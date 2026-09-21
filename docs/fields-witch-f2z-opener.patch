@@ -1,0 +1,1182 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index bd24662..6ff7b36 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -2,6 +2,12 @@
+ # It is not intended for manual editing.
+ version = 4
+ 
++[[package]]
++name = "anyhow"
++version = "1.0.104"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
++
+ [[package]]
+ name = "arrayref"
+ version = "0.3.9"
+@@ -14,6 +20,44 @@ version = "0.7.7"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "f02882884d3e1bc524fb12c79f107f6ad0e1cfd498c536ffb494301740995dfe"
+ 
++[[package]]
++name = "autocfg"
++version = "1.5.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
++
++[[package]]
++name = "bincode"
++version = "1.3.3"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
++dependencies = [
++ "serde",
++]
++
++[[package]]
++name = "bitz"
++version = "0.1.0"
++dependencies = [
++ "anyhow",
++ "bincode",
++ "blake3",
++ "circuit",
++ "derive_more",
++ "field",
++ "flock-core",
++ "itertools",
++ "libc",
++ "num-traits",
++ "rand",
++ "rand_core 0.10.1",
++ "rayon",
++ "serde",
++ "serde_json",
++ "thiserror",
++ "tracing",
++]
++
+ [[package]]
+ name = "blake3"
+ version = "1.8.5"
+@@ -26,6 +70,7 @@ dependencies = [
+  "cfg-if",
+  "constant_time_eq",
+  "cpufeatures 0.3.0",
++ "rayon-core",
+ ]
+ 
+ [[package]]
+@@ -53,12 +98,56 @@ version = "1.0.4"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
+ 
++[[package]]
++name = "chacha20"
++version = "0.10.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "65c35e4b699c7e15ccbe7ee35c005e4fc0a278d22238a2857e6ce2dadeda1b06"
++dependencies = [
++ "cfg-if",
++ "cpufeatures 0.3.0",
++ "rand_core 0.10.1",
++]
++
++[[package]]
++name = "circuit"
++version = "0.1.0"
++dependencies = [
++ "blake3",
++ "field",
++ "num-traits",
++ "rayon",
++ "thiserror",
++ "tracing",
++]
++
++[[package]]
++name = "cmov"
++version = "0.5.4"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
++
+ [[package]]
+ name = "constant_time_eq"
+ version = "0.4.2"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
+ 
++[[package]]
++name = "convert_case"
++version = "0.10.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "633458d4ef8c78b72454de2d54fd6ab2e60f9e02be22f3c6104cdc8a4e0fceb9"
++dependencies = [
++ "unicode-segmentation",
++]
++
++[[package]]
++name = "cpubits"
++version = "0.1.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "15b85f9c39137c3a891689859392b1bd49812121d0d61c9caf00d46ed5ce06ae"
++
+ [[package]]
+ name = "cpufeatures"
+ version = "0.2.17"
+@@ -102,6 +191,17 @@ version = "0.8.21"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
+ 
++[[package]]
++name = "crypto-bigint"
++version = "0.7.5"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "1a52aa3fcda4e6302a9f48734f234d35d4721b96f8fe07d073f07ce9df4f0271"
++dependencies = [
++ "cpubits",
++ "ctutils",
++ "num-traits",
++]
++
+ [[package]]
+ name = "crypto-common"
+ version = "0.1.7"
+@@ -112,6 +212,38 @@ dependencies = [
+  "typenum",
+ ]
+ 
++[[package]]
++name = "ctutils"
++version = "0.4.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e"
++dependencies = [
++ "cmov",
++]
++
++[[package]]
++name = "derive_more"
++version = "2.1.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "d751e9e49156b02b44f9c1815bcb94b984cdcc4396ecc32521c739452808b134"
++dependencies = [
++ "derive_more-impl",
++]
++
++[[package]]
++name = "derive_more-impl"
++version = "2.1.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "799a97264921d8623a957f6c3b9011f3b5492f557bbb7a5a19b7fa6d06ba8dcb"
++dependencies = [
++ "convert_case",
++ "proc-macro2",
++ "quote",
++ "rustc_version",
++ "syn 2.0.118",
++ "unicode-xid",
++]
++
+ [[package]]
+ name = "digest"
+ version = "0.10.7"
+@@ -128,13 +260,30 @@ version = "1.16.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "91622ff5e7162018101f2fea40d6ebf4a78bbe5a49736a2020649edf9693679e"
+ 
++[[package]]
++name = "equivalent"
++version = "1.0.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
++
++[[package]]
++name = "field"
++version = "0.1.0"
++dependencies = [
++ "crypto-bigint",
++ "num-traits",
++ "serde",
++]
++
+ [[package]]
+ name = "fields-witch"
+ version = "0.1.0"
+ dependencies = [
++ "bitz",
+  "blake3",
++ "flock-core",
+  "rand_chacha",
+- "rand_core",
++ "rand_core 0.9.5",
+  "rayon",
+  "sha2",
+ ]
+@@ -145,6 +294,20 @@ version = "0.1.9"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+ 
++[[package]]
++name = "flock-core"
++version = "0.1.0"
++dependencies = [
++ "bincode",
++ "blake3",
++ "field",
++ "rand_core 0.9.5",
++ "rayon",
++ "serde",
++ "sha2",
++ "toml",
++]
++
+ [[package]]
+ name = "generic-array"
+ version = "0.14.7"
+@@ -163,16 +326,86 @@ checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
+ dependencies = [
+  "cfg-if",
+  "libc",
+- "r-efi",
++ "r-efi 5.3.0",
+  "wasip2",
+ ]
+ 
++[[package]]
++name = "getrandom"
++version = "0.4.3"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
++dependencies = [
++ "cfg-if",
++ "libc",
++ "r-efi 6.0.0",
++ "rand_core 0.10.1",
++]
++
++[[package]]
++name = "hashbrown"
++version = "0.17.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
++
++[[package]]
++name = "indexmap"
++version = "2.14.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
++dependencies = [
++ "equivalent",
++ "hashbrown",
++]
++
++[[package]]
++name = "itertools"
++version = "0.14.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
++dependencies = [
++ "either",
++]
++
++[[package]]
++name = "itoa"
++version = "1.0.18"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
++
+ [[package]]
+ name = "libc"
+ version = "0.2.186"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
+ 
++[[package]]
++name = "memchr"
++version = "2.8.3"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
++
++[[package]]
++name = "num-traits"
++version = "0.2.19"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
++dependencies = [
++ "autocfg",
++]
++
++[[package]]
++name = "once_cell"
++version = "1.21.4"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
++
++[[package]]
++name = "pin-project-lite"
++version = "0.2.17"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
++
+ [[package]]
+ name = "ppv-lite86"
+ version = "0.2.21"
+@@ -206,6 +439,23 @@ version = "5.3.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
+ 
++[[package]]
++name = "r-efi"
++version = "6.0.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
++
++[[package]]
++name = "rand"
++version = "0.10.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "c7f5fa3a058cd35567ef9bfa5e75732bee0f9e4c55fa90477bef2dfcdbc4be80"
++dependencies = [
++ "chacha20",
++ "getrandom 0.4.3",
++ "rand_core 0.10.1",
++]
++
+ [[package]]
+ name = "rand_chacha"
+ version = "0.9.0"
+@@ -213,7 +463,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "d3022b5f1df60f26e1ffddd6c66e8aa15de382ae63b3a0c1bfc0e4d3e3f325cb"
+ dependencies = [
+  "ppv-lite86",
+- "rand_core",
++ "rand_core 0.9.5",
+ ]
+ 
+ [[package]]
+@@ -222,9 +472,15 @@ version = "0.9.5"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "76afc826de14238e6e8c374ddcc1fa19e374fd8dd986b0d2af0d02377261d83c"
+ dependencies = [
+- "getrandom",
++ "getrandom 0.3.4",
+ ]
+ 
++[[package]]
++name = "rand_core"
++version = "0.10.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
++
+ [[package]]
+ name = "rayon"
+ version = "1.12.0"
+@@ -245,6 +501,73 @@ dependencies = [
+  "crossbeam-utils",
+ ]
+ 
++[[package]]
++name = "rustc_version"
++version = "0.4.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
++dependencies = [
++ "semver",
++]
++
++[[package]]
++name = "semver"
++version = "1.0.28"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
++
++[[package]]
++name = "serde"
++version = "1.0.229"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba"
++dependencies = [
++ "serde_core",
++ "serde_derive",
++]
++
++[[package]]
++name = "serde_core"
++version = "1.0.229"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "67dca2c9c51e58a4791a4b1ed58308b39c64224d349a935ab5039aa360942a48"
++dependencies = [
++ "serde_derive",
++]
++
++[[package]]
++name = "serde_derive"
++version = "1.0.229"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
++dependencies = [
++ "proc-macro2",
++ "quote",
++ "syn 3.0.5",
++]
++
++[[package]]
++name = "serde_json"
++version = "1.0.151"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
++dependencies = [
++ "itoa",
++ "memchr",
++ "serde",
++ "serde_core",
++ "zmij",
++]
++
++[[package]]
++name = "serde_spanned"
++version = "0.6.9"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "bf41e0cfaf7226dca15e8197172c295a782857fcb97fad1808a166870dee75a3"
++dependencies = [
++ "serde",
++]
++
+ [[package]]
+ name = "sha2"
+ version = "0.10.9"
+@@ -254,6 +577,16 @@ dependencies = [
+  "cfg-if",
+  "cpufeatures 0.2.17",
+  "digest",
++ "sha2-asm",
++]
++
++[[package]]
++name = "sha2-asm"
++version = "0.6.4"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "b845214d6175804686b2bd482bcffe96651bb2d1200742b712003504a2dac1ab"
++dependencies = [
++ "cc",
+ ]
+ 
+ [[package]]
+@@ -273,6 +606,109 @@ dependencies = [
+  "unicode-ident",
+ ]
+ 
++[[package]]
++name = "syn"
++version = "3.0.5"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "12df2e0110f65b775f769bb17ef989067a1d931b2eb822bd4346631eeada89f9"
++dependencies = [
++ "proc-macro2",
++ "quote",
++ "unicode-ident",
++]
++
++[[package]]
++name = "thiserror"
++version = "2.0.20"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f"
++dependencies = [
++ "thiserror-impl",
++]
++
++[[package]]
++name = "thiserror-impl"
++version = "2.0.20"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af"
++dependencies = [
++ "proc-macro2",
++ "quote",
++ "syn 3.0.5",
++]
++
++[[package]]
++name = "toml"
++version = "0.8.23"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "dc1beb996b9d83529a9e75c17a1686767d148d70663143c7854d8b4a09ced362"
++dependencies = [
++ "serde",
++ "serde_spanned",
++ "toml_datetime",
++ "toml_edit",
++]
++
++[[package]]
++name = "toml_datetime"
++version = "0.6.11"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "22cddaf88f4fbc13c51aebbf5f8eceb5c7c5a9da2ac40a13519eb5b0a0e8f11c"
++dependencies = [
++ "serde",
++]
++
++[[package]]
++name = "toml_edit"
++version = "0.22.27"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "41fe8c660ae4257887cf66394862d21dbca4a6ddd26f04a3560410406a2f819a"
++dependencies = [
++ "indexmap",
++ "serde",
++ "serde_spanned",
++ "toml_datetime",
++ "toml_write",
++ "winnow",
++]
++
++[[package]]
++name = "toml_write"
++version = "0.1.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
++
++[[package]]
++name = "tracing"
++version = "0.1.44"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "63e71662fa4b2a2c3a26f570f037eb95bb1f85397f3cd8076caed2f026a6d100"
++dependencies = [
++ "pin-project-lite",
++ "tracing-attributes",
++ "tracing-core",
++]
++
++[[package]]
++name = "tracing-attributes"
++version = "0.1.31"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "7490cfa5ec963746568740651ac6781f701c9c5ea257c58e057f3ba8cf69e8da"
++dependencies = [
++ "proc-macro2",
++ "quote",
++ "syn 2.0.118",
++]
++
++[[package]]
++name = "tracing-core"
++version = "0.1.36"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a"
++dependencies = [
++ "once_cell",
++]
++
+ [[package]]
+ name = "typenum"
+ version = "1.20.1"
+@@ -285,6 +721,18 @@ version = "1.0.24"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+ 
++[[package]]
++name = "unicode-segmentation"
++version = "1.13.3"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8"
++
++[[package]]
++name = "unicode-xid"
++version = "0.2.6"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
++
+ [[package]]
+ name = "version_check"
+ version = "0.9.5"
+@@ -300,6 +748,15 @@ dependencies = [
+  "wit-bindgen",
+ ]
+ 
++[[package]]
++name = "winnow"
++version = "0.7.15"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
++dependencies = [
++ "memchr",
++]
++
+ [[package]]
+ name = "wit-bindgen"
+ version = "0.57.1"
+@@ -323,5 +780,11 @@ checksum = "1ae7f38b72ec2a254e2b87ef277cf2cd4fb97cbebf944faa6f33354da0867930"
+ dependencies = [
+  "proc-macro2",
+  "quote",
+- "syn",
++ "syn 2.0.118",
+ ]
++
++[[package]]
++name = "zmij"
++version = "1.0.23"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+diff --git a/Cargo.toml b/Cargo.toml
+index 49615de..3229a7d 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -5,6 +5,13 @@ edition = "2024"
+ 
+ [features]
+ hash-count = []
++# Local benchmark instantiation, not part of upstream fields-witch: commit and
++# open the two dense F_{2^128} phases (P_0 and the concatenated tails) with the
++# F2Z opener (`f2z::binary_pcs`: Johnson regime, Round 0, grinding, BLAKE3).
++f2z-opener = ["dep:f2z", "dep:flock-core"]
++# Control build: the assembly SHA-256 backend that `f2z-opener` inherits through
++# flock-core's `sha2/asm` (Cargo unifies the feature), without the F2Z opener.
++sha2-asm = ["sha2/asm"]
+ 
+ [profile.release]
+ # Cross-CGU optimization materially shrinks the verifier and improves its hot
+@@ -20,3 +27,10 @@ rand_chacha = "0.9"
+ rand_core = "0.9"
+ rayon = "1.10"
+ sha2 = "0.10"
++# `f2z-opener` only: the F2Z worktree the comparison is built from.
++f2z = { package = "bitz", path = "../f2z-pcs-curvesplit", default-features = false, features = ["parallel", "unchecked"], optional = true }
++flock-core = { git = "https://github.com/albert-garreta/flock-mod.git", rev = "ed4c0cd9aceeae15248bf4f24a70d96fe37b2395", optional = true }
++
++# F2Z builds against its vendored flock-core; patches apply only from the root.
++[patch."https://github.com/albert-garreta/flock-mod.git"]
++flock-core = { path = "../f2z-pcs-curvesplit/vendor/flock-mod/crates/flock-core" }
+diff --git a/examples/protocol_profile.rs b/examples/protocol_profile.rs
+index 451c092..b727da6 100644
+--- a/examples/protocol_profile.rs
++++ b/examples/protocol_profile.rs
+@@ -17,7 +17,9 @@ use std::time::{Duration, Instant};
+ 
+ use fields_witch::field::{F2_127, FIELD_BITS};
+ use fields_witch::fp::Fp;
+-use fields_witch::protocol::{Claim, Protocol, ProveProfile, Scratch, VerifyProfile};
++use fields_witch::protocol::{
++    Claim, Protocol, ProtocolOptions, ProveProfile, Scratch, VerifyProfile,
++};
+ use fields_witch::prover::witness::MAX_LIMB_BITS;
+ use rayon::ThreadPoolBuilder;
+ 
+@@ -29,6 +31,11 @@ struct Options {
+     repeats: usize,
+     zeroize_ab: bool,
+     allow_large: bool,
++    log_inv_rate: usize,
++    dense_opener: String,
++    f2z_initial_k: usize,
++    f2z_component_bits: usize,
++    print_proof_digest: bool,
+ }
+ 
+ impl Default for Options {
+@@ -43,6 +50,11 @@ impl Default for Options {
+             repeats: 3,
+             zeroize_ab: false,
+             allow_large: false,
++            log_inv_rate: 1,
++            dense_opener: "fields-witch".to_owned(),
++            f2z_initial_k: 4,
++            f2z_component_bits: 100,
++            print_proof_digest: false,
+         }
+     }
+ }
+@@ -54,6 +66,7 @@ struct RunProfile {
+     zeroize: Duration,
+     effective_prove_total: Duration,
+     proof_bytes: usize,
++    proof_digest: [u8; 32],
+ }
+ 
+ #[derive(Clone, Copy, Debug)]
+@@ -79,7 +92,11 @@ fn main() -> ExitCode {
+         return ExitCode::from(2);
+     }
+ 
+-    let protocol = match Protocol::new(options.limb_sizes.clone(), F2_127::X + F2_127::ONE) {
++    let protocol = match Protocol::with_options(
++        options.limb_sizes.clone(),
++        F2_127::X + F2_127::ONE,
++        protocol_options(&options),
++    ) {
+         Ok(protocol) => protocol,
+         Err(error) => {
+             eprintln!("error: could not configure protocol: {error:?}");
+@@ -106,6 +123,28 @@ fn main() -> ExitCode {
+     ExitCode::SUCCESS
+ }
+ 
++#[cfg(feature = "f2z-opener")]
++fn protocol_options(options: &Options) -> ProtocolOptions {
++    let f2z_opener = (options.dense_opener == "f2z").then_some(
++        fields_witch::protocol::F2zOpenerOptions {
++            log_inv_rate: options.log_inv_rate,
++            initial_k: options.f2z_initial_k,
++            component_bits: options.f2z_component_bits,
++        },
++    );
++    ProtocolOptions {
++        log_inv_rate: options.log_inv_rate,
++        f2z_opener,
++    }
++}
++
++#[cfg(not(feature = "f2z-opener"))]
++fn protocol_options(options: &Options) -> ProtocolOptions {
++    ProtocolOptions {
++        log_inv_rate: options.log_inv_rate,
++    }
++}
++
+ fn run(protocol: &Protocol, p0: &[F2_127], claim: &Claim, options: &Options) {
+     // One allocation-retaining workspace is shared by warmups, retained runs,
+     // and the optional zeroization A/B pass.
+@@ -136,15 +175,21 @@ fn run(protocol: &Protocol, p0: &[F2_127], claim: &Claim, options: &Options) {
+         options.warmups,
+         options.repeats,
+     );
++    println!(
++        "pcs: log_inv_rate={}, dense_opener={}; {}",
++        options.log_inv_rate,
++        options.dense_opener,
++        protocol.opener_summary()
++    );
+ 
+     warm_up(protocol, p0, claim, &mut scratch, options.warmups, false);
+     let retained = collect_runs(protocol, p0, claim, &mut scratch, options.repeats, false);
+-    print_variant("retained scratch", &retained);
++    print_variant("retained scratch", &retained, options.print_proof_digest);
+ 
+     if options.zeroize_ab {
+         warm_up(protocol, p0, claim, &mut scratch, options.warmups, true);
+         let zeroized = collect_runs(protocol, p0, claim, &mut scratch, options.repeats, true);
+-        print_variant("zeroize before prove", &zeroized);
++        print_variant("zeroize before prove", &zeroized, options.print_proof_digest);
+ 
+         let retained_total = summarize(retained.iter().map(|run| run.effective_prove_total));
+         let zeroized_total = summarize(zeroized.iter().map(|run| run.effective_prove_total));
+@@ -211,10 +256,11 @@ fn run_once(
+         zeroize: zeroize_time,
+         effective_prove_total: zeroize_time + proved.profile.total,
+         proof_bytes: proved.proof.len(),
++        proof_digest: *blake3::hash(proved.proof.as_bytes()).as_bytes(),
+     }
+ }
+ 
+-fn print_variant(name: &str, runs: &[RunProfile]) {
++fn print_variant(name: &str, runs: &[RunProfile], print_proof_digest: bool) {
+     println!("\n{name} ({} measured runs)", runs.len());
+     println!("  prover");
+     println!("    setup subrows overlap; setup wall is their critical-path time");
+@@ -251,6 +297,9 @@ fn print_variant(name: &str, runs: &[RunProfile]) {
+         runs.iter().map(|run| run.prove.aux_commitment),
+     );
+     print_row("  openings", runs.iter().map(|run| run.prove.openings));
++    if runs.iter().any(|run| !run.prove.ood_rounds.is_zero()) {
++        print_row("  round 0", runs.iter().map(|run| run.prove.ood_rounds));
++    }
+     if runs.iter().any(|run| !run.zeroize.is_zero()) {
+         print_row("scratch zeroize", runs.iter().map(|run| run.zeroize));
+         print_row(
+@@ -268,6 +317,15 @@ fn print_variant(name: &str, runs: &[RunProfile]) {
+     let proof_bytes = runs[0].proof_bytes;
+     assert!(runs.iter().all(|run| run.proof_bytes == proof_bytes));
+     println!("  proof bytes       {proof_bytes}");
++    if print_proof_digest {
++        let digest = runs[0].proof_digest;
++        assert!(runs.iter().all(|run| run.proof_digest == digest));
++        let hex = digest
++            .iter()
++            .map(|byte| format!("{byte:02x}"))
++            .collect::<String>();
++        println!("  proof digest      {hex}");
++    }
+ }
+ 
+ fn print_row(label: &str, values: impl Iterator<Item = Duration>) {
+@@ -333,6 +391,13 @@ fn parse_options(args: impl Iterator<Item = String>) -> Result<Option<Options>,
+             "--repeats" => options.repeats = parse_value(&mut args, "--repeats")?,
+             "--zeroize-ab" => options.zeroize_ab = true,
+             "--allow-large" => options.allow_large = true,
++            "--log-inv-rate" => options.log_inv_rate = parse_value(&mut args, "--log-inv-rate")?,
++            "--dense-opener" => options.dense_opener = parse_value(&mut args, "--dense-opener")?,
++            "--f2z-initial-k" => options.f2z_initial_k = parse_value(&mut args, "--f2z-initial-k")?,
++            "--f2z-component-bits" => {
++                options.f2z_component_bits = parse_value(&mut args, "--f2z-component-bits")?
++            }
++            "--print-proof-digest" => options.print_proof_digest = true,
+             _ => return Err(format!("unknown argument `{argument}`")),
+         }
+     }
+@@ -401,6 +466,18 @@ fn validate_options(options: &Options) -> Result<(), String> {
+         return Err("--repeats must be at least 1".to_owned());
+     }
+ 
++    if options.log_inv_rate == 0 {
++        return Err("--log-inv-rate must be at least 1".to_owned());
++    }
++    match options.dense_opener.as_str() {
++        "fields-witch" => {}
++        "f2z" if cfg!(feature = "f2z-opener") => {}
++        "f2z" => {
++            return Err("--dense-opener f2z needs a build with --features f2z-opener".to_owned());
++        }
++        other => return Err(format!("unknown --dense-opener `{other}` (fields-witch or f2z)")),
++    }
++
+     let (_, lookup_entries) = lookup_shape(&options.limb_sizes)?;
+     if lookup_entries > 1usize << 20 && !options.allow_large {
+         return Err(format!(
+@@ -450,6 +527,11 @@ fn print_usage() {
+            --repeats N        Measured prove+verify passes (default: 3)\n\
+            --zeroize-ab       Repeat with scratch zeroization before every proof\n\
+            --allow-large      Explicitly allow guarded input or lookup sizes\n\
++           --log-inv-rate R   Commitment inverse-rate exponent of every Ligerito PCS (default: 1 = rate 1/2)\n\
++           --dense-opener O   Opener of P_0 and the tails: fields-witch (default) or f2z (feature f2z-opener)\n\
++           --f2z-initial-k K  F2Z opener level-0 fold arity (default: 4 = 16 lanes)\n\
++           --f2z-component-bits B  F2Z opener round-by-round target (default: 100)\n\
++           --print-proof-digest  Print the BLAKE3 digest of the proof bytes\n\
+            -h, --help         Show this help"
+     );
+ }
+diff --git a/src/pcs.rs b/src/pcs.rs
+index 8cc43a1..273c30f 100644
+--- a/src/pcs.rs
++++ b/src/pcs.rs
+@@ -63,21 +63,55 @@ impl PcsConfig {
+         &self.levels
+     }
+ 
++    /// `message vars + lane vars @ rate x queries` per level, for benchmark logs.
++    pub fn describe(&self) -> String {
++        let levels = self
++            .levels
++            .iter()
++            .map(|params| {
++                format!(
++                    "{}+{} vars @1/{} x{}",
++                    params.log_msg_cols,
++                    params.log_num_interleaved,
++                    1usize << params.log_inv_rate,
++                    params.num_queries
++                )
++            })
++            .collect::<Vec<_>>();
++        format!("[{}]", levels.join(", "))
++    }
++
+     /// A conservative recursive schedule suitable as a starting point.
+     ///
+     /// Four variables are folded per level, the inverse rate grows from 2 to
+     /// 16 on deeper levels, and the unique-decoding query estimate targets 100
+     /// bits. Tiny codewords query every row.
+     pub fn practical<F: BinField>(log_num_vars: usize) -> Result<Self, PcsConfigError> {
++        Self::practical_with_rate::<F>(log_num_vars, 1)
++    }
++
++    /// [`Self::practical`] with the commitment (level-0) inverse rate
++    /// `2^level0_log_inv_rate`. Every level's inverse-rate exponent is shifted
++    /// by `level0_log_inv_rate - 1` and capped at `max(4, level0_log_inv_rate)`:
++    /// `1` is exactly the practical schedule (1/2, 1/4, 1/8, 1/16, ...), `3`
++    /// runs 1/8 at level 0 and 1/16 on every deeper level.
++    pub fn practical_with_rate<F: BinField>(
++        log_num_vars: usize,
++        level0_log_inv_rate: usize,
++    ) -> Result<Self, PcsConfigError> {
+         if log_num_vars >= usize::BITS as usize {
+             return Err(PcsConfigError::DimensionTooLarge);
+         }
++        if level0_log_inv_rate == 0 {
++            return Err(PcsConfigError::NoRedundancy { level: 0 });
++        }
++        let max_log_inv_rate = DEFAULT_MAX_LOG_INV_RATE.max(level0_log_inv_rate);
+ 
+         let mut remaining = log_num_vars;
+         let mut level_index = 0usize;
+         let mut levels = Vec::new();
+         loop {
+-            let log_inv_rate = (level_index + 1).min(DEFAULT_MAX_LOG_INV_RATE);
++            let log_inv_rate = (level_index + level0_log_inv_rate).min(max_log_inv_rate);
+             if log_inv_rate > F::DEGREE {
+                 return Err(PcsConfigError::CodewordExceedsField { level: level_index });
+             }
+diff --git a/src/protocol.rs b/src/protocol.rs
+index 9f4d743..ac7c18d 100644
+--- a/src/protocol.rs
++++ b/src/protocol.rs
+@@ -15,7 +15,7 @@ use crate::field::F2_127;
+ use crate::field128::F2_128;
+ use crate::fp::Fp;
+ use crate::ligerito::LigeritoProverScratch;
+-use crate::pcs::{AuxPcs, DenseCommitment, DensePcs, PcsConfigError, PcsError};
++use crate::pcs::{AuxPcs, DenseCommitment, DensePcs, PcsConfig, PcsConfigError, PcsError};
+ use crate::prover::logup::{LogupScratch, LogupStar};
+ use crate::prover::main_loop::{MainLoop, MainLoopScratch};
+ use crate::prover::ringswitch::{RingswitchScratch, prove_ringswitch};
+@@ -26,6 +26,11 @@ use crate::prover::witness::{
+ use crate::verifier::{FieldSwitch, FpEvalClaim, StepConfig, VerifyError, concatenate_p1_claim};
+ use rayon::prelude::*;
+ 
++#[cfg(feature = "f2z-opener")]
++mod f2z_opener;
++#[cfg(feature = "f2z-opener")]
++pub use f2z_opener::F2zOpenerOptions;
++
+ const TRANSCRIPT_DOMAIN: &[u8] = b"fields-witch/protocol/v1";
+ const PARAMETERS_LABEL: &[u8] = b"fields-witch/protocol-parameters/v1";
+ const FP_CLAIM_LABEL: &[u8] = b"fields-witch/fp-claim/v1";
+@@ -92,8 +97,9 @@ pub struct Scratch {
+     dense_p1: Vec<F2_128>,
+     claim_eval: Vec<Fp>,
+     scales: Vec<Fp>,
+-    dense_p0_pcs: LigeritoProverScratch<F2_128>,
+-    dense_p1_pcs: LigeritoProverScratch<F2_128>,
++    /// `None` when the dense phases are committed by the F2Z opener.
++    dense_p0_pcs: Option<LigeritoProverScratch<F2_128>>,
++    dense_p1_pcs: Option<LigeritoProverScratch<F2_128>>,
+     aux_pcs: LigeritoProverScratch<F2_127>,
+ }
+ 
+@@ -111,8 +117,12 @@ impl Scratch {
+         clear_full_capacity(&mut self.claim_eval, Fp::ZERO);
+         clear_full_capacity(&mut self.scales, Fp::ZERO);
+         clear_full_capacity(&mut self.dense_p1, F2_128::ZERO);
+-        self.dense_p0_pcs.zeroize();
+-        self.dense_p1_pcs.zeroize();
++        if let Some(scratch) = &mut self.dense_p0_pcs {
++            scratch.zeroize();
++        }
++        if let Some(scratch) = &mut self.dense_p1_pcs {
++            scratch.zeroize();
++        }
+         self.aux_pcs.zeroize();
+     }
+ }
+@@ -151,6 +161,8 @@ pub struct ProveProfile {
+     pub logup: Duration,
+     pub ringswitch: Duration,
+     pub openings: Duration,
++    /// Round 0 of the dense phases under the F2Z opener (zero otherwise).
++    pub ood_rounds: Duration,
+     pub core: Duration,
+     pub total: Duration,
+ }
+@@ -186,6 +198,9 @@ pub enum ProtocolError {
+     ScratchShapeMismatch,
+     Verification(VerifyError),
+     Transcript(ProofTranscriptError),
++    /// F2Z-opener configuration or proof failure.
++    #[cfg(feature = "f2z-opener")]
++    F2zOpener(&'static str),
+ }
+ 
+ impl From<PcsConfigError> for ProtocolError {
+@@ -212,6 +227,29 @@ impl From<ProofTranscriptError> for ProtocolError {
+     }
+ }
+ 
++/// Opening-layer options. The default is upstream fields-witch: every
++/// commitment is fields-witch's own Ligerito, starting at rate 1/2.
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub struct ProtocolOptions {
++    /// Commitment (level-0) inverse-rate exponent of every fields-witch
++    /// Ligerito PCS: 1 = rate 1/2 (upstream), 3 = rate 1/8. See
++    /// [`PcsConfig::practical_with_rate`].
++    pub log_inv_rate: usize,
++    /// Commit and open `P_0` and the tails with the F2Z opener instead.
++    #[cfg(feature = "f2z-opener")]
++    pub f2z_opener: Option<F2zOpenerOptions>,
++}
++
++impl Default for ProtocolOptions {
++    fn default() -> Self {
++        Self {
++            log_inv_rate: 1,
++            #[cfg(feature = "f2z-opener")]
++            f2z_opener: None,
++        }
++    }
++}
++
+ /// A fully configured field-switch prover and verifier.
+ ///
+ /// PCS schedules are deterministic functions of the committed table shapes:
+@@ -228,10 +266,20 @@ pub struct Protocol {
+     main_loop: MainLoop,
+     logup: LogupStar,
+     verifier: FieldSwitch,
++    #[cfg(feature = "f2z-opener")]
++    f2z: Option<f2z_opener::F2zDense>,
+ }
+ 
+ impl Protocol {
+     pub fn new(limb_bits: Vec<usize>, generator: F2_127) -> Result<Self, ProtocolError> {
++        Self::with_options(limb_bits, generator, ProtocolOptions::default())
++    }
++
++    pub fn with_options(
++        limb_bits: Vec<usize>,
++        generator: F2_127,
++        options: ProtocolOptions,
++    ) -> Result<Self, ProtocolError> {
+         let n = limb_bits.len();
+         if n == 0 {
+             return Err(ProtocolError::EmptyProtocol);
+@@ -262,9 +310,15 @@ impl Protocol {
+             .map(|limb_bits| StepConfig { limb_bits })
+             .collect::<Vec<_>>();
+ 
+-        let dense_p0_pcs = DensePcs::practical(n)?;
+-        let dense_p1_pcs = DensePcs::practical(n - 1)?;
+-        let aux_pcs = AuxPcs::practical(aux_vars)?;
++        let rate = options.log_inv_rate;
++        let dense_p0_pcs = DensePcs::new(PcsConfig::practical_with_rate::<F2_128>(n, rate)?)?;
++        let dense_p1_pcs = DensePcs::new(PcsConfig::practical_with_rate::<F2_128>(n - 1, rate)?)?;
++        let aux_pcs = AuxPcs::new(PcsConfig::practical_with_rate::<F2_127>(aux_vars, rate)?)?;
++        #[cfg(feature = "f2z-opener")]
++        let f2z = options
++            .f2z_opener
++            .map(|opener| f2z_opener::F2zDense::new(n, opener))
++            .transpose()?;
+ 
+         Ok(Self {
+             limb_bits: limb_bits.clone(),
+@@ -276,6 +330,8 @@ impl Protocol {
+             main_loop: MainLoop::new(steps.clone(), generator),
+             logup: LogupStar::new(steps.clone(), generator),
+             verifier: FieldSwitch::new(steps, generator),
++            #[cfg(feature = "f2z-opener")]
++            f2z,
+         })
+     }
+ 
+@@ -342,12 +398,43 @@ impl Protocol {
+             dense_p1: vec![F2_128::ZERO; 1usize << (n - 1)],
+             claim_eval: vec![Fp::ZERO; table_len],
+             scales: Vec::with_capacity(n),
+-            dense_p0_pcs: self.dense_p0_pcs.make_scratch(),
+-            dense_p1_pcs: self.dense_p1_pcs.make_scratch(),
++            dense_p0_pcs: self.dense_opener_scratch(&self.dense_p0_pcs),
++            dense_p1_pcs: self.dense_opener_scratch(&self.dense_p1_pcs),
+             aux_pcs: self.aux_pcs.make_scratch(),
+         }
+     }
+ 
++    fn dense_opener_scratch(&self, pcs: &DensePcs) -> Option<LigeritoProverScratch<F2_128>> {
++        #[cfg(feature = "f2z-opener")]
++        {
++            if self.f2z.is_some() {
++                return None;
++            }
++        }
++        Some(pcs.make_scratch())
++    }
++
++    /// The opener and level schedule of every commitment, for benchmark logs.
++    pub fn opener_summary(&self) -> String {
++        #[cfg(feature = "f2z-opener")]
++        {
++            if let Some(dense) = &self.f2z {
++                return format!(
++                    "P_0: F2Z opener {}; tails: F2Z opener {}; Logup aux: fields-witch Ligerito {}",
++                    dense.p0_summary(),
++                    dense.p1_summary(),
++                    self.aux_pcs.config().describe()
++                );
++            }
++        }
++        format!(
++            "P_0: fields-witch Ligerito {}; tails: fields-witch Ligerito {}; Logup aux: fields-witch Ligerito {}",
++            self.dense_p0_pcs.config().describe(),
++            self.dense_p1_pcs.config().describe(),
++            self.aux_pcs.config().describe()
++        )
++    }
++
+     /// Build the witness, commit every phase, prove the audited IOP, and open
+     /// every commitment claim it produces.
+     pub fn prove(
+@@ -356,6 +443,12 @@ impl Protocol {
+         claim: &Claim,
+         scratch: &mut Scratch,
+     ) -> Result<ProveOutput, ProtocolError> {
++        #[cfg(feature = "f2z-opener")]
++        {
++            if let Some(dense) = &self.f2z {
++                return self.prove_f2z(dense, p0, claim, scratch);
++            }
++        }
+         let total_start = Instant::now();
+         if scratch.limb_bits != self.limb_bits || scratch.generator != self.generator {
+             return Err(ProtocolError::ScratchShapeMismatch);
+@@ -395,9 +488,15 @@ impl Protocol {
+             let field_switch = &mut scratch.field_switch;
+             let witness_scratch = &mut scratch.witness;
+             let dense_p1 = &mut scratch.dense_p1;
+-            let dense_p1_pcs = &mut scratch.dense_p1_pcs;
++            let dense_p1_pcs = scratch
++                .dense_p1_pcs
++                .as_mut()
++                .ok_or(ProtocolError::ScratchShapeMismatch)?;
+             let dense_p0 = &mut scratch.dense_p0;
+-            let dense_p0_pcs = &mut scratch.dense_p0_pcs;
++            let dense_p0_pcs = scratch
++                .dense_p0_pcs
++                .as_mut()
++                .ok_or(ProtocolError::ScratchShapeMismatch)?;
+             rayon::join(
+                 || {
+                     let witness_start = Instant::now();
+@@ -505,14 +604,20 @@ impl Protocol {
+         let opening_start = Instant::now();
+         self.dense_p0_pcs.prove_packed_claims(
+             &scratch.dense_p0,
+-            &mut scratch.dense_p0_pcs,
++            scratch
++                .dense_p0_pcs
++                .as_mut()
++                .ok_or(ProtocolError::ScratchShapeMismatch)?,
+             p0_commitment,
+             std::slice::from_ref(&ringswitch_out.p0),
+             &mut writer,
+         )?;
+         self.dense_p1_pcs.prove_packed_claims(
+             &scratch.dense_p1,
+-            &mut scratch.dense_p1_pcs,
++            scratch
++                .dense_p1_pcs
++                .as_mut()
++                .ok_or(ProtocolError::ScratchShapeMismatch)?,
+             p1_commitment,
+             std::slice::from_ref(&p1_opening),
+             &mut writer,
+@@ -539,6 +644,7 @@ impl Protocol {
+             logup: logup_time,
+             ringswitch: ringswitch_time,
+             openings: opening_time,
++            ood_rounds: Duration::ZERO,
+             core,
+             total: total_start.elapsed(),
+         };
+@@ -557,6 +663,12 @@ impl Protocol {
+         commitments: &Commitments,
+         proof: &Proof,
+     ) -> Result<VerifyProfile, ProtocolError> {
++        #[cfg(feature = "f2z-opener")]
++        {
++            if let Some(dense) = &self.f2z {
++                return self.verify_f2z(dense, claim, commitments, proof);
++            }
++        }
+         let total_start = Instant::now();
+         self.validate_claim(claim)?;
+ 

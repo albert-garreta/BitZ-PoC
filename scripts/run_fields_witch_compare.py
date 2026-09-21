@@ -20,6 +20,7 @@ Re-render an existing run: --render PerfRuns/<dir>/results.jsonl
 """
 import argparse
 import datetime as dt
+import hashlib
 import json
 import math
 import os
@@ -123,6 +124,56 @@ def run_timed(cmd, cwd=None, env=None):
     return text, rss, wall
 
 
+def file_sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def fields_witch_provenance(binary):
+    """Base revision of the checkout the binary was built in (read from its
+    metadata files, no VCS command) and content hashes of its sources and of
+    the binary itself."""
+    root = binary.split(os.sep + "target", 1)[0]
+    head = None
+    try:
+        meta = os.path.join(root, ".git")
+        if os.path.isfile(meta):
+            meta = open(meta).read().split(":", 1)[1].strip()
+        common = meta
+        if os.path.exists(os.path.join(meta, "commondir")):
+            common = os.path.normpath(os.path.join(meta, open(os.path.join(meta, "commondir")).read().strip()))
+        ref = open(os.path.join(meta, "HEAD")).read().strip()
+        if ref.startswith("ref: "):
+            name, sha = ref[5:], None
+            loose = os.path.join(common, name)
+            if os.path.exists(loose):
+                sha = open(loose).read().strip()
+            elif os.path.exists(os.path.join(common, "packed-refs")):
+                for line in open(os.path.join(common, "packed-refs")):
+                    parts = line.split()
+                    if len(parts) == 2 and parts[1] == name:
+                        sha = parts[0]
+            head = f"{name.rsplit('/', 1)[-1]}@{sha}"
+        else:
+            head = ref
+    except OSError:
+        pass
+    h = hashlib.sha256()
+    for entry in ("Cargo.toml", "Cargo.lock", "src", "examples"):
+        path = os.path.join(root, entry)
+        files = [path] if os.path.isfile(path) else sorted(
+            os.path.join(d, f) for d, _, fs in os.walk(path) for f in fs)
+        for f in files:
+            h.update(os.path.relpath(f, root).encode() + b"\0")
+            with open(f, "rb") as fh:
+                h.update(fh.read())
+    return {"fw_root": root, "fw_head": head, "fw_tree_sha256": h.hexdigest()[:16],
+            "fw_binary_sha256": file_sha256(binary)[:16]}
+
+
 # --------------------------------------------------------------------------
 # fields-witch
 # --------------------------------------------------------------------------
@@ -162,16 +213,28 @@ def parse_fields_witch(text):
     return rows, proof_bytes, lookup
 
 
-def run_fields_witch(binary, k, threads, reps, warmups, min_idle):
+def run_fields_witch(binary, k, threads, reps, warmups, min_idle, log_inv_rate=1,
+                     dense_opener="fields-witch", f2z_initial_k=4, f2z_bits=100, scheme=None):
     schedule = README_2_20 if k == 20 else limb_schedule(k)
     cmd = [binary, "--limb-sizes", ",".join(map(str, schedule)), "--threads", str(threads),
            "--warmups", str(warmups), "--repeats", str(reps), "--allow-large"]
+    if log_inv_rate != 1:
+        cmd += ["--log-inv-rate", str(log_inv_rate)]
+    if dense_opener == "f2z":
+        cmd += ["--dense-opener", "f2z", "--f2z-initial-k", str(f2z_initial_k),
+                "--f2z-component-bits", str(f2z_bits)]
     idle = wait_for_quiet(min_idle)
     text, rss, wall = run_timed(cmd, cwd=os.path.dirname(binary))
     rows, proof_bytes, lookup = parse_fields_witch(text)
     med = lambda key: rows[key]["median_ms"] if key in rows else None
     return {
-        "scheme": "fields-witch",
+        "scheme": scheme or ("fields-witch-bitz" if dense_opener == "f2z" else "fields-witch"),
+        "log_inv_rate": log_inv_rate, "dense_opener": dense_opener,
+        "f2z_initial_k": f2z_initial_k if dense_opener == "f2z" else None,
+        "f2z_component_bits": f2z_bits if dense_opener == "f2z" else None,
+        "pcs": next((line[5:] for line in text.splitlines() if line.startswith("pcs: ")), None),
+        "ood_rounds_ms": med("prover/round 0"),
+        **fields_witch_provenance(binary),
         "k": k, "n_bits_log2": k + 7, "threads": threads, "reps": reps, "warmups": warmups,
         "limb_sizes": schedule, "lookup_used": lookup[0], "lookup_len": lookup[1],
         "idle_before": idle, "wall_s": wall, "max_rss_bytes": rss,
@@ -241,7 +304,7 @@ def run_bitz(binary, n, threads, reps, min_idle, word_bits=1, profile=None):
     bitz_commit = subprocess.run(["git", "describe", "--always", "--dirty", "--abbrev=9"],
                                 capture_output=True, text=True).stdout.strip() or None
     return {
-        "scheme": "bitz", "bitz_commit": bitz_commit,
+        "scheme": "bitz", "bitz_commit": bitz_commit, "bitz_binary_sha256": file_sha256(binary)[:16],
         "n": n, "word_bits": word_bits, "n_bits_log2": n + int(math.log2(word_bits)),
         "threads": threads, "reps": reps, "warmups": 1, "profile": f.get("lig"),
         "t": f.get("t"), "s": f.get("s"), "q_bits": f.get("q_bits"),
@@ -265,6 +328,17 @@ def run_bitz(binary, n, threads, reps, min_idle, word_bits=1, profile=None):
 # rendering
 # --------------------------------------------------------------------------
 
+def scheme_label(r):
+    if r["scheme"] == "bitz":
+        return f"BitZ {r.get('profile') or ''}".strip()
+    rate = f"rate 1/{2 ** (r.get('log_inv_rate') or 1)}"
+    if r["scheme"] == "fields-witch-bitz":
+        return f"fields-witch + BitZ opener ({rate})"
+    if r["scheme"] == "fields-witch-asm":
+        return f"fields-witch ({rate}, sha2 asm)"
+    return f"fields-witch ({rate})"
+
+
 def fmt_ms(v):
     if v is None:
         return "--"
@@ -284,7 +358,7 @@ def fmt_mb(b):
 
 
 def render_markdown(records, machine):
-    fw = [r for r in records if r["scheme"] == "fields-witch"]
+    fw = [r for r in records if r["scheme"] in ("fields-witch", "fields-witch-asm", "fields-witch-bitz")]
     fz = [r for r in records if r["scheme"] == "bitz" and r["word_bits"] == 1]
     fzw = [r for r in records if r["scheme"] == "bitz" and r["word_bits"] != 1]
     threads = sorted({r["threads"] for r in records})
@@ -299,11 +373,11 @@ def render_markdown(records, machine):
         for th in threads:
             for r in fw:
                 if r["n_bits_log2"] == bits and r["threads"] == th:
-                    out.append(f"| 2^{bits} | {th} | fields-witch | 2^{r['k']} x 127 b | {fmt_ms(r['prove_total_ms'])} | "
+                    out.append(f"| 2^{bits} | {th} | {scheme_label(r)} | 2^{r['k']} x 127 b | {fmt_ms(r['prove_total_ms'])} | "
                                f"{fmt_ms(r['verify_total_ms'])} | {fmt_kb(r['proof_bytes'])} | {fmt_mb(r['max_rss_bytes'])} |")
             for r in fz:
                 if r["n_bits_log2"] == bits and r["threads"] == th:
-                    out.append(f"| 2^{bits} | {th} | BitZ | n={r['n']} (t={r['t']}, s={r['s']}), q {r['q_bits']} b | "
+                    out.append(f"| 2^{bits} | {th} | {scheme_label(r)} | n={r['n']} (t={r['t']}, s={r['s']}), q {r['q_bits']} b | "
                                f"{fmt_ms(r['prove_total_ms'])} | {fmt_ms(r['verify_total_ms'])} | "
                                f"{fmt_kb(r['proof_bytes'])} | {fmt_mb(r['max_rss_bytes'])} |")
     out.append("")
@@ -316,12 +390,13 @@ def render_markdown(records, machine):
                 if r["n_bits_log2"] == bits and r["threads"] == th:
                     commit = (r["dense_commit_ms"] or 0) + (r["aux_commit_ms"] or 0)
                     other = (r["prove_total_ms"] or 0) - commit - (r["core_ms"] or 0) - (r["openings_ms"] or 0)
-                    out.append(f"| 2^{bits} | {th} | fields-witch | {fmt_ms(commit)} (dense {fmt_ms(r['dense_commit_ms'])} + aux {fmt_ms(r['aux_commit_ms'])}) | "
+                    out.append(f"| 2^{bits} | {th} | {scheme_label(r)} | {fmt_ms(commit)} (dense {fmt_ms(r['dense_commit_ms'])} + aux {fmt_ms(r['aux_commit_ms'])}) | "
                                f"{fmt_ms(r['core_ms'])} (main loop {fmt_ms(r['main_loop_ms'])}, Logup* {fmt_ms(r['logup_ms'])}, ring switch {fmt_ms(r['ringswitch_ms'])}) | "
-                               f"{fmt_ms(r['openings_ms'])} | {fmt_ms(other)} (witness {fmt_ms(r['witness_ms'])}, claim check {fmt_ms(r['claim_check_ms'])}) |")
+                               f"{fmt_ms(r['openings_ms'])} | {fmt_ms(other)} (witness {fmt_ms(r['witness_ms'])}, claim check {fmt_ms(r['claim_check_ms'])}"
+                               + (f", round 0 {fmt_ms(r['ood_rounds_ms'])}" if r.get("ood_rounds_ms") else "") + ") |")
             for r in fz:
                 if r["n_bits_log2"] == bits and r["threads"] == th:
-                    out.append(f"| 2^{bits} | {th} | BitZ | {fmt_ms(r['commit_ms'])} | "
+                    out.append(f"| 2^{bits} | {th} | {scheme_label(r)} | {fmt_ms(r['commit_ms'])} | "
                                f"{fmt_ms(r['prove_gp_ms'])} (GKR forest) + ring switch {fmt_ms(r['prove_rs_ms'])} | "
                                f"{fmt_ms(r['prove_lig_ms'])} | {fmt_ms(r['prove_residual_ms'])} |")
     if fzw:
@@ -355,6 +430,8 @@ def render_latex(records, machine, cmdline, threads=8, bitz_commit_override=None
     fw = [r for r in records if r["scheme"] == "fields-witch" and r["threads"] == threads]
     fz = [r for r in records if r["scheme"] == "bitz" and r["word_bits"] == 1 and r["threads"] == threads]
     sizes = sorted({r["n_bits_log2"] for r in fw} & {r["n_bits_log2"] for r in fz})
+    if not sizes:
+        return "% no size has both a fields-witch and an BitZ row; nothing to tabulate\n"
     fw_commit = subprocess.run(["git", "-C", os.path.expanduser("~/fields-witch"), "rev-parse", "--short", "HEAD"],
                                capture_output=True, text=True).stdout.strip() or "?"
     bitz_commit = bitz_commit_override or next((r.get("bitz_commit") for r in fz if r.get("bitz_commit")), None) \
@@ -410,10 +487,227 @@ def render_latex(records, machine, cmdline, threads=8, bitz_commit_override=None
                  "Ligerito openings (rate $1/2$ at the first level, SHA-256 Merkle trees) at $100$ bits of security. \\ftwoz\\ commits "
                  "the same volume as $\\codedim = 2^{m}$ bits at cell width $W = 1$ and proves one claim $\\langle \\vv, \\bff\\rangle = \\mu$ "
                  "over $\\FF_q$ for a prime $q$ sampled after the commitment from $[2^{b-1}, 2^{b})$, $b = " + f"{q_lo}, \\ldots, {q_hi}" + "$, "
-                 "exactly as in \\cref{tab:bitz-raw-performance} (rate $1/2$, Johnson regime, BLAKE3, $100$ bits). Prover time includes "
+                 "exactly as in \\cref{tab:f2z-raw-performance} (rate $1/2$, Johnson regime, BLAKE3, $100$ bits). Prover time includes "
                  "the commitment in both cases; both provers use their own retained scratch memory; peak memory is the maximum resident "
                  "set of the whole process; KB $= 1000$ bytes, $1$\\,GB $= 2^{30}$ bytes. Apple M5 (10 cores: 4 performance + 6 "
                  "efficiency), 24\\,GB, " + f"{threads}" + " threads; medians of 5 runs after one warm-up.}")
+    lines.append("  \\label{tab:fields-witch}")
+    lines.append("\\end{table}")
+    return "\n".join(lines) + "\n"
+
+
+def render_latex_three(records, machine, cmdline, threads=8, bitz_commit_override=None, caption_note=""):
+    """Paper-style table with three rows per size: BitZ, fields-witch, and
+    fields-witch with its two dense phases on the BitZ opener; bold = best of
+    the three; KB = 1000 bytes, GB = 2^30 bytes."""
+    def pick(scheme):
+        return [r for r in records if r["scheme"] == scheme and r["threads"] == threads
+                and r.get("word_bits", 1) == 1]
+    fz, fw, fwz = pick("bitz"), pick("fields-witch"), pick("fields-witch-bitz")
+    sizes = sorted({r["n_bits_log2"] for r in fz} & {r["n_bits_log2"] for r in fw} & {r["n_bits_log2"] for r in fwz})
+    if not sizes:
+        return "% no size has all three schemes; nothing to tabulate\n"
+    bitz_commit = bitz_commit_override or next((r.get("bitz_commit") for r in fz if r.get("bitz_commit")), "?")
+    rate = 2 ** (fw[0].get("log_inv_rate") or 1)
+    prov = lambda rs: sorted({f"{r.get('fw_head')} tree {r.get('fw_tree_sha256')} binary {r.get('fw_binary_sha256')}" for r in rs})
+    lines = []
+    lines.append("% BitZ vs fields-witch vs fields-witch with the BitZ opener -- GENERATED FILE, do not edit by hand.")
+    lines.append(f"% Generated by scripts/run_fields_witch_compare.py on {dt.datetime.utcnow():%Y-%m-%d} (UTC); BitZ at {bitz_commit}"
+                 f" (binary {sorted({r.get('bitz_binary_sha256') for r in fz})}), profile {sorted({r.get('profile') for r in fz})}.")
+    lines.append(f"% fields-witch (github.com/morgana-proofs/fields-witch @ 30cca8c + local rate knob): {prov(fw)}.")
+    lines.append(f"% fields-witch + BitZ opener (feature f2z-opener, same checkout): {prov(fwz)}.")
+    lines.append(f"% Command: python3 {cmdline}")
+    lines.append(f"% Machine: {machine}; {threads} rayon threads; one untimed warm-up, medians of the measured prove+verify")
+    lines.append("%   passes; every measured proof is verified; one fresh process per cell under /usr/bin/time -l.")
+    lines.append("% Include with \\input{<file>} (relative to paper/). Regenerate from a run directory with")
+    lines.append("%   python3 scripts/run_fields_witch_compare.py --render-latex PerfRuns/<run>/results.jsonl --latex <file>")
+    lines.append("\\begin{table}[H]")
+    lines.append("  \\centering")
+    lines.append("  \\small")
+    lines.append("  \\setlength{\\tabcolsep}{4.5pt}")
+    lines.append("  \\begin{tabular}{@{}rlrrrr@{}}")
+    lines.append("    \\toprule")
+    lines.append("    Committed bits & Scheme & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\\ (GB) \\\\")
+    lines.append("    \\midrule")
+    fmts = (("prove_total_ms", _fmt_ms_tex), ("verify_total_ms", _fmt_ms_tex),
+            ("proof_bytes", lambda v: f"{v / 1000:.0f}"),
+            ("max_rss_bytes", lambda v: f"{v / 2**30:.2f}" if v / 2**30 < 10 else f"{v / 2**30:.1f}"))
+    for i, bits in enumerate(sizes):
+        row = [next(r for r in rs if r["n_bits_log2"] == bits) for rs in (fz, fw, fwz)]
+        cells = [[fmt(r[key]) if r[key] is not None else "--" for key, fmt in fmts] for r in row]
+        for c, (key, fmt) in enumerate(fmts):
+            values = [r[key] for r in row]
+            if all(v is not None for v in values):
+                best = min(values)
+                for j, v in enumerate(values):
+                    if v == best:
+                        cells[j][c] = "\\textbf{" + cells[j][c] + "}"
+        if i:
+            lines.append("    \\addlinespace")
+        lines.append(f"    $2^{{{bits}}}$ & \\ftwoz-SNARK, $\\log \\codedim = {row[0]['n']}$ & " + " & ".join(cells[0]) + " \\\\")
+        lines.append(f"      & fields-witch, $2^{{{row[1]['k']}}}$ entries & " + " & ".join(cells[1]) + " \\\\")
+        lines.append("      & fields-witch with the \\ftwoz\\ opener & " + " & ".join(cells[2]) + " \\\\")
+    lines.append("    \\bottomrule")
+    lines.append("  \\end{tabular}")
+    q_lo = min(r["q_bits"] for r in fz)
+    q_hi = max(r["q_bits"] for r in fz)
+    lines.append("  \\caption{Cost of opening a commitment of $2^{m}$ bits, $m = " + f"{sizes[0]}, \\ldots, {sizes[-1]}" + "$, at rate "
+                 f"$1/{rate}$ in all three schemes. fields-witch (Soukhanov's implementation of \\cite{{lev}}) commits $2^{{m-7}}$ entries of "
+                 "$\\FF_{2^{127}}$, read as integers in $[0, 2^{127})$, densely over $\\FF_{2^{128}}$ and proves the evaluation of their "
+                 "multilinear extension at a random point of $\\FF_p$, $p = 2^{127} - 1$; its three Ligerito openings run in the unique-decoding "
+                 f"regime at rate $1/{rate}$ at the first level (SHA-256 Merkle trees, $100$-bit query target). In the third row the same protocol "
+                 "commits and opens its two $\\FF_{2^{128}}$ polynomials ($P_0$ and the concatenated tails) with the \\ftwoz\\ opener instead "
+                 "(Johnson regime, out-of-domain sample, fold and query grinding, BLAKE3, every error term at most $2^{-100}$); its Logup auxiliary "
+                 "polynomial lives in $\\FF_{2^{127}}$, which a $\\FF_{2^{128}}$ opener cannot open, and keeps fields-witch's own opener. \\ftwoz\\ commits "
+                 "the same volume as $\\codedim = 2^{m}$ bits at cell width $W = 1$ and proves one claim over $\\FF_q$ for a prime $q$ sampled after "
+                 "the commitment from $[2^{b-1}, 2^{b})$, $b = " + f"{q_lo}, \\ldots, {q_hi}" + "$." + (" " + caption_note if caption_note else "") + " Prover time includes the commitment; peak memory "
+                 "is the maximum resident set of the whole process; KB $= 1000$ bytes, $1$\\,GB $= 2^{30}$ bytes. Apple M5 (10 cores: 4 performance "
+                 "+ 6 efficiency), 24\\,GB, " + f"{threads}" + " threads; medians of 5 runs after one warm-up.}")
+    lines.append("  \\label{tab:fields-witch-rate8}")
+    lines.append("\\end{table}")
+    return "\n".join(lines) + "\n"
+
+
+
+# --------------------------------------------------------------------------
+# the fields-witch suite (Binius-suite shape: two rates x {own opener, BitZ opener})
+# --------------------------------------------------------------------------
+
+SUITE_ROWS = [
+    ("bitz", 1, "\\ftwoz-SNARK, $\\rho = 1/2$"),
+    ("bitz", 3, "\\ftwoz-SNARK, $\\rho = 1/8$"),
+    ("fields-witch", 1, "Fields-Witch, $\\rho = 1/2$"),
+    ("fields-witch", 3, "Fields-Witch, $\\rho = 1/8$"),
+    ("fields-witch-bitz", 1, "Fields-Witch + \\ftwoz\\ opener, $\\rho = 1/2$"),
+    ("fields-witch-bitz", 3, "Fields-Witch + \\ftwoz\\ opener, $\\rho = 1/8$"),
+]
+
+
+def record_rate(r):
+    """Level-0 inverse-rate exponent of a record: BitZ from its `custom:r:k`
+    profile, fields-witch from its recorded `log_inv_rate`."""
+    if r["scheme"] == "bitz":
+        m = re.match(r"custom:(\d+):", r.get("profile") or "")
+        return int(m.group(1)) if m else None
+    return r.get("log_inv_rate") or 1
+
+
+def _is_suite(records):
+    rates = {record_rate(r) for r in records
+             if r["scheme"] in ("fields-witch", "fields-witch-asm", "fields-witch-bitz")}
+    return len(rates) > 1
+
+
+def _pick_renderer(records):
+    if _is_suite(records):
+        return render_latex_suite
+    if any(r["scheme"] == "fields-witch-bitz" for r in records):
+        return render_latex_three
+    return render_latex
+
+
+def render_latex_suite(records, machine, cmdline, threads=None, bitz_commit_override=None, caption_note=""):
+    """SHA+ECDSA-style table of the fields-witch suite: \\ftwoz-SNARK, fields-witch and
+    fields-witch with the \\ftwoz\\ opener at rates 1/2 and 1/8, grouped by committed bits
+    and thread count (every thread count present; `threads` is ignored); bold = best row of
+    a group per column. The native fields-witch rows are the sha2-asm build when present."""
+    native = "fields-witch-asm" if any(r["scheme"] == "fields-witch-asm" for r in records) else "fields-witch"
+    cell = {}
+    for r in records:
+        if r.get("word_bits", 1) != 1:
+            continue
+        if r["scheme"] in ("fields-witch", "fields-witch-asm"):
+            if r["scheme"] != native:
+                continue
+            scheme = "fields-witch"
+        else:
+            scheme = r["scheme"]
+        cell[(scheme, record_rate(r), r["n_bits_log2"], r["threads"])] = r
+    sizes = sorted({key[2] for key in cell})
+    if not sizes:
+        return "% no suite rows; nothing to tabulate\n"
+    thread_counts = sorted({key[3] for key in cell})
+    fz = [r for key, r in cell.items() if key[0] == "bitz"]
+    fw_all = [r for key, r in cell.items() if key[0] != "bitz"]
+    bitz_commit = bitz_commit_override or next((r.get("bitz_commit") for r in fz if r.get("bitz_commit")), "?")
+    lines = []
+    lines.append("% fields-witch suite: BitZ vs fields-witch vs fields-witch with the BitZ opener, rates 1/2 and 1/8 -- GENERATED FILE, do not edit by hand.")
+    lines.append(f"% Generated by scripts/run_fields_witch_compare.py on {dt.datetime.utcnow():%Y-%m-%d} (UTC); BitZ at {bitz_commit} "
+                 f"(binaries {sorted({r.get('bitz_binary_sha256') for r in fz})}, profiles {sorted({r.get('profile') for r in fz})}).")
+    for prov in sorted({f"{r['scheme']}: {r.get('fw_head')} tree {r.get('fw_tree_sha256')} binary {r.get('fw_binary_sha256')}" for r in fw_all}):
+        lines.append(f"% fields-witch (github.com/morgana-proofs/fields-witch @ 30cca8c + local branch) {prov}")
+    lines.append(f"% Command: python3 {cmdline}")
+    lines.append(f"% Machine: {machine}; one untimed warm-up, medians of the measured prove+verify passes; every measured proof")
+    lines.append("%   is verified; one fresh process per cell under /usr/bin/time -l. Prover = commitment + proof generation;")
+    lines.append("%   proof KB = 1000 bytes; peak mem. = process max RSS, GB = 2^30 bytes. Bold = best row of the (bits, threads) group.")
+    lines.append("% Include with \\input{fields-witch-table} (relative to paper/). Regenerate from a run directory with")
+    lines.append("%   python3 scripts/run_fields_witch_compare.py --render-latex PerfRuns/<run>/results.jsonl --latex paper/fields-witch-table.tex")
+    lines.append("% Medians as recorded (ms unless noted):")
+    for bits in sizes:
+        for th in thread_counts:
+            for scheme, rate, _ in SUITE_ROWS:
+                r = cell.get((scheme, rate, bits, th))
+                if r:
+                    lines.append(f"%   2^{bits} threads={th} {r['scheme']}@{rate} prove={r['prove_total_ms']:.3f} verify={r['verify_total_ms']:.3f} "
+                                 f"proof_bytes={r['proof_bytes']} peak_rss={r['max_rss_bytes']} idle_before={r.get('idle_before')}")
+    lines.append("\\begin{table}[H]")
+    lines.append("  \\centering")
+    lines.append("  \\small")
+    lines.append("  \\setlength{\\tabcolsep}{4.5pt}")
+    lines.append("  \\begin{tabular}{@{}rrlrrrr@{}}")
+    lines.append("    \\toprule")
+    lines.append("    Committed bits & Threads & Scheme & Prover (ms) & Verifier (ms) & Proof (KB) & Peak mem.\\ (GB) \\\\")
+    lines.append("    \\midrule")
+    fmts = (("prove_total_ms", _fmt_ms_tex), ("verify_total_ms", _fmt_ms_tex),
+            ("proof_bytes", lambda v: f"{v / 1000:.0f}"),
+            ("max_rss_bytes", lambda v: f"{v / 2**30:.2f}" if v / 2**30 < 10 else f"{v / 2**30:.1f}"))
+    first_group = True
+    for bits in sizes:
+        for gi, th in enumerate(thread_counts):
+            group = [(label, cell.get((scheme, rate, bits, th))) for scheme, rate, label in SUITE_ROWS]
+            group = [(label, r) for label, r in group if r]
+            if not group:
+                continue
+            best = {}
+            for key, _ in fmts:
+                values = [r[key] for _, r in group if r[key] is not None]
+                best[key] = min(values) if values else None
+            if not first_group:
+                lines.append("    \\addlinespace")
+            first_group = False
+            for ri, (label, r) in enumerate(group):
+                cells = []
+                for key, fmt in fmts:
+                    text = fmt(r[key]) if r[key] is not None else "--"
+                    if r[key] is not None and r[key] == best[key]:
+                        text = "\\textbf{" + text + "}"
+                    cells.append(text)
+                size_cell = f"$2^{{{bits}}}$" if (gi == 0 and ri == 0) else ""
+                thread_cell = f"{th}" if ri == 0 else ""
+                lines.append(f"    {size_cell} & {thread_cell} & {label} & " + " & ".join(cells) + " \\\\")
+    lines.append("    \\bottomrule")
+    lines.append("  \\end{tabular}")
+    q_bits = [r["q_bits"] for r in fz if r.get("q_bits")]
+    q_clause = f", $b = {min(q_bits)}, \\ldots, {max(q_bits)}$" if q_bits else ""
+    size_list = ", ".join(str(b) for b in sizes)
+    caption = (
+        f"Cost of opening a commitment of $2^{{m}}$ bits, $m \\in \\{{{size_list}\\}}$, at Reed--Solomon rates $\\rho = 1/2$ and $\\rho = 1/8$. "
+        "\\ftwoz-SNARK commits the $2^{m}$ bits at cell width $W = 1$ and proves one claim over $\\FF_q$ for a prime $q$ sampled after the "
+        f"commitment from $[2^{{b-1}}, 2^{{b}})${q_clause} (round-by-round economic security model, every error term at most $2^{{-100}}$; "
+        "Johnson regime, early Round-0 OOD, fold and query grinding, BLAKE3 Merkle trees). Fields-Witch (Soukhanov's implementation of "
+        "\\cite{lev}) commits $2^{m-7}$ entries of $\\FF_{2^{127}}$, read as integers in $[0, 2^{127})$, densely over $\\FF_{2^{128}}$ and "
+        "proves the evaluation of their multilinear extension at a random point of $\\FF_p$, $p = 2^{127} - 1$, with three Ligerito openings "
+        "in the unique-decoding regime ($100$-bit query target, SHA-256 Merkle trees on the \\texttt{sha2} crate's assembly backend) whose "
+        "first level runs at rate $\\rho$. Fields-Witch + \\ftwoz\\ opener is the same protocol with its two $\\FF_{2^{128}}$ polynomials "
+        "($P_0$ and the concatenated tails) committed and opened by the \\ftwoz\\ opener at rate $\\rho$, under the same security model as "
+        "\\ftwoz-SNARK; its Logup auxiliary polynomial lives in $\\FF_{2^{127}}$, which an $\\FF_{2^{128}}$ opener cannot open, and keeps "
+        "Fields-Witch's own opener at rate $\\rho$. Prover time includes the commitment; peak memory is the maximum resident set of the "
+        "whole process; KB $= 1000$ bytes, $1$\\,GB $= 2^{30}$ bytes. Bold: best row of the size and thread count. Apple M5 (10 cores: "
+        "4 performance + 6 efficiency), 24\\,GB; medians of 5 runs after one warm-up."
+    )
+    if caption_note:
+        caption += " " + caption_note
+    lines.append("  \\caption{" + caption + "}")
     lines.append("  \\label{tab:fields-witch}")
     lines.append("\\end{table}")
     return "\n".join(lines) + "\n"
@@ -447,7 +741,21 @@ def main():
     ap.add_argument("--cooldown", type=float, default=3.0, help="seconds between processes")
     ap.add_argument("--word-rows", default="", help="extra BitZ rows `n:W,...` (e.g. 20:32,20:64)")
     ap.add_argument("--bitz-profile", default=None, help="override the BitZ opener profile (e.g. udr:1:4)")
-    ap.add_argument("--schemes", default="fields-witch,bitz")
+    ap.add_argument("--schemes", default="fields-witch,bitz",
+                    help="comma-separated: fields-witch, fields-witch-bitz (fields-witch with the BitZ opener), bitz")
+    ap.add_argument("--fw-log-inv-rate", type=int, default=1,
+                    help="commitment inverse-rate exponent of every fields-witch Ligerito PCS and of the BitZ opener in "
+                         "fields-witch-bitz (values != 1 need the patched binary)")
+    ap.add_argument("--fw-bitz-bin", default=os.path.join(home, "fields-witch-f2z", "target-f2z", "release", "examples", "protocol_profile"),
+                    help="fields-witch built with --features f2z-opener")
+    ap.add_argument("--fw-asm-bin", default=os.path.join(home, "fields-witch-f2z", "target-asm", "release", "examples", "protocol_profile"),
+                    help="scheme fields-witch-asm: fields-witch built with --features sha2-asm (the SHA-256 backend "
+                         "fields-witch-bitz inherits through flock-core)")
+    ap.add_argument("--fw-bitz-initial-k", type=int, default=4, help="BitZ opener level-0 fold arity in fields-witch-bitz")
+    ap.add_argument("--fw-bitz-bits", type=int, default=100, help="BitZ opener round-by-round target in fields-witch-bitz")
+    ap.add_argument("--rates", default=None,
+                    help="comma-separated inverse-rate exponents swept inside one campaign (e.g. 1,3): every fields-witch "
+                         "scheme runs --log-inv-rate r and BitZ runs custom:r:4; overrides --fw-log-inv-rate and --bitz-profile")
     ap.add_argument("--out-dir", default=None)
     ap.add_argument("--latex", default=None, help="write the LaTeX table here (default <out-dir>/fields-witch-table.tex)")
     ap.add_argument("--render", default=None, help="re-render an existing results.jsonl as markdown")
@@ -467,7 +775,7 @@ def main():
             records = [json.loads(line) for line in fh if line.strip()]
         cmd = next((r["cmd"] for r in records if r.get("cmd")), "")
         first = json.loads(open(args.render_latex).readline())
-        tex = render_latex(records, machine, "scripts/run_fields_witch_compare.py " + (open(os.path.join(os.path.dirname(args.render_latex), "summary.md")).readline().split("`")[1].split(" ", 1)[1] if os.path.exists(os.path.join(os.path.dirname(args.render_latex), "summary.md")) else ""), args.latex_threads, args.bitz_commit)
+        tex = _pick_renderer(records)(records, machine, "scripts/run_fields_witch_compare.py " + (open(os.path.join(os.path.dirname(args.render_latex), "summary.md")).readline().split("`")[1].split(" ", 1)[1] if os.path.exists(os.path.join(os.path.dirname(args.render_latex), "summary.md")) else ""), args.latex_threads, args.bitz_commit)
         path = args.latex or "paper/fields-witch-table.tex"
         with open(path, "w") as fh:
             fh.write(tex)
@@ -495,12 +803,24 @@ def main():
         print(json.dumps(brief), flush=True)
         time.sleep(args.cooldown)
 
+    rates = [int(x) for x in args.rates.split(",") if x] if args.rates else [None]
     for k in sizes:
         for th in threads:
-            if "fields-witch" in schemes:
-                emit(run_fields_witch(args.fw_bin, k, th, args.reps, args.warmups, args.min_idle))
-            if "bitz" in schemes:
-                emit(run_bitz(args.bitz_bin, k + 7, th, args.reps, args.min_idle, profile=args.bitz_profile))
+            for rate in rates:
+                fw_rate = args.fw_log_inv_rate if rate is None else rate
+                bitz_profile = args.bitz_profile if rate is None else f"custom:{rate}:4"
+                if "bitz" in schemes:
+                    emit(run_bitz(args.bitz_bin, k + 7, th, args.reps, args.min_idle, profile=bitz_profile))
+                if "fields-witch" in schemes:
+                    emit(run_fields_witch(args.fw_bin, k, th, args.reps, args.warmups, args.min_idle,
+                                          log_inv_rate=fw_rate))
+                if "fields-witch-asm" in schemes:
+                    emit(run_fields_witch(args.fw_asm_bin, k, th, args.reps, args.warmups, args.min_idle,
+                                          log_inv_rate=fw_rate, scheme="fields-witch-asm"))
+                if "fields-witch-bitz" in schemes:
+                    emit(run_fields_witch(args.fw_bitz_bin, k, th, args.reps, args.warmups, args.min_idle,
+                                          log_inv_rate=fw_rate, dense_opener="f2z",
+                                          f2z_initial_k=args.fw_bitz_initial_k, f2z_bits=args.fw_bitz_bits))
     for (n, w) in word_rows:
         for th in threads:
             emit(run_bitz(args.bitz_bin, n, th, args.reps, args.min_idle, word_bits=w, profile=args.bitz_profile))
@@ -508,7 +828,7 @@ def main():
     md = render_markdown(records, machine)
     with open(os.path.join(out_dir, "summary.md"), "w") as fh:
         fh.write(f"Command: `{cmdline}`\n\n" + md)
-    tex = render_latex(records, machine, cmdline, args.latex_threads, args.bitz_commit)
+    tex = _pick_renderer(records)(records, machine, cmdline, args.latex_threads, args.bitz_commit)
     latex_path = args.latex or os.path.join(out_dir, "fields-witch-table.tex")
     with open(latex_path, "w") as fh:
         fh.write(tex)
