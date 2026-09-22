@@ -1385,7 +1385,7 @@ fn prove_merged_forest_lazy_impl(
             .map(|(l, r)| (l.as_slice(), r.as_slice()))
             .collect()
     };
-    let mut col_bits = Some(halves);
+    let col_bits = halves;
     drop(_g_ext);
 
     if depth < 4 {
@@ -1397,10 +1397,8 @@ fn prove_merged_forest_lazy_impl(
             |ell: usize, _zx: &[Gf], _suffix: &SuffixTensorArena<Gf>| -> Option<BitLayer> {
                 (ell == depth - 1).then(|| BitLayer {
                     bufs: col_bits
-                        .take()
-                        .expect("leaf bits consumed once")
-                        .into_iter()
-                        .map(|(lbits, rbits)| GroupBufs::LeafBits {
+                        .iter()
+                        .map(|&(lbits, rbits)| GroupBufs::LeafBits {
                             lbits,
                             rbits,
                             tau_set: 0,
@@ -1485,7 +1483,7 @@ fn prove_merged_forest_lazy_impl(
             live,
             depth - 2,
             |c| {
-                let cb = col_bits.as_ref().expect("leaf bits alive for the build");
+                let cb = &col_bits;
                 let (lb, rb) = &cb[c];
                 t4_level_halves(lb, rb, t4_src(t4f, &t4, &te, &to), q1)
             },
@@ -1498,8 +1496,6 @@ fn prove_merged_forest_lazy_impl(
                     let deep = depth >= 5 && forest_lut3();
                     Some(BitLayer {
                         bufs: col_bits
-                            .as_ref()
-                            .expect("leaf bits alive for the pair layer")
                             .iter()
                             .map(|(lbits, rbits)| {
                                 let (lbits, rbits) = (*lbits, *rbits);
@@ -1528,11 +1524,7 @@ fn prove_merged_forest_lazy_impl(
                         flat: None,
                     })
                 } else if ell == depth - 1 {
-                    Some(leaf_bit_layer(
-                        col_bits.take().expect("leaf bits consumed once"),
-                        depth,
-                        &leaf_tau,
-                    ))
+                    Some(leaf_bit_layer(col_bits.clone(), depth, &leaf_tau))
                 } else {
                     None
                 }
@@ -1563,7 +1555,7 @@ fn prove_merged_forest_lazy_impl(
         // here, so this is the same gather count with the
         // materialise-then-read round trip removed.
         let gen3_at = |c: usize| {
-            let cb = col_bits.as_ref().expect("leaf bits alive for the build");
+            let cb = &col_bits;
             let (lb, rb) = &cb[c];
             T4At {
                 lbits: lb,
@@ -1611,9 +1603,7 @@ fn prove_merged_forest_lazy_impl(
                     // the driver's round-1 message pass never reads what was
                     // just written (byte-identical; `BITZ_JIT_R1=0` opts out).
                     let hh = q1 >> 1;
-                    let cb = col_bits
-                        .as_ref()
-                        .expect("leaf bits alive for the JIT regen");
+                    let cb = &col_bits;
                     let (bufs, round1, flat) = if use_flat {
                         if jit_r1 {
                             let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
@@ -1712,11 +1702,7 @@ fn prove_merged_forest_lazy_impl(
                     // immutable packed bits.
                     let deep = depth >= 5 && forest_lut3();
                     Some(BitLayer {
-                        bufs: cfg_iter!(
-                            col_bits
-                                .as_ref()
-                                .expect("leaf bits alive for the pair layer")
-                        )
+                        bufs: cfg_iter!(&col_bits)
                         .map(|(lbits, rbits)| {
                             let (lbits, rbits) = (*lbits, *rbits);
                             if deep {
@@ -1747,11 +1733,7 @@ fn prove_merged_forest_lazy_impl(
                     // Two bit-driven rounds (k = d−1 = 3): dense buffers only
                     // after round 2. Under `BITZ_LUT3` (depth ≥ 5, so k ≥ 4)
                     // three rounds (Leaf3Bits): the leaf residue halves.
-                    Some(leaf_bit_layer(
-                        col_bits.take().expect("leaf bits consumed once"),
-                        depth,
-                        &leaf_tau,
-                    ))
+                    Some(leaf_bit_layer(col_bits.clone(), depth, &leaf_tau))
                 } else {
                     None
                 }
@@ -1777,7 +1759,7 @@ fn prove_merged_forest_lazy_impl(
     let h4 = q1 >> 2; // level d−4 positions = 2^{d−4}
     let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
     let (levels, roots) = build_levels(live, depth - 4, |c| {
-        let cb = col_bits.as_ref().expect("leaf bits alive for the build");
+        let cb = &col_bits;
         let (lb, rb) = &cb[c];
         // Level d−4 straight from T4 gathers (each position once) — the
         // full level-(d−2) buffer never exists (see the L/4 build).
@@ -1812,9 +1794,7 @@ fn prove_merged_forest_lazy_impl(
             // default fuses the round-1 message into this generation
             // pass, exactly as the L/4 JIT layer does.
             let hh = h3 >> 1;
-            let cb = col_bits
-                .as_ref()
-                .expect("leaf bits alive for the JIT regen");
+            let cb = &col_bits;
             let (bufs, round1) = if jit_r1 {
                 let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
                 jit_layer_generate(hh, zx, live, suffix, |c| {
@@ -1859,7 +1839,7 @@ fn prove_merged_forest_lazy_impl(
             // One bit-driven round straight off T4 (k = d−3 ≥ 2): the
             // layer's input level is never stored nor regenerated; the
             // fold materialises ≈ L/8.
-            let cb = col_bits.as_ref().expect("leaf bits alive for the T4 layer");
+            let cb = &col_bits;
             Some(BitLayer {
                 bufs: cb
                     .iter()
@@ -1879,8 +1859,6 @@ fn prove_merged_forest_lazy_impl(
             // Two bit-driven rounds (k = d−2 ≥ 3): fold materialises ≈ L/8.
             Some(BitLayer {
                 bufs: col_bits
-                    .as_ref()
-                    .expect("leaf bits alive for the pair layer")
                     .iter()
                     .map(|(lbits, rbits)| GroupBufs::Pair3Bits {
                         lbits,
@@ -1903,10 +1881,8 @@ fn prove_merged_forest_lazy_impl(
             let deep4 = depth >= 6 && forest_lut4();
             Some(BitLayer {
                 bufs: col_bits
-                    .take()
-                    .expect("leaf bits consumed once")
-                    .into_iter()
-                    .map(|(lbits, rbits)| {
+                    .iter()
+                    .map(|&(lbits, rbits)| {
                         if deep4 {
                             GroupBufs::Leaf4Bits {
                                 lbits,
@@ -2249,7 +2225,7 @@ pub(crate) fn prove_merged_forest_lazy_quad_from_rows(
             .map(|(l, r)| (l.as_slice(), r.as_slice()))
             .collect()
     };
-    let mut col_bits = Some(halves);
+    let col_bits = halves;
 
     // The shared 4-case / 16-case tables — exactly the L/4 build.
     let q1 = row_len >> 2;
@@ -2291,7 +2267,7 @@ pub(crate) fn prove_merged_forest_lazy_quad_from_rows(
     let h3 = q1 >> 1;
     let t4_pf = t4_prfm(t4.len() * core::mem::size_of::<Gf>());
     let (mut levels, roots) = build_levels_quad(num_trees, depth - 3, |c| {
-        let cb = col_bits.as_ref().expect("leaf bits alive for the build");
+        let cb = &col_bits;
         let (lb, rb) = &cb[c];
         let at = T4At {
             lbits: lb,
@@ -2331,7 +2307,7 @@ pub(crate) fn prove_merged_forest_lazy_quad_from_rows(
             // The JIT level: gathered per tree straight off the bits +
             // T4 (never stored), quarter-contiguous.
             let _g = tracing::info_span!("mf:bitgen").entered();
-            let cb = col_bits.as_ref().expect("leaf bits alive for the JIT quad");
+            let cb = &col_bits;
             let hq = q1 >> 2;
             cfg_into_iter!(0..num_trees)
                 .map(|c| {
@@ -2440,9 +2416,7 @@ pub(crate) fn prove_merged_forest_lazy_quad_from_rows(
         let hh = q1 >> 1;
         let (bufs, round1) = {
             let _g = tracing::info_span!("mf:bitgen").entered();
-            let cb = col_bits
-                .as_ref()
-                .expect("leaf bits alive for the parity layer");
+            let cb = &col_bits;
             if jit_round1_fuse() {
                 let tensors = suffix_tensors(&z_x, &());
                 let v1 = tensors.tensor(0);
@@ -2549,11 +2523,9 @@ pub(crate) fn prove_merged_forest_lazy_quad_from_rows(
                 build_eq_x_r_vec(&z_c, &()).expect("nonempty tree point")
             };
             let groups: Vec<QuadBitGroup> = col_bits
-                .take()
-                .expect("leaf bits consumed once")
-                .into_iter()
+                .iter()
                 .zip(eq_zc.iter())
-                .map(|((lbits, rbits), &scale)| QuadBitGroup {
+                .map(|(&(lbits, rbits), &scale)| QuadBitGroup {
                     scale,
                     lbits,
                     rbits,
@@ -2618,8 +2590,6 @@ pub(crate) fn prove_merged_forest_lazy_quad_from_rows(
         let deep = depth >= 5 && forest_lut3();
         let bl = BitLayer {
             bufs: col_bits
-                .as_ref()
-                .expect("leaf bits alive for the pair layer")
                 .iter()
                 .map(|(lbits, rbits)| {
                     let (lbits, rbits) = (*lbits, *rbits);
@@ -2655,10 +2625,8 @@ pub(crate) fn prove_merged_forest_lazy_quad_from_rows(
         let deep = depth >= 5 && forest_lut3();
         let bl = BitLayer {
             bufs: col_bits
-                .take()
-                .expect("leaf bits consumed once")
-                .into_iter()
-                .map(|(lbits, rbits)| {
+                .iter()
+                .map(|&(lbits, rbits)| {
                     if deep {
                         GroupBufs::Leaf3Bits {
                             lbits,

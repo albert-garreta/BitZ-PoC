@@ -79,16 +79,29 @@ impl<const L: usize> PreparedOddInverse<L> {
         if modulus.as_words()[0] & 1 == 0 {
             return Err(ContextError::EvenModulus);
         }
-        let ring = ModRingCtx::new(modulus)?;
-        Ok(Self {
-            #[cfg(target_pointer_width = "64")]
-            modulus: crypto_bigint::Odd::new(crypto_bigint::Uint::from_words(
-                *ring.modulus().as_words(),
-            ))
-            .expect("prepared modulus is odd"),
-            #[cfg(not(target_pointer_width = "64"))]
-            ring,
-        })
+        // On 64-bit targets the only thing `ModRingCtx::new` would give us is
+        // its `modulus > 1` check and its own copy of `modulus`'s words — the
+        // Barrett reduction table it also builds is never used on this path,
+        // since `inverse_ct` below reduces via `crypto_bigint`'s own inversion
+        // instead. Do the same validation directly and skip that table.
+        #[cfg(target_pointer_width = "64")]
+        {
+            if modulus.ct_le(&Uint::ONE).declassify() {
+                return Err(ContextError::InvalidModulus);
+            }
+            Ok(Self {
+                modulus: crypto_bigint::Odd::new(crypto_bigint::Uint::from_words(
+                    *modulus.as_words(),
+                ))
+                .expect("prepared modulus is odd"),
+            })
+        }
+        #[cfg(not(target_pointer_width = "64"))]
+        {
+            Ok(Self {
+                ring: ModRingCtx::new(modulus)?,
+            })
+        }
     }
     /// Fixed-schedule inversion, with a zero output for nonunits. On 64-bit
     /// targets the backend batches divsteps instead of updating every full-width

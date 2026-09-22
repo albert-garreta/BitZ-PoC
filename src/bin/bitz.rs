@@ -99,7 +99,7 @@
 //!   `custom:1:4`, the raw-performance table's opener) selects the Johnson
 //!   Ligerito geometry at the profile's target; `--profile udr` selects the
 //!   relation's own default (flock's validated UDR at rate 1/2 — what
-//!   `benches/u32_mul.rs` and the transcript pins run). Same witness seed
+//!   `benches/mul_bitz.rs` and the transcript pins run). Same witness seed
 //!   as the bench, so numbers compare; prints the paper's step split
 //!   (Step 1 commit, Step 2 projection, Step 3 PIOP, Step 4 bitification,
 //!   Step 5 opening = grand products / ring switch / Ligerito) and one
@@ -3128,7 +3128,7 @@ fn alpha_of() -> bitz::poly::univariate::binary_gf128::Gf128 {
 // `--mul` / `--mul-sweep`: the u32 × u32 → u64 multiplication SNARK
 // ---------------------------------------------------------------------
 
-/// Root seed of `benches/u32_mul.rs` (`common::seed` default), so the CLI
+/// Root seed of `benches/mul_bitz.rs` (`common::seed` default), so the CLI
 /// proves the same witnesses as the bench at every exponent.
 const MUL_ROOT_SEED: u64 = 0x5533_326d_756c_0064;
 
@@ -3928,7 +3928,7 @@ fn write_mul_latex_table(
     );
     let _ = writeln!(
         out,
-        "% Same witnesses as benches/u32_mul.rs (root seed {MUL_ROOT_SEED:#018x}); prove_ms is END TO END and INCLUDES the commitment"
+        "% Same witnesses as benches/mul_bitz.rs (root seed {MUL_ROOT_SEED:#018x}); prove_ms is END TO END and INCLUDES the commitment"
     );
     let _ = writeln!(
         out,

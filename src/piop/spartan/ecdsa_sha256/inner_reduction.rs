@@ -115,6 +115,13 @@ impl InnerSumcheckClaim {
     }
 }
 
+/// Writes the batched `(1, ρ, ρ²)` matrix weights for one row into `slots`.
+fn matrix_weights(ctx: &field::FpCtx<2>, batch: u128, batch_squared: u128, slots: &mut [u128], weight: u128) {
+    slots[0] = weight;
+    slots[1] = ctx.mul_raw(weight, batch);
+    slots[2] = ctx.mul_raw(weight, batch_squared);
+}
+
 impl<'a> ModQCoefficients<'a> {
     pub(super) fn from_relation(relation: &'a PreparedSha256Ecdsa, cfg: &field::FpCtx<2>) -> Self {
         let _scope = tracing::info_span!("ecdsa:matrix_projection").entered();
@@ -373,15 +380,16 @@ impl<'a> ModQCoefficients<'a> {
         let batch_squared = ctx.mul_raw(batch, batch);
         let linear_batch = ctx.raw(&claim.linear_batch_weight);
         let mut matrix_rows = vec![0 as u128; 3 * relation.local.rows()];
-        let matrix_weights = |slots: &mut [u128], weight| {
-            slots[0] = weight;
-            slots[1] = ctx.mul_raw(weight, batch);
-            slots[2] = ctx.mul_raw(weight, batch_squared);
-        };
         match relation.mode {
             OuterMode::Split => {
                 for (index, &row) in relation.local.nonlinear.iter().enumerate() {
-                    matrix_weights(&mut matrix_rows[3 * row..3 * row + 3], outer.at(index));
+                    matrix_weights(
+                        ctx,
+                        batch,
+                        batch_squared,
+                        &mut matrix_rows[3 * row..3 * row + 3],
+                        outer.at(index),
+                    );
                 }
                 for (index, &row) in relation.local.linear.iter().enumerate() {
                     matrix_rows[3 * row + 2] = ctx.mul_raw(
@@ -393,7 +401,13 @@ impl<'a> ModQCoefficients<'a> {
             OuterMode::AllRows => {
                 for row in 0..relation.local.rows() {
                     let weight = outer.at(256 * relation.compressions() + row);
-                    matrix_weights(&mut matrix_rows[3 * row..3 * row + 3], weight);
+                    matrix_weights(
+                        ctx,
+                        batch,
+                        batch_squared,
+                        &mut matrix_rows[3 * row..3 * row + 3],
+                        weight,
+                    );
                 }
             }
         }
@@ -424,15 +438,13 @@ impl<'a> ModQCoefficients<'a> {
         let batch = ctx.raw(&claim.matrix_batch_challenge);
         let batch_squared = ctx.mul_raw(batch, batch);
         let mut matrix_rows = vec![0 as u128; 3 * relation.local.rows()];
-        let matrix_weights = |slots: &mut [u128], weight| {
-            slots[0] = weight;
-            slots[1] = ctx.mul_raw(weight, batch);
-            slots[2] = ctx.mul_raw(weight, batch_squared);
-        };
         match relation.mode {
             OuterMode::Split => {
                 for (index, &row) in relation.local.nonlinear.iter().enumerate() {
                     matrix_weights(
+                        ctx,
+                        batch,
+                        batch_squared,
                         &mut matrix_rows[3 * row..3 * row + 3],
                         ctx.raw(&outer.at(index)),
                     );
@@ -448,7 +460,13 @@ impl<'a> ModQCoefficients<'a> {
             OuterMode::AllRows => {
                 for row in 0..relation.local.rows() {
                     let weight = ctx.raw(&outer.at(256 * relation.compressions() + row));
-                    matrix_weights(&mut matrix_rows[3 * row..3 * row + 3], weight);
+                    matrix_weights(
+                        ctx,
+                        batch,
+                        batch_squared,
+                        &mut matrix_rows[3 * row..3 * row + 3],
+                        weight,
+                    );
                 }
             }
         }

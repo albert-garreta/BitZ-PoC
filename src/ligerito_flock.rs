@@ -1121,11 +1121,6 @@ fn q_weight_bound(q_bits: usize) -> Option<u128> {
     (1..=126).contains(&q_bits).then(|| 1u128 << q_bits)
 }
 
-#[allow(dead_code)]
-fn weights_fit_q_bits(weights: &[u128], q_bits: usize) -> bool {
-    q_weight_bound(q_bits).is_some_and(|bound| weights.iter().all(|&weight| weight < bound))
-}
-
 fn checked_mod_q_geometry(
     p: &IntegerMatrixLayout,
     q_bits: usize,
@@ -1189,81 +1184,6 @@ fn checked_mod_q_weight_chunks_geometry(
     q_bits: usize,
 ) -> Result<(IntEvalGeometry, usize, usize), FlockRsError> {
     checked_mod_q_weight_source_geometry(p, chunks, q_bits)
-}
-
-#[allow(dead_code)]
-fn checked_virtual_xor_geometry(
-    commitment: &Commitment,
-    layout: &ShaF2Layout,
-) -> Result<(IntEvalGeometry, IntegerMatrixLayout, IntEvalGeometry), FlockRsError> {
-    let shape = || FlockRsError::RingSwitch(RsOpenError::Shape);
-    let base = validate_int_eval_geometry(commitment, &layout.p, 0)?;
-    if layout.p.word_bits != 1
-        || layout.x_fold_extra >= layout.p.col_vars
-        || layout.bit_vars > u128::BITS.ilog2() as usize
-        || layout.num_cols == 0
-    {
-        return Err(shape());
-    }
-    let Some(expected_t) = layout
-        .bit_vars
-        .checked_add(layout.log_cols)
-        .and_then(|v| v.checked_add(layout.tw))
-    else {
-        return Err(shape());
-    };
-    let Some(expected_num_vars) = layout.tw.checked_add(layout.p.col_vars) else {
-        return Err(shape());
-    };
-    let expected_log_cols = if layout.num_cols <= 1 {
-        0
-    } else {
-        (usize::BITS - (layout.num_cols - 1).leading_zeros()) as usize
-    };
-    let Some(padded_cols) = u32::try_from(layout.log_cols)
-        .ok()
-        .and_then(|log| 1usize.checked_shl(log))
-    else {
-        return Err(shape());
-    };
-    let Some(x_base_t) = layout.bit_vars.checked_add(layout.tw) else {
-        return Err(shape());
-    };
-    if expected_t != layout.p.row_vars
-        || expected_num_vars != layout.num_vars
-        || expected_log_cols != layout.log_cols
-        || layout.num_cols > padded_cols
-        || (layout.x_fold_extra > 0 && x_base_t < 6)
-    {
-        return Err(shape());
-    }
-    let Some(x_t) = x_base_t.checked_add(layout.x_fold_extra) else {
-        return Err(shape());
-    };
-    let p_x = IntegerMatrixLayout {
-        row_vars: x_t,
-        col_vars: layout.p.col_vars - layout.x_fold_extra,
-        word_bits: 1,
-    };
-    let x = checked_int_eval_geometry(&p_x)?;
-    Ok((base, p_x, x))
-}
-
-#[allow(dead_code)]
-fn validate_single_proof_shape(
-    proof: &IntEvalRsLigProof,
-    geometry: IntEvalGeometry,
-) -> Result<(), FlockRsError> {
-    if proof.v.len() != geometry.cols {
-        return Err(FlockRsError::Common(IntEvalRsError::Forest));
-    }
-    if !proof.presum.has_shape(geometry.row_bit_vars, &[2]) {
-        return Err(FlockRsError::Common(IntEvalRsError::PreSumcheck));
-    }
-    if proof.open.ring.s_v.len() != 128 {
-        return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
-    }
-    Ok(())
 }
 
 fn checked_mod_q_shape(
