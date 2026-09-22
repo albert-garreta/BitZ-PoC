@@ -195,10 +195,7 @@ impl RelationSpec for MulLayout<u32> {
     }
 
     fn check_witness(&self, witness: &MulWitness<u32>) -> Result<(), ProtocolError> {
-        if witness.layout() != self {
-            return Err(ProtocolError::RelationWitnessLayoutMismatch);
-        }
-        Ok(())
+        super::protocol::check_witness_layout(self, witness.layout())
     }
 
     fn assignment_binding(

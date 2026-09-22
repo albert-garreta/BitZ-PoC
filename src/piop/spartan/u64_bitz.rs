@@ -153,10 +153,7 @@ impl RelationSpec for MulLayout<u64> {
     }
 
     fn check_witness(&self, witness: &MulWitness<u64>) -> Result<(), ProtocolError> {
-        if witness.layout() != self {
-            return Err(ProtocolError::RelationWitnessLayoutMismatch);
-        }
-        Ok(())
+        super::protocol::check_witness_layout(self, witness.layout())
     }
 
     fn assignment_binding(
@@ -166,42 +163,34 @@ impl RelationSpec for MulLayout<u64> {
         _ligerito: &LigProverConfig,
     ) -> Result<[u8; 32], ProtocolError> {
         let p = self.bitz_params();
-        let mut hasher = BindingHasher::new();
-        hasher
-            .bytes(BINDING_DOMAIN)
-            .bytes(ASSIGNMENT_BLOCK_ORDER)
-            .bytes(&commitment.root);
-        hasher.commitment_params(&commitment.params)?;
-        hasher
-            .u128_le(security.projection_min)
-            .u128_le(security.projection_max);
-        hasher.u32(security.lambda)?;
-        hasher.usize(security.ligerito_target_bits)?;
-        hasher.u32(security.initial_grinding_bits)?;
-        hasher.u32(security.piop_round_grinding_bits)?;
-        hasher.u32(security.terminal_grinding_bits)?;
-        hasher.u32(security.forest_round_grinding_bits)?;
-        hasher.bytes(&U64_MUL_LIMB_BASE.to_le_bytes());
-        hasher.usizes(&[
-            self.multiplications(),
-            self.capacity(),
-            self.assignment_len(),
-            self.padded_assignment_len(),
-            MulLayout::<u64>::gate_vars(self),
-            U64_MUL_LOGICAL_ASSIGNMENT_BLOCKS,
-            U64_MUL_PADDED_ASSIGNMENT_BLOCKS,
-            U64_MUL_VALUE_BITS,
-            U64_MUL_X_SLOT_START,
-            U64_MUL_Y_SLOT_START,
-            U64_MUL_Z_LO_SLOT_START,
-            U64_MUL_Z_HI_SLOT_START,
-            U64_MUL_BIT_SLOTS,
-            p.row_vars,
-            p.col_vars,
-            p.word_bits,
-        ])?;
-        self.bind_packing(&mut hasher)?;
-        Ok(hasher.finalize())
+        super::protocol::bind_assignment(
+            BINDING_DOMAIN,
+            ASSIGNMENT_BLOCK_ORDER,
+            commitment,
+            security,
+            |hasher| {
+                hasher.bytes(&U64_MUL_LIMB_BASE.to_le_bytes());
+                hasher.usizes(&[
+                    self.multiplications(),
+                    self.capacity(),
+                    self.assignment_len(),
+                    self.padded_assignment_len(),
+                    MulLayout::<u64>::gate_vars(self),
+                    U64_MUL_LOGICAL_ASSIGNMENT_BLOCKS,
+                    U64_MUL_PADDED_ASSIGNMENT_BLOCKS,
+                    U64_MUL_VALUE_BITS,
+                    U64_MUL_X_SLOT_START,
+                    U64_MUL_Y_SLOT_START,
+                    U64_MUL_Z_LO_SLOT_START,
+                    U64_MUL_Z_HI_SLOT_START,
+                    U64_MUL_BIT_SLOTS,
+                    p.row_vars,
+                    p.col_vars,
+                    p.word_bits,
+                ])?;
+                self.bind_packing(hasher)
+            },
+        )
     }
 
     fn hash_bridge_constants(&self, hasher: &mut BindingHasher) -> Result<(), ProtocolError> {

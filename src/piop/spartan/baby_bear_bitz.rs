@@ -227,10 +227,7 @@ impl RelationSpec for BabyBearMulLayout {
     }
 
     fn check_witness(&self, witness: &BabyBearMulWitness) -> Result<(), ProtocolError> {
-        if witness.layout() != self {
-            return Err(ProtocolError::RelationWitnessLayoutMismatch);
-        }
-        Ok(())
+        super::protocol::check_witness_layout(self, witness.layout())
     }
 
     fn assignment_binding(
@@ -240,42 +237,35 @@ impl RelationSpec for BabyBearMulLayout {
         _ligerito: &LigProverConfig,
     ) -> Result<[u8; 32], ProtocolError> {
         let p = self.bitz_params();
-        let mut hasher = BindingHasher::new();
-        hasher
-            .bytes(BABY_BEAR_PAPER_BINDING_DOMAIN)
-            .bytes(ASSIGNMENT_BLOCK_ORDER)
-            .bytes(&commitment.root);
-        hasher.commitment_params(&commitment.params)?;
-        hasher
-            .u128_le(security.projection_min)
-            .u128_le(security.projection_max);
-        hasher.u32(security.lambda)?;
-        hasher.usize(security.ligerito_target_bits)?;
-        hasher.u32(security.initial_grinding_bits)?;
-        hasher.u32(security.piop_round_grinding_bits)?;
-        hasher.u32(security.terminal_grinding_bits)?;
-        hasher.u32(security.forest_round_grinding_bits)?;
-        hasher.u64_le(BABY_BEAR_MODULUS);
-        hasher.usizes(&[
-            self.multiplications(),
-            self.capacity(),
-            self.assignment_len(),
-            self.padded_assignment_len(),
-            BabyBearMulLayout::gate_vars(self),
-            LOGICAL_ASSIGNMENT_BLOCKS,
-            PADDED_ASSIGNMENT_BLOCKS,
-            BABY_BEAR_MUL_VALUE_BITS,
-            BABY_BEAR_MUL_A_SLOT_START,
-            BABY_BEAR_MUL_B_SLOT_START,
-            BABY_BEAR_MUL_C_SLOT_START,
-            BABY_BEAR_MUL_K_SLOT_START,
-            BABY_BEAR_MUL_SEMANTIC_BIT_SLOTS,
-            BABY_BEAR_MUL_BIT_SLOTS,
-            p.row_vars,
-            p.col_vars,
-            p.word_bits,
-        ])?;
-        Ok(hasher.finalize())
+        super::protocol::bind_assignment(
+            BABY_BEAR_PAPER_BINDING_DOMAIN,
+            ASSIGNMENT_BLOCK_ORDER,
+            commitment,
+            security,
+            |hasher| {
+                hasher.u64_le(BABY_BEAR_MODULUS);
+                hasher.usizes(&[
+                    self.multiplications(),
+                    self.capacity(),
+                    self.assignment_len(),
+                    self.padded_assignment_len(),
+                    BabyBearMulLayout::gate_vars(self),
+                    LOGICAL_ASSIGNMENT_BLOCKS,
+                    PADDED_ASSIGNMENT_BLOCKS,
+                    BABY_BEAR_MUL_VALUE_BITS,
+                    BABY_BEAR_MUL_A_SLOT_START,
+                    BABY_BEAR_MUL_B_SLOT_START,
+                    BABY_BEAR_MUL_C_SLOT_START,
+                    BABY_BEAR_MUL_K_SLOT_START,
+                    BABY_BEAR_MUL_SEMANTIC_BIT_SLOTS,
+                    BABY_BEAR_MUL_BIT_SLOTS,
+                    p.row_vars,
+                    p.col_vars,
+                    p.word_bits,
+                ])?;
+                Ok(())
+            },
+        )
     }
 
     fn hash_bridge_constants(&self, hasher: &mut BindingHasher) -> Result<(), ProtocolError> {

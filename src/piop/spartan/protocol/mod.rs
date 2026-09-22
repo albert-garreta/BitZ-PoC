@@ -81,7 +81,7 @@ use super::{
     univariate_skip::UnivariateSkipSpartanPiopProof,
 };
 
-pub use binding::BindingHasher;
+pub use binding::{BindingHasher, bind_assignment, check_witness_layout};
 pub use bitify::{BitifiedClaim, BitifiedRows, BlockTable, ScaleSide, SlotRange};
 
 /// Runtime-configured Spartan field used by every BitZ relation.

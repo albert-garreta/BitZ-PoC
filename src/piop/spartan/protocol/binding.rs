@@ -5,12 +5,13 @@ use blake3::Hasher;
 use flock_core::{
     merkle::HashKind,
     pcs::{
-        commit::PcsParams,
+        commit::{Commitment, PcsParams},
         ligerito::{LigeritoProfile, ProverConfig as LigProverConfig},
     },
 };
 
 use super::{ProtocolError, SpartanBitzField};
+use crate::piop::spartan::profile::IopSecurityParams;
 
 /// Stable one-byte code of a flock Ligerito profile.
 pub const fn profile_code(profile: LigeritoProfile) -> u8 {
@@ -152,4 +153,56 @@ impl BindingHasher {
     pub fn finalize(self) -> [u8; 32] {
         *self.hasher.finalize().as_bytes()
     }
+}
+
+/// `RelationSpec::check_witness`'s one real check, shared verbatim by every
+/// relation: the witness's own layout must equal the layout it's being
+/// checked against.
+pub fn check_witness_layout<L: PartialEq>(
+    layout: &L,
+    witness_layout: &L,
+) -> Result<(), ProtocolError> {
+    if witness_layout != layout {
+        return Err(ProtocolError::RelationWitnessLayoutMismatch);
+    }
+    Ok(())
+}
+
+/// The `assignment_binding` preamble shared by the BitZ mul relations whose
+/// statement binding needs no per-relation security knobs beyond the common
+/// ones (projection bounds, lambda, target bits, the three grinding-bit
+/// counts): domain, block order, commitment root and params, then those
+/// fields, in the fixed order every one of those relations already used.
+/// `middle` appends whatever's relation-specific (width constants, the
+/// layout's own dimensions, an optional `bind_packing` call) and the digest
+/// is finalized after it returns.
+///
+/// Not shared by every `RelationSpec` impl: the u32 relation's binding
+/// additionally covers profile name, optional reduction/OOD parameters and
+/// the full Ligerito config, so it builds its own hasher from scratch
+/// instead of calling this.
+pub fn bind_assignment(
+    binding_domain: &[u8],
+    assignment_block_order: &[u8],
+    commitment: &Commitment,
+    security: &IopSecurityParams,
+    middle: impl FnOnce(&mut BindingHasher) -> Result<(), ProtocolError>,
+) -> Result<[u8; 32], ProtocolError> {
+    let mut hasher = BindingHasher::new();
+    hasher
+        .bytes(binding_domain)
+        .bytes(assignment_block_order)
+        .bytes(&commitment.root);
+    hasher.commitment_params(&commitment.params)?;
+    hasher
+        .u128_le(security.projection_min)
+        .u128_le(security.projection_max);
+    hasher.u32(security.lambda)?;
+    hasher.usize(security.ligerito_target_bits)?;
+    hasher.u32(security.initial_grinding_bits)?;
+    hasher.u32(security.piop_round_grinding_bits)?;
+    hasher.u32(security.terminal_grinding_bits)?;
+    hasher.u32(security.forest_round_grinding_bits)?;
+    middle(&mut hasher)?;
+    Ok(hasher.finalize())
 }
