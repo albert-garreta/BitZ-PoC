@@ -1549,7 +1549,7 @@ $$
 
 Next we define  a particular subclass of our full target relation. The full target relation is defined later in \cref{d:general_linbitsrings}.
 
-\begin{definition} The \emph{Core LinBitsRings} relation  is defined as
+\begin{definition}\label{d:core_linbitsrings} The \emph{Core LinBitsRings} relation  is defined as
 %
 \iflncs\begingroup\small\fi
 $$
@@ -1734,8 +1734,8 @@ $\Pi_{\mathsf{red}}$ outputs
 Let $\codedim =\codedim_1\cdot \codedim_2$ be dimension parameters,  and $R$ a ring with generators $1,\eta_1,\ldots, \eta_k$,  as in the previous sections. We let $\cP$ be a set of primes with $\max\cP< \fieldboundsizeexponent$. Given the tensor decomposition $\vv=\vv^{(1)}\otimes \vv^{(2)}$ from \cref{s:interleaved_setting}, we define 
 \begin{equation}\label{e:ring_theta_params}
 \begin{aligned}
-\uu &\defeq (\vv^{(1)},\vv^{(2)})\in R^{\codedim_1+ \codedim_2}\\
-D &\defeq \max_{i\in [|\uu|]} \deg\left(\picanon^{R}{}^{-1}(\uu_i)\right), \qquad\qquad N_R \defeq \max_{i\in [|\uu|]}\ \left\lVert \picanon^{R}{}^{-1}(\uu_i)\right\rVert_\infty,
+\ww &\defeq (\vv^{(1)},\vv^{(2)})\in R^{\codedim_1+ \codedim_2}\\
+D &\defeq \max_{i\in [|\ww|]} \deg\left(\picanon^{R}{}^{-1}(\ww_i)\right), \qquad\qquad N_R \defeq \max_{i\in [|\ww|]}\ \left\lVert \picanon^{R}{}^{-1}(\ww_i)\right\rVert_\infty,
 \end{aligned}
 \end{equation}
 %
@@ -1940,7 +1940,7 @@ When $k=0$ (so that $R=\ZZ_n$ for some $n$), we have $D=0$ and $T=1$.  When $k=1
      & & $O(\codedim_2)\cdot \FF_q$ \\
      & Proof (bits) & $\codedim_2\cdot \log(q\cdot \codedim_1)$ \\
     \hline
-    Phase 3 & Prover & $O((\codedim_1+\codedim_2)\cdot \comfieldexp/w)\cdot \comfield$ \\
+    Phase 3 & Prover & $O((\codedim_1+\codedim_2)\cdot \comfieldexp)\cdot \comfield$ \\
      & Verifier & same as prover \\
      & Proof (bits) & -- \\
     \bottomrule
