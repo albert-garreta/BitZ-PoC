@@ -11,19 +11,13 @@ use super::{Oracle, b128_to_f128};
 use crate::{
     binary_pcs::{BinaryPcs, Round0Prover, Round0Verifier},
     ligerito_flock::OodRound,
-    poly::univariate::binary_gf128::Gf128 as Gf,
-    transcript::{Blake3Transcript, traits::Transcript},
+    transcript::{Blake3Transcript, impl_plain_binius_ip_channel, traits::Transcript},
 };
 use binius_compute::Allocator;
-use binius_core::word::Word;
-use binius_field::{Field, PackedField};
+use binius_field::PackedField;
 use binius_iop::channel::{Error as IopError, IOPVerifierChannel, OracleSpec};
 use binius_iop_prover::channel::IOPProverChannel;
-use binius_ip::channel::{
-    Error as IpError, IPVerifierChannel, WordIPVerifierChannel, pack_words_concrete, select_word,
-    subset_sum_word,
-};
-use binius_ip_prover::channel::{IPProverChannel, WordIPProverChannel};
+use binius_ip::channel::Error as IpError;
 use binius_math::{FieldSlice, FieldVec};
 use binius_verifier::config::B128;
 use flock_core::{field::Gf128, merkle::Hash, pcs::commit::ProverData};
@@ -35,32 +29,6 @@ fn absorb_root(t: &mut Blake3Transcript, index: usize, root: &Hash) {
     t.absorb_slice(ORACLE_DOMAIN);
     t.absorb_slice(&(index as u64).to_le_bytes());
     t.absorb_slice(root);
-}
-
-fn observe(t: &mut Blake3Transcript, v: B128) {
-    t.absorb_slice(&u128::from(v).to_le_bytes());
-}
-
-fn challenge(t: &mut Blake3Transcript) -> B128 {
-    let x: Gf = t.get_field_challenge(&());
-    B128::new(u128::from(x.as_words()[0]) | (u128::from(x.as_words()[1]) << 64))
-}
-
-fn observe_words(t: &mut Blake3Transcript, words: &[Word]) {
-    for word in words {
-        t.absorb_slice(&word.0.to_le_bytes());
-    }
-}
-
-fn sample_bits(t: &mut Blake3Transcript, bits: usize) -> Word {
-    assert!(bits <= Word::BITS);
-    let value = u128::from(challenge(t)) as u64;
-    Word(
-        value
-            & (u64::MAX
-                .checked_shr((Word::BITS - bits) as u32)
-                .unwrap_or(0)),
-    )
 }
 
 /// One committed oracle on the prover side.
@@ -89,28 +57,7 @@ pub(super) struct ProverChannel<'a> {
     pub relations: Vec<ProverRelation>,
 }
 
-impl IPProverChannel<B128> for ProverChannel<'_> {
-    fn send_one(&mut self, elem: B128) {
-        self.messages.push(u128::from(elem));
-        observe(self.transcript, elem);
-    }
-    fn observe_one(&mut self, elem: B128) {
-        observe(self.transcript, elem);
-    }
-    fn sample(&mut self) -> B128 {
-        challenge(self.transcript)
-    }
-}
-
-impl WordIPProverChannel<B128> for ProverChannel<'_> {
-    type Word = Word;
-    fn observe_words(&mut self, words: &[Word]) {
-        observe_words(self.transcript, words);
-    }
-    fn sample_bits(&mut self, bits: usize) -> Word {
-        sample_bits(self.transcript, bits)
-    }
-}
+impl_plain_binius_ip_channel!(prover for ProverChannel<'_>);
 
 impl<P: PackedField<Scalar = B128>, A: Allocator> IOPProverChannel<P, A> for ProverChannel<'_> {
     type Oracle = Oracle;
@@ -217,50 +164,7 @@ pub(super) struct VerifierChannel<'a> {
     pub relations: Vec<VerifierRelation>,
 }
 
-impl IPVerifierChannel<B128> for VerifierChannel<'_> {
-    type Elem = B128;
-    fn recv_one(&mut self) -> Result<B128, IpError> {
-        let (&head, tail) = self.messages.split_first().ok_or(IpError::ProofEmpty)?;
-        self.messages = tail;
-        let elem = B128::new(head);
-        observe(self.transcript, elem);
-        Ok(elem)
-    }
-    fn sample(&mut self) -> B128 {
-        challenge(self.transcript)
-    }
-    fn observe_one(&mut self, elem: B128) -> B128 {
-        observe(self.transcript, elem);
-        elem
-    }
-    fn assert_zero(&mut self, elem: B128) -> Result<(), IpError> {
-        if elem == B128::ZERO {
-            Ok(())
-        } else {
-            Err(IpError::InvalidAssert)
-        }
-    }
-}
-
-impl WordIPVerifierChannel<B128> for VerifierChannel<'_> {
-    type Word = Word;
-    fn observe_words(&mut self, words: &[Word]) -> Vec<Word> {
-        observe_words(self.transcript, words);
-        words.to_vec()
-    }
-    fn sample_bits(&mut self, bits: usize) -> Word {
-        sample_bits(self.transcript, bits)
-    }
-    fn subset_sum(&mut self, elems: &[B128], word: &Word) -> B128 {
-        subset_sum_word(elems, *word)
-    }
-    fn select(&mut self, elems: &[B128], word: &Word) -> B128 {
-        select_word(elems, *word)
-    }
-    fn pack_words(&mut self, words: &[Word]) -> Vec<B128> {
-        pack_words_concrete::<B128, B128>(words)
-    }
-}
+impl_plain_binius_ip_channel!(verifier for VerifierChannel<'_>);
 
 impl IOPVerifierChannel<B128> for VerifierChannel<'_> {
     type Oracle = Oracle;

@@ -1,3 +1,9 @@
+// Both consumers (`hybrid`, `binius_ligerito`) are `#[cfg(feature = ...)]`-gated
+// in lib.rs because the `binius-*` crates they bridge to are optional
+// dependencies; `hybrid`'s feature always enables `binius64-bench`, so gating
+// on that one flag covers both.
+#[cfg(feature = "binius64-bench")]
+pub(crate) mod binius_channel;
 pub mod traits;
 
 use crate::poly::coefficient::PolynomialField;
@@ -142,6 +148,8 @@ where
 // `#[macro_export]` macros land at the crate root; re-export them here so
 // vendored `zinc_transcript::`-style paths keep working after the rename.
 pub use crate::{delegate_const_transcribable, delegate_transcribable};
+#[cfg(feature = "binius64-bench")]
+pub(crate) use crate::impl_plain_binius_ip_channel;
 
 #[cfg(test)]
 mod framing_tests {
