@@ -2,7 +2,7 @@
 # The 2026-09-13 bench-suite campaign queue (README.md, "Integer
 # multiplication"): integer-mult tables at odd exponents, every scheme at 1 and 10
 # threads, Binius suite under round-by-round accounting, Limber at the pinned
-# 100-bit Brakedown target, Plonky3-FRI at rate 1/2.
+# 100-bit Brakedown target.
 #
 # Every campaign is one fresh runner process, serialized through
 # scripts/bench_gate.py (machine lock + swap guard). Run
@@ -10,7 +10,7 @@
 # started elsewhere without the lock will still collide) and with the source
 # tree frozen — the runners reject tracked-source edits mid-campaign.
 #
-#   bash scripts/run_suite_2026_09_13.sh [u32] [u64] [u128] [multiswap]
+#   bash scripts/run_suite_2026_09_13.sh [sha-ecdsa] [sha-ecdsa-p256] [hybrid-counts] [hybrid-witness] [u32] [u64] [u128] [multiswap]
 #
 # No arguments = all phases in that order. Paging policy: cells known to page
 # are excluded, except the Binius64-family rows, which run under a raised swap
@@ -22,7 +22,7 @@ cd "$(dirname "$0")/.."
 
 REPS="${BITZ_SUITE_REPS:-5}"
 phases="$*"
-[ -z "$phases" ] && phases="sha-ecdsa hybrid-counts hybrid-witness u32 u64 u128 multiswap"
+[ -z "$phases" ] && phases="sha-ecdsa sha-ecdsa-p256 hybrid-counts hybrid-witness u32 u64 u128 multiswap"
 has() { case " $phases " in *" $1 "*) return 0;; *) return 1;; esac; }
 
 # One hybrid sweep = one (mode, rate) at one thread count over the variant's
@@ -70,12 +70,22 @@ hybrid_phase() { # phase-name shapes
 }
 
 if has sha-ecdsa; then
-  # The complete SHA+ECDSA matrix (BitZ rho=1/2,1/8; Binius64 rho=1/2,1/8;
-  # opener rho=1/2,1/8 rbr) at threads 1 and 10, over the message sizes the
-  # paper table groups by (2^4..2^7 compressions), one runner invocation.
+  # The secp256k1 head-to-head: BitZ on the circuit matched to Binius64's
+  # stock verifier schedule (rho=1/2,1/8), Binius64 on that stock verifier
+  # (rho=1/2,1/8) and the opener (rho=1/2,1/8 rbr), at threads 1 and 10, over
+  # the message sizes the paper table groups by (2^4..2^7 compressions), one
+  # runner invocation. Table: scripts/sha256_ecdsa_table.py <output>.
   python3 scripts/bench_gate.py run --label sha-ecdsa --swap-grow-gb 12 -- \
-    python3 scripts/run_sha256_ecdsa_compare.py \
-      --output "bench_results/suite-sha256-ecdsa-$(date +%Y%m%d)" --exponents 4 5 6 7
+    python3 scripts/run_sha256_ecdsa_compare.py --curve secp256k1 \
+      --output "bench_results/suite-sha256-ecdsa-secp256k1-$(date +%Y%m%d)" --exponents 4 5 6 7
+fi
+if has sha-ecdsa-p256; then
+  # P-256 is BitZ alone on the paper's circuit (rho=1/2,1/8): the pinned
+  # Binius64 fork has no P-256 verifier of its own, and the runner refuses to
+  # record one. Same sizes and threads as the head-to-head.
+  python3 scripts/bench_gate.py run --label sha-ecdsa-p256 --swap-grow-gb 12 -- \
+    python3 scripts/run_sha256_ecdsa_compare.py --curve p256 \
+      --output "bench_results/suite-sha256-ecdsa-p256-$(date +%Y%m%d)" --exponents 4 5 6 7
 fi
 if has hybrid-counts || has hybrid-witness; then
   HYBRID_BIN=$(hybrid_binary) || { echo "hybrid bench build failed" >&2; exit 1; }

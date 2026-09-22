@@ -19,12 +19,6 @@ mod binius;
 #[cfg(feature = "native-mul-compare")]
 #[path = "../integer_pcs_compare/ligerito.rs"]
 mod ligerito;
-#[cfg(feature = "native-mul-compare")]
-#[path = "../baby_bear_pcs_compare/whir.rs"]
-mod whir_bb;
-#[cfg(feature = "native-mul-compare")]
-#[path = "../integer_pcs_compare/whir_goldilocks.rs"]
-mod whir_u32;
 
 enum Witness {
     U32(MulWitness<u32>),
@@ -176,11 +170,9 @@ fn loop_trials(
     let seed = super::proof::shape_seed(&run.job.case);
     let tag = match (w.selectors(), run.job.case.backend.as_str()) {
         (2, "bitz") => 0x4632_5a00_5533_0001,
-        (2, "plonky3-whir") => 0x5748_4952_5533_0001,
         (2, "binius64-basefold") => 0x4249_4e49_5533_0001,
         (2, _) => 0x4c49_4745_5533_0001,
         (_, "bitz") => 0x4632_5a00_0000_0001,
-        (_, "plonky3-whir") => 0x5748_4952_0000_0001,
         (_, "binius64-basefold") => 0x4249_4e49_5553_0001,
         (_, _) => 0x4c49_4745_0000_0001,
     };
@@ -378,55 +370,9 @@ fn competitor(run: &mut Run, w: &Witness, start: Instant) -> Result<()> {
             ligerito::LigeritoBackend::setup(case.log_n).map_err(|e| anyhow::anyhow!("{e}"))?,
             |b: &ligerito::LigeritoBackend| json!({"target_bits":ligerito::SECURITY_BITS,"soundness_bits":b.soundness_bits(),"component_bits":b.component_bits(),"log_inv_rate":b.log_inv_rate(),"queries":b.n_test_queries()})
         ),
-        "plonky3-whir" => whir(run, w, start),
         _ => unreachable!("validated PCS backend"),
     }
 }
-#[cfg(feature = "native-mul-compare")]
-fn whir(run: &mut Run, w: &Witness, start: Instant) -> Result<()> {
-    let case = run.job.case.clone();
-    let params = case.whir.expect("resolved WHIR configuration");
-    let folding = params.folding;
-    macro_rules! trial {
-        ($module:ident,$ty:ident,$wit:ident,$materialize:expr,$claim:ident)=>{{
-            let backend=$module::$ty::setup_with_params(1<<w.gate_vars(),folding,params.log_inv_rate,params.max_pow_bits).map_err(|e|super::Unsupported(e.to_string()))?;
-            let summary=backend.security_summary();
-            let security=json!({"target_bits":summary.target_bits,"degree":$module::CHALLENGE_EXTENSION_DEGREE,"assumption":$module::SECURITY_ASSUMPTION_LABEL,"folding":summary.folding_factor,"log_inv_rate":summary.starting_log_inverse_rate,"max_pow_bits":summary.configured_max_pow_bits,"derived_pow_bits":summary.derived_max_pow_bits,"round_queries":summary.round_queries,"round_pow_bits":summary.round_pow_bits,"final_queries":summary.final_queries,"final_pow_bits":summary.final_pow_bits});
-            loop_trials(run,w,security,start.elapsed().as_secs_f64()*1000.,|seed| {
-                let root=tracing::info_span!("pcs-compare:verified_trial").entered();
-                let materialized=tracing::info_span!("pcs-compare:materialize").in_scope(||$materialize(&backend,$wit))?;
-                let committed=tracing::info_span!("pcs-compare:commit").in_scope(||backend.commit(materialized,seed));
-                let ready=tracing::info_span!("pcs-compare:claim_setup").in_scope(||backend.$claim(committed))?;
-                let opened=tracing::info_span!("pcs-compare:opening").in_scope(||backend.open(ready));
-                let _verified = tracing::info_span!("pcs-compare:verification").in_scope(||backend.verify(&opened))?;
-                drop(root);
-                Ok(Sizes {commitment:$module::commitment_bytes(opened.commitment())?,claim:(w.gate_vars()+w.selectors()+2)*16,opening:$module::proof_bytes(opened.proof())?})
-            })
-        }}
-    }
-    match w {
-        Witness::U32(wit) => trial!(
-            whir_u32,
-            Backend,
-            wit,
-            |b: &whir_u32::Backend, w: &MulWitness<u32>| b.materialize(w),
-            derive_and_bind_claim
-        ),
-        Witness::BabyBear(wit) => trial!(
-            whir_bb,
-            WhirBackend,
-            wit,
-            |b: &whir_bb::WhirBackend, w: &BabyBearMulWitness| b.materialize(
-                w.a_values(),
-                w.b_values(),
-                w.c_values(),
-                w.k_values()
-            ),
-            derive_and_bind_terminal_claim
-        ),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

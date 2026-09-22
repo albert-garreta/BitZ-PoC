@@ -1,192 +1,56 @@
-# BitZ
 
-BitZ is a hash-based polynomial commitment scheme (PCS) for witnesses over
-arbitrary rings. It commits to a vector f ∈ Sⁿ over any finitely generated ring S
-(a finite field, ℤ, ℤ/2³², a cyclotomic ring, …) and proves linear claims about
-it, such as multilinear-extension (MLE) evaluations:
+# BitZ 🫜
 
-    ⟨f, v⟩ = μ  in S,    or, through a ring homomorphism ψ: S → R,    ⟨ψ(f), v⟩ = μ  in R.
+PoC implementation of BitZ PCS and BitZ-SNARK, from the paper [insert_link]. 
 
-A typical instance is S = ℤ, R = F_q, and ψ reduction modulo q. The name is
-"Bit-ℤ": the ring is switched to bits and then to a binary field.
 
-## How it works
+## Reproducing the paper's benchmarks
 
-1. **Bitification.** The claim is rewritten as a claim about the bit-decomposition
-   of f. Decomposition is linear, so an inner product on f becomes an inner product
-   on its bits with a different weight vector.
-2. **Commitment.** The bits are committed as elements of the binary field GF(2¹²⁸),
-   with 128 bits packed into each field element, using a packed hash-based scheme:
-   ring-switching plus a recursive Ligerito opener (the Flock code in `vendor/flock-mod`).
-3. **Lift to ℤ.** The prover sends μ′ ∈ ℤ, the value of the lifted inner product.
-4. **Proof in the exponent.** For a generator g of GF(2¹²⁸)*, the claim becomes
-   g^⟨lift(u), bits(f)⟩ = g^μ′. That is a product Πᵢ ((g^{uᵢ} − 1)·bitᵢ + 1) over
-   the committed bits, proved as a grand product by a GKR-style forest specialised
-   to low-entropy inputs. There is no wrong-field arithmetic in this step.
+Run all commands below from the repository root. Dependency checkouts use
+sibling directories such as `../limber-impl`.
 
-Rings that are not prime fields, and values too large for the order of g, are
-handled by lifting the claim to ℤ[X₁, …, X_k] and projecting it onto a random
-prime field before step 3.
+Cross-system comparisons measure complete native proofs: witness generation,
+commitment, constraint proving, PCS opening, and verification.
 
-What this buys:
+Install the native Perfetto trace processor locally, then set its path in each
+shell used for benchmarks. Run these commands from the repository root:
 
-- **Pay per bit.** Cost depends essentially only on the bit-size of the witness, not on
-  the ring, so ℤ, ℤ/2³² and prime fields cost about the same per bit.
-- **Composability.** BitZ can serve as the PCS of a proof system over a prime field, ℤ,
-  a polynomial ring or a lattice ring, and it is hash-based.
-- **Free range checks.** Commitments to integers take a bit-size parameter B, so a prover
-  cannot commit to larger integers, and many range checks disappear.
-
-## What is in this repository
-
-- **The PCS and CLI (`src/`, binary `bitz`).** The core PCS proves `MLE[w](r) = y ∈ F_q`
-  for a bit vector w. Opened with a Flock-backed ring-switch and recursive Ligerito.
-- **BitZ-SNARK.** A SNARK for R1CS over the integers using the fingerprinting paradigm: commit
-  over ℤ, the verifier samples a random prime q, the R1CS is projected to F_q, a PIOP
-  reduces it to an MLE claim, and BitZ proves that claim. A hybrid variant proves
-  constraints over ℤ and binary fields together, with virtualized F₂ addition (XOR)
-  between integer witnesses.
-- **Benchmark campaigns.** Seven campaigns compare BitZ with Binius64, Limber and
-  Plonky3 (FRI and WHIR) on SHA-256 with P-256 ECDSA, SHA-256 chains, integer
-  multiplication (u32, u64, u128), MultiSwap, and a hybrid of SHA-256 with modular
-  multiplication. They target 100 bits of security in non-ZK mode and are documented below.
-- **The manuscript.** *BitZ: proofs and commitments in arbitrary rings through binary
-  fields* lives in `paper/`.
-
-Quick start, proving an MLE evaluation of a bit vector of length 2ⁿ:
-
-```sh
-RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- 24
-RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
-    28 --threads 1 --reps 5 --profile custom:1:4
+```bash
+bash scripts/install_trace_processor.sh
+export PERFETTO_TRACE_PROCESSOR="$PWD/.tools/perfetto/trace_processor_shell"
+export RUSTFLAGS="-C target-cpu=native"
 ```
 
-## Dependencies
+The installer downloads Perfetto **v58.2** for macOS or Linux, verifies its
+SHA-256 checksum, and reuses an existing matching installation. It requires
+`curl` and `sha256sum` or `shasum`. The binary stays in this checkout's ignored
+`.tools/perfetto/` directory; no system installation is needed.
 
-Cargo fetches everything it needs; there are no submodules and no vendoring step.
+### The benchmark campaigns
 
-- **In-tree:** `vendor/field` (field arithmetic) and `vendor/flock-mod` (the Flock library,
-  derived from `succinctlabs/flock`). Each has a `VENDORED.md`.
-- **Git pins:** Limber, Plonky3 and Binius64 are the `wu-s-john` forks, each pinned to an
-  exact commit in `Cargo.toml` (and `benchmarks/binius64/Cargo.toml`), plus the official
-  `halo2curves` revision Limber needs. `Cargo.lock` records the resolved sources.
-- **Requirements:** Python 3.11 or newer and `rustup`. The first build needs network
-  access for the registry and the git pins. Git is also needed to fetch the pinned Limber
-  checkout for MultiSwap (into `.tools/limber`).
+The campaign instructions live in [BENCH_INSTRUCTIONS.md](BENCH_INSTRUCTIONS.md) and are copied
+below verbatim by `scripts/sync_readme_campaigns.py` (the artifact workspace's README carries the
+same copy); edit the source file, then run the script.
 
-The field reference microbenchmark and retired external comparison integrations
-are omitted; the seven retained campaigns are documented below.
+<!-- bench-campaigns:begin (generated from BENCH_INSTRUCTIONS.md by scripts/sync_readme_campaigns.py; edit that file) -->
+This file is the single source of the benchmark instructions. `README.md`
+carries a verbatim copy between its two `bench-campaigns` HTML-comment
+markers, refreshed by `python3 scripts/sync_readme_campaigns.py` and checked
+by `python3 -m unittest discover -s scripts -p test_readme_sync.py`; the
+anonymised artifact workspace splices its own filtered copy (without the
+Zinc+ campaign) into its README the same way. Edit here, then sync.
 
-## Run all seven campaigns
-
-From the repository root:
-
-```sh
-bash scripts/run_all_benchmarks.sh --dry-run
-bash scripts/run_all_benchmarks.sh --smoke
-bash scripts/run_all_benchmarks.sh
-```
-
-The wrapper runs the seven campaigns below sequentially. It installs the pinned Rust
-toolchains and Perfetto if needed, and creates a fresh
-results directory under `bench_results/`. Use `--output DIR` to choose another
-new directory. `CARGO_TARGET_DIR` is preserved for build-cache reuse.
-
-`BITZ_REVISION` and `BITZ_DIRTY` are optional metadata: the shared validator in
-`benches/common/mod.rs` accepts them while still rejecting unknown `BITZ_*` knobs.
-They are only fallbacks for when Git is unavailable at run time; otherwise results
-record the revision, dirty flag and tracked diff straight from Git.
-
-`--dry-run` only prints commands; it does not compile, verify dependencies, or
-execute benchmarks. `--smoke` uses one size and one measured sample per campaign,
-retaining the listed backends, rates, and thread counts. It also exercises the
-equal-count hybrid table. Warmups and separate memory trials still run.
-
-One outer benchmark lock protects the complete workflow; before the first
-campaign, the gate waits for at least 88% CPU idle held for 120 s. Multiplication
-receives `--no-gate` internally to avoid taking that lock twice. The default
-swap-growth guard is 34 GiB, configurable with `--swap-grow-gb`. Failures retain
-their logs and stop the workflow without claiming completion. The wrapper waits for
-idle only once; see [Measurement conditions](#measurement-conditions-of-the-published-numbers)
-for how the published numbers were gated.
-
-## Compile without running benchmarks
-
-Install Rust `1.98.1` and `nightly-2026-07-01`, then run:
-
-```sh
-bash scripts/compile_export.sh
-```
-
-This builds all seven campaigns below and their affected Rust tests.
-It uses native CPU code generation and locked dependencies. Registry packages
-and the git-pinned dependencies (Limber, Plonky3, Binius64, `halo2curves`) may be
-downloaded, and the pinned Limber commit is fetched into `.tools/limber`. No benchmark,
-proof, test executable, or report generator is run by this script. Cargo's
-normal build scripts and procedural macros run
-as part of compilation. Build outputs and logs are ignored by Git.
-
-To compile the hybrid SHA-256/multiplication benchmark without executing it:
-
-```sh
-RUSTFLAGS="-C target-cpu=native" cargo +1.98.1 bench --locked --no-run \
-  --bench hybrid_u32_sha256 --features hybrid
-```
-
-## Measurement conditions of the published numbers
-
-The paper's numbers were measured on an Apple M5 (24 GB) under the conditions
-below. Departing from them moves the numbers by more than most of the effects the
-tables report.
-
-- **Idle gate.** Every timed campaign started only after `scripts/bench_gate.py`
-  saw at least 88% CPU idle held for 120 s, sampled every 20 s (`--min-idle`,
-  `--hold-seconds`, `--poll-seconds`). Run back-to-back on a warm machine, an
-  unchanged binary measured a 21% slower prover and a 47% slower verifier (SHA-256,
-  `2^14` compressions, 10 threads). `--hold-seconds 60` is acceptable; do not drop
-  the wait.
-- **Campaign granularity.** One gated invocation per workload, backend, rate and
-  thread count, with the sizes running inside it; the SHA-256 tables were gated per
-  rate and thread group. The multiplication launcher (campaign 3, without
-  `--no-gate`) gates each of its campaigns itself. To reproduce a SHA-256 table
-  group, run it separately under the gate, for example:
-
-  ```bash
-  python3 scripts/bench_gate.py run --label sha256-p256-rate2-t10 -- \
-    python3 scripts/run_sha256_ecdsa_compare.py \
-    --output "$RUN_DIR/sha256-p256-rate2-t10" \
-    --methods bitz-split binius64 binius64-ligerito --exponents 4 5 6 7 \
-    --targets 100 --threads 10 --reps 5 --bitz-profiles custom:1:4 \
-    --binius-rates 1 --timing perfetto
-  ```
-
-- **GKR forest schedule.** On Apple Silicon, `src/merged_forest/schedule.rs`
-  overrides the shared L/8 rule for the measured single-claim shapes (see
-  `docs/gkr-full-product-regression.md`). Each multiplication result records the
-  resolved schedule under `effective.gkr_schedules`; read it there rather than
-  assuming one. Explicit `--gkr-schedule` requests are never substituted.
-- **Builds.** `cargo +1.98.1`, fat LTO and one codegen unit (the release and bench
-  profiles), and `RUSTFLAGS="-C target-cpu=native"` for every scheme, including the
-  competitors. Resolve benchmark executables from Cargo's `--message-format=json`
-  output, as the runners do, never by listing an existing `target/` directory. A
-  stale binary measures old code, and can also reject shapes that the current
-  source accepts.
-- **Fixed inputs.** The u32 corpus seed is `0x5533_3250_4353_0064`
-  (6139306037344403556). Each multiplication result records its per-exponent
-  corpus digest (`effective.corpus_digest`); rows measured at another seed are not
-  comparable. Transcript domain strings determine the proof bytes, so changing them
-  changes the proof-size columns.
-
-Not reproducible from this artifact:
-
-- the Fields-Witch comparison (rates 1/2 and 1/8); its runner is not included;
-- the Zinc+ rows; the external Zinc+ comparison is omitted.
-
-## Benchmark campaigns
-
-Run the following commands from the repository root in **Bash**. These commands
-execute benchmarks and verify generated proofs. Use a fresh `RUN_DIR` for each
-campaign and run the workloads sequentially on an otherwise idle machine.
+Run the following commands from the repository root in **Bash**. They execute
+benchmarks and verify the generated proofs. Use a fresh `RUN_DIR` for each
+campaign and run the workloads sequentially on an otherwise idle machine:
+`scripts/bench_gate.py` serialises campaigns with a machine-wide lock, waits
+for 88% CPU idle held for 120 s before starting, and aborts a campaign whose
+swap growth passes its guard. Every scheme, including the competitors, is
+built at fat LTO with one codegen unit and `-C target-cpu=native`; the
+runners resolve the executables they measure from Cargo's
+`--message-format=json` output, and out-of-crate workers carry their own
+release profile with the same settings (verify a worker's effective flags in
+its `--build-info` before trusting its numbers).
 
 ### Setup
 
@@ -203,14 +67,26 @@ unset BITZ_LIG_PROFILE CARGO_ENCODED_RUSTFLAGS CARGO_TARGET_DIR
 
 mkdir -p bench_results
 export RUN_DIR="$(mktemp -d "$PWD/bench_results/all-benchmarks-$(date +%Y%m%d-%H%M%S)-XXXXXX")"
+# scripts/prepare_matched_limber.py fetches the Cargo.toml-pinned Limber
+# commit here on demand; set LIMBER_DIR to reuse an existing checkout.
+LIMBER_DIR="${LIMBER_DIR:-$PWD/.tools/limber}"
+gate() { python3 scripts/bench_gate.py run --label "$1" --swap-grow-gb "${2:-12}" -- "${@:3}"; }
 echo "Results: $RUN_DIR"
 ```
 
-### 1. SHA-256 + P-256: BitZ, Binius64, Binius64-Ligerito
+### 1. SHA-256 + ECDSA over secp256k1: BitZ (matched circuit), Binius64, Binius64-Ligerito
+
+The head-to-head. BitZ runs the circuit matched to Binius64's stock verifier
+schedule (`sha256-chain-secp256k1/bitz-binius64-matched/v1`); Binius64 and
+the BitZ-opener rows run the pinned fork's upstream `ecdsa::bitcoin_verify`
+(`sha256-chain-secp256k1/binius64-bitcoin-verify/v1`). Every row records its
+`curve` and `circuit_profile`, and the runner refuses any other pairing. See
+`docs/sha256-ecdsa-comparison.md` for what "matched" means and what differs.
 
 ```bash
-python3 scripts/run_sha256_ecdsa_compare.py \
-  --output "$RUN_DIR/sha256-p256" \
+gate sha-ecdsa-secp256k1 12 python3 scripts/run_sha256_ecdsa_compare.py \
+  --curve secp256k1 \
+  --output "$RUN_DIR/sha256-ecdsa-secp256k1" \
   --methods bitz-split binius64 binius64-ligerito \
   --exponents 4 5 6 7 \
   --targets 100 \
@@ -219,13 +95,34 @@ python3 scripts/run_sha256_ecdsa_compare.py \
   --bitz-profiles custom:1:4 custom:3:4 \
   --binius-rates 1 3 \
   --timing perfetto \
-  2>&1 | tee "$RUN_DIR/sha256-p256.log"
+  2>&1 | tee "$RUN_DIR/sha256-ecdsa-secp256k1.log"
 ```
 
-### 2. SHA-256 chains: BitZ, Binius64, Binius64-Ligerito
+### 2. SHA-256 + ECDSA over P-256: BitZ alone
+
+The paper's P-256 circuit (`sha256-chain-p256/bitz-lean-port/v1`). The pinned
+Binius64 fork has no P-256 verifier of its own (its P-256 gadget was written
+for this comparison), so no Binius row exists on this curve and the runner
+refuses to record one.
 
 ```bash
-python3 scripts/run_sha256_chain_compare.py \
+gate sha-ecdsa-p256 12 python3 scripts/run_sha256_ecdsa_compare.py \
+  --curve p256 \
+  --output "$RUN_DIR/sha256-ecdsa-p256" \
+  --methods bitz-split \
+  --exponents 4 5 6 7 \
+  --targets 100 \
+  --threads 1 10 \
+  --reps 5 \
+  --bitz-profiles custom:1:4 custom:3:4 \
+  --timing perfetto \
+  2>&1 | tee "$RUN_DIR/sha256-ecdsa-p256.log"
+```
+
+### 3. SHA-256 chains: BitZ, Binius64, Binius64-Ligerito
+
+```bash
+gate sha256-chain 12 python3 scripts/run_sha256_chain_compare.py \
   --methods bitz binius64 binius64-ligerito \
   --exponents 7 8 9 10 11 12 13 14 15 16 \
   --threads 1 10 \
@@ -236,30 +133,68 @@ python3 scripts/run_sha256_chain_compare.py \
   2>&1 | tee "$RUN_DIR/sha256-chain.log"
 ```
 
-### 3. Multiplication comparisons
+### 4. Multiplication comparisons: BitZ, Binius64, Binius64-Ligerito, Limber
 
-The launcher builds once, validates every selection with the Rust case planner,
-runs sequentially, and generates combined reports in `<output>/reports`. Without
-a `bitz` or `compare` target, it uses the retained per-backend size limits:
-180 configurations across u32-mod32, u64, and u128, with 1 and 10 threads, both
-BitZ/Binius rates, one warmup, five samples, and a separate RSS trial. Plonky3-FRI
-runs only u32-mod32. Limber stops at exponent 19; other defaults range through
-21 or 23 depending on workload and backend.
+The launcher builds once, validates every selection with the Rust case
+planner, runs one worker process per case, records a separate single-proof
+peak-RSS trial (`--memory rss`), and generates combined reports under
+`<output>/reports` (schema `mul-bench/v2`). Run one gated
+invocation per workload; the launcher gates each campaign itself, so omit
+`--no-gate` unless an outer gate already holds the lock. Cells whose prover
+exceeds the machine's memory are excluded, not measured while paging:
+`scripts/mul_memory_probe.py` runs one such cell alone under a small
+swap-growth guard and appends a record with the verdict, the observed peak
+and the installed memory to a JSONL file that the table generator reads (see
+"Tables and figures"), for example
 
 ```bash
-python3 scripts/run_multiplication_benchmarks.py \
-  --output "$RUN_DIR/multiplication" \
-  2>&1 | tee "$RUN_DIR/multiplication.log"
+python3 scripts/mul_memory_probe.py --workload u128 --backend binius64 --log-n 21 \
+  --threads 10 --log-inv-rate 1 --record "$RUN_DIR/mul-exclusions.jsonl" \
+  --output "$RUN_DIR/multiplication-probes/u128-binius64-rate2-t10-n21"
 ```
 
-Use `--dry-run` to preview this matrix or `--exponents 15 --reps 1 --threads 1`
-for a smaller run. Direct experiments, including WHIR, remain available with
-`compare -- proof --backends all --log-n 15 --threads 1` or `bitz -- ...`.
-For direct experiments, launcher flags precede `--` and Rust options follow it;
-benchmark `--dry-run` after the separator compiles and validates case selection.
-The reporter consumes `mul-bench/v2` results; historical formats are unsupported.
+```bash
+for workload in u32-mod32 u64 u128; do
+  python3 scripts/run_multiplication_benchmarks.py compare \
+    --output "$RUN_DIR/multiplication-$workload" -- \
+    proof --workload "$workload" --backends bitz,binius64,binius64-ligerito,limber \
+    --log-n 15,17,19 --threads 1,10 --reps 5 --memory rss --skip-unsupported \
+    --binius-ligerito-accounting rbr \
+    2>&1 | tee "$RUN_DIR/multiplication-$workload.log"
+done
+```
 
-### 4. BitZ full-product u32 × u32 → u64, with component breakdown
+Sizes above `2^19` are a per-backend decision on a 24 GiB machine: BitZ and
+Binius64 at rate 1/2 reach `2^21`; BitZ reaches `2^23`
+for u32 and u64; the others page first. Add `--log-n 21` (or `23`) runs for
+the backends that fit and record the rest as exclusions.
+
+### 5. Multiplication: the Zinc+ rows
+
+Zinc+ cannot be linked into this crate (it pins `crypto-bigint = 0.7.0-rc.9`
+against `vendor/field`'s 0.7.5), so its rows come from an external worker
+built inside a pinned zinc-plus checkout. The runner exports the exact BitZ
+corpora with `examples/mul_corpus_export`, builds a single-threaded and a
+`parallel` worker (features `simd,unchecked[,parallel]`, rate 1/4, 100 bits;
+the first build also runs once in CHECKED mode at the smallest size), runs
+one process per case under `/usr/bin/time -l`, and imports the logs into a
+`mul-bench/v2` campaign whose rows the table treats like every other
+backend's. Zinc+ reports no security accounting of its own; the imported
+configuration records the inverse rate, column openings, projecting-prime
+width, grinding bits and the LogUp range-check term per case.
+
+```bash
+cargo +1.98.1 build --release --locked --example mul_corpus_export
+gate zinc-plus 12 python3 scripts/run_zinc_plus_campaign.py \
+  --output "$RUN_DIR/zinc-plus" \
+  --workdir "$RUN_DIR/zinc-plus-checkout" \
+  --revision 878fbd8292472dcb13b25e2c9c0209406b5fb671 \
+  --corpus-exporter target/release/examples/mul_corpus_export \
+  --workloads u32-mod32 u64 u128 --exponents 15 17 19 --threads 1 10 --reps 5 \
+  2>&1 | tee "$RUN_DIR/zinc-plus.log"
+```
+
+### 6. BitZ full-product u32 × u32 → u64, with component breakdown
 
 ```bash
 cargo +1.98.1 run --release --locked --bin bitz \
@@ -273,21 +208,17 @@ cargo +1.98.1 run --release --locked --bin bitz \
   2>&1 | tee "$RUN_DIR/u32-full-product.log"
 ```
 
-### 5. MultiSwap: BitZ, Limber-Hyrax, Limber-Brakedown
+### 7. MultiSwap: BitZ, Limber-Hyrax, Limber-Brakedown
 
-This fetches the Limber commit pinned in `Cargo.toml` into `.tools/limber` on first
-use. `MSCFG=paper` is a workload name and does not require a manuscript directory. `--draft` runs proofs and the
-local comparison checks while marking canonical trace validation as pending.
-
-Matched reports use the same minimal-byte v1 circuit digest and batch statement
-contract for BitZ and Limber. BitZ's fixed-width v2 proof digest is kept separate;
-the benchmark computes comparison digests from the actual public matrices and
-moduli. This fixes the `canonical digest mismatch` caused by reporting the v2
-hash as v1. Rerun affected campaigns into a fresh directory to regenerate traces.
+This uses the Limber checkout in `LIMBER_DIR`. `MSCFG=paper` is a workload
+name and does not require a manuscript directory. `--draft` runs proofs and
+the local comparison checks while marking canonical trace validation as
+pending.
 
 ```bash
-python3 scripts/run_matched_multiswap_campaign.py \
+gate multiswap 10 python3 scripts/run_matched_multiswap_campaign.py \
   --draft \
+  --limber-root "$LIMBER_DIR" \
   --security-bits 114 \
   --batch-counts 1,2,4,8,16 \
   --all-threads 10 \
@@ -298,7 +229,7 @@ python3 scripts/run_matched_multiswap_campaign.py \
   2>&1 | tee "$RUN_DIR/multiswap.log"
 ```
 
-### 6. SHA-256 layout parameter sweep over s and t
+### 8. SHA-256 layout parameter sweep over s and t
 
 The `sha256_product_layout` benchmark holds the workload at `2^14` SHA-256
 compressions and sweeps the layout split with `s + t = 29`. By default, it runs
@@ -319,9 +250,9 @@ To select particular splits and change the sample count, prepend
 `(t, s) = (13, 16)` and `(17, 12)`, with five measured samples per split.
 Add `--no-run` to the Cargo command to compile without executing the sweep.
 
-### 7. Hybrid SHA-256 chain + multiplication modulo 2^32
+### 9. Hybrid SHA-256 chain + multiplication modulo 2^32
 
-This is the paper's **“Modular multiplications and bit operations”** experiment
+This is the paper's **"Modular multiplications and bit operations"** experiment
 (table label `tab:hybrid-sha256-mul`). It proves `N` relations
 `x*y = z + 2^32*w`, with four u32 limbs, together with `M = N/256` chained SHA-256
 compressions. The two branches have equal packed witness sizes; their witness
@@ -333,6 +264,12 @@ and `2^7` compressions.
 | `hybrid` | BitZ multiplication PIOP + Binius64 SHA PIOP, with one shared BitZ opening |
 | `all-binius` | Both relations in Binius64, using BaseFold/FRI (paper: Binius UDR) |
 | `binius-ligerito` | Both relations in Binius64, using the BitZ/Ligerito opener (paper: Binius Johnson) |
+
+Every other BitZ benchmark in this document is built with the `unchecked`
+feature (release integer arithmetic, no overflow guards); the hybrid bench is
+the one exception: its constructor refuses `unchecked` because the hybrid
+proof relies on checked arithmetic and constraints, so it is built with
+`--features hybrid` alone and its rows are checked-arithmetic numbers.
 
 The sweep below runs all three modes at rates 1/2 and 1/8, with 1 and 10
 threads, one warmup and five measured iterations per shape. The BitZ hybrid
@@ -417,12 +354,29 @@ result directory must not already exist. It will contain `summary.csv`,
 
 ### Tables and figures
 
-The bundled `scripts/zk_trace.py` provides trace report tooling. Tables default
-to `outputs/tables/` and figures to `outputs/figures/`; the root `paper/` directory
-is not needed. After collecting the hybrid witness sweeps above, its table can
-be generated with:
+Every table is generated from recorded campaign output; none is typed by
+hand, and each carries in its header comments the generator, the run
+directories, the machine, and the per-row medians needed to regenerate it.
 
 ```bash
+# SHA-256 + ECDSA: one table per curve (mixing curves is refused).
+python3 scripts/sha256_ecdsa_table.py "$RUN_DIR/sha256-ecdsa-secp256k1" \
+  --out "$RUN_DIR/sha256-ecdsa-secp256k1-table.tex"
+python3 scripts/sha256_ecdsa_table.py "$RUN_DIR/sha256-ecdsa-p256" \
+  --out "$RUN_DIR/sha256-ecdsa-p256-table.tex"
+
+# Multiplication: one table per workload from every campaign that measured it
+# (the launcher's directories and the imported Zinc+ campaign). Excluded cells
+# come from the memory probe's JSONL records (or a JSON list) with their
+# reason, observed peak and machine memory; the file may be empty.
+touch "$RUN_DIR/mul-exclusions.jsonl"
+for workload in u32-mod32 u64 u128; do
+  python3 scripts/mul_table.py "$RUN_DIR/multiplication-$workload" "$RUN_DIR/zinc-plus/campaign" \
+    --workload "$workload" --exclusions "$RUN_DIR/mul-exclusions.jsonl" \
+    --out "$RUN_DIR/native-mul-$workload-table.tex"
+done
+
+# Hybrid witness sweeps.
 hybrid_rows=()
 for threads in 1 10; do
   for rate in 1 3; do
@@ -436,17 +390,161 @@ python3 scripts/hybrid_table.py --variant witness "${hybrid_rows[@]}" \
 ```
 
 For equal-count results, use `--variant counts` and the `hybrid-counts`
-directories instead. Generation of a table does not rerun the proofs.
+directories instead. Generation of a table does not rerun the proofs. The
+bundled `scripts/zk_trace.py` (artifact workspace) provides trace report
+tooling; tables default to `outputs/tables/` and figures to `outputs/figures/`
+there.
+<!-- bench-campaigns:end -->
 
-Source attribution and licenses are retained alongside the incorporated code.
-Historical upstream citations may identify their original contributors;
-metadata normalization does not prevent recognizing previously published code.
-
-## Tests
+### Raw performance of BitZ PCS on the core LinBitsRings relation
 
 ```sh
-python3 -m unittest discover -s scripts -p 'test_*.py' -v
+RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
+    --sweep 20-30 --threads 8 --reps 5 --profile custom:1:4
 ```
 
-Licenses for the in-tree crates are kept beside their source, and third-party
-licenses stay in the forks pinned in `Cargo.toml`.
+### Comparison with fields-witch (Soukhanov's characteristic-2 field switch)
+
+[fields-witch](https://github.com/morgana-proofs/fields-witch) is Lev
+Soukhanov's implementation of his "Char 2 fieldswitch" note: it commits
+`2^k` entries of `F_{2^127}` (integers below `2^127`) densely over
+`F_{2^128}` and proves their multilinear evaluation over `F_p`,
+`p = 2^127 - 1`. The comparison is bit-matched: `2^k` entries of 127 bits
+are the same 16 bytes per entry as BitZ at `n = k + 7` with `W = 1`.
+`scripts/run_fields_witch_compare.py` derives fields-witch's per-round limb
+schedules from its README rule (it reproduces the README's `2^20` schedule
+exactly), runs every (scheme, size, threads) cell in a fresh process under
+`/usr/bin/time -l` on a quiet box (CPU-idle gate), and writes
+`PerfRuns/<stamp>-fields-witch-compare/{results.jsonl,summary.md,fields-witch-table.tex}`;
+see `docs/fields-witch-compare.md` for the measured comparison.
+
+```sh
+git clone https://github.com/morgana-proofs/fields-witch ../fields-witch   # measured at 30cca8c
+(cd ../fields-witch && CARGO_TARGET_DIR=target \
+    RUSTFLAGS="-C target-cpu=native" cargo build --release --examples)
+RUSTFLAGS="-C target-cpu=native" cargo build --release --features unchecked --bin bitz
+python3 scripts/run_fields_witch_compare.py \
+    --fw-bin ../fields-witch/target/release/examples/protocol_profile \
+    --sizes 14,16,18,20,22 --threads 1,8 --reps 5 \
+    --word-rows 20:32,20:64 --latex paper/fields-witch-table.tex
+```
+
+`--fw-bin` / `--bitz-bin` override the binaries (the BitZ default follows
+`CARGO_TARGET_DIR`); `--bitz-profile udr:1:4` measures BitZ in fields-witch's
+unique-decoding regime; `--render-latex <results.jsonl> --latex <path>`
+regenerates the paper table from a finished run.
+
+### Integer multiplication
+
+Choose `bitz` for standalone BitZ experiments or `compare` for cross-system
+comparisons. Launcher options go before `--`; Rust benchmark flags go after it.
+Standalone proof timings exclude native witness generation; comparison proof
+timings include it.
+
+```sh
+python3 scripts/run_multiplication_benchmarks.py bitz -- \
+  proof --workload u32-full,u64,u128 --log-n 15..=20 --w 1,3,8 \
+  --split=0,1 --threads 1,8 --reps 5 --skip-unsupported --dry-run
+
+python3 scripts/run_multiplication_benchmarks.py compare --output results/compare -- \
+  proof --workload u32-mod32,u64,u128 --backends all --log-n 15,17,19 \
+  --threads 1,8 --skip-unsupported --memory rss
+
+python3 scripts/run_multiplication_benchmarks.py bitz -- \
+  witness --workload u32-full,u64,u128,baby-bear --log-n 10 --threads 1
+```
+
+The launcher builds one executable, runs under the machine lock and swap guard,
+and writes shared reports under `<output>/reports`. It defaults to a fresh
+`PerfRuns/<timestamp>-multiplication` directory. `--no-gate` disables the gate;
+`--swap-grow-gb` changes its default 12 GiB limit. Build settings are preserved,
+with native CPU compilation used when no Rust flags are supplied.
+
+Launcher `--dry-run` before `--` prints commands without building or writing
+files. Benchmark `--dry-run` after `--` builds and validates the expanded cases
+without proving. Forwarded `--help` shows the selected benchmark's flags.
+Both targets support `proof`, `witness`, and `pcs`; `bitz` additionally supports
+`piop`, `outer`, and `bounds`. See the
+[multiplication benchmark guide](docs/native-mul-compare.md) for configuration,
+measurement boundaries, memory passes, and the `mul-bench/v2` result format.
+
+### RSA MultiSwap — matched 114-bit comparison
+
+Compare **BitZ/Ligerito, Limber-Hyrax, and Limber-Brakedown** on Limber's
+Table 1 fixture. One circuit copy contains **4 exponentiations with 352-bit
+exponents modulo a 2048-bit RSA modulus**, with 6,209 live integer constraint
+rows. The RSA chains execute; hash and Poseidon operations contribute modeled
+costs. The fixture has no application public inputs (`count=0`, `values=[]`)
+and does not prove a complete public accumulator transition.
+
+The campaign fixes `k=0` and proves **1, 2, 4, 8, or 16 complete circuit
+copies in one proof**: 4–64 RSA exponentiations. It checks matching canonical
+statements and witness data across backends. Each modeled security check must
+reach **at least 114 bits**; the shared 128-bit prime fingerprint retains its
+roughly 114-bit bound. This accounting is per check/round, not a combined
+whole-proof soundness bound or an RSA key-strength claim. Limber retains its
+native 128-bit integer target and 117-bit integer challenge bound target.
+
+Run these commands from the repository root. MultiSwap benchmarks the existing
+Limber checkout supplied through `--limber-root` and records its revision for
+provenance. If you need a checkout, the optional setup helper clones the Cargo
+dependency revision into a destination that does not already exist:
+
+```sh
+python3 scripts/prepare_matched_limber.py ../limber-impl
+```
+
+This clones the dependency revision directly, with no patching or local commits.
+Use `--limber-root ../limber-impl` for the sibling
+checkout. The runner does not require its revision to match the Cargo dependency.
+The setup and campaign scripts require Python 3.11 or newer.
+
+The runner requires this repository's pinned Rust toolchain and Limber's
+`nightly-2026-07-01`. It sets `MSCFG=paper` and each backend's security
+parameters, overriding inherited workload/security settings. Run the full
+sweep with **1 and 16 threads**, one warmup, and ten measured proofs per
+configuration (**30 configurations**):
+
+```sh
+python3 scripts/run_matched_multiswap_campaign.py \
+  --draft \
+  --limber-root ../limber-impl \
+  --security-bits 114 \
+  --batch-counts 1,2,4,8,16 \
+  --all-threads 16 \
+  --warmups 1 \
+  --samples 10 \
+  --rustflags="-C target-cpu=native"
+```
+
+`--draft` runs proof verification and repository comparison checks, but marks
+the results as **pending canonical validation**. The external
+`zk-proof-profiler/scripts/zk_trace.py` validator is not bundled here. For
+canonical execution, replace `--draft` with `--profiler` followed by the
+actual path to that file. A placeholder path will fail preflight.
+
+Add `--dry-run` to preview the commands without compiling or running proofs.
+For a smoke run, change to `--batch-counts 1 --samples 1` (six configurations).
+Results appear under `bench_results/<campaign>/reports/combined/` as
+`summary.json`, `metrics.csv`, and `intervals.html`. They report witness,
+commitment-plus-proving, combined prover, and verification times, along with
+proof sizes including commitments and process peak memory. Compilation and
+setup are excluded from headline proving times; analytical proof-size
+estimates are marked.
+
+See the [campaign guide](docs/matched-multiswap-campaign.md) for the statement,
+security accounting, toolchain setup, and validation requirements. The
+[historical comparison rows](#historical-multiswap-comparison-rows-limber-zinc)
+below predate this matched campaign.
+
+
+### SHA-256 
+```sh
+CARGO_TARGET_DIR=target RUSTFLAGS="-C target-cpu=native" \
+RAYON_NUM_THREADS=8 \
+BITZ_SHA_COMPARE_EXPONENTS="4 5 6 7 9 10 11 12" \
+BITZ_SHA_COMPARE_REPS=5 \
+BITZ_SHA_COMPARE_BACKENDS="bitz binius64" \
+BITZ_SHA_COMPARE_OUTPUT_DIR="PerfRuns/$(date -u +%Y-%m-%dT%H-%M-%SZ)-sha256-compare" \
+  cargo bench --bench sha256_e2e_compare --features bench-internals,native-sha256-compare
+```

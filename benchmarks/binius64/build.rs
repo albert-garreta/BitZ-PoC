@@ -1,25 +1,19 @@
 use sha2::{Digest, Sha256};
 use std::{env, fs, path::PathBuf, process::Command};
 
-/// The pinned Binius64 commit, read from the `binius-core` git source in the worker lockfile.
-fn binius_revision(lock: &str) -> String {
-    let mut in_core = false;
-    for line in lock.lines() {
-        if let Some(name) = line.strip_prefix("name = ") {
-            in_core = name == "\"binius-core\"";
-        } else if in_core {
-            if let Some(source) = line.strip_prefix("source = \"git+") {
-                return source.trim_end_matches('"').rsplit('#').next().unwrap().to_owned();
-            }
-        }
-    }
-    panic!("binius-core is not a git dependency in the worker lockfile");
-}
-
 fn main() {
     let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let lock = fs::read_to_string(root.join("Cargo.lock")).expect("worker lockfile");
-    let revision = binius_revision(&lock);
+    let revision = lock
+        .split("[[package]]")
+        .find(|p| p.lines().any(|l| l == "name = \"binius-circuits\""))
+        .and_then(|p| p.lines().find(|l| l.starts_with("source = \"git+")))
+        .and_then(|line| {
+            line.trim_end_matches('"')
+                .rsplit_once('#')
+                .map(|(_, rev)| rev)
+        })
+        .unwrap_or("unpublished");
     let mut source = Sha256::new();
     for path in [
         "Cargo.toml",
@@ -27,6 +21,7 @@ fn main() {
         "build.rs",
         "build.py",
         "src/main.rs",
+        "src/secp256k1.rs",
         "../../benches/support/sha256_ecdsa_fixture.rs",
         "../../benches/common/output.rs",
         "../../benches/common/trace_capture.rs",
@@ -45,6 +40,26 @@ fn main() {
     // and whether its tracked tree is dirty. Cargo rebuilds the path dep on
     // source change by itself; the parent campaign manifest records the exact
     // tracked diff, and the .build.json sidecar pins the binary hash.
+    let bitz_root = root.join("../..");
+    let git = |args: &[&str]| {
+        Command::new("git")
+            .arg("-C")
+            .arg(&bitz_root)
+            .args(args)
+            .output()
+            .ok()
+            .filter(|out| out.status.success())
+            .and_then(|out| String::from_utf8(out.stdout).ok())
+    };
+    let bitz_revision = git(&["rev-parse", "HEAD"])
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "unknown".into());
+    let bitz_dirty = git(&["status", "--porcelain", "--untracked-files=no"])
+        .map(|s| if s.trim().is_empty() { "clean" } else { "dirty" })
+        .unwrap_or("unknown");
+    println!("cargo:rerun-if-changed=../../.git/HEAD");
+    println!("cargo:rustc-env=BITZ_REVISION={bitz_revision}");
+    println!("cargo:rustc-env=BITZ_DIRTY={bitz_dirty}");
     let rustc = Command::new(env::var_os("RUSTC").unwrap())
         .arg("-Vv")
         .output()

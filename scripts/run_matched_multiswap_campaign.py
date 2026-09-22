@@ -590,6 +590,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         campaign_id = args.campaign_id or stamp
         bitz_root = args.bitz_root.resolve()
         limber_root = args.limber_root.resolve()
+        if limber_root == DEFAULT_DESTINATION.resolve():
+            try:
+                ensure_limber(limber_root, bitz_root)
+            except (OSError, ValueError, subprocess.CalledProcessError) as error:
+                raise report.CampaignError(f"cannot prepare the pinned Limber checkout: {error}") from error
         run_dir = (
             args.output_dir.resolve()
             if args.output_dir
@@ -640,11 +645,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if run_dir.exists():
             raise report.CampaignError(f"refusing to overwrite run directory {run_dir}")
-        if limber_root == DEFAULT_DESTINATION.resolve():
-            try:
-                ensure_limber(limber_root, bitz_root)
-            except (OSError, ValueError, subprocess.CalledProcessError) as error:
-                raise report.CampaignError(f"cannot prepare the pinned Limber checkout: {error}") from error
         if not bitz_root.is_dir() or not limber_root.is_dir():
             raise report.CampaignError("BitZ and Limber repository roots must both exist")
         manifest["validator"] = None if args.draft else preflight_profiler(args.profiler)

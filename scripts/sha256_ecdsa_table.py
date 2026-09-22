@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-"""LaTeX table of absolute numbers from a SHA-256 + P-256 ECDSA campaign (scripts/run_sha256_ecdsa_compare.py).
+"""LaTeX table of absolute numbers from a SHA-256 + ECDSA campaign (scripts/run_sha256_ecdsa_compare.py).
 
 Reads the `*.result.json` records of one or more campaign output directories
-(later directories override earlier ones for the same case) and writes a
-self-documenting `outputs/tables/sha256-ecdsa-table.tex`: one row group per
-(security target, thread count), one row per scheme, with the medians of
+of ONE curve (later directories override earlier ones for the same case) and
+writes a self-documenting `paper/sha256-ecdsa-<curve>-table.tex`: one row
+group per (size, security target), one row per scheme, with the medians of
 witness generation, the complete prover (commitment included) and the complete
 verifier, plus the complete proof material and the worker's peak memory.
 
-    python3 scripts/sha256_ecdsa_table.py bench_results/sha256-ecdsa-i7-bitz-binius
+The secp256k1 table is the head-to-head (BitZ on the circuit matched to
+Binius64's stock verifier schedule, Binius64 on that stock verifier); the
+P-256 table is BitZ alone on the paper's circuit. Directories of different
+curves are refused: they are different circuits and never one table.
+
+    python3 scripts/sha256_ecdsa_table.py bench_results/sha256-ecdsa-secp256k1
 """
 from __future__ import annotations
 
@@ -19,8 +24,6 @@ import platform
 import statistics
 import subprocess
 from pathlib import Path
-
-from bench_support import root_metadata
 
 SCHEMA = "bitz/sha256-ecdsa-compare/v1"
 # Table rows are (scheme id, LaTeX label), in display order. A scheme id is
@@ -36,6 +39,22 @@ SCHEMES = [
     ("binius64-ligerito@3", "Binius (Johnson), rate $1/8$"),
 ]
 PLACEHOLDER = "--"
+CURVE_NAMES = {"p256": "P-256", "secp256k1": "secp256k1"}
+# The circuit each scheme is required to have run on each curve (mirrors the
+# runner's pairing table); anything else is refused rather than tabulated.
+EXPECTED_PROFILES = {
+    ("p256", "bitz"): "sha256-chain-p256/bitz-lean-port/v1",
+    ("p256", "spartan-mc"): "sha256-chain-p256/spartan2-t256/v1",
+    ("secp256k1", "bitz"): "sha256-chain-secp256k1/bitz-binius64-matched/v1",
+    ("secp256k1", "binius64"): "sha256-chain-secp256k1/binius64-bitcoin-verify/v1",
+}
+
+
+def family(method: str) -> str:
+    for prefix in ("bitz", "binius64"):
+        if method.startswith(prefix):
+            return prefix
+    return method
 
 
 def scheme_id(case: dict, sample: dict) -> str:
@@ -91,12 +110,18 @@ def load_cases(directory: Path) -> dict:
         samples = [r for r in record["rows"] if r.get("trial") == "sample"]
         if not samples or any(r.get("schema") != SCHEMA or r.get("verified") is not True for r in samples):
             raise ValueError(f"{path}: complete case without verified samples")
+        curve = case.get("curve", samples[0].get("curve", "p256"))
+        profile = samples[0].get("circuit_profile")
+        expected = EXPECTED_PROFILES.get((curve, family(case["method"])))
+        if expected is None or profile != expected:
+            raise ValueError(f"{path}: {case['method']} on {curve} ran circuit {profile!r}, expected {expected!r}")
         key = (case["log_compressions"], case["security_target"], case["threads"], scheme_id(case, samples[0]))
         if key in result:
             raise ValueError(f"duplicate case {key} in {directory}")
         med = lambda k: statistics.median(r[k] for r in samples)  # noqa: E731
         result[key] = dict(
-            key=key, run_dir=str(directory), file=path.name, samples=len(samples),
+            key=key, run_dir=str(directory), file=path.name, samples=len(samples), curve=curve,
+            circuit_profile=profile, fixture_profile=samples[0].get("fixture_profile"),
             seed=case["seed"], compressions=samples[0]["compressions"], message_bytes=samples[0]["message_bytes"],
             fixture_id=samples[0]["fixture_id"], security=samples[0].get("security", {}),
             circuit=samples[0].get("circuit"), peak_rss_bytes=record["peak_rss_bytes"],
@@ -137,15 +162,27 @@ def opener_security(row: dict) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run_dirs", type=Path, nargs="+", metavar="RUN_DIR")
-    ap.add_argument("--out", type=Path, default=Path("outputs/tables/sha256-ecdsa-table.tex"))
-    ap.add_argument("--label", default="tab:sha256-ecdsa")
+    ap.add_argument("--out", type=Path, default=None, help="default paper/sha256-ecdsa-<curve>-table.tex")
+    ap.add_argument("--label", default=None, help="default tab:sha256-ecdsa-<curve>")
     args = ap.parse_args()
 
+    loaded = [load_cases(run_dir) for run_dir in args.run_dirs]
+    # Check the curves before later directories override earlier cases: a
+    # P-256 and a secp256k1 directory are different circuits, never one table.
+    curves = sorted({row["curve"] for cases in loaded for row in cases.values()})
+    if len(curves) != 1:
+        raise SystemExit(f"run directories mix curves {curves}: one curve, one circuit pairing, one table")
     by = {}
-    for run_dir in args.run_dirs:
-        by.update(load_cases(run_dir))
+    for cases in loaded:
+        by.update(cases)
     if not by:
         raise SystemExit("no complete cases found")
+    curve = curves[0]
+    curve_name = CURVE_NAMES[curve]
+    if args.out is None:
+        args.out = Path(f"paper/sha256-ecdsa-{curve}-table.tex")
+    if args.label is None:
+        args.label = f"tab:sha256-ecdsa-{curve}"
     fixtures = {}
     for row in by.values():
         fixtures.setdefault((row["key"][0], row["seed"]), set()).add(row["fixture_id"])
@@ -162,9 +199,8 @@ def main() -> int:
                ("proof_bytes", "Proof (KB)", fmt_kb), ("peak_rss_bytes", "Peak mem.\\ (GB)", fmt_gb)]
 
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-    source = root_metadata()
-    rev = source["revision"]
-    dirty = "+dirty" if source["git_dirty"] else ""
+    rev = probe(["git", "rev-parse", "HEAD"], "unknown")
+    dirty = "+dirty" if probe(["git", "status", "--porcelain", "--untracked-files=no"], "") else ""
     machine = probe(["sysctl", "-n", "machdep.cpu.brand_string"], platform.processor() or platform.machine())
     for run_dir in args.run_dirs:
         manifest = run_dir / "manifest.json"
@@ -173,13 +209,20 @@ def main() -> int:
             if cpu and cpu not in ("arm", "arm64", "x86_64", "i386"):
                 machine = cpu
     dirs = " ".join(str(d) for d in args.run_dirs)
+    circuit_lines = sorted({f"%   {row['key'][3].split('@')[0]}: circuit {row['circuit_profile']}, fixtures {row['fixture_profile']}"
+                            for row in by.values()})
+    pairing = ("BitZ on the circuit matched to Binius64's stock secp256k1 verifier schedule vs Binius64 on that stock verifier"
+               if curve == "secp256k1" else
+               "BitZ alone on the paper's P-256 circuit; the pinned Binius64 fork has no P-256 verifier of its own, so no Binius row exists")
     header = [
-        "% SHA-256 chain + P-256 ECDSA comparison (BitZ vs Binius64 vs Binius64 with the BitZ opener) — GENERATED FILE, do not edit by hand.",
+        f"% SHA-256 chain + {curve_name} ECDSA ({pairing}) — GENERATED FILE, do not edit by hand.",
+        f"% Curve: {curve}. Circuits per scheme (from the recorded rows; the runner refuses any other pairing):",
+        *circuit_lines,
         f"% Generated by scripts/sha256_ecdsa_table.py on {stamp} (UTC) at {rev}{dirty} from {dirs}",
         "%   (benches/sha256_ecdsa_compare.rs + benchmarks/binius64, driven by scripts/run_sha256_ecdsa_compare.py;",
-        "%   see README.md; later run directories override earlier ones per case).",
+        "%   see docs/sha256-ecdsa-comparison.md; later run directories override earlier ones per case).",
         "% Regenerate (from the repo root; this file is overwritten):",
-        f"%   python3 scripts/sha256_ecdsa_table.py {dirs}",
+        f"%   python3 scripts/sha256_ecdsa_table.py {dirs} --out {args.out} --label {args.label}",
         f"% Machine: {machine}; medians of the measured samples after one warm-up; one worker process per case.",
         "% Columns: witgen = witness_ms (witness generation from the message and signature; the binius64 rows count their",
         "%   witness packing here, while the binius64-ligerito rows pack inside their prover, so their witgen is the wire",
@@ -266,7 +309,14 @@ def main() -> int:
             clause = bitz_security(r)
             if clause not in policies:
                 policies.append(clause)
-        clauses.append("\\ftwoz-SNARK (integer R1CS with $\\FF_2$-virtualization; round-by-round economic security model; " + "; ".join(policies) + ")")
+        circuit_clause = ("the ECDSA circuit follows Binius64's stock verifier schedule --- GLV split into two signed "
+                          "128-bit halves, four-bit windows, in-circuit 16-entry tables for $\\pm G$ and $\\pm Q$, "
+                          "an accumulator that starts at the identity, $126$ doublings and $154$ additions that handle "
+                          "the identity but assert the doubling case away --- in \\ftwoz's integer arithmetization"
+                          if curve == "secp256k1" else
+                          "the paper's P-256 verifier: complete affine formulas, a fixed-base byte table for $G$ and joint scalar multiplication")
+        clauses.append("\\ftwoz-SNARK (integer R1CS with $\\FF_2$-virtualization; " + circuit_clause +
+                       "; round-by-round economic security model; " + "; ".join(policies) + ")")
     if binius_rows:
         policies = []
         for r in sorted(binius_rows, key=lambda r: r["key"]):
@@ -274,7 +324,8 @@ def main() -> int:
             if clause not in policies:
                 policies.append(clause)
         s = binius_rows[0]["security"]
-        clauses.append(f"Binius (UDR) (Binius64's fixed SHA-256 circuit and complete-arithmetic P-256 gadget, ring switching and BaseFold with "
+        clauses.append(f"Binius (UDR) (Binius64's fixed SHA-256 circuit and its stock upstream secp256k1 verifier "
+                       f"(\\texttt{{ecdsa::bitcoin\\_verify}}: GLV-Straus, four-bit windows, incomplete additions), ring switching and BaseFold with "
                        f"{s.get('merkle_hash', 'SHA-256')} Merkle hashing; FRI query target only, " + "; ".join(policies) + ")")
     if opener_rows:
         policies = []
@@ -290,7 +341,7 @@ def main() -> int:
     msg = f"{any_row['message_bytes']:,}".replace(",", "{,}") + " bytes" if len(exponents) == 1 else "$64(N-1)$ bytes"
     threads_desc = " and ".join(str(t) for t in threads)
     reps = sorted({r["samples"] for r in by.values()})
-    caption = (f"Proving one SHA-256 hash of a message of {msg} ({n_desc} compressions, padding block included) followed by one P-256 ECDSA "
+    caption = (f"Proving one SHA-256 hash of a message of {msg} ({n_desc} compressions, padding block included) followed by one {curve_name} ECDSA "
                f"signature verification of the digest, non-ZK: " + "; ".join(clauses) + ". "
                "Native security targets are reported separately; these are not a uniform complete-protocol bound. "
                "\\emph{Witgen} is the witness generation from the message and signature; \\emph{prover} is the complete prover after "

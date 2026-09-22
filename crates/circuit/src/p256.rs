@@ -1,8 +1,16 @@
-//! ECDSA-P256 verification over a prehashed 256-bit digest.
+//! ECDSA verification over a prehashed 256-bit digest.
 //!
-//! This is a direct circuit-shape port of Freigen's Lean implementation.  It
-//! uses the same lazy integer representatives, quotient widths, complete
-//! affine formulas, and joint fixed/variable-base scalar multiplication.
+//! `verify_digest_circuit` is the paper's P-256 verifier: a direct
+//! circuit-shape port of Freigen's Lean implementation with the same lazy
+//! integer representatives, quotient widths, complete affine formulas, and
+//! joint fixed/variable-base scalar multiplication. Its constraint stream is
+//! pinned by the transcript and proof-digest tests and must not move.
+//!
+//! The field and point gadgets below take their public constants from a
+//! [`Curve`], so the same gadgets serve the secp256k1 schedule matched to
+//! Binius64's verifier in [`secp256k1_matched`]. Only the constants differ
+//! between curves; the hint widths, representative bounds and constraint
+//! shapes are curve-independent.
 
 use std::array;
 use std::sync::OnceLock;
@@ -18,6 +26,8 @@ use num_traits::{One, Zero};
 use crate::{
     BoolRepresentation, BoolWitness, Circuit, HintError, HintResult, PackedBits, WitnessContext,
 };
+
+pub mod secp256k1_matched;
 
 /// Number of Boolean inputs: digest, public-key coordinates, signature
 /// scalars, and the two inverse witnesses.
@@ -46,67 +56,190 @@ const WORD_LIMBS: usize = 4;
 type P256Z<CS> = <CS as Circuit>::Z<P256_Z_LIMBS>;
 type P256Coefficient<CS> = <CS as Circuit>::Coefficient<P256_Z_LIMBS>;
 
-fn base_modulus() -> &'static Uint<4> {
-    const VALUE: Uint<4> = Uint::from_words([
+/// The coefficient `a` of a short-Weierstrass curve `y² = x³ + a·x + b`
+/// supported by these gadgets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CoefficientA {
+    /// `a = -3` (P-256).
+    MinusThree,
+    /// `a = 0` (secp256k1).
+    Zero,
+}
+
+/// Public constants of one 256-bit prime-order short-Weierstrass curve whose
+/// base and scalar moduli are both `2^256 - C` with `0 < C < 2^224`, as the
+/// fixed-width representative division below requires.
+pub struct Curve {
+    pub name: &'static str,
+    base: Uint<4>,
+    scalar: Uint<4>,
+    a: CoefficientA,
+    b: Uint<4>,
+    gx: Uint<4>,
+    gy: Uint<4>,
+    base_divisor: OnceLock<PreparedDivisor<4>>,
+    scalar_divisor: OnceLock<PreparedDivisor<4>>,
+    base_inverse: OnceLock<PreparedOddInverse<4>>,
+    scalar_inverse: OnceLock<PreparedOddInverse<4>>,
+}
+
+impl Curve {
+    const fn new(
+        name: &'static str,
+        base: [u64; 4],
+        scalar: [u64; 4],
+        a: CoefficientA,
+        b: [u64; 4],
+        gx: [u64; 4],
+        gy: [u64; 4],
+    ) -> Self {
+        Self {
+            name,
+            base: Uint::from_words(base),
+            scalar: Uint::from_words(scalar),
+            a,
+            b: Uint::from_words(b),
+            gx: Uint::from_words(gx),
+            gy: Uint::from_words(gy),
+            base_divisor: OnceLock::new(),
+            scalar_divisor: OnceLock::new(),
+            base_inverse: OnceLock::new(),
+            scalar_inverse: OnceLock::new(),
+        }
+    }
+
+    /// The coordinate field.
+    pub const fn base(&'static self) -> Modulus {
+        Modulus {
+            curve: self,
+            kind: Kind::Base,
+        }
+    }
+
+    /// The scalar field (the group order).
+    pub const fn scalar(&'static self) -> Modulus {
+        Modulus {
+            curve: self,
+            kind: Kind::Scalar,
+        }
+    }
+
+    pub const fn a(&self) -> CoefficientA {
+        self.a
+    }
+
+    pub const fn base_modulus(&self) -> &Uint<4> {
+        &self.base
+    }
+
+    pub const fn scalar_modulus(&self) -> &Uint<4> {
+        &self.scalar
+    }
+
+    pub const fn b(&self) -> &Uint<4> {
+        &self.b
+    }
+
+    /// Affine coordinates of the generator.
+    pub const fn generator(&self) -> (&Uint<4>, &Uint<4>) {
+        (&self.gx, &self.gy)
+    }
+
+    /// Invert a canonical, nonzero signature scalar using fixed public bounds.
+    /// Invalid inputs execute the same inverse schedule and return a false mask.
+    pub fn scalar_inverse_ct(&'static self, value: &Uint<4>) -> field::CtValue<Uint<4>> {
+        use field::{CtEq, CtOrd};
+        let inverse = self.scalar().inverse().inverse_ct(value);
+        let valid = value.ct_lt(&self.scalar) & !value.ct_is_zero() & inverse.validity();
+        field::CtValue::new(*inverse.value(), valid)
+    }
+}
+
+/// NIST P-256 (secp256r1): `y² = x³ - 3x + b`.
+pub static P256: Curve = Curve::new(
+    "P-256",
+    [
         0xffffffffffffffff,
         0x00000000ffffffff,
         0x0000000000000000,
         0xffffffff00000001,
-    ]);
-    &VALUE
-}
-
-fn scalar_modulus() -> &'static Uint<4> {
-    const VALUE: Uint<4> = Uint::from_words([
+    ],
+    [
         0xf3b9cac2fc632551,
         0xbce6faada7179e84,
         0xffffffffffffffff,
         0xffffffff00000000,
-    ]);
-    &VALUE
-}
-
-fn curve_b() -> &'static Uint<4> {
-    const VALUE: Uint<4> = Uint::from_words([
+    ],
+    CoefficientA::MinusThree,
+    [
         0x3bce3c3e27d2604b,
         0x651d06b0cc53b0f6,
         0xb3ebbd55769886bc,
         0x5ac635d8aa3a93e7,
-    ]);
-    &VALUE
-}
-
-fn generator_x() -> &'static Uint<4> {
-    const VALUE: Uint<4> = Uint::from_words([
+    ],
+    [
         0xf4a13945d898c296,
         0x77037d812deb33a0,
         0xf8bce6e563a440f2,
         0x6b17d1f2e12c4247,
-    ]);
-    &VALUE
-}
-
-fn generator_y() -> &'static Uint<4> {
-    const VALUE: Uint<4> = Uint::from_words([
+    ],
+    [
         0xcbb6406837bf51f5,
         0x2bce33576b315ece,
         0x8ee7eb4a7c0f9e16,
         0x4fe342e2fe1a7f9b,
-    ]);
-    &VALUE
-}
+    ],
+);
+
+/// secp256k1: `y² = x³ + 7` over `2^256 - 2^32 - 977`.
+pub static SECP256K1: Curve = Curve::new(
+    "secp256k1",
+    [
+        0xfffffffefffffc2f,
+        0xffffffffffffffff,
+        0xffffffffffffffff,
+        0xffffffffffffffff,
+    ],
+    [
+        0xbfd25e8cd0364141,
+        0xbaaedce6af48a03b,
+        0xfffffffffffffffe,
+        0xffffffffffffffff,
+    ],
+    CoefficientA::Zero,
+    [7, 0, 0, 0],
+    [
+        0x59f2815b16f81798,
+        0x029bfcdb2dce28d9,
+        0x55a06295ce870b07,
+        0x79be667ef9dcbbac,
+    ],
+    [
+        0x9c47d08ffb10d4b8,
+        0xfd17b448a6855419,
+        0x5da4fbfc0e1108a8,
+        0x483ada7726a3c465,
+    ],
+);
 
 #[derive(Clone, Copy)]
-enum Modulus {
+enum Kind {
     Base,
     Scalar,
 }
 
+/// One of a curve's two public moduli, with its cached divisor and inverse.
+#[derive(Clone, Copy)]
+pub struct Modulus {
+    curve: &'static Curve,
+    kind: Kind,
+}
+
 impl Modulus {
     fn value(self) -> &'static Uint<4> {
-        match self {
-            Self::Base => base_modulus(),
-            Self::Scalar => scalar_modulus(),
+        match self.kind {
+            Kind::Base => &self.curve.base,
+            Kind::Scalar => &self.curve.scalar,
         }
     }
 
@@ -115,16 +248,14 @@ impl Modulus {
     }
 
     fn divisor(self) -> &'static PreparedDivisor<4> {
-        static BASE: OnceLock<PreparedDivisor<4>> = OnceLock::new();
-        static SCALAR: OnceLock<PreparedDivisor<4>> = OnceLock::new();
-        let cache = match self {
-            Self::Base => &BASE,
-            Self::Scalar => &SCALAR,
+        let cache = match self.kind {
+            Kind::Base => &self.curve.base_divisor,
+            Kind::Scalar => &self.curve.scalar_divisor,
         };
-        cache.get_or_init(|| PreparedDivisor::new(self.words()).expect("P-256 modulus is nonzero"))
+        cache.get_or_init(|| PreparedDivisor::new(self.words()).expect("curve modulus is nonzero"))
     }
 
-    /// Divide any five-limb integer using the two public P-256 moduli.
+    /// Divide any five-limb integer using the curve's two public moduli.
     /// With R = 2^256 and p = R - C, both moduli have 0 < C < 2^224.
     /// Each fold replaces h*R + low by h*C + low and adds h to the quotient.
     #[inline]
@@ -160,23 +291,18 @@ impl Modulus {
     }
 
     fn inverse(self) -> &'static PreparedOddInverse<4> {
-        static BASE: OnceLock<PreparedOddInverse<4>> = OnceLock::new();
-        static SCALAR: OnceLock<PreparedOddInverse<4>> = OnceLock::new();
-        let cache = match self {
-            Self::Base => &BASE,
-            Self::Scalar => &SCALAR,
+        let cache = match self.kind {
+            Kind::Base => &self.curve.base_inverse,
+            Kind::Scalar => &self.curve.scalar_inverse,
         };
-        cache.get_or_init(|| PreparedOddInverse::new(self.words()).expect("P-256 modulus is odd"))
+        cache.get_or_init(|| PreparedOddInverse::new(self.words()).expect("curve modulus is odd"))
     }
 }
 
 /// Invert a canonical, nonzero P-256 signature scalar using fixed public bounds.
 /// Invalid inputs execute the same inverse schedule and return a false mask.
 pub fn scalar_inverse_ct(value: &Uint<4>) -> field::CtValue<Uint<4>> {
-    use field::{CtEq, CtOrd};
-    let inverse = Modulus::Scalar.inverse().inverse_ct(value);
-    let valid = value.ct_lt(scalar_modulus()) & !value.ct_is_zero() & inverse.validity();
-    field::CtValue::new(*inverse.value(), valid)
+    P256.scalar_inverse_ct(value)
 }
 
 struct Lc<CS: Circuit> {
@@ -923,18 +1049,31 @@ fn select_formula<CS: Circuit>(
     select_rep::<CS, 262, 5>(circuit, choose, when_one, when_zero, 66)
 }
 
-fn double_complete<CS: Circuit>(circuit: &mut CS, point: Point<CS>) -> Point<CS> {
-    let x2 = lazy_mul(circuit, Modulus::Base, point.x.clone(), point.x.clone());
-    let numerator = rep_add(
-        rep_sub(Modulus::Base, rep_scale(3, x2), rep_u64::<CS>(3)),
-        Rep {
-            value: point
-                .infinity
-                .clone()
-                .scale_coefficient(P256Coefficient::<CS>::from(3_u64)),
-            bound: 1,
-        },
-    );
+/// The doubling numerator `3x² + a`, with the infinity flag folded in so the
+/// identity's `(0, 0, 1)` representative yields the exact division `0 / 1`.
+fn doubling_numerator<CS: Circuit>(curve: &'static Curve, x2: Rep<CS>, infinity: &Lc<CS>) -> Rep<CS> {
+    match curve.a() {
+        CoefficientA::MinusThree => rep_add(
+            rep_sub(curve.base(), rep_scale(3, x2), rep_u64::<CS>(3)),
+            Rep {
+                value: infinity
+                    .clone()
+                    .scale_coefficient(P256Coefficient::<CS>::from(3_u64)),
+                bound: 1,
+            },
+        ),
+        CoefficientA::Zero => rep_scale(3, x2),
+    }
+}
+
+fn double_complete<CS: Circuit>(
+    circuit: &mut CS,
+    curve: &'static Curve,
+    point: Point<CS>,
+) -> Point<CS> {
+    let base = curve.base();
+    let x2 = lazy_mul(circuit, base, point.x.clone(), point.x.clone());
+    let numerator = doubling_numerator(curve, x2, &point.infinity);
     let denominator = rep_add(
         rep_scale(2, point.y.clone()),
         Rep {
@@ -942,10 +1081,10 @@ fn double_complete<CS: Circuit>(circuit: &mut CS, point: Point<CS>) -> Point<CS>
             bound: 1,
         },
     );
-    let slope = lazy_divide(circuit, Modulus::Base, denominator, numerator);
+    let slope = lazy_divide(circuit, base, denominator, numerator);
     let x3 = lazy_mul_sub_to_elem(
         circuit,
-        Modulus::Base,
+        base,
         slope.clone(),
         slope.clone(),
         rep_scale(2, point.x.clone()),
@@ -953,9 +1092,9 @@ fn double_complete<CS: Circuit>(circuit: &mut CS, point: Point<CS>) -> Point<CS>
     let x3_rep = of_elem(&x3);
     let y3 = lazy_mul_sub_to_elem(
         circuit,
-        Modulus::Base,
+        base,
         slope,
-        rep_sub(Modulus::Base, point.x, x3_rep.clone()),
+        rep_sub(base, point.x, x3_rep.clone()),
         point.y,
     );
     Point {
@@ -973,11 +1112,17 @@ struct AddControl<CS: Circuit> {
     active: Lc<CS>,
 }
 
-fn add_complete<CS: Circuit>(circuit: &mut CS, p: Point<CS>, q: Point<CS>) -> Point<CS> {
-    let dx = rep_sub(Modulus::Base, q.x.clone(), p.x.clone());
+fn add_complete<CS: Circuit>(
+    circuit: &mut CS,
+    curve: &'static Curve,
+    p: Point<CS>,
+    q: Point<CS>,
+) -> Point<CS> {
+    let base = curve.base();
+    let dx = rep_sub(base, q.x.clone(), p.x.clone());
     let y_sum = rep_add(p.y.clone(), q.y.clone());
-    let same_x = lazy_zero_test(circuit, Modulus::Base, dx.clone());
-    let opposite_y = lazy_zero_test(circuit, Modulus::Base, y_sum);
+    let same_x = lazy_zero_test(circuit, base, dx.clone());
+    let opposite_y = lazy_zero_test(circuit, base, y_sum);
     let finite = and_bit(
         circuit,
         lc_u64::<CS>(1).sub(p.infinity.clone()),
@@ -998,9 +1143,12 @@ fn add_complete<CS: Circuit>(circuit: &mut CS, p: Point<CS>, q: Point<CS>) -> Po
         active: double_case.add(generic_case),
     };
 
-    let dy = rep_sub(Modulus::Base, q.y.clone(), p.y.clone());
-    let x2 = lazy_mul(circuit, Modulus::Base, p.x.clone(), p.x.clone());
-    let double_numerator = rep_sub(Modulus::Base, rep_scale(3, x2), rep_u64::<CS>(3));
+    let dy = rep_sub(base, q.y.clone(), p.y.clone());
+    let x2 = lazy_mul(circuit, base, p.x.clone(), p.x.clone());
+    let double_numerator = match curve.a() {
+        CoefficientA::MinusThree => rep_sub(base, rep_scale(3, x2), rep_u64::<CS>(3)),
+        CoefficientA::Zero => rep_scale(3, x2),
+    };
     let double_denominator = rep_scale(2, p.y.clone());
     let selected_numerator =
         select_formula(circuit, control.double_case.clone(), double_numerator, dy);
@@ -1018,10 +1166,10 @@ fn add_complete<CS: Circuit>(circuit: &mut CS, p: Point<CS>, q: Point<CS>) -> Po
         selected_denominator,
         rep_u64(1),
     );
-    let slope = lazy_divide(circuit, Modulus::Base, denominator, numerator);
+    let slope = lazy_divide(circuit, base, denominator, numerator);
     let candidate_x = lazy_mul_sub_to_elem(
         circuit,
-        Modulus::Base,
+        base,
         slope.clone(),
         slope.clone(),
         rep_add(p.x.clone(), q.x.clone()),
@@ -1029,9 +1177,9 @@ fn add_complete<CS: Circuit>(circuit: &mut CS, p: Point<CS>, q: Point<CS>) -> Po
     let candidate_x = of_elem(&candidate_x);
     let candidate_y = lazy_mul_sub_to_elem(
         circuit,
-        Modulus::Base,
+        base,
         slope,
-        rep_sub(Modulus::Base, p.x.clone(), candidate_x.clone()),
+        rep_sub(base, p.x.clone(), candidate_x.clone()),
         p.y.clone(),
     );
     let candidate_y = of_elem(&candidate_y);
@@ -1051,14 +1199,18 @@ fn add_complete<CS: Circuit>(circuit: &mut CS, p: Point<CS>, q: Point<CS>) -> Po
     }
 }
 
-fn materialize_multiples<CS: Circuit>(circuit: &mut CS, q: Point<CS>) -> Vec<Point<CS>> {
+fn materialize_multiples<CS: Circuit>(
+    circuit: &mut CS,
+    curve: &'static Curve,
+    q: Point<CS>,
+) -> Vec<Point<CS>> {
     let p1 = q;
     let mut output = Vec::with_capacity(16);
     output.push(infinity());
     output.push(p1.clone());
     let mut previous = p1.clone();
     for _ in 2..16 {
-        previous = add_complete(circuit, previous, p1.clone());
+        previous = add_complete(circuit, curve, previous, p1.clone());
         output.push(previous.clone());
     }
     output
@@ -1183,19 +1335,15 @@ fn lookup_point<CS: Circuit>(circuit: &mut CS, digit: Lc<CS>, table: &[Point<CS>
 fn generator_table() -> &'static Vec<(Uint<4>, Uint<4>)> {
     static TABLE: OnceLock<Vec<(Uint<4>, Uint<4>)>> = OnceLock::new();
     TABLE.get_or_init(|| {
-        let ring = ModRingCtx::new(*base_modulus()).expect("P-256 base modulus");
-        let inverse = Modulus::Base.inverse();
+        let ring = ModRingCtx::new(*P256.base_modulus()).expect("P-256 base modulus");
+        let inverse = P256.base().inverse();
+        let (gx, gy) = P256.generator();
         let mut table = Vec::with_capacity(256);
         table.push((Uint::ZERO, Uint::ZERO));
-        let mut point = (generator_x().clone(), generator_y().clone());
+        let mut point = (*gx, *gy);
         table.push(point.clone());
         for _ in 2..256 {
-            point = affine_add(
-                &point,
-                &(generator_x().clone(), generator_y().clone()),
-                &ring,
-                inverse,
-            );
+            point = affine_add(&point, &(*gx, *gy), &ring, inverse);
             table.push(point);
         }
         table
@@ -1327,7 +1475,8 @@ fn joint_scalar_mul<CS: Circuit>(
     u2: ScalarElem<CS>,
     q: Point<CS>,
 ) -> Point<CS> {
-    let q_table = materialize_multiples(circuit, q);
+    let curve = &P256;
+    let q_table = materialize_multiples(circuit, curve, q);
     let g_table = generator_coefficients::<CS>();
     let mut accumulator = infinity();
     for i in 0..32 {
@@ -1338,29 +1487,35 @@ fn joint_scalar_mul<CS: Circuit>(
         let q_lo = lookup_point(circuit, d2_lo, &q_table);
         let g = lookup_generator_byte(circuit, d1, &g_table);
         for _ in 0..4 {
-            accumulator = double_complete(circuit, accumulator);
+            accumulator = double_complete(circuit, curve, accumulator);
         }
-        accumulator = add_complete(circuit, accumulator, q_hi);
+        accumulator = add_complete(circuit, curve, accumulator, q_hi);
         for _ in 0..4 {
-            accumulator = double_complete(circuit, accumulator);
+            accumulator = double_complete(circuit, curve, accumulator);
         }
-        accumulator = add_complete(circuit, accumulator, q_lo);
-        accumulator = add_complete(circuit, accumulator, g);
+        accumulator = add_complete(circuit, curve, accumulator, q_lo);
+        accumulator = add_complete(circuit, curve, accumulator, g);
     }
     accumulator
 }
 
-fn assert_on_curve<CS: Circuit>(circuit: &mut CS, x: &Elem<CS>, y: &Elem<CS>) {
+fn assert_on_curve<CS: Circuit>(
+    circuit: &mut CS,
+    curve: &'static Curve,
+    x: &Elem<CS>,
+    y: &Elem<CS>,
+) {
+    let base = curve.base();
     let x = of_elem(x);
     let y = of_elem(y);
-    let x2 = lazy_mul(circuit, Modulus::Base, x.clone(), x.clone());
-    let x3 = lazy_mul(circuit, Modulus::Base, x2, x.clone());
-    let rhs = rep_sub(
-        Modulus::Base,
-        rep_add(x3, rep_constant(curve_b())),
-        rep_scale(3, x),
-    );
-    lazy_assert_mul_eq(circuit, Modulus::Base, y.clone(), y, rhs);
+    let x2 = lazy_mul(circuit, base, x.clone(), x.clone());
+    let x3 = lazy_mul(circuit, base, x2, x.clone());
+    let x3_plus_b = rep_add(x3, rep_constant(curve.b()));
+    let rhs = match curve.a() {
+        CoefficientA::MinusThree => rep_sub(base, x3_plus_b, rep_scale(3, x)),
+        CoefficientA::Zero => x3_plus_b,
+    };
+    lazy_assert_mul_eq(circuit, base, y.clone(), y, rhs);
 }
 
 fn assert_elem_eq<CS: Circuit>(circuit: &mut CS, left: &Elem<CS>, right: &Elem<CS>) {
@@ -1391,40 +1546,29 @@ pub fn verify_digest_circuit<CS: Circuit>(
     let r_inverse = lift_input_word(circuit, words.next().unwrap());
     let s_inverse = lift_input_word(circuit, words.next().unwrap());
 
-    let qx = of_u(circuit, Modulus::Base, qx.elem.value);
-    let qy = of_u(circuit, Modulus::Base, qy.elem.value);
-    let r = of_u(circuit, Modulus::Scalar, r.elem.value);
-    let s = of_u(circuit, Modulus::Scalar, s.elem.value);
-    let r_inverse = of_u(circuit, Modulus::Scalar, r_inverse.elem.value);
-    let s_inverse = of_u(circuit, Modulus::Scalar, s_inverse.elem.value);
+    let (base, scalar) = (P256.base(), P256.scalar());
+    let qx = of_u(circuit, base, qx.elem.value);
+    let qy = of_u(circuit, base, qy.elem.value);
+    let r = of_u(circuit, scalar, r.elem.value);
+    let s = of_u(circuit, scalar, s.elem.value);
+    let r_inverse = of_u(circuit, scalar, r_inverse.elem.value);
+    let s_inverse = of_u(circuit, scalar, s_inverse.elem.value);
 
-    assert_on_curve(circuit, &qx, &qy);
-    lazy_assert_mul_eq(
-        circuit,
-        Modulus::Scalar,
-        of_elem(&r),
-        of_elem(&r_inverse),
-        rep_u64(1),
-    );
-    lazy_assert_mul_eq(
-        circuit,
-        Modulus::Scalar,
-        of_elem(&s),
-        of_elem(&s_inverse),
-        rep_u64(1),
-    );
+    assert_on_curve(circuit, &P256, &qx, &qy);
+    lazy_assert_mul_eq(circuit, scalar, of_elem(&r), of_elem(&r_inverse), rep_u64(1));
+    lazy_assert_mul_eq(circuit, scalar, of_elem(&s), of_elem(&s_inverse), rep_u64(1));
 
-    let z = relaxed_reduce_small(circuit, Modulus::Scalar, digest.elem.value.value);
-    let u1_relaxed = relaxed_mul(circuit, Modulus::Scalar, z, s_inverse.clone());
-    let u2_relaxed = relaxed_mul(circuit, Modulus::Scalar, r.clone(), s_inverse);
-    let u1 = lazy_reduce_scalar(circuit, Modulus::Scalar, of_elem(&u1_relaxed));
-    let u2 = lazy_reduce_scalar(circuit, Modulus::Scalar, of_elem(&u2_relaxed));
+    let z = relaxed_reduce_small(circuit, scalar, digest.elem.value.value);
+    let u1_relaxed = relaxed_mul(circuit, scalar, z, s_inverse.clone());
+    let u2_relaxed = relaxed_mul(circuit, scalar, r.clone(), s_inverse);
+    let u1 = lazy_reduce_scalar(circuit, scalar, of_elem(&u1_relaxed));
+    let u2 = lazy_reduce_scalar(circuit, scalar, of_elem(&u2_relaxed));
 
     let q = point_from_elems(&qx, &qy);
     let sum = joint_scalar_mul(circuit, u1, u2, q);
     assert_zero(circuit, sum.infinity);
-    let x_canonical = lazy_reduce(circuit, Modulus::Base, sum.x);
-    let x_mod_n = relaxed_reduce_small(circuit, Modulus::Scalar, x_canonical.value.value);
+    let x_canonical = lazy_reduce(circuit, base, sum.x);
+    let x_mod_n = relaxed_reduce_small(circuit, scalar, x_canonical.value.value);
     assert_elem_eq(circuit, &x_mod_n, &r);
 }
 
@@ -1454,22 +1598,18 @@ mod tests {
     }
 
     fn valid_input() -> Box<[bool; VERIFY_DIGEST_INPUT_BITS]> {
-        let r = uint256_biguint(*generator_x());
+        let (gx, gy) = P256.generator();
+        let n = uint256_biguint(*P256.scalar_modulus());
+        let r = uint256_biguint(*gx);
         let s = &r + BigUint::one();
         let values = [
             BigUint::one(),
-            uint256_biguint(*generator_x()),
-            uint256_biguint(*generator_y()),
+            uint256_biguint(*gx),
+            uint256_biguint(*gy),
             r.clone(),
             s.clone(),
-            r.modpow(
-                &(uint256_biguint(*scalar_modulus()) - 2u32),
-                &uint256_biguint(*scalar_modulus()),
-            ),
-            s.modpow(
-                &(uint256_biguint(*scalar_modulus()) - 2u32),
-                &uint256_biguint(*scalar_modulus()),
-            ),
+            r.modpow(&(&n - 2u32), &n),
+            s.modpow(&(&n - 2u32), &n),
         ];
         let bits: Box<[bool]> = (0..VERIFY_DIGEST_INPUT_BITS)
             .map(|index| values[index / WIDTH].bit((index % WIDTH) as u64))
@@ -1494,7 +1634,7 @@ mod tests {
     #[test]
     fn fixed_width_division_matches_biguint() {
         let mut state = 0x4d59_5df4_d0f3_3173_u64;
-        for modulus in [Modulus::Base, Modulus::Scalar] {
+        for modulus in [P256.base(), P256.scalar(), SECP256K1.base(), SECP256K1.scalar()] {
             for _ in 0..1_000 {
                 let mut words = [0; 18];
                 for word in &mut words {
@@ -1519,7 +1659,7 @@ mod tests {
         let capacity = BigUint::one() << 320usize;
         let radix = BigUint::one() << 256usize;
         let mut state = 0x7a9d_29a4_d375_198b_u64;
-        for modulus in [Modulus::Base, Modulus::Scalar] {
+        for modulus in [P256.base(), P256.scalar(), SECP256K1.base(), SECP256K1.scalar()] {
             let p = uint256_biguint(modulus.words());
             let complement = &radix - &p;
             assert!(complement > BigUint::zero());

@@ -112,7 +112,7 @@ unset BITZ_LIG_PROFILE CARGO_ENCODED_RUSTFLAGS
 REPS=5
 P256_EXPONENTS=(4 5 6 7)
 CHAIN_EXPONENTS=(7 8 9 10 11 12 13 14 15 16)
-MUL_SIZE_ARGS=()
+MUL_LOG_N=15,17,19
 FULL_PRODUCT_RANGE=15-22
 FULL_PRODUCT_COOLDOWN=20
 MULTISWAP_BATCHES=1,2,4,8,16
@@ -123,7 +123,7 @@ if [[ "$SMOKE" == 1 ]]; then
   REPS=1
   P256_EXPONENTS=(4)
   CHAIN_EXPONENTS=(7)
-  MUL_SIZE_ARGS=(--exponents 15)
+  MUL_LOG_N=15
   FULL_PRODUCT_RANGE=15-15
   FULL_PRODUCT_COOLDOWN=0
   MULTISWAP_BATCHES=1
@@ -132,9 +132,10 @@ if [[ "$SMOKE" == 1 ]]; then
   LAYOUT_ENV=(BITZ_SHA_PRODUCT_TS=13 BITZ_BENCH_REPS=1)
 fi
 
-printf '\n[1/7] SHA-256 + P-256\n'
-logged "$RUN_DIR/sha256-p256.log" python3 scripts/run_sha256_ecdsa_compare.py \
-  --output "$RUN_DIR/sha256-p256" --methods bitz-split binius64 binius64-ligerito \
+printf '\n[1/7] SHA-256 + ECDSA over secp256k1\n'
+logged "$RUN_DIR/sha256-ecdsa-secp256k1.log" python3 scripts/run_sha256_ecdsa_compare.py \
+  --curve secp256k1 --output "$RUN_DIR/sha256-ecdsa-secp256k1" \
+  --methods bitz-split binius64 binius64-ligerito \
   --exponents "${P256_EXPONENTS[@]}" --targets 100 --threads 1 10 --reps "$REPS" \
   --bitz-profiles custom:1:4 custom:3:4 --binius-rates 1 3 --timing perfetto
 
@@ -145,10 +146,13 @@ logged "$RUN_DIR/sha256-chain.log" python3 scripts/run_sha256_chain_compare.py \
   --output "$RUN_DIR/sha256-chain"
 
 printf '\n[3/7] Multiplication comparisons\n'
-logged "$RUN_DIR/multiplication.log" python3 scripts/run_multiplication_benchmarks.py \
-  --no-gate --workloads u32 u64 u128 --backends bitz binius64 binius64-ligerito plonky3-fri limber \
-  --threads 1 10 --reps "$REPS" --bitz-profiles custom:1:4 custom:3:4 --binius-rates 1 3 \
-  ${MUL_SIZE_ARGS[@]+"${MUL_SIZE_ARGS[@]}"} --output "$RUN_DIR/multiplication"
+for workload in u32-mod32 u64 u128; do
+  logged "$RUN_DIR/multiplication-$workload.log" python3 scripts/run_multiplication_benchmarks.py compare \
+    --output "$RUN_DIR/multiplication-$workload" --no-gate -- \
+    proof --workload "$workload" --backends bitz,binius64,binius64-ligerito,limber \
+    --log-n "$MUL_LOG_N" --threads 1,10 --reps "$REPS" --memory rss --skip-unsupported \
+    --binius-ligerito-accounting rbr
+done
 
 printf '\n[4/7] BitZ full-product multiplication\n'
 logged "$RUN_DIR/u32-full-product.log" cargo +1.98.1 run --release --locked --bin bitz \

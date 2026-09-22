@@ -48,7 +48,6 @@ pub struct Run {
     pub job: Job,
     pub effective: Value,
     pub samples: Vec<Sample>,
-    pub tuning: Option<Value>,
     pub heap_peak: Option<usize>,
 }
 impl Run {
@@ -57,7 +56,6 @@ impl Run {
             job,
             effective: json!({}),
             samples: Vec::new(),
-            tuning: None,
             heap_peak: None,
         }
     }
@@ -225,10 +223,7 @@ fn child(job: &Job, dir: &Path) -> Result<Run> {
     );
     let result = request.with_extension("result.json");
     let run: Run = serde_json::from_reader(File::open(&result)?)?;
-    let mut expected = job.case.clone();
-    if expected.whir.is_none() {
-        expected.whir = run.job.case.whir;
-    }
+    let expected = job.case.clone();
     ensure!(run.job.case == expected, "worker changed case identity");
     fs::remove_file(request)?;
     fs::remove_file(result)?;
@@ -241,7 +236,7 @@ fn provenance() -> Result<Value> {
     }
     let executable = fs::read(std::env::current_exe()?)?;
     value["executable_blake3"] = json!(blake3::hash(&executable).to_hex().to_string());
-    value["compiled_features"] = json!({"parallel":cfg!(feature="parallel"),"span-metrics":cfg!(feature="span-metrics"),"bench-internals":cfg!(feature="bench-internals"),"native-mul-compare":cfg!(feature="native-mul-compare"),"bench-peak-memory":cfg!(feature="bench-peak-memory"),"unchecked":cfg!(feature="unchecked"),"bench-perfetto":cfg!(feature="bench-perfetto"),"plonky3-whir-degree4-bench":cfg!(feature="plonky3-whir-degree4-bench"),"plonky3-whir-goldilocks-degree2-bench":cfg!(feature="plonky3-whir-goldilocks-degree2-bench")});
+    value["compiled_features"] = json!({"parallel":cfg!(feature="parallel"),"span-metrics":cfg!(feature="span-metrics"),"bench-internals":cfg!(feature="bench-internals"),"native-mul-compare":cfg!(feature="native-mul-compare"),"bench-peak-memory":cfg!(feature="bench-peak-memory"),"unchecked":cfg!(feature="unchecked"),"bench-perfetto":cfg!(feature="bench-perfetto")});
     value["debug_assertions"] = json!(cfg!(debug_assertions));
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files: Vec<String> = if root.join(".git").exists() {
@@ -382,7 +377,7 @@ pub fn main(compare: bool) -> Result<()> {
                 samples.write_all(b"\n")?;
             }
             samples.flush()?;
-            manifest["cases"].as_array_mut().expect("case list").push(json!({"job":resolved_job,"status":"measured","effective":run.effective,"tuning":run.tuning}));
+            manifest["cases"].as_array_mut().expect("case list").push(json!({"job":resolved_job,"status":"measured","effective":run.effective}));
         }
         fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest)?)?;
     }

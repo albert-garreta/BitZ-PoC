@@ -1,113 +1,465 @@
-# SHA-256 / P-256 ECDSA comparison
+# SHA-256 / ECDSA comparison
 
-The retained methods are `bitz-split`, `bitz-all`, `binius64`, and
-`binius64-ligerito`. They prove the same signed-message relation in non-ZK mode.
-BitZ reuses its composed prover; the isolated [Binius64 worker](../benchmarks/binius64/README.md)
-uses the same `wu-s-john/binius64` git pin as the root adapters.
-The worker keeps its own workspace, lockfile and toolchain.
+The comparison is split by curve, because the two curves answer different
+questions (`scripts/run_sha256_ecdsa_compare.py --curve ...`):
 
-## Compile without executing the comparison
+* **secp256k1 is the head-to-head.** **BitZ Split** (Ligerito rates 1/2 and
+  1/8) runs a circuit *matched to Binius64's stock verifier schedule*
+  (`sha256-chain-secp256k1/bitz-binius64-matched/v1`,
+  `crates/circuit/src/p256/secp256k1_matched.rs`); **Binius64** (BaseFold at
+  rates 1/2 and 1/8) and **Binius64 with the BitZ opener** (`binius64-ligerito`,
+  round-by-round 100-bit gate) run the pinned fork's upstream
+  `ecdsa::bitcoin_verify` (`sha256-chain-secp256k1/binius64-bitcoin-verify/v1`).
+  See [Circuits by curve](#circuits-by-curve) for what "matched" means and
+  what still differs.
+* **P-256 is BitZ alone**, on the paper's circuit
+  (`sha256-chain-p256/bitz-lean-port/v1`). The pinned Binius64 fork
+  (`wu-s-john/binius64` @ `bc73510`) implements ECDSA over secp256k1 only; its
+  `crates/circuits/src/p256.rs` and `sha256_ecdsa.rs` were added in one commit
+  by the fork's author for this comparison (`938eadcd`, 2026-09-09, "Add
+  matched SHA-chain P-256 verification and benchmark parameters", complete
+  formulas, no endomorphism, constant generator table) and appear in no
+  upstream checkout. A row measured with it would describe neither Binius64's
+  engineering nor a circuit matched to ours, so the runner refuses to record
+  Binius methods on P-256. **Spartan MC** and **BitZ AllRows** remain
+  selectable on P-256 only.
+
+All modes are non-ZK. BitZ's existing composed prover is reused. The Spartan
+dependency is pinned to the implementation on the fork's `bitz-benching`
+branch; `Cargo.lock` records the exact revision.
+
+Every recorded row names its `curve` and `circuit_profile`; the runner
+validates them against the pairing table above, `comparison.json` records
+`matched_circuits`, and `scripts/sha256_ecdsa_table.py` writes one table per
+curve and refuses directories of different curves.
+
+The backend commit
+[`3b94130453838550a1086ee75c5d280f5c25df3d`](https://github.com/wu-s-john/Spartan2/commit/3b94130453838550a1086ee75c5d280f5c25df3d)
+is published on the fork's `bitz-benching` branch. Cargo can fetch the pinned
+revision from GitHub; it is also available in this machine's Cargo cache.
+
+The [earlier measurements](sha256-ecdsa-shared-kernels-results.md) cover every
+exponent 4 through 11, both thread counts, and both Spartan chunking policies.
+
+The optional [Binius64 worker](../benchmarks/binius64/README.md) uses the rebased
+`bitz-benching` fork through an immutable Git revision shared with the root's
+Binius SHA/u32/hybrid adapters. The SHA+ECDSA worker retains its own Cargo
+workspace, lockfile, and toolchain. See [branch consolidation](binius64-consolidation.md).
+
+ZKPassport is deprecated and is no longer an active method. Historical outputs
+remain readable with `--summarize-only`.
+
+Every new run uses `bitz/sha256-ecdsa-fixture/standard-p256/v1` fixtures. Signatures
+are not normalized: valid low-s and high-s signatures are both accepted, with
+`0 < r,s < n`. Export/import uses this same generator and validation. Regenerate
+legacy low-s-profile fixtures for a new campaign; old results are not relabelled
+or resumed into the new profile. Keys and signatures are prepared before timers.
+
+## Run the comparison
+
+A small campaign builds the release benchmark, runs fresh worker processes,
+and records every warmup and measured proof:
 
 ```sh
-RUSTFLAGS="-C target-cpu=native" cargo +1.98.1 build --release --locked \
-  --features sha256-ecdsa-compare --bench sha256_ecdsa_compare
-RUSTFLAGS="-C target-cpu=native" cargo +1.98.1 build --release --locked \
-  --manifest-path benchmarks/binius64/Cargo.toml
+# secp256k1 head-to-head (default methods: bitz-split binius64 binius64-ligerito)
+python3 scripts/run_sha256_ecdsa_compare.py --curve secp256k1 \
+  --output bench_results/sha256-ecdsa-secp256k1 \
+  --exponents 4 5 6 7 --targets 100 --threads 1 10 --reps 5
+# P-256, BitZ alone (default method: bitz-split); Spartan MC is selectable here
+python3 scripts/run_sha256_ecdsa_compare.py --curve p256 \
+  --output bench_results/sha256-ecdsa-p256 \
+  --exponents 4 5 6 7 --targets 100 --threads 1 10 --reps 5
 ```
 
-Build the worker directly through Cargo for compile-only checks: its Python
-build wrapper executes the resulting binary to collect metadata. Compilation
-does not establish proof correctness or performance.
+Pass `--binary` and `--binius64-binary` (with its `.build.json` sidecar from
+`benchmarks/binius64/build.py`) to measure binaries you built yourself: the
+shell may export `CARGO_TARGET_DIR`, and the runner otherwise builds into it.
 
-## Run a campaign
+Use `--offline` when dependencies are cached. `CARGO_HOME`, `CARGO_TARGET_DIR`
+and compiler flags are inherited; `RUSTFLAGS` defaults to `-C target-cpu=native`.
+Selecting `binius64` additionally builds its isolated worker; the root comparison feature
+does not enable the root Binius or Limber adapters.
 
-The following command executes benchmarks. Use a fresh output directory when
-changing the code, compiler flags, timing backend or benchmark configuration.
-
-```sh
-python3 scripts/run_sha256_ecdsa_compare.py \
-  --output bench_results/sha256-p256 \
-  --methods bitz-split binius64 binius64-ligerito \
-  --exponents 4 5 6 7 --targets 100 --threads 1 10 --reps 5 \
-  --bitz-profiles custom:1:4 custom:3:4 --binius-rates 1 3 \
-  --timing perfetto
-```
-
-The default methods are `bitz-split binius64 binius64-ligerito`; default
-exponents are 3, 5 and 7. Supported total compression exponents are 3..16.
-Each BitZ case selects its Ligerito profile, and each Binius-family case its
-commitment rate: log inverse rates 1 and 3 mean rates 1/2 and 1/8.
-`binius64-ligerito` uses the fixed round-by-round 100-bit gate.
-Use `--methods bitz-split bitz-all` for the BitZ-only comparison.
-
-The runner rejects an ambient `BITZ_LIG_PROFILE`, since it sets that variable
-per case. `RUSTFLAGS` defaults to `-C target-cpu=native`; `--offline` uses cached
-Cargo dependencies. Perfetto timing requires `trace_processor_shell` on `PATH`
-or at `PERFETTO_TRACE_PROCESSOR`. For BitZ-only wall-clock timing:
+For BitZ or Spartan results without Perfetto or `trace_processor_shell`, select
+`--timing wall-clock`:
 
 ```sh
-python3 scripts/run_sha256_ecdsa_compare.py \
+env -u BITZ_LIG_PROFILE RUSTFLAGS="-C target-cpu=native" \
+  python3 scripts/run_sha256_ecdsa_compare.py \
   --output bench_results/sha256-p256-wall-clock \
   --methods bitz-split --exponents 7 --targets 100 --threads 10 \
-  --reps 5 --bitz-profiles custom:1:4 --timing wall-clock
+  --seeds 0 --reps 5 --bitz-profiles custom:1:4 --timing wall-clock
 ```
 
-Wall-clock mode uses Rust's monotonic clock for setup, witness generation,
-commitment, protocol, end-to-end proving, serialization and verification.
-Internal phase breakdowns remain null in JSON and blank in CSV. This mode
-supports `bitz-split` and `bitz-all`.
+This mode uses Rust's monotonic clock for setup, witness generation, commitment,
+protocol, end-to-end proving, serialization, and verification. Proofs are still
+serialized and verified. Internal phase breakdowns (outer, inner, opening,
+folding, and the derived PIOP/IOP split) are unavailable and remain null in JSON
+and blank in CSV. It supports `bitz-split`, `bitz-all`, and `spartan-mc`.
+The default `--timing perfetto` retains phase breakdowns and requires the native
+processor on `PATH` or at `PERFETTO_TRACE_PROCESSOR`.
 
-Every campaign records `samples.csv`, `summary.csv` and individual trial
-artifacts. Peak RSS is the whole-worker maximum, including setup, warmup,
-measured proofs and verification. To summarize saved results without running
-workers, use `--summarize-only` with the original output directory.
+The runner prints median timings and `Peak RSS MiB` for every method after each
+campaign, with full results in `summary.csv` and individual trials in
+`samples.csv`. Peak RSS is the whole-worker maximum, including setup, warmup,
+measured proofs and verification; it is not a per-proof median. CSV and JSON
+retain the original `peak_rss_bytes` values. To display saved results
+without rebuilding or running any worker:
 
-The default limits are 48 GiB of virtual address space on Linux and one hour
-per case, configurable with `--memory-gib` and `--timeout`. macOS records peak
-RSS and enforces the timeout but does not enforce that address-space limit.
-The runner records failed cases and resumes missing ones; `--retry-failed`
-retries failures. Binary and runner hashes prevent mixing incompatible runs.
+```sh
+python3 scripts/run_sha256_ecdsa_compare.py \
+  --output bench_results/sha256-p256-wall-clock --summarize-only
+```
 
-## Statement and workload
+Choose a new output directory when changing timing backends or benchmark code;
+the manifest prevents mixing measurements from different configurations.
 
-The external statement is `(i,Qx,Qy,r_sig,s_sig)`: a P-256 key, its exact
-signature and the compression exponent. The four key/signature values are
-canonical 32-byte big-endian values. The message and digest are witnesses;
-the verifier does not receive a separately expected message.
+To compare Spartan chunkings of a 1,024-compression chain:
+
+```sh
+python3 scripts/run_sha256_ecdsa_compare.py \
+  --output bench_results/sha256-ecdsa-1024 \
+  --spartan-splits 4:6 6:4 8:2 10:0 --targets 100 --threads 1 32
+```
+
+`--spartan-splits r:c` selects Spartan's SHA chunking: `2^r` compressions per
+instance and `2^c` instances. BitZ uses only the total exponent `i=r+c` and runs
+once per total size, method, security target, thread count, and seed.
+
+`--exponents 3 5 7` sweeps every Spartan `r+c=i` decomposition at those total
+sizes. It is mutually exclusive with `--spartan-splits`. Supported total exponents are 3..16;
+large cases can exceed the selected memory or time limit and remain recorded
+as failures. Defaults are exponents 3,5,7; target 100 (`--targets 100 128` for
+both); threads 1 and 10; seed 0; one warmup and three measured repetitions;
+methods `bitz-split binius64 binius64-ligerito` — the 2026-09-13 suite. Each BitZ
+case pins its Ligerito profile (`--bitz-profiles custom:1:4 custom:3:4`, rate 1/2
+and 1/8; the runner sets `BITZ_LIG_PROFILE` per case and rejects an ambient
+value), and each Binius-family case its commitment rate (`--binius-rates 1 3`).
+`binius64-ligerito` runs only at target 100: its whole-protocol gate is fixed.
+Use `--methods bitz-split bitz-all` for the BitZ-only comparison, or `spartan-mc`
+for Spartan alone. `--seeds 0 1 2` changes fixtures without changing the workload.
+
+An already-built worker can be supplied with `--binary`. Its direct interface is:
 
 ```text
-N = 2^i                 total SHA compressions, including padding
+sha256_ecdsa_compare --method bitz-split|bitz-all|spartan-mc|binius64|binius64-ligerito
+                    --r R --c C
+                    [--target 100|128] [--log-inv-rate 1|3] [--threads N] [--reps N] [--seed N]
+                    [--fixture FILE] [--binius64-worker PATH]
+                    [--timing perfetto|wall-clock]
+```
+
+`--log-inv-rate` selects the Binius-family commitment rate (1 = rate 1/2,
+3 = rate 1/8) and is forwarded to the worker; BitZ rows select their rate with
+`BITZ_LIG_PROFILE=custom:1:4|custom:3:4` instead. `binius64-ligerito` proves the
+identical circuit and witness through `bitz::binius_ligerito::Prepared` (every
+oracle committed and opened by the BitZ opener, `Accounting::RoundByRound`,
+100-bit gate) inside the same isolated worker binary.
+
+The standard P-256 gadget's select gates lower to BMUL constraints (fork
+`frontend/src/gates/select.rs`; 45,159 of them at exponent 3), so these rows
+exercise the adapter's full IntMul + BinMul + AND reduction mix; the security
+report carries a dedicated "Binius64 BinMul reduction" term (emitted per row
+under `security.terms`), and BMUL commits no extra oracle. The worker test
+`bitz_opener_round_trips_and_binds_the_statement` round-trips the exponent-3
+circuit through the opener and checks that term is present.
+
+It also accepts Cargo's automatic `--bench` flag:
+
+```sh
+cargo bench --profile release --features sha256-ecdsa-compare \
+  --bench sha256_ecdsa_compare -- \
+  --method spartan-mc --r 3 --c 0 --threads 1 --reps 3
+```
+
+The runner's default limits are 48 GiB of virtual address space on Linux and one
+hour per case, configurable through `--memory-gib` and `--timeout`. macOS does not
+support this address-space limit; it collects peak RSS and enforces the timeout.
+The manifest records whether the memory limit is enforced. Rerunning resumes
+missing cases; `--retry-failed` also retries recorded failures. An output
+directory cannot mix binaries or runners with different SHA-256 hashes. The runner uses
+Unix process/resource APIs; per-process peak RSS is collected with GNU time on
+Linux and BSD time on macOS, with both normalized to bytes.
+
+## Common statement and workload
+
+The external statement is `(i,Qx,Qy,r_sig,s_sig)`: one key on the campaign's
+curve, the exact signature, and the compression exponent. The four values are canonical 32-byte
+big-endian values. The message and digest are witnesses. The verifier does not
+receive a separately expected message. No method in this comparison promises
+zero knowledge.
+
+```text
+B = 2^r                 compressions per Spartan SHA instance
+K = 2^c                 number of Spartan SHA instances
+N = B*K = 2^(r+c) = 2^i  total compressions, including padding
 message_bytes = 64*(N-1)
 signatures = 1
 ```
 
-Each message has `N-1` complete blocks followed by the mandatory standard SHA
-padding block. At `N=1024`, the message is 65,472 bytes. Fixtures use
-`bitz/sha256-ecdsa-fixture/standard-p256/v1`. Both valid low-s and high-s
-signatures are accepted, with `0 < r,s < n`. Message, key and signature are
-prepared and validated outside timers, identically for each `(i,seed)` across
-methods. Host checks do not replace the ECDSA circuit.
+Each workload hashes one message of `N-1` complete blocks followed by one
+mandatory standard SHA padding block. For `N=1024`, the message is 65,472 bytes.
+A 2 KiB message needs 33 compressions and is a different workload.
 
-The direct Rust CLI retains `--r R --c C` as a way to supply total exponent
-`i=R+C`; the Python runner supplies `R=i,C=0`. Result records leave `r,c` null,
-since the retained methods do not use external SHA chunking.
+The worker generates the same message, key and signature for each `(i,seed)`
+across all methods and chunkings. It signs and validates the fixture outside the
+timers. Those host checks do not replace the ECDSA circuit. The runner checks
+fixture identifiers across completed cases and fails on a mismatch.
 
-| Method | Reduction | Commitment/opening |
-|---|---|---|
-| BitZ Split | Nonlinear P-256 rows enter the outer sumcheck; linear SHA/P-256 rows join the common inner sumcheck | One source commitment and virtual BitZ opening |
-| BitZ AllRows | All original SHA/P-256 rows enter the outer sumcheck, followed by the common inner sumcheck | Same commitment and opening architecture |
-| Binius64 | Fixed SHA circuit and standard P-256 gadget | Witness oracle commitment and BaseFold opening |
-| Binius64 with BitZ opener | Same circuit and Binius64 reduction | All oracles committed and opened through BitZ/Ligerito |
+BitZ accepts only the total exponent. Its records leave `r,c` null, and the
+runner measures each BitZ `(i,target,threads,seed)` case once, even when comparing
+many Spartan chunkings. BitZ's packed-inner prefix is fixed at 4; this parameter
+is unrelated to the Spartan chunk exponent.
+
+## Circuits by curve
+
+| Curve | BitZ circuit (`circuit_profile`) | Binius64 circuit |
+| --- | --- | --- |
+| secp256k1 | `sha256-chain-secp256k1/bitz-binius64-matched/v1`: 1,007,412 witness bits, 10,228 rows | `sha256-chain-secp256k1/binius64-bitcoin-verify/v1`: the fork's upstream `ecdsa::bitcoin_verify` + `msm_strauss_endo`, composed with the fork's fixed SHA-256 chain |
+| P-256 | `sha256-chain-p256/bitz-lean-port/v1`: the paper's circuit, 1,215,662 witness bits, 7,061 rows (pinned; transcript and proof digests unchanged) | none recorded (see above) |
+
+"Matched" is defined at the level of the elliptic-curve group operations and
+the completeness policy, which is where circuit engineering lives; the field
+gadgets underneath are each system's own. On secp256k1 both circuits perform:
+
+* `u1 = z/s`, `u2 = r/s` in the scalar field as hinted divisions checked by
+  one relation each, with `r, s` canonical and nonzero and `Q` on the curve;
+* a GLV split of each scalar into two signed 128-bit halves with the check
+  `k1 + λ·k2 ≡ k (mod n)`;
+* in-circuit 16-entry tables for `±G` and `±Q` (one doubling and thirteen
+  additions each; Binius64 builds the generator's table in circuit too, since
+  its sign depends on the split) and `φ` tables derived entrywise by one
+  multiplication by `β` and a conditional negation;
+* a Straus accumulation from the point at infinity over 32 four-bit windows:
+  124 doublings and 128 additions from 16-entry lookups (126 doublings and
+  154 additions in total with the tables);
+* additions that handle the point at infinity on either side and return the
+  identity for opposite points, while the doubling case `P = Q` is asserted
+  away (Binius64's `add_incomplete`); this is why a key that is a small
+  multiple of `G` is not a valid fixture on either side;
+* a finite result whose `x` equals `r` as coordinate-field elements, with no
+  reduction of `x` modulo `n` (Binius64's `r_diff.is_zero`).
+
+Recorded divergences, none of which changes the schedule: the digest is
+reduced modulo `n` before the division on both sides (Binius64's division
+needs a reduced dividend; the P-256 statements do the same); BitZ shows `r`
+and `s` nonzero through hinted inverses instead of word-level zero tests;
+BitZ's table lookups use one indicator row per entry instead of a multiplexer
+tree; BitZ's GLV check is one integer relation with a hinted quotient instead
+of a scalar-field multiplication; and BitZ's coordinate range checks and hint
+widths are the P-256 gadgets' (nine signed limbs). The matched circuit costs
+BitZ more outer-sumcheck rows than the paper's P-256 circuit (10,228 against
+7,061, so 2^14 against 2^13 slots), which is part of the price of matching.
+
+## Methodologies
+
+| Method | Arithmetization and reduction | Application commitments/opening |
+| --- | --- | --- |
+| BitZ Split | Boolean source map plus integer rows; the nonlinear ECDSA rows enter the outer sumcheck (6,807 for the paper's P-256 circuit); linear SHA/ECDSA rows join the common inner sumcheck | One source commitment and one virtual BitZ opening |
+| BitZ AllRows | Same BitZ arithmetization; all original SHA/P-256 rows enter the outer sumcheck, followed by the common inner sumcheck | Same commitment architecture and opening |
+| Spartan MC, non-ZK | Bellpepper SHA chunks and native P-256 R1CS; NeutronNova batch folding, paired outer and inner sumchecks | K SHA commitments and one core commitment, batched into one direct Hyrax opening |
+| Binius64, non-ZK | Current fixed SHA-256 circuit and the upstream secp256k1 verifier (`ecdsa::bitcoin_verify`: GLV-Straus MSM, four-bit windows, incomplete additions, in-circuit tables); the statement wrapper reduces the digest modulo `n` and asserts canonical key coordinates | Witness oracle commitment and BaseFold opening at the selected rate |
+| Binius64 + BitZ opener, non-ZK | The identical circuit and Binius64 PIOP up to the witness evaluation claim | Every oracle (witness + the IntMul reduction's logup* pushforward) committed and opened by the BitZ opener; round-by-round 100-bit gate |
+
+`AllRows` isolates the benefit of excluding linear rows from BitZ's outer
+sumcheck. It remains BitZ's arithmetization and is not Bellpepper's SHA circuit.
+BitZ uses no NeutronNova folding here. Constraint counts are reported in each
+system's representation and are not directly interchangeable.
 
 BitZ's virtual map supplies the IV, wires adjacent states, substitutes padding,
-and aliases the final SHA digest into ECDSA. Public-bit equations bind the
-key/signature, including the constant-one affine equation. See the
-[BitZ adapter description](sha256-ecdsa.md) for protocol details.
+and aliases the final SHA digest into ECDSA. It binds the key/signature with
+public-bit equations and includes the essential constant-one affine equation.
+The outer terminal claims join the linear checks in one inner sumcheck; the
+scaled terminal claim is discharged against the original source commitment.
+See the [BitZ adapter description](sha256-ecdsa.md).
 
-The Binius gadget exercises IntMul, BinMul and AND reductions. The worker
-records security accounting and its actual local dependency snapshot.
-Constraint counts use each system's representation and are not interchangeable.
+Spartan uses two circuit shapes and `K+1` instance/witness pairs. Chunks expose
+blocks and input/output states as authenticated auxiliary public inputs, using
+range-constrained 32-bit words. The verifier checks the IV, every adjacent
+boundary, exact final padding, final digest link, and expected key/signature.
+All this auxiliary data is counted in the proof size. Public auxiliary data
+can reveal the message, consistent with the non-ZK requirement.
 
-Report tables default to `outputs/tables/sha256-ecdsa-table.tex`. The internal
-BitZ prover remains part of this workspace; the external Spartan2 and
-ZKPassport comparisons have been removed.
+The Spartan protocol commits before challenges, folds the SHA instances while
+retaining the folding residual, and checks SHA/core outer reductions with
+shared challenges. Paired inner reductions produce evaluations at the same
+witness point. Both claims bind before a fresh batching scalar combines the
+witnesses, commitments and blinds for one direct Hyrax opening. The verifier
+checks its returned evaluation against the combined claim. For `c=0`, the
+sole SHA instance is used directly with target zero and no folding rounds.
+
+The non-ZK adapter in the Spartan2 fork reuses the optimized folding kernels in
+`neutronnova_zk.rs` and the batched kernels in `sumcheck.rs`. Both ZK and non-ZK
+entry points call the same arithmetic; round callbacks select verifier-circuit
+processing or public transcript messages. The non-ZK verifier checks the round
+and terminal equations natively and uses the existing direct Hyrax opening.
+Small-value cache construction is included in the measured protocol phase.
+The Bellpepper witness layout and cache accounting differ from stock applications
+using shared/precommitted witnesses. Measurements describe this non-ZK adapter,
+not the paper's published ZK Vega timings. The optional
+monolithic Spartan control is deferred; its existing IPA opening would also
+need alignment before using it to isolate folding cost.
+
+Historical reports at commit `bf99f4f8` used a separate implementation of the
+folding and sumcheck arithmetic. They do not measure the shared-kernel adapter.
+
+## Native P-256 circuit
+
+`T256HyraxEngine` makes the constraint field equal to P-256's coordinate field.
+The gadget constrains `[s_sig]R = [z]G + [r_sig]Q`, with:
+
+- Valid finite points and complete projective addition/doubling formulas.
+- Canonical, nonzero `r_sig,s_sig < n`, including valid high-s signatures.
+- All 256 digest bits used as integer `z`, without reduction modulo the
+  coordinate field.
+- Canonical coordinates and correct integer `x(R) mod n = r_sig`, including
+  an explicit bound that excludes modular wraparound in the quotient branch.
+
+The witness generator computes `R` with RustCrypto; the circuit independently
+checks the relation. Setup uses missing witness values and remains reusable
+across messages, keys and signatures. Boolean SHA witnesses use Hyrax's small
+value commitment path; P-256 field witnesses use its general path.
+
+## Timing, size and security
+
+| Metric | Definition |
+| --- | --- |
+| `setup_ms` | Public relation, circuit shape, and key preparation |
+| `witness_ms` | Fresh witness generation, including chaining states and signature hints |
+| `commit_ms` | All application witness commitments |
+| `protocol_ms` | After commitments through the completed proof, including matrix products, folding, sumchecks, grinding where applicable, and opening |
+| `piop_ms` | All non-opening protocol time: `protocol_ms - opening_ms`, including projection, preparation, matrix work, folding, sumchecks, transcript work and boundary overhead |
+| `iop_ms` | IOP/PCS opening time: BitZ's complete virtual opening path, or Spartan's combined witness/blind construction and direct Hyrax opening; equals `opening_ms` |
+| `prove_ms` | `commit_ms + protocol_ms` |
+| `witness_to_proof_ms` | Per-sample `witness_ms + prove_ms` (phase sum) |
+| `e2e_prover_ms` | Independently measured elapsed time from fresh witness generation through proof completion; excludes reusable setup, fixture signing, codec and verification |
+| `verify_ms` | Complete application verification, including Spartan's native linking checks |
+| `codec_ms` | Proof encoding and decoding, outside prover/verifier timers |
+| `proof_object_bytes` | Backend proof object; BitZ excludes its separately supplied commitment |
+| `proof_material_bytes` | Complete encoded proof material, including commitments, auxiliary public inputs, and framing |
+| `statement_bytes` | Expected external statement, separately counted: 129 bytes |
+| `peak_rss_bytes` | Whole worker peak, including setup and verification |
+
+The BitZ wire envelope contains its source commitment and encoded proof; the
+Spartan proof already contains its instances and commitments. Every warmup and
+sample is decoded and verified using the decoded proof material. There are no
+matrix products hidden in untimed per-message preparation. Report witness
+through proof for complete fresh-input cost: some work naturally occurs during
+witness generation in each implementation.
+
+The eight comparison metrics are `commit_ms`, `witness_ms`, `piop_ms`,
+`iop_ms`, `verify_ms`, `proof_material_bytes`, `peak_rss_bytes`, and `e2e_prover_ms`. The runner
+derives PIOP and IOP/PCS for each original sample before aggregating. These are
+disjoint accounting categories: `commit + PIOP + IOP/PCS = prove` per sample.
+The PIOP column includes work outside the named sumcheck scopes and is not
+just their sum. Spartan's IOP/PCS column names the corresponding PCS opening
+stage; it is not a separate oracle protocol. The timed opening boundary leaves
+BitZ's opening-input preparation in the non-opening category.
+
+`samples.csv` includes every warmup and measured sample. Its peak-memory value
+is the whole worker's high-water mark repeated on that worker's samples;
+memory is not measured independently for each proof. `summary.csv` contains
+one row per case with median times and the worker's peak memory.
+
+BitZ targets 100/128 use **round-by-round economic Fiat–Shamir accounting with
+proof of work**, and separately report a conservative statistical bound.
+They do not claim statistical error `2^-100`/`2^-128`. Spartan records its T256
+DLOG assumption, P-256 coordinate field, Keccak256 transcript and direct Hyrax
+opening. Its nominal 128-bit group security is not the same accounting model.
+Keep those labels visible when interpreting timing differences.
+
+Repeated BitZ trials at one seed reuse the fixture and transcript, hence the
+same grinding tasks. Multiple seeds provide separate grinding instances.
+Outer/inner/opening timers help distinguish constraint cost from grinding;
+BitZ's detailed nested timers overlap and must not be summed. Spartan reports
+non-overlapping phase timers; folding is marked unavailable when `c=0`.
+
+## Output and validation
+
+The output directory contains `manifest.json`, `requested_cases.json`, complete
+per-case JSON/stdout/stderr records, `summary.csv`, `samples.csv`, and `comparison.json`.
+The manifest records the binary hash, source revision/status, compiler, build
+fingerprint, machine and relevant environment. A source patch and copies of
+the new worker/runner accompany dirty-root builds. Each row records its pinned
+Spartan or Binius revision and a fixture identifier. The CSV takes medians of per-sample
+totals, not sums of medians. Failed and timed-out cases remain visible.
+
+Existing runs can receive the seven-column breakdown without rerunning proofs
+or changing their original raw records:
+
+```sh
+python3 scripts/run_sha256_ecdsa_compare.py \
+  --output bench_results/sha256-ecdsa-compare-i4-i11 --summarize-only
+```
+
+The Spartan tests cover folding counts including zero rounds, proof-message
+and opening tampering, malformed codecs, setup reuse, chain/padding/digest
+links, invalid signatures/keys, high-s variants, digest boundaries, integer
+wraparound exclusion, and exceptional point operations. The campaign tests
+cover BitZ deduplication, sample validation, fixture mismatches and aggregation.
+The normal BitZ cryptographic path is unchanged apart from dimension-reporting
+accessors.
+
+Useful entrypoints are the [comparison worker](../benches/sha256_ecdsa_compare.rs),
+[campaign runner](../scripts/run_sha256_ecdsa_compare.py), and
+[Spartan application adapter](https://github.com/wu-s-john/Spartan2/blob/3b94130453838550a1086ee75c5d280f5c25df3d/src/sha256_ecdsa/mod.rs).
+Raw `bench_results/` artifacts are ignored by Git; archive the output directory
+when sharing measurements. Older SHA-only/raw-compression benchmarks and earlier
+dirty-build BitZ snapshots are separate workloads or builds, not this comparison.
+
+The [complete i=4..11 measurements](sha256-ecdsa-i4-i11-results.md) cover every
+length from 16 through 2,048 compressions, with all seven requested metrics for
+64 configurations and 256 verified proofs. The
+[initial comparison measurements](sha256-ecdsa-comparison-results.md) preserve
+the earlier 24-case campaign at 8, 32 and 128 compressions.
+
+### Binius measurement boundaries
+
+Binius setup builds the fixed circuit and reusable prover/verifier parameters from
+only the exponent and security parameters. Every sample creates fresh witness
+values and arithmetic hints. Fixed generator constants and reusable allocation
+buffers belong to setup; key-specific tables and message-dependent work are
+recomputed per proof. The shared fixture is held once per worker.
+
+`witness_ms` includes circuit evaluation and witness packing. `commit_ms` covers
+the witness oracle commitment. `opening_ms` includes ring switching and the
+complete deferred BaseFold channel finish; `protocol_ms` includes that opening
+and the remaining reductions. Stage durations are disjoint wall-clock spans.
+The verifier reconstructs expected public words from `(i,Qx,Qy,r,s)` and consumes
+all proof bytes; it does not read the private witness.
+
+The bitz path dependency pulls flock-core, whose `asm` feature switches
+**sha2 0.10** to its assembly backend — but in this workspace sha2 0.10 backs
+only host-side p256 digests (fixture validation inside `verify_ms`, one
+8 KB hash, microseconds). Binius64's BaseFold Merkle hashing lives in
+`binius-hash` on **sha2 0.11**, a separate crate version whose features the
+dependency cannot unify with, so the Binius64 rows' Merkle backend is
+unchanged from the pre-suite worker. `build.py` records the resolved
+`sha2_features` per version in the `.build.json` provenance so this stays
+checkable per campaign.
+
+The worker uses SHA-256 Merkle hashing, BaseFold at default rate 1/2, and explicit 100/128
+FRI query targets. The runner's `--binius-log-inv-rate 1|2|3` selects rates
+1/2, 1/4, or 1/8; the standalone worker accepts `--log-inv-rate`.
+The chosen rate is recorded and must match when resuming a campaign.
+It records the actual query count and identifies these as
+query targets, not a claim about aggregate protocol security. The mathematical
+statement is shared; the security models remain separately identified.
+
+In `--method binius64-ligerito` the same worker proves the identical circuit
+and witness through the BitZ opener (BLAKE3 Merkle hashing and transcript,
+Johnson regime, Round-0 OOD, fold and query grinding; the whole protocol gated
+at 100 bits round-by-round). Its `witness_ms` is the wire assignment alone —
+witness packing happens inside the prover — so compare witgen+prover totals
+across the two Binius rows, not witgen columns. Its security block records
+`accounting`, `union_bound_bits`, `round_by_round_bits`, `component_bits` and
+the binding term. The worker's release profile matches the parent crate (fat
+LTO, one codegen unit) so the opener's field kernels are not handicapped;
+`--build-info` additionally records `bitz_revision`/`bitz_dirty` for the path
+dependency, and the campaign manifest records the parent repository's tracked
+diff.
+
+Peak memory is the whole worker high-water mark, including setup and verification.
+The runner obtains it with GNU time on Linux or BSD time on macOS; unavailable
+measurements stay null.
+Historical records without independent e2e timings retain an unavailable e2e field.

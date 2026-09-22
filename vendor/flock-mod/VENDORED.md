@@ -1,18 +1,15 @@
-# Flock benchmark snapshot
+# Flock Ligerito initial-oracle adapter
 
-This is the retained Flock library source, tracked in this repository and used as
-the path dependency `flock-core`. It derives from `succinctlabs/flock` at
-`e636760f`. Licenses and the upstream README are retained. The upstream README
-describes the full project: its standalone benchmark scripts, CUDA sources,
-examples, and development targets are outside this library snapshot. Use the
-root README for the supported release campaigns.
+`flock-core` is copied from `https://github.com/albert-garreta/flock-mod` at
+`ed4c0cd9aceeae15248bf4f24a70d96fe37b2395`. Copyright notices and licenses
+are retained.
 
 Local changes let Ligerito authenticate its initial interleaved oracle using
 two existing Merkle trees. Recursive levels retain the ordinary single-root
 protocol. The initial layout fixes the lane placement, zero padding, leaf
 widths, position domain, and hash before any challenges are sampled.
 
-`flock-prover/src` retains the root-tracked field integration from the selected source snapshot for the SHA-256
+`flock-prover/src` is copied unchanged from the same revision for the SHA-256
 R1CS witness generator and chain-shift reduction. Its manifest omits upstream
 benches, examples, and development dependencies; the library uses the same
 local `flock-core`. This source is preparation for a future selectable Flock

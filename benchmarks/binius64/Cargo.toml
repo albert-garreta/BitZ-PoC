@@ -6,16 +6,18 @@ publish = false
 
 [workspace]
 
+[patch."https://github.com/albert-garreta/flock-mod.git"]
+flock-core = { path = "../../vendor/flock-mod/crates/flock-core" }
 
 [dependencies]
 csv = "1.4"
-binius-circuits = { git = "https://github.com/wu-s-john/binius64.git", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
-binius-core = { git = "https://github.com/wu-s-john/binius64.git", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
-binius-frontend = { git = "https://github.com/wu-s-john/binius64.git", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
-binius-hash = { git = "https://github.com/wu-s-john/binius64.git", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
-binius-prover = { git = "https://github.com/wu-s-john/binius64.git", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
-binius-verifier = { git = "https://github.com/wu-s-john/binius64.git", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
-binius-transcript = { git = "https://github.com/wu-s-john/binius64.git", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
+binius-circuits = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
+binius-core = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
+binius-frontend = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
+binius-hash = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
+binius-prover = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
+binius-verifier = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
+binius-transcript = { git = "https://github.com/wu-s-john/binius64", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
 # The BitZ opener over the same circuit and PIOP (`--method binius64-ligerito`):
 # the parent crate's Binius64 adapter, pinned to the identical fork revision, so
 # the constraint-system and witness types unify. Its revision + dirty flag are
@@ -24,6 +26,8 @@ binius-transcript = { git = "https://github.com/wu-s-john/binius64.git", rev = "
 bitz = { path = "../..", features = ["binius64-bench", "span-metrics"] }
 blake3 = "1.8"
 p256 = { version = "0.13.2", features = ["ecdsa"] }
+k256 = { version = "0.13.4", features = ["ecdsa"] }
+num-bigint = "0.4"
 rayon = "1.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

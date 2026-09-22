@@ -6,7 +6,7 @@ Round-0 OOD. Select `udrg:1:4` for the matched-geometry unique-decoding-radius
 (UDR) configuration, with native fold grinding derived by Ligerito.
 
 This selector configures **only Ligerito**. Binius64 BaseFold/FRI,
-Plonky3-FRI, Plonky3-WHIR, and Limber-Brakedown retain their own policies.
+Limber-Brakedown retains its own policy.
 In hybrid mode it configures the shared opener, not the Binius SHA PIOP.
 The separate mode retains native Binius security and selects the BitZ opener.
 
@@ -140,7 +140,7 @@ balanced/padded hybrid proofs. The normally ignored u32 W=8, BabyBear terminal a
 combined-adapter correctness tests were run explicitly. Reader tests cover
 identity rejection, resume compatibility, Johnson/UDR captions and runner
 normalization. Configuration-only child-process probes compare actual
-Binius64, Plonky3-FRI, Plonky3-WHIR and Limber metadata under both selectors.
+Binius64 and Limber metadata under both selectors.
 
 Final results: 91 selected library tests, five production integration tests,
 four backend-isolation harness tests, and 22 Python tests passed. The
