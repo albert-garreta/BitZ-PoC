@@ -151,117 +151,16 @@ impl InnerTransparentField for Gf128 {
     }
 }
 
-/// Delayed-reduction accumulate: 256-bit unreduced carryless products,
-/// XOR-combined, reduced once per accumulator (see `crate::utils::wide_mul`).
-/// On aarch64 the accumulator is a NEON vector pair ([`field::Gf128Product`]); the
-/// word-array form remains on every other target. Same field values
-/// either way (the trait laws).
-impl crate::utils::wide_mul::WideMulAcc for Gf128 {
-    fn eqf_inverse(&self) -> Option<Self> {
-        (self.as_words() != &[0, 0]).then(|| self.inverse_or_zero())
-    }
-
-    type Wide = field::Gf128Product;
-    #[inline(always)]
-    fn wide_zero(_: &Self) -> Self::Wide {
-        field::Gf128Product::zero()
-    }
-    #[inline(always)]
-    fn wide_of(x: &Self) -> Self::Wide {
-        field::Gf128Product::from_element(*x)
-    }
-    #[inline(always)]
-    fn mul_wide(a: &Self, b: &Self) -> Self::Wide {
-        field::WideMul::<field::Gf128>::mul_wide(&field::Gf128Ops, a, b)
-    }
-    #[inline(always)]
-    fn wide_add_assign(acc: &mut Self::Wide, x: &Self::Wide) {
-        *acc ^= *x;
-    }
-    #[inline(always)]
-    fn wide_sub_assign(acc: &mut Self::Wide, x: &Self::Wide) {
-        *acc ^= *x;
-    }
-    #[inline(always)]
-    fn from_wide(value: Self::Wide) -> Self {
-        value.reduce()
-    }
-
-    #[inline(always)]
-    fn add_assign_masked(acc: &mut Self, x: &Self, mask: bool) {
-        // Branchless select: XOR in `x` under an all-ones/all-zeros mask —
-        // add in char 2, immune to the coin-flip mispredicts a data-bit
-        // branch would cost.
-        *acc += field::CtSelect::ct_select(&Self::ZERO, x, field::CtMask::from_lsb(mask as u64));
-    }
-
-    fn eqf_single_pair_round(
-        l: &[Self],
-        r: &[Self],
-        w: &[Self],
-        half: usize,
-    ) -> Option<(Self, Self, Self)> {
-        let [a, b, c] =
-            field::SumcheckKernels::eqf_single_pair_round(&field::Gf128Ops, (l), (r), (w), half);
-        Some((a, b, c))
-    }
-    fn eqf_two_pair_round(
-        l0: &[Self],
-        r0: &[Self],
-        l1: &[Self],
-        r1: &[Self],
-        w: &[Self],
-        half: usize,
-    ) -> Option<(Self, Self, Self)> {
-        let [a, b, c] = field::SumcheckKernels::eqf_two_pair_round(
-            &field::Gf128Ops,
-            (l0),
-            (r0),
-            (l1),
-            (r1),
-            (w),
-            half,
-        );
-        Some((a, b, c))
-    }
-    fn eqf_fold_in_place(v: &mut [Self], rho: &Self, half: usize) -> bool {
-        field::SumcheckKernels::eqf_fold_in_place(&field::Gf128Ops, (v), rho, half);
-        true
-    }
-    fn eqf_fused_fold_round(
-        l: &mut [Self],
-        r: &mut [Self],
-        rho: &Self,
-        w: &[Self],
-        half: usize,
-    ) -> Option<(Self, Self, Self)> {
-        let [a, b, c] = field::SumcheckKernels::eqf_fused_fold_round(
-            &field::Gf128Ops,
-            (l),
-            (r),
-            rho,
-            (w),
-            half,
-        );
-        Some((a, b, c))
-    }
-    fn eqf_grid_pass(
-        l: &mut [Self],
-        r: &mut [Self],
-        p: &[Self],
-        s: &[Self],
-        n: usize,
-    ) -> Option<[Self; 9]> {
-        Some(field::SumcheckKernels::eqf_grid_pass(
-            &field::Gf128Ops,
-            (l),
-            (r),
-            (p),
-            (s),
-            n,
-        ))
-    }
-}
+// Delayed-reduction accumulate: 256-bit unreduced carryless products,
+// XOR-combined, reduced once per accumulator (see `crate::utils::wide_mul`).
+// On aarch64 the accumulator is a NEON vector pair (`field::Gf128Product`); the
+// word-array form remains on every other target. Same field values
+// either way (the trait laws). Overrides `eqf_inverse`: unlike B127
+// (prime group order, no cheap inverse), Gf128 has one and offering it
+// keeps the three-coefficient GKR kernel available here.
+crate::impl_wide_mul_acc!(Gf128, field::Gf128Ops, field::Gf128Product, |elem: &Gf128| {
+    (elem.as_words() != &[0, 0]).then(|| elem.inverse_or_zero())
+});
 
 pub(crate) use field::gf128::kernels::clmul_128x128;
 #[cfg(test)]

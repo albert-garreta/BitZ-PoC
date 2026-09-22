@@ -61,7 +61,8 @@ pub fn powers<R: Coefficient>(x: R, one: R, num_pows: usize) -> Vec<R> {
 // `#[macro_export]` macros land at the crate root; re-export them here so
 // vendored `zinc_utils::`-style paths keep working after the rename.
 pub use crate::{
-    add, cfg_chunks, cfg_chunks_mut, cfg_into_iter, cfg_iter, cfg_iter_mut, mul, neg, sub,
+    add, cfg_chunks, cfg_chunks_mut, cfg_into_iter, cfg_iter, cfg_iter_mut, impl_wide_mul_acc,
+    mul, neg, sub,
 };
 
 /// Serializes tests that read or mutate process-global `BITZ_*` environment

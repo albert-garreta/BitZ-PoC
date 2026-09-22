@@ -210,107 +210,14 @@ impl InnerTransparentField for B127 {
     }
 }
 
-/// Delayed-reduction accumulate: 256-bit unreduced carryless products,
-/// XOR-combined, reduced once per accumulator (see `crate::utils::wide_mul`).
-/// All trait-reachable wide values are XORs of products of canonical
-/// (`deg ≤ 126`) operands, hence `deg ≤ 252` — inside the single-fold
-/// reduction contract of [`reduce_256_to_127`].
-impl crate::utils::wide_mul::WideMulAcc for B127 {
-    type Wide = field::B127Product;
-    #[inline(always)]
-    fn wide_zero(_: &Self) -> Self::Wide {
-        field::B127Product::zero()
-    }
-    #[inline(always)]
-    fn wide_of(x: &Self) -> Self::Wide {
-        field::B127Product::from_element(*x)
-    }
-    #[inline(always)]
-    fn mul_wide(a: &Self, b: &Self) -> Self::Wide {
-        field::WideMul::<field::B127>::mul_wide(&field::B127Ops, a, b)
-    }
-    #[inline(always)]
-    fn wide_add_assign(acc: &mut Self::Wide, x: &Self::Wide) {
-        *acc ^= *x;
-    }
-    #[inline(always)]
-    fn wide_sub_assign(acc: &mut Self::Wide, x: &Self::Wide) {
-        *acc ^= *x;
-    }
-    #[inline(always)]
-    fn from_wide(value: Self::Wide) -> Self {
-        value.reduce()
-    }
-
-    #[inline(always)]
-    fn add_assign_masked(acc: &mut Self, x: &Self, mask: bool) {
-        // Branchless select: XOR in `x` under an all-ones/all-zeros mask —
-        // add in char 2, immune to the coin-flip mispredicts a data-bit
-        // branch would cost.
-        *acc += field::CtSelect::ct_select(&Self::ZERO, x, field::CtMask::from_lsb(mask as u64));
-    }
-
-    fn eqf_single_pair_round(
-        l: &[Self],
-        r: &[Self],
-        w: &[Self],
-        half: usize,
-    ) -> Option<(Self, Self, Self)> {
-        let [a, b, c] =
-            field::SumcheckKernels::eqf_single_pair_round(&field::B127Ops, (l), (r), (w), half);
-        Some((a, b, c))
-    }
-    fn eqf_two_pair_round(
-        l0: &[Self],
-        r0: &[Self],
-        l1: &[Self],
-        r1: &[Self],
-        w: &[Self],
-        half: usize,
-    ) -> Option<(Self, Self, Self)> {
-        let [a, b, c] = field::SumcheckKernels::eqf_two_pair_round(
-            &field::B127Ops,
-            (l0),
-            (r0),
-            (l1),
-            (r1),
-            (w),
-            half,
-        );
-        Some((a, b, c))
-    }
-    fn eqf_fold_in_place(v: &mut [Self], rho: &Self, half: usize) -> bool {
-        field::SumcheckKernels::eqf_fold_in_place(&field::B127Ops, (v), rho, half);
-        true
-    }
-    fn eqf_fused_fold_round(
-        l: &mut [Self],
-        r: &mut [Self],
-        rho: &Self,
-        w: &[Self],
-        half: usize,
-    ) -> Option<(Self, Self, Self)> {
-        let [a, b, c] =
-            field::SumcheckKernels::eqf_fused_fold_round(&field::B127Ops, (l), (r), rho, (w), half);
-        Some((a, b, c))
-    }
-    fn eqf_grid_pass(
-        l: &mut [Self],
-        r: &mut [Self],
-        p: &[Self],
-        s: &[Self],
-        n: usize,
-    ) -> Option<[Self; 9]> {
-        Some(field::SumcheckKernels::eqf_grid_pass(
-            &field::B127Ops,
-            (l),
-            (r),
-            (p),
-            (s),
-            n,
-        ))
-    }
-}
+// Delayed-reduction accumulate: 256-bit unreduced carryless products,
+// XOR-combined, reduced once per accumulator (see `crate::utils::wide_mul`).
+// All trait-reachable wide values are XORs of products of canonical
+// (deg ≤ 126) operands, hence deg ≤ 252 — inside the single-fold
+// reduction contract of `reduce_256_to_127`. No `eqf_inverse` override:
+// `B^×` has prime order (see the module doc), so there's no cheap inverse
+// to offer and the trait's default (`None`) is exact.
+crate::impl_wide_mul_acc!(B127, field::B127Ops, field::B127Product);
 
 #[cfg(test)]
 fn reduce_256_to_127(words: [u64; 4]) -> [u64; 2] {

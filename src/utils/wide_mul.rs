@@ -154,3 +154,108 @@ pub trait WideMulAcc: Sized {
         None
     }
 }
+
+/// Generates a [`WideMulAcc`] impl that dispatches every method to `$ops`'s
+/// [`field::SumcheckKernels`]/[`field::WideMul`] instance — the shape every
+/// char-2 field with a `field`-crate-provided kernel set shares. Omit the
+/// trailing closure to inherit the trait's default `eqf_inverse` (`None`);
+/// pass `|elem: &$field| -> Option<$field> { ... }` to override it for
+/// fields (like `Gf128`) that have a cheap inverse. (A closure, not a bare
+/// block: `self` written at the call site can't bind to the `self` this
+/// macro's own `fn eqf_inverse(&self)` owns — that's macro hygiene — so the
+/// override takes its subject as an explicit parameter instead.)
+#[macro_export]
+macro_rules! impl_wide_mul_acc {
+    ($field:ty, $ops:expr, $wide:ty) => {
+        $crate::impl_wide_mul_acc!($field, $ops, $wide, |_elem: &$field| None);
+    };
+    ($field:ty, $ops:expr, $wide:ty, $eqf_inverse:expr) => {
+        impl $crate::utils::wide_mul::WideMulAcc for $field {
+            fn eqf_inverse(&self) -> Option<Self> {
+                ($eqf_inverse)(self)
+            }
+
+            type Wide = $wide;
+
+            #[inline(always)]
+            fn wide_zero(_: &Self) -> Self::Wide {
+                <$wide>::zero()
+            }
+            #[inline(always)]
+            fn wide_of(x: &Self) -> Self::Wide {
+                <$wide>::from_element(*x)
+            }
+            #[inline(always)]
+            fn mul_wide(a: &Self, b: &Self) -> Self::Wide {
+                field::WideMul::<$field>::mul_wide(&$ops, a, b)
+            }
+            #[inline(always)]
+            fn wide_add_assign(acc: &mut Self::Wide, x: &Self::Wide) {
+                *acc ^= *x;
+            }
+            #[inline(always)]
+            fn wide_sub_assign(acc: &mut Self::Wide, x: &Self::Wide) {
+                *acc ^= *x;
+            }
+            #[inline(always)]
+            fn from_wide(value: Self::Wide) -> Self {
+                value.reduce()
+            }
+
+            #[inline(always)]
+            fn add_assign_masked(acc: &mut Self, x: &Self, mask: bool) {
+                // Branchless select: XOR in `x` under an all-ones/all-zeros mask —
+                // add in char 2, immune to the coin-flip mispredicts a data-bit
+                // branch would cost.
+                *acc +=
+                    field::CtSelect::ct_select(&Self::ZERO, x, field::CtMask::from_lsb(mask as u64));
+            }
+
+            fn eqf_single_pair_round(
+                l: &[Self],
+                r: &[Self],
+                w: &[Self],
+                half: usize,
+            ) -> Option<(Self, Self, Self)> {
+                let [a, b, c] = field::SumcheckKernels::eqf_single_pair_round(&$ops, l, r, w, half);
+                Some((a, b, c))
+            }
+            fn eqf_two_pair_round(
+                l0: &[Self],
+                r0: &[Self],
+                l1: &[Self],
+                r1: &[Self],
+                w: &[Self],
+                half: usize,
+            ) -> Option<(Self, Self, Self)> {
+                let [a, b, c] =
+                    field::SumcheckKernels::eqf_two_pair_round(&$ops, l0, r0, l1, r1, w, half);
+                Some((a, b, c))
+            }
+            fn eqf_fold_in_place(v: &mut [Self], rho: &Self, half: usize) -> bool {
+                field::SumcheckKernels::eqf_fold_in_place(&$ops, v, rho, half);
+                true
+            }
+            fn eqf_fused_fold_round(
+                l: &mut [Self],
+                r: &mut [Self],
+                rho: &Self,
+                w: &[Self],
+                half: usize,
+            ) -> Option<(Self, Self, Self)> {
+                let [a, b, c] =
+                    field::SumcheckKernels::eqf_fused_fold_round(&$ops, l, r, rho, w, half);
+                Some((a, b, c))
+            }
+            fn eqf_grid_pass(
+                l: &mut [Self],
+                r: &mut [Self],
+                p: &[Self],
+                s: &[Self],
+                n: usize,
+            ) -> Option<[Self; 9]> {
+                Some(field::SumcheckKernels::eqf_grid_pass(&$ops, l, r, p, s, n))
+            }
+        }
+    };
+}
