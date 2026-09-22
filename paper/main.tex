@@ -140,7 +140,7 @@ To commit to $\bff$, \ftwoz\ first decomposes $\bff$ into a string of bits, and 
 %Our approach decomposes the witness into a string of bits and commits to it over a binary field $\comfield$, in packed form. Then, if necessary, it transforms the evaluation claim over $R$ into one over $\ZZ$ via a randomized process. 
 %Finally,  using the tensor structure of ``eq'' vectors, it decomposes the  claim into square root many inner-product claims over $\ZZ$, and proves each of these in the exponent of a generator of $\comfield^*$ via the GKR protocol for batched grand products. We design specific optimizations that exploit that the factors across all the grand products have low entropy (i.e.\ they take a ``small'' amount of different values).   
 
-
+To commit to $\bff$, \ftwoz\ first decomposes $\bff$ into a string of bits, and then commits to it over a binary field $\comfield$, in packed form. The scheme then  proves the linear claim on $\psi(\bff)$ over the arbitrary ring $R$, even though it committed to the bits forming $\bff$ over a binary field.
 
  We implement \ftwoz-SNARK and use it to prove, among others, SHA-256 hashing followed by ECDSA signature verification; RSA modular exponentiation and Poseidon hashing;  integer multiplication; and SHA-256 hashing followed by multiplication modulo $2^{32}$, consistently obtaining better performance than prior approaches on most tasks. As an example, we achieve a throughput of $5$ million proved 32-bit integer multiplications per second on a  MacBook Air M5 24\,GB (10 threads, CPU-only) with proof sizes under $150$\,kB. We prove a SHA-256 hash of a $2$\,kB ($2^5$ compressions) message followed by a P-256 ECDSA signature verification with $50$\,ms and $3.3$\,ms prover and verifier time, respectively, and with a proof of $76$\,kB, single-threaded. With $10$ threads the times are $20$\,ms and $3.4$\,ms. 
  
@@ -3015,7 +3015,7 @@ We implement the \ftwoz\ PCS (\cref{c:LinModFieldBin}) and an end-to-end proof s
 
 
 
-Our \ftwoz-PCS is instantiated with Reed-Solomon codes over $\FF_{2^{128}}$ of rate $1/2$ or $1/8$. As  backend of \ftwoz \ we use the Ligerito implementation from Flock \cite{flock} (commit \texttt{e636760}, with local modifications) with folding arity $4$. We set our experiments to 100 bits of round-by-round knowledge soundness\footnote{This means  that the largest round-by-round knowledge soundness error of the protocols is at most $2^{-100}$. Our own figure is a round-by-round bound that includes grinding ($16$ query bits and up to $9$ fold bits per level). For the schemes we compare against, we use each implementation\'s own $100$-bit setting, under its own soundness analysis (e.g.\ Binius64\'s $100$-bit target for the query phase of its Basefold opening).}, except in the Limber \cite{limber} comparison, cf.\  \cref{s:multiswap}, where we target 114 bits to match Limber's implementation. %We do not run experiments at $128$ bits of security, since several of the implementations we compare against (e.g.\ Binius64, Limber and Flock) cannot be configured at that level 
+Our \ftwoz-PCS is instantiated with Reed-Solomon codes over $\comfield=\FF_{2^{128}}$ of rate $1/2$ or $1/8$. As  backend of \ftwoz \ we use the Ligerito implementation from Flock \cite{flock} (commit \texttt{e636760}, with local modifications) with folding arity $4$. We set our experiments to 100 bits of round-by-round knowledge soundness\footnote{This means  that the largest round-by-round knowledge soundness error of the protocols is at most $2^{-100}$. Our own figure is a round-by-round bound that includes grinding ($16$ query bits and up to $9$ fold bits per level). For the schemes we compare against, we use each implementation\'s own $100$-bit setting, under its own soundness analysis (e.g.\ Binius64\'s $100$-bit target for the query phase of its Basefold opening).}, except in the Limber \cite{limber} comparison, cf.\  \cref{s:multiswap}, where we target 114 bits to match Limber's implementation. %We do not run experiments at $128$ bits of security, since several of the implementations we compare against (e.g.\ Binius64, Limber and Flock) cannot be configured at that level 
 
 When targeting 100 bits of round-by-round soundness we use the Johnson bound as proximity parameter, and perform out of domain sampling. When targeting more security (in \cref{s:multiswap}) we use the unique decoding radius. Further instantiation details are given in \cref{s:instantiation}.
 
@@ -3122,7 +3122,7 @@ Additionally, AI was used to prepare the benchmarks in other repositories, which
 \begin{lncsmove}{ExpRaw}
 \subsection{Raw performance of the \ftwoz \ PCS for the core LinBitsRings relation}
 
-In \cref{tab:f2z-raw-performance} we measure the performance of \cref{c:core_iop} for proving the Core LinBitsRings relation $\LinBitsDual(\bits, \pi, \FF_q,\cC)$ \iflncs\else following the instantiation in \cref{s:instantiation}\fi. Namely, we prove that $\langle \vv, \bff \rangle=\mu$ over $\FF_q$ for a vector of $\codedim$ bits $\bff$, and $\vv\in \FF_q^{\codedim}, \mu\in \FF_q$.  We set $\comfield=\FF_{2^{128}}$ and $\cC$ is a Reed-Solomon code. We choose $|\FF_q|  < (2^{128}-1)/\codedim_1$, so that Round 1 of \cref{c:core_iop} does not trigger. The proximity parameter is set at the Johnson bound, so Round 0 (OOD sampling) is executed.  In later experiments, Round 1 also triggers. 
+In \cref{tab:f2z-raw-performance} we measure the performance of \cref{c:core_iop} for proving the Core LinBitsRings relation $\LinBitsDual(\bits, \pi, \FF_q,\cC)$\iflncs\else\fi. Namely, we prove that $\langle \vv, \bff \rangle=\mu$ over $\FF_q$ for a vector of $\codedim$ bits $\bff$, and $\vv\in \FF_q^{\codedim}, \mu\in \FF_q$. We choose  $|\FF_q|  < (2^{128}-1)/\codedim_1$, so that Round 1 of \cref{c:core_iop} does not trigger. The proximity parameter is set at the Johnson bound, so Round 0 (OOD sampling) is executed.  In later experiments, Round 1 also triggers. 
 
  We set $\codedim_1 = 2^{\lceil 0.6\, n\rceil}$ and $\codedim_1 \cdot \codedim_2 = \codedim$ (\cref{s:instantiation}). 
 
@@ -3173,7 +3173,7 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
   \begin{tabular}{@{}llrrrrr@{}}
     \toprule
     Scheme &  \multicolumn{2}{c}{Prover (ms)} & \multicolumn{2}{c}{Verifier (ms)} & Proof \\
-    \cmidrule(lr){3-4} \cmidrule(lr){5-6}
+    \cmidrule(lr){2-3} \cmidrule(lr){4-5}
       & 1 thr & 10 thr & 1 thr & 10 thr & (KB) \\
     \midrule
     \ftwoz-SNARK                     & \textbf{226} & \textbf{76.6} & \textbf{7.8} & \textbf{10.0} & 268 \\
@@ -3199,11 +3199,11 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
 \subsection{SHA-256 hashing followed by ECDSA signature verification}
 
 
-We experiment with proving the SHA-256 hash of a message of a few KB followed by an ECDSA signature verification on the message digest. This is a common application of proof systems in anonymous credentials. We  arithmetize the computation as an integer R1CS constraint with $\FF_2$-virtualization (\cref{s:to_f2_virtual}), i.e.\ as an instance of $\Relation_{\mathsf{R1CS-bits-virtual}}(\ZZ)$. 
+We experiment with proving the SHA-256 hash of a message of a few KB followed by an ECDSA signature verification on the message digest. This is a common application of proof systems in anonymous credentials (though notice that \ftwoz\ currently does not support zero-knowledge). We  arithmetize the computation as an integer R1CS constraint with $\FF_2$-virtualization (\cref{s:to_f2_virtual}), i.e.\ as an instance of $\Relation_{\mathsf{R1CS-bits-virtual}}(\ZZ)$. 
 The  SHA-256  constraints in particular are  an instance of the $\mathsf{CM}$ relation from \cref{e:CM_rel}, obtained using the methods from \cref{r:CM_is_NP_complete}.
 
 % [AI edit (Claude Fable 5.1), 2026-09-21: "upstream" added, since the pinned fork carries an unoptimized P-256 circuit written for this comparison, and a typo fixed; please review]
-We benchmark \ftwoz\ both for proving SHA + ECDSA verification over the curve P-256 and over secp256k1. In the latter case, we compare \ftwoz-SNARK with the Binius64 \cite{binius64} suite (\cref{s:binius_suite}). To do so, we compose two circuits in the Binius64 repository, one for SHA-256 and one for ECDSA   verification (on the secp256k1 curve). Binius64 does not include a circuit for ECDSA verification on P-256, and hence we do not benchmark it.
+We benchmark \ftwoz\ both for proving SHA + ECDSA verification over the curve P-256 and over secp256k1. In the latter case, we compare \ftwoz-SNARK with the Binius64 \cite{binius64} suite. To do so, we compose two circuits in the Binius64 repository, one for SHA-256 and one for ECDSA   verification (on the secp256k1 curve). Binius64 does not include a circuit for ECDSA verification on P-256, and hence we do not benchmark it.
 
 
 For ECDSA over secp256k1, the \ftwoz\ circuit matches mathematically the circuit in Binius64, i.e.\ we prove the same sequence of secp256k1 operations, with these operations being arithmetized over $\ZZ$ in our case. This arithmetization was produced with AI, while the rest of arithmetizations for SHA and for ECDSA verification over P-256  were obtained from a lean specification, see \url{https://github.com/reilabs/freigen/blob/324935e/Freigen/Circuit/Examples/Sha256.lean}
@@ -3587,7 +3587,7 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
 \subsection{Comparison with Fields-Witch}\label{s:exp_fields_witch}
 
 
-We compare experimentally \ftwoz\ with Fields-Witch \cite{lev}, a PCS over the prime field $\FF_{2^{127}-1}$ that commits its witness over the binary field $\FF_{2^{127}}$. See \cref{r:comparison_grand_product_binius_lev} for a discussion of \cite{lev} and a conceptual comparison of both.  The Fields-Witch repository is available at \url{https://github.com/morgana-proofs/fields-witch} (commit \texttt{30cca8c}). In Fields-Witch we enabled assembly acceleration for  SHA-256, making Merkle commitments in it faster than in the original repository. 
+We compare experimentally \ftwoz\ with Fields-Witch \cite{lev}, a PCS over the prime field $\FF_{2^{127}-1}$ that commits its witness over the binary field $\FF_{2^{127}}$. See \cref{r:comparison_grand_product_binius_lev} for a discussion of \cite{lev} and a conceptual comparison with \ftwoz.  The Fields-Witch repository is available at \url{https://github.com/morgana-proofs/fields-witch} (commit \texttt{30cca8c}). In Fields-Witch we enabled assembly acceleration for  SHA-256, making Merkle commitments in it faster than in the original repository. 
 
 
 
