@@ -351,16 +351,17 @@ In our implementation, we use \ftwoz-SNARK to prove R1CS constraints simultaneou
 
  To keep the verifier succinct, we need to ensure that $M^{\mathsf{T}}\cdot \uu'$ admits a succinct representation. In our applications, the vector $\uu'$ admits such (see \iflncs\cref{r:tensor_dec_u}\else Step 2 in \cref{s:to_simple_bitz}\fi), and so one needs to ensure $M$ carries some succinct structure, such as for example a tensor decomposition, so that $M^{\mathsf{T}}\cdot \uu'$ does not become a dense vector.  
  
- This allows \ftwoz\  to prove polynomial constraints over $R$ on witness vectors $\bff$ whose bit-decomposition is a virtual $\FF_2$-linear combination of a committed vector $\bfg\in \FF_2^{\codedim'}$. For example, \ftwoz \ can efficiently prove the following R1CS-like relation: 
+ This allows \ftwoz\  to prove polynomial constraints over $R$ on witness vectors $\bff$ whose bit-decomposition is a virtual $\FF_2$-linear combination of a committed vector $\bfg\in \FF_2^{\codedim'}$, without committing to $\bff$. For example, \ftwoz \ can efficiently prove the following R1CS-like relation without committing to the part $\bff$ of the witness:
 %
 \iflncs\begingroup\small\fi
 \begin{align*}
 &\Relation_{\mathsf{R1CS-bits-virtual}}(\ZZ)\\ & \defeq \left\{ \begin{aligned}
     &\inp= (\xx, A,B,C, M)\in \FF_2^{\inplen} \times (\ZZ^{m\times \codedim})^3 \times \FF_2^{\codedim \times (\inplen+\codedim')}\\
-    & \wit = \bfg \in \bits^{\codedim'} \subseteq \FF_2^{\codedim'}
+    & \wit = (\bfg,\bff) \in \bits^{\codedim'}\times\ZZ^{\codedim} \subseteq \FF_2^{\codedim'}\times  \ZZ^{\codedim}
 \end{aligned}\  \left| \  \begin{aligned} %&f=\Enc_\cC \circ \pack \circ \pi_2(\bff)\\ 
-&(A\cdot \bff) \circ (B\cdot \bff) = C \cdot \bff\ \text{in } \ZZ \\
-&\bitstext(\bff)= \left(  M\cdot \bfg\right)    \text{ in } \FF_2\end{aligned} \right.\right\}.
+&\bitstext(\bff)= \left(  M\cdot \bfg\right)    \text{ in } \FF_2\\
+&(A\cdot \bff) \circ (B\cdot \bff) = C \cdot \bff\ \text{in } \ZZ 
+\end{aligned} \right.\right\}.
 \end{align*}
 \iflncs\endgroup\fi
 %
@@ -2818,7 +2819,7 @@ In \cref{t:gkr_step1_costs} we record the total upper bound costs for computing 
 
 
  On the other hand, a standard generic approach to compute $h_{1}(X)$ would require $O(\codedim)=O(\codedim_1\cdot \codedim_2)$ multiplications and additions, even if using the few  sumcheck optimizations that apply in our settings (to our knowledge) %\albert{which ones, exactly?}. 
- Crucially, we note that our sumcheck features summands of full field bit size $\log|\KK|$, which voids some known powerful optimizations when the summands are small, e.g.\ the univariate skip \cite{gruen} and some optimizations from \cite{sumcheck_opt_1,sumcheck_opt_2}. From \cite{sumcheck_opt_1,sumcheck_opt_2} we can use the square-root split of the $\eq$ factor, and, in a similar way as in \cite{sumcheck_opt_2}, we use  precomputed tables in the first sumcheck rounds, applied here to summands which are not small, but are selected by witness bits among few values. The prover message degree reduction through factoring the ``eq factor'' from \cite{gruen} does apply to our setting, and our implementation uses it: we send $2$ elements instead of the $3$ in each sumcheck round. 
+ Crucially, we note that our sumcheck features summands of full field bit size $\log|\KK|$, which prevents us from using some known powerful optimizations when the summands are small, e.g.\ the univariate skip \cite{gruen} and some optimizations from \cite{sumcheck_opt_1,sumcheck_opt_2}. From \cite{sumcheck_opt_1,sumcheck_opt_2} we can use the square-root split of the $\eq$ factor, and, in a similar way as in \cite{sumcheck_opt_2}, we use  precomputed tables in the first sumcheck rounds, applied here to summands which are not small, but are selected by witness bits among few values. The prover message degree reduction through factoring the ``eq factor'' from \cite{gruen} does apply to our setting, and our implementation uses it: we send $2$ elements instead of the $3$ in each sumcheck round. 
 
  
 
@@ -3289,7 +3290,7 @@ This is an artificial circuit. For example, the mod $2^{32}$ integers are not re
 
 Our end-to-end \ftwoz-SNARK is a hybrid construction combining the PIOP over $\ZZ$ from \cref{s:to_snark}, together with the Binius64 PIOP over binary fields, as  described in \cref{s:hybrid_snark}.    To arithmetize modular multiplication in Binius64  we use an approach similar to that for multiplying 32-bit integers, explained in \cref{s:integer_exps}.
 
-We measure computations where the witness bits are evenly split between  SHA hashing and modular multiplication. Reducing the amount of modular multiplications while keeping the amount of hashing constant, would bring the two proof systems to become the same in theory (though implementation-wise, there currently are harnesses that prevent that from fully happening). Conversely, reducing the amount of hashes and keeping the amount of modular multiplication constant would bring the experiment closer to the one where we multiply 32 bit integers (in both \ftwoz\ and Binius, 32-bit integer multiplication and multiplication modulo $2^{32}$ are proved through essentially the same circuits).
+We measure computations where the witness bits are evenly split between  SHA hashing and modular multiplication. If we kept the hashing fixed and removed the modular multiplications altogether, our hybrid prover would in theory just be running Binius64 (in practice the two benchmark harnesses still differ slightly). Conversely, reducing the amount of hashes and keeping the amount of modular multiplication constant would bring the experiment closer to the one where we multiply 32 bit integers (in both \ftwoz\ and Binius, 32-bit integer multiplication and multiplication modulo $2^{32}$ are proved through essentially the same circuits).
 
 \begin{table}[H]
   \centering
@@ -3673,7 +3674,7 @@ We instantiate \cref{c:core_iop,c:LinModFieldBin} by letting $\Pi_{\red}$ be an 
          \hline
         $\cP$ & Set of primes. Discussed below.\\
          \hline
-        $\cM_q=\{\pi_q\}$ & Reduction modulo $q$\\
+        $\cM_q=\{\pi_{q,\alpha}\mid \alpha\in R\}$ & Reduction modulo $q$ (and evaluation at $X=\alpha$ if $R$ is not prime)\\
         \hline $\codedim_1,\codedim_2$ & $\codedim_1\in \range{\codedim^{0.5}}{\codedim^{0.6}}$, $\codedim_1\cdot\codedim_2=\codedim$
     \end{tabular}
     \caption{Parameter choices in our deployment of \cref{c:core_iop,c:LinModFieldBin}.}
