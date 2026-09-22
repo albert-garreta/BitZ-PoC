@@ -548,3 +548,8 @@ BITZ_SHA_COMPARE_BACKENDS="bitz binius64" \
 BITZ_SHA_COMPARE_OUTPUT_DIR="PerfRuns/$(date -u +%Y-%m-%dT%H-%M-%SZ)-sha256-compare" \
   cargo bench --bench sha256_e2e_compare --features bench-internals,native-sha256-compare
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE). Vendored and pinned dependencies (`vendor/`, the
+`flock-core`, Binius64, Plonky3, and Limber pins) carry their own licenses.

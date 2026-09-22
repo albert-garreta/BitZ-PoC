@@ -2,6 +2,7 @@
 name = "bitz"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 description = "BitZ: integer-MLE-evaluation PCS over an F2 commitment via a GF(2^128) exponent-fold GKR forest, opened with a flock-backed ring-switch + recursive Ligerito PCS"
 
 [dependencies]
