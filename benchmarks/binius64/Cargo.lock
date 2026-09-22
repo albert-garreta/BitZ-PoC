@@ -404,14 +404,11 @@ dependencies = [
  "k256",
  "num-bigint 0.4.8",
  "p256",
- "perfetto-sdk",
  "rayon",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "tracing",
- "tracing-perfetto-sdk",
- "tracing-subscriber",
 ]
 
 [[package]]

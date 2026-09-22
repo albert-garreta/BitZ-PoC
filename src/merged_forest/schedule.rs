@@ -81,17 +81,6 @@ pub fn resolve_schedule(
         (SchedulePolicy::L8, _) if depth < 5 => Err(UnsupportedSchedule::ShallowL8 { depth }),
         (SchedulePolicy::L2, _) => Ok(ForestSchedule::L2),
         (SchedulePolicy::L8, _) => Ok(ForestSchedule::L8),
-        // The AMD-qualified L8 crossover does not hold on Apple Silicon with
-        // one worker at these measured geometries. Keep the faster stored
-        // levels there; explicit requests and other geometries are unchanged.
-        (SchedulePolicy::Auto, ForestPath::Single)
-            if cfg!(all(target_arch = "aarch64", target_os = "macos"))
-                && threads == 1
-                && depth == 13
-                && (12..=14).contains(&layout.col_vars) =>
-        {
-            Ok(ForestSchedule::L2)
-        }
         // Nor does it hold on Apple Silicon above four workers: there L8 costs
         // large single-claim forests 19-37% of prover time for ~19% less peak
         // RSS. Keep L4; the multi-claim path and explicit requests are unchanged.

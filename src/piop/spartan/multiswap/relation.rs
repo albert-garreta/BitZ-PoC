@@ -433,6 +433,10 @@ impl MultiswapAssignment {
 
     /// Exact row operands for the generic outer sumcheck. The relation checks
     /// the coefficient-sum bound once using public data during preparation.
+    /// Retained only for the differential test against the field-projected
+    /// path; production proving goes through `piop_witness`'s
+    /// `PiopWitness::FieldAssignment`.
+    #[cfg(test)]
     pub fn integer_products(
         &self,
         relation: &MultiswapIntegerRelation,

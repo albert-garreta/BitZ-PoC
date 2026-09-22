@@ -31,7 +31,6 @@
 //! an integer defect below `2 * d * Q^2 <= 2^282`, which has at most two
 //! prime divisors in the `[2^112, 2^113)` reduction interval.
 
-use field::RingOps;
 use field::{CanonicalCodec, CtOrd, IntegerOps, PreparedDivisor, Uint, WideMul};
 
 #[cfg(feature = "parallel")]

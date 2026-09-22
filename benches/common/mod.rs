@@ -73,21 +73,14 @@ use bitz::piop::spartan::{
 };
 
 /// Actual local dependency commit recorded when this benchmark was built.
-/// Path dependencies have no Git revision in Cargo.lock.
+/// These are git dependencies pinned in Cargo.lock; no build.rs stamps a
+/// per-package revision env var for this crate's own build, so this always
+/// reports "unknown" today.
 pub fn local_vendor_revision(package: &str) -> String {
-    let revision = if package.starts_with("p3-") {
-        option_env!("PLONKY3_REVISION")
-    } else if package.starts_with("binius-") {
-        option_env!("BINIUS64_REVISION")
-    } else if package == "limber" {
-        option_env!("LIMBER_REVISION")
-    } else {
+    if !(package.starts_with("p3-") || package.starts_with("binius-") || package == "limber") {
         panic!("unknown benchmark dependency {package}");
-    };
-    // These are git dependencies now, not path deps with no Cargo.lock
-    // revision: this fallback is only reached if a build.rs-style variable
-    // was never stamped, which is expected without that stamping step.
-    revision.unwrap_or("unknown").to_owned()
+    }
+    "unknown".to_owned()
 }
 
 // ---------------------------------------------------------------------

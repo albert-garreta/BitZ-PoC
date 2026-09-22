@@ -522,8 +522,6 @@ name = "bitz"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bellpepper",
- "bellpepper-core",
  "bincode",
  "binius-circuits",
  "binius-compute",
@@ -545,7 +543,6 @@ dependencies = [
  "clap",
  "csv",
  "derive_more",
- "ff",
  "field",
  "flock-core",
  "itertools 0.14.0",
