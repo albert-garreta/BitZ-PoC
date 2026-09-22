@@ -30,8 +30,8 @@ fn build_metadata_is_accepted_but_unknown_knobs_are_rejected() {
             ])
             .env_clear()
             .env("BENCH_KNOWN_ENV_PROBE", "1")
-            .env("BITZ_REVISION", env!("BITZ_REVISION"))
-            .env("BITZ_DIRTY", env!("BITZ_DIRTY"))
+            .env("BITZ_REVISION", option_env!("BITZ_REVISION").unwrap_or("unknown"))
+            .env("BITZ_DIRTY", option_env!("BITZ_DIRTY").unwrap_or("unknown"))
             .env("BITZ_BENCH_REPS", "1");
         if typo {
             command.env("BITZ_BENCH_REPZ", "1");

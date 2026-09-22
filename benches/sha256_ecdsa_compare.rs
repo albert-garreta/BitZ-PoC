@@ -224,8 +224,8 @@ struct BitzWire {
     proof: Vec<u8>,
 }
 
-fn bitz_revision() -> Option<&'static str> {
-    option_env!("BITZ_REVISION")
+fn bitz_revision() -> Option<String> {
+    Some(common::environment::revision()).filter(|revision| revision != "unknown")
 }
 
 #[derive(Serialize)]
@@ -280,7 +280,7 @@ struct ResultRecord<'a, D> {
     fixture_id: &'a str,
     statement_bytes: usize,
     statement: &'static str,
-    bitz_revision: Option<&'static str>,
+    bitz_revision: Option<String>,
     verified: bool,
     prove_ms: f64,
     witness_to_proof_ms: f64,

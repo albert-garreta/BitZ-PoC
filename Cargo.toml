@@ -17,7 +17,8 @@ rayon = { version = "1.10", optional = true }
 rand = "0.10"
 rand_core = "0.10"
 # The ring-switch + recursive Ligerito opener (commit / Ligerito hot paths).
-# Pinned to the flock fork so builds do not require a sibling checkout.
+# Flock library source is tracked in-tree (vendor/flock-mod, derived from
+# succinctlabs/flock) so builds do not require a sibling checkout.
 # The k=4 Johnson configuration is generated in this crate, so the dependency
 # does not need a private `Slim3` enum variant; see README.md.
 # flock-core itself pins bincode 1.3 and serde 1.

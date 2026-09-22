@@ -1,9 +1,9 @@
 # Binius64 SHA-chain/P-256 worker
 
 This isolated worker compares Binius64 BaseFold with the BitZ Ligerito opener
-over the same SHA-chain and standard P-256 circuit. Its source dependency is
-the local `../../vendor/binius64` snapshot recorded in `../../provenance.toml`.
-Build metadata includes that snapshot and the root BitZ commit.
+over the same SHA-chain and standard P-256 circuit. Its Binius64 dependency is the git pin in `Cargo.toml`, the same fork revision the
+parent crate uses, so the two share one set of Binius types. Build metadata
+includes that revision and the root BitZ commit.
 
 Compile without executing the worker:
 

@@ -27,7 +27,7 @@ that (shape, threads) group and column; dagger = the case paged.
 from __future__ import annotations
 
 import argparse
-from local_provenance import root_metadata
+from bench_support import root_metadata
 import csv
 import datetime
 import json

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from local_provenance import root_metadata, source_patch, vendor_snapshots
+from bench_support import root_metadata, source_patch
 import csv
 from datetime import datetime, timezone
 import hashlib
@@ -267,7 +267,6 @@ def main(argv=None):
         manifest["binary"] = str(binary)
         manifest["binary_sha256"] = hashlib.sha256(binary.read_bytes()).hexdigest()
         manifest["revision"] = root_metadata(ROOT)["revision"]
-        manifest["vendor_snapshots"] = vendor_snapshots(ROOT)
         manifest["cargo_lock_sha256"] = hashlib.sha256((ROOT / "Cargo.lock").read_bytes()).hexdigest()
         (args.output / "source.patch").write_bytes(source_patch(ROOT))
         sources = args.output / "source"

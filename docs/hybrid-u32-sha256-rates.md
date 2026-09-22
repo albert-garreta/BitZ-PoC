@@ -390,7 +390,7 @@ recorded zero.
 ## Binius64's FRI query target: 112 vs 100 vs 96 bits (rate 1/8)
 
 `BITZ_HYBRID_BINIUS_SECURITY_BITS` defaulted to a local choice of 112. Binius64's
-own default is `SECURITY_BITS = 96` (`vendor/binius64/crates/verifier/src/verify.rs`)
+own default is `SECURITY_BITS = 96` (`crates/verifier/src/verify.rs` in the Binius64 fork)
 and the repository's other Binius64 harnesses use 100. Same machine, thread
 count, build (executable hash `27d5fbd09e617036`), inputs and methodology as
 above; `all-binius` only, rate 1/8, medians of 11 verified iterations. Run:

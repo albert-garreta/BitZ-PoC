@@ -1,23 +1,31 @@
-#[path = "../../scripts/git_revision.rs"]
-mod git_revision;
 use sha2::{Digest, Sha256};
 use std::{env, fs, path::PathBuf, process::Command};
+
+/// The pinned Binius64 commit, read from the `binius-core` git source in the worker lockfile.
+fn binius_revision(lock: &str) -> String {
+    let mut in_core = false;
+    for line in lock.lines() {
+        if let Some(name) = line.strip_prefix("name = ") {
+            in_core = name == "\"binius-core\"";
+        } else if in_core {
+            if let Some(source) = line.strip_prefix("source = \"git+") {
+                return source.trim_end_matches('"').rsplit('#').next().unwrap().to_owned();
+            }
+        }
+    }
+    panic!("binius-core is not a git dependency in the worker lockfile");
+}
 
 fn main() {
     let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let lock = fs::read_to_string(root.join("Cargo.lock")).expect("worker lockfile");
-    let metadata = git_revision::metadata(&root.join("../.."));
-    let revision = &metadata["BINIUS64_REVISION"];
+    let revision = binius_revision(&lock);
     let mut source = Sha256::new();
     for path in [
         "Cargo.toml",
         "rust-toolchain.toml",
         "build.rs",
         "build.py",
-        "../../scripts/git_revision.rs",
-        "../../scripts/build_metadata.py",
-        "../../scripts/local_provenance.py",
-        "../../provenance.toml",
         "src/main.rs",
         "../../benches/support/sha256_ecdsa_fixture.rs",
         "../../benches/common/output.rs",

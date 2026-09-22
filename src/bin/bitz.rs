@@ -2042,9 +2042,6 @@ fn write_latex_table(path: &Path, rows: &[CliResult], o: &Opts, spec: &str) -> s
     };
 
     let mut out = String::new();
-    for line in include_str!("../../provenance.toml").lines() {
-        let _ = writeln!(out, "% vendor provenance: {line}");
-    }
     let _ = writeln!(
         out,
         "% Raw-performance table of BitZ (c:core_iop) — GENERATED FILE, do not edit by hand."
@@ -3904,9 +3901,6 @@ fn write_mul_latex_table(
     let cell_words = 128usize >> log_w; // committed cells per multiplication
 
     let mut out = String::new();
-    for line in include_str!("../../provenance.toml").lines() {
-        let _ = writeln!(out, "% vendor provenance: {line}");
-    }
     let _ = writeln!(
         out,
         "% Integer-multiplication table of BitZ (c:iop_pimsat on u32 × u32 → u64) — GENERATED FILE, do not edit by hand."

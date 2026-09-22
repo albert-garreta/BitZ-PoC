@@ -83,12 +83,14 @@ every measured proof.
 
 ## Prepare Limber
 
-The campaign defaults to [vendor/limber](../vendor/limber/), the same local
-repository used by Cargo. Its snapshot already includes the matched benchmark
+The campaign benchmarks the `wu-s-john/limber-impl` commit pinned in `Cargo.toml`.
+On first use it fetches that commit into `.tools/limber` (Git and network access
+are needed); an existing checkout is never modified, and one at a different
+revision is refused. The pinned commit already includes the matched benchmark
 support and BitZ comparison digest domains. Python 3.11 or newer is required.
 
-The optional helper checks its revision against `provenance.toml` and inspects
-the benchmark domains; it does not fetch or clone a repository:
+The helper does the fetch on its own, then prints the revision and inspects the
+benchmark domains:
 
 ```sh
 python3 scripts/prepare_matched_limber.py
@@ -112,7 +114,7 @@ Preview without compiling, running proofs, or writing campaign artifacts:
 
 ```sh
 python3 scripts/run_matched_multiswap_campaign.py --dry-run \
-  --limber-root "$PWD/vendor/limber" --all-threads 16
+  --all-threads 16
 ```
 
 Canonical execution uses the bundled `scripts/zk_trace.py` validator. Supply
@@ -127,7 +129,6 @@ validation as pending, so this does not complete the canonical acceptance gate:
 
 ```sh
 python3 scripts/run_matched_multiswap_campaign.py --draft \
-  --limber-root "$PWD/vendor/limber" \
   --security-bits 114 --batch-counts 1,2,4,8,16 \
   --all-threads 16 --warmups 1 --samples 10
 ```
@@ -137,7 +138,6 @@ use `--draft --batch-counts 1 --samples 1`; that runs six configurations.
 
 ```sh
 python3 scripts/run_matched_multiswap_campaign.py \
-  --limber-root "$PWD/vendor/limber" \
   --profiler "$PWD/scripts/zk_trace.py" \
   --security-bits 114 --batch-counts 1,2,4,8,16 \
   --all-threads 16 --warmups 1 --samples 10

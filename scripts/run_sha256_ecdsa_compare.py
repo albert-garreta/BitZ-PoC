@@ -2,7 +2,7 @@
 """Compare signed SHA-256 chains in fresh processes; retain failures and full samples."""
 from bench_support import cargo_executables, source_metadata, environment, file_hash, run_process, address_space_limit, write_json
 import argparse
-from local_provenance import source_patch, vendor_snapshots
+from bench_support import source_patch
 import csv
 import hashlib
 import itertools
@@ -271,7 +271,7 @@ def metadata(binary):
                    binary.name.replace("sha256_ecdsa_compare-", "bitz-", 1) /
                    "test-bench-sha256_ecdsa_compare.json")
     build_info = json.loads(fingerprint.read_text()) if fingerprint.exists() else None
-    return dict(vendor_snapshots=vendor_snapshots(ROOT), binary=str(binary), binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
+    return dict(binary=str(binary), binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
                 runner_sha256=file_hash(Path(__file__)), memory_limit_enforced=sys.platform.startswith("linux"),
                 **source_metadata(ROOT), build=build_info, runtime_env=environment(os.environ))
 

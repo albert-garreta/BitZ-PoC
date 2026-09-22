@@ -14,12 +14,9 @@ from test_mul_report import fixture
 
 class Matrix(unittest.TestCase):
     def setUp(self):
-        check = patch.object(launcher, "vendor_snapshots", return_value={})
-        check.start()
-        self.addCleanup(check.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.output = self.root / "results"
         self.arguments = ["--workloads", "u64", "--backends", "bitz", "--threads", "1",
                           "--exponents", "15", "--reps", "2", "--no-gate",
@@ -181,14 +178,6 @@ class Matrix(unittest.TestCase):
         build.assert_not_called()
         run.assert_not_called()
         self.assertEqual((self.output / "suite.json").read_bytes(), original)
-
-    def test_vendor_verification_failure_prevents_build_and_output(self):
-        with patch.object(launcher, "vendor_snapshots", side_effect=ValueError("vendor mismatch")):
-            code, build, run = self.run_suite()
-        self.assertEqual(code, 1)
-        build.assert_not_called()
-        run.assert_not_called()
-        self.assertFalse(self.output.exists())
 
 
 if __name__ == "__main__":

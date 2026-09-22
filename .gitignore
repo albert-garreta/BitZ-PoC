@@ -1,5 +1,6 @@
 /target
 /.tools/perfetto/
+/.tools/limber/
 /crates/*/target/
 /bench_results/
 /benches/results/
@@ -48,8 +49,8 @@ __pycache__/
 /vendor/**/target/
 /vendor/**/.git
 
-# Fetched via git dependency pins in Cargo.toml (see provenance.toml); never
-# vendored into this repository's history.
+# These crates are git dependency pins in Cargo.toml; builds never read local
+# checkouts, so any that exist here are personal and untracked.
 /vendor/limber/
 /vendor/binius64/
 /vendor/plonky3/

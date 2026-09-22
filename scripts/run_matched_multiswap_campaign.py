@@ -11,7 +11,7 @@ from __future__ import annotations
 from bench_support import cpu_name as _cpu_name, command_text, filtered_environment, stream_logged
 
 import argparse
-from local_provenance import repository_metadata, source_patch, vendor_snapshots
+from bench_support import root_metadata, source_patch
 import hashlib
 import json
 import os
@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 import matched_multiswap_report as report
-from prepare_matched_limber import DEFAULT_DESTINATION, migrate_multiswap_domains
+from prepare_matched_limber import DEFAULT_DESTINATION, ensure_limber, migrate_multiswap_domains
 
 
 WORKLOAD_DISCLOSURE = (
@@ -67,7 +67,7 @@ def detect_performance_cores() -> tuple[int, str]:
 
 
 def _git_metadata(root: Path) -> dict[str, Any]:
-    source = repository_metadata(root)
+    source = root_metadata(root.resolve())
     diff = source_patch(root) if source["source_kind"] == "checkout" else b""
     untracked = (subprocess.check_output(["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=root)
                  if source["source_kind"] == "checkout" else b"")
@@ -621,7 +621,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             k_values=k_values,
             expected_digests=expected_digests,
         )
-        manifest["vendor_snapshots"] = vendor_snapshots(bitz_root)
         manifest["security"] = {"target_bits": args.security_bits, "model": "per-check-round-minimum/v1"}
         manifest["validation"] = {
             "mode": "draft" if args.draft else "canonical",
@@ -641,6 +640,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if run_dir.exists():
             raise report.CampaignError(f"refusing to overwrite run directory {run_dir}")
+        if limber_root == DEFAULT_DESTINATION.resolve():
+            try:
+                ensure_limber(limber_root, bitz_root)
+            except (OSError, ValueError, subprocess.CalledProcessError) as error:
+                raise report.CampaignError(f"cannot prepare the pinned Limber checkout: {error}") from error
         if not bitz_root.is_dir() or not limber_root.is_dir():
             raise report.CampaignError("BitZ and Limber repository roots must both exist")
         manifest["validator"] = None if args.draft else preflight_profiler(args.profiler)

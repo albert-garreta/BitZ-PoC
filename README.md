@@ -1,48 +1,101 @@
-# BitZ benchmark workspace
+# BitZ
 
-This workspace contains BitZ and materialized source for the retained benchmark
-dependencies. Cargo uses relative paths; no submodule initialization, patch
-application, or nested Git repository is needed to build.
+BitZ is a hash-based polynomial commitment scheme (PCS) for witnesses over
+arbitrary rings. It commits to a vector f ∈ Sⁿ over any finitely generated ring S
+(a finite field, ℤ, ℤ/2³², a cyclotomic ring, …) and proves linear claims about
+it, such as multilinear-extension (MLE) evaluations:
 
-`provenance.toml` records each vendor's official upstream, original and normalized
-upstream revisions, final snapshot commit/tree, and review artifacts. Each vendor
-has one customization commit above its normalized upstream history. The release
-includes its patch; self-contained Git history bundles are distributed separately.
-The root development history is retained internally and excluded from the release.
-See [PROVENANCE_CHANGES.md](PROVENANCE_CHANGES.md) for the public source pins,
-history normalization, and deliberately retained attribution.
+    ⟨f, v⟩ = μ  in S,    or, through a ring homomorphism ψ: S → R,    ⟨ψ(f), v⟩ = μ  in R.
 
-Python 3.11 or newer is required by the campaign and release tools. Cargo may
-fetch registry packages and the exact official upstream `halo2curves` revision.
-Install `rustup` before running the campaigns. Git is needed to reconstruct
-missing vendors or create a ZIP from a development checkout, but not to verify
-the source already included in a ZIP.
+A typical instance is S = ℤ, R = F_q, and ψ reduction modulo q. The name is
+"Bit-ℤ": the ring is switched to bits and then to a binary field.
+
+## How it works
+
+1. **Bitification.** The claim is rewritten as a claim about the bit-decomposition
+   of f. Decomposition is linear, so an inner product on f becomes an inner product
+   on its bits with a different weight vector.
+2. **Commitment.** The bits are committed as elements of the binary field GF(2¹²⁸),
+   with 128 bits packed into each field element, using a packed hash-based scheme:
+   ring-switching plus a recursive Ligerito opener (the Flock code in `vendor/flock-mod`).
+3. **Lift to ℤ.** The prover sends μ′ ∈ ℤ, the value of the lifted inner product.
+4. **Proof in the exponent.** For a generator g of GF(2¹²⁸)*, the claim becomes
+   g^⟨lift(u), bits(f)⟩ = g^μ′. That is a product Πᵢ ((g^{uᵢ} − 1)·bitᵢ + 1) over
+   the committed bits, proved as a grand product by a GKR-style forest specialised
+   to low-entropy inputs. There is no wrong-field arithmetic in this step.
+
+Rings that are not prime fields, and values too large for the order of g, are
+handled by lifting the claim to ℤ[X₁, …, X_k] and projecting it onto a random
+prime field before step 3.
+
+What this buys:
+
+- **Pay per bit.** Cost depends essentially only on the bit-size of the witness, not on
+  the ring, so ℤ, ℤ/2³² and prime fields cost about the same per bit.
+- **Composability.** BitZ can serve as the PCS of a proof system over a prime field, ℤ,
+  a polynomial ring or a lattice ring, and it is hash-based.
+- **Free range checks.** Commitments to integers take a bit-size parameter B, so a prover
+  cannot commit to larger integers, and many range checks disappear.
+
+## What is in this repository
+
+- **The PCS and CLI (`src/`, binary `bitz`).** The core PCS proves `MLE[w](r) = y ∈ F_q`
+  for a bit vector w. Opened with a Flock-backed ring-switch and recursive Ligerito.
+- **BitZ-SNARK.** A SNARK for R1CS over the integers using the fingerprinting paradigm: commit
+  over ℤ, the verifier samples a random prime q, the R1CS is projected to F_q, a PIOP
+  reduces it to an MLE claim, and BitZ proves that claim. A hybrid variant proves
+  constraints over ℤ and binary fields together, with virtualized F₂ addition (XOR)
+  between integer witnesses.
+- **Benchmark campaigns.** Seven campaigns compare BitZ with Binius64, Limber and
+  Plonky3 (FRI and WHIR) on SHA-256 with P-256 ECDSA, SHA-256 chains, integer
+  multiplication (u32, u64, u128), MultiSwap, and a hybrid of SHA-256 with modular
+  multiplication. They target 100 bits of security in non-ZK mode and are documented below.
+- **The manuscript.** *BitZ: proofs and commitments in arbitrary rings through binary
+  fields* lives in `paper/`.
+
+Quick start, proving an MLE evaluation of a bit vector of length 2ⁿ:
+
+```sh
+RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- 24
+RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
+    28 --threads 1 --reps 5 --profile custom:1:4
+```
+
+## Dependencies
+
+Cargo fetches everything it needs; there are no submodules and no vendoring step.
+
+- **In-tree:** `vendor/field` (field arithmetic) and `vendor/flock-mod` (the Flock library,
+  derived from `succinctlabs/flock`). Each has a `VENDORED.md`.
+- **Git pins:** Limber, Plonky3 and Binius64 are the `wu-s-john` forks, each pinned to an
+  exact commit in `Cargo.toml` (and `benchmarks/binius64/Cargo.toml`), plus the official
+  `halo2curves` revision Limber needs. `Cargo.lock` records the resolved sources.
+- **Requirements:** Python 3.11 or newer and `rustup`. The first build needs network
+  access for the registry and the git pins. Git is also needed to fetch the pinned Limber
+  checkout for MultiSwap (into `.tools/limber`).
+
 The field reference microbenchmark and retired external comparison integrations
 are omitted; the seven retained campaigns are documented below.
 
 ## Run all seven campaigns
 
-From the repository root, or the `bitz/` directory extracted from the ZIP:
+From the repository root:
 
 ```sh
-python3 scripts/materialize_vendors.py --check
 bash scripts/run_all_benchmarks.sh --dry-run
 bash scripts/run_all_benchmarks.sh --smoke
 bash scripts/run_all_benchmarks.sh
 ```
 
-The wrapper runs the seven campaigns below sequentially. It checks vendor source,
-installs the pinned Rust toolchains and Perfetto if needed, and creates a fresh
+The wrapper runs the seven campaigns below sequentially. It installs the pinned Rust
+toolchains and Perfetto if needed, and creates a fresh
 results directory under `bench_results/`. Use `--output DIR` to choose another
 new directory. `CARGO_TARGET_DIR` is preserved for build-cache reuse.
 
-Cargo exports `BITZ_REVISION` and `BITZ_DIRTY` from the build script when it
-launches benchmarks. The shared validator in `benches/common/mod.rs` accepts
-these metadata variables while still rejecting unknown `BITZ_*` knobs. This
-fix applies to both the wrapper and the individual commands below. If an older
-build reports `unknown BITZ_* environment variable(s): BITZ_DIRTY, BITZ_REVISION`,
-rerun with the updated harness; unsetting them in the shell alone cannot fix it
-because Cargo adds them again.
+`BITZ_REVISION` and `BITZ_DIRTY` are optional metadata: the shared validator in
+`benches/common/mod.rs` accepts them while still rejecting unknown `BITZ_*` knobs.
+They are only fallbacks for when Git is unavailable at run time; otherwise results
+record the revision, dirty flag and tracked diff straight from Git.
 
 `--dry-run` only prints commands; it does not compile, verify dependencies, or
 execute benchmarks. `--smoke` uses one size and one measured sample per campaign,
@@ -57,39 +110,6 @@ their logs and stop the workflow without claiming completion. The wrapper waits 
 idle only once; see [Measurement conditions](#measurement-conditions-of-the-published-numbers)
 for how the published numbers were gated.
 
-## Materialize vendors and create the source ZIP
-
-From a development checkout, with Python 3.11+ and Git installed:
-
-```sh
-python3 scripts/materialize_vendors.py
-python3 scripts/materialize_vendors.py --check
-python3 scripts/package_release.py --dry-run
-python3 scripts/package_release.py --output outputs/bitz-source.zip
-```
-
-The materializer fetches pinned official upstream commits and applies the bundled
-patches. It verifies final source trees, skips matching existing vendors without
-network access, and refuses to overwrite local changes. Preserve and move aside
-any mismatched vendor directory before reconstructing it. `--check` verifies
-source and patches without downloading or changing files.
-
-The packager requires included source to be committed and clean. It preserves
-source, patches, licenses, build configuration, and fixtures while excluding Git
-metadata, editor/agent settings, caches, generated results, root documentation,
-and manuscript files. Root-relative directory exclusions do not remove similarly
-named vendor inputs. The ZIP has a single `bitz/` directory, reproducible ordering
-and timestamps, and a default limit of **20,000,000 bytes**. An existing output
-is never overwritten. It prints the exact byte count and SHA-256 after success.
-
-ZIP recipients already have materialized vendors; `--check` works without Git.
-No history bundle is required for compilation. Cargo may download registry
-packages and the pinned official `halo2curves` revision. Install Perfetto with
-`scripts/install_trace_processor.sh` before campaigns that require it.
-In a Git checkout, `git log -- vendor/limber` shows the root repository's vendor
-updates. Original upstream history is in the separately distributed vendor
-bundle; there are no submodules to initialize in the source ZIP.
-
 ## Compile without running benchmarks
 
 Install Rust `1.98.1` and `nightly-2026-07-01`, then run:
@@ -100,7 +120,8 @@ bash scripts/compile_export.sh
 
 This builds all seven campaigns below and their affected Rust tests.
 It uses native CPU code generation and locked dependencies. Registry packages
-and the pinned upstream `halo2curves` source may be downloaded. No benchmark,
+and the git-pinned dependencies (Limber, Plonky3, Binius64, `halo2curves`) may be
+downloaded, and the pinned Limber commit is fetched into `.tools/limber`. No benchmark,
 proof, test executable, or report generator is run by this script. Cargo's
 normal build scripts and procedural macros run
 as part of compilation. Build outputs and logs are ignored by Git.
@@ -159,7 +180,7 @@ tables report.
 Not reproducible from this artifact:
 
 - the Fields-Witch comparison (rates 1/2 and 1/8); its runner is not included;
-- the Zinc+ rows; the external Zinc+ comparison is omitted (see `NOTICE.md`).
+- the Zinc+ rows; the external Zinc+ comparison is omitted.
 
 ## Benchmark campaigns
 
@@ -174,7 +195,6 @@ set -euo pipefail
 
 rustup toolchain install 1.98.1
 rustup toolchain install nightly-2026-07-01
-python3 scripts/materialize_vendors.py --check
 bash scripts/install_trace_processor.sh
 
 export RUSTFLAGS="-C target-cpu=native"
@@ -183,7 +203,6 @@ unset BITZ_LIG_PROFILE CARGO_ENCODED_RUSTFLAGS CARGO_TARGET_DIR
 
 mkdir -p bench_results
 export RUN_DIR="$(mktemp -d "$PWD/bench_results/all-benchmarks-$(date +%Y%m%d-%H%M%S)-XXXXXX")"
-LIMBER_DIR="$PWD/vendor/limber"
 echo "Results: $RUN_DIR"
 ```
 
@@ -256,8 +275,8 @@ cargo +1.98.1 run --release --locked --bin bitz \
 
 ### 5. MultiSwap: BitZ, Limber-Hyrax, Limber-Brakedown
 
-This uses the local `vendor/limber` snapshot. `MSCFG=paper` is a workload name
-and does not require a manuscript directory. `--draft` runs proofs and the
+This fetches the Limber commit pinned in `Cargo.toml` into `.tools/limber` on first
+use. `MSCFG=paper` is a workload name and does not require a manuscript directory. `--draft` runs proofs and the
 local comparison checks while marking canonical trace validation as pending.
 
 Matched reports use the same minimal-byte v1 circuit digest and batch statement
@@ -269,7 +288,6 @@ hash as v1. Rerun affected campaigns into a fresh directory to regenerate traces
 ```bash
 python3 scripts/run_matched_multiswap_campaign.py \
   --draft \
-  --limber-root "$LIMBER_DIR" \
   --security-bits 114 \
   --batch-counts 1,2,4,8,16 \
   --all-threads 10 \
@@ -424,23 +442,11 @@ Source attribution and licenses are retained alongside the incorporated code.
 Historical upstream citations may identify their original contributors;
 metadata normalization does not prevent recognizing previously published code.
 
-## Reviewing and validating the release
-
-Use `python3 scripts/materialize_vendors.py --check` to verify vendor source and
-patch checksums. Inspect the customization patches at the paths recorded in
-`provenance.toml`. Vendor history bundles are separate artifacts; clone one to
-inspect its normalized upstream history and single customization commit. Verify
-the separately downloaded bundles with:
+## Tests
 
 ```sh
-python3 scripts/verify_vendor_histories.py --bundle-dir /path/to/bundles
+python3 -m unittest discover -s scripts -p 'test_*.py' -v
 ```
 
-Run the release tooling tests with:
-
-```sh
-python3 -m unittest discover -s scripts -p test_release_tooling.py -v
-```
-
-The root development history is retained internally and excluded from the ZIP.
-License notices and scholarly attribution are retained alongside the code.
+Licenses for the in-tree crates are kept beside their source, and third-party
+licenses stay in the forks pinned in `Cargo.toml`.

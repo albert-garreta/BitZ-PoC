@@ -20,7 +20,7 @@ import statistics
 import subprocess
 from pathlib import Path
 
-from local_provenance import root_metadata
+from bench_support import root_metadata
 
 SCHEMA = "bitz/sha256-ecdsa-compare/v1"
 # Table rows are (scheme id, LaTeX label), in display order. A scheme id is

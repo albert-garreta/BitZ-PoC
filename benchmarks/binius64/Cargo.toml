@@ -9,13 +9,13 @@ publish = false
 
 [dependencies]
 csv = "1.4"
-binius-circuits = { path = "../../vendor/binius64/crates/circuits" }
-binius-core = { path = "../../vendor/binius64/crates/core" }
-binius-frontend = { path = "../../vendor/binius64/crates/frontend" }
-binius-hash = { path = "../../vendor/binius64/crates/hash" }
-binius-prover = { path = "../../vendor/binius64/crates/prover" }
-binius-verifier = { path = "../../vendor/binius64/crates/verifier" }
-binius-transcript = { path = "../../vendor/binius64/crates/transcript" }
+binius-circuits = { git = "https://github.com/wu-s-john/binius64.git", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
+binius-core = { git = "https://github.com/wu-s-john/binius64.git", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
+binius-frontend = { git = "https://github.com/wu-s-john/binius64.git", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
+binius-hash = { git = "https://github.com/wu-s-john/binius64.git", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
+binius-prover = { git = "https://github.com/wu-s-john/binius64.git", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
+binius-verifier = { git = "https://github.com/wu-s-john/binius64.git", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
+binius-transcript = { git = "https://github.com/wu-s-john/binius64.git", rev = "bc73510ed63bf47eec25d4d10ade84f1c1fe2790" }
 # The BitZ opener over the same circuit and PIOP (`--method binius64-ligerito`):
 # the parent crate's Binius64 adapter, pinned to the identical fork revision, so
 # the constraint-system and witness types unify. Its revision + dirty flag are

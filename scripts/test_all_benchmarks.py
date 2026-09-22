@@ -76,10 +76,11 @@ elif name == 'hybrid':
         self.assertEqual(result.returncode, 0, result.stderr)
         commands = self.commands()
         scripts = [c for c in commands if c['name'] == 'python3' and c['args'][0].startswith('scripts/')]
-        names = [c['args'][0] for c in scripts]
+        # On Darwin the wrapper wraps hybrid runs in rss_sampler.py; that is not a campaign step.
+        names = [c['args'][0] for c in scripts if c['args'][0] != 'scripts/rss_sampler.py']
         self.assertEqual(names.count('scripts/bench_gate.py'), 1)
         self.assertEqual(names, [
-            'scripts/bench_gate.py', 'scripts/materialize_vendors.py',
+            'scripts/bench_gate.py',
             'scripts/run_sha256_ecdsa_compare.py', 'scripts/run_sha256_chain_compare.py',
             'scripts/run_multiplication_benchmarks.py', 'scripts/run_matched_multiswap_campaign.py',
             'scripts/hybrid_table.py'])
@@ -130,13 +131,6 @@ elif name == 'hybrid':
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.trace.exists())
         self.assertEqual(marker.read_text(), 'unchanged')
-
-    def test_verification_failure_prevents_campaigns(self):
-        result = self.run_wrapper('--smoke', FAIL_STEP='materialize_vendors.py')
-        self.assertEqual(result.returncode, 7)
-        self.assertFalse(self.output.exists())
-        self.assertFalse(any(c['name'] in ['cargo','rustup','hybrid'] for c in self.commands()))
-        self.assertNotIn('[1/7]', result.stdout)
 
     def test_failed_campaign_keeps_logs_and_cannot_claim_success(self):
         result = self.run_wrapper('--smoke', FAIL_STEP='run_sha256_chain_compare.py')

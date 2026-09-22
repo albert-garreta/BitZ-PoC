@@ -98,8 +98,9 @@ pub fn local_vendor_revision(package: &str) -> String {
 /// `BITZ_*` variable outside this list aborts the bench so a typo'd knob can
 /// never silently do nothing. Keep sorted; add new knobs here.
 pub const KNOWN_BITZ_ENV: &[&str] = &[
-    // Build metadata from scripts/build_metadata.py. Cargo also exports
-    // rustc-env values when launching benchmark executables.
+    // Optional revision metadata, read with `option_env!`/the environment; unset
+    // means "unknown". Accepted so a launcher may pass it without tripping the
+    // typo check.
     "BITZ_DIRTY",
     "BITZ_REVISION",
     // A/B example harness knobs (examples/taps_ab.rs, examples/rlc_ab.rs).

@@ -1,22 +1,47 @@
 #!/usr/bin/env python3
-"""Inspect the local Limber snapshot included in this workspace."""
+"""Fetch the Limber checkout pinned in Cargo.toml for the matched MultiSwap comparison."""
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import tomllib
 
-from local_provenance import ROOT, vendors, verify_patch, verify_vendor
-
-DEFAULT_DESTINATION = Path(__file__).resolve().parents[1] / "vendor/limber"
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_DESTINATION = ROOT / ".tools/limber"
 
 
 def limber_dependency(bitz_root: Path) -> dict[str, object]:
     with (bitz_root / "Cargo.toml").open("rb") as manifest:
         return tomllib.load(manifest)["dependencies"]["limber"]
+
+
+def _git(directory: Path, *args: str) -> str:
+    return subprocess.check_output(["git", "-C", str(directory), *args], text=True).strip()
+
+
+def ensure_limber(destination: Path, bitz_root: Path = ROOT) -> str:
+    """Return the revision of a Limber checkout at the rev Cargo.toml pins, fetching it if absent.
+
+    An existing checkout is never modified: a different revision is an error.
+    """
+    pin = limber_dependency(bitz_root)
+    url, revision = str(pin["git"]), str(pin["rev"])
+    if not destination.exists() or not any(destination.iterdir()):
+        destination.mkdir(parents=True, exist_ok=True)
+        _git(destination, "init", "--quiet")
+        _git(destination, "fetch", "--quiet", "--depth", "1", url, revision)
+        _git(destination, "checkout", "--quiet", "--detach", "FETCH_HEAD")
+    elif not (destination / ".git").exists():
+        raise ValueError(f"{destination} exists and is not a Git checkout")
+    actual = _git(destination, "rev-parse", "HEAD")
+    if actual != revision:
+        raise ValueError(f"Limber checkout {destination} is at {actual[:12]}, "
+                         f"but Cargo.toml pins {revision[:12]}")
+    return revision
 
 
 def migrate_multiswap_domains(limber_root: Path) -> dict[str, object]:
@@ -54,17 +79,16 @@ def main() -> None:
     parser.add_argument("destination", type=Path, nargs="?", default=DEFAULT_DESTINATION)
     args = parser.parse_args()
     destination = args.destination.resolve()
-    record = vendors(ROOT)["limber"]
-    verify_patch(ROOT, "limber", record)
-    actual_record = dict(record, path=str(destination.relative_to(ROOT)))
-    verify_vendor(ROOT, "limber", actual_record)
-    revision = record["snapshot_commit"]
+    try:
+        revision = ensure_limber(destination)
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        parser.error(str(error))
     path = destination / "benches/multiswap_modp.rs"
     source = path.read_text()
     expected = ["bitz/multiswap/circuit-digest/v1", "bitz/multiswap/integer-assignment/v1",
                 "bitz-limber/multiswap-statement/v2"]
     if not all(domain in source for domain in expected):
-        parser.error("Limber snapshot lacks the matched benchmark domains; rebuild its patch")
+        parser.error("Limber checkout lacks the matched benchmark domains")
     domains = {"namespace": "bitz", "path": "benches/multiswap_modp.rs",
                "changed": False, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
     print(json.dumps({"path": str(destination), "git_revision": revision,

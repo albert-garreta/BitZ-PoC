@@ -28,7 +28,6 @@ import sys
 import tempfile
 
 from bench_support import cargo_executables, clean_environment, write_json
-from local_provenance import vendor_snapshots
 from mul_report import main as report
 from mul_results import load
 
@@ -71,7 +70,6 @@ def main(argv=None):
                 return run_campaign(experiment_command(args, executable, True), env, None, gated=False)
         if args.output.exists():
             raise ValueError(f"results directory already exists: {args.output}")
-        vendor_snapshots(ROOT)
         args.output.mkdir(parents=True, exist_ok=False)
         print(f"Results: {args.output}", flush=True)
         executable, code = build_executable(args, env, args.output / "build.log")
@@ -229,7 +227,6 @@ def matrix_main(argv):
     try:
         if args.output.exists():
             raise ValueError(f"results directory already exists: {args.output}")
-        vendor_snapshots(ROOT)
         env = benchmark_environment(os.environ)
         processor = env.get("PERFETTO_TRACE_PROCESSOR", "trace_processor_shell")
         resolved = shutil.which(processor, path=env.get("PATH", os.defpath))

@@ -80,7 +80,6 @@ pub fn metadata(threads: usize) -> Value {
         "threads": threads, "requested_threads": std::env::var("RAYON_NUM_THREADS").ok(),
         "rustc": command("rustc", &["-Vv"]), "rustflags": std::env::var("RUSTFLAGS").ok(),
         "cargo_encoded_rustflags": std::env::var("CARGO_ENCODED_RUSTFLAGS").ok(),
-        "vendor_provenance_toml": include_str!("../../provenance.toml"),
         "git_revision": revision(),
         "git_status": root_git(&["status", "--porcelain", "--untracked-files=no"]),
         "cargo_lock_blake3": blake3::hash(include_bytes!("../../Cargo.lock")).to_hex().to_string()})

@@ -3,9 +3,8 @@
 The retained methods are `bitz-split`, `bitz-all`, `binius64`, and
 `binius64-ligerito`. They prove the same signed-message relation in non-ZK mode.
 BitZ reuses its composed prover; the isolated [Binius64 worker](../benchmarks/binius64/README.md)
-uses [vendor/binius64](../vendor/binius64/), shared with the root adapters.
-The worker keeps its own workspace, lockfile and toolchain. Local dependency
-snapshots are recorded in [provenance.toml](../provenance.toml).
+uses the same `wu-s-john/binius64` git pin as the root adapters.
+The worker keeps its own workspace, lockfile and toolchain.
 
 ## Compile without executing the comparison
 

@@ -143,7 +143,8 @@ impl Args {
 fn build_info() -> serde_json::Value {
     json!({"binius_revision":env!("BINIUS_REVISION"), "lock_sha256":env!("LOCK_SHA256"),
         "source_sha256":env!("SOURCE_SHA256"), "rustc":env!("BUILD_RUSTC"), "rustflags":env!("BUILD_RUSTFLAGS"),
-        "bitz_revision":env!("BITZ_REVISION"), "bitz_dirty":env!("BITZ_DIRTY") == "dirty",
+        "bitz_revision":option_env!("BITZ_REVISION").unwrap_or("unknown"),
+        "bitz_dirty":option_env!("BITZ_DIRTY").map(|dirty| dirty == "dirty"),
         "circuit_profile":PROFILE, "fixture_profile":fixture::SCHEMA, "zk":false})
 }
 
@@ -189,7 +190,7 @@ fn base_row(args: &Args, fixture: &SignedFixture, trial: usize, circuit_id: &str
         "threads":args.threads, "seed":args.seed,
         "fixture_id":fixture.id, "fixture_profile":fixture::SCHEMA, "statement_bytes":129,
         "statement":"public-key-signature; witness-message", "binius_revision":env!("BINIUS_REVISION"),
-        "bitz_revision":env!("BITZ_REVISION"),
+        "bitz_revision":option_env!("BITZ_REVISION").unwrap_or("unknown"),
         "circuit_profile":PROFILE, "circuit_id":circuit_id, "verified":true,
     })
 }

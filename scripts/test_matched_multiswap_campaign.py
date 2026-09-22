@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -339,7 +340,9 @@ class Matched112Tests(unittest.TestCase):
     def test_batch_report_and_missing_security_rejection(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
-            (root / "release-metadata.toml").write_text('root_revision = "' + '1' * 40 + '"\n')
+            for command in (["init", "--quiet"], ["-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                                                  "commit", "--quiet", "--allow-empty", "-m", "fixture"]):
+                subprocess.run(["git", "-C", str(root), *command], check=True)
             cells=runner.build_cells(bitz_root=root,limber_root=root,run_dir=root,campaign_id="fixture",samples=5,warmups=1,all_threads=16,rustflags="",expected_digests={},k_values=(0,),security_bits=self.security_bits,batch_counts=(1,2,4,8,16))
             manifest=runner.build_manifest(campaign_id="fixture",run_dir=root,bitz_root=root,limber_root=root,samples=5,warmups=1,all_threads=16,core_detection="fixture",cells=cells,k_values=(0,),expected_digests={})
             manifest["workload"]["batch_counts"]=[1,2,4,8,16]
