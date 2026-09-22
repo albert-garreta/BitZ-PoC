@@ -144,20 +144,35 @@ fn build_levels(
     top: usize,
     gen_top: impl Fn(usize) -> (Vec<Gf>, Vec<Gf>) + Sync,
 ) -> (TreeLevels, Vec<Gf>) {
+    build_levels_allocating(num_trees, top, gen_top, false)
+}
+
+#[allow(clippy::arithmetic_side_effects)]
+fn build_levels_allocating(
+    num_trees: usize,
+    top: usize,
+    gen_top: impl Fn(usize) -> (Vec<Gf>, Vec<Gf>) + Sync,
+    on_caller: bool,
+) -> (TreeLevels, Vec<Gf>) {
     // Per-tree chains [level top, top−1, …, 1], parallel across trees.
     let _g = tracing::info_span!("mf:build_levels").entered();
-    let chains: Vec<Vec<(Vec<Gf>, Vec<Gf>)>> = cfg_into_iter!(0..num_trees)
-        .map(|c| {
-            let mut chain = Vec::with_capacity(top);
-            chain.push(gen_top(c));
-            for _ in 1..top {
-                let last = chain.last().expect("non-empty chain");
-                let parent = parent_halves_top(&last.0, &last.1);
-                chain.push(parent);
-            }
-            chain
-        })
-        .collect();
+    let build_tree = |c| {
+        let mut chain = Vec::with_capacity(top);
+        chain.push(gen_top(c));
+        for _ in 1..top {
+            let last = chain.last().expect("non-empty chain");
+            let parent = parent_halves_top(&last.0, &last.1);
+            chain.push(parent);
+        }
+        chain
+    };
+    // The compact single-thread path builds on the caller, where the later
+    // tiled folds allocate, so freed forest buffers can be reused there.
+    let chains: Vec<_> = if on_caller {
+        (0..num_trees).map(build_tree).collect()
+    } else {
+        cfg_into_iter!(0..num_trees).map(build_tree).collect()
+    };
     let mut levels: TreeLevels = (0..top).map(|_| Vec::with_capacity(num_trees)).collect();
     let mut roots = Vec::with_capacity(num_trees);
     for chain in chains {
@@ -1161,12 +1176,31 @@ pub fn prove_merged_forest_lazy(
     )
 }
 
+/// Compact glibc power-table allocations for sizeable one-bit tables.
+/// The forest build moves onto the caller only for larger tables: doing both
+/// for the smallest measured table increased process RSS.
+pub(crate) fn use_compact_single_allocations(p: &IntegerMatrixLayout) -> bool {
+    #[cfg(feature = "parallel")]
+    let single_thread = rayon::current_num_threads() == 1;
+    #[cfg(not(feature = "parallel"))]
+    let single_thread = true;
+    cfg!(all(target_os = "linux", target_env = "gnu"))
+        && single_thread
+        && p.word_bits == 1
+        && p.rows() >= 1 << 15
+        && !quad_active(p)
+        && matches!(
+            configured(p, ForestPath::Single),
+            Ok(ForestSchedule::L2)
+        )
+}
+
 pub(crate) fn prove_merged_forest_lazy_from_rows(
     transcript: &mut impl Transcript,
     p: &IntegerMatrixLayout,
     rows: &[Vec<u64>],
     packed_cols: &[Vec<u64>],
-    pow2: &[Vec<Gf>],
+    pow2: &(impl crate::pcs::PowerTable + ?Sized),
     live: usize,
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
     prove_merged_forest_lazy_impl(
@@ -1177,6 +1211,7 @@ pub(crate) fn prove_merged_forest_lazy_from_rows(
         pow2,
         configured(p, ForestPath::Single).expect("single forest schedule"),
         live,
+        use_compact_single_allocations(p) && p.rows() >= 1 << 16,
     )
 }
 
@@ -1286,7 +1321,7 @@ fn prove_merged_forest_lazy_sched(
     sched: ForestSchedule,
     live: usize,
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
-    prove_merged_forest_lazy_impl(transcript, p, None, packed_cols, pow2, sched, live)
+    prove_merged_forest_lazy_impl(transcript, p, None, packed_cols, pow2, sched, live, false)
 }
 
 fn prove_merged_forest_lazy_impl(
@@ -1294,9 +1329,10 @@ fn prove_merged_forest_lazy_impl(
     p: &IntegerMatrixLayout,
     rows: Option<&[Vec<u64>]>,
     packed_cols: &[Vec<u64>],
-    pow2: &[Vec<Gf>],
+    pow2: &(impl crate::pcs::PowerTable + ?Sized),
     sched: ForestSchedule,
     live: usize,
+    build_on_caller: bool,
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
     let l8 = sched.is_l8();
     use crate::pcs::{
@@ -1318,7 +1354,7 @@ fn prove_merged_forest_lazy_impl(
             .map(|idx| {
                 let (c, i) = (idx >> depth, idx & (row_len - 1));
                 if (packed_cols[c >> 6][i] >> (c & 63)) & 1 == 1 {
-                    pow2[i >> log_w][i & mask_w]
+                    pow2.power(i >> log_w, i & mask_w)
                 } else {
                     one
                 }
@@ -1394,7 +1430,7 @@ fn prove_merged_forest_lazy_impl(
     // from the shared pair table.
     let q1 = row_len >> 2; // 2^{d−2}
     let q2 = row_len >> 1; // 2^{d−1}
-    let v = |i: usize| -> Gf { pow2[i >> log_w][i & mask_w] };
+    let v = |i: usize| -> Gf { pow2.power(i >> log_w, i & mask_w) };
     let _g_teto = tracing::info_span!("mf:teto").entered();
     let build_cases = |base: usize| -> Vec<Gf> {
         let mut t = Vec::with_capacity(q1 << 2);
@@ -1416,7 +1452,7 @@ fn prove_merged_forest_lazy_impl(
     // Vec<[Gf; 16]> and flatten in place: a parallel `.flatten()` here
     // treats every 16-entry row as its own nested parallel iterator and
     // the collect goes unindexed — measured ~836× slower than the same
-    // arithmetic serially (upstream zinc-plus fix `e19b0e1`, 2026-07-16).
+    // arithmetic serially (upstream zinc-plus arithmetic fix).
     // Under [`t4_factored`] the consumers recompute te·to themselves, so
     // the table is only built where the T4Bits round needs it precombined
     // (the L/8 schedule).
@@ -1445,11 +1481,16 @@ fn prove_merged_forest_lazy_impl(
         // `te`/`to`/`leaf_tau` and the bits, never a level). Peak ≈
         // `2^n·8 B`: level d−2 alone is `2^n·4 B` and the chain under it
         // sums to as much again.
-        let (levels, roots) = build_levels(live, depth - 2, |c| {
-            let cb = col_bits.as_ref().expect("leaf bits alive for the build");
-            let (lb, rb) = &cb[c];
-            t4_level_halves(lb, rb, t4_src(t4f, &t4, &te, &to), q1)
-        });
+        let (levels, roots) = build_levels_allocating(
+            live,
+            depth - 2,
+            |c| {
+                let cb = col_bits.as_ref().expect("leaf bits alive for the build");
+                let (lb, rb) = &cb[c];
+                t4_level_halves(lb, rb, t4_src(t4f, &t4, &te, &to), q1)
+            },
+            build_on_caller,
+        );
         drop(t4);
         let bit_layer =
             |ell: usize, _zx: &[Gf], _suffix: &SuffixTensorArena<Gf>| -> Option<BitLayer> {
@@ -2177,7 +2218,7 @@ pub(crate) fn prove_merged_forest_lazy_quad_from_rows(
     p: &IntegerMatrixLayout,
     rows: Option<&[Vec<u64>]>,
     packed_cols: &[Vec<u64>],
-    pow2: &[Vec<Gf>],
+    pow2: &(impl crate::pcs::PowerTable + ?Sized),
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
     use crate::pcs::{extract_column_bit_halves, layer1_pair_table, leaf_tau_halves};
     let log_w = p.word_bits.trailing_zeros() as usize;
@@ -2213,7 +2254,7 @@ pub(crate) fn prove_merged_forest_lazy_quad_from_rows(
     // The shared 4-case / 16-case tables — exactly the L/4 build.
     let q1 = row_len >> 2;
     let q2 = row_len >> 1;
-    let v = |i: usize| -> Gf { pow2[i >> log_w][i & mask_w] };
+    let v = |i: usize| -> Gf { pow2.power(i >> log_w, i & mask_w) };
     let build_cases = |base: usize| -> Vec<Gf> {
         let mut t = Vec::with_capacity(q1 << 2);
         for y in 0..q1 {
@@ -4017,14 +4058,19 @@ mod tests {
                 let cl: Gf = t_lazy.get_field_challenge(&());
                 assert_eq!(ce, cl, "transcript states diverged ({sched:?})");
                 let mut t_borrowed = Blake3Transcript::new();
+                let flat_powers = crate::pcs::FlatPowers {
+                    values: pow2.iter().flatten().copied().collect(),
+                    word_bits: w,
+                };
                 let borrowed = prove_merged_forest_lazy_impl(
                     &mut t_borrowed,
                     &p,
                     Some(&rows),
                     &packed_cols,
-                    &pow2,
+                    &flat_powers,
                     sched,
                     p.cols(),
+                    true,
                 );
                 assert_eq!(borrowed.0, lazy.0, "borrowed roots");
                 assert_eq!(borrowed.2, lazy.2, "borrowed point");

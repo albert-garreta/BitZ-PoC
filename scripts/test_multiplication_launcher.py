@@ -214,6 +214,19 @@ else:
         self.assertEqual(result.returncode, 143)
         self.assertFalse(Path(env["BITZ_BENCH_LOCK"]).exists())
 
+    def test_gate_requires_sustained_idle_before_starting(self):
+        import bench_gate
+        samples = iter([95.0, 50.0, 95.0, 95.0])
+        with patch.object(bench_gate, "idle_percent", side_effect=lambda: next(samples)), \
+             patch.object(bench_gate.time, "sleep"), contextlib.redirect_stdout(io.StringIO()):
+            # Two consecutive qualifying samples; the busy sample resets the streak.
+            bench_gate.wait_idle("test", 88.0, 40.0, 20.0)
+        self.assertIsNone(next(samples, None))
+        with patch.object(bench_gate, "idle_percent", return_value=10.0), \
+             patch.object(bench_gate.time, "sleep"), contextlib.redirect_stdout(io.StringIO()), \
+             self.assertRaises(TimeoutError):
+            bench_gate.wait_idle("test", 88.0, 40.0, 20.0, max_wait_seconds=0)
+
     def test_gate_cleans_workers_after_leader_exits(self):
         import bench_gate
         from unittest.mock import Mock

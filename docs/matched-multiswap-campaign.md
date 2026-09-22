@@ -83,31 +83,24 @@ every measured proof.
 
 ## Prepare Limber
 
-Use an existing Limber checkout with the matched benchmark support. The campaign
-records its actual revision and local changes for provenance without requiring
-it to match BitZ's Cargo dependency. The setup helper and campaign runner require
-Python 3.11 or newer.
+The campaign benchmarks the `wu-s-john/limber-impl` commit pinned in `Cargo.toml`.
+On first use it fetches that commit into `.tools/limber` (Git and network access
+are needed); an existing checkout is never modified, and one at a different
+revision is refused. The pinned commit already includes the matched benchmark
+support and BitZ comparison digest domains. Python 3.11 or newer is required.
 
-If you need a checkout, the optional setup helper reads the source and revision
-from BitZ's `Cargo.toml`:
+The helper does the fetch on its own, then prints the revision and inspects the
+benchmark domains:
 
 ```sh
-python3 scripts/prepare_matched_limber.py /tmp/limber-matched114
+python3 scripts/prepare_matched_limber.py
 ```
 
-An existing local clone containing the pinned revision can be supplied with
-`--source PATH`. The helper refuses existing destinations, checks out the
-published commit with detached HEAD, and prints the path, source, and revision.
-It creates no commit. Skip preparation when using an
-existing checkout.
-
-The runner defaults to `/tmp/limber-matched114`. Use `--limber-root` for another
-checkout; no commit-equality check is performed.
-
-The setup helper and campaign runner migrate the Limber benchmark’s three
-comparison hash domains to the BitZ namespace in the supplied checkout.
-The campaign records the modified benchmark source hash and Git status;
-no local commit is created. This step is idempotent and skipped by `--dry-run`.
+Use `--limber-root PATH` to explicitly select another checkout. The campaign
+records the actual revision, benchmark source hash and working-tree changes;
+it does not silently substitute a sibling checkout. For an older supplied
+checkout, the runner migrates the three digest domains before compilation,
+without creating a commit. The local snapshot needs no such migration.
 
 ## Preview and run
 
@@ -121,22 +114,21 @@ Preview without compiling, running proofs, or writing campaign artifacts:
 
 ```sh
 python3 scripts/run_matched_multiswap_campaign.py --dry-run \
-  --limber-root /tmp/limber-matched114 --all-threads 16
+  --all-threads 16
 ```
 
-Canonical execution requires the external `zk-proof-profiler` validator. It
-is **not bundled here**: supply the actual `scripts/zk_trace.py` file through
-`--profiler`. The runner fails preflight if it is absent; the repository's
-comparison-specific validator does not replace it.
+Canonical execution uses the bundled `scripts/zk_trace.py` validator. Supply
+it with `--profiler "$PWD/scripts/zk_trace.py"`. The runner fails preflight if
+the supplied file is absent; the comparison-specific validator does not
+replace the trace validator.
 
-To collect benchmark results while that dependency is unavailable, explicitly
+To collect results with canonical validation marked pending, explicitly
 select `--draft`. This runs the Rust proofs, proof verification, and all
 repository comparison checks. The manifest, JSON, CSV, and HTML mark canonical
 validation as pending, so this does not complete the canonical acceptance gate:
 
 ```sh
 python3 scripts/run_matched_multiswap_campaign.py --draft \
-  --limber-root /tmp/limber-matched114 \
   --security-bits 114 --batch-counts 1,2,4,8,16 \
   --all-threads 16 --warmups 1 --samples 10
 ```
@@ -146,8 +138,7 @@ use `--draft --batch-counts 1 --samples 1`; that runs six configurations.
 
 ```sh
 python3 scripts/run_matched_multiswap_campaign.py \
-  --limber-root /tmp/limber-matched114 \
-  --profiler /path/to/zk-proof-profiler/scripts/zk_trace.py \
+  --profiler "$PWD/scripts/zk_trace.py" \
   --security-bits 114 --batch-counts 1,2,4,8,16 \
   --all-threads 16 --warmups 1 --samples 10
 ```
@@ -158,7 +149,7 @@ records their identities, overrides inherited workload/security settings,
 and compiles with native CPU flags. The benchmark commands are:
 
 ```text
-BitZ:    cargo bench --bench multiswap --features unchecked
+BitZ:    cargo bench --bench multiswap --features unchecked,span-metrics
 Limber: rustup run nightly-2026-07-01 cargo bench --bench multiswap_modp
 ```
 

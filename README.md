@@ -59,7 +59,6 @@ set -euo pipefail
 
 rustup toolchain install 1.98.1
 rustup toolchain install nightly-2026-07-01
-[ -f scripts/materialize_vendors.py ] && python3 scripts/materialize_vendors.py --check
 bash scripts/install_trace_processor.sh
 
 export RUSTFLAGS="-C target-cpu=native"
@@ -68,9 +67,9 @@ unset BITZ_LIG_PROFILE CARGO_ENCODED_RUSTFLAGS CARGO_TARGET_DIR
 
 mkdir -p bench_results
 export RUN_DIR="$(mktemp -d "$PWD/bench_results/all-benchmarks-$(date +%Y%m%d-%H%M%S)-XXXXXX")"
-# The artifact workspace vendors Limber; a development checkout points this at
-# the Limber checkout prepared by scripts/prepare_matched_limber.py.
-LIMBER_DIR="${LIMBER_DIR:-$PWD/vendor/limber}"
+# scripts/prepare_matched_limber.py fetches the Cargo.toml-pinned Limber
+# commit here on demand; set LIMBER_DIR to reuse an existing checkout.
+LIMBER_DIR="${LIMBER_DIR:-$PWD/.tools/limber}"
 gate() { python3 scripts/bench_gate.py run --label "$1" --swap-grow-gb "${2:-12}" -- "${@:3}"; }
 echo "Results: $RUN_DIR"
 ```

@@ -1,5 +1,6 @@
 /target
 /.tools/perfetto/
+/.tools/limber/
 /crates/*/target/
 /bench_results/
 /benches/results/
@@ -10,7 +11,7 @@
 /benchmarks/results/**/*.csv
 /PerfRuns/
 /src/sumcheck/performance.csv
-/paper/figures/native-mul-ratios.csv
+/outputs/figures/native-mul-ratios.csv
 
 # Generated arithmetic validation and benchmark artifacts.
 /vendor/field/validation/
@@ -43,3 +44,13 @@ __pycache__/
 /vendor/field/target/
 
 /vendor/flock-mod/target/
+
+# Materialized dependencies are tracked; generated outputs are not.
+/vendor/**/target/
+/vendor/**/.git
+
+# These crates are git dependency pins in Cargo.toml; builds never read local
+# checkouts, so any that exist here are personal and untracked.
+/vendor/limber/
+/vendor/binius64/
+/vendor/plonky3/

@@ -34,6 +34,37 @@ impl<const D: usize> PreparedDivisor<D> {
             .divide_into(dividend, &self.divisor, |i, w| quotient.set_word(i, w));
         (quotient, remainder)
     }
+
+    /// Exact quotient and remainder of `a * b`, valid when both operands are
+    /// below this divisor. Invalid operands return a false mask and `(0, 0)`.
+    ///
+    /// For a full-width divisor m, a*b < m² < m*2^(64*D), so one Barrett
+    /// block suffices. Operand validation and selection have fixed bounds;
+    /// dispatch for padded and power-of-two divisors uses only the public m.
+    pub fn mul_div_rem_reduced_ct(&self, a: &Uint<D>, b: &Uint<D>) -> CtValue<(Uint<D>, Uint<D>)> {
+        let valid = a.ct_lt(&self.divisor) & b.ct_lt(&self.divisor);
+        let a = Uint::ct_select(&Uint::ZERO, a, valid);
+        let b = Uint::ct_select(&Uint::ZERO, b, valid);
+        let product = IntegerOps.mul_wide(&a, &b);
+        CtValue::new(
+            self.reduction
+                .divide_reduced_product(&product, &self.divisor),
+            valid,
+        )
+    }
+
+    /// Square counterpart of [`Self::mul_div_rem_reduced_ct`], with the same
+    /// validity and output contract and one product per distinct limb pair.
+    pub fn square_div_rem_reduced_ct(&self, a: &Uint<D>) -> CtValue<(Uint<D>, Uint<D>)> {
+        let valid = a.ct_lt(&self.divisor);
+        let a = Uint::ct_select(&Uint::ZERO, a, valid);
+        let product = IntegerOps.square_wide(&a);
+        CtValue::new(
+            self.reduction
+                .divide_reduced_product(&product, &self.divisor),
+            valid,
+        )
+    }
 }
 
 #[derive(Clone, Debug)]

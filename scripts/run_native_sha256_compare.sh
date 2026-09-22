@@ -7,7 +7,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
-PROFILER="${ZK_TRACE_SCRIPT:-$HOME/.ai-agent-army/skills/zk-proof-profiler/scripts/zk_trace.py}"
+PROFILER="${ZK_TRACE_SCRIPT:-$REPO_ROOT/scripts/zk_trace.py}"
 
 EXPONENTS="${BITZ_SHA_COMPARE_EXPONENTS:-7 8 10 11 12 13 14 15 16}"
 REPETITIONS="${BITZ_SHA_COMPARE_REPS:-21}"

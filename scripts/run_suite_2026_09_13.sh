@@ -109,13 +109,12 @@ fi
 
 if has multiswap; then
   # MultiSwap re-measure at 10 threads (was 8): the matched campaign as in
-  # README "MultiSwap", with --all-threads 10. Prepare the Limber checkout
-  # first (scripts/prepare_matched_limber.py). The campaign script measures
+  # README "MultiSwap", with --all-threads 10. The campaign fetches the pinned
+  # Limber checkout into .tools/limber itself. The campaign script measures
   # single-threaded and all-threads modes itself.
   python3 scripts/bench_gate.py run --label multiswap-t10 --swap-grow-gb 10 -- \
     python3 scripts/run_matched_multiswap_campaign.py \
       --draft \
-      --limber-root /tmp/limber-matched114 \
       --security-bits 114 \
       --batch-counts 1,2,4,8,16 \
       --all-threads 10 \

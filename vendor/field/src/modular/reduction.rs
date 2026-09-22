@@ -198,10 +198,34 @@ impl<const L: usize> Barrett<L> {
         remainder
     }
 
+    /// The caller has checked both multiplicands are below the modulus.
+    pub(crate) fn divide_reduced_product(
+        &self,
+        input: &UintProduct<L, L>,
+        modulus: &Uint<L>,
+    ) -> (Uint<L>, Uint<L>) {
+        if self.limbs == L && self.power_of_two.is_none() {
+            return self.divide_block(input, modulus, L);
+        }
+        let mut quotient = Uint::ZERO;
+        let remainder = self.divide_into(input, modulus, |i, word| {
+            // The reduced-product bound guarantees all higher words are zero.
+            if i < L {
+                quotient.0[i] = word;
+            }
+        });
+        (quotient, remainder)
+    }
+
     /// Divide x < m B^k, hence the quotient fits k limbs. Barrett's estimate
     /// is at most two below the exact quotient; execute both corrections.
     #[inline(always)]
-    fn divide_block(&self, x: &UintProduct<L, L>, modulus: &Uint<L>, k: usize) -> (Uint<L>, Uint<L>) {
+    fn divide_block(
+        &self,
+        x: &UintProduct<L, L>,
+        modulus: &Uint<L>,
+        k: usize,
+    ) -> (Uint<L>, Uint<L>) {
         let mut product = Scratch::<L>::zero();
         for i in 0..=k {
             let a = if i < k + 1 && k - 1 + i < 2 * k {

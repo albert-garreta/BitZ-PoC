@@ -110,8 +110,12 @@ fn div_product<const L: usize>(
     b: &Uint<L>,
     divisor: &PreparedDivisor<L>,
 ) -> (Uint<32>, Uint<L>) {
-    let product = IntegerOps.mul_wide(a, b);
-    let (q, r) = divisor.div_rem_product_ct(&product);
+    let result = divisor.mul_div_rem_reduced_ct(a, b);
+    debug_assert!(
+        result.validity().declassify(),
+        "generator operands are reduced"
+    );
+    let (q, r) = *result.value();
     // Both operands are reduced: their product divided by the modulus is
     // below that modulus, hence below 2^(64 L). No secret overflow branch.
     let q = q.checked_resize_ct::<32>();
@@ -123,6 +127,21 @@ fn div_value<const L: usize>(
     divisor: &PreparedDivisor<L>,
 ) -> (Uint<32>, Uint<L>) {
     divisor.div_rem_ct(value)
+}
+
+fn div_square<const L: usize>(
+    value: &Uint<L>,
+    divisor: &PreparedDivisor<L>,
+) -> (Uint<32>, Uint<L>) {
+    let result = divisor.square_div_rem_reduced_ct(value);
+    debug_assert!(
+        result.validity().declassify(),
+        "generator operand is reduced"
+    );
+    let (q, r) = *result.value();
+    let q = q.checked_resize_ct::<32>();
+    debug_assert!(q.validity().declassify());
+    (*q.value(), r)
 }
 
 use thiserror::Error;
@@ -378,6 +397,7 @@ fn build_exp_circuit<const L: usize, const E: usize>(
     base: &Uint<L>,
     exponent: &Uint<E>,
     n: &Uint<L>,
+    divisor: &PreparedDivisor<L>,
     ell_bits: usize,
     row_base: usize,
     col_base: usize,
@@ -391,7 +411,6 @@ fn build_exp_circuit<const L: usize, const E: usize>(
 ) -> usize {
     let one = Uint::<1>::ONE;
     let g_minus_1 = base.wrapping_sub(&Uint::ONE);
-    let divisor = PreparedDivisor::new(*n).expect("public nonzero chain modulus");
 
     let bit_col = |j: usize| col_base + j;
     let exp_col = col_base + ell_bits;
@@ -419,7 +438,7 @@ fn build_exp_circuit<const L: usize, const E: usize>(
         };
 
         // Square row.
-        let (sq_q, sq_val) = div_product(&acc_val, &acc_val, &divisor);
+        let (sq_q, sq_val) = div_square(&acc_val, divisor);
         w[sq_col(j)] = sq_val.zero_extend();
         quos[row] = sq_q;
 
@@ -432,7 +451,7 @@ fn build_exp_circuit<const L: usize, const E: usize>(
 
         // Conditional-multiply row.
         let b_val = Uint::ct_select(&Uint::ONE, base, CtMask::from_lsb(bits[j] as u64));
-        let (cm_q, acc_next) = div_product(&sq_val, &b_val, &divisor);
+        let (cm_q, acc_next) = div_product(&sq_val, &b_val, divisor);
         w[acc_col(j)] = acc_next.zero_extend();
         quos[row] = cm_q;
 
@@ -502,6 +521,9 @@ fn build_generic_rows<const L: usize>(
     w: &mut [Uint<32>],
     quos: &mut [Uint<32>],
 ) {
+    if count == 0 {
+        return;
+    }
     let divisor = PreparedDivisor::new(*modulus).expect("public row modulus");
     for r in start..start + count {
         let av = modulus.wrapping_sub(&Uint::from_u64(r as u64 % 17 + 1));
@@ -527,9 +549,16 @@ impl MultiswapCircuit {
         let n = modulus_n();
         let ell = modulus_ell();
         let p_hash = modulus_p_hash();
-        let n_divisor = PreparedDivisor::new(n).expect("public RSA modulus");
-        let hash_divisor = PreparedDivisor::new(p_hash).expect("public hash modulus");
-        let ell_divisor = PreparedDivisor::new(ell).expect("public exponent modulus");
+        let (n_divisor, hash_divisor, ell_divisor) = {
+            let _scope =
+                tracing::info_span!("multiswap:prepare_divisors", tag_witness_generation = true)
+                    .entered();
+            (
+                PreparedDivisor::new(n).expect("public RSA modulus"),
+                PreparedDivisor::new(p_hash).expect("public hash modulus"),
+                PreparedDivisor::new(ell).expect("public exponent modulus"),
+            )
+        };
         let bases = exp_bases();
         let exponents = exp_exponents(dims.ell_bits);
 
@@ -545,11 +574,14 @@ impl MultiswapCircuit {
         let mut quos = vec![Uint::<32>::ZERO; num_cons];
         let one = Uint::<1>::ONE;
 
+        let rsa_scope =
+            tracing::info_span!("multiswap:rsa_chains", tag_witness_generation = true).entered();
         for i in 0..dims.n_group_exps {
             build_exp_circuit(
                 &bases[i],
                 &exponents[i],
                 &n,
+                &n_divisor,
                 dims.ell_bits,
                 i * dims.rows_per_exp(),
                 i * dims.cols_per_exp(),
@@ -562,6 +594,7 @@ impl MultiswapCircuit {
                 &mut quos,
             );
         }
+        drop(rsa_scope);
 
         let mut row = dims.n_group_exps * dims.rows_per_exp();
         let mut col = dims.n_group_exps * dims.cols_per_exp();
@@ -587,10 +620,12 @@ impl MultiswapCircuit {
         let hp_inputs = hp_chain_inputs(dims.hp_exp_bits);
         let mut hp_out_cols = [0usize; 4];
         for i in 0..dims.hp_exps {
+            let divisor = PreparedDivisor::new(hp_ms[i]).expect("public chain modulus");
             build_exp_circuit(
                 &hp_inputs[i].0,
                 &hp_inputs[i].1,
                 &hp_ms[i],
+                &divisor,
                 dims.hp_exp_bits,
                 row,
                 col,
@@ -626,8 +661,8 @@ impl MultiswapCircuit {
         let mut x_col = seed_col;
         for _ in 0..(dims.poseidon_rows / 3) {
             let x = read::<4>(&w[x_col]);
-            let (q2, x2) = div_product(&x, &x, &hash_divisor);
-            let (q4, x4) = div_product(&x2, &x2, &hash_divisor);
+            let (q2, x2) = div_square(&x, &hash_divisor);
+            let (q4, x4) = div_square(&x2, &hash_divisor);
             let (q5, x5) = div_product(&x4, &x, &hash_divisor);
             w[col] = x2.zero_extend();
             a_entries.push((row, x_col, one.clone()));
@@ -811,12 +846,22 @@ impl MultiswapCircuit {
         self.dims.num_real_cols() * self.batch_count
     }
 
-    /// Backend-independent statement contract. The legacy matrix digest stays
-    /// unchanged for B=1; this envelope additionally binds roles and public IO.
+    /// BitZ protocol statement contract, including roles and public IO.
     pub fn comparison_statement_digest(&self) -> [u8; 32] {
+        self.comparison_digest_with_statement(self.statement_digest())
+    }
+
+    /// Backend-independent contract for matched benchmark reports.
+    /// Uses the minimal-byte matrix encoding shared with Limber, independently
+    /// of the fixed-width encoding used by the BitZ proof transcript.
+    pub fn canonical_comparison_statement_digest(&self) -> [u8; 32] {
+        self.comparison_digest_with_statement(self.canonical_statement_digest())
+    }
+
+    fn comparison_digest_with_statement(&self, statement: [u8; 32]) -> [u8; 32] {
         let mut h = Hasher::new();
         h.update(b"bitz-limber/multiswap-statement/v2");
-        h.update(&self.statement_digest());
+        h.update(&statement);
         for v in [
             self.batch_count,
             0,
@@ -948,14 +993,35 @@ impl MultiswapCircuit {
         self
     }
 
-    /// Canonical BLAKE3 digest of the complete integer statement.
+    /// BitZ protocol BLAKE3 digest of the complete integer statement (v2).
     ///
     /// Binds the dimension schedule, padded shape, all three COO matrices,
     /// and the per-row moduli with length-prefixed frames.  The witness and
-    /// quotients are deliberately excluded.
+    /// quotients are deliberately excluded. Integers retain their storage width.
     pub fn statement_digest(&self) -> [u8; 32] {
+        self.statement_digest_with_encoding(CIRCUIT_DIGEST_DOMAIN, false)
+    }
+
+    /// Canonical v1 digest for comparison with Limber's integer statement.
+    /// Public coefficients and moduli use minimal unsigned little-endian bytes,
+    /// with zero encoded as one zero byte, matching BigUint::to_bytes_le.
+    /// This diagnostic encoding is not used by the BitZ proof transcript.
+    pub fn canonical_statement_digest(&self) -> [u8; 32] {
+        self.statement_digest_with_encoding(b"bitz/multiswap/circuit-digest/v1", true)
+    }
+
+    fn statement_digest_with_encoding(&self, domain: &[u8], minimal: bool) -> [u8; 32] {
+        let encode = |words: &[u64]| {
+            let mut bytes: Vec<_> = words.iter().flat_map(|word| word.to_le_bytes()).collect();
+            if minimal {
+                // Only public statement values are formatted here.
+                let len = bytes.iter().rposition(|&byte| byte != 0).map_or(1, |i| i + 1);
+                bytes.truncate(len);
+            }
+            bytes
+        };
         let mut hasher = Hasher::new();
-        hasher.update(CIRCUIT_DIGEST_DOMAIN);
+        hasher.update(domain);
         for value in [
             self.dims.k,
             self.dims.ell_bits,
@@ -978,14 +1044,14 @@ impl MultiswapCircuit {
             for (row, column, value) in entries.iter() {
                 hasher.update(&(row as u64).to_le_bytes());
                 hasher.update(&(column as u64).to_le_bytes());
-                let bytes: Vec<_> = value.iter().flat_map(|word| word.to_le_bytes()).collect();
+                let bytes = encode(value);
                 hasher.update(&(bytes.len() as u64).to_le_bytes());
                 hasher.update(&bytes);
             }
         }
         hasher.update(&(self.mods.len() as u64).to_le_bytes());
         for modulus in self.mods.iter() {
-            let bytes: Vec<_> = modulus.iter().flat_map(|word| word.to_le_bytes()).collect();
+            let bytes = encode(modulus);
             hasher.update(&(bytes.len() as u64).to_le_bytes());
             hasher.update(&bytes);
         }
@@ -1018,6 +1084,23 @@ mod tests {
             };
             let actual = MultiswapCircuit::build(dims).unwrap();
             let expected = reference::MultiswapCircuit::build(old_dims).unwrap();
+            assert_eq!(actual.canonical_statement_digest(), expected.statement_digest());
+            assert_eq!(
+                actual.canonical_comparison_statement_digest(),
+                expected.comparison_statement_digest()
+            );
+            if full {
+                assert_eq!(
+                    blake3::Hash::from(actual.statement_digest()).to_hex().as_str(),
+                    "7b2a94147cfb9a0604c45f1ab13dacdefffb6474e26fffc8e376b147227523bf",
+                    "preserve the existing BitZ protocol digest"
+                );
+                assert_eq!(
+                    blake3::Hash::from(actual.canonical_statement_digest()).to_hex().as_str(),
+                    "23e2a82b4c5aac1d8e7dcfd558c5a22e85b51efa20000a9fb1f0e1791a50a5da",
+                    "match the independently recorded Limber digest"
+                );
+            }
             assert_eq!(actual.num_cons(), expected.num_cons());
             assert_eq!(actual.num_vars(), expected.num_vars());
             for (got, want) in actual.witness().iter().zip(expected.witness()) {
@@ -1043,6 +1126,22 @@ mod tests {
                 assert!(got.iter().any(|(_, _, v)| v.len() == 1));
             }
         }
+    }
+
+    #[test]
+    fn canonical_batch_digests_match_limber_encoding_and_bind_public_statement() {
+        let mut actual = MultiswapCircuit::build_batch(MultiswapDims::multiswap(0), 2).unwrap();
+        let expected = reference::MultiswapCircuit::build_batch(
+            reference::MultiswapDims::multiswap(0), 2,
+        ).unwrap();
+        assert_eq!(actual.canonical_statement_digest(), expected.statement_digest());
+        let contract = actual.canonical_comparison_statement_digest();
+        assert_eq!(contract, expected.comparison_statement_digest());
+        let last = actual.live_rows() - 1;
+        actual.quos[last] = actual.quos[last].wrapping_add(&Uint::ONE);
+        assert_eq!(contract, actual.canonical_comparison_statement_digest());
+        actual.mods.set(last, modulus_ell().wrapping_add(&Uint::ONE));
+        assert_ne!(contract, actual.canonical_comparison_statement_digest());
     }
 
     #[test]

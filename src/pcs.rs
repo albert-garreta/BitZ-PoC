@@ -142,6 +142,31 @@ mod row_bit_weight_tests {
     use super::*;
 
     #[test]
+    fn flat_powers_match_independent_exponentiation() {
+        let weights = [0, 1, 2, u128::MAX, 0x5a13_c479_890b_246f];
+        for word_bits in [1, 2, 8, 32, 128] {
+            let p = IntegerMatrixLayout {
+                row_vars: 3,
+                col_vars: 1,
+                word_bits,
+            };
+            for alpha in [Gf::zero(), Gf::one(), Gf::from([0x99887766, 0x12345678])] {
+                let powers = chunk_pow2_flat(&p, &weights, alpha);
+                for (row, &weight) in weights.iter().enumerate() {
+                    let base = gf_pow(alpha, weight);
+                    for bit in 0..word_bits {
+                        assert_eq!(
+                            powers.power(row, bit),
+                            gf_pow(base, 1u128 << bit),
+                            "row={row}, bit={bit}, W={word_bits}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn fused_weights_match_independent_powers() {
         for word_bits in [1usize, 2, 8, 32, 128] {
             let p = IntegerMatrixLayout {
@@ -1636,6 +1661,62 @@ where
     y
 }
 
+/// Access to a row's place-value powers, independent of their allocation layout.
+pub(crate) trait PowerTable: Sync {
+    fn power(&self, row: usize, bit: usize) -> Gf;
+}
+
+impl PowerTable for [Vec<Gf>] {
+    #[inline(always)]
+    fn power(&self, row: usize, bit: usize) -> Gf {
+        self[row][bit]
+    }
+}
+
+impl PowerTable for Vec<Vec<Gf>> {
+    #[inline(always)]
+    fn power(&self, row: usize, bit: usize) -> Gf {
+        self[row][bit]
+    }
+}
+
+pub(crate) struct FlatPowers {
+    pub(crate) values: Vec<Gf>,
+    pub(crate) word_bits: usize,
+}
+
+impl PowerTable for FlatPowers {
+    #[inline(always)]
+    fn power(&self, row: usize, bit: usize) -> Gf {
+        debug_assert!(bit < self.word_bits);
+        self.values[row * self.word_bits + bit]
+    }
+}
+
+/// One allocation for the shared powers; in particular, W=1 needs no per-row Vec.
+pub(crate) fn chunk_pow2_flat(
+    p: &IntegerMatrixLayout,
+    w_chunk: &[u128],
+    alpha: Gf,
+) -> FlatPowers {
+    let comb = field::FixedBasePow::<_, 2>::new_public(field::Gf128Ops, alpha.into(), 8);
+    let mut values = vec![Gf::zero(); w_chunk.len() * p.word_bits];
+    cfg_chunks_mut!(values, p.word_bits)
+        .zip(cfg_iter!(w_chunk))
+        .for_each(|(chain, &w)| {
+            let mut cur =
+                Gf::from(comb.pow_public(&field::Uint::from_words([w as u64, (w >> 64) as u64])));
+            for value in chain {
+                *value = cur;
+                cur = cur.square();
+            }
+        });
+    FlatPowers {
+        values,
+        word_bits: p.word_bits,
+    }
+}
+
 /// Build the per-chunk place-value table `α^{W_chunks[l][b]·2^j}` by a per-row
 /// squaring chain (`α^{w·2^j} = (α^{w·2^{j-1}})²`), one chunk's worth.
 pub(crate) fn chunk_pow2_table(
@@ -1741,13 +1822,13 @@ pub(crate) fn extract_column_bit_halves(
 #[allow(clippy::arithmetic_side_effects)]
 pub(crate) fn leaf_tau_halves(
     p: &IntegerMatrixLayout,
-    tbl: &[Vec<Gf>],
+    tbl: &(impl PowerTable + ?Sized),
     one: Gf,
     log_w: usize,
     row_len: usize,
 ) -> (Vec<Gf>, Vec<Gf>) {
     let mask_w = p.word_bits.wrapping_sub(1);
-    let tau = |i: usize| -> Gf { tbl[i >> log_w][i & mask_w] + one };
+    let tau = |i: usize| -> Gf { tbl.power(i >> log_w, i & mask_w) + one };
     let h = row_len >> 1;
     ((0..h).map(tau).collect(), (h..row_len).map(tau).collect())
 }
@@ -1761,7 +1842,7 @@ pub(crate) fn leaf_tau_halves(
 #[allow(clippy::arithmetic_side_effects)]
 pub(crate) fn layer1_pair_table(
     p: &IntegerMatrixLayout,
-    tbl: &[Vec<Gf>],
+    tbl: &(impl PowerTable + ?Sized),
     log_w: usize,
     row_len: usize,
 ) -> Vec<Gf> {
@@ -1770,7 +1851,7 @@ pub(crate) fn layer1_pair_table(
     cfg_into_iter!(0..half1)
         .map(|i| {
             let ih = i + half1;
-            tbl[i >> log_w][i & mask_w] * tbl[ih >> log_w][ih & mask_w]
+            tbl.power(i >> log_w, i & mask_w) * tbl.power(ih >> log_w, ih & mask_w)
         })
         .collect()
 }
@@ -1787,7 +1868,7 @@ pub(crate) fn build_column_layer1_halves(
     p: &IntegerMatrixLayout,
     packed_cols: &[Vec<u64>],
     col: usize,
-    tbl: &[Vec<Gf>],
+    tbl: &(impl PowerTable + ?Sized),
     pair_tbl: &[Gf],
     one: Gf,
     log_w: usize,
@@ -1800,10 +1881,10 @@ pub(crate) fn build_column_layer1_halves(
         let hi = packed_col_bit(packed_cols, col, i.wrapping_add(half1));
         match (lo, hi) {
             (false, false) => one,
-            (true, false) => tbl[i >> log_w][i & mask_w],
+            (true, false) => tbl.power(i >> log_w, i & mask_w),
             (false, true) => {
                 let ih = i.wrapping_add(half1);
-                tbl[ih >> log_w][ih & mask_w]
+                tbl.power(ih >> log_w, ih & mask_w)
             }
             (true, true) => pair_tbl[i],
         }

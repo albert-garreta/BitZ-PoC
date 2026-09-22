@@ -44,10 +44,28 @@ def file_hash(path):
     return digest.hexdigest()
 
 
+def git(root, *args):
+    return subprocess.check_output(["git", "--no-optional-locks", "-C", str(root), *args])
+
+
+def root_metadata(root=ROOT):
+    """Revision, status and dirty flag of the Git checkout at `root`."""
+    # Require a checkout at this root, never accidentally report an enclosing repo.
+    if not (root / ".git").exists():
+        raise ValueError(f"not a Git checkout: {root}")
+    revision = git(root, "rev-parse", "HEAD").decode().strip()
+    status = git(root, "status", "--porcelain", "--untracked-files=normal").decode().strip()
+    return dict(revision=revision, git_status=status, git_dirty=bool(status), source_kind="checkout")
+
+
+def source_patch(root=ROOT):
+    root_metadata(root)  # Reject a non-checkout rather than report it as clean source.
+    return git(root, "diff", "--binary", "HEAD")
+
+
 def source_metadata(root=ROOT):
-    diff = subprocess.run(["git", "diff", "HEAD"], cwd=root, capture_output=True, check=True).stdout
-    return dict(revision=command_text("git", "rev-parse", "HEAD", cwd=root),
-                git_status=command_text("git", "status", "--short", cwd=root),
+    diff = source_patch(root)
+    return dict(**root_metadata(root),
                 tracked_diff_sha256=hashlib.sha256(diff).hexdigest(),
                 rustc=command_text("rustc", "-Vv", cwd=root), cpu=cpu_name(),
                 platform=platform.platform(), logical_cpus=os.cpu_count())

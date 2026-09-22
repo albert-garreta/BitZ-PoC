@@ -258,7 +258,7 @@ struct TraceWriter {
     output: JsonlWriter<BufWriter<File>>,
     campaign_id: String,
     git_rev: String,
-    git_dirty: bool,
+    git_dirty: Option<bool>,
     build_profile: String,
     cpu: String,
     threads: usize,
@@ -283,14 +283,9 @@ impl TraceWriter {
         let campaign_id = std::env::var("BITZ_MULTISWAP_CAMPAIGN_ID")
             .unwrap_or_else(|_| "multiswap-matched-v1".to_owned());
         let git_rev = std::env::var("BITZ_MULTISWAP_GIT_REV").unwrap_or_else(|_| {
-            command_output("git", &["rev-parse", "--short", "HEAD"], "unknown")
+            common::environment::revision()
         });
-        let git_dirty = Command::new("git")
-            .args(["status", "--porcelain", "--untracked-files=no"])
-            .output()
-            .map_or(true, |output| {
-                !output.status.success() || !output.stdout.is_empty()
-            });
+        let git_dirty = common::environment::dirty();
         let cpu = std::env::var("BITZ_MULTISWAP_CPU").unwrap_or_else(|_| {
             command_output(
                 "sysctl",
@@ -358,7 +353,7 @@ impl TraceWriter {
             );
         }
 
-        let constraint_digest = hex_bytes(circuit.statement_digest());
+        let constraint_digest = hex_bytes(circuit.canonical_statement_digest());
         assert_eq!(
             prepared.statement_digest(),
             &circuit.statement_digest(),
@@ -400,6 +395,15 @@ impl TraceWriter {
         } else {
             "configured multi-worker Rayon pool; no affinity pinning"
         };
+        let schedule_policy = bitz::merged_forest::schedule::SchedulePolicy::from_env()
+            .expect("valid F2_FOREST_SCHEDULE");
+        let forest_schedule = bitz::merged_forest::schedule::resolve_schedule(
+            schedule_policy,
+            prepared.params(),
+            bitz::merged_forest::schedule::ForestPath::Single,
+            self.threads,
+        )
+        .expect("single forest schedule");
         let run = json!({
             "schema": "zkperf.trace/v1",
             "record": "run",
@@ -500,7 +504,8 @@ impl TraceWriter {
                 "bitz_virt_id_fast": env_setting("BITZ_VIRT_ID_FAST", "default:on"),
                 "bitz_rs_fast": env_setting("BITZ_RS_FAST", "default:on"),
                 "bitz_flat_forest": env_setting("BITZ_FLAT_FOREST", "default:shape-dependent"),
-                "f2_forest_schedule": env_setting("F2_FOREST_SCHEDULE", "default:l4"),
+                "f2_forest_schedule_requested": schedule_policy.name(),
+                "f2_forest_schedule": forest_schedule.name(),
                 "arithmetic": "delayed-barrett",
             },
         });
@@ -1140,7 +1145,7 @@ fn main() {
     let setup_ns = u64::try_from(setup_elapsed.as_nanos()).unwrap_or(u64::MAX);
     let setup_ms = setup_elapsed.as_secs_f64() * 1e3;
 
-    let constraint_digest = hex_bytes(circuit.statement_digest());
+    let constraint_digest = hex_bytes(circuit.canonical_statement_digest());
     if let Some(expected) = &env.expected_constraint_digest {
         assert_eq!(
             expected, &constraint_digest,
@@ -1276,7 +1281,7 @@ fn main() {
 fn statement_contract(circuit: &MultiswapCircuit) -> Value {
     json!({
         "domain": "bitz-limber/multiswap-statement/v2",
-        "digest_blake3": hex_bytes(circuit.comparison_statement_digest()),
+        "digest_blake3": hex_bytes(circuit.canonical_comparison_statement_digest()),
         "batch_count": circuit.batch_count(), "public_input_count": 0, "public_inputs": [],
         "value_bits": MULTISWAP_VALUE_BITS, "integer_domain": "unsigned",
         "public_roles": ["matrices", "moduli"], "private_roles": ["witness", "quotients"],

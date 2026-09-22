@@ -11,6 +11,7 @@ from __future__ import annotations
 from bench_support import cpu_name as _cpu_name, command_text, filtered_environment, stream_logged
 
 import argparse
+from bench_support import root_metadata, source_patch
 import hashlib
 import json
 import os
@@ -24,7 +25,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 import matched_multiswap_report as report
-from prepare_matched_limber import DEFAULT_DESTINATION, migrate_multiswap_domains
+from prepare_matched_limber import DEFAULT_DESTINATION, ensure_limber, migrate_multiswap_domains
 
 
 WORKLOAD_DISCLOSURE = (
@@ -66,10 +67,10 @@ def detect_performance_cores() -> tuple[int, str]:
 
 
 def _git_metadata(root: Path) -> dict[str, Any]:
-    revision = _capture(["git", "rev-parse", "HEAD"], root)
-    status = _capture(["git", "status", "--porcelain", "--untracked-files=all"], root)
-    diff = subprocess.run(["git", "diff", "HEAD", "--binary"], cwd=root, capture_output=True).stdout if root.is_dir() else b""
-    untracked = subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=root, capture_output=True).stdout if root.is_dir() else b""
+    source = root_metadata(root.resolve())
+    diff = source_patch(root) if source["source_kind"] == "checkout" else b""
+    untracked = (subprocess.check_output(["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=root)
+                 if source["source_kind"] == "checkout" else b"")
     untracked_hashes = {}
     for raw in untracked.split(b"\0"):
         if raw:
@@ -78,8 +79,9 @@ def _git_metadata(root: Path) -> dict[str, Any]:
                 untracked_hashes[os.fsdecode(raw)] = hashlib.sha256(path.read_bytes()).hexdigest()
     return {
         "root": str(root),
-        "git_revision": revision,
-        "git_dirty": status is not None,
+        "git_revision": source["revision"],
+        "git_dirty": source["git_dirty"],
+        "source_kind": source["source_kind"],
         "diff_sha256": hashlib.sha256(diff).hexdigest(),
         "untracked_sha256": untracked_hashes,
     }
@@ -588,6 +590,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         campaign_id = args.campaign_id or stamp
         bitz_root = args.bitz_root.resolve()
         limber_root = args.limber_root.resolve()
+        if limber_root == DEFAULT_DESTINATION.resolve():
+            try:
+                ensure_limber(limber_root, bitz_root)
+            except (OSError, ValueError, subprocess.CalledProcessError) as error:
+                raise report.CampaignError(f"cannot prepare the pinned Limber checkout: {error}") from error
         run_dir = (
             args.output_dir.resolve()
             if args.output_dir

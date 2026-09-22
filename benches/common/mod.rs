@@ -72,39 +72,22 @@ use bitz::piop::spartan::{
     Sha128ReferenceSchedule,
 };
 
-/// Revision from the Cargo-generated lockfile embedded in this benchmark.
-/// Report the dependency used at build time, without requiring sibling clones.
-///
-/// A dependency redirected by `[patch]` to an in-tree `vendor/` copy has no
-/// lockfile source. Its vendored tree carries local changes, so reporting a
-/// bare upstream revision for it would be wrong; instead this reports the
-/// revision its still-Git-pinned siblings share, marked `+patched`.
-pub fn locked_git_revision(package: &str) -> String {
-    let lock = include_str!("../../Cargo.lock");
-    let git_revision = |entry: &str| {
-        entry
-            .lines()
-            .find_map(|line| line.strip_prefix("source = \"git+"))
-            .and_then(|source| source.strip_suffix('"'))
-            .and_then(|source| source.rsplit_once('#'))
-            .map(|(_, commit)| commit.to_owned())
+/// Actual local dependency commit recorded when this benchmark was built.
+/// Path dependencies have no Git revision in Cargo.lock.
+pub fn local_vendor_revision(package: &str) -> String {
+    let revision = if package.starts_with("p3-") {
+        option_env!("PLONKY3_REVISION")
+    } else if package.starts_with("binius-") {
+        option_env!("BINIUS64_REVISION")
+    } else if package == "limber" {
+        option_env!("LIMBER_REVISION")
+    } else {
+        panic!("unknown benchmark dependency {package}");
     };
-    let name = format!("name = \"{package}\"");
-    let entry = lock
-        .split("[[package]]")
-        .find(|entry| entry.lines().any(|line| line == name))
-        .unwrap_or_else(|| panic!("missing locked dependency {package}"));
-    if let Some(revision) = git_revision(entry) {
-        return revision;
-    }
-    let family = format!("name = \"{}-", package.split('-').next().unwrap_or(package));
-    lock.split("[[package]]")
-        .filter(|entry| entry.lines().any(|line| line.starts_with(&family)))
-        .find_map(git_revision)
-        .map_or_else(
-            || "patched".to_owned(),
-            |revision| format!("{revision}+patched"),
-        )
+    // These are git dependencies now, not path deps with no Cargo.lock
+    // revision: this fallback is only reached if a build.rs-style variable
+    // was never stamped, which is expected without that stamping step.
+    revision.unwrap_or("unknown").to_owned()
 }
 
 // ---------------------------------------------------------------------
@@ -115,6 +98,11 @@ pub fn locked_git_revision(package: &str) -> String {
 /// `BITZ_*` variable outside this list aborts the bench so a typo'd knob can
 /// never silently do nothing. Keep sorted; add new knobs here.
 pub const KNOWN_BITZ_ENV: &[&str] = &[
+    // Optional revision metadata, read with `option_env!`/the environment; unset
+    // means "unknown". Accepted so a launcher may pass it without tripping the
+    // typo check.
+    "BITZ_DIRTY",
+    "BITZ_REVISION",
     // A/B example harness knobs (examples/taps_ab.rs, examples/rlc_ab.rs).
     "BITZ_AB_B3FAM",
     "BITZ_AB_B3OPEN",

@@ -1522,6 +1522,31 @@ pub(crate) fn prove_int_eval_merged_common(
     )
 }
 
+fn prove_merged_forest_with_powers(
+    transcript: &mut impl Transcript,
+    p: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+    packed_cols: &[Vec<u64>],
+    pow2: &(impl crate::pcs::PowerTable + ?Sized),
+) -> (Vec<Gf>, crate::merged_forest::MergedForestProof, Vec<Gf>, Gf) {
+    let _g = tracing::info_span!("mc:forest").entered();
+    if crate::merged_forest::quad_active(p) {
+        crate::merged_forest::prove_merged_forest_lazy_quad_from_rows(
+            transcript, p, Some(rows), packed_cols, pow2,
+        )
+    } else {
+        // A zero-padded witness ends in all-zero columns; those trees
+        // are constant 1 and never get built (byte-identical proof).
+        let live = {
+            let _g = tracing::info_span!("mc:live_cols").entered();
+            crate::merged_forest::live_cols(p, rows)
+        };
+        crate::merged_forest::prove_merged_forest_lazy_from_rows(
+            transcript, p, rows, packed_cols, pow2, live,
+        )
+    }
+}
+
 pub(crate) fn prove_int_eval_merged_bounded(
     transcript: &mut impl Transcript,
     p: &IntegerMatrixLayout,
@@ -1536,8 +1561,8 @@ pub(crate) fn prove_int_eval_merged_bounded(
     MultiDegreeSumcheckProof<Gf>,
     Vec<Gf>,
 ) {
-    use crate::merged_forest::prove_merged_forest_lazy_from_rows;
-    use crate::pcs::chunk_pow2_table;
+    use crate::merged_forest::use_compact_single_allocations;
+    use crate::pcs::{chunk_pow2_flat, chunk_pow2_table};
     let t_w = row_bit_vars(p);
     let owned;
     let packed_cols: &[Vec<u64>] = match packed_cols {
@@ -1548,31 +1573,19 @@ pub(crate) fn prove_int_eval_merged_bounded(
             &owned
         }
     };
-    let pow2 = {
-        let _g = tracing::info_span!("mc:pow2").entered();
-        chunk_pow2_table(p, row_weights, alpha)
+    let (_roots, mf, z, _e_d) = if use_compact_single_allocations(p) {
+        let pow2 = {
+            let _g = tracing::info_span!("mc:pow2").entered();
+            chunk_pow2_flat(p, row_weights, alpha)
+        };
+        prove_merged_forest_with_powers(transcript, p, rows, packed_cols, &pow2)
+    } else {
+        let pow2 = {
+            let _g = tracing::info_span!("mc:pow2").entered();
+            chunk_pow2_table(p, row_weights, alpha)
+        };
+        prove_merged_forest_with_powers(transcript, p, rows, packed_cols, &pow2)
     };
-    let (_roots, mf, z, _e_d) = {
-        let _g = tracing::info_span!("mc:forest").entered();
-        if crate::merged_forest::quad_active(p) {
-            crate::merged_forest::prove_merged_forest_lazy_quad_from_rows(
-                transcript,
-                p,
-                Some(rows),
-                packed_cols,
-                &pow2,
-            )
-        } else {
-            // A zero-padded witness ends in all-zero columns; those trees
-            // are constant 1 and never get built (byte-identical proof).
-            let live = {
-                let _g = tracing::info_span!("mc:live_cols").entered();
-                crate::merged_forest::live_cols(p, rows)
-            };
-            prove_merged_forest_lazy_from_rows(transcript, p, rows, packed_cols, &pow2, live)
-        }
-    };
-    drop(pow2);
     let v = {
         let _g = tracing::info_span!("mc:fold_v").entered();
         fold_values_bits_bounded(p, rows, row_weights, value_bits)
