@@ -92,14 +92,43 @@ time). The proof grows by the `16·2^s` bytes of the column folds; the
 verifier gets faster with fewer GKR levels (2^19: 3.5 ms against the
 forest's 4.4).
 
-## Numbers (u64 multiplication, M5 24 GB, online prover = commit + prove; forest → wfbitz at its split)
+## Numbers (u64 multiplication, the paper's protocol)
 
-| gates | 10 threads | 1 thread | proof (forest → wfbitz) |
-|---|---|---|---|
-| 2^15 | 22.6 → 20.0 ms | | 137 → 142 KB |
-| 2^17 | 57.8 → 41.6 | | 165 → 176 |
-| 2^19 | 184 → 131 | 731 → 508 | 202 → 228 |
-| 2^21 | 687 → 496 | 2982 → 2142 | 264 → 263 |
+Campaign `PerfRuns/cs-mul-20260924-u64opt-u64-wfbitz-*` (`scripts/
+run_u64_wfbitz_campaign.sh`: `mul_compare`, 5 timed reps after one warm-up,
+every proof verified, peak RSS from a separate single-proof child), M5
+24 GB, against the paper's forest rows (`cs-mul-20260921u-u64-bitz-*`) and
+its Binius64 rows. Online prover = commitment + PIOP + opening, ms; the
+forest → wfbitz columns; Binius64 (UDR) at the same rate for scale.
+
+| gates | thr | rate | forest → wfbitz prover | ratio | verify | proof KB | peak GB | Binius64 |
+|---|---|---|---|---|---|---|---|---|
+| 2^15 | 1 | 1/2 | 53.7 → 45.6 | 0.85 | 2.5 → 1.5 | 137 → 142 | 0.10 → 0.05 | 66.4 |
+| 2^15 | 1 | 1/8 | 55.1 → 65.5 | 1.19 | 2.4 → 1.4 | 84 → 88 | 0.11 → 0.05 | 76.7 |
+| 2^15 | 10 | 1/2 | 23.8 → 18.6 | 0.78 | 2.2 → 1.8 | 137 → 142 | 0.09 → 0.05 | 34.8 |
+| 2^15 | 10 | 1/8 | 23.7 → 21.6 | 0.91 | 2.0 → 1.5 | 84 → 88 | 0.09 → 0.06 | 36.8 |
+| 2^17 | 1 | 1/2 | 186 → 156 | 0.84 | 4.5 → 2.5 | 164 → 176 | 0.34 → 0.14 | 222 |
+| 2^17 | 1 | 1/8 | 213 → 174 | 0.82 | 4.3 → 2.2 | 99 → 110 | 0.37 → 0.17 | 272 |
+| 2^17 | 10 | 1/2 | 59.6 → 44.4 | 0.74 | 3.5 → 2.7 | 164 → 176 | 0.25 → 0.14 | 82.1 |
+| 2^17 | 10 | 1/8 | 64.9 → 48.4 | 0.75 | 3.1 → 2.3 | 99 → 110 | 0.28 → 0.17 | 91.7 |
+| 2^19 | 1 | 1/2 | 732 → 516 | 0.71 | 7.6 → 3.6 | 202 → 227 | 1.30 → 0.47 | 871 |
+| 2^19 | 1 | 1/8 | 867 → 625 | 0.72 | 7.4 → 3.4 | 124 → 147 | 1.42 → 0.60 | 1063 |
+| 2^19 | 10 | 1/2 | 204 → 135 | 0.66 | 4.5 → 3.4 | 202 → 227 | 0.87 → 0.48 | 272 |
+| 2^19 | 10 | 1/8 | 223 → 155 | 0.70 | 4.2 → 3.2 | 124 → 147 | 0.99 → 0.62 | 313 |
+| 2^21 | 1 | 1/2 | 2884 → 2212 | 0.77 | 7.9 → 10.6 | 264 → 262 | 5.05 → 1.89 | 3430 |
+| 2^21 | 1 | 1/8 | 3337 → 2707 | 0.81 | 7.8 → 10.2 | 171 → 170 | 5.55 → 2.39 | 4195 |
+| 2^21 | 10 | 1/2 | 754 → 505 | 0.67 | 4.9 → 8.3 | 264 → 262 | 3.42 → 1.90 | 1073 |
+| 2^21 | 10 | 1/8 | 810 → 626 | 0.77 | 4.7 → 8.1 | 171 → 170 | 3.85 → 2.47 | 1294 |
+
+Reading: the prover is 0.66–0.85× the forest's everywhere but the
+single-threaded 2^15 row at rate 1/8 (1.19×: the rate-1/8 commitment and
+the fixed per-level costs dominate a 46 ms proof), peak memory is 0.45–
+0.55× (one arena instead of the forest's `2^n·4 B` levels), proofs are
+within 7 % (rate 1/2) / 19 % (rate 1/8, 2^19) and equal at 2^21, the
+verifier is faster below 2^21 and slower at 2^21 (8.3 vs 4.9 ms: their
+per-level GKR verification grows with the row count while the forest's
+does not). The full table with every scheme is
+`paper/native-mul-u64-wfbitz-table.tex` (generated, uncommitted).
 
 Where the wfbitz prover's time goes at 2^21 (10 threads, 496 ms): commit 32,
 PIOP 30, column folds + images 17, GKR 357 (levels ≥ 4 built 26, level-4
