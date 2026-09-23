@@ -129,6 +129,9 @@ def build_command(args):
     features = ["span-metrics", "bench-internals", "unchecked"]
     if args.target == "compare":
         features.append("native-mul-compare")
+    if "wfbitz" in args.experiment:
+        # `--opener wfbitz`: the parity port of worldfnd/BitZ's scheme.
+        features.append("bitz-parity")
     features.extend(feature for group in args.features for feature in group.split(",") if feature)
     features = list(dict.fromkeys(features))
     return ["cargo", "bench", "--no-run", "--locked", "--bench", TARGETS[args.target],

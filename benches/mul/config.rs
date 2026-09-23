@@ -110,6 +110,13 @@ pub struct Args {
     pub ligerito: Option<String>,
     #[arg(long, default_value = "johnson")]
     pub bound: String,
+    #[arg(
+        long,
+        default_value = "forest",
+        value_parser = ["forest", "wfbitz"],
+        help = "BitZ opener: the crate's exponent-fold forest, or the parity port of worldfnd/BitZ's scheme (feature bitz-parity; --ligerito fast = its ladder as shipped)"
+    )]
+    pub opener: String,
     #[arg(long, default_value = "current", value_parser = ["current", "regression"])]
     pub preset: String,
     #[arg(long)]
@@ -139,6 +146,11 @@ pub struct Args {
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BitzConfig {
+    /// `Some("wfbitz")`: the bitified claim discharged through the parity
+    /// port of worldfnd/BitZ's scheme (`protocol::wfbitz_opener`) at that
+    /// opener's own default split; `None`: the crate's forest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opener: Option<String>,
     pub gkr_schedule: Option<SchedulePolicy>,
     pub w: usize,
     pub split: i8,
@@ -230,10 +242,18 @@ impl Args {
             .ligerito
             .as_deref()
             .map_or_else(|| vec![None], |s| s.split(',').map(Some).collect());
+        let wfbitz = self.opener == "wfbitz";
         for request in selections.iter().flatten() {
+            if wfbitz && *request == "fast" {
+                continue;
+            }
             bitz::ligerito_flock::LigeritoSelection::parse(request, 100)
                 .map_err(anyhow::Error::msg)?;
         }
+        ensure!(
+            !wfbitz || matches!(self.mode, Mode::Proof | Mode::Witness),
+            "the wfbitz opener runs the proof and witness experiments only"
+        );
         let variants: Vec<_> = self
             .variants
             .as_deref()
@@ -381,38 +401,38 @@ impl Args {
                                     for &profile in &profiles {
                                         for bound in &bounds {
                                             for request in &selections {
-                                                let selected = if let Some(request) = request {
-                                                    bitz::ligerito_flock::LigeritoSelection::parse(
-                                                        request,
-                                                        profile as usize,
-                                                    )
-                                                    .map_err(anyhow::Error::msg)?
-                                                } else if self.mode != Mode::Bounds {
-                                                    bitz::ligerito_flock::LigeritoSelection::for_target(profile as usize)
+                                                // (name, bound) of the opener's Ligerito ladder.
+                                                let (name, johnson) = if wfbitz && *request == Some("fast") {
+                                                    ("fast".to_string(), true)
                                                 } else {
-                                                    match *bound {"johnson"=>bitz::ligerito_flock::LigeritoSelection::JOHNSON,"unique"=>bitz::ligerito_flock::LigeritoSelection::MATCHED_UDR,_=>bitz::ligerito_flock::LigeritoSelection::CustomUdr{log_inv_rate:1,initial_k:4,fold_grinding:false}}
+                                                    let selected = if let Some(request) = request {
+                                                        bitz::ligerito_flock::LigeritoSelection::parse(
+                                                            request,
+                                                            profile as usize,
+                                                        )
+                                                        .map_err(anyhow::Error::msg)?
+                                                    } else if self.mode != Mode::Bounds {
+                                                        bitz::ligerito_flock::LigeritoSelection::for_target(profile as usize)
+                                                    } else {
+                                                        match *bound {"johnson"=>bitz::ligerito_flock::LigeritoSelection::JOHNSON,"unique"=>bitz::ligerito_flock::LigeritoSelection::MATCHED_UDR,_=>bitz::ligerito_flock::LigeritoSelection::CustomUdr{log_inv_rate:1,initial_k:4,fold_grinding:false}}
+                                                    };
+                                                    let name = selected.name();
+                                                    let johnson = name.starts_with("custom:");
+                                                    (name, johnson)
                                                 };
                                                 let f = Some(BitzConfig {
+                                                    opener: (wfbitz && self.mode != Mode::Witness)
+                                                        .then(|| "wfbitz".to_string()),
                                                     gkr_schedule: None,
                                                     w: w as usize,
                                                     split: split as i8,
                                                     profile: (self.mode != Mode::Witness)
                                                         .then_some(profile as usize),
                                                     bound: (self.mode != Mode::Witness).then(
-                                                        || {
-                                                            if selected
-                                                                .name()
-                                                                .starts_with("custom:")
-                                                            {
-                                                                "johnson"
-                                                            } else {
-                                                                "unique"
-                                                            }
-                                                            .into()
-                                                        },
+                                                        || if johnson { "johnson" } else { "unique" }.into(),
                                                     ),
                                                     ligerito: (self.mode != Mode::Witness)
-                                                        .then(|| selected.name()),
+                                                        .then(|| name.clone()),
                                                 });
                                                 if !c.contains(&f) {
                                                     c.push(f);
@@ -430,7 +450,7 @@ impl Args {
                             .into_iter()
                             .flat_map(|f| {
                                 if let Some(f) = &f {
-                                    if self.mode != Mode::Witness {
+                                    if self.mode != Mode::Witness && f.opener.is_none() {
                                         return self
                                             .gkr_schedule
                                             .as_deref()
@@ -555,7 +575,13 @@ impl Case {
         {
             "BitZ opening needs log-n >= 15"
         } else if let Some(f) = &self.bitz {
-            if (self.mode == Mode::Pcs || self.workload == Workload::BabyBear)
+            if f.opener.as_deref() == Some("wfbitz") && !cfg!(feature = "bitz-parity") {
+                "the wfbitz opener needs a build with --features bitz-parity"
+            } else if f.opener.as_deref() == Some("wfbitz") && f.w != 1 {
+                "the wfbitz opener commits bits (W=1)"
+            } else if f.opener.as_deref() == Some("wfbitz") && self.workload == Workload::BabyBear {
+                "the wfbitz opener is wired for the integer workloads"
+            } else if (self.mode == Mode::Pcs || self.workload == Workload::BabyBear)
                 && (f.w != 1 || f.split != 0)
             {
                 "this adapter requires W=1 and split=0"
@@ -596,17 +622,18 @@ impl Case {
             .map(|_| ())
             .map_err(|e| e.to_string())
         }
+        let wfbitz = f.opener.as_deref() == Some("wfbitz");
         let result = match self.workload {
             Workload::U32Full | Workload::U32Mod32 => MulLayout::<u32>::new_with_word_bits(n, f.w)
-                .and_then(|l| l.with_split_shift(f.split))
+                .and_then(|l| if wfbitz { l.wfbitz_split(f.split) } else { l.with_split_shift(f.split) })
                 .map_err(|e| e.to_string())
                 .and_then(|l| check(l, self.mode, f, self.threads)),
             Workload::U64 => MulLayout::<u64>::new_with_word_bits(n, f.w)
-                .and_then(|l| l.with_split_shift(f.split))
+                .and_then(|l| if wfbitz { l.wfbitz_split(f.split) } else { l.with_split_shift(f.split) })
                 .map_err(|e| e.to_string())
                 .and_then(|l| check(l, self.mode, f, self.threads)),
             Workload::U128 => MulLayout::<u128>::new_with_word_bits(n, f.w)
-                .and_then(|l| l.with_split_shift(f.split))
+                .and_then(|l| if wfbitz { l.wfbitz_split(f.split) } else { l.with_split_shift(f.split) })
                 .map_err(|e| e.to_string())
                 .and_then(|l| check(l, self.mode, f, self.threads)),
             Workload::BabyBear => bitz::piop::spartan::baby_bear_mul::BabyBearMulLayout::new(n)
@@ -624,6 +651,11 @@ impl Case {
                 Workload::U128 => self.log_n + 2,
                 _ => return None,
             };
+            if wfbitz && f.ligerito.as_deref() == Some("fast") {
+                // flock's embedded `fast` ladder exists for 2^22..2^35 bits.
+                return (!(22..=35).contains(&(packed + 7)))
+                    .then(|| "no embedded fast ladder for this size".to_string());
+            }
             let selection = bitz::ligerito_flock::LigeritoSelection::parse(
                 f.ligerito.as_deref().expect("proof selection"),
                 f.profile.expect("profile"),
