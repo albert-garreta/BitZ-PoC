@@ -684,6 +684,7 @@ mod tests {
             .fold(Gf::zero(), |acc, (&f, &b)| acc + (f) * (b));
         crate::ligerito::absorb_ood_value(&mut t, target);
         let proof = pcs.open_basis(&mut t, &packed, &data, &r0, basis.clone(), target);
+        let prover_digest = t.state_digest();
 
         let mut t = Blake3Transcript::new();
         t.absorb_slice(&c.root);
@@ -710,6 +711,7 @@ mod tests {
         };
         pcs.verify_basis(&mut t, &c.root, &r0v, target, eval_b, &proof)
             .unwrap();
+        assert_eq!(t.state_digest(), prover_digest);
     }
 
     fn basis_opening_round_trips_at(packed_log: usize) {
@@ -731,6 +733,7 @@ mod tests {
         crate::ligerito::absorb_ood_value(&mut t, target);
         let basis: Vec<Gf128> = basis_gf.iter().copied().collect();
         let proof = pcs.open_basis(&mut t, &packed, &data, &r0, basis, target);
+        let prover_digest = t.state_digest();
 
         let mut t = Blake3Transcript::new();
         t.absorb_slice(&c.root);
@@ -760,5 +763,6 @@ mod tests {
         };
         pcs.verify_basis(&mut t, &c.root, &r0v, target, eval_b, &proof)
             .unwrap();
+        assert_eq!(t.state_digest(), prover_digest);
     }
 }

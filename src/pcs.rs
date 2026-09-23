@@ -1699,8 +1699,22 @@ pub(crate) fn chunk_pow2_flat(
     w_chunk: &[u128],
     alpha: Gf,
 ) -> FlatPowers {
-    let comb = field::FixedBasePow::<_, 2>::new_public(field::Gf128Ops, alpha.into(), 8);
     let mut values = vec![Gf::zero(); w_chunk.len() * p.word_bits];
+    fill_chunk_pow2_flat(p, w_chunk, alpha, &mut values);
+    FlatPowers {
+        values,
+        word_bits: p.word_bits,
+    }
+}
+
+pub(crate) fn fill_chunk_pow2_flat(
+    p: &IntegerMatrixLayout,
+    w_chunk: &[u128],
+    alpha: Gf,
+    values: &mut [Gf],
+) {
+    assert_eq!(values.len(), w_chunk.len() * p.word_bits);
+    let comb = field::FixedBasePow::<_, 2>::new_public(field::Gf128Ops, alpha.into(), 8);
     cfg_chunks_mut!(values, p.word_bits)
         .zip(cfg_iter!(w_chunk))
         .for_each(|(chain, &w)| {
@@ -1711,10 +1725,6 @@ pub(crate) fn chunk_pow2_flat(
                 cur = cur.square();
             }
         });
-    FlatPowers {
-        values,
-        word_bits: p.word_bits,
-    }
 }
 
 /// Build the per-chunk place-value table `α^{W_chunks[l][b]·2^j}` by a per-row

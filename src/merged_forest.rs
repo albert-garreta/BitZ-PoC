@@ -88,7 +88,7 @@ pub enum MergedForestError {
 }
 
 #[allow(clippy::arithmetic_side_effects)]
-fn absorb_gfs(transcript: &mut impl Transcript, tag: u8, vals: &[Gf]) {
+pub(crate) fn absorb_gfs(transcript: &mut impl Transcript, tag: u8, vals: &[Gf]) {
     let mut bytes = Vec::with_capacity(vals.len() * 16 + 1);
     bytes.push(tag);
     for v in vals {
@@ -101,7 +101,7 @@ fn absorb_gfs(transcript: &mut impl Transcript, tag: u8, vals: &[Gf]) {
 
 /// Evaluate the multilinear with table `tbl` (bit k ↔ point[k]) at `point`.
 #[allow(clippy::arithmetic_side_effects)]
-fn mle_at(tbl: &[Gf], point: &[Gf]) -> Gf {
+pub(crate) fn mle_at(tbl: &[Gf], point: &[Gf]) -> Gf {
     debug_assert_eq!(tbl.len(), 1usize << point.len());
     let mut buf = tbl.to_vec();
     for &r in point {
