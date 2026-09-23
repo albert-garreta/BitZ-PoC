@@ -273,10 +273,7 @@ where
         }
         #[cfg(feature = "bitz-parity")]
         Some("wfbitz") => {
-            use bitz::piop::spartan::protocol::{
-                PreparedRelationPrefix,
-                wfbitz_opener::{self, WfbitzLigerito, WfbitzOpener},
-            };
+            use bitz::piop::spartan::protocol::wfbitz_opener::{self, WfbitzLigerito, WfbitzOpener};
             let target = config.profile.expect("profile");
             let ladder = WfbitzLigerito::parse(
                 config.ligerito.as_deref().expect("proof selection"),
@@ -284,12 +281,11 @@ where
             )
             .map_err(anyhow::Error::msg)?;
             let setup = Instant::now();
-            let prefix = if profile128 {
-                PreparedRelationPrefix::new::<Lambda128>(layout)?
+            let (prefix, opener) = if profile128 {
+                WfbitzOpener::prepare::<Lambda128, _>(layout, ladder, target)?
             } else {
-                PreparedRelationPrefix::new::<Lambda100>(layout)?
+                WfbitzOpener::prepare::<Lambda100, _>(layout, ladder, target)?
             };
-            let opener = WfbitzOpener::new(prefix.params(), ladder, target)?;
             let setup_ms = setup.elapsed().as_secs_f64() * 1000.;
             let security_params = prefix.security();
             let (opening_bits, opening_binding) = opener.opening_bits();
@@ -306,7 +302,8 @@ where
                     "regime":if ladder_config.levels.first().is_some_and(|l| l.eta.is_some()) {"johnson"} else {"udr"},
                     "target_bits":ladder_config.target_security_bits,
                     "configuration_fingerprint":opener.digest().iter().map(|b| format!("{b:02x}")).collect::<String>(),
-                    "outer_ood":false,
+                    "outer_ood":prefix.security().ood.is_some(),
+                    "ood_grinding_bits":prefix.security().ood.map(|params| params.grinding_bits),
                     "opening_bits":opening_bits,
                     "opening_binding":opening_binding,
                     "configuration":ladder_config,

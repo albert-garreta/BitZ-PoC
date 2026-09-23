@@ -24,7 +24,9 @@ use spongefish::Encoding;
 use super::params::{LinearClaimGf, Root, Shape};
 use super::sumcheck;
 use super::transcript::{ProverState, PublicTranscript, VerifierState};
-use crate::ligerito_flock::{FlockCommitHint, commit_rs_ligerito_rows};
+use crate::ligerito_flock::{
+    FlockCommitHint, add_ood_basis, commit_rs_ligerito_rows, ood_residual_evals,
+};
 use field::Gf128 as Gf;
 
 /// flock's field element is this crate's `Gf128`: the conversions are the identity.
@@ -43,6 +45,9 @@ const INNER_PRODUCT_STATEMENT_LABEL: &[u8] = b"bitz/pcs/bit-inner-product/v2";
 const SUMCHECK_LABEL: &[u8] = b"bitz/pcs/inner-product-sumcheck/v1";
 const MLE_CLAIMS_LABEL: &[u8] = b"bitz/pcs/mle-claims/v1";
 const CHALLENGES_LABEL: &[u8] = b"bitz/pcs/ring-switch-challenges/v1";
+/// The composed caller's Round-0 claim, batched into the Ligerito basis
+/// (this crate's addition; absent in their protocol).
+const OOD_CLAIM_LABEL: &[u8] = b"bitz/wfbitz/round0-claim/v1";
 const PROOF_HINT_LIMIT: usize = 64 * 1024 * 1024;
 
 const VECTOR_SQUEEZE_TAG: &[u8] = b"pcs/flock/sample-vector/v1";
@@ -216,12 +221,17 @@ impl Pcs {
     }
 
     /// Their `CommitScheme::prove_lin`.
+    ///
+    /// `ood`: an out-of-domain claim `MLE[P](point) = y` on the packed
+    /// message, bound by the caller before any of its challenges (the
+    /// crate's Round 0), to batch into the opening; `None` = as shipped.
     pub fn prove_lin(
         &self,
         hint: &FlockCommitHint,
         query: &OpeningQuery,
         statement_binding: StatementBinding,
         transcript: &mut ProverState,
+        ood: Option<(&[Gf], Gf)>,
     ) -> Result<(), ProveError> {
         if hint.packed_message().len() != self.packed_len {
             return Err(ProveError::PackedWitnessLengthMismatch);
@@ -234,7 +244,7 @@ impl Pcs {
                 if statement_binding == StatementBinding::Bind {
                     bind_mle_statement(self, &root, point, *target, transcript);
                 }
-                self.prove_mle(hint, &ring_switch, *target, transcript)
+                self.prove_mle(hint, &ring_switch, *target, transcript, ood)
             }
             OpeningQuery::InnerProduct { claim } => {
                 validate_inner_product_claim(self, claim)?;
@@ -247,7 +257,7 @@ impl Pcs {
                 super::trace("  sumcheck", started);
                 let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
                 bind_mle_statement(self, &root, &reduced.point, reduced.target, transcript);
-                self.prove_mle(hint, &ring_switch, reduced.target, transcript)
+                self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood)
             }
         }
     }
@@ -259,6 +269,7 @@ impl Pcs {
         query: &OpeningQuery,
         statement_binding: StatementBinding,
         transcript: &mut VerifierState<'_>,
+        ood: Option<(&[Gf], Gf)>,
     ) -> Result<(), VerifyError> {
         match query {
             OpeningQuery::Mle { point, target } => {
@@ -266,7 +277,7 @@ impl Pcs {
                 if statement_binding == StatementBinding::Bind {
                     bind_mle_statement(self, &commitment.0, point, *target, transcript);
                 }
-                self.verify_mle(commitment, &ring_switch, *target, transcript)
+                self.verify_mle(commitment, &ring_switch, *target, transcript, ood)
             }
             OpeningQuery::InnerProduct { claim } => {
                 validate_inner_product_claim(self, claim)?;
@@ -277,7 +288,7 @@ impl Pcs {
                 let reduced = sumcheck::verify(claim, transcript)?;
                 let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
                 bind_mle_statement(self, &commitment.0, &reduced.point, reduced.target, transcript);
-                self.verify_mle(commitment, &ring_switch, reduced.target, transcript)
+                self.verify_mle(commitment, &ring_switch, reduced.target, transcript, ood)
             }
         }
     }
@@ -290,6 +301,7 @@ impl Pcs {
         ring_switch: &RingSwitch,
         target: Gf,
         transcript: &mut ProverState,
+        ood: Option<(&[Gf], Gf)>,
     ) -> Result<(), ProveError> {
         let started_rs = std::time::Instant::now();
         let packed = hint.packed_message();
@@ -313,9 +325,20 @@ impl Pcs {
 
         // reduce_dense
         let batching_weights = build_eq(&batching_point);
-        let packed_target = batch_claims(&claims, &batching_weights);
-        let packed_basis = fold_b128_elems(&suffix_tensor, &batching_weights);
+        let mut packed_target = batch_claims(&claims, &batching_weights);
+        let mut packed_basis = fold_b128_elems(&suffix_tensor, &batching_weights);
         debug_assert_eq!(packed_basis.len(), suffix_tensor.len());
+
+        // The caller's Round-0 claim joins the batch: `η_ood·eq(·, point)`
+        // into the basis, `η_ood·y` into the target.
+        if let Some((point, y)) = ood {
+            if point.len() != ring_switch.suffix_dimension() {
+                return Err(ProveError::Internal);
+            }
+            let eta = bind_ood_claim(transcript, point, y);
+            add_ood_basis(&mut packed_basis, packed, point, eta, None);
+            packed_target = packed_target + eta * y;
+        }
 
         super::trace("  ring switch", started_rs);
 
@@ -346,6 +369,7 @@ impl Pcs {
         ring_switch: &RingSwitch,
         target: Gf,
         transcript: &mut VerifierState<'_>,
+        ood: Option<(&[Gf], Gf)>,
     ) -> Result<(), VerifyError> {
         let proof = read_opening_proof(transcript)?;
         validate_ligerito_proof_shape(&proof, &self.verifier_config, self.final_log_n, &commitment.0)?;
@@ -366,8 +390,19 @@ impl Pcs {
 
         // reduce_succinct
         let batching_weights = build_eq(&batching_point);
-        let packed_target = batch_claims(&claims, &batching_weights);
+        let mut packed_target = batch_claims(&claims, &batching_weights);
         let suffix_point = &ring_switch.point[LOG_PACKING..];
+        let ood = match ood {
+            Some((point, y)) => {
+                if point.len() != ring_switch.suffix_dimension() {
+                    return Err(VerifyError::VerificationFailed);
+                }
+                let eta = bind_ood_claim(transcript, point, y);
+                packed_target = packed_target + eta * y;
+                Some((point, eta))
+            }
+            None => None,
+        };
         let evaluate_basis = |ris: &[FlockF128], yr_log_n: usize| -> Vec<FlockF128> {
             if yr_log_n > 32 || ris.len().checked_add(yr_log_n) != Some(suffix_point.len()) {
                 return Vec::new();
@@ -377,11 +412,17 @@ impl Pcs {
             };
             let prefix = eval_rs_eq_prefix(suffix_point, ris);
             let suffix = &suffix_point[ris.len()..];
-            (0..yr_len)
+            let mut out: Vec<FlockF128> = (0..yr_len)
                 .map(|y| {
                     eval_rs_eq_finish_from_prefix_binary_q(&prefix, suffix, y as u32, &batching_weights)
                 })
-                .collect()
+                .collect();
+            if let Some((point, eta)) = ood {
+                for (slot, term) in out.iter_mut().zip(ood_residual_evals(ris, yr_log_n, point, eta)) {
+                    *slot = *slot + term;
+                }
+            }
+            out
         };
 
         // verify_succinct
@@ -689,6 +730,18 @@ fn bind_inner_product_statement(
     transcript.public_message(root);
     transcript.public_message(pcs);
     transcript.public_message(claim);
+}
+
+/// Binds the caller's Round-0 claim (the point, the value) and draws its
+/// batching scalar `η_ood`.
+fn bind_ood_claim(transcript: &mut impl PublicTranscript, point: &[Gf], y: Gf) -> Gf {
+    transcript.public_message(OOD_CLAIM_LABEL);
+    transcript.public_message(&(point.len() as u64));
+    for coordinate in point {
+        transcript.public_message(coordinate);
+    }
+    transcript.public_message(&y);
+    transcript.verifier_message_f128()
 }
 
 /// Samples the seven MLE ring-switch challenges.

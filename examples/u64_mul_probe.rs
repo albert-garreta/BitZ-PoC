@@ -160,16 +160,16 @@ fn main() {
         #[cfg(feature = "bitz-parity")]
         "wfbitz" => {
             use bitz::piop::spartan::Lambda100;
-            use bitz::piop::spartan::protocol::{
-                PreparedRelationPrefix,
-                wfbitz_opener::{self, WfbitzLigerito, WfbitzOpener},
-            };
+            use bitz::piop::spartan::protocol::wfbitz_opener::{self, WfbitzLigerito, WfbitzOpener};
             let ladder = std::env::var("BITZ_WFBITZ_LADDER").unwrap_or_else(|_| "fast".to_string());
             let ladder = WfbitzLigerito::parse(&ladder, 100).expect("BITZ_WFBITZ_LADDER");
-            let prefix = PreparedRelationPrefix::new::<Lambda100>(layout).unwrap();
-            let opener = WfbitzOpener::new(prefix.params(), ladder, 100).unwrap();
+            let (prefix, opener) = WfbitzOpener::prepare::<Lambda100, _>(layout, ladder, 100).unwrap();
             let (bits, term) = opener.opening_bits();
-            println!("wfbitz ladder {} | opening {bits:.1} bits ({term})", opener.ligerito().name());
+            println!(
+                "wfbitz ladder {} | opening {bits:.1} bits ({term}) | round 0: {:?}",
+                opener.ligerito().name(),
+                prefix.security().ood
+            );
             let hint = opener.commit(witness.bitz_bit_rows()).unwrap();
             measure(
                 e,

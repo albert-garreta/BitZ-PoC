@@ -138,7 +138,7 @@ fn main() {
         record_phases(true);
         let started = Instant::now();
         let mut transcript = build_prover(SESSION, INSTANCE);
-        prover.prove(&claim, &pcs, &hint, &mut transcript).expect("prove");
+        prover.prove(&claim, &pcs, &hint, &mut transcript, None).expect("prove");
         let proof = transcript.finish();
         let elapsed = started.elapsed();
         let phases = take_phases();
@@ -155,7 +155,7 @@ fn main() {
         }
         let started = Instant::now();
         verifier
-            .verify(&claim, &pcs, root, build_verifier(SESSION, INSTANCE, &proof))
+            .verify(&claim, &pcs, root, build_verifier(SESSION, INSTANCE, &proof), None)
             .expect("verify");
         verify_times.push(started.elapsed());
         sizes = (proof.narg_string.len(), proof.hints.len());

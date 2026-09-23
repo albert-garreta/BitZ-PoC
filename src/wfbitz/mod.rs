@@ -127,13 +127,18 @@ impl BitZProver {
     ///
     /// `rows` are the committed per-column bit rows (the layout
     /// [`crate::ligerito_flock::commit_rs_ligerito_rows`] takes), `hint` the
-    /// commitment they produced under `pcs`.
+    /// commitment they produced under `pcs`. `ood` is an out-of-domain
+    /// evaluation claim `MLE[P](point) = y` on the packed message that a
+    /// composed caller bound before its own challenges (the crate's Round
+    /// 0); it is batched into the final Ligerito opening. `None` is their
+    /// protocol as shipped.
     pub fn prove(
         &self,
         claim: &LinearClaim,
         pcs: &Pcs,
         hint: &FlockCommitHint,
         transcript: &mut ProverState,
+        ood: Option<(&[Gf], Gf)>,
     ) -> Result<(), ProveError> {
         let shape = *self.params.shape();
         let rows = hint.rows();
@@ -164,7 +169,7 @@ impl BitZProver {
         // Step 6: inner-product sumcheck, ring switching, and the opening.
         let started = std::time::Instant::now();
         let result = pcs
-            .prove_lin(hint, &query, StatementBinding::Bind, transcript)
+            .prove_lin(hint, &query, StatementBinding::Bind, transcript, ood)
             .map_err(ProveError::Opening);
         trace("opening (all)", started);
         result
@@ -186,13 +191,14 @@ impl BitZVerifier {
     }
 
     /// Their `BitZVerifier::verify`, consuming the transcript so both streams
-    /// are checked for exhaustion here.
+    /// are checked for exhaustion here. `ood` as in [`BitZProver::prove`].
     pub fn verify(
         &self,
         claim: &LinearClaim,
         pcs: &Pcs,
         com: Root,
         mut transcript: VerifierState<'_>,
+        ood: Option<(&[Gf], Gf)>,
     ) -> Result<(), VerifyError> {
         transcript.public_message(&com.0);
         transcript.public_message(&self.params);
@@ -208,7 +214,7 @@ impl BitZVerifier {
         trace("v: gkr", started);
 
         let started = std::time::Instant::now();
-        pcs.verify_lin(&com, &query, StatementBinding::Bind, &mut transcript)
+        pcs.verify_lin(&com, &query, StatementBinding::Bind, &mut transcript, ood)
             .map_err(VerifyError::Opening)?;
         trace("v: opening", started);
 

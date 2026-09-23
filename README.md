@@ -452,6 +452,12 @@ python3 scripts/run_multiplication_benchmarks.py compare --output results/compar
 
 python3 scripts/run_multiplication_benchmarks.py bitz -- \
   witness --workload u32-full,u64,u128,baby-bear --log-n 10 --threads 1
+
+# the worldfnd/BitZ scheme as the opener (feature bitz-parity, added by the
+# launcher): `--ligerito fast` is its ladder as shipped; see docs/wfbitz-opener.md
+python3 scripts/run_multiplication_benchmarks.py bitz -- \
+  proof --workload u64 --opener wfbitz --ligerito fast --bitz-profile 100 \
+  --log-n 15,17,19,21 --threads 1,10 --reps 5 --memory rss
 ```
 
 The launcher builds one executable, runs under the machine lock and swap guard,

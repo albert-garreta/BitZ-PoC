@@ -187,7 +187,7 @@ fn check(dir: &Path, verbose: bool) -> Result<Report, String> {
         let started = Instant::now();
         let mut transcript = build_prover(session.as_str(), instance.as_str());
         prover
-            .prove(&claim, &pcs, &hint, &mut transcript)
+            .prove(&claim, &pcs, &hint, &mut transcript, None)
             .map_err(|e| format!("our prover: {e:?}"))?;
         let proof = transcript.finish();
         times.push(started.elapsed());
@@ -240,6 +240,7 @@ fn check(dir: &Path, verbose: bool) -> Result<Report, String> {
         &pcs,
         root,
         build_verifier(session.as_str(), instance.as_str(), &theirs),
+        None,
     );
     let verify = started.elapsed();
     let on_ours = verifier.verify(
@@ -247,6 +248,7 @@ fn check(dir: &Path, verbose: bool) -> Result<Report, String> {
         &pcs,
         root,
         build_verifier(session.as_str(), instance.as_str(), &ours),
+        None,
     );
     if verbose {
         println!("our verifier on THEIR proof: {on_theirs:?} ({verify:.1?})");
