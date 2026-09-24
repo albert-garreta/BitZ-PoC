@@ -24,7 +24,7 @@ use crate::{
     },
     poly::{univariate::binary_gf128::Gf128 as Gf, utils::build_eq_x_r_vec},
     transcript::{Blake3Transcript, traits::Transcript},
-    utils::cfg_iter_mut,
+    utils::{cfg_iter_mut, wide_mul::WideMulAcc},
 };
 
 #[cfg(feature = "parallel")]
@@ -32,8 +32,8 @@ use rayon::prelude::*;
 
 use super::{
     ChunkProductTable, ChunkSpec, DyadicPlan, DyadicUpperProof, FractionTreeWitness,
-    InnerProductProof, LogupCutEstimate, PackedLayout, ProductWorkspace, RationalProof,
-    StructuredSumcheckProof, chunk_specs,
+    InnerProductProof, InnerProductWorkspace, LogupCutEstimate, PackedLayout, ProductWorkspace,
+    RationalProof, StructuredSumcheckProof, chunk_specs,
     derive_source_index_claim, encode_table_row, eval_table_encoding, fill_pushforward,
     DyadicUpperProfile, merge_cut_claims, prove_dyadic_upper, prove_inner_product, prove_rational,
     prove_structured_sumcheck, source_layout, verify_dyadic_upper, verify_inner_product,
@@ -115,11 +115,6 @@ pub struct LogupCutProfile {
     pub upper_forest_build: Duration,
     pub upper_root_merge: Duration,
     pub upper_forest_sumcheck: Duration,
-    pub upper_phase_a_messages: Duration,
-    pub upper_phase_a_folds: Duration,
-    pub upper_phase_a_close: Duration,
-    pub upper_phase_b: Duration,
-    pub upper_buffer_release: Duration,
     pub pushforward: Duration,
     pub auxiliary_commit: Duration,
     pub denominators: Duration,
@@ -192,6 +187,7 @@ pub struct LogupCutScratch {
     upper_forest: DyadicUpperScratch,
     upper_products: ProductWorkspace,
     fraction_products: ProductWorkspace,
+    inner_product: InnerProductWorkspace,
 }
 
 impl LogupCutScratch {
@@ -242,6 +238,8 @@ impl LogupCutScratch {
             1usize << (fraction_dimension - 1)
         };
         fraction_products.reserve(1, fraction_table_len, fraction_dimension);
+        let mut inner_product = InnerProductWorkspace::default();
+        inner_product.reserve(table_layout.padded_len);
         let upper_forest = DyadicUpperScratch::new(&plan, layout.col_vars);
 
         let mut scratch = Self {
@@ -259,6 +257,7 @@ impl LogupCutScratch {
             upper_forest,
             upper_products,
             fraction_products,
+            inner_product,
             chunks,
             plan,
             table_layout,
@@ -310,6 +309,7 @@ impl LogupCutScratch {
             + self.upper_forest.retained_bytes()
             + self.upper_products.retained_bytes()
             + self.fraction_products.retained_bytes()
+            + self.inner_product.retained_bytes()
     }
 }
 
@@ -432,11 +432,6 @@ pub fn prove_logup_cut_profiled(
     profile.upper_forest_build = upper_profile.forest_build;
     profile.upper_root_merge = upper_profile.root_merge;
     profile.upper_forest_sumcheck = upper_profile.forest_sumcheck;
-    profile.upper_phase_a_messages = upper_profile.phase_a_messages;
-    profile.upper_phase_a_folds = upper_profile.phase_a_folds;
-    profile.upper_phase_a_close = upper_profile.phase_a_close;
-    profile.upper_phase_b = upper_profile.phase_b;
-    profile.upper_buffer_release = upper_profile.buffer_release;
 
     let phase_start = Instant::now();
     fill_pushforward(
@@ -533,6 +528,7 @@ pub fn prove_logup_cut_profiled(
         &scratch.pushforward[..scratch.table_layout.padded_len],
         &scratch.table_values,
         merged.claim,
+        &mut scratch.inner_product,
     );
     profile.table_inner_product = phase_start.elapsed();
 
@@ -543,12 +539,7 @@ pub fn prove_logup_cut_profiled(
         &rational_claims.right.point,
         scratch.aux_pcs.packed_log(),
     );
-    let mut basis = build_eq_x_r_vec(&table_point, &()).expect("auxiliary table point");
-    let fraction_basis =
-        build_eq_x_r_vec(&fraction_point, &()).expect("auxiliary fraction point");
-    for (slot, value) in basis.iter_mut().zip(fraction_basis) {
-        *slot += eta * value;
-    }
+    let basis = combined_equality_basis(&table_point, &fraction_point, eta);
     let aux_target = table_claim.value + eta * rational_claims.right.num;
     crate::ligerito::absorb_ood_value(transcript, aux_target);
     profile.auxiliary_open_prepare = phase_start.elapsed();
@@ -843,6 +834,34 @@ fn extend_point(point: &[Gf], dimension: usize) -> Vec<Gf> {
     extended.extend_from_slice(point);
     extended.resize(dimension, Gf::ZERO);
     extended
+}
+
+fn combined_equality_basis(left: &[Gf], right: &[Gf], right_scale: Gf) -> Vec<Gf> {
+    assert_eq!(left.len(), right.len());
+    let split = left.len() / 2;
+    let left_low = build_eq_x_r_vec(&left[..split], &()).expect("nonempty low point");
+    let left_high = build_eq_x_r_vec(&left[split..], &()).expect("nonempty high point");
+    let right_low = build_eq_x_r_vec(&right[..split], &()).expect("nonempty low point");
+    let mut right_high = build_eq_x_r_vec(&right[split..], &()).expect("nonempty high point");
+    cfg_iter_mut!(&mut right_high).for_each(|value| *value *= right_scale);
+
+    let block = left_low.len();
+    let mut basis = vec![Gf::ZERO; block * left_high.len()];
+    crate::cfg_chunks_mut!(&mut basis, block)
+        .enumerate()
+        .for_each(|(high, output)| {
+            let left_high = left_high[high];
+            let right_high = right_high[high];
+            for (index, output) in output.iter_mut().enumerate() {
+                let mut sum = <Gf as WideMulAcc>::mul_wide(&left_low[index], &left_high);
+                <Gf as WideMulAcc>::wide_add_assign(
+                    &mut sum,
+                    &<Gf as WideMulAcc>::mul_wide(&right_low[index], &right_high),
+                );
+                *output = <Gf as WideMulAcc>::from_wide(sum);
+            }
+        });
+    basis
 }
 
 fn equality_tail(point: &[Gf], prefix: &[Gf], tail: usize, log_tail: usize) -> Gf {

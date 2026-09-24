@@ -16,7 +16,10 @@ pub use fraction::{
     FractionClaim, FractionProofProfile, FractionTreeWitness, RationalClaims, RationalProof,
     prove_rational, prove_rational_profiled, verify_rational,
 };
-pub use inner_product::{EvalClaim, InnerProductProof, prove_inner_product, verify_inner_product};
+pub use inner_product::{
+    EvalClaim, InnerProductProof, InnerProductWorkspace, prove_inner_product,
+    verify_inner_product,
+};
 pub use layout::{PackedBlock, PackedLayout};
 pub use pushforward::{
     CutClaim, MergedCut, StructuredLinearClaim, TensorWeightTerm,

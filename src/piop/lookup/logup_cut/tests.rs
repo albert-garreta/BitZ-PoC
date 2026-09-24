@@ -241,9 +241,16 @@ fn inner_product_reduces_to_one_committed_evaluation() {
         .zip(&public)
         .map(|(&left, &right)| left * right)
         .sum();
+    let mut workspace = InnerProductWorkspace::default();
+    workspace.reserve(committed.len());
     let mut prover_transcript = Blake3Transcript::new();
-    let (proof, evaluation) =
-        prove_inner_product(&mut prover_transcript, &committed, &public, claim);
+    let (proof, evaluation) = prove_inner_product(
+        &mut prover_transcript,
+        &committed,
+        &public,
+        claim,
+        &mut workspace,
+    );
     let mut verifier_transcript = Blake3Transcript::new();
     let verified = verify_inner_product(
         &mut verifier_transcript,

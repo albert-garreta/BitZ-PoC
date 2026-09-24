@@ -1,11 +1,5 @@
 use crate::{
-    cfg_iter,
-    merged_forest::{
-        MergedForestProfile, MergedForestProof, merged_forest_proof_size_bytes,
-        allocate_prepared_merged_forest, prepare_merged_forest,
-        prove_prepared_merged_forest_from_claim, verify_merged_forest_from_claim,
-        PreparedMergedForest,
-    },
+    cfg_chunks, cfg_chunks_mut, cfg_iter,
     piop::{
         lookup::gkr_product::absorb_field_slice,
         sumcheck::SumcheckProof,
@@ -37,7 +31,7 @@ pub(super) struct ProductBatchProof {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DyadicUpperProof {
     root_merge: Vec<ProductBatchProof>,
-    block_forests: Vec<Option<MergedForestProof>>,
+    block_forests: Vec<Vec<ProductBatchProof>>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -45,28 +39,42 @@ pub(crate) struct DyadicUpperProfile {
     pub forest_build: Duration,
     pub root_merge: Duration,
     pub forest_sumcheck: Duration,
-    pub phase_a_messages: Duration,
-    pub phase_a_folds: Duration,
-    pub phase_a_close: Duration,
-    pub phase_b: Duration,
-    pub buffer_release: Duration,
 }
 
 pub(crate) struct DyadicUpperScratch {
-    forests: Vec<Option<PreparedMergedForest>>,
+    forests: Vec<Option<PreparedProductForest>>,
+    products: ProductWorkspace,
+}
+
+struct PreparedProductForest {
+    roots: Vec<Gf>,
+    levels: Vec<(Vec<Gf>, Vec<Gf>)>,
+    depth: usize,
+    tree_vars: usize,
 }
 
 impl DyadicUpperScratch {
     pub(crate) fn new(plan: &DyadicPlan, tree_vars: usize) -> Self {
+        let columns = 1usize << tree_vars;
+        let max_depth = plan.blocks.iter().map(|block| block.depth).max().unwrap_or(0);
+        let mut products = ProductWorkspace::default();
+        if max_depth != 0 {
+            products.reserve(
+                1,
+                columns << (max_depth - 1),
+                tree_vars + max_depth - 1,
+            );
+        }
         Self {
             forests: plan
                 .blocks
                 .iter()
                 .map(|block| {
                     (block.depth != 0)
-                        .then(|| allocate_prepared_merged_forest(block.depth, tree_vars))
+                        .then(|| PreparedProductForest::new(block.depth, tree_vars))
                 })
                 .collect(),
+            products,
         }
     }
 
@@ -74,8 +82,77 @@ impl DyadicUpperScratch {
         self.forests
             .iter()
             .flatten()
-            .map(PreparedMergedForest::retained_bytes)
-            .sum()
+            .map(PreparedProductForest::retained_bytes)
+            .sum::<usize>()
+            + self.products.retained_bytes()
+    }
+}
+
+impl PreparedProductForest {
+    fn new(depth: usize, tree_vars: usize) -> Self {
+        let columns = 1usize << tree_vars;
+        Self {
+            roots: vec![Gf::ZERO; columns],
+            levels: (0..depth)
+                .map(|level| {
+                    let len = columns << level;
+                    (vec![Gf::ZERO; len], vec![Gf::ZERO; len])
+                })
+                .collect(),
+            depth,
+            tree_vars,
+        }
+    }
+
+    fn rebuild(&mut self, leaf: impl Fn(usize, usize) -> Gf + Sync) {
+        let columns = 1usize << self.tree_vars;
+        let top = self.depth - 1;
+        let half = 1usize << top;
+        let (left, right) = &mut self.levels[top];
+        cfg_chunks_mut!(left, half)
+            .zip(cfg_chunks_mut!(right, half))
+            .enumerate()
+            .for_each(|(column, (left, right))| {
+                for index in 0..half {
+                    left[index] = leaf(column, index);
+                    right[index] = leaf(column, index + half);
+                }
+            });
+
+        for level in (1..self.depth).rev() {
+            let child_len = 1usize << level;
+            let parent_len = child_len >> 1;
+            let (parents, children) = self.levels.split_at_mut(level);
+            let (parent_left, parent_right) = &mut parents[level - 1];
+            let (child_left, child_right) = &children[0];
+            cfg_chunks_mut!(parent_left, parent_len)
+                .zip(cfg_chunks_mut!(parent_right, parent_len))
+                .zip(cfg_chunks!(child_left, child_len))
+                .zip(cfg_chunks!(child_right, child_len))
+                .for_each(|(((left, right), child_left), child_right)| {
+                    for index in 0..parent_len {
+                        left[index] = child_left[index] * child_right[index];
+                        right[index] =
+                            child_left[index + parent_len] * child_right[index + parent_len];
+                    }
+                });
+        }
+
+        let (left, right) = &self.levels[0];
+        debug_assert_eq!(left.len(), columns);
+        for (root, (&left, &right)) in self.roots.iter_mut().zip(left.iter().zip(right)) {
+            *root = left * right;
+        }
+    }
+
+    fn retained_bytes(&self) -> usize {
+        (self.roots.capacity()
+            + self
+                .levels
+                .iter()
+                .map(|(left, right)| left.capacity() + right.capacity())
+                .sum::<usize>())
+            * core::mem::size_of::<Gf>()
     }
 }
 
@@ -95,10 +172,62 @@ impl DyadicUpperProof {
             self.block_forests
                 .iter()
                 .flatten()
-                .map(merged_forest_proof_size_bytes)
+                .map(ProductBatchProof::proof_size_bytes)
                 .sum(),
         )
     }
+}
+
+fn prove_product_forest_from_claim(
+    transcript: &mut impl Transcript,
+    forest: &PreparedProductForest,
+    mut point: Vec<Gf>,
+    mut value: Gf,
+    workspace: &mut ProductWorkspace,
+) -> (Vec<ProductBatchProof>, Vec<Gf>, Gf) {
+    debug_assert_eq!(point.len(), forest.tree_vars);
+    let mut proofs = Vec::with_capacity(forest.depth);
+    for (level, (left, right)) in forest.levels.iter().enumerate() {
+        debug_assert_eq!(point.len(), forest.tree_vars + level);
+        let (proof, next_point, values) = prove_product_batch(
+            transcript,
+            &[(point, value)],
+            &[(ProductInput::Table(left), ProductInput::Table(right))],
+            workspace,
+        );
+        let (left, right) = values[0];
+        let selector = transcript.get_field_challenge::<Gf>(&());
+        point = next_point;
+        point.insert(level, selector);
+        value = left + selector * (left + right);
+        proofs.push(proof);
+    }
+    (proofs, point, value)
+}
+
+fn verify_product_forest_from_claim(
+    transcript: &mut impl Transcript,
+    proofs: &[ProductBatchProof],
+    mut point: Vec<Gf>,
+    mut value: Gf,
+    depth: usize,
+) -> Option<(Vec<Gf>, Gf)> {
+    if proofs.len() != depth {
+        return None;
+    }
+    let tree_vars = point.len();
+    for (level, proof) in proofs.iter().enumerate() {
+        if point.len() != tree_vars + level {
+            return None;
+        }
+        let (next_point, values) = verify_product_batch(transcript, &[(point, value)], proof)?;
+        let (left, right) = values[0];
+        let selector = transcript.get_field_challenge::<Gf>(&());
+        point = next_point;
+        point.insert(level, selector);
+        value = left + selector * (left + right);
+    }
+    Some((point, value))
 }
 
 pub(crate) fn prove_dyadic_upper(
@@ -129,13 +258,10 @@ pub(crate) fn prove_dyadic_upper(
             assert!(forest.is_none());
         } else {
             let forest = forest.as_mut().expect("preallocated block forest");
-            prepare_merged_forest(
-                forest,
-                block.depth,
-                r2,
-                |column, local_chunk| cut_value(column, block.chunk_start + local_chunk),
-            );
-            block_roots.push(forest.roots().to_vec());
+            forest.rebuild(|column, local_chunk| {
+                cut_value(column, block.chunk_start + local_chunk)
+            });
+            block_roots.push(forest.roots.clone());
         }
         profile.forest_build += started.elapsed();
     }
@@ -163,22 +289,16 @@ pub(crate) fn prove_dyadic_upper(
         .enumerate()
     {
         if let Some(forest) = forest.as_mut() {
-            let mut forest_profile = MergedForestProfile::default();
-            let (proof, point, value) =
-                prove_prepared_merged_forest_from_claim(
-                    transcript,
-                    forest,
-                    &point,
-                    value,
-                    &mut forest_profile,
-                );
-            profile.forest_sumcheck += forest_profile.sumcheck;
-            profile.phase_a_messages += forest_profile.upper_messages;
-            profile.phase_a_folds += forest_profile.upper_folds;
-            profile.phase_a_close += forest_profile.phase_a_close;
-            profile.phase_b += forest_profile.phase_b;
-            profile.buffer_release += forest_profile.buffer_release;
-            block_forests.push(Some(proof));
+            let started = Instant::now();
+            let (proof, point, value) = prove_product_forest_from_claim(
+                transcript,
+                forest,
+                point,
+                value,
+                &mut scratch.products,
+            );
+            profile.forest_sumcheck += started.elapsed();
+            block_forests.push(proof);
             claims.push(CutClaim {
                 block: block_index,
                 point,
@@ -186,7 +306,7 @@ pub(crate) fn prove_dyadic_upper(
             });
         } else {
             debug_assert_eq!(block.depth, 0);
-            block_forests.push(None);
+            block_forests.push(Vec::new());
             claims.push(CutClaim {
                 block: block_index,
                 point,
@@ -239,12 +359,13 @@ pub(crate) fn verify_dyadic_upper(
         .zip(block_claims.into_iter().zip(&proof.block_forests))
         .enumerate()
     {
-        let (point, value) = match (forest, block.depth) {
-            (Some(proof), depth @ 1..) => {
-                verify_merged_forest_from_claim(transcript, proof, depth, &point, value).ok()?
+        let (point, value) = if block.depth == 0 {
+            if !forest.is_empty() {
+                return None;
             }
-            (None, 0) => (point, value),
-            _ => return None,
+            (point, value)
+        } else {
+            verify_product_forest_from_claim(transcript, forest, point, value, block.depth)?
         };
         claims.push(CutClaim {
             block: block_index,

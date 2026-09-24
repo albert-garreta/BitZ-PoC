@@ -1,5 +1,4 @@
 use crate::{
-    ligerito::xi_combined_rows_packed,
     pcs::IntegerMatrixLayout,
     piop::sumcheck::multi_degree::MultiDegreeSumcheckProof,
     poly::{univariate::binary_gf128::Gf128 as Gf, utils::build_eq_x_r_vec},
@@ -8,6 +7,9 @@ use crate::{
 };
 
 use super::{EvalClaim, StructuredLinearClaim};
+
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StructuredSumcheckProof {
@@ -28,15 +30,20 @@ pub fn prove_structured_sumcheck(
 ) -> (StructuredSumcheckProof, Vec<EvalClaim>) {
     assert!(!claim.terms.is_empty());
     let row_len = layout.rows() * layout.word_bits;
+    let values = xi_combined_rows_packed_batch(
+        layout,
+        packed_columns,
+        &claim
+            .terms
+            .iter()
+            .map(|term| term.column_point.as_slice())
+            .collect::<Vec<_>>(),
+    );
     let mut pairs = Vec::with_capacity(claim.terms.len());
-    for term in &claim.terms {
+    for (term, values) in claim.terms.iter().zip(values) {
         assert_eq!(term.row_weights.len(), row_len);
         assert_eq!(term.column_point.len(), layout.col_vars);
-        let column_weights = build_eq_x_r_vec(&term.column_point, &()).unwrap_or(vec![Gf::ONE]);
-        pairs.push([
-            term.row_weights.clone(),
-            xi_combined_rows_packed(layout, packed_columns, &column_weights),
-        ]);
+        pairs.push([term.row_weights.clone(), values]);
     }
     let (values, weights) = binary::inputs(pairs, row_len.ilog2() as usize);
     let output = crate::sumcheck::inner::prove_batched_inner_sumcheck(
@@ -73,6 +80,122 @@ pub fn prove_structured_sumcheck(
         },
         evaluations,
     )
+}
+
+fn xi_combined_rows_packed_batch(
+    layout: &IntegerMatrixLayout,
+    packed_columns: &[Vec<u64>],
+    points: &[&[Gf]],
+) -> Vec<Vec<Gf>> {
+    let rows = layout.rows() * layout.word_bits;
+    let columns = layout.cols();
+    let groups = columns.div_ceil(64);
+    assert!(!points.is_empty());
+    assert!(points.iter().all(|point| point.len() == layout.col_vars));
+    assert!(packed_columns.len() >= groups);
+    assert!(packed_columns[..groups].iter().all(|column| column.len() == rows));
+
+    let split = layout.col_vars.min(6);
+    let eq = points
+        .iter()
+        .map(|point| {
+            (
+                build_eq_x_r_vec(&point[..split], &()).unwrap_or(vec![Gf::ONE]),
+                build_eq_x_r_vec(&point[split..], &()).unwrap_or(vec![Gf::ONE]),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    #[cfg(feature = "parallel")]
+    let partials = {
+        let group_chunk = groups.div_ceil(rayon::current_num_threads()).max(1);
+        packed_columns[..groups]
+            .par_chunks(group_chunk)
+            .enumerate()
+            .map(|(chunk, sources)| {
+                let mut outputs = vec![vec![Gf::ZERO; rows]; points.len()];
+                let mut table = vec![Gf::ZERO; 8 << 8];
+                for (local, source) in sources.iter().enumerate() {
+                    accumulate_packed_group(
+                        columns,
+                        chunk * group_chunk + local,
+                        source,
+                        &eq,
+                        &mut outputs,
+                        &mut table,
+                    );
+                }
+                outputs
+            })
+            .collect::<Vec<_>>()
+    };
+    #[cfg(feature = "parallel")]
+    {
+        let mut outputs = vec![vec![Gf::ZERO; rows]; points.len()];
+        for partial in partials {
+            for (output, partial) in outputs.iter_mut().zip(partial) {
+                output.iter_mut().zip(partial).for_each(|(out, add)| *out += add);
+            }
+        }
+        outputs
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        let mut outputs = vec![vec![Gf::ZERO; rows]; points.len()];
+        let mut table = vec![Gf::ZERO; 8 << 8];
+        for (group, source) in packed_columns[..groups].iter().enumerate() {
+            accumulate_packed_group(
+                columns,
+                group,
+                source,
+                &eq,
+                &mut outputs,
+                &mut table,
+            );
+        }
+        outputs
+    }
+}
+
+fn accumulate_packed_group(
+    columns: usize,
+    group: usize,
+    source: &[u64],
+    eq: &[(Vec<Gf>, Vec<Gf>)],
+    outputs: &mut [Vec<Gf>],
+    table: &mut [Gf],
+) {
+    for ((low, high), output) in eq.iter().zip(outputs) {
+        table.fill(Gf::ZERO);
+        let high = field::PreparedGf128Mul::new(high[group]);
+        for pos in 0..8usize {
+            let base_column = (group << 6) | (pos << 3);
+            let subset = &mut table[pos << 8..(pos + 1) << 8];
+            for bit in 0..8usize {
+                let column = base_column + bit;
+                if column >= columns {
+                    break;
+                }
+                let weight = high.mul(&low[column & 63]);
+                let flag = 1usize << bit;
+                for mask in 0..flag {
+                    subset[mask | flag] = subset[mask] + weight;
+                }
+            }
+        }
+        for (&word, output) in source.iter().zip(output) {
+            let mut word = word;
+            let mut pos = 0usize;
+            while word != 0 {
+                let byte = (word & 0xff) as usize;
+                if byte != 0 {
+                    *output += table[(pos << 8) | byte];
+                }
+                word >>= 8;
+                pos += 1;
+            }
+        }
+    }
 }
 
 pub fn verify_structured_sumcheck(
