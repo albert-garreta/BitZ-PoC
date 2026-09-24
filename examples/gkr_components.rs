@@ -161,7 +161,7 @@ fn fraction_sample(
     left.rebuild_swapped(numerators, denominators, log_n, Gf::ZERO, Gf::ONE);
     let root = left.root();
     right.rebuild(&[root.0], &[root.1], 0, Gf::ZERO, Gf::ONE);
-    let witness = started.elapsed();
+    let mut witness = started.elapsed();
 
     let mut transcript = Blake3Transcript::new();
     let mut profile = FractionProofProfile::default();
@@ -176,7 +176,9 @@ fn fraction_sample(
     let sumcheck = started.elapsed();
     let guard = output.1.left.num.as_words()[0] ^ output.1.left.den.as_words()[1];
     black_box(output);
+    let started = Instant::now();
     left.release_leaves(numerators, denominators);
+    witness += started.elapsed();
     let sample = Sample {
         witness: witness.as_secs_f64() * 1e3,
         sumcheck: sumcheck.as_secs_f64() * 1e3,
@@ -236,6 +238,7 @@ fn main() {
     println!("direct image:  excluded");
     println!("gamma fold:    included in fraction sumcheck");
     println!("dense leaves:  build/release included in naive witness build");
+    println!("fraction tree: build/leaf release included in fraction witness build");
     println!("lazy JIT work: included in low-entropy sumcheck\n");
     std::io::stdout().flush().expect("flush benchmark header");
 
