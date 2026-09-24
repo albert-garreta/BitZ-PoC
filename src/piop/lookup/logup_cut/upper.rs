@@ -139,11 +139,7 @@ impl PreparedProductForest {
                 if side.capacity() < len {
                     *side = super::fraction::take_fitting(pool, len);
                 }
-                if side.len() >= len {
-                    side.truncate(len);
-                } else {
-                    side.resize(len, Gf::ZERO);
-                }
+                super::fraction::resize_zeroed(side, len);
             }
         }
     }

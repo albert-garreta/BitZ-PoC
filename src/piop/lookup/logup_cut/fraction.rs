@@ -81,6 +81,25 @@ pub struct FractionTreeWitness {
     eq_high: Vec<Gf>,
 }
 
+/// `resize(len, ZERO)` with any growth written by the thread pool: a pooled
+/// buffer arrives with whatever length its last owner left it, and a
+/// sequential zero-fill of the gap (hundreds of MB per proof at 2^28) costs
+/// milliseconds that the rebuild's own overwrite does not need.
+pub(crate) fn resize_zeroed(buffer: &mut Vec<Gf>, len: usize) {
+    if buffer.len() >= len {
+        buffer.truncate(len);
+        return;
+    }
+    #[cfg(feature = "parallel")]
+    {
+        let gap = len - buffer.len();
+        buffer.reserve(gap);
+        buffer.par_extend(rayon::iter::repeatn(Gf::ZERO, gap));
+    }
+    #[cfg(not(feature = "parallel"))]
+    buffer.resize(len, Gf::ZERO);
+}
+
 /// Removes the smallest pooled buffer whose capacity is at least
 /// `capacity` (a fresh one of that capacity when none fits). Its length is
 /// whatever its last owner left; the taker sets it.
@@ -212,9 +231,9 @@ impl FractionTreeWitness {
             let parent_len = self.nums[level].len().div_ceil(2);
             let num_padding = self.num_padding[level];
             let den_padding = self.den_padding[level];
-            self.nums[level + 1].resize(parent_len, Gf::ZERO);
-            self.dens[level + 1].resize(parent_len, Gf::ZERO);
-            self.ac[level].resize(parent_len, Gf::ZERO);
+            resize_zeroed(&mut self.nums[level + 1], parent_len);
+            resize_zeroed(&mut self.dens[level + 1], parent_len);
+            resize_zeroed(&mut self.ac[level], parent_len);
             let (child_nums, parent_nums) = self.nums.split_at_mut(level + 1);
             let (child_dens, parent_dens) = self.dens.split_at_mut(level + 1);
             let child_num = &child_nums[level];
