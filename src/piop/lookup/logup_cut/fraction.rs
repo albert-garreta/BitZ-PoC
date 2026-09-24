@@ -1,5 +1,7 @@
 use std::time::{Duration, Instant};
 
+use core::mem::MaybeUninit;
+
 use crate::{
     piop::lookup::gkr_product::absorb_field_slice,
     poly::univariate::binary_gf128::Gf128 as Gf,
@@ -231,9 +233,6 @@ impl FractionTreeWitness {
             let parent_len = self.nums[level].len().div_ceil(2);
             let num_padding = self.num_padding[level];
             let den_padding = self.den_padding[level];
-            resize_zeroed(&mut self.nums[level + 1], parent_len);
-            resize_zeroed(&mut self.dens[level + 1], parent_len);
-            resize_zeroed(&mut self.ac[level], parent_len);
             let (child_nums, parent_nums) = self.nums.split_at_mut(level + 1);
             let (child_dens, parent_dens) = self.dens.split_at_mut(level + 1);
             let child_num = &child_nums[level];
@@ -241,7 +240,21 @@ impl FractionTreeWitness {
             let next_num = &mut parent_nums[0];
             let next_den = &mut parent_dens[0];
             let next_ac = &mut self.ac[level];
-            let fill = |index: usize, num: &mut Gf, den: &mut Gf, ac_out: &mut Gf| {
+            // The parent level is written in full below, so its buffer takes
+            // the new length without a zero-fill (a pooled buffer arrives
+            // with whatever length its last owner left; zeroing the gap cost
+            // 270 MB of writes per proof at 2^28).
+            for buffer in [&mut *next_num, &mut *next_den, &mut *next_ac] {
+                buffer.clear();
+                buffer.reserve(parent_len);
+            }
+            let num_out = &mut next_num.spare_capacity_mut()[..parent_len];
+            let den_out = &mut next_den.spare_capacity_mut()[..parent_len];
+            let ac_out = &mut next_ac.spare_capacity_mut()[..parent_len];
+            let fill = |index: usize,
+                        num: &mut MaybeUninit<Gf>,
+                        den: &mut MaybeUninit<Gf>,
+                        ac_slot: &mut MaybeUninit<Gf>| {
                 let even = 2 * index;
                 let a = child_num[even];
                 let b = child_den[even];
@@ -249,33 +262,42 @@ impl FractionTreeWitness {
                 let d = child_den.get(even + 1).copied().unwrap_or(den_padding);
                 let ac = a * c;
                 let bd = b * d;
-                *num = (a + b) * (c + d) + ac + bd;
-                *den = bd;
-                *ac_out = ac;
+                num.write((a + b) * (c + d) + ac + bd);
+                den.write(bd);
+                ac_slot.write(ac);
             };
             #[cfg(feature = "parallel")]
             if parent_len >= PARALLEL_THRESHOLD {
-                next_num
+                num_out
                     .par_iter_mut()
-                    .zip(next_den.par_iter_mut())
-                    .zip(next_ac.par_iter_mut())
+                    .zip(den_out.par_iter_mut())
+                    .zip(ac_out.par_iter_mut())
                     .enumerate()
                     .for_each(|(index, ((num, den), ac))| fill(index, num, den, ac));
             } else {
-                next_num
+                num_out
                     .iter_mut()
-                    .zip(next_den.iter_mut())
-                    .zip(next_ac.iter_mut())
+                    .zip(den_out.iter_mut())
+                    .zip(ac_out.iter_mut())
                     .enumerate()
                     .for_each(|(index, ((num, den), ac))| fill(index, num, den, ac));
             }
             #[cfg(not(feature = "parallel"))]
-            next_num
+            num_out
                 .iter_mut()
-                .zip(next_den.iter_mut())
-                .zip(next_ac.iter_mut())
+                .zip(den_out.iter_mut())
+                .zip(ac_out.iter_mut())
                 .enumerate()
                 .for_each(|(index, ((num, den), ac))| fill(index, num, den, ac));
+            // SAFETY: every slot below `parent_len` of the three buffers was
+            // written by `fill` (the zipped iterators cover exactly
+            // `parent_len` slots), and `parent_len <= capacity` by the
+            // `reserve` above.
+            unsafe {
+                next_num.set_len(parent_len);
+                next_den.set_len(parent_len);
+                next_ac.set_len(parent_len);
+            }
 
             self.ac_padding[level] = self.num_padding[level].square();
             self.num_padding[level + 1] = Gf::ZERO;
