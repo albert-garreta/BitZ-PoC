@@ -148,6 +148,25 @@ per 4-bit term single-threaded (one 16-byte scatter-add per term); the
 jit folds and dense tails are DRAM-bound at 10 threads (≈ 2 GB of traffic
 per level).
 
+## The other widths at 8 threads (2026-09-24, `PerfRuns/cs-mul-20260924-t8-*`)
+
+The forest gains nothing from the two efficiency cores on any workload
+(u32 2^23: 1962 ms at 8 threads vs 1939 at 10; u128 2^21: 2285 vs 2257).
+The wfbitz opener at the u32/u128 DEFAULT split (`wfbitz_split` only has
+a rule for u64) loses at the small sizes and wins at the large ones:
+u32 rate 1/2, forest → wfbitz, ms: 2^15 14.3 → 17.7, 2^17 34.7 → 38.3,
+2^19 108 → 98.7, 2^21 393 → 314, 2^23 1962 → 1162; u128: 2^15 36.4 → 53.2,
+2^17 111 → 124, 2^19 472 → 350, 2^21 2285 → 1229. With two more column
+variables (`--split 2`) it wins everywhere: u32 12.1 / 28.3 / 77.3 / 281 /
+1119 (0.84× / 0.82× / 0.72× / 0.71× / 0.57× the forest) for proofs
+124 / 163 / 212 / 274 / 375 KB (+4 % … +35 %: no row cap applies to u32,
+so at 2^23 the folds are 2^13 × 16 B); u128 30.6 / 80.8 / 276 / 1081
+(0.84× / 0.73× / 0.58× / 0.47×) for 154 / 196 / 242 / 308 KB (+4 … +17 %).
+A u64-style rule (`s = ⌊g/2⌋ + 2` capped at 11) would keep the small-size
+gain and the 2^21+ proof sizes; not encoded yet — the campaign rows
+tabulate the default split (`paper/native-mul{,-u128}-table-8thr.tex`)
+and the split-2 runs sit in `PerfRuns/cs-mul-20260924-t8-*-wfbitz-s2-*`.
+
 ## Ladders
 
 `fast` (their embedded ladder: rate 1/2, k = 4, Johnson, 100-bit, 16 bits
