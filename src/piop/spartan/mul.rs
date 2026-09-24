@@ -172,14 +172,21 @@ impl<T: MulWord> MulLayout<T> {
     /// more time for much more proof. In gate variables this moves two or
     /// three to the columns below `2^21` and one at `2^21` (u64).
     ///
+    /// The rule stops at 64 gates per row (`s ≤ g − 6`): below that the
+    /// witness packer (`pack_rows`) loses its word-parallel fast path and
+    /// the bit-by-bit fallback costs more inside the timed commit than the
+    /// narrower rows save (u64 at `2^15`: 4 ms of a 23 ms prover). Only
+    /// `2^15` is affected at the widths the benches run.
+    ///
     /// `extra` moves that many more gate variables from rows to columns
     /// (negative: back), the way [`MulLayout::with_split_shift`] does from
-    /// the default split; the rule saturates at the gate count.
+    /// the default split; it is applied after the clamp.
     pub fn wfbitz_split(self, extra: i8) -> Result<Self, MulError> {
         let params = self.bitz_params();
         let n = params.row_vars + params.col_vars;
         let rows = ((3 * n).div_ceil(5)).saturating_sub(1);
-        let wanted = n.saturating_sub(rows).min(self.gate_vars) as i64 + i64::from(extra);
+        let packer_cap = self.gate_vars.saturating_sub(6);
+        let wanted = n.saturating_sub(rows).min(packer_cap) as i64 + i64::from(extra);
         let shift = wanted - self.default_col_vars() as i64;
         self.with_split_shift(i8::try_from(shift).map_err(|_| MulError::DomainTooLarge)?)
     }

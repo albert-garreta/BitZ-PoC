@@ -72,25 +72,54 @@ grinding) and the `GF(2^128)` floor.
 
 ## The split
 
-Their per-level sumchecks carry a per-row cost (bucketing, transposes,
-contractions once per row, whatever its width), so the opener wants wider
-rows than the forest (which is indifferent below its row cap `t ≤ 18`).
-Measured on u64, M5, 10 threads, online prover / proof bytes, moving `k`
-gate variables from rows to columns:
+The opener runs at the crate's reference split minus one row variable:
+`t = ⌈0.6 n⌉ − 1`, `s = n − t` of the committed bits (`Shape::reference`
+for the raw PCS, `MulLayout::wfbitz_split` for the relations; the
+2026-09-24 decision). Their per-level sumchecks carry a per-row cost
+(bucketing, transposes, contractions once per row, whatever its width),
+so the opener wants wider rows than the forest, which is indifferent to
+the split below its row cap; against that, every column variable costs
+`16·2^s` bytes of integer column folds in the proof, and the verifier's
+per-level work grows with `t`.
 
-| gates | default (t, s) | k = 0 | k = 1 | k = 2 | k = 3 | forest (k = 0) |
-|---|---|---|---|---|---|---|
-| 2^15 | (16, 7) | 32.6 ms / 137 KB | 24.4 / 139 | 20.0 / 142 | 17.7 / 150 | 22.6 / 137 |
-| 2^17 | (17, 8) | 61.8 / 164 | 48.4 / 168 | 41.6 / 176 | 39.9 / 193 | 57.8 / 165 |
-| 2^19 | (18, 9) | 162 / 201 | 141 / 210 | 131 / 228 | 126 / 258 | 184 / 202 |
-| 2^21 | (18, 11) | 496 / 263 | 474 / 295 | 474 / 360 | — | 687 / 264 |
+Raw PCS, 8 threads, 96-bit weights, the crate's `custom:1:4` ladder
+(`examples/logup_cut_compare` on branch `lookup-wfbitz`, medians of 5;
+prove ms / proof KB, the reference split `t = ⌈0.6n⌉` in the middle):
 
-`MulLayout::wfbitz_split` takes `s = ⌊g/2⌋ + 2` capped by the default's
-row cap: `k = 2` below `2^21`, the default at `2^21` (where the rows are
-already 2^11 wide and another variable costs 12 % of proof for 4 % of
-time). The proof grows by the `16·2^s` bytes of the column folds; the
-verifier gets faster with fewer GKR levels (2^19: 3.5 ms against the
-forest's 4.4).
+| n | −3 | −2 | −1 (the rule) | ⌈0.6n⌉ | +1 |
+|---|---|---|---|---|---|
+| 24 | 12:12 22.8 / 209 | 13:11 20.1 / 177 | 14:10 22.8 / 160 | 15:9 24.5 / 153 | 16:8 34.4 / 148 |
+| 26 | 13:13 57.0 / 307 | 14:12 58.9 / 241 | 15:11 62.5 / 209 | 16:10 65.4 / 193 | 17:9 79.2 / 186 |
+| 28 | 14:14 224 / 467 | 15:13 222 / 337 | 16:12 227 / 269 | 17:11 232 / 238 | 18:10 254 / 223 |
+| 30 | 15:15 929 / 764 | 16:14 908 / 502 | 17:13 909 / 373 | 18:12 942 / 307 | 19:11 942 / 276 |
+
+The prover's optimum sits two or three variables below the reference,
+but its gain over the reference shrinks with `n` (−18 % at n = 24, −13 %
+at 26, −4 % at 28, −3.6 % at 30) while the proof grows by `16·2^s` per
+variable; one variable buys 2–7 % of prover time for 5–23 % of proof at
+every `n`, the second buys little more time for much more proof, and one
+variable in the other direction costs 10–40 %. The verifier prefers the
+smaller `t` as well (n = 28: 3.2–3.7 ms at t ≤ 16, 4.4 at 17, 7.6 at 18;
+n = 30: 5.3–6.3 at t ≤ 17, 8.5 at 18, 12.8 at 19). Under the rule the
+raw sweep (`examples/wfbitz_bench`, 8 threads, flock's fast ladder,
+`PerfRuns/wfbitz-rule-20260924c/raw_n*.txt`) reads, reference → rule,
+commit + prove ms / verify ms / proof KB: n = 22 14.2 → 13.3 / 1.32 →
+1.26 / 118 → 122; 24 30.0 → 24.8 / 1.73 → 1.50 / 152 → 160; 26 71.6 →
+64.4 / 2.63 → 2.06 / 193 → 208; 28 255.6 → 243.2 / 4.35 → 3.47 / 237 →
+270; 30 956.8 → 945.2 / 8.17 → 5.71 / 307 → 372 (the forest at 8 threads:
+12.5 / 32.1 / 95.6 / 340 / 1395 ms).
+
+In the multiplication benches the rule moves gate variables from rows to
+columns relative to the forest's default split: u64 two at `2^15`, three
+at `2^17`, two at `2^19`, one at `2^21`; u32 two everywhere; u128 two at
+`2^15`, three above. **It stops at 64 gates per row (`s ≤ g − 6`)**: the
+witness packer (`MulWitness::pack_rows`) only has its word-parallel fast
+path from 64 gates per row on, and the bit-by-bit fallback below that
+costs more inside the timed commit than the narrower rows save (u64
+`2^15`, 8 threads: 22.7 ms with 32 gates per row against 17.6 with 64;
+u128 `2^15`: 36.9 against 30.0). Only `2^15` is affected at the widths the
+benches run. `extra` (`--split k`, `BITZ_U64_SPLIT_SHIFT=k`) still moves
+`k` more variables from there.
 
 ## Numbers (u64 multiplication, the paper's protocol)
 
@@ -103,69 +132,63 @@ forest → wfbitz columns; Binius64 (UDR) at the same rate for scale.
 
 | gates | thr | rate | forest → wfbitz prover | ratio | verify | proof KB | peak GB | Binius64 |
 |---|---|---|---|---|---|---|---|---|
-| 2^15 | 1 | 1/2 | 53.7 → 45.6 | 0.85 | 2.5 → 1.5 | 137 → 142 | 0.10 → 0.05 | 66.4 |
-| 2^15 | 1 | 1/8 | 55.1 → 65.5 | 1.19 | 2.4 → 1.4 | 84 → 88 | 0.11 → 0.05 | 76.7 |
-| 2^15 | 10 | 1/2 | 23.8 → 18.6 | 0.78 | 2.2 → 1.8 | 137 → 142 | 0.09 → 0.05 | 34.8 |
-| 2^15 | 10 | 1/8 | 23.7 → 21.6 | 0.91 | 2.0 → 1.5 | 84 → 88 | 0.09 → 0.06 | 36.8 |
-| 2^17 | 1 | 1/2 | 186 → 156 | 0.84 | 4.5 → 2.5 | 164 → 176 | 0.34 → 0.14 | 222 |
-| 2^17 | 1 | 1/8 | 213 → 174 | 0.82 | 4.3 → 2.2 | 99 → 110 | 0.37 → 0.17 | 272 |
-| 2^17 | 10 | 1/2 | 59.6 → 44.4 | 0.74 | 3.5 → 2.7 | 164 → 176 | 0.25 → 0.14 | 82.1 |
-| 2^17 | 10 | 1/8 | 64.9 → 48.4 | 0.75 | 3.1 → 2.3 | 99 → 110 | 0.28 → 0.17 | 91.7 |
-| 2^19 | 1 | 1/2 | 732 → 516 | 0.71 | 7.6 → 3.6 | 202 → 227 | 1.30 → 0.47 | 871 |
-| 2^19 | 1 | 1/8 | 867 → 625 | 0.72 | 7.4 → 3.4 | 124 → 147 | 1.42 → 0.60 | 1063 |
-| 2^19 | 10 | 1/2 | 204 → 135 | 0.66 | 4.5 → 3.4 | 202 → 227 | 0.87 → 0.48 | 272 |
-| 2^19 | 10 | 1/8 | 223 → 155 | 0.70 | 4.2 → 3.2 | 124 → 147 | 0.99 → 0.62 | 313 |
-| 2^21 | 1 | 1/2 | 2884 → 2212 | 0.77 | 7.9 → 10.6 | 264 → 262 | 5.05 → 1.89 | 3430 |
-| 2^21 | 1 | 1/8 | 3337 → 2707 | 0.81 | 7.8 → 10.2 | 171 → 170 | 5.55 → 2.39 | 4195 |
-| 2^21 | 10 | 1/2 | 754 → 505 | 0.67 | 4.9 → 8.3 | 264 → 262 | 3.42 → 1.90 | 1073 |
-| 2^21 | 10 | 1/8 | 810 → 626 | 0.77 | 4.7 → 8.1 | 171 → 170 | 3.85 → 2.47 | 1294 |
+| 2^15 | 1 | 1/2 | 53.7 → 45.1 | 0.84 | 2.49 → 1.52 | 137 → 142 | 0.086 → 0.051 | 66.4 |
+| 2^15 | 1 | 1/8 | 55.1 → 64.2 | 1.17 | 2.36 → 1.38 | 84.1 → 88.3 | 0.093 → 0.059 | 76.7 |
+| 2^15 | 8 | 1/2 | 23.1 → 17.6 | 0.76 | 2.24 → 1.67 | 137 → 142 | 0.086 → 0.051 | -- |
+| 2^15 | 8 | 1/8 | 23.5 → 21.3 | 0.91 | 2.03 → 1.49 | 84.1 → 88.3 | 0.093 → 0.059 | -- |
+| 2^15 | 10 | 1/2 | 23.8 → 18.2 | 0.76 | 2.25 → 1.68 | 137 → 142 | 0.086 → 0.051 | 34.8 |
+| 2^15 | 10 | 1/8 | 23.7 → 21.2 | 0.89 | 2.03 → 1.53 | 84.1 → 88.3 | 0.093 → 0.059 | 36.8 |
+| 2^17 | 1 | 1/2 | 186 → 123 | 0.66 | 4.52 → 1.95 | 164 → 193 | 0.251 → 0.126 | 222 |
+| 2^17 | 1 | 1/8 | 213 → 155 | 0.73 | 4.34 → 1.74 | 98.5 → 126 | 0.278 → 0.158 | 272 |
+| 2^17 | 8 | 1/2 | 61.3 → 39.1 | 0.64 | 3.44 → 2.26 | 164 → 193 | 0.251 → 0.126 | -- |
+| 2^17 | 8 | 1/8 | 68.1 → 46.7 | 0.69 | 3.18 → 1.95 | 98.5 → 126 | 0.278 → 0.158 | -- |
+| 2^17 | 10 | 1/2 | 59.6 → 38.7 | 0.65 | 3.54 → 2.33 | 164 → 193 | 0.251 → 0.126 | 82.1 |
+| 2^17 | 10 | 1/8 | 64.9 → 44.2 | 0.68 | 3.13 → 2.09 | 98.5 → 126 | 0.278 → 0.158 | 91.7 |
+| 2^19 | 1 | 1/2 | 732 → 516 | 0.70 | 7.58 → 3.50 | 202 → 227 | 0.869 → 0.479 | 871 |
+| 2^19 | 1 | 1/8 | 867 → 632 | 0.73 | 7.38 → 3.33 | 124 → 147 | 0.986 → 0.616 | 1063 |
+| 2^19 | 8 | 1/2 | 207 → 140 | 0.68 | 4.39 → 3.36 | 202 → 227 | 0.869 → 0.479 | -- |
+| 2^19 | 8 | 1/8 | 232 → 165 | 0.71 | 4.20 → 3.15 | 124 → 147 | 0.986 → 0.616 | -- |
+| 2^19 | 10 | 1/2 | 204 → 133 | 0.65 | 4.55 → 3.42 | 202 → 227 | 0.869 → 0.479 | 272 |
+| 2^19 | 10 | 1/8 | 223 → 155 | 0.70 | 4.15 → 3.23 | 124 → 147 | 0.986 → 0.616 | 313 |
+| 2^21 | 1 | 1/2 | 2884 → 2095 | 0.73 | 7.95 → 6.03 | 264 → 294 | 3.42 → 1.64 | 3430 |
+| 2^21 | 1 | 1/8 | 3337 → 2605 | 0.78 | 7.76 → 5.76 | 171 → 202 | 3.85 → 2.21 | 4195 |
+| 2^21 | 8 | 1/2 | 749 → 526 | 0.70 | 4.77 → 5.34 | 264 → 294 | 3.42 → 1.64 | -- |
+| 2^21 | 8 | 1/8 | 875 → 640 | 0.73 | 4.46 → 5.00 | 171 → 202 | 3.85 → 2.21 | -- |
+| 2^21 | 10 | 1/2 | 754 → 488 | 0.65 | 4.90 → 5.40 | 264 → 294 | 3.42 → 1.64 | 1072 |
+| 2^21 | 10 | 1/8 | 810 → 603 | 0.74 | 4.66 → 5.29 | 171 → 202 | 3.85 → 2.21 | 1294 |
 
-At 8 threads (campaign `PerfRuns/cs-mul-20260924-u64opt-t8-*`, both
-openers re-measured on this tree the same day; forest → wfbitz, rate 1/2):
-2^15 23.1 → 17.7 ms, 2^17 61.3 → 45.2, 2^19 207 → 141, 2^21 749 → 553;
-rate 1/8: 23.5 → 21.4, 68.1 → 49.3, 232 → 166, 875 → 672. The forest
-gains nothing from the two extra efficiency cores (2^21: 749 at 8 threads,
-754 at 10); wfbitz gains 9 % at 2^21 (553 → 505) and nothing below 2^19.
-The generated table carries the 8-thread column next to 1 and 10.
+The rows are campaign `PerfRuns/cs-mul-20260924f-u64-wfbitz-*` (the rule
+as committed, threads 1, 8 and 10 in one run; `paper/native-mul-u64-wfbitz-table.tex`
+is generated from them next to the forest's 1/10-thread rows from
+`cs-mul-20260921u-*` and its 8-thread rows from `cs-mul-20260924-u64opt-t8-u64-forest-*`).
+Binius64 (UDR) has no 8-thread rows. The forest gains nothing from the two
+efficiency cores (2^21: 749 ms at 8 threads, 754 at 10); wfbitz gains
+7 % at 2^21 and nothing below 2^19.
 
-Reading: the prover is 0.66–0.85× the forest's everywhere but the
-single-threaded 2^15 row at rate 1/8 (1.19×: the rate-1/8 commitment and
-the fixed per-level costs dominate a 46 ms proof), peak memory is 0.45–
-0.55× (one arena instead of the forest's `2^n·4 B` levels), proofs are
-within 7 % (rate 1/2) / 19 % (rate 1/8, 2^19) and equal at 2^21, the
-verifier is faster below 2^21 and slower at 2^21 (8.3 vs 4.9 ms: their
-per-level GKR verification grows with the row count while the forest's
-does not). The full table with every scheme is
-`paper/native-mul-u64-wfbitz-table.tex` (generated, uncommitted).
+Reading: the prover is 0.63–0.79× the forest's at 2^17 and above and
+0.76–0.96× at 2^15 (the one row the packer clamp keeps at the old shape),
+peak memory is 0.45–0.65×, proofs are +4–18 % at rate 1/2 and +5–19 % at
+rate 1/8 (the column folds), the verifier is faster at every size except
+2^21 at rate 1/2, where the per-level GKR verification of 2^17 rows costs
+5.3 ms against the forest's 4.8.
 
-Where the wfbitz prover's time goes at 2^21 (10 threads, 496 ms): commit 32,
-PIOP 30, column folds + images 17, GKR 357 (levels ≥ 4 built 26, level-4
-rebuild 14, levels 17..4 proved 57, levels 3..0 — the table-driven ones —
-47 / 63 / 78 / 93), reduction sumcheck 14, ring switch 13, Ligerito 26.
-At 1 thread (2142 ms) the bit rounds of levels 0–3 are 670 ms, their jit
-rounds and folds 570, the dense tails 190. The bit rounds run at ≈ 0.55 ns
-per 4-bit term single-threaded (one 16-byte scatter-add per term); the
-jit folds and dense tails are DRAM-bound at 10 threads (≈ 2 GB of traffic
-per level).
+## The other widths (2026-09-25, `PerfRuns/cs-mul-20260924c-u32-mod32-wfbitz-*`, `cs-mul-20260924f-u128-wfbitz-*`)
 
-## The other widths at 8 threads (2026-09-24, `PerfRuns/cs-mul-20260924-t8-*`)
-
-The forest gains nothing from the two efficiency cores on any workload
-(u32 2^23: 1962 ms at 8 threads vs 1939 at 10; u128 2^21: 2285 vs 2257).
-The wfbitz opener at the u32/u128 DEFAULT split (`wfbitz_split` only has
-a rule for u64) loses at the small sizes and wins at the large ones:
-u32 rate 1/2, forest → wfbitz, ms: 2^15 14.3 → 17.7, 2^17 34.7 → 38.3,
-2^19 108 → 98.7, 2^21 393 → 314, 2^23 1962 → 1162; u128: 2^15 36.4 → 53.2,
-2^17 111 → 124, 2^19 472 → 350, 2^21 2285 → 1229. With two more column
-variables (`--split 2`) it wins everywhere: u32 12.1 / 28.3 / 77.3 / 281 /
-1119 (0.84× / 0.82× / 0.72× / 0.71× / 0.57× the forest) for proofs
-124 / 163 / 212 / 274 / 375 KB (+4 % … +35 %: no row cap applies to u32,
-so at 2^23 the folds are 2^13 × 16 B); u128 30.6 / 80.8 / 276 / 1081
-(0.84× / 0.73× / 0.58× / 0.47×) for 154 / 196 / 242 / 308 KB (+4 … +17 %).
-A u64-style rule (`s = ⌊g/2⌋ + 2` capped at 11) would keep the small-size
-gain and the 2^21+ proof sizes; not encoded yet — the campaign rows
-tabulate the default split (`paper/native-mul{,-u128}-table-8thr.tex`)
-and the split-2 runs sit in `PerfRuns/cs-mul-20260924-t8-*-wfbitz-s2-*`.
+Under the rule, 8 threads, rate 1/2, forest → wfbitz, ms (ratio; proof KB
+forest → wfbitz): u32 2^15 14.3 → 12.1 (0.85; 120 → 124), 2^17 34.7 → 27.9
+(0.80; 152 → 163), 2^19 108 → 77.2 (0.71; 189 → 212), 2^21 393 → 270
+(0.69; 225 → 274), 2^23 1962 → 1073 (0.55; 279 → 375); u128 2^15 36.4 →
+30.0 (0.82; 149 → 154), 2^17 111 → 69.9 (0.63; 186 → 213), 2^19 472 → 257
+(0.54; 217 → 273), 2^21 2284 → 1024 (0.45; 263 → 374). Rate 1/8: u32 15.0
+→ 14.0, 37.5 → 29.6, 118 → 86.1, 454 → 324, 2306 → 1323; u128 39.1 → 36.7,
+124 → 82.3, 525 → 307, 2606 → 1267. Single-threaded the ratios are the
+same within a few points (u32 2^23: 6853 → 4299; u128 2^21: 7171 → 4094).
+The verifier is faster everywhere (u32 2^23: 7.4 → 6.8 ms; u128 2^21: 11.6
+→ 6.5) and peak memory is 0.5–0.65× the forest's. The generated tables
+`paper/native-mul-table-8thr.tex` and `paper/native-mul-u128-table-8thr.tex`
+carry these rows at threads 1, 8 and 10; the forest gains nothing from the
+two efficiency cores on any workload (u32 2^23: 1962 ms at 8 threads vs
+1939 at 10; u128 2^21: 2284 vs 2257).
 
 ## Ladders
 
