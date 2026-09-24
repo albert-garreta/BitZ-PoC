@@ -157,6 +157,36 @@ impl<T: MulWord> MulLayout<T> {
     pub const fn padded_assignment_len(&self) -> usize {
         1 << self.assignment_vars()
     }
+    /// The row/column split the worldfnd/BitZ-scheme opener
+    /// (`protocol::wfbitz_opener`) proves fastest, from the default split.
+    ///
+    /// That opener's cost has a per-row component (each of its per-level
+    /// sumchecks buckets, transposes and contracts once per row, whatever
+    /// the row's width), so it wants wider rows than the forest, which is
+    /// indifferent to the split below its row cap. Measured on the u64
+    /// relation (M5, 10 threads, online prover / proof bytes, 2026-09-24):
+    /// two more column variables than the default give 0.61× / +4 % at
+    /// `2^15`, 0.67× / +7 % at `2^17`, 0.81× / +13 % at `2^19`, and at
+    /// `2^21` (already 2^11 columns per row) 0.95× / +37 %; a third one
+    /// gains little more for another 5–13 % of proof. Hence `s = ⌊g/2⌋ + 2`
+    /// capped by the default's row cap (`t ≤ 18`): `2^15..2^19` move two
+    /// variables, `2^21` keeps the default. The proof grows by the
+    /// `16·2^s` bytes of the integer column folds; the verifier gets
+    /// faster (fewer GKR levels). Other widths keep their default split.
+    ///
+    /// `extra` moves that many more gate variables from rows to columns
+    /// (negative: back), the way [`MulLayout::with_split_shift`] does from
+    /// the default split.
+    pub fn wfbitz_split(self, extra: i8) -> Result<Self, MulError> {
+        if T::BITS != 64 {
+            return self.with_split_shift(extra);
+        }
+        let g = self.gate_vars;
+        let default = (g / 2).max(g.saturating_sub(10));
+        let wanted = (g / 2 + 2).min(default.max(11));
+        let shift = wanted as i64 - default as i64 + i64::from(extra);
+        self.with_split_shift(i8::try_from(shift).map_err(|_| MulError::DomainTooLarge)?)
+    }
     pub fn with_split_shift(mut self, shift: i8) -> Result<Self, MulError> {
         let base = if T::BITS == 64 {
             (self.gate_vars / 2).max(self.gate_vars.saturating_sub(10))

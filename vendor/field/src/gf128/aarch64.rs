@@ -34,13 +34,13 @@ pub(crate) fn store(v: uint64x2_t) -> [u64; 2] {
 
 /// Carryless product of the low lanes: `a[0] * b[0]`.
 #[inline(always)]
-pub(crate) fn pmull_lo(a: uint64x2_t, b: uint64x2_t) -> uint64x2_t {
+pub fn pmull_lo(a: uint64x2_t, b: uint64x2_t) -> uint64x2_t {
     unsafe { vreinterpretq_u64_p128(vmull_p64(vgetq_lane_u64::<0>(a), vgetq_lane_u64::<0>(b))) }
 }
 
 /// Carryless product of the high lanes: `a[1] * b[1]`.
 #[inline(always)]
-pub(crate) fn pmull_hi(a: uint64x2_t, b: uint64x2_t) -> uint64x2_t {
+pub fn pmull_hi(a: uint64x2_t, b: uint64x2_t) -> uint64x2_t {
     unsafe {
         vreinterpretq_u64_p128(vmull_high_p64(
             vreinterpretq_p64_u64(a),
@@ -72,7 +72,7 @@ fn shift_down(v: uint64x2_t) -> uint64x2_t {
 /// Karatsuba would trade one PMULL for an XOR-dependency chain — a loss on
 /// M-class cores, so its absence here is deliberate.
 #[inline(always)]
-pub(crate) fn clmul128(a: uint64x2_t, b: uint64x2_t) -> (uint64x2_t, uint64x2_t) {
+pub fn clmul128(a: uint64x2_t, b: uint64x2_t) -> (uint64x2_t, uint64x2_t) {
     unsafe {
         let swapped = vextq_u64::<1>(b, b);
         let low = pmull_lo(a, b); // a0*b0
@@ -88,7 +88,7 @@ pub(crate) fn clmul128(a: uint64x2_t, b: uint64x2_t) -> (uint64x2_t, uint64x2_t)
 /// Reduce a 256-bit product with 3 PMULL: fold the whole high half against `g`
 /// at once, then clear the at-most-7-bit spill that fold leaves behind.
 #[inline(always)]
-pub(crate) fn reduce_256(low: uint64x2_t, high: uint64x2_t) -> uint64x2_t {
+pub fn reduce_256(low: uint64x2_t, high: uint64x2_t) -> uint64x2_t {
     unsafe {
         // high * g, as a 192-bit quantity spread over two products.
         let p0 = pmull_lo(high, vdupq_n_u64(REDUCTION));

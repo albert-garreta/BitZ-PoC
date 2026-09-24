@@ -78,6 +78,10 @@ def load(directory: Path) -> list[Case]:
             if descriptor["mode"] == "witness":
                 if schedule is not None:
                     raise ValueError("witness generation cannot have a GKR schedule")
+            elif config.get("opener") == "wfbitz":
+                # The worldfnd/BitZ-scheme opener has no forest schedule.
+                if schedule is not None:
+                    raise ValueError("the wfbitz opener cannot have a GKR schedule")
             elif schedule not in ("auto", "l2", "l4", "l8"):
                 raise ValueError("missing or invalid GKR schedule policy")
         if type(job.get("proof_fingerprints")) is not bool:

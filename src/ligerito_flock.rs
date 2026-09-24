@@ -219,9 +219,21 @@ impl FlockCommitHint {
         &self.rows
     }
 
-    pub(crate) fn packed_cols(&self) -> &[Vec<u64>] {
+    /// The 64-column-lane packing of the same bits (`packed_cols[g][b]` =
+    /// bit `b` of columns `64g..64g+63`), built on first use.
+    pub fn packed_cols(&self) -> &[Vec<u64>] {
         self.packed_cols
             .get_or_init(|| crate::ligerito::pack_columns_from_rows(&self.row_layout, &self.rows))
+    }
+
+    /// The flock prover data (codeword + Merkle tree) behind the commitment.
+    pub fn flock_prover_data(&self) -> &ProverData {
+        &self.prover_data
+    }
+
+    /// The packed message in flock representation, `2^{m_p}` elements.
+    pub fn packed_message(&self) -> &[Gf128] {
+        &self.p_msg
     }
 
     pub(crate) fn matches_rows(&self, rows: &std::sync::Arc<Vec<Vec<u64>>>) -> bool {

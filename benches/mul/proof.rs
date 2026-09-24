@@ -137,8 +137,12 @@ where
     MulLayout<T>: RelationSpec<Witness = MulWitness<T>>,
 {
     let c = run.job.case.bitz.as_ref().expect("BitZ config");
-    let layout =
-        MulLayout::<T>::new_with_word_bits(inputs.len(), c.w)?.with_split_shift(c.split)?;
+    let layout = MulLayout::<T>::new_with_word_bits(inputs.len(), c.w)?;
+    let layout = if c.opener.as_deref() == Some("wfbitz") {
+        layout.wfbitz_split(c.split)?
+    } else {
+        layout.with_split_shift(c.split)?
+    };
     let packing = packing(&layout);
     let modular = run.job.case.workload == Workload::U32Mod32;
     trials(
@@ -208,28 +212,156 @@ where
             json!({"packing":packing,"corpus_digest":expected,"boundary":"witness-generation"});
         return Ok(());
     }
-    let setup = Instant::now();
-    let prepared = if run.job.case.bitz.as_ref().expect("config").profile == Some(128) {
-        PreparedRelation::new_with_profile_and_ligerito::<Lambda128>(
-            layout,
-            selection(&run.job.case),
-        )?
-    } else {
-        PreparedRelation::new_with_profile_and_ligerito::<Lambda100>(
-            layout,
-            selection(&run.job.case),
-        )?
-    };
-    let setup_ms = setup.elapsed().as_secs_f64() * 1000.;
+    let config = run.job.case.bitz.as_ref().expect("config");
+    let profile128 = config.profile == Some(128);
+    match config.opener.as_deref() {
+        None => {
+            let setup = Instant::now();
+            let prepared = if profile128 {
+                PreparedRelation::new_with_profile_and_ligerito::<Lambda128>(
+                    layout,
+                    selection(&run.job.case),
+                )?
+            } else {
+                PreparedRelation::new_with_profile_and_ligerito::<Lambda100>(
+                    layout,
+                    selection(&run.job.case),
+                )?
+            };
+            let setup_ms = setup.elapsed().as_secs_f64() * 1000.;
+            let lig = prepared.ligerito_configuration();
+            let security = json!({
+                "profile":if prepared.security().lambda==128 {Lambda128::NAME}else{Lambda100::NAME},
+                "lambda":prepared.security().lambda,"achieved_bits":prepared.security().accounting.achieved_bits(),
+                "ligerito":lig.report(&lig.selection().name(),prepared.security().ood)});
+            let bounds = run.job.case.mode == Mode::Bounds;
+            trial_loop(
+                run,
+                compare,
+                setup_ms,
+                security,
+                packing,
+                witness,
+                pack,
+                audit,
+                |rows| Ok(protocol::commit(&prepared, rows)?),
+                |w, hint, transcript| Ok(protocol::prove(transcript, &prepared, w, hint)?),
+                |hint, proof| {
+                    protocol::verify(&mut Blake3Transcript::new(), &prepared, &hint.commitment, proof)?;
+                    Ok(())
+                },
+                |proof| proof.size_bytes(prepared.security()),
+                |proof| {
+                    if bounds {
+                        let encoded = proof.bitz().to_bytes();
+                        let roundtrip = match proof.bitz() {
+                            protocol::Opening::Direct(_) => {
+                                bitz::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&encoded)?.to_bytes()
+                            }
+                            protocol::Opening::Virtual(_) => {
+                                bitz::ligerito_flock::IntEvalRsLigVirtProof::from_bytes(&encoded)?.to_bytes()
+                            }
+                        };
+                        anyhow::ensure!(encoded == roundtrip, "opening codec roundtrip");
+                    }
+                    Ok(())
+                },
+                |proof, root, transcript| {
+                    crate::common::proof_fingerprint::nonlinear_fingerprint(proof, root, transcript)
+                },
+            )
+        }
+        #[cfg(feature = "bitz-parity")]
+        Some("wfbitz") => {
+            use bitz::piop::spartan::protocol::wfbitz_opener::{self, WfbitzLigerito, WfbitzOpener};
+            let target = config.profile.expect("profile");
+            let ladder = WfbitzLigerito::parse(
+                config.ligerito.as_deref().expect("proof selection"),
+                target,
+            )
+            .map_err(anyhow::Error::msg)?;
+            let setup = Instant::now();
+            let (prefix, opener) = if profile128 {
+                WfbitzOpener::prepare::<Lambda128, _>(layout, ladder, target)?
+            } else {
+                WfbitzOpener::prepare::<Lambda100, _>(layout, ladder, target)?
+            };
+            let setup_ms = setup.elapsed().as_secs_f64() * 1000.;
+            let security_params = prefix.security();
+            let (opening_bits, opening_binding) = opener.opening_bits();
+            let ladder_config = opener.security();
+            let security = json!({
+                "profile":if security_params.lambda==128 {Lambda128::NAME}else{Lambda100::NAME},
+                "lambda":security_params.lambda,
+                "achieved_bits":security_params.accounting.achieved_bits().min(opening_bits),
+                "piop_achieved_bits":security_params.accounting.achieved_bits(),
+                "opener":"wfbitz",
+                "ligerito":{
+                    "requested_profile":opener.ligerito().name(),
+                    "resolved_profile":format!("wfbitz-{}", opener.ligerito().name()),
+                    "regime":if ladder_config.levels.first().is_some_and(|l| l.eta.is_some()) {"johnson"} else {"udr"},
+                    "target_bits":ladder_config.target_security_bits,
+                    "configuration_fingerprint":opener.digest().iter().map(|b| format!("{b:02x}")).collect::<String>(),
+                    "outer_ood":prefix.security().ood.is_some(),
+                    "ood_grinding_bits":prefix.security().ood.map(|params| params.grinding_bits),
+                    "opening_bits":opening_bits,
+                    "opening_binding":opening_binding,
+                    "configuration":ladder_config,
+                }});
+            trial_loop(
+                run,
+                compare,
+                setup_ms,
+                security,
+                packing,
+                witness,
+                pack,
+                audit,
+                |rows| Ok(opener.commit(rows)?),
+                |w, hint, transcript| Ok(wfbitz_opener::prove(transcript, &prefix, &opener, w, hint)?),
+                |hint, proof| {
+                    wfbitz_opener::verify(&mut Blake3Transcript::new(), &prefix, &opener, &hint.commitment, proof)?;
+                    Ok(())
+                },
+                |proof| proof.size_bytes(security_params),
+                |_proof| Ok(()),
+                |proof, root, transcript| {
+                    crate::common::proof_fingerprint::nonlinear_fingerprint(proof, root, transcript)
+                },
+            )
+        }
+        Some(other) => anyhow::bail!("unknown BitZ opener {other} (or a build without its feature)"),
+    }
+}
+
+/// The timed trials of one prepared relation, the opener abstracted: each
+/// trial commits the packed rows, proves, verifies, and records the
+/// paper's metrics (and the traced phases on latency runs).
+#[allow(clippy::too_many_arguments)]
+fn trial_loop<W, P>(
+    run: &mut Run,
+    compare: bool,
+    setup_ms: f64,
+    security: Value,
+    packing: Value,
+    witness: impl Fn() -> Result<W>,
+    pack: impl Fn(&W) -> Vec<Vec<u64>>,
+    audit: impl Fn(&W) -> Result<String>,
+    commit: impl Fn(Vec<Vec<u64>>) -> Result<bitz::ligerito_flock::FlockCommitHint>,
+    prove: impl Fn(&W, &bitz::ligerito_flock::FlockCommitHint, &mut Blake3Transcript) -> Result<P>,
+    verify: impl Fn(&bitz::ligerito_flock::FlockCommitHint, &P) -> Result<()>,
+    size: impl Fn(&P) -> usize,
+    roundtrip: impl Fn(&P) -> Result<()>,
+    fingerprint: impl Fn(&P, &[u8], &Blake3Transcript) -> crate::common::proof_fingerprint::ProofFingerprint,
+) -> Result<()>
+where
+    W: Sync,
+{
     let generate_each = compare || run.job.case.mode == Mode::Bounds;
     let baseline = witness()?;
     let expected = audit(&baseline)?;
     let baseline = (!generate_each).then_some(baseline);
-    let lig = prepared.ligerito_configuration();
-    run.effective = json!({"packing":packing,"corpus_digest":expected,"boundary":if generate_each {"witness-to-proof"}else{"standalone-proving"},"security": {
-        "profile":if prepared.security().lambda==128 {Lambda128::NAME}else{Lambda100::NAME},
-        "lambda":prepared.security().lambda,"achieved_bits":prepared.security().accounting.achieved_bits(),
-        "ligerito":lig.report(&lig.selection().name(),prepared.security().ood)}});
+    run.effective = json!({"packing":packing,"corpus_digest":expected,"boundary":if generate_each {"witness-to-proof"}else{"standalone-proving"},"security": security});
     for i in 0..run.trials() {
         run.begin_memory();
         let recording = run
@@ -253,21 +385,16 @@ where
             .expect("trial witness");
         let proving = tracing::info_span!("mul:proving").entered();
         let online = Instant::now();
-        let hint = protocol::commit(&prepared, pack(w))?;
+        let hint = commit(pack(w))?;
         let commit_ms = online.elapsed().as_secs_f64() * 1000.;
         let mut transcript = Blake3Transcript::new();
-        let proof = protocol::prove(&mut transcript, &prepared, w, &hint)?;
+        let proof = prove(w, &hint, &mut transcript)?;
         let online_ms = online.elapsed().as_secs_f64() * 1000.;
         drop(proving);
         let total_ms = start.elapsed().as_secs_f64() * 1000.;
         let verification = tracing::info_span!("mul:verification").entered();
         let verify_start = Instant::now();
-        protocol::verify(
-            &mut Blake3Transcript::new(),
-            &prepared,
-            &hint.commitment,
-            &proof,
-        )?;
+        verify(&hint, &proof)?;
         let verify_ms = verify_start.elapsed().as_secs_f64() * 1000.;
         drop(verification);
         let verified_ms = start.elapsed().as_secs_f64() * 1000.;
@@ -279,7 +406,7 @@ where
             ("verify_ms".into(), verify_ms),
             (
                 "proof_bytes".into(),
-                (hint.commitment.root.len() + proof.size_bytes(prepared.security())) as f64,
+                (hint.commitment.root.len() + size(&proof)) as f64,
             ),
         ]);
         if generate_each {
@@ -312,25 +439,9 @@ where
             }
         }
         anyhow::ensure!(audit(w)? == expected, "trial witness differs from corpus");
-        if run.job.case.mode == Mode::Bounds {
-            let encoded = proof.bitz().to_bytes();
-            let roundtrip = match proof.bitz() {
-                protocol::Opening::Direct(_) => {
-                    bitz::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&encoded)?.to_bytes()
-                }
-                protocol::Opening::Virtual(_) => {
-                    bitz::ligerito_flock::IntEvalRsLigVirtProof::from_bytes(&encoded)?.to_bytes()
-                }
-            };
-            anyhow::ensure!(encoded == roundtrip, "opening codec roundtrip");
-        }
-        let fingerprint = (run.latency() && run.job.proof_fingerprints).then(|| {
-            crate::common::proof_fingerprint::nonlinear_fingerprint(
-                &proof,
-                &hint.commitment.root,
-                &transcript,
-            )
-        });
+        roundtrip(&proof)?;
+        let fingerprint = (run.latency() && run.job.proof_fingerprints)
+            .then(|| fingerprint(&proof, &hint.commitment.root, &transcript));
         std::hint::black_box(proof);
         run.sample(i, metrics);
         run.samples.last_mut().expect("recorded sample").fingerprint = fingerprint;

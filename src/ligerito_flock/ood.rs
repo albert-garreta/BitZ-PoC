@@ -40,6 +40,18 @@ impl ProverOod {
     }
 }
 
+impl ProverOod {
+    /// The claim a composed caller bound before its PIOP
+    /// ([`bind_prover_ood`]), for an opener outside this module; `None`
+    /// when no round ran (or the state was never bound).
+    pub(crate) fn into_bound_claim(self) -> Option<OodProverClaim> {
+        match self.0 {
+            ProverState::Bound(claim) => claim,
+            ProverState::AtOpening(_) => None,
+        }
+    }
+}
+
 /// Opaque verifier state, tied to the exact Round-0 payload already checked.
 pub struct VerifierOod(VerifierState);
 enum VerifierState {
@@ -86,6 +98,17 @@ impl VerifierOod {
             }
             VerifierState::Bound(None) if round.is_none() => Ok(None),
             VerifierState::Bound(None) => Err(FlockRsError::OodRound),
+        }
+    }
+}
+
+impl VerifierOod {
+    /// The claim and the proof's round a composed caller checked before its
+    /// PIOP ([`bind_verifier_ood`]); `None` when no round ran.
+    pub(crate) fn into_bound_claim(self) -> Option<(OodVerifierClaim, OodRound)> {
+        match self.0 {
+            VerifierState::Bound(claim) => claim,
+            VerifierState::AtOpening(_) => None,
         }
     }
 }
