@@ -38,6 +38,7 @@ docs/
 benchmark-results/
 logup-cut-*.txt
 gkr-components-*.txt
+/logup_cut_compare*.txt
 /opt.txt
 /eager.txt
 /src/eager.txt
