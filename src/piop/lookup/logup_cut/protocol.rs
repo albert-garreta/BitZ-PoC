@@ -19,12 +19,12 @@ use crate::{
     },
     merged_forest::{absorb_gfs, mle_at},
     pcs::{
-        GF128_MULT_ORDER, IntegerMatrixLayout, fill_chunk_pow2_flat, gf_pow, is_generator,
+        GF128_MULT_ORDER, IntegerMatrixLayout, fill_chunk_pow2_flat, is_generator,
         max_fold_magnitude,
     },
     poly::{univariate::binary_gf128::Gf128 as Gf, utils::build_eq_x_r_vec},
     transcript::{Blake3Transcript, traits::Transcript},
-    utils::{cfg_iter_mut, wide_mul::WideMulAcc},
+    utils::{cfg_iter, cfg_iter_mut, wide_mul::WideMulAcc},
 };
 
 #[cfg(feature = "parallel")]
@@ -313,6 +313,29 @@ impl LogupCutScratch {
     }
 }
 
+/// `alpha^v` for every column fold `v` by windowed fixed-base
+/// exponentiation (the crate's `FixedBasePow`, window 8): 16 table products
+/// per 128-bit exponent. The verifier's sequential version.
+fn column_roots(alpha: Gf, folds: &[u128]) -> Vec<Gf> {
+    let comb = field::FixedBasePow::<_, 2>::new_public(field::Gf128Ops, alpha.into(), 8);
+    folds
+        .iter()
+        .map(|&value| {
+            Gf::from(comb.pow_public(&field::Uint::from_words([value as u64, (value >> 64) as u64])))
+        })
+        .collect()
+}
+
+/// [`column_roots`] with the columns spread over the thread pool.
+fn column_roots_parallel(alpha: Gf, folds: &[u128]) -> Vec<Gf> {
+    let comb = field::FixedBasePow::<_, 2>::new_public(field::Gf128Ops, alpha.into(), 8);
+    cfg_iter!(folds)
+        .map(|&value| {
+            Gf::from(comb.pow_public(&field::Uint::from_words([value as u64, (value >> 64) as u64])))
+        })
+        .collect()
+}
+
 pub fn prove_logup_cut(
     transcript: &mut Blake3Transcript,
     hint: &FlockCommitHint,
@@ -401,7 +424,10 @@ pub fn prove_logup_cut_profiled(
     if max_fold_magnitude(&v) >= GF128_MULT_ORDER {
         return Err(LogupCutError::InvalidParams);
     }
-    let roots = v.iter().map(|&value| gf_pow(alpha, value)).collect::<Vec<_>>();
+    // Windowed fixed-base exponentiation (what the crate's forest and the
+    // wfbitz scheme use): 16 table products per exponent instead of
+    // square-and-multiply over its ~100 bits, one column per task.
+    let roots = column_roots_parallel(alpha, &v);
     absorb_gfs(transcript, 0x30, &roots);
     let root_point = transcript.get_field_challenges(layout.col_vars, &());
     let root_value = mle_at(&roots, &root_point);
@@ -644,11 +670,7 @@ pub fn verify_logup_cut(
         layout: &table_layout,
     };
 
-    let roots = proof
-        .v
-        .iter()
-        .map(|&value| gf_pow(alpha, value))
-        .collect::<Vec<_>>();
+    let roots = column_roots(alpha, &proof.v);
     absorb_gfs(transcript, 0x30, &roots);
     let root_point = transcript.get_field_challenges(layout.col_vars, &());
     let root_value = mle_at(&roots, &root_point);
