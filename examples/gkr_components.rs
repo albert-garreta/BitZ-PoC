@@ -31,34 +31,43 @@ struct Sample {
     sumcheck: f64,
 }
 
-fn summary(samples: &[Sample], select: impl Fn(&Sample) -> f64) -> (f64, f64, f64) {
+fn summary(samples: &[Sample], select: impl Fn(&Sample) -> f64) -> (f64, f64, f64, f64) {
     let mut values = samples.iter().map(select).collect::<Vec<_>>();
     values.sort_by(f64::total_cmp);
-    (values[0], values[values.len() / 2], values[values.len() - 1])
+    let median = values[values.len() / 2];
+    let mut deviations = values.iter().map(|value| (value - median).abs()).collect::<Vec<_>>();
+    deviations.sort_by(f64::total_cmp);
+    (values[0], median, values[values.len() - 1], deviations[deviations.len() / 2])
 }
 
 fn fraction_duration_summary(
     profiles: &[FractionProofProfile],
     select: impl Fn(&FractionProofProfile) -> std::time::Duration,
-) -> (f64, f64, f64) {
+) -> (f64, f64, f64, f64) {
     let mut values = profiles
         .iter()
         .map(|profile| select(profile).as_secs_f64() * 1e3)
         .collect::<Vec<_>>();
     values.sort_by(f64::total_cmp);
-    (values[0], values[values.len() / 2], values[values.len() - 1])
+    let median = values[values.len() / 2];
+    let mut deviations = values.iter().map(|value| (value - median).abs()).collect::<Vec<_>>();
+    deviations.sort_by(f64::total_cmp);
+    (values[0], median, values[values.len() - 1], deviations[deviations.len() / 2])
 }
 
 fn forest_duration_summary(
     profiles: &[MergedForestProfile],
     select: impl Fn(&MergedForestProfile) -> std::time::Duration,
-) -> (f64, f64, f64) {
+) -> (f64, f64, f64, f64) {
     let mut values = profiles
         .iter()
         .map(|profile| select(profile).as_secs_f64() * 1e3)
         .collect::<Vec<_>>();
     values.sort_by(f64::total_cmp);
-    (values[0], values[values.len() / 2], values[values.len() - 1])
+    let median = values[values.len() / 2];
+    let mut deviations = values.iter().map(|value| (value - median).abs()).collect::<Vec<_>>();
+    deviations.sort_by(f64::total_cmp);
+    (values[0], median, values[values.len() - 1], deviations[deviations.len() / 2])
 }
 
 fn print_samples(label: &str, samples: &[Sample]) {
@@ -67,16 +76,16 @@ fn print_samples(label: &str, samples: &[Sample]) {
     let total = summary(samples, |sample| sample.witness + sample.sumcheck);
     println!("{label}");
     println!(
-        "  witness build  best {:9.3} ms | median {:9.3} ms | worst {:9.3} ms",
-        witness.0, witness.1, witness.2,
+        "  witness build  best {:9.3} ms | median {:9.3} ms | worst {:9.3} ms | MAD {:8.3} ms",
+        witness.0, witness.1, witness.2, witness.3,
     );
     println!(
-        "  sumcheck       best {:9.3} ms | median {:9.3} ms | worst {:9.3} ms",
-        sumcheck.0, sumcheck.1, sumcheck.2,
+        "  sumcheck       best {:9.3} ms | median {:9.3} ms | worst {:9.3} ms | MAD {:8.3} ms",
+        sumcheck.0, sumcheck.1, sumcheck.2, sumcheck.3,
     );
     println!(
-        "  total          best {:9.3} ms | median {:9.3} ms | worst {:9.3} ms",
-        total.0, total.1, total.2,
+        "  total          best {:9.3} ms | median {:9.3} ms | worst {:9.3} ms | MAD {:8.3} ms",
+        total.0, total.1, total.2, total.3,
     );
 }
 
@@ -469,8 +478,8 @@ fn main() {
         ),
     ] {
         println!(
-            "    {label:<22} best {:9.3} ms | median {:9.3} ms | worst {:9.3} ms",
-            values.0, values.1, values.2,
+            "    {label:<22} best {:9.3} ms | median {:9.3} ms | worst {:9.3} ms | MAD {:8.3} ms",
+            values.0, values.1, values.2, values.3,
         );
     }
     println!();
@@ -494,8 +503,8 @@ fn main() {
         ),
     ] {
         println!(
-            "    {label:<18} best {:9.3} ms | median {:9.3} ms | worst {:9.3} ms",
-            values.0, values.1, values.2,
+            "    {label:<18} best {:9.3} ms | median {:9.3} ms | worst {:9.3} ms | MAD {:8.3} ms",
+            values.0, values.1, values.2, values.3,
         );
     }
 
