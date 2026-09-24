@@ -1687,141 +1687,195 @@ pub struct LigOpenProof {
     pub lig: LigeritoProof,
 }
 
-/// One Ligerito closure for several evaluation claims on the same commitment.
-/// Each point keeps its own ring-switch message; the expensive recursive
-/// opening is shared by a random linear combination.
-#[derive(Clone, Debug)]
-pub struct LigMultiOpenProof {
-    pub rings: Vec<RingSwitchProof>,
-    pub lig: LigeritoProof,
+const COMBINED_OPEN_DOMAIN: &[u8] = b"bitz/rs-open-ligerito-combined/v1";
+
+fn combined_open_coefficients(
+    transcript: &mut (impl Transcript + Send),
+    count: usize,
+) -> Vec<Gf> {
+    transcript.absorb_slice(COMBINED_OPEN_DOMAIN);
+    transcript.absorb_slice(&(count as u64).to_le_bytes());
+    let eta = transcript.get_field_challenge::<Gf>(&());
+    let mut power = Gf::ONE;
+    let mut coefficients = Vec::with_capacity(count);
+    for _ in 0..count {
+        coefficients.push(power);
+        power *= eta;
+    }
+    coefficients
 }
 
-pub(crate) fn prove_rs_open_ligerito_many(
+fn combined_high_equality(points: &[Vec<Gf>], coefficients: &[Gf]) -> Vec<Gf> {
+    let high = points
+        .iter()
+        .map(|point| &point[LOG_PACKING..])
+        .collect::<Vec<_>>();
+    let high_vars = high[0].len();
+    let common_vars = (0..high_vars)
+        .take_while(|&coordinate| {
+            high[1..]
+                .iter()
+                .all(|point| point[coordinate] == high[0][coordinate])
+        })
+        .count();
+    let common_eq = build_eq_x_r_vec(&high[0][..common_vars], &()).unwrap_or(vec![Gf::ONE]);
+    let mut tail_eq = vec![Gf::ZERO; 1usize << (high_vars - common_vars)];
+    for (point, &coefficient) in high.iter().zip(coefficients) {
+        let eq = build_eq_x_r_vec(&point[common_vars..], &()).unwrap_or(vec![Gf::ONE]);
+        for (slot, value) in tail_eq.iter_mut().zip(eq) {
+            *slot += coefficient * value;
+        }
+    }
+    let common_len = common_eq.len();
+    let mut combined = vec![Gf::ZERO; common_len * tail_eq.len()];
+    cfg_iter_mut!(combined)
+        .enumerate()
+        .for_each(|(index, slot)| {
+            *slot = common_eq[index & (common_len - 1)] * tail_eq[index / common_len];
+        });
+    combined
+}
+
+/// Transpose multiplication-by-`scale` onto the coordinate weights of an
+/// F2-linear field recombination.
+fn dual_mul_weights(weights: &[Gf], scale: Gf) -> Vec<Gf> {
+    debug_assert_eq!(weights.len(), 128);
+    let mut out = vec![Gf::ZERO; 128];
+    let mut column = scale;
+    let x = Gf::from_polynomial_words([2, 0]);
+    for slot in &mut out {
+        let words = column.as_words();
+        let mut value = Gf::ZERO;
+        for word in 0..2 {
+            let mut bits = words[word];
+            while bits != 0 {
+                let bit = bits.trailing_zeros() as usize;
+                value += weights[(word << 6) | bit];
+                bits &= bits - 1;
+            }
+        }
+        *slot = value;
+        column *= x;
+    }
+    out
+}
+
+/// Open a random linear combination of claims whose packed-coordinate prefix
+/// is shared. Linearity moves the batching challenge before the ring switch,
+/// so the proof contains one ring message and one recursive Ligerito opening.
+pub(crate) fn prove_rs_open_ligerito_combined(
     transcript: &mut (impl Transcript + Send),
     hint: &FlockCommitHint,
     points: &[Vec<Gf>],
     pc: &LigProverConfig,
-) -> LigMultiOpenProof {
+) -> LigOpenProof {
     assert!(!points.is_empty());
     let m_p = hint.p_msg.len().ilog2() as usize;
-    assert!(points.iter().all(|point| point.len() == m_p + LOG_PACKING));
+    assert!(points.iter().all(|point| {
+        point.len() == m_p + LOG_PACKING
+            && point[..LOG_PACKING] == points[0][..LOG_PACKING]
+    }));
+    let coefficients = combined_open_coefficients(transcript, points.len());
+    let eq_hi = combined_high_equality(points, &coefficients);
+    assert_eq!(eq_hi.len(), hint.p_msg.len());
 
-    let mut rings = Vec::with_capacity(points.len());
-    let mut eq_his = Vec::with_capacity(points.len());
-    for point in points {
-        let eq_hi = build_eq_x_r_vec(&point[LOG_PACKING..], &()).expect("nonempty high point");
-        let s_v = dense_ring_sv(&hint.p_msg, &eq_hi);
-        crate::ligerito::absorb_sv(transcript, &s_v);
-        rings.push(RingSwitchProof { s_v });
-        eq_his.push(eq_hi);
-    }
-
+    let s_v = dense_ring_sv(&hint.p_msg, &eq_hi);
+    crate::ligerito::absorb_sv(transcript, &s_v);
+    let ring = RingSwitchProof { s_v };
     let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
     let eq_r2 = build_eq_x_r_vec(&r2, &()).expect("ring point");
-    let etas: Vec<Gf> = transcript.get_field_challenges(points.len(), &());
     let mut basis = vec![Gf128::ZERO; hint.p_msg.len()];
-    if rs_fast() {
-        for (eq_hi, &eta) in eq_his.iter().zip(&etas) {
-            let tables = phi_byte_tables(&eq_r2, eta);
-            const CHUNK: usize = 1 << 12;
-            cfg_chunks_mut!(basis, CHUNK)
-                .enumerate()
-                .for_each(|(chunk_index, chunk)| {
-                    let base = chunk_index * CHUNK;
-                    for (offset, slot) in chunk.iter_mut().enumerate() {
-                        *slot += phi_from_words(*eq_hi[base + offset].as_words(), &tables);
-                    }
-                });
-        }
+    let precomputed_round0 = if rs_fast() {
+        Some(fill_phi_basis_round0(
+            &mut basis,
+            &hint.p_msg,
+            core::slice::from_ref(&eq_hi),
+            &[Gf::ONE],
+            &eq_r2,
+        ))
     } else {
-        for (eq_hi, &eta) in eq_his.iter().zip(&etas) {
-            for (slot, &value) in basis.iter_mut().zip(eq_hi) {
-                *slot += eta * phi_bit_sum(value, &eq_r2);
-            }
-        }
-    }
-    let target = rings
+        fill_phi_basis(
+            &mut basis,
+            core::slice::from_ref(&eq_hi),
+            &[Gf::ONE],
+            &eq_r2,
+        );
+        None
+    };
+    let target = crate::ligerito::transpose_bits_128(&ring.s_v)
         .iter()
-        .zip(&etas)
-        .map(|(ring, &eta)| {
-            crate::ligerito::transpose_bits_128(&ring.s_v)
-                .iter()
-                .zip(&eq_r2)
-                .map(|(&value, &weight)| value * weight)
-                .sum::<Gf>()
-                * eta
-        })
+        .zip(&eq_r2)
+        .map(|(&value, &weight)| value * weight)
         .sum();
-    let lig = ligerito::recursive_prover_with_basis(
-        pc,
-        &hint.p_msg,
-        basis,
-        target,
-        &hint.prover_data.codeword,
-        &hint.prover_data.merkle_tree,
-        &mut ZincChallenger(transcript),
-    );
-    LigMultiOpenProof { rings, lig }
+    let lig = match precomputed_round0 {
+        Some(round0) => ligerito::recursive_prover_with_basis_precomputed_round0(
+            pc,
+            hint.p_msg.as_slice(),
+            basis,
+            target,
+            &hint.prover_data.codeword,
+            &hint.prover_data.merkle_tree,
+            round0,
+            None,
+            &mut ZincChallenger(transcript),
+        ),
+        None => ligerito::recursive_prover_with_basis(
+            pc,
+            hint.p_msg.as_slice(),
+            basis,
+            target,
+            &hint.prover_data.codeword,
+            &hint.prover_data.merkle_tree,
+            &mut ZincChallenger(transcript),
+        ),
+    };
+    LigOpenProof { ring, lig }
 }
 
-pub(crate) fn verify_rs_open_ligerito_many(
+pub(crate) fn verify_rs_open_ligerito_combined(
     transcript: &mut (impl Transcript + Send),
     commitment: &Commitment,
     points: &[Vec<Gf>],
     values: &[Gf],
-    proof: &LigMultiOpenProof,
+    proof: &LigOpenProof,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
     if points.is_empty()
         || points.len() != values.len()
-        || points.len() != proof.rings.len()
-        || points.iter().any(|point| point.len() != commitment.params.m)
+        || points.iter().any(|point| {
+            point.len() != commitment.params.m
+                || point[..LOG_PACKING] != points[0][..LOG_PACKING]
+        })
     {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
-    for ((point, &value), ring) in points.iter().zip(values).zip(&proof.rings) {
-        if ring.s_v.len() != 128 {
-            return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
-        }
-        let eq_lo = build_eq_x_r_vec(&point[..LOG_PACKING], &()).expect("ring point");
-        let actual = ring
-            .s_v
-            .iter()
-            .zip(&eq_lo)
-            .map(|(&evaluation, &weight)| evaluation * weight)
-            .sum::<Gf>();
-        if actual != value {
-            return Err(FlockRsError::RingSwitch(RsOpenError::RingSwitchClaim));
-        }
-        crate::ligerito::absorb_sv(transcript, &ring.s_v);
-    }
-    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
-    let eq_r2 = build_eq_x_r_vec(&r2, &()).expect("ring point");
-    let etas: Vec<Gf> = transcript.get_field_challenges(points.len(), &());
-    let target = proof
-        .rings
+    let coefficients = combined_open_coefficients(transcript, points.len());
+    let combined_value = values
         .iter()
-        .zip(&etas)
-        .map(|(ring, &eta)| {
-            crate::ligerito::transpose_bits_128(&ring.s_v)
-                .iter()
-                .zip(&eq_r2)
-                .map(|(&value, &weight)| value * weight)
-                .sum::<Gf>()
-                * eta
-        })
+        .zip(&coefficients)
+        .map(|(&value, &coefficient)| value * coefficient)
         .sum();
-    let high_points = points
+    let (eq_r2, target) = ring_switch_verify(
+        transcript,
+        &proof.ring,
+        combined_value,
+        &points[0][..LOG_PACKING],
+    )
+    .map_err(FlockRsError::RingSwitch)?;
+    let high = points
         .iter()
         .map(|point| &point[LOG_PACKING..])
         .collect::<Vec<_>>();
+    let dual_weights = coefficients
+        .iter()
+        .map(|&coefficient| dual_mul_weights(&eq_r2, coefficient))
+        .collect::<Vec<_>>();
     let eval_basis = |prefix: &[Gf128], log_y: usize| -> Vec<Gf128> {
         let mut out = vec![Gf::ZERO; 1usize << log_y];
-        for ((point, &eta), ring) in high_points.iter().zip(&etas).zip(&proof.rings) {
-            let residual = residual_b_evals(prefix, log_y, point, &eq_r2);
-            debug_assert_eq!(ring.s_v.len(), 128);
+        for (point, weights) in high.iter().zip(&dual_weights) {
+            let residual = residual_b_evals(prefix, log_y, point, weights);
             for (slot, value) in out.iter_mut().zip(residual) {
-                *slot += eta * value;
+                *slot += value;
             }
         }
         out.into_iter().collect()

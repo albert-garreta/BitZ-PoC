@@ -14,8 +14,8 @@ use std::time::{Duration, Instant};
 use crate::{
     binary_pcs::{BinaryPcs, MIN_PACKED_LOG},
     ligerito_flock::{
-        FlockCommitHint, FlockRsError, LigMultiOpenProof, OodRound, prove_rs_open_ligerito_many,
-        verify_rs_open_ligerito_many,
+        FlockCommitHint, FlockRsError, LigOpenProof, OodRound,
+        prove_rs_open_ligerito_combined, verify_rs_open_ligerito_combined,
     },
     merged_forest::{absorb_gfs, mle_at},
     pcs::{
@@ -87,7 +87,7 @@ pub struct LogupCutProof {
     table_inner: InnerProductProof,
     aux_open: LigeritoProof,
     structured: StructuredSumcheckProof,
-    main_open: Option<LigMultiOpenProof>,
+    main_open: Option<LigOpenProof>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -153,7 +153,7 @@ pub fn logup_cut_proof_size(proof: &LogupCutProof) -> LogupCutProofSize {
     let (root_merge, block_forest) = proof.upper.proof_size_bytes();
     let (main_ring_switch, main_ligerito) = proof.main_open.as_ref().map_or((0, 0), |opening| {
         (
-            opening.rings.iter().map(|ring| ring.s_v.len() * 16).sum(),
+            opening.ring.s_v.len() * 16,
             opening.lig.size_bytes(),
         )
     });
@@ -595,7 +595,7 @@ pub fn prove_logup_cut_profiled(
 
     let phase_start = Instant::now();
     let main_open = (!bit_claims.is_empty()).then(|| {
-        prove_rs_open_ligerito_many(
+        prove_rs_open_ligerito_combined(
             transcript,
             hint,
             &bit_claims.iter().map(|claim| claim.point.clone()).collect::<Vec<_>>(),
@@ -749,7 +749,7 @@ pub fn verify_logup_cut(
     .ok_or(LogupCutError::StructuredClaim)?;
     match (&proof.main_open, bit_claims.is_empty()) {
         (None, true) => {}
-        (Some(main_open), false) => verify_rs_open_ligerito_many(
+        (Some(main_open), false) => verify_rs_open_ligerito_combined(
             transcript,
             commitment,
             &bit_claims.iter().map(|claim| claim.point.clone()).collect::<Vec<_>>(),
