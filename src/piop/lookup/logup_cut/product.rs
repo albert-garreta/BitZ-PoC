@@ -615,6 +615,7 @@ fn fused_fold_product_round(
     let right_spare = &mut right_out.spare_capacity_mut()[..folded_len];
     let high_len = pairs.div_ceil(low_domain);
     let baseline = left.padding * right.padding;
+    let challenge_mul = field::PreparedGf128Mul::new(challenge);
 
     let block = |(
         high,
@@ -637,7 +638,7 @@ fn fused_fold_product_round(
             low_domain,
             high_weight,
             domain_len,
-            challenge,
+            &challenge_mul,
             baseline,
             at_one,
         )
@@ -704,7 +705,7 @@ fn fused_fold_product_block(
     low_domain: usize,
     high_weight: Gf,
     domain_len: usize,
-    challenge: Gf,
+    challenge: &field::PreparedGf128Mul,
     baseline: Gf,
     at_one: bool,
 ) -> [<Gf as WideMulAcc>::Wide; 2] {
@@ -759,7 +760,7 @@ fn folded_pair(
     right: StateView<'_>,
     output: usize,
     domain_len: usize,
-    challenge: Gf,
+    challenge: &field::PreparedGf128Mul,
 ) -> [Gf; 2] {
     debug_assert!(left.values.len() <= domain_len && right.values.len() <= domain_len);
     let fold = |state: StateView<'_>| {
@@ -773,7 +774,7 @@ fn folded_pair(
             .get(2 * output + 1)
             .copied()
             .unwrap_or(state.padding);
-        low + challenge * (low + high)
+        low + challenge.mul(&(low + high))
     };
     [fold(left), fold(right)]
 }
