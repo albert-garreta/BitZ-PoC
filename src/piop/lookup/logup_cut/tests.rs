@@ -120,7 +120,7 @@ fn dyadic_upper_proves_exact_unpadded_cut() {
     let root = (0..columns)
         .map(|column| {
             (0..plan.n_chunks)
-                .map(|chunk| cut_values[chunk * columns + column])
+                .map(|chunk| cut_values[column * plan.n_chunks + chunk])
                 .product::<Gf>()
         })
         .collect::<Vec<_>>();
@@ -132,11 +132,10 @@ fn dyadic_upper_proves_exact_unpadded_cut() {
 
     let mut prover_transcript = Blake3Transcript::new();
     let mut product_workspace = ProductWorkspace::default();
-    let max_depth = plan.blocks.iter().map(|block| block.depth).max().unwrap();
     product_workspace.reserve(
-        plan.blocks.len(),
-        columns << max_depth.saturating_sub(1),
-        r2 + max_depth,
+        plan.blocks.len().next_power_of_two() / 2,
+        columns,
+        r2,
     );
     let (proof, claims) = prove_dyadic_upper(
         &mut prover_transcript,
@@ -155,7 +154,7 @@ fn dyadic_upper_proves_exact_unpadded_cut() {
             for local_chunk in 0..block.n_chunks {
                 let index = local_chunk | (column << block.depth);
                 expected += eq[index]
-                    * cut_values[(block.chunk_start + local_chunk) * columns + column];
+                    * cut_values[column * plan.n_chunks + block.chunk_start + local_chunk];
             }
         }
         assert_eq!(claim.value, expected);

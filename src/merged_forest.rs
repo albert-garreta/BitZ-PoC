@@ -62,7 +62,7 @@ use rayon::prelude::*;
 /// One merged layer: the phase-A (in-tree variables; `None` at layer 0,
 /// which has none) and phase-B (tree-index variables) sumchecks, plus the
 /// closing child pair.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MergedLayer {
     pub sc_x: Option<SumcheckProof<Gf>>,
     pub sc_c: SumcheckProof<Gf>,
@@ -75,7 +75,7 @@ pub struct MergedLayer {
 }
 
 /// Merged-forest proof (roots live in the caller's proof object).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MergedForestProof {
     pub layers: Vec<MergedLayer>,
 }
@@ -216,6 +216,22 @@ fn build_levels_allocating(
 pub(crate) enum ForestLevels {
     PerTree(TreeLevels),
     Flat(Vec<Option<FlatDense<Gf>>>),
+}
+
+/// A dense product forest whose roots have been built, but whose GKR layers
+/// have not yet been proved. This is used when an enclosing protocol already
+/// owns an evaluation claim on the root table.
+pub(crate) struct PreparedMergedForest {
+    roots: Vec<Gf>,
+    levels: ForestLevels,
+    depth: usize,
+    s: usize,
+}
+
+impl PreparedMergedForest {
+    pub(crate) fn roots(&self) -> &[Gf] {
+        &self.roots
+    }
 }
 
 /// Flat-forest gate: `BITZ_FLAT_FOREST=0/1` forces the per-tree/flat
@@ -926,18 +942,21 @@ where
 /// `bit_layer(ℓ)` may supply layer ℓ's phase-A buffers from the bits
 /// (LeafBits / Pair2Bits); every other layer consumes `levels[ℓ]`.
 #[allow(clippy::arithmetic_side_effects)]
-fn drive_grouped<'a>(
+fn drive_grouped_from_claim<'a>(
     transcript: &mut impl Transcript,
-    roots: Vec<Gf>,
+    num_trees: usize,
     mut levels: ForestLevels,
     mut bit_layer: impl FnMut(usize, &[Gf], &SuffixTensorArena<Gf>) -> Option<BitLayer<'a>>,
     depth: usize,
     s: usize,
     live: usize,
+    mut z_c: Vec<Gf>,
+    mut claim: Gf,
     mut profile: Option<&mut MergedForestProfile>,
-) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
+) -> (MergedForestProof, Vec<Gf>, Gf) {
     assert!(depth >= 1, "merged forest needs depth >= 1");
-    let num_trees = roots.len();
+    assert_eq!(num_trees, 1usize << s, "tree count");
+    assert_eq!(z_c.len(), s, "root point dimension");
     assert!(
         live >= 1 && live <= num_trees,
         "live columns must be in 1..=2^s"
@@ -945,12 +964,7 @@ fn drive_grouped<'a>(
     // Elided trees are constant 1 (see `col_elide`); only their aggregate
     // equality weight enters phase A.
     let one = Gf::one();
-    absorb_gfs(transcript, 0x30, &roots);
-    let zeta: Vec<Gf> = transcript.get_field_challenges(s, &());
-    let mut claim = mle_at(&roots, &zeta);
-
     let mut z_x: Vec<Gf> = Vec::new();
-    let mut z_c: Vec<Gf> = zeta;
     let mut out_layers = Vec::with_capacity(depth);
     // Layer ℓ uses level ℓ+1 = levels[ℓ] unless bit-driven; consumed via
     // mem::take per slot (front-first order).
@@ -1145,7 +1159,35 @@ fn drive_grouped<'a>(
     }
     let mut z = z_x;
     z.extend_from_slice(&z_c);
-    (roots, MergedForestProof { layers: out_layers }, z, claim)
+    (MergedForestProof { layers: out_layers }, z, claim)
+}
+
+fn drive_grouped<'a>(
+    transcript: &mut impl Transcript,
+    roots: Vec<Gf>,
+    levels: ForestLevels,
+    bit_layer: impl FnMut(usize, &[Gf], &SuffixTensorArena<Gf>) -> Option<BitLayer<'a>>,
+    depth: usize,
+    s: usize,
+    live: usize,
+    profile: Option<&mut MergedForestProfile>,
+) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
+    absorb_gfs(transcript, 0x30, &roots);
+    let zeta: Vec<Gf> = transcript.get_field_challenges(s, &());
+    let claim = mle_at(&roots, &zeta);
+    let (proof, point, value) = drive_grouped_from_claim(
+        transcript,
+        roots.len(),
+        levels,
+        bit_layer,
+        depth,
+        s,
+        live,
+        zeta,
+        claim,
+        profile,
+    );
+    (roots, proof, point, value)
 }
 
 fn drive_grouped_profiled<'a>(
@@ -1178,6 +1220,77 @@ fn drive_grouped_profiled<'a>(
         }
         None => drive_grouped(transcript, roots, levels, bit_layer, depth, s, live, None),
     }
+}
+
+/// Build a dense forest from contiguous per-tree leaves held in a larger
+/// strided table.
+pub(crate) fn prepare_merged_forest_strided(
+    leaves: &[Gf],
+    tree_stride: usize,
+    leaf_offset: usize,
+    depth: usize,
+    s: usize,
+) -> PreparedMergedForest {
+    let num_trees = 1usize << s;
+    let per = 1usize << depth;
+    assert!(tree_stride >= leaf_offset + per, "tree stride");
+    assert!(leaves.len() >= tree_stride * num_trees, "leaf table shape");
+    assert!(depth >= 1, "depth must be positive");
+    let half = per >> 1;
+    let (levels, roots) = if flat_forest(s, depth) {
+        let (levels, roots) = build_levels_flat(num_trees, depth, |tree, left, right| {
+            let base = tree * tree_stride + leaf_offset;
+            for (slot, &value) in left.iter_mut().zip(&leaves[base..base + half]) {
+                slot.write(value);
+            }
+            for (slot, &value) in right
+                .iter_mut()
+                .zip(&leaves[base + half..base + per])
+            {
+                slot.write(value);
+            }
+        });
+        (ForestLevels::Flat(levels), roots)
+    } else {
+        let (levels, roots) = build_levels(num_trees, depth, |tree| {
+            let base = tree * tree_stride + leaf_offset;
+            (
+                leaves[base..base + half].to_vec(),
+                leaves[base + half..base + per].to_vec(),
+            )
+        });
+        (ForestLevels::PerTree(levels), roots)
+    };
+    PreparedMergedForest {
+        roots,
+        levels,
+        depth,
+        s,
+    }
+}
+
+/// Prove a prepared forest from an evaluation claim supplied by an enclosing
+/// protocol, without reabsorbing the roots or sampling another root point.
+pub(crate) fn prove_prepared_merged_forest_from_claim(
+    transcript: &mut impl Transcript,
+    prepared: PreparedMergedForest,
+    root_point: &[Gf],
+    root_value: Gf,
+) -> (MergedForestProof, Vec<Gf>, Gf) {
+    assert_eq!(root_point.len(), prepared.s, "root point dimension");
+    debug_assert_eq!(mle_at(&prepared.roots, root_point), root_value);
+    drive_grouped_from_claim(
+        transcript,
+        1usize << prepared.s,
+        prepared.levels,
+        |_, _, _| None,
+        prepared.depth,
+        prepared.s,
+        1usize << prepared.s,
+        root_point.to_vec(),
+        root_value,
+        None,
+    )
 }
 
 /// Prove all `2^s` per-tree grand products over the flat leaf table
@@ -3842,13 +3955,29 @@ pub fn verify_merged_forest(
     if roots.len() != 1usize << s || proof.layers.len() != depth {
         return Err(MergedForestError::Shape);
     }
-    let one = Gf::one();
     absorb_gfs(transcript, 0x30, roots);
     let zeta: Vec<Gf> = transcript.get_field_challenges(s, &());
-    let mut claim = mle_at(roots, &zeta);
+    let claim = mle_at(roots, &zeta);
+    verify_merged_forest_from_claim(transcript, proof, depth, &zeta, claim)
+}
+
+/// Verify a production merged forest from a root evaluation claim supplied by
+/// an enclosing protocol.
+pub(crate) fn verify_merged_forest_from_claim(
+    transcript: &mut impl Transcript,
+    proof: &MergedForestProof,
+    depth: usize,
+    root_point: &[Gf],
+    root_value: Gf,
+) -> Result<(Vec<Gf>, Gf), MergedForestError> {
+    if proof.layers.len() != depth {
+        return Err(MergedForestError::Shape);
+    }
+    let one = Gf::one();
+    let mut claim = root_value;
 
     let mut z_x: Vec<Gf> = Vec::new();
-    let mut z_c: Vec<Gf> = zeta;
+    let mut z_c: Vec<Gf> = root_point.to_vec();
     for (ell, layer) in proof.layers.iter().enumerate() {
         // Arity-2 layers never carry a closing quad — reject it here so a
         // stream with a smuggled `pair2` (codec flag bit 2) cannot decode

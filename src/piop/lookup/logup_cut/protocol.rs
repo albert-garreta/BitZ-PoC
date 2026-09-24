@@ -218,13 +218,13 @@ impl LogupCutScratch {
             .map_err(|_| LogupCutError::AuxiliaryPcs)?;
         let aux_len = 1usize << aux_log;
         let mut upper_products = ProductWorkspace::default();
-        let max_depth = plan.blocks.iter().map(|block| block.depth).max().unwrap_or(0);
-        let upper_table_len = layout.cols() << max_depth.saturating_sub(1);
-        upper_products.reserve(
-            plan.blocks.len().max(1),
-            upper_table_len,
-            layout.col_vars + max_depth,
-        );
+        if plan.blocks.len() > 1 {
+            upper_products.reserve(
+                (plan.blocks.len().next_power_of_two() / 2).max(1),
+                layout.cols(),
+                layout.col_vars,
+            );
+        }
         let mut fraction_products = ProductWorkspace::default();
         let fraction_dimension = source_layout.dim.max(table_layout.dim);
         let fraction_table_len = if fraction_dimension == 0 {
@@ -361,9 +361,8 @@ pub fn prove_logup_cut_profiled(
     let phase_start = Instant::now();
     let columns = layout.cols();
     cfg_iter_mut!(&mut scratch.patterns)
-        .zip(cfg_iter_mut!(&mut scratch.cut_values))
         .enumerate()
-        .for_each(|(index, (pattern_slot, cut_value))| {
+        .for_each(|(index, pattern_slot)| {
             let chunk_index = index / columns;
             let column = index % columns;
             let chunk = scratch.chunks[chunk_index];
@@ -374,6 +373,14 @@ pub fn prove_logup_cut_profiled(
                 pattern |= (((row[factor >> 6] >> (factor & 63)) & 1) as usize) << bit;
             }
             *pattern_slot = pattern;
+        });
+    let n_chunks = scratch.chunks.len();
+    cfg_iter_mut!(&mut scratch.cut_values)
+        .enumerate()
+        .for_each(|(index, cut_value)| {
+            let column = index / n_chunks;
+            let chunk_index = index % n_chunks;
+            let pattern = scratch.patterns[chunk_index * columns + column];
             *cut_value = scratch.table_values
                 [scratch.table_layout.blocks[chunk_index].offset | pattern];
         });

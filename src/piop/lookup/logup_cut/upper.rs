@@ -1,5 +1,10 @@
 use crate::{
     cfg_iter,
+    merged_forest::{
+        MergedForestProof, merged_forest_proof_size_bytes,
+        prepare_merged_forest_strided, prove_prepared_merged_forest_from_claim,
+        verify_merged_forest_from_claim,
+    },
     piop::{
         lookup::gkr_product::absorb_field_slice,
         sumcheck::SumcheckProof,
@@ -29,7 +34,7 @@ pub(super) struct ProductBatchProof {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DyadicUpperProof {
     root_merge: Vec<ProductBatchProof>,
-    block_layers: Vec<ProductBatchProof>,
+    block_forests: Vec<Option<MergedForestProof>>,
 }
 
 impl ProductBatchProof {
@@ -45,7 +50,11 @@ impl DyadicUpperProof {
     pub(crate) fn proof_size_bytes(&self) -> (usize, usize) {
         (
             self.root_merge.iter().map(ProductBatchProof::proof_size_bytes).sum(),
-            self.block_layers.iter().map(ProductBatchProof::proof_size_bytes).sum(),
+            self.block_forests
+                .iter()
+                .flatten()
+                .map(merged_forest_proof_size_bytes)
+                .sum(),
         )
     }
 }
@@ -65,24 +74,26 @@ pub fn prove_dyadic_upper(
     assert_eq!(cut_values.len(), plan.n_chunks * columns);
 
     let mut block_roots = Vec::with_capacity(plan.blocks.len());
-    let mut witnesses = Vec::with_capacity(plan.blocks.len());
+    let mut forests = Vec::with_capacity(plan.blocks.len());
     for block in &plan.blocks {
-        let start = block.chunk_start * columns;
-        let end = start + block.n_chunks * columns;
-        let leaves = cut_values[start..end].to_vec();
-        let mut levels = vec![leaves];
-        for _ in 0..block.depth {
-            let child = levels.last().unwrap();
-            let half = child.len() / 2;
-            levels.push(
-                cfg_iter!(&child[..half])
-                    .zip(cfg_iter!(&child[half..]))
-                    .map(|(&left, &right)| left * right)
+        if block.depth == 0 {
+            block_roots.push(
+                (0..columns)
+                    .map(|column| cut_values[column * plan.n_chunks + block.chunk_start])
                     .collect(),
             );
+            forests.push(None);
+        } else {
+            let forest = prepare_merged_forest_strided(
+                cut_values,
+                plan.n_chunks,
+                block.chunk_start,
+                block.depth,
+                r2,
+            );
+            block_roots.push(forest.roots().to_vec());
+            forests.push(Some(forest));
         }
-        block_roots.push(levels.last().unwrap().clone());
-        witnesses.push(levels);
     }
 
     let (block_claims, root_merge) = if block_roots.len() == 1 {
@@ -96,18 +107,38 @@ pub fn prove_dyadic_upper(
             product_workspace,
         )
     };
-    let (claims, block_layers) = prove_block_forests(
-        transcript,
-        plan,
-        r2,
-        block_claims,
-        witnesses,
-        product_workspace,
-    );
+    let mut claims = Vec::with_capacity(plan.blocks.len());
+    let mut block_forests = Vec::with_capacity(plan.blocks.len());
+    for (block_index, ((block, (point, value)), forest)) in plan
+        .blocks
+        .iter()
+        .zip(block_claims)
+        .zip(forests)
+        .enumerate()
+    {
+        if let Some(forest) = forest {
+            let (proof, point, value) =
+                prove_prepared_merged_forest_from_claim(transcript, forest, &point, value);
+            block_forests.push(Some(proof));
+            claims.push(CutClaim {
+                block: block_index,
+                point,
+                value,
+            });
+        } else {
+            debug_assert_eq!(block.depth, 0);
+            block_forests.push(None);
+            claims.push(CutClaim {
+                block: block_index,
+                point,
+                value,
+            });
+        }
+    }
     (
         DyadicUpperProof {
             root_merge,
-            block_layers,
+            block_forests,
         },
         claims,
     )
@@ -139,13 +170,30 @@ pub fn verify_dyadic_upper(
             &proof.root_merge,
         )?
     };
-    verify_block_forests(
-        transcript,
-        plan,
-        r2,
-        block_claims,
-        &proof.block_layers,
-    )
+    if proof.block_forests.len() != plan.blocks.len() {
+        return None;
+    }
+    let mut claims = Vec::with_capacity(plan.blocks.len());
+    for (block_index, (block, ((point, value), forest))) in plan
+        .blocks
+        .iter()
+        .zip(block_claims.into_iter().zip(&proof.block_forests))
+        .enumerate()
+    {
+        let (point, value) = match (forest, block.depth) {
+            (Some(proof), depth @ 1..) => {
+                verify_merged_forest_from_claim(transcript, proof, depth, &point, value).ok()?
+            }
+            (None, 0) => (point, value),
+            _ => return None,
+        };
+        claims.push(CutClaim {
+            block: block_index,
+            point,
+            value,
+        });
+    }
+    Some(claims)
 }
 
 fn bind_plan(transcript: &mut impl Transcript, plan: &DyadicPlan, r2: usize) {
@@ -238,127 +286,6 @@ fn verify_root_product(
     }
     claims.truncate(leaves);
     Some(claims)
-}
-
-fn prove_block_forests(
-    transcript: &mut impl Transcript,
-    plan: &DyadicPlan,
-    r2: usize,
-    block_claims: Vec<(Vec<Gf>, Gf)>,
-    mut witnesses: Vec<Vec<Vec<Gf>>>,
-    product_workspace: &mut ProductWorkspace,
-) -> (Vec<CutClaim>, Vec<ProductBatchProof>) {
-    let mut active = block_claims.into_iter().map(Some).collect::<Vec<_>>();
-    let max_depth = plan.blocks.iter().map(|block| block.depth).max().unwrap();
-    let mut proofs = Vec::with_capacity(max_depth);
-    for layer in 0..max_depth {
-        let blocks = plan
-            .blocks
-            .iter()
-            .enumerate()
-            .filter_map(|(block, spec)| (spec.depth > layer).then_some(block))
-            .collect::<Vec<_>>();
-        let claims = blocks
-            .iter()
-            .map(|&block| active[block].take().unwrap())
-            .collect::<Vec<_>>();
-        let owned_inputs = blocks
-            .iter()
-            .map(|&block| {
-                let child_level = plan.blocks[block].depth - layer - 1;
-                let mut child = std::mem::take(&mut witnesses[block][child_level]);
-                let right = child.split_off(child.len() / 2);
-                (child, right)
-            })
-            .collect::<Vec<_>>();
-        let inputs = owned_inputs
-            .iter()
-            .map(|(left, right)| (ProductInput::Table(left), ProductInput::Table(right)))
-            .collect::<Vec<_>>();
-        let (proof, point, values) = prove_product_batch(
-            transcript,
-            &claims,
-            &inputs,
-            product_workspace,
-        );
-        proofs.push(proof);
-        let selector = transcript.get_field_challenge(&());
-        for ((&block, &(left, right)), claim) in blocks.iter().zip(&values).zip(claims) {
-            let mut next_point = point.clone();
-            next_point.push(selector);
-            debug_assert_eq!(claim.0.len() + 1, next_point.len());
-            active[block] = Some((next_point, left + selector * (left + right)));
-        }
-    }
-    let claims = active
-        .into_iter()
-        .enumerate()
-        .map(|(block, claim)| {
-            let (point, value) = claim.unwrap();
-            let mut normalized = point[r2..].to_vec();
-            normalized.extend_from_slice(&point[..r2]);
-            CutClaim {
-                block,
-                point: normalized,
-                value,
-            }
-        })
-        .collect();
-    (claims, proofs)
-}
-
-fn verify_block_forests(
-    transcript: &mut impl Transcript,
-    plan: &DyadicPlan,
-    r2: usize,
-    block_claims: Vec<(Vec<Gf>, Gf)>,
-    proofs: &[ProductBatchProof],
-) -> Option<Vec<CutClaim>> {
-    let mut active = block_claims.into_iter().map(Some).collect::<Vec<_>>();
-    let max_depth = plan.blocks.iter().map(|block| block.depth).max()?;
-    if proofs.len() != max_depth {
-        return None;
-    }
-    for (layer, proof) in proofs.iter().enumerate() {
-        let blocks = plan
-            .blocks
-            .iter()
-            .enumerate()
-            .filter_map(|(block, spec)| (spec.depth > layer).then_some(block))
-            .collect::<Vec<_>>();
-        let claims = blocks
-            .iter()
-            .map(|&block| active[block].take().unwrap())
-            .collect::<Vec<_>>();
-        let (point, values) = verify_product_batch(transcript, &claims, proof)?;
-        let selector = transcript.get_field_challenge(&());
-        for ((&block, &(left, right)), claim) in blocks.iter().zip(&values).zip(claims) {
-            let mut next_point = point.clone();
-            next_point.push(selector);
-            if claim.0.len() + 1 != next_point.len() {
-                return None;
-            }
-            active[block] = Some((next_point, left + selector * (left + right)));
-        }
-    }
-    active
-        .into_iter()
-        .enumerate()
-        .map(|(block, claim)| {
-            let (point, value) = claim?;
-            let depth = plan.blocks[block].depth;
-            if point.len() != r2 + depth {
-                return None;
-            }
-            let mut normalized = point[r2..].to_vec();
-            normalized.extend_from_slice(&point[..r2]);
-            Some(CutClaim {
-                block,
-                point: normalized,
-                value,
-            })
-        })
-        .collect()
 }
 
 pub(super) fn prove_product_batch(
