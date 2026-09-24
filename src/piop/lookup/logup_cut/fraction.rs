@@ -5,7 +5,10 @@ use crate::{
     utils::wide_mul::WideMulAcc,
 };
 
-use super::upper::{ProductBatchProof, prove_product_batch, verify_product_batch};
+use super::{
+    product::{ProductInput, ProductWorkspace},
+    upper::{ProductBatchProof, prove_product_batch, verify_product_batch},
+};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -185,7 +188,11 @@ impl FractionTreeWitness {
         (self.nums[level][0], self.dens[level][0])
     }
 
-    fn prove(&mut self, transcript: &mut impl Transcript) -> (FractionTreeProof, FractionClaim) {
+    fn prove(
+        &mut self,
+        transcript: &mut impl Transcript,
+        product_workspace: &mut ProductWorkspace,
+    ) -> (FractionTreeProof, FractionClaim) {
         let (mut claim_num, mut claim_den) = self.root();
         let mut claim_point = Vec::with_capacity(self.dimension());
         let mut ac_evals = Vec::with_capacity(self.dimension());
@@ -204,13 +211,12 @@ impl FractionTreeWitness {
             let gamma = transcript.get_field_challenge::<Gf>(&());
             assert_ne!(gamma, Gf::ZERO, "negligible zero fraction challenge");
 
-            let full_parent_len = 1usize << claim_point.len();
-            let products = &mut self.products[..2 * full_parent_len];
-            let (left_products, right_products) = products.split_at_mut(full_parent_len);
             let product_padding = self.den_padding[level] + gamma * self.num_padding[level];
+            let active = self.ac[level].len();
+            self.products.resize(2 * active, product_padding);
+            let (left_products, right_products) = self.products.split_at_mut(active);
             left_products.fill(product_padding);
             right_products.fill(product_padding);
-            let active = self.ac[level].len();
             let fill = |index: usize, left: &mut Gf, right: &mut Gf| {
                 let even = 2 * index;
                 *left = self.dens[level][even] + gamma * self.nums[level][even];
@@ -240,10 +246,15 @@ impl FractionTreeWitness {
                 .for_each(|(index, (left, right))| fill(index, left, right));
 
             let folded = claim_den + gamma * claim_num + gamma.square() * ac_eval;
+            let inputs = [(
+                ProductInput::PaddedTable(left_products, product_padding),
+                ProductInput::PaddedTable(right_products, product_padding),
+            )];
             let (product_proof, product_point, values) = prove_product_batch(
                 transcript,
                 &[(claim_point.clone(), folded)],
-                vec![(left_products.to_vec(), right_products.to_vec())],
+                &inputs,
+                product_workspace,
             );
             product_proofs.push(product_proof);
             let (left, right) = values[0];
@@ -284,6 +295,7 @@ pub fn prove_rational(
     transcript: &mut impl Transcript,
     left: &mut FractionTreeWitness,
     right: &mut FractionTreeWitness,
+    product_workspace: &mut ProductWorkspace,
 ) -> (RationalProof, RationalClaims) {
     transcript.absorb_slice(DOMAIN);
     transcript.absorb_slice(&(left.dimension() as u64).to_le_bytes());
@@ -295,8 +307,8 @@ pub fn prove_rational(
     assert_eq!(left_root.0 * right_root.1, right_root.0 * left_root.1);
     let roots = [left_root.0, left_root.1, right_root.0, right_root.1];
     absorb_field_slice(transcript, &roots);
-    let (left_proof, left_claim) = left.prove(transcript);
-    let (right_proof, right_claim) = right.prove(transcript);
+    let (left_proof, left_claim) = left.prove(transcript, product_workspace);
+    let (right_proof, right_claim) = right.prove(transcript, product_workspace);
     (
         RationalProof {
             roots,

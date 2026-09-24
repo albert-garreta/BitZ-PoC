@@ -32,7 +32,8 @@ use rayon::prelude::*;
 
 use super::{
     ChunkProductTable, ChunkSpec, DyadicPlan, DyadicUpperProof, FractionTreeWitness,
-    InnerProductProof, LogupCutEstimate, PackedLayout, RationalProof, StructuredSumcheckProof, chunk_specs,
+    InnerProductProof, LogupCutEstimate, PackedLayout, ProductWorkspace, RationalProof,
+    StructuredSumcheckProof, chunk_specs,
     derive_source_index_claim, encode_table_row, eval_table_encoding, fill_pushforward,
     merge_cut_claims, prove_dyadic_upper, prove_inner_product, prove_rational,
     prove_structured_sumcheck, source_layout, verify_dyadic_upper, verify_inner_product,
@@ -180,6 +181,8 @@ pub struct LogupCutScratch {
     table_den: Vec<Gf>,
     left_tree: FractionTreeWitness,
     right_tree: FractionTreeWitness,
+    upper_products: ProductWorkspace,
+    fraction_products: ProductWorkspace,
 }
 
 impl LogupCutScratch {
@@ -214,6 +217,23 @@ impl LogupCutScratch {
         let aux_pcs = BinaryPcs::new(aux_log, config.aux_component_bits)
             .map_err(|_| LogupCutError::AuxiliaryPcs)?;
         let aux_len = 1usize << aux_log;
+        let mut upper_products = ProductWorkspace::default();
+        let max_depth = plan.blocks.iter().map(|block| block.depth).max().unwrap_or(0);
+        let upper_table_len = layout.cols() << max_depth.saturating_sub(1);
+        upper_products.reserve(
+            plan.blocks.len().max(1),
+            upper_table_len,
+            layout.col_vars + max_depth,
+        );
+        let mut fraction_products = ProductWorkspace::default();
+        let fraction_dimension = source_layout.dim.max(table_layout.dim);
+        let fraction_table_len = if fraction_dimension == 0 {
+            1
+        } else {
+            1usize << (fraction_dimension - 1)
+        };
+        fraction_products.reserve(1, fraction_table_len, fraction_dimension);
+
         let mut scratch = Self {
             layout,
             config,
@@ -227,6 +247,8 @@ impl LogupCutScratch {
             table_den: vec![Gf::ONE; table_layout.real_len],
             left_tree: FractionTreeWitness::default(),
             right_tree: FractionTreeWitness::default(),
+            upper_products,
+            fraction_products,
             chunks,
             plan,
             table_layout,
@@ -273,6 +295,8 @@ impl LogupCutScratch {
             + self.source_layout.blocks.capacity() * core::mem::size_of::<super::PackedBlock>()
             + self.left_tree.retained_bytes()
             + self.right_tree.retained_bytes()
+            + self.upper_products.retained_bytes()
+            + self.fraction_products.retained_bytes()
     }
 }
 
@@ -374,6 +398,7 @@ pub fn prove_logup_cut_profiled(
         &root_point,
         root_value,
         &scratch.cut_values,
+        &mut scratch.upper_products,
     );
     let merged = merge_cut_claims(transcript, &scratch.plan, layout.col_vars, &cut_claims)
         .ok_or(LogupCutError::NegligibleEvent)?;
@@ -454,7 +479,12 @@ pub fn prove_logup_cut_profiled(
 
     let phase_start = Instant::now();
     let (rational, rational_claims) =
-        prove_rational(transcript, &mut scratch.left_tree, &mut scratch.right_tree);
+        prove_rational(
+            transcript,
+            &mut scratch.left_tree,
+            &mut scratch.right_tree,
+            &mut scratch.fraction_products,
+        );
     debug_assert_eq!(
         rational_claims.right.den,
         tau + eval_table_encoding(&scratch.table_layout, &rational_claims.right.point),

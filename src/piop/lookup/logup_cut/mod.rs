@@ -6,6 +6,7 @@ mod inner_product;
 mod layout;
 mod pushforward;
 mod protocol;
+mod product;
 mod structured;
 mod table;
 mod upper;
@@ -27,6 +28,7 @@ pub use protocol::{
     LogupCutScratch, logup_cut_proof_size, prove_logup_cut, prove_logup_cut_profiled,
     verify_logup_cut,
 };
+pub use product::ProductWorkspace;
 pub use structured::{
     StructuredSumcheckProof, prove_structured_sumcheck, verify_structured_sumcheck,
 };

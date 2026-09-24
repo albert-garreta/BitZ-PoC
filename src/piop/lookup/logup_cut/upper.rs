@@ -2,7 +2,7 @@ use crate::{
     cfg_iter,
     piop::{
         lookup::gkr_product::absorb_field_slice,
-        sumcheck::{MLSumcheck, SumcheckProof},
+        sumcheck::SumcheckProof,
     },
     poly::{univariate::binary_gf128::Gf128 as Gf, utils::eq_eval},
     transcript::traits::{Transcribable, Transcript},
@@ -11,7 +11,10 @@ use crate::{
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use super::{CutClaim, DyadicPlan};
+use super::{
+    CutClaim, DyadicPlan,
+    product::{ProductInput, ProductWorkspace, prove_products},
+};
 
 const DOMAIN: &[u8] = b"bitz/logup-cut/dyadic-upper/v1";
 
@@ -58,6 +61,7 @@ pub fn prove_dyadic_upper(
     root_point: &[Gf],
     root_value: Gf,
     cut_values: &[Gf],
+    product_workspace: &mut ProductWorkspace,
 ) -> (DyadicUpperProof, Vec<CutClaim>) {
     bind_plan(transcript, plan, r2);
     let columns = 1usize << r2;
@@ -88,10 +92,22 @@ pub fn prove_dyadic_upper(
     let (block_claims, root_merge) = if block_roots.len() == 1 {
         (vec![(root_point.to_vec(), root_value)], Vec::new())
     } else {
-        prove_root_product(transcript, root_point, root_value, block_roots)
+        prove_root_product(
+            transcript,
+            root_point,
+            root_value,
+            block_roots,
+            product_workspace,
+        )
     };
-    let (claims, block_layers) =
-        prove_block_forests(transcript, plan, r2, block_claims, witnesses);
+    let (claims, block_layers) = prove_block_forests(
+        transcript,
+        plan,
+        r2,
+        block_claims,
+        witnesses,
+        product_workspace,
+    );
     (
         DyadicUpperProof {
             root_merge,
@@ -179,6 +195,7 @@ fn prove_root_product(
     root_point: &[Gf],
     root_value: Gf,
     block_roots: Vec<Vec<Gf>>,
+    product_workspace: &mut ProductWorkspace,
 ) -> (Vec<(Vec<Gf>, Gf)>, Vec<ProductBatchProof>) {
     let leaves = block_roots.len();
     let (nodes, root) = merge_shape(leaves);
@@ -209,14 +226,23 @@ fn prove_root_product(
             .iter()
             .map(|&node| active[node].take().unwrap())
             .collect::<Vec<_>>();
-        let inputs = batch
+        let owned_inputs = batch
             .iter()
             .map(|&node| {
                 let (left, right) = nodes[node].children.unwrap();
                 (tables[left].take().unwrap(), tables[right].take().unwrap())
             })
-            .collect();
-        let (proof, point, values) = prove_product_batch(transcript, &claims, inputs);
+            .collect::<Vec<_>>();
+        let inputs = owned_inputs
+            .iter()
+            .map(|(left, right)| (ProductInput::Table(left), ProductInput::Table(right)))
+            .collect::<Vec<_>>();
+        let (proof, point, values) = prove_product_batch(
+            transcript,
+            &claims,
+            &inputs,
+            product_workspace,
+        );
         proofs.push(proof);
         for (index, &node) in batch.iter().enumerate() {
             let (left, right) = nodes[node].children.unwrap();
@@ -280,6 +306,7 @@ fn prove_block_forests(
     r2: usize,
     block_claims: Vec<(Vec<Gf>, Gf)>,
     mut witnesses: Vec<Vec<Vec<Gf>>>,
+    product_workspace: &mut ProductWorkspace,
 ) -> (Vec<CutClaim>, Vec<ProductBatchProof>) {
     let mut active = block_claims.into_iter().map(Some).collect::<Vec<_>>();
     let max_depth = plan.blocks.iter().map(|block| block.depth).max().unwrap();
@@ -295,7 +322,7 @@ fn prove_block_forests(
             .iter()
             .map(|&block| active[block].take().unwrap())
             .collect::<Vec<_>>();
-        let inputs = blocks
+        let owned_inputs = blocks
             .iter()
             .map(|&block| {
                 let child_level = plan.blocks[block].depth - layer - 1;
@@ -303,8 +330,17 @@ fn prove_block_forests(
                 let right = child.split_off(child.len() / 2);
                 (child, right)
             })
-            .collect();
-        let (proof, point, values) = prove_product_batch(transcript, &claims, inputs);
+            .collect::<Vec<_>>();
+        let inputs = owned_inputs
+            .iter()
+            .map(|(left, right)| (ProductInput::Table(left), ProductInput::Table(right)))
+            .collect::<Vec<_>>();
+        let (proof, point, values) = prove_product_batch(
+            transcript,
+            &claims,
+            &inputs,
+            product_workspace,
+        );
         proofs.push(proof);
         let selector = transcript.get_field_challenge(&());
         for ((&block, &(left, right)), claim) in blocks.iter().zip(&values).zip(claims) {
@@ -388,57 +424,14 @@ fn verify_block_forests(
 pub(super) fn prove_product_batch(
     transcript: &mut impl Transcript,
     claims: &[(Vec<Gf>, Gf)],
-    inputs: Vec<(Vec<Gf>, Vec<Gf>)>,
+    inputs: &[(ProductInput<'_>, ProductInput<'_>)],
+    workspace: &mut ProductWorkspace,
 ) -> (ProductBatchProof, Vec<Gf>, Vec<(Gf, Gf)>) {
-    assert!(!claims.is_empty() && claims.len() == inputs.len());
     let dimension = claims[0].0.len();
-    assert!(claims.iter().all(|claim| claim.0.len() == dimension));
-    assert!(inputs.iter().all(|(left, right)| {
-        left.len() == 1usize << dimension && right.len() == left.len()
-    }));
-    let beta = (claims.len() > 1).then(|| transcript.get_field_challenge::<Gf>(&()));
-    let mut scale = Gf::ONE;
-    let mut scales = Vec::with_capacity(claims.len());
-    let mut claimed_sum = Gf::ZERO;
-    for claim in claims {
-        scales.push(scale);
-        claimed_sum += scale * claim.1;
-        if let Some(beta) = beta {
-            scale *= beta;
-        }
-    }
-
-    if dimension == 0 {
-        let evals = inputs.into_iter().map(|(l, r)| (l[0], r[0])).collect::<Vec<_>>();
-        assert_eq!(claimed_sum, evals.iter().zip(&scales).map(|(&(l, r), &s)| s * l * r).sum());
-        let flat = evals.iter().flat_map(|&(l, r)| [l, r]).collect::<Vec<_>>();
-        absorb_field_slice(transcript, &flat);
-        return (ProductBatchProof { sumcheck: None, evals: evals.clone() }, Vec::new(), evals);
-    }
-
-    let groups = claims
-        .iter()
-        .zip(inputs)
-        .zip(scales)
-        .map(|((claim, (left, right)), scale)| {
-            crate::piop::sumcheck::eq_factored::EqInnerGroupMixed {
-                q: claim.0.as_slice().into(),
-                scale,
-                bufs: crate::piop::sumcheck::eq_factored::GroupBufs::Dense(vec![(left, right)]),
-            }
-        })
-        .collect();
-    let (sumcheck, point, final_evals) =
-        crate::piop::sumcheck::eq_factored::prove_eq_inner_sumcheck_mixed(
-            transcript, groups, &[], &[], &[], &(),
-        );
-    debug_assert_eq!(sumcheck.claimed_sum, claimed_sum);
-    let evals = final_evals.into_iter().map(|mut evals| evals.remove(0)).collect::<Vec<_>>();
-    let flat = evals.iter().flat_map(|&(l, r)| [l, r]).collect::<Vec<_>>();
-    absorb_field_slice(transcript, &flat);
+    let (sumcheck, point, evals) = prove_products(transcript, claims, inputs, workspace);
     (
         ProductBatchProof {
-            sumcheck: Some(sumcheck),
+            sumcheck: (dimension != 0).then_some(sumcheck),
             evals: evals.clone(),
         },
         point,
@@ -480,8 +473,16 @@ pub(super) fn verify_product_batch(
         if sumcheck.claimed_sum != claimed_sum {
             return None;
         }
-        let subclaim =
-            MLSumcheck::verify_as_subprotocol(transcript, dimension, 3, sumcheck, &()).ok()?;
+        if claims[1..].iter().any(|claim| claim.0 != claims[0].0) {
+            return None;
+        }
+        let subclaim = crate::piop::sumcheck::eq_factored::verify_eq_inner_sumcheck_gruen(
+            transcript,
+            &claims[0].0,
+            sumcheck,
+            &(),
+        )
+        .ok()?;
         let mut expected = Gf::ZERO;
         for ((claim, &(left, right)), &scale) in claims.iter().zip(&proof.evals).zip(&scales) {
             expected += scale * eq_eval(&subclaim.point, &claim.0, Gf::ONE).ok()? * left * right;

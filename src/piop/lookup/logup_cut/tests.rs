@@ -129,6 +129,13 @@ fn dyadic_upper_proves_exact_unpadded_cut() {
     let root_value = root.iter().zip(root_eq).map(|(&v, e)| v * e).sum();
 
     let mut prover_transcript = Blake3Transcript::new();
+    let mut product_workspace = ProductWorkspace::default();
+    let max_depth = plan.blocks.iter().map(|block| block.depth).max().unwrap();
+    product_workspace.reserve(
+        plan.blocks.len(),
+        columns << max_depth.saturating_sub(1),
+        r2 + max_depth,
+    );
     let (proof, claims) = prove_dyadic_upper(
         &mut prover_transcript,
         &plan,
@@ -136,6 +143,7 @@ fn dyadic_upper_proves_exact_unpadded_cut() {
         &root_point,
         root_value,
         &cut_values,
+        &mut product_workspace,
     );
     assert_eq!(claims.len(), plan.blocks.len());
     for (claim, block) in claims.iter().zip(&plan.blocks) {
@@ -179,9 +187,16 @@ fn rational_fraction_tree_replays_and_binds_leaves() {
     let mut right = FractionTreeWitness::default();
     left.rebuild(&numerators, &denominators, dimension, Gf::ZERO, tau);
     right.rebuild(&numerators, &denominators, dimension, Gf::ZERO, tau);
+    let mut product_workspace = ProductWorkspace::default();
+    product_workspace.reserve(1, 1 << (dimension - 1), dimension);
 
     let mut prover_transcript = Blake3Transcript::new();
-    let (proof, claims) = prove_rational(&mut prover_transcript, &mut left, &mut right);
+    let (proof, claims) = prove_rational(
+        &mut prover_transcript,
+        &mut left,
+        &mut right,
+        &mut product_workspace,
+    );
     let mut verifier_transcript = Blake3Transcript::new();
     let verified = verify_rational(&mut verifier_transcript, &proof, dimension, dimension).unwrap();
     assert_eq!(verified, claims);
