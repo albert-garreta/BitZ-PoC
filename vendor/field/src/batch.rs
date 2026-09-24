@@ -36,6 +36,15 @@ pub trait DotProductKernels<Src, Folded>: FieldOps {
 /// in monomial order `[constant, linear, quadratic]`. All shape checks are
 /// public; in-place methods write only the documented prefix.
 pub trait SumcheckKernels: FieldOps {
+    /// Return the weighted product polynomial at zero or one and at infinity.
+    fn eqf_gruen_pair_round(
+        &self,
+        l: &[Self::Elem],
+        r: &[Self::Elem],
+        weights: &[Self::Elem],
+        half: usize,
+        at_one: bool,
+    ) -> [Self::Elem; 2];
     fn eqf_single_pair_round(
         &self,
         l: &[Self::Elem],
@@ -73,6 +82,34 @@ pub trait SumcheckKernels: FieldOps {
         suffix: &[Self::Elem],
         quads: usize,
     ) -> [Self::Elem; 9];
+}
+
+pub(crate) fn gruen<C: RoundArithmetic>(
+    field: &C,
+    l: &[C::Elem],
+    r: &[C::Elem],
+    weights: &[C::Elem],
+    half: usize,
+    at_one: bool,
+) -> [C::Elem; 2] {
+    check_pair::<C>(l, r, weights, half, 2);
+    let mut finite = field.zero_acc();
+    let mut infinity = field.zero_acc();
+    for i in 0..half {
+        let l0 = l[2 * i];
+        let l1 = l[2 * i + 1];
+        let r0 = r[2 * i];
+        let r1 = r[2 * i + 1];
+        let finite_product = if at_one {
+            field.mul(&l1, &r1)
+        } else {
+            field.mul(&l0, &r0)
+        };
+        let infinity_product = field.mul(&field.sub(&l1, &l0), &field.sub(&r1, &r0));
+        field.mac(&mut finite, &weights[i], &finite_product);
+        field.mac(&mut infinity, &weights[i], &infinity_product);
+    }
+    [field.finish(finite), field.finish(infinity)]
 }
 
 pub(crate) trait RoundArithmetic: FieldOps + PreparedRoundMul {
@@ -297,6 +334,7 @@ pub(crate) fn grid_pass<C: RoundArithmetic>(
 macro_rules! implement_sumcheck {
     ([$($generic:tt)*] $provider:ty) => {
         impl<$($generic)*> $crate::batch::SumcheckKernels for $provider {
+            fn eqf_gruen_pair_round(&self,l:&[Self::Elem],r:&[Self::Elem],w:&[Self::Elem],n:usize,at_one:bool)->[Self::Elem;2] {$crate::batch::gruen(self,l,r,w,n,at_one)}
             fn eqf_single_pair_round(&self,l:&[Self::Elem],r:&[Self::Elem],w:&[Self::Elem],n:usize)->[Self::Elem;3] {$crate::batch::single(self,l,r,w,n)}
             fn eqf_two_pair_round(&self,l0:&[Self::Elem],r0:&[Self::Elem],l1:&[Self::Elem],r1:&[Self::Elem],w:&[Self::Elem],n:usize)->[Self::Elem;3] {$crate::batch::two(self,l0,r0,l1,r1,w,n)}
             fn eqf_fold_in_place(&self,v:&mut[Self::Elem],r:&Self::Elem,n:usize) {$crate::batch::fold_in_place(self,v,r,n)}

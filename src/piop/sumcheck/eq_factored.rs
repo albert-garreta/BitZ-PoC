@@ -56,6 +56,7 @@ use crate::utils::{
     inner_transparent_field::InnerTransparentField, wide_mul::WideMulAcc,
 };
 use num_traits::Zero;
+use std::time::{Duration, Instant};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
@@ -2512,10 +2513,7 @@ where
 {
     prove_eq_inner_sumcheck_mixed_prepared(
         transcript,
-        SharedPointInput {
-            groups,
-            constant_weight: F::zero_with_cfg(field_cfg),
-        },
+        SharedPointInput::mixed(groups, F::zero_with_cfg(field_cfg)),
         tau_sets,
         pair_tau_sets,
         t4_sets,
@@ -2529,9 +2527,53 @@ where
 
 /// Real groups plus an analytic all-ones contribution at their shared point.
 /// A nonzero constant is supported only by the shared-point Gruen format.
+pub(crate) enum SharedPointGroups<'a, F: Clone> {
+    Mixed(Vec<EqInnerGroupMixed<'a, F>>),
+    Flat {
+        q: &'a [F],
+        scales: Vec<F>,
+    },
+}
+
 pub(crate) struct SharedPointInput<'a, F: Clone> {
-    pub(crate) groups: Vec<EqInnerGroupMixed<'a, F>>,
+    pub(crate) groups: SharedPointGroups<'a, F>,
     pub(crate) constant_weight: F,
+}
+
+impl<'a, F: Clone> SharedPointInput<'a, F> {
+    pub(crate) fn mixed(groups: Vec<EqInnerGroupMixed<'a, F>>, constant_weight: F) -> Self {
+        Self {
+            groups: SharedPointGroups::Mixed(groups),
+            constant_weight,
+        }
+    }
+
+    pub(crate) fn flat(q: &'a [F], scales: Vec<F>, constant_weight: F) -> Self {
+        Self {
+            groups: SharedPointGroups::Flat {
+                q,
+                scales,
+            },
+            constant_weight,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct EqInnerProfile {
+    pub(crate) suffix: Duration,
+    pub(crate) table_build: Duration,
+    pub(crate) prefix_messages: Duration,
+    pub(crate) prefix_folds: Duration,
+    pub(crate) dense_messages: Duration,
+    pub(crate) dense_folds: Duration,
+    pub(crate) close: Duration,
+    pub(crate) release: Duration,
+}
+
+pub(crate) enum EqInnerFinals<F> {
+    Grouped(Vec<Vec<(F, F)>>),
+    Flat(Vec<(F, F)>),
 }
 
 /// Internal forest entry with suffixes constructed for this layer's shared point.
@@ -2541,8 +2583,8 @@ pub(crate) fn prove_eq_inner_sumcheck_mixed_prepared<F>(
     tau_sets: &[(Vec<F>, Vec<F>)],
     pair_tau_sets: &[Pair2TauSet<F>],
     t4_sets: &[Vec<F>],
-    mut pre_round1: Option<PreRound<F>>,
-    flat: Option<FlatDense<F>>,
+    pre_round1: Option<PreRound<F>>,
+    mut flat: Option<FlatDense<F>>,
     gruen: bool,
     field_cfg: &F::Config,
     prepared_suffix: Option<SuffixTensorArena<F>>,
@@ -2553,49 +2595,86 @@ where
     F::Modulus: ConstTranscribable,
     F::Config: Sync,
 {
+    let (proof, point, finals) = prove_eq_inner_sumcheck_mixed_prepared_profiled(
+        transcript,
+        input,
+        tau_sets,
+        pair_tau_sets,
+        t4_sets,
+        pre_round1,
+        flat.as_mut(),
+        gruen,
+        field_cfg,
+        prepared_suffix,
+        None,
+    );
+    let finals = match finals {
+        EqInnerFinals::Grouped(finals) => finals,
+        EqInnerFinals::Flat(finals) => finals.into_iter().map(|pair| vec![pair]).collect(),
+    };
+    (proof, point, finals)
+}
+
+pub(crate) fn prove_eq_inner_sumcheck_mixed_prepared_profiled<F>(
+    transcript: &mut impl Transcript,
+    input: SharedPointInput<'_, F>,
+    tau_sets: &[(Vec<F>, Vec<F>)],
+    pair_tau_sets: &[Pair2TauSet<F>],
+    t4_sets: &[Vec<F>],
+    mut pre_round1: Option<PreRound<F>>,
+    mut flat: Option<&mut FlatDense<F>>,
+    gruen: bool,
+    field_cfg: &F::Config,
+    prepared_suffix: Option<SuffixTensorArena<F>>,
+    mut profile: Option<&mut EqInnerProfile>,
+) -> (SumcheckProof<F>, Vec<F>, EqInnerFinals<F>)
+where
+    F: InnerTransparentField + WideMulAcc + Send + Sync,
+    F::Inner: ConstTranscribable + Zero + Default + Send + Sync,
+    F::Modulus: ConstTranscribable,
+    F::Config: Sync,
+{
     let SharedPointInput {
-        groups,
+        groups: group_input,
         constant_weight,
     } = input;
     assert!(
         gruen || constant_weight == F::zero_with_cfg(field_cfg),
         "analytic constants require the shared-point Gruen format"
     );
-    // Flat single-pair storage (the wide-shallow forest layout): all
-    // groups are `Flat` markers over ONE shared store, group 0 carries the
-    // shared point and the rest leave `q` empty (no clones). Semantically
-    // each marker is a single-pair Dense group.
-    let mut flat = flat;
-    let all_flat = flat.is_some();
+    let groups = match &group_input {
+        SharedPointGroups::Mixed(groups) => groups.as_slice(),
+        SharedPointGroups::Flat { .. } => &[],
+    };
+    let all_flat = matches!(&group_input, SharedPointGroups::Flat { .. });
+    let (k, num_groups) = match &group_input {
+        SharedPointGroups::Mixed(groups) => {
+            (groups.first().map_or(0, |group| group.q.len()), groups.len())
+        }
+        SharedPointGroups::Flat { q, scales } => (q.len(), scales.len()),
+    };
     if let Some(fs) = &flat {
-        assert!(
-            groups.iter().all(|g| matches!(g.bufs, GroupBufs::Flat)),
-            "a flat store requires all-Flat groups"
-        );
+        assert!(all_flat, "a flat store requires flat shared-point input");
         assert!(gruen, "flat groups share their point — Gruen format only");
-        assert_eq!(fs.l.len(), groups.len() * fs.seg, "flat store shape (L)");
-        assert_eq!(fs.r.len(), groups.len() * fs.seg, "flat store shape (R)");
-        assert_eq!(
-            fs.seg,
-            1usize << groups.first().map_or(0, |g| g.q.len()),
-            "flat seg = 2^k"
-        );
+        assert_eq!(fs.l.len(), num_groups * fs.seg, "flat store shape (L)");
+        assert_eq!(fs.r.len(), num_groups * fs.seg, "flat store shape (R)");
+        assert_eq!(fs.seg, 1usize << k, "flat seg = 2^k");
     } else {
+        assert!(!all_flat, "flat shared-point input needs a flat store");
         assert!(
             groups.iter().all(|g| !matches!(g.bufs, GroupBufs::Flat)),
             "Flat groups need the driver's flat store"
         );
     }
     if let Some(pre) = &pre_round1 {
-        assert_eq!(pre.len(), groups.len(), "one (A0, A1, A2) triple per group");
+        assert_eq!(pre.len(), num_groups, "one (A0, A1, A2) triple per group");
         assert!(
             all_flat || groups.iter().all(|g| matches!(g.bufs, GroupBufs::Dense(_))),
             "precomputed round-1 coefficients require all-Dense groups"
         );
     }
-    let k = groups.first().map_or(0, |g| g.q.len());
     debug_assert!(
-        !groups.is_empty(),
+        num_groups != 0,
         "eq-factored sumcheck needs at least one group"
     );
     debug_assert!(groups.iter().enumerate().all(|(t, g)| {
@@ -2692,6 +2771,17 @@ where
     let has_t4b = groups
         .iter()
         .any(|g| matches!(g.bufs, GroupBufs::T4Bits { .. }));
+    let prefix_rounds = if has_leaf4 {
+        4
+    } else if has_leaf3 {
+        3
+    } else if has_leaf2 || has_pair3 {
+        2
+    } else if has_leaf || has_pair || has_t4b {
+        1
+    } else {
+        0
+    };
     let one = F::one_with_cfg(field_cfg);
     let zero = F::zero_with_cfg(field_cfg);
     // The generic path's boundary nodes: F::from(2) = X, F::from(3) = X+1
@@ -2752,36 +2842,47 @@ where
             "Pair3Bits groups need k >= 3 (use Pair2Bits at k = 2)"
         );
     }
+    let suffix_started = profile.is_some().then(Instant::now);
     let suffix: Vec<SuffixTensorArena<F>> = {
         let _g = tracing::info_span!("eqf:suffix").entered();
         if let Some(arena) = prepared_suffix {
             assert!(shared_q, "prepared suffixes require a shared point");
             assert_eq!(arena.len(), k, "prepared suffix dimension");
             vec![arena]
+        } else if let SharedPointGroups::Flat { q, .. } = &group_input {
+            vec![suffix_tensors(q, field_cfg)]
         } else if shared_q {
             vec![suffix_tensors(&groups[0].q, field_cfg)]
         } else {
             cfg_iter!(groups)
                 .map(|g| suffix_tensors(&g.q, field_cfg))
-                .collect()
+            .collect()
         }
     };
+    if let (Some(profile), Some(started)) = (profile.as_deref_mut(), suffix_started) {
+        profile.suffix += started.elapsed();
+    }
     debug_assert!(
         suffix
             .iter()
             .all(|arena| arena.len() == k && arena.is_empty() == (k == 0))
     );
-    // Consume the groups so each equality point keeps its owned or borrowed
-    // storage without cloning.
-    let num_groups = groups.len();
-    let mut qs: Vec<std::borrow::Cow<'_, [F]>> = Vec::with_capacity(num_groups);
-    let mut scales: Vec<F> = Vec::with_capacity(num_groups);
-    let mut bufs: Vec<GroupBufs<'_, F>> = Vec::with_capacity(num_groups);
-    for g in groups {
-        qs.push(g.q);
-        scales.push(g.scale);
-        bufs.push(g.bufs);
-    }
+    // Consume the mixed metadata once. Flat storage already carries the
+    // group shape, so it needs only one representative marker and point.
+    let (qs, scales, mut bufs): (Vec<_>, Vec<_>, Vec<_>) = match group_input {
+        SharedPointGroups::Mixed(groups) => {
+            let mut qs = Vec::with_capacity(num_groups);
+            let mut scales = Vec::with_capacity(num_groups);
+            let mut bufs = Vec::with_capacity(num_groups);
+            for group in groups {
+                qs.push(group.q);
+                scales.push(group.scale);
+                bufs.push(group.bufs);
+            }
+            (qs, scales, bufs)
+        }
+        SharedPointGroups::Flat { q, scales } => (vec![q.into()], scales, vec![GroupBufs::Flat]),
+    };
 
     let _g = tracing::info_span!("eqf:rounds").entered();
     let mut buf = vec![0u8; F::Inner::NUM_BYTES];
@@ -2796,41 +2897,53 @@ where
     // layer. Keep the same header absorption as the non-empty protocol so
     // prover and verifier transcripts remain aligned.
     if k == 0 {
-        let final_evals: Vec<Vec<(F, F)>> = if let Some(fs) = &flat {
+        if let Some(fs) = &flat {
             debug_assert_eq!(fs.seg, 1);
-            (0..bufs.len())
-                .map(|group| vec![(fs.l[group].clone(), fs.r[group].clone())])
-                .collect()
-        } else {
-            bufs.iter()
-                .map(|group| match group {
-                    GroupBufs::Dense(pairs) => pairs
-                        .iter()
-                        .map(|(left, right)| (left[0].clone(), right[0].clone()))
-                        .collect(),
-                    _ => unreachable!("zero-variable groups must use dense singleton buffers"),
-                })
-                .collect()
-        };
-        let claimed_sum =
-            scales
-                .iter()
-                .zip(&final_evals)
-                .fold(constant_weight.clone(), |sum, (scale, pairs)| {
-                    let group_sum = pairs
-                        .iter()
-                        .fold(F::zero_with_cfg(field_cfg), |acc, (left, right)| {
-                            acc + &(left.clone() * right)
-                        });
-                    sum + &(scale.clone() * &group_sum)
-                });
+            let final_evals: Vec<(F, F)> = (0..num_groups)
+                .map(|group| (fs.l[group].clone(), fs.r[group].clone()))
+                .collect();
+            let claimed_sum = scales.iter().zip(&final_evals).fold(
+                constant_weight.clone(),
+                |sum, (scale, (left, right))| {
+                    sum + &(scale.clone() * &(left.clone() * right))
+                },
+            );
+            return (
+                SumcheckProof {
+                    messages: Vec::new(),
+                    claimed_sum,
+                },
+                Vec::new(),
+                EqInnerFinals::Flat(final_evals),
+            );
+        }
+        let final_evals: Vec<Vec<(F, F)>> = bufs
+            .iter()
+            .map(|group| match group {
+                GroupBufs::Dense(pairs) => pairs
+                    .iter()
+                    .map(|(left, right)| (left[0].clone(), right[0].clone()))
+                    .collect(),
+                _ => unreachable!("zero-variable groups must use dense singleton buffers"),
+            })
+            .collect();
+        let claimed_sum = scales.iter().zip(&final_evals).fold(
+            constant_weight.clone(),
+            |sum, (scale, pairs)| {
+                let group_sum = pairs.iter().fold(
+                    F::zero_with_cfg(field_cfg),
+                    |acc, (left, right)| acc + &(left.clone() * right),
+                );
+                sum + &(scale.clone() * &group_sum)
+            },
+        );
         return (
             SumcheckProof {
                 messages: Vec::new(),
                 claimed_sum,
             },
             Vec::new(),
-            final_evals,
+            EqInnerFinals::Grouped(final_evals),
         );
     }
 
@@ -2908,6 +3021,7 @@ where
         });
         let recover_linear = recovery_inverse.is_some();
 
+        let tables_started = profile.is_some().then(Instant::now);
         // Shared leaf tables for round 1 (one per tau set; every group of a
         // set only XOR-selects from them).
         let leaf_tables: Vec<LeafTables<F>> =
@@ -2943,6 +3057,9 @@ where
         } else {
             Vec::new()
         };
+        if let (Some(profile), Some(started)) = (profile.as_deref_mut(), tables_started) {
+            profile.table_build += started.elapsed();
+        }
 
         // Per group `t` (independent): accumulate the suffix-weighted *coefficients*
         // of H_t in the round variable — A0 = Σ_b w_b·Σ_i L_i(0)·R_i(0), A1 = Σ_b
@@ -3408,6 +3525,7 @@ where
         // produced when round j+1 is NOT the last, so round k always runs
         // a real pass and the final interpolation never sees a deferred
         // fold.
+        let message_started = profile.is_some().then(Instant::now);
         let double_now = eqf_double()
             && half >= eqf_double_min_half()
             && grid.is_none()
@@ -3684,7 +3802,15 @@ where
             }
         };
 
+        if let (Some(profile), Some(started)) = (profile.as_deref_mut(), message_started) {
+            if j <= prefix_rounds {
+                profile.prefix_messages += started.elapsed();
+            } else {
+                profile.dense_messages += started.elapsed();
+            }
+        }
         drop(recovery_span);
+        let close_started = profile.is_some().then(Instant::now);
         let _g_close = tracing::info_span!("eqf:close").entered();
         let tail = if gruen {
             // Gruen format (shared q, asserted): the round polynomial is
@@ -3783,6 +3909,9 @@ where
             }
         }
         drop(_g_close);
+        if let (Some(profile), Some(started)) = (profile.as_deref_mut(), close_started) {
+            profile.close += started.elapsed();
+        }
         if j < k {
             // Pass fusion (the default): defer this round's fold into the
             // next round's message pass when every group is Dense
@@ -3801,6 +3930,7 @@ where
             }
             // Shared leaf fold tables (need ρ, so built here) — one per tau
             // set; every leaf group's fold is then two XOR-selects per entry.
+            let fold_tables_started = profile.is_some().then(Instant::now);
             let leaf_fold_tables: Vec<LeafFoldTables<F>> =
                 if j == 1 && (has_leaf || has_leaf2 || has_leaf3 || has_leaf4) {
                     cfg_iter!(tau_sets)
@@ -3845,6 +3975,12 @@ where
                     reweight_fold_tables_in_place(&rho, &one, set);
                 }
             }
+            if let (Some(profile), Some(started)) =
+                (profile.as_deref_mut(), fold_tables_started)
+            {
+                profile.table_build += started.elapsed();
+            }
+            let fold_started = profile.is_some().then(Instant::now);
             // Mat+grid fusion ([`mat_grid_enabled`]): materialising folds
             // below accumulate the next round-pair's grid over the values
             // they write and return it; when EVERY group produced one, it
@@ -4417,44 +4553,63 @@ where
                     pair3_value_sets = Vec::new();
                 }
             }
+            if let (Some(profile), Some(started)) = (profile.as_deref_mut(), fold_started) {
+                if j <= prefix_rounds {
+                    profile.prefix_folds += started.elapsed();
+                } else {
+                    profile.dense_folds += started.elapsed();
+                }
+            }
             randomness.push(rho);
         } else {
+            let final_started = profile.is_some().then(Instant::now);
             // Final interpolation of every pair at ρ_k. (Leaf-bit groups
             // materialised at the round-1 fold — `k ≥ 2` is asserted — so
             // only Dense groups reach here.)
             let interp = |v: &[F]| -> F { v[0].clone() + &(rho.clone() * &(v[1].clone() - &v[0])) };
-            let final_evals: Vec<Vec<(F, F)>> = if let Some(fs) = &flat {
+            let final_evals = if let Some(fs) = &flat {
                 // The last round always ran a real pass (grid production is
                 // gated off the final round), so each segment's live prefix
                 // is the folded pair — exactly a Dense buffer of length 2.
-                fs.l.chunks(fs.seg)
-                    .zip(fs.r.chunks(fs.seg))
-                    .map(|(lseg, rseg)| vec![(interp(&lseg[..2]), interp(&rseg[..2]))])
-                    .collect()
+                EqInnerFinals::Flat(
+                    fs.l.chunks(fs.seg)
+                        .zip(fs.r.chunks(fs.seg))
+                        .map(|(lseg, rseg)| (interp(&lseg[..2]), interp(&rseg[..2])))
+                        .collect(),
+                )
             } else {
-                bufs.iter()
-                    .map(|gb| match gb {
-                        GroupBufs::Dense(group_bufs) => group_bufs
-                            .iter()
-                            .map(|(l, r)| (interp(l), interp(r)))
-                            .collect(),
-                        GroupBufs::Flat => {
-                            unreachable!("Flat groups take the flat finals branch")
-                        }
-                        GroupBufs::LeafBits { .. }
-                        | GroupBufs::Pair2Bits { .. }
-                        | GroupBufs::Leaf2Bits { .. }
-                        | GroupBufs::Leaf3Bits { .. }
-                        | GroupBufs::Leaf4Bits { .. }
-                        | GroupBufs::Pair3Bits { .. }
-                        | GroupBufs::T4Bits { .. } => {
-                            unreachable!(
-                                "bit-selected groups materialise at their fold (k asserts)"
-                            )
-                        }
-                    })
-                    .collect()
+                EqInnerFinals::Grouped(
+                    bufs.iter()
+                        .map(|gb| match gb {
+                            GroupBufs::Dense(group_bufs) => group_bufs
+                                .iter()
+                                .map(|(l, r)| (interp(l), interp(r)))
+                                .collect(),
+                            GroupBufs::Flat => {
+                                unreachable!("Flat groups take the flat finals branch")
+                            }
+                            GroupBufs::LeafBits { .. }
+                            | GroupBufs::Pair2Bits { .. }
+                            | GroupBufs::Leaf2Bits { .. }
+                            | GroupBufs::Leaf3Bits { .. }
+                            | GroupBufs::Leaf4Bits { .. }
+                            | GroupBufs::Pair3Bits { .. }
+                            | GroupBufs::T4Bits { .. } => {
+                                unreachable!(
+                                    "bit-selected groups materialise at their fold (k asserts)"
+                                )
+                            }
+                        })
+                        .collect(),
+                )
             };
+            if let (Some(profile), Some(started)) = (profile.as_deref_mut(), final_started) {
+                profile.dense_folds += started.elapsed();
+            }
+            let release_started = profile.is_some().then(Instant::now);
+            if let (Some(profile), Some(started)) = (profile.as_deref_mut(), release_started) {
+                profile.release += started.elapsed();
+            }
             randomness.push(rho);
             return (
                 SumcheckProof {
@@ -4643,10 +4798,7 @@ mod tests {
                 let prove = |dense, transcript: &mut Blake3Transcript| {
                     prove_eq_inner_sumcheck_mixed_prepared(
                         transcript,
-                        SharedPointInput {
-                            groups: make(dense),
-                            constant_weight: sample(102),
-                        },
+                        SharedPointInput::mixed(make(dense), sample(102)),
                         &tables,
                         &[],
                         &[],
@@ -4722,10 +4874,7 @@ mod tests {
                 };
                 let analytic = prove_eq_inner_sumcheck_mixed_prepared(
                     &mut analytic_t,
-                    SharedPointInput {
-                        groups: vec![mk(false)],
-                        constant_weight: sample(777),
-                    },
+                    SharedPointInput::mixed(vec![mk(false)], sample(777)),
                     &[],
                     &[],
                     &[],
@@ -4787,10 +4936,7 @@ mod tests {
                     let mut ta = Blake3Transcript::new();
                     let analytic = prove_eq_inner_sumcheck_mixed_prepared(
                         &mut ta,
-                        SharedPointInput {
-                            groups: vec![mk()],
-                            constant_weight: c,
-                        },
+                        SharedPointInput::mixed(vec![mk()], c),
                         &[],
                         &[],
                         &[],

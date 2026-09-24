@@ -384,6 +384,7 @@ const PROVE_STEP_ROWS: &[StepRow] = &[
     step("α-power tables (mc:pow2)", &["mc:pow2"]),
     step("merged GKR forest (mc:forest)", &["mc:forest"]),
     substep("live-col scan (mc:live_cols)", &["mc:live_cols"], &[]),
+    substep("dense leaves (mf:dense_leaves)", &["mf:dense_leaves"], &[]),
     substep("level build (mf:build_levels)", &["mf:build_levels"], &[]),
     substep("leaf-layer gen (mf:bitgen)", &["mf:bitgen"], &[]),
     substep(
@@ -395,7 +396,13 @@ const PROVE_STEP_ROWS: &[StepRow] = &[
     substep(
         "(forest rest)",
         &["mc:forest"],
-        &["mc:live_cols", "mf:build_levels", "mf:phaseA", "mf:phaseB"],
+        &[
+            "mc:live_cols",
+            "mf:dense_leaves",
+            "mf:build_levels",
+            "mf:phaseA",
+            "mf:phaseB",
+        ],
     ),
     step("integer folds u_c (mc:fold_v)", &["mc:fold_v"]),
     step("pre-sumcheck tables (mc:presum_tbls)", &["mc:presum_tbls"]),
@@ -1018,11 +1025,16 @@ fn main() {
     };
     println!(
         "bitz: n={} (t={t}, s={s}, W={w}, m_p={m_p}, chunks={lch}) | lig={lig_tag}@r1/{}k{} \
-         merkle={} | threads={threads_eff} | int guards: {}",
+         merkle={} | threads={threads_eff} | forest={} | int guards: {}",
         o.n,
         1usize << pc.log_inv_rates[0],
         pc.initial_k,
         hash_name(pc.merkle_hash),
+        if std::env::var("BITZ_FOREST_EAGER").is_ok_and(|value| value == "1") {
+            "eager (0/0/0)"
+        } else {
+            "low-entropy"
+        },
         if bitz::utils::CHECKED {
             "CHECKED (build with --features unchecked)"
         } else {

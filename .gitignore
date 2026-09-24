@@ -36,6 +36,12 @@ outputs/
 docs/
 .history/*
 benchmark-results/
+logup-cut-*.txt
+gkr-components-*.txt
+/logup_cut_compare*.txt
+/opt.txt
+/eager.txt
+/src/eager.txt
 tmp/
 # Python bytecode caches.
 __pycache__/

@@ -240,6 +240,16 @@ fn array(v: (B127, B127, B127)) -> [B127; 3] {
     [v.0, v.1, v.2]
 }
 impl SumcheckKernels for B127Ops {
+    fn eqf_gruen_pair_round(
+        &self,
+        l: &[B127],
+        r: &[B127],
+        w: &[B127],
+        n: usize,
+        at_one: bool,
+    ) -> [B127; 2] {
+        crate::batch::gruen(self, l, r, w, n, at_one)
+    }
     fn eqf_single_pair_round(&self, l: &[B127], r: &[B127], w: &[B127], n: usize) -> [B127; 3] {
         pair(l.len(), r.len(), w.len(), n, 2);
         array(B127::bitz_eqf_single_pair_round(l, r, w, n).unwrap())

@@ -15,6 +15,84 @@ fn reduce_wide(words: [u64; 4]) -> Gf128 {
     Gf128Product::from_polynomial_words(words).reduce()
 }
 impl Gf128 {
+    #[allow(clippy::arithmetic_side_effects)]
+    fn bitz_eqf_gruen_pair_round(
+        l: &[Self],
+        r: &[Self],
+        w: &[Self],
+        half: usize,
+        at_one: bool,
+    ) -> (Self, Self) {
+        #[inline(always)]
+        fn slot(
+            w: &Gf128,
+            l0: &Gf128,
+            l1: &Gf128,
+            r0: &Gf128,
+            r1: &Gf128,
+            at_one: bool,
+            finite: &mut [u64; 4],
+            infinity: &mut [u64; 4],
+        ) {
+            let (lf, rf) = if at_one { (l1, r1) } else { (l0, r0) };
+            let finite_product = reduce_256_to_128(clmul_128x128(lf.as_words(), rf.as_words()));
+            let dl = [l0.lo ^ l1.lo, l0.hi ^ l1.hi];
+            let dr = [r0.lo ^ r1.lo, r0.hi ^ r1.hi];
+            let infinity_product = reduce_256_to_128(clmul_128x128(&dl, &dr));
+            let finite_product = clmul_128x128(w.as_words(), &finite_product);
+            let infinity_product = clmul_128x128(w.as_words(), &infinity_product);
+            for i in 0..4 {
+                finite[i] ^= finite_product[i];
+                infinity[i] ^= infinity_product[i];
+            }
+        }
+
+        let (mut finite_a, mut infinity_a) = ([0u64; 4], [0u64; 4]);
+        let (mut finite_b, mut infinity_b) = ([0u64; 4], [0u64; 4]);
+        let mut i = 0;
+        while i + 2 <= half {
+            slot(
+                &w[i],
+                &l[2 * i],
+                &l[2 * i + 1],
+                &r[2 * i],
+                &r[2 * i + 1],
+                at_one,
+                &mut finite_a,
+                &mut infinity_a,
+            );
+            let j = i + 1;
+            slot(
+                &w[j],
+                &l[2 * j],
+                &l[2 * j + 1],
+                &r[2 * j],
+                &r[2 * j + 1],
+                at_one,
+                &mut finite_b,
+                &mut infinity_b,
+            );
+            i += 2;
+        }
+        if i < half {
+            slot(
+                &w[i],
+                &l[2 * i],
+                &l[2 * i + 1],
+                &r[2 * i],
+                &r[2 * i + 1],
+                at_one,
+                &mut finite_a,
+                &mut infinity_a,
+            );
+        }
+        for i in 0..4 {
+            finite_a[i] ^= finite_b[i];
+            infinity_a[i] ^= infinity_b[i];
+        }
+        (reduce_wide(finite_a), reduce_wide(infinity_a))
+    }
+
     /// Hand-fused round body over raw words: two INDEPENDENT slot chains
     /// per iteration with their own register-resident 256-bit accumulator
     /// sets, so the PMULL pipes stay fed instead of serialising one slot's
@@ -365,6 +443,18 @@ fn array(v: (Gf128, Gf128, Gf128)) -> [Gf128; 3] {
     [v.0, v.1, v.2]
 }
 impl SumcheckKernels for Gf128Ops {
+    fn eqf_gruen_pair_round(
+        &self,
+        l: &[Gf128],
+        r: &[Gf128],
+        w: &[Gf128],
+        n: usize,
+        at_one: bool,
+    ) -> [Gf128; 2] {
+        pair(l.len(), r.len(), w.len(), n, 2);
+        let (finite, infinity) = Gf128::bitz_eqf_gruen_pair_round(l, r, w, n, at_one);
+        [finite, infinity]
+    }
     fn eqf_single_pair_round(&self, l: &[Gf128], r: &[Gf128], w: &[Gf128], n: usize) -> [Gf128; 3] {
         pair(l.len(), r.len(), w.len(), n, 2);
         array(Gf128::bitz_eqf_single_pair_round(l, r, w, n).unwrap())

@@ -403,6 +403,14 @@ RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
     --sweep 20-30 --threads 8 --reps 5 --profile custom:1:4
 ```
 
+### Logup* lookup comparison
+
+```sh
+RUSTFLAGS="-C target-cpu=native -A warnings" RAYON_NUM_THREADS=32 \
+  cargo run --release --example logup_cut_compare -- 28 14 12 10 8,10,12 100 0 \
+  2>&1 | tee logup_cut_compare_32t.txt
+```
+
 ### Comparison with fields-witch (Soukhanov's characteristic-2 field switch)
 
 [fields-witch](https://github.com/morgana-proofs/fields-witch) is Lev

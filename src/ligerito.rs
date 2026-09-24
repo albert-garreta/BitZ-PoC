@@ -847,10 +847,10 @@ pub(crate) fn xi_combined_rows_packed(
     // output slots are L1-resident RMW — no cross-group pointer chases in
     // the inner loop and no 256-deep serial add chain per output.
     let mut m = vec![Gf::zero(); len];
-    cfg_chunks_mut!(m, 1 << 10)
+    cfg_chunks_mut!(m, 1 << 8)
         .enumerate()
         .for_each(|(ci, chunk)| {
-            let base = ci << 10;
+            let base = ci << 8;
             for (g, tg) in tables.iter().enumerate() {
                 let src = &packed_cols[g][base..base + chunk.len()];
                 for (slot, &x) in chunk.iter_mut().zip(src.iter()) {
@@ -1530,7 +1530,26 @@ fn prove_merged_forest_with_powers(
     pow2: &(impl crate::pcs::PowerTable + ?Sized),
 ) -> (Vec<Gf>, crate::merged_forest::MergedForestProof, Vec<Gf>, Gf) {
     let _g = tracing::info_span!("mc:forest").entered();
-    if crate::merged_forest::quad_active(p) {
+    if std::env::var("BITZ_FOREST_EAGER").is_ok_and(|value| value == "1") {
+        let log_w = p.word_bits.trailing_zeros() as usize;
+        let mask_w = p.word_bits - 1;
+        let row_len = p.rows() << log_w;
+        let depth = row_len.trailing_zeros() as usize;
+        let _g = tracing::info_span!("mf:dense_leaves").entered();
+        let leaves: Vec<Gf> = cfg_into_iter!(0..row_len * p.cols(), 1 << 14)
+            .map(|index| {
+                let column = index >> depth;
+                let row_bit = index & (row_len - 1);
+                if (rows[column][row_bit >> 6] >> (row_bit & 63)) & 1 == 1 {
+                    pow2.power(row_bit >> log_w, row_bit & mask_w)
+                } else {
+                    Gf::one()
+                }
+            })
+            .collect();
+        drop(_g);
+        crate::merged_forest::prove_merged_forest(transcript, &leaves, depth, p.col_vars)
+    } else if crate::merged_forest::quad_active(p) {
         crate::merged_forest::prove_merged_forest_lazy_quad_from_rows(
             transcript, p, Some(rows), packed_cols, pow2,
         )

@@ -3796,6 +3796,12 @@ where
                 .collect();
             let merkle_proof_last =
                 merkle_multi_proof_for(&wtns_prev.tree, wtns_prev.block_len, &queries_last);
+            // The verifier binds the final commitment to `yr` with an
+            // alpha-weighted opening check. The honest prover has no work to
+            // do for that identity, but it must consume the same challenges
+            // so the Fiat-Shamir transcript remains composable.
+            let _alpha_last = challenger.sample_f128_vec(ceil_log2(num_queries_last));
+            let _beta_last = challenger.sample_f128();
             if trace {
                 t_opens += _t.elapsed();
             }
