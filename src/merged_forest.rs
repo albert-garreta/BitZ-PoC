@@ -39,13 +39,15 @@
 
 pub mod schedule;
 use core::mem::MaybeUninit;
+use std::time::{Duration, Instant};
 use schedule::{ForestPath, configured};
 
 use crate::pcs::IntegerMatrixLayout;
 use crate::piop::sumcheck::eq_factored::{
     EqInnerGroupMixed, FlatDense, GroupBufs, PRFM_DIST, Pair2TauSet, PreRound, SharedPointInput,
-    SuffixTensorArena, prove_eq_inner_sumcheck_mixed_gruen, prove_eq_inner_sumcheck_mixed_pre,
-    prove_eq_inner_sumcheck_mixed_prepared, suffix_tensors, verify_eq_inner_sumcheck_gruen,
+    EqInnerProfile, SuffixTensorArena, prove_eq_inner_sumcheck_mixed_gruen,
+    prove_eq_inner_sumcheck_mixed_pre, prove_eq_inner_sumcheck_mixed_prepared_profiled, suffix_tensors,
+    verify_eq_inner_sumcheck_gruen,
 };
 use crate::piop::sumcheck::{MLSumcheck, SumcheckProof};
 use crate::poly::univariate::binary_gf128::Gf128 as Gf;
@@ -76,6 +78,23 @@ pub struct MergedLayer {
 #[derive(Clone, Debug)]
 pub struct MergedForestProof {
     pub layers: Vec<MergedLayer>,
+}
+
+/// Timings for materializing the forest witness and running its GKR driver.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MergedForestProfile {
+    pub witness_build: Duration,
+    pub sumcheck: Duration,
+    pub bit_generation: Duration,
+    pub lut_tables: Duration,
+    pub lut_prefix_messages: Duration,
+    pub lut_prefix_folds: Duration,
+    pub lut_tail_messages: Duration,
+    pub lut_tail_folds: Duration,
+    pub upper_messages: Duration,
+    pub upper_folds: Duration,
+    pub phase_a_close: Duration,
+    pub phase_b: Duration,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -915,6 +934,7 @@ fn drive_grouped<'a>(
     depth: usize,
     s: usize,
     live: usize,
+    mut profile: Option<&mut MergedForestProfile>,
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
     assert!(depth >= 1, "merged forest needs depth >= 1");
     let num_trees = roots.len();
@@ -995,11 +1015,17 @@ fn drive_grouped<'a>(
             };
             // The JIT first message and the sumcheck use the same suffixes.
             let prepared_suffix = suffix_tensors(&z_x, &());
-            let (groups, tau_sets, pair_tau_sets, t4_sets, pre_round1, flat_store) =
-                if let Some(bl) = {
+            let bit_started = profile.is_some().then(Instant::now);
+            let bit_layer = {
                     let _g = tracing::info_span!("mf:bitgen").entered();
                     bit_layer(ell, &z_x, &prepared_suffix)
-                } {
+                };
+            if let (Some(profile), Some(started)) = (profile.as_deref_mut(), bit_started) {
+                profile.bit_generation += started.elapsed();
+            }
+            let structured = bit_layer.is_some();
+            let (groups, tau_sets, pair_tau_sets, t4_sets, pre_round1, flat_store) =
+                if let Some(bl) = bit_layer {
                     if let Some(fs) = bl.flat {
                         let nseg = fs.l.len() / fs.seg;
                         let groups = mk_groups_flat(nseg);
@@ -1041,7 +1067,8 @@ fn drive_grouped<'a>(
                         }
                     }
                 };
-            let (sc, r_x, finals) = prove_eq_inner_sumcheck_mixed_prepared(
+            let mut eq_profile = EqInnerProfile::default();
+            let (sc, r_x, finals) = prove_eq_inner_sumcheck_mixed_prepared_profiled(
                 transcript,
                 SharedPointInput {
                     groups,
@@ -1055,7 +1082,22 @@ fn drive_grouped<'a>(
                 true,
                 &(),
                 Some(prepared_suffix),
+                profile.as_ref().map(|_| &mut eq_profile),
             );
+            if let Some(profile) = profile.as_deref_mut() {
+                profile.phase_a_close += eq_profile.close + eq_profile.suffix;
+                if structured {
+                    profile.lut_tables += eq_profile.table_build;
+                    profile.lut_prefix_messages += eq_profile.prefix_messages;
+                    profile.lut_prefix_folds += eq_profile.prefix_folds;
+                    profile.lut_tail_messages += eq_profile.dense_messages;
+                    profile.lut_tail_folds += eq_profile.dense_folds;
+                } else {
+                    profile.upper_messages +=
+                        eq_profile.prefix_messages + eq_profile.dense_messages;
+                    profile.upper_folds += eq_profile.prefix_folds + eq_profile.dense_folds;
+                }
+            }
             // Elided trees evaluate to (1,1) at every point; restore them
             // below in their original tree-index order for phase B.
             debug_assert_eq!(finals.len(), live);
@@ -1072,6 +1114,7 @@ fn drive_grouped<'a>(
         };
 
         // Phase B: bind the s tree-index variables over the per-tree finals.
+        let phase_b_started = profile.is_some().then(Instant::now);
         let _g = tracing::info_span!("mf:phaseB").entered();
         let group_b = EqInnerGroupMixed {
             q: z_c.as_slice().into(),
@@ -1082,6 +1125,9 @@ fn drive_grouped<'a>(
             prove_eq_inner_sumcheck_mixed_gruen(transcript, vec![group_b], &[], &[], &[], &());
         let pair = finals_b[0][0];
         drop(_g);
+        if let (Some(profile), Some(started)) = (profile.as_deref_mut(), phase_b_started) {
+            profile.phase_b += started.elapsed();
+        }
 
         absorb_gfs(transcript, 0x32, &[pair.0, pair.1]);
         let mu: Gf = transcript.get_field_challenge(&());
@@ -1102,6 +1148,38 @@ fn drive_grouped<'a>(
     (roots, MergedForestProof { layers: out_layers }, z, claim)
 }
 
+fn drive_grouped_profiled<'a>(
+    transcript: &mut impl Transcript,
+    roots: Vec<Gf>,
+    levels: ForestLevels,
+    bit_layer: impl FnMut(usize, &[Gf], &SuffixTensorArena<Gf>) -> Option<BitLayer<'a>>,
+    depth: usize,
+    s: usize,
+    live: usize,
+    profile: Option<&mut MergedForestProfile>,
+    witness_started: Option<Instant>,
+) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
+    match profile {
+        Some(profile) => {
+            profile.witness_build = witness_started.expect("profile start").elapsed();
+            let started = Instant::now();
+            let output = drive_grouped(
+                transcript,
+                roots,
+                levels,
+                bit_layer,
+                depth,
+                s,
+                live,
+                Some(profile),
+            );
+            profile.sumcheck = started.elapsed();
+            output
+        }
+        None => drive_grouped(transcript, roots, levels, bit_layer, depth, s, live, None),
+    }
+}
+
 /// Prove all `2^s` per-tree grand products over the flat leaf table
 /// (`leaves[i + 2^d·c]`, in-tree index low, tree index high). Returns
 /// `(roots, proof, exit_point (len d+s), exit_eval)`.
@@ -1115,6 +1193,36 @@ pub fn prove_merged_forest(
     leaves: &[Gf],
     depth: usize,
     s: usize,
+) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
+    prove_merged_forest_impl(transcript, leaves, depth, s, None, None)
+}
+
+/// [`prove_merged_forest`] with witness construction timed separately.
+pub fn prove_merged_forest_profiled(
+    transcript: &mut impl Transcript,
+    leaves: &[Gf],
+    depth: usize,
+    s: usize,
+    profile: &mut MergedForestProfile,
+) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
+    *profile = MergedForestProfile::default();
+    prove_merged_forest_impl(
+        transcript,
+        leaves,
+        depth,
+        s,
+        Some(profile),
+        Some(Instant::now()),
+    )
+}
+
+fn prove_merged_forest_impl(
+    transcript: &mut impl Transcript,
+    leaves: &[Gf],
+    depth: usize,
+    s: usize,
+    profile: Option<&mut MergedForestProfile>,
+    witness_started: Option<Instant>,
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
     let num_trees = 1usize << s;
     assert_eq!(leaves.len(), 1usize << (depth + s), "leaf table shape");
@@ -1130,7 +1238,7 @@ pub fn prove_merged_forest(
     };
     // Everything materialised: the leaf level is `levels[depth−1]`.
     let (levels, roots) = build_levels(num_trees, depth, leaf_halves);
-    drive_grouped(
+    drive_grouped_profiled(
         transcript,
         roots,
         ForestLevels::PerTree(levels),
@@ -1138,6 +1246,8 @@ pub fn prove_merged_forest(
         depth,
         s,
         num_trees,
+        profile,
+        witness_started,
     )
 }
 
@@ -1173,6 +1283,33 @@ pub fn prove_merged_forest_lazy(
         pow2,
         configured(p, ForestPath::Single).expect("single forest schedule"),
         live,
+    )
+}
+
+/// The production raw-row path with its materialized prefix timed separately.
+/// Lazy/JIT layers generated by the driver are included in `sumcheck`.
+pub fn prove_merged_forest_lazy_from_rows_profiled(
+    transcript: &mut impl Transcript,
+    p: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+    packed_cols: &[Vec<u64>],
+    pow2: &[Vec<Gf>],
+    live: usize,
+    profile: &mut MergedForestProfile,
+) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
+    *profile = MergedForestProfile::default();
+    let schedule = configured(p, ForestPath::Single).expect("single forest schedule");
+    prove_merged_forest_lazy_impl(
+        transcript,
+        p,
+        Some(rows),
+        packed_cols,
+        pow2,
+        schedule,
+        live,
+        use_compact_single_allocations(p) && p.rows() >= 1 << 16,
+        Some(profile),
+        Some(Instant::now()),
     )
 }
 
@@ -1212,6 +1349,8 @@ pub(crate) fn prove_merged_forest_lazy_from_rows(
         configured(p, ForestPath::Single).expect("single forest schedule"),
         live,
         use_compact_single_allocations(p) && p.rows() >= 1 << 16,
+        None,
+        None,
     )
 }
 
@@ -1321,7 +1460,18 @@ fn prove_merged_forest_lazy_sched(
     sched: ForestSchedule,
     live: usize,
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
-    prove_merged_forest_lazy_impl(transcript, p, None, packed_cols, pow2, sched, live, false)
+    prove_merged_forest_lazy_impl(
+        transcript,
+        p,
+        None,
+        packed_cols,
+        pow2,
+        sched,
+        live,
+        false,
+        None,
+        None,
+    )
 }
 
 fn prove_merged_forest_lazy_impl(
@@ -1333,6 +1483,8 @@ fn prove_merged_forest_lazy_impl(
     sched: ForestSchedule,
     live: usize,
     build_on_caller: bool,
+    profile: Option<&mut MergedForestProfile>,
+    witness_started: Option<Instant>,
 ) -> (Vec<Gf>, MergedForestProof, Vec<Gf>, Gf) {
     let l8 = sched.is_l8();
     use crate::pcs::{
@@ -1360,7 +1512,14 @@ fn prove_merged_forest_lazy_impl(
                 }
             })
             .collect();
-        return prove_merged_forest(transcript, &dense, depth, s);
+        return prove_merged_forest_impl(
+            transcript,
+            &dense,
+            depth,
+            s,
+            profile,
+            witness_started,
+        );
     }
 
     let _g_pre = tracing::info_span!("mf:l1tabs").entered();
@@ -1411,7 +1570,7 @@ fn prove_merged_forest_lazy_impl(
                     flat: None,
                 })
             };
-        return drive_grouped(
+        return drive_grouped_profiled(
             transcript,
             pad_roots(roots, num_trees),
             ForestLevels::PerTree(levels),
@@ -1419,6 +1578,8 @@ fn prove_merged_forest_lazy_impl(
             depth,
             s,
             live,
+            profile,
+            witness_started,
         );
     }
 
@@ -1529,7 +1690,7 @@ fn prove_merged_forest_lazy_impl(
                     None
                 }
             };
-        return drive_grouped(
+        return drive_grouped_profiled(
             transcript,
             pad_roots(roots, num_trees),
             ForestLevels::PerTree(levels),
@@ -1537,6 +1698,8 @@ fn prove_merged_forest_lazy_impl(
             depth,
             s,
             live,
+            profile,
+            witness_started,
         );
     }
 
@@ -1738,7 +1901,7 @@ fn prove_merged_forest_lazy_impl(
                     None
                 }
             };
-        return drive_grouped(
+        return drive_grouped_profiled(
             transcript,
             pad_roots(roots, num_trees),
             levels_l4,
@@ -1746,6 +1909,8 @@ fn prove_merged_forest_lazy_impl(
             depth,
             s,
             live,
+            profile,
+            witness_started,
         );
     }
 
@@ -1908,7 +2073,7 @@ fn prove_merged_forest_lazy_impl(
             None
         }
     };
-    drive_grouped(
+    drive_grouped_profiled(
         transcript,
         pad_roots(roots, num_trees),
         ForestLevels::PerTree(levels),
@@ -1916,6 +2081,8 @@ fn prove_merged_forest_lazy_impl(
         depth,
         s,
         live,
+        profile,
+        witness_started,
     )
 }
 
@@ -3032,6 +3199,7 @@ pub fn prove_merged_forest_lazy_rlc2(
         depth,
         s,
         num_trees,
+        None,
     )
 }
 
@@ -3199,6 +3367,7 @@ pub fn prove_merged_forest_lazy_rlc_general(
         depth,
         s,
         num_trees,
+        None,
     )
 }
 
@@ -3483,6 +3652,7 @@ fn prove_merged_forest_lazy_multi_sched(
             depth,
             s_batch,
             num_trees,
+            None,
         );
     }
 
@@ -3655,6 +3825,7 @@ fn prove_merged_forest_lazy_multi_sched(
         depth,
         s_batch,
         num_trees,
+        None,
     )
 }
 
@@ -4039,6 +4210,8 @@ mod tests {
                     sched,
                     p.cols(),
                     true,
+                    None,
+                    None,
                 );
                 assert_eq!(borrowed.0, lazy.0, "borrowed roots");
                 assert_eq!(borrowed.2, lazy.2, "borrowed point");

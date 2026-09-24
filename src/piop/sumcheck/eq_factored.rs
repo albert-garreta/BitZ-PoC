@@ -56,6 +56,7 @@ use crate::utils::{
     inner_transparent_field::InnerTransparentField, wide_mul::WideMulAcc,
 };
 use num_traits::Zero;
+use std::time::{Duration, Instant};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
@@ -2534,8 +2535,52 @@ pub(crate) struct SharedPointInput<'a, F: Clone> {
     pub(crate) constant_weight: F,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct EqInnerProfile {
+    pub(crate) suffix: Duration,
+    pub(crate) table_build: Duration,
+    pub(crate) prefix_messages: Duration,
+    pub(crate) prefix_folds: Duration,
+    pub(crate) dense_messages: Duration,
+    pub(crate) dense_folds: Duration,
+    pub(crate) close: Duration,
+}
+
 /// Internal forest entry with suffixes constructed for this layer's shared point.
 pub(crate) fn prove_eq_inner_sumcheck_mixed_prepared<F>(
+    transcript: &mut impl Transcript,
+    input: SharedPointInput<'_, F>,
+    tau_sets: &[(Vec<F>, Vec<F>)],
+    pair_tau_sets: &[Pair2TauSet<F>],
+    t4_sets: &[Vec<F>],
+    pre_round1: Option<PreRound<F>>,
+    flat: Option<FlatDense<F>>,
+    gruen: bool,
+    field_cfg: &F::Config,
+    prepared_suffix: Option<SuffixTensorArena<F>>,
+) -> (SumcheckProof<F>, Vec<F>, Vec<Vec<(F, F)>>)
+where
+    F: InnerTransparentField + WideMulAcc + Send + Sync,
+    F::Inner: ConstTranscribable + Zero + Default + Send + Sync,
+    F::Modulus: ConstTranscribable,
+    F::Config: Sync,
+{
+    prove_eq_inner_sumcheck_mixed_prepared_profiled(
+        transcript,
+        input,
+        tau_sets,
+        pair_tau_sets,
+        t4_sets,
+        pre_round1,
+        flat,
+        gruen,
+        field_cfg,
+        prepared_suffix,
+        None,
+    )
+}
+
+pub(crate) fn prove_eq_inner_sumcheck_mixed_prepared_profiled<F>(
     transcript: &mut impl Transcript,
     input: SharedPointInput<'_, F>,
     tau_sets: &[(Vec<F>, Vec<F>)],
@@ -2546,6 +2591,7 @@ pub(crate) fn prove_eq_inner_sumcheck_mixed_prepared<F>(
     gruen: bool,
     field_cfg: &F::Config,
     prepared_suffix: Option<SuffixTensorArena<F>>,
+    mut profile: Option<&mut EqInnerProfile>,
 ) -> (SumcheckProof<F>, Vec<F>, Vec<Vec<(F, F)>>)
 where
     F: InnerTransparentField + WideMulAcc + Send + Sync,
@@ -2692,6 +2738,17 @@ where
     let has_t4b = groups
         .iter()
         .any(|g| matches!(g.bufs, GroupBufs::T4Bits { .. }));
+    let prefix_rounds = if has_leaf4 {
+        4
+    } else if has_leaf3 {
+        3
+    } else if has_leaf2 || has_pair3 {
+        2
+    } else if has_leaf || has_pair || has_t4b {
+        1
+    } else {
+        0
+    };
     let one = F::one_with_cfg(field_cfg);
     let zero = F::zero_with_cfg(field_cfg);
     // The generic path's boundary nodes: F::from(2) = X, F::from(3) = X+1
@@ -2752,6 +2809,7 @@ where
             "Pair3Bits groups need k >= 3 (use Pair2Bits at k = 2)"
         );
     }
+    let suffix_started = profile.is_some().then(Instant::now);
     let suffix: Vec<SuffixTensorArena<F>> = {
         let _g = tracing::info_span!("eqf:suffix").entered();
         if let Some(arena) = prepared_suffix {
@@ -2763,9 +2821,12 @@ where
         } else {
             cfg_iter!(groups)
                 .map(|g| suffix_tensors(&g.q, field_cfg))
-                .collect()
+            .collect()
         }
     };
+    if let (Some(profile), Some(started)) = (profile.as_deref_mut(), suffix_started) {
+        profile.suffix += started.elapsed();
+    }
     debug_assert!(
         suffix
             .iter()
@@ -2908,6 +2969,7 @@ where
         });
         let recover_linear = recovery_inverse.is_some();
 
+        let tables_started = profile.is_some().then(Instant::now);
         // Shared leaf tables for round 1 (one per tau set; every group of a
         // set only XOR-selects from them).
         let leaf_tables: Vec<LeafTables<F>> =
@@ -2943,6 +3005,9 @@ where
         } else {
             Vec::new()
         };
+        if let (Some(profile), Some(started)) = (profile.as_deref_mut(), tables_started) {
+            profile.table_build += started.elapsed();
+        }
 
         // Per group `t` (independent): accumulate the suffix-weighted *coefficients*
         // of H_t in the round variable — A0 = Σ_b w_b·Σ_i L_i(0)·R_i(0), A1 = Σ_b
@@ -3408,6 +3473,7 @@ where
         // produced when round j+1 is NOT the last, so round k always runs
         // a real pass and the final interpolation never sees a deferred
         // fold.
+        let message_started = profile.is_some().then(Instant::now);
         let double_now = eqf_double()
             && half >= eqf_double_min_half()
             && grid.is_none()
@@ -3684,7 +3750,15 @@ where
             }
         };
 
+        if let (Some(profile), Some(started)) = (profile.as_deref_mut(), message_started) {
+            if j <= prefix_rounds {
+                profile.prefix_messages += started.elapsed();
+            } else {
+                profile.dense_messages += started.elapsed();
+            }
+        }
         drop(recovery_span);
+        let close_started = profile.is_some().then(Instant::now);
         let _g_close = tracing::info_span!("eqf:close").entered();
         let tail = if gruen {
             // Gruen format (shared q, asserted): the round polynomial is
@@ -3783,6 +3857,9 @@ where
             }
         }
         drop(_g_close);
+        if let (Some(profile), Some(started)) = (profile.as_deref_mut(), close_started) {
+            profile.close += started.elapsed();
+        }
         if j < k {
             // Pass fusion (the default): defer this round's fold into the
             // next round's message pass when every group is Dense
@@ -3801,6 +3878,7 @@ where
             }
             // Shared leaf fold tables (need ρ, so built here) — one per tau
             // set; every leaf group's fold is then two XOR-selects per entry.
+            let fold_tables_started = profile.is_some().then(Instant::now);
             let leaf_fold_tables: Vec<LeafFoldTables<F>> =
                 if j == 1 && (has_leaf || has_leaf2 || has_leaf3 || has_leaf4) {
                     cfg_iter!(tau_sets)
@@ -3845,6 +3923,12 @@ where
                     reweight_fold_tables_in_place(&rho, &one, set);
                 }
             }
+            if let (Some(profile), Some(started)) =
+                (profile.as_deref_mut(), fold_tables_started)
+            {
+                profile.table_build += started.elapsed();
+            }
+            let fold_started = profile.is_some().then(Instant::now);
             // Mat+grid fusion ([`mat_grid_enabled`]): materialising folds
             // below accumulate the next round-pair's grid over the values
             // they write and return it; when EVERY group produced one, it
@@ -4417,8 +4501,16 @@ where
                     pair3_value_sets = Vec::new();
                 }
             }
+            if let (Some(profile), Some(started)) = (profile.as_deref_mut(), fold_started) {
+                if j <= prefix_rounds {
+                    profile.prefix_folds += started.elapsed();
+                } else {
+                    profile.dense_folds += started.elapsed();
+                }
+            }
             randomness.push(rho);
         } else {
+            let final_started = profile.is_some().then(Instant::now);
             // Final interpolation of every pair at ρ_k. (Leaf-bit groups
             // materialised at the round-1 fold — `k ≥ 2` is asserted — so
             // only Dense groups reach here.)
@@ -4455,6 +4547,9 @@ where
                     })
                     .collect()
             };
+            if let (Some(profile), Some(started)) = (profile.as_deref_mut(), final_started) {
+                profile.dense_folds += started.elapsed();
+            }
             randomness.push(rho);
             return (
                 SumcheckProof {
