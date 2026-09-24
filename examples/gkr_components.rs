@@ -235,7 +235,8 @@ fn main() {
     println!("threads:       {threads}");
     println!("field kernel:  {}", field::gf128::KERNEL);
     println!("low entropy:   {} (1/2/3 bottom-layer skips)", schedule.name());
-    println!("direct image:  excluded");
+    println!("forest inputs: prepared rows, packed columns, and power table");
+    println!("lookup image:  excluded");
     println!("gamma fold:    included in fraction sumcheck");
     println!("dense leaves:  build/release included in naive witness build");
     println!("fraction tree: build/leaf release included in fraction witness build");
