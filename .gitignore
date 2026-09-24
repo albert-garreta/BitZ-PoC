@@ -36,6 +36,7 @@ outputs/
 docs/
 .history/*
 benchmark-results/
+logup-cut-*.txt
 tmp/
 # Python bytecode caches.
 __pycache__/
