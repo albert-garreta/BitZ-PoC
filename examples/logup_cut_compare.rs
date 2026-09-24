@@ -3,8 +3,9 @@
 //!
 //! ```text
 //! RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=10 \
-//!   cargo run --release --example logup_cut_compare -- 16 6 5 4,5,6,7,8
+//!   cargo run --release --example logup_cut_compare -- 28 14 12 5 6,8,10
 //! ```
+//! Arguments are `total_vars baseline_row_vars cut_row_vars runs chunk_widths`.
 
 use std::{
     process::Command,
@@ -55,64 +56,79 @@ fn print_phase(
 
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
-    let row_vars = args.first().and_then(|value| value.parse().ok()).unwrap_or(16);
-    let col_vars = args.get(1).and_then(|value| value.parse().ok()).unwrap_or(6);
-    let runs = args.get(2).and_then(|value| value.parse().ok()).unwrap_or(5usize);
+    let total_vars = args.first().and_then(|value| value.parse().ok()).unwrap_or(22usize);
+    let baseline_row_vars = args.get(1).and_then(|value| value.parse().ok()).unwrap_or(11usize);
+    let cut_row_vars = args.get(2).and_then(|value| value.parse().ok()).unwrap_or(12usize);
+    let runs = args.get(3).and_then(|value| value.parse().ok()).unwrap_or(5usize);
     let widths = args
-        .get(3)
+        .get(4)
         .map(String::as_str)
         .unwrap_or("4,5,6,7,8")
         .split(',')
         .map(|value| value.parse::<usize>().expect("chunk width"))
         .collect::<Vec<_>>();
-    let component_bits = args.get(4).and_then(|value| value.parse().ok()).unwrap_or(100);
-    let memory_limit_mib = args.get(5).and_then(|value| value.parse::<u64>().ok()).unwrap_or(0);
+    let component_bits = args.get(5).and_then(|value| value.parse().ok()).unwrap_or(100);
+    let memory_limit_mib = args.get(6).and_then(|value| value.parse::<u64>().ok()).unwrap_or(0);
     let memory_limit_bytes = memory_limit_mib.saturating_mul(1 << 20);
-    assert!(runs > 0 && !widths.is_empty());
+    assert!(
+        runs > 0
+            && !widths.is_empty()
+            && baseline_row_vars < total_vars
+            && cut_row_vars < total_vars
+    );
 
-    let layout = IntegerMatrixLayout { row_vars, col_vars, word_bits: 1 };
-    let row_len = layout.rows();
-    let words = row_len.div_ceil(64);
-    let rows = (0..layout.cols())
-        .map(|column| {
-            (0..words)
-                .map(|word| {
-                    let mut value = (column as u64 + 1)
-                        .wrapping_mul(0x9e37_79b9_7f4a_7c15)
-                        ^ (word as u64 + 7).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-                    value ^= value >> 30;
-                    value = value.wrapping_mul(0x94d0_49bb_1331_11eb);
-                    value ^ (value >> 31)
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    let row_weights = (0..layout.rows()).map(|row| row as u128 + 1).collect::<Vec<_>>();
-    let col_weights = vec![1u128; layout.cols()];
-    let claimed_eval = rows
-        .iter()
-        .map(|row| {
-            row.iter()
-                .enumerate()
-                .map(|(word, &bits)| {
-                    let mut bits = bits;
-                    let mut sum = 0u128;
-                    while bits != 0 {
-                        let bit = bits.trailing_zeros() as usize;
-                        bits &= bits - 1;
-                        let index = 64 * word + bit;
-                        if index < row_weights.len() {
-                            sum += row_weights[index];
+    let baseline_layout = IntegerMatrixLayout {
+        row_vars: baseline_row_vars,
+        col_vars: total_vars - baseline_row_vars,
+        word_bits: 1,
+    };
+    let cut_layout = IntegerMatrixLayout {
+        row_vars: cut_row_vars,
+        col_vars: total_vars - cut_row_vars,
+        word_bits: 1,
+    };
+    let witness_bits = 1usize << total_vars;
+    let make_rows = |layout: &IntegerMatrixLayout| {
+        let words = layout.rows().div_ceil(64);
+        (0..layout.cols())
+            .map(|column| {
+                (0..words)
+                    .map(|word| {
+                        let global_word = column * words + word;
+                        let mut value = (global_word as u64 + 1)
+                            .wrapping_mul(0x9e37_79b9_7f4a_7c15)
+                            ^ 0xbf58_476d_1ce4_e5b9;
+                        value ^= value >> 30;
+                        value = value.wrapping_mul(0x94d0_49bb_1331_11eb);
+                        value ^ (value >> 31)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+    };
+    let column_values = |rows: &[Vec<u64>], row_weights: &[u128]| {
+        rows
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .enumerate()
+                    .map(|(word, &bits)| {
+                        let mut bits = bits;
+                        let mut sum = 0u128;
+                        while bits != 0 {
+                            let bit = bits.trailing_zeros() as usize;
+                            bits &= bits - 1;
+                            let index = 64 * word + bit;
+                            if index < row_weights.len() {
+                                sum += row_weights[index];
+                            }
                         }
-                    }
-                    sum
-                })
-                .sum::<u128>()
-        })
-        .sum::<u128>();
-
-    let (pc, vc) = historical_sha_lig_configs(packed_vars(&layout)).expect("Ligerito config");
-    let hint = commit_rs_ligerito_rows(&layout, rows, &pc);
+                        sum
+                    })
+                    .sum::<u128>()
+            })
+            .collect::<Vec<_>>()
+    };
     let alpha = smallest_generator();
     let mut revision = Command::new("git")
         .args(["rev-parse", "--short=12", "HEAD"])
@@ -135,6 +151,17 @@ fn main() {
     #[cfg(not(feature = "parallel"))]
     let threads = 1usize;
 
+    let baseline_rows = make_rows(&baseline_layout);
+    let baseline_row_weights = (0..baseline_layout.rows())
+        .map(|row| row as u128 + 1)
+        .collect::<Vec<_>>();
+    let baseline_values = column_values(&baseline_rows, &baseline_row_weights);
+    let baseline_claimed_eval = baseline_values.iter().sum::<u128>();
+    let baseline_col_weights = vec![1u128; baseline_layout.cols()];
+    let (baseline_pc, baseline_vc) = historical_sha_lig_configs(packed_vars(&baseline_layout))
+        .expect("baseline Ligerito config");
+    let baseline_hint = commit_rs_ligerito_rows(&baseline_layout, baseline_rows, &baseline_pc);
+
     println!("BitZ full grand-product backend comparison");
     println!("revision:       {revision}");
     println!("architecture:   {}", std::env::consts::ARCH);
@@ -151,8 +178,15 @@ fn main() {
         "portable field kernel selected on a PMULL host; use -C target-cpu=native"
     );
     println!("threads:        {threads}");
-    println!("shape:          row_vars={row_vars}, col_vars={col_vars}, W=1");
-    println!("witness bits:   {}", layout.cells());
+    println!(
+        "baseline shape: row_vars={}, col_vars={}, W=1",
+        baseline_layout.row_vars, baseline_layout.col_vars,
+    );
+    println!(
+        "cut shape:      row_vars={}, col_vars={}, W=1",
+        cut_layout.row_vars, cut_layout.col_vars,
+    );
+    println!("witness bits:   {witness_bits}");
     println!("runs:           {runs}");
     println!("chunk widths:   {widths:?}");
     println!("memory cap:     {memory_limit_mib} MiB (0 = disabled)");
@@ -161,35 +195,34 @@ fn main() {
     let mut baseline_prove = Vec::with_capacity(runs);
     let mut baseline_verify = Vec::with_capacity(runs);
     let mut baseline_bytes = 0usize;
-    let mut expected_v = None;
     for _ in 0..runs {
         let mut prover_transcript = Blake3Transcript::new();
         let start = Instant::now();
         let proof = prove_rs_ligerito(
             &mut prover_transcript,
-            &hint,
-            &layout,
-            &row_weights,
+            &baseline_hint,
+            &baseline_layout,
+            &baseline_row_weights,
             alpha,
-            &pc,
+            &baseline_pc,
         );
         baseline_prove.push(start.elapsed().as_secs_f64() * 1e3);
         baseline_bytes = int_eval_rs_lig_proof_size_bytes(&proof);
-        expected_v = Some(proof.v.clone());
+        assert_eq!(proof.v, baseline_values);
 
         let mut verifier_transcript = Blake3Transcript::new();
         let start = Instant::now();
         verify_rs_ligerito(
             &mut verifier_transcript,
-            &hint.commitment,
+            &baseline_hint.commitment,
             &proof,
-            &layout,
-            &row_weights,
-            &col_weights,
+            &baseline_layout,
+            &baseline_row_weights,
+            &baseline_col_weights,
             1u128,
             alpha,
-            claimed_eval,
-            &vc,
+            baseline_claimed_eval,
+            &baseline_vc,
         )
         .expect("baseline verification");
         baseline_verify.push(start.elapsed().as_secs_f64() * 1e3);
@@ -200,24 +233,33 @@ fn main() {
     print_samples("verify", &baseline_verify);
     println!(
         "  throughput: {:.2} Mbit/s",
-        layout.cells() as f64 / (summary(&baseline_prove).1 * 1e3)
+        witness_bits as f64 / (summary(&baseline_prove).1 * 1e3)
     );
     println!("  proof:     {baseline_bytes} bytes\n");
 
-    let expected_v = expected_v.unwrap();
+    drop(baseline_hint);
+    let cut_rows = make_rows(&cut_layout);
+    let cut_row_weights = (0..cut_layout.rows())
+        .map(|row| row as u128 + 1)
+        .collect::<Vec<_>>();
+    let cut_values = column_values(&cut_rows, &cut_row_weights);
+    let (cut_pc, cut_vc) =
+        historical_sha_lig_configs(packed_vars(&cut_layout)).expect("cut Ligerito config");
+    let cut_hint = commit_rs_ligerito_rows(&cut_layout, cut_rows, &cut_pc);
+    let row_len = cut_layout.rows();
     for chunk_bits in widths {
         let config = LogupCutConfig {
             chunk_bits,
             aux_component_bits: component_bits,
             memory_limit_bytes,
         };
-        let estimate = LogupCutEstimate::new(row_len, layout.cols(), chunk_bits);
+        let estimate = LogupCutEstimate::new(row_len, cut_layout.cols(), chunk_bits);
         if memory_limit_bytes != 0 && estimate.estimated_scratch_bytes > memory_limit_bytes {
             println!("dyadic Logup cut: w={chunk_bits}");
             println!("  skipped: estimated scratch {} bytes exceeds memory cap\n", estimate.estimated_scratch_bytes);
             continue;
         }
-        let mut scratch = LogupCutScratch::new(layout, config).expect("Logup-cut scratch");
+        let mut scratch = LogupCutScratch::new(cut_layout, config).expect("Logup-cut scratch");
         let chunks = chunk_specs(row_len, chunk_bits);
         let plan = DyadicPlan::new(chunks.len());
         let mut prove_samples = Vec::with_capacity(runs);
@@ -229,30 +271,30 @@ fn main() {
             let start = Instant::now();
             let (proof, profile) = prove_logup_cut_profiled(
                 &mut prover_transcript,
-                &hint,
-                &layout,
-                &row_weights,
+                &cut_hint,
+                &cut_layout,
+                &cut_row_weights,
                 alpha,
-                &pc,
+                &cut_pc,
                 config,
                 &mut scratch,
             )
             .expect("Logup-cut proof");
             prove_samples.push(start.elapsed().as_secs_f64() * 1e3);
             profiles.push(profile);
-            assert_eq!(proof.v, expected_v);
+            assert_eq!(proof.v, cut_values);
             size = Some(logup_cut_proof_size(&proof));
 
             let mut verifier_transcript = Blake3Transcript::new();
             let start = Instant::now();
             verify_logup_cut(
                 &mut verifier_transcript,
-                &hint.commitment,
+                &cut_hint.commitment,
                 &proof,
-                &layout,
-                &row_weights,
+                &cut_layout,
+                &cut_row_weights,
                 alpha,
-                &vc,
+                &cut_vc,
                 config,
             )
             .expect("Logup-cut verification");
@@ -301,7 +343,7 @@ fn main() {
         });
         println!(
             "  throughput: {:.2} Mbit/s",
-            layout.cells() as f64 / (summary(&prove_samples).1 * 1e3)
+            witness_bits as f64 / (summary(&prove_samples).1 * 1e3)
         );
         println!("  proof:     {} bytes", size.total());
         println!(
