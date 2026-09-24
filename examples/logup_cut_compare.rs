@@ -5,7 +5,17 @@
 //! RUSTFLAGS="-C target-cpu=native" RAYON_NUM_THREADS=10 \
 //!   cargo run --release --example logup_cut_compare -- 28 14 12 5 6,8,10
 //! ```
-//! Arguments are `total_vars baseline_row_vars cut_row_vars runs chunk_widths`.
+//! Arguments are `total_vars baseline_row_vars cut_row_vars runs chunk_widths
+//! [component_bits] [memory_limit_mib] [wfbitz_row_vars] [weight_bits]`.
+//!
+//! The last two drive the third contender and the weights: `wfbitz_row_vars`
+//! is a comma list of row splits at which the worldfnd/BitZ parity scheme
+//! (`bitz::wfbitz`, feature `bitz-parity`) proves the same committed rows
+//! (default: the baseline's split); `weight_bits` = 0 keeps the PR's `row +
+//! 1` row weights, any other value draws pseudo-random `weight_bits`-bit
+//! weights (the protocol's ~100-bit lifted residues) for every contender.
+//! `WFBITZ_LADDER=fast` runs wfbitz on flock's embedded ladder as shipped
+//! instead of the baseline's `custom:1:4` Johnson ladder.
 
 use std::{
     process::Command,
@@ -25,6 +35,18 @@ use bitz::{
     },
     transcript::Blake3Transcript,
 };
+#[cfg(feature = "bitz-parity")]
+use bitz::{
+    ligerito_flock::custom_johnson_config,
+    wfbitz::{
+        BitZParams, BitZProver, BitZVerifier, LinearClaim, Pcs, Shape, WINDOW, build_prover,
+        build_verifier,
+        fold::{fold_columns, reconstruct},
+        record_phases, take_phases,
+    },
+};
+#[cfg(feature = "bitz-parity")]
+use flock_core::{merkle::HashKind, pcs::ligerito::LigeritoProfile};
 
 fn summary(samples: &[f64]) -> (f64, f64, f64, f64) {
     let mut sorted = samples.to_vec();
@@ -70,6 +92,24 @@ fn main() {
     let component_bits = args.get(5).and_then(|value| value.parse().ok()).unwrap_or(100);
     let memory_limit_mib = args.get(6).and_then(|value| value.parse::<u64>().ok()).unwrap_or(0);
     let memory_limit_bytes = memory_limit_mib.saturating_mul(1 << 20);
+    let wfbitz_row_vars = args
+        .get(7)
+        .map(|value| {
+            value
+                .split(',')
+                .map(|item| item.parse::<usize>().expect("wfbitz row vars"))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| vec![baseline_row_vars]);
+    let weight_bits = args.get(8).and_then(|value| value.parse::<usize>().ok()).unwrap_or(0);
+    assert!(
+        weight_bits == 0 || (weight_bits <= 99 && total_vars + weight_bits < 128),
+        "weight_bits: 0 = the PR's `row + 1`; otherwise at most 99 with total_vars + weight_bits < 128 so every integer sum fits u128"
+    );
+    assert!(
+        wfbitz_row_vars.iter().all(|&t| (6..=26).contains(&t) && t < total_vars),
+        "wfbitz row splits must be 6..=26 and below total_vars"
+    );
     assert!(
         runs > 0
             && !widths.is_empty()
@@ -129,6 +169,29 @@ fn main() {
             })
             .collect::<Vec<_>>()
     };
+    // Row weights: the PR's `row + 1` (weight_bits = 0) or pseudo-random
+    // `weight_bits`-bit integers, a deterministic function of the row index so
+    // every contender at a given row count sees the same weights.
+    let make_weights = |rows: usize| -> Vec<u128> {
+        let mix = |seed: u64| {
+            let mut value = seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ 0x94d0_49bb_1331_11eb;
+            value ^= value >> 30;
+            value = value.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+            value ^= value >> 27;
+            value = value.wrapping_mul(0x94d0_49bb_1331_11eb);
+            value ^ (value >> 31)
+        };
+        (0..rows)
+            .map(|row| {
+                if weight_bits == 0 {
+                    return row as u128 + 1;
+                }
+                let wide = (u128::from(mix(2 * row as u64 + 1)) << 64)
+                    | u128::from(mix(2 * row as u64 + 2));
+                wide & ((1u128 << weight_bits) - 1)
+            })
+            .collect()
+    };
     let alpha = smallest_generator();
     let mut revision = Command::new("git")
         .args(["rev-parse", "--short=12", "HEAD"])
@@ -152,9 +215,7 @@ fn main() {
     let threads = 1usize;
 
     let baseline_rows = make_rows(&baseline_layout);
-    let baseline_row_weights = (0..baseline_layout.rows())
-        .map(|row| row as u128 + 1)
-        .collect::<Vec<_>>();
+    let baseline_row_weights = make_weights(baseline_layout.rows());
     let baseline_values = column_values(&baseline_rows, &baseline_row_weights);
     let baseline_claimed_eval = baseline_values.iter().sum::<u128>();
     let baseline_col_weights = vec![1u128; baseline_layout.cols()];
@@ -190,6 +251,15 @@ fn main() {
     println!("runs:           {runs}");
     println!("chunk widths:   {widths:?}");
     println!("memory cap:     {memory_limit_mib} MiB (0 = disabled)");
+    println!(
+        "row weights:    {}",
+        if weight_bits == 0 {
+            "row + 1 (the PR's)".to_string()
+        } else {
+            format!("{weight_bits}-bit pseudo-random")
+        }
+    );
+    println!("wfbitz splits:  {wfbitz_row_vars:?} (row_vars)");
     println!("commitment:     outside timed region\n");
 
     let mut baseline_prove = Vec::with_capacity(runs);
@@ -239,9 +309,7 @@ fn main() {
 
     drop(baseline_hint);
     let cut_rows = make_rows(&cut_layout);
-    let cut_row_weights = (0..cut_layout.rows())
-        .map(|row| row as u128 + 1)
-        .collect::<Vec<_>>();
+    let cut_row_weights = make_weights(cut_layout.rows());
     let cut_values = column_values(&cut_rows, &cut_row_weights);
     let (cut_pc, cut_vc) =
         historical_sha_lig_configs(packed_vars(&cut_layout)).expect("cut Ligerito config");
@@ -365,5 +433,111 @@ fn main() {
             size.main_ring_switch,
             size.main_ligerito,
         );
+    }
+    drop(cut_hint);
+
+    #[cfg(not(feature = "bitz-parity"))]
+    {
+        let _ = &wfbitz_row_vars;
+        println!("wfbitz: skipped (build with --features bitz-parity)");
+    }
+
+    #[cfg(feature = "bitz-parity")]
+    {
+        /// `2^100 - 15`, the parity harness's prime: both weight modes stay
+        /// below it and `(q - 1)(2^t + 1) < 2^127` holds for `t <= 26`.
+        const WFBITZ_Q: u128 = (1u128 << 100) - 15;
+        const SESSION: &str = "logup-cut-compare";
+        const INSTANCE: &str = "wfbitz";
+        let ladder = std::env::var("WFBITZ_LADDER").unwrap_or_else(|_| "matched".into());
+        for &row_vars in &wfbitz_row_vars {
+            let layout = IntegerMatrixLayout {
+                row_vars,
+                col_vars: total_vars - row_vars,
+                word_bits: 1,
+            };
+            let shape = Shape::new(row_vars, total_vars - row_vars).expect("wfbitz shape");
+            let params = BitZParams::new(shape, WFBITZ_Q, alpha).expect("wfbitz params");
+            let rows = make_rows(&layout);
+            let row_weights = make_weights(layout.rows());
+            let column_weights = vec![1u128; layout.cols()];
+            let folds = fold_columns(&shape, &rows, &row_weights);
+            let unresolved =
+                LinearClaim::new(&params, row_weights.clone(), column_weights.clone(), 0)
+                    .expect("wfbitz claim");
+            let target = reconstruct(&unresolved, &folds, WFBITZ_Q);
+            let claim = LinearClaim::new(&params, row_weights, column_weights, target)
+                .expect("wfbitz claim");
+            let pcs = if ladder == "fast" {
+                Pcs::new(&shape, HashKind::Blake3)
+            } else {
+                Pcs::with_security(
+                    &shape,
+                    &custom_johnson_config(total_vars, 1, 4),
+                    LigeritoProfile::Fast,
+                )
+            }
+            .expect("wfbitz pcs");
+            let start = Instant::now();
+            let (root, hint) = pcs.commit(&shape, rows).expect("wfbitz commit");
+            let commit_ms = start.elapsed().as_secs_f64() * 1e3;
+            let prover = BitZProver::new(params, WINDOW);
+            let verifier = BitZVerifier::new(params, WINDOW);
+            let mut prove_samples = Vec::with_capacity(runs);
+            let mut verify_samples = Vec::with_capacity(runs);
+            let mut phase_samples: Vec<(String, Vec<f64>)> = Vec::new();
+            let mut bytes = (0usize, 0usize);
+            for _ in 0..runs {
+                record_phases(true);
+                let start = Instant::now();
+                let mut transcript = build_prover(SESSION, INSTANCE);
+                prover
+                    .prove(&claim, &pcs, &hint, &mut transcript, None)
+                    .expect("wfbitz prove");
+                let proof = transcript.finish();
+                prove_samples.push(start.elapsed().as_secs_f64() * 1e3);
+                let phases = take_phases();
+                record_phases(false);
+                for (label, duration) in phases {
+                    let sample = duration.as_secs_f64() * 1e3;
+                    match phase_samples.iter_mut().find(|(l, _)| *l == label) {
+                        Some((_, v)) => v.push(sample),
+                        None => phase_samples.push((label, vec![sample])),
+                    }
+                }
+                let start = Instant::now();
+                verifier
+                    .verify(&claim, &pcs, root, build_verifier(SESSION, INSTANCE, &proof), None)
+                    .expect("wfbitz verify");
+                verify_samples.push(start.elapsed().as_secs_f64() * 1e3);
+                bytes = (proof.narg_string.len(), proof.hints.len());
+            }
+            println!(
+                "wfbitz: integer folds in the exponent + batched per-level GKR + reduction + ring switch + Ligerito ({})",
+                if ladder == "fast" { "flock's fast ladder as shipped" } else { "the baseline's custom:1:4 ladder" }
+            );
+            println!(
+                "  shape:     row_vars={}, col_vars={}, W=1",
+                row_vars,
+                total_vars - row_vars
+            );
+            println!("  commit:    {commit_ms:.3} ms (outside the timed region)");
+            print_samples("prove", &prove_samples);
+            print_samples("verify", &verify_samples);
+            println!("  prover phases:");
+            for (label, samples) in &phase_samples {
+                print_samples(label, samples);
+            }
+            println!(
+                "  throughput: {:.2} Mbit/s",
+                witness_bits as f64 / (summary(&prove_samples).1 * 1e3)
+            );
+            println!(
+                "  proof:     {} bytes (narg {} | Ligerito hints {})\n",
+                bytes.0 + bytes.1,
+                bytes.0,
+                bytes.1
+            );
+        }
     }
 }
