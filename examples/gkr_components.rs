@@ -5,7 +5,7 @@
 //!   cargo run --release --example gkr_components -- 14 12 5 10
 //! ```
 
-use std::{hint::black_box, io::Write, time::Instant};
+use std::{hint::black_box, io::Write, process::Command, time::Instant};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -226,14 +226,43 @@ fn main() {
         std::env::var("BITZ_LUT3").map_or(true, |value| value != "0"),
         "the low-entropy comparison needs BITZ_LUT3 enabled",
     );
+    let mut revision = Command::new("git")
+        .args(["rev-parse", "--short=12", "HEAD"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        .unwrap_or_else(|| "unknown".into());
+    let dirty = Command::new("git")
+        .args(["status", "--porcelain"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .is_some_and(|output| !output.stdout.is_empty());
+    if dirty {
+        revision.push_str("-dirty");
+    }
 
     println!("GKR component comparison");
+    println!("revision:       {revision}");
+    println!("architecture:   {}", std::env::consts::ARCH);
+    println!("field kernel:   {}", field::gf128::KERNEL);
+    #[cfg(target_arch = "x86_64")]
+    assert!(
+        !std::arch::is_x86_feature_detected!("pclmulqdq")
+            || field::gf128::KERNEL == "pclmul-karatsuba-barrett",
+        "portable field kernel selected on a PCLMULQDQ host; use -C target-cpu=native"
+    );
+    #[cfg(target_arch = "aarch64")]
+    assert!(
+        !std::arch::is_aarch64_feature_detected!("pmull") || field::gf128::KERNEL == "neon",
+        "portable field kernel selected on a PMULL host; use -C target-cpu=native"
+    );
     println!("N:             2^{log_n} = {n}");
     println!("tree depth:    {row_vars} ({row_len} leaves/tree)");
     println!("trees:         2^{col_vars} = {cols}");
     println!("runs:          {runs}");
     println!("threads:       {threads}");
-    println!("field kernel:  {}", field::gf128::KERNEL);
     println!("low entropy:   {} (1/2/3 bottom-layer skips)", schedule.name());
     println!("forest inputs: prepared rows, packed columns, and power table");
     println!("lookup image:  excluded");
