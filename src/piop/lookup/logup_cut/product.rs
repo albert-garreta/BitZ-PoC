@@ -181,113 +181,118 @@ pub(super) fn prove_products(
     let mut running_claim = claimed_sum;
     let mut prefix = Gf::ONE;
     let mut domain_len = full_len;
+    let mut prefetched_round = None;
 
     for round in 0..dimension {
         let initial = round == 0;
-        let max_pairs = (0..claims.len())
-            .map(|claim| {
-                let left = input_view(claim, initial, inputs, workspace);
-                let right = input_view(claim + claims.len(), initial, inputs, workspace);
-                active_len(left).max(active_len(right)).div_ceil(2)
-            })
-            .max()
-            .unwrap();
-        let low_domain = prepare_eq_split(
-            &q[round + 1..],
-            max_pairs,
-            &mut workspace.eq_low,
-            &mut workspace.eq_high,
-        );
-
         let s = q[round];
-        let at_one = s != Gf::ONE;
-        let linear0_inv = if at_one {
-            (Gf::ONE + s).inverse_or_zero()
-        } else {
-            Gf::ZERO
-        };
         workspace.quadratics.resize(claims.len(), [Gf::ZERO; 3]);
-        let total_work = (0..claims.len())
-            .map(|claim| {
-                active_len(input_view(claim, initial, inputs, workspace))
-                    .max(active_len(input_view(
-                        claim + claims.len(),
-                        initial,
-                        inputs,
-                        workspace,
-                    )))
-                    .div_ceil(2)
-            })
-            .sum::<usize>();
-
-        let tables = &workspace.tables;
-        let paddings = &workspace.paddings;
-        let normalized = &workspace.normalized_claims;
-        let eq_low = &workspace.eq_low;
-        let eq_high = &workspace.eq_high;
-        let calculate = |claim: usize, quadratic: &mut [Gf; 3]| {
-            let left = if initial {
-                let input = inputs[claim].0;
-                StateView {
-                    values: input.values(),
-                    padding: input.padding(),
-                }
-            } else {
-                StateView {
-                    values: &tables[2 * claim],
-                    padding: paddings[2 * claim],
-                }
-            };
-            let right = if initial {
-                let input = inputs[claim].1;
-                StateView {
-                    values: input.values(),
-                    padding: input.padding(),
-                }
-            } else {
-                StateView {
-                    values: &tables[2 * claim + 1],
-                    padding: paddings[2 * claim + 1],
-                }
-            };
-            let parallel_kernel = claims.len() == 1;
-            let [finite, infinity] = product_round(
-                left,
-                right,
-                eq_low,
-                eq_high,
-                low_domain,
-                domain_len,
-                at_one,
-                parallel_kernel,
-            );
-            let (h0, h1) = if at_one {
-                let h1 = finite;
-                let h0 = (normalized[claim] + s * h1) * linear0_inv;
-                (h0, h1)
-            } else {
-                (finite, normalized[claim])
-            };
-            *quadratic = [h0, h0 + h1 + infinity, infinity];
-        };
-
-        #[cfg(feature = "parallel")]
-        if claims.len() > 1 && total_work >= PARALLEL_THRESHOLD {
-            workspace.quadratics[..claims.len()]
-                .par_iter_mut()
-                .enumerate()
-                .for_each(|(claim, quadratic)| calculate(claim, quadratic));
+        if let Some(quadratic) = prefetched_round.take() {
+            debug_assert_eq!(claims.len(), 1);
+            workspace.quadratics[0] = quadratic;
         } else {
+            let max_pairs = (0..claims.len())
+                .map(|claim| {
+                    let left = input_view(claim, initial, inputs, workspace);
+                    let right = input_view(claim + claims.len(), initial, inputs, workspace);
+                    active_len(left).max(active_len(right)).div_ceil(2)
+                })
+                .max()
+                .unwrap();
+            let low_domain = prepare_eq_split(
+                &q[round + 1..],
+                max_pairs,
+                &mut workspace.eq_low,
+                &mut workspace.eq_high,
+            );
+            let at_one = s != Gf::ONE;
+            let linear0_inv = if at_one {
+                (Gf::ONE + s).inverse_or_zero()
+            } else {
+                Gf::ZERO
+            };
+            let total_work = (0..claims.len())
+                .map(|claim| {
+                    active_len(input_view(claim, initial, inputs, workspace))
+                        .max(active_len(input_view(
+                            claim + claims.len(),
+                            initial,
+                            inputs,
+                            workspace,
+                        )))
+                        .div_ceil(2)
+                })
+                .sum::<usize>();
+
+            let tables = &workspace.tables;
+            let paddings = &workspace.paddings;
+            let normalized = &workspace.normalized_claims;
+            let eq_low = &workspace.eq_low;
+            let eq_high = &workspace.eq_high;
+            let calculate = |claim: usize, quadratic: &mut [Gf; 3]| {
+                let left = if initial {
+                    let input = inputs[claim].0;
+                    StateView {
+                        values: input.values(),
+                        padding: input.padding(),
+                    }
+                } else {
+                    StateView {
+                        values: &tables[2 * claim],
+                        padding: paddings[2 * claim],
+                    }
+                };
+                let right = if initial {
+                    let input = inputs[claim].1;
+                    StateView {
+                        values: input.values(),
+                        padding: input.padding(),
+                    }
+                } else {
+                    StateView {
+                        values: &tables[2 * claim + 1],
+                        padding: paddings[2 * claim + 1],
+                    }
+                };
+                let parallel_kernel = claims.len() == 1;
+                let [finite, infinity] = product_round(
+                    left,
+                    right,
+                    eq_low,
+                    eq_high,
+                    low_domain,
+                    domain_len,
+                    at_one,
+                    parallel_kernel,
+                );
+                let (h0, h1) = if at_one {
+                    let h1 = finite;
+                    let h0 = (normalized[claim] + s * h1) * linear0_inv;
+                    (h0, h1)
+                } else {
+                    (finite, normalized[claim])
+                };
+                *quadratic = [h0, h0 + h1 + infinity, infinity];
+            };
+
+            #[cfg(feature = "parallel")]
+            if claims.len() > 1 && total_work >= PARALLEL_THRESHOLD {
+                workspace.quadratics[..claims.len()]
+                    .par_iter_mut()
+                    .enumerate()
+                    .for_each(|(claim, quadratic)| calculate(claim, quadratic));
+            } else {
+                workspace.quadratics[..claims.len()]
+                    .iter_mut()
+                    .enumerate()
+                    .for_each(|(claim, quadratic)| calculate(claim, quadratic));
+            }
+            #[cfg(not(feature = "parallel"))]
             workspace.quadratics[..claims.len()]
                 .iter_mut()
                 .enumerate()
                 .for_each(|(claim, quadratic)| calculate(claim, quadratic));
         }
-        #[cfg(not(feature = "parallel"))]
-        workspace.quadratics[..claims.len()]
-            .iter_mut()
-            .enumerate()
-            .for_each(|(claim, quadratic)| calculate(claim, quadratic));
 
         let mut cofactor = [Gf::ZERO; 3];
         for ((quadratic, &scale), _) in workspace.quadratics[..claims.len()]
@@ -327,7 +332,80 @@ pub(super) fn prove_products(
         }
         prefix *= eq_at;
 
-        if initial {
+        let can_prefetch = claims.len() == 1
+            && round + 1 < dimension
+            && active_len(input_view(0, initial, inputs, workspace))
+                == active_len(input_view(1, initial, inputs, workspace));
+        if can_prefetch {
+            let current_len = active_len(input_view(0, initial, inputs, workspace));
+            let folded_len = current_len.div_ceil(2);
+            let next_pairs = folded_len.div_ceil(2);
+            let low_domain = prepare_eq_split(
+                &q[round + 2..],
+                next_pairs,
+                &mut workspace.eq_low,
+                &mut workspace.eq_high,
+            );
+            let next_s = q[round + 1];
+            let next_at_one = next_s != Gf::ONE;
+            let [finite, infinity] = if initial {
+                let left = StateView {
+                    values: inputs[0].0.values(),
+                    padding: inputs[0].0.padding(),
+                };
+                let right = StateView {
+                    values: inputs[0].1.values(),
+                    padding: inputs[0].1.padding(),
+                };
+                let (left_out, right_out) = two_mut(&mut workspace.tables, 0, 1);
+                fused_fold_product_round(
+                    left,
+                    right,
+                    left_out,
+                    right_out,
+                    &workspace.eq_low,
+                    &workspace.eq_high,
+                    low_domain,
+                    domain_len,
+                    challenge,
+                    next_at_one,
+                )
+            } else {
+                let left = StateView {
+                    values: &workspace.tables[0],
+                    padding: workspace.paddings[0],
+                };
+                let right = StateView {
+                    values: &workspace.tables[1],
+                    padding: workspace.paddings[1],
+                };
+                let (left_out, right_out) = two_mut(&mut workspace.backs, 0, 1);
+                let message = fused_fold_product_round(
+                    left,
+                    right,
+                    left_out,
+                    right_out,
+                    &workspace.eq_low,
+                    &workspace.eq_high,
+                    low_domain,
+                    domain_len,
+                    challenge,
+                    next_at_one,
+                );
+                core::mem::swap(&mut workspace.tables[0], &mut workspace.backs[0]);
+                core::mem::swap(&mut workspace.tables[1], &mut workspace.backs[1]);
+                message
+            };
+            let (h0, h1) = if next_at_one {
+                let h1 = finite;
+                let h0 = (workspace.normalized_claims[0] + next_s * h1)
+                    * (Gf::ONE + next_s).inverse_or_zero();
+                (h0, h1)
+            } else {
+                (finite, workspace.normalized_claims[0])
+            };
+            prefetched_round = Some([h0, h0 + h1 + infinity, infinity]);
+        } else if initial {
             initialize_tables(inputs, workspace, challenge);
         } else {
             fold_tables(workspace, table_count, challenge);
@@ -512,6 +590,203 @@ fn fold_tables(
     }
     #[cfg(not(feature = "parallel"))]
     tables.iter_mut().zip(backs).zip(paddings).for_each(fold);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fused_fold_product_round(
+    left: StateView<'_>,
+    right: StateView<'_>,
+    left_out: &mut Vec<Gf>,
+    right_out: &mut Vec<Gf>,
+    eq_low: &[Gf],
+    eq_high: &[Gf],
+    low_domain: usize,
+    domain_len: usize,
+    challenge: Gf,
+    at_one: bool,
+) -> [Gf; 2] {
+    debug_assert_eq!(left.values.len(), right.values.len());
+    let folded_len = left.values.len().div_ceil(2);
+    let pairs = folded_len.div_ceil(2);
+    assert!(left_out.capacity() >= folded_len && right_out.capacity() >= folded_len);
+    left_out.clear();
+    right_out.clear();
+    let left_spare = &mut left_out.spare_capacity_mut()[..folded_len];
+    let right_spare = &mut right_out.spare_capacity_mut()[..folded_len];
+    let high_len = pairs.div_ceil(low_domain);
+    let baseline = left.padding * right.padding;
+
+    let block = |(
+        high,
+        ((left_out, right_out), &high_weight),
+    ): (
+        usize,
+        ((
+            &mut [core::mem::MaybeUninit<Gf>],
+            &mut [core::mem::MaybeUninit<Gf>],
+        ),
+        &Gf),
+    )| {
+        fused_fold_product_block(
+            left,
+            right,
+            left_out,
+            right_out,
+            eq_low,
+            high,
+            low_domain,
+            high_weight,
+            domain_len,
+            challenge,
+            baseline,
+            at_one,
+        )
+    };
+    let zero = || {
+        [
+            <Gf as WideMulAcc>::wide_zero(&Gf::ZERO),
+            <Gf as WideMulAcc>::wide_zero(&Gf::ZERO),
+        ]
+    };
+    let merge = |
+        mut left: [<Gf as WideMulAcc>::Wide; 2],
+        right: [<Gf as WideMulAcc>::Wide; 2],
+    | {
+        <Gf as WideMulAcc>::wide_add_assign(&mut left[0], &right[0]);
+        <Gf as WideMulAcc>::wide_add_assign(&mut left[1], &right[1]);
+        left
+    };
+    #[cfg(feature = "parallel")]
+    let correction = if folded_len >= PARALLEL_THRESHOLD && high_len > 1 {
+        left_spare
+            .par_chunks_mut(2 * low_domain)
+            .zip(right_spare.par_chunks_mut(2 * low_domain))
+            .zip(eq_high[..high_len].par_iter())
+            .enumerate()
+            .map(block)
+            .reduce(zero, merge)
+    } else {
+        left_spare
+            .chunks_mut(2 * low_domain)
+            .zip(right_spare.chunks_mut(2 * low_domain))
+            .zip(&eq_high[..high_len])
+            .enumerate()
+            .map(block)
+            .fold(zero(), merge)
+    };
+    #[cfg(not(feature = "parallel"))]
+    let correction = left_spare
+        .chunks_mut(2 * low_domain)
+        .zip(right_spare.chunks_mut(2 * low_domain))
+        .zip(&eq_high[..high_len])
+        .enumerate()
+        .map(block)
+        .fold(zero(), merge);
+
+    unsafe {
+        left_out.set_len(folded_len);
+        right_out.set_len(folded_len);
+    }
+    [
+        baseline + <Gf as WideMulAcc>::from_wide(correction[0].clone()),
+        <Gf as WideMulAcc>::from_wide(correction[1].clone()),
+    ]
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fused_fold_product_block(
+    left: StateView<'_>,
+    right: StateView<'_>,
+    left_out: &mut [core::mem::MaybeUninit<Gf>],
+    right_out: &mut [core::mem::MaybeUninit<Gf>],
+    eq_low: &[Gf],
+    high: usize,
+    low_domain: usize,
+    high_weight: Gf,
+    domain_len: usize,
+    challenge: Gf,
+    baseline: Gf,
+    at_one: bool,
+) -> [<Gf as WideMulAcc>::Wide; 2] {
+    debug_assert_eq!(left_out.len(), right_out.len());
+    let block_pairs = left_out.len().div_ceil(2);
+    let base_pair = high * low_domain;
+    let mut finite = <Gf as WideMulAcc>::wide_zero(&Gf::ZERO);
+    let mut infinity = <Gf as WideMulAcc>::wide_zero(&Gf::ZERO);
+    for (low, &weight) in eq_low.iter().take(block_pairs).enumerate() {
+        let pair = base_pair + low;
+        let output = 2 * low;
+        let [left0, right0] = folded_pair(left, right, 2 * pair, domain_len, challenge);
+        let (left1, right1) = if output + 1 < left_out.len() {
+            let folded = folded_pair(left, right, 2 * pair + 1, domain_len, challenge);
+            (folded[0], folded[1])
+        } else {
+            (left.padding, right.padding)
+        };
+        left_out[output].write(left0);
+        right_out[output].write(right0);
+        if output + 1 < left_out.len() {
+            left_out[output + 1].write(left1);
+            right_out[output + 1].write(right1);
+        }
+
+        let (left_finite, right_finite) = if at_one {
+            (left1, right1)
+        } else {
+            (left0, right0)
+        };
+        let finite_product = left_finite * right_finite + baseline;
+        let infinity_product = (left0 + left1) * (right0 + right1);
+        <Gf as WideMulAcc>::wide_add_assign(
+            &mut finite,
+            &<Gf as WideMulAcc>::mul_wide(&weight, &finite_product),
+        );
+        <Gf as WideMulAcc>::wide_add_assign(
+            &mut infinity,
+            &<Gf as WideMulAcc>::mul_wide(&weight, &infinity_product),
+        );
+    }
+    let finite = <Gf as WideMulAcc>::from_wide(finite);
+    let infinity = <Gf as WideMulAcc>::from_wide(infinity);
+    [
+        <Gf as WideMulAcc>::mul_wide(&high_weight, &finite),
+        <Gf as WideMulAcc>::mul_wide(&high_weight, &infinity),
+    ]
+}
+
+fn folded_pair(
+    left: StateView<'_>,
+    right: StateView<'_>,
+    output: usize,
+    domain_len: usize,
+    challenge: Gf,
+) -> [Gf; 2] {
+    debug_assert!(left.values.len() <= domain_len && right.values.len() <= domain_len);
+    let fold = |state: StateView<'_>| {
+        let low = state
+            .values
+            .get(2 * output)
+            .copied()
+            .unwrap_or(state.padding);
+        let high = state
+            .values
+            .get(2 * output + 1)
+            .copied()
+            .unwrap_or(state.padding);
+        low + challenge * (low + high)
+    };
+    [fold(left), fold(right)]
+}
+
+fn two_mut<T>(values: &mut [T], left: usize, right: usize) -> (&mut T, &mut T) {
+    assert_ne!(left, right);
+    if left < right {
+        let (before_right, from_right) = values.split_at_mut(right);
+        (&mut before_right[left], &mut from_right[0])
+    } else {
+        let (before_left, from_left) = values.split_at_mut(left);
+        (&mut from_left[0], &mut before_left[right])
+    }
 }
 
 fn product_round(
