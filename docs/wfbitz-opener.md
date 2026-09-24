@@ -120,6 +120,14 @@ forest → wfbitz columns; Binius64 (UDR) at the same rate for scale.
 | 2^21 | 10 | 1/2 | 754 → 505 | 0.67 | 4.9 → 8.3 | 264 → 262 | 3.42 → 1.90 | 1073 |
 | 2^21 | 10 | 1/8 | 810 → 626 | 0.77 | 4.7 → 8.1 | 171 → 170 | 3.85 → 2.47 | 1294 |
 
+At 8 threads (campaign `PerfRuns/cs-mul-20260924-u64opt-t8-*`, both
+openers re-measured on this tree the same day; forest → wfbitz, rate 1/2):
+2^15 23.1 → 17.7 ms, 2^17 61.3 → 45.2, 2^19 207 → 141, 2^21 749 → 553;
+rate 1/8: 23.5 → 21.4, 68.1 → 49.3, 232 → 166, 875 → 672. The forest
+gains nothing from the two extra efficiency cores (2^21: 749 at 8 threads,
+754 at 10); wfbitz gains 9 % at 2^21 (553 → 505) and nothing below 2^19.
+The generated table carries the 8-thread column next to 1 and 10.
+
 Reading: the prover is 0.66–0.85× the forest's everywhere but the
 single-threaded 2^15 row at rate 1/8 (1.19×: the rate-1/8 commitment and
 the fixed per-level costs dominate a 46 ms proof), peak memory is 0.45–
