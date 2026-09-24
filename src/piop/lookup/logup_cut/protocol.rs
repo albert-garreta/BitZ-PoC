@@ -188,6 +188,9 @@ pub struct LogupCutScratch {
     upper_products: ProductWorkspace,
     fraction_products: ProductWorkspace,
     inner_product: InnerProductWorkspace,
+    /// Level buffers passed between the upper forests and the source-side
+    /// fraction tree, which are never live at the same time.
+    buffer_pool: Vec<Vec<Gf>>,
 }
 
 impl LogupCutScratch {
@@ -258,6 +261,7 @@ impl LogupCutScratch {
             upper_products,
             fraction_products,
             inner_product,
+            buffer_pool: Vec::new(),
             chunks,
             plan,
             table_layout,
@@ -274,6 +278,7 @@ impl LogupCutScratch {
         scratch
             .left_tree
             .release_leaves(&mut scratch.source_weights, &mut scratch.source_den);
+        scratch.left_tree.release_buffers(&mut scratch.buffer_pool);
         scratch.right_tree.rebuild(
             &scratch.pushforward[..scratch.table_layout.real_len],
             &scratch.table_den,
@@ -310,6 +315,7 @@ impl LogupCutScratch {
             + self.upper_products.retained_bytes()
             + self.fraction_products.retained_bytes()
             + self.inner_product.retained_bytes()
+            + self.buffer_pool.iter().map(Vec::capacity).sum::<usize>() * core::mem::size_of::<Gf>()
     }
 }
 
@@ -441,6 +447,7 @@ pub fn prove_logup_cut_profiled(
             table_blocks[chunk].offset | patterns[column * n_chunks + chunk] as usize
         ]
     };
+    scratch.upper_forest.reclaim_levels(&mut scratch.buffer_pool);
     let (upper, cut_claims) = prove_dyadic_upper(
         transcript,
         &scratch.plan,
@@ -452,6 +459,7 @@ pub fn prove_logup_cut_profiled(
         &mut scratch.upper_forest,
         &mut upper_profile,
     );
+    scratch.upper_forest.lend_levels(&mut scratch.buffer_pool);
     let merged = merge_cut_claims(transcript, &scratch.plan, layout.col_vars, &cut_claims)
         .ok_or(LogupCutError::NegligibleEvent)?;
     profile.upper_gkr = phase_start.elapsed();
@@ -512,6 +520,11 @@ pub fn prove_logup_cut_profiled(
     profile.denominators = phase_start.elapsed();
 
     let phase_start = Instant::now();
+    scratch.left_tree.adopt_buffers(
+        &mut scratch.buffer_pool,
+        scratch.source_layout.dim,
+        scratch.source_weights.len(),
+    );
     scratch.left_tree.rebuild_swapped(
         &mut scratch.source_weights,
         &mut scratch.source_den,
@@ -546,6 +559,7 @@ pub fn prove_logup_cut_profiled(
     scratch
         .left_tree
         .release_leaves(&mut scratch.source_weights, &mut scratch.source_den);
+    scratch.left_tree.release_buffers(&mut scratch.buffer_pool);
     profile.fraction_witness += phase_start.elapsed();
 
     let phase_start = Instant::now();

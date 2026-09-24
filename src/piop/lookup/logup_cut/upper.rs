@@ -86,6 +86,23 @@ impl DyadicUpperScratch {
             .sum::<usize>()
             + self.products.retained_bytes()
     }
+
+    /// Moves every block forest's level buffers into `pool`: they are dead
+    /// once the upper GKR has run, and the fraction trees built next want
+    /// buffers of the same kind.
+    pub(crate) fn lend_levels(&mut self, pool: &mut Vec<Vec<Gf>>) {
+        for forest in self.forests.iter_mut().flatten() {
+            forest.lend_levels(pool);
+        }
+    }
+
+    /// Refills the lent level buffers from `pool` (largest block and level
+    /// first) before a rebuild.
+    pub(crate) fn reclaim_levels(&mut self, pool: &mut Vec<Vec<Gf>>) {
+        for forest in self.forests.iter_mut().flatten() {
+            forest.reclaim_levels(pool);
+        }
+    }
 }
 
 impl PreparedProductForest {
@@ -93,14 +110,41 @@ impl PreparedProductForest {
         let columns = 1usize << tree_vars;
         Self {
             roots: vec![Gf::ZERO; columns],
-            levels: (0..depth)
-                .map(|level| {
-                    let len = columns << level;
-                    (vec![Gf::ZERO; len], vec![Gf::ZERO; len])
-                })
-                .collect(),
+            // Filled by `reclaim_levels` before every rebuild, from the pool
+            // the fraction tree returns its buffers to.
+            levels: (0..depth).map(|_| (Vec::new(), Vec::new())).collect(),
             depth,
             tree_vars,
+        }
+    }
+
+    fn lend_levels(&mut self, pool: &mut Vec<Vec<Gf>>) {
+        for (left, right) in &mut self.levels {
+            for side in [left, right] {
+                if side.capacity() != 0 {
+                    pool.push(core::mem::take(side));
+                }
+            }
+        }
+    }
+
+    /// The length is set by truncation wherever the pooled buffer allows,
+    /// so nothing is written before the rebuild overwrites every entry.
+    fn reclaim_levels(&mut self, pool: &mut Vec<Vec<Gf>>) {
+        let columns = 1usize << self.tree_vars;
+        for level in (0..self.depth).rev() {
+            let len = columns << level;
+            let (left, right) = &mut self.levels[level];
+            for side in [left, right] {
+                if side.capacity() < len {
+                    *side = super::fraction::take_fitting(pool, len);
+                }
+                if side.len() >= len {
+                    side.truncate(len);
+                } else {
+                    side.resize(len, Gf::ZERO);
+                }
+            }
         }
     }
 

@@ -81,6 +81,22 @@ pub struct FractionTreeWitness {
     eq_high: Vec<Gf>,
 }
 
+/// Removes the smallest pooled buffer whose capacity is at least
+/// `capacity` (a fresh one of that capacity when none fits). Its length is
+/// whatever its last owner left; the taker sets it.
+pub(crate) fn take_fitting(pool: &mut Vec<Vec<Gf>>, capacity: usize) -> Vec<Gf> {
+    let best = pool
+        .iter()
+        .enumerate()
+        .filter(|(_, buffer)| buffer.capacity() >= capacity)
+        .min_by_key(|(_, buffer)| buffer.capacity())
+        .map(|(index, _)| index);
+    match best {
+        Some(index) => pool.swap_remove(index),
+        None => Vec::with_capacity(capacity),
+    }
+}
+
 impl FractionTreeWitness {
     pub fn rebuild(
         &mut self,
@@ -129,6 +145,42 @@ impl FractionTreeWitness {
         assert!(numerator.is_empty() && denominator.is_empty());
         core::mem::swap(&mut self.nums[0], numerator);
         core::mem::swap(&mut self.dens[0], denominator);
+    }
+
+    /// Takes the parent-level buffers of a tree over `leaves` leaves from
+    /// `pool` wherever the retained ones are too small (largest level first,
+    /// the smallest pooled buffer that fits, a fresh allocation when none
+    /// does), so the rebuild reuses memory another structure has finished
+    /// with instead of holding its own copy.
+    pub fn adopt_buffers(&mut self, pool: &mut Vec<Vec<Gf>>, dimension: usize, leaves: usize) {
+        self.prepare(dimension);
+        let mut len = leaves;
+        for level in 0..dimension {
+            len = len.div_ceil(2);
+            let (nums, dens, ac) = (&mut self.nums, &mut self.dens, &mut self.ac);
+            for buffer in [&mut nums[level + 1], &mut dens[level + 1], &mut ac[level]] {
+                if buffer.capacity() < len {
+                    *buffer = take_fitting(pool, len);
+                }
+            }
+        }
+    }
+
+    /// Returns the parent-level buffers to `pool` (the leaves are released
+    /// through [`Self::release_leaves`]); the tree is empty until the next
+    /// adoption or rebuild.
+    pub fn release_buffers(&mut self, pool: &mut Vec<Vec<Gf>>) {
+        for buffer in self
+            .nums
+            .iter_mut()
+            .skip(1)
+            .chain(self.dens.iter_mut().skip(1))
+            .chain(self.ac.iter_mut())
+        {
+            if buffer.capacity() != 0 {
+                pool.push(core::mem::take(buffer));
+            }
+        }
     }
 
     fn prepare(&mut self, dimension: usize) {
