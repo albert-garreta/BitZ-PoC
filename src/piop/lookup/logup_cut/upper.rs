@@ -416,7 +416,6 @@ pub(super) fn prove_product_batch(
         return (ProductBatchProof { sumcheck: None, evals: evals.clone() }, Vec::new(), evals);
     }
 
-    let shared = claims[1..].iter().all(|claim| claim.0 == claims[0].0);
     let groups = claims
         .iter()
         .zip(inputs)
@@ -429,15 +428,10 @@ pub(super) fn prove_product_batch(
             }
         })
         .collect();
-    let (sumcheck, point, final_evals) = if shared {
-        crate::piop::sumcheck::eq_factored::prove_eq_inner_sumcheck_mixed_gruen(
-            transcript, groups, &[], &[], &[], &(),
-        )
-    } else {
+    let (sumcheck, point, final_evals) =
         crate::piop::sumcheck::eq_factored::prove_eq_inner_sumcheck_mixed(
             transcript, groups, &[], &[], &[], &(),
-        )
-    };
+        );
     debug_assert_eq!(sumcheck.claimed_sum, claimed_sum);
     let evals = final_evals.into_iter().map(|mut evals| evals.remove(0)).collect::<Vec<_>>();
     let flat = evals.iter().flat_map(|&(l, r)| [l, r]).collect::<Vec<_>>();
@@ -486,18 +480,8 @@ pub(super) fn verify_product_batch(
         if sumcheck.claimed_sum != claimed_sum {
             return None;
         }
-        let shared = claims[1..].iter().all(|claim| claim.0 == claims[0].0);
-        let subclaim = if shared {
-            crate::piop::sumcheck::eq_factored::verify_eq_inner_sumcheck_gruen(
-                transcript,
-                &claims[0].0,
-                sumcheck,
-                &(),
-            )
-            .ok()?
-        } else {
-            MLSumcheck::verify_as_subprotocol(transcript, dimension, 3, sumcheck, &()).ok()?
-        };
+        let subclaim =
+            MLSumcheck::verify_as_subprotocol(transcript, dimension, 3, sumcheck, &()).ok()?;
         let mut expected = Gf::ZERO;
         for ((claim, &(left, right)), &scale) in claims.iter().zip(&proof.evals).zip(&scales) {
             expected += scale * eq_eval(&subclaim.point, &claim.0, Gf::ONE).ok()? * left * right;
