@@ -118,7 +118,7 @@ fn dyadic_upper_proves_exact_unpadded_cut() {
     let root = (0..columns)
         .map(|column| {
             (0..plan.n_chunks)
-                .map(|chunk| cut_values[column * plan.n_chunks + chunk])
+                .map(|chunk| cut_values[chunk * columns + column])
                 .product::<Gf>()
         })
         .collect::<Vec<_>>();
@@ -135,7 +135,7 @@ fn dyadic_upper_proves_exact_unpadded_cut() {
         r2,
         &root_point,
         root_value,
-        |column, chunk| cut_values[column * plan.n_chunks + chunk],
+        &cut_values,
     );
     assert_eq!(claims.len(), plan.blocks.len());
     for (claim, block) in claims.iter().zip(&plan.blocks) {
@@ -145,7 +145,7 @@ fn dyadic_upper_proves_exact_unpadded_cut() {
             for local_chunk in 0..block.n_chunks {
                 let index = local_chunk | (column << block.depth);
                 expected += eq[index]
-                    * cut_values[column * plan.n_chunks + block.chunk_start + local_chunk];
+                    * cut_values[(block.chunk_start + local_chunk) * columns + column];
             }
         }
         assert_eq!(claim.value, expected);
@@ -244,7 +244,6 @@ fn pushforward_and_structured_index_claim_match_materialized_tables() {
     let r2 = 2;
     let columns = 1usize << r2;
     let chunks = chunk_specs(ell1, chunk_bits);
-    let n_chunks = chunks.len();
     let plan = DyadicPlan::new(chunks.len());
     let table_layout = PackedLayout::new(chunks.iter().map(|chunk| chunk.width));
     let y = (0..ell1)
@@ -268,12 +267,12 @@ fn pushforward_and_structured_index_claim_match_materialized_tables() {
     let table = ChunkProductTable { y: &y, chunks: &chunks, layout: &table_layout };
     let mut table_values = vec![Gf::ZERO; table_layout.padded_len];
     table.materialize(&mut table_values);
-    let cut_values = (0..columns)
-        .flat_map(|column| {
+    let cut_values = (0..chunks.len())
+        .flat_map(|chunk| {
             let table_values = &table_values;
             let patterns = &patterns;
             let table_layout = &table_layout;
-            (0..n_chunks).map(move |chunk| {
+            (0..columns).map(move |column| {
                 table_values[table_layout.blocks[chunk].offset | patterns[chunk * columns + column]]
             })
         })
@@ -294,7 +293,7 @@ fn pushforward_and_structured_index_claim_match_materialized_tables() {
                 .flat_map(|column| {
                     let cut_values = &cut_values;
                     (0..block.n_chunks).map(move |local_chunk| {
-                        cut_values[column * n_chunks + block.chunk_start + local_chunk]
+                        cut_values[(block.chunk_start + local_chunk) * columns + column]
                     })
                 })
                 .collect::<Vec<_>>();

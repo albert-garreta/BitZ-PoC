@@ -5,9 +5,7 @@ use crate::{
     utils::wide_mul::WideMulAcc,
 };
 
-use super::upper::{
-    ProductBatchProof, prove_product_single, verify_product_batch,
-};
+use super::upper::{ProductBatchProof, prove_product_batch, verify_product_batch};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -64,11 +62,7 @@ pub struct FractionTreeWitness {
     num_padding: Vec<Gf>,
     den_padding: Vec<Gf>,
     ac_padding: Vec<Gf>,
-    product_left: Vec<Gf>,
-    product_right: Vec<Gf>,
-    product_left_back: Vec<Gf>,
-    product_right_back: Vec<Gf>,
-    product_grids: Vec<[Gf; 9]>,
+    products: Vec<Gf>,
     eq_low: Vec<Gf>,
     eq_high: Vec<Gf>,
 }
@@ -97,17 +91,7 @@ impl FractionTreeWitness {
         self.num_padding.resize(dimension + 1, Gf::ZERO);
         self.den_padding.resize(dimension + 1, Gf::ZERO);
         self.ac_padding.resize(dimension, Gf::ZERO);
-        let product_len = full_len / 2;
-        self.product_left
-            .reserve(product_len.saturating_sub(self.product_left.capacity()));
-        self.product_right
-            .reserve(product_len.saturating_sub(self.product_right.capacity()));
-        self.product_left_back
-            .reserve((product_len / 2).saturating_sub(self.product_left_back.capacity()));
-        self.product_right_back
-            .reserve((product_len / 2).saturating_sub(self.product_right_back.capacity()));
-        self.product_grids
-            .reserve(1usize.saturating_sub(self.product_grids.capacity()));
+        self.products.resize(full_len, Gf::ZERO);
         self.eq_low
             .reserve((1usize << (dimension / 2)).saturating_sub(self.eq_low.capacity()));
         self.eq_high.reserve(
@@ -186,14 +170,10 @@ impl FractionTreeWitness {
             + self.num_padding.capacity()
             + self.den_padding.capacity()
             + self.ac_padding.capacity()
-            + self.product_left.capacity()
-            + self.product_right.capacity()
-            + self.product_left_back.capacity()
-            + self.product_right_back.capacity()
+            + self.products.capacity()
             + self.eq_low.capacity()
             + self.eq_high.capacity())
             * core::mem::size_of::<Gf>()
-            + 9 * self.product_grids.capacity() * core::mem::size_of::<Gf>()
     }
 
     pub fn dimension(&self) -> usize {
@@ -225,11 +205,11 @@ impl FractionTreeWitness {
             assert_ne!(gamma, Gf::ZERO, "negligible zero fraction challenge");
 
             let full_parent_len = 1usize << claim_point.len();
+            let products = &mut self.products[..2 * full_parent_len];
+            let (left_products, right_products) = products.split_at_mut(full_parent_len);
             let product_padding = self.den_padding[level] + gamma * self.num_padding[level];
-            self.product_left.resize(full_parent_len, product_padding);
-            self.product_right.resize(full_parent_len, product_padding);
-            self.product_left.fill(product_padding);
-            self.product_right.fill(product_padding);
+            left_products.fill(product_padding);
+            right_products.fill(product_padding);
             let active = self.ac[level].len();
             let fill = |index: usize, left: &mut Gf, right: &mut Gf| {
                 let even = 2 * index;
@@ -240,39 +220,33 @@ impl FractionTreeWitness {
             };
             #[cfg(feature = "parallel")]
             if active >= PARALLEL_THRESHOLD {
-                self.product_left[..active]
+                left_products[..active]
                     .par_iter_mut()
-                    .zip(self.product_right[..active].par_iter_mut())
+                    .zip(right_products[..active].par_iter_mut())
                     .enumerate()
                     .for_each(|(index, (left, right))| fill(index, left, right));
             } else {
-                self.product_left[..active]
+                left_products[..active]
                     .iter_mut()
-                    .zip(self.product_right[..active].iter_mut())
+                    .zip(right_products[..active].iter_mut())
                     .enumerate()
                     .for_each(|(index, (left, right))| fill(index, left, right));
             }
             #[cfg(not(feature = "parallel"))]
-            self.product_left[..active]
+            left_products[..active]
                 .iter_mut()
-                .zip(self.product_right[..active].iter_mut())
+                .zip(right_products[..active].iter_mut())
                 .enumerate()
                 .for_each(|(index, (left, right))| fill(index, left, right));
 
             let folded = claim_den + gamma * claim_num + gamma.square() * ac_eval;
-            let (product_proof, product_point, (left, right)) = prove_product_single(
+            let (product_proof, product_point, values) = prove_product_batch(
                 transcript,
-                &claim_point,
-                folded,
-                &mut self.product_left,
-                &mut self.product_right,
-                &mut self.product_left_back,
-                &mut self.product_right_back,
-                &mut self.product_grids,
-                &mut self.eq_low,
-                &mut self.eq_high,
+                &[(claim_point.clone(), folded)],
+                vec![(left_products.to_vec(), right_products.to_vec())],
             );
             product_proofs.push(product_proof);
+            let (left, right) = values[0];
             let [a, c] = mle_eval_interleaved_pair(
                 &self.nums[level],
                 self.num_padding[level],
