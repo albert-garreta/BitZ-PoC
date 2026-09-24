@@ -173,7 +173,6 @@ pub struct LogupCutScratch {
     factors: Vec<Gf>,
     patterns: Vec<usize>,
     table_values: Vec<Gf>,
-    cut_values: Vec<Gf>,
     source_weights: Vec<Gf>,
     pushforward: Vec<Gf>,
     source_den: Vec<Gf>,
@@ -220,7 +219,6 @@ impl LogupCutScratch {
             factors: vec![Gf::ZERO; ell1],
             patterns: vec![0; chunks.len() * layout.cols()],
             table_values: vec![Gf::ZERO; table_layout.padded_len],
-            cut_values: vec![Gf::ZERO; chunks.len() * layout.cols()],
             source_weights: vec![Gf::ZERO; source_layout.padded_len],
             pushforward: vec![Gf::ZERO; aux_len],
             source_den: vec![Gf::ONE; source_layout.real_len],
@@ -260,7 +258,6 @@ impl LogupCutScratch {
     pub fn retained_bytes(&self) -> usize {
         let fields = self.factors.capacity()
             + self.table_values.capacity()
-            + self.cut_values.capacity()
             + self.source_weights.capacity()
             + self.pushforward.capacity()
             + self.source_den.capacity()
@@ -337,9 +334,8 @@ pub fn prove_logup_cut_profiled(
     let phase_start = Instant::now();
     let columns = layout.cols();
     cfg_iter_mut!(&mut scratch.patterns)
-        .zip(cfg_iter_mut!(&mut scratch.cut_values))
         .enumerate()
-        .for_each(|(index, (pattern_slot, cut_value))| {
+        .for_each(|(index, pattern_slot)| {
             let chunk_index = index / columns;
             let column = index % columns;
             let chunk = scratch.chunks[chunk_index];
@@ -350,8 +346,6 @@ pub fn prove_logup_cut_profiled(
                 pattern |= (((row[factor >> 6] >> (factor & 63)) & 1) as usize) << bit;
             }
             *pattern_slot = pattern;
-            *cut_value = scratch.table_values
-                [scratch.table_layout.blocks[chunk_index].offset | pattern];
         });
     profile.pattern_and_cut_values = phase_start.elapsed();
 
@@ -373,7 +367,10 @@ pub fn prove_logup_cut_profiled(
         layout.col_vars,
         &root_point,
         root_value,
-        &scratch.cut_values,
+        |column, chunk| {
+            scratch.table_values[scratch.table_layout.blocks[chunk].offset
+                | scratch.patterns[chunk * columns + column]]
+        },
     );
     let merged = merge_cut_claims(transcript, &scratch.plan, layout.col_vars, &cut_claims)
         .ok_or(LogupCutError::NegligibleEvent)?;
