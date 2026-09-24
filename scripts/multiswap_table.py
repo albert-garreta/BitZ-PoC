@@ -29,7 +29,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-THREADS = (1, 10)
+THREADS = (1, 10)  # overridden by --threads
 SCHEMES = (
     ("bitz", r"\ftwoz-SNARK"),
     ("zinc", "Zinc+"),
@@ -231,7 +231,11 @@ def main() -> int:
     parser.add_argument("run", type=Path, help="campaign directory")
     parser.add_argument("--out", type=Path, help="LaTeX table path (default: stdout)")
     parser.add_argument("--json", type=Path, help="also write the parsed metrics here")
+    parser.add_argument("--threads", default="1,10",
+                        help="thread counts to tabulate, comma-separated (each needs its <scheme>-t<N>.log; default 1,10)")
     args = parser.parse_args()
+    global THREADS
+    THREADS = tuple(int(t) for t in args.threads.split(",") if t)
     cells = {scheme: {} for scheme, _ in SCHEMES}
     for scheme, _ in SCHEMES:
         for threads in THREADS:
