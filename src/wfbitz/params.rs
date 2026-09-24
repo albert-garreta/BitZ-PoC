@@ -22,6 +22,18 @@ pub enum ShapeError {
     CommitmentSizeOutOfRange,
 }
 
+/// The row index width of the scheme's default split for `log_bits`
+/// committed bits: one below the crate's reference `⌈0.6 n⌉`, at least the
+/// packing width. Measured (8 threads, 96-bit weights, n = 24..30): one row
+/// variable fewer than the reference buys 2–7 % of prover time for 5–23 %
+/// of proof, two or more buy little more time for much more proof.
+pub fn reference_log_rows(log_bits: usize) -> usize {
+    ((3 * log_bits).div_ceil(5))
+        .saturating_sub(1)
+        .max(PACK_BITS as usize)
+        .min(log_bits.saturating_sub(1))
+}
+
 /// How the committed bits are laid out, as the two index widths `t`, `s`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Shape {
@@ -44,6 +56,14 @@ impl Shape {
             log_rows,
             log_columns,
         })
+    }
+
+    /// The split this scheme runs at by default: the crate's reference
+    /// split `t = ⌈0.6 n⌉` minus one row variable (2026-09-24 decision,
+    /// see `docs/wfbitz-opener.md`), clamped to the packing width.
+    pub fn reference(log_bits: usize) -> Result<Self, ShapeError> {
+        let log_rows = reference_log_rows(log_bits);
+        Self::new(log_rows, log_bits.saturating_sub(log_rows))
     }
 
     pub fn log_rows(&self) -> usize {

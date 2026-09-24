@@ -1,7 +1,7 @@
 //! The paper's raw-performance row for the BitZ parity prover at one size.
 //!
 //! `bitz_bench <n> [--reps R] [--seed S]` builds a random instance at the
-//! reference split (`t = max(⌈3n/5⌉, 7)` capped at `n − 1`, `s = n − t`,
+//! scheme's split (`Shape::reference`: `t = ⌈3n/5⌉ − 1`, `s = n − t`,
 //! `q = 2^100 − 15`, generator `X`, the dump examples' transcript labels),
 //! commits it `R` times (median), proves it once to warm up and then `R`
 //! times (medians of the wall time and of every traced phase, the paper's
@@ -83,9 +83,8 @@ fn main() {
         }
     }
     let n = n.expect("usage: bitz_bench <n> [--reps R] [--seed S]");
-    let t = ((3 * n).div_ceil(5)).max(7).min(n - 1);
-    let s = n - t;
-    let shape = Shape::new(t, s).expect("shape");
+    let shape = Shape::reference(n).expect("shape");
+    let (t, s) = (shape.log_rows(), shape.log_columns());
     let params = BitZParams::new(shape, Q, Gf::from_polynomial_words([2, 0])).expect("params");
     #[cfg(feature = "parallel")]
     let threads = rayon::current_num_threads();
