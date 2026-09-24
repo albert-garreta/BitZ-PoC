@@ -3,11 +3,6 @@ use crate::{
         lookup::gkr_product::absorb_field_slice,
         sumcheck::{
             SumcheckProof,
-            eq_factored::{
-                EqInnerFinals, FlatDense, SharedPointInput,
-                eqf_double, grid_finish, grid_next_round, grid_quad_acc, grid_this_round,
-                prove_eq_inner_sumcheck_mixed_prepared_profiled,
-            },
             prover::{NatEvaluatedPolyWithoutConstant, ProverMsg},
         },
     },
@@ -181,52 +176,6 @@ pub(super) fn prove_products(
     prove_products_impl(transcript, claims, inputs, workspace, None)
 }
 
-pub(super) fn prove_products_flat(
-    transcript: &mut impl Transcript,
-    claims: &[(Vec<Gf>, Gf)],
-    tables: &mut FlatDense<Gf>,
-) -> (SumcheckProof<Gf>, Vec<Gf>, Vec<(Gf, Gf)>) {
-    assert!(!claims.is_empty());
-    let dimension = claims[0].0.len();
-    assert_ne!(dimension, 0);
-    assert!(claims.iter().all(|claim| claim.0 == claims[0].0));
-    assert_eq!(tables.seg, 1usize << dimension);
-    assert_eq!(tables.l.len(), claims.len() * tables.seg);
-    assert_eq!(tables.r.len(), claims.len() * tables.seg);
-
-    let beta = (claims.len() > 1).then(|| transcript.get_field_challenge::<Gf>(&()));
-    let mut scale = Gf::ONE;
-    let mut scales = Vec::with_capacity(claims.len());
-    let mut claimed_sum = Gf::ZERO;
-    for claim in claims {
-        scales.push(scale);
-        claimed_sum += scale * claim.1;
-        if let Some(beta) = beta {
-            scale *= beta;
-        }
-    }
-
-    let (proof, point, finals) = prove_eq_inner_sumcheck_mixed_prepared_profiled(
-        transcript,
-        SharedPointInput::flat(&claims[0].0, scales, Gf::ZERO),
-        &[],
-        &[],
-        &[],
-        None,
-        Some(tables),
-        true,
-        &(),
-        None,
-        None,
-    );
-    assert_eq!(proof.claimed_sum, claimed_sum);
-    let EqInnerFinals::Flat(evals) = finals else {
-        unreachable!("flat product sumcheck returned grouped evaluations")
-    };
-    absorb_evals(transcript, &evals);
-    (proof, point, evals)
-}
-
 pub(super) fn prove_products_materialized(
     transcript: &mut impl Transcript,
     claims: &[(Vec<Gf>, Gf)],
@@ -327,71 +276,15 @@ fn prove_products_impl(
     let mut prefix = Gf::ONE;
     let mut domain_len = full_len;
     let mut prefetched_round = None;
-    let mut grid = None;
-    let mut grid_rho = None;
-    let mut pending = Vec::with_capacity(2);
-    let grid_enabled = eqf_double()
-        && claims.len() == 1
-        && matches!(inputs[0].0, ProductInput::AffineInterleaved { .. });
 
     for round in 0..dimension {
         let initial = round == 0;
         let s = q[round];
-        let mut generated_grid = false;
-        let mut used_grid_next = false;
-        let mut used_prefetched = false;
         workspace.quadratics.resize(claims.len(), [Gf::ZERO; 3]);
-        if let Some(rho) = grid_rho.take() {
-            let current = grid.take().expect("grid challenge without grid");
-            let (h0, h1, h2) = grid_next_round(&current, &rho);
-            workspace.quadratics[0] = [h0, h1, h2];
-            used_grid_next = true;
-        } else if let Some(quadratic) = prefetched_round.take() {
+        if let Some(quadratic) = prefetched_round.take() {
             debug_assert_eq!(claims.len(), 1);
             workspace.quadratics[0] = quadratic;
-            used_prefetched = true;
-        } else if grid_enabled
-            && !pending.is_empty()
-            && round + 1 < dimension
-            && domain_len >= 4
-        {
-            debug_assert_eq!(claims.len(), 1);
-            let arity = 1usize << pending.len();
-            let folded_len = workspace.tables[0].len().div_ceil(arity);
-            let quads = folded_len.div_ceil(4);
-            let low_domain = prepare_eq_split(
-                &q[round + 2..],
-                quads,
-                &mut workspace.eq_low,
-                &mut workspace.eq_high,
-            );
-            let left_padding = workspace.paddings[0];
-            let right_padding = workspace.paddings[1];
-            let (left, right) = two_mut(&mut workspace.tables, 0, 1);
-            let (left_out, right_out) = two_mut(&mut workspace.backs, 0, 1);
-            let current = fold_product_grid(
-                left,
-                right,
-                left_out,
-                right_out,
-                left_padding,
-                right_padding,
-                &pending,
-                &workspace.eq_low,
-                &workspace.eq_high,
-                low_domain,
-            );
-            core::mem::swap(&mut workspace.tables[0], &mut workspace.backs[0]);
-            core::mem::swap(&mut workspace.tables[1], &mut workspace.backs[1]);
-            pending.clear();
-            let (h0, h1, h2) = grid_this_round(&current, &q[round + 1], &Gf::ONE);
-            workspace.quadratics[0] = [h0, h1, h2];
-            grid = Some(current);
-            generated_grid = true;
         } else {
-            for challenge in pending.drain(..) {
-                fold_tables(workspace, table_count, challenge);
-            }
             let max_pairs = (0..claims.len())
                 .map(|claim| {
                     let left = input_view(claim, initial, inputs, workspace);
@@ -523,8 +416,7 @@ fn prove_products_impl(
         debug_assert_eq!(
             running_claim,
             (Gf::ONE + s) * cofactor[0]
-                + s * (cofactor[0] + cofactor[1] + cofactor[2]),
-            "product round {round}",
+                + s * (cofactor[0] + cofactor[1] + cofactor[2])
         );
         let message = ProverMsg(NatEvaluatedPolyWithoutConstant::new(vec![
             cofactor[1],
@@ -548,20 +440,8 @@ fn prove_products_impl(
         }
         prefix *= eq_at;
 
-        if generated_grid {
-            grid_rho = Some(challenge);
-            pending.push(challenge);
-        } else if used_grid_next || (used_prefetched && grid_enabled) {
-            pending.push(challenge);
-            if round + 1 == dimension {
-                for challenge in pending.drain(..) {
-                    fold_tables(workspace, table_count, challenge);
-                }
-            }
-        } else {
         let can_prefetch = claims.len() == 1
             && round + 1 < dimension
-            && (!grid_enabled || materialized.is_none() || initial)
             && active_len(input_view(0, initial, inputs, workspace))
                 == active_len(input_view(1, initial, inputs, workspace));
         if can_prefetch {
@@ -659,7 +539,6 @@ fn prove_products_impl(
             }
         } else {
             fold_tables(workspace, table_count, challenge);
-        }
         }
         domain_len >>= 1;
     }
@@ -842,143 +721,6 @@ fn fold_tables(
     }
     #[cfg(not(feature = "parallel"))]
     tables.iter_mut().zip(backs).zip(paddings).for_each(fold);
-}
-
-#[allow(clippy::too_many_arguments)]
-fn fold_product_grid(
-    left: &mut Vec<Gf>,
-    right: &mut Vec<Gf>,
-    left_out: &mut Vec<Gf>,
-    right_out: &mut Vec<Gf>,
-    left_padding: Gf,
-    right_padding: Gf,
-    pending: &[Gf],
-    eq_low: &[Gf],
-    eq_high: &[Gf],
-    low_domain: usize,
-) -> [Gf; 9] {
-    assert!(!pending.is_empty() && pending.len() <= 2);
-    assert_eq!(left.len(), right.len());
-    let arity = 1usize << pending.len();
-    let folded_len = left.len().div_ceil(arity);
-    let quads = folded_len.div_ceil(4);
-    assert!(left_out.capacity() >= folded_len && right_out.capacity() >= folded_len);
-    left_out.resize(folded_len, Gf::ZERO);
-    right_out.resize(folded_len, Gf::ZERO);
-
-    let source_block = 4 * arity * low_domain;
-    let output_block = 4 * low_domain;
-    let full_low_weight: Gf = eq_low.iter().copied().sum();
-    let block = |(
-        high,
-        ((((left, right), left_out), right_out), &high_weight),
-    ): (
-        usize,
-        ((((&mut [Gf], &mut [Gf]), &mut [Gf]), &mut [Gf]), &Gf),
-    )| {
-        let block_quads = left.len().div_ceil(arity).div_ceil(4);
-        let complete = left.len() / (4 * arity);
-        let mut grid = if complete == 0 {
-            [Gf::ZERO; 9]
-        } else {
-            field::Gf128Ops.eqf_grid_pass(
-                &mut left[..complete * 4 * arity],
-                &mut right[..complete * 4 * arity],
-                pending,
-                &eq_low[..complete],
-                complete,
-            )
-        };
-        if complete != 0 {
-            left_out[..4 * complete].copy_from_slice(&left[..4 * complete]);
-            right_out[..4 * complete].copy_from_slice(&right[..4 * complete]);
-        }
-
-        if complete < block_quads {
-            let fold = |values: &[Gf], padding: Gf, output: usize| {
-                let base = output * arity;
-                let value = |index| values.get(base + index).copied().unwrap_or(padding);
-                if pending.len() == 1 {
-                    let low = value(0);
-                    low + pending[0] * (low + value(1))
-                } else {
-                    let low0 = value(0);
-                    let low1 = value(2);
-                    let first0 = low0 + pending[0] * (low0 + value(1));
-                    let first1 = low1 + pending[0] * (low1 + value(3));
-                    first0 + pending[1] * (first0 + first1)
-                }
-            };
-            let base = 4 * complete;
-            let lv = core::array::from_fn(|i| fold(left, left_padding, base + i));
-            let rv = core::array::from_fn(|i| fold(right, right_padding, base + i));
-            let live = folded_len.saturating_sub(high * output_block + base).min(4);
-            left_out[base..base + live].copy_from_slice(&lv[..live]);
-            right_out[base..base + live].copy_from_slice(&rv[..live]);
-            let mut acc = core::array::from_fn(|_| {
-                <Gf as WideMulAcc>::wide_zero(&Gf::ZERO)
-            });
-            grid_quad_acc(&mut acc, &lv, &rv, &eq_low[complete]);
-            let tail = grid_finish::<Gf>(acc);
-            for (value, tail) in grid.iter_mut().zip(tail) {
-                *value += tail;
-            }
-        }
-
-        let weight_sum = if block_quads == eq_low.len() {
-            full_low_weight
-        } else {
-            eq_low[..block_quads].iter().copied().sum()
-        };
-        for value in &mut grid {
-            *value *= high_weight;
-        }
-        (grid, high_weight * weight_sum)
-    };
-
-    let zero = || ([Gf::ZERO; 9], Gf::ZERO);
-    let merge = |(mut grid, weight_sum): ([Gf; 9], Gf),
-                 (block, block_weight): ([Gf; 9], Gf)| {
-        for (value, block) in grid.iter_mut().zip(block) {
-            *value += block;
-        }
-        (grid, weight_sum + block_weight)
-    };
-
-    #[cfg(feature = "parallel")]
-    let (mut grid, weight_sum) = if quads >= PARALLEL_THRESHOLD.div_ceil(4) {
-        left.par_chunks_mut(source_block)
-            .zip(right.par_chunks_mut(source_block))
-            .zip(left_out.par_chunks_mut(output_block))
-            .zip(right_out.par_chunks_mut(output_block))
-            .zip(eq_high.par_iter())
-            .enumerate()
-            .map(block)
-            .reduce(zero, merge)
-    } else {
-        left.chunks_mut(source_block)
-            .zip(right.chunks_mut(source_block))
-            .zip(left_out.chunks_mut(output_block))
-            .zip(right_out.chunks_mut(output_block))
-            .zip(eq_high.iter())
-            .enumerate()
-            .map(block)
-            .fold(zero(), merge)
-    };
-    #[cfg(not(feature = "parallel"))]
-    let (mut grid, weight_sum) = left
-        .chunks_mut(source_block)
-        .zip(right.chunks_mut(source_block))
-        .zip(left_out.chunks_mut(output_block))
-        .zip(right_out.chunks_mut(output_block))
-        .zip(eq_high.iter())
-        .enumerate()
-        .map(block)
-        .fold(zero(), merge);
-    let baseline = left_padding * right_padding * (Gf::ONE + weight_sum);
-    grid[0] += baseline;
-    grid[1] += baseline;
-    grid
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -2135,7 +2135,7 @@ where
 /// alone (char 2: XORs), nine wide products.
 #[allow(clippy::arithmetic_side_effects)]
 #[inline(always)]
-pub(crate) fn grid_quad_acc<F>(acc: &mut [F::Wide; 9], lv: &[F; 4], rv: &[F; 4], w: &F)
+fn grid_quad_acc<F>(acc: &mut [F::Wide; 9], lv: &[F; 4], rv: &[F; 4], w: &F)
 where
     F: InnerTransparentField + WideMulAcc,
 {
@@ -2168,7 +2168,7 @@ where
 /// coefficients per `x₂` node: `a₀ = H(0)`, `a₂ = H(∞)`,
 /// `a₁ = H(1) − H(0) − H(∞)`.
 #[allow(clippy::arithmetic_side_effects)]
-pub(crate) fn grid_finish<F>(acc: [F::Wide; 9]) -> [F; 9]
+fn grid_finish<F>(acc: [F::Wide; 9]) -> [F; 9]
 where
     F: InnerTransparentField + WideMulAcc,
 {
@@ -2188,11 +2188,7 @@ where
 /// `H^{(j)}(X₁) = Σ_{x₂} eq1(x₂; q_{j+1})·G(X₁, x₂)`. Nodes `v = 0, 1`
 /// ARE those two evaluations, so each `X₁` coefficient is one `eq1` blend.
 #[allow(clippy::arithmetic_side_effects)]
-pub(crate) fn grid_this_round<F: InnerTransparentField>(
-    g: &[F; 9],
-    q_next: &F,
-    one: &F,
-) -> (F, F, F) {
+fn grid_this_round<F: InnerTransparentField>(g: &[F; 9], q_next: &F, one: &F) -> (F, F, F) {
     let e1 = q_next.clone();
     let e0 = one.clone() - q_next;
     let a = |u: usize| -> F { e0.clone() * &g[u * 3] + &(e1.clone() * &g[u * 3 + 1]) };
@@ -2204,10 +2200,7 @@ pub(crate) fn grid_this_round<F: InnerTransparentField>(
 /// polynomial at ρ, then convert the three nodes to monomial
 /// coefficients. Nine field elements in, no buffer touched.
 #[allow(clippy::arithmetic_side_effects)]
-pub(crate) fn grid_next_round<F: InnerTransparentField>(
-    g: &[F; 9],
-    rho: &F,
-) -> (F, F, F) {
+fn grid_next_round<F: InnerTransparentField>(g: &[F; 9], rho: &F) -> (F, F, F) {
     let rho2 = rho.clone() * rho;
     let at =
         |v: usize| -> F { g[v].clone() + &(rho.clone() * &g[3 + v]) + &(rho2.clone() * &g[6 + v]) };

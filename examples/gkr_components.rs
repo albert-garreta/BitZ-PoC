@@ -200,7 +200,7 @@ fn main() {
     let row_vars = args.first().and_then(|value| value.parse().ok()).unwrap_or(14usize);
     let col_vars = args.get(1).and_then(|value| value.parse().ok()).unwrap_or(12usize);
     let runs = args.get(2).and_then(|value| value.parse().ok()).unwrap_or(5usize);
-    let requested_threads: Option<usize> = args.get(3).and_then(|value| value.parse().ok());
+    let requested_threads = args.get(3).and_then(|value| value.parse().ok());
     assert!(row_vars >= 6 && runs > 0);
 
     #[cfg(feature = "parallel")]
