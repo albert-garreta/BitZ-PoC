@@ -1,6 +1,7 @@
 use super::*;
 use crate::{poly::utils::build_eq_x_r_vec, transcript::Blake3Transcript};
 use crate::poly::univariate::binary_gf128::Gf128 as Gf;
+use super::upper::DyadicUpperScratch;
 
 #[test]
 fn chunk_specs_cover_exactly() {
@@ -137,6 +138,7 @@ fn dyadic_upper_proves_exact_unpadded_cut() {
         columns,
         r2,
     );
+    let mut upper_scratch = DyadicUpperScratch::new(&plan, r2);
     let (proof, claims) = prove_dyadic_upper(
         &mut prover_transcript,
         &plan,
@@ -145,6 +147,8 @@ fn dyadic_upper_proves_exact_unpadded_cut() {
         root_value,
         &cut_values,
         &mut product_workspace,
+        &mut upper_scratch,
+        &mut Default::default(),
     );
     assert_eq!(claims.len(), plan.blocks.len());
     for (claim, block) in claims.iter().zip(&plan.blocks) {
@@ -327,7 +331,7 @@ fn pushforward_and_structured_index_claim_match_materialized_tables() {
         &claims,
     )
     .unwrap();
-    let mut source_weights = vec![Gf::ZERO; merged.source_layout.padded_len];
+    let mut source_weights = vec![Gf::ZERO; merged.source_layout.real_len];
     let mut pushforward = vec![Gf::ZERO; table_layout.padded_len];
     fill_pushforward(
         &merged,
@@ -352,7 +356,9 @@ fn pushforward_and_structured_index_claim_match_materialized_tables() {
     let source_point = (0..merged.source_layout.dim)
         .map(|coordinate| Gf::from_polynomial_words([(19 * coordinate + 11) as u64, 0]))
         .collect::<Vec<_>>();
-    let source_weight_eval = crate::merged_forest::mle_at(&source_weights, &source_point);
+    let mut padded_source_weights = vec![Gf::ZERO; merged.source_layout.padded_len];
+    padded_source_weights[..source_weights.len()].copy_from_slice(&source_weights);
+    let source_weight_eval = crate::merged_forest::mle_at(&padded_source_weights, &source_point);
     assert_eq!(source_weight_eval, eval_source_weight(&merged, &claims, &source_point));
     let mut source_index = vec![Gf::ZERO; merged.source_layout.padded_len];
     for (block, packed) in plan.blocks.iter().zip(&merged.source_layout.blocks) {

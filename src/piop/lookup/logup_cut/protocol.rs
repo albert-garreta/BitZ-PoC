@@ -35,10 +35,11 @@ use super::{
     InnerProductProof, LogupCutEstimate, PackedLayout, ProductWorkspace, RationalProof,
     StructuredSumcheckProof, chunk_specs,
     derive_source_index_claim, encode_table_row, eval_table_encoding, fill_pushforward,
-    merge_cut_claims, prove_dyadic_upper, prove_inner_product, prove_rational,
+    DyadicUpperProfile, merge_cut_claims, prove_dyadic_upper, prove_inner_product, prove_rational,
     prove_structured_sumcheck, source_layout, verify_dyadic_upper, verify_inner_product,
     verify_rational, verify_structured_sumcheck,
 };
+use super::upper::DyadicUpperScratch;
 
 const DOMAIN: &[u8] = b"bitz/logup-dyadic-cut/v1";
 
@@ -111,6 +112,14 @@ pub struct LogupCutProfile {
     pub pattern_and_cut_values: Duration,
     pub roots: Duration,
     pub upper_gkr: Duration,
+    pub upper_forest_build: Duration,
+    pub upper_root_merge: Duration,
+    pub upper_forest_sumcheck: Duration,
+    pub upper_phase_a_messages: Duration,
+    pub upper_phase_a_folds: Duration,
+    pub upper_phase_a_close: Duration,
+    pub upper_phase_b: Duration,
+    pub upper_buffer_release: Duration,
     pub pushforward: Duration,
     pub auxiliary_commit: Duration,
     pub denominators: Duration,
@@ -181,6 +190,7 @@ pub struct LogupCutScratch {
     table_den: Vec<Gf>,
     left_tree: FractionTreeWitness,
     right_tree: FractionTreeWitness,
+    upper_forest: DyadicUpperScratch,
     upper_products: ProductWorkspace,
     fraction_products: ProductWorkspace,
 }
@@ -233,6 +243,7 @@ impl LogupCutScratch {
             1usize << (fraction_dimension - 1)
         };
         fraction_products.reserve(1, fraction_table_len, fraction_dimension);
+        let upper_forest = DyadicUpperScratch::new(&plan, layout.col_vars);
 
         let mut scratch = Self {
             layout,
@@ -241,12 +252,13 @@ impl LogupCutScratch {
             patterns: vec![0; chunks.len() * layout.cols()],
             table_values: vec![Gf::ZERO; table_layout.padded_len],
             cut_values: vec![Gf::ZERO; chunks.len() * layout.cols()],
-            source_weights: vec![Gf::ZERO; source_layout.padded_len],
+            source_weights: vec![Gf::ZERO; source_layout.real_len],
             pushforward: vec![Gf::ZERO; aux_len],
             source_den: vec![Gf::ONE; source_layout.real_len],
             table_den: vec![Gf::ONE; table_layout.real_len],
             left_tree: FractionTreeWitness::default(),
             right_tree: FractionTreeWitness::default(),
+            upper_forest,
             upper_products,
             fraction_products,
             chunks,
@@ -255,13 +267,16 @@ impl LogupCutScratch {
             source_layout,
             aux_pcs,
         };
-        scratch.left_tree.rebuild(
-            &scratch.source_weights[..scratch.source_layout.real_len],
-            &scratch.source_den,
+        scratch.left_tree.rebuild_swapped(
+            &mut scratch.source_weights,
+            &mut scratch.source_den,
             scratch.source_layout.dim,
             Gf::ZERO,
             Gf::ONE,
         );
+        scratch
+            .left_tree
+            .release_leaves(&mut scratch.source_weights, &mut scratch.source_den);
         scratch.right_tree.rebuild(
             &scratch.pushforward[..scratch.table_layout.real_len],
             &scratch.table_den,
@@ -295,6 +310,7 @@ impl LogupCutScratch {
             + self.source_layout.blocks.capacity() * core::mem::size_of::<super::PackedBlock>()
             + self.left_tree.retained_bytes()
             + self.right_tree.retained_bytes()
+            + self.upper_forest.retained_bytes()
             + self.upper_products.retained_bytes()
             + self.fraction_products.retained_bytes()
     }
@@ -398,6 +414,7 @@ pub fn prove_logup_cut_profiled(
     profile.roots = phase_start.elapsed();
 
     let phase_start = Instant::now();
+    let mut upper_profile = DyadicUpperProfile::default();
     let (upper, cut_claims) = prove_dyadic_upper(
         transcript,
         &scratch.plan,
@@ -406,10 +423,20 @@ pub fn prove_logup_cut_profiled(
         root_value,
         &scratch.cut_values,
         &mut scratch.upper_products,
+        &mut scratch.upper_forest,
+        &mut upper_profile,
     );
     let merged = merge_cut_claims(transcript, &scratch.plan, layout.col_vars, &cut_claims)
         .ok_or(LogupCutError::NegligibleEvent)?;
     profile.upper_gkr = phase_start.elapsed();
+    profile.upper_forest_build = upper_profile.forest_build;
+    profile.upper_root_merge = upper_profile.root_merge;
+    profile.upper_forest_sumcheck = upper_profile.forest_sumcheck;
+    profile.upper_phase_a_messages = upper_profile.phase_a_messages;
+    profile.upper_phase_a_folds = upper_profile.phase_a_folds;
+    profile.upper_phase_a_close = upper_profile.phase_a_close;
+    profile.upper_phase_b = upper_profile.phase_b;
+    profile.upper_buffer_release = upper_profile.buffer_release;
 
     let phase_start = Instant::now();
     fill_pushforward(
@@ -468,9 +495,9 @@ pub fn prove_logup_cut_profiled(
     profile.denominators = phase_start.elapsed();
 
     let phase_start = Instant::now();
-    scratch.left_tree.rebuild(
-        &scratch.source_weights[..scratch.source_layout.real_len],
-        &scratch.source_den,
+    scratch.left_tree.rebuild_swapped(
+        &mut scratch.source_weights,
+        &mut scratch.source_den,
         scratch.source_layout.dim,
         Gf::ZERO,
         tau,
@@ -497,6 +524,12 @@ pub fn prove_logup_cut_profiled(
         tau + eval_table_encoding(&scratch.table_layout, &rational_claims.right.point),
     );
     profile.fraction_prove = phase_start.elapsed();
+
+    let phase_start = Instant::now();
+    scratch
+        .left_tree
+        .release_leaves(&mut scratch.source_weights, &mut scratch.source_den);
+    profile.fraction_witness += phase_start.elapsed();
 
     let phase_start = Instant::now();
     let (table_inner, table_claim) = prove_inner_product(

@@ -2544,6 +2544,12 @@ pub(crate) struct EqInnerProfile {
     pub(crate) dense_messages: Duration,
     pub(crate) dense_folds: Duration,
     pub(crate) close: Duration,
+    pub(crate) release: Duration,
+}
+
+pub(crate) enum EqInnerFinals<F> {
+    Grouped(Vec<Vec<(F, F)>>),
+    Flat(Vec<(F, F)>),
 }
 
 /// Internal forest entry with suffixes constructed for this layer's shared point.
@@ -2554,7 +2560,7 @@ pub(crate) fn prove_eq_inner_sumcheck_mixed_prepared<F>(
     pair_tau_sets: &[Pair2TauSet<F>],
     t4_sets: &[Vec<F>],
     pre_round1: Option<PreRound<F>>,
-    flat: Option<FlatDense<F>>,
+    mut flat: Option<FlatDense<F>>,
     gruen: bool,
     field_cfg: &F::Config,
     prepared_suffix: Option<SuffixTensorArena<F>>,
@@ -2565,19 +2571,24 @@ where
     F::Modulus: ConstTranscribable,
     F::Config: Sync,
 {
-    prove_eq_inner_sumcheck_mixed_prepared_profiled(
+    let (proof, point, finals) = prove_eq_inner_sumcheck_mixed_prepared_profiled(
         transcript,
         input,
         tau_sets,
         pair_tau_sets,
         t4_sets,
         pre_round1,
-        flat,
+        flat.as_mut(),
         gruen,
         field_cfg,
         prepared_suffix,
         None,
-    )
+    );
+    let finals = match finals {
+        EqInnerFinals::Grouped(finals) => finals,
+        EqInnerFinals::Flat(finals) => finals.into_iter().map(|pair| vec![pair]).collect(),
+    };
+    (proof, point, finals)
 }
 
 pub(crate) fn prove_eq_inner_sumcheck_mixed_prepared_profiled<F>(
@@ -2587,12 +2598,12 @@ pub(crate) fn prove_eq_inner_sumcheck_mixed_prepared_profiled<F>(
     pair_tau_sets: &[Pair2TauSet<F>],
     t4_sets: &[Vec<F>],
     mut pre_round1: Option<PreRound<F>>,
-    flat: Option<FlatDense<F>>,
+    mut flat: Option<&mut FlatDense<F>>,
     gruen: bool,
     field_cfg: &F::Config,
     prepared_suffix: Option<SuffixTensorArena<F>>,
     mut profile: Option<&mut EqInnerProfile>,
-) -> (SumcheckProof<F>, Vec<F>, Vec<Vec<(F, F)>>)
+) -> (SumcheckProof<F>, Vec<F>, EqInnerFinals<F>)
 where
     F: InnerTransparentField + WideMulAcc + Send + Sync,
     F::Inner: ConstTranscribable + Zero + Default + Send + Sync,
@@ -2611,7 +2622,6 @@ where
     // groups are `Flat` markers over ONE shared store, group 0 carries the
     // shared point and the rest leave `q` empty (no clones). Semantically
     // each marker is a single-pair Dense group.
-    let mut flat = flat;
     let all_flat = flat.is_some();
     if let Some(fs) = &flat {
         assert!(
@@ -2857,41 +2867,53 @@ where
     // layer. Keep the same header absorption as the non-empty protocol so
     // prover and verifier transcripts remain aligned.
     if k == 0 {
-        let final_evals: Vec<Vec<(F, F)>> = if let Some(fs) = &flat {
+        if let Some(fs) = &flat {
             debug_assert_eq!(fs.seg, 1);
-            (0..bufs.len())
-                .map(|group| vec![(fs.l[group].clone(), fs.r[group].clone())])
-                .collect()
-        } else {
-            bufs.iter()
-                .map(|group| match group {
-                    GroupBufs::Dense(pairs) => pairs
-                        .iter()
-                        .map(|(left, right)| (left[0].clone(), right[0].clone()))
-                        .collect(),
-                    _ => unreachable!("zero-variable groups must use dense singleton buffers"),
-                })
-                .collect()
-        };
-        let claimed_sum =
-            scales
-                .iter()
-                .zip(&final_evals)
-                .fold(constant_weight.clone(), |sum, (scale, pairs)| {
-                    let group_sum = pairs
-                        .iter()
-                        .fold(F::zero_with_cfg(field_cfg), |acc, (left, right)| {
-                            acc + &(left.clone() * right)
-                        });
-                    sum + &(scale.clone() * &group_sum)
-                });
+            let final_evals: Vec<(F, F)> = (0..bufs.len())
+                .map(|group| (fs.l[group].clone(), fs.r[group].clone()))
+                .collect();
+            let claimed_sum = scales.iter().zip(&final_evals).fold(
+                constant_weight.clone(),
+                |sum, (scale, (left, right))| {
+                    sum + &(scale.clone() * &(left.clone() * right))
+                },
+            );
+            return (
+                SumcheckProof {
+                    messages: Vec::new(),
+                    claimed_sum,
+                },
+                Vec::new(),
+                EqInnerFinals::Flat(final_evals),
+            );
+        }
+        let final_evals: Vec<Vec<(F, F)>> = bufs
+            .iter()
+            .map(|group| match group {
+                GroupBufs::Dense(pairs) => pairs
+                    .iter()
+                    .map(|(left, right)| (left[0].clone(), right[0].clone()))
+                    .collect(),
+                _ => unreachable!("zero-variable groups must use dense singleton buffers"),
+            })
+            .collect();
+        let claimed_sum = scales.iter().zip(&final_evals).fold(
+            constant_weight.clone(),
+            |sum, (scale, pairs)| {
+                let group_sum = pairs.iter().fold(
+                    F::zero_with_cfg(field_cfg),
+                    |acc, (left, right)| acc + &(left.clone() * right),
+                );
+                sum + &(scale.clone() * &group_sum)
+            },
+        );
         return (
             SumcheckProof {
                 messages: Vec::new(),
                 claimed_sum,
             },
             Vec::new(),
-            final_evals,
+            EqInnerFinals::Grouped(final_evals),
         );
     }
 
@@ -4515,40 +4537,48 @@ where
             // materialised at the round-1 fold — `k ≥ 2` is asserted — so
             // only Dense groups reach here.)
             let interp = |v: &[F]| -> F { v[0].clone() + &(rho.clone() * &(v[1].clone() - &v[0])) };
-            let final_evals: Vec<Vec<(F, F)>> = if let Some(fs) = &flat {
+            let final_evals = if let Some(fs) = &flat {
                 // The last round always ran a real pass (grid production is
                 // gated off the final round), so each segment's live prefix
                 // is the folded pair — exactly a Dense buffer of length 2.
-                fs.l.chunks(fs.seg)
-                    .zip(fs.r.chunks(fs.seg))
-                    .map(|(lseg, rseg)| vec![(interp(&lseg[..2]), interp(&rseg[..2]))])
-                    .collect()
+                EqInnerFinals::Flat(
+                    fs.l.chunks(fs.seg)
+                        .zip(fs.r.chunks(fs.seg))
+                        .map(|(lseg, rseg)| (interp(&lseg[..2]), interp(&rseg[..2])))
+                        .collect(),
+                )
             } else {
-                bufs.iter()
-                    .map(|gb| match gb {
-                        GroupBufs::Dense(group_bufs) => group_bufs
-                            .iter()
-                            .map(|(l, r)| (interp(l), interp(r)))
-                            .collect(),
-                        GroupBufs::Flat => {
-                            unreachable!("Flat groups take the flat finals branch")
-                        }
-                        GroupBufs::LeafBits { .. }
-                        | GroupBufs::Pair2Bits { .. }
-                        | GroupBufs::Leaf2Bits { .. }
-                        | GroupBufs::Leaf3Bits { .. }
-                        | GroupBufs::Leaf4Bits { .. }
-                        | GroupBufs::Pair3Bits { .. }
-                        | GroupBufs::T4Bits { .. } => {
-                            unreachable!(
-                                "bit-selected groups materialise at their fold (k asserts)"
-                            )
-                        }
-                    })
-                    .collect()
+                EqInnerFinals::Grouped(
+                    bufs.iter()
+                        .map(|gb| match gb {
+                            GroupBufs::Dense(group_bufs) => group_bufs
+                                .iter()
+                                .map(|(l, r)| (interp(l), interp(r)))
+                                .collect(),
+                            GroupBufs::Flat => {
+                                unreachable!("Flat groups take the flat finals branch")
+                            }
+                            GroupBufs::LeafBits { .. }
+                            | GroupBufs::Pair2Bits { .. }
+                            | GroupBufs::Leaf2Bits { .. }
+                            | GroupBufs::Leaf3Bits { .. }
+                            | GroupBufs::Leaf4Bits { .. }
+                            | GroupBufs::Pair3Bits { .. }
+                            | GroupBufs::T4Bits { .. } => {
+                                unreachable!(
+                                    "bit-selected groups materialise at their fold (k asserts)"
+                                )
+                            }
+                        })
+                        .collect(),
+                )
             };
             if let (Some(profile), Some(started)) = (profile.as_deref_mut(), final_started) {
                 profile.dense_folds += started.elapsed();
+            }
+            let release_started = profile.is_some().then(Instant::now);
+            if let (Some(profile), Some(started)) = (profile.as_deref_mut(), release_started) {
+                profile.release += started.elapsed();
             }
             randomness.push(rho);
             return (

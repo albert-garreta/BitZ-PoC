@@ -324,6 +324,14 @@ fn main() {
         print_phase("patterns", &profiles, |profile| profile.pattern_and_cut_values);
         print_phase("roots", &profiles, |profile| profile.roots);
         print_phase("upper GKR", &profiles, |profile| profile.upper_gkr);
+        print_phase("  forest build", &profiles, |profile| profile.upper_forest_build);
+        print_phase("  root merge", &profiles, |profile| profile.upper_root_merge);
+        print_phase("  forest prove", &profiles, |profile| profile.upper_forest_sumcheck);
+        print_phase("    phase A msg", &profiles, |profile| profile.upper_phase_a_messages);
+        print_phase("    phase A fold", &profiles, |profile| profile.upper_phase_a_folds);
+        print_phase("    phase A close", &profiles, |profile| profile.upper_phase_a_close);
+        print_phase("    phase B", &profiles, |profile| profile.upper_phase_b);
+        print_phase("    release", &profiles, |profile| profile.upper_buffer_release);
         print_phase("pushforward", &profiles, |profile| profile.pushforward);
         print_phase("aux commit", &profiles, |profile| profile.auxiliary_commit);
         print_phase("denoms", &profiles, |profile| profile.denominators);

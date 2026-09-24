@@ -33,7 +33,8 @@ pub use structured::{
     StructuredSumcheckProof, prove_structured_sumcheck, verify_structured_sumcheck,
 };
 pub use table::{ChunkProductTable, LogupCutEstimate, encode_table_row};
-pub use upper::{DyadicUpperProof, prove_dyadic_upper, verify_dyadic_upper};
+pub use upper::DyadicUpperProof;
+pub(crate) use upper::{DyadicUpperProfile, prove_dyadic_upper, verify_dyadic_upper};
 
 #[cfg(test)]
 mod tests;

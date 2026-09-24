@@ -86,7 +86,7 @@ pub fn fill_pushforward(
     assert_eq!(chunks.len(), plan.n_chunks);
     assert_eq!(patterns.len(), chunks.len() * columns);
     assert_eq!(table_layout.blocks.len(), chunks.len());
-    assert_eq!(source_weights.len(), merged.source_layout.padded_len);
+    assert_eq!(source_weights.len(), merged.source_layout.real_len);
     assert_eq!(pushforward.len(), table_layout.padded_len);
     cfg_iter_mut!(source_weights).for_each(|value| *value = Gf::ZERO);
     cfg_iter_mut!(pushforward).for_each(|value| *value = Gf::ZERO);

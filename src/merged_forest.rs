@@ -44,8 +44,8 @@ use schedule::{ForestPath, configured};
 
 use crate::pcs::IntegerMatrixLayout;
 use crate::piop::sumcheck::eq_factored::{
-    EqInnerGroupMixed, FlatDense, GroupBufs, PRFM_DIST, Pair2TauSet, PreRound, SharedPointInput,
-    EqInnerProfile, SuffixTensorArena, prove_eq_inner_sumcheck_mixed_gruen,
+    EqInnerFinals, EqInnerGroupMixed, FlatDense, GroupBufs, PRFM_DIST, Pair2TauSet, PreRound,
+    SharedPointInput, EqInnerProfile, SuffixTensorArena, prove_eq_inner_sumcheck_mixed_gruen,
     prove_eq_inner_sumcheck_mixed_pre, prove_eq_inner_sumcheck_mixed_prepared_profiled, suffix_tensors,
     verify_eq_inner_sumcheck_gruen,
 };
@@ -95,6 +95,7 @@ pub struct MergedForestProfile {
     pub upper_folds: Duration,
     pub phase_a_close: Duration,
     pub phase_b: Duration,
+    pub buffer_release: Duration,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -218,6 +219,20 @@ pub(crate) enum ForestLevels {
     Flat(Vec<Option<FlatDense<Gf>>>),
 }
 
+enum FlatStore<'a> {
+    Owned(FlatDense<Gf>),
+    Borrowed(&'a mut FlatDense<Gf>),
+}
+
+impl FlatStore<'_> {
+    fn as_mut(&mut self) -> &mut FlatDense<Gf> {
+        match self {
+            Self::Owned(store) => store,
+            Self::Borrowed(store) => store,
+        }
+    }
+}
+
 /// A dense product forest whose roots have been built, but whose GKR layers
 /// have not yet been proved. This is used when an enclosing protocol already
 /// owns an evaluation claim on the root table.
@@ -231,6 +246,22 @@ pub(crate) struct PreparedMergedForest {
 impl PreparedMergedForest {
     pub(crate) fn roots(&self) -> &[Gf] {
         &self.roots
+    }
+
+    pub(crate) fn retained_bytes(&self) -> usize {
+        let levels: usize = match &self.levels {
+            ForestLevels::PerTree(levels) => levels
+                .iter()
+                .flatten()
+                .map(|(left, right)| left.capacity() + right.capacity())
+                .sum(),
+            ForestLevels::Flat(levels) => levels
+                .iter()
+                .flatten()
+                .map(|level| level.l.capacity() + level.r.capacity())
+                .sum(),
+        };
+        (self.roots.capacity() + levels) * core::mem::size_of::<Gf>()
     }
 }
 
@@ -945,7 +976,7 @@ where
 fn drive_grouped_from_claim<'a>(
     transcript: &mut impl Transcript,
     num_trees: usize,
-    mut levels: ForestLevels,
+    levels: &mut ForestLevels,
     mut bit_layer: impl FnMut(usize, &[Gf], &SuffixTensorArena<Gf>) -> Option<BitLayer<'a>>,
     depth: usize,
     s: usize,
@@ -971,7 +1002,7 @@ fn drive_grouped_from_claim<'a>(
     for ell in 0..depth {
         // Phase A: bind the ℓ in-tree variables (ℓ ≥ 1).
         let (sc_x, r_x, e_vec, o_vec) = if ell == 0 {
-            let (mut e, mut o) = match &mut levels {
+            let (mut e, mut o) = match levels {
                 ForestLevels::PerTree(levels) => {
                     let lvl1 = core::mem::take(&mut levels[0]);
                     let mut e = Vec::with_capacity(num_trees);
@@ -984,12 +1015,9 @@ fn drive_grouped_from_claim<'a>(
                 }
                 ForestLevels::Flat(slots) => {
                     // Stride-1 store: `l`/`r` are the live root halves.
-                    let fs = slots[0].take().expect("level 1 present");
+                    let fs = slots[0].as_ref().expect("level 1 present");
                     debug_assert_eq!(fs.seg, 1, "level-1 stride");
-                    let (mut e, mut o) = (fs.l, fs.r);
-                    e.truncate(live);
-                    o.truncate(live);
-                    (e, o)
+                    (fs.l[..live].to_vec(), fs.r[..live].to_vec())
                 }
             };
             e.resize(num_trees, one);
@@ -1038,7 +1066,7 @@ fn drive_grouped_from_claim<'a>(
                 profile.bit_generation += started.elapsed();
             }
             let structured = bit_layer.is_some();
-            let (groups, tau_sets, pair_tau_sets, t4_sets, pre_round1, flat_store) =
+            let (groups, tau_sets, pair_tau_sets, t4_sets, pre_round1, mut flat_store) =
                 if let Some(bl) = bit_layer {
                     if let Some(fs) = bl.flat {
                         let nseg = fs.l.len() / fs.seg;
@@ -1049,7 +1077,7 @@ fn drive_grouped_from_claim<'a>(
                             bl.pair_tau_sets,
                             bl.t4_sets,
                             bl.round1,
-                            Some(fs),
+                            Some(FlatStore::Owned(fs)),
                         )
                     } else {
                         let groups = mk_groups(bl.bufs);
@@ -1063,7 +1091,7 @@ fn drive_grouped_from_claim<'a>(
                         )
                     }
                 } else {
-                    match &mut levels {
+                    match levels {
                         ForestLevels::PerTree(levels) => {
                             let lvl = core::mem::take(&mut levels[ell]);
                             let bufs = lvl
@@ -1074,10 +1102,17 @@ fn drive_grouped_from_claim<'a>(
                             (groups, Vec::new(), Vec::new(), Vec::new(), None, None)
                         }
                         ForestLevels::Flat(slots) => {
-                            let fs = slots[ell].take().expect("stored flat level");
+                            let fs = slots[ell].as_mut().expect("stored flat level");
                             let nseg = fs.l.len() / fs.seg;
                             let groups = mk_groups_flat(nseg);
-                            (groups, Vec::new(), Vec::new(), Vec::new(), None, Some(fs))
+                            (
+                                groups,
+                                Vec::new(),
+                                Vec::new(),
+                                Vec::new(),
+                                None,
+                                Some(FlatStore::Borrowed(fs)),
+                            )
                         }
                     }
                 };
@@ -1092,7 +1127,7 @@ fn drive_grouped_from_claim<'a>(
                 &pair_tau_sets,
                 &t4_sets,
                 pre_round1,
-                flat_store,
+                flat_store.as_mut().map(FlatStore::as_mut),
                 true,
                 &(),
                 Some(prepared_suffix),
@@ -1100,6 +1135,7 @@ fn drive_grouped_from_claim<'a>(
             );
             if let Some(profile) = profile.as_deref_mut() {
                 profile.phase_a_close += eq_profile.close + eq_profile.suffix;
+                profile.buffer_release += eq_profile.release;
                 if structured {
                     profile.lut_tables += eq_profile.table_build;
                     profile.lut_prefix_messages += eq_profile.prefix_messages;
@@ -1114,13 +1150,24 @@ fn drive_grouped_from_claim<'a>(
             }
             // Elided trees evaluate to (1,1) at every point; restore them
             // below in their original tree-index order for phase B.
-            debug_assert_eq!(finals.len(), live);
             let mut e = Vec::with_capacity(num_trees);
             let mut o = Vec::with_capacity(num_trees);
-            for f in finals.iter().take(live) {
-                let (fe, fo) = f[0];
-                e.push(fe);
-                o.push(fo);
+            match finals {
+                EqInnerFinals::Grouped(finals) => {
+                    debug_assert_eq!(finals.len(), live);
+                    for f in finals {
+                        let (fe, fo) = f[0];
+                        e.push(fe);
+                        o.push(fo);
+                    }
+                }
+                EqInnerFinals::Flat(finals) => {
+                    debug_assert_eq!(finals.len(), live);
+                    for (fe, fo) in finals {
+                        e.push(fe);
+                        o.push(fo);
+                    }
+                }
             }
             e.resize(num_trees, one);
             o.resize(num_trees, one);
@@ -1165,7 +1212,7 @@ fn drive_grouped_from_claim<'a>(
 fn drive_grouped<'a>(
     transcript: &mut impl Transcript,
     roots: Vec<Gf>,
-    levels: ForestLevels,
+    mut levels: ForestLevels,
     bit_layer: impl FnMut(usize, &[Gf], &SuffixTensorArena<Gf>) -> Option<BitLayer<'a>>,
     depth: usize,
     s: usize,
@@ -1178,7 +1225,7 @@ fn drive_grouped<'a>(
     let (proof, point, value) = drive_grouped_from_claim(
         transcript,
         roots.len(),
-        levels,
+        &mut levels,
         bit_layer,
         depth,
         s,
@@ -1222,50 +1269,82 @@ fn drive_grouped_profiled<'a>(
     }
 }
 
-/// Build a dense forest from contiguous per-tree leaves held in a larger
-/// strided table.
+pub(crate) fn allocate_prepared_merged_forest(depth: usize, s: usize) -> PreparedMergedForest {
+    assert!(depth >= 1, "depth must be positive");
+    let num_trees = 1usize << s;
+    let levels = (0..depth)
+        .map(|level| {
+            let seg = 1usize << level;
+            Some(FlatDense {
+                l: vec![Gf::ZERO; num_trees * seg],
+                r: vec![Gf::ZERO; num_trees * seg],
+                seg,
+            })
+        })
+        .collect();
+    PreparedMergedForest {
+        roots: vec![Gf::ZERO; num_trees],
+        levels: ForestLevels::Flat(levels),
+        depth,
+        s,
+    }
+}
+
+/// Rebuild a preallocated dense forest from contiguous per-tree leaves held
+/// in a larger strided table.
 pub(crate) fn prepare_merged_forest_strided(
+    prepared: &mut PreparedMergedForest,
     leaves: &[Gf],
     tree_stride: usize,
     leaf_offset: usize,
     depth: usize,
     s: usize,
-) -> PreparedMergedForest {
+) {
     let num_trees = 1usize << s;
     let per = 1usize << depth;
     assert!(tree_stride >= leaf_offset + per, "tree stride");
     assert!(leaves.len() >= tree_stride * num_trees, "leaf table shape");
     assert!(depth >= 1, "depth must be positive");
+    assert_eq!(prepared.depth, depth, "prepared depth");
+    assert_eq!(prepared.s, s, "prepared tree dimension");
     let half = per >> 1;
-    let (levels, roots) = if flat_forest(s, depth) {
-        let (levels, roots) = build_levels_flat(num_trees, depth, |tree, left, right| {
-            let base = tree * tree_stride + leaf_offset;
-            for (slot, &value) in left.iter_mut().zip(&leaves[base..base + half]) {
-                slot.write(value);
-            }
-            for (slot, &value) in right
-                .iter_mut()
-                .zip(&leaves[base + half..base + per])
-            {
-                slot.write(value);
-            }
-        });
-        (ForestLevels::Flat(levels), roots)
-    } else {
-        let (levels, roots) = build_levels(num_trees, depth, |tree| {
-            let base = tree * tree_stride + leaf_offset;
-            (
-                leaves[base..base + half].to_vec(),
-                leaves[base + half..base + per].to_vec(),
-            )
-        });
-        (ForestLevels::PerTree(levels), roots)
+    let ForestLevels::Flat(levels) = &mut prepared.levels else {
+        unreachable!("preallocated cut forests use flat storage")
     };
-    PreparedMergedForest {
-        roots,
-        levels,
-        depth,
-        s,
+    let top = levels[depth - 1].as_mut().expect("top level present");
+    debug_assert_eq!(top.seg, half);
+    cfg_chunks_mut!(top.l, half)
+        .zip(cfg_chunks_mut!(top.r, half))
+        .enumerate()
+        .for_each(|(tree, (left, right))| {
+            let base = tree * tree_stride + leaf_offset;
+            left.copy_from_slice(&leaves[base..base + half]);
+            right.copy_from_slice(&leaves[base + half..base + per]);
+        });
+
+    for level in (1..depth).rev() {
+        let child_seg = 1usize << level;
+        let parent_seg = child_seg >> 1;
+        let (parents, children) = levels.split_at_mut(level);
+        let parent = parents[level - 1].as_mut().expect("parent level present");
+        let child = children[0].as_ref().expect("child level present");
+        debug_assert_eq!(parent.seg, parent_seg);
+        debug_assert_eq!(child.seg, child_seg);
+        cfg_chunks_mut!(parent.l, parent_seg)
+            .zip(cfg_chunks_mut!(parent.r, parent_seg))
+            .zip(cfg_chunks!(child.l, child_seg))
+            .zip(cfg_chunks!(child.r, child_seg))
+            .for_each(|(((left, right), child_left), child_right)| {
+                for index in 0..parent_seg {
+                    left[index] = child_left[index] * child_right[index];
+                    right[index] =
+                        child_left[index + parent_seg] * child_right[index + parent_seg];
+                }
+            });
+    }
+    let level_one = levels[0].as_ref().expect("level 1 present");
+    for (tree, root) in prepared.roots.iter_mut().enumerate() {
+        *root = level_one.l[tree] * level_one.r[tree];
     }
 }
 
@@ -1273,24 +1352,28 @@ pub(crate) fn prepare_merged_forest_strided(
 /// protocol, without reabsorbing the roots or sampling another root point.
 pub(crate) fn prove_prepared_merged_forest_from_claim(
     transcript: &mut impl Transcript,
-    prepared: PreparedMergedForest,
+    prepared: &mut PreparedMergedForest,
     root_point: &[Gf],
     root_value: Gf,
+    profile: &mut MergedForestProfile,
 ) -> (MergedForestProof, Vec<Gf>, Gf) {
     assert_eq!(root_point.len(), prepared.s, "root point dimension");
     debug_assert_eq!(mle_at(&prepared.roots, root_point), root_value);
-    drive_grouped_from_claim(
+    let started = Instant::now();
+    let output = drive_grouped_from_claim(
         transcript,
         1usize << prepared.s,
-        prepared.levels,
+        &mut prepared.levels,
         |_, _, _| None,
         prepared.depth,
         prepared.s,
         1usize << prepared.s,
         root_point.to_vec(),
         root_value,
-        None,
-    )
+        Some(profile),
+    );
+    profile.sumcheck = started.elapsed();
+    output
 }
 
 /// Prove all `2^s` per-tree grand products over the flat leaf table
