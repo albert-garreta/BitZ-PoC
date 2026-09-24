@@ -139,13 +139,16 @@ fn dyadic_upper_proves_exact_unpadded_cut() {
         r2,
     );
     let mut upper_scratch = DyadicUpperScratch::new(&plan, r2);
+    let cut_value = |column: usize, chunk: usize| {
+        cut_values[column * plan.n_chunks + chunk]
+    };
     let (proof, claims) = prove_dyadic_upper(
         &mut prover_transcript,
         &plan,
         r2,
         &root_point,
         root_value,
-        &cut_values,
+        &cut_value,
         &mut product_workspace,
         &mut upper_scratch,
         &mut Default::default(),
@@ -272,14 +275,13 @@ fn pushforward_and_structured_index_claim_match_materialized_tables() {
     let bits = (0..ell1 * columns)
         .map(|index| (index * 0x9e37 + index / columns * 13) & 4 != 0)
         .collect::<Vec<_>>();
-    let patterns = chunks
-        .iter()
-        .flat_map(|chunk| {
+    let patterns = (0..columns)
+        .flat_map(|column| {
             let bits = &bits;
-            (0..columns).map(move |column| {
-                (0..chunk.width).fold(0usize, |pattern, bit| {
+            chunks.iter().map(move |chunk| {
+                (0..chunk.width).fold(0u16, |pattern, bit| {
                     pattern
-                        | ((bits[(chunk.factor_start + bit) * columns + column] as usize) << bit)
+                        | ((bits[(chunk.factor_start + bit) * columns + column] as u16) << bit)
                 })
             })
         })
@@ -287,13 +289,15 @@ fn pushforward_and_structured_index_claim_match_materialized_tables() {
     let table = ChunkProductTable { y: &y, chunks: &chunks, layout: &table_layout };
     let mut table_values = vec![Gf::ZERO; table_layout.padded_len];
     table.materialize(&mut table_values);
+    let n_chunks = chunks.len();
     let cut_values = (0..chunks.len())
         .flat_map(|chunk| {
             let table_values = &table_values;
             let patterns = &patterns;
             let table_layout = &table_layout;
             (0..columns).map(move |column| {
-                table_values[table_layout.blocks[chunk].offset | patterns[chunk * columns + column]]
+                table_values[table_layout.blocks[chunk].offset
+                    | patterns[column * n_chunks + chunk] as usize]
             })
         })
         .collect::<Vec<_>>();
@@ -367,7 +371,8 @@ fn pushforward_and_structured_index_claim_match_materialized_tables() {
                 let local = local_chunk | (column << block.depth);
                 let chunk = block.chunk_start + local_chunk;
                 source_index[packed.offset + local] = encode_table_row(
-                    table_layout.blocks[chunk].offset | patterns[chunk * columns + column],
+                    table_layout.blocks[chunk].offset
+                        | patterns[column * n_chunks + chunk] as usize,
                 );
             }
         }

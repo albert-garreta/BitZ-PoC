@@ -1045,16 +1045,6 @@ fn drive_grouped_from_claim<'a>(
                     })
                     .collect()
             };
-            let mk_groups_flat = |nseg: usize| -> Vec<EqInnerGroupMixed<'_, Gf>> {
-                assert_eq!(nseg, live);
-                (0..nseg)
-                    .map(|c| EqInnerGroupMixed {
-                        q: (if c == 0 { z_x.as_slice() } else { &[] }).into(),
-                        scale: eq_zc[c],
-                        bufs: GroupBufs::Flat,
-                    })
-                    .collect()
-            };
             // The JIT first message and the sumcheck use the same suffixes.
             let prepared_suffix = suffix_tensors(&z_x, &());
             let bit_started = profile.is_some().then(Instant::now);
@@ -1066,13 +1056,17 @@ fn drive_grouped_from_claim<'a>(
                 profile.bit_generation += started.elapsed();
             }
             let structured = bit_layer.is_some();
-            let (groups, tau_sets, pair_tau_sets, t4_sets, pre_round1, mut flat_store) =
+            let (input, tau_sets, pair_tau_sets, t4_sets, pre_round1, mut flat_store) =
                 if let Some(bl) = bit_layer {
                     if let Some(fs) = bl.flat {
                         let nseg = fs.l.len() / fs.seg;
-                        let groups = mk_groups_flat(nseg);
+                        assert_eq!(nseg, live);
                         (
-                            groups,
+                            SharedPointInput::flat(
+                                z_x.as_slice(),
+                                eq_zc[..nseg].to_vec(),
+                                const_scale,
+                            ),
                             bl.tau_sets,
                             bl.pair_tau_sets,
                             bl.t4_sets,
@@ -1080,9 +1074,8 @@ fn drive_grouped_from_claim<'a>(
                             Some(FlatStore::Owned(fs)),
                         )
                     } else {
-                        let groups = mk_groups(bl.bufs);
                         (
-                            groups,
+                            SharedPointInput::mixed(mk_groups(bl.bufs), const_scale),
                             bl.tau_sets,
                             bl.pair_tau_sets,
                             bl.t4_sets,
@@ -1098,15 +1091,25 @@ fn drive_grouped_from_claim<'a>(
                                 .into_iter()
                                 .map(|pair| GroupBufs::Dense(vec![pair]))
                                 .collect();
-                            let groups = mk_groups(bufs);
-                            (groups, Vec::new(), Vec::new(), Vec::new(), None, None)
+                            (
+                                SharedPointInput::mixed(mk_groups(bufs), const_scale),
+                                Vec::new(),
+                                Vec::new(),
+                                Vec::new(),
+                                None,
+                                None,
+                            )
                         }
                         ForestLevels::Flat(slots) => {
                             let fs = slots[ell].as_mut().expect("stored flat level");
                             let nseg = fs.l.len() / fs.seg;
-                            let groups = mk_groups_flat(nseg);
+                            assert_eq!(nseg, live);
                             (
-                                groups,
+                                SharedPointInput::flat(
+                                    z_x.as_slice(),
+                                    eq_zc[..nseg].to_vec(),
+                                    const_scale,
+                                ),
                                 Vec::new(),
                                 Vec::new(),
                                 Vec::new(),
@@ -1119,10 +1122,7 @@ fn drive_grouped_from_claim<'a>(
             let mut eq_profile = EqInnerProfile::default();
             let (sc, r_x, finals) = prove_eq_inner_sumcheck_mixed_prepared_profiled(
                 transcript,
-                SharedPointInput {
-                    groups,
-                    constant_weight: const_scale,
-                },
+                input,
                 &tau_sets,
                 &pair_tau_sets,
                 &t4_sets,
@@ -1290,20 +1290,14 @@ pub(crate) fn allocate_prepared_merged_forest(depth: usize, s: usize) -> Prepare
     }
 }
 
-/// Rebuild a preallocated dense forest from contiguous per-tree leaves held
-/// in a larger strided table.
-pub(crate) fn prepare_merged_forest_strided(
+/// Rebuild a preallocated dense forest from a leaf generator.
+pub(crate) fn prepare_merged_forest(
     prepared: &mut PreparedMergedForest,
-    leaves: &[Gf],
-    tree_stride: usize,
-    leaf_offset: usize,
     depth: usize,
     s: usize,
+    leaf: impl Fn(usize, usize) -> Gf + Sync,
 ) {
-    let num_trees = 1usize << s;
     let per = 1usize << depth;
-    assert!(tree_stride >= leaf_offset + per, "tree stride");
-    assert!(leaves.len() >= tree_stride * num_trees, "leaf table shape");
     assert!(depth >= 1, "depth must be positive");
     assert_eq!(prepared.depth, depth, "prepared depth");
     assert_eq!(prepared.s, s, "prepared tree dimension");
@@ -1317,9 +1311,10 @@ pub(crate) fn prepare_merged_forest_strided(
         .zip(cfg_chunks_mut!(top.r, half))
         .enumerate()
         .for_each(|(tree, (left, right))| {
-            let base = tree * tree_stride + leaf_offset;
-            left.copy_from_slice(&leaves[base..base + half]);
-            right.copy_from_slice(&leaves[base + half..base + per]);
+            for index in 0..half {
+                left[index] = leaf(tree, index);
+                right[index] = leaf(tree, index + half);
+            }
         });
 
     for level in (1..depth).rev() {

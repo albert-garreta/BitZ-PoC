@@ -847,10 +847,10 @@ pub(crate) fn xi_combined_rows_packed(
     // output slots are L1-resident RMW — no cross-group pointer chases in
     // the inner loop and no 256-deep serial add chain per output.
     let mut m = vec![Gf::zero(); len];
-    cfg_chunks_mut!(m, 1 << 10)
+    cfg_chunks_mut!(m, 1 << 8)
         .enumerate()
         .for_each(|(ci, chunk)| {
-            let base = ci << 10;
+            let base = ci << 8;
             for (g, tg) in tables.iter().enumerate() {
                 let src = &packed_cols[g][base..base + chunk.len()];
                 for (slot, &x) in chunk.iter_mut().zip(src.iter()) {

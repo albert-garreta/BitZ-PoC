@@ -321,7 +321,7 @@ fn main() {
         println!("  prover phases:");
         print_phase("setup", &profiles, |profile| profile.common_setup);
         print_phase("table", &profiles, |profile| profile.public_table);
-        print_phase("patterns", &profiles, |profile| profile.pattern_and_cut_values);
+        print_phase("patterns", &profiles, |profile| profile.patterns);
         print_phase("roots", &profiles, |profile| profile.roots);
         print_phase("upper GKR", &profiles, |profile| profile.upper_gkr);
         print_phase("  forest build", &profiles, |profile| profile.upper_forest_build);

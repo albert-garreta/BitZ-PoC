@@ -2513,10 +2513,7 @@ where
 {
     prove_eq_inner_sumcheck_mixed_prepared(
         transcript,
-        SharedPointInput {
-            groups,
-            constant_weight: F::zero_with_cfg(field_cfg),
-        },
+        SharedPointInput::mixed(groups, F::zero_with_cfg(field_cfg)),
         tau_sets,
         pair_tau_sets,
         t4_sets,
@@ -2530,9 +2527,36 @@ where
 
 /// Real groups plus an analytic all-ones contribution at their shared point.
 /// A nonzero constant is supported only by the shared-point Gruen format.
+pub(crate) enum SharedPointGroups<'a, F: Clone> {
+    Mixed(Vec<EqInnerGroupMixed<'a, F>>),
+    Flat {
+        q: &'a [F],
+        scales: Vec<F>,
+    },
+}
+
 pub(crate) struct SharedPointInput<'a, F: Clone> {
-    pub(crate) groups: Vec<EqInnerGroupMixed<'a, F>>,
+    pub(crate) groups: SharedPointGroups<'a, F>,
     pub(crate) constant_weight: F,
+}
+
+impl<'a, F: Clone> SharedPointInput<'a, F> {
+    pub(crate) fn mixed(groups: Vec<EqInnerGroupMixed<'a, F>>, constant_weight: F) -> Self {
+        Self {
+            groups: SharedPointGroups::Mixed(groups),
+            constant_weight,
+        }
+    }
+
+    pub(crate) fn flat(q: &'a [F], scales: Vec<F>, constant_weight: F) -> Self {
+        Self {
+            groups: SharedPointGroups::Flat {
+                q,
+                scales,
+            },
+            constant_weight,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -2611,47 +2635,46 @@ where
     F::Config: Sync,
 {
     let SharedPointInput {
-        groups,
+        groups: group_input,
         constant_weight,
     } = input;
     assert!(
         gruen || constant_weight == F::zero_with_cfg(field_cfg),
         "analytic constants require the shared-point Gruen format"
     );
-    // Flat single-pair storage (the wide-shallow forest layout): all
-    // groups are `Flat` markers over ONE shared store, group 0 carries the
-    // shared point and the rest leave `q` empty (no clones). Semantically
-    // each marker is a single-pair Dense group.
-    let all_flat = flat.is_some();
+    let groups = match &group_input {
+        SharedPointGroups::Mixed(groups) => groups.as_slice(),
+        SharedPointGroups::Flat { .. } => &[],
+    };
+    let all_flat = matches!(&group_input, SharedPointGroups::Flat { .. });
+    let (k, num_groups) = match &group_input {
+        SharedPointGroups::Mixed(groups) => {
+            (groups.first().map_or(0, |group| group.q.len()), groups.len())
+        }
+        SharedPointGroups::Flat { q, scales } => (q.len(), scales.len()),
+    };
     if let Some(fs) = &flat {
-        assert!(
-            groups.iter().all(|g| matches!(g.bufs, GroupBufs::Flat)),
-            "a flat store requires all-Flat groups"
-        );
+        assert!(all_flat, "a flat store requires flat shared-point input");
         assert!(gruen, "flat groups share their point — Gruen format only");
-        assert_eq!(fs.l.len(), groups.len() * fs.seg, "flat store shape (L)");
-        assert_eq!(fs.r.len(), groups.len() * fs.seg, "flat store shape (R)");
-        assert_eq!(
-            fs.seg,
-            1usize << groups.first().map_or(0, |g| g.q.len()),
-            "flat seg = 2^k"
-        );
+        assert_eq!(fs.l.len(), num_groups * fs.seg, "flat store shape (L)");
+        assert_eq!(fs.r.len(), num_groups * fs.seg, "flat store shape (R)");
+        assert_eq!(fs.seg, 1usize << k, "flat seg = 2^k");
     } else {
+        assert!(!all_flat, "flat shared-point input needs a flat store");
         assert!(
             groups.iter().all(|g| !matches!(g.bufs, GroupBufs::Flat)),
             "Flat groups need the driver's flat store"
         );
     }
     if let Some(pre) = &pre_round1 {
-        assert_eq!(pre.len(), groups.len(), "one (A0, A1, A2) triple per group");
+        assert_eq!(pre.len(), num_groups, "one (A0, A1, A2) triple per group");
         assert!(
             all_flat || groups.iter().all(|g| matches!(g.bufs, GroupBufs::Dense(_))),
             "precomputed round-1 coefficients require all-Dense groups"
         );
     }
-    let k = groups.first().map_or(0, |g| g.q.len());
     debug_assert!(
-        !groups.is_empty(),
+        num_groups != 0,
         "eq-factored sumcheck needs at least one group"
     );
     debug_assert!(groups.iter().enumerate().all(|(t, g)| {
@@ -2826,6 +2849,8 @@ where
             assert!(shared_q, "prepared suffixes require a shared point");
             assert_eq!(arena.len(), k, "prepared suffix dimension");
             vec![arena]
+        } else if let SharedPointGroups::Flat { q, .. } = &group_input {
+            vec![suffix_tensors(q, field_cfg)]
         } else if shared_q {
             vec![suffix_tensors(&groups[0].q, field_cfg)]
         } else {
@@ -2842,17 +2867,22 @@ where
             .iter()
             .all(|arena| arena.len() == k && arena.is_empty() == (k == 0))
     );
-    // Consume the groups so each equality point keeps its owned or borrowed
-    // storage without cloning.
-    let num_groups = groups.len();
-    let mut qs: Vec<std::borrow::Cow<'_, [F]>> = Vec::with_capacity(num_groups);
-    let mut scales: Vec<F> = Vec::with_capacity(num_groups);
-    let mut bufs: Vec<GroupBufs<'_, F>> = Vec::with_capacity(num_groups);
-    for g in groups {
-        qs.push(g.q);
-        scales.push(g.scale);
-        bufs.push(g.bufs);
-    }
+    // Consume the mixed metadata once. Flat storage already carries the
+    // group shape, so it needs only one representative marker and point.
+    let (qs, scales, mut bufs): (Vec<_>, Vec<_>, Vec<_>) = match group_input {
+        SharedPointGroups::Mixed(groups) => {
+            let mut qs = Vec::with_capacity(num_groups);
+            let mut scales = Vec::with_capacity(num_groups);
+            let mut bufs = Vec::with_capacity(num_groups);
+            for group in groups {
+                qs.push(group.q);
+                scales.push(group.scale);
+                bufs.push(group.bufs);
+            }
+            (qs, scales, bufs)
+        }
+        SharedPointGroups::Flat { q, scales } => (vec![q.into()], scales, vec![GroupBufs::Flat]),
+    };
 
     let _g = tracing::info_span!("eqf:rounds").entered();
     let mut buf = vec![0u8; F::Inner::NUM_BYTES];
@@ -2869,7 +2899,7 @@ where
     if k == 0 {
         if let Some(fs) = &flat {
             debug_assert_eq!(fs.seg, 1);
-            let final_evals: Vec<(F, F)> = (0..bufs.len())
+            let final_evals: Vec<(F, F)> = (0..num_groups)
                 .map(|group| (fs.l[group].clone(), fs.r[group].clone()))
                 .collect();
             let claimed_sum = scales.iter().zip(&final_evals).fold(
@@ -4768,10 +4798,7 @@ mod tests {
                 let prove = |dense, transcript: &mut Blake3Transcript| {
                     prove_eq_inner_sumcheck_mixed_prepared(
                         transcript,
-                        SharedPointInput {
-                            groups: make(dense),
-                            constant_weight: sample(102),
-                        },
+                        SharedPointInput::mixed(make(dense), sample(102)),
                         &tables,
                         &[],
                         &[],
@@ -4847,10 +4874,7 @@ mod tests {
                 };
                 let analytic = prove_eq_inner_sumcheck_mixed_prepared(
                     &mut analytic_t,
-                    SharedPointInput {
-                        groups: vec![mk(false)],
-                        constant_weight: sample(777),
-                    },
+                    SharedPointInput::mixed(vec![mk(false)], sample(777)),
                     &[],
                     &[],
                     &[],
@@ -4912,10 +4936,7 @@ mod tests {
                     let mut ta = Blake3Transcript::new();
                     let analytic = prove_eq_inner_sumcheck_mixed_prepared(
                         &mut ta,
-                        SharedPointInput {
-                            groups: vec![mk()],
-                            constant_weight: c,
-                        },
+                        SharedPointInput::mixed(vec![mk()], c),
                         &[],
                         &[],
                         &[],

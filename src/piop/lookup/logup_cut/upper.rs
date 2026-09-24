@@ -2,7 +2,7 @@ use crate::{
     cfg_iter,
     merged_forest::{
         MergedForestProfile, MergedForestProof, merged_forest_proof_size_bytes,
-        allocate_prepared_merged_forest, prepare_merged_forest_strided,
+        allocate_prepared_merged_forest, prepare_merged_forest,
         prove_prepared_merged_forest_from_claim, verify_merged_forest_from_claim,
         PreparedMergedForest,
     },
@@ -107,7 +107,7 @@ pub(crate) fn prove_dyadic_upper(
     r2: usize,
     root_point: &[Gf],
     root_value: Gf,
-    cut_values: &[Gf],
+    cut_value: &(impl Fn(usize, usize) -> Gf + Sync),
     product_workspace: &mut ProductWorkspace,
     scratch: &mut DyadicUpperScratch,
     profile: &mut DyadicUpperProfile,
@@ -115,7 +115,6 @@ pub(crate) fn prove_dyadic_upper(
     bind_plan(transcript, plan, r2);
     let columns = 1usize << r2;
     assert_eq!(root_point.len(), r2);
-    assert_eq!(cut_values.len(), plan.n_chunks * columns);
     assert_eq!(scratch.forests.len(), plan.blocks.len());
 
     let mut block_roots = Vec::with_capacity(plan.blocks.len());
@@ -124,19 +123,17 @@ pub(crate) fn prove_dyadic_upper(
         if block.depth == 0 {
             block_roots.push(
                 (0..columns)
-                    .map(|column| cut_values[column * plan.n_chunks + block.chunk_start])
+                    .map(|column| cut_value(column, block.chunk_start))
                     .collect(),
             );
             assert!(forest.is_none());
         } else {
             let forest = forest.as_mut().expect("preallocated block forest");
-            prepare_merged_forest_strided(
+            prepare_merged_forest(
                 forest,
-                cut_values,
-                plan.n_chunks,
-                block.chunk_start,
                 block.depth,
                 r2,
+                |column, local_chunk| cut_value(column, block.chunk_start + local_chunk),
             );
             block_roots.push(forest.roots().to_vec());
         }

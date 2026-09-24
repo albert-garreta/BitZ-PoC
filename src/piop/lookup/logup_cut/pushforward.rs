@@ -78,7 +78,7 @@ pub fn fill_pushforward(
     table_layout: &PackedLayout,
     r2: usize,
     claims: &[CutClaim],
-    patterns: &[usize],
+    patterns: &[u16],
     source_weights: &mut [Gf],
     pushforward: &mut [Gf],
 ) {
@@ -88,7 +88,6 @@ pub fn fill_pushforward(
     assert_eq!(table_layout.blocks.len(), chunks.len());
     assert_eq!(source_weights.len(), merged.source_layout.real_len);
     assert_eq!(pushforward.len(), table_layout.padded_len);
-    cfg_iter_mut!(source_weights).for_each(|value| *value = Gf::ZERO);
     cfg_iter_mut!(pushforward).for_each(|value| *value = Gf::ZERO);
 
     let mut chunk_sources = vec![(0usize, 0usize, 0usize); chunks.len()];
@@ -125,13 +124,23 @@ pub fn fill_pushforward(
         .iter()
         .take_while(|chunk| chunk.width == full_width)
         .count();
-    cfg_chunks_mut!(&mut pushforward[..full_chunks * full_len], full_len)
+    const HISTOGRAM_TILE: usize = 8;
+    cfg_chunks_mut!(
+        &mut pushforward[..full_chunks * full_len],
+        HISTOGRAM_TILE * full_len
+    )
         .enumerate()
-        .for_each(|(chunk, histogram)| {
-            let (source_offset, depth, local_chunk) = chunk_sources[chunk];
+        .for_each(|(tile, histograms)| {
+            let first_chunk = tile * HISTOGRAM_TILE;
+            let tile_chunks = histograms.len() / full_len;
             for column in 0..columns {
-                histogram[patterns[chunk * columns + column]] +=
-                    source_weights[source_offset + local_chunk + (column << depth)];
+                for local in 0..tile_chunks {
+                    let chunk = first_chunk + local;
+                    let (source_offset, depth, local_chunk) = chunk_sources[chunk];
+                    histograms
+                        [local * full_len + patterns[column * chunks.len() + chunk] as usize] +=
+                        source_weights[source_offset + local_chunk + (column << depth)];
+                }
             }
         });
     for chunk in full_chunks..chunks.len() {
@@ -139,7 +148,7 @@ pub fn fill_pushforward(
         let histogram = &mut pushforward[table_block.offset..table_block.offset + table_block.len()];
         let (source_offset, depth, local_chunk) = chunk_sources[chunk];
         for column in 0..columns {
-            histogram[patterns[chunk * columns + column]] +=
+            histogram[patterns[column * chunks.len() + chunk] as usize] +=
                 source_weights[source_offset + local_chunk + (column << depth)];
         }
     }

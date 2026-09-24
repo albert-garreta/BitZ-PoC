@@ -109,7 +109,7 @@ pub struct LogupCutProofSize {
 pub struct LogupCutProfile {
     pub common_setup: Duration,
     pub public_table: Duration,
-    pub pattern_and_cut_values: Duration,
+    pub patterns: Duration,
     pub roots: Duration,
     pub upper_gkr: Duration,
     pub upper_forest_build: Duration,
@@ -181,9 +181,8 @@ pub struct LogupCutScratch {
     source_layout: PackedLayout,
     aux_pcs: BinaryPcs,
     factors: Vec<Gf>,
-    patterns: Vec<usize>,
+    patterns: Vec<u16>,
     table_values: Vec<Gf>,
-    cut_values: Vec<Gf>,
     source_weights: Vec<Gf>,
     pushforward: Vec<Gf>,
     source_den: Vec<Gf>,
@@ -208,7 +207,7 @@ impl LogupCutScratch {
             || !ell1.is_power_of_two()
             || layout.cols() == 0
             || config.chunk_bits == 0
-            || config.chunk_bits > ell1
+            || config.chunk_bits > ell1.min(16)
             || config.aux_component_bits == 0
         {
             return Err(LogupCutError::InvalidParams);
@@ -251,7 +250,6 @@ impl LogupCutScratch {
             factors: vec![Gf::ZERO; ell1],
             patterns: vec![0; chunks.len() * layout.cols()],
             table_values: vec![Gf::ZERO; table_layout.padded_len],
-            cut_values: vec![Gf::ZERO; chunks.len() * layout.cols()],
             source_weights: vec![Gf::ZERO; source_layout.real_len],
             pushforward: vec![Gf::ZERO; aux_len],
             source_den: vec![Gf::ONE; source_layout.real_len],
@@ -297,13 +295,12 @@ impl LogupCutScratch {
     pub fn retained_bytes(&self) -> usize {
         let fields = self.factors.capacity()
             + self.table_values.capacity()
-            + self.cut_values.capacity()
             + self.source_weights.capacity()
             + self.pushforward.capacity()
             + self.source_den.capacity()
             + self.table_den.capacity();
         fields * core::mem::size_of::<Gf>()
-            + self.patterns.capacity() * core::mem::size_of::<usize>()
+            + self.patterns.capacity() * core::mem::size_of::<u16>()
             + self.chunks.capacity() * core::mem::size_of::<ChunkSpec>()
             + self.plan.blocks.capacity() * core::mem::size_of::<super::DyadicBlock>()
             + self.table_layout.blocks.capacity() * core::mem::size_of::<super::PackedBlock>()
@@ -375,32 +372,29 @@ pub fn prove_logup_cut_profiled(
     profile.public_table = phase_start.elapsed();
 
     let phase_start = Instant::now();
-    let columns = layout.cols();
+    let n_chunks = scratch.chunks.len();
+    let chunks = &scratch.chunks;
+    let table_blocks = &scratch.table_layout.blocks;
+    let table_values = &scratch.table_values;
     cfg_iter_mut!(&mut scratch.patterns)
         .enumerate()
         .for_each(|(index, pattern_slot)| {
-            let chunk_index = index / columns;
-            let column = index % columns;
-            let chunk = scratch.chunks[chunk_index];
-            let row = &hint.rows()[column];
-            let mut pattern = 0usize;
-            for bit in 0..chunk.width {
-                let factor = chunk.factor_start + bit;
-                pattern |= (((row[factor >> 6] >> (factor & 63)) & 1) as usize) << bit;
-            }
-            *pattern_slot = pattern;
-        });
-    let n_chunks = scratch.chunks.len();
-    cfg_iter_mut!(&mut scratch.cut_values)
-        .enumerate()
-        .for_each(|(index, cut_value)| {
             let column = index / n_chunks;
             let chunk_index = index % n_chunks;
-            let pattern = scratch.patterns[chunk_index * columns + column];
-            *cut_value = scratch.table_values
-                [scratch.table_layout.blocks[chunk_index].offset | pattern];
+            let chunk = chunks[chunk_index];
+            let row = &hint.rows()[column];
+            debug_assert!(chunk.width <= 16);
+            let word = chunk.factor_start >> 6;
+            let shift = chunk.factor_start & 63;
+            let mut pattern = row[word] >> shift;
+            if shift + chunk.width > 64 {
+                pattern |= row[word + 1] << (64 - shift);
+            }
+            let mask = (1u64 << chunk.width) - 1;
+            let pattern = (pattern & mask) as u16;
+            *pattern_slot = pattern;
         });
-    profile.pattern_and_cut_values = phase_start.elapsed();
+    profile.patterns = phase_start.elapsed();
 
     let phase_start = Instant::now();
     let v = crate::ligerito::fold_values_bits(layout, hint.rows(), row_weights);
@@ -415,13 +409,19 @@ pub fn prove_logup_cut_profiled(
 
     let phase_start = Instant::now();
     let mut upper_profile = DyadicUpperProfile::default();
+    let patterns = &scratch.patterns;
+    let cut_value = |column: usize, chunk: usize| {
+        table_values[
+            table_blocks[chunk].offset | patterns[column * n_chunks + chunk] as usize
+        ]
+    };
     let (upper, cut_claims) = prove_dyadic_upper(
         transcript,
         &scratch.plan,
         layout.col_vars,
         &root_point,
         root_value,
-        &scratch.cut_values,
+        &cut_value,
         &mut scratch.upper_products,
         &mut scratch.upper_forest,
         &mut upper_profile,
@@ -464,6 +464,10 @@ pub fn prove_logup_cut_profiled(
     if tau == Gf::ZERO {
         return Err(LogupCutError::NegligibleEvent);
     }
+    let tau_words = tau.as_words();
+    if tau_words[1] == 0 && tau_words[0] < scratch.table_layout.real_len as u64 {
+        return Err(LogupCutError::NegligibleEvent);
+    }
     profile.auxiliary_commit = phase_start.elapsed();
 
     let phase_start = Instant::now();
@@ -477,20 +481,12 @@ pub fn prove_logup_cut_profiled(
                 *denominator = tau
                     + encode_table_row(
                         scratch.table_layout.blocks[chunk].offset
-                            | scratch.patterns[chunk * columns + column],
+                            | scratch.patterns[column * n_chunks + chunk] as usize,
                     );
             });
     }
     for (row, denominator) in scratch.table_den.iter_mut().enumerate() {
         *denominator = tau + encode_table_row(row);
-    }
-    if scratch
-        .source_den
-        .iter()
-        .chain(&scratch.table_den)
-        .any(|&value| value == Gf::ZERO)
-    {
-        return Err(LogupCutError::NegligibleEvent);
     }
     profile.denominators = phase_start.elapsed();
 
@@ -805,7 +801,7 @@ fn check_public_shape(
         || !row_len.is_power_of_two()
         || commitment.params.m != row_len.ilog2() as usize + layout.col_vars
         || config.chunk_bits == 0
-        || config.chunk_bits > row_len
+        || config.chunk_bits > row_len.min(16)
         || config.aux_component_bits == 0
         || !is_generator(alpha)
     {
