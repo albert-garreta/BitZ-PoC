@@ -13,8 +13,8 @@ mod upper;
 
 pub use chunks::{ChunkSpec, DyadicBlock, DyadicPlan, chunk_specs};
 pub use fraction::{
-    FractionClaim, FractionTreeWitness, RationalClaims, RationalProof, prove_rational,
-    verify_rational,
+    FractionClaim, FractionProofProfile, FractionTreeWitness, RationalClaims, RationalProof,
+    prove_rational, prove_rational_profiled, verify_rational,
 };
 pub use inner_product::{EvalClaim, InnerProductProof, prove_inner_product, verify_inner_product};
 pub use layout::{PackedBlock, PackedLayout};

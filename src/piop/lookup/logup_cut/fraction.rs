@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use crate::{
     piop::lookup::gkr_product::absorb_field_slice,
     poly::univariate::binary_gf128::Gf128 as Gf,
@@ -7,7 +9,9 @@ use crate::{
 
 use super::{
     product::{ProductInput, ProductWorkspace},
-    upper::{ProductBatchProof, prove_product_batch, verify_product_batch},
+    upper::{
+        ProductBatchProof, prove_product_batch_materialized, verify_product_batch,
+    },
 };
 
 #[cfg(feature = "parallel")]
@@ -44,6 +48,14 @@ pub struct RationalProof {
     right: FractionTreeProof,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FractionProofProfile {
+    pub ac_evals: Duration,
+    pub gamma_folds: Duration,
+    pub product_sumchecks: Duration,
+    pub numerator_evals: Duration,
+}
+
 impl FractionTreeProof {
     fn proof_size_bytes(&self) -> usize {
         (self.ac_evals.len() + 2 * self.numerators.len()) * 16
@@ -65,7 +77,6 @@ pub struct FractionTreeWitness {
     num_padding: Vec<Gf>,
     den_padding: Vec<Gf>,
     ac_padding: Vec<Gf>,
-    products: Vec<Gf>,
     eq_low: Vec<Gf>,
     eq_high: Vec<Gf>,
 }
@@ -83,8 +94,44 @@ impl FractionTreeWitness {
         assert!(!numerator.is_empty() && numerator.len() <= full_len);
         assert_eq!(numerator.len(), denominator.len());
         assert_ne!(denominator_padding, Gf::ZERO);
-        assert!(denominator.iter().all(|value| *value != Gf::ZERO));
+        debug_assert!(denominator.iter().all(|value| *value != Gf::ZERO));
 
+        self.prepare(dimension);
+        self.nums[0].clear();
+        self.nums[0].extend_from_slice(numerator);
+        self.dens[0].clear();
+        self.dens[0].extend_from_slice(denominator);
+        self.rebuild_parent_levels(numerator_padding, denominator_padding);
+    }
+
+    pub fn rebuild_swapped(
+        &mut self,
+        numerator: &mut Vec<Gf>,
+        denominator: &mut Vec<Gf>,
+        dimension: usize,
+        numerator_padding: Gf,
+        denominator_padding: Gf,
+    ) {
+        let full_len = 1usize << dimension;
+        assert!(!numerator.is_empty() && numerator.len() <= full_len);
+        assert_eq!(numerator.len(), denominator.len());
+        assert_ne!(denominator_padding, Gf::ZERO);
+        debug_assert!(denominator.iter().all(|value| *value != Gf::ZERO));
+
+        self.prepare(dimension);
+        assert!(self.nums[0].is_empty() && self.dens[0].is_empty());
+        core::mem::swap(&mut self.nums[0], numerator);
+        core::mem::swap(&mut self.dens[0], denominator);
+        self.rebuild_parent_levels(numerator_padding, denominator_padding);
+    }
+
+    pub fn release_leaves(&mut self, numerator: &mut Vec<Gf>, denominator: &mut Vec<Gf>) {
+        assert!(numerator.is_empty() && denominator.is_empty());
+        core::mem::swap(&mut self.nums[0], numerator);
+        core::mem::swap(&mut self.dens[0], denominator);
+    }
+
+    fn prepare(&mut self, dimension: usize) {
         self.nums.resize_with(dimension + 1, Vec::new);
         self.nums.truncate(dimension + 1);
         self.dens.resize_with(dimension + 1, Vec::new);
@@ -94,16 +141,15 @@ impl FractionTreeWitness {
         self.num_padding.resize(dimension + 1, Gf::ZERO);
         self.den_padding.resize(dimension + 1, Gf::ZERO);
         self.ac_padding.resize(dimension, Gf::ZERO);
-        self.products.resize(full_len, Gf::ZERO);
         self.eq_low
             .reserve((1usize << (dimension / 2)).saturating_sub(self.eq_low.capacity()));
         self.eq_high.reserve(
             (1usize << dimension.div_ceil(2)).saturating_sub(self.eq_high.capacity()),
         );
-        self.nums[0].clear();
-        self.nums[0].extend_from_slice(numerator);
-        self.dens[0].clear();
-        self.dens[0].extend_from_slice(denominator);
+    }
+
+    fn rebuild_parent_levels(&mut self, numerator_padding: Gf, denominator_padding: Gf) {
+        let dimension = self.nums.len() - 1;
         self.num_padding.fill(Gf::ZERO);
         self.den_padding.fill(Gf::ZERO);
         self.ac_padding.fill(Gf::ZERO);
@@ -173,7 +219,6 @@ impl FractionTreeWitness {
             + self.num_padding.capacity()
             + self.den_padding.capacity()
             + self.ac_padding.capacity()
-            + self.products.capacity()
             + self.eq_low.capacity()
             + self.eq_high.capacity())
             * core::mem::size_of::<Gf>()
@@ -192,6 +237,7 @@ impl FractionTreeWitness {
         &mut self,
         transcript: &mut impl Transcript,
         product_workspace: &mut ProductWorkspace,
+        mut profile: Option<&mut FractionProofProfile>,
     ) -> (FractionTreeProof, FractionClaim) {
         let (mut claim_num, mut claim_den) = self.root();
         let mut claim_point = Vec::with_capacity(self.dimension());
@@ -199,6 +245,7 @@ impl FractionTreeWitness {
         let mut product_proofs = Vec::with_capacity(self.dimension());
         let mut numerators = Vec::with_capacity(self.dimension());
         for level in (0..self.dimension()).rev() {
+            let started = profile.is_some().then(Instant::now);
             let ac_eval = mle_eval(
                 &self.ac[level],
                 self.ac_padding[level],
@@ -206,58 +253,54 @@ impl FractionTreeWitness {
                 &mut self.eq_low,
                 &mut self.eq_high,
             );
+            if let (Some(profile), Some(started)) = (profile.as_deref_mut(), started) {
+                profile.ac_evals += started.elapsed();
+            }
             ac_evals.push(ac_eval);
             absorb_field_slice(transcript, &[ac_eval]);
             let gamma = transcript.get_field_challenge::<Gf>(&());
             assert_ne!(gamma, Gf::ZERO, "negligible zero fraction challenge");
 
+            let started = profile.is_some().then(Instant::now);
             let product_padding = self.den_padding[level] + gamma * self.num_padding[level];
             let active = self.ac[level].len();
-            self.products.resize(2 * active, product_padding);
-            let (left_products, right_products) = self.products.split_at_mut(active);
-            left_products.fill(product_padding);
-            right_products.fill(product_padding);
-            let fill = |index: usize, left: &mut Gf, right: &mut Gf| {
-                let even = 2 * index;
-                *left = self.dens[level][even] + gamma * self.nums[level][even];
-                if even + 1 < self.nums[level].len() {
-                    *right = self.dens[level][even + 1] + gamma * self.nums[level][even + 1];
-                }
-            };
-            #[cfg(feature = "parallel")]
-            if active >= PARALLEL_THRESHOLD {
-                left_products[..active]
-                    .par_iter_mut()
-                    .zip(right_products[..active].par_iter_mut())
-                    .enumerate()
-                    .for_each(|(index, (left, right))| fill(index, left, right));
-            } else {
-                left_products[..active]
-                    .iter_mut()
-                    .zip(right_products[..active].iter_mut())
-                    .enumerate()
-                    .for_each(|(index, (left, right))| fill(index, left, right));
+            if let (Some(profile), Some(started)) = (profile.as_deref_mut(), started) {
+                profile.gamma_folds += started.elapsed();
             }
-            #[cfg(not(feature = "parallel"))]
-            left_products[..active]
-                .iter_mut()
-                .zip(right_products[..active].iter_mut())
-                .enumerate()
-                .for_each(|(index, (left, right))| fill(index, left, right));
 
             let folded = claim_den + gamma * claim_num + gamma.square() * ac_eval;
-            let inputs = [(
-                ProductInput::PaddedTable(left_products, product_padding),
-                ProductInput::PaddedTable(right_products, product_padding),
-            )];
-            let (product_proof, product_point, values) = prove_product_batch(
-                transcript,
-                &[(claim_point.clone(), folded)],
-                &inputs,
-                product_workspace,
-            );
+            let started = profile.is_some().then(Instant::now);
+            let (product_proof, product_point, values) = {
+                let (child_nums, parent_nums) = self.nums.split_at_mut(level + 1);
+                let (child_dens, parent_dens) = self.dens.split_at_mut(level + 1);
+                let numerators = &child_nums[level];
+                let denominators = &child_dens[level];
+                let left = &mut parent_nums[0];
+                let right = &mut parent_dens[0];
+                assert_eq!(left.len(), active);
+                assert_eq!(right.len(), active);
+                let input = |parity| ProductInput::AffineInterleaved {
+                    numerators,
+                    denominators,
+                    gamma,
+                    parity,
+                    len: active,
+                    padding: product_padding,
+                };
+                prove_product_batch_materialized(
+                    transcript,
+                    &[(claim_point.clone(), folded)],
+                    &[(input(0), input(1))],
+                    product_workspace,
+                    (left, right),
+                )
+            };
+            if let (Some(profile), Some(started)) = (profile.as_deref_mut(), started) {
+                profile.product_sumchecks += started.elapsed();
+            }
             product_proofs.push(product_proof);
             let (left, right) = values[0];
+            let started = profile.is_some().then(Instant::now);
             let [a, c] = mle_eval_interleaved_pair(
                 &self.nums[level],
                 self.num_padding[level],
@@ -265,6 +308,9 @@ impl FractionTreeWitness {
                 &mut self.eq_low,
                 &mut self.eq_high,
             );
+            if let (Some(profile), Some(started)) = (profile.as_deref_mut(), started) {
+                profile.numerator_evals += started.elapsed();
+            }
             numerators.push((a, c));
             absorb_field_slice(transcript, &[a, c]);
             let b = left + gamma * a;
@@ -297,6 +343,33 @@ pub fn prove_rational(
     right: &mut FractionTreeWitness,
     product_workspace: &mut ProductWorkspace,
 ) -> (RationalProof, RationalClaims) {
+    prove_rational_impl(transcript, left, right, product_workspace, None)
+}
+
+pub fn prove_rational_profiled(
+    transcript: &mut impl Transcript,
+    left: &mut FractionTreeWitness,
+    right: &mut FractionTreeWitness,
+    product_workspace: &mut ProductWorkspace,
+    profile: &mut FractionProofProfile,
+) -> (RationalProof, RationalClaims) {
+    *profile = FractionProofProfile::default();
+    prove_rational_impl(
+        transcript,
+        left,
+        right,
+        product_workspace,
+        Some(profile),
+    )
+}
+
+fn prove_rational_impl(
+    transcript: &mut impl Transcript,
+    left: &mut FractionTreeWitness,
+    right: &mut FractionTreeWitness,
+    product_workspace: &mut ProductWorkspace,
+    mut profile: Option<&mut FractionProofProfile>,
+) -> (RationalProof, RationalClaims) {
     transcript.absorb_slice(DOMAIN);
     transcript.absorb_slice(&(left.dimension() as u64).to_le_bytes());
     transcript.absorb_slice(&(right.dimension() as u64).to_le_bytes());
@@ -307,8 +380,16 @@ pub fn prove_rational(
     assert_eq!(left_root.0 * right_root.1, right_root.0 * left_root.1);
     let roots = [left_root.0, left_root.1, right_root.0, right_root.1];
     absorb_field_slice(transcript, &roots);
-    let (left_proof, left_claim) = left.prove(transcript, product_workspace);
-    let (right_proof, right_claim) = right.prove(transcript, product_workspace);
+    let (left_proof, left_claim) = left.prove(
+        transcript,
+        product_workspace,
+        profile.as_deref_mut(),
+    );
+    let (right_proof, right_claim) = right.prove(
+        transcript,
+        product_workspace,
+        profile.as_deref_mut(),
+    );
     (
         RationalProof {
             roots,

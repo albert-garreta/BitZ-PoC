@@ -13,7 +13,9 @@ use rayon::prelude::*;
 
 use super::{
     CutClaim, DyadicPlan,
-    product::{ProductInput, ProductWorkspace, prove_products},
+    product::{
+        ProductInput, ProductWorkspace, prove_products, prove_products_materialized,
+    },
 };
 
 const DOMAIN: &[u8] = b"bitz/logup-cut/dyadic-upper/v1";
@@ -46,12 +48,6 @@ impl DyadicUpperProof {
             self.block_layers.iter().map(ProductBatchProof::proof_size_bytes).sum(),
         )
     }
-}
-
-#[derive(Clone, Copy)]
-struct MergeNode {
-    children: Option<(usize, usize)>,
-    level: usize,
 }
 
 pub fn prove_dyadic_upper(
@@ -163,33 +159,6 @@ fn bind_plan(transcript: &mut impl Transcript, plan: &DyadicPlan, r2: usize) {
     }
 }
 
-fn merge_shape(leaves: usize) -> (Vec<MergeNode>, usize) {
-    let mut nodes = vec![MergeNode {
-        children: None,
-        level: 0,
-    }; leaves];
-    let mut current = (0..leaves).collect::<Vec<_>>();
-    let mut level = 1;
-    while current.len() > 1 {
-        let mut next = Vec::with_capacity(current.len().div_ceil(2));
-        for pair in current.chunks(2) {
-            if pair.len() == 1 {
-                next.push(pair[0]);
-            } else {
-                let node = nodes.len();
-                nodes.push(MergeNode {
-                    children: Some((pair[0], pair[1])),
-                    level,
-                });
-                next.push(node);
-            }
-        }
-        current = next;
-        level += 1;
-    }
-    (nodes, current[0])
-}
-
 fn prove_root_product(
     transcript: &mut impl Transcript,
     root_point: &[Gf],
@@ -198,44 +167,33 @@ fn prove_root_product(
     product_workspace: &mut ProductWorkspace,
 ) -> (Vec<(Vec<Gf>, Gf)>, Vec<ProductBatchProof>) {
     let leaves = block_roots.len();
-    let (nodes, root) = merge_shape(leaves);
-    let mut tables = block_roots.into_iter().map(Some).collect::<Vec<_>>();
-    tables.resize_with(nodes.len(), || None);
-    for node in leaves..nodes.len() {
-        let (left, right) = nodes[node].children.unwrap();
-        tables[node] = Some(
-            cfg_iter!(tables[left].as_ref().unwrap())
-                .zip(cfg_iter!(tables[right].as_ref().unwrap()))
-                .map(|(&left, &right)| left * right)
+    let padded_leaves = leaves.next_power_of_two();
+    let mut leaf_tables = block_roots;
+    leaf_tables.resize_with(padded_leaves, || vec![Gf::ONE; 1usize << root_point.len()]);
+    let mut levels = vec![leaf_tables];
+    while levels.last().unwrap().len() > 1 {
+        let children = levels.last().unwrap();
+        levels.push(
+            children
+                .chunks_exact(2)
+                .map(|pair| {
+                    cfg_iter!(&pair[0])
+                        .zip(cfg_iter!(&pair[1]))
+                        .map(|(&left, &right)| left * right)
+                        .collect()
+                })
                 .collect(),
         );
     }
 
-    let max_level = nodes.iter().map(|node| node.level).max().unwrap();
-    let mut active = vec![None; nodes.len()];
-    active[root] = Some((root_point.to_vec(), root_value));
-    let mut proofs = Vec::with_capacity(max_level);
-    for level in (1..=max_level).rev() {
-        let batch = (leaves..nodes.len())
-            .filter(|&node| nodes[node].level == level && active[node].is_some())
-            .collect::<Vec<_>>();
-        if batch.is_empty() {
-            continue;
-        }
-        let claims = batch
-            .iter()
-            .map(|&node| active[node].take().unwrap())
-            .collect::<Vec<_>>();
-        let owned_inputs = batch
-            .iter()
-            .map(|&node| {
-                let (left, right) = nodes[node].children.unwrap();
-                (tables[left].take().unwrap(), tables[right].take().unwrap())
-            })
-            .collect::<Vec<_>>();
-        let inputs = owned_inputs
-            .iter()
-            .map(|(left, right)| (ProductInput::Table(left), ProductInput::Table(right)))
+    let mut claims = vec![(root_point.to_vec(), root_value)];
+    let mut proofs = Vec::with_capacity(levels.len() - 1);
+    for level in (1..levels.len()).rev() {
+        let children = &levels[level - 1];
+        debug_assert_eq!(children.len(), 2 * claims.len());
+        let inputs = children
+            .chunks_exact(2)
+            .map(|pair| (ProductInput::Table(&pair[0]), ProductInput::Table(&pair[1])))
             .collect::<Vec<_>>();
         let (proof, point, values) = prove_product_batch(
             transcript,
@@ -244,19 +202,15 @@ fn prove_root_product(
             product_workspace,
         );
         proofs.push(proof);
-        for (index, &node) in batch.iter().enumerate() {
-            let (left, right) = nodes[node].children.unwrap();
-            active[left] = Some((point.clone(), values[index].0));
-            active[right] = Some((point.clone(), values[index].1));
+        claims.clear();
+        for (left, right) in values {
+            claims.push((point.clone(), left));
+            claims.push((point.clone(), right));
         }
     }
-    (
-        active[..leaves]
-            .iter_mut()
-            .map(|claim| claim.take().unwrap())
-            .collect(),
-        proofs,
-    )
+    debug_assert!(claims[leaves..].iter().all(|claim| claim.1 == Gf::ONE));
+    claims.truncate(leaves);
+    (claims, proofs)
 }
 
 fn verify_root_product(
@@ -266,38 +220,24 @@ fn verify_root_product(
     leaves: usize,
     proofs: &[ProductBatchProof],
 ) -> Option<Vec<(Vec<Gf>, Gf)>> {
-    let (nodes, root) = merge_shape(leaves);
-    let max_level = nodes.iter().map(|node| node.level).max()?;
-    let mut active = vec![None; nodes.len()];
-    active[root] = Some((root_point.to_vec(), root_value));
-    let mut proof_index = 0;
-    for level in (1..=max_level).rev() {
-        let batch = (leaves..nodes.len())
-            .filter(|&node| nodes[node].level == level && active[node].is_some())
-            .collect::<Vec<_>>();
-        if batch.is_empty() {
-            continue;
-        }
-        let claims = batch
-            .iter()
-            .map(|&node| active[node].take().unwrap())
-            .collect::<Vec<_>>();
-        let (point, values) = verify_product_batch(
-            transcript,
-            &claims,
-            proofs.get(proof_index)?,
-        )?;
-        proof_index += 1;
-        for (index, &node) in batch.iter().enumerate() {
-            let (left, right) = nodes[node].children.unwrap();
-            active[left] = Some((point.clone(), values[index].0));
-            active[right] = Some((point.clone(), values[index].1));
-        }
-    }
-    if proof_index != proofs.len() {
+    let depth = leaves.next_power_of_two().ilog2() as usize;
+    if proofs.len() != depth {
         return None;
     }
-    active[..leaves].iter_mut().map(Option::take).collect()
+    let mut claims = vec![(root_point.to_vec(), root_value)];
+    for proof in proofs {
+        let (point, values) = verify_product_batch(transcript, &claims, proof)?;
+        claims.clear();
+        for (left, right) in values {
+            claims.push((point.clone(), left));
+            claims.push((point.clone(), right));
+        }
+    }
+    if claims[leaves..].iter().any(|claim| claim.1 != Gf::ONE) {
+        return None;
+    }
+    claims.truncate(leaves);
+    Some(claims)
 }
 
 fn prove_block_forests(
@@ -429,6 +369,31 @@ pub(super) fn prove_product_batch(
 ) -> (ProductBatchProof, Vec<Gf>, Vec<(Gf, Gf)>) {
     let dimension = claims[0].0.len();
     let (sumcheck, point, evals) = prove_products(transcript, claims, inputs, workspace);
+    (
+        ProductBatchProof {
+            sumcheck: (dimension != 0).then_some(sumcheck),
+            evals: evals.clone(),
+        },
+        point,
+        evals,
+    )
+}
+
+pub(super) fn prove_product_batch_materialized(
+    transcript: &mut impl Transcript,
+    claims: &[(Vec<Gf>, Gf)],
+    inputs: &[(ProductInput<'_>, ProductInput<'_>)],
+    workspace: &mut ProductWorkspace,
+    materialized: (&mut [Gf], &mut [Gf]),
+) -> (ProductBatchProof, Vec<Gf>, Vec<(Gf, Gf)>) {
+    let dimension = claims[0].0.len();
+    let (sumcheck, point, evals) = prove_products_materialized(
+        transcript,
+        claims,
+        inputs,
+        workspace,
+        materialized,
+    );
     (
         ProductBatchProof {
             sumcheck: (dimension != 0).then_some(sumcheck),

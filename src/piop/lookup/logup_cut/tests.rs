@@ -109,7 +109,9 @@ fn estimate_counts_partial_chunk_exactly() {
 
 #[test]
 fn dyadic_upper_proves_exact_unpadded_cut() {
-    let plan = DyadicPlan::new(13);
+    // Six dyadic blocks exercise the non-power-of-two root merge. The merge
+    // must keep every live claim at one shared sumcheck point.
+    let plan = DyadicPlan::new(63);
     let r2 = 3;
     let columns = 1usize << r2;
     let cut_values = (0..plan.n_chunks * columns)

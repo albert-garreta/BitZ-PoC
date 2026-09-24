@@ -20,28 +20,98 @@ const PARALLEL_THRESHOLD: usize = 1 << 15;
 #[derive(Clone, Copy)]
 pub(super) enum ProductInput<'a> {
     Table(&'a [Gf]),
-    PaddedTable(&'a [Gf], Gf),
+    AffineInterleaved {
+        numerators: &'a [Gf],
+        denominators: &'a [Gf],
+        gamma: Gf,
+        parity: usize,
+        len: usize,
+        padding: Gf,
+    },
 }
 
 impl<'a> ProductInput<'a> {
-    fn values(self) -> &'a [Gf] {
+    fn len(self) -> usize {
         match self {
-            Self::Table(values) | Self::PaddedTable(values, _) => values,
+            Self::Table(values) => values.len(),
+            Self::AffineInterleaved { len, .. } => len,
         }
+    }
+
+    fn is_empty(self) -> bool {
+        self.len() == 0
     }
 
     fn padding(self) -> Gf {
         match self {
             Self::Table(_) => Gf::ZERO,
-            Self::PaddedTable(_, padding) => padding,
+            Self::AffineInterleaved { padding, .. } => padding,
+        }
+    }
+
+    #[inline(always)]
+    fn value(self, index: usize) -> Gf {
+        match self {
+            Self::Table(values) => values.get(index).copied().unwrap_or(Gf::ZERO),
+            Self::AffineInterleaved {
+                numerators,
+                denominators,
+                gamma,
+                parity,
+                len,
+                padding,
+            } => {
+                if index >= len {
+                    return padding;
+                }
+                let source = 2 * index + parity;
+                numerators
+                    .get(source)
+                    .zip(denominators.get(source))
+                    .map_or(padding, |(&num, &den)| den + gamma * num)
+            }
         }
     }
 }
 
 #[derive(Clone, Copy)]
-struct StateView<'a> {
-    values: &'a [Gf],
-    padding: Gf,
+enum StateView<'a> {
+    Dense { values: &'a [Gf], padding: Gf },
+    Input(ProductInput<'a>),
+}
+
+impl StateView<'_> {
+    fn len(self) -> usize {
+        match self {
+            Self::Dense { values, .. } => values.len(),
+            Self::Input(input) => input.len(),
+        }
+    }
+
+    fn padding(self) -> Gf {
+        match self {
+            Self::Dense { padding, .. } => padding,
+            Self::Input(input) => input.padding(),
+        }
+    }
+
+    #[inline(always)]
+    fn value(self, index: usize) -> Gf {
+        match self {
+            Self::Dense { values, padding } => values.get(index).copied().unwrap_or(padding),
+            Self::Input(input) => input.value(index),
+        }
+    }
+}
+
+fn initial_view(input: ProductInput<'_>) -> StateView<'_> {
+    match input {
+        ProductInput::Table(values) => StateView::Dense {
+            values,
+            padding: Gf::ZERO,
+        },
+        input @ ProductInput::AffineInterleaved { .. } => StateView::Input(input),
+    }
 }
 
 #[derive(Default)]
@@ -103,15 +173,39 @@ pub(super) fn prove_products(
     inputs: &[(ProductInput<'_>, ProductInput<'_>)],
     workspace: &mut ProductWorkspace,
 ) -> (SumcheckProof<Gf>, Vec<Gf>, Vec<(Gf, Gf)>) {
+    prove_products_impl(transcript, claims, inputs, workspace, None)
+}
+
+pub(super) fn prove_products_materialized(
+    transcript: &mut impl Transcript,
+    claims: &[(Vec<Gf>, Gf)],
+    inputs: &[(ProductInput<'_>, ProductInput<'_>)],
+    workspace: &mut ProductWorkspace,
+    materialized: (&mut [Gf], &mut [Gf]),
+) -> (SumcheckProof<Gf>, Vec<Gf>, Vec<(Gf, Gf)>) {
+    assert_eq!(claims.len(), 1);
+    assert_eq!(inputs.len(), 1);
+    assert_eq!(materialized.0.len(), inputs[0].0.len());
+    assert_eq!(materialized.1.len(), inputs[0].1.len());
+    prove_products_impl(transcript, claims, inputs, workspace, Some(materialized))
+}
+
+fn prove_products_impl(
+    transcript: &mut impl Transcript,
+    claims: &[(Vec<Gf>, Gf)],
+    inputs: &[(ProductInput<'_>, ProductInput<'_>)],
+    workspace: &mut ProductWorkspace,
+    mut materialized: Option<(&mut [Gf], &mut [Gf])>,
+) -> (SumcheckProof<Gf>, Vec<Gf>, Vec<(Gf, Gf)>) {
     assert!(!claims.is_empty() && claims.len() == inputs.len());
     let dimension = claims[0].0.len();
     let full_len = 1usize << dimension;
     assert!(claims.iter().all(|claim| claim.0 == claims[0].0));
     assert!(inputs.iter().all(|&(left, right)| {
-        !left.values().is_empty()
-            && left.values().len() <= full_len
-            && !right.values().is_empty()
-            && right.values().len() <= full_len
+        !left.is_empty()
+            && left.len() <= full_len
+            && !right.is_empty()
+            && right.len() <= full_len
     }));
 
     let beta = (claims.len() > 1).then(|| transcript.get_field_challenge::<Gf>(&()));
@@ -131,7 +225,7 @@ pub(super) fn prove_products(
     if dimension == 0 {
         let evals = inputs
             .iter()
-            .map(|&(left, right)| (left.values()[0], right.values()[0]))
+            .map(|&(left, right)| (left.value(0), right.value(0)))
             .collect::<Vec<_>>();
         debug_assert_eq!(
             claimed_sum,
@@ -157,7 +251,7 @@ pub(super) fn prove_products(
     workspace.paddings.clear();
     for &(left, right) in inputs {
         for input in [left, right] {
-            let folded_len = input.values().len().div_ceil(2).max(1);
+            let folded_len = input.len().div_ceil(2).max(1);
             let slot = workspace.paddings.len();
             assert!(workspace.tables[slot].capacity() >= folded_len);
             assert!(workspace.backs[slot].capacity() >= folded_len);
@@ -231,25 +325,17 @@ pub(super) fn prove_products(
             let eq_high = &workspace.eq_high;
             let calculate = |claim: usize, quadratic: &mut [Gf; 3]| {
                 let left = if initial {
-                    let input = inputs[claim].0;
-                    StateView {
-                        values: input.values(),
-                        padding: input.padding(),
-                    }
+                    initial_view(inputs[claim].0)
                 } else {
-                    StateView {
+                    StateView::Dense {
                         values: &tables[2 * claim],
                         padding: paddings[2 * claim],
                     }
                 };
                 let right = if initial {
-                    let input = inputs[claim].1;
-                    StateView {
-                        values: input.values(),
-                        padding: input.padding(),
-                    }
+                    initial_view(inputs[claim].1)
                 } else {
-                    StateView {
+                    StateView::Dense {
                         values: &tables[2 * claim + 1],
                         padding: paddings[2 * claim + 1],
                     }
@@ -275,23 +361,45 @@ pub(super) fn prove_products(
                 *quadratic = [h0, h0 + h1 + infinity, infinity];
             };
 
-            #[cfg(feature = "parallel")]
-            if claims.len() > 1 && total_work >= PARALLEL_THRESHOLD {
-                workspace.quadratics[..claims.len()]
-                    .par_iter_mut()
-                    .enumerate()
-                    .for_each(|(claim, quadratic)| calculate(claim, quadratic));
+            if initial && materialized.is_some() {
+                let (left_out, right_out) = materialized.as_mut().unwrap();
+                let [finite, infinity] = product_round_materialize(
+                    initial_view(inputs[0].0),
+                    initial_view(inputs[0].1),
+                    left_out,
+                    right_out,
+                    eq_low,
+                    eq_high,
+                    low_domain,
+                    at_one,
+                );
+                let (h0, h1) = if at_one {
+                    let h1 = finite;
+                    let h0 = (normalized[0] + s * h1) * linear0_inv;
+                    (h0, h1)
+                } else {
+                    (finite, normalized[0])
+                };
+                workspace.quadratics[0] = [h0, h0 + h1 + infinity, infinity];
             } else {
+                #[cfg(feature = "parallel")]
+                if claims.len() > 1 && total_work >= PARALLEL_THRESHOLD {
+                    workspace.quadratics[..claims.len()]
+                        .par_iter_mut()
+                        .enumerate()
+                        .for_each(|(claim, quadratic)| calculate(claim, quadratic));
+                } else {
+                    workspace.quadratics[..claims.len()]
+                        .iter_mut()
+                        .enumerate()
+                        .for_each(|(claim, quadratic)| calculate(claim, quadratic));
+                }
+                #[cfg(not(feature = "parallel"))]
                 workspace.quadratics[..claims.len()]
                     .iter_mut()
                     .enumerate()
                     .for_each(|(claim, quadratic)| calculate(claim, quadratic));
             }
-            #[cfg(not(feature = "parallel"))]
-            workspace.quadratics[..claims.len()]
-                .iter_mut()
-                .enumerate()
-                .for_each(|(claim, quadratic)| calculate(claim, quadratic));
         }
 
         let mut cofactor = [Gf::ZERO; 3];
@@ -349,13 +457,13 @@ pub(super) fn prove_products(
             let next_s = q[round + 1];
             let next_at_one = next_s != Gf::ONE;
             let [finite, infinity] = if initial {
-                let left = StateView {
-                    values: inputs[0].0.values(),
-                    padding: inputs[0].0.padding(),
-                };
-                let right = StateView {
-                    values: inputs[0].1.values(),
-                    padding: inputs[0].1.padding(),
+                let (left, right) = if let Some((left, right)) = materialized.as_ref() {
+                    (
+                        StateView::Dense { values: left, padding: inputs[0].0.padding() },
+                        StateView::Dense { values: right, padding: inputs[0].1.padding() },
+                    )
+                } else {
+                    (initial_view(inputs[0].0), initial_view(inputs[0].1))
                 };
                 let (left_out, right_out) = two_mut(&mut workspace.tables, 0, 1);
                 fused_fold_product_round(
@@ -371,11 +479,11 @@ pub(super) fn prove_products(
                     next_at_one,
                 )
             } else {
-                let left = StateView {
+                let left = StateView::Dense {
                     values: &workspace.tables[0],
                     padding: workspace.paddings[0],
                 };
-                let right = StateView {
+                let right = StateView::Dense {
                     values: &workspace.tables[1],
                     padding: workspace.paddings[1],
                 };
@@ -406,7 +514,29 @@ pub(super) fn prove_products(
             };
             prefetched_round = Some([h0, h0 + h1 + infinity, infinity]);
         } else if initial {
-            initialize_tables(inputs, workspace, challenge);
+            if let Some((left, right)) = materialized.as_ref() {
+                let (left_out, right_out) = two_mut(&mut workspace.tables, 0, 1);
+                initialize_view(
+                    left_out,
+                    StateView::Dense {
+                        values: left,
+                        padding: inputs[0].0.padding(),
+                    },
+                    challenge,
+                    false,
+                );
+                initialize_view(
+                    right_out,
+                    StateView::Dense {
+                        values: right,
+                        padding: inputs[0].1.padding(),
+                    },
+                    challenge,
+                    false,
+                );
+            } else {
+                initialize_tables(inputs, workspace, challenge);
+            }
         } else {
             fold_tables(workspace, table_count, challenge);
         }
@@ -464,13 +594,10 @@ fn input_view<'a>(
         inputs[claim].1
     };
     if initial {
-        StateView {
-            values: input.values(),
-            padding: input.padding(),
-        }
+        initial_view(input)
     } else {
         let table = 2 * claim + usize::from(slot >= inputs.len());
-        StateView {
+        StateView::Dense {
             values: &workspace.tables[table],
             padding: workspace.paddings[table],
         }
@@ -486,7 +613,7 @@ fn initialize_tables(
     let total_len = inputs
         .iter()
         .flat_map(|&(left, right)| [left, right])
-        .map(|input| input.values().len().div_ceil(2))
+        .map(|input| input.len().div_ceil(2))
         .sum::<usize>();
     #[cfg(feature = "parallel")]
     let parallel_within_table = total_len >= PARALLEL_THRESHOLD
@@ -518,18 +645,22 @@ fn initialize_table(
     challenge: Gf,
     parallel: bool,
 ) {
-    let values = input.values();
-    let padding = input.padding();
-    let folded_len = values.len().div_ceil(2);
+    initialize_view(table, initial_view(input), challenge, parallel);
+}
+
+fn initialize_view(
+    table: &mut Vec<Gf>,
+    input: StateView<'_>,
+    challenge: Gf,
+    parallel: bool,
+) {
+    let folded_len = input.len().div_ceil(2);
     assert!(table.capacity() >= folded_len);
     table.clear();
     let spare = &mut table.spare_capacity_mut()[..folded_len];
     let fill = |(index, output): (usize, &mut core::mem::MaybeUninit<Gf>)| {
-        let low = values[2 * index];
-        let high = values
-            .get(2 * index + 1)
-            .copied()
-            .unwrap_or(padding);
+        let low = input.value(2 * index);
+        let high = input.value(2 * index + 1);
         output.write(low + challenge * (low + high));
     };
     #[cfg(feature = "parallel")]
@@ -605,8 +736,8 @@ fn fused_fold_product_round(
     challenge: Gf,
     at_one: bool,
 ) -> [Gf; 2] {
-    debug_assert_eq!(left.values.len(), right.values.len());
-    let folded_len = left.values.len().div_ceil(2);
+    debug_assert_eq!(left.len(), right.len());
+    let folded_len = left.len().div_ceil(2);
     let pairs = folded_len.div_ceil(2);
     assert!(left_out.capacity() >= folded_len && right_out.capacity() >= folded_len);
     left_out.clear();
@@ -614,7 +745,7 @@ fn fused_fold_product_round(
     let left_spare = &mut left_out.spare_capacity_mut()[..folded_len];
     let right_spare = &mut right_out.spare_capacity_mut()[..folded_len];
     let high_len = pairs.div_ceil(low_domain);
-    let baseline = left.padding * right.padding;
+    let baseline = left.padding() * right.padding();
     let challenge_mul = field::PreparedGf128Mul::new(challenge);
 
     let block = |(
@@ -722,7 +853,7 @@ fn fused_fold_product_block(
             let folded = folded_pair(left, right, 2 * pair + 1, domain_len, challenge);
             (folded[0], folded[1])
         } else {
-            (left.padding, right.padding)
+            (left.padding(), right.padding())
         };
         left_out[output].write(left0);
         right_out[output].write(right0);
@@ -762,18 +893,10 @@ fn folded_pair(
     domain_len: usize,
     challenge: &field::PreparedGf128Mul,
 ) -> [Gf; 2] {
-    debug_assert!(left.values.len() <= domain_len && right.values.len() <= domain_len);
+    debug_assert!(left.len() <= domain_len && right.len() <= domain_len);
     let fold = |state: StateView<'_>| {
-        let low = state
-            .values
-            .get(2 * output)
-            .copied()
-            .unwrap_or(state.padding);
-        let high = state
-            .values
-            .get(2 * output + 1)
-            .copied()
-            .unwrap_or(state.padding);
+        let low = state.value(2 * output);
+        let high = state.value(2 * output + 1);
         low + challenge.mul(&(low + high))
     };
     [fold(left), fold(right)]
@@ -800,7 +923,7 @@ fn product_round(
     at_one: bool,
     parallel: bool,
 ) -> [Gf; 2] {
-    let baseline = left.padding * right.padding;
+    let baseline = left.padding() * right.padding();
     let pairs = active_len(left).max(active_len(right)).div_ceil(2);
     if pairs == 0 {
         return [baseline, Gf::ZERO];
@@ -849,6 +972,127 @@ fn product_round(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn product_round_materialize(
+    left: StateView<'_>,
+    right: StateView<'_>,
+    left_out: &mut [Gf],
+    right_out: &mut [Gf],
+    eq_low: &[Gf],
+    eq_high: &[Gf],
+    low_domain: usize,
+    at_one: bool,
+) -> [Gf; 2] {
+    assert_eq!(left_out.len(), left.len());
+    assert_eq!(right_out.len(), right.len());
+    assert_eq!(left.len(), right.len());
+    let baseline = left.padding() * right.padding();
+    let pairs = left.len().max(right.len()).div_ceil(2);
+    if pairs == 0 {
+        return [baseline, Gf::ZERO];
+    }
+    let high_len = pairs.div_ceil(low_domain);
+    let block = |(
+        high,
+        ((left_out, right_out), &high_weight),
+    ): (
+        usize,
+        ((&mut [Gf], &mut [Gf]), &Gf),
+    )| {
+        let base = high * low_domain;
+        let block_len = (pairs - base).min(low_domain);
+        let mut finite = <Gf as WideMulAcc>::wide_zero(&Gf::ZERO);
+        let mut infinity = <Gf as WideMulAcc>::wide_zero(&Gf::ZERO);
+        for low in 0..block_len {
+            let pair = base + low;
+            let index = 2 * pair;
+            let left0 = left.value(index);
+            let left1 = left.value(index + 1);
+            let right0 = right.value(index);
+            let right1 = right.value(index + 1);
+            let output = 2 * low;
+            if index < left.len() {
+                left_out[output] = left0;
+            }
+            if index + 1 < left.len() {
+                left_out[output + 1] = left1;
+            }
+            if index < right.len() {
+                right_out[output] = right0;
+            }
+            if index + 1 < right.len() {
+                right_out[output + 1] = right1;
+            }
+            let (left_finite, right_finite) = if at_one {
+                (left1, right1)
+            } else {
+                (left0, right0)
+            };
+            let finite_product = left_finite * right_finite + baseline;
+            let infinity_product = (left0 + left1) * (right0 + right1);
+            let weight = eq_low[low];
+            <Gf as WideMulAcc>::wide_add_assign(
+                &mut finite,
+                &<Gf as WideMulAcc>::mul_wide(&weight, &finite_product),
+            );
+            <Gf as WideMulAcc>::wide_add_assign(
+                &mut infinity,
+                &<Gf as WideMulAcc>::mul_wide(&weight, &infinity_product),
+            );
+        }
+        let finite = <Gf as WideMulAcc>::from_wide(finite);
+        let infinity = <Gf as WideMulAcc>::from_wide(infinity);
+        [
+            <Gf as WideMulAcc>::mul_wide(&high_weight, &finite),
+            <Gf as WideMulAcc>::mul_wide(&high_weight, &infinity),
+        ]
+    };
+    let zero = || {
+        [
+            <Gf as WideMulAcc>::wide_zero(&Gf::ZERO),
+            <Gf as WideMulAcc>::wide_zero(&Gf::ZERO),
+        ]
+    };
+    let merge = |
+        mut left: [<Gf as WideMulAcc>::Wide; 2],
+        right: [<Gf as WideMulAcc>::Wide; 2],
+    | {
+        <Gf as WideMulAcc>::wide_add_assign(&mut left[0], &right[0]);
+        <Gf as WideMulAcc>::wide_add_assign(&mut left[1], &right[1]);
+        left
+    };
+    #[cfg(feature = "parallel")]
+    let sum = if pairs >= PARALLEL_THRESHOLD && high_len > 1 {
+        left_out
+            .par_chunks_mut(2 * low_domain)
+            .zip(right_out.par_chunks_mut(2 * low_domain))
+            .zip(eq_high[..high_len].par_iter())
+            .enumerate()
+            .map(block)
+            .reduce(zero, merge)
+    } else {
+        left_out
+            .chunks_mut(2 * low_domain)
+            .zip(right_out.chunks_mut(2 * low_domain))
+            .zip(&eq_high[..high_len])
+            .enumerate()
+            .map(block)
+            .fold(zero(), merge)
+    };
+    #[cfg(not(feature = "parallel"))]
+    let sum = left_out
+        .chunks_mut(2 * low_domain)
+        .zip(right_out.chunks_mut(2 * low_domain))
+        .zip(&eq_high[..high_len])
+        .enumerate()
+        .map(block)
+        .fold(zero(), merge);
+    [
+        baseline + <Gf as WideMulAcc>::from_wide(sum[0].clone()),
+        <Gf as WideMulAcc>::from_wide(sum[1].clone()),
+    ]
+}
+
+#[allow(clippy::too_many_arguments)]
 fn product_round_block(
     left: StateView<'_>,
     right: StateView<'_>,
@@ -865,24 +1109,33 @@ fn product_round_block(
     let block_len = (pairs - base).min(low_len);
     let mut finite = <Gf as WideMulAcc>::wide_zero(&Gf::ZERO);
     let mut infinity = <Gf as WideMulAcc>::wide_zero(&Gf::ZERO);
-    let kernel_len = (left.values.len() / 2)
-        .min(right.values.len() / 2)
-        .saturating_sub(base)
-        .min(block_len);
+    let kernel_len = match (left, right) {
+        (
+            StateView::Dense { values: left, .. },
+            StateView::Dense { values: right, .. },
+        ) => (left.len() / 2)
+            .min(right.len() / 2)
+            .saturating_sub(base)
+            .min(block_len),
+        _ => 0,
+    };
     if kernel_len != 0 {
         let start = 2 * base;
         let end = start + 2 * kernel_len;
-        let [constant, linear, quadratic] = field::Gf128Ops.eqf_single_pair_round(
-            &left.values[start..end],
-            &right.values[start..end],
+        let (left_values, right_values) = match (left, right) {
+            (
+                StateView::Dense { values: left, .. },
+                StateView::Dense { values: right, .. },
+            ) => (left, right),
+            _ => unreachable!(),
+        };
+        let [mut finite_value, quadratic] = field::Gf128Ops.eqf_gruen_pair_round(
+            &left_values[start..end],
+            &right_values[start..end],
             eq_low,
             kernel_len,
+            at_one,
         );
-        let mut finite_value = if at_one {
-            constant + linear + quadratic
-        } else {
-            constant
-        };
         if baseline != Gf::ZERO {
             let weight_sum = if kernel_len == low_len {
                 Gf::ONE
@@ -996,19 +1249,15 @@ fn fill_eq_prefix(point: &[Gf], prefix_len: usize, output: &mut Vec<Gf>) {
 }
 
 fn pair_coeffs(state: StateView<'_>, pair: usize, domain_len: usize) -> (Gf, Gf) {
-    debug_assert!(state.values.len() <= domain_len);
+    debug_assert!(state.len() <= domain_len);
     let index = 2 * pair;
-    let low = state.values.get(index).copied().unwrap_or(state.padding);
-    let high = state
-        .values
-        .get(index + 1)
-        .copied()
-        .unwrap_or(state.padding);
+    let low = state.value(index);
+    let high = state.value(index + 1);
     (low, low + high)
 }
 
 fn active_len(state: StateView<'_>) -> usize {
-    state.values.len()
+    state.len()
 }
 
 fn eval_quadratic(coefficients: [Gf; 3], point: Gf) -> Gf {
