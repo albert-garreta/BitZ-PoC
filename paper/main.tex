@@ -271,7 +271,7 @@ We emphasize that \ftwoz\ can also be used  to prove more exotic constraints, su
  \medskip
      \begin{enumerate}[leftmargin=*,nosep]
          \item  \textbf{Bitification.} First, the prover and verifier transform the  initial claim into a claim of the form  $\langle \psi(\bitstext(\bff)),\lncsbreak \uu \rangle = \mu$ over $R$, for some $\uu$, and where $\bitstext(\bff)$ denotes a vector  with entries in $\{0,1\}$. Intuitively, $\bitstext(\bff)$ is simply the result of  bit-decomposing the entries of $\bff$ in a natural way. This decomposition is linear, and so an inner product on $\bff$ equals an inner product on $\bitstext(\bff)$, for a different weight vector. For example, if $\bff$ is filled with $B$ bit nonnegative elements, then $\uu=  \vv\otimes(1,2,\ldots, 2^{B-1})$.
-         \item \textbf{Commitment.} The prover commits to $\bitstext(\bff)$ over a binary field $\comfield$. To do so, it first packs every $\comfieldexp$ entries of $\bitstext(\bff)$ into a single element from $\comfield$, obtaining a packed vector $\pack(\bff)$ of dimension $|\bitstext(\bff)|/\comfieldexp$. Then the prover commits to $\pack(\bff)$ using a hash-based  commitment scheme  over $\comfield$, e.g.\ WHIR \cite{whir}.  Using the ring-switching techniques from \cite{binius,binius2}, we can later ptove linear claims for $\bitstext(\bff)$ using only the commitment to the packed vector. 
+         \item \textbf{Commitment.} The prover commits to $\bitstext(\bff)$ over a binary field $\comfield$. To do so, it first packs every $\comfieldexp$ entries of $\bitstext(\bff)$ into a single element from $\comfield$, obtaining a packed vector $\pack(\bff)$ of dimension $|\bitstext(\bff)|/\comfieldexp$. Then the prover commits to $\pack(\bff)$ using a hash-based  commitment scheme  over $\comfield$, e.g.\ WHIR \cite{whir}.  Using the ring-switching techniques from \cite{binius,binius2}, we can later prove linear claims for $\bitstext(\bff)$ using only the commitment to the packed vector. 
          \item \textbf{Lift to integers.} The prover computes and sends $\mu'\in \ZZ$ such that $\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle = \mu'$ in $\ZZ$, where $\pi_q^{-1}$ is the natural lift of elements from $\FF_q$ to $\ZZ$.
          \item \textbf{Proof in the exponent of $\comfield$.} Let $g$ be a generator of the multiplicative subgroup $\comfield^*$. Inspired by \cite{binius64}, we have prover and verifier  prove that $g^{\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle} = g^{\mu'}$ in $\comfield$. Precisely, we have
          \begin{equation}\label{e:intro}
@@ -451,7 +451,7 @@ Compared to all prior work, \ftwoz\ proposes a new  concrete PCS over rings, and
 %Remarkably, the Galois approach is present in prior work \cite[Appendix F]{stark}, although not explicitly framed in full generality.
 %}
 
-At the time of writing, two further works push the performance envelope of binary proof systems. Bünz, Rothblum, and Wang~\cite{flock} combine \cite{binius64} with the batched R1CS strategy inspired by~\cite{linearSizedIOPs}, achieving a striking proving throughput of several hundred thousand hashes per second on an M4 Max CPU. BinarySpartan~\cite{binaryspartan}, in turn, incorporates the optimizations of \cite{binius64}-Flock into Spartan, resulting in a proof system with again high hash-proving throughput.
+At the time of writing, two further works push the performance envelope of binary proof systems. Bünz, Rothblum, and Wang~\cite{flock} combine \cite{binius64} with the batched R1CS strategy inspired by~\cite{linearSizedIOPs}, achieving a striking proving throughput of several hundred thousand hashes per second on an M4 Max CPU. BinarySpartan~\cite{binaryspartan}, in turn, adapts and incorporates optimizations from prime fields and elliptic curves to  Spartan over binary fields, resulting in a proof system with again high hash-proving throughput.
 % \ulrich{Not sure about Flock and Binary Spartan, since nothing conceptually new is happening there.
 % The main improvement over binius64 stems from batching R1CS instances as in \cite{linearSizedIOPs}, and to be frank I do not know what Spartan is about, since binius64 and Flock are essentially Spartan.
 % I have the impression that naming them requires also to provide a more complete list of binary provers.
@@ -3354,6 +3354,13 @@ We measure computations where the witness bits are evenly split between  SHA has
      & & Binius (UDR), rate $1/8$ & 2405 & 714 & 86.5 & 25.1 & 356 & 11.9 \\
      & & Binius (Johnson), rate $1/2$ & 2011 & 643 & 85.5 & 26.7 & 419 & 11.6 \\
      & & Binius (Johnson), rate $1/8$ & 2429 & 721 & 87.2 & 27.2 & 222 & 12.5 \\
+         \addlinespace
+    $2^{21}$ & $2^{13}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{2289} & \textbf{564} & 99.4 & 27.8 & 331 & \textbf{11.0} \\
+     & & \ftwoz-SNARK, rate $1/8$ & 2885 & 683 & \textbf{98.9} & \textbf{26.0} & \textbf{195} & 11.5 \\
+     & & Binius (UDR), rate $1/2$ & -- & -- & -- & -- & -- & -- \\
+     & & Binius (UDR), rate $1/8$ & -- & -- & -- & -- & -- & -- \\
+     & & Binius (Johnson), rate $1/2$ & -- & -- & -- & -- & -- & -- \\
+     & & Binius (Johnson), rate $1/8$ & -- & -- & -- & -- & -- & -- \\
     \bottomrule
   \end{tabular}
   \caption{Cost of proving $N$ multiplications modulo $2^{32}$ and $M=N/256$  chained SHA-256 compressions.  The choice of $N$ and $M$ is done so that both types of workloads (modular multiplication and SHA-256) amount to roughly the same number of witness bits. Configured at $\lambda = 100$ bits of round-by-round knowledge soundness.  Ran on a MacBook Air M5, 24\,GB, CPU only.}
