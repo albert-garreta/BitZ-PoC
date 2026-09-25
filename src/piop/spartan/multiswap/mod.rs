@@ -36,6 +36,8 @@ pub use proof::{
     MultiswapSpec, PreparedMultiswapRelation, commit_multiswap_witness, multiswap_lig_configs,
     prove_multiswap_mod_r1cs, verify_multiswap_mod_r1cs,
 };
+#[cfg(feature = "bitz-parity")]
+pub use proof::{prove_multiswap_mod_r1cs_wfbitz, verify_multiswap_mod_r1cs_wfbitz};
 pub use reduce::{step50_accepts_lift, step50_integer_lift, step50_mu_prime_bound, step50_reduce};
 pub use relation::{
     MULTISWAP_QUOS_SLOT_START, MULTISWAP_SLOT_VARS, MULTISWAP_SLOTS, MULTISWAP_W_SLOT_START,

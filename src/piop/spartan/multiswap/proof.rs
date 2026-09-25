@@ -519,6 +519,35 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
 
 /// Verifies the MultiSwap proof, re-deriving both primes from the bound
 /// transcript.
+/// [`prove_multiswap_mod_r1cs`] with the reduced claim discharged through the
+/// worldfnd/BitZ scheme's virtual opening (feature `bitz-parity`): the same
+/// prefix, lift and second prime, then that scheme's fold, GKR and opening
+/// under this relation's UDR ladder.
+#[cfg(feature = "bitz-parity")]
+pub fn prove_multiswap_mod_r1cs_wfbitz<T: Transcript + Send>(
+    transcript: &mut T,
+    prepared: &PreparedMultiswapRelation,
+    assignment: &MultiswapAssignment,
+    hint: &FlockCommitHint,
+    pc: &LigProverConfig,
+) -> Result<Proof<protocol::wfbitz_opener::WfbitzOpeningProof>, ProtocolError> {
+    prepared.validate_config(pc)?;
+    protocol::wfbitz_opener::prove_reduced(transcript, &prepared.inner, assignment, hint)
+}
+
+/// Verifies a [`prove_multiswap_mod_r1cs_wfbitz`] proof.
+#[cfg(feature = "bitz-parity")]
+pub fn verify_multiswap_mod_r1cs_wfbitz<T: Transcript + Send>(
+    transcript: &mut T,
+    prepared: &PreparedMultiswapRelation,
+    commitment: &Commitment,
+    proof: &Proof<protocol::wfbitz_opener::WfbitzOpeningProof>,
+    vc: &LigVerifierConfig,
+) -> Result<(), ProtocolError> {
+    prepared.validate_config(vc)?;
+    protocol::wfbitz_opener::verify_reduced(transcript, &prepared.inner, commitment, proof)
+}
+
 pub fn verify_multiswap_mod_r1cs<T: Transcript + Send>(
     transcript: &mut T,
     prepared: &PreparedMultiswapRelation,
@@ -637,6 +666,48 @@ mod tests {
                 &foreign.0
             ),
             Err(ProtocolError::Bitz(FlockRsError::CommitmentConfig))
+        ));
+    }
+
+    /// The reduced claim discharged through the worldfnd/BitZ scheme's virtual
+    /// opening: proves, verifies, is deterministic, and a wrong integer lift
+    /// is still rejected before the reduction draw.
+    #[cfg(feature = "bitz-parity")]
+    #[test]
+    fn mini_multiswap_roundtrips_through_the_wfbitz_opener() {
+        use crate::piop::spartan::protocol::OpeningProof as _;
+        let _env = crate::utils::QUAD_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (prepared, assignment, hint, pc, vc) = mini_setup();
+        let mut pt = Blake3Transcript::new();
+        let proof =
+            prove_multiswap_mod_r1cs_wfbitz(&mut pt, &prepared, &assignment, &hint, &pc).unwrap();
+        assert!(proof.mu_prime().is_some());
+        let mut vt = Blake3Transcript::new();
+        verify_multiswap_mod_r1cs_wfbitz(&mut vt, &prepared, &hint.commitment, &proof, &vc)
+            .unwrap();
+        assert_eq!(vt.state_digest(), pt.state_digest());
+
+        let mut second = Blake3Transcript::new();
+        let again =
+            prove_multiswap_mod_r1cs_wfbitz(&mut second, &prepared, &assignment, &hint, &pc)
+                .unwrap();
+        assert_eq!(again.bitz().to_bytes(), proof.bitz().to_bytes());
+
+        let (prefix, reduction, bitz) = proof.clone().into_parts();
+        let mut reduction = reduction.unwrap();
+        reduction.mu_prime = reduction.mu_prime.wrapping_add(&field::Uint::ONE);
+        let tampered = Proof::from_parts(prefix, Some(reduction), bitz);
+        assert!(matches!(
+            verify_multiswap_mod_r1cs_wfbitz(
+                &mut Blake3Transcript::new(),
+                &prepared,
+                &hint.commitment,
+                &tampered,
+                &vc
+            ),
+            Err(ProtocolError::InvalidIntegerLift)
         ));
     }
 
