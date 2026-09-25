@@ -124,6 +124,9 @@ impl Pcs {
     /// Their scheme as shipped: flock's embedded `fast` ladder for the size.
     pub fn new(shape: &Shape, merkle_hash: HashKind) -> Result<Self, ConfigError> {
         let m = shape.log_bits();
+        if m < super::params::MIN_LOG_BITS {
+            return Err(ConfigError::Invalid("below the embedded ladders' smallest size"));
+        }
         let profile = LigeritoProfile::Fast;
         let security = security_config(m, profile, merkle_hash)?;
         Self::with_security(shape, &security, profile)
@@ -167,6 +170,50 @@ impl Pcs {
         let (prover_config, verifier_config) = security
             .to_prover_verifier_configs()
             .map_err(|_| ConfigError::Invalid("prover config"))?;
+        validate_pcs_verifier_prover(&params, &prover_config, &verifier_config)?;
+        let final_log_n = validate_verifier_config(&verifier_config, log_n, params.log_batch_size)?;
+        let packed_len = 1usize
+            .checked_shl(log_n as u32)
+            .ok_or(ConfigError::Invalid("packed length overflow"))?;
+        Ok(Self {
+            params,
+            prover_config,
+            verifier_config,
+            final_log_n,
+            bit_len,
+            packed_len,
+        })
+    }
+
+    /// The scheme over explicit flock prover/verifier configurations (a
+    /// relation that carries its opener as configurations rather than a
+    /// security config, like MultiSwap's UDR ladder): the parameter frame
+    /// takes the level-0 rate, the initial batch and the hash from the
+    /// prover configuration, and both configurations are validated against
+    /// the shape as `with_security` validates the derived ones.
+    pub fn from_configs(
+        shape: &Shape,
+        prover_config: ProverConfig,
+        verifier_config: VerifierConfig,
+    ) -> Result<Self, ConfigError> {
+        let m = shape.log_bits();
+        let bit_len = 1usize
+            .checked_shl(m as u32)
+            .ok_or(ConfigError::Invalid("bit length overflow"))?;
+        let log_inv_rate = *prover_config
+            .log_inv_rates
+            .first()
+            .ok_or(ConfigError::Invalid("no levels"))?;
+        let params = PcsParams {
+            m,
+            log_inv_rate,
+            log_batch_size: prover_config.initial_k,
+            profile: LigeritoProfile::Fast,
+            merkle_hash: prover_config.merkle_hash,
+        };
+        let log_n = m
+            .checked_sub(LOG_PACKING)
+            .ok_or(ConfigError::Invalid("m below packing width"))?;
         validate_pcs_verifier_prover(&params, &prover_config, &verifier_config)?;
         let final_log_n = validate_verifier_config(&verifier_config, log_n, params.log_batch_size)?;
         let packed_len = 1usize

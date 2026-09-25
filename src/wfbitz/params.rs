@@ -42,14 +42,16 @@ pub struct Shape {
 }
 
 impl Shape {
+    /// A grid of `2^log_rows` bit rows by `2^log_columns` columns: rows at
+    /// least the packing width, at most `2^MAX_LOG_BITS` cells. The
+    /// embedded-ladder floor (`MIN_LOG_BITS`) is checked where flock's
+    /// ladders are looked up ([`super::Pcs::new`]), not here: a virtual
+    /// claim grid, or a commitment under an explicit ladder, may be smaller.
     pub fn new(log_rows: usize, log_columns: usize) -> Result<Self, ShapeError> {
         if log_rows < PACK_BITS as usize {
             return Err(ShapeError::RowIndexTooNarrow);
         }
-        if log_rows > MAX_LOG_BITS
-            || log_columns > MAX_LOG_BITS - log_rows
-            || log_rows + log_columns < MIN_LOG_BITS
-        {
+        if log_rows > MAX_LOG_BITS || log_columns > MAX_LOG_BITS - log_rows {
             return Err(ShapeError::CommitmentSizeOutOfRange);
         }
         Ok(Self {

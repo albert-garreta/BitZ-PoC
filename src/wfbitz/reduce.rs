@@ -31,10 +31,21 @@ fn eq_table(point: &[Gf]) -> Vec<Gf> {
 fn query_from_terminal(
     fold: &Fold,
     shape: &Shape,
-    mut point: Vec<Gf>,
+    point: Vec<Gf>,
     claim: Gf,
 ) -> Result<OpeningQuery, ClaimError> {
-    // The multilinear extension of the constant-one table is one everywhere.
+    let (u1, alfa_c, inner_product_claim) = exit_from_terminal(fold, point, claim);
+    let u2 = eq_table(&alfa_c);
+    let claim = LinearClaimGf::from_shape(shape, u1, u2, inner_product_claim)?;
+    Ok(OpeningQuery::InnerProduct { claim })
+}
+
+/// The GKR's exit split the way a composition consumes it: the row-bit
+/// weights `(A(b) − 1)·eq(b, α_b)`, the column point `α_c` and the
+/// inner-product target `claim − 1` (the multilinear extension of the
+/// constant-one table is one everywhere). GKR's terminal point is
+/// `[α_c (r2 column vars) | α_b (r1 row vars)]`.
+pub(crate) fn exit_from_terminal(fold: &Fold, mut point: Vec<Gf>, claim: Gf) -> (Vec<Gf>, Vec<Gf>, Gf) {
     let inner_product_claim = claim - Gf::one();
     let r1 = fold.row_images.len().max(1).ilog2() as usize;
     let r2 = point.len() - r1;
@@ -46,9 +57,36 @@ fn query_from_terminal(
         .zip(eq_table(&alfa_b))
         .map(|(a, b)| (*a - Gf::one()) * b)
         .collect();
-    let u2 = eq_table(&alfa_c);
-    let claim = LinearClaimGf::from_shape(shape, u1, u2, inner_product_claim)?;
-    Ok(OpeningQuery::InnerProduct { claim })
+    (u1, alfa_c, inner_product_claim)
+}
+
+/// The fold's GKR over any grid's packed columns, its exit in the
+/// composition's form (see [`exit_from_terminal`]).
+pub(crate) fn gkr_exit_prove(
+    transcript: &mut ProverState,
+    fold: &Fold,
+    shape: &Shape,
+    packed_cols: &[Vec<u64>],
+) -> (Vec<Gf>, Vec<Gf>, Gf) {
+    let forest = Forest::new(
+        shape.log_rows(),
+        shape.log_columns(),
+        packed_cols,
+        &fold.row_images,
+    );
+    let (point, claim) = forest.prove(transcript, &fold.zeta);
+    exit_from_terminal(fold, point, claim)
+}
+
+/// [`gkr_exit_prove`]'s verifier.
+pub(crate) fn gkr_exit_verify(
+    transcript: &mut VerifierState<'_>,
+    fold: &Fold,
+    shape: &Shape,
+) -> Result<(Vec<Gf>, Vec<Gf>, Gf), ReduceError> {
+    let (point, claim) = gpgkr_verify(transcript, fold.e0, &fold.zeta, shape.log_rows() as u32)
+        .ok_or(ReduceError::GKR)?;
+    Ok(exit_from_terminal(fold, point, claim))
 }
 
 pub(crate) fn gkr_reduce_prove(
