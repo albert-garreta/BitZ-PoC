@@ -494,11 +494,50 @@ pub struct PreparedSha256Ecdsa {
     pub(crate) h_layout: IntegerMatrixLayout,
     pub(crate) f_layout: IntegerMatrixLayout,
     pub(crate) ligerito: crate::ligerito_flock::ResolvedLigerito,
+    pub(crate) opener: Sha256EcdsaOpener,
+}
+
+/// Which scheme opens the terminal scaled claim through the commitment:
+/// the crate's chunked exponent-fold forest with its virtual opening (the
+/// paper's), or the worldfnd/BitZ scheme's virtual opening
+/// (`crate::wfbitz::virt`, feature `bitz-parity`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Sha256EcdsaOpener {
+    #[default]
+    Forest,
+    Wfbitz,
+}
+
+impl Sha256EcdsaOpener {
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "forest" => Some(Self::Forest),
+            "wfbitz" => Some(Self::Wfbitz),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Forest => "forest",
+            Self::Wfbitz => "wfbitz",
+        }
+    }
 }
 
 impl PreparedSha256Ecdsa {
     pub fn ligerito_configuration(&self) -> &crate::ligerito_flock::ResolvedLigerito {
         &self.ligerito
+    }
+
+    /// Selects the opener of the terminal claim (default: the forest).
+    pub fn with_opener(mut self, opener: Sha256EcdsaOpener) -> Self {
+        self.opener = opener;
+        self
+    }
+
+    pub fn opener(&self) -> Sha256EcdsaOpener {
+        self.opener
     }
 
     pub fn with_ligerito(
@@ -701,5 +740,6 @@ pub fn prepare_sha256_ecdsa_on(
         ligerito: crate::ligerito_flock::LigeritoSelection::for_target(lambda as usize)
             .resolve(f_bits - 7, lambda as usize)
             .map_err(error)?,
+        opener: Sha256EcdsaOpener::Forest,
     })
 }

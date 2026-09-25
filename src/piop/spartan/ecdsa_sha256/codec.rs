@@ -1,7 +1,6 @@
-use super::{Result, Sha256EcdsaProof, error};
+use super::{Result, Sha256EcdsaOpening, Sha256EcdsaProof, error};
 use crate::piop::spartan::SpartanField as _;
 use crate::{
-    ligerito_flock::IntEvalRsLigVirtProof,
     piop::spartan::{
         SpartanField,
         bitz::SpartanBitzField as F,
@@ -63,8 +62,7 @@ impl Sha256EcdsaProof {
         let inner = read_rounds(&mut r, q, &cfg)?;
         let inner_nonces = read_nonces(&mut r)?;
         let len = r.len().map_err(error)?;
-        let opening =
-            IntEvalRsLigVirtProof::from_bytes(r.take(len).map_err(error)?).map_err(error)?;
+        let opening = Sha256EcdsaOpening::from_bytes(r.take(len).map_err(error)?)?;
         if r.remaining() != 0 {
             return Err(error("trailing proof bytes"));
         }

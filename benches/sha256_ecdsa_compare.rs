@@ -52,6 +52,10 @@ struct Args {
     #[arg(long = "log-inv-rate", alias = "binius-log-inv-rate", default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=3))]
     log_inv_rate: u8,
     /// Wall-clock reports top-level timings without recording internal spans.
+    /// The BitZ methods' opener of the terminal claim: the forest (the
+    /// paper's) or the worldfnd/BitZ scheme (needs `--features bitz-parity`).
+    #[arg(long, default_value = "forest", value_parser = ["forest", "wfbitz"])]
+    opener: String,
     #[arg(long, value_enum, default_value = "perfetto")]
     timing: Timing,
 }
@@ -324,6 +328,8 @@ struct ResultRecord<'a, D> {
     schema: &'static str,
     timing: Timing,
     method: &'a str,
+    /// The BitZ methods' opener of the terminal claim (`forest` | `wfbitz`).
+    opener: &'a str,
     /// The statement's curve and the exact verifier circuit this row ran,
     /// so no two rows are compared without the runner checking both.
     curve: &'a str,
@@ -363,6 +369,7 @@ fn result_record<'a, D>(
         schema: "bitz/sha256-ecdsa-compare/v1",
         timing: args.timing,
         method: &args.method,
+        opener: &args.opener,
         curve: &args.curve,
         circuit_profile,
         zk: false,
@@ -416,6 +423,7 @@ fn bitz(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
     let (prepared, setup_ms) = setup(args.timing, || {
         prepare_sha256_ecdsa_on(circuit, args.exponent(), args.target, mode)
             .and_then(|p| p.with_ligerito(common::ligerito_selection(args.target as usize)))
+            .map(|p| p.with_opener(Sha256EcdsaOpener::parse(&args.opener).expect("opener")))
     })?;
     let security = prepared.security()?;
     for trial in 0..=args.reps {

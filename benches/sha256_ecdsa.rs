@@ -26,6 +26,10 @@ struct Args {
     security: u32,
     #[arg(value_parser = common::cli::positive)]
     reps: usize,
+    /// The opener of the terminal claim: the forest (the paper's) or the
+    /// worldfnd/BitZ scheme's virtual opening (needs `--features bitz-parity`).
+    #[arg(long, default_value = "forest", value_parser = ["forest", "wfbitz"])]
+    opener: String,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -41,6 +45,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (prepared, setup) = bitz::observability::measure(tracing::info_span!("ecdsa:setup"), || {
         prepare_sha256_ecdsa(exponent, lambda, mode)
             .and_then(|p| p.with_ligerito(common::ligerito_selection(lambda as usize)))
+            .map(|p| p.with_opener(Sha256EcdsaOpener::parse(&args.opener).expect("opener")))
     })?;
     let prepared = prepared?;
     let setup_ms = setup.as_secs_f64() * 1000.;

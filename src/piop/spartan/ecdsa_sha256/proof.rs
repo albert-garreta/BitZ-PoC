@@ -56,7 +56,66 @@ pub struct Sha256EcdsaProof {
     pub(crate) outer_nonces: Vec<u64>,
     pub(crate) inner: SumcheckProof<F, 3>,
     pub(crate) inner_nonces: Vec<u64>,
-    pub(crate) opening: IntEvalRsLigVirtProof,
+    pub(crate) opening: Sha256EcdsaOpening,
+}
+
+/// The opening of the terminal scaled claim, by whichever scheme the
+/// prepared statement selected ([`super::Sha256EcdsaOpener`]).
+#[derive(Clone)]
+pub enum Sha256EcdsaOpening {
+    /// The forest's virtual opening (the paper's).
+    Forest(IntEvalRsLigVirtProof),
+    /// The worldfnd/BitZ scheme's virtual opening: its narg string, hint
+    /// stream and the crate's Round-0 message.
+    #[cfg(feature = "bitz-parity")]
+    Wfbitz(crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof),
+}
+
+impl Sha256EcdsaOpening {
+    const FOREST_TAG: u8 = 0;
+    #[cfg(feature = "bitz-parity")]
+    const WFBITZ_TAG: u8 = 1;
+
+    pub(crate) fn ood(&self) -> Option<&crate::ligerito_flock::OodRound> {
+        match self {
+            Self::Forest(opening) => opening.ood.as_ref(),
+            #[cfg(feature = "bitz-parity")]
+            Self::Wfbitz(opening) => opening.ood.as_ref(),
+        }
+    }
+
+    /// One tag byte, then the variant's own encoding.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            Self::Forest(opening) => {
+                let mut bytes = vec![Self::FOREST_TAG];
+                bytes.extend_from_slice(&opening.to_bytes());
+                bytes
+            }
+            #[cfg(feature = "bitz-parity")]
+            Self::Wfbitz(opening) => {
+                use crate::piop::spartan::protocol::OpeningProof;
+                let mut bytes = vec![Self::WFBITZ_TAG];
+                bytes.extend_from_slice(&opening.to_bytes());
+                bytes
+            }
+        }
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        match bytes.split_first() {
+            Some((&Self::FOREST_TAG, rest)) => {
+                IntEvalRsLigVirtProof::from_bytes(rest).map(Self::Forest).map_err(error)
+            }
+            #[cfg(feature = "bitz-parity")]
+            Some((&Self::WFBITZ_TAG, rest)) => {
+                crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof::from_bytes(rest)
+                    .map(Self::Wfbitz)
+                    .ok_or_else(|| error("malformed wfbitz opening"))
+            }
+            _ => Err(error("unknown opening variant")),
+        }
+    }
 }
 
 pub fn commit_sha256_ecdsa(
@@ -294,6 +353,43 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
             u128::from(cfg.to_integer(&x))
         })
         .collect();
+    if prepared.opener == super::Sha256EcdsaOpener::Wfbitz {
+        #[cfg(not(feature = "bitz-parity"))]
+        {
+            return Err(error("the wfbitz opener needs the bitz-parity feature"));
+        }
+        #[cfg(feature = "bitz-parity")]
+        {
+            let cols: Vec<u128> = eq_table(&inner.point[prepared.h_layout.row_vars..], &cfg)
+                .map_err(error)?
+                .iter()
+                .map(|x| u128::from(cfg.to_integer(x)))
+                .collect();
+            let target = u128::from(cfg.to_integer(&inner.final_claim));
+            let opening = super::wfbitz::prove_opening(
+                t,
+                prepared,
+                hint,
+                &witness.h_rows,
+                rows,
+                cols,
+                target,
+                modulus,
+                ood,
+            )?;
+            return Ok(Sha256EcdsaProof {
+                modulus,
+                initial_nonce,
+                batch_nonce,
+                flock_nonces: Vec::new(),
+                outer: outer.proof,
+                outer_nonces,
+                inner: inner.proof,
+                inner_nonces,
+                opening: Sha256EcdsaOpening::Wfbitz(opening),
+            });
+        }
+    }
     let mut flock_nonces = Vec::new();
     let chunks = ModQWeightChunks::from_single_chunk(&prepared.h_layout, 113, rows)
         .map_err(|_| error("invalid row weights"))?;
@@ -329,7 +425,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         outer_nonces,
         inner: inner.proof,
         inner_nonces,
-        opening,
+        opening: Sha256EcdsaOpening::Forest(opening),
     })
 }
 
@@ -348,7 +444,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         transcript,
         packed_vars(&prepared.f_layout),
         security.ood,
-        proof.opening.ood.as_ref(),
+        proof.opening.ood(),
     )
     .map_err(|e| error(format!("{e:?}")))?;
     let InitialSpartanChallenges {
@@ -438,6 +534,17 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     // chunks: L × R; folds = chunks · h: L × C.
     // folds[ℓ][c] = Σ_b chunks[ℓ][b] · h[b,c].
     // chunks[0][b] = rows[b].
+    let opening = match (&proof.opening, prepared.opener) {
+        (Sha256EcdsaOpening::Forest(opening), super::Sha256EcdsaOpener::Forest) => opening,
+        #[cfg(feature = "bitz-parity")]
+        (Sha256EcdsaOpening::Wfbitz(opening), super::Sha256EcdsaOpener::Wfbitz) => {
+            let target = u128::from(cfg.to_integer(&inner_final_claim));
+            return super::wfbitz::verify_opening(
+                transcript, prepared, commitment, opening, rows, cols, target, modulus, ood,
+            );
+        }
+        _ => return Err(error("the proof's opening is not the prepared opener's")),
+    };
     let chunks = ModQWeightChunks::from_single_chunk(&prepared.h_layout, 113, rows)
         .map_err(|_| error("invalid row weights"))?;
     let mut grinding = GrindingContext {
@@ -451,7 +558,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off_with_security(
         transcript,
         commitment,
-        &proof.opening,
+        opening,
         &prepared.h_layout,
         &prepared.f_layout,
         &prepared.map,

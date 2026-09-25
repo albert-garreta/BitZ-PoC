@@ -92,8 +92,12 @@ def sample_metrics(row):
     return row
 
 
+OPENERS = ["forest", "wfbitz"]
+
+
 def cases(curve, spartan_splits, methods, targets, threads, seeds,
-          bitz_profiles=DEFAULT_BITZ_PROFILES, binius_rates=DEFAULT_BINIUS_RATES):
+          bitz_profiles=DEFAULT_BITZ_PROFILES, binius_rates=DEFAULT_BINIUS_RATES,
+          openers=("forest",)):
     """BitZ depends only on total work; emit it once for each exponent/target.
 
     Every case carries its curve and its scheme configuration: BitZ methods a
@@ -110,10 +114,10 @@ def cases(curve, spartan_splits, methods, targets, threads, seeds,
                 yield dict(method=method, curve=curve, log_compressions=r+c, r=r, c=c,
                            security_target=None, threads=workers, seed=seed)
         elif method.startswith("bitz"):
-            for exponent, target, profile in itertools.product(work, targets, bitz_profiles):
+            for exponent, target, profile, opener in itertools.product(work, targets, bitz_profiles, openers):
                 yield dict(method=method, curve=curve, log_compressions=exponent, r=None, c=None,
                            security_target=target, threads=workers, seed=seed,
-                           ligerito_profile=profile)
+                           ligerito_profile=profile, opener=opener)
         else:
             method_targets = [100] if method == "binius64-ligerito" else targets
             for exponent, target, rate in itertools.product(work, method_targets, binius_rates):
@@ -220,7 +224,7 @@ def summarize(directory):
     fields = ["method", "log_compressions", "r", "c", "security_target", "threads", "seed",
               "status", "samples", "peak_rss_bytes", "fixture_id", "security_model",
               "economic_bits", "statistical_bits_lower_bound", *METRICS,
-              "log_inv_rate", "ligerito_profile", "timing", "curve", "circuit_profile"]
+              "log_inv_rate", "ligerito_profile", "opener", "timing", "curve", "circuit_profile"]
     fixture_ids = {}
     curves, profiles = set(), {}
     sample_fields = [*fields[:8], "source_file", "trial", "sample", "verified", "peak_rss_bytes",
@@ -325,7 +329,11 @@ def print_summary(directory):
 
 
 def build(args, directory):
-    command = ["cargo", "build", "--release", "--locked", "--features", "sha256-ecdsa-compare,unchecked",
+    features = "sha256-ecdsa-compare,unchecked"
+    if "wfbitz" in getattr(args, "openers", []):
+        # The worldfnd/BitZ scheme's opener lives behind `bitz-parity`.
+        features += ",bitz-parity"
+    command = ["cargo", "build", "--release", "--locked", "--features", features,
                "--bench", "sha256_ecdsa_compare", "--message-format=json-render-diagnostics"]
     if args.offline:
         command.append("--offline")
@@ -380,6 +388,8 @@ def run_case(binary, case, args, directory):
         command.extend(["--target", str(case["security_target"])])
     if "log_inv_rate" in case:
         command.extend(["--log-inv-rate", str(case["log_inv_rate"])])
+    if "opener" in case:
+        command.extend(["--opener", case["opener"]])
     fixture = directory / "fixtures" / f"i{case['log_compressions']}-seed{case['seed']}.json"
     expected_fixture = json.loads(fixture.read_text())["id"]
     command.extend(["--fixture", str(fixture)])
@@ -510,6 +520,9 @@ def main():
                         help="default: bitz-split binius64 binius64-ligerito on secp256k1, bitz-split on p256")
     parser.add_argument("--targets", nargs="+", type=int, choices=[100, 128], default=[100],
                         help="security targets; the binius64-ligerito gate is fixed at 100, so its cases exist only there")
+    parser.add_argument("--openers", nargs="+", choices=OPENERS, default=["forest"],
+                        help="the BitZ methods' opener of the terminal claim: the forest (the paper's) "
+                             "and/or the worldfnd/BitZ scheme's virtual opening (builds with bitz-parity)")
     parser.add_argument("--bitz-profiles", nargs="+", choices=sorted(PROFILE_RATES), default=DEFAULT_BITZ_PROFILES,
                         help="Ligerito profile per BitZ case: custom:1:4 = rate 1/2, custom:3:4 = rate 1/8")
     parser.add_argument("--binius-rates", nargs="+", type=int, choices=[1, 2, 3], default=None,
@@ -571,6 +584,7 @@ def main():
         manifest["binius_log_inv_rate"] = args.binius_log_inv_rate
     manifest["campaign"] = dict(curve=args.curve, methods=args.methods, targets=args.targets, threads=args.threads,
                                 bitz_profiles=args.bitz_profiles, binius_rates=args.binius_rates,
+                                openers=args.openers,
                                 seeds=args.seeds, reps=args.reps, timeout=args.timeout, memory_gib=args.memory_gib,
                                 memory_cap_enforced=address_space_limit(args.memory_gib) is not None)
     manifest_path = directory / "manifest.json"
@@ -595,7 +609,8 @@ def main():
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes((ROOT / relative).read_bytes())
     jobs = list(cases(args.curve, spartan_splits, args.methods, args.targets, sorted(set(args.threads)), sorted(set(args.seeds)),
-                      bitz_profiles=args.bitz_profiles, binius_rates=sorted(set(args.binius_rates))))
+                      bitz_profiles=args.bitz_profiles, binius_rates=sorted(set(args.binius_rates)),
+                      openers=args.openers))
     for case in jobs:
         if not case["method"].startswith("binius64"):
             case["timing"] = args.timing

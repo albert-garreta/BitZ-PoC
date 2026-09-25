@@ -562,3 +562,80 @@ fn rejects_a_valid_sha_trace_joined_to_an_unrelated_valid_signature_trace() {
         );
     }
 }
+
+/// The worldfnd/BitZ scheme's virtual opening in place of the forest's:
+/// both outer modes prove, round-trip through bytes and verify on the
+/// paper's Johnson ladder (Round 0 on); a forest proof is refused by a
+/// verifier prepared for the other opener.
+#[cfg(feature = "bitz-parity")]
+#[test]
+fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
+    use crate::transcript::Blake3Transcript;
+    use crate::transcript::traits::Transcript;
+    let (statement, message) = fixture();
+    for mode in [OuterMode::Split, OuterMode::AllRows] {
+        let prepared = prepare_sha256_ecdsa(3, 100, mode)
+            .unwrap()
+            .with_ligerito(crate::ligerito_flock::LigeritoSelection::JOHNSON)
+            .unwrap()
+            .with_opener(Sha256EcdsaOpener::Wfbitz);
+        let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
+        let hint = commit_sha256_ecdsa(&prepared, &witness).unwrap();
+        let mut prover_transcript = Blake3Transcript::new();
+        let mut verifier_transcript = Blake3Transcript::new();
+        let proof =
+            prove_sha256_ecdsa(&mut prover_transcript, &prepared, &statement, &witness, &hint, 4)
+                .unwrap();
+        assert!(matches!(proof.opening, Sha256EcdsaOpening::Wfbitz(_)));
+        let bytes = proof.to_bytes();
+        let proof = Sha256EcdsaProof::from_bytes(&bytes).unwrap();
+        assert_eq!(proof.to_bytes(), bytes);
+        verify_sha256_ecdsa(
+            &mut verifier_transcript,
+            &prepared,
+            &statement,
+            &hint.commitment,
+            &proof,
+        )
+        .unwrap();
+        assert_eq!(
+            prover_transcript.get_challenge::<u128>(),
+            verifier_transcript.get_challenge::<u128>()
+        );
+        // The same statement prepared for the forest refuses this proof, and a
+        // forest proof is refused by the wfbitz-prepared verifier.
+        let forest = prepare_sha256_ecdsa(3, 100, mode)
+            .unwrap()
+            .with_ligerito(crate::ligerito_flock::LigeritoSelection::JOHNSON)
+            .unwrap();
+        assert!(
+            verify_sha256_ecdsa(
+                &mut Blake3Transcript::new(),
+                &forest,
+                &statement,
+                &hint.commitment,
+                &proof
+            )
+            .is_err()
+        );
+        let forest_proof = prove_sha256_ecdsa(
+            &mut Blake3Transcript::new(),
+            &forest,
+            &statement,
+            &witness,
+            &hint,
+            4,
+        )
+        .unwrap();
+        assert!(
+            verify_sha256_ecdsa(
+                &mut Blake3Transcript::new(),
+                &prepared,
+                &statement,
+                &hint.commitment,
+                &forest_proof
+            )
+            .is_err()
+        );
+    }
+}

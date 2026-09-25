@@ -63,9 +63,12 @@ use crate::{
 use flock_core::pcs::commit::Commitment;
 
 use super::{
-    OpeningProof, Opener, PreparedRelationPrefix, Proof, ProtocolError, RelationSpec,
-    bind_prover_statement, bind_verifier_statement, bitify, bitz_generator, instantiate_profile,
-    packed_variables, prove_piop, validate_bit_rows, verify_piop,
+    ClaimFrame, OpeningProof, Opener, PreparedRelation, PreparedRelationPrefix, Proof,
+    ProtocolError, ReductionProof, RelationSpec, bind_claim_frame, bind_prover_statement,
+    bind_verifier_statement, bitify, bitz_generator, check_proof_kernel,
+    grind_and_absorb_in_domain, instantiate_profile, packed_variables, prove_piop,
+    sample_mod_q, step50_accepts_lift, step50_integer_lift, step50_reduce, validate_bit_rows,
+    validate_commitment, verify_and_absorb_in_domain, verify_piop,
 };
 
 /// The session tag of the forked BitZ transcript.
@@ -365,7 +368,7 @@ pub type WfbitzProof = Proof<WfbitzOpeningProof>;
 
 /// The fork's instance tag: 32 bytes squeezed from the outer transcript
 /// after the terminal boundary.
-fn fork_tag<T: Transcript>(transcript: &mut T) -> [u8; 32] {
+pub(crate) fn fork_tag<T: Transcript>(transcript: &mut T) -> [u8; 32] {
     let low: u128 = transcript.get_challenge();
     let high: u128 = transcript.get_challenge();
     let mut tag = [0u8; 32];
@@ -375,7 +378,7 @@ fn fork_tag<T: Transcript>(transcript: &mut T) -> [u8; 32] {
 }
 
 /// The modulus of the runtime prime context as a word.
-fn modulus_u128(prime: &field::FpCtx<2>) -> u128 {
+pub(crate) fn modulus_u128(prime: &field::FpCtx<2>) -> u128 {
     let words = prime.modulus().as_words();
     u128::from(words[0]) | (u128::from(words[1]) << 64)
 }
@@ -588,4 +591,287 @@ mod tests {
         verify(&mut Blake3Transcript::new(), &prefix, &fast, &hint.commitment, &proof).unwrap();
         assert!(verify(&mut Blake3Transcript::new(), &udr_prefix, &udr, &hint.commitment, &proof).is_err());
     }
+}
+
+
+/// The session tag of the reduced (two-prime, virtual) discharge's fork.
+const REDUCED_SESSION: &[u8] = b"bitz/wfbitz-opener/reduced/v1";
+
+/// The scheme over the relation's opener: a resolved ladder's security
+/// config, or explicit configurations (MultiSwap's UDR ladder).
+fn reduced_pcs(opener: &Opener, committed: &Shape) -> Result<BitzPcs, ProtocolError> {
+    let pcs = match opener {
+        Opener::Resolved(resolved) => {
+            BitzPcs::with_security(committed, resolved.security(), LigeritoProfile::Fast)
+        }
+        Opener::Custom {
+            prover: Some(prover),
+            verifier: Some(verifier),
+        } => BitzPcs::from_configs(committed, prover.clone(), verifier.clone()),
+        Opener::Custom { .. } => return Err(ProtocolError::OpenerConfigUnavailable),
+    };
+    pcs.map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ pcs: {error:?}")))
+}
+
+/// The derived grid `h = M·f` the claim is about, as per-column bit rows of
+/// the opening layout: the relation's own derived rows when it materialises
+/// them, the committed rows under an identity map, and otherwise the map
+/// applied to the committed rows (every source cell XORed into the derived
+/// cells it feeds; `O(nnz)`).
+fn derived_bit_rows<S: RelationSpec>(
+    spec: &S,
+    witness: &S::Witness,
+    committed: &IntegerMatrixLayout,
+    opening: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+) -> Vec<Vec<u64>> {
+    if let Some(derived) = spec.derived_rows(witness) {
+        return derived;
+    }
+    let map = match spec.map() {
+        Some(map) if !map.is_identity() => map,
+        _ => return rows.to_vec(),
+    };
+    use circuit::linear_map::binary::VirtualMap;
+    let words = opening.rows() / 64;
+    let mut derived = vec![vec![0u64; words]; opening.cols()];
+    let t_f = committed.row_vars;
+    let t_h = opening.row_vars;
+    for (source_column, row) in rows.iter().enumerate() {
+        for (word_index, &word) in row.iter().enumerate() {
+            let mut bits = word;
+            while bits != 0 {
+                let b = word_index * 64 + bits.trailing_zeros() as usize;
+                bits &= bits - 1;
+                let source = (source_column << t_f) | b;
+                if let Some(targets) = map.column_rows(source) {
+                    for d in targets {
+                        let (c, r) = (d >> t_h, d & ((1 << t_h) - 1));
+                        derived[c][r / 64] ^= 1u64 << (r % 64);
+                    }
+                }
+            }
+        }
+    }
+    derived
+}
+
+/// Proves a two-prime relation (MultiSwap's Strategy 2) with the reduced
+/// claim discharged through the scheme's virtual opening
+/// ([`crate::wfbitz::virt`]): the protocol prefix, the integer lift and the
+/// second prime are the runner's (`protocol::prove_reduced`), then the fold
+/// and GKR run over the derived grid on a forked transcript and the
+/// transposed claim is opened on the commitment under the relation's own
+/// ladder.
+pub fn prove_reduced<T: Transcript + Send, S: RelationSpec>(
+    transcript: &mut T,
+    prepared: &PreparedRelation<S>,
+    witness: &S::Witness,
+    hint: &FlockCommitHint,
+) -> Result<Proof<WfbitzOpeningProof>, ProtocolError> {
+    let prefix = &prepared.prefix;
+    let opener = &prepared.opener;
+    let spec = &prefix.spec;
+    spec.check_witness(witness)?;
+    let p = prepared.params();
+    let pc = opener.prover()?;
+    validate_bit_rows(&p, hint.rows())?;
+    validate_commitment(&p, &hint.commitment, pc)?;
+    let security = &prefix.security;
+    let reduction = security
+        .reduction
+        .ok_or(ProtocolError::UnsupportedProfile)?;
+    let domains = spec.domains();
+    let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
+    let (binding, ood) = bind_prover_statement(transcript, prefix, opener, hint)?;
+    let ood = ood.into_bound_claim();
+    let proved = prove_piop(transcript, prefix, witness, &binding)?;
+    let prime = &proved.prime;
+    let row_weights = bitify::dense_row_weights(&proved.opening, &proved.table, prime)?;
+    let col_weights: Vec<u128> = bitify::column_weights(&proved.opening, prime)?;
+    let step5_0_scope = tracing::info_span!("step5_0:reduce_prove").entered();
+    let mu_prime = step50_integer_lift(hint.rows(), &row_weights, &col_weights);
+    if !step50_accepts_lift(
+        &mu_prime,
+        proved.opening.claimed,
+        prime.modulus_u128(),
+        p.cells(),
+    ) {
+        return Err(ProtocolError::InvalidIntegerLift);
+    }
+    bind_claim_frame(
+        transcript,
+        spec,
+        ClaimFrame {
+            field: prime,
+            binding: &binding,
+            matrices_digest: &proved.matrices_digest,
+            terminal_claim: &proved.terminal_claim,
+            opening: &proved.opening,
+            row_weights: &row_weights,
+            col_weights: &col_weights,
+            mu_prime: Some(&mu_prime),
+        },
+    )?;
+    let nonce = grind_and_absorb_in_domain(
+        transcript,
+        domains.reduction_grinding,
+        0,
+        reduction.grinding_bits,
+    )?;
+    let reduced = sample_mod_q(
+        transcript,
+        domains.reduction_prime,
+        reduction.min,
+        reduction.max,
+    )?;
+    let (rows_reduced, cols_reduced, claimed_reduced) = step50_reduce(
+        &row_weights,
+        &col_weights,
+        &mu_prime,
+        reduced.modulus_u128(),
+    );
+    drop(step5_0_scope);
+
+    let _step5 = tracing::info_span!("step5:open_prove").entered();
+    let opening_layout = spec.opening_layout();
+    let derived_shape = Shape::new(opening_layout.row_vars, opening_layout.col_vars)
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ derived shape: {error:?}")))?;
+    let committed = Shape::new(p.row_vars, p.col_vars)
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ shape: {error:?}")))?;
+    let params = BitZParams::new(derived_shape, reduced.modulus_u128(), bitz_generator().into())
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ params: {error:?}")))?;
+    let claim = LinearClaim::new(&params, rows_reduced, cols_reduced, claimed_reduced)
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
+    let statement = crate::wfbitz::VirtualStatement::new(params, committed, map, &claim)
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
+    let pcs = reduced_pcs(opener, &committed)?;
+    let derived_rows = derived_bit_rows(spec, witness, &p, &opening_layout, hint.rows());
+    let tag = fork_tag(transcript);
+    let mut state = build_prover(REDUCED_SESSION, &tag);
+    state.public_message(&proved.bridge_digest);
+    BitZProver::new(params, WINDOW)
+        .prove_virtual(
+            &statement,
+            &pcs,
+            hint,
+            &derived_rows,
+            &mut state,
+            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+        )
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ prove: {error:?}")))?;
+    let BitzTranscriptProof { narg_string, hints } = state.finish();
+    Ok(Proof::from_parts(
+        proved.messages,
+        Some(ReductionProof { mu_prime, nonce }),
+        WfbitzOpeningProof {
+            narg: narg_string,
+            hints,
+            ood: ood.map(|claim| claim.round),
+        },
+    ))
+}
+
+/// Verifies a [`prove_reduced`] proof.
+pub fn verify_reduced<T: Transcript + Send, S: RelationSpec>(
+    transcript: &mut T,
+    prepared: &PreparedRelation<S>,
+    commitment: &Commitment,
+    proof: &Proof<WfbitzOpeningProof>,
+) -> Result<(), ProtocolError> {
+    let prefix = &prepared.prefix;
+    let opener = &prepared.opener;
+    let spec = &prefix.spec;
+    let p = prepared.params();
+    let binding_config = opener.binding_config()?;
+    validate_commitment(&p, commitment, &binding_config)?;
+    let security = &prefix.security;
+    let reduction = security
+        .reduction
+        .ok_or(ProtocolError::UnsupportedProfile)?;
+    let domains = spec.domains();
+    let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
+    let lift = proof
+        .reduction
+        .as_ref()
+        .ok_or(ProtocolError::InvalidIntegerLift)?;
+    check_proof_kernel(spec.kernel(), &proof.prefix.spartan)?;
+    let (binding, ood) =
+        bind_verifier_statement(transcript, prefix, opener, commitment, proof.bitz.ood.as_ref())?;
+    let ood = ood.into_bound_claim();
+    let verified = verify_piop(transcript, prefix, &binding, &proof.prefix)?;
+    let prime = &verified.prime;
+    let row_weights = bitify::dense_row_weights(&verified.opening, &verified.table, prime)?;
+    let col_weights: Vec<u128> = bitify::column_weights(&verified.opening, prime)?;
+    if !step50_accepts_lift(
+        &lift.mu_prime,
+        verified.opening.claimed,
+        prime.modulus_u128(),
+        p.cells(),
+    ) {
+        return Err(ProtocolError::InvalidIntegerLift);
+    }
+    bind_claim_frame(
+        transcript,
+        spec,
+        ClaimFrame {
+            field: prime,
+            binding: &binding,
+            matrices_digest: &verified.matrices_digest,
+            terminal_claim: &verified.terminal_claim,
+            opening: &verified.opening,
+            row_weights: &row_weights,
+            col_weights: &col_weights,
+            mu_prime: Some(&lift.mu_prime),
+        },
+    )?;
+    verify_and_absorb_in_domain(
+        transcript,
+        domains.reduction_grinding,
+        0,
+        reduction.grinding_bits,
+        lift.nonce,
+    )?;
+    let reduced = sample_mod_q(
+        transcript,
+        domains.reduction_prime,
+        reduction.min,
+        reduction.max,
+    )?;
+    let (rows_reduced, cols_reduced, claimed_reduced) = step50_reduce(
+        &row_weights,
+        &col_weights,
+        &lift.mu_prime,
+        reduced.modulus_u128(),
+    );
+    let _step5 = tracing::info_span!("step5:open_verify").entered();
+    let opening_layout = spec.opening_layout();
+    let derived_shape = Shape::new(opening_layout.row_vars, opening_layout.col_vars)
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ derived shape: {error:?}")))?;
+    let committed = Shape::new(p.row_vars, p.col_vars)
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ shape: {error:?}")))?;
+    let params = BitZParams::new(derived_shape, reduced.modulus_u128(), bitz_generator().into())
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ params: {error:?}")))?;
+    let claim = LinearClaim::new(&params, rows_reduced, cols_reduced, claimed_reduced)
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
+    let statement = crate::wfbitz::VirtualStatement::new(params, committed, map, &claim)
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
+    let pcs = reduced_pcs(opener, &committed)?;
+    let tag = fork_tag(transcript);
+    let opening = proof.bitz();
+    let bitz_proof = BitzTranscriptProof {
+        narg_string: opening.narg.clone(),
+        hints: opening.hints.clone(),
+    };
+    let mut state = build_verifier(REDUCED_SESSION, &tag, &bitz_proof);
+    state.public_message(&verified.bridge_digest);
+    BitZVerifier::new(params, WINDOW)
+        .verify_virtual(
+            &statement,
+            &pcs,
+            Root(commitment.root),
+            state,
+            ood.as_ref().map(|(claim, _)| (claim.point.as_slice(), claim.y)),
+        )
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ verify: {error:?}")))
 }
