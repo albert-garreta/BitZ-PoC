@@ -17,7 +17,7 @@ pub struct FalconConstraintCounts {
     pub keccak_linear_bits: usize,
     /// The two quadratic chi identities, one pair per Keccak bit.
     pub keccak_quadratic_rows: usize,
-    /// Division, two ranges, accept-AND and prefix recurrence per candidate.
+    /// Division, two ranges and prefix recurrence per candidate.
     pub hash_to_point_linear: usize,
     /// Biased centered-lift range equalities.
     pub s1_ranges: usize,
@@ -27,7 +27,8 @@ pub struct FalconConstraintCounts {
     pub norm_terms: usize,
     /// Leaves in each stable-compaction product tree after padding.
     pub compaction_leaves: usize,
-    /// Selector, selected-prefix, selected-remainder and accept products.
+    /// Four word products: selector, selected prefix, selected remainder,
+    /// and rejection from the quotient bits.
     pub compaction_product_rows: usize,
 }
 
@@ -46,7 +47,7 @@ impl FalconConstraintCounts {
             ring_coefficients: N,
             norm_terms: 2 * N,
             compaction_leaves: HASH_TO_POINT_SAMPLES.next_power_of_two(),
-            compaction_product_rows: 27 * HASH_TO_POINT_SAMPLES,
+            compaction_product_rows: 4 * HASH_TO_POINT_SAMPLES,
         }
     }
 
@@ -276,6 +277,7 @@ mod tests {
         assert_eq!(counts.linear_rows(), 930_183);
         assert!(counts.linear_rows() < 1 << 20);
         assert_eq!(counts.norm_round_degree(), 2);
+        assert_eq!(counts.compaction_product_rows, 4 * HASH_TO_POINT_SAMPLES);
         assert_eq!(counts.product_round_degree(), 3);
     }
 

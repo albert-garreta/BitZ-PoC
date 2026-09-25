@@ -39,7 +39,7 @@ const ROTATION: [[u32; 5]; 5] = [
 /// The nonlinear witness of SHAKE256.  `chi_ands` is ordered by
 /// permutation, round, `y`, then `x`; each word is
 /// `(!B[x+1,y]) & B[x+2,y]`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct KeccakTrace {
     /// Native inputs to each permutation, used by the independent trace checker.
     /// These checkpoints are reconstructed from public inputs and prior states

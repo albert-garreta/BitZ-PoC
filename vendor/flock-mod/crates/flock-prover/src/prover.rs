@@ -587,6 +587,18 @@ pub struct ProveCore {
     pub s_hat_v_c: Vec<Gf128>,
 }
 
+/// Zerocheck and lincheck against an existing commitment, without committing
+/// again or opening the resulting claims. Composition protocols retain their
+/// own packed witness and PCS state and authenticate `ab` and `c` downstream.
+pub struct CommittedPrefix {
+    pub zc_proof: zerocheck::ZerocheckProof,
+    pub lc_proof: lincheck::LincheckProof,
+    pub ab: ZClaim,
+    pub c: ZClaim,
+    pub s_hat_v_ab: Option<Vec<Gf128>>,
+    pub s_hat_v_c: Vec<Gf128>,
+}
+
 /// Run commit → bind → zerocheck → lincheck and build the base claims, stopping
 /// just before the PCS open. See [`ProveCore`].
 pub fn prove_fast_core<Ch: Challenger>(
@@ -633,7 +645,49 @@ pub fn prove_fast_core_with_codeword<Ch: Challenger>(
         Some(buf) => pcs::commit_into(&z_packed, pcs_params, buf),
         None => pcs::commit(&z_packed, pcs_params),
     };
-    bind_statement(challenger, r1cs, &commitment);
+    let prefix = prove_fast_committed_prefix(
+        r1cs,
+        &commitment,
+        &z_packed,
+        a_packed_f128,
+        b_packed_f128,
+        z_packed_lincheck,
+        lincheck_circuit,
+        challenger,
+    );
+    ProveCore {
+        zc_proof: prefix.zc_proof,
+        lc_proof: prefix.lc_proof,
+        ab: prefix.ab,
+        c: prefix.c,
+        commitment,
+        prover_data,
+        z_packed,
+        s_hat_v_ab: prefix.s_hat_v_ab,
+        s_hat_v_c: prefix.s_hat_v_c,
+    }
+}
+
+/// Run bind → zerocheck → lincheck on a witness already committed by the
+/// caller. Uses the caller's current transcript and supplied root verbatim;
+/// neither creates a commitment nor samples an opening challenge.
+///
+/// The caller must authenticate both returned claims against `commitment`.
+/// As with [`prove_fast_core`], the A/B and lincheck buffers are consumed.
+#[allow(clippy::too_many_arguments)]
+pub fn prove_fast_committed_prefix<Ch: Challenger>(
+    r1cs: &BlockR1cs,
+    commitment: &Commitment,
+    z_packed: &[Gf128],
+    a_packed_f128: Vec<Gf128>,
+    b_packed_f128: Vec<Gf128>,
+    z_packed_lincheck: Vec<u8>,
+    lincheck_circuit: &dyn lincheck::LincheckCircuit,
+    challenger: &mut Ch,
+) -> CommittedPrefix {
+    assert_eq!(commitment.params.m, r1cs.m);
+    assert_eq!(z_packed.len(), 1usize << (r1cs.m - pcs::LOG_PACKING));
+    bind_statement(challenger, r1cs, commitment);
 
     let padding = r1cs.padding_spec();
     let (zc_proof, zc_claim, s_hat_v_c) = {
@@ -706,14 +760,11 @@ pub fn prove_fast_core_with_codeword<Ch: Challenger>(
         None
     };
 
-    ProveCore {
+    CommittedPrefix {
         zc_proof,
         lc_proof,
         ab,
         c,
-        commitment,
-        prover_data,
-        z_packed,
         s_hat_v_ab,
         s_hat_v_c,
     }

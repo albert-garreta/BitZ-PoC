@@ -21,6 +21,17 @@ pub fn hash_to_point_ct(nonce: &[u8; 40], message: &[u8]) -> Result<HashToPointT
     input.extend_from_slice(nonce);
     input.extend_from_slice(message);
     let (bytes, shake) = shake256_with_trace(&input, 2 * HASH_TO_POINT_SAMPLES);
+    from_shake_bytes(&bytes, shake)
+}
+
+/// Arithmetic mirror shared by the prime and binary SHAKE front ends.
+pub(super) fn from_shake_bytes(
+    bytes: &[u8],
+    shake: KeccakTrace,
+) -> Result<HashToPointTrace, FalconError> {
+    if bytes.len() != 2 * HASH_TO_POINT_SAMPLES {
+        return Err(FalconError::Piop("SHAKE sample length".into()));
+    }
 
     let mut words = Box::new([0u16; HASH_TO_POINT_SAMPLES]);
     let mut quotients = Box::new([0u8; HASH_TO_POINT_SAMPLES]);

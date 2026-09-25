@@ -17,7 +17,7 @@ mod channel;
 mod codec;
 pub mod mod32_binius;
 mod mul;
-mod opening;
+pub(crate) mod opening;
 mod security;
 mod sha;
 pub(crate) mod sumcheck;

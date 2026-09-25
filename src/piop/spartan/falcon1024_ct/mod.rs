@@ -10,12 +10,25 @@
 mod constraints;
 mod format;
 mod hash_to_point;
+#[cfg(feature = "falcon-hybrid")]
+mod hybrid;
+#[cfg(feature = "falcon-hybrid")]
+mod hybrid_bridge;
+#[cfg(feature = "falcon-hybrid")]
+mod hybrid_keccak;
+#[cfg(feature = "falcon-hybrid")]
+mod hybrid_sumcheck;
 mod keccak;
 mod layout;
 mod opening;
 mod piop;
 mod source;
 mod verify;
+#[cfg(feature = "falcon-hybrid")]
+pub use hybrid::{
+    CommittedFalconHybrid, FalconHybridProof, FalconHybridSecurity, FalconHybridStatement,
+    PreparedFalconHybrid,
+};
 
 pub use format::{FalconPublicKey, FalconSignatureCt, decode_public_key, decode_signature_ct};
 pub use hash_to_point::{HashToPointTrace, hash_to_point_ct};
@@ -62,9 +75,9 @@ pub enum FalconError {
     HashToPointUnderflow { accepted: usize },
     #[error("Falcon squared norm {actual} exceeds {BETA_SQUARED}")]
     NormTooLarge { actual: u64 },
-    #[error("the requested Falcon batch capacity must be in 1..=32")]
+    #[error("unsupported Falcon batch size (legacy: 1..=32; hybrid: 1..=1024)")]
     InvalidBatchCapacity,
-    #[error("the Falcon source layout exceeds its 2^22-bit per-signature stride")]
+    #[error("the Falcon source layout or opening exceeds its configured capacity")]
     SourceStrideOverflow,
     #[error("Falcon constraint family {family} failed at row {index}")]
     ConstraintViolation { family: &'static str, index: usize },

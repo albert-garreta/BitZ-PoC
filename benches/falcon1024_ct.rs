@@ -107,6 +107,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "proof_prove_ms": proof_prove_ms,
                 "proof_verify_ms": proof_verify_ms,
                 "projection_modulus_bits": 128 - proof.piop.modulus.leading_zeros(),
+                "norm_instance_grinding_bits": if layout.capacity() > 1 { security.norm_instance_bits } else { 0 },
+                "outer_point_grinding_bits": security.outer_point_bits,
                 "quadratic_round_grinding_bits": security.quadratic_round_bits,
                 "cubic_round_grinding_bits": security.cubic_round_bits,
                 "fingerprint_grinding_bits": security.fingerprint_bits,

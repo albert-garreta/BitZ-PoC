@@ -13,6 +13,8 @@ use super::{
     BETA_SQUARED, FalconError, FalconSourceLayout, FalconVerificationTrace, HASH_TO_POINT_SAMPLES,
     N,
 };
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 /// Start offsets of each committed column inside one `2^22`-bit signature
 /// stride.  The interval ending at `end` is live; `[end,2^22)` is canonical
@@ -29,6 +31,7 @@ pub struct FalconSourceOffsets {
     pub keccak_column_parities: usize,
     pub keccak_column_parity_quotients: usize,
     pub keccak_parity_quotients: usize,
+    pub hash_words: usize,
     pub hash_quotients: usize,
     pub hash_remainders: usize,
     pub hash_remainder_slack: usize,
@@ -48,7 +51,10 @@ pub struct FalconSourceOffsets {
 
 impl FalconSourceOffsets {
     pub const fn new() -> Self {
-        let counts = FalconSourceLayout::counts();
+        Self::from_counts(FalconSourceLayout::counts())
+    }
+
+    pub const fn from_counts(counts: super::FalconTraceCounts) -> Self {
         let shared_one = 0;
         let message = shared_one + counts.shared_one;
         let encoded_signature = message + counts.message;
@@ -60,7 +66,8 @@ impl FalconSourceOffsets {
         let keccak_column_parity_quotients = keccak_column_parities + counts.keccak_column_parities;
         let keccak_parity_quotients =
             keccak_column_parity_quotients + counts.keccak_column_parity_quotients;
-        let hash_quotients = keccak_parity_quotients + counts.keccak_parity_quotients;
+        let hash_words = keccak_parity_quotients + counts.keccak_parity_quotients;
+        let hash_quotients = hash_words + counts.hash_words;
         let hash_remainders = hash_quotients + counts.hash_quotients;
         let hash_remainder_slack = hash_remainders + counts.hash_remainders;
         let hash_quotient_slack = hash_remainder_slack + counts.hash_remainder_slack;
@@ -87,6 +94,7 @@ impl FalconSourceOffsets {
             keccak_column_parities,
             keccak_column_parity_quotients,
             keccak_parity_quotients,
+            hash_words,
             hash_quotients,
             hash_remainders,
             hash_remainder_slack,
@@ -131,245 +139,268 @@ impl FalconSourceWitness {
         }
         let p = layout.bitz_params();
         let mut rows = vec![vec![0u64; p.rows() / 64]; p.cols()];
-        let offsets = FalconSourceOffsets::new();
-        debug_assert_eq!(offsets.end, FalconSourceLayout::counts().total());
+        let offsets = layout.offsets();
+        debug_assert_eq!(offsets.end, layout.local_counts().total());
 
-        for instance in 0..layout.batch() {
-            let base = instance * FalconSourceLayout::SIGNATURE_STRIDE;
-            let signature = signatures[instance];
-            let message = messages[instance];
-            let trace = &traces[instance];
-            trace.hash_to_point.shake.validate_falcon_shape()?;
-            if signature.len() != super::CT_SIGNATURE_BYTES {
-                return Err(FalconError::SignatureLength);
-            }
-            if message.len() != 32 {
-                return Err(FalconError::InvalidBatchCapacity);
-            }
+        crate::utils::cfg_chunks_mut!(rows, layout.signature_stride() >> p.row_vars)
+            .enumerate()
+            .take(layout.batch())
+            .try_for_each(|(instance, mut rows)| -> Result<(), FalconError> {
+                let base = 0;
+                let signature = signatures[instance];
+                let message = messages[instance];
+                let trace = &traces[instance];
+                if !layout.is_hybrid() {
+                    trace.hash_to_point.shake.validate_falcon_shape()?;
+                }
+                if signature.len() != super::CT_SIGNATURE_BYTES {
+                    return Err(FalconError::SignatureLength);
+                }
+                if message.len() != 32 {
+                    return Err(FalconError::InvalidBatchCapacity);
+                }
 
-            put_unsigned(&mut rows, &p, base + offsets.shared_one, 1, 1);
-            for (byte_index, &byte) in message.iter().enumerate() {
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.message + 8 * byte_index,
-                    u64::from(byte),
-                    8,
-                );
-            }
+                put_unsigned(&mut rows, &p, base + offsets.shared_one, 1, 1);
+                for (byte_index, &byte) in message.iter().enumerate() {
+                    put_unsigned(
+                        &mut rows,
+                        &p,
+                        base + offsets.message + 8 * byte_index,
+                        u64::from(byte),
+                        8,
+                    );
+                }
 
-            for (byte_index, &byte) in signature.iter().enumerate() {
+                for (byte_index, &byte) in signature.iter().enumerate() {
+                    put_unsigned(
+                        &mut rows,
+                        &p,
+                        base + offsets.encoded_signature + 8 * byte_index,
+                        u64::from(byte),
+                        8,
+                    );
+                }
+                for (i, &coefficient) in trace.signature.s2.iter().enumerate() {
+                    let encoded = (i32::from(coefficient) as u32) & 0xfff;
+                    let low_sum = (encoded & 0x7ff).count_ones();
+                    let sign = encoded >> 11;
+                    let slack = low_sum
+                        .checked_sub(sign)
+                        .expect("canonical CT decoding excludes signed minimum");
+                    put_unsigned(
+                        &mut rows,
+                        &p,
+                        base + offsets.s2_non_min_slack + 4 * i,
+                        u64::from(slack),
+                        4,
+                    );
+                }
+                if !layout.is_hybrid() {
+                    for (word_index, &word) in trace.hash_to_point.shake.chi_ands.iter().enumerate()
+                    {
+                        put_unsigned(
+                            &mut rows,
+                            &p,
+                            base + offsets.keccak_chi_ands + 64 * word_index,
+                            word,
+                            64,
+                        );
+                    }
+                    for (word_index, &word) in
+                        trace.hash_to_point.shake.chi_inputs.iter().enumerate()
+                    {
+                        put_unsigned(
+                            &mut rows,
+                            &p,
+                            base + offsets.keccak_chi_inputs + 64 * word_index,
+                            word,
+                            64,
+                        );
+                    }
+                    for (word_index, &word) in
+                        trace.hash_to_point.shake.round_states.iter().enumerate()
+                    {
+                        put_unsigned(
+                            &mut rows,
+                            &p,
+                            base + offsets.keccak_round_states + 64 * word_index,
+                            word,
+                            64,
+                        );
+                    }
+                    for (word_index, &word) in
+                        trace.hash_to_point.shake.column_parities.iter().enumerate()
+                    {
+                        put_unsigned(
+                            &mut rows,
+                            &p,
+                            base + offsets.keccak_column_parities + 64 * word_index,
+                            word,
+                            64,
+                        );
+                    }
+                    for (bit_index, &quotient) in trace
+                        .hash_to_point
+                        .shake
+                        .column_parity_quotients
+                        .iter()
+                        .enumerate()
+                    {
+                        put_unsigned(
+                            &mut rows,
+                            &p,
+                            base + offsets.keccak_column_parity_quotients + 2 * bit_index,
+                            u64::from(quotient),
+                            2,
+                        );
+                    }
+                    for (bit_index, &quotient) in trace
+                        .hash_to_point
+                        .shake
+                        .parity_quotients
+                        .iter()
+                        .enumerate()
+                    {
+                        put_unsigned(
+                            &mut rows,
+                            &p,
+                            base + offsets.keccak_parity_quotients + bit_index,
+                            u64::from(quotient),
+                            1,
+                        );
+                    }
+                }
+                for i in 0..HASH_TO_POINT_SAMPLES {
+                    if layout.is_hybrid() {
+                        put_unsigned(
+                            &mut rows,
+                            &p,
+                            base + offsets.hash_words + 16 * i,
+                            u64::from(trace.hash_to_point.words[i]),
+                            16,
+                        );
+                    }
+                    let quotient = trace.hash_to_point.quotients[i];
+                    let remainder = trace.hash_to_point.remainders[i];
+                    put_unsigned(
+                        &mut rows,
+                        &p,
+                        base + offsets.hash_quotients + 3 * i,
+                        u64::from(quotient),
+                        3,
+                    );
+                    put_unsigned(
+                        &mut rows,
+                        &p,
+                        base + offsets.hash_remainders + 14 * i,
+                        u64::from(remainder),
+                        14,
+                    );
+                    put_unsigned(
+                        &mut rows,
+                        &p,
+                        base + offsets.hash_remainder_slack + 14 * i,
+                        u64::from(12_288 - remainder),
+                        14,
+                    );
+                    put_unsigned(
+                        &mut rows,
+                        &p,
+                        base + offsets.hash_quotient_slack + 3 * i,
+                        u64::from(5 - quotient),
+                        3,
+                    );
+                    put_unsigned(
+                        &mut rows,
+                        &p,
+                        base + offsets.hash_accept_ands + i,
+                        u64::from((quotient & 0b101) == 0b101),
+                        1,
+                    );
+                }
+                for (i, &prefix) in trace.hash_to_point.prefix.iter().enumerate() {
+                    put_unsigned(
+                        &mut rows,
+                        &p,
+                        base + offsets.hash_prefixes + 11 * i,
+                        u64::from(prefix),
+                        11,
+                    );
+                }
+                for i in 0..HASH_TO_POINT_SAMPLES {
+                    let selected =
+                        trace.hash_to_point.accepted[i] && trace.hash_to_point.prefix[i] < 1024;
+                    put_unsigned(
+                        &mut rows,
+                        &p,
+                        base + offsets.compact_selectors + i,
+                        u64::from(selected),
+                        1,
+                    );
+                    put_unsigned(
+                        &mut rows,
+                        &p,
+                        base + offsets.compact_selected_prefixes + 11 * i,
+                        if selected {
+                            u64::from(trace.hash_to_point.prefix[i])
+                        } else {
+                            0
+                        },
+                        11,
+                    );
+                    put_unsigned(
+                        &mut rows,
+                        &p,
+                        base + offsets.compact_selected_remainders + 14 * i,
+                        if selected {
+                            u64::from(trace.hash_to_point.remainders[i])
+                        } else {
+                            0
+                        },
+                        14,
+                    );
+                }
+                for i in 0..N {
+                    put_unsigned(
+                        &mut rows,
+                        &p,
+                        base + offsets.hash_point + 14 * i,
+                        u64::from(trace.hash_to_point.point[i]),
+                        14,
+                    );
+                    let biased_s1 = i64::from(trace.s1[i]) + 6_144;
+                    put_unsigned(
+                        &mut rows,
+                        &p,
+                        base + offsets.s1 + 14 * i,
+                        biased_s1 as u64,
+                        14,
+                    );
+                    put_unsigned(
+                        &mut rows,
+                        &p,
+                        base + offsets.s1_range_slack + 14 * i,
+                        (12_288 - biased_s1) as u64,
+                        14,
+                    );
+                    put_signed(
+                        &mut rows,
+                        &p,
+                        base + offsets.ring_quotients + 23 * i,
+                        trace.quotient[i],
+                        23,
+                    );
+                }
+                debug_assert_eq!(trace.norm + trace.norm_slack, BETA_SQUARED);
                 put_unsigned(
                     &mut rows,
                     &p,
-                    base + offsets.encoded_signature + 8 * byte_index,
-                    u64::from(byte),
-                    8,
+                    base + offsets.norm_slack,
+                    trace.norm_slack,
+                    27,
                 );
-            }
-            for (i, &coefficient) in trace.signature.s2.iter().enumerate() {
-                let encoded = (i32::from(coefficient) as u32) & 0xfff;
-                let low_sum = (encoded & 0x7ff).count_ones();
-                let sign = encoded >> 11;
-                let slack = low_sum
-                    .checked_sub(sign)
-                    .expect("canonical CT decoding excludes signed minimum");
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.s2_non_min_slack + 4 * i,
-                    u64::from(slack),
-                    4,
-                );
-            }
-            for (word_index, &word) in trace.hash_to_point.shake.chi_ands.iter().enumerate() {
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.keccak_chi_ands + 64 * word_index,
-                    word,
-                    64,
-                );
-            }
-            for (word_index, &word) in trace.hash_to_point.shake.chi_inputs.iter().enumerate() {
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.keccak_chi_inputs + 64 * word_index,
-                    word,
-                    64,
-                );
-            }
-            for (word_index, &word) in trace.hash_to_point.shake.round_states.iter().enumerate() {
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.keccak_round_states + 64 * word_index,
-                    word,
-                    64,
-                );
-            }
-            for (word_index, &word) in trace.hash_to_point.shake.column_parities.iter().enumerate()
-            {
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.keccak_column_parities + 64 * word_index,
-                    word,
-                    64,
-                );
-            }
-            for (bit_index, &quotient) in trace
-                .hash_to_point
-                .shake
-                .column_parity_quotients
-                .iter()
-                .enumerate()
-            {
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.keccak_column_parity_quotients + 2 * bit_index,
-                    u64::from(quotient),
-                    2,
-                );
-            }
-            for (bit_index, &quotient) in trace
-                .hash_to_point
-                .shake
-                .parity_quotients
-                .iter()
-                .enumerate()
-            {
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.keccak_parity_quotients + bit_index,
-                    u64::from(quotient),
-                    1,
-                );
-            }
-            for i in 0..HASH_TO_POINT_SAMPLES {
-                let quotient = trace.hash_to_point.quotients[i];
-                let remainder = trace.hash_to_point.remainders[i];
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.hash_quotients + 3 * i,
-                    u64::from(quotient),
-                    3,
-                );
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.hash_remainders + 14 * i,
-                    u64::from(remainder),
-                    14,
-                );
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.hash_remainder_slack + 14 * i,
-                    u64::from(12_288 - remainder),
-                    14,
-                );
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.hash_quotient_slack + 3 * i,
-                    u64::from(5 - quotient),
-                    3,
-                );
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.hash_accept_ands + i,
-                    u64::from((quotient & 0b101) == 0b101),
-                    1,
-                );
-            }
-            for (i, &prefix) in trace.hash_to_point.prefix.iter().enumerate() {
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.hash_prefixes + 11 * i,
-                    u64::from(prefix),
-                    11,
-                );
-            }
-            for i in 0..HASH_TO_POINT_SAMPLES {
-                let selected =
-                    trace.hash_to_point.accepted[i] && trace.hash_to_point.prefix[i] < 1024;
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.compact_selectors + i,
-                    u64::from(selected),
-                    1,
-                );
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.compact_selected_prefixes + 11 * i,
-                    if selected {
-                        u64::from(trace.hash_to_point.prefix[i])
-                    } else {
-                        0
-                    },
-                    11,
-                );
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.compact_selected_remainders + 14 * i,
-                    if selected {
-                        u64::from(trace.hash_to_point.remainders[i])
-                    } else {
-                        0
-                    },
-                    14,
-                );
-            }
-            for i in 0..N {
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.hash_point + 14 * i,
-                    u64::from(trace.hash_to_point.point[i]),
-                    14,
-                );
-                let biased_s1 = i64::from(trace.s1[i]) + 6_144;
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.s1 + 14 * i,
-                    biased_s1 as u64,
-                    14,
-                );
-                put_unsigned(
-                    &mut rows,
-                    &p,
-                    base + offsets.s1_range_slack + 14 * i,
-                    (12_288 - biased_s1) as u64,
-                    14,
-                );
-                put_signed(
-                    &mut rows,
-                    &p,
-                    base + offsets.ring_quotients + 23 * i,
-                    trace.quotient[i],
-                    23,
-                );
-            }
-            debug_assert_eq!(trace.norm + trace.norm_slack, BETA_SQUARED);
-            put_unsigned(
-                &mut rows,
-                &p,
-                base + offsets.norm_slack,
-                trace.norm_slack,
-                27,
-            );
-        }
+                Ok(())
+            })?;
         Ok(Self { layout, rows })
     }
 
@@ -420,13 +451,13 @@ fn put_unsigned(
     width: usize,
 ) {
     assert!(width <= 64 && (width == 64 || value < 1u64 << width));
-    for bit in 0..width {
-        if value >> bit & 1 == 1 {
-            let index = flat + bit;
-            let b = index & (p.rows() - 1);
-            let c = index >> p.row_vars;
-            rows[c][b / 64] |= 1u64 << (b % 64);
-        }
+    let words_per_column = p.rows() / 64;
+    let word = flat / 64;
+    let shift = flat % 64;
+    rows[word / words_per_column][word % words_per_column] |= value << shift;
+    if shift != 0 && width > 64 - shift {
+        let next = word + 1;
+        rows[next / words_per_column][next % words_per_column] |= value >> (64 - shift);
     }
 }
 

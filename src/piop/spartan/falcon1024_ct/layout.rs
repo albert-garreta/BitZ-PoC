@@ -16,6 +16,7 @@ pub struct FalconTraceCounts {
     pub keccak_column_parities: usize,
     pub keccak_column_parity_quotients: usize,
     pub keccak_parity_quotients: usize,
+    pub hash_words: usize,
     pub hash_quotients: usize,
     pub hash_remainders: usize,
     pub hash_remainder_slack: usize,
@@ -45,6 +46,7 @@ impl FalconTraceCounts {
             + self.keccak_column_parities
             + self.keccak_column_parity_quotients
             + self.keccak_parity_quotients
+            + self.hash_words
             + self.hash_quotients
             + self.hash_remainders
             + self.hash_remainder_slack
@@ -67,6 +69,7 @@ impl FalconTraceCounts {
 pub struct FalconSourceLayout {
     batch: usize,
     capacity: usize,
+    hybrid: bool,
 }
 
 impl FalconSourceLayout {
@@ -82,7 +85,77 @@ impl FalconSourceLayout {
         Ok(Self {
             batch,
             capacity: batch.next_power_of_two(),
+            hybrid: false,
         })
+    }
+
+    /// Compact arithmetic source; SHAKE is proved by the binary branch.
+    /// The 16-bit samples are linked to that branch by authenticated wiring.
+    #[cfg(feature = "falcon-hybrid")]
+    pub fn new_hybrid(batch: usize) -> Result<Self, FalconError> {
+        if !(1..=1024).contains(&batch) {
+            return Err(FalconError::InvalidBatchCapacity);
+        }
+        let layout = Self {
+            batch,
+            capacity: batch.next_power_of_two(),
+            hybrid: true,
+        };
+        if layout.local_counts().total() > layout.signature_stride() {
+            return Err(FalconError::SourceStrideOverflow);
+        }
+        Ok(layout)
+    }
+
+    pub const fn is_hybrid(&self) -> bool {
+        self.hybrid
+    }
+
+    pub(super) const fn single_instance(&self) -> Self {
+        Self {
+            batch: 1,
+            capacity: 1,
+            hybrid: self.hybrid,
+        }
+    }
+
+    pub const fn signature_stride(&self) -> usize {
+        if self.hybrid {
+            1 << 18
+        } else {
+            Self::SIGNATURE_STRIDE
+        }
+    }
+
+    pub const fn local_counts(&self) -> FalconTraceCounts {
+        let mut counts = Self::counts();
+        if self.hybrid {
+            counts.keccak_chi_inputs = 0;
+            counts.keccak_chi_ands = 0;
+            counts.keccak_round_states = 0;
+            counts.keccak_column_parities = 0;
+            counts.keccak_column_parity_quotients = 0;
+            counts.keccak_parity_quotients = 0;
+            counts.hash_words = HASH_TO_POINT_SAMPLES * 16;
+        }
+        counts
+    }
+
+    pub const fn offsets(&self) -> super::FalconSourceOffsets {
+        super::FalconSourceOffsets::from_counts(self.local_counts())
+    }
+
+    pub const fn linear_rows(&self) -> usize {
+        let full = super::FalconConstraintCounts::per_signature().linear_rows();
+        if self.hybrid {
+            full - 20 * 24 * 30 * 64
+        } else {
+            full
+        }
+    }
+
+    pub const fn linear_stride(&self) -> usize {
+        if self.hybrid { 1 << 14 } else { 1 << 20 }
     }
 
     pub const fn batch(&self) -> usize {
@@ -94,7 +167,7 @@ impl FalconSourceLayout {
     }
 
     pub const fn source_bits(&self) -> usize {
-        Self::SIGNATURE_STRIDE * self.capacity
+        self.signature_stride() * self.capacity
     }
 
     pub const fn row_vars(&self) -> usize {
@@ -103,7 +176,11 @@ impl FalconSourceLayout {
 
     pub const fn col_vars(&self) -> usize {
         // log2(2^22 * capacity) - row_vars.
-        9 + self.capacity.trailing_zeros() as usize
+        if self.hybrid {
+            5 + self.capacity.trailing_zeros() as usize
+        } else {
+            9 + self.capacity.trailing_zeros() as usize
+        }
     }
 
     /// Physical `W=1` source-commitment tensor.  Flat source index `i` is
@@ -135,6 +212,7 @@ impl FalconSourceLayout {
             keccak_column_parity_quotients: 20 * 24 * 5 * 64 * 2,
             // One-bit exact parity quotient for every theta/rho/pi output.
             keccak_parity_quotients: 20 * 24 * 25 * 64,
+            hash_words: 0,
             hash_quotients: HASH_TO_POINT_SAMPLES * 3,
             hash_remainders: HASH_TO_POINT_SAMPLES * 14,
             hash_remainder_slack: HASH_TO_POINT_SAMPLES * 14,

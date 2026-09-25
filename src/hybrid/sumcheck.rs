@@ -57,7 +57,7 @@ fn eq_eval(a: &[F], b: &[F]) -> F {
         .fold(F::ONE, |p, (&x, &y)| p * (F::ONE + x + y))
 }
 
-fn fold(table: &mut Vec<F>, r: F) {
+pub(crate) fn fold(table: &mut Vec<F>, r: F) {
     for i in 0..table.len() / 2 {
         table[i] = table[2 * i] + r * (table[2 * i] + table[2 * i + 1]);
     }
@@ -80,7 +80,7 @@ fn evaluate_round([u0, u2]: [F; 2], sum: F, r: F) -> F {
 }
 
 /// LUT for the F2-linear map from a packed word to a field-valued bit sum.
-fn byte_table(coefficients: &[F; 128]) -> Vec<F> {
+pub(crate) fn byte_table(coefficients: &[F; 128]) -> Vec<F> {
     let mut table = vec![F::ZERO; 16 * 256];
     for byte in 0..16 {
         for val in 1usize..256 {
@@ -91,7 +91,7 @@ fn byte_table(coefficients: &[F; 128]) -> Vec<F> {
     table
 }
 
-fn apply(table: &[F], packed: F) -> F {
+pub(crate) fn apply(table: &[F], packed: F) -> F {
     let bytes = ((packed.lo as u128) | ((packed.hi as u128) << 64)).to_le_bytes();
     bytes
         .iter()
@@ -135,7 +135,7 @@ fn sum_pairs(iter: impl Iterator<Item = [F; 2]>) -> [F; 2] {
 /// and one accumulate — instead of thirty-two byte-table lookups per word
 /// per round. Exact field sums, so the messages are bit-identical to the
 /// per-word scan for any accumulation order.
-fn bit_marginals(packed: &[F], high: &[F], low_blocks: usize) -> Vec<F> {
+pub(crate) fn bit_marginals(packed: &[F], high: &[F], low_blocks: usize) -> Vec<F> {
     let rows = high.len();
     let packed = &packed[..rows * low_blocks];
     // Tasks are (block range, row range) pairs. Whole block ranges keep a
@@ -235,7 +235,7 @@ fn marginals_task(
 /// map replaced by `Σ_{block, bit} c_block[bit]·S[block·128 + bit]`, where
 /// `c` carries the bound prefix and the (twice-folded) low weights of the
 /// round.
-fn packed_round(marginals: &[F], low: &[F], prefix_eq: &[F], round: usize) -> [F; 2] {
+pub(crate) fn packed_round(marginals: &[F], low: &[F], prefix_eq: &[F], round: usize) -> [F; 2] {
     let stride = 128 >> round;
     let low_blocks = low.len() / stride;
     debug_assert_eq!(marginals.len(), low_blocks * 128);
@@ -263,14 +263,14 @@ fn packed_round(marginals: &[F], low: &[F], prefix_eq: &[F], round: usize) -> [F
 /// proof pays that (the same reason Binius64's prover pools its buffers).
 #[derive(Default)]
 pub(crate) struct Scratch {
-    witness: Vec<F>,
-    weights: Vec<F>,
-    spare_x: Vec<F>,
-    spare_w: Vec<F>,
+    pub(crate) witness: Vec<F>,
+    pub(crate) weights: Vec<F>,
+    pub(crate) spare_x: Vec<F>,
+    pub(crate) spare_w: Vec<F>,
 }
 
 /// Takes `buf` out of the scratch, emptied, with capacity for `n` elements.
-fn take_cleared(buf: &mut Vec<F>, n: usize) -> Vec<F> {
+pub(crate) fn take_cleared(buf: &mut Vec<F>, n: usize) -> Vec<F> {
     let mut v = std::mem::take(buf);
     v.clear();
     if v.capacity() < n {
@@ -282,7 +282,7 @@ fn take_cleared(buf: &mut Vec<F>, n: usize) -> Vec<F> {
 /// Fold both dense tables by `r` (`out[i] = in[2i] + r·(in[2i] + in[2i+1])`)
 /// and return the next round's message over the folded pairs: one pass
 /// over the tables instead of a fold pass and a message pass.
-fn dense_fold(
+pub(crate) fn dense_fold(
     witness: &mut Vec<F>,
     weights: &mut Vec<F>,
     spare_x: &mut Vec<F>,

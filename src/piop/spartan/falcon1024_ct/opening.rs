@@ -6,6 +6,8 @@
 //! evaluation, which is authenticated by the ordinary runtime-prime BitZ /
 //! Ligerito opening.
 
+use std::{collections::HashMap, sync::OnceLock};
+
 use field::{RingOps, Uint};
 use flock_core::pcs::{
     commit::Commitment,
@@ -39,14 +41,13 @@ use crate::{
 use super::{
     FalconError, FalconPiopProof, FalconPublicKey, FalconSourceLayout, FalconSourceOffsets,
     FalconSourceWitness, FalconVerificationTrace, HASH_TO_POINT_SAMPLES, N, Q, decode_public_key,
-    piop::{
-        BINDING_GRINDING_BITS, LINEAR_POINT_GRINDING_BITS, prove_falcon_piop, verify_falcon_piop,
-    },
+    piop::{prove_falcon_piop, security_schedule, verify_falcon_piop},
 };
 
 type F = SpartanBitzField;
 type Cfg = <F as SpartanField>::Config;
 
+#[cfg(test)]
 const LINEAR_STRIDE: usize = 1 << 20;
 const COMPACTION_LEAVES: usize = 1 << 11;
 const KECCAK_PERMUTATIONS: usize = 20;
@@ -108,9 +109,11 @@ impl FalconPublicStatement {
     }
 }
 
-/// One commitment-bound Falcon proof: nonlinear PIOP, shared terminal
-/// reduction, and the final BitZ source opening.
-pub struct FalconBitzProof {
+/// Prime-field reductions through their authenticated-source opening claim.
+/// This prefix is sound only when the caller has already bound the source
+/// commitment and public statement, and subsequently authenticates its claim.
+#[derive(Clone, Debug)]
+pub struct FalconBindingPrefixProof {
     pub piop: FalconPiopProof,
     pub linear_point_nonce: Option<u64>,
     pub binding: SumcheckProof<F, 3>,
@@ -118,7 +121,32 @@ pub struct FalconBitzProof {
     /// `[coefficient MLE, source MLE]` at `binding_point`.
     pub binding_terminal: [F; 2],
     pub binding_nonces: Vec<u64>,
+}
+
+pub(super) struct FalconOpeningClaim {
+    pub row_weights: Vec<u128>,
+    pub col_weights: Vec<u128>,
+    pub value: u128,
+    pub modulus: u128,
+}
+
+/// One commitment-bound Falcon proof, including the final BitZ opening.
+pub struct FalconBitzProof {
+    pub prefix: FalconBindingPrefixProof,
     pub opening: IntEvalRsLigModQProof,
+}
+
+impl core::ops::Deref for FalconBitzProof {
+    type Target = FalconBindingPrefixProof;
+    fn deref(&self) -> &Self::Target {
+        &self.prefix
+    }
+}
+
+impl core::ops::DerefMut for FalconBitzProof {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.prefix
+    }
 }
 
 /// Prove a batch against one already-created binary source commitment.
@@ -133,12 +161,54 @@ pub fn prove_falcon_bitz(
     target_bits: usize,
     pc: &ProverConfig,
 ) -> Result<FalconBitzProof, FalconError> {
+    if layout.is_hybrid() {
+        return Err(piop(
+            "compact Falcon source requires the hybrid proof adapter",
+        ));
+    }
     validate_prover_inputs(layout, statement, traces, source, hint, target_bits, pc)?;
     bind_statement(transcript, layout, statement, &hint.commitment, target_bits)?;
+    let (prefix, claim) =
+        prove_binding_prefix(transcript, layout, statement, traces, source, target_bits)?;
+    let opening = prove_mle_eval_mod_q_ligerito(
+        transcript,
+        hint,
+        &layout.bitz_params(),
+        &claim.row_weights,
+        modulus_bits(claim.modulus),
+        smallest_generator(),
+        pc,
+    );
+    Ok(FalconBitzProof { prefix, opening })
+}
+
+/// The caller binds all commitments and the statement before this call, and
+/// authenticates the returned source claim afterward. Hybrid callers must
+/// additionally prove SHAKE and its links to the compact arithmetic source.
+pub(super) fn prove_binding_prefix(
+    transcript: &mut impl Transcript,
+    layout: &FalconSourceLayout,
+    statement: &FalconPublicStatement,
+    traces: &[FalconVerificationTrace],
+    source: &FalconSourceWitness,
+    target_bits: usize,
+) -> Result<(FalconBindingPrefixProof, FalconOpeningClaim), FalconError> {
+    if statement.batch() != layout.batch()
+        || statement.messages.len() != layout.batch()
+        || traces.len() != layout.batch()
+        || source.layout() != layout
+        || !matches!(target_bits, 100 | 128)
+        || traces
+            .iter()
+            .zip(&statement.public_keys)
+            .any(|(trace, key)| &trace.public_key != key)
+    {
+        return Err(piop("Falcon prefix input shape mismatch"));
+    }
     let algebraic = prove_falcon_piop(transcript, layout, traces, target_bits)?;
     let field = field_from_modulus(algebraic.modulus)?;
 
-    let linear_point_nonce = grind_linear_point(transcript, target_bits, None)?;
+    let linear_point_nonce = grind_linear_point(transcript, layout, target_bits, None)?;
     let linear_point = sample_point(transcript, linear_rounds(layout), &field)?;
     let binding = prepare_binding_form(
         transcript,
@@ -164,7 +234,7 @@ pub fn prove_falcon_bitz(
     };
     let output = if target_bits == 128 {
         let mut boundary = ProverGrindingRoundBoundary::<BindingGrinding>::with_round_offset(
-            BINDING_GRINDING_BITS,
+            security_schedule(layout, target_bits)?.binding_round_bits,
             0,
         );
         let output = prove_inner_sumcheck(&field, transcript, target, input(), (), &mut boundary)
@@ -186,26 +256,16 @@ pub fn prove_falcon_bitz(
         binding_terminal[1],
         &field,
     );
-    let row_weights = canonical_eq_weights(&output.point[..layout.row_vars()], &field)?;
-    let opening = prove_mle_eval_mod_q_ligerito(
-        transcript,
-        hint,
-        &layout.bitz_params(),
-        &row_weights,
-        modulus_bits(algebraic.modulus),
-        smallest_generator(),
-        pc,
-    );
-
-    Ok(FalconBitzProof {
+    let claim = opening_claim(layout, &output.point, binding_terminal[1], &field)?;
+    let prefix = FalconBindingPrefixProof {
         piop: algebraic,
         linear_point_nonce,
         binding: output.proof,
         binding_point: output.point,
         binding_terminal,
         binding_nonces,
-        opening,
-    })
+    };
+    Ok((prefix, claim))
 }
 
 /// Verify the nonlinear PIOP, rebuild its public linear functional, reduce it
@@ -220,12 +280,50 @@ pub fn verify_falcon_bitz(
     target_bits: usize,
     vc: &VerifierConfig,
 ) -> Result<(), FalconError> {
+    if layout.is_hybrid() {
+        return Err(piop(
+            "compact Falcon source requires the hybrid proof adapter",
+        ));
+    }
     validate_verifier_inputs(layout, statement, commitment, target_bits, vc)?;
     bind_statement(transcript, layout, statement, commitment, target_bits)?;
+    let claim = verify_binding_prefix(transcript, layout, statement, &proof.prefix, target_bits)?;
+    verify_mle_eval_mod_q_ligerito_runtime(
+        transcript,
+        commitment,
+        &proof.opening,
+        &layout.bitz_params(),
+        &claim.row_weights,
+        &claim.col_weights,
+        smallest_generator(),
+        claim.value,
+        claim.modulus,
+        modulus_bits(claim.modulus),
+        None,
+        vc,
+    )
+    .map_err(|error| piop(format!("{error:?}")))
+}
+
+pub(super) fn verify_binding_prefix(
+    transcript: &mut impl Transcript,
+    layout: &FalconSourceLayout,
+    statement: &FalconPublicStatement,
+    proof: &FalconBindingPrefixProof,
+    target_bits: usize,
+) -> Result<FalconOpeningClaim, FalconError> {
+    if statement.batch() != layout.batch()
+        || statement.messages.len() != layout.batch()
+        || !matches!(target_bits, 100 | 128)
+        || (target_bits == 128 && proof.linear_point_nonce.is_none())
+        || (target_bits == 100 && !proof.binding_nonces.is_empty())
+    {
+        return Err(piop("Falcon prefix proof shape mismatch"));
+    }
     verify_falcon_piop(transcript, layout, &proof.piop, target_bits)?;
     let field = field_from_modulus(proof.piop.modulus)?;
 
-    grind_linear_point(transcript, target_bits, proof.linear_point_nonce)?;
+    grind_linear_point(transcript, layout, target_bits, proof.linear_point_nonce)?;
     let linear_point = sample_point(transcript, linear_rounds(layout), &field)?;
     let binding = prepare_binding_form(
         transcript,
@@ -239,7 +337,7 @@ pub fn verify_falcon_bitz(
     transcript.absorb_slice(b"bitz/falcon1024-ct/shared-inner/v1");
     let (point, final_claims) = if target_bits == 128 {
         let mut boundary = VerifierGrindingRoundBoundary::<BindingGrinding>::new(
-            BINDING_GRINDING_BITS,
+            security_schedule(layout, target_bits)?.binding_round_bits,
             &proof.binding_nonces,
         );
         SumcheckProof::verify_batch_with_round_boundary(
@@ -262,6 +360,8 @@ pub fn verify_falcon_bitz(
         )
     }
     .map_err(|error| piop(error.to_string()))?;
+    crate::sumcheck::proof::validate_field_elements(&proof.binding_terminal, &field)
+        .map_err(|error| piop(error.to_string()))?;
     if point != proof.binding_point
         || final_claims[0] != field.mul(&proof.binding_terminal[0], &proof.binding_terminal[1])
     {
@@ -278,23 +378,21 @@ pub fn verify_falcon_bitz(
         proof.binding_terminal[1],
         &field,
     );
-    let row_weights = canonical_eq_weights(&point[..layout.row_vars()], &field)?;
-    let col_weights = canonical_eq_weights(&point[layout.row_vars()..], &field)?;
-    verify_mle_eval_mod_q_ligerito_runtime(
-        transcript,
-        commitment,
-        &proof.opening,
-        &layout.bitz_params(),
-        &row_weights,
-        &col_weights,
-        smallest_generator(),
-        canonical(proof.binding_terminal[1], &field),
-        proof.piop.modulus,
-        modulus_bits(proof.piop.modulus),
-        None,
-        vc,
-    )
-    .map_err(|error| piop(format!("{error:?}")))
+    opening_claim(layout, &point, proof.binding_terminal[1], &field)
+}
+
+fn opening_claim(
+    layout: &FalconSourceLayout,
+    point: &[F],
+    value: F,
+    field: &Cfg,
+) -> Result<FalconOpeningClaim, FalconError> {
+    Ok(FalconOpeningClaim {
+        row_weights: canonical_eq_weights(&point[..layout.row_vars()], field)?,
+        col_weights: canonical_eq_weights(&point[layout.row_vars()..], field)?,
+        value: canonical(value, field),
+        modulus: field.modulus_u128(),
+    })
 }
 
 fn validate_prover_inputs(
@@ -350,7 +448,8 @@ fn bind_statement(
     commitment: &Commitment,
     target_bits: usize,
 ) -> Result<(), FalconError> {
-    transcript.absorb_slice(b"bitz/falcon1024-ct/commitment-bound/v2");
+    transcript.absorb_slice(b"bitz/falcon1024-ct/commitment-bound/v3");
+    transcript.absorb_slice(&[u8::from(layout.is_hybrid())]);
     transcript.absorb_slice(&(layout.batch() as u64).to_le_bytes());
     transcript.absorb_slice(&(layout.capacity() as u64).to_le_bytes());
     transcript.absorb_slice(&(target_bits as u64).to_le_bytes());
@@ -367,6 +466,7 @@ fn bind_statement(
 
 fn grind_linear_point(
     transcript: &mut impl Transcript,
+    layout: &FalconSourceLayout,
     target_bits: usize,
     nonce: Option<u64>,
 ) -> Result<Option<u64>, FalconError> {
@@ -381,14 +481,14 @@ fn grind_linear_point(
         None => grind_and_absorb(
             transcript,
             GrindingRound::<LinearPointGrinding>::new(0),
-            LINEAR_POINT_GRINDING_BITS,
+            security_schedule(layout, target_bits)?.linear_point_bits,
         )
         .map(Some)
         .map_err(|error| piop(error.to_string())),
         Some(nonce) => verify_and_absorb(
             transcript,
             GrindingRound::<LinearPointGrinding>::new(0),
-            LINEAR_POINT_GRINDING_BITS,
+            security_schedule(layout, target_bits)?.linear_point_bits,
             nonce,
         )
         .map(|()| Some(nonce))
@@ -404,9 +504,18 @@ struct BindingForm<'a> {
     proof: &'a FalconPiopProof,
     field: &'a Cfg,
     linear_weights: crate::poly::mle::EqualityWeights<F>,
-    linear_point: Vec<F>,
-    ring_weights: Vec<Vec<F>>,
+    local_linear_weights: crate::poly::mle::EqualityWeights<F>,
+    ring_row_weights: Vec<F>,
+    ring_instance_weights: Vec<F>,
+    prover_ring_cache: OnceLock<ProverRingCache>,
     eta: F,
+}
+
+/// Unscaled adjoints shared by instances with the same complete public key.
+/// Only prover coefficient emission initializes this cache.
+struct ProverRingCache {
+    adjoints: Vec<Vec<F>>,
+    instance_keys: Vec<usize>,
 }
 
 trait CoefficientSink {
@@ -494,43 +603,47 @@ fn prepare_binding_form<'a>(
     field: &'a Cfg,
 ) -> Result<BindingForm<'a>, FalconError> {
     let linear_weights = factored_weights(linear_point, field)?;
+    // The preceding linear-point nonce protects one atomic challenge block:
+    // its row coordinates followed by eta. No prover message intervenes.
+    // Include eta's degree (2*batch + 8 in hybrid mode) in that block's bound.
     transcript.absorb_slice(b"bitz/falcon1024-ct/terminal-collapse/v1");
     let eta = squeeze(transcript, field)?;
-    let ring_start = super::FalconConstraintCounts::per_signature().linear_rows() - N;
-    let ring_weights = statement
-        .public_keys
-        .iter()
-        .enumerate()
-        .map(|(instance, key)| {
-            let weights: Vec<_> = (0..N)
-                .map(|i| linear_weights.at(instance * LINEAR_STRIDE + ring_start + i))
-                .collect();
-            ring_adjoint(&key.h, &weights, field)
-        })
+    let local_linear_vars = layout.linear_stride().ilog2() as usize;
+    let local_linear_weights = factored_weights(&linear_point[..local_linear_vars], field)?;
+    let ring_start = layout.linear_rows() - N;
+    let ring_row_weights = (0..N)
+        .map(|i| local_linear_weights.at(ring_start + i))
         .collect();
+    let mut ring_instance_weights = eq_table(&linear_point[local_linear_vars..], field)
+        .map_err(|error| piop(error.to_string()))?;
+    ring_instance_weights.truncate(layout.batch());
     Ok(BindingForm {
         layout,
         statement,
         proof,
         field,
         linear_weights,
-        linear_point: linear_point.to_vec(),
-        ring_weights,
+        local_linear_weights,
+        ring_row_weights,
+        ring_instance_weights,
+        prover_ring_cache: OnceLock::new(),
         eta,
     })
 }
 
-/// H^T is negacyclic multiplication by h*(X)=h[0]-sum_{i>0}h[N-i]X^i.
-/// Karatsuba works in the sampled proof field without roots of unity or CRT.
 fn ring_adjoint(h: &[u16; N], weights: &[F], field: &Cfg) -> Vec<F> {
+    let lifted = std::array::from_fn(|i| unsigned(u128::from(h[i]), field));
+    ring_adjoint_field(&lifted, weights, field)
+}
+
+/// Returns -H^T weights, where H^T is negacyclic multiplication by
+/// h*(X)=h[0]-sum_{i>0}h[N-i]X^i. Field-valued keys also support contraction
+/// across instances; they must not be reduced modulo the Falcon modulus Q.
+/// Karatsuba works in the sampled proof field without roots of unity or CRT.
+fn ring_adjoint_field(h: &[F; N], weights: &[F], field: &Cfg) -> Vec<F> {
     let mut adjoint = Vec::with_capacity(N);
-    adjoint.push(unsigned(u128::from(h[0]), field));
-    adjoint.extend(
-        h[1..]
-            .iter()
-            .rev()
-            .map(|&x| field.sub(&field.zero(), &unsigned(u128::from(x), field))),
-    );
+    adjoint.push(h[0]);
+    adjoint.extend(h[1..].iter().rev().map(|&x| field.sub(&field.zero(), &x)));
     let product = polynomial_product(&adjoint, weights, field);
     (0..N)
         .map(|i| field.sub(&product[N + i], &product[i]))
@@ -569,6 +682,31 @@ fn polynomial_product(left: &[F], right: &[F], field: &Cfg) -> Vec<F> {
 }
 
 impl BindingForm<'_> {
+    fn prover_ring_cache(&self) -> &ProverRingCache {
+        self.prover_ring_cache.get_or_init(|| {
+            let mut keys = HashMap::new();
+            let mut adjoints = Vec::new();
+            let instance_keys = self
+                .statement
+                .public_keys
+                .iter()
+                .map(|key| {
+                    // HashMap equality compares all canonical h coefficients,
+                    // so hash collisions cannot merge different keys.
+                    *keys.entry(key.h.as_ref()).or_insert_with(|| {
+                        let index = adjoints.len();
+                        adjoints.push(ring_adjoint(&key.h, &self.ring_row_weights, self.field));
+                        index
+                    })
+                })
+                .collect();
+            ProverRingCache {
+                adjoints,
+                instance_keys,
+            }
+        })
+    }
+
     fn emit(&self, coefficients: &mut impl CoefficientSink) -> Result<F, FalconError> {
         let Self {
             layout,
@@ -576,18 +714,27 @@ impl BindingForm<'_> {
             proof,
             field,
             linear_weights,
-            ring_weights,
             eta,
             ..
         } = self;
-        let linear_constant = add_linear_constraints(
-            coefficients,
-            linear_weights,
-            ring_weights,
-            layout,
-            statement,
-            field,
-        )?;
+        let linear_constant =
+            add_linear_constraints(coefficients, linear_weights, layout, statement, field)?;
+        if coefficients.enabled() {
+            let ring_cache = self.prover_ring_cache();
+            let offsets = layout.offsets();
+            for (instance, &key) in ring_cache.instance_keys.iter().enumerate() {
+                for (j, weight) in ring_cache.adjoints[key].iter().enumerate() {
+                    add_signed_source_scaled(
+                        coefficients,
+                        instance * layout.signature_stride(),
+                        &offsets,
+                        j,
+                        field.mul(&self.ring_instance_weights[instance], weight),
+                        field,
+                    );
+                }
+            }
+        }
         let mut target = field.sub(&field.zero(), &linear_constant);
         let mut scale = *eta;
         add_norm_claims(
@@ -638,7 +785,8 @@ impl BindingForm<'_> {
             return Err(piop("binding endpoint dimension mismatch"));
         }
         let field = self.field;
-        let local_vars = FalconSourceLayout::SIGNATURE_STRIDE.ilog2() as usize;
+        let layout = self.layout;
+        let local_vars = layout.signature_stride().ilog2() as usize;
         let mut sink = EvaluatingSink {
             weights: factored_weights(point, field)?,
             local_weights: factored_weights(&point[..local_vars], field)?,
@@ -649,10 +797,8 @@ impl BindingForm<'_> {
         };
         // All linear wiring is shared across signatures except H*s2. Contract
         // the instance factor first, then evaluate the local template once.
-        let instances =
-            eq_table(&self.linear_point[20..], field).map_err(|e| piop(e.to_string()))?;
-        let scale = sink.bind_instances(&instances[..self.layout.batch()], field)[0].1;
-        let local_layout = FalconSourceLayout::new(1)?;
+        let scale = sink.bind_instances(&self.ring_instance_weights, field)[0].1;
+        let local_layout = layout.single_instance();
         let local_statement = FalconPublicStatement {
             public_keys: vec![self.statement.public_keys[0].clone()],
             messages: vec![self.statement.messages[0]],
@@ -663,24 +809,41 @@ impl BindingForm<'_> {
                 scale,
                 field,
             },
-            &factored_weights(&self.linear_point[..20], field)?,
-            &[vec![field.zero(); N]],
+            &self.local_linear_weights,
             &local_layout,
             &local_statement,
             field,
         )?;
-        let offsets = FalconSourceOffsets::new();
-        for (instance, weights) in self.ring_weights.iter().enumerate() {
-            for (j, &weight) in weights.iter().enumerate() {
-                add_signed_source_scaled(
-                    &mut sink,
-                    instance * FalconSourceLayout::SIGNATURE_STRIDE,
-                    &offsets,
-                    j,
-                    weight,
-                    field,
+        // The local signed-bit endpoint is common to every instance, so the
+        // ring contribution contracts to one adjoint of sum_s alpha_s beta_s h_s.
+        // Only live instances contribute; padding carries no public key.
+        let mut combined_key = [field.zero(); N];
+        for ((key, row_weight), endpoint_weight) in self
+            .statement
+            .public_keys
+            .iter()
+            .zip(&self.ring_instance_weights)
+            .zip(&sink.instance_weights)
+        {
+            let scale = field.mul(row_weight, endpoint_weight);
+            for (combined, &coefficient) in combined_key.iter_mut().zip(key.h.iter()) {
+                *combined = field.add(
+                    combined,
+                    &field.mul(&scale, &unsigned(u128::from(coefficient), field)),
                 );
             }
+        }
+        let ring_weights = ring_adjoint_field(&combined_key, &self.ring_row_weights, field);
+        let offsets = layout.offsets();
+        // The beta_s factors are already in combined_key. Use local endpoint
+        // weights here, without multiplying by beta_0 a second time.
+        let mut local_sink = RepeatedScaledSink {
+            sink: &mut sink,
+            scale: field.one(),
+            field,
+        };
+        for (j, &weight) in ring_weights.iter().enumerate() {
+            add_signed_source_scaled(&mut local_sink, 0, &offsets, j, weight, field);
         }
         let mut ignored_target = field.zero();
         let mut scale = self.eta;
@@ -755,19 +918,20 @@ impl StreamingCoefficientSource for BindingForm<'_> {
     }
 }
 
+/// Emits affine wiring and constants. The key-dependent -H*s2 contribution
+/// is emitted separately from the cached adjoints or the contracted key.
 fn add_linear_constraints(
     coefficients: &mut impl CoefficientSink,
     weights: &crate::poly::mle::EqualityWeights<F>,
-    ring_weights: &[Vec<F>],
     layout: &FalconSourceLayout,
     statement: &FalconPublicStatement,
     field: &Cfg,
 ) -> Result<F, FalconError> {
-    let offsets = FalconSourceOffsets::new();
+    let offsets = layout.offsets();
     let mut constant = field.zero();
     let emit = coefficients.enabled();
     for instance in 0..layout.batch() {
-        let base = instance * FalconSourceLayout::SIGNATURE_STRIDE;
+        let base = instance * layout.signature_stride();
         let mut row = 0usize;
         let mut residual = |terms: &[(usize, i128)], c: i128| {
             let row_index = row;
@@ -775,7 +939,7 @@ fn add_linear_constraints(
             if !emit && c == 0 {
                 return;
             }
-            let weight = weights.at(instance * LINEAR_STRIDE + row_index);
+            let weight = weights.at(instance * layout.linear_stride() + row_index);
             for &(index, coefficient) in terms.iter().filter(|_| emit) {
                 add_coefficient(
                     coefficients,
@@ -813,78 +977,83 @@ fn add_linear_constraints(
             residual(&terms, 0);
         }
 
-        let mut terms = Vec::with_capacity(8);
-        for permutation in 0..KECCAK_PERMUTATIONS {
-            for round in 0..KECCAK_ROUNDS {
-                if !emit && (permutation != 0 || round != 0) {
-                    for _ in 0..(5 * 64 + 25 * 64) {
-                        residual(&[], 0);
-                    }
-                    continue;
-                }
-                let column_start = (permutation * KECCAK_ROUNDS + round) * 5 * 64;
-                for x in 0..5 {
-                    for bit in 0..64 {
-                        terms.clear();
-                        let mut c = 0;
-                        for y in 0..5 {
-                            push_round_input(
-                                &mut terms,
-                                &mut c,
-                                &offsets,
-                                permutation,
-                                round,
-                                x,
-                                y,
-                                bit,
-                                1,
-                            );
+        if !layout.is_hybrid() {
+            let mut terms = Vec::with_capacity(8);
+            for permutation in 0..KECCAK_PERMUTATIONS {
+                for round in 0..KECCAK_ROUNDS {
+                    if !emit && (permutation != 0 || round != 0) {
+                        for _ in 0..(5 * 64 + 25 * 64) {
+                            residual(&[], 0);
                         }
-                        let column = column_start + x * 64 + bit;
-                        terms.push((offsets.keccak_column_parities + column, -1));
-                        terms.push((offsets.keccak_column_parity_quotients + 2 * column, -2));
-                        terms.push((offsets.keccak_column_parity_quotients + 2 * column + 1, -4));
-                        residual(&terms, c);
+                        continue;
                     }
-                }
-                for y in 0..5 {
+                    let column_start = (permutation * KECCAK_ROUNDS + round) * 5 * 64;
                     for x in 0..5 {
-                        let (source_x, source_y) = rho_pi_source(x, y);
-                        let rotation = ROTATION[source_x][source_y] as usize;
-                        for destination_bit in 0..64 {
-                            let source_bit = (destination_bit + 64 - rotation) & 63;
-                            let rotated_bit = (source_bit + 63) & 63;
+                        for bit in 0..64 {
                             terms.clear();
                             let mut c = 0;
-                            push_round_input(
-                                &mut terms,
-                                &mut c,
-                                &offsets,
-                                permutation,
-                                round,
-                                source_x,
-                                source_y,
-                                source_bit,
-                                1,
-                            );
+                            for y in 0..5 {
+                                push_round_input(
+                                    &mut terms,
+                                    &mut c,
+                                    &offsets,
+                                    permutation,
+                                    round,
+                                    x,
+                                    y,
+                                    bit,
+                                    1,
+                                );
+                            }
+                            let column = column_start + x * 64 + bit;
+                            terms.push((offsets.keccak_column_parities + column, -1));
+                            terms.push((offsets.keccak_column_parity_quotients + 2 * column, -2));
                             terms.push((
-                                offsets.keccak_column_parities
-                                    + column_start
-                                    + ((source_x + 4) % 5) * 64
-                                    + source_bit,
-                                1,
+                                offsets.keccak_column_parity_quotients + 2 * column + 1,
+                                -4,
                             ));
-                            terms.push((
-                                offsets.keccak_column_parities
-                                    + column_start
-                                    + ((source_x + 1) % 5) * 64
-                                    + rotated_bit,
-                                1,
-                            ));
-                            let gate = keccak_gate(permutation, round, x, y, destination_bit);
-                            terms.push((offsets.keccak_chi_inputs + gate, -1));
-                            terms.push((offsets.keccak_parity_quotients + gate, -2));
                             residual(&terms, c);
+                        }
+                    }
+                    for y in 0..5 {
+                        for x in 0..5 {
+                            let (source_x, source_y) = rho_pi_source(x, y);
+                            let rotation = ROTATION[source_x][source_y] as usize;
+                            for destination_bit in 0..64 {
+                                let source_bit = (destination_bit + 64 - rotation) & 63;
+                                let rotated_bit = (source_bit + 63) & 63;
+                                terms.clear();
+                                let mut c = 0;
+                                push_round_input(
+                                    &mut terms,
+                                    &mut c,
+                                    &offsets,
+                                    permutation,
+                                    round,
+                                    source_x,
+                                    source_y,
+                                    source_bit,
+                                    1,
+                                );
+                                terms.push((
+                                    offsets.keccak_column_parities
+                                        + column_start
+                                        + ((source_x + 4) % 5) * 64
+                                        + source_bit,
+                                    1,
+                                ));
+                                terms.push((
+                                    offsets.keccak_column_parities
+                                        + column_start
+                                        + ((source_x + 1) % 5) * 64
+                                        + rotated_bit,
+                                    1,
+                                ));
+                                let gate = keccak_gate(permutation, round, x, y, destination_bit);
+                                terms.push((offsets.keccak_chi_inputs + gate, -1));
+                                terms.push((offsets.keccak_parity_quotients + gate, -2));
+                                residual(&terms, c);
+                            }
                         }
                     }
                 }
@@ -894,7 +1063,7 @@ fn add_linear_constraints(
         for i in 0..HASH_TO_POINT_SAMPLES {
             let mut division = Vec::with_capacity(34);
             for bit in 0..16 {
-                division.push((shake_word_bit_index(&offsets, i, bit), 1i128 << bit));
+                division.push((shake_word_bit_index(layout, &offsets, i, bit), 1i128 << bit));
             }
             push_unsigned_terms(
                 &mut division,
@@ -948,13 +1117,7 @@ fn add_linear_constraints(
             );
             residual(&ring, 6_144);
         }
-        if emit {
-            for (j, &weight) in ring_weights[instance].iter().enumerate() {
-                add_signed_source_scaled(coefficients, base, &offsets, j, weight, field);
-            }
-        }
-
-        if row != super::FalconConstraintCounts::per_signature().linear_rows() {
+        if row != layout.linear_rows() {
             return Err(piop(format!(
                 "linear row inventory mismatch: built {row} rows"
             )));
@@ -973,13 +1136,21 @@ fn add_norm_claims(
     field: &Cfg,
 ) -> Result<(), FalconError> {
     let weights = eq_table(&proof.norm.point, field).map_err(|error| piop(error.to_string()))?;
-    let offsets = FalconSourceOffsets::new();
+    let instance_weights =
+        eq_table(&proof.norm.instance_point, field).map_err(|error| piop(error.to_string()))?;
+    if instance_weights.len() != layout.capacity() || weights.len() != N * layout.capacity() {
+        return Err(piop("norm binding point dimension mismatch"));
+    }
+    let offsets = layout.offsets();
     for side in 0..2 {
         let mut constant = field.zero();
         for instance in 0..layout.batch() {
-            let base = instance * FalconSourceLayout::SIGNATURE_STRIDE;
+            let base = instance * layout.signature_stride();
             for i in 0..N {
-                let weight = field.mul(scale, &weights[instance * N + i]);
+                let weight = field.mul(
+                    &field.mul(scale, &instance_weights[instance]),
+                    &weights[instance * N + i],
+                );
                 if side == 0 {
                     add_unsigned_scaled(
                         coefficients,
@@ -1004,7 +1175,7 @@ fn add_norm_claims(
         *scale = field.mul(scale, &eta);
         let mut constant = field.zero();
         for instance in 0..layout.batch() {
-            let base = instance * FalconSourceLayout::SIGNATURE_STRIDE;
+            let base = instance * layout.signature_stride();
             for i in 0..N {
                 let weight = field.mul(scale, &weights[instance * N + i]);
                 if side == 0 {
@@ -1034,9 +1205,9 @@ fn add_norm_claims(
     for instance in 0..layout.batch() {
         add_unsigned_scaled(
             coefficients,
-            instance * FalconSourceLayout::SIGNATURE_STRIDE + offsets.norm_slack,
+            instance * layout.signature_stride() + offsets.norm_slack,
             27,
-            *scale,
+            field.mul(scale, &instance_weights[instance]),
             field,
         );
     }
@@ -1054,7 +1225,17 @@ fn add_keccak_claims(
     proof: &FalconPiopProof,
     field: &Cfg,
 ) -> Result<(), FalconError> {
-    let point = &proof.keccak_chi.point;
+    let Some(keccak_chi) = &proof.keccak_chi else {
+        return if layout.is_hybrid() {
+            Ok(())
+        } else {
+            Err(piop("missing Keccak binding claims"))
+        };
+    };
+    if layout.is_hybrid() {
+        return Err(piop("unexpected Keccak binding claims"));
+    }
+    let point = &keccak_chi.point;
     let batch_vars = layout.capacity().ilog2() as usize;
     if point.len() != 21 + batch_vars {
         return Err(piop("Keccak terminal point dimension mismatch"));
@@ -1097,9 +1278,9 @@ fn add_keccak_claims(
         ),
     );
     let claims = [
-        proof.keccak_chi.terminal.ax,
-        proof.keccak_chi.terminal.bx,
-        proof.keccak_chi.terminal.cx,
+        keccak_chi.terminal.ax,
+        keccak_chi.terminal.bx,
+        keccak_chi.terminal.cx,
     ];
     for coordinate in 0..3 {
         *target = field.add(target, &field.mul(&scales[coordinate], &claims[coordinate]));
@@ -1116,11 +1297,11 @@ fn add_keccak_claims(
         field.add(&rel0[2], &field.add(&rel1[1], &half_c)),
         half_c,
     ];
-    let offsets = FalconSourceOffsets::new();
+    let offsets = layout.offsets();
     for (instance, instance_weight) in
         coefficients.bind_instances(&instances[..layout.batch()], field)
     {
-        let base = instance * FalconSourceLayout::SIGNATURE_STRIDE;
+        let base = instance * layout.signature_stride();
         let seeds = seeds.map(|s| field.mul(&s, &instance_weight));
         for gate in 0..gates {
             let word = gate >> 6;
@@ -1183,7 +1364,7 @@ fn add_compaction_product_claims(
     let weights =
         eq_table(&proof.compact_products.point, field).map_err(|error| piop(error.to_string()))?;
     let stride = COMPACTION_LEAVES * layout.capacity();
-    let offsets = FalconSourceOffsets::new();
+    let offsets = layout.offsets();
     let claims = [
         proof.compact_products.terminal.ax,
         proof.compact_products.terminal.bx,
@@ -1192,39 +1373,34 @@ fn add_compaction_product_claims(
     for coordinate in 0..3 {
         let mut constant = field.zero();
         for instance in 0..layout.batch() {
-            let base = instance * FalconSourceLayout::SIGNATURE_STRIDE;
+            let base = instance * layout.signature_stride();
             for i in 0..HASH_TO_POINT_SAMPLES {
                 let source_row = instance * COMPACTION_LEAVES + i;
-                for block in 0..27 {
+                for block in 0..4 {
                     let weight = field.mul(scale, &weights[block * stride + source_row]);
                     let reject = offsets.hash_accept_ands + i;
                     let selector = offsets.compact_selectors + i;
-                    let (index, c) = match (block, coordinate) {
-                        (0, 0) => (reject, 1),
-                        (0, 1) => (offsets.hash_prefixes + 11 * i + 10, 1),
-                        (0, 2) => (selector, 0),
-                        (1..=11, 0) => (selector, 0),
-                        (1..=11, 1) => (offsets.hash_prefixes + 11 * i + block - 1, 0),
-                        (1..=11, 2) => (offsets.compact_selected_prefixes + 11 * i + block - 1, 0),
-                        (12..=25, 0) => (selector, 0),
-                        (12..=25, 1) => (offsets.hash_remainders + 14 * i + block - 12, 0),
-                        (12..=25, 2) => {
-                            (offsets.compact_selected_remainders + 14 * i + block - 12, 0)
-                        }
-                        (26, 0) => (offsets.hash_quotients + 3 * i + 2, 0),
-                        (26, 1) => (offsets.hash_quotients + 3 * i, 0),
-                        (26, 2) => (reject, 0),
+                    let (index, width, complemented) = match (block, coordinate) {
+                        (0, 0) => (reject, 1, true),
+                        (0, 1) => (offsets.hash_prefixes + 11 * i + 10, 1, true),
+                        (0, 2) => (selector, 1, false),
+                        (1 | 2, 0) => (selector, 1, false),
+                        (1, 1) => (offsets.hash_prefixes + 11 * i, 11, false),
+                        (1, 2) => (offsets.compact_selected_prefixes + 11 * i, 11, false),
+                        (2, 1) => (offsets.hash_remainders + 14 * i, 14, false),
+                        (2, 2) => (offsets.compact_selected_remainders + 14 * i, 14, false),
+                        (3, 0) => (offsets.hash_quotients + 3 * i + 2, 1, false),
+                        (3, 1) => (offsets.hash_quotients + 3 * i, 1, false),
+                        (3, 2) => (reject, 1, false),
                         _ => unreachable!(),
                     };
-                    let coefficient = if block == 0 && coordinate < 2 {
+                    let coefficient = if complemented {
+                        constant = field.add(&constant, &weight);
                         field.sub(&field.zero(), &weight)
                     } else {
                         weight
                     };
-                    add_coefficient(coefficients, base + index, coefficient, field);
-                    if c == 1 {
-                        constant = field.add(&constant, &weight);
-                    }
+                    add_unsigned_scaled(coefficients, base + index, width, coefficient, field);
                 }
             }
         }
@@ -1243,9 +1419,9 @@ fn add_product_tree_claims(
     proof: &FalconPiopProof,
     field: &Cfg,
 ) -> Result<(), FalconError> {
-    let offsets = FalconSourceOffsets::new();
+    let offsets = layout.offsets();
     for instance in 0..layout.batch() {
-        let base = instance * FalconSourceLayout::SIGNATURE_STRIDE;
+        let base = instance * layout.signature_stride();
         let pair = &proof.compaction[instance];
         for (candidate, tree) in [true, false]
             .into_iter()
@@ -1325,6 +1501,9 @@ fn add_unsigned_scaled(
     mut scale: F,
     field: &Cfg,
 ) {
+    if !values.enabled() {
+        return;
+    }
     for bit in 0..width {
         values.add(base + bit, scale);
         scale = field.add(&scale, &scale);
@@ -1339,6 +1518,9 @@ fn add_signed_source_scaled(
     scale: F,
     field: &Cfg,
 ) {
+    if !values.enabled() {
+        return;
+    }
     for bit in 0..12 {
         let signed_weight = if bit == 11 {
             -(1i128 << 11)
@@ -1418,7 +1600,15 @@ fn s2_bit_index(offsets: &FalconSourceOffsets, coefficient: usize, bit: usize) -
     offsets.encoded_signature + 8 * byte + byte_bit
 }
 
-fn shake_word_bit_index(offsets: &FalconSourceOffsets, sample: usize, bit: usize) -> usize {
+fn shake_word_bit_index(
+    layout: &FalconSourceLayout,
+    offsets: &FalconSourceOffsets,
+    sample: usize,
+    bit: usize,
+) -> usize {
+    if layout.is_hybrid() {
+        return offsets.hash_words + 16 * sample + bit;
+    }
     let output_byte = if bit < 8 { 2 * sample + 1 } else { 2 * sample };
     let byte_bit = bit % 8;
     let permutation = output_byte / RATE_BYTES;
@@ -1558,7 +1748,7 @@ fn mul_i(mut value: F, coefficient: i128, field: &Cfg) -> F {
 }
 
 fn linear_rounds(layout: &FalconSourceLayout) -> usize {
-    20 + layout.capacity().trailing_zeros() as usize
+    layout.linear_stride().ilog2() as usize + layout.capacity().trailing_zeros() as usize
 }
 
 fn source_rounds(layout: &FalconSourceLayout) -> usize {

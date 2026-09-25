@@ -546,6 +546,7 @@ dependencies = [
  "derive_more",
  "field",
  "flock-core",
+ "flock-prover",
  "itertools 0.14.0",
  "k256",
  "libc",
@@ -1168,6 +1169,18 @@ dependencies = [
  "serde",
  "sha2 0.10.9",
  "toml",
+]
+
+[[package]]
+name = "flock-prover"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "blake3",
+ "flock-core",
+ "rayon",
+ "serde",
+ "sha2 0.10.9",
 ]
 
 [[package]]

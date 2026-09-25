@@ -21,7 +21,7 @@ use crate::{
         ood_residual_evals, prove_ood_round_packed, verify_ood_round,
     },
     piop::spartan::profile::{IopSecurityProfile, MAX_DERIVED_GRINDING_BITS},
-    transcript::{Blake3Transcript, traits::Transcript},
+    transcript::traits::Transcript,
 };
 use flock_core::{
     field::Gf128 as F,
@@ -39,10 +39,10 @@ use rayon::prelude::*;
 /// level-0 rate — [`Geometry::params`] takes it explicitly — and the commit
 /// rate MUST equal that level-0 configuration rate: the opener queries the
 /// committed codewords.
-pub(super) const LOG_INV_RATE: usize = 1;
+pub(crate) const LOG_INV_RATE: usize = 1;
 
 #[derive(Clone, Debug)]
-pub(super) struct Geometry {
+pub(crate) struct Geometry {
     pub logs: [usize; 2],
     pub physical_logs: [usize; 2],
     pub position_log: usize,
@@ -161,7 +161,7 @@ impl Geometry {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct Proof {
+pub(crate) struct Proof {
     /// Round 0: `y = MLE[V](ζ⃗)` and the proof-of-work nonce before the
     /// `ζ` draw.
     pub ood: Option<OodRound>,
@@ -172,8 +172,8 @@ pub(super) struct Proof {
 
 /// Round 0 on the prover side, on the virtual packed witness `packed`.
 /// Must run right after the statement, before any other challenge.
-pub(super) fn prove_ood(
-    t: &mut Blake3Transcript,
+pub(crate) fn prove_ood(
+    t: &mut (impl Transcript + Send),
     params: Option<OodRoundParams>,
     packed: &[F],
 ) -> Option<OodProverClaim> {
@@ -182,8 +182,8 @@ pub(super) fn prove_ood(
 
 /// Round 0 on the verifier side: the same frame and draw, the nonce
 /// checked against `params`, the prover's `y` absorbed.
-pub(super) fn verify_ood(
-    t: &mut Blake3Transcript,
+pub(crate) fn verify_ood(
+    t: &mut (impl Transcript + Send),
     geometry: &Geometry,
     params: Option<OodRoundParams>,
     round: Option<&OodRound>,
@@ -199,7 +199,7 @@ pub(super) fn verify_ood(
     }
 }
 
-pub(super) fn ood_parameters(
+pub(crate) fn ood_parameters(
     resolved: &crate::ligerito_flock::ResolvedLigerito,
 ) -> Result<Option<(f64, OodRoundParams)>, Error> {
     resolved
@@ -216,7 +216,7 @@ pub(super) fn ood_parameters(
         .transpose()
 }
 
-fn sample_padding(t: &mut Blake3Transcript, geometry: &Geometry) -> Vec<(Vec<Gf>, Gf)> {
+fn sample_padding(t: &mut (impl Transcript + Send), geometry: &Geometry) -> Vec<(Vec<Gf>, Gf)> {
     t.absorb_slice(b"hybrid/zero-padding/three-equality-bases/v1");
     let point = (0..geometry.packed_log())
         .map(|_| t.get_field_challenge(&()))
@@ -225,8 +225,8 @@ fn sample_padding(t: &mut Blake3Transcript, geometry: &Geometry) -> Vec<(Vec<Gf>
     geometry.padding_bases(point, eta)
 }
 
-pub(super) fn prove(
-    t: &mut Blake3Transcript,
+pub(crate) fn prove(
+    t: &mut (impl Transcript + Send),
     geometry: &Geometry,
     statement: &Hash,
     packed: Vec<F>,
@@ -234,6 +234,23 @@ pub(super) fn prove(
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     data: [&ProverData; 2],
     point: &[Gf],
+) -> Result<Proof, Error> {
+    prove_with_security(
+        t, geometry, statement, packed, ood, resolved, data, point, None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prove_with_security(
+    t: &mut (impl Transcript + Send),
+    geometry: &Geometry,
+    statement: &Hash,
+    packed: Vec<F>,
+    ood: Option<&OodProverClaim>,
+    resolved: &crate::ligerito_flock::ResolvedLigerito,
+    data: [&ProverData; 2],
+    point: &[Gf],
+    security: Option<&mut crate::ligerito_flock::grinding::GrindingContext<'_>>,
 ) -> Result<Proof, Error> {
     let ring_scope = tracing::info_span!("op:ring_switch").entered();
     // flock's packed words are bit-compatible with `Gf`: the ring switch
@@ -259,31 +276,49 @@ pub(super) fn prove(
     let _lig_scope = tracing::info_span!("op:ligerito").entered();
     let pc = resolved.prover();
     let mut paths = [Vec::new(), Vec::new()];
-    let proof = ligerito::recursive_prover_with_basis_initial(
-        &pc,
-        packed,
-        basis,
-        target,
-        *statement,
-        |positions, lanes, queries| {
-            let mut rows = vec![vec![F::ZERO; lanes]; queries.len()];
-            for branch in 0..2 {
-                let width = 1 << geometry.lane_logs[branch];
-                let start = geometry.offset(branch);
-                for (row, &q) in rows.iter_mut().zip(queries) {
-                    row[start..start + width]
-                        .copy_from_slice(&data[branch].codeword[q * width..(q + 1) * width]);
-                }
-                paths[branch] =
-                    merkle::merkle_multi_proof(&data[branch].merkle_tree, positions, queries);
-            }
-            RecursiveProof {
-                opened_rows: rows,
-                merkle_proof: Vec::new(),
-            }
-        },
-        &mut ZincChallenger(t),
-    );
+    macro_rules! run {
+        ($challenger:expr) => {
+            ligerito::recursive_prover_with_basis_initial(
+                &pc,
+                packed,
+                basis,
+                target,
+                *statement,
+                |positions, lanes, queries| {
+                    let mut rows = vec![vec![F::ZERO; lanes]; queries.len()];
+                    for branch in 0..2 {
+                        let width = 1 << geometry.lane_logs[branch];
+                        let start = geometry.offset(branch);
+                        for (row, &q) in rows.iter_mut().zip(queries) {
+                            row[start..start + width].copy_from_slice(
+                                &data[branch].codeword[q * width..(q + 1) * width],
+                            );
+                        }
+                        paths[branch] = merkle::merkle_multi_proof(
+                            &data[branch].merkle_tree,
+                            positions,
+                            queries,
+                        );
+                    }
+                    RecursiveProof {
+                        opened_rows: rows,
+                        merkle_proof: Vec::new(),
+                    }
+                },
+                $challenger,
+            )
+        };
+    }
+    let proof = if let Some(security) = security {
+        let mut challenger = crate::ligerito_flock::grinding::GrindingChallenger::new(t, security);
+        let proof = run!(&mut challenger);
+        if !challenger.finish() {
+            return Err(Error::Invalid("shared Ligerito grinding schedule"));
+        }
+        proof
+    } else {
+        run!(&mut ZincChallenger(t))
+    };
     Ok(Proof {
         ood: ood.map(|claim| claim.round),
         ring,
@@ -293,8 +328,8 @@ pub(super) fn prove(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn verify(
-    t: &mut Blake3Transcript,
+pub(crate) fn verify(
+    t: &mut (impl Transcript + Send),
     geometry: &Geometry,
     statement: &Hash,
     roots: &[Hash; 2],
@@ -303,6 +338,24 @@ pub(super) fn verify(
     ood: Option<&OodVerifierClaim>,
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     proof: &Proof,
+) -> Result<(), Error> {
+    verify_with_security(
+        t, geometry, statement, roots, point, value, ood, resolved, proof, None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn verify_with_security(
+    t: &mut (impl Transcript + Send),
+    geometry: &Geometry,
+    statement: &Hash,
+    roots: &[Hash; 2],
+    point: &[Gf],
+    value: F,
+    ood: Option<&OodVerifierClaim>,
+    resolved: &crate::ligerito_flock::ResolvedLigerito,
+    proof: &Proof,
+    security: Option<&mut crate::ligerito_flock::grinding::GrindingContext<'_>>,
 ) -> Result<(), Error> {
     let (eq_r2, mut target) = ring_switch_verify(t, &proof.ring, value, &point[..7])
         .map_err(|_| Error::Invalid("ring switch"))?;
@@ -334,71 +387,82 @@ pub(super) fn verify(
     {
         return Err(Error::Invalid("Ligerito proof shape"));
     }
-    let valid = ligerito::recursive_verifier_with_basis_initial(
-        &vc,
-        &proof.ligerito,
-        geometry.packed_log(),
-        target,
-        statement,
-        |prefix, log_y| {
-            let prefix_gf: Vec<_> = prefix.iter().copied().collect();
-            let mut out = residual_b_evals(&prefix_gf, log_y, &point[7..], &eq_r2);
-            if let (Some(ood), Some(eta)) = (ood, eta_ood) {
-                for (slot, term) in out
-                    .iter_mut()
-                    .zip(ood_residual_evals(prefix, log_y, &ood.point, eta))
-                {
-                    *slot += term;
-                }
-            }
-            for (point, scale) in &padding {
-                for (slot, term) in out
-                    .iter_mut()
-                    .zip(ood_residual_evals(prefix, log_y, point, *scale))
-                {
-                    *slot += term;
-                }
-            }
-            out.into_iter().collect()
-        },
-        |positions, lanes, queries, opening| {
-            if !opening.merkle_proof.is_empty() || lanes != geometry.lanes() {
-                return false;
-            }
-            let mut hashes = [
-                Vec::with_capacity(queries.len()),
-                Vec::with_capacity(queries.len()),
-            ];
-            for row in &opening.opened_rows {
-                // Authentication of both real slices AND every public zero lane.
-                for branch in 0..2 {
-                    let start = geometry.offset(branch);
-                    let end = start + (1 << geometry.lane_logs[branch]);
-                    let half_end = start + lanes / 2;
-                    if row[end..half_end].iter().any(|&x| x != F::ZERO) {
+    macro_rules! run {
+        ($challenger:expr) => {
+            ligerito::recursive_verifier_with_basis_initial(
+                &vc,
+                &proof.ligerito,
+                geometry.packed_log(),
+                target,
+                statement,
+                |prefix, log_y| {
+                    let prefix_gf: Vec<_> = prefix.iter().copied().collect();
+                    let mut out = residual_b_evals(&prefix_gf, log_y, &point[7..], &eq_r2);
+                    if let (Some(ood), Some(eta)) = (ood, eta_ood) {
+                        for (slot, term) in out
+                            .iter_mut()
+                            .zip(ood_residual_evals(prefix, log_y, &ood.point, eta))
+                        {
+                            *slot += term;
+                        }
+                    }
+                    for (point, scale) in &padding {
+                        for (slot, term) in out
+                            .iter_mut()
+                            .zip(ood_residual_evals(prefix, log_y, point, *scale))
+                        {
+                            *slot += term;
+                        }
+                    }
+                    out.into_iter().collect()
+                },
+                |positions, lanes, queries, opening| {
+                    if !opening.merkle_proof.is_empty() || lanes != geometry.lanes() {
                         return false;
                     }
-                    let mut bytes = Vec::with_capacity((end - start) * 16);
-                    for word in &row[start..end] {
-                        bytes.extend_from_slice(&word.lo.to_le_bytes());
-                        bytes.extend_from_slice(&word.hi.to_le_bytes());
+                    let mut hashes = [
+                        Vec::with_capacity(queries.len()),
+                        Vec::with_capacity(queries.len()),
+                    ];
+                    for row in &opening.opened_rows {
+                        // Authentication of both real slices AND every public zero lane.
+                        for branch in 0..2 {
+                            let start = geometry.offset(branch);
+                            let end = start + (1 << geometry.lane_logs[branch]);
+                            let half_end = start + lanes / 2;
+                            if row[end..half_end].iter().any(|&x| x != F::ZERO) {
+                                return false;
+                            }
+                            let mut bytes = Vec::with_capacity((end - start) * 16);
+                            for word in &row[start..end] {
+                                bytes.extend_from_slice(&word.lo.to_le_bytes());
+                                bytes.extend_from_slice(&word.hi.to_le_bytes());
+                            }
+                            hashes[branch].push(merkle::hash_leaf(&bytes, vc.merkle_hash));
+                        }
                     }
-                    hashes[branch].push(merkle::hash_leaf(&bytes, vc.merkle_hash));
-                }
-            }
-            (0..2).all(|branch| {
-                merkle::verify_merkle_multi_proof(
-                    &roots[branch],
-                    positions,
-                    queries,
-                    &hashes[branch],
-                    &proof.paths[branch],
-                    vc.merkle_hash,
-                )
-            })
-        },
-        &mut ZincChallenger(t),
-    );
+                    (0..2).all(|branch| {
+                        merkle::verify_merkle_multi_proof(
+                            &roots[branch],
+                            positions,
+                            queries,
+                            &hashes[branch],
+                            &proof.paths[branch],
+                            vc.merkle_hash,
+                        )
+                    })
+                },
+                $challenger,
+            )
+        };
+    }
+    let valid = if let Some(security) = security {
+        let mut challenger = crate::ligerito_flock::grinding::GrindingChallenger::new(t, security);
+        let valid = run!(&mut challenger);
+        valid && challenger.finish()
+    } else {
+        run!(&mut ZincChallenger(t))
+    };
     if valid {
         Ok(())
     } else {

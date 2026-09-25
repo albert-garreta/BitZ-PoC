@@ -29,16 +29,33 @@ pub fn verification_trace(
     let public_key = decode_public_key(public_key)?;
     let signature = decode_signature_ct(signature)?;
     let hash_to_point = hash_to_point_ct(&signature.nonce, message)?;
+    trace_from_parts(public_key, signature, hash_to_point, false)
+}
 
+pub(super) fn trace_from_parts(
+    public_key: FalconPublicKey,
+    signature: FalconSignatureCt,
+    hash_to_point: HashToPointTrace,
+    fast_convolution: bool,
+) -> Result<FalconVerificationTrace, FalconError> {
     let mut convolution = Box::new([0i64; N]);
-    for (i, &h) in public_key.h.iter().enumerate() {
-        for (j, &s) in signature.s2.iter().enumerate() {
-            let product = i64::from(h) * i64::from(s);
-            let index = i + j;
-            if index < N {
-                convolution[index] += product;
-            } else {
-                convolution[index - N] -= product;
+    if fast_convolution {
+        let left: Vec<_> = public_key.h.iter().map(|&h| i64::from(h)).collect();
+        let right: Vec<_> = signature.s2.iter().map(|&s| i64::from(s)).collect();
+        let product = integer_polynomial_product(&left, &right);
+        for i in 0..N {
+            convolution[i] = product[i] - product[i + N];
+        }
+    } else {
+        for (i, &h) in public_key.h.iter().enumerate() {
+            for (j, &s) in signature.s2.iter().enumerate() {
+                let product = i64::from(h) * i64::from(s);
+                let index = i + j;
+                if index < N {
+                    convolution[index] += product;
+                } else {
+                    convolution[index - N] -= product;
+                }
             }
         }
     }
@@ -75,6 +92,34 @@ pub fn verification_trace(
         norm,
         norm_slack: BETA_SQUARED - norm,
     })
+}
+
+/// Exact Karatsuba product. Falcon's bounded 14- and 12-bit inputs at
+/// degree 1024 leave ample headroom in i64, including recursive sums.
+fn integer_polynomial_product(a: &[i64], b: &[i64]) -> Vec<i64> {
+    let n = a.len();
+    debug_assert_eq!(n, b.len());
+    let mut out = vec![0; 2 * n];
+    if n <= 32 {
+        for (i, &x) in a.iter().enumerate() {
+            for (j, &y) in b.iter().enumerate() {
+                out[i + j] += x * y;
+            }
+        }
+        return out;
+    }
+    let h = n / 2;
+    let lo = integer_polynomial_product(&a[..h], &b[..h]);
+    let hi = integer_polynomial_product(&a[h..], &b[h..]);
+    let asum: Vec<_> = (0..h).map(|i| a[i] + a[h + i]).collect();
+    let bsum: Vec<_> = (0..h).map(|i| b[i] + b[h + i]).collect();
+    let mid = integer_polynomial_product(&asum, &bsum);
+    for i in 0..n {
+        out[i] += lo[i];
+        out[i + n] += hi[i];
+        out[i + h] += mid[i] - lo[i] - hi[i];
+    }
+    out
 }
 
 /// Verifies a Falcon-1024 CT signature.
