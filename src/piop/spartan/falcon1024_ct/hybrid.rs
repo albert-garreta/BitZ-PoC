@@ -41,11 +41,11 @@ impl GrindingDomain for OpeningGrinding {
     const DOMAIN: &'static [u8] = b"bitz/falcon-hybrid/opening-grinding/v1";
 }
 
-/// Public keys, messages, and the two authenticated binary sources.
+/// Public keys, messages, and the three authenticated binary sources.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FalconHybridStatement {
     pub public: FalconPublicStatement,
-    pub roots: [[u8; 32]; 2],
+    pub roots: [[u8; 32]; 3],
 }
 
 /// Union-bound terms in the existing computational grinding model. This is
@@ -60,8 +60,8 @@ pub struct FalconHybridSecurity {
 /// Prepared public circuit, reusable across witnesses of the same batch size.
 pub struct PreparedFalconHybrid {
     layout: FalconSourceLayout,
-    keccak: PreparedKeccak,
-    geometry: shared::Geometry,
+    keccak: [PreparedKeccak; 2],
+    geometry: shared::Geometry<3>,
     target_bits: usize,
     ligerito: ResolvedLigerito,
     pcs_grinding: GrindingPlan,
@@ -74,20 +74,20 @@ pub struct CommittedFalconHybrid {
     pub statement: FalconHybridStatement,
     traces: Vec<FalconVerificationTrace>,
     arithmetic: FalconSourceWitness,
-    auxiliary: KeccakAuxiliary,
-    packed: [Vec<Gf>; 2],
-    commitments: [Commitment; 2],
-    data: [ProverData; 2],
+    auxiliary: [KeccakAuxiliary; 2],
+    packed: [Vec<Gf>; 3],
+    commitments: [Commitment; 3],
+    data: [ProverData; 3],
 }
 
 #[derive(Clone, Debug)]
 pub struct FalconHybridProof {
     arithmetic: FalconBindingPrefixProof,
     bridge: hybrid_bridge::Proof,
-    keccak: hybrid_keccak::PrefixProof,
+    keccak: [hybrid_keccak::PrefixProof; 2],
     links_nonces: Vec<u64>,
     joint: joint::Proof,
-    opening: shared::Proof,
+    opening: shared::Proof<3>,
     opening_nonces: Vec<u64>,
     pcs_nonces: Vec<u64>,
 }
@@ -99,10 +99,14 @@ impl PreparedFalconHybrid {
             return Err(error("hybrid security must be 100 or 128 bits"));
         }
         let layout = FalconSourceLayout::new_hybrid(batch)?;
-        let keccak = PreparedKeccak::new(batch).map_err(error)?;
+        let keccak = [
+            PreparedKeccak::new_slab(batch, 0, 16).map_err(error)?,
+            PreparedKeccak::new_slab(batch, 16, 4).map_err(error)?,
+        ];
         let geometry = shared::Geometry::new([
             layout.source_bits().ilog2() as usize - 7,
-            keccak.packed_vars(),
+            keccak[0].packed_vars(),
+            keccak[1].packed_vars(),
         ])
         .map_err(error)?;
         // Unique decoding avoids a level-zero list-selection obligation. The
@@ -144,8 +148,12 @@ impl PreparedFalconHybrid {
     pub fn target_bits(&self) -> usize {
         self.target_bits
     }
-    pub fn source_bits_per_signature(&self) -> [usize; 2] {
-        [self.layout.signature_stride(), 1 << 21]
+    pub fn source_bits_per_signature(&self) -> [usize; 3] {
+        [
+            self.layout.signature_stride(),
+            (1 << self.keccak[0].bit_vars()) / self.capacity(),
+            (1 << self.keccak[1].bit_vars()) / self.capacity(),
+        ]
     }
 
     pub fn security(&self) -> FalconHybridSecurity {
@@ -193,9 +201,13 @@ impl PreparedFalconHybrid {
             (
                 "binary Keccak PIOP",
                 self.keccak
-                    .security((self.target_bits + 8) as u32)
-                    .expect("prepared profile")
-                    .error_bound(),
+                    .iter()
+                    .map(|slab| {
+                        slab.security((self.target_bits + 8) as u32)
+                            .expect("prepared profile")
+                            .error_bound()
+                    })
+                    .sum(),
             ),
             ("SHAKE wiring and binary claim batching", binary(128)),
             ("joint binary sumcheck", binary(2 * self.geometry.bit_log())),
@@ -239,16 +251,10 @@ impl PreparedFalconHybrid {
             .map(|s| decode_signature_ct(s))
             .collect::<Result<Vec<_>, _>>()?;
         let nonces: Vec<_> = decoded.iter().map(|s| s.nonce).collect();
-        let witness = self
-            .keccak
-            .generate_witness(&nonces, &public.messages)
-            .map_err(error)?;
+        let (keccak_packed, auxiliary, samples) = self.generate_shake(&nonces, &public.messages)?;
         let traces = crate::utils::cfg_into_iter!(0..self.batch())
             .map(|i| {
-                let bytes: Vec<_> = witness.samples[i]
-                    .iter()
-                    .flat_map(|w| w.to_be_bytes())
-                    .collect();
+                let bytes: Vec<_> = samples[i].iter().flat_map(|w| w.to_be_bytes()).collect();
                 let htp = super::hash_to_point::from_shake_bytes(&bytes, KeccakTrace::default())?;
                 super::verify::trace_from_parts(
                     public.public_keys[i].clone(),
@@ -266,23 +272,64 @@ impl PreparedFalconHybrid {
             arithmetic_packed.extend(row.chunks_exact(2).map(|w| Gf { lo: w[0], hi: w[1] }));
         }
         arithmetic_packed.resize(1 << self.geometry.physical_logs[0], Gf::ZERO);
-        let packed = [arithmetic_packed, witness.packed];
+        let [k16, k4] = keccak_packed;
+        let packed = [arithmetic_packed, k16, k4];
         let rate = self.ligerito.prover().log_inv_rates[0];
         let (ca, da) = commit(&packed[0], &self.geometry.params(0, rate));
         let (ck, dk) = commit(&packed[1], &self.geometry.params(1, rate));
+        let (ct, dt) = commit(&packed[2], &self.geometry.params(2, rate));
         let statement = FalconHybridStatement {
             public,
-            roots: [ca.root, ck.root],
+            roots: [ca.root, ck.root, ct.root],
         };
         Ok(CommittedFalconHybrid {
             statement,
             traces,
             arithmetic,
-            auxiliary: witness.auxiliary,
+            auxiliary,
             packed,
-            commitments: [ca, ck],
-            data: [da, dk],
+            commitments: [ca, ck, ct],
+            data: [da, dk, dt],
         })
+    }
+
+    fn generate_shake(
+        &self,
+        nonces: &[[u8; 40]],
+        messages: &[[u8; 32]],
+    ) -> Result<
+        (
+            [Vec<Gf>; 2],
+            [KeccakAuxiliary; 2],
+            Vec<[u16; hybrid_keccak::SAMPLES]>,
+        ),
+        FalconError,
+    > {
+        let initial: Vec<_> = nonces
+            .iter()
+            .zip(messages)
+            .map(|(nonce, message)| hybrid_keccak::initial_state(nonce, message))
+            .collect();
+        let (k16, a16, out16) = self.keccak[0].generate_chain(&initial).map_err(error)?;
+        let next: Vec<_> = out16[..self.batch()].iter().map(|out| out[15]).collect();
+        let (k4, a4, out4) = self.keccak[1].generate_chain(&next).map_err(error)?;
+        let samples = crate::utils::cfg_into_iter!(0..self.batch())
+            .map(|signature| {
+                std::array::from_fn(|sample| {
+                    let byte = 2 * sample;
+                    let permutation = byte / hybrid_keccak::RATE_BYTES;
+                    let offset = byte % hybrid_keccak::RATE_BYTES;
+                    let out = if permutation < 16 {
+                        &out16[signature][permutation]
+                    } else {
+                        &out4[signature][permutation - 16]
+                    };
+                    let byte_at = |i: usize| (out[i / 8] >> (8 * (i % 8))) as u8;
+                    u16::from_be_bytes([byte_at(offset), byte_at(offset + 1)])
+                })
+            })
+            .collect();
+        Ok(([k16, k4], [a16, a4], samples))
     }
 
     fn transcript(
@@ -303,13 +350,14 @@ impl PreparedFalconHybrid {
             return Err(error("noncanonical Falcon public key"));
         }
         let mut h = blake3::Hasher::new();
-        h.update(b"bitz/falcon1024-ct/hybrid/non-zk/v1");
+        h.update(b"bitz/falcon1024-ct/hybrid/non-zk/v2");
         for n in [
             self.batch(),
             self.capacity(),
             self.target_bits,
             self.geometry.logs[0],
             self.geometry.logs[1],
+            self.geometry.logs[2],
         ] {
             h.update(&(n as u64).to_le_bytes());
         }
@@ -333,7 +381,7 @@ impl PreparedFalconHybrid {
         }
         let digest = *h.finalize().as_bytes();
         let mut t = Blake3Transcript::new();
-        t.absorb_slice(b"bitz/falcon-hybrid/statement/v1");
+        t.absorb_slice(b"bitz/falcon-hybrid/statement/v2");
         t.absorb_slice(&digest);
         self.ligerito.bind(&mut t);
         Ok((t, digest))
@@ -364,35 +412,52 @@ impl PreparedFalconHybrid {
         )?;
         drop(bridge_span);
         let keccak_span = tracing::info_span!("falcon_hybrid:keccak_prefix").entered();
-        let (keccak, k) = self
-            .keccak
-            .prove_prefix(
-                &committed.packed[1],
-                committed.auxiliary,
-                &committed.commitments[1],
-                &mut t,
-                (self.target_bits + 8) as u32,
-            )
-            .map_err(error)?;
+        let mut prefixes = Vec::new();
+        let mut k = Vec::new();
+        let mut marginals = Vec::new();
+        for (slab, auxiliary) in committed.auxiliary.into_iter().enumerate() {
+            let (proof, claims, cached) = self.keccak[slab]
+                .prove_prefix(
+                    &committed.packed[slab + 1],
+                    auxiliary,
+                    &committed.commitments[slab + 1],
+                    &mut t,
+                    (self.target_bits + 8) as u32,
+                )
+                .map_err(error)?;
+            prefixes.push(proof);
+            k.push(claims.map(|c| BinaryClaim {
+                low: c.low,
+                high_point: c.high_point,
+                value: c.value,
+            }));
+            marginals.push(cached);
+        }
+        let keccak = prefixes.try_into().expect("two Keccak slabs");
+        let k: [[BinaryClaim; 2]; 2] = k
+            .try_into()
+            .unwrap_or_else(|_| unreachable!("two Keccak slabs"));
         drop(keccak_span);
-        let k = k.map(|c| BinaryClaim {
-            low: c.low,
-            high_point: c.high_point,
-            value: c.value,
-        });
+        let links_span = tracing::info_span!("falcon_hybrid:link_coefficients").entered();
         let mut link_t = ProverBlockGrindingTranscript::<_, LinkGrinding>::new(
             &mut t,
             self.binary_grinding(128),
         );
-        let (coefficients, target) =
+        let (mut coefficients, target) =
             self.coefficients(&mut link_t, &committed.statement.public, &a, &k);
         let links_nonces = link_t.finish();
+        drop(links_span);
+        for (branch, cached) in marginals.into_iter().enumerate() {
+            for (tensor, values) in coefficients[branch + 1].tensors.iter_mut().zip(cached) {
+                tensor.marginals = Some(values);
+            }
+        }
         let joint_span = tracing::info_span!("falcon_hybrid:joint_sumcheck").entered();
         let (joint, point) = joint::prove(
             &mut t,
             &self.geometry,
-            [&committed.packed[0], &committed.packed[1]],
-            [&coefficients[0], &coefficients[1]],
+            committed.packed.each_ref().map(Vec::as_slice),
+            coefficients.each_ref(),
             target,
             self.binary_grinding(2 * self.geometry.bit_log()),
             &mut *self
@@ -405,7 +470,7 @@ impl PreparedFalconHybrid {
         let opening_span = tracing::info_span!("falcon_hybrid:shared_opening").entered();
         let packed = self
             .geometry
-            .virtual_packed([&committed.packed[0], &committed.packed[1]]);
+            .virtual_packed(committed.packed.each_ref().map(Vec::as_slice));
         let mut pcs_nonces = Vec::new();
         let mut pcs = GrindingContext {
             plan: &self.pcs_grinding,
@@ -422,7 +487,7 @@ impl PreparedFalconHybrid {
             packed,
             None,
             &self.ligerito,
-            [&committed.data[0], &committed.data[1]],
+            committed.data.each_ref(),
             &point,
             Some(&mut pcs),
         )
@@ -466,26 +531,31 @@ impl PreparedFalconHybrid {
             &proof.bridge,
             self.binary_grinding(4096),
         )?;
-        let commitment = Commitment {
-            root: statement.roots[1],
-            params: self
-                .geometry
-                .params(1, self.ligerito.prover().log_inv_rates[0]),
-        };
-        let k = self
-            .keccak
-            .verify_prefix(
-                &proof.keccak,
-                &commitment,
-                &mut t,
-                (self.target_bits + 8) as u32,
-            )
-            .map_err(error)?;
-        let k = k.map(|c| BinaryClaim {
-            low: c.low,
-            high_point: c.high_point,
-            value: c.value,
-        });
+        let mut k = Vec::new();
+        for slab in 0..2 {
+            let commitment = Commitment {
+                root: statement.roots[slab + 1],
+                params: self
+                    .geometry
+                    .params(slab + 1, self.ligerito.prover().log_inv_rates[0]),
+            };
+            let claims = self.keccak[slab]
+                .verify_prefix(
+                    &proof.keccak[slab],
+                    &commitment,
+                    &mut t,
+                    (self.target_bits + 8) as u32,
+                )
+                .map_err(error)?;
+            k.push(claims.map(|c| BinaryClaim {
+                low: c.low,
+                high_point: c.high_point,
+                value: c.value,
+            }));
+        }
+        let k: [[BinaryClaim; 2]; 2] = k
+            .try_into()
+            .unwrap_or_else(|_| unreachable!("two Keccak slabs"));
         let mut link_t = VerifierBlockGrindingTranscript::<_, LinkGrinding>::new(
             &mut t,
             self.binary_grinding(128),
@@ -496,7 +566,7 @@ impl PreparedFalconHybrid {
         let point = joint::verify(
             &mut t,
             &self.geometry,
-            [&coefficients[0], &coefficients[1]],
+            coefficients.each_ref(),
             target,
             self.binary_grinding(2 * self.geometry.bit_log()),
             &proof.joint,
@@ -535,25 +605,29 @@ impl PreparedFalconHybrid {
         t: &mut impl Transcript,
         public: &FalconPublicStatement,
         a: &[BinaryClaim],
-        k: &[BinaryClaim],
-    ) -> ([Coefficients; 2], Gf) {
-        t.absorb_slice(b"bitz/falcon-hybrid/binary-claims-and-shake-wiring/v1");
-        for claims in [a, k] {
+        k: &[[BinaryClaim; 2]; 2],
+    ) -> ([Coefficients; 3], Gf) {
+        t.absorb_slice(b"bitz/falcon-hybrid/binary-claims-and-shake-wiring/v2");
+        for claims in [a, k[0].as_slice(), k[1].as_slice()] {
             t.absorb_slice(&(claims.len() as u64).to_le_bytes());
             for c in claims {
                 t.absorb_slice(&c.value.lo.to_le_bytes());
                 t.absorb_slice(&c.value.hi.to_le_bytes());
             }
         }
-        let mut result = [Coefficients::default(), Coefficients::default()];
+        let mut result = std::array::from_fn(|_| Coefficients::default());
         let mut target = Gf::ZERO;
-        for (branch, claims) in [a, k].into_iter().enumerate() {
+        for (branch, claims) in [a, k[0].as_slice(), k[1].as_slice()]
+            .into_iter()
+            .enumerate()
+        {
             for c in claims {
                 let scale: Gf = t.get_field_challenge(&());
                 target += scale * c.value;
                 result[branch].tensors.push(Tensor {
                     low: c.low.iter().map(|&w| w * scale).collect(),
                     high_point: c.high_point.clone(),
+                    marginals: None,
                 });
             }
         }
@@ -564,15 +638,18 @@ impl PreparedFalconHybrid {
         let instances = eq_table(&instance_point);
         let offsets = self.layout.offsets();
         let mut arithmetic = Vec::with_capacity(320 + 16 * super::HASH_TO_POINT_SAMPLES);
-        let mut binary = Vec::with_capacity(1600 + 19 * 3200 + 16 * super::HASH_TO_POINT_SAMPLES);
-        // Remove the middle signature coordinates from BatchMajor addresses;
-        // Gather::repeated_at inserts them back, with their equality weights.
-        let local_index = |index: usize| {
-            (index & ((1 << 12) - 1)) | ((index >> (12 + instance_point.len())) << 12)
+        let mut binary: [Vec<(usize, Gf)>; 2] = std::array::from_fn(|_| Vec::new());
+        // Slab addresses are [7 in-word | signature | permutation | chunk].
+        // Remove the signature axis for the factored repeated gather.
+        let local_index = |slab: usize, index: usize| {
+            (index & 127) | ((index >> (7 + self.keccak[slab].capacity().ilog2())) << 7)
         };
         for bit in 0..1600 {
             let w = eta * local[bit];
-            binary.push((local_index(self.keccak.initial_bit_index(0, 0, bit)), w));
+            binary[0].push((
+                local_index(0, self.keccak[0].initial_bit_index(0, 0, bit)),
+                w,
+            ));
             if bit < 320 {
                 arithmetic.push((offsets.encoded_signature + 8 + bit, w));
             } else {
@@ -590,15 +667,23 @@ impl PreparedFalconHybrid {
                 }
             }
         }
-        for permutation in 1..20 {
+        for permutation in 1..hybrid_keccak::PERMUTATIONS {
             for bit in 0..1600 {
                 let w = eta * local[permutation * 1600 + bit];
-                binary.push((
-                    local_index(self.keccak.initial_bit_index(0, permutation, bit)),
+                let slab = usize::from(permutation >= 16);
+                let previous = usize::from(permutation > 16);
+                binary[slab].push((
+                    local_index(
+                        slab,
+                        self.keccak[slab].initial_bit_index(0, permutation, bit),
+                    ),
                     w,
                 ));
-                binary.push((
-                    local_index(self.keccak.output_bit_index(0, permutation - 1, bit)),
+                binary[previous].push((
+                    local_index(
+                        previous,
+                        self.keccak[previous].output_bit_index(0, permutation - 1, bit),
+                    ),
                     w,
                 ));
             }
@@ -606,7 +691,11 @@ impl PreparedFalconHybrid {
         for sample in 0..super::HASH_TO_POINT_SAMPLES {
             for bit in 0..16 {
                 let w = eta * local[32000 + 16 * sample + bit];
-                binary.push((local_index(self.keccak.sample_bit_index(0, sample, bit)), w));
+                let slab = usize::from((2 * sample) / hybrid_keccak::RATE_BYTES >= 16);
+                binary[slab].push((
+                    local_index(slab, self.keccak[slab].sample_bit_index(0, sample, bit)),
+                    w,
+                ));
                 arithmetic.push((offsets.hash_words + 16 * sample + bit, w));
             }
         }
@@ -617,11 +706,17 @@ impl PreparedFalconHybrid {
                 arithmetic.iter().map(|&(i, w)| (i, w * scale)).collect(),
                 point.clone(),
             ));
-            result[1].gathers.push(Gather::repeated_at(
-                binary.iter().map(|&(i, w)| (i, w * scale)).collect(),
-                point,
-                12,
-            ));
+            for slab in 0..2 {
+                let mut repeat = point.clone();
+                // At batch one the four-permutation slab has one padded
+                // signature coordinate to meet Flock's eight-block minimum.
+                repeat.resize(self.keccak[slab].capacity().ilog2() as usize, Gf::ZERO);
+                result[slab + 1].gathers.push(Gather::repeated_at(
+                    binary[slab].iter().map(|&(i, w)| (i, w * scale)).collect(),
+                    repeat,
+                    7,
+                ));
+            }
         }
         (result, target)
     }
@@ -745,21 +840,23 @@ mod tests {
         nonce[0] ^= 1;
         // Both branches separately satisfy their PIOPs. Only the authenticated
         // SHAKE/nonce/sample links distinguish this from a valid composition.
-        let wrong = prepared
-            .keccak
-            .generate_witness(&[nonce], &committed.statement.public.messages)
+        let (wrong, auxiliary, _) = prepared
+            .generate_shake(&[nonce], &committed.statement.public.messages)
             .unwrap();
-        committed.packed[1] = wrong.packed;
-        committed.auxiliary = wrong.auxiliary;
-        let (cm, data) = commit(
-            &committed.packed[1],
-            &prepared
-                .geometry
-                .params(1, prepared.ligerito.prover().log_inv_rates[0]),
-        );
-        committed.statement.roots[1] = cm.root;
-        committed.commitments[1] = cm;
-        committed.data[1] = data;
+        committed.auxiliary = auxiliary;
+        for (slab, packed) in wrong.into_iter().enumerate() {
+            let branch = slab + 1;
+            committed.packed[branch] = packed;
+            let (cm, data) = commit(
+                &committed.packed[branch],
+                &prepared
+                    .geometry
+                    .params(branch, prepared.ligerito.prover().log_inv_rates[0]),
+            );
+            committed.statement.roots[branch] = cm.root;
+            committed.commitments[branch] = cm;
+            committed.data[branch] = data;
+        }
         let statement = committed.statement.clone();
         if let Ok(proof) = prepared.prove(committed) {
             assert!(prepared.verify(&statement, &proof).is_err());
@@ -776,5 +873,67 @@ mod tests {
         let mut changed = proof.clone();
         changed.links_nonces.clear();
         assert!(prepared.verify(&statement, &changed).is_err());
+    }
+
+    #[test]
+    fn hybrid_fused_batch_roundtrip_and_all_three_roots_are_bound() {
+        let prepared = PreparedFalconHybrid::new(9, 100).unwrap();
+        let committed = prepared.commit(public(9), &[SIG; 9]).unwrap();
+        assert_eq!(
+            prepared.source_bits_per_signature(),
+            [1 << 18, 1 << 20, 1 << 18]
+        );
+        let native = super::super::verification_trace(PK, MSG, SIG).unwrap();
+        for trace in &committed.traces {
+            assert_eq!(trace.hash_to_point.words, native.hash_to_point.words);
+        }
+        let statement = committed.statement.clone();
+        let proof = prepared.prove(committed).unwrap();
+        prepared.verify(&statement, &proof).unwrap();
+        for branch in 0..3 {
+            let mut wrong = statement.clone();
+            wrong.roots[branch][0] ^= 1;
+            assert!(prepared.verify(&wrong, &proof).is_err());
+            let mut wrong = proof.clone();
+            wrong.opening.paths[branch][0][0] ^= 1;
+            assert!(prepared.verify(&statement, &wrong).is_err());
+        }
+        let mut wrong = proof.clone();
+        wrong.keccak.swap(0, 1);
+        assert!(prepared.verify(&statement, &wrong).is_err());
+    }
+
+    #[test]
+    fn valid_keccak_tail_cannot_break_the_cross_slab_chain_link() {
+        let prepared = PreparedFalconHybrid::new(1, 100).unwrap();
+        let mut committed = prepared.commit(public(1), &[SIG]).unwrap();
+        // This is a valid four-permutation Keccak chain, but its input is not
+        // permutation 15's output from the other authenticated commitment.
+        let (packed, auxiliary, _) = prepared.keccak[1].generate_chain(&[[0; 25]]).unwrap();
+        let (cm, data) = commit(
+            &packed,
+            &prepared
+                .geometry
+                .params(2, prepared.ligerito.prover().log_inv_rates[0]),
+        );
+        let (prefix, claims, _) = prepared.keccak[1]
+            .prove_prefix(&packed, auxiliary, &cm, &mut Blake3Transcript::new(), 108)
+            .unwrap();
+        assert_eq!(
+            prepared.keccak[1]
+                .verify_prefix(&prefix, &cm, &mut Blake3Transcript::new(), 108)
+                .unwrap(),
+            claims
+        );
+        let (_, auxiliary, _) = prepared.keccak[1].generate_chain(&[[0; 25]]).unwrap();
+        committed.packed[2] = packed;
+        committed.auxiliary[1] = auxiliary;
+        committed.commitments[2] = cm;
+        committed.data[2] = data;
+        committed.statement.roots[2] = committed.commitments[2].root;
+        let statement = committed.statement.clone();
+        if let Ok(proof) = prepared.prove(committed) {
+            assert!(prepared.verify(&statement, &proof).is_err());
+        }
     }
 }

@@ -6,6 +6,8 @@
 //! for a commitment-bound proof.
 
 use field::RingOps;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 use crate::{
     piop::spartan::{
@@ -404,6 +406,7 @@ fn sample_field(transcript: &mut impl Transcript) -> Result<Cfg, FalconError> {
         .map_err(|error| piop(error.to_string()))
 }
 
+#[tracing::instrument(skip_all, name = "falcon_arithmetic:norm")]
 fn prove_norm(
     transcript: &mut impl Transcript,
     layout: &FalconSourceLayout,
@@ -707,6 +710,7 @@ impl OuterRows for KeccakRows<'_> {
     }
 }
 
+#[tracing::instrument(skip_all, name = "falcon_arithmetic:hash_to_point_products")]
 fn prove_compaction_products(
     transcript: &mut impl Transcript,
     layout: &FalconSourceLayout,
@@ -977,6 +981,7 @@ fn compaction_leaves(
 /// is replaced by an equality between products across different signatures.
 /// The hybrid profile allows 2048 trees and derives its difficulty from the
 /// actual tree count together with the H2P cubic-round numerator.
+#[tracing::instrument(skip_all, name = "falcon_arithmetic:compaction_forest")]
 fn prove_product_forest(
     transcript: &mut impl Transcript,
     leaves: Vec<Vec<F>>,
@@ -991,8 +996,7 @@ fn prove_product_forest(
     {
         return Err(piop("invalid compaction forest shape"));
     }
-    let trees: Vec<Vec<Vec<F>>> = leaves
-        .into_iter()
+    let mut trees: Vec<Vec<Vec<F>>> = crate::utils::cfg_into_iter!(leaves)
         .map(|leaves| {
             let mut tree = vec![leaves];
             while tree.last().expect("leaf layer").len() > 1 {
@@ -1018,12 +1022,12 @@ fn prove_product_forest(
     let mut layers = Vec::with_capacity(11);
     for level in 0..11 {
         transcript.absorb_slice(&(level as u64).to_le_bytes());
-        let mut groups: Vec<[Vec<F>; 2]> = trees
-            .iter()
+        let mut groups: Vec<[Vec<F>; 2]> = crate::utils::cfg_iter_mut!(trees)
             .map(|tree| {
-                let child = &tree[level + 1];
+                let mut child = std::mem::take(&mut tree[level + 1]);
                 let half = child.len() / 2;
-                [child[..half].to_vec(), child[half..].to_vec()]
+                let right = child.split_off(half);
+                [child, right]
             })
             .collect();
         let (sumcheck, evaluations, grinding_nonces, batching_nonce, next_point) = if level == 0 {
@@ -1156,26 +1160,39 @@ fn prove_forest_layer(
     let mut round_polynomials = Vec::with_capacity(point.len());
     let mut next_point = Vec::with_capacity(point.len());
     for _ in 0..point.len() {
-        let mut polynomial = [field.zero(); 4];
-        for (group, scale) in groups.iter().zip(scales) {
-            for i in 0..equality.len() / 2 {
-                let e0 = field.mul(&equality[2 * i], scale);
-                let ed = field.mul(&field.sub(&equality[2 * i + 1], &equality[2 * i]), scale);
-                let l0 = group[0][2 * i];
-                let ld = field.sub(&group[0][2 * i + 1], &l0);
-                let r0 = group[1][2 * i];
-                let rd = field.sub(&group[1][2 * i + 1], &r0);
-                let product = [
-                    field.mul(&l0, &r0),
-                    field.add(&field.mul(&l0, &rd), &field.mul(&ld, &r0)),
-                    field.mul(&ld, &rd),
-                ];
-                for j in 0..3 {
-                    polynomial[j] = field.add(&polynomial[j], &field.mul(&e0, &product[j]));
-                    polynomial[j + 1] = field.add(&polynomial[j + 1], &field.mul(&ed, &product[j]));
+        // Equality differences are shared by every tree. Apply each tree's
+        // batching scalar once to its polynomial, outside the coefficient loop.
+        let equality_pairs: Vec<_> = equality
+            .chunks_exact(2)
+            .map(|e| [e[0], field.sub(&e[1], &e[0])])
+            .collect();
+        let polynomials: Vec<_> = crate::utils::cfg_iter!(groups)
+            .zip(scales)
+            .map(|(group, scale)| {
+                let mut polynomial = [field.zero(); 4];
+                for i in 0..equality.len() / 2 {
+                    let [e0, ed] = equality_pairs[i];
+                    let l0 = group[0][2 * i];
+                    let ld = field.sub(&group[0][2 * i + 1], &l0);
+                    let r0 = group[1][2 * i];
+                    let rd = field.sub(&group[1][2 * i + 1], &r0);
+                    let product = [
+                        field.mul(&l0, &r0),
+                        field.add(&field.mul(&l0, &rd), &field.mul(&ld, &r0)),
+                        field.mul(&ld, &rd),
+                    ];
+                    for j in 0..3 {
+                        polynomial[j] = field.add(&polynomial[j], &field.mul(&e0, &product[j]));
+                        polynomial[j + 1] =
+                            field.add(&polynomial[j + 1], &field.mul(&ed, &product[j]));
+                    }
                 }
-            }
-        }
+                polynomial.map(|coefficient| field.mul(&coefficient, scale))
+            })
+            .collect();
+        let polynomial = polynomials.into_iter().fold([field.zero(); 4], |sum, p| {
+            std::array::from_fn(|i| field.add(&sum[i], &p[i]))
+        });
         let at_one = polynomial.iter().fold(field.zero(), |sum, coefficient| {
             field.add(&sum, coefficient)
         });
@@ -1194,10 +1211,10 @@ fn prove_forest_layer(
         )
         .map_err(|error| piop(error.to_string()))?;
         fold_table(&mut equality, challenge, field);
-        for group in groups.iter_mut() {
+        crate::utils::cfg_iter_mut!(groups).for_each(|group| {
             fold_table(&mut group[0], challenge, field);
             fold_table(&mut group[1], challenge, field);
-        }
+        });
     }
     let evaluations = groups
         .iter()
@@ -1421,6 +1438,77 @@ mod tests {
     const MESSAGE: &[u8; 32] = include_bytes!("fixtures/message.bin");
     const SIGNATURE: &[u8; super::super::CT_SIGNATURE_BYTES] =
         include_bytes!("fixtures/signature_ct.bin");
+
+    #[test]
+    fn parallel_forest_rounds_match_direct_cubic_evaluations() {
+        let field = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
+        let point: Vec<_> = (0..5).map(|i| unsigned(19 + i, &field)).collect();
+        let mut equality = eq_table(&point, &field).unwrap();
+        let groups: Vec<[Vec<F>; 2]> = (0..6)
+            .map(|tree| {
+                std::array::from_fn(|side| {
+                    (0..32)
+                        .map(|i| unsigned((1 << 120) + 311 * tree + 37 * side as u128 + i, &field))
+                        .collect()
+                })
+            })
+            .collect();
+        let scales = powers(unsigned(127, &field), groups.len(), &field);
+        let mut initial = field.zero();
+        for (group, scale) in groups.iter().zip(&scales) {
+            for i in 0..32 {
+                initial = field.add(
+                    &initial,
+                    &field.mul(
+                        scale,
+                        &field.mul(&equality[i], &field.mul(&group[0][i], &group[1][i])),
+                    ),
+                );
+            }
+        }
+        let (proof, _, challenges, _) = prove_forest_layer(
+            &mut Blake3Transcript::new(),
+            &mut groups.clone(),
+            &point,
+            &scales,
+            initial,
+            100,
+            FalconSecuritySchedule::for_target(100).unwrap(),
+            &field,
+        )
+        .unwrap();
+        let mut groups = groups;
+        for (polynomial, challenge) in proof.round_polynomials.iter().zip(challenges) {
+            // Four independent evaluations determine the entire cubic. This
+            // oracle interpolates operands directly instead of expanding them.
+            for x in 0..4 {
+                let x = unsigned(x, &field);
+                let mut expected = field.zero();
+                for (group, scale) in groups.iter().zip(&scales) {
+                    for i in 0..equality.len() / 2 {
+                        let e = affine(equality[2 * i], equality[2 * i + 1], x, &field);
+                        let l = affine(group[0][2 * i], group[0][2 * i + 1], x, &field);
+                        let r = affine(group[1][2 * i], group[1][2 * i + 1], x, &field);
+                        expected = field.add(
+                            &expected,
+                            &field.mul(scale, &field.mul(&e, &field.mul(&l, &r))),
+                        );
+                    }
+                }
+                let actual = polynomial
+                    .iter()
+                    .rev()
+                    .fold(field.zero(), |acc, c| field.add(&field.mul(&acc, &x), c));
+                assert_eq!(actual, expected);
+            }
+            fold_table(&mut equality, challenge, &field);
+            for group in &mut groups {
+                for table in group {
+                    fold_table(table, challenge, &field);
+                }
+            }
+        }
+    }
 
     #[test]
     fn norm_verifier_rejects_budget_transfer_between_instances() {

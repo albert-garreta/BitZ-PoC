@@ -13,6 +13,21 @@ pub(crate) trait StreamingCoefficientSource: Sync {
         &self,
         emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
     ) -> Result<(), SumcheckError>;
+
+    /// Disjoint, power-of-two aligned intervals that can be replayed independently.
+    fn partition_len(&self) -> usize {
+        1usize.checked_shl(self.num_vars() as u32).unwrap_or(0)
+    }
+    fn for_each_partition(
+        &self,
+        partition: usize,
+        emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+    ) -> Result<(), SumcheckError> {
+        if partition != 0 {
+            return Err(SumcheckError::InvalidProductDimensions);
+        }
+        self.for_each_coefficient(emit)
+    }
 }
 
 /// A streaming source deliberately has no random-access coefficient operation.
@@ -38,6 +53,9 @@ impl<'a, S: StreamingCoefficientSource + ?Sized> StreamingMle<'a, S> {
             || live_len != self.source.live_len()
             || live_len == 0
             || live_len > 1usize << num_vars
+            || !self.source.partition_len().is_power_of_two()
+            || self.source.partition_len() < 1usize << K
+            || self.source.partition_len() > 1usize << num_vars
         {
             return Err(SumcheckError::InvalidProductDimensions);
         }
@@ -46,23 +64,27 @@ impl<'a, S: StreamingCoefficientSource + ?Sized> StreamingMle<'a, S> {
 
     fn visit_checked(
         &self,
+        partition: usize,
         cfg: &FieldConfig,
         mut emit: impl FnMut(usize, Field) -> Result<(), SumcheckError>,
     ) -> Result<(), SumcheckError> {
         use field::CtOrd;
-        self.source.for_each_coefficient(&mut |index, value| {
-            if index >= self.source.live_len() {
-                return Err(SumcheckError::InvalidProductDimensions);
-            }
-            if !value
-                .as_montgomery_integer()
-                .ct_lt(cfg.modulus())
-                .declassify()
-            {
-                return Err(SumcheckError::NonCanonicalFieldElement);
-            }
-            emit(index, value)
-        })
+        let start = partition * self.source.partition_len();
+        let end = (start + self.source.partition_len()).min(self.source.live_len());
+        self.source
+            .for_each_partition(partition, &mut |index, value| {
+                if !(start..end).contains(&index) {
+                    return Err(SumcheckError::InvalidProductDimensions);
+                }
+                if !value
+                    .as_montgomery_integer()
+                    .ct_lt(cfg.modulus())
+                    .declassify()
+                {
+                    return Err(SumcheckError::NonCanonicalFieldElement);
+                }
+                emit(index, value)
+            })
     }
 }
 
@@ -91,6 +113,71 @@ impl<S: StreamingCoefficientSource + ?Sized> InnerSumcheckMleSource for Streamin
         if K == 0 {
             return Ok(PrefixAccumulators::new::<K>(zero));
         }
+        let count = live_len.div_ceil(self.source.partition_len());
+        let partials: Vec<_> = crate::utils::cfg_into_iter!(0..count)
+            .map(|partition| self.build_partition::<K, _>(partition, live_len, bits, cfg, zero))
+            .collect();
+        let mut result = PrefixAccumulators::new::<K>(zero);
+        for partial in partials {
+            for (out, input) in result.rounds.iter_mut().zip(partial?.rounds) {
+                for (out, input) in out.iter_mut().zip(input) {
+                    for j in 0..2 {
+                        out[j] = cfg.add(&out[j], &input[j]);
+                    }
+                }
+            }
+        }
+        Ok(result)
+    }
+
+    fn fold_prefix_table<const K: usize>(
+        &self,
+        num_vars: usize,
+        live_len: usize,
+        challenges: &[Field],
+        cfg: &FieldConfig,
+        zero: &Field,
+        one: &Field,
+    ) -> Result<CompactPrefixVTable, SumcheckError> {
+        self.validate_dimensions::<K>(num_vars, live_len)?;
+        if challenges.len() != K {
+            return Err(SumcheckError::InvalidProductDimensions);
+        }
+        validate_field_values(challenges, cfg)?;
+        let weights = equality_weights_lsb(challenges, zero, one, cfg);
+        let suffix_count = live_len.div_ceil(1usize << K);
+        let mut table = CompactPrefixVTable {
+            values: vec![raw_montgomery(zero); (suffix_count + 1) & !1],
+            suffix_count,
+        };
+        let width = self.source.partition_len() >> K;
+        crate::utils::cfg_chunks_mut!(table.values, width)
+            .enumerate()
+            .try_for_each(|(partition, values)| {
+                // The final even-length padding slot has no source coefficient.
+                if partition * width >= suffix_count {
+                    return Ok(());
+                }
+                self.visit_checked(partition, cfg, |index, delta| {
+                    let slot = &mut values[(index >> K) - partition * width];
+                    let term = cfg.mul(&delta, &weights[index & ((1usize << K) - 1)]);
+                    *slot = raw_montgomery(&cfg.add(&field_from_raw(slot, cfg), &term));
+                    Ok(())
+                })
+            })?;
+        Ok(table)
+    }
+}
+
+impl<S: StreamingCoefficientSource + ?Sized> StreamingMle<'_, S> {
+    fn build_partition<const K: usize, H: Sha256InnerBitSource + ?Sized>(
+        &self,
+        partition: usize,
+        live_len: usize,
+        bits: &H,
+        cfg: &FieldConfig,
+        zero: &Field,
+    ) -> Result<PrefixAccumulators, SumcheckError> {
         // A four-way bounded cache combines nearby scatter updates before the
         // ternary prefix extension. Evictions remain exact because every prefix
         // accumulator is linear in the coefficient table for a fixed witness.
@@ -98,13 +185,13 @@ impl<S: StreamingCoefficientSource + ?Sized> InnerSumcheckMleSource for Streamin
         const SETS: usize = 1024;
         const WAYS: usize = 4;
         let width = 1usize << K;
-        let blocks = live_len.div_ceil(width);
+        let blocks = self.source.partition_len().div_ceil(width);
         let sets = blocks.next_power_of_two().min(SETS);
         let mut keys = vec![usize::MAX; sets * WAYS];
         let mut replace = vec![0usize; sets];
         let mut values = vec![*zero; keys.len() * width];
         let mut state = PrefixBuildState::new::<K>(zero);
-        self.visit_checked(cfg, |index, delta| {
+        self.visit_checked(partition, cfg, |index, delta| {
             let block = index >> K;
             let set = block & (sets - 1);
             let start = set * WAYS;
@@ -150,35 +237,6 @@ impl<S: StreamingCoefficientSource + ?Sized> InnerSumcheckMleSource for Streamin
             .map(|sum| linear_reduce(sum, cfg))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(scatter_beta_values::<K>(&beta, zero, cfg))
-    }
-
-    fn fold_prefix_table<const K: usize>(
-        &self,
-        num_vars: usize,
-        live_len: usize,
-        challenges: &[Field],
-        cfg: &FieldConfig,
-        zero: &Field,
-        one: &Field,
-    ) -> Result<CompactPrefixVTable, SumcheckError> {
-        self.validate_dimensions::<K>(num_vars, live_len)?;
-        if challenges.len() != K {
-            return Err(SumcheckError::InvalidProductDimensions);
-        }
-        validate_field_values(challenges, cfg)?;
-        let weights = equality_weights_lsb(challenges, zero, one, cfg);
-        let suffix_count = live_len.div_ceil(1usize << K);
-        let mut table = CompactPrefixVTable {
-            values: vec![raw_montgomery(zero); (suffix_count + 1) & !1],
-            suffix_count,
-        };
-        self.visit_checked(cfg, |index, delta| {
-            let slot = &mut table.values[index >> K];
-            let term = cfg.mul(&delta, &weights[index & ((1usize << K) - 1)]);
-            *slot = raw_montgomery(&cfg.add(&field_from_raw(slot, cfg), &term));
-            Ok(())
-        })?;
-        Ok(table)
     }
 }
 
@@ -451,6 +509,70 @@ mod tests {
         .unwrap();
         assert_eq!(actual, expected);
         assert_eq!(a.get_challenge::<u128>(), b.get_challenge::<u128>());
+    }
+
+    #[test]
+    fn partitioned_stream_matches_serial_for_partial_tail_and_every_prefix() {
+        struct Partitioned<'a>(&'a Updates);
+        impl StreamingCoefficientSource for Partitioned<'_> {
+            fn num_vars(&self) -> usize {
+                self.0.num_vars
+            }
+            fn live_len(&self) -> usize {
+                self.0.live_len
+            }
+            fn partition_len(&self) -> usize {
+                16
+            }
+            fn for_each_coefficient(
+                &self,
+                emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+            ) -> Result<(), SumcheckError> {
+                self.0.for_each_coefficient(emit)
+            }
+            fn for_each_partition(
+                &self,
+                partition: usize,
+                emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+            ) -> Result<(), SumcheckError> {
+                for &(i, value) in &self.0.updates {
+                    if i / 16 == partition {
+                        emit(i, value)?;
+                    }
+                }
+                Ok(())
+            }
+        }
+        let cfg = spartan_bitz_field_config();
+        let (updates, _, bits, claim) = fixture(8, 193, &cfg);
+        let partitions = Partitioned(&updates);
+        for prefix in 0..=4 {
+            let mut serial = Blake3Transcript::new();
+            let expected = prove_inner_sumcheck(
+                &cfg,
+                &mut serial,
+                claim,
+                PackedInput::new(&StreamingMle::new(&updates), &bits, 8, 193, prefix),
+                (),
+                &mut UngrindedRoundBoundary,
+            )
+            .unwrap();
+            let mut parallel = Blake3Transcript::new();
+            let actual = prove_inner_sumcheck(
+                &cfg,
+                &mut parallel,
+                claim,
+                PackedInput::new(&StreamingMle::new(&partitions), &bits, 8, 193, prefix),
+                (),
+                &mut UngrindedRoundBoundary,
+            )
+            .unwrap();
+            assert_eq!(actual, expected);
+            assert_eq!(
+                serial.get_challenge::<u128>(),
+                parallel.get_challenge::<u128>()
+            );
+        }
     }
 
     #[test]

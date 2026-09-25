@@ -143,9 +143,17 @@ serialization format.
 The arithmetic source has **198,935 live bits**, padded to **2^18 bits per
 capacity slot**. It contains the encoded signature, the 1311 sampled words,
 HashToPoint/compaction auxiliaries, ring witnesses, and norm slack. The binary
-source reserves **32 × 2^16 = 2^21 bits per capacity slot**. Each slot holds
-20 SHAKE permutations and 12 valid dummy Keccak(0) permutations; padded signature
-slots are also filled with valid dummy permutations.
+sources reserve **16 × 2^16 + 4 × 2^16 bits per capacity slot**, in two
+separately committed permutation groups. This removes the old 12 dummy
+permutations per signature. Padded signature slots still contain valid Keccak
+chains. At batch one only, the four-permutation group has a second padded
+signature slot to satisfy Flock's eight-block minimum.
+
+For capacity at least eight, a chain-aware witness producer executes each
+permutation once, emitting its compact circuit witness and retaining output
+lanes for the next permutation and for SHAKE sample extraction. Smaller
+capacities use the reference setup and packed producer. Physical addresses are
+`[7 in-word | signature | permutation within group | 9 chunk]`.
 
 [hybrid_keccak.rs](hybrid_keccak.rs) uses Flock's compact Keccak encoder: each
 permutation stores input, output, and 24 chi-AND vectors in a 65,536-bit block
@@ -155,7 +163,7 @@ their contributions without expanding the corresponding dense matrices.
 The prefix uses the existing binary commitment and caller transcript and stops
 at two normalized linear claims; it does not make another commitment.
 
-The two sources are connected by authenticated random linear copy checks:
+The three sources are connected by authenticated random linear copy checks:
 
 1. The first Keccak input contains the arithmetic source's 40-byte nonce,
    the public message, and the exact SHAKE suffix/padding and capacity zeros.
@@ -164,7 +172,7 @@ The two sources are connected by authenticated random linear copy checks:
    16-bit words, which feed the proved HashToPoint calculation.
 
 These checks include the full sponge state, not only the output rate. Public
-messages and both roots enter the common transcript before proof challenges.
+messages and all three roots enter the common transcript before proof challenges.
 Two unrelated proofs sharing an opener would not establish these equalities.
 
 [hybrid_bridge.rs](hybrid_bridge.rs) converts the prime-field source claim to
@@ -174,7 +182,8 @@ it does not identify a prime-field MLE with a binary-field MLE.
 and the copy checks using structured tensor and gather terms. It folds the
 first seven bits without constructing a full field-element coefficient table,
 then hands one terminal to a shared ring switch and Ligerito continuation.
-Both original roots remain authenticated. The current hybrid selects the
+All three roots remain authenticated, including the chain link from permutation 15
+to permutation 16 across the two Keccak commitments. The current hybrid selects the
 unique-decoding Ligerito profile and has no Round-0 OOD message.
 
 The `falcon-hybrid` feature currently enables `falcon`, the existing `hybrid`
@@ -210,20 +219,23 @@ g(n) = max(0, 128 + 5 + ceil(log2(n)) - 125), with g(0) = 0.
 Here `n` is that stage's audited degree/occurrence numerator. The shared cubic
 difficulty covers the sum of the HashToPoint product-sumcheck and entire
 compaction-forest numerators. This avoids charging a one-signature proof for
-the maximum 2048-tree forest. Seven prime category budgets of `2^-133`, five
-binary-stage budgets of `2^-136`, a whole-PCS budget of `2^-130`, and the
+the maximum 2048-tree forest. Seven prime category budgets of `2^-133`, six
+binary-stage budgets of `2^-136` (including both Keccak prefixes), a whole-PCS
+budget of `2^-130`, and the
 `2^-144` whole-search prime-sampling term give a conservative whole-composition
 bound above 129 bits:
 
 ```text
-error / 2^-128 <= 7/32 + 5/256 + 1/4 + 2^-16 < 0.489.
+error / 2^-128 <= 7/32 + 6/256 + 1/4 + 2^-16 < 0.493.
 ```
 
 These are analytical bounds under the stated grinding model, not measured attack costs
 or performance results. The legacy backend retains its separate schedule.
 
-For the binary Keccak prefix, `m = 21 + log2(capacity)` and the raw error is
-bounded by `(4*m + 256) / 2^128`. A caller component target of `target + 8` gives
+For the two binary Keccak prefixes, `m = 20 + log2(capacity)` and
+`m = 18 + log2(capacity)` respectively, except for the small-batch padding
+noted above. Each raw error is bounded by `(4*m + 256) / 2^128`; the security
+report adds both contributions. A caller component target of `target + 8` gives
 zero extra grinding at target 100 and 17 bits at target 128. Each uninterrupted
 challenge block has one nonce; vector coordinates share it. The bound includes
 the constant-column check across all permutations, and tests check that the
@@ -242,7 +254,10 @@ The legacy commitment-bound and PIOP headers now use `v3`; existing forest
 domains retain `v2`. The new norm and initial-row-point proof fields change
 the transcript. **Regenerate earlier proofs.** The hybrid has its own versioned
 statement and different source layouts; hybrid roots are not interchangeable
-with legacy roots.
+with legacy roots. The three-source hybrid statement and Keccak-prefix domains
+now use **v2**, binding the permutation groups and all three roots. Regenerate
+proofs from the previous two-source hybrid. Prime arithmetic constraints and
+its challenge schedule are unchanged by the parallel implementation.
 
 Streaming eliminates the full binding coefficient vector, but does not make the
 entire prover constant-memory. For one signature, coefficient-cache values use
@@ -250,12 +265,15 @@ at most 1 MiB plus metadata, and the four-coordinate folded coefficient table
 uses 4 MiB. The folded table scales with batch capacity. The first Keccak outer
 fold still uses about 48 MiB per capacity slot. Packed witnesses, subsequent
 folds, and commitment/opening state also remain. Prefix accumulation and
-coefficient replay currently run serially. Whole-process peak RSS includes these
-allocations and must not be interpreted as binder-only memory. These figures
+coefficient replay run on disjoint signature partitions. Each active worker
+has its own bounded coefficient cache; folded-table writes need no atomics.
+Whole-process peak RSS includes these allocations and must not be interpreted
+as binder-only memory. These figures
 describe the legacy prime-Keccak backend.
 
 The hybrid also retains substantial witness and opening state. At capacity
-1024, its packed arithmetic and Keccak sources alone occupy 32 MiB and 256 MiB.
+1024, its packed arithmetic and Keccak sources alone occupy 32 MiB and 160 MiB.
+The virtual shared-opening table is half the previous two-source table.
 Keccak A/B buffers, a lincheck copy, folded field tables, Merkle codewords, and
 shared-opening workspaces add to this. Structured wiring avoids a dense table
 over the entire bit domain; it does not make the full prover constant-memory.
@@ -280,7 +298,10 @@ checks the field-valued adjoint on coefficients much larger than Falcon's modulu
 Verifier and target evaluation tests also check that the prover cache stays empty.
 
 On 2026-09-25, the complete release library suite with `falcon-hybrid` enabled
-passed **567 tests**, with zero failures and five ignored tests. This includes
+passed **574 tests**, with zero failures and five ignored tests. The native build
+also covers the new three-source padding mask, dense sumcheck equivalence with
+cached marginals, every fused Keccak witness buffer, cross-group chain-link
+rejection, partitioned streaming, and direct cubic forest evaluations. This includes
 end-to-end proofs at both security targets and preparation checks through
 1024 signatures. The existing `falcon1024_ct` and `hybrid_u32_sha256` benchmark
 clients also pass `cargo check` with `falcon-hybrid` enabled.
@@ -299,9 +320,17 @@ witness/commit time, proving time, verification time, total prover throughput,
 and process peak RSS. Security must be selected explicitly:
 
 ```sh
-cargo bench --offline --features falcon-hybrid --bench falcon_hybrid -- \
-  --batch 32 --security 128 --threads 16 --warmup 1 --iterations 3
+scripts/bench_falcon_native.sh \
+  --batch 256 --security 128 --threads 16 --warmup 1 --iterations 3
 ```
+
+The script builds for the host CPU with `-C target-cpu=native` in an isolated
+`target/falcon-native` directory; this binary is hardware-specific. Ordinary
+Cargo builds retain their portable defaults. Benchmark metadata reports the
+selected GF(2^128) kernel and compiled features. Explicit `RUSTFLAGS` override
+the script's default. To collect diagnostic stage timings, set
+`BITZ_FALCON_STAGE_TIMINGS=1`; JSON stage records go to stderr and nested times
+overlap. Run latency measurements separately with that variable unset.
 
 Run larger batches only with sufficient memory. The benchmark defaults to a
 repeated bundled fixture, which it identifies in its output; fixture files can
@@ -436,3 +465,58 @@ and 420–424 ms for batch 32). The sumcheck kernels and expensive nonce searche
 use Rayon; coefficient streaming, verifier binding evaluation, and product-forest
 arithmetic still use serial loops. This limits parallel speedup. These timings
 do not isolate the contribution of each stage.
+
+
+## Native kernels and parallel prover: 16-thread results
+
+The previous 44.41 ms/signature measurement used portable GF(2^128) arithmetic.
+The native rebuild selects the existing PCLMUL kernel and available AVX-512,
+VPCLMUL, and GFNI paths. Native baseline commitments exactly match the portable
+baseline commitments. The library's default build remains portable; use the
+native benchmark script above to reproduce accelerated timings.
+
+A 2026-09-25 campaign on the same Ryzen 9 9950X3D used target 128, batch 256,
+16 Rayon threads, release fat LTO, and one codegen unit. Native baseline and
+optimized binaries each ran one warmup plus three measured trials, sequentially
+without concurrent builds or tests. Every trial verified. The fixture repeats
+the bundled signature and shared public key.
+
+| Implementation | Witness + commitments | Proof generation | Full prover/signature | Verification/batch |
+| --- | ---: | ---: | ---: | ---: |
+| Previous reported portable build | 2017.27 ms | 9353.14 ms | 44.41 ms | 928.59 ms |
+| Native rebuild of c1e75c53 | 46.47 ms | 6953.60 ms | 27.34 ms | 890.97 ms |
+| Native with parallel binding/forest and compact Keccak groups | 33.50 ms | 1636.33 ms | **6.52 ms** | 919.24 ms |
+
+Each phase is its own median; full prover uses the median of combined per-trial
+times and includes witness generation, all commitments, and proof generation.
+It excludes reusable preparation and verification. Optimized samples span
+6.450–6.541 ms/signature, versus 27.264–27.404 ms for the matched native baseline.
+This is 4.19x faster than that native baseline and 6.81x faster than the earlier
+reported portable result, with throughput of 153.35 signatures/s. Verification
+did not improve in this campaign. Process peak RSS across the trials fell from
+2,690,364 KiB to 1,447,640 KiB.
+
+A separate cold diagnostic profile identifies the remaining proof costs:
+
+| Stage | Time/signature |
+| --- | ---: |
+| Prime arithmetic prefix | 3.38 ms |
+| Prime-to-binary conversion | 2.23 ms |
+| Joint binary sumcheck | 0.65 ms |
+| Shared opening | 0.28 ms |
+| Both Keccak prefixes | 0.17 ms |
+
+The arithmetic prefix includes binding target construction (0.58 ms/signature),
+binding coefficient streams plus inner sumcheck (1.54 ms), compaction forest
+(0.80 ms), HashToPoint products (0.18 ms), norm (0.09 ms), and sampling/fingerprint
+work. Nested spans overlap; do not add these arithmetic substeps to the
+arithmetic total. This diagnostic run is excluded from the latency medians.
+
+Raw JSONL, process timings, stage profile, and build metadata are retained in
+`bench_results/falcon-native-20260925/` (an ignored local artifact directory).
+
+A final single cold trial at batch 1024, target 128 and 16 threads verified
+successfully: full prover 6.522 s (**6.37 ms/signature**), witness/commit 0.191 s,
+proof generation 6.331 s, verification 3.599 s, and peak RSS 4,063,324 KiB.
+This maximum-batch result is preliminary (one trial), not a multi-trial median.
+It was run through `scripts/bench_falcon_native.sh` after the final test build.

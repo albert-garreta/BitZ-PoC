@@ -25,10 +25,11 @@ use crate::{
 };
 use grinding::{ProverBlockGrindingTranscript, VerifierBlockGrindingTranscript};
 
-#[cfg(feature = "parallel")]
+#[cfg(all(test, feature = "parallel"))]
 use rayon::prelude::*;
 
 pub(crate) const PERMUTATIONS: usize = 20;
+#[cfg(test)]
 pub(crate) const PERMUTATION_SLOTS: usize = 32;
 pub(crate) const RATE_BYTES: usize = 136;
 pub(crate) const SAMPLES: usize = 1_311;
@@ -70,6 +71,7 @@ pub(crate) struct KeccakAuxiliary {
     lincheck: Vec<u8>,
 }
 
+#[cfg(test)]
 pub(crate) struct KeccakWitness {
     pub(crate) packed: Vec<Gf128>,
     pub(crate) auxiliary: KeccakAuxiliary,
@@ -102,14 +104,19 @@ impl GrindingDomain for PrefixGrinding {
 
 /// Prepared public circuit. No witness-sized tables or commitments are built
 /// during preparation. BatchMajor addresses are
-/// `[7 in-word | 5 permutation | log2(capacity) signature | 9 chunk]`.
+/// `[7 in-word | log2(capacity) signature | log2(permutations) permutation | 9 chunk]`.
+/// Tests retain the former 32-slot layout as an independent reference.
 pub(crate) struct PreparedKeccak {
     batch_len: usize,
     capacity: usize,
     r1cs: BlockR1cs,
+    first_permutation: usize,
+    permutations: usize,
+    permutation_major: bool,
 }
 
 impl PreparedKeccak {
+    #[cfg(test)]
     pub(crate) fn new(batch_len: usize) -> Result<Self, KeccakError> {
         if !(1..=MAX_CAPACITY).contains(&batch_len) {
             return Err(KeccakError::Invalid("batch length must be in 1..=8192"));
@@ -121,12 +128,51 @@ impl PreparedKeccak {
             batch_len,
             capacity,
             r1cs,
+            first_permutation: 0,
+            permutations: PERMUTATION_SLOTS,
+            permutation_major: false,
         })
     }
 
-    pub(crate) fn batch_len(&self) -> usize {
-        self.batch_len
+    pub(crate) fn new_slab(
+        batch_len: usize,
+        first: usize,
+        permutations: usize,
+    ) -> Result<Self, KeccakError> {
+        if !(1..=MAX_CAPACITY).contains(&batch_len)
+            || !matches!((first, permutations), (0, 16) | (16, 4))
+        {
+            return Err(KeccakError::Invalid("invalid SHAKE permutation slab"));
+        }
+        // The Flock byte-stripe lincheck requires at least eight blocks.
+        let capacity = batch_len.next_power_of_two().max(8 / permutations);
+        let mut r1cs = compact::build_block_r1cs((capacity * permutations).ilog2() as usize);
+        r1cs.layout = WitnessLayout::BatchMajor;
+        Ok(Self {
+            batch_len,
+            capacity,
+            r1cs,
+            first_permutation: first,
+            permutations,
+            permutation_major: true,
+        })
     }
+
+    pub(crate) fn generate_chain(
+        &self,
+        initial: &[[u64; 25]],
+    ) -> Result<(Vec<Gf128>, KeccakAuxiliary, Vec<Vec<[u64; 25]>>), KeccakError> {
+        if initial.len() != self.batch_len || !self.permutation_major {
+            return Err(KeccakError::Invalid("SHAKE chain input shape"));
+        }
+        let (z, a, b, lincheck, outputs) = compact::generate_chained_witness_batch_major(
+            initial,
+            self.capacity,
+            self.permutations,
+        );
+        Ok((z, KeccakAuxiliary { a, b, lincheck }, outputs))
+    }
+
     pub(crate) fn capacity(&self) -> usize {
         self.capacity
     }
@@ -178,9 +224,17 @@ impl PreparedKeccak {
         local_bit: usize,
     ) -> usize {
         assert!(
-            signature < self.capacity && permutation < PERMUTATION_SLOTS && local_bit < compact::K
+            signature < self.capacity
+                && (self.first_permutation..self.first_permutation + self.permutations)
+                    .contains(&permutation)
+                && local_bit < compact::K
         );
-        let block = signature * PERMUTATION_SLOTS + permutation;
+        let permutation = permutation - self.first_permutation;
+        let block = if self.permutation_major {
+            permutation * self.capacity + signature
+        } else {
+            signature * self.permutations + permutation
+        };
         (((local_bit >> LOG_PACKING) << self.r1cs.n_log()) | block) * 128 + (local_bit & 127)
     }
 
@@ -221,6 +275,7 @@ impl PreparedKeccak {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn generate_witness(
         &self,
         nonces: &[[u8; 40]],
@@ -254,7 +309,13 @@ impl PreparedKeccak {
     }
 
     fn bind<T: Transcript>(&self, t: &mut T, security: PrefixSecurity) {
-        t.absorb_slice(PREFIX_DOMAIN);
+        if self.permutation_major {
+            t.absorb_slice(b"bitz/falcon1024-ct/hybrid-keccak-prefix/v2");
+            t.absorb_slice(&(self.first_permutation as u64).to_le_bytes());
+            t.absorb_slice(&(self.permutations as u64).to_le_bytes());
+        } else {
+            t.absorb_slice(PREFIX_DOMAIN);
+        }
         t.absorb_slice(&(self.batch_len as u64).to_le_bytes());
         t.absorb_slice(&(self.capacity as u64).to_le_bytes());
         t.absorb_slice(&security.component_bits.to_le_bytes());
@@ -277,7 +338,7 @@ impl PreparedKeccak {
         commitment: &Commitment,
         transcript: &mut T,
         component_bits: u32,
-    ) -> Result<(PrefixProof, [BinaryLinearClaim; 2]), KeccakError> {
+    ) -> Result<(PrefixProof, [BinaryLinearClaim; 2], [Vec<Gf128>; 2]), KeccakError> {
         self.validate_commitment(commitment)?;
         let n = 1usize << self.packed_vars();
         if packed.len() != n
@@ -319,7 +380,16 @@ impl PreparedKeccak {
             lincheck: prefix.lc_proof,
             grinding_nonces: grinding.finish(),
         };
-        Ok((proof, claims))
+        let marginals = [
+            prefix
+                .s_hat_v_ab
+                .ok_or(KeccakError::Invalid("missing Keccak AB marginals"))?,
+            prefix.s_hat_v_c,
+        ];
+        if marginals.iter().any(|v| v.len() != 128) {
+            return Err(KeccakError::Invalid("Keccak marginal shape"));
+        }
+        Ok((proof, claims, marginals))
     }
 
     pub(crate) fn verify_prefix<T: Transcript + Send>(
@@ -370,21 +440,14 @@ impl PreparedKeccak {
     }
 }
 
+#[cfg(test)]
 fn shake_inputs_and_samples(
     nonce: &[u8; 40],
     message: &[u8; 32],
     states: &mut [compact::State],
     words: &mut [u16; SAMPLES],
 ) {
-    let mut absorb = [0u8; RATE_BYTES];
-    absorb[..40].copy_from_slice(nonce);
-    absorb[40..72].copy_from_slice(message);
-    absorb[72] = 0x1f;
-    absorb[RATE_BYTES - 1] = 0x80;
-    let mut lanes = [0u64; compact::N_LANES];
-    for (lane, bytes) in lanes.iter_mut().zip(absorb.chunks_exact(8)) {
-        *lane = u64::from_le_bytes(bytes.try_into().expect("one lane"));
-    }
+    let mut lanes = initial_state(nonce, message);
     for (permutation, initial) in states.iter_mut().take(PERMUTATIONS).enumerate() {
         *initial = compact::lanes_to_state(&lanes);
         for round in 0..compact::N_ROUNDS {
@@ -398,6 +461,19 @@ fn shake_inputs_and_samples(
             }
         }
     }
+}
+
+pub(crate) fn initial_state(nonce: &[u8; 40], message: &[u8; 32]) -> [u64; 25] {
+    let mut absorb = [0u8; RATE_BYTES];
+    absorb[..40].copy_from_slice(nonce);
+    absorb[40..72].copy_from_slice(message);
+    absorb[72] = 0x1f;
+    absorb[RATE_BYTES - 1] = 0x80;
+    let mut lanes = [0u64; compact::N_LANES];
+    for (lane, bytes) in lanes.iter_mut().zip(absorb.chunks_exact(8)) {
+        *lane = u64::from_le_bytes(bytes.try_into().expect("one lane"));
+    }
+    lanes
 }
 
 /// Both Flock layouts expose ZClaim suffixes in physical address order.
@@ -482,6 +558,36 @@ mod tests {
             log_batch_size: 4,
             profile: flock_core::pcs::ligerito::LigeritoProfile::Fast,
             merkle_hash: HashKind::Blake3,
+        }
+    }
+
+    #[test]
+    fn fused_chain_matches_reference_witness_in_every_buffer() {
+        for (live, capacity, permutations) in [(1, 2, 4), (3, 4, 16), (7, 8, 4), (9, 16, 16)] {
+            let initial: Vec<_> = (0..live)
+                .map(|i| initial_state(&[i as u8 + 7; 40], &[i as u8 + 31; 32]))
+                .collect();
+            let (z, a, b, stripe, outputs) =
+                compact::generate_chained_witness_batch_major(&initial, capacity, permutations);
+            let mut states = vec![[false; compact::STATE_BITS]; capacity * permutations];
+            for signature in 0..capacity {
+                let mut lanes = initial.get(signature).copied().unwrap_or([0; 25]);
+                for permutation in 0..permutations {
+                    states[permutation * capacity + signature] = compact::lanes_to_state(&lanes);
+                    for round in 0..24 {
+                        compact::keccak_round_lanes(&mut lanes, round);
+                    }
+                    assert_eq!(outputs[signature][permutation], lanes);
+                }
+            }
+            let expected = compact::generate_witness_batch_major(
+                &states,
+                (capacity * permutations).ilog2() as usize,
+            );
+            assert_eq!(z, expected.0, "source: live={live}");
+            assert_eq!(a, expected.1, "A: live={live}");
+            assert_eq!(b, expected.2, "B: live={live}");
+            assert_eq!(stripe, expected.3, "lincheck: live={live}");
         }
     }
 
@@ -669,7 +775,7 @@ mod tests {
             t
         };
         let mut pt = start();
-        let (proof, claims) = prepared
+        let (proof, claims, marginals) = prepared
             .prove_prefix(
                 &witness.packed,
                 witness.auxiliary,
@@ -678,8 +784,13 @@ mod tests {
                 108,
             )
             .unwrap();
-        for claim in &claims {
+        for (claim, cached) in claims.iter().zip(&marginals) {
             assert_eq!(evaluate(&witness.packed, claim), claim.value);
+            let weights = crate::hybrid::sumcheck::eq_table(&claim.high_point);
+            assert_eq!(
+                *cached,
+                crate::hybrid::sumcheck::bit_marginals(&witness.packed, &weights, 1)
+            );
         }
         let mut vt = start();
         let checked = prepared
@@ -753,7 +864,7 @@ mod tests {
             .unwrap();
         let (commitment, _data) = commit(&witness.packed, &params(prepared.bit_vars()));
         let mut pt = Blake3Transcript::new();
-        let (proof, claims) = prepared
+        let (proof, claims, marginals) = prepared
             .prove_prefix(
                 &witness.packed,
                 witness.auxiliary,
@@ -763,6 +874,13 @@ mod tests {
             )
             .unwrap();
         assert_eq!(proof.grinding_nonces.len(), prepared.bit_vars() + 8);
+        for (claim, cached) in claims.iter().zip(&marginals) {
+            let weights = crate::hybrid::sumcheck::eq_table(&claim.high_point);
+            assert_eq!(
+                *cached,
+                crate::hybrid::sumcheck::bit_marginals(&witness.packed, &weights, 1)
+            );
+        }
         let mut vt = Blake3Transcript::new();
         assert_eq!(
             prepared
@@ -815,7 +933,7 @@ mod tests {
             lincheck: vec![0; 16 * n],
         };
         let (commitment, _data) = commit(&packed, &params(prepared.bit_vars()));
-        let (proof, _) = prepared
+        let (proof, _, _) = prepared
             .prove_prefix(
                 &packed,
                 auxiliary,

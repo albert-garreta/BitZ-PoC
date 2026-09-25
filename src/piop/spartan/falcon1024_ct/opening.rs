@@ -218,8 +218,11 @@ pub(super) fn prove_binding_prefix(
         &linear_point,
         &field,
     )?;
+    let target_span = tracing::info_span!("falcon_arithmetic:binding_target").entered();
     let target = binding.target()?;
+    drop(target_span);
 
+    let _binding_span = tracing::info_span!("falcon_arithmetic:binding_inner").entered();
     transcript.absorb_slice(b"bitz/falcon1024-ct/shared-inner/v1");
     let packed_source = ColumnMajorPackedBits::new(source.rows(), layout.row_vars());
     let coefficients = StreamingMle::new(&binding);
@@ -519,12 +522,17 @@ struct ProverRingCache {
 }
 
 trait CoefficientSink {
+    fn instances(&self, batch: usize) -> std::ops::Range<usize> {
+        0..batch
+    }
     fn enabled(&self) -> bool {
         true
     }
     fn add(&mut self, index: usize, coefficient: F);
     fn bind_instances(&self, weights: &[F], _field: &Cfg) -> Vec<(usize, F)> {
-        weights.iter().copied().enumerate().collect()
+        self.instances(weights.len())
+            .map(|i| (i, weights[i]))
+            .collect()
     }
     fn add_repeated(&mut self, index: usize, coefficient: F) {
         self.add(index, coefficient);
@@ -722,7 +730,8 @@ impl BindingForm<'_> {
         if coefficients.enabled() {
             let ring_cache = self.prover_ring_cache();
             let offsets = layout.offsets();
-            for (instance, &key) in ring_cache.instance_keys.iter().enumerate() {
+            for instance in coefficients.instances(layout.batch()) {
+                let key = ring_cache.instance_keys[instance];
                 for (j, weight) in ring_cache.adjoints[key].iter().enumerate() {
                     add_signed_source_scaled(
                         coefficients,
@@ -894,24 +903,58 @@ impl StreamingCoefficientSource for BindingForm<'_> {
     fn live_len(&self) -> usize {
         self.layout.source_bits()
     }
+    fn partition_len(&self) -> usize {
+        self.layout.signature_stride()
+    }
     fn for_each_coefficient(
         &self,
         emit: &mut impl FnMut(usize, F) -> Result<(), crate::sumcheck::SumcheckError>,
     ) -> Result<(), crate::sumcheck::SumcheckError> {
+        self.emit_partition(0..self.layout.batch(), emit)
+    }
+    fn for_each_partition(
+        &self,
+        partition: usize,
+        emit: &mut impl FnMut(usize, F) -> Result<(), crate::sumcheck::SumcheckError>,
+    ) -> Result<(), crate::sumcheck::SumcheckError> {
+        if partition >= self.layout.capacity() {
+            return Err(crate::sumcheck::SumcheckError::InvalidProductDimensions);
+        }
+        if partition >= self.layout.batch() {
+            return Ok(());
+        }
+        self.emit_partition(partition..partition + 1, emit)
+    }
+}
+
+impl BindingForm<'_> {
+    fn emit_partition(
+        &self,
+        instances: std::ops::Range<usize>,
+        emit: &mut impl FnMut(usize, F) -> Result<(), crate::sumcheck::SumcheckError>,
+    ) -> Result<(), crate::sumcheck::SumcheckError> {
         struct Sink<'a, E> {
+            instances: std::ops::Range<usize>,
             emit: &'a mut E,
             error: Option<crate::sumcheck::SumcheckError>,
         }
         impl<E: FnMut(usize, F) -> Result<(), crate::sumcheck::SumcheckError>> CoefficientSink
             for Sink<'_, E>
         {
+            fn instances(&self, _: usize) -> std::ops::Range<usize> {
+                self.instances.clone()
+            }
             fn add(&mut self, index: usize, value: F) {
                 if self.error.is_none() {
                     self.error = (self.emit)(index, value).err();
                 }
             }
         }
-        let mut sink = Sink { emit, error: None };
+        let mut sink = Sink {
+            instances,
+            emit,
+            error: None,
+        };
         self.emit(&mut sink)
             .map_err(|_| crate::sumcheck::SumcheckError::InvalidProductDimensions)?;
         sink.error.map_or(Ok(()), Err)
@@ -930,7 +973,7 @@ fn add_linear_constraints(
     let offsets = layout.offsets();
     let mut constant = field.zero();
     let emit = coefficients.enabled();
-    for instance in 0..layout.batch() {
+    for instance in coefficients.instances(layout.batch()) {
         let base = instance * layout.signature_stride();
         let mut row = 0usize;
         let mut residual = |terms: &[(usize, i128)], c: i128| {
@@ -1135,21 +1178,23 @@ fn add_norm_claims(
     proof: &FalconPiopProof,
     field: &Cfg,
 ) -> Result<(), FalconError> {
-    let weights = eq_table(&proof.norm.point, field).map_err(|error| piop(error.to_string()))?;
+    let weights = factored_weights(&proof.norm.point, field)?;
     let instance_weights =
         eq_table(&proof.norm.instance_point, field).map_err(|error| piop(error.to_string()))?;
-    if instance_weights.len() != layout.capacity() || weights.len() != N * layout.capacity() {
+    if instance_weights.len() != layout.capacity()
+        || (1usize << proof.norm.point.len()) != N * layout.capacity()
+    {
         return Err(piop("norm binding point dimension mismatch"));
     }
     let offsets = layout.offsets();
     for side in 0..2 {
         let mut constant = field.zero();
-        for instance in 0..layout.batch() {
+        for instance in coefficients.instances(layout.batch()) {
             let base = instance * layout.signature_stride();
             for i in 0..N {
                 let weight = field.mul(
                     &field.mul(scale, &instance_weights[instance]),
-                    &weights[instance * N + i],
+                    &weights.at(instance * N + i),
                 );
                 if side == 0 {
                     add_unsigned_scaled(
@@ -1174,10 +1219,10 @@ fn add_norm_claims(
         );
         *scale = field.mul(scale, &eta);
         let mut constant = field.zero();
-        for instance in 0..layout.batch() {
+        for instance in coefficients.instances(layout.batch()) {
             let base = instance * layout.signature_stride();
             for i in 0..N {
-                let weight = field.mul(scale, &weights[instance * N + i]);
+                let weight = field.mul(scale, &weights.at(instance * N + i));
                 if side == 0 {
                     add_unsigned_scaled(
                         coefficients,
@@ -1202,7 +1247,7 @@ fn add_norm_claims(
         *scale = field.mul(scale, &eta);
     }
     let constant = field.zero();
-    for instance in 0..layout.batch() {
+    for instance in coefficients.instances(layout.batch()) {
         add_unsigned_scaled(
             coefficients,
             instance * layout.signature_stride() + offsets.norm_slack,
@@ -1361,8 +1406,7 @@ fn add_compaction_product_claims(
     proof: &FalconPiopProof,
     field: &Cfg,
 ) -> Result<(), FalconError> {
-    let weights =
-        eq_table(&proof.compact_products.point, field).map_err(|error| piop(error.to_string()))?;
+    let weights = factored_weights(&proof.compact_products.point, field)?;
     let stride = COMPACTION_LEAVES * layout.capacity();
     let offsets = layout.offsets();
     let claims = [
@@ -1372,12 +1416,12 @@ fn add_compaction_product_claims(
     ];
     for coordinate in 0..3 {
         let mut constant = field.zero();
-        for instance in 0..layout.batch() {
+        for instance in coefficients.instances(layout.batch()) {
             let base = instance * layout.signature_stride();
             for i in 0..HASH_TO_POINT_SAMPLES {
                 let source_row = instance * COMPACTION_LEAVES + i;
                 for block in 0..4 {
-                    let weight = field.mul(scale, &weights[block * stride + source_row]);
+                    let weight = field.mul(scale, &weights.at(block * stride + source_row));
                     let reject = offsets.hash_accept_ands + i;
                     let selector = offsets.compact_selectors + i;
                     let (index, width, complemented) = match (block, coordinate) {
@@ -1420,7 +1464,11 @@ fn add_product_tree_claims(
     field: &Cfg,
 ) -> Result<(), FalconError> {
     let offsets = layout.offsets();
-    for instance in 0..layout.batch() {
+    let instances = coefficients.instances(layout.batch());
+    for _ in 0..2 * instances.start {
+        *scale = field.mul(scale, &eta);
+    }
+    for instance in instances {
         let base = instance * layout.signature_stride();
         let pair = &proof.compaction[instance];
         for (candidate, tree) in [true, false]

@@ -1065,7 +1065,7 @@ impl KeccakSetup {
 // zeroes the contiguous padding suffix of the recycled scratch buffers.
 // ---------------------------------------------------------------------------
 
-use super::common::{BM_V, SendPtr, nt_store_row};
+use super::common::{nt_store_row, SendPtr, BM_V};
 
 type VLane = [u64; BM_V];
 type VLanes = [[u64; BM_V]; N_LANES];
@@ -1187,6 +1187,30 @@ unsafe fn build_group_batch_major(
     b: *mut u64,
     stripe: *mut u8,
 ) {
+    let mut lanes = [[0u64; BM_V]; N_LANES];
+    for (j, state) in states.iter().enumerate() {
+        let words = state_to_lanes(state);
+        for lane in 0..N_LANES {
+            lanes[lane][j] = words[lane];
+        }
+    }
+    // SAFETY: inherits the caller's disjoint, fully allocated output ranges.
+    unsafe {
+        build_group_batch_major_lanes(lanes, o0, n_log, z, a, b, stripe);
+    }
+}
+
+/// The same producer, retaining output lanes for a subsequent squeeze step.
+/// SAFETY: same disjoint output-range requirements as build_group_batch_major.
+unsafe fn build_group_batch_major_lanes(
+    mut lanes: VLanes,
+    o0: usize,
+    n_log: usize,
+    z: *mut u64,
+    a: *mut u64,
+    b: *mut u64,
+    stripe: *mut u8,
+) -> VLanes {
     use flock_core::bits::transpose_8_u64s_to_64_bytes;
 
     let mut wz = RowWriter::new(z, o0, n_log);
@@ -1207,15 +1231,6 @@ unsafe fn build_group_batch_major(
             transpose_8_u64s_to_64_bytes(vals, out);
             wz.push(w, vals);
         }};
-    }
-
-    // Initial lanes, instance-minor.
-    let mut lanes: VLanes = [[0u64; BM_V]; N_LANES];
-    for (j, s) in states.iter().enumerate() {
-        let l = state_to_lanes(s);
-        for i in 0..N_LANES {
-            lanes[i][j] = l[i];
-        }
     }
 
     let s0_w = state_u64_base(0);
@@ -1314,6 +1329,7 @@ unsafe fn build_group_batch_major(
         wa.flush();
         wb.flush();
     }
+    lanes
 }
 
 /// Batch-major counterpart of [`generate_witness_with_ab_packed_and_lincheck`]:
@@ -1375,6 +1391,90 @@ pub fn generate_witness_batch_major(
     });
 
     (z, a, b, stripe)
+}
+
+/// Execute independent Keccak chains and emit their circuit witness in one pass.
+/// Block IDs are `permutation * capacity + signature`. The returned outputs
+/// supply both the next slab's inputs and the SHAKE samples, without replaying
+/// the permutations. Small batches use the scalar reference setup because the
+/// byte-stripe producer operates on eight blocks at a time.
+pub fn generate_chained_witness_batch_major(
+    initial: &[[u64; N_LANES]],
+    capacity: usize,
+    permutations: usize,
+) -> (
+    Vec<Gf128>,
+    Vec<Gf128>,
+    Vec<Gf128>,
+    Vec<u8>,
+    Vec<Vec<[u64; N_LANES]>>,
+) {
+    use rayon::prelude::*;
+    assert!(capacity.is_power_of_two() && permutations.is_power_of_two());
+    assert!(initial.len() <= capacity && capacity * permutations >= BM_V);
+    let n_log = (capacity * permutations).ilog2() as usize;
+    let mut outputs = vec![vec![[0; N_LANES]; permutations]; capacity];
+    if capacity < BM_V {
+        let mut states = vec![[false; STATE_BITS]; capacity * permutations];
+        for signature in 0..capacity {
+            let mut lanes = initial.get(signature).copied().unwrap_or([0; N_LANES]);
+            for permutation in 0..permutations {
+                states[permutation * capacity + signature] = lanes_to_state(&lanes);
+                for round in 0..N_ROUNDS {
+                    keccak_round_lanes(&mut lanes, round);
+                }
+                outputs[signature][permutation] = lanes;
+            }
+        }
+        let (z, a, b, stripe) = generate_witness_batch_major(&states, n_log);
+        return (z, a, b, stripe, outputs);
+    }
+    let total = capacity * permutations * (U64_PER_BLOCK / 2);
+    let mut z = flock_core::scratch::take_f128(total);
+    let mut a = flock_core::scratch::take_f128(total);
+    let mut b = flock_core::scratch::take_f128(total);
+    let mut stripe = vec![0u8; total * 16];
+    let tail = USEFUL_BITS.div_ceil(128) << n_log;
+    for buf in [&mut z, &mut a, &mut b] {
+        buf[tail..]
+            .par_chunks_mut(1 << 16)
+            .for_each(|c| c.fill(Gf128::ZERO));
+    }
+    let (zp, ap, bp, sp) = (
+        SendPtr(z.as_mut_ptr() as *mut u64),
+        SendPtr(a.as_mut_ptr() as *mut u64),
+        SendPtr(b.as_mut_ptr() as *mut u64),
+        SendPtr(stripe.as_mut_ptr() as *mut u64),
+    );
+    outputs
+        .par_chunks_mut(BM_V)
+        .enumerate()
+        .for_each(|(group, out)| {
+            let first = group * BM_V;
+            let mut lanes: VLanes = std::array::from_fn(|lane| {
+                std::array::from_fn(|j| initial.get(first + j).map_or(0, |state| state[lane]))
+            });
+            for permutation in 0..permutations {
+                // SAFETY: each worker owns 8 signature IDs in every permutation.
+                // Their packed rows and byte stripes are disjoint; the padding
+                // suffix was initialized above and remains untouched.
+                lanes = unsafe {
+                    build_group_batch_major_lanes(
+                        lanes,
+                        permutation * capacity + first,
+                        n_log,
+                        zp.get(),
+                        ap.get(),
+                        bp.get(),
+                        sp.get() as *mut u8,
+                    )
+                };
+                for j in 0..BM_V {
+                    out[j][permutation] = std::array::from_fn(|lane| lanes[lane][j]);
+                }
+            }
+        });
+    (z, a, b, stripe, outputs)
 }
 
 // ---------------------------------------------------------------------------
@@ -1789,7 +1889,7 @@ mod tests {
     /// word addressing.
     #[test]
     fn batch_major_chain_fold_matches_row_major() {
-        use crate::r1cs_hashes::chain_common::{ChainFold, fold_in_out};
+        use crate::r1cs_hashes::chain_common::{fold_in_out, ChainFold};
         let n_log = 3;
         let mut rng = Rng::new(0xF01D_BA7C);
         let inputs: Vec<State> = (0..8).map(|_| random_state(&mut rng)).collect();

@@ -1,9 +1,9 @@
-//! A joint binary sumcheck for two committed, packed sources.
+//! A joint binary sumcheck for several committed, packed sources.
 //!
 //! Coefficients are sums of tensor products and sparse additive gathers. The
 //! first seven rounds operate on packed bits; only then are the coefficient
 //! and witness tables materialized, with one field element per packed word.
-//! The caller must bind both commitments and all claims defining the public
+//! The caller must bind all commitments and all claims defining the public
 //! coefficients, and sample any claim-batching scalars, before this reduction.
 use crate::hybrid::{
     Error,
@@ -27,6 +27,8 @@ use rayon::prelude::*;
 pub(crate) struct Tensor {
     pub low: Vec<F>,
     pub high_point: Vec<F>,
+    /// Prover-only folded witness values, already computed by the Keccak prefix.
+    pub marginals: Option<Vec<F>>,
 }
 
 /// Sparse additive updates in one source's original bit coordinates.
@@ -128,7 +130,12 @@ fn observe(t: &mut impl Transcript, values: &[F]) {
     }
 }
 
-fn bind(t: &mut impl Transcript, geometry: &Geometry, target: F, grinding_bits: u32) {
+fn bind<const N: usize>(
+    t: &mut impl Transcript,
+    geometry: &Geometry<N>,
+    target: F,
+    grinding_bits: u32,
+) {
     t.absorb_slice(b"bitz/falcon/joint-binary-sumcheck/v1");
     for log in geometry.logs {
         t.absorb_slice(&(log as u64).to_le_bytes());
@@ -137,13 +144,17 @@ fn bind(t: &mut impl Transcript, geometry: &Geometry, target: F, grinding_bits: 
     observe(t, &[target]);
 }
 
-fn validate(geometry: &Geometry, coefficients: [&Coefficients; 2]) -> Result<(), Error> {
+fn validate<const N: usize>(
+    geometry: &Geometry<N>,
+    coefficients: [&Coefficients; N],
+) -> Result<(), Error> {
     // Validate before touching the transcript or allocating a tensor table.
     let expected = Geometry::new(geometry.logs)?;
     if geometry.physical_logs != expected.physical_logs
         || geometry.position_log != expected.position_log
         || geometry.lane_logs != expected.lane_logs
         || geometry.virtual_lane_log != expected.virtual_lane_log
+        || geometry.offsets != expected.offsets
     {
         return Err(Error::Invalid("joint binary sumcheck geometry"));
     }
@@ -152,6 +163,10 @@ fn validate(geometry: &Geometry, coefficients: [&Coefficients; 2]) -> Result<(),
         for tensor in &coefficients.tensors {
             if !tensor.low.len().is_power_of_two()
                 || tensor.low.len().ilog2() as usize + tensor.high_point.len() != bits
+                || tensor
+                    .marginals
+                    .as_ref()
+                    .is_some_and(|values| values.len() != tensor.low.len().max(128))
             {
                 return Err(Error::Invalid("joint binary tensor shape"));
             }
@@ -199,7 +214,10 @@ impl TensorState {
             .flat_map(|weight| tensor.low.iter().map(move |&value| weight * value))
             .collect();
         let high = eq_table(&tensor.high_point[consume..]);
-        let marginals = kernels::bit_marginals(packed, &high, low.len() / 128);
+        let marginals = tensor
+            .marginals
+            .clone()
+            .unwrap_or_else(|| kernels::bit_marginals(packed, &high, low.len() / 128));
         Self {
             low,
             high,
@@ -252,26 +270,26 @@ fn gather_round(
     }))
 }
 
-struct Input<'a> {
-    geometry: &'a Geometry,
-    sources: [&'a [F]; 2],
-    coefficients: [&'a Coefficients; 2],
+struct Input<'a, const N: usize> {
+    geometry: &'a Geometry<N>,
+    sources: [&'a [F]; N],
+    coefficients: [&'a Coefficients; N],
     scratch: &'a mut Scratch,
 }
 
-struct State<'a> {
-    input: Input<'a>,
-    tensors: [Vec<TensorState>; 2],
-    gather_high: [Vec<Vec<F>>; 2],
+struct State<'a, const N: usize> {
+    input: Input<'a, N>,
+    tensors: [Vec<TensorState>; N],
+    gather_high: [Vec<Vec<F>>; N],
     point: [F; 7],
     round: usize,
     next: [F; 2],
 }
 
-impl input::sealed::Input for Input<'_> {}
-impl<'a> input::Input<field::Gf128Ops> for Input<'a> {
+impl<const N: usize> input::sealed::Input for Input<'_, N> {}
+impl<'a, const N: usize> input::Input<field::Gf128Ops> for Input<'a, N> {
     type Weights = ();
-    type State = State<'a>;
+    type State = State<'a, N>;
     type Codec = CompressedCodec;
 
     fn prepare(self, _: &field::Gf128Ops, _: ()) -> Result<Self::State, SumcheckError> {
@@ -300,7 +318,7 @@ impl<'a> input::Input<field::Gf128Ops> for Input<'a> {
     }
 }
 
-impl State<'_> {
+impl<const N: usize> State<'_, N> {
     fn prepare_dense(&mut self) {
         for tensor in self.tensors.iter_mut().flatten() {
             tensor.marginals = Vec::new();
@@ -322,12 +340,14 @@ impl State<'_> {
                 .enumerate()
                 .for_each(|(group, (x, w))| {
                     for lane in 0..lanes {
-                        let branch = lane / (lanes / 2);
-                        let local_lane = lane % (lanes / 2);
-                        let k = geometry.lane_logs[branch];
                         let mut value = F::ZERO;
                         let mut coefficient = F::ZERO;
-                        if local_lane < 1 << k {
+                        if let Some(branch) = (0..N).find(|&branch| {
+                            let start = geometry.offset(branch);
+                            (start..start + (1 << geometry.lane_logs[branch])).contains(&lane)
+                        }) {
+                            let local_lane = lane - geometry.offset(branch);
+                            let k = geometry.lane_logs[branch];
                             let index = (group << k) | local_lane;
                             value = kernels::apply(&table, sources[branch][index]);
                             if index < 1 << geometry.logs[branch] {
@@ -356,7 +376,7 @@ impl State<'_> {
                 let start = chunk * 1024;
                 let first_group = start / lanes;
                 let end_group = (start + weights.len()) / lanes;
-                for branch in 0..2 {
+                for branch in 0..N {
                     let k = geometry.lane_logs[branch];
                     let first_bit = (first_group << k) * 128;
                     let bits = geometry.logs[branch] + 7;
@@ -396,14 +416,14 @@ impl State<'_> {
                     sum
                 }),
         );
-        self.tensors = [Vec::new(), Vec::new()];
-        self.gather_high = [Vec::new(), Vec::new()];
+        self.tensors = std::array::from_fn(|_| Vec::new());
+        self.gather_high = std::array::from_fn(|_| Vec::new());
         scratch.witness = witness;
         scratch.weights = weights;
     }
 }
 
-impl input::State<field::Gf128Ops> for State<'_> {
+impl<const N: usize> input::State<field::Gf128Ops> for State<'_, N> {
     fn num_vars(&self) -> usize {
         self.input.geometry.bit_log()
     }
@@ -414,7 +434,7 @@ impl input::State<field::Gf128Ops> for State<'_> {
         }
         let prefix = eq_table(&self.point[..self.round]);
         let mut sum = [F::ZERO; 2];
-        for branch in 0..2 {
+        for branch in 0..N {
             for tensor in &self.tensors[branch] {
                 let term =
                     kernels::packed_round(&tensor.marginals, &tensor.low, &prefix, self.round);
@@ -471,17 +491,17 @@ impl input::State<field::Gf128Ops> for State<'_> {
     }
 }
 
-pub(crate) fn prove(
+pub(crate) fn prove<const N: usize>(
     t: &mut Blake3Transcript,
-    geometry: &Geometry,
-    sources: [&[F]; 2],
-    coefficients: [&Coefficients; 2],
+    geometry: &Geometry<N>,
+    sources: [&[F]; N],
+    coefficients: [&Coefficients; N],
     target: F,
     grinding_bits: u32,
     scratch: &mut Scratch,
 ) -> Result<(Proof, Vec<F>), Error> {
     validate(geometry, coefficients)?;
-    if (0..2).any(|b| sources[b].len() != 1 << geometry.physical_logs[b]) {
+    if (0..N).any(|b| sources[b].len() != 1 << geometry.physical_logs[b]) {
         return Err(Error::Invalid("joint binary source shape"));
     }
     let mut boundary =
@@ -563,10 +583,10 @@ impl Coefficients {
     }
 }
 
-pub(crate) fn verify(
+pub(crate) fn verify<const N: usize>(
     t: &mut Blake3Transcript,
-    geometry: &Geometry,
-    coefficients: [&Coefficients; 2],
+    geometry: &Geometry<N>,
+    coefficients: [&Coefficients; N],
     target: F,
     grinding_bits: u32,
     proof: &Proof,
@@ -593,7 +613,7 @@ pub(crate) fn verify(
         point.push(r);
     }
     let mut coefficient = F::ZERO;
-    for branch in 0..2 {
+    for branch in 0..N {
         let (original, padding) = geometry.project_point(branch, &point);
         coefficient += padding * coefficients[branch].evaluate(&original);
     }
@@ -645,6 +665,7 @@ mod tests {
             let tensors = [0, 6, 8]
                 .into_iter()
                 .map(|low_vars| Tensor {
+                    marginals: None,
                     low: (0..1 << low_vars).map(|_| random.next()).collect(),
                     high_point: (0..bits - low_vars).map(|_| random.next()).collect(),
                 })
@@ -680,14 +701,14 @@ mod tests {
         (geometry, packed, coefficients)
     }
 
-    fn dense_tables(
-        geometry: &Geometry,
-        packed: [&[F]; 2],
-        coefficients: [&Coefficients; 2],
+    fn dense_tables<const N: usize>(
+        geometry: &Geometry<N>,
+        packed: [&[F]; N],
+        coefficients: [&Coefficients; N],
     ) -> (Vec<F>, Vec<F>, F) {
         let mut witness = vec![F::ZERO; 1 << geometry.bit_log()];
         let mut weights = witness.clone();
-        for branch in 0..2 {
+        for branch in 0..N {
             let mut local = vec![F::ZERO; 1 << (geometry.logs[branch] + 7)];
             for tensor in &coefficients[branch].tensors {
                 let high = eq_table(&tensor.high_point);
@@ -747,9 +768,9 @@ mod tests {
         (witness, weights, target)
     }
 
-    fn dense_prove(
+    fn dense_prove<const N: usize>(
         t: &mut Blake3Transcript,
-        geometry: &Geometry,
+        geometry: &Geometry<N>,
         mut witness: Vec<F>,
         mut weights: Vec<F>,
         target: F,
@@ -850,6 +871,82 @@ mod tests {
             )
             .unwrap();
             assert_eq!(actual, repeated);
+        }
+    }
+
+    #[test]
+    fn three_root_joint_sumcheck_and_cached_marginals_match_dense_transcript() {
+        for logs in [[9, 11, 9], [9, 11, 10], [9, 13, 10]] {
+            let geometry = Geometry::new(logs).unwrap();
+            let mut random = Random(0x791abc98);
+            let packed: [Vec<F>; 3] = std::array::from_fn(|branch| {
+                (0..1 << geometry.physical_logs[branch])
+                    .map(|_| random.next())
+                    .collect()
+            });
+            let mut coefficients: [Coefficients; 3] = std::array::from_fn(|branch| Coefficients {
+                tensors: vec![Tensor {
+                    low: (0..128).map(|_| random.next()).collect(),
+                    high_point: (0..logs[branch]).map(|_| random.next()).collect(),
+                    marginals: None,
+                }],
+                gathers: vec![Gather::new(vec![
+                    (17, random.next()),
+                    ((1 << (logs[branch] + 7)) - 1, random.next()),
+                ])],
+            });
+            let sources = packed.each_ref().map(Vec::as_slice);
+            let (witness, weights, target) =
+                dense_tables(&geometry, sources, coefficients.each_ref());
+            let mut reference = transcript(false);
+            let expected = dense_prove(&mut reference, &geometry, witness, weights, target, 0);
+            let mut actual_t = transcript(false);
+            let actual = prove(
+                &mut actual_t,
+                &geometry,
+                sources,
+                coefficients.each_ref(),
+                target,
+                0,
+                &mut Scratch::default(),
+            )
+            .unwrap();
+            assert_eq!(actual, expected);
+            assert_eq!(
+                actual_t.get_challenge::<u128>(),
+                reference.get_challenge::<u128>()
+            );
+            for (branch, c) in coefficients.iter_mut().enumerate() {
+                let tensor = &mut c.tensors[0];
+                tensor.marginals = Some(kernels::bit_marginals(
+                    &sources[branch][..1 << logs[branch]],
+                    &eq_table(&tensor.high_point),
+                    1,
+                ));
+            }
+            let cached = prove(
+                &mut transcript(false),
+                &geometry,
+                sources,
+                coefficients.each_ref(),
+                target,
+                0,
+                &mut Scratch::default(),
+            )
+            .unwrap();
+            assert_eq!(cached, expected);
+            assert_eq!(
+                verify(
+                    &mut transcript(false),
+                    &geometry,
+                    coefficients.each_ref(),
+                    target,
+                    0,
+                    &cached.0
+                )
+                .unwrap(),
+                cached.1
+            );
         }
     }
 
@@ -979,6 +1076,7 @@ mod tests {
         assert!(validate(&geometry, [&invalid, claims[1]]).is_err());
         invalid.gathers.clear();
         invalid.tensors.push(Tensor {
+            marginals: None,
             low: vec![F::ONE; 3],
             high_point: Vec::new(),
         });

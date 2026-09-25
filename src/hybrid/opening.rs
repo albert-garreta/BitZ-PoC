@@ -1,5 +1,5 @@
 //! Round 0 (the out-of-domain sample), one ring switch and one Ligerito
-//! continuation, with two-root authentication.
+//! continuation, authenticating disjoint slices from each source commitment.
 //!
 //! The shared opener runs in the Johnson (list-decoding) regime, at rate
 //! 1/2 by default (rate 1/8 selectable through the prepared Ligerito
@@ -42,29 +42,49 @@ use rayon::prelude::*;
 pub(crate) const LOG_INV_RATE: usize = 1;
 
 #[derive(Clone, Debug)]
-pub(crate) struct Geometry {
-    pub logs: [usize; 2],
-    pub physical_logs: [usize; 2],
+pub(crate) struct Geometry<const N: usize = 2> {
+    pub logs: [usize; N],
+    pub physical_logs: [usize; N],
     pub position_log: usize,
-    pub lane_logs: [usize; 2],
+    pub lane_logs: [usize; N],
     pub virtual_lane_log: usize,
+    pub offsets: [usize; N],
 }
 
-impl Geometry {
-    pub fn new(logs: [usize; 2]) -> Result<Self, Error> {
-        if logs.iter().any(|&n| !(9..=27).contains(&n)) {
+impl<const N: usize> Geometry<N> {
+    pub fn new(logs: [usize; N]) -> Result<Self, Error> {
+        if N == 0 || logs.iter().any(|&n| !(9..=27).contains(&n)) {
             return Err(Error::Invalid("packed witness logarithm outside 9..=27"));
         }
-        let position_log = logs[0].max(logs[1]) - 3;
+        let position_log = *logs.iter().max().expect("nonempty geometry") - 3;
         let physical_logs = logs.map(|l| l.max(position_log));
         let lane_logs = physical_logs.map(|l| l - position_log);
         let virtual_lane_log = 4;
+        let mut offsets = [0; N];
+        if N == 2 {
+            // Preserve the established two-root layout and transcript.
+            offsets[1] = 8;
+        } else {
+            // Largest first keeps every power-of-two slice aligned. Falcon's
+            // A/K16/K4 branches occupy 2+8+2 of the 16 authenticated lanes.
+            let mut order: Vec<_> = (0..N).collect();
+            order.sort_by_key(|&i| std::cmp::Reverse(lane_logs[i]));
+            let mut next = 0;
+            for branch in order {
+                offsets[branch] = next;
+                next += 1 << lane_logs[branch];
+            }
+            if next > 16 {
+                return Err(Error::Invalid("too many shared opening lanes"));
+            }
+        }
         Ok(Self {
             logs,
             physical_logs,
             position_log,
             lane_logs,
             virtual_lane_log,
+            offsets,
         })
     }
     pub fn packed_log(&self) -> usize {
@@ -77,7 +97,7 @@ impl Geometry {
         1 << self.virtual_lane_log
     }
     pub fn offset(&self, branch: usize) -> usize {
-        branch << (self.virtual_lane_log - 1)
+        self.offsets[branch]
     }
     #[cfg(test)]
     pub fn embed(&self, branch: usize, original: usize) -> usize {
@@ -93,7 +113,7 @@ impl Geometry {
         original.extend_from_slice(&point[11..11 + high]);
         let mut padding = F::ONE;
         for j in k..self.virtual_lane_log {
-            padding *= if branch == 1 && j == self.virtual_lane_log - 1 {
+            padding *= if self.offset(branch) >> j & 1 == 1 {
                 point[7 + j]
             } else {
                 F::ONE + point[7 + j]
@@ -118,18 +138,18 @@ impl Geometry {
             merkle_hash: merkle::HashKind::Blake3,
         }
     }
-    /// H_r = eq(r,.) minus its restrictions to the two logical supports.
-    /// In characteristic two subtraction is addition. This represents the
-    /// padding mask with exactly three equality bases, without a dense mask.
+    /// H_r = eq(r,.) minus its restrictions to the disjoint logical supports.
+    /// In characteristic two subtraction is addition. The padding mask needs
+    /// N+1 equality bases and no dense mask.
     fn padding_bases(&self, r: Vec<Gf>, eta: Gf) -> Vec<(Vec<Gf>, Gf)> {
         let mut bases = vec![(r.clone(), eta)];
-        for branch in 0..2 {
+        for branch in 0..N {
             let k = self.lane_logs[branch];
             let high = self.logs[branch] - k;
             let mut clamped = r.clone();
             let mut scale = eta;
             for coordinate in (k..4).chain(4 + high..self.packed_log()) {
-                let bit = coordinate == 3 && branch == 1;
+                let bit = coordinate < 4 && self.offset(branch) >> coordinate & 1 == 1;
                 scale *= if bit {
                     r[coordinate]
                 } else {
@@ -141,7 +161,7 @@ impl Geometry {
         }
         bases
     }
-    pub fn virtual_packed(&self, sources: [&[F]; 2]) -> Vec<F> {
+    pub fn virtual_packed(&self, sources: [&[F]; N]) -> Vec<F> {
         let lanes = self.lanes();
         let mut out = vec![F::ZERO; 1 << self.packed_log()];
         // One lane group per position: `embed` places word `(g << k) | l`
@@ -149,7 +169,7 @@ impl Geometry {
         crate::utils::cfg_chunks_mut!(out, lanes)
             .enumerate()
             .for_each(|(g, group)| {
-                for branch in 0..2 {
+                for branch in 0..N {
                     let k = self.lane_logs[branch];
                     let start = self.offset(branch);
                     let words = &sources[branch][g << k..(g + 1) << k];
@@ -160,14 +180,53 @@ impl Geometry {
     }
 }
 
+#[cfg(test)]
+mod geometry_tests {
+    use super::*;
+    use crate::hybrid::sumcheck::eq_table;
+
+    #[test]
+    fn three_root_padding_basis_matches_logical_support_exactly() {
+        for logs in [[9, 11, 9], [9, 11, 10], [9, 13, 10]] {
+            let g = Geometry::new(logs).unwrap();
+            let mut live = vec![false; 1 << g.packed_log()];
+            for branch in 0..3 {
+                for word in 0..1 << logs[branch] {
+                    let index = g.embed(branch, word);
+                    assert!(!live[index], "source supports overlap");
+                    live[index] = true;
+                }
+            }
+            let point: Vec<_> = (0..g.packed_log())
+                .map(|i| F {
+                    lo: 31 + i as u64,
+                    hi: 17,
+                })
+                .collect();
+            let scale = F { lo: 19, hi: 271 };
+            let mut actual = vec![F::ZERO; live.len()];
+            for (point, scale) in g.padding_bases(point.clone(), scale) {
+                for (a, weight) in actual.iter_mut().zip(eq_table(&point)) {
+                    *a += scale * weight;
+                }
+            }
+            for ((actual, live), expected) in actual.into_iter().zip(live).zip(eq_table(&point)) {
+                assert_eq!(actual, if live { F::ZERO } else { scale * expected });
+            }
+        }
+        assert!(Geometry::new([13, 13, 13]).is_err());
+        assert!(Geometry::<0>::new([]).is_err());
+    }
+}
+
 #[derive(Clone, Debug)]
-pub(crate) struct Proof {
+pub(crate) struct Proof<const N: usize = 2> {
     /// Round 0: `y = MLE[V](ζ⃗)` and the proof-of-work nonce before the
     /// `ζ` draw.
     pub ood: Option<OodRound>,
     pub ring: RingSwitchProof,
     pub ligerito: LigeritoProof,
-    pub paths: [Vec<Hash>; 2],
+    pub paths: [Vec<Hash>; N],
 }
 
 /// Round 0 on the prover side, on the virtual packed witness `packed`.
@@ -182,9 +241,9 @@ pub(crate) fn prove_ood(
 
 /// Round 0 on the verifier side: the same frame and draw, the nonce
 /// checked against `params`, the prover's `y` absorbed.
-pub(crate) fn verify_ood(
+pub(crate) fn verify_ood<const N: usize>(
     t: &mut (impl Transcript + Send),
-    geometry: &Geometry,
+    geometry: &Geometry<N>,
     params: Option<OodRoundParams>,
     round: Option<&OodRound>,
 ) -> Result<Option<OodVerifierClaim>, Error> {
@@ -216,8 +275,20 @@ pub(crate) fn ood_parameters(
         .transpose()
 }
 
-fn sample_padding(t: &mut (impl Transcript + Send), geometry: &Geometry) -> Vec<(Vec<Gf>, Gf)> {
-    t.absorb_slice(b"hybrid/zero-padding/three-equality-bases/v1");
+fn sample_padding<const N: usize>(
+    t: &mut (impl Transcript + Send),
+    geometry: &Geometry<N>,
+) -> Vec<(Vec<Gf>, Gf)> {
+    if N == 2 {
+        t.absorb_slice(b"hybrid/zero-padding/three-equality-bases/v1");
+    } else {
+        t.absorb_slice(b"hybrid/zero-padding/disjoint-supports/v2");
+        t.absorb_slice(&(N as u64).to_le_bytes());
+        for branch in 0..N {
+            t.absorb_slice(&(geometry.logs[branch] as u64).to_le_bytes());
+            t.absorb_slice(&(geometry.offset(branch) as u64).to_le_bytes());
+        }
+    }
     let point = (0..geometry.packed_log())
         .map(|_| t.get_field_challenge(&()))
         .collect();
@@ -225,33 +296,33 @@ fn sample_padding(t: &mut (impl Transcript + Send), geometry: &Geometry) -> Vec<
     geometry.padding_bases(point, eta)
 }
 
-pub(crate) fn prove(
+pub(crate) fn prove<const N: usize>(
     t: &mut (impl Transcript + Send),
-    geometry: &Geometry,
+    geometry: &Geometry<N>,
     statement: &Hash,
     packed: Vec<F>,
     ood: Option<&OodProverClaim>,
     resolved: &crate::ligerito_flock::ResolvedLigerito,
-    data: [&ProverData; 2],
+    data: [&ProverData; N],
     point: &[Gf],
-) -> Result<Proof, Error> {
+) -> Result<Proof<N>, Error> {
     prove_with_security(
         t, geometry, statement, packed, ood, resolved, data, point, None,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn prove_with_security(
+pub(crate) fn prove_with_security<const N: usize>(
     t: &mut (impl Transcript + Send),
-    geometry: &Geometry,
+    geometry: &Geometry<N>,
     statement: &Hash,
     packed: Vec<F>,
     ood: Option<&OodProverClaim>,
     resolved: &crate::ligerito_flock::ResolvedLigerito,
-    data: [&ProverData; 2],
+    data: [&ProverData; N],
     point: &[Gf],
     security: Option<&mut crate::ligerito_flock::grinding::GrindingContext<'_>>,
-) -> Result<Proof, Error> {
+) -> Result<Proof<N>, Error> {
     let ring_scope = tracing::info_span!("op:ring_switch").entered();
     // flock's packed words are bit-compatible with `Gf`: the ring switch
     // reads them in place and writes the basis in flock's element type (no
@@ -275,7 +346,7 @@ pub(crate) fn prove_with_security(
     drop(basis_scope);
     let _lig_scope = tracing::info_span!("op:ligerito").entered();
     let pc = resolved.prover();
-    let mut paths = [Vec::new(), Vec::new()];
+    let mut paths = std::array::from_fn(|_| Vec::new());
     macro_rules! run {
         ($challenger:expr) => {
             ligerito::recursive_prover_with_basis_initial(
@@ -286,7 +357,7 @@ pub(crate) fn prove_with_security(
                 *statement,
                 |positions, lanes, queries| {
                     let mut rows = vec![vec![F::ZERO; lanes]; queries.len()];
-                    for branch in 0..2 {
+                    for branch in 0..N {
                         let width = 1 << geometry.lane_logs[branch];
                         let start = geometry.offset(branch);
                         for (row, &q) in rows.iter_mut().zip(queries) {
@@ -328,16 +399,16 @@ pub(crate) fn prove_with_security(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn verify(
+pub(crate) fn verify<const N: usize>(
     t: &mut (impl Transcript + Send),
-    geometry: &Geometry,
+    geometry: &Geometry<N>,
     statement: &Hash,
-    roots: &[Hash; 2],
+    roots: &[Hash; N],
     point: &[Gf],
     value: F,
     ood: Option<&OodVerifierClaim>,
     resolved: &crate::ligerito_flock::ResolvedLigerito,
-    proof: &Proof,
+    proof: &Proof<N>,
 ) -> Result<(), Error> {
     verify_with_security(
         t, geometry, statement, roots, point, value, ood, resolved, proof, None,
@@ -345,16 +416,16 @@ pub(crate) fn verify(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn verify_with_security(
+pub(crate) fn verify_with_security<const N: usize>(
     t: &mut (impl Transcript + Send),
-    geometry: &Geometry,
+    geometry: &Geometry<N>,
     statement: &Hash,
-    roots: &[Hash; 2],
+    roots: &[Hash; N],
     point: &[Gf],
     value: F,
     ood: Option<&OodVerifierClaim>,
     resolved: &crate::ligerito_flock::ResolvedLigerito,
-    proof: &Proof,
+    proof: &Proof<N>,
     security: Option<&mut crate::ligerito_flock::grinding::GrindingContext<'_>>,
 ) -> Result<(), Error> {
     let (eq_r2, mut target) = ring_switch_verify(t, &proof.ring, value, &point[..7])
@@ -420,19 +491,25 @@ pub(crate) fn verify_with_security(
                     if !opening.merkle_proof.is_empty() || lanes != geometry.lanes() {
                         return false;
                     }
-                    let mut hashes = [
-                        Vec::with_capacity(queries.len()),
-                        Vec::with_capacity(queries.len()),
-                    ];
+                    let mut hashes: [Vec<Hash>; N] =
+                        std::array::from_fn(|_| Vec::with_capacity(queries.len()));
                     for row in &opening.opened_rows {
-                        // Authentication of both real slices AND every public zero lane.
-                        for branch in 0..2 {
-                            let start = geometry.offset(branch);
-                            let end = start + (1 << geometry.lane_logs[branch]);
-                            let half_end = start + lanes / 2;
-                            if row[end..half_end].iter().any(|&x| x != F::ZERO) {
+                        // Authenticate every branch and reject all unused virtual lanes.
+                        if row.len() != lanes {
+                            return false;
+                        }
+                        for (lane, &word) in row.iter().enumerate() {
+                            let occupied = (0..N).any(|branch| {
+                                let start = geometry.offset(branch);
+                                (start..start + (1 << geometry.lane_logs[branch])).contains(&lane)
+                            });
+                            if !occupied && word != F::ZERO {
                                 return false;
                             }
+                        }
+                        for branch in 0..N {
+                            let start = geometry.offset(branch);
+                            let end = start + (1 << geometry.lane_logs[branch]);
                             let mut bytes = Vec::with_capacity((end - start) * 16);
                             for word in &row[start..end] {
                                 bytes.extend_from_slice(&word.lo.to_le_bytes());
@@ -441,7 +518,7 @@ pub(crate) fn verify_with_security(
                             hashes[branch].push(merkle::hash_leaf(&bytes, vc.merkle_hash));
                         }
                     }
-                    (0..2).all(|branch| {
+                    (0..N).all(|branch| {
                         merkle::verify_merkle_multi_proof(
                             &roots[branch],
                             positions,
@@ -466,6 +543,6 @@ pub(crate) fn verify_with_security(
     if valid {
         Ok(())
     } else {
-        Err(Error::Invalid("two-root Ligerito opening"))
+        Err(Error::Invalid("multi-root Ligerito opening"))
     }
 }

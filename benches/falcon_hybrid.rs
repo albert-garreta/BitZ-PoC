@@ -1,9 +1,9 @@
-//! Complete Falcon hybrid proof benchmark, including both source commitments.
+//! Complete Falcon hybrid proof benchmark, including all source commitments.
 //!
 //! Example: `RAYON_NUM_THREADS=16 BITZ_BENCH_LAMBDA=128 cargo bench
 //! --features falcon-hybrid --bench falcon_hybrid -- --batch 256 --iterations 2`.
 //! Security must be selected explicitly. Each trial commits a fresh repeated
-//! fixture batch and verifies the resulting full proof against both roots.
+//! fixture batch and verifies the resulting full proof against all roots.
 use bitz::piop::spartan::falcon1024_ct::{FalconPublicStatement, PreparedFalconHybrid};
 use serde_json::json;
 use std::{error::Error, fs, time::Instant};
@@ -93,7 +93,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     if options.threads != 1 {
         return Err("multiple threads require the parallel feature".into());
     }
-    bitz::observability::install().expect("install Perfetto subscriber");
+    if std::env::var_os("BITZ_FALCON_STAGE_TIMINGS").is_some() {
+        use tracing_subscriber::prelude::*;
+        tracing_subscriber::registry()
+            .with(StageTimings)
+            .try_init()?;
+    } else {
+        bitz::observability::install().expect("install Perfetto subscriber");
+    }
     #[cfg(feature = "parallel")]
     let threads = rayon::current_num_threads();
     #[cfg(not(feature = "parallel"))]
@@ -151,11 +158,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             "build_rustflags": option_env!("RUSTFLAGS"),
             "runtime_rustflags": std::env::var("RUSTFLAGS").ok(),
             "target_arch": std::env::consts::ARCH,
+            "gf128_kernel": field::gf128::KERNEL,
+            "stage_timings": std::env::var_os("BITZ_FALCON_STAGE_TIMINGS").is_some(),
             "compiled_target_features": {
                 "pclmulqdq": cfg!(target_feature = "pclmulqdq"),
                 "sse4.1": cfg!(target_feature = "sse4.1"),
                 "avx2": cfg!(target_feature = "avx2"),
                 "aes": cfg!(target_feature = "aes"),
+                "avx512f": cfg!(target_feature = "avx512f"),
+                "vpclmulqdq": cfg!(target_feature = "vpclmulqdq"),
+                "gfni": cfg!(target_feature = "gfni"),
             },
             "prepare_ms": prepare_ms,
             "source_bits_per_signature": prepared.source_bits_per_signature(),
@@ -232,6 +244,38 @@ fn main() -> Result<(), Box<dyn Error>> {
         })
     );
     Ok(())
+}
+
+/// Diagnostic wall times; kept out of the normal benchmark's subscriber so
+/// span logging cannot bias the matched latency runs. Nested spans overlap.
+struct StageTimings;
+impl<S> tracing_subscriber::Layer<S> for StageTimings
+where
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+{
+    fn on_new_span(
+        &self,
+        _: &tracing::span::Attributes<'_>,
+        id: &tracing::Id,
+        ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        if let Some(span) = ctx.span(id) {
+            if span.name().starts_with("falcon") {
+                span.extensions_mut().insert(Instant::now());
+            }
+        }
+    }
+    fn on_close(&self, id: tracing::Id, ctx: tracing_subscriber::layer::Context<'_, S>) {
+        if let Some(span) = ctx.span(&id) {
+            if let Some(start) = span.extensions().get::<Instant>() {
+                eprintln!(
+                    "{}",
+                    json!({"event": "stage", "name": span.name(),
+                    "elapsed_ms": start.elapsed().as_secs_f64() * 1000.0})
+                );
+            }
+        }
+    }
 }
 
 fn env_usize(name: &str) -> Result<Option<usize>, Box<dyn Error>> {
