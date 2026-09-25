@@ -246,6 +246,10 @@ struct Args {
     cargo: cli::CargoArgs,
     #[arg(long, default_value = "hybrid", requires_if("all", "sweep"), value_parser = ["hybrid", "separate", "all-binius", "binius-ligerito", "all"])]
     mode: String,
+    /// The hybrid's multiplication-side grand-product scheme: the forest
+    /// (the paper's) or the worldfnd/BitZ scheme (needs `--features bitz-parity`).
+    #[arg(long, default_value = "forest", value_parser = ["forest", "wfbitz"])]
+    mul_opener: String,
     #[arg(long, env = "BITZ_LIG_PROFILE")]
     profile: Option<String>,
     #[arg(long, value_parser = clap::value_parser!(u32).range(9..=22))]
@@ -342,7 +346,8 @@ pub fn run() -> Result<(), AnyError> {
         let prepared = PreparedHybrid::new_with_ligerito(
             statement.parameters,
             ligerito,
-        )?;
+        )?
+        .with_mul_opener(bitz::hybrid::MulOpener::parse(&args.mul_opener).expect("opener"));
         let proof = prepared.proof_from_bytes(&statement, &std::fs::read(path)?)?;
         prepared.verify(&statement, &proof)?;
         println!(
@@ -370,7 +375,8 @@ pub fn run() -> Result<(), AnyError> {
         let prepared = PreparedHybrid::new_with_ligerito(
             parameters,
             ligerito,
-        )?;
+        )?
+        .with_mul_opener(bitz::hybrid::MulOpener::parse(&args.mul_opener).expect("opener"));
         let request = profile
             .clone()
             .unwrap_or_else(|| "custom:1:4".into());

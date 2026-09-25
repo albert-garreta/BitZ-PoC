@@ -95,11 +95,41 @@ pub(crate) struct BinaryClaim {
     pub value: Gf128,
 }
 
+/// Which scheme reduces the multiplication side's grand product to its bit
+/// claim: the crate's merged forest (the paper's) or the worldfnd/BitZ
+/// scheme's fold and per-level GKR (feature `bitz-parity`). The joint bit
+/// sumcheck, the ring switch and the shared Ligerito opening are the same
+/// either way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MulOpener {
+    #[default]
+    Forest,
+    Wfbitz,
+}
+
+impl MulOpener {
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "forest" => Some(Self::Forest),
+            "wfbitz" => Some(Self::Wfbitz),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Forest => "forest",
+            Self::Wfbitz => "wfbitz",
+        }
+    }
+}
+
 /// Prepared circuit and verifier parameters. Preparation is independent of the
 /// witness and final SHA state; it is reusable across instances of this shape.
 pub struct PreparedHybrid {
     parameters: Parameters,
     multiplication: PreparedRelationPrefix<MulLayout<u32>>,
+    mul_opener: MulOpener,
     sha: sha::ShaRelation,
     geometry: opening::Geometry,
     /// Round-0 parameters (`step0:ood-draw` grinding), derived from the
@@ -217,6 +247,7 @@ impl PreparedHybrid {
         };
         let ood = opening::ood_parameters(&ligerito)?.map(|(_, params)| params);
         Ok(Self {
+            mul_opener: MulOpener::Forest,
             parameters,
             multiplication,
             sha,
@@ -226,6 +257,16 @@ impl PreparedHybrid {
             security,
             scratch: std::sync::Mutex::default(),
         })
+    }
+
+    /// Selects the multiplication side's grand-product scheme (default: the forest).
+    pub fn with_mul_opener(mut self, opener: MulOpener) -> Self {
+        self.mul_opener = opener;
+        self
+    }
+
+    pub fn mul_opener(&self) -> MulOpener {
+        self.mul_opener
     }
 
     pub fn parameters(&self) -> Parameters {
@@ -383,6 +424,7 @@ impl PreparedHybrid {
             &committed.multiplication,
             &committed.rows,
             &digest,
+            self.mul_opener,
         )?;
         tracing::info!("proving chained SHA constraints");
         let sha_scope = tracing::info_span!("hybrid:sha_piop").entered();
@@ -436,7 +478,13 @@ impl PreparedHybrid {
         let (mut t, digest) = self.transcript(statement)?;
         let ood =
             opening::verify_ood(&mut t, &self.geometry, self.ood, proof.opening.ood.as_ref())?;
-        let a = mul::verify(&mut t, &self.multiplication, &digest, &proof.multiplication)?;
+        let a = mul::verify(
+            &mut t,
+            &self.multiplication,
+            &digest,
+            &proof.multiplication,
+            self.mul_opener,
+        )?;
         let public = self.sha.public(statement.final_sha_state);
         let b = self.sha.verify(&mut t, &public, &proof.sha)?;
         let point = sumcheck::verify(&mut t, &self.geometry, [&a, &b], &proof.joint)?;
@@ -587,6 +635,49 @@ mod tests {
                 sha_compressions: 1 << 8
             })
             .is_err()
+        );
+    }
+
+    /// The multiplication side reduced by the worldfnd/BitZ scheme's fold and
+    /// GKR: the composition proves, round-trips through bytes and verifies,
+    /// and each opener refuses the other's proof.
+    #[cfg(feature = "bitz-parity")]
+    #[test]
+    fn wfbitz_multiplication_side_roundtrips_and_is_bound_to_its_opener() {
+        let parameters = Parameters {
+            multiplications: 1 << 9,
+            sha_compressions: 1 << 9,
+        };
+        let inputs: Vec<_> = (0..1u32 << 9)
+            .map(|i| (i.wrapping_mul(0x9e3779b9), u32::MAX - i))
+            .collect();
+        let blocks: Vec<[u32; 16]> = (0..1u32 << 9)
+            .map(|i| std::array::from_fn(|j| i.wrapping_mul(0x85ebca6b).wrapping_add(j as u32)))
+            .collect();
+        let prepared = PreparedHybrid::new(parameters)
+            .unwrap()
+            .with_mul_opener(MulOpener::Wfbitz);
+        let committed = prepared.commit(&inputs, &blocks).unwrap();
+        let proof = prepared.prove(&committed).unwrap();
+        prepared.verify(committed.statement(), &proof).unwrap();
+        let bytes = proof.to_bytes();
+        let decoded = prepared
+            .proof_from_bytes(committed.statement(), &bytes)
+            .unwrap();
+        prepared.verify(committed.statement(), &decoded).unwrap();
+        let forest = PreparedHybrid::new(parameters).unwrap();
+        assert!(forest.verify(committed.statement(), &proof).is_err());
+        let forest_proof = forest.prove(&committed).unwrap();
+        assert!(prepared.verify(committed.statement(), &forest_proof).is_err());
+        // A changed multiplication row is still caught.
+        let mut rows: Vec<_> = committed.multiplication_rows().collect();
+        rows[7].lo ^= 1;
+        let invalid = prepared.commit_mod32(&rows, &blocks).unwrap();
+        assert!(
+            prepared.prove(&invalid).is_err()
+                || prepared
+                    .verify(invalid.statement(), &prepared.prove(&invalid).unwrap())
+                    .is_err()
         );
     }
 

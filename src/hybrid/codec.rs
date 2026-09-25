@@ -19,7 +19,7 @@ use bincode::Options;
 
 use flock_core::field::Gf128;
 
-const MAGIC: &[u8; 8] = b"BZSH\x06\0\0\0";
+const MAGIC: &[u8; 8] = b"BZSH\x07\0\0\0";
 const MAX_PROOF_BYTES: usize = 64 << 20;
 
 fn count(r: &mut Reader<'_>, max: usize) -> Result<usize, CodecError> {
@@ -149,22 +149,34 @@ impl HybridProof {
             write_q(&mut w, q, &p.field);
         }
         write_rounds(&mut w, &s.inner, &p.field);
-        w.len(p.sums.len());
-        for &sum in &p.sums {
-            w.u128(sum);
-        }
-        w.len(p.forest.layers.len());
-        for layer in &p.forest.layers {
-            w.len(usize::from(layer.sc_x.is_some()));
-            if let Some(sc) = &layer.sc_x {
-                write_sc(&mut w, sc);
+        // The multiplication side's grand-product reduction, tagged by opener.
+        match &p.gkr {
+            super::mul::MulGkr::Forest(forest) => {
+                w.len(0);
+                w.len(p.sums.len());
+                for &sum in &p.sums {
+                    w.u128(sum);
+                }
+                w.len(forest.layers.len());
+                for layer in &forest.layers {
+                    w.len(usize::from(layer.sc_x.is_some()));
+                    if let Some(sc) = &layer.sc_x {
+                        write_sc(&mut w, sc);
+                    }
+                    write_sc(&mut w, &layer.sc_c);
+                    w.gf(&layer.pair.0);
+                    w.gf(&layer.pair.1);
+                    // This protocol always uses the binary forest, regardless of
+                    // environment variables controlling standalone BitZ schedules.
+                    assert!(layer.pair2.is_none());
+                }
             }
-            write_sc(&mut w, &layer.sc_c);
-            w.gf(&layer.pair.0);
-            w.gf(&layer.pair.1);
-            // This protocol always uses the binary forest, regardless of
-            // environment variables controlling standalone BitZ schedules.
-            assert!(layer.pair2.is_none());
+            #[cfg(feature = "bitz-parity")]
+            super::mul::MulGkr::Wfbitz { narg } => {
+                w.len(1);
+                w.len(narg.len());
+                w.bytes(narg);
+            }
         }
         w.len(self.sha.len());
         for &word in &self.sha {
@@ -274,26 +286,38 @@ impl PreparedHybrid {
             outer: UnivariateSkipOuterSumcheckProof { skip, tail },
             inner: read_rounds(&mut r, q, &cfg)?,
         };
-        let n = count(&mut r, self.multiplication.params().cols())?;
-        let mut sums = Vec::with_capacity(n);
-        for _ in 0..n {
-            sums.push(r.u128()?);
-        }
-        let n = count(&mut r, 64)?;
-        let mut layers = Vec::with_capacity(n);
-        for _ in 0..n {
-            let sc_x = if count(&mut r, 1)? == 1 {
-                Some(read_sc(&mut r)?)
-            } else {
-                None
-            };
-            layers.push(MergedLayer {
-                sc_x,
-                sc_c: read_sc(&mut r)?,
-                pair: (r.gf()?, r.gf()?),
-                pair2: None,
-            });
-        }
+        let (sums, gkr) = match count(&mut r, 1)? {
+            0 => {
+                let n = count(&mut r, self.multiplication.params().cols())?;
+                let mut sums = Vec::with_capacity(n);
+                for _ in 0..n {
+                    sums.push(r.u128()?);
+                }
+                let n = count(&mut r, 64)?;
+                let mut layers = Vec::with_capacity(n);
+                for _ in 0..n {
+                    let sc_x = if count(&mut r, 1)? == 1 {
+                        Some(read_sc(&mut r)?)
+                    } else {
+                        None
+                    };
+                    layers.push(MergedLayer {
+                        sc_x,
+                        sc_c: read_sc(&mut r)?,
+                        pair: (r.gf()?, r.gf()?),
+                        pair2: None,
+                    });
+                }
+                (sums, super::mul::MulGkr::Forest(MergedForestProof { layers }))
+            }
+            #[cfg(feature = "bitz-parity")]
+            1 => {
+                let n = count(&mut r, MAX_PROOF_BYTES)?;
+                let narg = r.take(n)?.to_vec();
+                (Vec::new(), super::mul::MulGkr::Wfbitz { narg })
+            }
+            _ => return Err(CodecError::NonCanonical.into()),
+        };
         let n = count(&mut r, 1 << 16)?;
         let mut sha = Vec::with_capacity(n);
         for _ in 0..n {
@@ -338,7 +362,7 @@ impl PreparedHybrid {
                 piop_nonces,
                 spartan,
                 sums,
-                forest: MergedForestProof { layers },
+                gkr,
             },
             sha,
             joint,
