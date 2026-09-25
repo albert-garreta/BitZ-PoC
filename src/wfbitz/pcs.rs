@@ -1113,8 +1113,13 @@ fn find_pow(seed: &[u8; 16], bits: u32) -> u64 {
     nonce
 }
 
-/// Their proof-of-work domain prefix.
-const POW_PREFIX: &[u8] = b"bitz-pcs-pow-v1";
+/// The proof-of-work domain prefix: their `bitz-pcs-pow-v1` padded by one
+/// zero byte, so the 32-byte `prefix ‖ seed` is whole 32-bit words and the
+/// crate's scan ([`crate::utils::blake3x4`]) takes its NEON/AVX2 lanes
+/// instead of the reference hash (their 31-byte prefix ran every query and
+/// fold grind on the scalar path: 2-3 ms per proof at any size, most of
+/// the opening below n = 24). Not byte-compatible with worldfnd's PoW.
+const POW_PREFIX: &[u8] = b"bitz-pcs-pow-v1\0";
 
 fn pow_valid(seed: &[u8; 16], nonce: u64, bits: u32) -> bool {
     if bits == 0 {
