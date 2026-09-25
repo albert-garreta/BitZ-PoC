@@ -11,7 +11,7 @@
 //! The last two drive the third contender and the weights: `wfbitz_row_vars`
 //! is a comma list of row splits at which the worldfnd/BitZ parity scheme
 //! (`bitz::wfbitz`, feature `bitz-parity`) proves the same committed rows
-//! (default: the baseline's split); `weight_bits` = 0 keeps the PR's `row +
+//! (default: the scheme's own split, `t = ceil(0.6 n) - 1`); `weight_bits` = 0 keeps the PR's `row +
 //! 1` row weights, any other value draws pseudo-random `weight_bits`-bit
 //! weights (the protocol's ~100-bit lifted residues) for every contender.
 //! `WFBITZ_LADDER=fast` runs wfbitz on flock's embedded ladder as shipped
@@ -100,7 +100,11 @@ fn main() {
                 .map(|item| item.parse::<usize>().expect("wfbitz row vars"))
                 .collect::<Vec<_>>()
         })
-        .unwrap_or_else(|| vec![baseline_row_vars]);
+        // Default: the wfbitz scheme's own split, the crate's reference
+        // `t = ceil(0.6 n)` minus one row variable (`wfbitz::Shape::reference`).
+        .unwrap_or_else(|| {
+            vec![((3 * total_vars).div_ceil(5)).saturating_sub(1).max(7).min(total_vars - 1)]
+        });
     let weight_bits = args.get(8).and_then(|value| value.parse::<usize>().ok()).unwrap_or(0);
     assert!(
         weight_bits == 0 || (weight_bits <= 99 && total_vars + weight_bits < 128),
