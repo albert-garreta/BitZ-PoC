@@ -13,7 +13,7 @@ use super::pcs::{ProveError, VerifyError};
 use super::transcript::{ProverState, VerifierState};
 use crate::cfg_into_iter;
 use crate::ligerito::{xi_combined_rows, xi_combined_rows_packed};
-use crate::ligerito_flock::FlockCommitHint;
+
 use crate::pcs::IntegerMatrixLayout;
 use field::Gf128 as Gf;
 use crate::poly::utils::build_eq_x_r_vec;
@@ -144,12 +144,12 @@ fn fold_rows_eq(rows: &[Vec<u64>], eq: &[Gf]) -> Vec<Gf> {
 /// witness.
 pub(crate) fn prove(
     claim: &LinearClaimGf,
-    hint: &FlockCommitHint,
+    rows_bits: &[Vec<u64>],
+    packed_cols: &[Vec<u64>],
     transcript: &mut ProverState,
 ) -> Result<MleClaim, ProveError> {
     let w1 = claim.row_weights();
     let w2 = claim.column_weights();
-    let rows_bits = hint.rows();
     if rows_bits.len() != w2.len() || rows_bits.iter().any(|row| row.len() * 64 != w1.len()) {
         return Err(ProveError::PackedWitnessLengthMismatch);
     }
@@ -163,10 +163,10 @@ pub(crate) fn prove(
 
     // Rows: the column-combined table against the row weights.
     let started = std::time::Instant::now();
-    let mut combined = if hint.packed_cols().is_empty() {
+    let mut combined = if packed_cols.is_empty() {
         xi_combined_rows(&layout, rows_bits, w2)
     } else {
-        xi_combined_rows_packed(&layout, hint.packed_cols(), w2)
+        xi_combined_rows_packed(&layout, packed_cols, w2)
     };
     super::trace("    sc combine cols", started);
     let started = std::time::Instant::now();

@@ -40,6 +40,7 @@ pub mod pcs;
 pub mod reduce;
 pub mod sumcheck;
 pub mod transcript;
+pub mod virt;
 
 use crate::ligerito_flock::FlockCommitHint;
 use field::Gf128 as Gf;
@@ -47,6 +48,7 @@ use field::Gf128 as Gf;
 pub use params::{BitZParams, LinearClaim, ParamsError, Root, Shape, ShapeError};
 pub use pcs::{OpeningQuery, Pcs, StatementBinding};
 pub use transcript::{Proof, ProverState, VerifierState, build_prover, build_verifier};
+pub use virt::{VirtualError, VirtualStatement};
 
 /// Their comb: a fixed-base exponentiation table over the generator
 /// (`field::FixedBasePow` with public, variable-time exponents — every
@@ -93,6 +95,8 @@ pub enum ProveError {
     Reduction(params::ClaimError),
     /// The opening failed, so the reduction's claim was never discharged.
     Opening(pcs::ProveError),
+    /// The virtual statement, map or parameters do not fit.
+    Virtual(virt::VirtualError),
 }
 
 /// A proof the verifier rejects.
@@ -106,6 +110,8 @@ pub enum VerifyError {
     Opening(pcs::VerifyError),
     /// A stream held bytes the protocol never read.
     TrailingData,
+    /// The virtual statement, map or parameters do not fit.
+    Virtual(virt::VirtualError),
 }
 
 impl BitZProver {

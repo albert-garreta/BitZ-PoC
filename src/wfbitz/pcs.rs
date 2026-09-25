@@ -233,6 +233,34 @@ impl Pcs {
         transcript: &mut ProverState,
         ood: Option<(&[Gf], Gf)>,
     ) -> Result<(), ProveError> {
+        self.prove_lin_rows(
+            hint,
+            hint.rows(),
+            hint.packed_cols(),
+            query,
+            statement_binding,
+            transcript,
+            ood,
+        )
+    }
+
+    /// [`Pcs::prove_lin`] with the committed bits presented in the claim's
+    /// shape: `rows` (per-column bit rows, 64 bits per word) and, when the
+    /// claim has more than a few columns, their 64-lane packing (empty
+    /// otherwise). The direct scheme passes the hint's own rows; a virtual
+    /// opening passes the committed bits as the one row of a single-column
+    /// claim. The bits are the hint's either way, only regrouped.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn prove_lin_rows(
+        &self,
+        hint: &FlockCommitHint,
+        rows: &[Vec<u64>],
+        packed_cols: &[Vec<u64>],
+        query: &OpeningQuery,
+        statement_binding: StatementBinding,
+        transcript: &mut ProverState,
+        ood: Option<(&[Gf], Gf)>,
+    ) -> Result<(), ProveError> {
         if hint.packed_message().len() != self.packed_len {
             return Err(ProveError::PackedWitnessLengthMismatch);
         }
@@ -253,7 +281,7 @@ impl Pcs {
                 }
                 transcript.public_message(SUMCHECK_LABEL);
                 let started = std::time::Instant::now();
-                let reduced = sumcheck::prove(claim, hint, transcript)?;
+                let reduced = sumcheck::prove(claim, rows, packed_cols, transcript)?;
                 super::trace("  sumcheck", started);
                 let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
                 bind_mle_statement(self, &root, &reduced.point, reduced.target, transcript);

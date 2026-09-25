@@ -57,10 +57,22 @@ pub(crate) fn gkr_reduce_prove(
     shape: &Shape,
     hint: &FlockCommitHint,
 ) -> Result<OpeningQuery, ClaimError> {
+    gkr_reduce_prove_packed(transcript, fold, shape, hint.packed_cols())
+}
+
+/// [`gkr_reduce_prove`] over any grid's 64-lane packed columns
+/// (`packed_cols[g][b]` = bit `b` of columns `64g..64g+63`): the committed
+/// rows' packing, or a derived grid's for a virtual opening.
+pub(crate) fn gkr_reduce_prove_packed(
+    transcript: &mut ProverState,
+    fold: &Fold,
+    shape: &Shape,
+    packed_cols: &[Vec<u64>],
+) -> Result<OpeningQuery, ClaimError> {
     let forest = Forest::new(
         shape.log_rows(),
         shape.log_columns(),
-        hint.packed_cols(),
+        packed_cols,
         &fold.row_images,
     );
     let (point, claim) = forest.prove(transcript, &fold.zeta);
