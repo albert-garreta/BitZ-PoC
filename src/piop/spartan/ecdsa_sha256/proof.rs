@@ -126,6 +126,16 @@ pub fn commit_sha256_ecdsa(
     if witness.statement.log_compressions as usize != prepared.log_n {
         return Err(error("witness layout mismatch"));
     }
+    #[cfg(feature = "bitz-parity")]
+    if let Some(chained) = &prepared.wfbitz {
+        // The structured wfbitz opening commits the sources in its block layout.
+        let rows = chained.geometry.committed_rows(&prepared.f_layout, &witness.f_rows);
+        return Ok(commit_rs_ligerito_shared_rows(
+            &chained.layout,
+            std::sync::Arc::new(rows),
+            chained.ligerito.prover(),
+        ));
+    }
     Ok(commit_rs_ligerito_shared_rows(
         &prepared.f_layout,
         witness.f_rows.clone(),
@@ -246,8 +256,19 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
     hint: &FlockCommitHint,
     prefix_vars: usize,
 ) -> Result<Sha256EcdsaProof> {
-    let pc = prepared.ligerito.prover();
-    if &witness.statement != statement || !hint.matches_rows(&witness.f_rows) {
+    #[cfg(feature = "bitz-parity")]
+    let (pc, hint_matches) = match &prepared.wfbitz {
+        Some(chained) => (
+            chained.ligerito.prover(),
+            hint.matches_rows(&std::sync::Arc::new(
+                chained.geometry.committed_rows(&prepared.f_layout, &witness.f_rows),
+            )),
+        ),
+        None => (prepared.ligerito.prover(), hint.matches_rows(&witness.f_rows)),
+    };
+    #[cfg(not(feature = "bitz-parity"))]
+    let (pc, hint_matches) = (prepared.ligerito.prover(), hint.matches_rows(&witness.f_rows));
+    if &witness.statement != statement || !hint_matches {
         return Err(error("statement or commitment witness mismatch"));
     }
     if prefix_vars > 4 {
@@ -345,14 +366,6 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         &inner.final_claim,
         &cfg,
     );
-    let rows: Vec<_> = eq_table(&inner.point[..prepared.h_layout.row_vars], &cfg)
-        .map_err(error)?
-        .into_iter()
-        .map(|mut x| {
-            x = cfg.mul(&(x), &(&inner.terminal_evaluations[0]));
-            u128::from(cfg.to_integer(&x))
-        })
-        .collect();
     if prepared.opener == super::Sha256EcdsaOpener::Wfbitz {
         #[cfg(not(feature = "bitz-parity"))]
         {
@@ -360,19 +373,15 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         }
         #[cfg(feature = "bitz-parity")]
         {
-            let cols: Vec<u128> = eq_table(&inner.point[prepared.h_layout.row_vars..], &cfg)
-                .map_err(error)?
-                .iter()
-                .map(|x| u128::from(cfg.to_integer(x)))
-                .collect();
             let target = u128::from(cfg.to_integer(&inner.final_claim));
             let opening = super::wfbitz::prove_opening(
                 t,
                 prepared,
                 hint,
                 &witness.h_rows,
-                rows,
-                cols,
+                &inner.point,
+                &inner.terminal_evaluations[0],
+                &cfg,
                 target,
                 modulus,
                 ood,
@@ -390,6 +399,14 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
             });
         }
     }
+    let rows: Vec<_> = eq_table(&inner.point[..prepared.h_layout.row_vars], &cfg)
+        .map_err(error)?
+        .into_iter()
+        .map(|mut x| {
+            x = cfg.mul(&(x), &(&inner.terminal_evaluations[0]));
+            u128::from(cfg.to_integer(&x))
+        })
+        .collect();
     let mut flock_nonces = Vec::new();
     let chunks = ModQWeightChunks::from_single_chunk(&prepared.h_layout, 113, rows)
         .map_err(|_| error("invalid row weights"))?;
@@ -436,13 +453,19 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     commitment: &Commitment,
     proof: &Sha256EcdsaProof,
 ) -> Result<()> {
-    let vc = prepared.ligerito.verifier();
+    #[cfg(feature = "bitz-parity")]
+    let (vc, committed_layout) = match &prepared.wfbitz {
+        Some(chained) => (chained.ligerito.verifier(), &chained.layout),
+        None => (prepared.ligerito.verifier(), &prepared.f_layout),
+    };
+    #[cfg(not(feature = "bitz-parity"))]
+    let (vc, committed_layout) = (prepared.ligerito.verifier(), &prepared.f_layout);
     validate_ligerito_commitment(commitment, vc).map_err(|e| error(format!("{e:?}")))?;
     let security = prepared.security()?;
     bind_statement(transcript, prepared, statement, commitment, &security)?;
     let ood = crate::ligerito_flock::bind_verifier_ood(
         transcript,
-        packed_vars(&prepared.f_layout),
+        packed_vars(committed_layout),
         security.ood,
         proof.opening.ood(),
     )
@@ -540,7 +563,16 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         (Sha256EcdsaOpening::Wfbitz(opening), super::Sha256EcdsaOpener::Wfbitz) => {
             let target = u128::from(cfg.to_integer(&inner_final_claim));
             return super::wfbitz::verify_opening(
-                transcript, prepared, commitment, opening, rows, cols, target, modulus, ood,
+                transcript,
+                prepared,
+                commitment,
+                opening,
+                &inner_eval_point,
+                &scale,
+                &cfg,
+                target,
+                modulus,
+                ood,
             );
         }
         _ => return Err(error("the proof's opening is not the prepared opener's")),

@@ -290,6 +290,73 @@ impl LinearClaimGf {
     }
 }
 
+/// A sum of factored claims over one grid, `Σ_k ⟨rows_k ⊗ cols_k, f⟩ =
+/// target`: a virtual opening's transposed weights when the map has enough
+/// structure for them to be a short sum of tensors. `binding` stands in for
+/// the expanded weights when the statement is bound: a digest of what both
+/// roles derive the terms from (the GKR's exit claim and the map's frame).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SumClaimGf {
+    terms: Vec<(Vec<Gf>, Vec<Gf>)>,
+    target: Gf,
+    binding: Vec<u8>,
+}
+
+impl SumClaimGf {
+    pub fn from_shape(
+        shape: &Shape,
+        terms: Vec<(Vec<Gf>, Vec<Gf>)>,
+        target: Gf,
+        binding: Vec<u8>,
+    ) -> Result<Self, ClaimError> {
+        if terms.is_empty() {
+            return Err(ClaimError::RowWeightCountMismatch);
+        }
+        for (row_weights, column_weights) in &terms {
+            if row_weights.len() != shape.rows() {
+                return Err(ClaimError::RowWeightCountMismatch);
+            }
+            if column_weights.len() != shape.columns() {
+                return Err(ClaimError::ColumnWeightCountMismatch);
+            }
+        }
+        Ok(Self {
+            terms,
+            target,
+            binding,
+        })
+    }
+
+    pub fn terms(&self) -> &[(Vec<Gf>, Vec<Gf>)] {
+        &self.terms
+    }
+
+    pub fn target(&self) -> Gf {
+        self.target
+    }
+
+    pub fn rows(&self) -> usize {
+        self.terms[0].0.len()
+    }
+
+    pub fn columns(&self) -> usize {
+        self.terms[0].1.len()
+    }
+}
+
+impl Encoding<[u8]> for SumClaimGf {
+    fn encode(&self) -> impl AsRef<[u8]> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(self.terms.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&(self.rows() as u64).to_le_bytes());
+        bytes.extend_from_slice(&(self.columns() as u64).to_le_bytes());
+        bytes.extend_from_slice(&gf_to_bytes(self.target));
+        bytes.extend_from_slice(&(self.binding.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&self.binding);
+        bytes
+    }
+}
+
 impl Encoding<[u8]> for LinearClaimGf {
     fn encode(&self) -> impl AsRef<[u8]> {
         let mut bytes = Vec::new();

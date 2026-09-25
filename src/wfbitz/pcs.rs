@@ -21,7 +21,7 @@ use flock_core::pcs::ring_switch::{
 use flock_core::zerocheck::univariate_skip::build_eq;
 use spongefish::Encoding;
 
-use super::params::{LinearClaimGf, Root, Shape};
+use super::params::{LinearClaimGf, SumClaimGf, Root, Shape};
 use super::sumcheck;
 use super::transcript::{ProverState, PublicTranscript, VerifierState};
 use crate::ligerito_flock::{
@@ -42,6 +42,7 @@ fn gf_to_f128(g: Gf) -> FlockF128 {
 
 const MLE_STATEMENT_LABEL: &[u8] = b"bitz/pcs/mle-opening/v1";
 const INNER_PRODUCT_STATEMENT_LABEL: &[u8] = b"bitz/pcs/bit-inner-product/v2";
+const INNER_PRODUCT_SUM_STATEMENT_LABEL: &[u8] = b"bitz/pcs/bit-inner-product-sum/v1";
 const SUMCHECK_LABEL: &[u8] = b"bitz/pcs/inner-product-sumcheck/v1";
 const MLE_CLAIMS_LABEL: &[u8] = b"bitz/pcs/mle-claims/v1";
 const CHALLENGES_LABEL: &[u8] = b"bitz/pcs/ring-switch-challenges/v1";
@@ -104,6 +105,9 @@ pub enum StatementBinding {
 pub enum OpeningQuery {
     Mle { point: Vec<Gf>, target: Gf },
     InnerProduct { claim: LinearClaimGf },
+    /// A short sum of factored claims (a structured virtual opening's
+    /// transposed weights), reduced by [`sumcheck::prove_sum`].
+    InnerProductSum { claim: SumClaimGf },
 }
 
 /// Their `Pcs`: flock parameters for one bit length, with the checked
@@ -334,6 +338,19 @@ impl Pcs {
                 bind_mle_statement(self, &root, &reduced.point, reduced.target, transcript);
                 self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood)
             }
+            OpeningQuery::InnerProductSum { claim } => {
+                validate_sum_claim(self, claim)?;
+                if statement_binding == StatementBinding::Bind {
+                    bind_sum_statement(self, &root, claim, transcript);
+                }
+                transcript.public_message(SUMCHECK_LABEL);
+                let started = std::time::Instant::now();
+                let reduced = sumcheck::prove_sum(claim, rows, packed_cols, transcript)?;
+                super::trace("  sumcheck (sum)", started);
+                let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
+                bind_mle_statement(self, &root, &reduced.point, reduced.target, transcript);
+                self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood)
+            }
         }
     }
 
@@ -361,6 +378,17 @@ impl Pcs {
                 }
                 transcript.public_message(SUMCHECK_LABEL);
                 let reduced = sumcheck::verify(claim, transcript)?;
+                let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
+                bind_mle_statement(self, &commitment.0, &reduced.point, reduced.target, transcript);
+                self.verify_mle(commitment, &ring_switch, reduced.target, transcript, ood)
+            }
+            OpeningQuery::InnerProductSum { claim } => {
+                validate_sum_claim(self, claim)?;
+                if statement_binding == StatementBinding::Bind {
+                    bind_sum_statement(self, &commitment.0, claim, transcript);
+                }
+                transcript.public_message(SUMCHECK_LABEL);
+                let reduced = sumcheck::verify_sum(claim, transcript)?;
                 let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
                 bind_mle_statement(self, &commitment.0, &reduced.point, reduced.target, transcript);
                 self.verify_mle(commitment, &ring_switch, reduced.target, transcript, ood)
@@ -746,6 +774,13 @@ fn validate_inner_product_claim(pcs: &Pcs, claim: &LinearClaimGf) -> Result<(), 
     Ok(())
 }
 
+fn validate_sum_claim(pcs: &Pcs, claim: &SumClaimGf) -> Result<(), QueryError> {
+    if claim.rows().checked_mul(claim.columns()) != Some(pcs.bit_len) {
+        return Err(QueryError::WeightLengthMismatch);
+    }
+    Ok(())
+}
+
 /// Query validation shared by prover and verifier entry points.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum QueryError {
@@ -802,6 +837,18 @@ fn bind_inner_product_statement(
     transcript: &mut impl PublicTranscript,
 ) {
     transcript.public_message(INNER_PRODUCT_STATEMENT_LABEL);
+    transcript.public_message(root);
+    transcript.public_message(pcs);
+    transcript.public_message(claim);
+}
+
+fn bind_sum_statement(
+    pcs: &Pcs,
+    root: &[u8; 32],
+    claim: &SumClaimGf,
+    transcript: &mut impl PublicTranscript,
+) {
+    transcript.public_message(INNER_PRODUCT_SUM_STATEMENT_LABEL);
     transcript.public_message(root);
     transcript.public_message(pcs);
     transcript.public_message(claim);

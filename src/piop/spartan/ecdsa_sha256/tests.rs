@@ -579,6 +579,10 @@ fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
             .with_ligerito(crate::ligerito_flock::LigeritoSelection::JOHNSON)
             .unwrap()
             .with_opener(Sha256EcdsaOpener::Wfbitz);
+        assert!(
+            prepared.wfbitz.is_some(),
+            "the chained map should get the structured wfbitz opening"
+        );
         let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
         let hint = commit_sha256_ecdsa(&prepared, &witness).unwrap();
         let mut prover_transcript = Blake3Transcript::new();
@@ -618,12 +622,15 @@ fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
             )
             .is_err()
         );
+        // The openers commit the sources in different layouts, so the forest
+        // proof comes with the forest's own commitment.
+        let forest_hint = commit_sha256_ecdsa(&forest, &witness).unwrap();
         let forest_proof = prove_sha256_ecdsa(
             &mut Blake3Transcript::new(),
             &forest,
             &statement,
             &witness,
-            &hint,
+            &forest_hint,
             4,
         )
         .unwrap();
@@ -632,7 +639,7 @@ fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
                 &mut Blake3Transcript::new(),
                 &prepared,
                 &statement,
-                &hint.commitment,
+                &forest_hint.commitment,
                 &forest_proof
             )
             .is_err()

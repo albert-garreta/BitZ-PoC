@@ -8,7 +8,7 @@
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use super::params::LinearClaimGf;
+use super::params::{LinearClaimGf, SumClaimGf};
 use super::pcs::{ProveError, VerifyError};
 use super::transcript::{ProverState, VerifierState};
 use crate::cfg_into_iter;
@@ -254,6 +254,152 @@ pub(crate) fn verify(
     })
 }
 
+/// [`prove`] for a sum of factored claims: the row rounds run one
+/// column-combined table per term against that term's row weights and send
+/// the summed round polynomials; once the rows are bound every term is the
+/// scalar `w1_k(r_b)`, so the column rounds run the one row-folded table
+/// against `Σ_k w1_k(r_b)·cols_k`, exactly the single-term column rounds.
+pub(crate) fn prove_sum(
+    claim: &SumClaimGf,
+    rows_bits: &[Vec<u64>],
+    packed_cols: &[Vec<u64>],
+    transcript: &mut ProverState,
+) -> Result<MleClaim, ProveError> {
+    let terms = claim.terms();
+    let (n_rows, n_cols) = (claim.rows(), claim.columns());
+    if rows_bits.len() != n_cols || rows_bits.iter().any(|row| row.len() * 64 != n_rows) {
+        return Err(ProveError::PackedWitnessLengthMismatch);
+    }
+    let layout = IntegerMatrixLayout {
+        row_vars: n_rows.ilog2() as usize,
+        col_vars: n_cols.ilog2() as usize,
+        word_bits: 1,
+    };
+    let mut target = claim.target();
+    let mut point = Vec::with_capacity(layout.row_vars + layout.col_vars);
+
+    let started = std::time::Instant::now();
+    let mut combined: Vec<Vec<Gf>> = terms
+        .iter()
+        .map(|(_, w2)| {
+            if packed_cols.is_empty() {
+                xi_combined_rows(&layout, rows_bits, w2)
+            } else {
+                xi_combined_rows_packed(&layout, packed_cols, w2)
+            }
+        })
+        .collect();
+    super::trace("    sc combine cols (sum)", started);
+    let started = std::time::Instant::now();
+    let mut rows: Vec<Vec<Gf>> = terms.iter().map(|(w1, _)| w1.clone()).collect();
+    while combined[0].len() > 1 {
+        let mut coefficients = [Gf::zero(); 3];
+        for (table, weights) in combined.iter().zip(&rows) {
+            let part = round_polynomial(table, weights);
+            for (sum, value) in coefficients.iter_mut().zip(part) {
+                *sum += value;
+            }
+        }
+        if coefficients[1] + coefficients[2] != target {
+            return Err(ProveError::InvalidClaim);
+        }
+        transcript.prover_message(&coefficients);
+        let challenge = transcript.verifier_message::<Gf>();
+        target = evaluate_round(coefficients, challenge);
+        point.push(challenge);
+        for table in &mut combined {
+            fold(table, challenge);
+        }
+        for weights in &mut rows {
+            fold(weights, challenge);
+        }
+    }
+    super::trace("    sc row rounds (sum)", started);
+
+    let started = std::time::Instant::now();
+    let mut folded = fold_rows_point(rows_bits, &point);
+    super::trace("    sc fold rows", started);
+    let mut columns = merged_columns(terms, &rows);
+    while folded.len() > 1 {
+        let coefficients = round_polynomial(&folded, &columns);
+        if coefficients[1] + coefficients[2] != target {
+            return Err(ProveError::InvalidClaim);
+        }
+        transcript.prover_message(&coefficients);
+        let challenge = transcript.verifier_message::<Gf>();
+        target = evaluate_round(coefficients, challenge);
+        point.push(challenge);
+        fold(&mut folded, challenge);
+        fold(&mut columns, challenge);
+    }
+    let evaluation = folded[0];
+    if target != evaluation * columns[0] {
+        return Err(ProveError::InvalidClaim);
+    }
+    transcript.prover_message(&evaluation);
+    Ok(MleClaim {
+        point,
+        target: evaluation,
+    })
+}
+
+/// `Σ_k w1_k(r_b)·cols_k`: the column weights once every term's row weights
+/// are folded to the scalar `w1_k(r_b)`.
+fn merged_columns(terms: &[(Vec<Gf>, Vec<Gf>)], bound_rows: &[Vec<Gf>]) -> Vec<Gf> {
+    let mut columns = vec![Gf::zero(); terms[0].1.len()];
+    for ((_, w2), bound) in terms.iter().zip(bound_rows) {
+        let scalar = bound[0];
+        for (sum, &weight) in columns.iter_mut().zip(w2) {
+            *sum += scalar * weight;
+        }
+    }
+    columns
+}
+
+pub(crate) fn verify_sum(
+    claim: &SumClaimGf,
+    transcript: &mut VerifierState<'_>,
+) -> Result<MleClaim, VerifyError> {
+    let terms = claim.terms();
+    let row_rounds = claim.rows().ilog2() as usize;
+    let col_rounds = claim.columns().ilog2() as usize;
+    let mut rows: Vec<Vec<Gf>> = terms.iter().map(|(w1, _)| w1.clone()).collect();
+    let mut columns = if row_rounds == 0 { merged_columns(terms, &rows) } else { Vec::new() };
+    let mut point = Vec::with_capacity(row_rounds + col_rounds);
+    let mut target = claim.target();
+    for round in 0..row_rounds + col_rounds {
+        let coefficients = transcript
+            .prover_message::<[Gf; 3]>()
+            .map_err(|_| VerifyError::MalformedProof)?;
+        if coefficients[1] + coefficients[2] != target {
+            return Err(VerifyError::VerificationFailed);
+        }
+        let challenge = transcript.verifier_message::<Gf>();
+        target = evaluate_round(coefficients, challenge);
+        point.push(challenge);
+        if round < row_rounds {
+            for weights in &mut rows {
+                fold(weights, challenge);
+            }
+            if round + 1 == row_rounds {
+                columns = merged_columns(terms, &rows);
+            }
+        } else {
+            fold(&mut columns, challenge);
+        }
+    }
+    let evaluation = transcript
+        .prover_message::<Gf>()
+        .map_err(|_| VerifyError::MalformedProof)?;
+    if target != evaluation * columns[0] {
+        return Err(VerifyError::VerificationFailed);
+    }
+    Ok(MleClaim {
+        point,
+        target: evaluation,
+    })
+}
+
 /// The coefficients `[a0, a1, a2]` of the round polynomial over pairs
 /// `(2k, 2k+1)` of `witness` against the per-element `weights`, computed
 /// their way (`a1 = Σ(w0·M0 + w1·M1) + a0 + a2` in characteristic two).
@@ -314,4 +460,112 @@ fn fold(values: &mut Vec<Gf>, challenge: Gf) {
         })
         .collect();
     *values = folded;
+}
+
+#[cfg(test)]
+mod sum_tests {
+    use super::*;
+    use crate::wfbitz::params::{LinearClaimGf, Shape, SumClaimGf};
+    use crate::wfbitz::{build_prover, build_verifier};
+
+    fn xorshift(state: &mut u64) -> u64 {
+        *state ^= *state << 13;
+        *state ^= *state >> 7;
+        *state ^= *state << 17;
+        *state
+    }
+
+    fn random_gf(state: &mut u64) -> Gf {
+        Gf::new(xorshift(state), xorshift(state))
+    }
+
+    /// `Σ_k Σ_{b,c} rows_k[b]·cols_k[c]·bit(b, c)` over the bits.
+    fn dense_target(rows_bits: &[Vec<u64>], terms: &[(Vec<Gf>, Vec<Gf>)]) -> Gf {
+        let mut total = Gf::zero();
+        for (c, column) in rows_bits.iter().enumerate() {
+            for (word_index, &word) in column.iter().enumerate() {
+                let mut bits = word;
+                while bits != 0 {
+                    let b = word_index * 64 + bits.trailing_zeros() as usize;
+                    bits &= bits - 1;
+                    for (rows, cols) in terms {
+                        total += rows[b] * cols[c];
+                    }
+                }
+            }
+        }
+        total
+    }
+
+    fn grid(state: &mut u64, shape: &Shape) -> Vec<Vec<u64>> {
+        (0..shape.columns())
+            .map(|_| (0..shape.rows() / 64).map(|_| xorshift(state)).collect())
+            .collect()
+    }
+
+    fn terms(state: &mut u64, shape: &Shape, count: usize) -> Vec<(Vec<Gf>, Vec<Gf>)> {
+        (0..count)
+            .map(|_| {
+                (
+                    (0..shape.rows()).map(|_| random_gf(state)).collect(),
+                    (0..shape.columns()).map(|_| random_gf(state)).collect(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_sum_of_tensors_reduces_to_the_witness_evaluation() {
+        let shape = Shape::new(8, 5).unwrap();
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let rows_bits = grid(&mut state, &shape);
+        let terms = terms(&mut state, &shape, 3);
+        let target = dense_target(&rows_bits, &terms);
+        let claim = SumClaimGf::from_shape(&shape, terms, target, b"sum-test".to_vec()).unwrap();
+        let mut prover = build_prover(b"sum-test/v1", b"instance");
+        let reduced = prove_sum(&claim, &rows_bits, &[], &mut prover).unwrap();
+        let proof = prover.finish();
+        let mut verifier = build_verifier(b"sum-test/v1", b"instance", &proof);
+        let checked = verify_sum(&claim, &mut verifier).unwrap();
+        assert_eq!(reduced.point, checked.point);
+        assert_eq!(reduced.target, checked.target);
+        // The reduced value is the witness MLE at the point: the dense sum of
+        // eq weights over the set bits.
+        let eq = crate::poly::utils::build_eq_x_r_vec(&reduced.point, &()).unwrap();
+        let mut evaluation = Gf::zero();
+        for (c, column) in rows_bits.iter().enumerate() {
+            for (word_index, &word) in column.iter().enumerate() {
+                let mut bits = word;
+                while bits != 0 {
+                    let b = word_index * 64 + bits.trailing_zeros() as usize;
+                    bits &= bits - 1;
+                    evaluation += eq[c * shape.rows() + b];
+                }
+            }
+        }
+        assert_eq!(reduced.target, evaluation);
+        // A wrong target is caught by the prover's own consistency check.
+        let wrong = SumClaimGf::from_shape(&shape, claim.terms().to_vec(), target + Gf::one(), Vec::new()).unwrap();
+        let mut prover = build_prover(b"sum-test/v1", b"instance");
+        assert!(prove_sum(&wrong, &rows_bits, &[], &mut prover).is_err());
+    }
+
+    #[test]
+    fn one_term_matches_the_single_claim_messages() {
+        let shape = Shape::new(7, 6).unwrap();
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let rows_bits = grid(&mut state, &shape);
+        let mut terms = terms(&mut state, &shape, 1);
+        let (rows, cols) = terms.pop().unwrap();
+        let target = dense_target(&rows_bits, &[(rows.clone(), cols.clone())]);
+        let single = LinearClaimGf::from_shape(&shape, rows.clone(), cols.clone(), target).unwrap();
+        let sum = SumClaimGf::from_shape(&shape, vec![(rows, cols)], target, Vec::new()).unwrap();
+        let mut a = build_prover(b"sum-test/v1", b"one");
+        let reduced_single = prove(&single, &rows_bits, &[], &mut a).unwrap();
+        let mut b = build_prover(b"sum-test/v1", b"one");
+        let reduced_sum = prove_sum(&sum, &rows_bits, &[], &mut b).unwrap();
+        assert_eq!(a.finish().narg_string, b.finish().narg_string);
+        assert_eq!(reduced_single.point, reduced_sum.point);
+        assert_eq!(reduced_single.target, reduced_sum.target);
+    }
 }
