@@ -506,7 +506,8 @@ fn bitz(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
                 proof_material_bytes: wire.len(),
                 outer_ms: phase("ecdsa:outer_prove"),
                 inner_ms: phase("ecdsa:shared_inner_prove"),
-                opening_ms: phase("ecdsa:bitz_prove"),
+                // The terminal opening: the forest's span or the wfbitz opener's.
+                opening_ms: phase("ecdsa:bitz_prove").or_else(|| phase("ecdsa:wfbitz_prove")),
                 folding_ms: None,
                 details: BitzDetails {
                     proof_digest,

@@ -42,6 +42,8 @@ from pathlib import Path
 ROWS = [
     (("hybrid", 1), r"\ftwoz-SNARK, rate $1/2$"),
     (("hybrid", 3), r"\ftwoz-SNARK, rate $1/8$"),
+    (("hybrid-wfbitz", 1), r"\ftwoz-SNARK (wfbitz opener), rate $1/2$"),
+    (("hybrid-wfbitz", 3), r"\ftwoz-SNARK (wfbitz opener), rate $1/8$"),
     (("all-binius", 1), r"Binius (UDR), rate $1/2$"),
     (("all-binius", 3), r"Binius (UDR), rate $1/8$"),
     (("binius-ligerito", 1), r"Binius (Johnson), rate $1/2$"),
@@ -105,8 +107,16 @@ def knob(meta: dict[str, str], name: str) -> str | None:
 
 def validate(base: Path, mode: str, rate: int, threads: int, meta: dict[str, str]) -> None:
     """The recorded knobs must match the row key; unrecorded runs are rejected."""
-    if mode not in meta.get("modes", ""):
-        raise RunError(f"{base}: run.txt modes {meta.get('modes')!r} do not include {mode!r}")
+    # `hybrid-wfbitz` is the hybrid mode with the multiplication side's grand
+    # product on the worldfnd/BitZ scheme (`--mul-opener wfbitz`); the sweep
+    # records the opener as `mul_opener=` (absent = the forest, pre-knob runs).
+    sweep_mode = "hybrid" if mode == "hybrid-wfbitz" else mode
+    if sweep_mode not in meta.get("modes", ""):
+        raise RunError(f"{base}: run.txt modes {meta.get('modes')!r} do not include {sweep_mode!r}")
+    recorded_opener = meta.get("mul_opener", "forest")
+    expected_opener = "wfbitz" if mode == "hybrid-wfbitz" else "forest"
+    if sweep_mode == "hybrid" and recorded_opener != expected_opener:
+        raise RunError(f"{base}: run.txt mul_opener={recorded_opener!r} but the row declares {expected_opener!r}")
     recorded_threads = meta.get("RAYON_NUM_THREADS", "default")
     if recorded_threads != str(threads):
         raise RunError(
@@ -152,7 +162,7 @@ def validate_identity(row: dict, base: Path, mode: str, rate: int) -> None:
     if not encoded:
         raise RunError(f"{base}: {mode} row is missing its Ligerito identity")
     report = decode_hex_json(encoded)
-    if mode == "hybrid":
+    if mode in ("hybrid", "hybrid-wfbitz"):
         resolved = report.get("resolved_profile", "")
         if resolved != f"custom:{rate}:4":
             raise RunError(f"{base}: resolved opener profile {resolved!r} does not match rate {rate}")
@@ -171,9 +181,10 @@ def medians(base: Path, mode: str, rate: int) -> dict:
     if not summary.exists():
         raise RunError(f"{base}: missing summary.csv")
     by_shape: dict[tuple[int, int], list[dict]] = {}
+    sweep_mode = "hybrid" if mode == "hybrid-wfbitz" else mode
     with open(summary) as f:
         for row in csv.DictReader(f):
-            if row["mode"] != mode:
+            if row["mode"] != sweep_mode:
                 continue
             validate_identity(row, base, mode, rate)
             by_shape.setdefault((int(row["mul_log"]), int(row["sha_log"])), []).append(row)

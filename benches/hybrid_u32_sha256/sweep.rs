@@ -190,6 +190,7 @@ fn formatted_rows(
 pub fn run(
     shapes: Vec<Shape>,
     mode: &str,
+    mul_opener: &str,
     iterations: usize,
     results_dir: Option<PathBuf>,
     profile: Option<&str>,
@@ -225,7 +226,7 @@ pub fn run(
     output.write_text(
         "run.txt",
         &format!(
-            "executable={}\nprotocol=hybrid-u32-mod32-sha256-v5\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nshapes={shapes:?}\nmodes={modes:?}\niterations={iterations}\nRAYON_NUM_THREADS={}\nnon_zk=true\nsecurity_target_bits=100\nprofile={}\nBITZ_HYBRID_BINIUS_LOG_INV_RATE={}\nBITZ_HYBRID_BINIUS_SECURITY_BITS={}\nBITZ_BINIUS_LOG_INV_RATE={}\nBITZ_BINIUS_LIGERITO_ACCOUNTING={}\n",
+            "executable={}\nprotocol=hybrid-u32-mod32-sha256-v5\nmultiplication_relation=xy=z+2^32*w (x,y,z,w are u32)\nshapes={shapes:?}\nmodes={modes:?}\nmul_opener={mul_opener}\niterations={iterations}\nRAYON_NUM_THREADS={}\nnon_zk=true\nsecurity_target_bits=100\nprofile={}\nBITZ_HYBRID_BINIUS_LOG_INV_RATE={}\nBITZ_HYBRID_BINIUS_SECURITY_BITS={}\nBITZ_BINIUS_LOG_INV_RATE={}\nBITZ_BINIUS_LIGERITO_ACCOUNTING={}\n",
             executable.display(),
             std::env::var("RAYON_NUM_THREADS").unwrap_or_else(|_| "default".into()),
             profile
@@ -272,6 +273,8 @@ pub fn run(
                 .args([
                     "--mode",
                     mode,
+                    "--mul-opener",
+                    mul_opener,
                     "--mul-log",
                     &shape.mul_log.to_string(),
                     "--sha-log",

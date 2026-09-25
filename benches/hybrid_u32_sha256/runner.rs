@@ -302,12 +302,12 @@ fn binius_ligerito_accounting() -> Accounting {
 }
 
 pub fn run() -> Result<(), AnyError> {
-    let Args { mode, profile, mul_log, sha_log, iterations, sweep, shapes, results_dir, output, verify: verify_file, .. } = <Args as clap::Parser>::parse();
+    let Args { mode, mul_opener, profile, mul_log, sha_log, iterations, sweep, shapes, results_dir, output, verify: verify_file, .. } = <Args as clap::Parser>::parse();
     if (output.is_some() || verify_file.is_some()) && mode != "hybrid" {
         return Err("--output and --verify require --mode hybrid".into());
     }
     if sweep {
-        return sweep::run(shapes.unwrap_or_else(sweep::equal_witness_shapes), &mode, iterations, results_dir, profile.as_deref());
+        return sweep::run(shapes.unwrap_or_else(sweep::equal_witness_shapes), &mode, &mul_opener, iterations, results_dir, profile.as_deref());
     }
     let mut parameters = Parameters::default();
     if let Some(log) = mul_log { parameters.multiplications = 1 << log; }
@@ -347,7 +347,7 @@ pub fn run() -> Result<(), AnyError> {
             statement.parameters,
             ligerito,
         )?
-        .with_mul_opener(bitz::hybrid::MulOpener::parse(&args.mul_opener).expect("opener"));
+        .with_mul_opener(bitz::hybrid::MulOpener::parse(&mul_opener).expect("opener"));
         let proof = prepared.proof_from_bytes(&statement, &std::fs::read(path)?)?;
         prepared.verify(&statement, &proof)?;
         println!(
@@ -363,7 +363,7 @@ pub fn run() -> Result<(), AnyError> {
         .map(|i| std::array::from_fn(|j| i.wrapping_mul(0x85ebca6b).wrapping_add(j as u32)))
         .collect();
     eprintln!(
-        "mode={mode} multiplication_relation=u32_mod_2_32 multiplications={} chained_compressions={} merkle=blake3 non_zk=true threads={}",
+        "mode={mode} mul_opener={mul_opener} multiplication_relation=u32_mod_2_32 multiplications={} chained_compressions={} merkle=blake3 non_zk=true threads={}",
         parameters.multiplications,
         parameters.sha_compressions,
         binius_utils::rayon::current_num_threads()
@@ -376,7 +376,7 @@ pub fn run() -> Result<(), AnyError> {
             parameters,
             ligerito,
         )?
-        .with_mul_opener(bitz::hybrid::MulOpener::parse(&args.mul_opener).expect("opener"));
+        .with_mul_opener(bitz::hybrid::MulOpener::parse(&mul_opener).expect("opener"));
         let request = profile
             .clone()
             .unwrap_or_else(|| "custom:1:4".into());

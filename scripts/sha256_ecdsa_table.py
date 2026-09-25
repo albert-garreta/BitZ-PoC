@@ -33,6 +33,8 @@ SCHEMA = "bitz/sha256-ecdsa-compare/v1"
 SCHEMES = [
     ("bitz-split@1", "\\ftwoz-SNARK, rate $1/2$"),
     ("bitz-split@3", "\\ftwoz-SNARK, rate $1/8$"),
+    ("bitz-split-wfbitz@1", "\\ftwoz-SNARK (wfbitz opener), rate $1/2$"),
+    ("bitz-split-wfbitz@3", "\\ftwoz-SNARK (wfbitz opener), rate $1/8$"),
     ("binius64@1", "Binius (UDR), rate $1/2$"),
     ("binius64@3", "Binius (UDR), rate $1/8$"),
     ("binius64-ligerito@1", "Binius (Johnson), rate $1/2$"),
@@ -64,7 +66,11 @@ def scheme_id(case: dict, sample: dict) -> str:
     if method.startswith("bitz"):
         lig = security.get("ligerito") or {}
         levels = (lig.get("configuration") or lig).get("levels") or [{}]
-        return f"{method}@{int(levels[0].get('log_inv_rate', 1))}"
+        # The terminal claim's opener splits the BitZ rows: the forest (the
+        # paper's, unmarked) or the worldfnd/BitZ scheme's virtual opening.
+        opener = case.get("opener") or "forest"
+        suffix = "" if opener == "forest" else f"-{opener}"
+        return f"{method}{suffix}@{int(levels[0].get('log_inv_rate', 1))}"
     if method.startswith("binius64"):
         rate = case.get("log_inv_rate", security.get("log_inv_rate", 1))
         return f"{method}@{int(rate)}"
