@@ -115,6 +115,12 @@ impl<'a, M: VirtualMap> VirtualStatement<'a, M> {
         self.claim
     }
 
+    /// Whether the map is the identity between two identical grids, so the
+    /// derived grid is the committed one and no transposition is needed.
+    pub fn is_direct(&self) -> bool {
+        self.map.is_identity() && *self.claim_params.shape() == self.committed
+    }
+
     /// The bytes both roles bind after the root: the claim parameters, the
     /// committed shape, the map digest.
     fn frame(&self) -> Vec<u8> {
@@ -135,6 +141,12 @@ impl<'a, M: VirtualMap> VirtualStatement<'a, M> {
             return Err(VirtualError::UnsupportedQuery);
         };
         let shape = self.claim_params.shape();
+        if self.is_direct() {
+            // `h = f` cell for cell on the same grid: the factored claim
+            // already is the committed grid's, opened as the direct scheme
+            // opens its own (the verifier's weights cost O(2^t + 2^s)).
+            return Ok(OpeningQuery::InnerProduct { claim });
+        }
         let (row_w, col_w) = (claim.row_weights(), claim.column_weights());
         if row_w.len() != shape.rows() || col_w.len() != shape.columns() {
             return Err(VirtualError::Claim(ClaimError::RowWeightCountMismatch));
@@ -228,9 +240,12 @@ impl BitZProver {
         super::trace("transpose", started);
 
         let started = std::time::Instant::now();
-        let flat = flatten_rows(hint.rows());
-        let result = pcs
-            .prove_lin_rows(
+        let result = if statement.is_direct() {
+            pcs.prove_lin(hint, &query, StatementBinding::Bind, transcript, ood)
+                .map_err(ProveError::Opening)
+        } else {
+            let flat = flatten_rows(hint.rows());
+            pcs.prove_lin_rows(
                 hint,
                 core::slice::from_ref(&flat),
                 &[],
@@ -239,7 +254,8 @@ impl BitZProver {
                 transcript,
                 ood,
             )
-            .map_err(ProveError::Opening);
+            .map_err(ProveError::Opening)
+        };
         super::trace("opening (all)", started);
         result
     }
