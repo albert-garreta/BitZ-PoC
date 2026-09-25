@@ -129,10 +129,15 @@ pub fn commit_sha256_ecdsa(
     #[cfg(feature = "bitz-parity")]
     if let Some(chained) = &prepared.wfbitz {
         // The structured wfbitz opening commits the sources in its block layout.
-        let rows = chained.geometry.committed_rows(&prepared.f_layout, &witness.f_rows);
+        let rows = witness
+            .wfbitz_rows
+            .get_or_init(|| {
+                std::sync::Arc::new(chained.geometry.committed_rows(&prepared.f_layout, &witness.f_rows))
+            })
+            .clone();
         return Ok(commit_rs_ligerito_shared_rows(
             &chained.layout,
-            std::sync::Arc::new(rows),
+            rows,
             chained.ligerito.prover(),
         ));
     }
@@ -260,9 +265,9 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
     let (pc, hint_matches) = match &prepared.wfbitz {
         Some(chained) => (
             chained.ligerito.prover(),
-            hint.matches_rows(&std::sync::Arc::new(
-                chained.geometry.committed_rows(&prepared.f_layout, &witness.f_rows),
-            )),
+            hint.matches_rows(witness.wfbitz_rows.get_or_init(|| {
+                std::sync::Arc::new(chained.geometry.committed_rows(&prepared.f_layout, &witness.f_rows))
+            })),
         ),
         None => (prepared.ligerito.prover(), hint.matches_rows(&witness.f_rows)),
     };

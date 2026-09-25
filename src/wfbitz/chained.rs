@@ -216,14 +216,19 @@ impl ChainedGeometry {
         let build = |block: usize| -> Vec<u64> {
             let mut out = vec![0u64; words];
             if block < self.sha_blocks {
+                // An instance's cells are one contiguous native range: copy
+                // it word by word, native column by native column.
                 for u in 0..2 {
                     let instance = 2 * block + u;
-                    let base = 1 + instance * self.local_cells;
-                    for cell in 0..self.local_cells {
-                        if bit(base + cell) {
-                            let row = (u << (LOG_ROWS - 1)) | cell;
-                            out[row / 64] |= 1u64 << (row % 64);
-                        }
+                    let mut source = 1 + instance * self.local_cells;
+                    let end = source + self.local_cells;
+                    let mut row = u << (LOG_ROWS - 1);
+                    while source < end && source < native_cells {
+                        let (c, b) = (source >> t_f, source & ((1 << t_f) - 1));
+                        let len = (end - source).min((1 << t_f) - b);
+                        copy_bits(&f_rows[c], b, &mut out, row, len);
+                        source += len;
+                        row += len;
                     }
                 }
             } else {
@@ -286,6 +291,31 @@ impl ChainedGeometry {
         {
             (0..shape.columns()).map(build).collect()
         }
+    }
+}
+
+/// ORs `len` bits of `src` from bit `src_bit` into `dst` at bit `dst_bit`,
+/// 64 at a time (`dst`'s target bits are zero beforehand).
+fn copy_bits(src: &[u64], src_bit: usize, dst: &mut [u64], dst_bit: usize, len: usize) {
+    let mut done = 0;
+    while done < len {
+        let take = (len - done).min(64);
+        let s = src_bit + done;
+        let (sw, sb) = (s / 64, s % 64);
+        let mut chunk = src[sw] >> sb;
+        if sb != 0 && sw + 1 < src.len() {
+            chunk |= src[sw + 1] << (64 - sb);
+        }
+        if take < 64 {
+            chunk &= (1u64 << take) - 1;
+        }
+        let d = dst_bit + done;
+        let (dw, db) = (d / 64, d % 64);
+        dst[dw] |= chunk << db;
+        if db != 0 && db + take > 64 {
+            dst[dw + 1] |= chunk >> (64 - db);
+        }
+        done += take;
     }
 }
 

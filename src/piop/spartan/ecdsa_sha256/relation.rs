@@ -586,7 +586,11 @@ impl PreparedSha256Ecdsa {
             col_vars: native_bits - LOG_ROWS,
             word_bits: 1,
         };
-        let ligerito = crate::ligerito_flock::LigeritoSelection::for_target(self.lambda as usize)
+        // The same ladder selection as the native commitment's, resolved for
+        // the block layout's size.
+        let ligerito = self
+            .ligerito
+            .selection()
             .resolve(native_bits - 7, self.lambda as usize)
             .map_err(error)?;
         Ok(WfbitzChained {
@@ -611,6 +615,11 @@ impl PreparedSha256Ecdsa {
             )
             .map_err(error)?;
         self.security()?;
+        #[cfg(feature = "bitz-parity")]
+        if self.wfbitz.is_some() {
+            // Keep the structured opener's ladder on the same selection.
+            self.wfbitz = Some(self.chained_geometry()?);
+        }
         Ok(self)
     }
 
