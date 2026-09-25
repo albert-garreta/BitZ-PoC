@@ -15,6 +15,8 @@ pub mod u32_mul_relation;
 pub mod cm;
 #[cfg(feature = "ecdsa")]
 pub mod ecdsa_sha256;
+#[cfg(feature = "falcon")]
+pub mod falcon1024_ct;
 pub mod grinding;
 pub mod matrix;
 pub mod mul;

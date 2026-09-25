@@ -103,6 +103,11 @@ harness = false
 required-features = ["span-metrics", "ecdsa"]
 
 [[bench]]
+name = "falcon1024_ct"
+harness = false
+required-features = ["span-metrics", "falcon"]
+
+[[bench]]
 name = "sha256_ecdsa_compare"
 harness = false
 required-features = ["span-metrics", "sha256-ecdsa-compare"]
@@ -291,6 +296,8 @@ bench-peak-memory = []
 bench-internals = []
 # Composed SHA-256/P-256 arithmetization and its split Spartan adapter.
 ecdsa = ["circuit/full"]
+# Falcon-1024 constant-time verification trace and BitZ benchmark adapter.
+falcon = []
 sha256-ecdsa-compare = ["span-metrics", "ecdsa", "parallel", "dep:spartan2"]
 # Enables the Plonky3 BabyBear/Goldilocks WHIR stack for the controlled PCS
 # comparison without adding it to normal library or benchmark builds.
