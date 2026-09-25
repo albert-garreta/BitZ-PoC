@@ -62,6 +62,16 @@ None of these integrations owns a proving loop. The former raw, structured-raw,
 SHA-specific and binary batch prover functions, and `engine::drive`, are removed.
 Arithmetic kernels remain where their storage-specific optimizations belong.
 
+`packed::StreamingMle` accepts a replayable `StreamingCoefficientSource` of
+additive coefficient updates. Its serial prefix pass coalesces arbitrary,
+overlapping updates in a bounded four-way cache (at most 1 MiB of coefficient
+values for four prefix rounds). A second replay folds directly into the suffix
+coefficient table, without an initial full-domain coefficient vector. It overrides
+both prefix operations and deliberately rejects random coefficient access.
+The suffix table still has `ceil(live_len / 2^prefix_vars)` field elements;
+prefix zero therefore retains a full live coefficient table. The ordinary
+sumcheck messages and transcript remain unchanged for identical inputs.
+
 Arithmetic bounds use `FieldOps`, `BatchMulAcc`, `Reduce`, and
 `PreparedLinearCombination` from `vendor/field`, plus `SpartanField` for the
 ordinary transcript codec. Streaming MAC is `BatchMulAcc::mul_acc`;

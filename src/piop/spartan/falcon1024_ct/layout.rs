@@ -13,6 +13,8 @@ pub struct FalconTraceCounts {
     pub keccak_chi_inputs: usize,
     pub keccak_chi_ands: usize,
     pub keccak_round_states: usize,
+    pub keccak_column_parities: usize,
+    pub keccak_column_parity_quotients: usize,
     pub keccak_parity_quotients: usize,
     pub hash_quotients: usize,
     pub hash_remainders: usize,
@@ -40,6 +42,8 @@ impl FalconTraceCounts {
             + self.keccak_chi_inputs
             + self.keccak_chi_ands
             + self.keccak_round_states
+            + self.keccak_column_parities
+            + self.keccak_column_parity_quotients
             + self.keccak_parity_quotients
             + self.hash_quotients
             + self.hash_remainders
@@ -66,7 +70,7 @@ pub struct FalconSourceLayout {
 }
 
 impl FalconSourceLayout {
-    pub const SIGNATURE_STRIDE: usize = 1 << 23;
+    pub const SIGNATURE_STRIDE: usize = 1 << 22;
 
     pub fn new(batch: usize) -> Result<Self, FalconError> {
         if !(1..=32).contains(&batch) {
@@ -98,8 +102,8 @@ impl FalconSourceLayout {
     }
 
     pub const fn col_vars(&self) -> usize {
-        // log2(2^23 * capacity) - row_vars.
-        10 + self.capacity.trailing_zeros() as usize
+        // log2(2^22 * capacity) - row_vars.
+        9 + self.capacity.trailing_zeros() as usize
     }
 
     /// Physical `W=1` source-commitment tensor.  Flat source index `i` is
@@ -126,8 +130,11 @@ impl FalconSourceLayout {
             keccak_chi_ands: 20 * 24 * 25 * 64,
             // Sparse round checkpoints, after chi and iota.
             keccak_round_states: 20 * 24 * 25 * 64,
-            // Three-bit exact parity quotient for every theta/rho/pi output.
-            keccak_parity_quotients: 20 * 24 * 25 * 64 * 3,
+            // Shared theta column parities and their two-bit exact quotients.
+            keccak_column_parities: 20 * 24 * 5 * 64,
+            keccak_column_parity_quotients: 20 * 24 * 5 * 64 * 2,
+            // One-bit exact parity quotient for every theta/rho/pi output.
+            keccak_parity_quotients: 20 * 24 * 25 * 64,
             hash_quotients: HASH_TO_POINT_SAMPLES * 3,
             hash_remainders: HASH_TO_POINT_SAMPLES * 14,
             hash_remainder_slack: HASH_TO_POINT_SAMPLES * 14,
@@ -158,14 +165,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn source_layout_fits_eight_megabit_stride() {
+    fn source_layout_fits_four_megabit_stride() {
         let counts = FalconSourceLayout::counts();
         assert_eq!(counts.keccak_chi_ands, 768_000);
         assert_eq!(counts.keccak_chi_inputs, 768_000);
         assert_eq!(counts.keccak_round_states, 768_000);
-        assert_eq!(counts.keccak_parity_quotients, 2_304_000);
+        assert_eq!(counts.keccak_column_parities, 153_600);
+        assert_eq!(counts.keccak_column_parity_quotients, 307_200);
+        assert_eq!(counts.keccak_parity_quotients, 768_000);
         assert!(counts.total() < FalconSourceLayout::SIGNATURE_STRIDE);
-        assert_eq!(counts.total(), 4_785_959);
+        assert_eq!(counts.total(), 3_710_759);
+        assert_eq!(FalconSourceLayout::SIGNATURE_STRIDE, 1 << 22);
         for batch in 1..=32 {
             let layout = FalconSourceLayout::new(batch).unwrap();
             assert_eq!(

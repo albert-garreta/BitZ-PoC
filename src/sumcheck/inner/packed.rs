@@ -291,6 +291,8 @@ mod composite;
 pub(crate) use composite::CompactCompositeMle;
 mod state;
 pub use state::PackedInput;
+mod streaming;
+pub(crate) use streaming::{StreamingCoefficientSource, StreamingMle};
 
 /// Prover output for the transcript-identical SHA-256 inner sumcheck.
 #[cfg(test)]

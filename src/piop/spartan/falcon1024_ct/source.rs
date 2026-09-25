@@ -14,8 +14,8 @@ use super::{
     N,
 };
 
-/// Start offsets of each committed column inside one `2^23`-bit signature
-/// stride.  The interval ending at `end` is live; `[end,2^23)` is canonical
+/// Start offsets of each committed column inside one `2^22`-bit signature
+/// stride.  The interval ending at `end` is live; `[end,2^22)` is canonical
 /// zero padding.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FalconSourceOffsets {
@@ -26,6 +26,8 @@ pub struct FalconSourceOffsets {
     pub keccak_chi_inputs: usize,
     pub keccak_chi_ands: usize,
     pub keccak_round_states: usize,
+    pub keccak_column_parities: usize,
+    pub keccak_column_parity_quotients: usize,
     pub keccak_parity_quotients: usize,
     pub hash_quotients: usize,
     pub hash_remainders: usize,
@@ -54,7 +56,10 @@ impl FalconSourceOffsets {
         let keccak_chi_inputs = s2_non_min_slack + counts.s2_non_min_slack;
         let keccak_chi_ands = keccak_chi_inputs + counts.keccak_chi_inputs;
         let keccak_round_states = keccak_chi_ands + counts.keccak_chi_ands;
-        let keccak_parity_quotients = keccak_round_states + counts.keccak_round_states;
+        let keccak_column_parities = keccak_round_states + counts.keccak_round_states;
+        let keccak_column_parity_quotients = keccak_column_parities + counts.keccak_column_parities;
+        let keccak_parity_quotients =
+            keccak_column_parity_quotients + counts.keccak_column_parity_quotients;
         let hash_quotients = keccak_parity_quotients + counts.keccak_parity_quotients;
         let hash_remainders = hash_quotients + counts.hash_quotients;
         let hash_remainder_slack = hash_remainders + counts.hash_remainders;
@@ -79,6 +84,8 @@ impl FalconSourceOffsets {
             keccak_chi_inputs,
             keccak_chi_ands,
             keccak_round_states,
+            keccak_column_parities,
+            keccak_column_parity_quotients,
             keccak_parity_quotients,
             hash_quotients,
             hash_remainders,
@@ -132,6 +139,7 @@ impl FalconSourceWitness {
             let signature = signatures[instance];
             let message = messages[instance];
             let trace = &traces[instance];
+            trace.hash_to_point.shake.validate_falcon_shape()?;
             if signature.len() != super::CT_SIGNATURE_BYTES {
                 return Err(FalconError::SignatureLength);
             }
@@ -201,6 +209,31 @@ impl FalconSourceWitness {
                     64,
                 );
             }
+            for (word_index, &word) in trace.hash_to_point.shake.column_parities.iter().enumerate()
+            {
+                put_unsigned(
+                    &mut rows,
+                    &p,
+                    base + offsets.keccak_column_parities + 64 * word_index,
+                    word,
+                    64,
+                );
+            }
+            for (bit_index, &quotient) in trace
+                .hash_to_point
+                .shake
+                .column_parity_quotients
+                .iter()
+                .enumerate()
+            {
+                put_unsigned(
+                    &mut rows,
+                    &p,
+                    base + offsets.keccak_column_parity_quotients + 2 * bit_index,
+                    u64::from(quotient),
+                    2,
+                );
+            }
             for (bit_index, &quotient) in trace
                 .hash_to_point
                 .shake
@@ -211,9 +244,9 @@ impl FalconSourceWitness {
                 put_unsigned(
                     &mut rows,
                     &p,
-                    base + offsets.keccak_parity_quotients + 3 * bit_index,
+                    base + offsets.keccak_parity_quotients + bit_index,
                     u64::from(quotient),
-                    3,
+                    1,
                 );
             }
             for i in 0..HASH_TO_POINT_SAMPLES {
@@ -456,9 +489,33 @@ mod tests {
             trace.hash_to_point.shake.round_states[0]
         );
         assert_eq!(
-            read_unsigned(&witness, offsets.keccak_parity_quotients, 3),
+            read_unsigned(&witness, offsets.keccak_column_parities, 64),
+            trace.hash_to_point.shake.column_parities[0]
+        );
+        assert_eq!(
+            read_unsigned(&witness, offsets.keccak_column_parity_quotients, 2),
+            u64::from(trace.hash_to_point.shake.column_parity_quotients[0])
+        );
+        assert_eq!(
+            read_unsigned(&witness, offsets.keccak_parity_quotients, 1),
             u64::from(trace.hash_to_point.shake.parity_quotients[0])
         );
+        for index in [1, 63, 64, 319, 320, 153_599] {
+            assert_eq!(
+                read_unsigned(
+                    &witness,
+                    offsets.keccak_column_parity_quotients + 2 * index,
+                    2
+                ),
+                u64::from(trace.hash_to_point.shake.column_parity_quotients[index])
+            );
+        }
+        for index in [1, 63, 64, 1_599, 1_600, 767_999] {
+            assert_eq!(
+                read_unsigned(&witness, offsets.keccak_parity_quotients + index, 1),
+                u64::from(trace.hash_to_point.shake.parity_quotients[index])
+            );
+        }
         assert_eq!(
             read_unsigned(
                 &witness,
@@ -473,6 +530,57 @@ mod tests {
         );
         assert!(
             (offsets.end..FalconSourceLayout::SIGNATURE_STRIDE).all(|index| !witness.bit(index))
+        );
+    }
+
+    #[test]
+    fn source_packing_rejects_malformed_keccak_auxiliaries() {
+        let mut trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+        let layout = FalconSourceLayout::new(1).unwrap();
+        trace.hash_to_point.shake.column_parities.pop();
+        assert!(matches!(
+            FalconSourceWitness::from_traces(layout, &[MESSAGE], &[SIGNATURE], &[trace]),
+            Err(FalconError::ConstraintViolation {
+                family: "keccak-shape",
+                ..
+            })
+        ));
+
+        let mut trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+        trace.hash_to_point.shake.parity_quotients[0] = 2;
+        assert!(matches!(
+            FalconSourceWitness::from_traces(layout, &[MESSAGE], &[SIGNATURE], &[trace]),
+            Err(FalconError::ConstraintViolation {
+                family: "keccak-theta-quotient-range",
+                index: 0,
+            })
+        ));
+    }
+
+    #[test]
+    fn batch_padding_stays_zero_after_stride_reduction() {
+        let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+        let layout = FalconSourceLayout::new(3).unwrap();
+        let witness = FalconSourceWitness::from_traces(
+            layout,
+            &[MESSAGE, MESSAGE, MESSAGE],
+            &[SIGNATURE, SIGNATURE, SIGNATURE],
+            &[trace.clone(), trace.clone(), trace],
+        )
+        .unwrap();
+        let offsets = FalconSourceOffsets::new();
+        for instance in 0..3 {
+            let base = instance * FalconSourceLayout::SIGNATURE_STRIDE;
+            assert!(witness.bit(base + offsets.shared_one));
+            assert_eq!(
+                read_unsigned(&witness, base + offsets.encoded_signature, 8),
+                0x5a
+            );
+        }
+        assert_eq!(layout.capacity(), 4);
+        assert!(
+            (3 * FalconSourceLayout::SIGNATURE_STRIDE..layout.source_bits())
+                .all(|index| !witness.bit(index))
         );
     }
 

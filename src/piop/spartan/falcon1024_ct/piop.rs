@@ -11,6 +11,7 @@ use crate::{
     piop::spartan::{
         SpartanBitzField, SpartanField, absorb_field_elements,
         grinding::{GrindingDomain, GrindingRound, grind_and_absorb, verify_and_absorb},
+        matrix::{eq_eval, eq_table},
         squeeze_field,
     },
     sumcheck::{
@@ -18,7 +19,12 @@ use crate::{
         boundary::{ProverGrindingRoundBoundary, VerifierGrindingRoundBoundary},
         inner::{InitialClaims, prove_batched_inner_sumcheck},
         outer::{
-            OuterClaim, OuterEvaluations, OuterInputs, prove_outer_sumcheck, verify_outer_sumcheck,
+            OuterClaim, OuterEvaluations, OuterInputs, OuterRows, prove_outer_sumcheck,
+            verify_outer_sumcheck,
+        },
+        proof::{
+            recover_full_round_polynomial_and_sample_next_challenge_with_boundary,
+            validate_field_elements,
         },
     },
     transcript::traits::Transcript,
@@ -94,6 +100,21 @@ impl GrindingDomain for FingerprintGrinding {
     const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/grinding/fingerprint/v1";
 }
 
+struct ForestBatchGrinding;
+impl GrindingDomain for ForestBatchGrinding {
+    const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/grinding/forest-batch/v2";
+}
+
+struct ForestLineGrinding;
+impl GrindingDomain for ForestLineGrinding {
+    const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/grinding/forest-line/v2";
+}
+
+struct ForestRoundGrinding;
+impl GrindingDomain for ForestRoundGrinding {
+    const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/grinding/forest-round/v2";
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NormProof {
     pub claims: [F; 2],
@@ -116,18 +137,24 @@ pub struct QuadraticRelationProof {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProductLayerProof {
+pub struct ProductForestLayerProof {
     /// Absent only for the root's direct two-child multiplication.
     pub sumcheck: Option<SumcheckProof<F, 4>>,
-    pub left: F,
-    pub right: F,
+    /// Candidate then output for each signature, at one shared point.
+    pub evaluations: Vec<[F; 2]>,
     pub grinding_nonces: Vec<u64>,
+    pub batching_nonce: Option<u64>,
+    pub line_nonce: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PrimeProductForestProof {
+    pub layers: Vec<ProductForestLayerProof>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrimeProductTreeProof {
     pub root: F,
-    pub layers: Vec<ProductLayerProof>,
     /// Point and value of the original leaf MLE after all layer reductions.
     pub terminal_point: Vec<F>,
     pub terminal_claim: F,
@@ -152,6 +179,7 @@ pub struct FalconPiopProof {
     pub compaction_gamma: F,
     pub compaction_rank_scale: F,
     pub compaction: Vec<CompactionProof>,
+    pub compaction_forest: PrimeProductForestProof,
 }
 
 /// Proves the nonlinear Falcon relation layers.  `target_bits` controls the
@@ -191,16 +219,13 @@ pub fn prove_falcon_piop(
     };
     let gamma = squeeze(transcript, &field)?;
     let rank_scale = squeeze(transcript, &field)?;
-    let mut compaction = Vec::with_capacity(layout.batch());
+    let mut leaves = Vec::with_capacity(2 * layout.batch());
     for trace in traces {
         let (candidate, output) = compaction_leaves(trace, gamma, rank_scale, &field);
-        let candidate = prove_product_tree(transcript, candidate, target_bits, &field)?;
-        let output = prove_product_tree(transcript, output, target_bits, &field)?;
-        if candidate.root != output.root {
-            return Err(piop("compaction product roots differ"));
-        }
-        compaction.push(CompactionProof { candidate, output });
+        leaves.extend([candidate, output]);
     }
+    let (compaction_forest, compaction) =
+        prove_product_forest(transcript, leaves, target_bits, &field)?;
 
     Ok(FalconPiopProof {
         modulus: field.modulus_u128(),
@@ -211,6 +236,7 @@ pub fn prove_falcon_piop(
         compaction_gamma: gamma,
         compaction_rank_scale: rank_scale,
         compaction,
+        compaction_forest,
     })
 }
 
@@ -266,13 +292,13 @@ pub fn verify_falcon_piop(
     if gamma != proof.compaction_gamma || rank_scale != proof.compaction_rank_scale {
         return Err(piop("compaction fingerprint challenge mismatch"));
     }
-    for pair in &proof.compaction {
-        let _candidate = verify_product_tree(transcript, &pair.candidate, target_bits, &field)?;
-        let _output = verify_product_tree(transcript, &pair.output, target_bits, &field)?;
-        if pair.candidate.root != pair.output.root {
-            return Err(piop("compaction product roots differ"));
-        }
-    }
+    verify_product_forest(
+        transcript,
+        &proof.compaction_forest,
+        &proof.compaction,
+        target_bits,
+        &field,
+    )?;
     Ok(())
 }
 
@@ -288,7 +314,7 @@ fn validate_inputs(
 }
 
 fn bind_header(transcript: &mut impl Transcript, layout: &FalconSourceLayout, target_bits: usize) {
-    transcript.absorb_slice(b"bitz/falcon1024-ct/piop/v1");
+    transcript.absorb_slice(b"bitz/falcon1024-ct/piop/v2");
     transcript.absorb_slice(&(layout.batch() as u64).to_le_bytes());
     transcript.absorb_slice(&(layout.capacity() as u64).to_le_bytes());
     transcript.absorb_slice(&(target_bits as u64).to_le_bytes());
@@ -431,53 +457,94 @@ fn prove_keccak_chi(
     field: &Cfg,
 ) -> Result<QuadraticRelationProof, FalconError> {
     transcript.absorb_slice(b"bitz/falcon1024-ct/keccak-chi/v1");
-    let half = KECCAK_GATE_STRIDE * layout.capacity();
-    let zero = field.zero();
-    let one = field.one();
-    let two_inv = unsigned((field.modulus_u128() + 1) / 2, field);
-    let mut rows = OuterInputs {
-        ax: vec![zero; 2 * half],
-        bx: vec![zero; 2 * half],
-        cx: vec![zero; 2 * half],
+    let rows = KeccakRows {
+        traces,
+        half: KECCAK_GATE_STRIDE * layout.capacity(),
+        field,
+        two_inv: unsigned((field.modulus_u128() + 1) / 2, field),
     };
-    for (instance, trace) in traces.iter().enumerate() {
-        let shake = &trace.hash_to_point.shake;
-        for gate in 0..KECCAK_BITS {
-            let word = gate >> 6;
-            let bit = gate & 63;
-            let lane_in_round = word % 25;
-            let round = (word / 25) % 24;
-            let bx = bit_field(shake.chi_inputs[word], bit, field);
-            let b1 = bit_field(
-                shake.chi_inputs
-                    [word - lane_in_round + (lane_in_round / 5) * 5 + (lane_in_round + 1) % 5],
-                bit,
-                field,
-            );
-            let b2 = bit_field(
-                shake.chi_inputs
-                    [word - lane_in_round + (lane_in_round / 5) * 5 + (lane_in_round + 2) % 5],
-                bit,
-                field,
-            );
-            let z = bit_field(shake.chi_ands[word], bit, field);
-            let mut y = ((shake.round_states[word] >> bit) & 1) != 0;
-            if lane_in_round == 0 && (ROUND_CONSTANTS[round] >> bit) & 1 == 1 {
-                y = !y;
-            }
-            let y = unsigned(u128::from(y), field);
-            let index = instance * KECCAK_GATE_STRIDE + gate;
-            rows.ax[index] = field.sub(&one, &b1);
-            rows.bx[index] = b2;
-            rows.cx[index] = z;
+    prove_quadratic(transcript, rows, keccak_rounds(layout), target_bits, field)
+}
 
-            let xor_index = half + index;
-            rows.ax[xor_index] = bx;
-            rows.bx[xor_index] = z;
-            rows.cx[xor_index] = field.mul(&field.sub(&field.add(&bx, &z), &y), &two_inv);
+/// Read the original row operands from packed trace words. Only the first
+/// challenge fold allocates field tables; padding never needs source storage.
+struct KeccakRows<'a> {
+    traces: &'a [FalconVerificationTrace],
+    half: usize,
+    field: &'a Cfg,
+    two_inv: F,
+}
+
+impl KeccakRows<'_> {
+    fn gate(&self, row: usize) -> Option<(&super::keccak::KeccakTrace, usize, usize, bool)> {
+        let xor = row >= self.half;
+        let index = row % self.half;
+        let gate = index % KECCAK_GATE_STRIDE;
+        let trace = self.traces.get(index / KECCAK_GATE_STRIDE)?;
+        (gate < KECCAK_BITS).then_some((&trace.hash_to_point.shake, gate >> 6, gate & 63, xor))
+    }
+}
+
+impl OuterRows for KeccakRows<'_> {
+    type AB = F;
+    type C = F;
+
+    fn dimensions(&self) -> (usize, usize, usize) {
+        (2 * self.half, 2 * self.half, 2 * self.half)
+    }
+
+    fn a(&self, row: usize) -> F {
+        let Some((shake, word, bit, xor)) = self.gate(row) else {
+            return self.field.zero();
+        };
+        if xor {
+            bit_field(shake.chi_inputs[word], bit, self.field)
+        } else {
+            let neighbor = word - word % 5 + (word + 1) % 5;
+            self.field.sub(
+                &self.field.one(),
+                &bit_field(shake.chi_inputs[neighbor], bit, self.field),
+            )
         }
     }
-    prove_quadratic(transcript, rows, keccak_rounds(layout), target_bits, field)
+
+    fn b(&self, row: usize) -> F {
+        let Some((shake, word, bit, xor)) = self.gate(row) else {
+            return self.field.zero();
+        };
+        let value = if xor {
+            shake.chi_ands[word]
+        } else {
+            shake.chi_inputs[word - word % 5 + (word + 2) % 5]
+        };
+        bit_field(value, bit, self.field)
+    }
+
+    fn c(&self, row: usize) -> F {
+        let Some((shake, word, bit, xor)) = self.gate(row) else {
+            return self.field.zero();
+        };
+        let z = bit_field(shake.chi_ands[word], bit, self.field);
+        if !xor {
+            return z;
+        }
+        let round = (word / 25) % 24;
+        let y = shake.round_states[word]
+            ^ if word % 25 == 0 {
+                ROUND_CONSTANTS[round]
+            } else {
+                0
+            };
+        self.field.mul(
+            &self.field.sub(
+                &self
+                    .field
+                    .add(&bit_field(shake.chi_inputs[word], bit, self.field), &z),
+                &bit_field(y, bit, self.field),
+            ),
+            &self.two_inv,
+        )
+    }
 }
 
 fn prove_compaction_products(
@@ -538,7 +605,7 @@ fn prove_compaction_products(
 
 fn prove_quadratic(
     transcript: &mut impl Transcript,
-    rows: OuterInputs<F>,
+    rows: impl OuterRows<AB = F, C = F>,
     rounds: usize,
     target_bits: usize,
     field: &Cfg,
@@ -665,171 +732,376 @@ fn compaction_leaves(
     (candidate, output)
 }
 
-fn prove_product_tree(
+/// The forest uses at most 64 trees. Ten batching draws have degree <=63,
+/// 55 sumcheck draws have degree three, and eleven line draws have degree one
+/// per tree. With the unchanged 21-bit grind, their union bound is at most
+/// (10*63 + 55*3 + 11*64) / (2^125 * 2^21) < 2^-135. No tree's root equality
+/// is replaced by an equality between products across different signatures.
+fn prove_product_forest(
     transcript: &mut impl Transcript,
-    leaves: Vec<F>,
+    leaves: Vec<Vec<F>>,
     target_bits: usize,
     field: &Cfg,
-) -> Result<PrimeProductTreeProof, FalconError> {
-    let mut tree = vec![leaves];
-    while tree.last().expect("leaf layer").len() > 1 {
-        let child = tree.last().expect("child layer");
-        let half = child.len() / 2;
-        let parent = (0..half)
-            .map(|i| field.mul(&child[i], &child[i + half]))
-            .collect();
-        tree.push(parent);
+) -> Result<(PrimeProductForestProof, Vec<CompactionProof>), FalconError> {
+    if leaves.is_empty()
+        || leaves.len() > 64
+        || leaves.len() % 2 != 0
+        || leaves.iter().any(|tree| tree.len() != COMPACTION_LEAVES)
+    {
+        return Err(piop("invalid compaction forest shape"));
     }
-    tree.reverse();
-    let root = tree[0][0];
-    absorb_field_elements(transcript, &[root], field);
-    let mut claim = root;
-    let mut point = Vec::new();
-    let mut layers = Vec::with_capacity(tree.len() - 1);
-    for level in 0..tree.len() - 1 {
-        let children = &tree[level + 1];
-        let half = children.len() / 2;
-        let left = &children[..half];
-        let right = &children[half..];
-        if level == 0 {
-            if claim != field.mul(&left[0], &right[0]) {
-                return Err(piop("product root mismatch"));
+    let trees: Vec<Vec<Vec<F>>> = leaves
+        .into_iter()
+        .map(|leaves| {
+            let mut tree = vec![leaves];
+            while tree.last().expect("leaf layer").len() > 1 {
+                let child = tree.last().expect("child layer");
+                let half = child.len() / 2;
+                tree.push(
+                    (0..half)
+                        .map(|i| field.mul(&child[i], &child[i + half]))
+                        .collect(),
+                );
             }
-            absorb_field_elements(transcript, &[left[0], right[0]], field);
-            let lambda = squeeze(transcript, field)?;
-            claim = affine(left[0], right[0], lambda, field);
-            point = vec![lambda];
-            layers.push(ProductLayerProof {
-                sumcheck: None,
-                left: left[0],
-                right: right[0],
-                grinding_nonces: Vec::new(),
-            });
-            continue;
-        }
-        let zero = field.zero();
-        let rows = OuterInputs {
-            ax: left.to_vec(),
-            bx: right.to_vec(),
-            cx: vec![zero; half],
-        };
-        let out = if target_bits == 128 {
-            let mut boundary = ProverGrindingRoundBoundary::<CubicGrinding>::with_round_offset(
-                CUBIC_GRINDING_BITS,
-                0,
-            );
-            let out = prove_outer_sumcheck(
-                field,
-                transcript,
-                OuterClaim::Sum(claim),
-                &point,
-                rows,
+            tree.reverse();
+            tree
+        })
+        .collect();
+    let roots: Vec<F> = trees.iter().map(|tree| tree[0][0]).collect();
+    if roots.chunks_exact(2).any(|pair| pair[0] != pair[1]) {
+        return Err(piop("compaction product roots differ"));
+    }
+    bind_forest(transcript, &roots, field);
+    let mut claims = roots.clone();
+    let mut point = Vec::new();
+    let mut layers = Vec::with_capacity(11);
+    for level in 0..11 {
+        transcript.absorb_slice(&(level as u64).to_le_bytes());
+        let mut groups: Vec<[Vec<F>; 2]> = trees
+            .iter()
+            .map(|tree| {
+                let child = &tree[level + 1];
+                let half = child.len() / 2;
+                [child[..half].to_vec(), child[half..].to_vec()]
+            })
+            .collect();
+        let (sumcheck, evaluations, grinding_nonces, batching_nonce, next_point) = if level == 0 {
+            (
                 None,
-                &mut boundary,
+                groups.iter().map(|g| [g[0][0], g[1][0]]).collect(),
+                Vec::new(),
+                None,
+                Vec::new(),
             )
-            .map_err(|error| piop(error.to_string()))?;
-            (out, boundary.into_nonces())
         } else {
-            let mut boundary = crate::sumcheck::UngrindedRoundBoundary;
-            let out = prove_outer_sumcheck(
-                field,
+            // The roots and every previous layer's evaluations already bind all
+            // current claims before the fresh random combination is selected.
+            let batching_nonce =
+                prove_forest_nonce::<ForestBatchGrinding>(transcript, level, target_bits)?;
+            let rho = squeeze(transcript, field)?;
+            let scales = powers(rho, groups.len(), field);
+            let initial = weighted_sum(&claims, &scales, field);
+            let (proof, evaluations, next_point, nonces) = prove_forest_layer(
                 transcript,
-                OuterClaim::Sum(claim),
+                &mut groups,
                 &point,
-                rows,
-                None,
-                &mut boundary,
-            )
-            .map_err(|error| piop(error.to_string()))?;
-            (out, Vec::new())
+                &scales,
+                initial,
+                target_bits,
+                field,
+            )?;
+            (Some(proof), evaluations, nonces, batching_nonce, next_point)
         };
+        absorb_field_elements(transcript, &evaluations.concat(), field);
+        let line_nonce = prove_forest_nonce::<ForestLineGrinding>(transcript, level, target_bits)?;
         let lambda = squeeze(transcript, field)?;
-        claim = affine(out.0.evaluations.ax, out.0.evaluations.bx, lambda, field);
-        point = out.0.point;
+        claims = evaluations
+            .iter()
+            .map(|[left, right]| affine(*left, *right, lambda, field))
+            .collect();
+        point = next_point;
         point.push(lambda);
-        layers.push(ProductLayerProof {
-            sumcheck: Some(out.0.proof),
-            left: out.0.evaluations.ax,
-            right: out.0.evaluations.bx,
-            grinding_nonces: out.1,
+        layers.push(ProductForestLayerProof {
+            sumcheck,
+            evaluations,
+            grinding_nonces,
+            batching_nonce,
+            line_nonce,
         });
     }
-    Ok(PrimeProductTreeProof {
-        root,
-        layers,
-        terminal_point: point,
-        terminal_claim: claim,
-    })
+    let terminals: Vec<_> = roots
+        .iter()
+        .zip(&claims)
+        .map(|(&root, &terminal_claim)| PrimeProductTreeProof {
+            root,
+            terminal_point: point.clone(),
+            terminal_claim,
+        })
+        .collect();
+    let mut terminals = terminals.into_iter();
+    let mut compaction = Vec::with_capacity(trees.len() / 2);
+    while let Some(candidate) = terminals.next() {
+        compaction.push(CompactionProof {
+            candidate,
+            output: terminals.next().expect("paired trees"),
+        });
+    }
+    Ok((PrimeProductForestProof { layers }, compaction))
 }
 
-fn verify_product_tree(
+fn bind_forest(transcript: &mut impl Transcript, roots: &[F], field: &Cfg) {
+    transcript.absorb_slice(b"bitz/falcon1024-ct/compaction/forest/v2");
+    transcript.absorb_slice(&(roots.len() as u64).to_le_bytes());
+    absorb_field_elements(transcript, roots, field);
+}
+
+fn powers(value: F, len: usize, field: &Cfg) -> Vec<F> {
+    let mut power = field.one();
+    (0..len)
+        .map(|_| {
+            let current = power;
+            power = field.mul(&power, &value);
+            current
+        })
+        .collect()
+}
+
+fn weighted_sum(values: &[F], scales: &[F], field: &Cfg) -> F {
+    values
+        .iter()
+        .zip(scales)
+        .fold(field.zero(), |sum, (value, scale)| {
+            field.add(&sum, &field.mul(value, scale))
+        })
+}
+
+fn fold_table(table: &mut Vec<F>, challenge: F, field: &Cfg) {
+    for i in 0..table.len() / 2 {
+        table[i] = affine(table[2 * i], table[2 * i + 1], challenge, field);
+    }
+    table.truncate(table.len() / 2);
+}
+
+/// Sumcheck of eq(point,x) * sum_t scales[t] L_t(x) R_t(x).
+/// The tables contain at most 64*2048 elements, independent of source padding.
+/// The ordinary outer engine has one A*B-C terminal triple, and the batched
+/// inner engine is degree two. This cubic sum of products therefore supplies
+/// its own arithmetic, using the shared sumcheck transcript/round helper.
+fn prove_forest_layer(
     transcript: &mut impl Transcript,
-    proof: &PrimeProductTreeProof,
+    groups: &mut [[Vec<F>; 2]],
+    point: &[F],
+    scales: &[F],
+    mut claim: F,
     target_bits: usize,
     field: &Cfg,
-) -> Result<(Vec<F>, F), FalconError> {
-    if proof.layers.len() != 11 {
-        return Err(piop("product-tree depth mismatch"));
-    }
-    absorb_field_elements(transcript, &[proof.root], field);
-    let mut claim = proof.root;
-    let mut point = Vec::new();
-    for (level, layer) in proof.layers.iter().enumerate() {
-        if level == 0 {
-            if layer.sumcheck.is_some() || claim != field.mul(&layer.left, &layer.right) {
-                return Err(piop("product root layer failed"));
+) -> Result<(SumcheckProof<F, 4>, Vec<[F; 2]>, Vec<F>, Vec<u64>), FalconError> {
+    let mut equality = eq_table(point, field).map_err(|error| piop(error.to_string()))?;
+    let mut boundary = ProverGrindingRoundBoundary::<ForestRoundGrinding>::with_round_offset(
+        if target_bits == 128 {
+            CUBIC_GRINDING_BITS
+        } else {
+            0
+        },
+        0,
+    );
+    let mut round_polynomials = Vec::with_capacity(point.len());
+    let mut next_point = Vec::with_capacity(point.len());
+    for _ in 0..point.len() {
+        let mut polynomial = [field.zero(); 4];
+        for (group, scale) in groups.iter().zip(scales) {
+            for i in 0..equality.len() / 2 {
+                let e0 = field.mul(&equality[2 * i], scale);
+                let ed = field.mul(&field.sub(&equality[2 * i + 1], &equality[2 * i]), scale);
+                let l0 = group[0][2 * i];
+                let ld = field.sub(&group[0][2 * i + 1], &l0);
+                let r0 = group[1][2 * i];
+                let rd = field.sub(&group[1][2 * i + 1], &r0);
+                let product = [
+                    field.mul(&l0, &r0),
+                    field.add(&field.mul(&l0, &rd), &field.mul(&ld, &r0)),
+                    field.mul(&ld, &rd),
+                ];
+                for j in 0..3 {
+                    polynomial[j] = field.add(&polynomial[j], &field.mul(&e0, &product[j]));
+                    polynomial[j + 1] = field.add(&polynomial[j + 1], &field.mul(&ed, &product[j]));
+                }
             }
-            absorb_field_elements(transcript, &[layer.left, layer.right], field);
-            let lambda = squeeze(transcript, field)?;
-            claim = affine(layer.left, layer.right, lambda, field);
-            point = vec![lambda];
-            continue;
         }
-        let sumcheck = layer
-            .sumcheck
-            .as_ref()
-            .ok_or_else(|| piop("missing product layer sumcheck"))?;
-        let evaluations = OuterEvaluations {
-            ax: layer.left,
-            bx: layer.right,
-            cx: field.zero(),
-        };
-        let output = if target_bits == 128 {
-            let mut boundary = VerifierGrindingRoundBoundary::<CubicGrinding>::new(
-                CUBIC_GRINDING_BITS,
+        let at_one = polynomial.iter().fold(field.zero(), |sum, coefficient| {
+            field.add(&sum, coefficient)
+        });
+        if field.add(&polynomial[0], &at_one) != claim {
+            return Err(piop("product forest round claim mismatch"));
+        }
+        let challenge = recover_full_round_polynomial_and_sample_next_challenge_with_boundary(
+            transcript,
+            &mut claim,
+            &[polynomial[0], polynomial[2], polynomial[3]],
+            &mut round_polynomials,
+            &mut next_point,
+            &field.zero(),
+            field,
+            &mut boundary,
+        )
+        .map_err(|error| piop(error.to_string()))?;
+        fold_table(&mut equality, challenge, field);
+        for group in groups.iter_mut() {
+            fold_table(&mut group[0], challenge, field);
+            fold_table(&mut group[1], challenge, field);
+        }
+    }
+    let evaluations = groups
+        .iter()
+        .map(|group| [group[0][0], group[1][0]])
+        .collect();
+    Ok((
+        SumcheckProof { round_polynomials },
+        evaluations,
+        next_point,
+        boundary.into_nonces(),
+    ))
+}
+
+fn prove_forest_nonce<D: GrindingDomain>(
+    transcript: &mut impl Transcript,
+    level: usize,
+    target_bits: usize,
+) -> Result<Option<u64>, FalconError> {
+    if target_bits == 128 {
+        grind_and_absorb(
+            transcript,
+            GrindingRound::<D>::new(level as u64),
+            CUBIC_GRINDING_BITS,
+        )
+        .map(Some)
+        .map_err(|error| piop(error.to_string()))
+    } else {
+        Ok(None)
+    }
+}
+
+fn verify_forest_nonce<D: GrindingDomain>(
+    transcript: &mut impl Transcript,
+    level: usize,
+    target_bits: usize,
+    nonce: Option<u64>,
+) -> Result<(), FalconError> {
+    match (target_bits, nonce) {
+        (128, Some(nonce)) => verify_and_absorb(
+            transcript,
+            GrindingRound::<D>::new(level as u64),
+            CUBIC_GRINDING_BITS,
+            nonce,
+        )
+        .map_err(|error| piop(error.to_string())),
+        (100, None) => Ok(()),
+        _ => Err(piop("invalid product forest grinding nonce")),
+    }
+}
+
+fn verify_product_forest(
+    transcript: &mut impl Transcript,
+    forest: &PrimeProductForestProof,
+    compaction: &[CompactionProof],
+    target_bits: usize,
+    field: &Cfg,
+) -> Result<(), FalconError> {
+    if compaction.is_empty() || compaction.len() > 32 || forest.layers.len() != 11 {
+        return Err(piop("invalid compaction forest shape"));
+    }
+    let terminals: Vec<_> = compaction
+        .iter()
+        .flat_map(|pair| [&pair.candidate, &pair.output])
+        .collect();
+    let roots: Vec<_> = terminals.iter().map(|tree| tree.root).collect();
+    validate_field_elements(&roots, field).map_err(|error| piop(error.to_string()))?;
+    if roots.chunks_exact(2).any(|pair| pair[0] != pair[1]) {
+        return Err(piop("compaction product roots differ"));
+    }
+    bind_forest(transcript, &roots, field);
+    let mut claims = roots;
+    let mut point = Vec::new();
+    for (level, layer) in forest.layers.iter().enumerate() {
+        if layer.evaluations.len() != terminals.len() {
+            return Err(piop("product forest evaluation count mismatch"));
+        }
+        validate_field_elements(&layer.evaluations.concat(), field)
+            .map_err(|error| piop(error.to_string()))?;
+        transcript.absorb_slice(&(level as u64).to_le_bytes());
+        let next_point = if level == 0 {
+            if layer.sumcheck.is_some()
+                || !layer.grinding_nonces.is_empty()
+                || layer.batching_nonce.is_some()
+                || claims
+                    .iter()
+                    .zip(&layer.evaluations)
+                    .any(|(claim, [left, right])| *claim != field.mul(left, right))
+            {
+                return Err(piop("product forest root layer failed"));
+            }
+            Vec::new()
+        } else {
+            let sumcheck = layer
+                .sumcheck
+                .as_ref()
+                .ok_or_else(|| piop("missing product forest sumcheck"))?;
+            verify_forest_nonce::<ForestBatchGrinding>(
+                transcript,
+                level,
+                target_bits,
+                layer.batching_nonce,
+            )?;
+            let rho = squeeze(transcript, field)?;
+            let scales = powers(rho, terminals.len(), field);
+            let initial = weighted_sum(&claims, &scales, field);
+            let mut boundary = VerifierGrindingRoundBoundary::<ForestRoundGrinding>::new(
+                if target_bits == 128 {
+                    CUBIC_GRINDING_BITS
+                } else {
+                    0
+                },
                 &layer.grinding_nonces,
             );
-            verify_outer_sumcheck(
-                field,
-                transcript,
-                claim,
-                &point,
-                sumcheck,
-                evaluations,
-                &mut boundary,
-            )
-        } else {
-            let mut boundary = crate::sumcheck::UngrindedRoundBoundary;
-            verify_outer_sumcheck(
-                field,
-                transcript,
-                claim,
-                &point,
-                sumcheck,
-                evaluations,
-                &mut boundary,
-            )
-        }
-        .map_err(|error| piop(error.to_string()))?;
+            let (next_point, final_claim) = sumcheck
+                .verify_with_round_boundary(transcript, initial, level, field, &mut boundary)
+                .map_err(|error| piop(error.to_string()))?;
+            let products: Vec<_> = layer
+                .evaluations
+                .iter()
+                .map(|[left, right]| field.mul(left, right))
+                .collect();
+            let eq =
+                eq_eval(&point, &next_point, field).map_err(|error| piop(error.to_string()))?;
+            if final_claim != field.mul(&eq, &weighted_sum(&products, &scales, field)) {
+                return Err(piop("product forest terminal identity failed"));
+            }
+            next_point
+        };
+        absorb_field_elements(transcript, &layer.evaluations.concat(), field);
+        verify_forest_nonce::<ForestLineGrinding>(
+            transcript,
+            level,
+            target_bits,
+            layer.line_nonce,
+        )?;
         let lambda = squeeze(transcript, field)?;
-        claim = affine(layer.left, layer.right, lambda, field);
-        point = output.point;
+        claims = layer
+            .evaluations
+            .iter()
+            .map(|[left, right]| affine(*left, *right, lambda, field))
+            .collect();
+        point = next_point;
         point.push(lambda);
     }
-    if point != proof.terminal_point || claim != proof.terminal_claim {
-        return Err(piop("product-tree terminal mismatch"));
+    if terminals
+        .iter()
+        .zip(&claims)
+        .any(|(tree, claim)| tree.terminal_point != point || tree.terminal_claim != *claim)
+    {
+        return Err(piop("product forest terminal mismatch"));
     }
-    Ok((point, claim))
+    Ok(())
 }
 
 fn sample_point(
@@ -908,5 +1180,171 @@ mod tests {
         assert!(!proof.keccak_chi.grinding_nonces.is_empty());
         let mut verifier = Blake3Transcript::new();
         verify_falcon_piop(&mut verifier, &layout, &proof, 128).unwrap();
+        assert_eq!(
+            proof
+                .compaction_forest
+                .layers
+                .iter()
+                .map(|layer| layer.grinding_nonces.len())
+                .sum::<usize>(),
+            55
+        );
+        assert!(
+            proof
+                .compaction_forest
+                .layers
+                .iter()
+                .all(|layer| layer.line_nonce.is_some())
+        );
+        assert!(
+            proof.compaction_forest.layers[1..]
+                .iter()
+                .all(|layer| layer.batching_nonce.is_some())
+        );
+        let mut bad = proof.clone();
+        bad.compaction_forest.layers[1].batching_nonce = None;
+        assert!(verify_falcon_piop(&mut Blake3Transcript::new(), &layout, &bad, 128).is_err());
+        let mut bad = proof.clone();
+        bad.compaction_forest.layers[0].line_nonce = None;
+        assert!(verify_falcon_piop(&mut Blake3Transcript::new(), &layout, &bad, 128).is_err());
+        let mut bad = proof;
+        bad.compaction_forest.layers[1].grinding_nonces.clear();
+        assert!(verify_falcon_piop(&mut Blake3Transcript::new(), &layout, &bad, 128).is_err());
+    }
+
+    #[test]
+    fn lazy_keccak_rows_preserve_dense_proof_and_transcript() {
+        let traces = [verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap()];
+        let layout = FalconSourceLayout::new(1).unwrap();
+        let field = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
+        let half = KECCAK_GATE_STRIDE;
+        let mut dense = OuterInputs {
+            ax: vec![field.zero(); 2 * half],
+            bx: vec![field.zero(); 2 * half],
+            cx: vec![field.zero(); 2 * half],
+        };
+        // Independent original dense construction, including iota and the
+        // linear XOR operand rather than substituting the honest product.
+        let shake = &traces[0].hash_to_point.shake;
+        let two_inv = unsigned((field.modulus_u128() + 1) / 2, &field);
+        for gate in 0..KECCAK_BITS {
+            let word = gate / 64;
+            let bit = gate % 64;
+            let lane = word % 25;
+            let round = word / 25 % 24;
+            let neighbor = |offset| word - lane + lane / 5 * 5 + (lane + offset) % 5;
+            let b = bit_field(shake.chi_inputs[word], bit, &field);
+            let z = bit_field(shake.chi_ands[word], bit, &field);
+            let mut y = shake.round_states[word] >> bit & 1;
+            if lane == 0 {
+                y ^= ROUND_CONSTANTS[round] >> bit & 1;
+            }
+            dense.ax[gate] = field.sub(
+                &field.one(),
+                &bit_field(shake.chi_inputs[neighbor(1)], bit, &field),
+            );
+            dense.bx[gate] = bit_field(shake.chi_inputs[neighbor(2)], bit, &field);
+            dense.cx[gate] = z;
+            dense.ax[half + gate] = b;
+            dense.bx[half + gate] = z;
+            dense.cx[half + gate] = field.mul(
+                &field.sub(&field.add(&b, &z), &unsigned(y.into(), &field)),
+                &two_inv,
+            );
+        }
+        let mut dense_transcript = Blake3Transcript::new();
+        dense_transcript.absorb_slice(b"bitz/falcon1024-ct/keccak-chi/v1");
+        let dense_proof = prove_quadratic(
+            &mut dense_transcript,
+            dense,
+            keccak_rounds(&layout),
+            100,
+            &field,
+        )
+        .unwrap();
+        let mut lazy_transcript = Blake3Transcript::new();
+        let lazy_proof =
+            prove_keccak_chi(&mut lazy_transcript, &layout, &traces, 100, &field).unwrap();
+        assert_eq!(lazy_proof, dense_proof);
+        assert_eq!(
+            squeeze(&mut lazy_transcript, &field).unwrap(),
+            squeeze(&mut dense_transcript, &field).unwrap()
+        );
+
+        // A non-power-of-two batch has both per-signature padding and a
+        // completely empty capacity slot, including in the XOR row block.
+        let traces = vec![traces[0].clone(); 3];
+        let rows = KeccakRows {
+            traces: &traces,
+            half: 4 * half,
+            field: &field,
+            two_inv,
+        };
+        for row in [
+            KECCAK_BITS,
+            3 * half,
+            rows.half + KECCAK_BITS,
+            rows.half + 3 * half,
+        ] {
+            assert_eq!([rows.a(row), rows.b(row), rows.c(row)], [field.zero(); 3]);
+        }
+    }
+
+    #[test]
+    fn forest_batches_distinct_trees_and_rejects_tampering() {
+        let field = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
+        for batch in [1, 3, 32] {
+            let mut leaves = Vec::new();
+            for instance in 0..batch {
+                let candidate: Vec<_> = (0..COMPACTION_LEAVES)
+                    .map(|i| unsigned((2 + i + 3 * instance) as u128, &field))
+                    .collect();
+                let output = candidate.iter().rev().copied().collect();
+                leaves.extend([candidate, output]);
+            }
+            let original_leaves = leaves.clone();
+            let mut prover = Blake3Transcript::new();
+            let (forest, compaction) =
+                prove_product_forest(&mut prover, leaves, 100, &field).unwrap();
+            let mut verifier = Blake3Transcript::new();
+            verify_product_forest(&mut verifier, &forest, &compaction, 100, &field).unwrap();
+            assert_eq!(
+                squeeze(&mut prover, &field).unwrap(),
+                squeeze(&mut verifier, &field).unwrap()
+            );
+            for (tree, leaves) in compaction
+                .iter()
+                .flat_map(|pair| [&pair.candidate, &pair.output])
+                .zip(original_leaves)
+            {
+                let weights = eq_table(&tree.terminal_point, &field).unwrap();
+                assert_eq!(tree.terminal_claim, weighted_sum(&leaves, &weights, &field));
+            }
+            let reject = |forest: &PrimeProductForestProof, trees: &[CompactionProof]| {
+                assert!(
+                    verify_product_forest(&mut Blake3Transcript::new(), forest, trees, 100, &field)
+                        .is_err()
+                );
+            };
+            let mut bad = compaction.clone();
+            bad[0].candidate.root = field.add(&bad[0].candidate.root, &field.one());
+            reject(&forest, &bad);
+            let mut bad = compaction.clone();
+            let first = &mut bad[0];
+            std::mem::swap(&mut first.candidate, &mut first.output);
+            reject(&forest, &bad);
+            let mut bad = forest.clone();
+            bad.layers.swap(1, 2);
+            reject(&bad, &compaction);
+            let mut bad = forest.clone();
+            bad.layers[2].evaluations.swap(0, 1);
+            reject(&bad, &compaction);
+            let mut bad = forest.clone();
+            bad.layers[0].line_nonce = Some(0);
+            reject(&bad, &compaction);
+            let mut bad = forest.clone();
+            bad.layers[1].sumcheck.as_mut().unwrap().round_polynomials[0][0] = field.zero();
+            reject(&bad, &compaction);
+        }
     }
 }

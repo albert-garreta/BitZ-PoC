@@ -64,7 +64,7 @@ pub enum FalconError {
     NormTooLarge { actual: u64 },
     #[error("the requested Falcon batch capacity must be in 1..=32")]
     InvalidBatchCapacity,
-    #[error("the Falcon source layout exceeds its 2^23-bit per-signature stride")]
+    #[error("the Falcon source layout exceeds its 2^22-bit per-signature stride")]
     SourceStrideOverflow,
     #[error("Falcon constraint family {family} failed at row {index}")]
     ConstraintViolation { family: &'static str, index: usize },

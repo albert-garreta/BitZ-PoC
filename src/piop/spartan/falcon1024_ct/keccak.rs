@@ -41,6 +41,10 @@ const ROTATION: [[u32; 5]; 5] = [
 /// `(!B[x+1,y]) & B[x+2,y]`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct KeccakTrace {
+    /// Native inputs to each permutation, used by the independent trace checker.
+    /// These checkpoints are reconstructed from public inputs and prior states
+    /// by the proof and are not separate committed source bits.
+    pub permutation_inputs: Vec<[u64; 25]>,
     /// The `B = \rho(\pi(\theta(A)))` lanes entering every chi layer, in
     /// permutation/round/`y`/`x` order.
     pub chi_inputs: Vec<u64>,
@@ -48,10 +52,52 @@ pub struct KeccakTrace {
     /// State lanes after chi and iota, in the same order as `chi_inputs`.
     /// Committing these checkpoints keeps the theta/rho/pi wiring sparse.
     pub round_states: Vec<u64>,
+    /// Theta column parity words, in permutation/round/`x` order.
+    pub column_parities: Vec<u64>,
+    /// Two-bit quotients in `sum_y A[x,y,bit] = C[x,bit] + 2 * quotient`,
+    /// in permutation/round/`x`/bit order.
+    pub column_parity_quotients: Vec<u8>,
     /// For every bit of `chi_inputs`, the exact quotient in
-    /// `sum(theta inputs) = B_bit + 2 * quotient`.
+    /// `A_bit + C_left + C_rotated_right = B_bit + 2 * quotient`.
+    /// Every quotient fits one bit.
     pub parity_quotients: Vec<u8>,
     pub permutations: usize,
+}
+
+impl KeccakTrace {
+    pub(super) fn validate_falcon_shape(&self) -> Result<(), super::FalconError> {
+        if self.permutations != 20
+            || self.permutation_inputs.len() != 20
+            || self.chi_inputs.len() != 20 * ROUNDS * 25
+            || self.chi_ands.len() != self.chi_inputs.len()
+            || self.round_states.len() != self.chi_inputs.len()
+            || self.column_parities.len() != 20 * ROUNDS * 5
+            || self.column_parity_quotients.len() != self.column_parities.len() * 64
+            || self.parity_quotients.len() != self.chi_inputs.len() * 64
+        {
+            return Err(super::FalconError::ConstraintViolation {
+                family: "keccak-shape",
+                index: 0,
+            });
+        }
+        for (index, &quotient) in self.column_parity_quotients.iter().enumerate() {
+            if quotient > 2 {
+                return Err(super::FalconError::ConstraintViolation {
+                    family: "keccak-column-quotient-range",
+                    index,
+                });
+            }
+        }
+        for (index, &quotient) in self.parity_quotients.iter().enumerate() {
+            if quotient > 1 {
+                return Err(super::FalconError::ConstraintViolation {
+                    family: "keccak-theta-quotient-range",
+                    index,
+                });
+            }
+        }
+        Ok(())
+    }
 }
 
 #[inline]
@@ -60,6 +106,7 @@ const fn lane(x: usize, y: usize) -> usize {
 }
 
 fn permutation(state: &mut [u64; 25], trace: &mut KeccakTrace) {
+    trace.permutation_inputs.push(*state);
     for &round_constant in &ROUND_CONSTANTS {
         let round_input = *state;
         let c: [u64; 5] = core::array::from_fn(|x| {
@@ -69,6 +116,17 @@ fn permutation(state: &mut [u64; 25], trace: &mut KeccakTrace) {
                 ^ state[lane(x, 3)]
                 ^ state[lane(x, 4)]
         });
+        trace.column_parities.extend_from_slice(&c);
+        for x in 0..5 {
+            for bit_index in 0..64 {
+                let sum: u8 = (0..5)
+                    .map(|y| bit(round_input[lane(x, y)], bit_index))
+                    .sum();
+                trace
+                    .column_parity_quotients
+                    .push((sum - bit(c[x], bit_index)) / 2);
+            }
+        }
         let d: [u64; 5] = core::array::from_fn(|x| c[(x + 4) % 5] ^ c[(x + 1) % 5].rotate_left(1));
         for y in 0..5 {
             for x in 0..5 {
@@ -92,17 +150,9 @@ fn permutation(state: &mut [u64; 25], trace: &mut KeccakTrace) {
                 for destination_bit in 0..64 {
                     let source_bit = (destination_bit + 64 - rotation) & 63;
                     let rotated_bit = (source_bit + 63) & 63;
-                    let mut sum = bit(round_input[lane(source_x, source_y)], source_bit);
-                    for source_row in 0..5 {
-                        sum += bit(
-                            round_input[lane((source_x + 4) % 5, source_row)],
-                            source_bit,
-                        );
-                        sum += bit(
-                            round_input[lane((source_x + 1) % 5, source_row)],
-                            rotated_bit,
-                        );
-                    }
+                    let sum = bit(round_input[lane(source_x, source_y)], source_bit)
+                        + bit(c[(source_x + 4) % 5], source_bit)
+                        + bit(c[(source_x + 1) % 5], rotated_bit);
                     let output = bit(word, destination_bit);
                     debug_assert!(sum >= output && (sum - output) & 1 == 0);
                     trace.parity_quotients.push((sum - output) / 2);
@@ -134,9 +184,12 @@ fn permutation(state: &mut [u64; 25], trace: &mut KeccakTrace) {
 pub fn shake256_with_trace(input: &[u8], output_len: usize) -> (Vec<u8>, KeccakTrace) {
     let mut state = [0u64; 25];
     let mut trace = KeccakTrace {
+        permutation_inputs: Vec::new(),
         chi_inputs: Vec::new(),
         chi_ands: Vec::new(),
         round_states: Vec::new(),
+        column_parities: Vec::new(),
+        column_parity_quotients: Vec::new(),
         parity_quotients: Vec::new(),
         permutations: 0,
     };
@@ -204,7 +257,12 @@ mod tests {
         assert_eq!(trace.chi_ands.len(), 25 * 24);
         assert_eq!(trace.chi_inputs.len(), 25 * 24);
         assert_eq!(trace.round_states.len(), 25 * 24);
+        assert_eq!(trace.permutation_inputs.len(), 1);
+        assert_eq!(trace.column_parities.len(), 5 * 24);
+        assert_eq!(trace.column_parity_quotients.len(), 5 * 24 * 64);
+        assert!(trace.column_parity_quotients.iter().all(|&q| q <= 2));
         assert_eq!(trace.parity_quotients.len(), 25 * 24 * 64);
+        assert!(trace.parity_quotients.iter().all(|&q| q <= 1));
     }
 
     #[test]
@@ -214,6 +272,9 @@ mod tests {
         assert_eq!(trace.chi_ands.len(), 12_000);
         assert_eq!(trace.chi_inputs.len(), 12_000);
         assert_eq!(trace.round_states.len(), 12_000);
+        assert_eq!(trace.permutation_inputs.len(), 20);
+        assert_eq!(trace.column_parities.len(), 2_400);
+        assert_eq!(trace.column_parity_quotients.len(), 153_600);
         assert_eq!(trace.parity_quotients.len(), 768_000);
     }
 

@@ -11,6 +11,8 @@ pub struct FalconConstraintCounts {
     pub public_bit_bindings: usize,
     /// Canonical CT `s2 != -2048` range equalities.
     pub s2_canonical: usize,
+    /// Shared theta column parity equations, one per column bit.
+    pub keccak_column_parity_bits: usize,
     /// Sparse theta/rho/pi parity equations, one per Keccak bit.
     pub keccak_linear_bits: usize,
     /// The two quadratic chi identities, one pair per Keccak bit.
@@ -34,6 +36,7 @@ impl FalconConstraintCounts {
         Self {
             public_bit_bindings: 1 + 32 * 8 + 8,
             s2_canonical: N,
+            keccak_column_parity_bits: 20 * 24 * 5 * 64,
             keccak_linear_bits: 20 * 24 * 25 * 64,
             keccak_quadratic_rows: 2 * 20 * 24 * 25 * 64,
             // Division/output tie, two ranges, prefix recurrence, plus the
@@ -51,6 +54,7 @@ impl FalconConstraintCounts {
     pub const fn linear_rows(self) -> usize {
         self.public_bit_bindings
             + self.s2_canonical
+            + self.keccak_column_parity_bits
             + self.keccak_linear_bits
             + self.hash_to_point_linear
             + self.s1_ranges
@@ -78,6 +82,7 @@ impl FalconConstraintCounts {
 /// displayed equations, rather than calling the verifier that generated the
 /// trace.
 pub fn check_exact_constraints(trace: &FalconVerificationTrace) -> Result<(), FalconError> {
+    check_keccak_constraints(trace)?;
     let hash = &trace.hash_to_point;
     for i in 0..HASH_TO_POINT_SAMPLES {
         let word = i64::from(hash.words[i]);
@@ -144,6 +149,109 @@ pub fn check_exact_constraints(trace: &FalconVerificationTrace) -> Result<(), Fa
     Ok(())
 }
 
+fn check_keccak_constraints(trace: &FalconVerificationTrace) -> Result<(), FalconError> {
+    let shake = &trace.hash_to_point.shake;
+    shake.validate_falcon_shape()?;
+    // The 32 message bytes are statement-bound by the commitment adapter.
+    for byte in 0..200 {
+        if (40..72).contains(&byte) {
+            continue;
+        }
+        let expected = match byte {
+            0..40 => trace.signature.nonce[byte],
+            72 => 0x1f,
+            135 => 0x80,
+            _ => 0,
+        };
+        if (shake.permutation_inputs[0][byte / 8] >> (8 * (byte % 8))) as u8 != expected {
+            return violation("keccak-input", byte);
+        }
+    }
+    // Forward rho/pi indexing makes this independent of the binder's inverse.
+    const ROTATION: [[u32; 5]; 5] = [
+        [0, 36, 3, 41, 18],
+        [1, 44, 10, 45, 2],
+        [62, 6, 43, 15, 61],
+        [28, 55, 25, 21, 56],
+        [27, 20, 39, 8, 14],
+    ];
+    let bit = |word: u64, index: usize| ((word >> index) & 1) as u16;
+    for permutation in 0..20 {
+        if permutation > 0
+            && shake.permutation_inputs[permutation]
+                != shake.round_states[(permutation * 24 - 1) * 25..permutation * 24 * 25]
+        {
+            return violation("keccak-squeeze-state", permutation);
+        }
+        for round in 0..24 {
+            let round_index = permutation * 24 + round;
+            let input: &[u64] = if round == 0 {
+                &shake.permutation_inputs[permutation]
+            } else {
+                &shake.round_states[(round_index - 1) * 25..round_index * 25]
+            };
+            let columns = &shake.column_parities[round_index * 5..(round_index + 1) * 5];
+            for x in 0..5 {
+                for z in 0..64 {
+                    let index = (round_index * 5 + x) * 64 + z;
+                    let sum: u16 = (0..5).map(|y| bit(input[x + 5 * y], z)).sum();
+                    if sum
+                        != bit(columns[x], z) + 2 * u16::from(shake.column_parity_quotients[index])
+                    {
+                        return violation("keccak-column-parity", index);
+                    }
+                }
+            }
+            for y in 0..5 {
+                for x in 0..5 {
+                    let destination_lane = y + 5 * ((2 * x + 3 * y) % 5);
+                    let output_word = round_index * 25 + destination_lane;
+                    for z in 0..64 {
+                        let destination_bit = (z + ROTATION[x][y] as usize) & 63;
+                        let index = output_word * 64 + destination_bit;
+                        let sum = bit(input[x + 5 * y], z)
+                            + bit(columns[(x + 4) % 5], z)
+                            + bit(columns[(x + 1) % 5], (z + 63) & 63);
+                        if sum
+                            != bit(shake.chi_inputs[output_word], destination_bit)
+                                + 2 * u16::from(shake.parity_quotients[index])
+                        {
+                            return violation("keccak-theta-parity", index);
+                        }
+                    }
+                    let index = round_index * 25 + x + 5 * y;
+                    let expected_and = !shake.chi_inputs[round_index * 25 + (x + 1) % 5 + 5 * y]
+                        & shake.chi_inputs[round_index * 25 + (x + 2) % 5 + 5 * y];
+                    if shake.chi_ands[index] != expected_and {
+                        return violation("keccak-chi", index);
+                    }
+                    let mut expected_state = shake.chi_inputs[index] ^ shake.chi_ands[index];
+                    if x == 0 && y == 0 {
+                        expected_state ^= super::keccak::ROUND_CONSTANTS[round];
+                    }
+                    if shake.round_states[index] != expected_state {
+                        return violation("keccak-round-state", index);
+                    }
+                }
+            }
+        }
+    }
+    let output_byte = |byte: usize| {
+        let permutation = byte / 136;
+        let within_rate = byte % 136;
+        let word = (permutation * 24 + 23) * 25 + within_rate / 8;
+        (shake.round_states[word] >> (8 * (within_rate % 8))) as u8
+    };
+    for i in 0..HASH_TO_POINT_SAMPLES {
+        if trace.hash_to_point.words[i]
+            != u16::from_be_bytes([output_byte(2 * i), output_byte(2 * i + 1)])
+        {
+            return violation("keccak-output", i);
+        }
+    }
+    Ok(())
+}
+
 fn violation<T>(family: &'static str, index: usize) -> Result<T, FalconError> {
     Err(FalconError::ConstraintViolation { family, index })
 }
@@ -164,7 +272,9 @@ mod tests {
         let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
         check_exact_constraints(&trace).unwrap();
         let counts = FalconConstraintCounts::per_signature();
-        assert_eq!(counts.linear_rows(), 776_583);
+        assert_eq!(counts.keccak_column_parity_bits, 153_600);
+        assert_eq!(counts.linear_rows(), 930_183);
+        assert!(counts.linear_rows() < 1 << 20);
         assert_eq!(counts.norm_round_degree(), 2);
         assert_eq!(counts.product_round_degree(), 3);
     }
@@ -178,6 +288,73 @@ mod tests {
             Err(FalconError::ConstraintViolation {
                 family: "hash-division",
                 index: 17
+            })
+        ));
+    }
+
+    #[test]
+    fn corrupted_keccak_parity_witnesses_are_rejected() {
+        let mut trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+        trace.hash_to_point.shake.column_parities[5] ^= 1;
+        assert!(matches!(
+            check_exact_constraints(&trace),
+            Err(FalconError::ConstraintViolation {
+                family: "keccak-column-parity",
+                index: 320,
+            })
+        ));
+        trace.hash_to_point.shake.column_parities[5] ^= 1;
+
+        trace.hash_to_point.shake.column_parity_quotients[320] ^= 1;
+        assert!(matches!(
+            check_exact_constraints(&trace),
+            Err(FalconError::ConstraintViolation {
+                family: "keccak-column-parity" | "keccak-column-quotient-range",
+                index: 320,
+            })
+        ));
+        trace.hash_to_point.shake.column_parity_quotients[320] ^= 1;
+
+        trace.hash_to_point.shake.parity_quotients[1_600] ^= 1;
+        assert!(matches!(
+            check_exact_constraints(&trace),
+            Err(FalconError::ConstraintViolation {
+                family: "keccak-theta-parity",
+                index: 1_600,
+            })
+        ));
+    }
+
+    #[test]
+    fn malformed_keccak_auxiliary_shapes_and_ranges_are_rejected() {
+        let mut trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+        let parity = trace.hash_to_point.shake.column_parities.pop().unwrap();
+        assert!(matches!(
+            check_exact_constraints(&trace),
+            Err(FalconError::ConstraintViolation {
+                family: "keccak-shape",
+                ..
+            })
+        ));
+        trace.hash_to_point.shake.column_parities.push(parity);
+
+        let quotient = trace.hash_to_point.shake.column_parity_quotients[0];
+        trace.hash_to_point.shake.column_parity_quotients[0] = 3;
+        assert!(matches!(
+            check_exact_constraints(&trace),
+            Err(FalconError::ConstraintViolation {
+                family: "keccak-column-quotient-range",
+                index: 0,
+            })
+        ));
+        trace.hash_to_point.shake.column_parity_quotients[0] = quotient;
+
+        trace.hash_to_point.shake.parity_quotients[0] = 2;
+        assert!(matches!(
+            check_exact_constraints(&trace),
+            Err(FalconError::ConstraintViolation {
+                family: "keccak-theta-quotient-range",
+                index: 0,
             })
         ));
     }
