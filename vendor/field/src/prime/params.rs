@@ -117,6 +117,17 @@ impl<const L: usize> PrimeParameters<L> {
     #[inline]
     pub fn add(&self, a: &Uint<L>, b: &Uint<L>) -> Uint<L> {
         let (sum, carry) = a.adc(b);
+        if L == 2 {
+            // Canonical inputs give a + b < 2p, including the 129th carry.
+            // Reuse the register-only correction on AArch64 so a static
+            // modulus does not become per-limb additions of -p literals.
+            let reduced = super::montgomery128::conditional_subtract(
+                [sum.0[0], sum.0[1]],
+                [self.modulus.0[0], self.modulus.0[1]],
+                carry,
+            );
+            return Uint(core::array::from_fn(|i| reduced[i]));
+        }
         let (reduced, borrow) = sum.sbb(&self.modulus);
         Uint::ct_select(&sum, &reduced, CtMask::from_lsb(carry | (borrow ^ 1)))
     }
@@ -205,38 +216,43 @@ impl<const L: usize> PrimeParameters<L> {
     }
 
     /// Reduce every supplied limb. The schedule depends on width, never magnitude.
+    // Keep the fixed-width arithmetic visible to static callers so their
+    // modulus and Barrett reciprocal can be folded into the generated code.
+    #[inline(always)]
     pub fn remainder(&self, words: &(impl Words + ?Sized)) -> Uint<L> {
-        // Preserve the measured two-limb schedule; other public widths use
-        // prepared radix division rather than a bit-by-bit execution fallback.
-        if L == 2 && self.modulus.0[1] != 0 {
-            return self.remainder_barrett(words);
-        }
-        self.general_reduction
-            .as_ref()
-            .expect("prepared general modulus")
-            .remainder(words, &self.modulus)
-    }
-
-    fn remainder_barrett(&self, words: &(impl Words + ?Sized)) -> Uint<L> {
-        use super::barrett128::*;
-        let r2 = [self.r2.0[0], self.r2.0[1]];
-        let modulus = [self.modulus.0[0], self.modulus.0[1]];
-        let result = if words.len() <= 5 {
+        if L == 2 && self.modulus.0[1] != 0 && words.len() <= 5 {
+            use super::barrett128::*;
+            let r2 = [self.r2.0[0], self.r2.0[1]];
+            let modulus = [self.modulus.0[0], self.modulus.0[1]];
             let mut limbs = [0; 5];
             for (i, dst) in limbs.iter_mut().enumerate().take(words.len()) {
                 *dst = words.word(i);
             }
             let (folded, carry) = fold_fifth_limb(limbs, r2);
-            add_mod_masked(barrett_reduce_4(folded, self), r2, carry, modulus)
-        } else {
+            let result = add_mod_masked(barrett_reduce_4(folded, self), r2, carry, modulus);
+            return Uint(core::array::from_fn(|i| result[i]));
+        }
+        self.remainder_fallback(words)
+    }
+
+    // Keep arbitrary-width and general-modulus reduction outside the inlined
+    // small-product path. These branches depend only on public parameters.
+    fn remainder_fallback(&self, words: &(impl Words + ?Sized)) -> Uint<L> {
+        if L == 2 && self.modulus.0[1] != 0 {
             // Horner in radix 2^64; no dependence on the integer's magnitude.
             let mut remainder = [0; 2];
             for i in (0..words.len()).rev() {
-                remainder = barrett_reduce_4([words.word(i), remainder[0], remainder[1], 0], self);
+                remainder = super::barrett128::barrett_reduce_4(
+                    [words.word(i), remainder[0], remainder[1], 0],
+                    self,
+                );
             }
-            remainder
-        };
-        Uint(core::array::from_fn(|i| result[i]))
+            return Uint(core::array::from_fn(|i| remainder[i]));
+        }
+        self.general_reduction
+            .as_ref()
+            .expect("prepared general modulus")
+            .remainder(words, &self.modulus)
     }
 
     pub fn reduce_product_acc(&self, input: &UintAccumulator<L, L>) -> Uint<L> {
