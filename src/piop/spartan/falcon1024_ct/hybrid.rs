@@ -18,6 +18,7 @@ use crate::{
         LigeritoSelection, ResolvedLigerito,
         grinding::{GrindingContext, GrindingNonces, GrindingPlan},
     },
+    merged_forest::ForestScratch,
     piop::spartan::grinding::GrindingDomain,
     transcript::{Blake3Transcript, traits::Transcript},
 };
@@ -66,6 +67,7 @@ pub struct PreparedFalconHybrid {
     ligerito: ResolvedLigerito,
     pcs_grinding: GrindingPlan,
     scratch: Mutex<Scratch>,
+    forest_scratch: Mutex<ForestScratch>,
 }
 
 /// Packed witness and its commitments. Consumed by proving so large auxiliary
@@ -130,6 +132,7 @@ impl PreparedFalconHybrid {
             ligerito,
             pcs_grinding,
             scratch: Mutex::default(),
+            forest_scratch: Mutex::default(),
         };
         if prepared.security().algebraic_bits < target_bits as f64 {
             return Err(error(
@@ -396,7 +399,7 @@ impl PreparedFalconHybrid {
     ) -> Result<FalconHybridProof, FalconError> {
         let (mut t, digest) = self.transcript(&committed.statement)?;
         let arithmetic_span = tracing::info_span!("falcon_hybrid:arithmetic_prefix").entered();
-        let (arithmetic, _) = prove_binding_prefix(
+        let (arithmetic, claim) = prove_binding_prefix(
             &mut t,
             &self.layout,
             &committed.statement.public,
@@ -406,13 +409,21 @@ impl PreparedFalconHybrid {
         )?;
         drop(arithmetic_span);
         let bridge_span = tracing::info_span!("falcon_hybrid:binary_bridge").entered();
+        let forest_scratch = self
+            .forest_scratch
+            .lock()
+            .map_err(|_| error("hybrid forest scratch lock"))?;
         let (bridge, a) = hybrid_bridge::prove(
             &mut t,
             &committed.arithmetic,
             &arithmetic.binding_point,
             arithmetic.piop.modulus,
             self.binary_grinding(hybrid_bridge::ERROR_NUMERATOR),
+            &claim.row_weights,
+            &forest_scratch,
         )?;
+        drop(forest_scratch);
+        drop(claim);
         drop(bridge_span);
         let keccak_span = tracing::info_span!("falcon_hybrid:keccak_prefix").entered();
         let mut prefixes = Vec::new();

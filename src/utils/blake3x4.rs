@@ -8,7 +8,8 @@
 //! multi-chunk `hash_many` path), which made the level-0 fold grinding of a
 //! Johnson-regime opener (2^21–2^23 attempts at the hybrid shapes) the
 //! largest part of its Ligerito time. [`first_pow_nonce`] compresses eight
-//! nonces at once in NEON or AVX2 lanes and returns exactly the nonce a serial scan
+//! nonces at once in NEON or AVX2 lanes, or sixteen in AVX-512 lanes, and
+//! returns exactly the nonce a serial scan
 //! would: the SMALLEST hit of the range. Every kernel constant is the BLAKE3
 //! specification's (the equivalence tests below pin the lanes to
 //! `blake3::hash` bit for bit).
@@ -34,6 +35,8 @@ const FLAGS: u32 = 1 | 2 | 8; // CHUNK_START | CHUNK_END | ROOT
 
 #[cfg(target_arch = "x86_64")]
 mod avx2;
+#[cfg(target_arch = "x86_64")]
+mod avx512;
 
 /// Longest prefix (bytes) that keeps `prefix ‖ nonce` inside one block.
 pub(crate) const MAX_PREFIX_LEN: usize = 56;
@@ -66,7 +69,7 @@ pub(crate) fn leading_zero_bits(bytes: &[u8]) -> u32 {
 /// The smallest nonce in `start..end` whose `blake3(prefix ‖ nonce_le)`
 /// has at least `bits` leading zero bits, scanning in increasing order.
 /// `prefix` is at most [`MAX_PREFIX_LEN`] bytes; the NEON lanes take a
-/// prefix of whole 32-bit words (every BitZ seed), as do the AVX2 lanes; other inputs scan
+/// prefix of whole 32-bit words (every BitZ seed), as do the x86 SIMD lanes; other inputs scan
 /// through the reference hash.
 pub(crate) fn first_pow_nonce(prefix: &[u8], start: u64, end: u64, bits: u32) -> Option<u64> {
     assert!(
@@ -79,10 +82,16 @@ pub(crate) fn first_pow_nonce(prefix: &[u8], start: u64, end: u64, bits: u32) ->
         return unsafe { neon::first_pow_nonce(prefix, start, end, bits) };
     }
     #[cfg(target_arch = "x86_64")]
-    if prefix.len() % 4 == 0 && std::is_x86_feature_detected!("avx2") {
-        // SAFETY: AVX2 support was checked above; the public prefix bound is
-        // asserted at entry and the kernel accepts whole-word prefixes.
-        return unsafe { avx2::first_pow_nonce(prefix, start, end, bits) };
+    if prefix.len() % 4 == 0 {
+        if std::is_x86_feature_detected!("avx512f") {
+            // SAFETY: AVX512F support was checked above; the public prefix
+            // bound is asserted at entry and the kernel accepts whole words.
+            return unsafe { avx512::first_pow_nonce(prefix, start, end, bits) };
+        }
+        if std::is_x86_feature_detected!("avx2") {
+            // SAFETY: AVX2 support was checked above, with the same bounds.
+            return unsafe { avx2::first_pow_nonce(prefix, start, end, bits) };
+        }
     }
     (start..end).find(|&n| pow_ok(prefix, n, bits))
 }
@@ -100,8 +109,24 @@ pub(crate) fn first_pow_nonce(prefix: &[u8], start: u64, end: u64, bits: u32) ->
 /// exhausted (a theoretical bound only).
 #[cfg(feature = "parallel")]
 pub(crate) fn smallest_pow_nonce(prefix: &[u8], bits: u32) -> Option<u64> {
+    // Short AVX-512 searches benefit from smaller chunks: workers finish
+    // in-flight scans sooner after another worker finds the minimum. Keep
+    // larger chunks for long searches to amortize shared-counter traffic.
+    #[cfg(target_arch = "x86_64")]
+    if bits <= 16 && prefix.len() % 4 == 0 && std::is_x86_feature_detected!("avx512f") {
+        return smallest_pow_nonce_with::<8>(prefix, bits, first_pow_nonce);
+    }
+    smallest_pow_nonce_with::<10>(prefix, bits, first_pow_nonce)
+}
+
+#[cfg(feature = "parallel")]
+fn smallest_pow_nonce_with<const CHUNK_LOG: u32>(
+    prefix: &[u8],
+    bits: u32,
+    scan: impl Fn(&[u8], u64, u64, u32) -> Option<u64> + Sync,
+) -> Option<u64> {
     use std::sync::atomic::{AtomicU64, Ordering};
-    const CHUNK_LOG: u64 = 10;
+    assert!((1..64).contains(&CHUNK_LOG));
     let next = AtomicU64::new(0);
     let best = AtomicU64::new(u64::MAX);
     rayon::broadcast(|_| {
@@ -114,9 +139,7 @@ pub(crate) fn smallest_pow_nonce(prefix: &[u8], bits: u32) -> Option<u64> {
             if start >= best.load(Ordering::Relaxed) {
                 break;
             }
-            if let Some(n) =
-                first_pow_nonce(prefix, start, start.saturating_add(1 << CHUNK_LOG), bits)
-            {
+            if let Some(n) = scan(prefix, start, start.saturating_add(1 << CHUNK_LOG), bits) {
                 best.fetch_min(n, Ordering::Relaxed);
             }
         }
@@ -323,6 +346,74 @@ mod tests {
         }
     }
 
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn avx512_words_match_the_blake3_crate() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        for seed in 0..8 {
+            for len in (0..=MAX_PREFIX_LEN).step_by(4) {
+                let prefix = prefix(seed, len);
+                let words: Vec<_> = prefix
+                    .chunks_exact(4)
+                    .map(|word| u32::from_le_bytes(word.try_into().unwrap()))
+                    .collect();
+                for base in [0, 1, 4093, (1 << 32) - 3, u64::MAX - 15] {
+                    // SAFETY: AVX512F is available and every full batch fits.
+                    let actual = unsafe { avx512::first_words(&words, base) };
+                    for (lane, word) in actual.into_iter().enumerate() {
+                        let mut message = prefix.clone();
+                        message.extend_from_slice(&(base + lane as u64).to_le_bytes());
+                        let hash = blake3::hash(&message);
+                        let expected = u32::from_le_bytes(hash.as_bytes()[..4].try_into().unwrap());
+                        assert_eq!(
+                            word, expected,
+                            "seed {seed} len {len} base {base} lane {lane}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Direct calls pin both x86 kernels even when dispatch selects AVX-512.
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn x86_kernels_return_the_same_smallest_nonce() {
+        for seed in 0..4 {
+            for len in (0..=MAX_PREFIX_LEN).step_by(4) {
+                let prefix = prefix(seed + 200, len);
+                for start in [0, 4093, (1 << 32) - 9, u64::MAX - 257] {
+                    for count in [0, 1, 7, 8, 15, 16, 17, 31, 32, 33, 257] {
+                        let end = start + count;
+                        for bits in [0, 1, 5, 8, 31, 32, 33, 256, 257] {
+                            let expected = (start..end).find(|&n| pow_ok(&prefix, n, bits));
+                            if std::is_x86_feature_detected!("avx2") {
+                                // SAFETY: the feature is checked and prefix is bounded.
+                                let actual =
+                                    unsafe { avx2::first_pow_nonce(&prefix, start, end, bits) };
+                                assert_eq!(
+                                    actual, expected,
+                                    "AVX2 len {len} start {start} count {count} bits {bits}"
+                                );
+                            }
+                            if std::is_x86_feature_detected!("avx512f") {
+                                // SAFETY: the feature is checked and prefix is bounded.
+                                let actual =
+                                    unsafe { avx512::first_pow_nonce(&prefix, start, end, bits) };
+                                assert_eq!(
+                                    actual, expected,
+                                    "AVX512 len {len} start {start} count {count} bits {bits}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn range_edges_match_the_serial_scan() {
         for len in 0..=MAX_PREFIX_LEN {
@@ -419,6 +510,134 @@ mod tests {
                         smallest_pow_nonce(&seed, bits),
                         serial,
                         "len {len} seed {s} bits {bits}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn pool_search_preserves_minimum_across_threads_and_chunks() {
+        for threads in [1, 2, 4] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .unwrap();
+            pool.install(|| {
+                for seed in 100..104 {
+                    for len in [7, 16, 32, 56] {
+                        let prefix = prefix(seed, len);
+                        for bits in [1, 8, 12] {
+                            let expected = (0..u64::MAX).find(|&n| pow_ok(&prefix, n, bits));
+                            assert_eq!(
+                                smallest_pow_nonce_with::<4>(&prefix, bits, first_pow_nonce),
+                                expected
+                            );
+                            assert_eq!(
+                                smallest_pow_nonce_with::<8>(&prefix, bits, first_pow_nonce),
+                                expected
+                            );
+                            assert_eq!(
+                                smallest_pow_nonce_with::<10>(&prefix, bits, first_pow_nonce),
+                                expected
+                            );
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    /// Run alone in a release build with --ignored --nocapture. The nonce
+    /// ranges and seeds are fixed; difficulty 257 forces every lane to run.
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    #[ignore = "isolated grinding kernel benchmark"]
+    fn benchmark_x86_nonce_kernels() {
+        use std::{hint::black_box, time::Instant};
+        type Scan = unsafe fn(&[u8], u64, u64, u32) -> Option<u64>;
+        let kernels: [(&str, bool, Scan); 2] = [
+            (
+                "avx2",
+                std::is_x86_feature_detected!("avx2"),
+                avx2::first_pow_nonce,
+            ),
+            (
+                "avx512",
+                std::is_x86_feature_detected!("avx512f"),
+                avx512::first_pow_nonce,
+            ),
+        ];
+        for (name, available, scan) in kernels {
+            if !available {
+                continue;
+            }
+            for len in [16, 32] {
+                let seeds: Vec<_> = (0..8).map(|i| prefix(i + 500, len)).collect();
+                for trial in 0..6 {
+                    let start = Instant::now();
+                    for seed in &seeds {
+                        // SAFETY: the feature is checked, prefixes are whole
+                        // words, and the range is bounded far below u64::MAX.
+                        assert_eq!(unsafe { scan(black_box(seed), 0, 1 << 18, 257) }, None);
+                    }
+                    let elapsed_ns = start.elapsed().as_nanos();
+                    eprintln!(
+                        "{{\"benchmark\":\"grinding-kernel\",\"kernel\":\"{name}\",\"prefix_bytes\":{len},\"trial\":{trial},\"warmup\":{},\"nonces\":{},\"elapsed_ns\":{elapsed_ns}}}",
+                        trial == 0,
+                        8 << 18
+                    );
+                }
+            }
+        }
+    }
+
+    /// Compares search policy on identical seeds, independently of proof
+    /// transcript variation. Run alone with RAYON_NUM_THREADS=16.
+    #[cfg(feature = "parallel")]
+    #[test]
+    #[ignore = "isolated grinding scheduling benchmark"]
+    fn benchmark_nonce_scheduling() {
+        use std::{hint::black_box, time::Instant};
+        type Search = fn(&[u8], u32) -> Option<u64>;
+        let searches: [(&str, Search); 6] = [
+            ("serial", |prefix, bits| {
+                first_pow_nonce(prefix, 0, u64::MAX, bits)
+            }),
+            ("parallel16", |prefix, bits| {
+                smallest_pow_nonce_with::<4>(prefix, bits, first_pow_nonce)
+            }),
+            ("parallel64", |prefix, bits| {
+                smallest_pow_nonce_with::<6>(prefix, bits, first_pow_nonce)
+            }),
+            ("parallel256", |prefix, bits| {
+                smallest_pow_nonce_with::<8>(prefix, bits, first_pow_nonce)
+            }),
+            ("parallel1024", |prefix, bits| {
+                smallest_pow_nonce_with::<10>(prefix, bits, first_pow_nonce)
+            }),
+            ("parallel4096", |prefix, bits| {
+                smallest_pow_nonce_with::<12>(prefix, bits, first_pow_nonce)
+            }),
+        ];
+        let seeds: Vec<_> = (0..32).map(|i| prefix(i + 600, 32)).collect();
+        let threads = rayon::current_num_threads();
+        for bits in [10, 12, 14, 16, 18, 20] {
+            let expected: Vec<_> = seeds
+                .iter()
+                .map(|seed| first_pow_nonce(seed, 0, u64::MAX, bits))
+                .collect();
+            for trial in 0..4 {
+                for (name, search) in searches {
+                    let start = Instant::now();
+                    for (seed, expected) in seeds.iter().zip(&expected) {
+                        assert_eq!(search(black_box(seed), bits), *expected);
+                    }
+                    let elapsed_ns = start.elapsed().as_nanos();
+                    eprintln!(
+                        "{{\"benchmark\":\"grinding-scheduling\",\"search\":\"{name}\",\"bits\":{bits},\"threads\":{threads},\"trial\":{trial},\"warmup\":{},\"seeds\":32,\"elapsed_ns\":{elapsed_ns}}}",
+                        trial == 0
                     );
                 }
             }

@@ -648,3 +648,84 @@ schedules, and compensating limb-sum forgeries. Serial Falcon and the legacy/new
 benchmark clients passed `cargo check`. Raw trials, diagnostic spans, build/test
 logs and executable/source hashes are retained in
 `bench_results/falcon-word-binder-20260925/` (ignored local artifacts).
+
+## GKR buffer reuse and AVX-512 grinding: 16-thread results
+
+The next implementation preserves the hybrid v3 constraints, security schedule,
+and transcript. It adds runtime-dispatched AVX512F BLAKE3 nonce scans (16 lanes,
+with AVX2/scalar fallbacks), and uses 256-nonce work chunks for short AVX-512
+parallel searches while retaining 1024-nonce chunks for longer searches. The
+parallel threshold and grinding difficulties are unchanged. Isolated native
+kernel measurements on the Ryzen 9 9950X3D measured about 1.92x AVX2 throughput.
+
+The multi-claim bridge forest now supports contiguous storage, recycles its
+buffers through a prepared-object workspace, and shares witness-bit selector
+decoding across the two limbs. Limb weights and field products remain distinct.
+Lookup tables move into their final consumers instead of being cloned. The
+bridge also reuses the arithmetic prefix's canonical row weights. Scratch is
+reset on geometry changes, bounded in retained capacity, and reuses matching
+allocation size classes so small root layers cannot consume large JIT buffers.
+
+Matched native release runs compared the saved `e5f46958` library with these
+changes using the same updated benchmark harness, target 128, 16 Rayon threads,
+one warmup and three measured trials per case. Every one of the 40 proofs
+verified. Each of the 20 corresponding baseline/candidate pairs had identical
+commitment roots and complete proof Debug digests. This digest is an exact-build
+comparison aid, not a canonical wire encoding. All 15 measured trial pairs were
+faster after the changes.
+
+| Workload | Batch | Baseline ms/signature | Optimized ms/signature | Less time, ratio of medians |
+| --- | ---: | ---: | ---: | ---: |
+| Repeated bundled signature, shared key | 256 | 5.205 | **4.036** | 22.5% |
+| Repeated bundled signature, shared key | 1024 | 5.138 | **3.842** | 25.2% |
+| Four signatures, shared key | 256 | 5.400 | **4.494** | 16.8% |
+| Eight signatures, two keys | 256 | 5.141 | **4.026** | 21.7% |
+| Eight signatures, two keys | 1024 | 5.031 | **3.815** | 24.2% |
+
+Full prover time includes witness generation, commitments, SHAKE, HashToPoint,
+and all proof stages. It excludes fixture loading, public-statement decoding,
+reusable setup, verification, and proof Debug hashing. Varied cases cycle their
+four/eight valid fixture pool across the batch and rotate the starting offset
+between trials; they are not batches of hundreds of unique signatures. The
+fixtures were generated and checked with the local Falcon reference signer.
+Grinding varies across these transcripts: paired trial reductions range from
+11.4% to 27.5%, so unpaired minima/maxima should not be used to infer a speedup.
+Process order alternates across cases; the three-sample medians still have
+ordinary run-to-run uncertainty.
+
+Buffer retention has a measurable memory cost. Repeated-fixture process peak
+RSS grew from **1.52 to 2.03 GiB** at batch 256 and **5.14 to 7.16 GiB** at batch
+1024. These are whole-process high-water marks including warmup, verification,
+and retained workspaces. The existing `BITZ_FLAT_FOREST=0` override keeps the
+lower-memory per-tree path while retaining the faster grinding kernel:
+
+| Mode | Batch 256 ms/signature / peak RSS | Batch 1024 ms/signature / peak RSS |
+| --- | ---: | ---: |
+| Default flat forest with reuse | 4.036 / 2.03 GiB | 3.842 / 7.16 GiB |
+| `BITZ_FLAT_FOREST=0` | 4.170 / 1.53 GiB | 3.990 / 5.14 GiB |
+
+This separate ablation attributes roughly 3–4% additional whole-prover time
+reduction to the flat/reuse path; most of the overall gain comes from grinding.
+Both modes produced identical proofs. Retaining more tree levels was also
+tested: the existing L4 schedule was about 10–12% slower than automatic L8 on
+the baseline at these batch sizes and used more memory. L8 remains the default;
+the unsupported multi-claim L2 schedule was not added.
+
+Separate single-trial cold diagnostic runs measured grinding at **2.32 to 1.26
+ms/signature** and the two inclusive GKR forest stages at **2.34 to 1.63 ms**.
+Those timings overlap and are excluded from the latency medians. Diagnostic
+events now record full span ancestry to attribute grinding to its enclosing
+forest, arithmetic, or opening stage.
+
+The benchmark accepts `--fixture-manifest PATH` (or
+`BITZ_FALCON_FIXTURE_MANIFEST`). The JSON is a nonempty array of objects with
+`public_key`, `signature`, and `message` paths, resolved relative to the manifest.
+Existing single-fixture environment overrides and bundled defaults still work.
+Validation passed **590 native release library tests**, with zero failures and
+seven ignored tests. All six merged-forest tests also passed separately with
+`BITZ_JIT_R1=0` and `BITZ_JIT_GRID=0`, covering the alternative JIT paths. The
+serial Falcon configuration passed `cargo check`; native and generic-target
+grinding checks matched scalar BLAKE3, including nonce carries and search tails.
+Raw trials, generated fixtures, executable/source hashes, comparison scripts,
+profiles, and validation logs are in
+`bench_results/falcon-gkr-reuse-20260925/` (ignored local artifacts).

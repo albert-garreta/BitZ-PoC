@@ -11,7 +11,8 @@ use crate::{
     hybrid::BinaryClaim,
     ligerito::fold_values_bits_multi,
     merged_forest::{
-        MergedForestProof, prove_merged_forest_lazy_multi_from_rows, verify_merged_forest,
+        ForestScratch, MergedForestProof, prove_merged_forest_lazy_multi_from_rows_with_scratch,
+        verify_merged_forest,
     },
     pcs::{
         FlatPowers, IntegerMatrixLayout, PowerTable, chunk_pow2_flat, chunk_row_weights,
@@ -94,21 +95,27 @@ fn bind(t: &mut impl Transcript, sums: &[Vec<u128>]) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn prove(
     t: &mut impl Transcript,
     source: &FalconSourceWitness,
     point: &[F],
     modulus: u128,
     grinding_bits: u32,
+    row_weights: &[u128],
+    scratch: &ForestScratch,
 ) -> Result<(Proof, Vec<BinaryClaim>), FalconError> {
     let p = source.layout().bitz_params();
     if point.len() != p.row_vars + p.col_vars {
         return Err(err("bridge point shape"));
     }
-    let field = F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
+    F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
+    if row_weights.len() != p.rows() || row_weights.iter().any(|&weight| weight >= modulus) {
+        return Err(err("bridge row weights"));
+    }
     let q_bits = 128 - modulus.leading_zeros() as usize;
     let chunks = chunk_row_weights(
-        &weights(&point[..p.row_vars], &field),
+        row_weights,
         mod_q_chunk_width(&p),
         mod_q_num_chunks(&p, q_bits),
     );
@@ -129,9 +136,14 @@ pub(super) fn prove(
     drop(power_span);
     let mut grinder = ProverBlockGrindingTranscript::<_, BridgeGrinding>::new(t, grinding_bits);
     let forest_span = tracing::info_span!("falcon_bridge:merged_forest").entered();
-    let (_, forest, z, e) =
-        prove_merged_forest_lazy_multi_from_rows(&mut grinder, &p, source.rows(), &powers)
-            .map_err(|_| err("unsupported bridge forest schedule"))?;
+    let (_, forest, z, e) = prove_merged_forest_lazy_multi_from_rows_with_scratch(
+        &mut grinder,
+        &p,
+        source.rows(),
+        &powers,
+        scratch,
+    )
+    .map_err(|_| err("unsupported bridge forest schedule"))?;
     drop(forest_span);
     let residual_span = tracing::info_span!("falcon_bridge:residual").entered();
     let claim = binary_claim(&p, &powers, &z, e);
@@ -265,7 +277,16 @@ mod tests {
         }
         let value = F::from_with_cfg(Uint::from(value), &field);
         let mut pt = Blake3Transcript::new();
-        let (proof, claims) = prove(&mut pt, &source, &point, modulus, 2).unwrap();
+        let (proof, claims) = prove(
+            &mut pt,
+            &source,
+            &point,
+            modulus,
+            2,
+            &row_weights,
+            &ForestScratch::default(),
+        )
+        .unwrap();
         assert_eq!(claims.len(), 1);
         let mut vt = Blake3Transcript::new();
         let verified = verify(&mut vt, &layout, &point, value, modulus, &proof, 2).unwrap();

@@ -11,7 +11,7 @@
 //!
 //! The nonce is absorbed into the transcript as canonical little-endian bytes
 //! before the next Fiat--Shamir challenge is drawn.  The prover scans nonces
-//! with the eight-lane NEON BLAKE3 kernel of [`crate::utils::blake3x4`]; the
+//! with the SIMD BLAKE3 kernels of [`crate::utils::blake3x4`]; the
 //! parallel search returns the smallest hit of the whole scanned prefix of
 //! the nonce space, so enabling `parallel` does not change the proof or
 //! transcript.
@@ -193,7 +193,7 @@ pub fn verify_and_absorb_in_domain<T: Transcript>(
 /// Finds the smallest valid nonce and absorbs its canonical encoding.
 ///
 /// With the `parallel` feature, sufficiently expensive searches use ordered
-/// parallel waves.  The result remains byte-for-byte identical to a serial
+/// parallel searches. The result remains byte-for-byte identical to a serial
 /// scan from nonce zero.
 pub fn grind_and_absorb<D, T>(
     transcript: &mut T,
