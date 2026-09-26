@@ -758,6 +758,36 @@ fn shared_key_binding_matches_per_instance_reference_at_degenerate_points() {
                 None,
                 "coefficient mismatch for keys {groups:?}, selected instance {selected_instance:?}",
             );
+            // The compact word operator must preserve every source coefficient,
+            // including overlapping isolated-bit terms and encoded signed words.
+            actual.values.fill(field.zero());
+            let mut previous = None;
+            binding
+                .for_each_coefficient(&mut |index, value| {
+                    assert!(previous.is_none_or(|previous| index > previous));
+                    previous = Some(index);
+                    actual.add(index, value);
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(
+                actual
+                    .values
+                    .iter()
+                    .zip(&expected.values)
+                    .position(|(a, b)| a != b),
+                None,
+                "compact coefficient mismatch for keys {groups:?}, selected instance {selected_instance:?}",
+            );
+            // Replaying reuses the word cache and has exactly the same output.
+            actual.subtract = true;
+            binding
+                .for_each_coefficient(&mut |index, value| {
+                    actual.add(index, value);
+                    Ok(())
+                })
+                .unwrap();
+            assert!(actual.values.iter().all(|value| *value == field.zero()));
             let cache = binding.prover_ring_cache.get().unwrap();
             let distinct = groups
                 .iter()
@@ -770,6 +800,54 @@ fn shared_key_binding_matches_per_instance_reference_at_degenerate_points() {
                 actual_endpoint,
                 evaluate_mle_in_place(&mut expected.values, &endpoint, &field).unwrap(),
             );
+        }
+    }
+}
+
+#[cfg(feature = "falcon-hybrid")]
+#[test]
+fn compact_binding_targets_match_constants_oracle_at_boolean_points() {
+    let field = config();
+    let layout = FalconSourceLayout::new_hybrid(3).unwrap();
+    let statement = statement_with_key_groups(&[0, 1, 0]);
+    for selected in [0, 1, 2, 3] {
+        let mut proof = full_terminal_fixture(&layout, &field);
+        for (bit, coordinate) in proof.norm.point.iter_mut().enumerate() {
+            *coordinate = unsigned(((selected * 1024 + 17) >> bit & 1) as u128, &field);
+        }
+        for (bit, coordinate) in proof.norm.instance_point.iter_mut().enumerate() {
+            *coordinate = unsigned(((selected >> bit) & 1) as u128, &field);
+        }
+        for candidate in [
+            0,
+            HASH_TO_POINT_SAMPLES - 1,
+            HASH_TO_POINT_SAMPLES,
+            COMPACTION_LEAVES - 1,
+        ] {
+            for (bit, coordinate) in proof.compact_products.point.iter_mut().enumerate() {
+                *coordinate = unsigned(
+                    (((selected * COMPACTION_LEAVES + candidate) >> bit) & 1) as u128,
+                    &field,
+                );
+            }
+            for eta in [field.zero(), field.one(), unsigned(29, &field)] {
+                let linear_point = point(linear_rounds(&layout), &field);
+                let mut transcript = Blake3Transcript::new();
+                let mut binding = prepare_binding_form(
+                    &mut transcript,
+                    &layout,
+                    &statement,
+                    &proof,
+                    &linear_point,
+                    &field,
+                )
+                .unwrap();
+                binding.eta = eta;
+                assert_eq!(
+                    binding.target().unwrap(),
+                    binding.emit(&mut ConstantsOnly).unwrap()
+                );
+            }
         }
     }
 }

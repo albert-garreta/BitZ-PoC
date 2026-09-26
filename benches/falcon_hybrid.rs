@@ -260,7 +260,7 @@ where
         ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
         if let Some(span) = ctx.span(id) {
-            if span.name().starts_with("falcon") {
+            if span.name().starts_with("falcon") || span.name() == "spartan:grinding" {
                 span.extensions_mut().insert(Instant::now());
             }
         }
@@ -271,6 +271,7 @@ where
                 eprintln!(
                     "{}",
                     json!({"event": "stage", "name": span.name(),
+                    "parent": span.parent().map(|parent| parent.name()),
                     "elapsed_ms": start.elapsed().as_secs_f64() * 1000.0})
                 );
             }

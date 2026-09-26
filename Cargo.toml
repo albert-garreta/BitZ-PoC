@@ -114,6 +114,11 @@ harness = false
 required-features = ["falcon-hybrid"]
 
 [[bench]]
+name = "falcon_hash_to_point"
+harness = false
+required-features = ["falcon-hybrid"]
+
+[[bench]]
 name = "sha256_ecdsa_compare"
 harness = false
 required-features = ["span-metrics", "sha256-ecdsa-compare"]

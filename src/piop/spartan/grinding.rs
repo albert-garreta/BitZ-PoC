@@ -237,6 +237,7 @@ where
 }
 
 /// Finds the smallest `u64` nonce satisfying `bits` for an explicit seed.
+#[tracing::instrument(skip(seed), name = "spartan:grinding")]
 pub fn find_grinding_nonce(seed: &GrindingSeed, bits: u32) -> Result<u64, GrindingError> {
     validate_difficulty(bits)?;
 

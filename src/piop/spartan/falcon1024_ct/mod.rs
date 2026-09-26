@@ -15,6 +15,8 @@ mod hybrid;
 #[cfg(feature = "falcon-hybrid")]
 mod hybrid_bridge;
 #[cfg(feature = "falcon-hybrid")]
+pub mod hybrid_hash_to_point;
+#[cfg(feature = "falcon-hybrid")]
 mod hybrid_keccak;
 #[cfg(feature = "falcon-hybrid")]
 mod hybrid_sumcheck;

@@ -197,7 +197,10 @@ impl PreparedFalconHybrid {
                 "prime source sumcheck",
                 prime(2 * (18 + d), schedule.binding_round_bits),
             ),
-            ("integer-to-binary forests", binary(4096)),
+            (
+                "batched integer-to-binary forest",
+                binary(hybrid_bridge::ERROR_NUMERATOR),
+            ),
             (
                 "binary Keccak PIOP",
                 self.keccak
@@ -350,7 +353,7 @@ impl PreparedFalconHybrid {
             return Err(error("noncanonical Falcon public key"));
         }
         let mut h = blake3::Hasher::new();
-        h.update(b"bitz/falcon1024-ct/hybrid/non-zk/v2");
+        h.update(b"bitz/falcon1024-ct/hybrid/non-zk/v3");
         for n in [
             self.batch(),
             self.capacity(),
@@ -381,7 +384,7 @@ impl PreparedFalconHybrid {
         }
         let digest = *h.finalize().as_bytes();
         let mut t = Blake3Transcript::new();
-        t.absorb_slice(b"bitz/falcon-hybrid/statement/v2");
+        t.absorb_slice(b"bitz/falcon-hybrid/statement/v3");
         t.absorb_slice(&digest);
         self.ligerito.bind(&mut t);
         Ok((t, digest))
@@ -408,7 +411,7 @@ impl PreparedFalconHybrid {
             &committed.arithmetic,
             &arithmetic.binding_point,
             arithmetic.piop.modulus,
-            self.binary_grinding(4096),
+            self.binary_grinding(hybrid_bridge::ERROR_NUMERATOR),
         )?;
         drop(bridge_span);
         let keccak_span = tracing::info_span!("falcon_hybrid:keccak_prefix").entered();
@@ -529,7 +532,7 @@ impl PreparedFalconHybrid {
             proof.arithmetic.binding_terminal[1],
             proof.arithmetic.piop.modulus,
             &proof.bridge,
-            self.binary_grinding(4096),
+            self.binary_grinding(hybrid_bridge::ERROR_NUMERATOR),
         )?;
         let mut k = Vec::new();
         for slab in 0..2 {
@@ -607,7 +610,7 @@ impl PreparedFalconHybrid {
         a: &[BinaryClaim],
         k: &[[BinaryClaim; 2]; 2],
     ) -> ([Coefficients; 3], Gf) {
-        t.absorb_slice(b"bitz/falcon-hybrid/binary-claims-and-shake-wiring/v2");
+        t.absorb_slice(b"bitz/falcon-hybrid/binary-claims-and-shake-wiring/v3");
         for claims in [a, k[0].as_slice(), k[1].as_slice()] {
             t.absorb_slice(&(claims.len() as u64).to_le_bytes());
             for c in claims {

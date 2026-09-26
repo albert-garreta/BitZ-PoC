@@ -44,6 +44,9 @@ use super::{
     piop::{prove_falcon_piop, security_schedule, verify_falcon_piop},
 };
 
+#[path = "opening_compact.rs"]
+mod compact;
+
 type F = SpartanBitzField;
 type Cfg = <F as SpartanField>::Config;
 
@@ -511,6 +514,10 @@ struct BindingForm<'a> {
     ring_row_weights: Vec<F>,
     ring_instance_weights: Vec<F>,
     prover_ring_cache: OnceLock<ProverRingCache>,
+    compact_linear: OnceLock<compact::CompiledCoefficients>,
+    compact_instances: Vec<OnceLock<compact::CompiledCoefficients>>,
+    compact_weights: OnceLock<compact::PreparedWeights>,
+    local_linear_point: Vec<F>,
     eta: F,
 }
 
@@ -528,7 +535,51 @@ trait CoefficientSink {
     fn enabled(&self) -> bool {
         true
     }
+    fn needs_constants(&self) -> bool {
+        true
+    }
     fn add(&mut self, index: usize, coefficient: F);
+    fn add_word(&mut self, base: usize, width: usize, signed: bool, mut scale: F, field: &Cfg) {
+        if !self.enabled() {
+            return;
+        }
+        for bit in 0..width {
+            let value = if signed && bit + 1 == width {
+                field.sub(&field.zero(), &scale)
+            } else {
+                scale
+            };
+            self.add(base + bit, value);
+            scale = field.add(&scale, &scale);
+        }
+    }
+    fn add_encoded_word(
+        &mut self,
+        base: usize,
+        offset: usize,
+        weighted: bool,
+        mut scale: F,
+        field: &Cfg,
+    ) {
+        if !self.enabled() {
+            return;
+        }
+        for bit in 0..12 {
+            let stream = offset + 11 - bit;
+            let index = base + 8 * (stream / 8) + 7 - stream % 8;
+            self.add(
+                index,
+                if bit == 11 {
+                    field.sub(&field.zero(), &scale)
+                } else {
+                    scale
+                },
+            );
+            if weighted {
+                scale = field.add(&scale, &scale);
+            }
+        }
+    }
     fn bind_instances(&self, weights: &[F], _field: &Cfg) -> Vec<(usize, F)> {
         self.instances(weights.len())
             .map(|i| (i, weights[i]))
@@ -635,6 +686,10 @@ fn prepare_binding_form<'a>(
         ring_row_weights,
         ring_instance_weights,
         prover_ring_cache: OnceLock::new(),
+        compact_linear: OnceLock::new(),
+        compact_instances: (0..layout.batch()).map(|_| OnceLock::new()).collect(),
+        compact_weights: OnceLock::new(),
+        local_linear_point: linear_point[..local_linear_vars].to_vec(),
         eta,
     })
 }
@@ -786,7 +841,11 @@ impl BindingForm<'_> {
     }
 
     fn target(&self) -> Result<F, FalconError> {
-        self.emit(&mut ConstantsOnly)
+        if self.layout.is_hybrid() {
+            self.compact_target()
+        } else {
+            self.emit(&mut ConstantsOnly)
+        }
     }
 
     fn evaluate(&self, point: &[F]) -> Result<F, FalconError> {
@@ -933,6 +992,14 @@ impl BindingForm<'_> {
         instances: std::ops::Range<usize>,
         emit: &mut impl FnMut(usize, F) -> Result<(), crate::sumcheck::SumcheckError>,
     ) -> Result<(), crate::sumcheck::SumcheckError> {
+        if self.layout.is_hybrid() {
+            for instance in instances {
+                self.compact_instance(instance)
+                    .map_err(|_| crate::sumcheck::SumcheckError::InvalidProductDimensions)?
+                    .emit(instance * self.layout.signature_stride(), self.field, emit)?;
+            }
+            return Ok(());
+        }
         struct Sink<'a, E> {
             instances: std::ops::Range<usize>,
             emit: &'a mut E,
@@ -1181,6 +1248,31 @@ fn add_norm_claims(
     let weights = factored_weights(&proof.norm.point, field)?;
     let instance_weights =
         eq_table(&proof.norm.instance_point, field).map_err(|error| piop(error.to_string()))?;
+    add_norm_claims_prepared(
+        coefficients,
+        target,
+        scale,
+        eta,
+        layout,
+        proof,
+        field,
+        &weights,
+        &instance_weights,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn add_norm_claims_prepared(
+    coefficients: &mut impl CoefficientSink,
+    target: &mut F,
+    scale: &mut F,
+    eta: F,
+    layout: &FalconSourceLayout,
+    proof: &FalconPiopProof,
+    field: &Cfg,
+    weights: &crate::poly::mle::EqualityWeights<F>,
+    instance_weights: &[F],
+) -> Result<(), FalconError> {
     if instance_weights.len() != layout.capacity()
         || (1usize << proof.norm.point.len()) != N * layout.capacity()
     {
@@ -1204,7 +1296,9 @@ fn add_norm_claims(
                         weight,
                         field,
                     );
-                    constant = field.add(&constant, &mul_i(weight, -6_144, field));
+                    if coefficients.needs_constants() {
+                        constant = field.add(&constant, &mul_i(weight, -6_144, field));
+                    }
                 } else {
                     add_signed_source_scaled(coefficients, base, &offsets, i, weight, field);
                 }
@@ -1231,7 +1325,9 @@ fn add_norm_claims(
                         weight,
                         field,
                     );
-                    constant = field.add(&constant, &mul_i(weight, -6_144, field));
+                    if coefficients.needs_constants() {
+                        constant = field.add(&constant, &mul_i(weight, -6_144, field));
+                    }
                 } else {
                     add_signed_source_scaled(coefficients, base, &offsets, i, weight, field);
                 }
@@ -1407,6 +1503,29 @@ fn add_compaction_product_claims(
     field: &Cfg,
 ) -> Result<(), FalconError> {
     let weights = factored_weights(&proof.compact_products.point, field)?;
+    add_compaction_product_claims_prepared(
+        coefficients,
+        target,
+        scale,
+        eta,
+        layout,
+        proof,
+        field,
+        &weights,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn add_compaction_product_claims_prepared(
+    coefficients: &mut impl CoefficientSink,
+    target: &mut F,
+    scale: &mut F,
+    eta: F,
+    layout: &FalconSourceLayout,
+    proof: &FalconPiopProof,
+    field: &Cfg,
+    weights: &crate::poly::mle::EqualityWeights<F>,
+) -> Result<(), FalconError> {
     let stride = COMPACTION_LEAVES * layout.capacity();
     let offsets = layout.offsets();
     let claims = [
@@ -1439,7 +1558,9 @@ fn add_compaction_product_claims(
                         _ => unreachable!(),
                     };
                     let coefficient = if complemented {
-                        constant = field.add(&constant, &weight);
+                        if coefficients.needs_constants() {
+                            constant = field.add(&constant, &weight);
+                        }
                         field.sub(&field.zero(), &weight)
                     } else {
                         weight
@@ -1546,16 +1667,10 @@ fn add_unsigned_scaled(
     values: &mut impl CoefficientSink,
     base: usize,
     width: usize,
-    mut scale: F,
+    scale: F,
     field: &Cfg,
 ) {
-    if !values.enabled() {
-        return;
-    }
-    for bit in 0..width {
-        values.add(base + bit, scale);
-        scale = field.add(&scale, &scale);
-    }
+    values.add_word(base, width, false, scale, field);
 }
 
 fn add_signed_source_scaled(
@@ -1566,22 +1681,14 @@ fn add_signed_source_scaled(
     scale: F,
     field: &Cfg,
 ) {
-    if !values.enabled() {
-        return;
-    }
-    for bit in 0..12 {
-        let signed_weight = if bit == 11 {
-            -(1i128 << 11)
-        } else {
-            1i128 << bit
-        };
-        add_coefficient(
-            values,
-            base + s2_bit_index(offsets, coefficient, bit),
-            field.mul(&scale, &signed(signed_weight, field)),
-            field,
-        );
-    }
+    let stream = 12 * coefficient;
+    values.add_encoded_word(
+        base + offsets.encoded_signature + 8 * (1 + super::NONCE_BYTES + stream / 8),
+        stream % 8,
+        true,
+        scale,
+        field,
+    );
 }
 
 fn push_unsigned_terms(terms: &mut Vec<(usize, i128)>, base: usize, width: usize, scale: i128) {

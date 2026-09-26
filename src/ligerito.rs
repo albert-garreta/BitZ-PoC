@@ -626,6 +626,261 @@ pub(crate) fn xi_combined_rows_packed(
     m
 }
 
+/// `v_c = Σ_b w_b·D[(b,c)]` computed from the packed bit rows (W-bit cells
+/// reassembled per set bit) — avoids re-streaming the `u128` data tensor.
+///
+/// Two exact forms (u128 addition is associative and the total stays
+/// `< 2^127` by the chunking bound, so reassociation is value-exact —
+/// identical `us`, identical transcript):
+///
+/// - **nibble-LUT** (the default — S3 of `docs/forest-speedup-ideas.md`):
+///   precombine each 4-bit group's weight sums ONCE
+///   (`tbl[g≪4 | nib] = Σ_{i∈nib} w_{4g+i}·2^{j}`, `16·row_len/4` u128
+///   entries shared by all `2^s` columns), then each column is an
+///   unconditional table-add per nonzero nibble — no per-bit
+///   trailing-zeros walk, no data-dependent shift;
+/// - **tz-walk** (`BITZ_FOLDV_LUT=0`): the original per-set-bit scan.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn fold_values_bits(
+    p: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+    row_weights: &[u128],
+) -> Vec<u128> {
+    fold_values_bits_width::<false>(p, rows, row_weights, p.word_bits)
+}
+
+pub(crate) fn fold_values_bits_bounded(
+    p: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+    row_weights: &[u128],
+    value_bits: usize,
+) -> Vec<u128> {
+    if value_bits == p.word_bits {
+        return fold_values_bits(p, rows, row_weights);
+    }
+    fold_values_bits_width::<true>(p, rows, row_weights, value_bits)
+}
+
+fn fold_values_bits_width<const PADDED: bool>(
+    p: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+    row_weights: &[u128],
+    value_bits: usize,
+) -> Vec<u128> {
+    let log_w = p.word_bits.trailing_zeros() as usize;
+    let mask = p.word_bits.wrapping_sub(1);
+    if foldv_lut() {
+        // Per-BIT weight of bit i: w_{i≫log_w}·2^{i&mask}; zero beyond
+        // row_len (the packed words' padding bits are zero anyway, but
+        // the table covers every word's 16 nibble groups).
+        let row_len = p.rows() << log_w;
+        let words = row_len.div_ceil(64);
+        let groups = words << 4;
+        let wbit = |i: usize| -> u128 {
+            if i < row_len && (!PADDED || (i & mask) < value_bits) {
+                row_weights[i >> log_w] << (i & mask)
+            } else {
+                0
+            }
+        };
+        let tbl: Vec<u128> = {
+            let rows_t: Vec<[u128; 16]> = cfg_into_iter!(0..groups, 1 << 12)
+                .map(|g| {
+                    let mut t = [0u128; 16];
+                    for nib in 1..16usize {
+                        // t[nib] = t[nib without its lowest bit] + that bit's weight.
+                        t[nib] =
+                            t[nib & (nib - 1)] + wbit((g << 2) | nib.trailing_zeros() as usize);
+                    }
+                    t
+                })
+                .collect();
+            rows_t.into_flattened()
+        };
+        // Column blocks stream the shared table (8 MB at 2^17 rows —
+        // L2-resident, not L1) once per block instead of once per column;
+        // the block's accumulators are independent chains. Per-column
+        // term order is unchanged (exact u128 sums either way).
+        const MAX_BLOCK: usize = 32;
+        let cols = p.cols();
+        #[cfg(feature = "parallel")]
+        let threads = rayon::current_num_threads();
+        #[cfg(not(feature = "parallel"))]
+        let threads = 1;
+        let block = (cols / (4 * threads)).clamp(1, MAX_BLOCK);
+        let sums: Vec<[u128; MAX_BLOCK]> = cfg_into_iter!(0..cols.div_ceil(block))
+            .map(|blk| {
+                let c0 = blk * block;
+                let n = block.min(cols - c0);
+                let mut acc = [0u128; MAX_BLOCK];
+                for wi in 0..words {
+                    for (k, acc_k) in acc.iter_mut().enumerate().take(n) {
+                        let mut w = rows[c0 + k][wi];
+                        let mut g = wi << 4;
+                        while w != 0 {
+                            *acc_k += tbl[(g << 4) | (w & 15) as usize];
+                            w >>= 4;
+                            g += 1;
+                        }
+                    }
+                }
+                acc
+            })
+            .collect();
+        return (0..cols).map(|c| sums[c / block][c % block]).collect();
+    }
+    cfg_into_iter!(0..p.cols())
+        .map(|c| {
+            let mut acc = 0u128;
+            for (wi, &word) in rows[c].iter().enumerate() {
+                let mut bits = word;
+                while bits != 0 {
+                    let tz = bits.trailing_zeros() as usize;
+                    let i = (wi << 6) | tz;
+                    if !PADDED || (i & mask) < value_bits {
+                        acc += row_weights[i >> log_w] << (i & mask);
+                    }
+                    bits &= bits.wrapping_sub(1);
+                }
+            }
+            acc
+        })
+        .collect()
+}
+
+/// [`fold_values_bits`] form choice: `BITZ_FOLDV_LUT=0` opts back into the
+/// per-set-bit trailing-zeros walk (diagnostic / A-B). Read once per
+/// process.
+fn foldv_lut() -> bool {
+    static ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENV.get_or_init(|| std::env::var("BITZ_FOLDV_LUT").map_or(true, |v| v != "0"))
+}
+
+/// One fused pass folding `K` weight sets at once: per column,
+/// `acc[k] = Σ_b w_k[b]·D[(b,c)]`. The fixed-size array accumulator lets
+/// the `K`-term inner body unroll fully, so the per-set-bit scan
+/// (trailing-zeros walk, index math) is paid ONCE for all `K` sets — a
+/// `Vec` accumulator measured as slow as `K` separate passes.
+#[allow(clippy::arithmetic_side_effects)]
+fn fold_cols_multi_k<const K: usize>(
+    p: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+    sets: &[&[u128]],
+) -> Vec<[u128; K]> {
+    debug_assert_eq!(sets.len(), K);
+    let w: [&[u128]; K] = core::array::from_fn(|k| sets[k]);
+    let log_w = p.word_bits.trailing_zeros() as usize;
+    let mask = p.word_bits.wrapping_sub(1);
+    if foldv_lut() {
+        let row_len = p.rows() << log_w;
+        let words = row_len.div_ceil(64);
+        let tables: Vec<[[u128; K]; 16]> = cfg_into_iter!(0..words * 16, 1 << 12)
+            .map(|g| {
+                let mut table = [[0; K]; 16];
+                for nib in 1..16usize {
+                    let i = (g << 2) | nib.trailing_zeros() as usize;
+                    for k in 0..K {
+                        table[nib][k] = table[nib & (nib - 1)][k]
+                            + if i < row_len {
+                                w[k][i >> log_w] << (i & mask)
+                            } else {
+                                0
+                            };
+                    }
+                }
+                table
+            })
+            .collect();
+        // Keep both limbs adjacent in each lookup and scan each source word
+        // once. Blocks reuse the shared tables across independent columns.
+        const MAX_BLOCK: usize = 32;
+        #[cfg(feature = "parallel")]
+        let threads = rayon::current_num_threads();
+        #[cfg(not(feature = "parallel"))]
+        let threads = 1;
+        let cols = p.cols();
+        let block = (cols / (4 * threads)).clamp(1, MAX_BLOCK);
+        let sums: Vec<[[u128; K]; MAX_BLOCK]> = cfg_into_iter!(0..cols.div_ceil(block))
+            .map(|blk| {
+                let c0 = blk * block;
+                let n = block.min(cols - c0);
+                let mut acc = [[0; K]; MAX_BLOCK];
+                for wi in 0..words {
+                    for (c, acc_c) in acc.iter_mut().enumerate().take(n) {
+                        let mut bits = rows[c0 + c][wi];
+                        let mut g = wi << 4;
+                        while bits != 0 {
+                            let add = &tables[g][(bits & 15) as usize];
+                            for k in 0..K {
+                                acc_c[k] += add[k];
+                            }
+                            bits >>= 4;
+                            g += 1;
+                        }
+                    }
+                }
+                acc
+            })
+            .collect();
+        return (0..cols).map(|c| sums[c / block][c % block]).collect();
+    }
+    cfg_into_iter!(0..p.cols())
+        .map(|c| {
+            let mut acc = [0u128; K];
+            for (wi, &word) in rows[c].iter().enumerate() {
+                let mut bits = word;
+                while bits != 0 {
+                    let tz = bits.trailing_zeros() as usize;
+                    let i = (wi << 6) | tz;
+                    let (b, sh) = (i >> log_w, i & mask);
+                    for k in 0..K {
+                        acc[k] += w[k][b] << sh;
+                    }
+                    bits &= bits.wrapping_sub(1);
+                }
+            }
+            acc
+        })
+        .collect()
+}
+
+/// Multi-weight-set variant of [`fold_values_bits`]: `out[k][c] =
+/// Σ_b w_k[b]·D[(b,c)]` for EVERY weight set `k`, the sets processed in
+/// unrolled groups of up to 4 ([`fold_cols_multi_k`]) so the bit stream
+/// and nibble lookups are shared within a group (the extension path's Step-1
+/// folds run `e·L₁` sets over the same bits). Value-exact per set: each
+/// accumulator receives exactly [`fold_values_bits`]'s terms in the same
+/// per-column order.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn fold_values_bits_multi(
+    p: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+    weight_sets: &[&[u128]],
+) -> Vec<Vec<u128>> {
+    let mut out = Vec::with_capacity(weight_sets.len());
+    let mut i = 0usize;
+    while i < weight_sets.len() {
+        let take = (weight_sets.len() - i).min(4);
+        let group = &weight_sets[i..i + take];
+        match take {
+            4 => transpose_fold_group::<4>(fold_cols_multi_k::<4>(p, rows, group), &mut out),
+            3 => transpose_fold_group::<3>(fold_cols_multi_k::<3>(p, rows, group), &mut out),
+            2 => transpose_fold_group::<2>(fold_cols_multi_k::<2>(p, rows, group), &mut out),
+            _ => out.push(fold_values_bits(p, rows, group[0])),
+        }
+        i += take;
+    }
+    out
+}
+
+/// Split a fused group's per-column `[u128; K]` accumulators into `K`
+/// per-set fold vectors, appended to `out` in set order.
+fn transpose_fold_group<const K: usize>(cols: Vec<[u128; K]>, out: &mut Vec<Vec<u128>>) {
+    for k in 0..K {
+        out.push(cols.iter().map(|a| a[k]).collect());
+    }
+}
+
 /// Classic 64×64 bit-matrix transpose (6 mask/shift rounds): output word
 /// `t`'s bit `k` = input word `k`'s bit `t`.
 #[allow(clippy::arithmetic_side_effects)]
@@ -720,6 +975,54 @@ pub(crate) fn rows_from_packed_cols(
 #[allow(clippy::arithmetic_side_effects)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fused_integer_folds_match_independent_bit_sums() {
+        for (row_vars, col_vars, word_bits) in [(1, 2, 1), (7, 3, 1), (5, 2, 4), (4, 3, 8)] {
+            let p = IntegerMatrixLayout {
+                row_vars,
+                col_vars,
+                word_bits,
+            };
+            let row_len = p.rows() * word_bits;
+            let rows: Vec<Vec<u64>> = (0..p.cols())
+                .map(|c| {
+                    (0..row_len.div_ceil(64))
+                        .map(|i| {
+                            let word =
+                                (17 + (c * 31 + i) as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+                            if row_len < 64 {
+                                word & ((1u64 << row_len) - 1)
+                            } else {
+                                word
+                            }
+                        })
+                        .collect()
+                })
+                .collect();
+            let sets: Vec<Vec<u128>> = (0..4)
+                .map(|k| {
+                    (0..p.rows())
+                        .map(|r| ((r + 5 * k) as u128 + 1) * (1u128 << (13 * k)))
+                        .collect()
+                })
+                .collect();
+            for count in 2..=4 {
+                let refs: Vec<_> = sets[..count].iter().map(Vec::as_slice).collect();
+                let actual = fold_values_bits_multi(&p, &rows, &refs);
+                for (k, set) in sets[..count].iter().enumerate() {
+                    assert_eq!(actual[k], fold_values_bits(&p, &rows, set));
+                    for c in 0..p.cols() {
+                        let expected: u128 = (0..row_len)
+                            .filter(|&i| (rows[c][i >> 6] >> (i & 63)) & 1 != 0)
+                            .map(|i| set[i / word_bits] << (i % word_bits))
+                            .sum();
+                        assert_eq!(actual[k][c], expected);
+                    }
+                }
+            }
+        }
+    }
 
     fn sample(seed: u64) -> Gf {
         let hi = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(29) ^ 0x1234_5678_9ABC_DEF0;

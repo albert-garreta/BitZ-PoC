@@ -9,13 +9,16 @@ use super::hybrid_keccak::grinding::{
 use super::{FalconError, FalconSourceWitness};
 use crate::{
     hybrid::BinaryClaim,
-    ligerito::{fold_values_bits, pack_columns_from_rows},
-    merged_forest::{MergedForestProof, prove_merged_forest_lazy, verify_merged_forest},
+    ligerito::fold_values_bits_multi,
+    merged_forest::{
+        MergedForestProof, prove_merged_forest_lazy_multi_from_rows, verify_merged_forest,
+    },
     pcs::{
-        chunk_pow2_table, chunk_row_weights, mod_q_chunk_width, mod_q_num_chunks, row_bit_weights,
+        FlatPowers, IntegerMatrixLayout, PowerTable, chunk_pow2_flat, chunk_row_weights,
+        mod_q_chunk_width, mod_q_num_chunks,
     },
     piop::spartan::{SpartanBitzField, SpartanField, grinding::GrindingDomain, matrix::eq_table},
-    poly::univariate::binary_gf128::Gf128 as Gf,
+    poly::{univariate::binary_gf128::Gf128 as Gf, utils::build_eq_x_r_vec},
     transcript::traits::Transcript,
 };
 use field::Uint;
@@ -23,15 +26,48 @@ use field::Uint;
 type F = SpartanBitzField;
 type Cfg = <F as SpartanField>::Config;
 
+/// Conservative numerator for the merged limb forest. With depth d and s
+/// tree-index variables (including the limb index), the initial root projection,
+/// degree-at-most-three sumcheck rounds, and d line folds cost at most
+/// s + 3*(d*(d-1)/2 + d*s) + d. At the largest supported layout this is 887.
+/// The existing budget leaves room for all supported batch geometries.
+pub(super) const ERROR_NUMERATOR: usize = 4096;
+
+fn binary_claim(
+    p: &IntegerMatrixLayout,
+    powers: &[FlatPowers],
+    point: &[Gf],
+    value: Gf,
+) -> BinaryClaim {
+    let (row_point, high) = point.split_at(p.row_vars);
+    let (column_point, limb_point) = high.split_at(p.col_vars);
+    let limb_weights = build_eq_x_r_vec(limb_point, &()).expect("nonempty limb point");
+    let mut low = build_eq_x_r_vec(row_point, &()).expect("nonempty row point");
+    for (r, weight) in low.iter_mut().enumerate() {
+        let factor = powers
+            .iter()
+            .zip(&limb_weights)
+            .fold(Gf::zero(), |acc, (table, &limb)| {
+                acc + limb * (table.power(r, 0) + Gf::one())
+            });
+        *weight *= factor;
+    }
+    BinaryClaim {
+        low,
+        high_point: column_point.to_vec(),
+        value: value + Gf::one(),
+    }
+}
+
 struct BridgeGrinding;
 impl GrindingDomain for BridgeGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/falcon-hybrid/bridge-grinding/v1";
+    const DOMAIN: &'static [u8] = b"bitz/falcon-hybrid/bridge-grinding/v2";
 }
 
 #[derive(Clone, Debug)]
 pub(super) struct Proof {
     pub sums: Vec<Vec<u128>>,
-    pub forests: Vec<MergedForestProof>,
+    pub forest: MergedForestProof,
     pub nonces: Vec<u64>,
 }
 
@@ -48,7 +84,7 @@ fn weights(point: &[F], field: &Cfg) -> Vec<u128> {
 }
 
 fn bind(t: &mut impl Transcript, sums: &[Vec<u128>]) {
-    t.absorb_slice(b"bitz/falcon-hybrid/integer-folds/v1");
+    t.absorb_slice(b"bitz/falcon-hybrid/integer-folds/v2");
     t.absorb_slice(&(sums.len() as u64).to_le_bytes());
     for column in sums {
         t.absorb_slice(&(column.len() as u64).to_le_bytes());
@@ -66,6 +102,9 @@ pub(super) fn prove(
     grinding_bits: u32,
 ) -> Result<(Proof, Vec<BinaryClaim>), FalconError> {
     let p = source.layout().bitz_params();
+    if point.len() != p.row_vars + p.col_vars {
+        return Err(err("bridge point shape"));
+    }
     let field = F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
     let q_bits = 128 - modulus.leading_zeros() as usize;
     let chunks = chunk_row_weights(
@@ -73,35 +112,38 @@ pub(super) fn prove(
         mod_q_chunk_width(&p),
         mod_q_num_chunks(&p, q_bits),
     );
-    let sums: Vec<_> = chunks
-        .iter()
-        .map(|w| fold_values_bits(&p, source.rows(), w))
-        .collect();
-    bind(t, &sums);
-    let packed = pack_columns_from_rows(&p, source.rows());
-    let generator = crate::pcs::smallest_generator();
-    let mut grinder = ProverBlockGrindingTranscript::<_, BridgeGrinding>::new(t, grinding_bits);
-    let mut forests = Vec::new();
-    let mut claims = Vec::new();
-    for w in &chunks {
-        let powers = chunk_pow2_table(&p, w, generator);
-        let (_, forest, z, e) =
-            prove_merged_forest_lazy(&mut grinder, &p, &packed, &powers, p.cols());
-        forests.push(forest);
-        claims.push(BinaryClaim {
-            low: row_bit_weights(&p, w, generator, &z[..p.row_vars]),
-            high_point: z[p.row_vars..].to_vec(),
-            value: e + Gf::one(),
-        });
+    if chunks.len() != 2 {
+        return Err(err("bridge needs two bounded prime limbs"));
     }
+    let fold_span = tracing::info_span!("falcon_bridge:integer_folds").entered();
+    let chunk_refs: Vec<_> = chunks.iter().map(Vec::as_slice).collect();
+    let sums = fold_values_bits_multi(&p, source.rows(), &chunk_refs);
+    drop(fold_span);
+    bind(t, &sums);
+    let generator = crate::pcs::smallest_generator();
+    let power_span = tracing::info_span!("falcon_bridge:power_tables").entered();
+    let powers: Vec<_> = chunks
+        .iter()
+        .map(|w| chunk_pow2_flat(&p, w, generator))
+        .collect();
+    drop(power_span);
+    let mut grinder = ProverBlockGrindingTranscript::<_, BridgeGrinding>::new(t, grinding_bits);
+    let forest_span = tracing::info_span!("falcon_bridge:merged_forest").entered();
+    let (_, forest, z, e) =
+        prove_merged_forest_lazy_multi_from_rows(&mut grinder, &p, source.rows(), &powers)
+            .map_err(|_| err("unsupported bridge forest schedule"))?;
+    drop(forest_span);
+    let residual_span = tracing::info_span!("falcon_bridge:residual").entered();
+    let claim = binary_claim(&p, &powers, &z, e);
+    drop(residual_span);
     let nonces = grinder.finish();
     Ok((
         Proof {
             sums,
-            forests,
+            forest,
             nonces,
         },
-        claims,
+        vec![claim],
     ))
 }
 
@@ -126,7 +168,7 @@ pub(super) fn verify(
         width,
         mod_q_num_chunks(&p, q_bits),
     );
-    if proof.sums.len() != chunks.len() || proof.forests.len() != chunks.len() {
+    if chunks.len() != 2 || proof.sums.len() != chunks.len() {
         return Err(err("bridge chunk shape"));
     }
     let cols = weights(&point[p.row_vars..], &field);
@@ -154,20 +196,139 @@ pub(super) fn verify(
     let comb = field::FixedBasePow::<_, 2>::new_public(field::Gf128Ops, generator.into(), 8);
     let mut grinder =
         VerifierBlockGrindingTranscript::<_, BridgeGrinding>::new(t, grinding_bits, &proof.nonces);
-    let mut claims = Vec::new();
-    for ((w, sums), forest) in chunks.iter().zip(&proof.sums).zip(&proof.forests) {
-        let roots: Vec<_> = sums
-            .iter()
-            .map(|&s| Gf::from(comb.pow_public(&Uint::from_words([s as u64, (s >> 64) as u64]))))
-            .collect();
-        let (z, e) = verify_merged_forest(&mut grinder, &roots, forest, p.row_vars, p.col_vars)
-            .map_err(|_| err("bridge forest"))?;
-        claims.push(BinaryClaim {
-            low: row_bit_weights(&p, w, generator, &z[..p.row_vars]),
-            high_point: z[p.row_vars..].to_vec(),
-            value: e + Gf::one(),
-        });
-    }
+    let roots: Vec<_> = proof
+        .sums
+        .iter()
+        .flatten()
+        .map(|&s| Gf::from(comb.pow_public(&Uint::from_words([s as u64, (s >> 64) as u64]))))
+        .collect();
+    let (z, e) = verify_merged_forest(
+        &mut grinder,
+        &roots,
+        &proof.forest,
+        p.row_vars,
+        p.col_vars + 1,
+    )
+    .map_err(|_| err("bridge forest"))?;
     grinder.finish().map_err(|_| err("bridge grinding"))?;
-    Ok(claims)
+    let powers: Vec<_> = chunks
+        .iter()
+        .map(|w| chunk_pow2_flat(&p, w, generator))
+        .collect();
+    Ok(vec![binary_claim(&p, &powers, &z, e)])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{FalconSourceLayout, verification_trace};
+    use super::*;
+    use crate::transcript::Blake3Transcript;
+
+    #[test]
+    fn merged_limb_forest_fits_security_budget() {
+        for batch in [1, 3, 32, 256, 1024] {
+            let p = FalconSourceLayout::new_hybrid(batch).unwrap().bitz_params();
+            let d = p.row_vars;
+            let s = p.col_vars + 1;
+            let numerator = s + 3 * (d * (d - 1) / 2 + d * s) + d;
+            assert!(numerator <= ERROR_NUMERATOR);
+        }
+    }
+
+    #[test]
+    fn batched_limbs_authenticate_source_and_reject_compensating_changes() {
+        const PK: &[u8] = include_bytes!("fixtures/public_key.bin");
+        const MSG: &[u8] = include_bytes!("fixtures/message.bin");
+        const SIG: &[u8] = include_bytes!("fixtures/signature_ct.bin");
+        let layout = FalconSourceLayout::new_hybrid(1).unwrap();
+        let trace = verification_trace(PK, MSG, SIG).unwrap();
+        let source =
+            FalconSourceWitness::from_traces(layout.clone(), &[MSG], &[SIG], &[trace]).unwrap();
+        let p = layout.bitz_params();
+        let modulus = (1u128 << 127) - 1;
+        let field = F::make_cfg(&Uint::from(modulus)).unwrap();
+        let point: Vec<_> = (0..p.row_vars + p.col_vars)
+            .map(|i| F::from_with_cfg(Uint::from(3 + 2 * i as u128), &field))
+            .collect();
+        let row_weights = weights(&point[..p.row_vars], &field);
+        let column_weights = weights(&point[p.row_vars..], &field);
+        // Independent prime-field evaluation over the original committed bits.
+        let mut value = 0;
+        for (c, row) in source.rows().iter().enumerate() {
+            let mut column = 0;
+            for r in 0..p.rows() {
+                if (row[r >> 6] >> (r & 63)) & 1 == 1 {
+                    column = field.add_u128(column, row_weights[r]);
+                }
+            }
+            value = field.add_u128(value, field.mul_u128(column, column_weights[c]));
+        }
+        let value = F::from_with_cfg(Uint::from(value), &field);
+        let mut pt = Blake3Transcript::new();
+        let (proof, claims) = prove(&mut pt, &source, &point, modulus, 2).unwrap();
+        assert_eq!(claims.len(), 1);
+        let mut vt = Blake3Transcript::new();
+        let verified = verify(&mut vt, &layout, &point, value, modulus, &proof, 2).unwrap();
+        assert_eq!(claims[0].low, verified[0].low);
+        assert_eq!(claims[0].high_point, verified[0].high_point);
+        assert_eq!(claims[0].value, verified[0].value);
+        assert_eq!(pt.get_challenge::<u128>(), vt.get_challenge::<u128>());
+        let column_eq = build_eq_x_r_vec(&claims[0].high_point, &()).unwrap();
+        let mut binary_value = Gf::zero();
+        for (c, row) in source.rows().iter().enumerate() {
+            let mut column = Gf::zero();
+            for r in 0..p.rows() {
+                if (row[r >> 6] >> (r & 63)) & 1 == 1 {
+                    column += claims[0].low[r];
+                }
+            }
+            binary_value += column_eq[c] * column;
+        }
+        assert_eq!(binary_value, claims[0].value);
+
+        let reject = |changed: &Proof| {
+            assert!(
+                verify(
+                    &mut Blake3Transcript::new(),
+                    &layout,
+                    &point,
+                    value,
+                    modulus,
+                    changed,
+                    2,
+                )
+                .is_err()
+            );
+        };
+        for limb in 0..2 {
+            let mut changed = proof.clone();
+            changed.sums[limb][0] ^= 1;
+            reject(&changed);
+        }
+        // Preserve the prime read-off exactly while shifting mass between
+        // limbs. Only the authenticated forest can detect this forgery.
+        let mut changed = proof.clone();
+        let radix = 1u128 << mod_q_chunk_width(&p);
+        let c = changed.sums[0]
+            .iter()
+            .position(|&sum| sum >= radix)
+            .unwrap();
+        changed.sums[0][c] -= radix;
+        changed.sums[1][c] += 1;
+        let error = verify(
+            &mut Blake3Transcript::new(),
+            &layout,
+            &point,
+            value,
+            modulus,
+            &changed,
+            2,
+        )
+        .err()
+        .unwrap();
+        assert!(error.to_string().contains("bridge forest"));
+        let mut changed = proof.clone();
+        changed.forest.layers[0].pair.0 += Gf::one();
+        reject(&changed);
+    }
 }
