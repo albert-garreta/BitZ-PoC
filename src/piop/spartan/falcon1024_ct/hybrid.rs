@@ -1,7 +1,7 @@
 //! Non-ZK Falcon composition with compact binary Keccak and one shared PCS opening.
 use super::{
     FalconError, FalconPublicStatement, FalconSourceLayout, FalconSourceWitness,
-    FalconVerificationTrace, KeccakTrace, decode_signature_ct, hybrid_bridge,
+    FalconVerificationTrace, KeccakTrace, encode_signature_ct, hybrid_bridge,
     hybrid_keccak::{
         self, KeccakAuxiliary, PreparedKeccak,
         grinding::{ProverBlockGrindingTranscript, VerifierBlockGrindingTranscript},
@@ -42,7 +42,7 @@ impl GrindingDomain for OpeningGrinding {
     const DOMAIN: &'static [u8] = b"bitz/falcon-hybrid/opening-grinding/v1";
 }
 
-/// Public keys, messages, and the three authenticated binary sources.
+/// Public keys, messages, signatures, and the three authenticated binary sources.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FalconHybridStatement {
     pub public: FalconPublicStatement,
@@ -243,20 +243,16 @@ impl PreparedFalconHybrid {
     pub fn commit(
         &self,
         public: FalconPublicStatement,
-        signatures: &[&[u8]],
     ) -> Result<CommittedFalconHybrid, FalconError> {
         let _span = tracing::info_span!("falcon_hybrid:witness_commit").entered();
-        if public.batch() != self.batch()
-            || public.messages.len() != self.batch()
-            || signatures.len() != self.batch()
-        {
-            return Err(error("hybrid witness batch mismatch"));
-        }
-        let decoded = signatures
+        public.validate(self.batch())?;
+        let encoded = public
+            .signatures
             .iter()
-            .map(|s| decode_signature_ct(s))
+            .map(encode_signature_ct)
             .collect::<Result<Vec<_>, _>>()?;
-        let nonces: Vec<_> = decoded.iter().map(|s| s.nonce).collect();
+        let signatures: Vec<&[u8]> = encoded.iter().map(|s| s.as_slice()).collect();
+        let nonces: Vec<_> = public.signatures.iter().map(|s| s.nonce).collect();
         let (keccak_packed, auxiliary, samples) = self.generate_shake(&nonces, &public.messages)?;
         let traces = crate::utils::cfg_into_iter!(0..self.batch())
             .map(|i| {
@@ -264,7 +260,7 @@ impl PreparedFalconHybrid {
                 let htp = super::hash_to_point::from_shake_bytes(&bytes, KeccakTrace::default())?;
                 super::verify::trace_from_parts(
                     public.public_keys[i].clone(),
-                    decoded[i].clone(),
+                    public.signatures[i].clone(),
                     htp,
                     true,
                 )
@@ -272,7 +268,7 @@ impl PreparedFalconHybrid {
             .collect::<Result<Vec<_>, FalconError>>()?;
         let messages: Vec<&[u8]> = public.messages.iter().map(|m| m.as_slice()).collect();
         let arithmetic =
-            FalconSourceWitness::from_traces(self.layout, &messages, signatures, &traces)?;
+            FalconSourceWitness::from_traces(self.layout, &messages, &signatures, &traces)?;
         let mut arithmetic_packed = Vec::with_capacity(1 << self.geometry.physical_logs[0]);
         for row in arithmetic.rows() {
             arithmetic_packed.extend(row.chunks_exact(2).map(|w| Gf { lo: w[0], hi: w[1] }));
@@ -342,21 +338,9 @@ impl PreparedFalconHybrid {
         &self,
         statement: &FalconHybridStatement,
     ) -> Result<(Blake3Transcript, [u8; 32]), FalconError> {
-        if statement.public.batch() != self.batch()
-            || statement.public.messages.len() != self.batch()
-        {
-            return Err(error("hybrid statement shape"));
-        }
-        if statement
-            .public
-            .public_keys
-            .iter()
-            .any(|key| key.h.iter().any(|&h| i64::from(h) >= super::Q))
-        {
-            return Err(error("noncanonical Falcon public key"));
-        }
+        statement.public.validate(self.batch())?;
         let mut h = blake3::Hasher::new();
-        h.update(b"bitz/falcon1024-ct/hybrid/non-zk/v3");
+        h.update(b"bitz/falcon1024-ct/hybrid/non-zk/v4");
         for n in [
             self.batch(),
             self.capacity(),
@@ -370,16 +354,18 @@ impl PreparedFalconHybrid {
         for root in &statement.roots {
             h.update(root);
         }
-        for (pk, msg) in statement
+        for ((pk, msg), signature) in statement
             .public
             .public_keys
             .iter()
             .zip(&statement.public.messages)
+            .zip(&statement.public.signatures)
         {
             for &coefficient in pk.h.iter() {
                 h.update(&coefficient.to_le_bytes());
             }
             h.update(msg);
+            h.update(&encode_signature_ct(signature)?);
         }
         h.update(&self.ligerito.digest());
         for block in &self.pcs_grinding.blocks {
@@ -387,7 +373,7 @@ impl PreparedFalconHybrid {
         }
         let digest = *h.finalize().as_bytes();
         let mut t = Blake3Transcript::new();
-        t.absorb_slice(b"bitz/falcon-hybrid/statement/v3");
+        t.absorb_slice(b"bitz/falcon-hybrid/statement/v4");
         t.absorb_slice(&digest);
         self.ligerito.bind(&mut t);
         Ok((t, digest))
@@ -766,13 +752,70 @@ fn live_subcubes(point: &[Gf], live: usize) -> Vec<(Vec<Gf>, Gf)> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::decode_signature_ct;
     use super::*;
     const PK: &[u8] = include_bytes!("fixtures/public_key.bin");
     const MSG: &[u8] = include_bytes!("fixtures/message.bin");
     const SIG: &[u8] = include_bytes!("fixtures/signature_ct.bin");
 
     fn public(batch: usize) -> FalconPublicStatement {
-        FalconPublicStatement::from_bytes(&vec![PK; batch], &vec![MSG; batch]).unwrap()
+        FalconPublicStatement::from_bytes(&vec![PK; batch], &vec![MSG; batch], &vec![SIG; batch])
+            .unwrap()
+    }
+
+    #[test]
+    fn hybrid_shake_matches_rustcrypto_samples_and_source_bits() {
+        use rand::{RngExt, SeedableRng, rngs::StdRng};
+        use sha3::{
+            Shake256,
+            digest::{ExtendableOutput, Update, XofReader},
+        };
+
+        let mut rng = StdRng::seed_from_u64(0x4859_4252_4944);
+        for batch in [1, 3, 8] {
+            let prepared = PreparedFalconHybrid::new(batch, 100).unwrap();
+            let nonces: Vec<[u8; 40]> = (0..batch)
+                .map(|_| std::array::from_fn(|_| rng.random()))
+                .collect();
+            let messages: Vec<[u8; 32]> = (0..batch)
+                .map(|_| std::array::from_fn(|_| rng.random()))
+                .collect();
+            let (packed, _, samples) = prepared.generate_shake(&nonces, &messages).unwrap();
+            assert_eq!(samples.len(), batch);
+            for signature in 0..batch {
+                let mut oracle = Shake256::default();
+                oracle.update(&nonces[signature]);
+                oracle.update(&messages[signature]);
+                let mut expected = [0; 2622];
+                oracle.finalize_xof().read(&mut expected);
+                let actual: Vec<_> = samples[signature]
+                    .iter()
+                    .flat_map(|word| word.to_be_bytes())
+                    .collect();
+                assert_eq!(actual, expected, "batch={batch}, signature={signature}");
+
+                // Check the bits committed by both Keccak groups, including
+                // the transition after the sixteenth 136-byte output block.
+                for (byte_index, byte) in expected.into_iter().enumerate() {
+                    let permutation = byte_index / 136;
+                    let group = usize::from(permutation >= 16);
+                    for bit in 0..8 {
+                        let index = prepared.keccak[group].output_bit_index(
+                            signature,
+                            permutation,
+                            8 * (byte_index % 136) + bit,
+                        );
+                        let word = packed[group][index / 128];
+                        let half = if index % 128 < 64 { word.lo } else { word.hi };
+                        assert_eq!(
+                            (half >> (index % 64)) & 1,
+                            u64::from((byte >> bit) & 1),
+                            "batch={batch}, signature={signature}, byte={byte_index}, bit={bit}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]
@@ -812,7 +855,7 @@ mod tests {
     #[test]
     fn hybrid_falcon_roundtrip_and_tampering() {
         let prepared = PreparedFalconHybrid::new(1, 100).unwrap();
-        let committed = prepared.commit(public(1), &[SIG]).unwrap();
+        let committed = prepared.commit(public(1)).unwrap();
         let native = super::super::verification_trace(PK, MSG, SIG).unwrap();
         assert_eq!(committed.traces[0].convolution, native.convolution);
         assert_eq!(
@@ -825,6 +868,23 @@ mod tests {
         prepared.verify(&statement, &proof).unwrap();
         let mut changed = statement.clone();
         changed.public.messages[0][0] ^= 1;
+        assert!(prepared.verify(&changed, &proof).is_err());
+        let mut changed = statement.clone();
+        changed.public.signatures[0].nonce[0] ^= 1;
+        assert!(prepared.verify(&changed, &proof).is_err());
+        let mut changed = statement.clone();
+        changed.public.signatures[0].s2[0] = if changed.public.signatures[0].s2[0] == 0 {
+            1
+        } else {
+            0
+        };
+        assert_ne!(changed.public.signatures, statement.public.signatures);
+        assert!(prepared.verify(&changed, &proof).is_err());
+        let mut changed = statement.clone();
+        changed.public.signatures.clear();
+        assert!(prepared.verify(&changed, &proof).is_err());
+        let mut changed = statement.clone();
+        changed.public.signatures[0].s2[0] = -2048;
         assert!(prepared.verify(&changed, &proof).is_err());
         let mut changed = statement.clone();
         changed.roots.swap(0, 1);
@@ -843,13 +903,13 @@ mod tests {
     #[test]
     fn hybrid_falcon_padding_and_wrong_nonce_branch() {
         let prepared = PreparedFalconHybrid::new(3, 100).unwrap();
-        let committed = prepared.commit(public(3), &[SIG; 3]).unwrap();
+        let committed = prepared.commit(public(3)).unwrap();
         let statement = committed.statement.clone();
         let proof = prepared.prove(committed).unwrap();
         prepared.verify(&statement, &proof).unwrap();
 
         let prepared = PreparedFalconHybrid::new(1, 100).unwrap();
-        let mut committed = prepared.commit(public(1), &[SIG]).unwrap();
+        let mut committed = prepared.commit(public(1)).unwrap();
         let mut nonce = decode_signature_ct(SIG).unwrap().nonce;
         nonce[0] ^= 1;
         // Both branches separately satisfy their PIOPs. Only the authenticated
@@ -880,7 +940,7 @@ mod tests {
     #[test]
     fn hybrid_falcon_128_roundtrip() {
         let prepared = PreparedFalconHybrid::new(1, 128).unwrap();
-        let committed = prepared.commit(public(1), &[SIG]).unwrap();
+        let committed = prepared.commit(public(1)).unwrap();
         let statement = committed.statement.clone();
         let proof = prepared.prove(committed).unwrap();
         prepared.verify(&statement, &proof).unwrap();
@@ -892,7 +952,7 @@ mod tests {
     #[test]
     fn hybrid_fused_batch_roundtrip_and_all_three_roots_are_bound() {
         let prepared = PreparedFalconHybrid::new(9, 100).unwrap();
-        let committed = prepared.commit(public(9), &[SIG; 9]).unwrap();
+        let committed = prepared.commit(public(9)).unwrap();
         assert_eq!(
             prepared.source_bits_per_signature(),
             [1 << 18, 1 << 20, 1 << 18]
@@ -920,7 +980,7 @@ mod tests {
     #[test]
     fn valid_keccak_tail_cannot_break_the_cross_slab_chain_link() {
         let prepared = PreparedFalconHybrid::new(1, 100).unwrap();
-        let mut committed = prepared.commit(public(1), &[SIG]).unwrap();
+        let mut committed = prepared.commit(public(1)).unwrap();
         // This is a valid four-permutation Keccak chain, but its input is not
         // permutation 15's output from the other authenticated commitment.
         let (packed, auxiliary, _) = prepared.keccak[1].generate_chain(&[[0; 25]]).unwrap();

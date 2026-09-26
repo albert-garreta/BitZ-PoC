@@ -13,6 +13,30 @@ pub struct FalconSignatureCt {
     pub s2: Box<[i16; N]>,
 }
 
+/// Encodes the public nonce and coefficients in canonical Falcon-1024 CT form.
+pub fn encode_signature_ct(
+    signature: &FalconSignatureCt,
+) -> Result<[u8; CT_SIGNATURE_BYTES], FalconError> {
+    let mut bytes = [0u8; CT_SIGNATURE_BYTES];
+    bytes[0] = 0x5a;
+    bytes[1..1 + NONCE_BYTES].copy_from_slice(&signature.nonce);
+    for (index, &coefficient) in signature.s2.iter().enumerate() {
+        if !(-2047..=2047).contains(&coefficient) {
+            return Err(FalconError::SignatureCoefficientOutOfRange { index });
+        }
+    }
+    for (pair, output) in signature
+        .s2
+        .chunks_exact(2)
+        .zip(bytes[1 + NONCE_BYTES..].chunks_exact_mut(3))
+    {
+        let a = (pair[0] as u16) & 0x0fff;
+        let b = (pair[1] as u16) & 0x0fff;
+        output.copy_from_slice(&[(a >> 4) as u8, ((a << 4) | (b >> 8)) as u8, b as u8]);
+    }
+    Ok(bytes)
+}
+
 /// Decodes the `0x0a || h[0..1024]` public-key format.  Coefficients are
 /// 14-bit, big-endian bit strings and must lie in `[0,q)`.
 pub fn decode_public_key(bytes: &[u8]) -> Result<FalconPublicKey, FalconError> {
@@ -85,6 +109,20 @@ pub fn decode_signature_ct(bytes: &[u8]) -> Result<FalconSignatureCt, FalconErro
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ct_encoder_preserves_fixture_and_rejects_noncanonical_coefficients() {
+        let fixture = include_bytes!("fixtures/signature_ct.bin");
+        let mut signature = decode_signature_ct(fixture).unwrap();
+        assert_eq!(&encode_signature_ct(&signature).unwrap(), fixture);
+        for invalid in [-2048, 2048, i16::MIN, i16::MAX] {
+            signature.s2[17] = invalid;
+            assert_eq!(
+                encode_signature_ct(&signature),
+                Err(FalconError::SignatureCoefficientOutOfRange { index: 17 })
+            );
+        }
+    }
 
     #[test]
     fn ct_decoder_is_msb_first_and_signed() {

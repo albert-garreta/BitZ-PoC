@@ -96,9 +96,7 @@ pub const KNOWN_BITZ_ENV: &[&str] = &[
     "BITZ_CM_EXPONENTS",
     "BITZ_CM_SEED",
     "BITZ_FALCON_BATCH",
-    "BITZ_FALCON_MESSAGE",
-    "BITZ_FALCON_PUBLIC_KEY",
-    "BITZ_FALCON_SIGNATURE",
+    "BITZ_FALCON_SEED",
     "BITZ_EQ_TABLE_SAMPLES",
     "BITZ_LIG_PROFILE",
     // Matched MultiSwap/Mod-R1CS campaign trace metadata.

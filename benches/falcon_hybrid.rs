@@ -1,15 +1,17 @@
 //! Complete Falcon hybrid proof benchmark, including all source commitments.
 //!
 //! Example: `RAYON_NUM_THREADS=16 BITZ_BENCH_LAMBDA=128 cargo bench
-//! --features falcon-hybrid --bench falcon_hybrid -- --batch 256 --iterations 2`.
+//! --features falcon-hybrid --bench falcon_hybrid -- --batch 32 --iterations 2`.
 //! Security must be selected explicitly. Each trial commits a fresh batch and
-//! verifies the resulting full proof against all roots. A fixture manifest is a
-//! JSON array of {"public_key": "path", "signature": "path", "message": "path"},
-//! with paths relative to the manifest. Entries cycle across the batch, starting
-//! at a different offset each trial; without a manifest the bundled fixture repeats.
+//! verifies the resulting full proof against all roots. fn-dsa 0.3.0
+//! generates distinct original Falcon-1024 keypairs/messages/signatures once,
+//! outside prover timing, and the same batch is reused across trials.
+#[path = "common/falcon_inputs.rs"]
+mod falcon_inputs;
 use bitz::piop::spartan::falcon1024_ct::{FalconPublicStatement, PreparedFalconHybrid};
+use falcon_inputs::{generate_cases, reject_fixture_overrides};
 use serde_json::json;
-use std::{error::Error, fmt::Write, fs, path::PathBuf, time::Instant};
+use std::{error::Error, fmt::Write, fs, time::Instant};
 
 struct Options {
     batch: usize,
@@ -17,18 +19,21 @@ struct Options {
     iterations: usize,
     warmup: usize,
     threads: usize,
-    fixture_manifest: Option<PathBuf>,
+    seed: u64,
 }
 
 impl Options {
     fn read() -> Result<Self, Box<dyn Error>> {
-        let mut batch = env_usize("BITZ_FALCON_BATCH")?.unwrap_or(1);
+        let mut batch = env_usize("BITZ_FALCON_BATCH")?.unwrap_or(32);
         let mut security = env_usize("BITZ_BENCH_LAMBDA")?;
         let mut iterations = env_usize("BITZ_BENCH_REPS")?.unwrap_or(3);
         let mut warmup = 1;
         let mut threads = env_usize("RAYON_NUM_THREADS")?.unwrap_or(1);
-        let mut fixture_manifest =
-            std::env::var_os("BITZ_FALCON_FIXTURE_MANIFEST").map(PathBuf::from);
+        let mut seed = std::env::var("BITZ_FALCON_SEED")
+            .ok()
+            .map(|value| value.parse::<u64>())
+            .transpose()?
+            .unwrap_or(42);
         let mut args = std::env::args().skip(1);
         while let Some(flag) = args.next() {
             if flag == "--bench" {
@@ -36,12 +41,12 @@ impl Options {
             }
             if matches!(flag.as_str(), "--help" | "-h") {
                 println!(
-                    "falcon_hybrid --security 100|128 [--batch 1..1024] [--iterations N] [--warmup N] [--threads N] [--fixture-manifest PATH]\nEnvironment defaults: BITZ_BENCH_LAMBDA, BITZ_FALCON_BATCH, BITZ_BENCH_REPS, RAYON_NUM_THREADS.\nOptional fixture paths: BITZ_FALCON_PUBLIC_KEY, BITZ_FALCON_SIGNATURE, BITZ_FALCON_MESSAGE.\nVaried batches: --fixture-manifest PATH or BITZ_FALCON_FIXTURE_MANIFEST (JSON array of public_key/signature/message paths)."
+                    "falcon_hybrid --security 100|128 [--batch 1..1024] [--seed U64] [--iterations N] [--warmup N] [--threads N]\nInputs: distinct fn-dsa 0.3.0 original Falcon-1024 keys and signatures; generation is outside prover timing. Defaults: batch 32, seed 42.\nEnvironment defaults: BITZ_BENCH_LAMBDA, BITZ_FALCON_BATCH, BITZ_FALCON_SEED, BITZ_BENCH_REPS, RAYON_NUM_THREADS."
                 );
                 std::process::exit(0);
             }
-            if flag == "--fixture-manifest" {
-                fixture_manifest = Some(args.next().ok_or("missing fixture manifest path")?.into());
+            if flag == "--seed" {
+                seed = args.next().ok_or("missing seed")?.parse()?;
                 continue;
             }
             if !matches!(
@@ -89,13 +94,14 @@ impl Options {
             iterations,
             warmup,
             threads,
-            fixture_manifest,
+            seed,
         })
     }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let options = Options::read()?;
+    reject_fixture_overrides()?;
     #[cfg(feature = "parallel")]
     rayon::ThreadPoolBuilder::new()
         .num_threads(options.threads)
@@ -117,8 +123,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     #[cfg(not(feature = "parallel"))]
     let threads = 1;
 
-    let fixtures = Fixtures::read(&options)?;
-    let fixture_hash = fixtures.digest();
+    let start = Instant::now();
+    let cases = generate_cases(options.batch, options.seed)?;
+    let input_setup_ms = ms(start);
+    let mut input_hash = blake3::Hasher::new();
+    for case in &cases {
+        case.hash_into(&mut input_hash);
+    }
+    let input_digest = input_hash.finalize().to_hex().to_string();
+    let keys: Vec<_> = cases
+        .iter()
+        .map(|case| case.public_key.as_slice())
+        .collect();
+    let messages: Vec<_> = cases.iter().map(|case| case.message.as_slice()).collect();
+    let signatures: Vec<_> = cases.iter().map(|case| case.signature.as_slice()).collect();
 
     let start = Instant::now();
     let prepared = PreparedFalconHybrid::new(options.batch, options.security)?;
@@ -138,7 +156,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!(
         "{}",
         json!({
-            "schema": "bitz/falcon-hybrid/v1",
+            "schema": "bitz/falcon-hybrid/v3",
+            "protocol": "bitz/falcon1024-ct/hybrid/non-zk/v4",
             "event": "prepared",
             "batch": options.batch,
             "capacity": prepared.capacity(),
@@ -161,12 +180,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "gfni": cfg!(target_feature = "gfni"),
             },
             "prepare_ms": prepare_ms,
+            "input_source": "pornin/rust-fn-dsa",
+            "input_implementation_version": "0.3.0",
+            "input_mode": "original-falcon-1024",
+            "input_seed": options.seed,
+            "input_rng": "rand_chacha 0.3.1 ChaCha20Rng::seed_from_u64",
+            "input_count": cases.len(),
+            "input_digest": input_digest,
+            "input_setup_ms": input_setup_ms,
+            "native_verify_includes_public_key_decode": true,
+            "public_inputs": ["public_key", "message", "signature_nonce", "signature_s2"],
             "source_bits_per_signature": prepared.source_bits_per_signature(),
-            "fixture_digest": fixture_hash,
-            "fixture_repeated": fixtures.0.len() == 1,
-            "fixture_count": fixtures.0.len(),
-            "fixture_manifest": options.fixture_manifest,
-            "fixture_trial_rotation": fixtures.0.len() > 1,
             "warmup_trials": options.warmup,
             "measured_trials": options.iterations,
         })
@@ -174,22 +198,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut samples = Vec::with_capacity(options.iterations);
     for trial in 0..options.warmup + options.iterations {
-        let offset = trial % fixtures.0.len();
-        let batch: Vec<_> = (0..options.batch)
-            .map(|i| &fixtures.0[(offset + i) % fixtures.0.len()])
-            .collect();
-        let keys: Vec<_> = batch.iter().map(|f| f.public_key.as_slice()).collect();
-        let messages: Vec<_> = batch.iter().map(|f| f.message.as_slice()).collect();
-        let signatures: Vec<_> = batch.iter().map(|f| f.signature.as_slice()).collect();
-        let public = FalconPublicStatement::from_bytes(&keys, &messages)?;
-        let mut batch_hash = blake3::Hasher::new();
-        for fixture in &batch {
-            fixture.hash_into(&mut batch_hash);
+        let public = FalconPublicStatement::from_bytes(&keys, &messages, &signatures)?;
+        let start = Instant::now();
+        for case in &cases {
+            std::hint::black_box(case).verify_upstream()?;
         }
-        let batch_digest = batch_hash.finalize().to_hex().to_string();
+        let native_verify_ms = ms(start);
         let phase = tracing::info_span!("falcon_bench:commit", trial).entered();
         let start = Instant::now();
-        let committed = prepared.commit(public, &signatures)?;
+        let committed = prepared.commit(public)?;
         let statement = committed.statement.clone();
         let witness_commit_ms = ms(start);
         drop(phase);
@@ -210,12 +227,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         let proof_debug_digest = proof_hash.0.finalize().to_hex().to_string();
         let measured = trial >= options.warmup;
         if measured {
-            samples.push([witness_commit_ms, prove_ms, verify_ms]);
+            samples.push(([witness_commit_ms, prove_ms, verify_ms], native_verify_ms));
         }
         println!(
             "{}",
             json!({
-                "schema": "bitz/falcon-hybrid/v1",
+                "schema": "bitz/falcon-hybrid/v3",
                 "event": "trial",
                 "trial": if measured { "sample" } else { "warmup" },
                 "sample": if measured { Some(trial - options.warmup + 1) } else { None },
@@ -224,6 +241,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "security_target": options.security,
                 "threads": threads,
                 "prepare_ms": prepare_ms,
+                "input_setup_ms": input_setup_ms,
+                "native_verify_ms": native_verify_ms,
                 "witness_commit_ms": witness_commit_ms,
                 "proof_prove_ms": prove_ms,
                 "proof_verify_ms": verify_ms,
@@ -231,21 +250,26 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "end_to_end_ms": witness_commit_ms + prove_ms + verify_ms,
                 "process_peak_rss_kib": process_peak_rss_kib(),
                 "roots": statement.roots.map(|root| root.iter().map(|byte| format!("{byte:02x}")).collect::<String>()),
-                "fixture_offset": offset,
-                "batch_fixture_digest": batch_digest,
+                "input_digest": input_digest,
                 "proof_debug_digest": proof_debug_digest,
                 "verified": true,
             })
         );
     }
-    let witness_commit_ms = median(samples.iter().map(|sample| sample[0]).collect());
-    let prove_ms = median(samples.iter().map(|sample| sample[1]).collect());
-    let verify_ms = median(samples.iter().map(|sample| sample[2]).collect());
-    let total_prover_ms = median(samples.iter().map(|sample| sample[0] + sample[1]).collect());
+    let witness_commit_ms = median(samples.iter().map(|sample| sample.0[0]).collect());
+    let prove_ms = median(samples.iter().map(|sample| sample.0[1]).collect());
+    let verify_ms = median(samples.iter().map(|sample| sample.0[2]).collect());
+    let total_prover_ms = median(
+        samples
+            .iter()
+            .map(|sample| sample.0[0] + sample.0[1])
+            .collect(),
+    );
+    let native_verify_ms = median(samples.iter().map(|sample| sample.1).collect());
     println!(
         "{}",
         json!({
-            "schema": "bitz/falcon-hybrid/v1",
+            "schema": "bitz/falcon-hybrid/v3",
             "event": "summary",
             "batch": options.batch,
             "capacity": prepared.capacity(),
@@ -253,11 +277,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             "threads": threads,
             "samples": samples.len(),
             "prepare_ms": prepare_ms,
+            "input_setup_ms": input_setup_ms,
+            "median_native_verify_ms": native_verify_ms,
             "median_witness_commit_ms": witness_commit_ms,
             "median_proof_prove_ms": prove_ms,
             "median_proof_verify_ms": verify_ms,
             "median_total_prover_ms": total_prover_ms,
-            "median_end_to_end_ms": median(samples.iter().map(|sample| sample.iter().sum()).collect()),
+            "median_end_to_end_ms": median(samples.iter().map(|sample| sample.0.iter().sum()).collect()),
             "proof_signatures_per_second": 1000.0 * options.batch as f64 / prove_ms,
             "total_prover_signatures_per_second": 1000.0 * options.batch as f64 / total_prover_ms,
             "process_peak_rss_kib": process_peak_rss_kib(),
@@ -313,88 +339,12 @@ impl std::fmt::Write for DebugHasher {
     }
 }
 
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FixturePaths {
-    public_key: PathBuf,
-    signature: PathBuf,
-    message: PathBuf,
-}
-
-struct Fixture {
-    public_key: Vec<u8>,
-    signature: Vec<u8>,
-    message: Vec<u8>,
-}
-
-impl Fixture {
-    fn hash_into(&self, hash: &mut blake3::Hasher) {
-        for part in [&self.public_key, &self.message, &self.signature] {
-            hash.update(&(part.len() as u64).to_le_bytes());
-            hash.update(part);
-        }
-    }
-}
-
-struct Fixtures(Vec<Fixture>);
-impl Fixtures {
-    fn read(options: &Options) -> Result<Self, Box<dyn Error>> {
-        if let Some(path) = &options.fixture_manifest {
-            let entries: Vec<FixturePaths> = serde_json::from_slice(&fs::read(path)?)?;
-            if entries.is_empty() {
-                return Err("fixture manifest must not be empty".into());
-            }
-            let directory = path.parent().unwrap_or_else(|| std::path::Path::new("."));
-            let fixtures = entries
-                .into_iter()
-                .map(|entry| {
-                    Ok(Fixture {
-                        public_key: fs::read(directory.join(entry.public_key))?,
-                        signature: fs::read(directory.join(entry.signature))?,
-                        message: fs::read(directory.join(entry.message))?,
-                    })
-                })
-                .collect::<Result<Vec<_>, std::io::Error>>()?;
-            return Ok(Self(fixtures));
-        }
-        Ok(Self(vec![Fixture {
-            public_key: fixture(
-                "BITZ_FALCON_PUBLIC_KEY",
-                include_bytes!("../src/piop/spartan/falcon1024_ct/fixtures/public_key.bin"),
-            )?,
-            signature: fixture(
-                "BITZ_FALCON_SIGNATURE",
-                include_bytes!("../src/piop/spartan/falcon1024_ct/fixtures/signature_ct.bin"),
-            )?,
-            message: fixture(
-                "BITZ_FALCON_MESSAGE",
-                include_bytes!("../src/piop/spartan/falcon1024_ct/fixtures/message.bin"),
-            )?,
-        }]))
-    }
-
-    fn digest(&self) -> String {
-        let mut hash = blake3::Hasher::new();
-        for fixture in &self.0 {
-            fixture.hash_into(&mut hash);
-        }
-        hash.finalize().to_hex().to_string()
-    }
-}
-
 fn env_usize(name: &str) -> Result<Option<usize>, Box<dyn Error>> {
     match std::env::var(name) {
         Ok(value) => Ok(Some(value.parse()?)),
         Err(std::env::VarError::NotPresent) => Ok(None),
         Err(error) => Err(error.into()),
     }
-}
-
-fn fixture(name: &str, fallback: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
-    Ok(match std::env::var_os(name) {
-        Some(path) => fs::read(path)?,
-        None => fallback.to_vec(),
-    })
 }
 
 fn ms(start: Instant) -> f64 {

@@ -465,6 +465,7 @@ fn linear_binding_matches_committed_bits_and_detects_parity_changes_in_padded_ba
     let statement = FalconPublicStatement::from_bytes(
         &[PUBLIC_KEY, PUBLIC_KEY, PUBLIC_KEY],
         &[MESSAGE, MESSAGE, MESSAGE],
+        &[SIGNATURE, SIGNATURE, SIGNATURE],
     )
     .unwrap();
     let mut traces = [trace.clone(), trace.clone(), trace];
@@ -535,7 +536,7 @@ fn linear_binding_matches_committed_bits_and_detects_parity_changes_in_padded_ba
         signed(-1, &field)
     };
     traces[1].hash_to_point.shake.column_parities[0] ^= 1u64 << column_bit;
-    let first_round = 1 + 256 + 8 + N;
+    let first_round = 1 + 256 + super::super::CT_SIGNATURE_BYTES + N;
     let mut column_weight = field.sub(
         &field.zero(),
         &weights.at(LINEAR_STRIDE + first_round + column_bit),
@@ -647,12 +648,17 @@ fn full_binding_endpoint_matches_dense_with_distinct_keys_and_padded_instance() 
     let mut statement = FalconPublicStatement::from_bytes(
         &[PUBLIC_KEY, PUBLIC_KEY, PUBLIC_KEY],
         &[MESSAGE, MESSAGE, MESSAGE],
+        &[SIGNATURE, SIGNATURE, SIGNATURE],
     )
     .unwrap();
     statement.public_keys[1].h[0] = (statement.public_keys[1].h[0] + 1) % Q as u16;
     statement.public_keys[2].h[N - 1] = (statement.public_keys[2].h[N - 1] + 3) % Q as u16;
     statement.messages[1][0] ^= 1;
     statement.messages[2][31] ^= 128;
+    statement.signatures[1].nonce[0] ^= 1;
+    statement.signatures[2].nonce[39] ^= 128;
+    statement.signatures[1].s2[0] = -2047;
+    statement.signatures[2].s2[N - 1] = 2047;
     let proof = full_terminal_fixture(&layout, &field);
     let linear_point = point(linear_rounds(&layout), &field);
     let mut transcript = Blake3Transcript::new();
@@ -684,12 +690,17 @@ fn statement_with_key_groups(groups: &[usize]) -> FalconPublicStatement {
     let mut statement = FalconPublicStatement::from_bytes(
         &vec![PUBLIC_KEY.as_slice(); groups.len()],
         &vec![MESSAGE.as_slice(); groups.len()],
+        &vec![SIGNATURE.as_slice(); groups.len()],
     )
     .unwrap();
     for (instance, (&group, key)) in groups.iter().zip(&mut statement.public_keys).enumerate() {
         key.h[0] = (key.h[0] + group as u16) % Q as u16;
         key.h[N - 1] = (key.h[N - 1] + 7 * group as u16) % Q as u16;
         statement.messages[instance][0] ^= instance as u8;
+        statement.signatures[instance].nonce[0] ^= instance as u8;
+        statement.signatures[instance].nonce[39] ^= (instance as u8).wrapping_mul(17);
+        statement.signatures[instance].s2[0] = -2047 + instance as i16;
+        statement.signatures[instance].s2[N - 1] = 2047 - instance as i16;
     }
     statement
 }
@@ -1036,6 +1047,106 @@ fn norm_binding_matches_weighted_words_and_slack_for_padded_batch() {
 
 #[cfg(feature = "falcon-hybrid")]
 #[test]
+fn public_signature_bytes_are_constrained_to_the_committed_source() {
+    let field = config();
+    let layout = FalconSourceLayout::new_hybrid(3).unwrap();
+    let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+    let source = FalconSourceWitness::from_traces(
+        layout,
+        &[MESSAGE.as_slice(); 3],
+        &[SIGNATURE.as_slice(); 3],
+        &[trace.clone(), trace.clone(), trace],
+    )
+    .unwrap();
+    let statement = FalconPublicStatement::from_bytes(
+        &[PUBLIC_KEY.as_slice(); 3],
+        &[MESSAGE.as_slice(); 3],
+        &[SIGNATURE.as_slice(); 3],
+    )
+    .unwrap();
+    let proof = full_terminal_fixture(&layout, &field);
+
+    struct SourceDot<'a> {
+        source: &'a FalconSourceWitness,
+        field: &'a Cfg,
+        value: F,
+    }
+    impl CoefficientSink for SourceDot<'_> {
+        fn add(&mut self, index: usize, coefficient: F) {
+            if self.source.bit(index) {
+                self.value = self.field.add(&self.value, &coefficient);
+            }
+        }
+    }
+
+    // Select one public byte equation exactly. The source and transcript stay
+    // fixed: rejection must come from the equality, not changed challenges.
+    for (instance, nonce_byte, coefficient) in [
+        (0, Some(0), None),
+        (1, Some(39), None),
+        (2, None, Some(0)),
+        (2, None, Some(N - 1)),
+    ] {
+        let mut changed = statement.clone();
+        if let Some(byte) = nonce_byte {
+            changed.signatures[instance].nonce[byte] ^= 1;
+        }
+        if let Some(index) = coefficient {
+            let value = &mut changed.signatures[instance].s2[index];
+            *value += if *value == 2047 { -1 } else { 1 };
+        }
+        let encoded = super::super::encode_signature_ct(&changed.signatures[instance]).unwrap();
+        let byte = encoded
+            .iter()
+            .zip(SIGNATURE)
+            .position(|(changed, original)| changed != original)
+            .unwrap();
+        let row = instance * layout.linear_stride() + 1 + 256 + byte;
+        let linear_point: Vec<_> = (0..linear_rounds(&layout))
+            .map(|bit| unsigned(((row >> bit) & 1) as u128, &field))
+            .collect();
+        let weights = factored_weights(&linear_point, &field).unwrap();
+        for (public, expected) in [
+            (&statement, field.zero()),
+            (
+                &changed,
+                signed(
+                    i128::from(SIGNATURE[byte]) - i128::from(encoded[byte]),
+                    &field,
+                ),
+            ),
+        ] {
+            let mut sink = SourceDot {
+                source: &source,
+                field: &field,
+                value: field.zero(),
+            };
+            let constant =
+                add_linear_constraints(&mut sink, &weights, &layout, public, &field).unwrap();
+            assert_eq!(field.add(&sink.value, &constant), expected);
+
+            let mut transcript = Blake3Transcript::new();
+            let mut binding = prepare_binding_form(
+                &mut transcript,
+                &layout,
+                public,
+                &proof,
+                &linear_point,
+                &field,
+            )
+            .unwrap();
+            binding.eta = field.zero();
+            assert_eq!(
+                binding.target().unwrap(),
+                field.sub(&field.zero(), &constant)
+            );
+        }
+        assert_ne!(SIGNATURE[byte], encoded[byte]);
+    }
+}
+
+#[cfg(feature = "falcon-hybrid")]
+#[test]
 fn compact_prefix_binds_word_products_and_weighted_norm_to_source() {
     let layout = FalconSourceLayout::new_hybrid(3).unwrap();
     let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
@@ -1043,6 +1154,7 @@ fn compact_prefix_binds_word_products_and_weighted_norm_to_source() {
     let statement = FalconPublicStatement::from_bytes(
         &[PUBLIC_KEY, PUBLIC_KEY, PUBLIC_KEY],
         &[MESSAGE, MESSAGE, MESSAGE],
+        &[SIGNATURE, SIGNATURE, SIGNATURE],
     )
     .unwrap();
     let source = FalconSourceWitness::from_traces(

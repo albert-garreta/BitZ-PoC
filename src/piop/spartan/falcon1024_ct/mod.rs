@@ -32,7 +32,9 @@ pub use hybrid::{
     PreparedFalconHybrid,
 };
 
-pub use format::{FalconPublicKey, FalconSignatureCt, decode_public_key, decode_signature_ct};
+pub use format::{
+    FalconPublicKey, FalconSignatureCt, decode_public_key, decode_signature_ct, encode_signature_ct,
+};
 pub use hash_to_point::{HashToPointTrace, hash_to_point_ct};
 pub use keccak::{KeccakTrace, shake256_with_trace};
 pub use layout::{FalconSourceLayout, FalconTraceCounts};
@@ -73,6 +75,8 @@ pub enum FalconError {
     SignatureHeader,
     #[error("Falcon CT coefficient {index} uses the forbidden -2048 encoding")]
     ForbiddenSignatureCoefficient { index: usize },
+    #[error("Falcon CT coefficient {index} is outside -2047..=2047")]
+    SignatureCoefficientOutOfRange { index: usize },
     #[error("constant-time HashToPoint produced only {accepted} accepted samples")]
     HashToPointUnderflow { accepted: usize },
     #[error("Falcon squared norm {actual} exceeds {BETA_SQUARED}")]

@@ -351,10 +351,11 @@ impl BindingForm<'_> {
             .iter()
             .fold(field.zero(), |sum, weight| field.add(&sum, weight));
         constant = field.mul(&constant, &instance_sum);
-        for (message, alpha) in self
+        for ((message, signature), alpha) in self
             .statement
             .messages
             .iter()
+            .zip(&self.statement.signatures)
             .zip(&self.ring_instance_weights)
         {
             let mut bits = field.zero();
@@ -364,6 +365,20 @@ impl BindingForm<'_> {
                 }
             }
             constant = field.sub(&constant, &field.mul(alpha, &bits));
+            let encoded = super::super::encode_signature_ct(signature)?;
+            let mut signature_bytes = field.zero();
+            // The common header constant is already in linear_constant().
+            for (byte, &value) in encoded.iter().enumerate().skip(1) {
+                signature_bytes = field.add(
+                    &signature_bytes,
+                    &mul_i(
+                        self.local_linear_weights.at(1 + 256 + byte),
+                        i128::from(value),
+                        field,
+                    ),
+                );
+            }
+            constant = field.sub(&constant, &field.mul(alpha, &signature_bytes));
         }
         let mut target = field.sub(&field.zero(), &constant);
         let norm_instances =
@@ -484,16 +499,16 @@ fn strided_sum(point: &[F], start: usize, count: usize, field: &Cfg) -> F {
     field.mul(&low, &interval_sum(&point[2..], start >> 2, count, field))
 }
 
-/// Constants of the repeated hybrid linear template, excluding public messages.
+/// Constants of the repeated hybrid linear template, excluding public messages
+/// and the instance-specific nonce and signature coefficient bytes.
 fn linear_constant(point: &[F], field: &Cfg) -> F {
     let mut constant = field.sub(&field.zero(), &interval_sum(point, 0, 1, field));
     let mut row = 1 + 256;
-    for bit in 0..8 {
-        if (0x5au8 >> bit) & 1 == 1 {
-            constant = field.sub(&constant, &interval_sum(point, row + bit, 1, field));
-        }
-    }
-    row += 8 + N;
+    constant = field.sub(
+        &constant,
+        &mul_i(interval_sum(point, row, 1, field), 0x5a, field),
+    );
+    row += super::super::CT_SIGNATURE_BYTES + N;
     for (offset, value) in [(1, -12_288), (2, -5), (3, -1)] {
         constant = field.add(
             &constant,
@@ -534,8 +549,14 @@ fn emit_linear_template(
     for bit in 0..256 {
         sink.add(offsets.message + bit, next());
     }
-    for bit in 0..8 {
-        sink.add(offsets.encoded_signature + bit, next());
+    for byte in 0..super::super::CT_SIGNATURE_BYTES {
+        sink.add_word(
+            offsets.encoded_signature + 8 * byte,
+            8,
+            false,
+            next(),
+            field,
+        );
     }
     for i in 0..N {
         let weight = next();

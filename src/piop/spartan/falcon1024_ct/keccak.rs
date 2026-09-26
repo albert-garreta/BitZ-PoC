@@ -266,6 +266,34 @@ mod tests {
     }
 
     #[test]
+    fn shake256_matches_rustcrypto_at_rate_boundaries() {
+        use rand::{RngExt, SeedableRng, rngs::StdRng};
+        use sha3::{
+            Shake256,
+            digest::{ExtendableOutput, Update, XofReader},
+        };
+
+        let mut rng = StdRng::seed_from_u64(0x5348_414b_4532_3536);
+        // Include Falcon's 72-byte preimage and boundaries of SHAKE256's rate.
+        for input_len in [0, 1, 71, 72, 73, 135, 136, 137, 271, 272, 273] {
+            let input: Vec<u8> = (0..input_len).map(|_| rng.random()).collect();
+            let mut oracle = Shake256::default();
+            oracle.update(&input);
+            let mut expected = vec![0; 2622];
+            oracle.finalize_xof().read(&mut expected);
+
+            for output_len in [0, 1, 64, 135, 136, 137, 271, 272, 273, 2622] {
+                let (actual, _) = shake256_with_trace(&input, output_len);
+                assert_eq!(
+                    actual,
+                    expected[..output_len],
+                    "input_len={input_len}, output_len={output_len}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn falcon_shape_has_twenty_permutations() {
         let (_, trace) = shake256_with_trace(&[0u8; 72], 2 * 1_311);
         assert_eq!(trace.permutations, 20);

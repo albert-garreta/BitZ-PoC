@@ -39,8 +39,9 @@ use crate::{
 };
 
 use super::{
-    FalconError, FalconPiopProof, FalconPublicKey, FalconSourceLayout, FalconSourceOffsets,
-    FalconSourceWitness, FalconVerificationTrace, HASH_TO_POINT_SAMPLES, N, Q, decode_public_key,
+    FalconError, FalconPiopProof, FalconPublicKey, FalconSignatureCt, FalconSourceLayout,
+    FalconSourceOffsets, FalconSourceWitness, FalconVerificationTrace, HASH_TO_POINT_SAMPLES, N, Q,
+    decode_public_key, decode_signature_ct, encode_signature_ct,
     piop::{prove_falcon_piop, security_schedule, verify_falcon_piop},
 };
 
@@ -76,17 +77,25 @@ impl GrindingDomain for BindingGrinding {
     const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/grinding/binding/v1";
 }
 
-/// Public inputs of a batch.  Signatures remain inside the committed witness;
-/// the public key and the 32-byte message are bound before any PIOP challenge.
+/// Public keys, 32-byte messages, and exact signatures verified by the proof.
+/// Their witness copies are authenticated by the terminal linear binder.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FalconPublicStatement {
     pub public_keys: Vec<FalconPublicKey>,
     pub messages: Vec<[u8; 32]>,
+    pub signatures: Vec<FalconSignatureCt>,
 }
 
 impl FalconPublicStatement {
-    pub fn from_bytes(public_keys: &[&[u8]], messages: &[&[u8]]) -> Result<Self, FalconError> {
-        if public_keys.len() != messages.len() || public_keys.is_empty() {
+    pub fn from_bytes(
+        public_keys: &[&[u8]],
+        messages: &[&[u8]],
+        signatures: &[&[u8]],
+    ) -> Result<Self, FalconError> {
+        if public_keys.len() != messages.len()
+            || public_keys.len() != signatures.len()
+            || public_keys.is_empty()
+        {
             return Err(piop("public statement batch mismatch"));
         }
         let public_keys = public_keys
@@ -101,10 +110,32 @@ impl FalconPublicStatement {
                     .map_err(|_| piop("Falcon benchmark messages must contain 32 bytes"))
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let signatures = signatures
+            .iter()
+            .map(|bytes| decode_signature_ct(bytes))
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             public_keys,
             messages,
+            signatures,
         })
+    }
+
+    pub(super) fn validate(&self, batch: usize) -> Result<(), FalconError> {
+        if self.batch() != batch || self.messages.len() != batch || self.signatures.len() != batch {
+            return Err(piop("public statement batch mismatch"));
+        }
+        for key in &self.public_keys {
+            for (index, &coefficient) in key.h.iter().enumerate() {
+                if i64::from(coefficient) >= Q {
+                    return Err(FalconError::PublicKeyCoefficient { index });
+                }
+            }
+        }
+        for signature in &self.signatures {
+            encode_signature_ct(signature)?;
+        }
+        Ok(())
     }
 
     pub fn batch(&self) -> usize {
@@ -196,6 +227,7 @@ pub(super) fn prove_binding_prefix(
     source: &FalconSourceWitness,
     target_bits: usize,
 ) -> Result<(FalconBindingPrefixProof, FalconOpeningClaim), FalconError> {
+    statement.validate(layout.batch())?;
     if statement.batch() != layout.batch()
         || statement.messages.len() != layout.batch()
         || traces.len() != layout.batch()
@@ -205,6 +237,10 @@ pub(super) fn prove_binding_prefix(
             .iter()
             .zip(&statement.public_keys)
             .any(|(trace, key)| &trace.public_key != key)
+        || traces
+            .iter()
+            .zip(&statement.signatures)
+            .any(|(trace, signature)| &trace.signature != signature)
     {
         return Err(piop("Falcon prefix input shape mismatch"));
     }
@@ -318,6 +354,7 @@ pub(super) fn verify_binding_prefix(
     proof: &FalconBindingPrefixProof,
     target_bits: usize,
 ) -> Result<FalconOpeningClaim, FalconError> {
+    statement.validate(layout.batch())?;
     if statement.batch() != layout.batch()
         || statement.messages.len() != layout.batch()
         || !matches!(target_bits, 100 | 128)
@@ -410,6 +447,7 @@ fn validate_prover_inputs(
     target_bits: usize,
     pc: &ProverConfig,
 ) -> Result<(), FalconError> {
+    statement.validate(layout.batch())?;
     if statement.batch() != layout.batch()
         || statement.messages.len() != layout.batch()
         || traces.len() != layout.batch()
@@ -418,8 +456,12 @@ fn validate_prover_inputs(
     {
         return Err(piop("Falcon prover input shape mismatch"));
     }
-    for (trace, public_key) in traces.iter().zip(&statement.public_keys) {
-        if &trace.public_key != public_key {
+    for ((trace, public_key), signature) in traces
+        .iter()
+        .zip(&statement.public_keys)
+        .zip(&statement.signatures)
+    {
+        if &trace.public_key != public_key || &trace.signature != signature {
             return Err(piop("trace does not match the public Falcon statement"));
         }
     }
@@ -437,6 +479,7 @@ fn validate_verifier_inputs(
     target_bits: usize,
     vc: &VerifierConfig,
 ) -> Result<(), FalconError> {
+    statement.validate(layout.batch())?;
     if statement.batch() != layout.batch()
         || statement.messages.len() != layout.batch()
         || !matches!(target_bits, 100 | 128)
@@ -454,18 +497,24 @@ fn bind_statement(
     commitment: &Commitment,
     target_bits: usize,
 ) -> Result<(), FalconError> {
-    transcript.absorb_slice(b"bitz/falcon1024-ct/commitment-bound/v3");
+    transcript.absorb_slice(b"bitz/falcon1024-ct/commitment-bound/v4");
     transcript.absorb_slice(&[u8::from(layout.is_hybrid())]);
     transcript.absorb_slice(&(layout.batch() as u64).to_le_bytes());
     transcript.absorb_slice(&(layout.capacity() as u64).to_le_bytes());
     transcript.absorb_slice(&(target_bits as u64).to_le_bytes());
     transcript
         .absorb_slice(&bincode::serialize(commitment).map_err(|error| piop(error.to_string()))?);
-    for (public_key, message) in statement.public_keys.iter().zip(&statement.messages) {
+    for ((public_key, message), signature) in statement
+        .public_keys
+        .iter()
+        .zip(&statement.messages)
+        .zip(&statement.signatures)
+    {
         for coefficient in public_key.h.iter() {
             transcript.absorb_inner(&coefficient.to_le_bytes());
         }
         transcript.absorb_inner(message);
+        transcript.absorb_inner(&encode_signature_ct(signature)?);
     }
     Ok(())
 }
@@ -870,6 +919,7 @@ impl BindingForm<'_> {
         let local_statement = FalconPublicStatement {
             public_keys: vec![self.statement.public_keys[0].clone()],
             messages: vec![self.statement.messages[0]],
+            signatures: vec![self.statement.signatures[0].clone()],
         };
         add_linear_constraints(
             &mut RepeatedScaledSink {
@@ -1068,11 +1118,16 @@ fn add_linear_constraints(
             let expected = (statement.messages[instance][bit / 8] >> (bit % 8)) & 1;
             residual(&[(offsets.message + bit, 1)], -i128::from(expected));
         }
-        for bit in 0..8 {
-            residual(
-                &[(offsets.encoded_signature + bit, 1)],
-                -i128::from((0x5au8 >> bit) & 1),
-            );
+        for (byte, expected) in encode_signature_ct(&statement.signatures[instance])?
+            .into_iter()
+            .enumerate()
+        {
+            // The authenticated source contains bits, so each byte sum is in
+            // [0,255] and equality in the proof field fixes all eight bits.
+            let terms: [(usize, i128); 8] = std::array::from_fn(|bit| {
+                (offsets.encoded_signature + 8 * byte + bit, 1i128 << bit)
+            });
+            residual(&terms, -i128::from(expected));
         }
 
         for i in 0..N {
@@ -1938,7 +1993,8 @@ mod tests {
     fn commitment_bound_proof_roundtrips() {
         let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
         let layout = FalconSourceLayout::new(1).unwrap();
-        let statement = FalconPublicStatement::from_bytes(&[PUBLIC_KEY], &[MESSAGE]).unwrap();
+        let statement =
+            FalconPublicStatement::from_bytes(&[PUBLIC_KEY], &[MESSAGE], &[SIGNATURE]).unwrap();
         let source =
             FalconSourceWitness::from_traces(layout, &[MESSAGE], &[SIGNATURE], &[trace.clone()])
                 .unwrap();
@@ -2022,7 +2078,8 @@ mod tests {
     fn corrupted_committed_column_parity_is_rejected() {
         let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
         let layout = FalconSourceLayout::new(1).unwrap();
-        let statement = FalconPublicStatement::from_bytes(&[PUBLIC_KEY], &[MESSAGE]).unwrap();
+        let statement =
+            FalconPublicStatement::from_bytes(&[PUBLIC_KEY], &[MESSAGE], &[SIGNATURE]).unwrap();
         let mut corrupted = trace.clone();
         corrupted.hash_to_point.shake.column_parities[7] ^= 1;
         let source =

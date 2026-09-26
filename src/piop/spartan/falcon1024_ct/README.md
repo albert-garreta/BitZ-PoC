@@ -1,4 +1,4 @@
-# Falcon-1024 CT proofs, v3 and experimental hybrid
+# Falcon-1024 CT proofs, v4 public signatures and experimental hybrid
 
 This module contains two non-ZK proof backends for Falcon-1024 constant-time
 signatures. The `falcon` backend supports 1–32 signatures and one BitZ source
@@ -8,9 +8,66 @@ joint opening. Both prove SHAKE256, HashToPoint rejection and ordered compaction
 the Falcon ring equation, and the norm bound. Native witness generation is not
 used as a substitute for those proof constraints.
 
-The signature and nonce are not public-statement fields. These protocols do not
-provide zero knowledge or establish formal nonce hiding: proof messages and
-openings can disclose witness information.
+Public statements contain the public keys, 32-byte messages, and exact signatures
+(nonce and `s2`). Both backends bind the canonical CT signature bytes to their
+authenticated witness copies. These protocols do not provide zero knowledge;
+the remaining auxiliary witness is not guaranteed to be hidden.
+
+## Public signatures and independent benchmark inputs
+
+The outer commitment-bound and hybrid statement domains are now `v4`.
+Every CT signature byte has a linear equality against its eight committed bits,
+including the nonce and signed coefficient payload. Absorbing signatures into
+the transcript complements these equality constraints; it does not replace them.
+There are 931,752 linear rows per legacy signature and 10,152 per hybrid signature,
+which fit the existing row domains. The internal nonlinear PIOP is unchanged.
+
+Both proof benchmarks use only distinct keypairs and 32-byte messages generated
+reproducibly with `fn-dsa = 0.3.0` in `HASH_ID_ORIGINAL_FALCON` mode. The default
+batch contains 32 signatures; each selected batch size generates that many keys
+and signatures. Fixture manifests, file overrides, and repeated-input pools have
+been removed. Obsolete fixture arguments and environment variables are rejected.
+Upstream generation and verification, CT conversion, and native preflight checks
+run before prover timing. Every measured trial still constructs and commits the
+complete witness, proves it, and verifies the proof. Upstream native verification
+is reported separately for the same batch. The fixed seed is for benchmark keys
+only. The benchmark records the seed, upstream version, input digest, and public
+input relation so runs can be reproduced.
+The hybrid benchmark's JSON schema is `bitz/falcon-hybrid/v3`; `input_digest`
+identifies the generated batch in the preparation and trial records.
+
+The performance tables below predate public-signature binding and independent
+generated inputs unless explicitly marked otherwise; they are historical data.
+
+### Generated-input validation on 2026-09-26
+
+The portable release build, with no `RUSTFLAGS` override, verified a warmup and
+three measured batches of 32 distinct upstream-generated signatures at target
+128, seed 42, and 16 Rayon threads on an AMD Ryzen 9 9950X3D. Median times:
+
+| Stage | Milliseconds per 32-signature batch |
+| --- | ---: |
+| Upstream native verification, sequential, including key decoding | 0.580 |
+| Witness construction and commitments | 146.018 |
+| Proof generation | 553.180 |
+| Total prover | 699.198 |
+| Proof verification | 136.530 |
+
+Input generation and preflight took 298.116 ms, and reusable preparation took
+3.440 ms; both are outside total prover time. Total prover throughput was
+45.77 signatures/second (21.85 ms/signature). This is a measurement of the new
+public-signature relation on distinct keys, not a matched speedup comparison
+with the historical repeated-fixture tables. Raw trials, source hashes, and
+validation logs are retained locally in `bench_results/falcon-upstream-20260926/`.
+The legacy benchmark also verified a warmup and one measured 32-signature batch
+with the same input digest, target, and thread count. Its single measured sample
+took 4,428.833 ms for the total prover and 296.928 ms for proof verification;
+this is a smoke measurement rather than a median.
+
+Validation passed all 72 Falcon library tests and three upstream integration
+tests. These include canonical conversion, reproducible distinct inputs, direct
+public-byte/source equality checks, and rejection when a proof is paired with
+a different valid signature for the same public key and message.
 
 ## Changes in v3
 
@@ -135,8 +192,8 @@ use bitz::piop::spartan::falcon1024_ct::{
 };
 
 let prepared = PreparedFalconHybrid::new(public_keys.len(), 128)?;
-let public = FalconPublicStatement::from_bytes(&public_keys, &messages)?;
-let committed = prepared.commit(public, &signatures)?;
+let public = FalconPublicStatement::from_bytes(&public_keys, &messages, &signatures)?;
+let committed = prepared.commit(public)?;
 let statement = committed.statement.clone();
 let proof = prepared.prove(committed)?;
 prepared.verify(&statement, &proof)?;
@@ -367,6 +424,7 @@ clients also pass `cargo check` with `falcon-hybrid` enabled.
 Run from the repository root:
 
 ```sh
+cargo test --offline --release --features falcon-hybrid --test falcon_upstream
 cargo test --offline --release --features falcon-hybrid --lib rustcrypto
 cargo test --offline --release --features falcon --lib falcon1024_ct
 cargo test --offline --release --features falcon --lib streaming_
@@ -376,12 +434,24 @@ cargo test --offline --release --features falcon-hybrid --lib
 
 The complete hybrid benchmark verifies every generated proof and reports
 witness/commit time, proving time, verification time, total prover throughput,
-and process peak RSS. Security must be selected explicitly:
+and process peak RSS. Fetch dependencies once with `cargo fetch` before using
+the offline benchmark script on a fresh checkout. Security must be selected explicitly:
 
 ```sh
 scripts/bench_falcon_native.sh \
-  --batch 256 --security 128 --threads 16 --warmup 1 --iterations 3
+  --batch 32 --security 128 --seed 42 --threads 16 --warmup 1 --iterations 3
 ```
+
+The legacy proof benchmark uses the same independent generator and seed:
+
+```sh
+BITZ_FALCON_BATCH=32 BITZ_FALCON_SEED=42 BITZ_BENCH_LAMBDA=128 \
+  RAYON_NUM_THREADS=16 cargo bench --offline --profile release \
+  --features falcon,span-metrics --bench falcon1024_ct
+```
+
+The upstream native-verification baseline is sequential and includes public-key
+decoding; the prover and proof verifier use the configured Rayon thread pool.
 
 The script builds for the host CPU with `-C target-cpu=native` in an isolated
 `target/falcon-native` directory; this binary is hardware-specific. Ordinary
@@ -391,11 +461,10 @@ the script's default. To collect diagnostic stage timings, set
 `BITZ_FALCON_STAGE_TIMINGS=1`; JSON stage records go to stderr and nested times
 overlap. Run latency measurements separately with that variable unset.
 
-Run larger batches only with sufficient memory. The benchmark defaults to a
-repeated bundled fixture, which it identifies in its output; fixture files can
-be overridden with `BITZ_FALCON_PUBLIC_KEY`, `BITZ_FALCON_SIGNATURE`, and
-`BITZ_FALCON_MESSAGE`. Compare the total prover column when witness generation
-and commitments must count toward throughput.
+Run larger batches only with sufficient memory. Every input is generated by the
+independent Rust implementation. Compare the total prover column when witness
+generation and commitments must count toward throughput; input generation and
+public-statement decoding are excluded from this column.
 
 ## Adjoint reuse: matched 16-thread comparison
 
@@ -717,10 +786,9 @@ Those timings overlap and are excluded from the latency medians. Diagnostic
 events now record full span ancestry to attribute grinding to its enclosing
 forest, arithmetic, or opening stage.
 
-The benchmark accepts `--fixture-manifest PATH` (or
-`BITZ_FALCON_FIXTURE_MANIFEST`). The JSON is a nonempty array of objects with
-`public_key`, `signature`, and `message` paths, resolved relative to the manifest.
-Existing single-fixture environment overrides and bundled defaults still work.
+These historical runs used fixture manifests and file overrides. That harness
+has been removed; current proof benchmarks generate distinct inputs with
+`fn-dsa` as described above. The historical results remain for reference.
 Validation passed **590 native release library tests**, with zero failures and
 seven ignored tests. All six merged-forest tests also passed separately with
 `BITZ_JIT_R1=0` and `BITZ_JIT_GRID=0`, covering the alternative JIT paths. The

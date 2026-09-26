@@ -79,6 +79,48 @@ mod tests {
     use super::*;
 
     #[test]
+    fn falcon_hash_to_point_matches_rustcrypto_stream() {
+        use rand::{RngExt, SeedableRng, rngs::StdRng};
+        use sha3::{
+            Shake256,
+            digest::{ExtendableOutput, Update, XofReader},
+        };
+
+        let mut rng = StdRng::seed_from_u64(0x4641_4c43_4f4e);
+        for case in 0..10 {
+            let (nonce, message) = match case {
+                0 => ([0; 40], [0; 32]),
+                1 => ([255; 40], [255; 32]),
+                _ => (
+                    std::array::from_fn(|_| rng.random::<u8>()),
+                    std::array::from_fn(|_| rng.random::<u8>()),
+                ),
+            };
+            let mut oracle = Shake256::default();
+            oracle.update(&nonce);
+            oracle.update(&message);
+            let mut bytes = [0; 2622];
+            oracle.finalize_xof().read(&mut bytes);
+            let words: Vec<_> = bytes
+                .chunks_exact(2)
+                .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+                .collect();
+            let point: Vec<_> = words
+                .iter()
+                .copied()
+                .filter(|&word| word < 61_445)
+                .map(|word| word % 12_289)
+                .take(1024)
+                .collect();
+
+            let trace = hash_to_point_ct(&nonce, &message).unwrap();
+            assert_eq!(trace.words.as_slice(), words, "sample stream, case={case}");
+            assert_eq!(point.len(), 1024);
+            assert_eq!(trace.point.as_slice(), point, "hash to point, case={case}");
+        }
+    }
+
+    #[test]
     fn exact_division_and_prefix_constraints_hold() {
         let trace = hash_to_point_ct(&[7u8; 40], &[3u8; 32]).unwrap();
         for i in 0..HASH_TO_POINT_SAMPLES {

@@ -7,8 +7,8 @@ use super::{
 /// or low-degree relation rows, not generic bit-blasted R1CS rows.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FalconConstraintCounts {
-    /// Public one/message/header bindings.
-    pub public_bit_bindings: usize,
+    /// Public one/message-bit/signature-byte bindings.
+    pub public_input_bindings: usize,
     /// Canonical CT `s2 != -2048` range equalities.
     pub s2_canonical: usize,
     /// Shared theta column parity equations, one per column bit.
@@ -35,7 +35,7 @@ pub struct FalconConstraintCounts {
 impl FalconConstraintCounts {
     pub const fn per_signature() -> Self {
         Self {
-            public_bit_bindings: 1 + 32 * 8 + 8,
+            public_input_bindings: 1 + 32 * 8 + super::CT_SIGNATURE_BYTES,
             s2_canonical: N,
             keccak_column_parity_bits: 20 * 24 * 5 * 64,
             keccak_linear_bits: 20 * 24 * 25 * 64,
@@ -53,7 +53,7 @@ impl FalconConstraintCounts {
 
     /// Rows batched by the single random linear/ideal-check binder.
     pub const fn linear_rows(self) -> usize {
-        self.public_bit_bindings
+        self.public_input_bindings
             + self.s2_canonical
             + self.keccak_column_parity_bits
             + self.keccak_linear_bits
@@ -274,7 +274,7 @@ mod tests {
         check_exact_constraints(&trace).unwrap();
         let counts = FalconConstraintCounts::per_signature();
         assert_eq!(counts.keccak_column_parity_bits, 153_600);
-        assert_eq!(counts.linear_rows(), 930_183);
+        assert_eq!(counts.linear_rows(), 931_752);
         assert!(counts.linear_rows() < 1 << 20);
         assert_eq!(counts.norm_round_degree(), 2);
         assert_eq!(counts.compaction_product_rows, 4 * HASH_TO_POINT_SAMPLES);
