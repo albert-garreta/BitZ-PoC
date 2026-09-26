@@ -222,6 +222,139 @@ impl<S: StreamingCoefficientSource + ?Sized> InnerSumcheckMleSource for Streamin
             })?;
         Ok(table)
     }
+
+    #[allow(clippy::too_many_arguments)]
+    fn fold_prefix_table_and_prepare_tail<const K: usize, H: Sha256InnerBitSource + ?Sized>(
+        &self,
+        num_vars: usize,
+        live_len: usize,
+        challenges: &[Field],
+        prefix_weights: &[Field],
+        bits: &H,
+        cfg: &FieldConfig,
+        zero: &Field,
+        one: &Field,
+    ) -> Result<(CompactPrefixVTable, [Field; 2]), SumcheckError> {
+        self.validate_dimensions::<K>(num_vars, live_len)?;
+        if challenges.len() != K || prefix_weights.len() != 1 << K {
+            return Err(SumcheckError::InvalidProductDimensions);
+        }
+        validate_field_values(challenges, cfg)?;
+        let width = self.source.partition_len() >> K;
+        let suffix_count = live_len.div_ceil(1usize << K);
+        let separate_scan = width == 1 || num_vars == K;
+        // With only a few large source partitions, the ordinary first-tail
+        // scan can distribute their pairs across more workers than the replay.
+        // Keep that parallelism for large tables; small scans stay fused.
+        #[cfg(feature = "parallel")]
+        let separate_scan = separate_scan
+            || (suffix_count.div_ceil(2) >= 1 << 10
+                && rayon::current_num_threads() > live_len.div_ceil(self.source.partition_len()));
+        // A one-suffix partition splits the first tail pair across workers.
+        // Keep the ordinary fold for that uncommon shape and for K = num_vars.
+        if separate_scan {
+            let table =
+                self.fold_prefix_table::<K>(num_vars, live_len, challenges, cfg, zero, one)?;
+            let next = if num_vars > K {
+                sum_first_tail_round::<K, _>(
+                    &table,
+                    live_len,
+                    bits,
+                    prefix_weights,
+                    cfg,
+                    zero,
+                    one,
+                )?
+            } else {
+                [*zero; 2]
+            };
+            return Ok((table, next));
+        }
+
+        let mut table = CompactPrefixVTable {
+            values: vec![raw_montgomery(zero); (suffix_count + 1) & !1],
+            suffix_count,
+        };
+        let partials: Vec<_> = crate::utils::cfg_chunks_mut!(table.values, width)
+            .enumerate()
+            .map(|(partition, values)| -> Result<_, SumcheckError> {
+                let offset = partition * width;
+                let mut accumulators = std::array::from_fn(|_| product_accumulator_zero());
+                let accumulate = |accumulators: &mut [ProductAccumulator; 2],
+                                  values: &[RawMontgomery],
+                                  pair: usize| {
+                    accumulate_first_tail_values::<K, _>(
+                        accumulators,
+                        &values[2 * pair..2 * pair + 2],
+                        suffix_count,
+                        offset / 2 + pair,
+                        live_len,
+                        bits,
+                        prefix_weights,
+                        cfg,
+                        zero,
+                        one,
+                    )
+                };
+
+                // Ordered final-sum blocks complete each adjacent V pair as
+                // soon as the next pair arrives. Consume it while it is hot;
+                // omitted pairs have V0 = V1 = 0 and contribute nothing.
+                // The control flow depends only on coefficient wiring, never
+                // on the committed witness bits.
+                let mut pending_pair = None;
+                if let Some(result) =
+                    self.visit_blocks_checked::<K>(partition, cfg, |base, block| {
+                        let suffix = (base >> K) - offset;
+                        let pair = suffix / 2;
+                        if let Some(previous) = pending_pair {
+                            if previous != pair {
+                                accumulate(&mut accumulators, values, previous)?;
+                            }
+                        }
+                        pending_pair = Some(pair);
+                        let value = if K == 0 {
+                            block[0]
+                        } else {
+                            let mut sum = product_accumulator_zero();
+                            for (weight, value) in prefix_weights.iter().zip(block) {
+                                product_multiply_accumulate(cfg, &mut sum, weight, value);
+                            }
+                            product_reduce(sum, cfg)?
+                        };
+                        values[suffix] = raw_montgomery(&value);
+                        Ok(())
+                    })
+                {
+                    result?;
+                    if let Some(pair) = pending_pair {
+                        accumulate(&mut accumulators, values, pair)?;
+                    }
+                    return Ok(accumulators);
+                }
+
+                // Additive streams may revisit any entry. Complete this
+                // partition before accumulating its pairs, without a second
+                // pass over the entire batch's compact coefficient table.
+                self.visit_checked(partition, cfg, |index, delta| {
+                    let slot = &mut values[(index >> K) - offset];
+                    let term = cfg.mul(&delta, &prefix_weights[index & ((1usize << K) - 1)]);
+                    *slot = raw_montgomery(&cfg.add(&field_from_raw(slot, cfg), &term));
+                    Ok(())
+                })?;
+                for pair in 0..values.len() / 2 {
+                    accumulate(&mut accumulators, values, pair)?;
+                }
+                Ok(accumulators)
+            })
+            .collect();
+        let mut accumulators = std::array::from_fn(|_| product_accumulator_zero());
+        for partial in partials {
+            accumulators = merge_accumulators(accumulators, partial?);
+        }
+        let next = reduce_product_accumulators(accumulators, cfg)?;
+        Ok((table, next))
+    }
 }
 
 impl<S: StreamingCoefficientSource + ?Sized> StreamingMle<'_, S> {
@@ -644,49 +777,52 @@ mod tests {
         }
     }
 
+    struct Blocks<'a> {
+        values: &'a [Field],
+        zero: Field,
+        num_vars: usize,
+        partition_len: usize,
+    }
+    impl StreamingCoefficientSource for Blocks<'_> {
+        fn num_vars(&self) -> usize {
+            self.num_vars
+        }
+        fn live_len(&self) -> usize {
+            self.values.len()
+        }
+        fn partition_len(&self) -> usize {
+            self.partition_len
+        }
+        fn for_each_coefficient(
+            &self,
+            _: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+        ) -> Result<(), SumcheckError> {
+            panic!("ordered block source used the scatter path")
+        }
+        fn for_each_partition_block(
+            &self,
+            partition: usize,
+            block_len: usize,
+            emit: &mut impl FnMut(usize, &[Field]) -> Result<(), SumcheckError>,
+        ) -> Option<Result<(), SumcheckError>> {
+            Some((|| {
+                let start = self.partition_len * partition;
+                let end = (start + self.partition_len).min(self.values.len());
+                for base in (start..end).step_by(block_len) {
+                    let mut block = [self.zero; 16];
+                    let active = block_len.min(end - base);
+                    block[..active].copy_from_slice(&self.values[base..base + active]);
+                    if block[..block_len].iter().any(|value| *value != self.zero) {
+                        emit(base, &block[..block_len])?;
+                    }
+                }
+                Ok(())
+            })())
+        }
+    }
+
     #[test]
     fn ordered_blocks_match_scatter_proofs_with_partition_tails_and_zero_blocks() {
-        struct Blocks<'a> {
-            values: &'a [Field],
-            zero: Field,
-        }
-        impl StreamingCoefficientSource for Blocks<'_> {
-            fn num_vars(&self) -> usize {
-                8
-            }
-            fn live_len(&self) -> usize {
-                self.values.len()
-            }
-            fn partition_len(&self) -> usize {
-                32
-            }
-            fn for_each_coefficient(
-                &self,
-                _: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
-            ) -> Result<(), SumcheckError> {
-                panic!("ordered block source used the scatter path")
-            }
-            fn for_each_partition_block(
-                &self,
-                partition: usize,
-                block_len: usize,
-                emit: &mut impl FnMut(usize, &[Field]) -> Result<(), SumcheckError>,
-            ) -> Option<Result<(), SumcheckError>> {
-                Some((|| {
-                    let start = 32 * partition;
-                    let end = (start + 32).min(self.values.len());
-                    for base in (start..end).step_by(block_len) {
-                        let mut block = [self.zero; 16];
-                        let active = block_len.min(end - base);
-                        block[..active].copy_from_slice(&self.values[base..base + active]);
-                        if block[..block_len].iter().any(|value| *value != self.zero) {
-                            emit(base, &block[..block_len])?;
-                        }
-                    }
-                    Ok(())
-                })())
-            }
-        }
         let cfg = spartan_bitz_field_config();
         for live_len in [1, 13, 32, 33, 193, 256] {
             let (mut updates, mut dense, bits, _) = fixture(8, live_len, &cfg);
@@ -710,6 +846,8 @@ mod tests {
             let blocks = Blocks {
                 values: &dense,
                 zero: cfg.zero(),
+                num_vars: 8,
+                partition_len: 32,
             };
             for prefix in 0..=4 {
                 let mut a = Blake3Transcript::new();
@@ -733,6 +871,122 @@ mod tests {
                 )
                 .unwrap();
                 assert_eq!(actual, expected, "live={live_len}, prefix={prefix}");
+                assert_eq!(a.get_challenge::<u128>(), b.get_challenge::<u128>());
+            }
+        }
+    }
+
+    #[test]
+    fn fused_streaming_transition_matches_separate_fold_at_falcon_field_widths() {
+        fn check<const K: usize>(cfg: &FieldConfig) {
+            let zero = cfg.zero();
+            let one = cfg.one();
+            for live_len in [1, 13, 16, 17, 31, 32, 33, 193, 1021, 1024] {
+                let (_, mut dense, bits, _) = fixture(10, live_len, cfg);
+                for (i, value) in dense.iter_mut().enumerate() {
+                    // Whole missing pairs, one missing side, and cancellation
+                    // within an emitted block all appear in the same replay.
+                    if (i / 16) % 7 <= 2 {
+                        *value = zero;
+                    } else if i % 2 == 0 {
+                        *value = cfg.neg(value);
+                    }
+                }
+                for partition_len in [16, 32, 128, 1024] {
+                    let source = Blocks {
+                        values: &dense,
+                        zero,
+                        num_vars: 10,
+                        partition_len,
+                    };
+                    let stream = StreamingMle::new(&source);
+                    for challenge_kind in 0..3 {
+                        let challenges: Vec<_> = (0..K)
+                            .map(|i| match challenge_kind {
+                                0 => zero,
+                                1 => one,
+                                _ => cfg.neg(&Field::from_with_cfg(101 + i as u64, cfg)),
+                            })
+                            .collect();
+                        let weights = equality_weights_lsb(&challenges, &zero, &one, cfg);
+                        let expected_table = stream
+                            .fold_prefix_table::<K>(10, live_len, &challenges, cfg, &zero, &one)
+                            .unwrap();
+                        let expected_round = sum_first_tail_round::<K, _>(
+                            &expected_table,
+                            live_len,
+                            &bits,
+                            &weights,
+                            cfg,
+                            &zero,
+                            &one,
+                        )
+                        .unwrap();
+                        let (actual_table, actual_round) = stream
+                            .fold_prefix_table_and_prepare_tail::<K, _>(
+                                10,
+                                live_len,
+                                &challenges,
+                                &weights,
+                                &bits,
+                                cfg,
+                                &zero,
+                                &one,
+                            )
+                            .unwrap();
+                        assert_eq!(actual_table.values, expected_table.values);
+                        assert_eq!(actual_table.suffix_count, expected_table.suffix_count);
+                        assert_eq!(actual_round, expected_round);
+                    }
+                }
+            }
+        }
+
+        for bit_width in [100, 125, 126] {
+            let cfg = crate::ext_proj::sample_prime_context(
+                &mut Blake3Transcript::new(),
+                1u128 << (bit_width - 1),
+                (1u128 << bit_width) - 1,
+                128,
+            )
+            .unwrap();
+            check::<0>(&cfg);
+            check::<1>(&cfg);
+            check::<2>(&cfg);
+            check::<3>(&cfg);
+            check::<4>(&cfg);
+
+            // Compare the entire proof and subsequent transcript challenge
+            // against the random-access source, including its separate tail.
+            let (_, dense, bits, claim) = fixture(10, 1021, &cfg);
+            let blocks = Blocks {
+                values: &dense,
+                zero: cfg.zero(),
+                num_vars: 10,
+                partition_len: 128,
+            };
+            for prefix in 0..=4 {
+                let mut a = Blake3Transcript::new();
+                let actual = prove_inner_sumcheck(
+                    &cfg,
+                    &mut a,
+                    claim,
+                    PackedInput::new(&StreamingMle::new(&blocks), &bits, 10, 1021, prefix),
+                    (),
+                    &mut UngrindedRoundBoundary,
+                )
+                .unwrap();
+                let mut b = Blake3Transcript::new();
+                let expected = prove_inner_sumcheck(
+                    &cfg,
+                    &mut b,
+                    claim,
+                    PackedInput::new(&|i| Ok(dense[i]), &bits, 10, 1021, prefix),
+                    (),
+                    &mut UngrindedRoundBoundary,
+                )
+                .unwrap();
+                assert_eq!(actual, expected);
                 assert_eq!(a.get_challenge::<u128>(), b.get_challenge::<u128>());
             }
         }

@@ -365,8 +365,8 @@ be consumed and verified.
 The legacy commitment-bound statement uses `v4`; its internal PIOP headers use
 `v3` and existing forest domains retain `v2`. The hybrid has its own versioned
 statement and different source layouts; hybrid roots are not interchangeable
-with legacy roots. The hybrid statement and transcript now use **v5**, with the
-bridge numerator and difficulty explicitly bound. Bridge grinding uses `v3`;
+with legacy roots. The hybrid statement and transcript use **v6**, with the
+wfbitz bridge numerator and difficulty explicitly bound. Bridge grinding uses `v4`;
 integer-fold and Keccak-prefix domains remain `v2`. All permutation groups and
 roots remain bound. **Regenerate proofs from earlier hybrid versions.** The
 revised schedule preserves the arithmetic, SHAKE, HashToPoint, and individual
@@ -390,6 +390,36 @@ The virtual shared-opening table is half the previous two-source table.
 Keccak A/B buffers, a lincheck copy, folded field tables, Merkle codewords, and
 shared-opening workspaces add to this. Structured wiring avoids a dense table
 over the entire bit domain; it does not make the full prover constant-memory.
+
+The prover prepares all distinct-key adjoints before launching coefficient
+partitions. These convolutions run in parallel, share the challenge operand's
+Karatsuba tree, and reuse bounded scratch buffers. Leaf products accumulate in
+five limbs and reduce once per output coefficient; the public product count
+selects the appropriate field reducer. Shared-key instances still reuse one
+adjoint, while verifier contraction still computes just one combined adjoint.
+
+The compact binder compiles word descriptors and their addition order once,
+then fills indexed coefficient arrays for each instance. Descriptors are shared
+across the batch instead of hashed and sorted again per signature. The packed
+inner sumcheck combines suffix-table construction with the first tail round
+when enough signature partitions are available; small batches retain the
+separate parallel scan. These are prover implementation changes: source bits,
+constraints, challenge schedules, and proof messages are unchanged.
+The hybrid uses three packed prefix rounds, reducing ternary-prefix work at
+the cost of a 512 MiB compact coefficient table at capacity 1024 (four rounds
+use 256 MiB). The legacy backend keeps four rounds.
+
+A matched native run on the Ryzen 9 9950X3D, 16 threads, target 128, and 1024
+distinct signatures measured **3.160 ms/signature (316.4 signatures/sec)**,
+versus a fresh **4.650 ms/signature** baseline at `e9cf4a1d`. These are medians
+of three measured trials after one warmup, including witnesses, commitments,
+SHAKE, HashToPoint, and all proof stages. All twelve proofs across the baseline,
+optimized four-round prefix, and final three-round prefix verified with matching
+inputs, roots, complete proof Debug digests, and security reports. The optimized
+four-round variant measured 3.273 ms/signature. Peak RSS remained about 5.2 GiB.
+The separate cold batch-256 profile reduced binding/inner time from 2.082 to
+0.732 ms/signature. Raw results, configuration, and reproduction commands are
+in `bench_results/falcon-prime-inner-20260926/` (ignored local artifacts).
 
 ## Validation
 

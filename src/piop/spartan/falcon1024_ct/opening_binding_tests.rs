@@ -210,6 +210,40 @@ fn terminal_fixture(keccak_point: Vec<F>, field: &Cfg) -> FalconPiopProof {
 }
 
 #[test]
+fn prepared_polynomial_product_matches_schoolbook_and_reuses_dirty_scratch() {
+    for modulus in [(1u128 << 100) - 15, (1u128 << 127) - 1, u128::MAX - 158] {
+        let field = field_from_modulus(modulus).unwrap();
+        for n in [1, 2, 16, 32, 64, 128] {
+            let right: Vec<_> = (0..n)
+                .map(|i| unsigned(modulus - 1 - 17 * i as u128, &field))
+                .collect();
+            let multiplier = PreparedPolynomialProduct::new(&right, &field);
+            let mut out = vec![field.one(); 2 * n];
+            let mut scratch = vec![field.one(); 3 * n];
+            // Reusing nonzero buffers catches incomplete writes at every
+            // recursion boundary, including the final zero coefficient.
+            for trial in 0..3 {
+                let left: Vec<_> = (0..n)
+                    .map(|i| match trial {
+                        0 => unsigned(modulus - 1 - i as u128, &field),
+                        1 => unsigned((i * i + 3) as u128, &field),
+                        _ => field.zero(),
+                    })
+                    .collect();
+                let mut expected = vec![field.zero(); 2 * n];
+                for (i, a) in left.iter().enumerate() {
+                    for (j, b) in right.iter().enumerate() {
+                        expected[i + j] = field.add(&expected[i + j], &field.mul(a, b));
+                    }
+                }
+                multiplier.multiply(&left, &mut out, &mut scratch);
+                assert_eq!(out, expected, "modulus={modulus}, n={n}, trial={trial}");
+            }
+        }
+    }
+}
+
+#[test]
 fn ring_adjoint_matches_explicit_negacyclic_matrix() {
     let field = config();
     let h = core::array::from_fn(|i| ((97 * i + 3 * i * i) % Q as usize) as u16);

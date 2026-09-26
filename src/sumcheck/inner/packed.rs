@@ -213,6 +213,38 @@ pub(crate) trait InnerSumcheckMleSource: Sync {
             num_vars, live_len, self, challenges, field_cfg, zero, one,
         )
     }
+
+    /// Prepare the compact suffix and its first round together when the source
+    /// can consume adjacent coefficients directly during its replay.
+    #[allow(clippy::too_many_arguments)]
+    fn fold_prefix_table_and_prepare_tail<const K: usize, H: Sha256InnerBitSource + ?Sized>(
+        &self,
+        num_vars: usize,
+        live_len: usize,
+        challenges: &[Field],
+        prefix_weights: &[Field],
+        bits: &H,
+        field_cfg: &FieldConfig,
+        zero: &Field,
+        one: &Field,
+    ) -> Result<(CompactPrefixVTable, [Field; 2]), SumcheckError> {
+        let table =
+            self.fold_prefix_table::<K>(num_vars, live_len, challenges, field_cfg, zero, one)?;
+        let next = if num_vars > K {
+            sum_first_tail_round::<K, _>(
+                &table,
+                live_len,
+                bits,
+                prefix_weights,
+                field_cfg,
+                zero,
+                one,
+            )?
+        } else {
+            [*zero; 2]
+        };
+        Ok((table, next))
+    }
 }
 
 impl<F> InnerSumcheckMleSource for F
@@ -1068,6 +1100,7 @@ fn extend_lsb_axis<T, S>(
     }
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn fold_prefix_v_table<const K: usize, S>(
     num_vars: usize,
@@ -1326,9 +1359,37 @@ fn accumulate_first_tail_pair<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     zero: &Field,
     one: &Field,
 ) -> Result<(), SumcheckError> {
+    accumulate_first_tail_values::<K, _>(
+        accumulators,
+        &table.values[2 * pair..2 * pair + 2],
+        table.suffix_count,
+        pair,
+        live_len,
+        h_source,
+        prefix_weights,
+        field_cfg,
+        zero,
+        one,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn accumulate_first_tail_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
+    accumulators: &mut [ProductAccumulator; 2],
+    values: &[RawMontgomery],
+    suffix_count: usize,
+    pair: usize,
+    live_len: usize,
+    h_source: &H,
+    prefix_weights: &[Field],
+    field_cfg: &FieldConfig,
+    zero: &Field,
+    one: &Field,
+) -> Result<(), SumcheckError> {
+    debug_assert_eq!(values.len(), 2);
     let low_suffix = 2 * pair;
     let high_suffix = low_suffix + 1;
-    let v_zero = field_from_raw(&table.values[low_suffix], field_cfg);
+    let v_zero = field_from_raw(&values[0], field_cfg);
     let h_zero = folded_packed_h::<K, _>(
         low_suffix,
         live_len,
@@ -1338,9 +1399,9 @@ fn accumulate_first_tail_pair<const K: usize, H: Sha256InnerBitSource + ?Sized>(
         zero,
         one,
     )?;
-    let (v_one, h_one) = if high_suffix < table.suffix_count {
+    let (v_one, h_one) = if high_suffix < suffix_count {
         (
-            field_from_raw(&table.values[high_suffix], field_cfg),
+            field_from_raw(&values[1], field_cfg),
             folded_packed_h::<K, _>(
                 high_suffix,
                 live_len,

@@ -308,7 +308,10 @@ where
         ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
         if let Some(span) = ctx.span(id) {
-            if span.name().starts_with("falcon") || span.name() == "spartan:grinding" {
+            if span.name().starts_with("falcon")
+                || span.name().starts_with("inner_packed:")
+                || span.name() == "spartan:grinding"
+            {
                 span.extensions_mut().insert(Instant::now());
             }
         }

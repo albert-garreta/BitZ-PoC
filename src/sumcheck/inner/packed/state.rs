@@ -52,6 +52,7 @@ impl<'a, S: InnerSumcheckMleSource + ?Sized, H: Sha256InnerBitSource + ?Sized, c
         }
         input.coefficients.validate_shape(input.live_len, f)?;
         let accumulators = if K > 0 {
+            let _span = tracing::info_span!("inner_packed:prefix_accumulators").entered();
             Some(input.coefficients.build_prefix_accumulators::<K, _>(
                 input.num_vars,
                 input.live_len,
@@ -78,31 +79,26 @@ impl<'a, S: InnerSumcheckMleSource + ?Sized, H: Sha256InnerBitSource + ?Sized, c
         }
         Ok(state)
     }
+    #[tracing::instrument(skip_all, name = "inner_packed:prepare_tail")]
     fn prepare_tail(&mut self, f: &FieldConfig) -> Result<(), SumcheckError> {
         self.accumulators = None;
         self.lagrange = Vec::new();
         let (zero, one) = (f.zero(), f.one());
-        let table = fold_prefix_v_table::<K, _>(
-            self.input.num_vars,
-            self.input.live_len,
-            self.input.coefficients,
-            &self.point[..K],
-            f,
-            &zero,
-            &one,
-        )?;
         self.prefix_weights = equality_weights_lsb(&self.point[..K], &zero, &one, f);
-        if self.input.num_vars > K {
-            self.next = sum_first_tail_round::<K, _>(
-                &table,
+        let (table, next) = self
+            .input
+            .coefficients
+            .fold_prefix_table_and_prepare_tail::<K, _>(
+                self.input.num_vars,
                 self.input.live_len,
-                self.input.bits,
+                &self.point[..K],
                 &self.prefix_weights,
+                self.input.bits,
                 f,
                 &zero,
                 &one,
             )?;
-        }
+        self.next = next;
         self.table = Some(table);
         Ok(())
     }
@@ -129,6 +125,7 @@ impl<'a, S: InnerSumcheckMleSource + ?Sized, H: Sha256InnerBitSource + ?Sized, c
             }
             return Ok(());
         }
+        let _span = tracing::info_span!("inner_packed:fold_tail", round = self.round).entered();
         let table = self.table.as_mut().unwrap();
         let more = self.round + 1 < self.input.num_vars;
         if self.round == K {

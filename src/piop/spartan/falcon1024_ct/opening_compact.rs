@@ -18,14 +18,69 @@ struct Word {
 }
 
 pub(super) struct CompiledCoefficients {
-    words: Vec<(Word, F)>,
+    words: std::sync::Arc<[Word]>,
+    coefficients: Vec<F>,
 }
 
-struct WordSink<'a> {
+/// All instances share the public operator and the same dynamic addition order.
+/// Compile their word slots once, then accumulate each instance by slot index.
+/// Word descriptors are also shared by the cached instance coefficient vectors.
+pub(super) struct CompiledTemplate {
+    words: std::sync::Arc<[Word]>,
+    common: Vec<(usize, F)>,
+    dynamic_slots: Vec<usize>,
+}
+
+trait WordAccumulator {
+    fn add(&mut self, word: Word, value: F, field: &Cfg);
+}
+
+#[derive(Default)]
+struct MapWords(HashMap<Word, F>);
+
+impl WordAccumulator for MapWords {
+    fn add(&mut self, word: Word, value: F, field: &Cfg) {
+        let slot = self.0.entry(word).or_insert_with(|| field.zero());
+        *slot = field.add(slot, &value);
+    }
+}
+
+#[derive(Default)]
+struct RecordWords(Vec<Word>);
+
+impl WordAccumulator for RecordWords {
+    fn add(&mut self, word: Word, _: F, _: &Cfg) {
+        // Include zero coefficients: topology must not depend on challenges.
+        self.0.push(word);
+    }
+}
+
+struct IndexedWords<'a> {
+    template: &'a CompiledTemplate,
+    coefficients: Vec<F>,
+    next: usize,
+}
+
+impl WordAccumulator for IndexedWords<'_> {
+    fn add(&mut self, word: Word, value: F, field: &Cfg) {
+        let index = self.template.dynamic_slots[self.next];
+        // This also guards future edits that accidentally make the addition
+        // order instance-dependent. No word lookup or sorting is needed here.
+        assert_eq!(
+            word, self.template.words[index],
+            "compact word topology changed"
+        );
+        self.next += 1;
+        let slot = &mut self.coefficients[index];
+        *slot = field.add(slot, &value);
+    }
+}
+
+struct WordSink<'a, A = MapWords> {
     field: &'a Cfg,
     instance: usize,
     base: usize,
-    words: HashMap<Word, F>,
+    accumulator: A,
 }
 
 impl<'a> WordSink<'a> {
@@ -34,32 +89,102 @@ impl<'a> WordSink<'a> {
             field,
             instance,
             base,
-            words: HashMap::new(),
+            accumulator: MapWords::default(),
         }
-    }
-
-    fn word(&mut self, base: usize, width: usize, kind: WordKind, value: F) {
-        let key = Word {
-            base: base - self.base,
-            width: width as u8,
-            kind,
-        };
-        let slot = self.words.entry(key).or_insert_with(|| self.field.zero());
-        *slot = self.field.add(slot, &value);
     }
 
     fn finish(self) -> CompiledCoefficients {
         let mut words: Vec<_> = self
-            .words
+            .accumulator
+            .0
             .into_iter()
             .filter(|(_, value)| *value != self.field.zero())
             .collect();
         words.sort_unstable_by_key(|(word, _)| *word);
-        CompiledCoefficients { words }
+        let (words, coefficients): (Vec<_>, Vec<_>) = words.into_iter().unzip();
+        CompiledCoefficients {
+            words: words.into(),
+            coefficients,
+        }
     }
 }
 
-impl CoefficientSink for WordSink<'_> {
+impl<A: WordAccumulator> WordSink<'_, A> {
+    fn word(&mut self, base: usize, width: usize, kind: WordKind, value: F) {
+        self.accumulator.add(
+            Word {
+                base: base - self.base,
+                width: width as u8,
+                kind,
+            },
+            value,
+            self.field,
+        );
+    }
+}
+
+impl CompiledTemplate {
+    fn new(common: CompiledCoefficients, dynamic_words: Vec<Word>) -> Self {
+        let mut words = common.words.to_vec();
+        words.extend_from_slice(&dynamic_words);
+        words.sort_unstable();
+        words.dedup();
+        let common = common
+            .words
+            .iter()
+            .zip(common.coefficients)
+            .map(|(word, value)| (words.binary_search(word).expect("common word slot"), value))
+            .collect();
+        let dynamic_slots = dynamic_words
+            .iter()
+            .map(|word| words.binary_search(word).expect("dynamic word slot"))
+            .collect();
+        Self {
+            words: words.into(),
+            common,
+            dynamic_slots,
+        }
+    }
+
+    fn sink<'a>(
+        &'a self,
+        instance: usize,
+        base: usize,
+        alpha: F,
+        field: &'a Cfg,
+    ) -> WordSink<'a, IndexedWords<'a>> {
+        let mut coefficients = vec![field.zero(); self.words.len()];
+        for &(slot, value) in &self.common {
+            coefficients[slot] = field.mul(&alpha, &value);
+        }
+        WordSink {
+            field,
+            instance,
+            base,
+            accumulator: IndexedWords {
+                template: self,
+                coefficients,
+                next: 0,
+            },
+        }
+    }
+}
+
+impl WordSink<'_, IndexedWords<'_>> {
+    fn finish(self) -> CompiledCoefficients {
+        assert_eq!(
+            self.accumulator.next,
+            self.accumulator.template.dynamic_slots.len(),
+            "incomplete compact word topology"
+        );
+        CompiledCoefficients {
+            words: std::sync::Arc::clone(&self.accumulator.template.words),
+            coefficients: self.accumulator.coefficients,
+        }
+    }
+}
+
+impl<A: WordAccumulator> CoefficientSink for WordSink<'_, A> {
     fn instances(&self, _: usize) -> std::ops::Range<usize> {
         self.instance..self.instance + 1
     }
@@ -110,7 +235,10 @@ impl CompiledCoefficients {
         // words and isolated-bit corrections before emitting each bit once.
         let mut pending = [field.zero(); 32];
         let mut cursor = 0;
-        for &(word, scale) in &self.words {
+        for (&word, &scale) in self.words.iter().zip(&self.coefficients) {
+            if scale == field.zero() {
+                continue;
+            }
             flush_window(&mut cursor, word.base, &mut pending, base, field, emit)?;
             accumulate_word(word, scale, &mut pending, field);
         }
@@ -136,7 +264,10 @@ impl CompiledCoefficients {
         // block, so a 64-field ring covers the pending interval without aliasing.
         let mut pending = [field.zero(); 64];
         let mut cursor = 0;
-        for &(word, scale) in &self.words {
+        for (&word, &scale) in self.words.iter().zip(&self.coefficients) {
+            if scale == field.zero() {
+                continue;
+            }
             flush_blocks(
                 &mut cursor,
                 word.base & !(block_len - 1),
@@ -285,6 +416,33 @@ impl BindingForm<'_> {
             .expect("prepared binding weights"))
     }
 
+    pub(super) fn prepared_compact_template(&self) -> Result<&CompiledTemplate, FalconError> {
+        if let Some(template) = self.compact_linear.get() {
+            return Ok(template);
+        }
+        let field = self.field;
+        let mut common = WordSink::new(0, 0, field);
+        emit_linear_template(
+            &mut common,
+            &self.local_linear_weights,
+            &self.layout.offsets(),
+            field,
+        );
+        let mut dynamic = WordSink {
+            field,
+            instance: 0,
+            base: 0,
+            accumulator: RecordWords::default(),
+        };
+        self.emit_compact_instance_terms(0, &mut dynamic, self.prepared_compact_weights()?)?;
+        let template = CompiledTemplate::new(common.finish(), dynamic.accumulator.0);
+        let _ = self.compact_linear.set(template);
+        Ok(self
+            .compact_linear
+            .get()
+            .expect("compiled binding template"))
+    }
+
     pub(super) fn compact_instance(
         &self,
         instance: usize,
@@ -293,40 +451,40 @@ impl BindingForm<'_> {
         if let Some(compiled) = slot.get() {
             return Ok(compiled);
         }
+        let template = self.prepared_compact_template()?;
+        let mut sink = template.sink(
+            instance,
+            instance * self.layout.signature_stride(),
+            self.ring_instance_weights[instance],
+            self.field,
+        );
+        self.emit_compact_instance_terms(instance, &mut sink, self.prepared_compact_weights()?)?;
+        let _ = slot.set(sink.finish());
+        Ok(slot.get().expect("compiled binding instance"))
+    }
+
+    fn emit_compact_instance_terms(
+        &self,
+        instance: usize,
+        sink: &mut impl CoefficientSink,
+        prepared: &PreparedWeights,
+    ) -> Result<(), FalconError> {
         let field = self.field;
         let layout = self.layout;
         let offsets = layout.offsets();
         let base = instance * layout.signature_stride();
-        let common = self.compact_linear.get_or_init(|| {
-            let mut sink = WordSink::new(0, 0, field);
-            emit_linear_template(&mut sink, &self.local_linear_weights, &offsets, field);
-            sink.finish()
-        });
-        let mut sink = WordSink::new(instance, base, field);
         let alpha = self.ring_instance_weights[instance];
-        sink.words.reserve(common.words.len());
-        for &(word, value) in &common.words {
-            sink.words.insert(word, field.mul(&alpha, &value));
-        }
         let ring = self.prover_ring_cache();
         for (i, weight) in ring.adjoints[ring.instance_keys[instance]]
             .iter()
             .enumerate()
         {
-            add_signed_source_scaled(
-                &mut sink,
-                base,
-                &offsets,
-                i,
-                field.mul(&alpha, weight),
-                field,
-            );
+            add_signed_source_scaled(sink, base, &offsets, i, field.mul(&alpha, weight), field);
         }
-        let prepared = self.prepared_compact_weights()?;
         let mut ignored = field.zero();
         let mut scale = self.eta;
         add_norm_claims_prepared(
-            &mut sink,
+            sink,
             &mut ignored,
             &mut scale,
             self.eta,
@@ -337,7 +495,7 @@ impl BindingForm<'_> {
             &prepared.norm_instances,
         )?;
         add_compaction_product_claims_prepared(
-            &mut sink,
+            sink,
             &mut ignored,
             &mut scale,
             self.eta,
@@ -384,8 +542,7 @@ impl BindingForm<'_> {
                 }
             }
         }
-        let _ = slot.set(sink.finish());
-        Ok(slot.get().expect("compiled binding instance"))
+        Ok(())
     }
 
     pub(super) fn compact_target(&self) -> Result<F, FalconError> {
@@ -717,7 +874,15 @@ mod tests {
     use super::*;
 
     fn overlapping_words(sink: &mut impl CoefficientSink, base: usize, field: &Cfg) {
-        let scale = unsigned(37, field);
+        overlapping_words_scaled(sink, base, unsigned(37, field), field);
+    }
+
+    fn overlapping_words_scaled(
+        sink: &mut impl CoefficientSink,
+        base: usize,
+        scale: F,
+        field: &Cfg,
+    ) {
         // Signed and ordinary words cross every sliding-window/block boundary.
         for local in [0, 15, 31, 63, 127, 224] {
             sink.add_word(base + local, 27, true, scale, field);
@@ -733,17 +898,19 @@ mod tests {
         sink.add_word(base + 192, 8, false, field.neg(&scale), field);
     }
 
+    struct Dense<'a> {
+        values: Vec<F>,
+        field: &'a Cfg,
+    }
+
+    impl CoefficientSink for Dense<'_> {
+        fn add(&mut self, index: usize, value: F) {
+            self.values[index] = self.field.add(&self.values[index], &value);
+        }
+    }
+
     #[test]
     fn compact_blocks_match_bit_stream_and_dense_signed_word_expansion() {
-        struct Dense<'a> {
-            values: Vec<F>,
-            field: &'a Cfg,
-        }
-        impl CoefficientSink for Dense<'_> {
-            fn add(&mut self, index: usize, value: F) {
-                self.values[index] = self.field.add(&self.values[index], &value);
-            }
-        }
         let field = crate::piop::spartan::bitz::spartan_bitz_field_config();
         for base in [0, 256] {
             let mut sink = WordSink::new(base / 256, base, &field);
@@ -778,6 +945,70 @@ mod tests {
                     })
                     .unwrap();
                 assert_eq!(actual, expected.values, "base={base}, width={width}");
+            }
+        }
+    }
+
+    #[test]
+    fn indexed_word_template_matches_dense_expansion_across_instances_and_zero_scales() {
+        let field = crate::piop::spartan::bitz::spartan_bitz_field_config();
+        let mut common = WordSink::new(0, 0, &field);
+        overlapping_words(&mut common, 0, &field);
+        let mut record = WordSink {
+            field: &field,
+            instance: 0,
+            base: 0,
+            accumulator: RecordWords::default(),
+        };
+        // Build with all-zero dynamic scales, then replay nonzero instances.
+        // Slots cannot be dropped just because this first instance is zero.
+        overlapping_words_scaled(&mut record, 0, field.zero(), &field);
+        record.add_word(300, 8, false, field.zero(), &field);
+        let template = CompiledTemplate::new(common.finish(), record.accumulator.0);
+        for (instance, alpha, dynamic_scale) in [
+            (0, field.zero(), field.zero()),
+            (1, field.zero(), unsigned(91, &field)),
+            (0, field.one(), field.neg(&unsigned(37, &field))),
+            (1, unsigned(23, &field), unsigned(91, &field)),
+        ] {
+            let base = instance * 512;
+            let mut indexed = template.sink(instance, base, alpha, &field);
+            overlapping_words_scaled(&mut indexed, base, dynamic_scale, &field);
+            indexed.add_word(base + 300, 8, false, dynamic_scale, &field);
+            let compact = indexed.finish();
+            assert!(std::sync::Arc::ptr_eq(&compact.words, &template.words));
+            let mut expected = Dense {
+                values: vec![field.zero(); 1024],
+                field: &field,
+            };
+            overlapping_words_scaled(
+                &mut expected,
+                base,
+                field.mul(&alpha, &unsigned(37, &field)),
+                &field,
+            );
+            overlapping_words_scaled(&mut expected, base, dynamic_scale, &field);
+            expected.add_word(base + 300, 8, false, dynamic_scale, &field);
+            let mut actual = vec![field.zero(); 1024];
+            compact
+                .emit(base, &field, &mut |index, value| {
+                    actual[index] = value;
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(actual, expected.values);
+            for width in [1, 2, 4, 8, 16] {
+                actual.fill(field.zero());
+                compact
+                    .emit_blocks(base, width, &field, &mut |start, values| {
+                        actual[start..start + width].copy_from_slice(values);
+                        Ok(())
+                    })
+                    .unwrap();
+                assert_eq!(
+                    actual, expected.values,
+                    "instance={instance}, width={width}"
+                );
             }
         }
     }

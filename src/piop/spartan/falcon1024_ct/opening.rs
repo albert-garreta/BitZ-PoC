@@ -8,11 +8,13 @@
 
 use std::{collections::HashMap, sync::OnceLock};
 
-use field::{RingOps, Uint};
+use field::{BatchMulAcc, MergeAccumulator, RingOps, Uint};
 use flock_core::pcs::{
     commit::Commitment,
     ligerito::{ProverConfig, VerifierConfig},
 };
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 use crate::{
     ligerito_flock::{
@@ -262,16 +264,27 @@ pub(super) fn prove_binding_prefix(
     drop(target_span);
 
     let _binding_span = tracing::info_span!("falcon_arithmetic:binding_inner").entered();
+    // Finish the shared cache before coefficient partitions start. In
+    // particular, do not make Rayon workers wait on a parallel initializer.
+    binding.prover_ring_cache();
+    if layout.is_hybrid() {
+        let _template_span = tracing::info_span!("falcon_arithmetic:binding_template").entered();
+        binding.prepared_compact_template()?;
+    }
     transcript.absorb_slice(b"bitz/falcon1024-ct/shared-inner/v1");
     let packed_source = ColumnMajorPackedBits::new(source.rows(), layout.row_vars());
     let coefficients = StreamingMle::new(&binding);
+    // Three packed rounds reduce ternary-prefix work for the hybrid source.
+    // The larger tail table won the native batch benchmark; this choice has
+    // no effect on the sumcheck messages or verifier. Keep the legacy tuning.
+    let prefix_vars = if layout.is_hybrid() { 3 } else { 4 };
     let input = || {
         PackedInput::new(
             &coefficients,
             &packed_source,
             source_rounds(layout),
             layout.source_bits(),
-            4,
+            prefix_vars,
         )
     };
     let output = if target_bits == 128 {
@@ -563,7 +576,7 @@ struct BindingForm<'a> {
     ring_row_weights: Vec<F>,
     ring_instance_weights: Vec<F>,
     prover_ring_cache: OnceLock<ProverRingCache>,
-    compact_linear: OnceLock<compact::CompiledCoefficients>,
+    compact_linear: OnceLock<compact::CompiledTemplate>,
     compact_instances: Vec<OnceLock<compact::CompiledCoefficients>>,
     compact_weights: OnceLock<compact::PreparedWeights>,
     local_linear_point: Vec<F>,
@@ -743,6 +756,7 @@ fn prepare_binding_form<'a>(
     })
 }
 
+#[cfg(test)]
 fn ring_adjoint(h: &[u16; N], weights: &[F], field: &Cfg) -> Vec<F> {
     let lifted = std::array::from_fn(|i| unsigned(u128::from(h[i]), field));
     ring_adjoint_field(&lifted, weights, field)
@@ -753,70 +767,189 @@ fn ring_adjoint(h: &[u16; N], weights: &[F], field: &Cfg) -> Vec<F> {
 /// across instances; they must not be reduced modulo the Falcon modulus Q.
 /// Karatsuba works in the sampled proof field without roots of unity or CRT.
 fn ring_adjoint_field(h: &[F; N], weights: &[F], field: &Cfg) -> Vec<F> {
-    let mut adjoint = Vec::with_capacity(N);
-    adjoint.push(h[0]);
-    adjoint.extend(h[1..].iter().rev().map(|&x| field.sub(&field.zero(), &x)));
-    let product = polynomial_product(&adjoint, weights, field);
-    (0..N)
-        .map(|i| field.sub(&product[N + i], &product[i]))
-        .collect()
+    let multiplier = PreparedPolynomialProduct::new(weights, field);
+    let mut scratch = RingScratch::new(field);
+    scratch.adjoint[0] = h[0];
+    for i in 1..N {
+        scratch.adjoint[i] = field.sub(&field.zero(), &h[N - i]);
+    }
+    scratch.evaluate(&multiplier)
 }
 
-fn polynomial_product(left: &[F], right: &[F], field: &Cfg) -> Vec<F> {
-    let n = left.len();
-    debug_assert!(n.is_power_of_two() && right.len() == n);
-    let mut result = vec![field.zero(); 2 * n];
-    if n <= 32 {
-        for (i, a) in left.iter().enumerate() {
-            for (j, b) in right.iter().enumerate() {
-                result[i + j] = field.add(&result[i + j], &field.mul(a, b));
-            }
+const KARATSUBA_LEAF: usize = 32;
+
+/// The challenge-dependent right operand is shared by every public key.
+/// Store its complete Karatsuba tree once, in preorder, instead of rebuilding
+/// the same sums for each key. All tree shapes depend only on public lengths.
+struct PreparedPolynomialProduct<'a> {
+    field: &'a Cfg,
+    right_tree: Vec<F>,
+    leaf_reducer: field::PreparedProductReduction<'a, 2>,
+}
+
+impl<'a> PreparedPolynomialProduct<'a> {
+    fn tree_len(n: usize) -> usize {
+        if n <= KARATSUBA_LEAF {
+            n
+        } else {
+            n + 3 * Self::tree_len(n / 2)
         }
-        return result;
     }
-    let half = n / 2;
-    let low = polynomial_product(&left[..half], &right[..half], field);
-    let high = polynomial_product(&left[half..], &right[half..], field);
-    let left_sum: Vec<_> = (0..half)
-        .map(|i| field.add(&left[i], &left[half + i]))
-        .collect();
-    let right_sum: Vec<_> = (0..half)
-        .map(|i| field.add(&right[i], &right[half + i]))
-        .collect();
-    let middle = polynomial_product(&left_sum, &right_sum, field);
-    for i in 0..n {
-        result[i] = field.add(&result[i], &low[i]);
-        result[n + i] = field.add(&result[n + i], &high[i]);
-        let cross = field.sub(&field.sub(&middle[i], &low[i]), &high[i]);
-        result[half + i] = field.add(&result[half + i], &cross);
+
+    fn new(right: &[F], field: &'a Cfg) -> Self {
+        assert!(right.len().is_power_of_two());
+        fn append_tree(right: &[F], tree: &mut Vec<F>, field: &Cfg) {
+            tree.extend_from_slice(right);
+            if right.len() <= KARATSUBA_LEAF {
+                return;
+            }
+            let half = right.len() / 2;
+            append_tree(&right[..half], tree, field);
+            append_tree(&right[half..], tree, field);
+            let sum: Vec<_> = (0..half)
+                .map(|i| field.add(&right[i], &right[half + i]))
+                .collect();
+            append_tree(&sum, tree, field);
+        }
+        let mut right_tree = Vec::with_capacity(Self::tree_len(right.len()));
+        append_tree(right, &mut right_tree, field);
+        Self {
+            field,
+            right_tree,
+            leaf_reducer: field.prepare_product_reduction(right.len().min(KARATSUBA_LEAF)),
+        }
     }
-    result
+
+    fn multiply(&self, left: &[F], out: &mut [F], scratch: &mut [F]) {
+        self.multiply_node(left, &self.right_tree, out, scratch);
+    }
+
+    fn multiply_node(&self, left: &[F], tree: &[F], out: &mut [F], scratch: &mut [F]) {
+        let n = left.len();
+        debug_assert_eq!(out.len(), 2 * n);
+        let field = self.field;
+        if n <= KARATSUBA_LEAF {
+            // At most 32 canonical products per coefficient. The five-limb
+            // accumulator holds this bound even for a full 128-bit modulus;
+            // reduction happens once per coefficient, not once per product.
+            for (degree, coefficient) in out[..2 * n - 1].iter_mut().enumerate() {
+                let mut sum = <Cfg as BatchMulAcc<F>>::Accumulator::zero();
+                for i in (degree + 1).saturating_sub(n)..n.min(degree + 1) {
+                    field.mul_acc(&mut sum, &left[i], &tree[degree - i]);
+                }
+                *coefficient = self.leaf_reducer.reduce(sum);
+            }
+            out[2 * n - 1] = field.zero();
+            return;
+        }
+        let half = n / 2;
+        let child_len = Self::tree_len(half);
+        let children = &tree[n..];
+        self.multiply_node(
+            &left[..half],
+            &children[..child_len],
+            &mut out[..n],
+            scratch,
+        );
+        self.multiply_node(
+            &left[half..],
+            &children[child_len..2 * child_len],
+            &mut out[n..],
+            scratch,
+        );
+        let (left_sum, rest) = scratch.split_at_mut(half);
+        let (middle, rest) = rest.split_at_mut(n);
+        for i in 0..half {
+            left_sum[i] = field.add(&left[i], &left[half + i]);
+        }
+        self.multiply_node(left_sum, &children[2 * child_len..], middle, rest);
+        // Read both low/high products before their overlapping output region
+        // is modified by the middle product.
+        for i in 0..n {
+            middle[i] = field.sub(&field.sub(&middle[i], &out[i]), &out[n + i]);
+        }
+        for i in 0..n {
+            out[half + i] = field.add(&out[half + i], &middle[i]);
+        }
+    }
+}
+
+struct RingScratch {
+    adjoint: Vec<F>,
+    product: Vec<F>,
+    work: Vec<F>,
+}
+
+impl RingScratch {
+    fn new(field: &Cfg) -> Self {
+        Self {
+            adjoint: vec![field.zero(); N],
+            product: vec![field.zero(); 2 * N],
+            // S(n) = 3n/2 + S(n/2) < 3n.
+            work: vec![field.zero(); 3 * N],
+        }
+    }
+
+    fn evaluate(&mut self, multiplier: &PreparedPolynomialProduct<'_>) -> Vec<F> {
+        multiplier.multiply(&self.adjoint, &mut self.product, &mut self.work);
+        (0..N)
+            .map(|i| multiplier.field.sub(&self.product[N + i], &self.product[i]))
+            .collect()
+    }
 }
 
 impl BindingForm<'_> {
     fn prover_ring_cache(&self) -> &ProverRingCache {
-        self.prover_ring_cache.get_or_init(|| {
-            let mut keys = HashMap::new();
-            let mut adjoints = Vec::new();
-            let instance_keys = self
-                .statement
-                .public_keys
-                .iter()
-                .map(|key| {
-                    // HashMap equality compares all canonical h coefficients,
-                    // so hash collisions cannot merge different keys.
-                    *keys.entry(key.h.as_ref()).or_insert_with(|| {
-                        let index = adjoints.len();
-                        adjoints.push(ring_adjoint(&key.h, &self.ring_row_weights, self.field));
-                        index
-                    })
+        if let Some(cache) = self.prover_ring_cache.get() {
+            return cache;
+        }
+        let _span = tracing::info_span!("falcon_arithmetic:ring_adjoints").entered();
+        let mut keys = HashMap::new();
+        let mut unique = Vec::new();
+        let instance_keys = self
+            .statement
+            .public_keys
+            .iter()
+            .map(|key| {
+                // Equality compares all coefficients; first occurrence fixes a
+                // deterministic index independently of hash or worker ordering.
+                *keys.entry(key.h.as_ref()).or_insert_with(|| {
+                    let index = unique.len();
+                    unique.push(key.h.as_ref());
+                    index
                 })
-                .collect();
-            ProverRingCache {
-                adjoints,
-                instance_keys,
+            })
+            .collect();
+        let multiplier = PreparedPolynomialProduct::new(&self.ring_row_weights, self.field);
+        let evaluate = |scratch: &mut RingScratch, h: &&[u16; N]| {
+            scratch.adjoint[0] = unsigned(u128::from(h[0]), self.field);
+            for i in 1..N {
+                scratch.adjoint[i] = self.field.sub(
+                    &self.field.zero(),
+                    &unsigned(u128::from(h[N - i]), self.field),
+                );
             }
-        })
+            scratch.evaluate(&multiplier)
+        };
+        #[cfg(feature = "parallel")]
+        let adjoints = unique
+            .par_iter()
+            .map_init(|| RingScratch::new(self.field), evaluate)
+            .collect();
+        #[cfg(not(feature = "parallel"))]
+        let adjoints = {
+            let mut scratch = RingScratch::new(self.field);
+            unique.iter().map(|h| evaluate(&mut scratch, h)).collect()
+        };
+        // Normal proving prewarms this cache. Other callers may race to build
+        // it, but never block a Rayon worker while another initializer needs it.
+        let _ = self.prover_ring_cache.set(ProverRingCache {
+            adjoints,
+            instance_keys,
+        });
+        self.prover_ring_cache
+            .get()
+            .expect("prepared ring adjoints")
     }
 
     fn emit(&self, coefficients: &mut impl CoefficientSink) -> Result<F, FalconError> {
