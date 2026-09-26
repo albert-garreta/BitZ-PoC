@@ -200,8 +200,100 @@ impl ChainedGeometry {
     }
 
     /// The committed bit rows in the block layout, from the native committed
-    /// rows (per native column, `native.rows()` bits each).
+    /// rows (per native column, `native.rows()` bits each): the instances'
+    /// cells copied word by word, the tail transposed chunk by chunk (see
+    /// [`transpose_chunk`]); the reference bit walk is
+    /// [`Self::committed_rows_reference`].
     pub fn committed_rows(&self, native: &IntegerMatrixLayout, f_rows: &[Vec<u64>]) -> Vec<Vec<u64>> {
+        let shape = Shape::new(LOG_ROWS, self.native_bits - LOG_ROWS).expect("validated geometry");
+        // Only the real cells are read: whatever sits past the last tail cell
+        // in the native grid is padding, not a committed source.
+        let native_cells = native
+            .cells()
+            .min(self.f_offset + self.tail_rows - self.aliases);
+        let t_f = native.row_vars;
+        let n = self.instances;
+        let words = shape.rows() / 64;
+        let chunks = shape.columns() >> self.log_instances;
+        // Tail chunk `m ≥ 1` (derived blocks `n·m..n·m+n`): source of cell
+        // `(i, r)` is `f_offset − aliases + i + n·(m·2^LOG_ROWS + r) − h_offset`.
+        let tail_base = |m: usize| -> isize {
+            (self.f_offset + n * (m << LOG_ROWS)) as isize
+                - (self.aliases + self.h_offset) as isize
+        };
+        let boundary = self.local_rows - (1 << LOG_ROWS); // first tail row of chunk 1
+        let build_chunk = |m: usize| -> Vec<Vec<u64>> {
+            let mut out = vec![vec![0u64; words]; n];
+            if m == 0 {
+                return out; // committed chunk 0 is never a tail mirror
+            }
+            transpose_chunk(f_rows, t_f, native_cells, tail_base(m), n, &mut out);
+            if m == 1 {
+                // Rows below the boundary mirror SHA rows (no committed
+                // cell); the aliased sources `0 < σ < aliases` are not
+                // committed either, and `σ = 0` is the constant.
+                for block in out.iter_mut() {
+                    for row in 0..boundary {
+                        block[row / 64] &= !(1u64 << (row % 64));
+                    }
+                }
+                let last = boundary + self.aliases / n + 1;
+                for row in boundary..last.min(shape.rows()) {
+                    for (i, block) in out.iter_mut().enumerate() {
+                        let sigma = i + n * (row - boundary);
+                        if sigma < self.aliases {
+                            let bit = sigma == 0 && f_rows[0][0] & 1 == 1;
+                            if bit {
+                                block[row / 64] |= 1u64 << (row % 64);
+                            } else {
+                                block[row / 64] &= !(1u64 << (row % 64));
+                            }
+                        }
+                    }
+                }
+            }
+            out
+        };
+        let sha_block = |block: usize| -> Vec<u64> {
+            let mut out = vec![0u64; words];
+            for u in 0..2 {
+                let instance = 2 * block + u;
+                let mut source = 1 + instance * self.local_cells;
+                let end = source + self.local_cells;
+                let mut row = u << (LOG_ROWS - 1);
+                while source < end && source < native_cells {
+                    let (c, b) = (source >> t_f, source & ((1 << t_f) - 1));
+                    let len = (end - source).min((1 << t_f) - b);
+                    copy_bits(&f_rows[c], b, &mut out, row, len);
+                    source += len;
+                    row += len;
+                }
+            }
+            out
+        };
+        #[cfg(feature = "parallel")]
+        let (sha, tail): (Vec<Vec<u64>>, Vec<Vec<Vec<u64>>>) = rayon::join(
+            || (0..self.sha_blocks).into_par_iter().map(sha_block).collect(),
+            || (1..chunks).into_par_iter().map(build_chunk).collect(),
+        );
+        #[cfg(not(feature = "parallel"))]
+        let (sha, tail): (Vec<Vec<u64>>, Vec<Vec<Vec<u64>>>) = (
+            (0..self.sha_blocks).map(sha_block).collect(),
+            (1..chunks).map(build_chunk).collect(),
+        );
+        let mut rows = sha;
+        for chunk in tail {
+            rows.extend(chunk);
+        }
+        rows.truncate(shape.columns());
+        while rows.len() < shape.columns() {
+            rows.push(vec![0u64; words]);
+        }
+        rows
+    }
+
+    /// [`Self::committed_rows`] as one bit walk (the reference).
+    pub fn committed_rows_reference(&self, native: &IntegerMatrixLayout, f_rows: &[Vec<u64>]) -> Vec<Vec<u64>> {
         let shape = Shape::new(LOG_ROWS, self.native_bits - LOG_ROWS).expect("validated geometry");
         let native_cells = native.cells();
         let t_f = native.row_vars;
@@ -263,8 +355,36 @@ impl ChainedGeometry {
         }
     }
 
-    /// The derived bit rows in the block layout, from the native derived rows.
+    /// The derived bit rows in the block layout, from the native derived
+    /// rows: chunk `m` (blocks `n·m..n·m+n`) is the transpose of the
+    /// `2^LOG_ROWS × n` bit matrix whose row `r` is the native `n`-bit word at
+    /// `n·(m·2^LOG_ROWS + r)`. The reference bit walk is
+    /// [`Self::derived_rows_reference`].
     pub fn derived_rows(&self, native: &IntegerMatrixLayout, h_rows: &[Vec<u64>]) -> Vec<Vec<u64>> {
+        let shape = Shape::new(LOG_ROWS, self.native_bits - LOG_ROWS).expect("validated geometry");
+        let native_cells = native.cells();
+        let t_h = native.row_vars;
+        let n = self.instances;
+        let words = shape.rows() / 64;
+        let chunks = shape.columns() >> self.log_instances;
+        let build_chunk = |m: usize| -> Vec<Vec<u64>> {
+            let mut out = vec![vec![0u64; words]; n];
+            transpose_chunk(h_rows, t_h, native_cells, (n * (m << LOG_ROWS)) as isize, n, &mut out);
+            out
+        };
+        #[cfg(feature = "parallel")]
+        let chunks_out: Vec<Vec<Vec<u64>>> = (0..chunks).into_par_iter().map(build_chunk).collect();
+        #[cfg(not(feature = "parallel"))]
+        let chunks_out: Vec<Vec<Vec<u64>>> = (0..chunks).map(build_chunk).collect();
+        let mut rows = Vec::with_capacity(shape.columns());
+        for chunk in chunks_out {
+            rows.extend(chunk);
+        }
+        rows
+    }
+
+    /// [`Self::derived_rows`] as one bit walk (the reference).
+    pub fn derived_rows_reference(&self, native: &IntegerMatrixLayout, h_rows: &[Vec<u64>]) -> Vec<Vec<u64>> {
         let shape = Shape::new(LOG_ROWS, self.native_bits - LOG_ROWS).expect("validated geometry");
         let native_cells = native.cells();
         let t_h = native.row_vars;
@@ -290,6 +410,56 @@ impl ChainedGeometry {
         #[cfg(not(feature = "parallel"))]
         {
             (0..shape.columns()).map(build).collect()
+        }
+    }
+}
+
+/// Transposes the `2^LOG_ROWS × n` bit matrix whose row `r` is the `n`-bit
+/// word at bit `base + n·r` of the column-major native bit sequence (`t_nat`
+/// bits per native column, `n` a power of two in `8..=128`, so a word never
+/// straddles a column): `out[i]` receives bit `i` of every row. Bits at
+/// negative or out-of-range offsets read as zero. Eight rows at a time: the
+/// `n/8` byte columns of those rows are 8×8 tiles.
+fn transpose_chunk(native: &[Vec<u64>], t_nat: usize, native_cells: usize, base: isize, n: usize, out: &mut [Vec<u64>]) {
+    debug_assert!(n.is_power_of_two() && (8..=128).contains(&n));
+    let mask_nat = (1usize << t_nat) - 1;
+    let read = |offset: isize| -> u128 {
+        if offset < 0 || offset as usize >= native_cells {
+            return 0;
+        }
+        let o = offset as usize;
+        let (c, b) = (o >> t_nat, o & mask_nat);
+        let column = &native[c];
+        let (w, sh) = (b / 64, b % 64);
+        let word = if n <= 64 {
+            ((column[w] >> sh) as u128) & ((1u128 << n) - 1)
+        } else {
+            column[w] as u128 | ((column[w + 1] as u128) << 64)
+        };
+        // A word straddling the last real cell keeps only the real bits.
+        let live = native_cells - o;
+        if live < n { word & ((1u128 << live) - 1) } else { word }
+    };
+    let bytes = n / 8;
+    let mut words = [0u128; 8];
+    for r in (0..1usize << LOG_ROWS).step_by(8) {
+        for (q, word) in words.iter_mut().enumerate() {
+            *word = read(base + (n * (r + q)) as isize);
+        }
+        let shift = r % 64;
+        for b in 0..bytes {
+            let mut tile = 0u64;
+            for (q, word) in words.iter().enumerate() {
+                tile |= (((*word >> (8 * b)) & 0xff) as u64) << (8 * q);
+            }
+            if tile == 0 {
+                continue;
+            }
+            let tile = crate::ligerito::transpose_8x8_bits(tile);
+            for j in 0..8 {
+                let byte = (tile >> (8 * j)) & 0xff;
+                out[8 * b + j][r / 64] |= byte << shift;
+            }
         }
     }
 }
@@ -635,5 +805,68 @@ impl BitZVerifier {
         transcript
             .check_eof()
             .map_err(|_| VerifyError::TrailingData)
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+
+    fn xorshift(state: &mut u64) -> u64 {
+        *state ^= *state << 13;
+        *state ^= *state >> 7;
+        *state ^= *state << 17;
+        *state
+    }
+
+    fn geometry(instances: usize) -> ChainedGeometry {
+        // SHA-like: 20_457 derived rows and 6_888 nonconstant cells per
+        // instance, a 300_000-row identity tail with 257 aliases.
+        let log_instances = instances.ilog2() as usize;
+        let local_rows = 20_457;
+        let local_cells = 6_888;
+        let tail_rows = 300_000;
+        let h_offset = local_rows * instances;
+        let f_offset = 1 + local_cells * instances;
+        let native_bits = (h_offset + tail_rows).next_power_of_two().ilog2() as usize;
+        ChainedGeometry {
+            log_instances,
+            instances,
+            local_rows,
+            local_cells,
+            tail_rows,
+            aliases: 257,
+            h_offset,
+            f_offset,
+            native_bits,
+            sha_blocks: instances / 2,
+        }
+    }
+
+    fn random_rows(state: &mut u64, layout: &IntegerMatrixLayout) -> Vec<Vec<u64>> {
+        (0..layout.cols())
+            .map(|_| (0..layout.rows() / 64).map(|_| xorshift(state)).collect())
+            .collect()
+    }
+
+    #[test]
+    fn transposed_gathers_match_the_bit_walks() {
+        for instances in [8usize, 64, 128] {
+            let g = geometry(instances);
+            let mut state = 0x0123_4567_89ab_cdefu64 ^ instances as u64;
+            let native_h = IntegerMatrixLayout { row_vars: 11, col_vars: g.native_bits - 11, word_bits: 1 };
+            let f_bits = (g.f_offset + g.tail_rows - g.aliases).next_power_of_two().ilog2() as usize;
+            let native_f = IntegerMatrixLayout { row_vars: 11, col_vars: f_bits - 11, word_bits: 1 };
+            let h_rows = random_rows(&mut state, &native_h);
+            let f_rows = random_rows(&mut state, &native_f);
+            assert_eq!(g.derived_rows(&native_h, &h_rows), g.derived_rows_reference(&native_h, &h_rows), "derived, n = {instances}");
+            let (got, want) = (g.committed_rows(&native_f, &f_rows), g.committed_rows_reference(&native_f, &f_rows));
+            assert_eq!(got.len(), want.len(), "committed block count, n = {instances}");
+            for (block, (a, b)) in got.iter().zip(&want).enumerate() {
+                for (w, (x, y)) in a.iter().zip(b).enumerate() {
+                    assert_eq!(x, y, "committed n = {instances}: block {block} (sha_blocks {}) word {w} (rows {}..): got {x:#x} want {y:#x}", g.sha_blocks, w * 64);
+                }
+            }
+        }
     }
 }

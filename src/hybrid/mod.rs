@@ -130,6 +130,9 @@ pub struct PreparedHybrid {
     parameters: Parameters,
     multiplication: PreparedRelationPrefix<MulLayout<u32>>,
     mul_opener: MulOpener,
+    /// The multiplication grid's split relative to the layout's default
+    /// (nonzero for the wfbitz opener); witnesses adopt it when committed.
+    mul_split_shift: i8,
     sha: sha::ShaRelation,
     geometry: opening::Geometry,
     /// Round-0 parameters (`step0:ood-draw` grinding), derived from the
@@ -174,6 +177,18 @@ impl PreparedHybrid {
         parameters: Parameters,
         selection: crate::ligerito_flock::LigeritoSelection,
     ) -> Result<Self, Error> {
+        Self::build(parameters, selection, MulOpener::Forest)
+    }
+
+    /// The statement for one multiplication-side opener: the wfbitz scheme
+    /// takes the multiplication grid at its own split (`t = ⌈0.6n⌉ − 1`, the
+    /// split its GKR is fastest at), the forest at the layout's default. The
+    /// shared opener sees the same packed word count either way.
+    fn build(
+        parameters: Parameters,
+        selection: crate::ligerito_flock::LigeritoSelection,
+        opener: MulOpener,
+    ) -> Result<Self, Error> {
         if cfg!(feature = "unchecked") {
             return Err(Error::Invalid(
                 "hybrid proofs require checked arithmetic and constraints",
@@ -196,7 +211,13 @@ impl PreparedHybrid {
                 "SHA compression count must be a power of two from 2 to 2^16",
             ));
         }
-        let layout = MulLayout::<u32>::new(parameters.multiplications)?;
+        let mut layout = MulLayout::<u32>::new(parameters.multiplications)?;
+        let default_cols = layout.bitz_params().col_vars;
+        if opener == MulOpener::Wfbitz {
+            layout = layout.wfbitz_split(0)?;
+        }
+        let mul_split_shift = i8::try_from(layout.bitz_params().col_vars as i64 - default_cols as i64)
+            .map_err(|_| Error::Invalid("multiplication split shift"))?;
         let multiplication =
             PreparedRelationPrefix::<MulLayout<u32>>::new::<security::CompositionProfile>(layout)?;
         let sha = sha::ShaRelation::new(parameters.sha_compressions)?;
@@ -247,7 +268,8 @@ impl PreparedHybrid {
         };
         let ood = opening::ood_parameters(&ligerito)?.map(|(_, params)| params);
         Ok(Self {
-            mul_opener: MulOpener::Forest,
+            mul_opener: opener,
+            mul_split_shift,
             parameters,
             multiplication,
             sha,
@@ -261,6 +283,13 @@ impl PreparedHybrid {
 
     /// Selects the multiplication side's grand-product scheme (default: the forest).
     pub fn with_mul_opener(mut self, opener: MulOpener) -> Self {
+        if opener != self.mul_opener {
+            // The multiplication grid's split follows the opener: rebuild.
+            match Self::build(self.parameters, self.ligerito.selection(), opener) {
+                Ok(rebuilt) => return rebuilt,
+                Err(error) => tracing::warn!("hybrid: keeping the default split ({error:?})"),
+            }
+        }
         self.mul_opener = opener;
         self
     }
@@ -321,6 +350,7 @@ impl PreparedHybrid {
         multiplication: MulWitness<u32>,
         blocks: &[[u32; 16]],
     ) -> Result<CommittedHybrid, Error> {
+        let multiplication = multiplication.with_split_shift(self.mul_split_shift)?;
         if multiplication.layout() != self.multiplication.layout()
             || blocks.len() != self.parameters.sha_compressions
         {
@@ -667,8 +697,11 @@ mod tests {
         prepared.verify(committed.statement(), &decoded).unwrap();
         let forest = PreparedHybrid::new(parameters).unwrap();
         assert!(forest.verify(committed.statement(), &proof).is_err());
-        let forest_proof = forest.prove(&committed).unwrap();
-        assert!(prepared.verify(committed.statement(), &forest_proof).is_err());
+        // The openers commit the multiplication grid at different splits, so
+        // the forest proof comes with the forest's own commitment.
+        let forest_committed = forest.commit(&inputs, &blocks).unwrap();
+        let forest_proof = forest.prove(&forest_committed).unwrap();
+        assert!(prepared.verify(forest_committed.statement(), &forest_proof).is_err());
         // A changed multiplication row is still caught.
         let mut rows: Vec<_> = committed.multiplication_rows().collect();
         rows[7].lo ^= 1;
