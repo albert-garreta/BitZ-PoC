@@ -202,7 +202,7 @@ impl PreparedFalconHybrid {
             ),
             (
                 "batched integer-to-binary forest",
-                binary(hybrid_bridge::ERROR_NUMERATOR),
+                binary(hybrid_bridge::error_numerator(&self.layout)),
             ),
             (
                 "binary Keccak PIOP",
@@ -340,7 +340,7 @@ impl PreparedFalconHybrid {
     ) -> Result<(Blake3Transcript, [u8; 32]), FalconError> {
         statement.public.validate(self.batch())?;
         let mut h = blake3::Hasher::new();
-        h.update(b"bitz/falcon1024-ct/hybrid/non-zk/v4");
+        h.update(b"bitz/falcon1024-ct/hybrid/non-zk/v5");
         for n in [
             self.batch(),
             self.capacity(),
@@ -351,6 +351,11 @@ impl PreparedFalconHybrid {
         ] {
             h.update(&(n as u64).to_le_bytes());
         }
+        // The v5 schedule is public and deterministic, but bind it explicitly
+        // so proofs cannot be replayed under a different bridge error budget.
+        let bridge_numerator = hybrid_bridge::error_numerator(&self.layout);
+        h.update(&(bridge_numerator as u64).to_le_bytes());
+        h.update(&self.binary_grinding(bridge_numerator).to_le_bytes());
         for root in &statement.roots {
             h.update(root);
         }
@@ -373,7 +378,7 @@ impl PreparedFalconHybrid {
         }
         let digest = *h.finalize().as_bytes();
         let mut t = Blake3Transcript::new();
-        t.absorb_slice(b"bitz/falcon-hybrid/statement/v4");
+        t.absorb_slice(b"bitz/falcon-hybrid/statement/v5");
         t.absorb_slice(&digest);
         self.ligerito.bind(&mut t);
         Ok((t, digest))
@@ -404,7 +409,7 @@ impl PreparedFalconHybrid {
             &committed.arithmetic,
             &arithmetic.binding_point,
             arithmetic.piop.modulus,
-            self.binary_grinding(hybrid_bridge::ERROR_NUMERATOR),
+            self.binary_grinding(hybrid_bridge::error_numerator(&self.layout)),
             &claim.row_weights,
             &forest_scratch,
         )?;
@@ -529,7 +534,7 @@ impl PreparedFalconHybrid {
             proof.arithmetic.binding_terminal[1],
             proof.arithmetic.piop.modulus,
             &proof.bridge,
-            self.binary_grinding(hybrid_bridge::ERROR_NUMERATOR),
+            self.binary_grinding(hybrid_bridge::error_numerator(&self.layout)),
         )?;
         let mut k = Vec::new();
         for slab in 0..2 {
@@ -843,9 +848,33 @@ mod tests {
     #[test]
     fn hybrid_security_covers_supported_batch_sizes() {
         for target in [100, 128] {
-            for batch in [1, 3, 32, 256, 1024] {
+            for batch in 1..=1024 {
                 let prepared = PreparedFalconHybrid::new(batch, target).unwrap();
-                assert!(prepared.security().algebraic_bits >= target as f64);
+                let security = prepared.security();
+                assert!(security.algebraic_bits >= target as f64);
+                let numerator = hybrid_bridge::error_numerator(&prepared.layout);
+                let bits = prepared.binary_grinding(numerator);
+                assert_eq!(
+                    bits,
+                    if target == 100 {
+                        0
+                    } else if batch == 1 {
+                        17
+                    } else {
+                        18
+                    }
+                );
+                let bridge_error = security
+                    .terms
+                    .iter()
+                    .find(|(name, _)| *name == "batched integer-to-binary forest")
+                    .unwrap()
+                    .1;
+                assert_eq!(
+                    bridge_error,
+                    (numerator as f64) * 2f64.powi(-128 - bits as i32)
+                );
+                assert!(bridge_error <= 2f64.powi(-(target as i32) - 8));
                 assert_eq!(prepared.layout.local_counts().total(), 198_935);
             }
         }

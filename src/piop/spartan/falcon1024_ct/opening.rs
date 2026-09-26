@@ -1034,6 +1034,33 @@ impl StreamingCoefficientSource for BindingForm<'_> {
         }
         self.emit_partition(partition..partition + 1, emit)
     }
+
+    fn for_each_partition_block(
+        &self,
+        partition: usize,
+        block_len: usize,
+        emit: &mut impl FnMut(usize, &[F]) -> Result<(), crate::sumcheck::SumcheckError>,
+    ) -> Option<Result<(), crate::sumcheck::SumcheckError>> {
+        if !self.layout.is_hybrid() {
+            return None;
+        }
+        Some((|| {
+            if partition >= self.layout.capacity() {
+                return Err(crate::sumcheck::SumcheckError::InvalidProductDimensions);
+            }
+            if partition >= self.layout.batch() {
+                return Ok(());
+            }
+            self.compact_instance(partition)
+                .map_err(|_| crate::sumcheck::SumcheckError::InvalidProductDimensions)?
+                .emit_blocks(
+                    partition * self.layout.signature_stride(),
+                    block_len,
+                    self.field,
+                    emit,
+                )
+        })())
+    }
 }
 
 impl BindingForm<'_> {

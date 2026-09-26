@@ -28,6 +28,19 @@ pub(crate) trait StreamingCoefficientSource: Sync {
         }
         self.for_each_coefficient(emit)
     }
+
+    /// Optional replay as aligned, strictly increasing blocks of final sums.
+    /// Each slice has `block_len` entries; omitted blocks and entries beyond
+    /// `live_len` are zero. Unlike the additive stream, blocks cannot overlap.
+    /// Return `None` without invoking `emit` when this interface is unsupported.
+    fn for_each_partition_block(
+        &self,
+        _partition: usize,
+        _block_len: usize,
+        _emit: &mut impl FnMut(usize, &[Field]) -> Result<(), SumcheckError>,
+    ) -> Option<Result<(), SumcheckError>> {
+        None
+    }
 }
 
 /// A streaming source deliberately has no random-access coefficient operation.
@@ -84,6 +97,31 @@ impl<'a, S: StreamingCoefficientSource + ?Sized> StreamingMle<'a, S> {
                     return Err(SumcheckError::NonCanonicalFieldElement);
                 }
                 emit(index, value)
+            })
+    }
+
+    fn visit_blocks_checked<const K: usize>(
+        &self,
+        partition: usize,
+        cfg: &FieldConfig,
+        mut emit: impl FnMut(usize, &[Field]) -> Result<(), SumcheckError>,
+    ) -> Option<Result<(), SumcheckError>> {
+        let width = 1usize << K;
+        let start = partition * self.source.partition_len();
+        let end = (start + self.source.partition_len()).min(self.source.live_len());
+        let mut next = start;
+        self.source
+            .for_each_partition_block(partition, width, &mut |base, values| {
+                if values.len() != width || base % width != 0 || base < next || base >= end {
+                    return Err(SumcheckError::InvalidProductDimensions);
+                }
+                validate_field_values(values, cfg)?;
+                let active = width.min(end - base);
+                if values[active..].iter().any(|value| *value != cfg.zero()) {
+                    return Err(SumcheckError::InvalidProductDimensions);
+                }
+                next = base + width;
+                emit(base, values)
             })
     }
 }
@@ -158,6 +196,23 @@ impl<S: StreamingCoefficientSource + ?Sized> InnerSumcheckMleSource for Streamin
                 if partition * width >= suffix_count {
                     return Ok(());
                 }
+                if let Some(result) =
+                    self.visit_blocks_checked::<K>(partition, cfg, |base, block| {
+                        let value = if K == 0 {
+                            block[0]
+                        } else {
+                            let mut sum = product_accumulator_zero();
+                            for (weight, value) in weights.iter().zip(block) {
+                                product_multiply_accumulate(cfg, &mut sum, weight, value);
+                            }
+                            product_reduce(sum, cfg)?
+                        };
+                        values[(base >> K) - partition * width] = raw_montgomery(&value);
+                        Ok(())
+                    })
+                {
+                    return result;
+                }
                 self.visit_checked(partition, cfg, |index, delta| {
                     let slot = &mut values[(index >> K) - partition * width];
                     let term = cfg.mul(&delta, &weights[index & ((1usize << K) - 1)]);
@@ -178,6 +233,13 @@ impl<S: StreamingCoefficientSource + ?Sized> StreamingMle<'_, S> {
         cfg: &FieldConfig,
         zero: &Field,
     ) -> Result<PrefixAccumulators, SumcheckError> {
+        let mut state = PrefixBuildState::new::<K>(zero);
+        if let Some(result) = self.visit_blocks_checked::<K>(partition, cfg, |base, values| {
+            accumulate_block::<K, _>(&mut state, base >> K, values, bits, live_len, cfg, zero)
+        }) {
+            result?;
+            return finish_partition::<K>(state, cfg, zero);
+        }
         // A four-way bounded cache combines nearby scatter updates before the
         // ternary prefix extension. Evictions remain exact because every prefix
         // accumulator is linear in the coefficient table for a fixed witness.
@@ -190,7 +252,6 @@ impl<S: StreamingCoefficientSource + ?Sized> StreamingMle<'_, S> {
         let mut keys = vec![usize::MAX; sets * WAYS];
         let mut replace = vec![0usize; sets];
         let mut values = vec![*zero; keys.len() * width];
-        let mut state = PrefixBuildState::new::<K>(zero);
         self.visit_checked(partition, cfg, |index, delta| {
             let block = index >> K;
             let set = block & (sets - 1);
@@ -231,13 +292,21 @@ impl<S: StreamingCoefficientSource + ?Sized> StreamingMle<'_, S> {
                 )?;
             }
         }
-        let beta = state
-            .partial_sums
-            .into_iter()
-            .map(|sum| linear_reduce(sum, cfg))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(scatter_beta_values::<K>(&beta, zero, cfg))
+        finish_partition::<K>(state, cfg, zero)
     }
+}
+
+fn finish_partition<const K: usize>(
+    state: PrefixBuildState,
+    cfg: &FieldConfig,
+    zero: &Field,
+) -> Result<PrefixAccumulators, SumcheckError> {
+    let beta = state
+        .partial_sums
+        .into_iter()
+        .map(|sum| linear_reduce(sum, cfg))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(scatter_beta_values::<K>(&beta, zero, cfg))
 }
 
 fn accumulate_block<const K: usize, H: Sha256InnerBitSource + ?Sized>(
@@ -572,6 +641,176 @@ mod tests {
                 serial.get_challenge::<u128>(),
                 parallel.get_challenge::<u128>()
             );
+        }
+    }
+
+    #[test]
+    fn ordered_blocks_match_scatter_proofs_with_partition_tails_and_zero_blocks() {
+        struct Blocks<'a> {
+            values: &'a [Field],
+            zero: Field,
+        }
+        impl StreamingCoefficientSource for Blocks<'_> {
+            fn num_vars(&self) -> usize {
+                8
+            }
+            fn live_len(&self) -> usize {
+                self.values.len()
+            }
+            fn partition_len(&self) -> usize {
+                32
+            }
+            fn for_each_coefficient(
+                &self,
+                _: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+            ) -> Result<(), SumcheckError> {
+                panic!("ordered block source used the scatter path")
+            }
+            fn for_each_partition_block(
+                &self,
+                partition: usize,
+                block_len: usize,
+                emit: &mut impl FnMut(usize, &[Field]) -> Result<(), SumcheckError>,
+            ) -> Option<Result<(), SumcheckError>> {
+                Some((|| {
+                    let start = 32 * partition;
+                    let end = (start + 32).min(self.values.len());
+                    for base in (start..end).step_by(block_len) {
+                        let mut block = [self.zero; 16];
+                        let active = block_len.min(end - base);
+                        block[..active].copy_from_slice(&self.values[base..base + active]);
+                        if block[..block_len].iter().any(|value| *value != self.zero) {
+                            emit(base, &block[..block_len])?;
+                        }
+                    }
+                    Ok(())
+                })())
+            }
+        }
+        let cfg = spartan_bitz_field_config();
+        for live_len in [1, 13, 32, 33, 193, 256] {
+            let (mut updates, mut dense, bits, _) = fixture(8, live_len, &cfg);
+            // Empty first/middle partitions and holes exercise omitted blocks.
+            updates.updates.retain(|(i, _)| i / 32 % 3 != 0);
+            for (i, value) in dense.iter_mut().enumerate() {
+                if i / 32 % 3 == 0 {
+                    *value = cfg.zero();
+                }
+            }
+            let claim = dense
+                .iter()
+                .enumerate()
+                .fold(cfg.zero(), |sum, (i, value)| {
+                    if bits[i / 64] >> (i % 64) & 1 != 0 {
+                        cfg.add(&sum, value)
+                    } else {
+                        sum
+                    }
+                });
+            let blocks = Blocks {
+                values: &dense,
+                zero: cfg.zero(),
+            };
+            for prefix in 0..=4 {
+                let mut a = Blake3Transcript::new();
+                let actual = prove_inner_sumcheck(
+                    &cfg,
+                    &mut a,
+                    claim,
+                    PackedInput::new(&StreamingMle::new(&blocks), &bits, 8, live_len, prefix),
+                    (),
+                    &mut UngrindedRoundBoundary,
+                )
+                .unwrap();
+                let mut b = Blake3Transcript::new();
+                let expected = prove_inner_sumcheck(
+                    &cfg,
+                    &mut b,
+                    claim,
+                    PackedInput::new(&StreamingMle::new(&updates), &bits, 8, live_len, prefix),
+                    (),
+                    &mut UngrindedRoundBoundary,
+                )
+                .unwrap();
+                assert_eq!(actual, expected, "live={live_len}, prefix={prefix}");
+                assert_eq!(a.get_challenge::<u128>(), b.get_challenge::<u128>());
+            }
+        }
+    }
+
+    #[test]
+    fn ordered_blocks_reject_invalid_replays_before_transcript_changes() {
+        struct InvalidBlocks {
+            fault: usize,
+            cfg: FieldConfig,
+        }
+        impl StreamingCoefficientSource for InvalidBlocks {
+            fn num_vars(&self) -> usize {
+                5
+            }
+            fn live_len(&self) -> usize {
+                29
+            }
+            fn partition_len(&self) -> usize {
+                16
+            }
+            fn for_each_coefficient(
+                &self,
+                _: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+            ) -> Result<(), SumcheckError> {
+                unreachable!()
+            }
+            fn for_each_partition_block(
+                &self,
+                partition: usize,
+                width: usize,
+                emit: &mut impl FnMut(usize, &[Field]) -> Result<(), SumcheckError>,
+            ) -> Option<Result<(), SumcheckError>> {
+                let mut block = vec![self.cfg.zero(); width];
+                let base = 16 * partition;
+                Some(match self.fault {
+                    0 => {
+                        block[0] = crate::piop::spartan::noncanonical_test_value(&self.cfg);
+                        emit(base, &block)
+                    }
+                    1 => emit(base, &block[..width - 1]),
+                    2 => emit(base + 16, &block), // next partition is outside this replay
+                    3 => emit(base, &block).and_then(|_| emit(base, &block)),
+                    4 => emit(if width > 1 { base + 1 } else { usize::MAX }, &block),
+                    5 if partition == 1 => {
+                        block[29 % width] = self.cfg.one();
+                        emit(29 / width * width, &block) // nonzero domain padding
+                    }
+                    5 => Ok(()),
+                    _ => unreachable!(),
+                })
+            }
+        }
+        let cfg = spartan_bitz_field_config();
+        for fault in 0..6 {
+            for prefix in 0..=4 {
+                let source = InvalidBlocks {
+                    fault,
+                    cfg: cfg.clone(),
+                };
+                let mut transcript = Blake3Transcript::new();
+                assert!(
+                    prove_inner_sumcheck(
+                        &cfg,
+                        &mut transcript,
+                        cfg.zero(),
+                        PackedInput::new(&StreamingMle::new(&source), &[0u64][..], 5, 29, prefix),
+                        (),
+                        &mut UngrindedRoundBoundary,
+                    )
+                    .is_err(),
+                    "fault={fault}, prefix={prefix}"
+                );
+                assert_eq!(
+                    transcript.get_challenge::<u128>(),
+                    Blake3Transcript::new().get_challenge::<u128>()
+                );
+            }
         }
     }
 

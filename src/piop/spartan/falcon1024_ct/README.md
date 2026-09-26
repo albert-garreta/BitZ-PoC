@@ -1,4 +1,4 @@
-# Falcon-1024 CT proofs, v4 public signatures and experimental hybrid
+# Falcon-1024 CT proofs, public signatures and experimental hybrid
 
 This module contains two non-ZK proof backends for Falcon-1024 constant-time
 signatures. The `falcon` backend supports 1–32 signatures and one BitZ source
@@ -15,7 +15,9 @@ the remaining auxiliary witness is not guaranteed to be hidden.
 
 ## Public signatures and independent benchmark inputs
 
-The outer commitment-bound and hybrid statement domains are now `v4`.
+The outer commitment-bound statement uses `v4`. The hybrid statement uses `v5`
+to bind its geometry-derived bridge grinding schedule; see
+[BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md).
 Every CT signature byte has a linear equality against its eight committed bits,
 including the nonce and signed coefficient payload. Absorbing signatures into
 the transcript complements these equality constraints; it does not replace them.
@@ -251,7 +253,11 @@ contracts their row weights into one claim on the same committed bits. This
 does not identify a prime-field MLE with a binary-field MLE.
 The conservative merged-forest error numerator is
 `s + 3*(d*(d-1)/2 + d*s) + d`, where `d=13` and `s=col_vars+1` includes the
-limb coordinate. Its maximum 887 remains below the existing budget of 4096.
+limb coordinate. This gives 487 through 887 across supported capacities and is
+used directly in the security report and grinding allocation. At target 128,
+the bridge uses 17 grinding bits for capacity one and 18 for larger capacities,
+previously 20. Its category error remains at most `2^-136` under the existing
+computational grinding model. Target 100 still needs no bridge grinding.
 [hybrid_sumcheck.rs](hybrid_sumcheck.rs) combines these claims, the Keccak claims,
 and the copy checks using structured tensor and gather terms. It folds the
 first seven bits without constructing a full field-element coefficient table,
@@ -356,15 +362,15 @@ be consumed and verified.
 
 ## Compatibility and memory
 
-The legacy commitment-bound and PIOP headers now use `v3`; existing forest
-domains retain `v2`. The new norm and initial-row-point proof fields change
-the transcript. **Regenerate earlier proofs.** The hybrid has its own versioned
+The legacy commitment-bound statement uses `v4`; its internal PIOP headers use
+`v3` and existing forest domains retain `v2`. The hybrid has its own versioned
 statement and different source layouts; hybrid roots are not interchangeable
-with legacy roots. The three-source hybrid statement and claim-combination
-domains now use **v3** for the merged bridge; its bridge-local domains use v2.
-Keccak-prefix domains remain v2. All permutation groups and roots remain bound.
-Regenerate proofs from earlier hybrid versions. Prime arithmetic constraints and
-its challenge schedule are unchanged by the parallel implementation.
+with legacy roots. The hybrid statement and transcript now use **v5**, with the
+bridge numerator and difficulty explicitly bound. Bridge grinding uses `v3`;
+integer-fold and Keccak-prefix domains remain `v2`. All permutation groups and
+roots remain bound. **Regenerate proofs from earlier hybrid versions.** The
+revised schedule preserves the arithmetic, SHAKE, HashToPoint, and individual
+norm constraints; it changes transcript challenges at both security targets.
 
 Streaming eliminates the full binding coefficient vector, but does not make the
 entire prover constant-memory. For one signature, coefficient-cache values use
@@ -797,3 +803,74 @@ grinding checks matched scalar BLAKE3, including nonce carries and search tails.
 Raw trials, generated fixtures, executable/source hashes, comparison scripts,
 profiles, and validation logs are in
 `bench_results/falcon-gkr-reuse-20260925/` (ignored local artifacts).
+
+## Native SIMD, direct binding blocks, and bridge budget
+
+Native x86 builds with PCLMUL, SSE4.1, AVX-512F/BW, and VPCLMUL now use four-lane
+field kernels for the GKR grid, deferred-fold round, and in-place folding paths.
+Grid coordinates share vector registers and products accumulate before reduction.
+Partial vectors use scalar tails. PCLMUL-only, portable, and ARM paths remain
+available; the instruction selection is compile-time, so an ordinary portable
+build does not select these kernels just because the host supports them.
+
+The compact Falcon binder now emits ordered coefficient blocks directly from a
+64-field sliding window. The packed inner sumcheck validates their canonical
+values, ordering, alignment, partition bounds, and zero padding, then consumes
+each block without the generic scatter cache. Suffix folding reduces a buffered
+dot product once per block. Other additive coefficient sources keep their scatter
+path. The implementation changes preserve the complete v4 proof transcript.
+
+The v5 bridge schedule separately replaces the fixed error numerator 4096 with
+the audited value for the actual layout. See
+[BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md) for the accepted verifier's
+round counts, degrees, integer exponent bounds, and composition budget. This
+change preserves all constraints and requires regenerated proofs because its
+versioned transcript differs.
+
+To reproduce native measurements on the benchmarking host:
+
+```sh
+CARGO_TARGET_DIR=target/falcon-native RUSTFLAGS='-C target-cpu=native' \
+  cargo bench --offline --profile release --features falcon-hybrid \
+  --bench falcon_hybrid -- --batch 1024 --security 128 --seed 42 \
+  --threads 16 --warmup 1 --iterations 3
+```
+
+These runs use 1024 distinct upstream-generated keypairs, messages, and signatures.
+The reported full prover time includes witness generation, all commitments,
+SHAKE, HashToPoint, and every proof stage. Input key generation/signing, reusable
+preparation, public-statement decoding, verification, and proof Debug hashing
+are excluded. Raw measurements, saved executables, build configuration, and test
+logs are in `bench_results/falcon-simd-blocks-20260926/` (ignored local artifacts).
+
+On an AMD Ryzen 9 9950X3D, target 128, 16 threads, seed 42, with one warmup and
+three measured trials, the medians were:
+
+| Configuration | Full prover ms/signature | Signatures/second |
+| --- | ---: | ---: |
+| Saved portable v4 reference | 17.328 | 57.7 |
+| Current v4 native baseline (`f7bfbb84`) | 5.225 | 191.4 |
+| Native SIMD and direct blocks, v4 schedule | 4.943 | 202.3 |
+| All changes, v5 bridge schedule | **4.846** | **206.4** |
+
+The final run uses 7.3% less prover time than the matched native baseline and
+has 3.58 times the throughput of the saved portable reference. Final batch
+proving took 4.962 seconds; verification took 2.658 seconds. Whole-process peak
+RSS was 7.20 GiB. Every warmup and measured proof verified. The portable, native
+baseline, and SIMD/block runs have identical input digests, commitment roots,
+and complete proof Debug digests. The v5 run retains the same inputs and roots;
+its proof changes with the versioned challenge schedule. These Debug digests
+are comparison aids, not canonical wire encodings.
+
+The schedule change also changes deterministic grinding seeds throughout the
+proof, so its measured incremental gain is specific to this input batch.
+Separate single-trial diagnostic profiles at batch 256 measured binding at
+2.251 to 2.082 ms/signature, the inclusive bridge forest at 1.164 to 0.758 ms,
+and joint sumcheck at 0.814 to 0.669 ms. Nested grinding times overlap these
+stages and must not be added to them.
+
+Validation passed 597 native release library tests (seven ignored) and three
+upstream Falcon integration tests. Both alternate JIT forest configurations
+passed six tests each. Field validation passed 35 native, 33 PCLMUL-only, and
+31 portable GF128 unit tests, plus six integration tests in each configuration.
+Portable hybrid and serial Falcon build checks and scoped formatting passed.

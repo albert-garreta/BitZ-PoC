@@ -1,13 +1,31 @@
 //! Fused binary-field arithmetic. Protocol drivers own traversal and parallelism.
 use super::kernels::{clmul_128x128, reduce_256_to_128};
 use crate::{Gf128, Gf128Ops, Gf128Product, SumcheckKernels};
+#[cfg(all(
+    target_arch = "x86_64",
+    target_feature = "pclmulqdq",
+    target_feature = "sse4.1",
+    target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "vpclmulqdq"
+))]
+#[path = "kernels/sumcheck_avx512.rs"]
+mod avx512;
 #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
 #[path = "kernels/sumcheck_aarch64.rs"]
 pub(crate) mod neon;
 #[cfg(all(
     target_arch = "x86_64",
     target_feature = "pclmulqdq",
-    target_feature = "sse4.1"
+    target_feature = "sse4.1",
+    any(
+        test,
+        not(all(
+            target_feature = "avx512f",
+            target_feature = "avx512bw",
+            target_feature = "vpclmulqdq"
+        ))
+    )
 ))]
 #[path = "kernels/sumcheck_x86_64.rs"]
 mod x86;
@@ -214,6 +232,18 @@ impl Gf128 {
     /// `2b..2b+4`). Value-exact per entry.
     #[allow(clippy::arithmetic_side_effects)]
     fn bitz_eqf_fold_in_place(v: &mut [Self], rho: &Self, half: usize) -> bool {
+        #[cfg(all(
+            target_arch = "x86_64",
+            target_feature = "pclmulqdq",
+            target_feature = "sse4.1",
+            target_feature = "avx512f",
+            target_feature = "avx512bw",
+            target_feature = "vpclmulqdq"
+        ))]
+        {
+            avx512::fold_in_place(v, rho, half);
+            return true;
+        }
         // NEON-resident pipeline; value-exact vs the word pipeline below.
         #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
         {
@@ -224,7 +254,17 @@ impl Gf128 {
             }
             return true;
         }
-        #[cfg(not(all(target_arch = "aarch64", target_feature = "aes")))]
+        #[cfg(not(any(
+            all(target_arch = "aarch64", target_feature = "aes"),
+            all(
+                target_arch = "x86_64",
+                target_feature = "pclmulqdq",
+                target_feature = "sse4.1",
+                target_feature = "avx512f",
+                target_feature = "avx512bw",
+                target_feature = "vpclmulqdq"
+            )
+        )))]
         {
             let rw = *rho.as_words();
             let mut b = 0usize;
@@ -269,6 +309,17 @@ impl Gf128 {
         w: &[Self],
         half: usize,
     ) -> Option<(Self, Self, Self)> {
+        #[cfg(all(
+            target_arch = "x86_64",
+            target_feature = "pclmulqdq",
+            target_feature = "sse4.1",
+            target_feature = "avx512f",
+            target_feature = "avx512bw",
+            target_feature = "vpclmulqdq"
+        ))]
+        {
+            return Some(avx512::fused_fold_round(l, r, rho, w, half));
+        }
         // NEON-resident pipeline; value-exact vs the word pipeline below.
         #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
         {
@@ -277,7 +328,17 @@ impl Gf128 {
             }
             return Some(neon::eqf_fused_fold_round(l, r, rho, w, half));
         }
-        #[cfg(not(all(target_arch = "aarch64", target_feature = "aes")))]
+        #[cfg(not(any(
+            all(target_arch = "aarch64", target_feature = "aes"),
+            all(
+                target_arch = "x86_64",
+                target_feature = "pclmulqdq",
+                target_feature = "sse4.1",
+                target_feature = "avx512f",
+                target_feature = "avx512bw",
+                target_feature = "vpclmulqdq"
+            )
+        )))]
         {
             let rw = *rho.as_words();
             let fold1 = |v0: [u64; 2], v1: [u64; 2]| -> [u64; 2] {
@@ -331,6 +392,17 @@ impl Gf128 {
         suffix: &[Self],
         quads: usize,
     ) -> Option<[Self; 9]> {
+        #[cfg(all(
+            target_arch = "x86_64",
+            target_feature = "pclmulqdq",
+            target_feature = "sse4.1",
+            target_feature = "avx512f",
+            target_feature = "avx512bw",
+            target_feature = "vpclmulqdq"
+        ))]
+        {
+            return Some(avx512::grid_pass(l, r, pending, suffix, quads));
+        }
         #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
         {
             if pending.len() <= 2 && true {
@@ -338,7 +410,17 @@ impl Gf128 {
             }
             None
         }
-        #[cfg(not(all(target_arch = "aarch64", target_feature = "aes")))]
+        #[cfg(not(any(
+            all(target_arch = "aarch64", target_feature = "aes"),
+            all(
+                target_arch = "x86_64",
+                target_feature = "pclmulqdq",
+                target_feature = "sse4.1",
+                target_feature = "avx512f",
+                target_feature = "avx512bw",
+                target_feature = "vpclmulqdq"
+            )
+        )))]
         {
             #[cfg(all(
                 target_arch = "x86_64",

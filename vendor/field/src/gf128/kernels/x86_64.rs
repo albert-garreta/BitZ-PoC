@@ -394,6 +394,17 @@ impl WideGhashX4 {
         self.mid = _mm512_xor_si512(self.mid, m);
     }
 
+    /// Reduce each accumulator lane separately, preserving all four sums.
+    ///
+    /// # Safety
+    /// Requires `avx512f`, `avx512bw`, and `vpclmulqdq`.
+    #[inline]
+    #[target_feature(enable = "avx512f,avx512bw,vpclmulqdq")]
+    pub unsafe fn reduce_lanes(self) -> __m512i {
+        // SAFETY: this function carries every feature the reduction uses.
+        unsafe { gf2_128_reduce_x4(self.lo, gf2_128_reduce_x4(self.mid, self.hi)) }
+    }
+
     /// Horizontally XOR the 4 lanes and assemble a scalar `Gf128Product`
     /// (NOT yet reduced, so it can be XORed with a scalar tail accumulator).
     ///

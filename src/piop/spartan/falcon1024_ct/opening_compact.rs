@@ -110,35 +110,95 @@ impl CompiledCoefficients {
         // words and isolated-bit corrections before emitting each bit once.
         let mut pending = [field.zero(); 32];
         let mut cursor = 0;
-        for &(word, mut scale) in &self.words {
+        for &(word, scale) in &self.words {
             flush_window(&mut cursor, word.base, &mut pending, base, field, emit)?;
-            for bit in 0..usize::from(word.width) {
-                let (index, negative, weighted) = match word.kind {
-                    WordKind::Unsigned => (word.base + bit, false, true),
-                    WordKind::Signed => (word.base + bit, bit + 1 == usize::from(word.width), true),
-                    WordKind::Encoded { offset, weighted } => {
-                        let stream = usize::from(offset) + 11 - bit;
-                        (
-                            word.base + 8 * (stream / 8) + 7 - stream % 8,
-                            bit == 11,
-                            weighted,
-                        )
-                    }
-                };
-                let slot = &mut pending[index & 31];
-                *slot = if negative {
-                    field.sub(slot, &scale)
-                } else {
-                    field.add(slot, &scale)
-                };
-                if weighted {
-                    scale = field.add(&scale, &scale);
-                }
-            }
+            accumulate_word(word, scale, &mut pending, field);
         }
         let end = cursor + 32;
         flush_window(&mut cursor, end, &mut pending, base, field, emit)
     }
+
+    pub(super) fn emit_blocks(
+        &self,
+        base: usize,
+        block_len: usize,
+        field: &Cfg,
+        emit: &mut impl FnMut(usize, &[F]) -> Result<(), crate::sumcheck::SumcheckError>,
+    ) -> Result<(), crate::sumcheck::SumcheckError> {
+        if !block_len.is_power_of_two()
+            || block_len > 1 << crate::sumcheck::inner::packed::SHA256_INNER_PREFIX_MAX_VARS
+            || base % block_len != 0
+        {
+            return Err(crate::sumcheck::SumcheckError::InvalidProductDimensions);
+        }
+        // Keep a whole prefix block until every overlapping word has arrived.
+        // A word spans at most 27 positions and can start 15 positions into a
+        // block, so a 64-field ring covers the pending interval without aliasing.
+        let mut pending = [field.zero(); 64];
+        let mut cursor = 0;
+        for &(word, scale) in &self.words {
+            flush_blocks(
+                &mut cursor,
+                word.base & !(block_len - 1),
+                block_len,
+                &mut pending,
+                base,
+                field,
+                emit,
+            )?;
+            accumulate_word(word, scale, &mut pending, field);
+        }
+        let end = cursor + pending.len();
+        flush_blocks(&mut cursor, end, block_len, &mut pending, base, field, emit)
+    }
+}
+
+fn accumulate_word<const W: usize>(word: Word, mut scale: F, pending: &mut [F; W], field: &Cfg) {
+    for bit in 0..usize::from(word.width) {
+        let (index, negative, weighted) = match word.kind {
+            WordKind::Unsigned => (word.base + bit, false, true),
+            WordKind::Signed => (word.base + bit, bit + 1 == usize::from(word.width), true),
+            WordKind::Encoded { offset, weighted } => {
+                let stream = usize::from(offset) + 11 - bit;
+                (
+                    word.base + 8 * (stream / 8) + 7 - stream % 8,
+                    bit == 11,
+                    weighted,
+                )
+            }
+        };
+        let slot = &mut pending[index & (W - 1)];
+        *slot = if negative {
+            field.sub(slot, &scale)
+        } else {
+            field.add(slot, &scale)
+        };
+        if weighted {
+            scale = field.add(&scale, &scale);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn flush_blocks(
+    cursor: &mut usize,
+    end: usize,
+    block_len: usize,
+    pending: &mut [F; 64],
+    base: usize,
+    field: &Cfg,
+    emit: &mut impl FnMut(usize, &[F]) -> Result<(), crate::sumcheck::SumcheckError>,
+) -> Result<(), crate::sumcheck::SumcheckError> {
+    for index in (*cursor..end.min(*cursor + pending.len())).step_by(block_len) {
+        let start = index & (pending.len() - 1);
+        let block = &mut pending[start..start + block_len];
+        if block.iter().any(|value| *value != field.zero()) {
+            emit(base + index, block)?;
+            block.fill(field.zero());
+        }
+    }
+    *cursor = end;
+    Ok(())
 }
 
 fn flush_window(
@@ -649,5 +709,96 @@ fn emit_linear_template(
             mul_i(weight, -i128::from(Q), field),
             field,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn overlapping_words(sink: &mut impl CoefficientSink, base: usize, field: &Cfg) {
+        let scale = unsigned(37, field);
+        // Signed and ordinary words cross every sliding-window/block boundary.
+        for local in [0, 15, 31, 63, 127, 224] {
+            sink.add_word(base + local, 27, true, scale, field);
+            sink.add_word(base + local + 1, 14, false, scale, field);
+            sink.add(base + local + 26, field.neg(&scale));
+        }
+        // CT encoding has a reversed bit order and alternates nibble offsets.
+        for (local, offset) in [(8, 0), (24, 4), (56, 4), (120, 0), (224, 4)] {
+            sink.add_encoded_word(base + local, offset, true, scale, field);
+            sink.add_encoded_word(base + local, offset, false, scale, field);
+        }
+        sink.add_word(base + 192, 8, false, scale, field);
+        sink.add_word(base + 192, 8, false, field.neg(&scale), field);
+    }
+
+    #[test]
+    fn compact_blocks_match_bit_stream_and_dense_signed_word_expansion() {
+        struct Dense<'a> {
+            values: Vec<F>,
+            field: &'a Cfg,
+        }
+        impl CoefficientSink for Dense<'_> {
+            fn add(&mut self, index: usize, value: F) {
+                self.values[index] = self.field.add(&self.values[index], &value);
+            }
+        }
+        let field = crate::piop::spartan::bitz::spartan_bitz_field_config();
+        for base in [0, 256] {
+            let mut sink = WordSink::new(base / 256, base, &field);
+            overlapping_words(&mut sink, base, &field);
+            let compact = sink.finish();
+            let mut expected = Dense {
+                values: vec![field.zero(); 512],
+                field: &field,
+            };
+            overlapping_words(&mut expected, base, &field);
+            let mut generic = vec![field.zero(); 512];
+            compact
+                .emit(base, &field, &mut |i, value| {
+                    generic[i] = field.add(&generic[i], &value);
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(generic, expected.values);
+            for width in [1, 2, 4, 8, 16] {
+                let mut actual = vec![field.zero(); 512];
+                let mut next = base;
+                compact
+                    .emit_blocks(base, width, &field, &mut |start, block| {
+                        assert!(start >= next);
+                        assert_eq!(start % width, 0);
+                        assert_eq!(block.len(), width);
+                        assert!(start + width <= base + 256);
+                        assert!(block.iter().any(|value| *value != field.zero()));
+                        actual[start..start + width].copy_from_slice(block);
+                        next = start + width;
+                        Ok(())
+                    })
+                    .unwrap();
+                assert_eq!(actual, expected.values, "base={base}, width={width}");
+            }
+        }
+    }
+
+    #[test]
+    fn compact_empty_blocks_and_invalid_block_dimensions() {
+        let field = crate::piop::spartan::bitz::spartan_bitz_field_config();
+        let compact = WordSink::new(0, 0, &field).finish();
+        for width in [1, 2, 4, 8, 16] {
+            compact
+                .emit_blocks(256, width, &field, &mut |_, _| {
+                    panic!("empty compact source emitted a block")
+                })
+                .unwrap();
+        }
+        for (base, width) in [(0, 0), (0, 3), (0, 32), (1, 16)] {
+            assert!(
+                compact
+                    .emit_blocks(base, width, &field, &mut |_, _| Ok(()))
+                    .is_err()
+            );
+        }
     }
 }

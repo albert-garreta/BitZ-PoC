@@ -27,12 +27,17 @@ use field::Uint;
 type F = SpartanBitzField;
 type Cfg = <F as SpartanField>::Config;
 
-/// Conservative numerator for the merged limb forest. With depth d and s
-/// tree-index variables (including the limb index), the initial root projection,
-/// degree-at-most-three sumcheck rounds, and d line folds cost at most
-/// s + 3*(d*(d-1)/2 + d*s) + d. At the largest supported layout this is 887.
-/// The existing budget leaves room for all supported batch geometries.
-pub(super) const ERROR_NUMERATOR: usize = 4096;
+/// Raw numerator for the accepted arity-2 merged forest over GF(2^128).
+/// The root projection costs `s`, each of the `sum(ell+s)` Gruen sumcheck
+/// rounds has degree at most three, and each of the `d` child-pair folds
+/// costs one. L4/L8, JIT, and double-fold kernels preserve these messages.
+/// See BRIDGE_GRINDING_AUDIT.md for the block schedule and integer binding.
+pub(super) fn error_numerator(layout: &super::FalconSourceLayout) -> usize {
+    let p = layout.bitz_params();
+    let d = p.row_vars;
+    let s = p.col_vars + 1; // Both bounded limbs form one tree-index MLE.
+    s + 3 * (d * (d - 1) / 2 + d * s) + d
+}
 
 fn binary_claim(
     p: &IntegerMatrixLayout,
@@ -62,7 +67,7 @@ fn binary_claim(
 
 struct BridgeGrinding;
 impl GrindingDomain for BridgeGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/falcon-hybrid/bridge-grinding/v2";
+    const DOMAIN: &'static [u8] = b"bitz/falcon-hybrid/bridge-grinding/v3";
 }
 
 #[derive(Clone, Debug)]
@@ -238,12 +243,79 @@ mod tests {
 
     #[test]
     fn merged_limb_forest_fits_security_budget() {
-        for batch in [1, 3, 32, 256, 1024] {
-            let p = FalconSourceLayout::new_hybrid(batch).unwrap().bitz_params();
+        for batch in 1..=1024 {
+            let layout = FalconSourceLayout::new_hybrid(batch).unwrap();
+            let p = layout.bitz_params();
             let d = p.row_vars;
             let s = p.col_vars + 1;
-            let numerator = s + 3 * (d * (d - 1) / 2 + d * s) + d;
-            assert!(numerator <= ERROR_NUMERATOR);
+            assert_eq!(p.word_bits, 1);
+            assert_eq!(d, 13);
+            assert_eq!(s, 6 + layout.capacity().ilog2() as usize);
+            // Count the accepted verifier rounds independently of the formula.
+            let sumcheck_rounds: usize = (0..d).map(|ell| ell + s).sum();
+            assert_eq!(error_numerator(&layout), s + 3 * sumcheck_rounds + d);
+            assert!((487..=887).contains(&error_numerator(&layout)));
+            assert_eq!(mod_q_chunk_width(&p), 113);
+            for prime_bits in [126, 127] {
+                assert_eq!(mod_q_num_chunks(&p, prime_bits), 2);
+            }
+            // Every canonical bit column has exponent < 2^126, strictly
+            // below the order 2^128-1 of the fixed multiplicative generator.
+            let max_limb = (1u128 << mod_q_chunk_width(&p)) - 1;
+            assert!(max_limb * (p.rows() as u128) < (1u128 << 126));
+        }
+        assert!(crate::pcs::is_generator(crate::pcs::smallest_generator()));
+    }
+
+    #[test]
+    fn revised_bridge_domain_and_difficulty_reject_old_nonces() {
+        use crate::piop::spartan::grinding::{
+            GrindingRound, derive_grinding_seed, derive_grinding_seed_in_domain,
+            grinding_nonce_is_valid, verify_and_absorb,
+        };
+
+        const BITS: u32 = 3;
+        let mut initial = Blake3Transcript::new();
+        initial.absorb_slice(b"fixed bridge prefix");
+        let current = derive_grinding_seed(
+            &mut initial.clone(),
+            GrindingRound::<BridgeGrinding>::new(0),
+            BITS,
+        )
+        .unwrap();
+        let legacy = derive_grinding_seed_in_domain(
+            &mut initial.clone(),
+            b"bitz/falcon-hybrid/bridge-grinding/v2",
+            0,
+            BITS,
+        )
+        .unwrap();
+        let other_difficulty = derive_grinding_seed(
+            &mut initial.clone(),
+            GrindingRound::<BridgeGrinding>::new(0),
+            BITS + 1,
+        )
+        .unwrap();
+        assert_ne!(current, legacy);
+        assert_ne!(current, other_difficulty);
+        for (old_seed, old_bits) in [(&legacy, BITS), (&other_difficulty, BITS + 1)] {
+            // Choose a nonce whose rejection is certain, independent of a
+            // chance nonce collision across the two independent seeds.
+            let old_nonce = (0..u64::MAX)
+                .find(|&nonce| {
+                    grinding_nonce_is_valid(old_seed, nonce, old_bits).unwrap()
+                        && !grinding_nonce_is_valid(&current, nonce, BITS).unwrap()
+                })
+                .unwrap();
+            assert!(
+                verify_and_absorb(
+                    &mut initial.clone(),
+                    GrindingRound::<BridgeGrinding>::new(0),
+                    BITS,
+                    old_nonce,
+                )
+                .is_err()
+            );
         }
     }
 
@@ -288,6 +360,24 @@ mod tests {
         )
         .unwrap();
         assert_eq!(claims.len(), 1);
+        let s = p.col_vars + 1;
+        let rounds: usize = (0..p.row_vars).map(|ell| ell + s).sum();
+        assert_eq!(proof.nonces.len(), 1 + rounds + p.row_vars);
+        assert_eq!(proof.forest.layers.len(), p.row_vars);
+        for (ell, layer) in proof.forest.layers.iter().enumerate() {
+            assert!(layer.pair2.is_none());
+            assert_eq!(layer.sc_x.is_some(), ell != 0);
+            assert_eq!(layer.sc_x.as_ref().map_or(0, |sc| sc.messages.len()), ell);
+            assert_eq!(layer.sc_c.messages.len(), s);
+            for sumcheck in layer.sc_x.iter().chain(core::iter::once(&layer.sc_c)) {
+                assert!(
+                    sumcheck
+                        .messages
+                        .iter()
+                        .all(|msg| msg.0.tail_evaluations.len() == 2)
+                );
+            }
+        }
         let mut vt = Blake3Transcript::new();
         let verified = verify(&mut vt, &layout, &point, value, modulus, &proof, 2).unwrap();
         assert_eq!(claims[0].low, verified[0].low);
@@ -321,6 +411,27 @@ mod tests {
                 .is_err()
             );
         };
+        let mut changed = proof.clone();
+        changed.nonces.pop();
+        reject(&changed);
+        let mut changed = proof.clone();
+        changed.nonces.push(0);
+        reject(&changed);
+        let mut changed = proof.clone();
+        changed.nonces[0] ^= 1;
+        reject(&changed);
+        assert!(
+            verify(
+                &mut Blake3Transcript::new(),
+                &layout,
+                &point,
+                value,
+                modulus,
+                &proof,
+                3,
+            )
+            .is_err()
+        );
         for limb in 0..2 {
             let mut changed = proof.clone();
             changed.sums[limb][0] ^= 1;
@@ -350,6 +461,9 @@ mod tests {
         assert!(error.to_string().contains("bridge forest"));
         let mut changed = proof.clone();
         changed.forest.layers[0].pair.0 += Gf::one();
+        reject(&changed);
+        let mut changed = proof.clone();
+        changed.forest.layers[0].pair2 = Some((Gf::one(), Gf::one()));
         reject(&changed);
     }
 }
