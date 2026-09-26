@@ -1,26 +1,33 @@
 # Falcon hybrid bridge grinding audit
 
-This revision changes the grinding schedule only. SHAKE, HashToPoint, the
-Falcon arithmetic constraints, all per-signature norm bounds, and the committed
-sources remain in the proof. The top-level hybrid statement and transcript use
-v5; the bridge grinding domain uses v3. The statement digest explicitly binds
-the derived bridge numerator and grinding difficulty. Proofs made under the
-v4 statement domain are not compatible.
+The v6 Falcon hybrid uses one partially reduced `wfbitz` forest over both
+bounded integer limbs of its prime-field row weights. SHAKE, HashToPoint,
+Falcon arithmetic, every signature's norm bound, the three committed sources,
+and the joint binary sumcheck and shared PCS opening remain enforced. This
+change replaces the bridge's GKR implementation and coordinate order while
+preserving the two-limb batching and its error budget.
+
+The hybrid statement and transcript use v6; the bridge grinding domain uses
+v4. The statement digest binds the derived bridge numerator and grinding
+difficulty. Previous hybrid proofs must be regenerated. The former v5
+merged-forest implementation is recorded below for comparison.
 
 ## Scope and model
 
-The calculation below applies to `hybrid_bridge::{prove, verify}` using
-`verify_merged_forest`, not the separate experimental quad forest. It uses the
-repository's existing computational grinding model: a challenge block with raw
-error `e` and difficulty `g` contributes `e * 2^-g` per unit of adversarial
-work. It does not claim that grinding improves unconditional interactive
-soundness, nor add security beyond the separately stated BLAKE3 bound.
+This calculation applies to the adapter in `hybrid_bridge::{prove, verify}`
+and the arity-two `wfbitz` forest/GKR it invokes. It uses the repository's
+existing computational grinding model: a challenge block with raw error `e`
+and difficulty `g` contributes `e * 2^-g` per unit of adversarial work. It does
+not claim that grinding improves unconditional interactive soundness, nor add
+security beyond the separately stated BLAKE3 bound.
 
-All supported live batch sizes are 1 through 1024 and are padded to their next
-power of two. In the arithmetic source `word_bits=1`, `d=row_vars=13`, and
-`col_vars=5+log2(capacity)`. There are exactly two bounded limbs, so the merged
-tree-index MLE has `s=col_vars+1=6+log2(capacity)` coordinates. The complete
-geometry range is therefore `d=13`, `6 <= s <= 16`.
+Supported live batch sizes are 1 through 1024, padded to their next power of
+two. The arithmetic source has `word_bits=1`, `d=row_vars=13`, and
+`c=col_vars=5+log2(capacity)`. There are exactly two bounded limbs. The forest
+uses an interleaved row grid of geometric width `t=d+1=14`, but reduces only
+`d=13` product-tree levels. Its root-table width is therefore
+`s=c+1=6+log2(capacity)`, ranging from 6 to 16. The unreduced coordinate is the
+limb index; it is not multiplied away.
 
 ## Integer binding has no probabilistic loss
 
@@ -41,65 +48,132 @@ exactly that group order. Thus `sum -> generator^sum` is injective throughout
 the accepted interval. A false integer sum cannot give the correct root.
 There is no random-generator collision term or unaccounted limb collision.
 
+Both limbs' sums are bound before the root challenge is sampled. The existing
+prime-field read-off still combines them with radix `2^113`; using one forest
+does not replace that check with a sum or product of the two limbs.
+
+## Interleaved forest geometry
+
+Write `A_l(r)=generator^weight_l[r]` for original source row `r` and limb
+`l` in `{0,1}`. The source column `j` is reused for both limbs:
+
+```
+images'[2*r+l] = A_l(r)
+packed_cols'[group][2*r+l] = packed_cols[group][r].
+```
+
+The derived leaf index is
+
+```
+j + 2^c * (l + 2*r),
+```
+
+so its coordinates are `[column | limb | original row]`, with each slice in
+little-endian order. The `wfbitz` product tree pairs halves, eliminating the
+highest remaining row bit first. Reducing exactly 13 levels therefore
+multiplies all 8192 original rows while retaining the low limb bit. The root
+at index `j + 2^c*l` is
+
+```
+product_r A_l(r)^source_bit[j,r]
+    = generator^sum_l[j].
+```
+
+This is precisely the order of the two supplied limb-sum vectors flattened
+limb-major. Reducing all 14 geometric levels instead would multiply the two
+limb roots together and would not establish the required claims.
+
+The geometric row width remains 14 in the table-driven/JIT kernels, while
+the proving loop visits only the 13 levels below the retained roots. At entry
+the root point has `c+1` coordinates; each layer adds one row coordinate. The
+final point has `c+14` coordinates, including the retained limb bit. A generic
+partial-depth forest requires `depth <= geometric_row_vars` and
+`root_point.len() == column_vars + geometric_row_vars - depth`; Falcon uses
+only the fixed values above.
+
 ## Accepted forest and challenge blocks
 
-The verifier checks `layers.len()==d`. Every layer rejects a `pair2`, so the
-experimental arity-four/degree-five protocol is not accepted by this bridge.
-The root table contains both limbs, including the limb coordinate in `s`.
-Its claimed integer sums and derived roots are absorbed before challenges.
+The entry claim is the MLE of the `2^s` limb/column roots at a fresh point.
+Each of the `d` layers sends two Gruen coefficients per sumcheck round, then
+a pair of child evaluations. The next layer's claim follows by interpolation
+of that pair. At layer `ell=0..d-1`, the incoming claim has `ell+s`
+coordinates. The limb remains among these root coordinates at every layer.
 
 1. **Root projection:** a wrong root table differs by a nonzero multilinear
-   polynomial in `s` variables, of total degree at most `s`. All `s` uniform
-   GF(2^128) draws are one uninterrupted challenge block. Cost: `s/2^128`.
-2. **Layer ell, phase A:** the `ell` in-tree coordinates run the eq-weighted
-   product sumcheck. The summand is `eq * left * right`, of individual degree
-   at most three. Layer zero has no phase A. Cost: `3*ell/2^128`.
-3. **Layer ell, phase B:** the `s` tree-index coordinates run the same
-   degree-at-most-three sumcheck. This includes the limb coordinate and is
-   not two independent forests. Cost: `3*s/2^128`.
-4. **Layer ell, pair reduction:** the verifier checks the product of the two
-   claimed child evaluations and absorbs the pair, then samples one line
-   challenge. If the pair is wrong, its interpolation error is nonzero of
-   degree at most one. Cost: `1/2^128`.
+   polynomial in `s` variables, of total degree at most `s`. Its `s` uniform
+   GF(2^128) coordinates share one uninterrupted challenge block. Raw cost:
+   `s/2^128`.
+2. **Layer sumcheck:** each of the `ell+s` rounds proves an eq-weighted
+   product, of degree at most three in the round variable. Each coefficient
+   pair is absorbed before its challenge is sampled. Layer cost:
+   `3*(ell+s)/2^128`.
+3. **Child-pair reduction:** after checking the claimed product and
+   absorbing both child evaluations, one challenge reduces the pair to its
+   line interpolation. A false pair has interpolation error of degree at
+   most one. Cost: `1/2^128`.
 
-`verify_eq_inner_sumcheck_gruen` accepts exactly two cofactor coefficients per
-round, reconstructs the constant from the current claim, absorbs the message,
-draws one challenge, and reabsorbs that challenge. Its full polynomial remains
-`eq1(X) * quadratic(X)`, of degree at most three. Coefficient recovery does not
-increase the degree or add a random exceptional-event term. In particular,
-when an equality factor vanishes at a sampled coordinate, that coordinate is
-already a root of the same degree-at-most-three false-round difference
-polynomial. It is not a separate failure event. The verifier never divides by
-an equality factor. Prover-only `recovery_inverses` uses an optional inverse;
-`eqf_inverse` returns `None` on zero and the original coefficient-computation
-kernel runs instead. A zero public coordinate therefore causes no undefined
-inverse or extra statistical assumption.
+The verifier's Gruen reconstruction handles a zero incoming coordinate by
+sending/checking the endpoint at one instead of dividing by zero. For a
+nonzero coordinate its division is by that known nonzero value. A vanishing
+accumulated equality factor does not add a separate exceptional-event term:
+it is already a root of the same degree-at-most-three false-round polynomial.
+The verifier checks the final eq factor times the two child values against
+the running claim.
 
-Each sumcheck round and each pair reduction has its own grinding block. The
-root vector shares one block and its entire degree `s` is charged to that
-block. The wrapper's inner nonce seed draw is forwarded directly and does not
-introduce a recursive unground protocol challenge. `finish()` rejects missing,
-extra, and invalid nonces before accepting the bridge result.
+One global bridge grinder spans the root point and all layer messages. Each
+sumcheck round and child-pair reduction starts a block by absorbing its
+message. Coordinates within the root vector share one block. The nonce-seed
+draw is forwarded directly and is not an additional unground protocol
+challenge. The verifier consumes exactly the expected forest messages and
+finishes the grinder; omitted, surplus, or invalid nonces cannot be accepted.
 
-L4/L8 select stored levels only. JIT, coefficient recovery, flat storage, and
-single/double/grid folding keep the same round messages and transcript order.
-In particular, double folding computes two messages from an internal bivariate
-grid but still absorbs and samples each univariate round separately. The
-quad forest entry point is not reachable from the multi-claim bridge path.
-
-Consequently, there are
+Consequently:
 
 ```
 R = sum(ell+s, ell=0..d-1) = d*(d-1)/2 + d*s
 blocks = 1 + R + d
-numerator = s + 3*R + d
+numerator = s + 3*R + d.
 ```
 
-The terminal leaf evaluation is exactly the binary linear claim returned by
-`binary_claim`: its constant-one part sums to one, and the limb MLE coordinates
-contract both sets of deterministic row weights against the same committed
-bit column. The separate joint sumcheck and PCS authenticate this claim; their
-error terms are already present in the whole hybrid report.
+The two limb root tables are projected together with one additional root
+coordinate. This accounting differs from two independent forest proofs,
+which would incur two root projections and two complete challenge schedules.
+The chosen implementation retains the batched reduction.
+
+## Terminal claim and coordinate order
+
+Leaf `(j,l,r)` has binary-field value
+
+```
+1 + (A_l(r) + 1) * source_bit[j,r].
+```
+
+Split the terminal point as `[column_point | eta | row_point]`. Its value
+`e` gives exactly the binary claim
+
+```
+low[r] = eq(row_point,r)
+         * sum_l eq(eta,l) * (A_l(r) + 1)
+high_point = column_point
+target = e + 1.
+```
+
+The constant-one contribution evaluates to one at every point, since the
+row, column, and limb equality weights each sum to one. Both limb copies
+share the same original bit, so their deterministic row factors contract
+before the existing joint binary sumcheck. It authenticates this claim
+against the arithmetic source commitment, together with the Keccak claims
+and explicit SHAKE/HashToPoint links. The joint sumcheck and PCS errors remain
+separate terms in the whole hybrid report.
+
+Exact shapes matter. The verifier accepts exactly two sum vectors, each of
+length `2^c`, and exactly `R+d` pairs in the forest message stream. It runs
+exactly `d` layers with `ell+s` sumcheck rounds per layer and consumes every
+pair. The terminal point has `c+d+1` coordinates. No proof-supplied dimensions,
+alternate degree schedule, or unused trailing messages override these
+layout-derived lengths. The source constructor fixes column counts and row
+lengths; the bridge checks weight counts and canonical weight bounds before
+handing buffers to the optimized forest.
 
 ## Derived difficulties and composition
 
@@ -117,18 +191,18 @@ error terms are already present in the whole hybrid report.
 | 512 | 15 | 273 | 287 | 847 | 18 |
 | 1024 | 16 | 286 | 300 | 887 | 18 |
 
-The code derives the numerator from the validated layout rather than substituting
-a smaller global magic constant. The unchanged category allocator chooses
+The numerator is derived from the validated layout. The unchanged category
+allocator uses
 
 ```
 g = max(0, target + 8 + ceil(log2(numerator)) - 128).
 ```
 
-Every bridge category remains at most `2^-(target+8)`. Target 100 needs zero
-grinding bits throughout the supported range. Target 128 needs 17 bits for one
-signature and 18 bits for every larger capacity, previously 20 bits everywhere.
-Expected nonce attempts per bridge block fall by eight times or four times,
-respectively; this is not a claim of that speedup for the whole prover.
+The bridge therefore remains at most `2^-(target+8)`. Target 100 needs zero
+grinding throughout the supported range. Target 128 needs 17 bits for one
+signature and 18 bits for every larger capacity. These counts and difficulties
+match the previous v5 merged-forest bridge, although its different variable
+order and the changed domains produce different messages and nonce seeds.
 
 The surrounding union allocation is unchanged: seven prime category budgets
 of `2^-133`, six binary budgets of `2^-136` including the bridge and both
@@ -139,45 +213,59 @@ Their normalized sum is at most
 7/32 + 6/256 + 1/4 + 2^-16 < 0.493
 ```
 
-at target 128. The programmatic security report checks the actual terms for
-both targets and all 1024 live batch sizes, including non-power-of-two batches.
+at target 128. The whole-composition report checks actual terms at both
+supported security targets for every live batch size, including batches
+whose capacity exceeds their live count.
 
-## Regression checks
+## Previous v5 implementation
 
-The bridge geometry test enumerates every supported live batch size, checks
-the exact row/column/limb shape, independently counts verifier rounds, and
-checks the exponent bound and full-order generator. The roundtrip test pins
-the emitted nonce count and rejects changed limbs, compensating limb sums,
-changed pairs, and omitted/extra/altered nonces. A domain test constructs old
-v2-domain and wrong-difficulty nonces that are invalid under the new domain,
-and confirms their rejection without relying on chance seed collisions.
-The whole hybrid report test enumerates all live batch sizes and both target
-levels, checking both the bridge category allocation and the complete report.
+The v5 statement used bridge grinding domain v3 and `merged_forest` over both
+limbs. Its terminal point was `[row | column | limb]`; v6 uses
+`[column | limb | row]`. Both retain the limb among the root coordinates,
+reduce 13 original source-row coordinates, and contract the limb weights
+into a single binary claim. Hence their degree/error accounting is identical.
+The optimized `wfbitz` forest computes its rounds using prescaled tables,
+bit-driven lower levels, fused dense folding, and an arena for the larger
+levels. This is an implementation change within that shared algebraic
+schedule, not authorization to reuse old proof transcripts or drop grinding.
+Before v5, the bridge used a conservative constant 4096 numerator and 20-bit
+grinding at target 128.
 
-These are implementation checks plus the analytical accounting above; they
-are not an independent cryptographic audit of the global Fiat-Shamir model.
+## Regression coverage
 
-## Code paths checked
+Relevant integration checks are: enumerate supported shapes and both
+security targets; compare the partially reduced optimized forest against an
+independent dense GKR oracle; verify the contracted terminal claim directly
+against original source bits; check continuation challenges; and pin exact
+message and nonce counts. Partial-depth tests need different images for the
+two copies of each source row, so an accidental limb product or permutation
+cannot pass unnoticed. Zero and one challenges exercise the Gruen endpoint
+branches and vanishing equality factors.
 
-- `hybrid_bridge.rs`: canonical limb construction, sum magnitude checks,
-  root derivation, `binary_claim`, and grinder completion.
-- `layout.rs`: `new_hybrid`, `row_vars`, `col_vars`, `bitz_params`.
-- `src/pcs.rs`: `mod_q_chunk_width`, `mod_q_num_chunks`,
-  `GF128_ORDER_PRIME_FACTORS`, `is_generator`, `smallest_generator`.
-- `src/merged_forest.rs`: `prove_merged_forest_lazy_multi_from_rows_with_scratch`,
-  `prove_merged_forest_lazy_multi_impl_options`, `drive_grouped_reuse`,
-  and `verify_merged_forest` (the accepted verifier).
-- `src/piop/sumcheck/eq_factored.rs`: `verify_eq_inner_sumcheck_gruen`,
-  `prove_eq_inner_sumcheck_mixed_prepared_recycle`, `recovery_inverses`, and the
-  per-round message/draw/reabsorb loop. `src/poly/univariate/binary_gf128.rs`
-  supplies the zero-checked `eqf_inverse`.
-- `hybrid_keccak/grinding.rs`: block boundary transitions and `finish`.
-  `src/piop/spartan/grinding.rs` binds domain, block index, and difficulty
-  before deriving a seed and absorbing the checked nonce.
-- `hybrid.rs`: whole-composition category accounting, `binary_grinding`,
-  statement binding, and the same layout-derived difficulty on both sides.
+Negative cases include altered and compensating limb sums, changed round
+coefficients or child pairs, missing or surplus messages, and omitted,
+surplus, invalid, wrong-domain, or wrong-difficulty nonces. Whole Falcon tests
+must continue to reject invalid public signatures, SHAKE/HashToPoint links,
+and individual norm violations.
 
-The standalone legacy `commitment-bound/v4` domain in `opening.rs` remains
-unchanged: it is used only by its separate prove/verify wrappers. The hybrid
-calls the prefix helpers, whose contract requires the enclosing caller to
-bind the statement. Only the hybrid benchmark's protocol label needs v5.
+These checks and the accounting above are implementation analysis, not an
+independent cryptographic audit of the global Fiat-Shamir model.
+
+## Code paths
+
+- `hybrid_bridge.rs`: limb construction, magnitude/read-off checks, root
+  derivation, interleaved source/images, forest adapter, endpoint contraction,
+  shape validation, and grinder completion.
+- `wfbitz/forest.rs`, `wfbitz/gkr.rs`, and `wfbitz/kernels.rs`: column-packed
+  forest, partial product depth, MSB-first arity-two GKR, table-driven rounds
+  and dense kernels.
+- `layout.rs` and `src/pcs.rs`: fixed source dimensions, limb widths, and
+  full-order generator checks.
+- `hybrid_keccak/grinding.rs` and `src/piop/spartan/grinding.rs`: block
+  boundaries and domain-, difficulty-, and index-bound nonces.
+- `hybrid.rs`: v6 statement binding, category accounting, existing joint
+  binary sumcheck, and shared PCS authentication.
+
+The separate legacy `commitment-bound/v4` wrapper in `opening.rs` remains
+unchanged. The hybrid calls its prefix helpers under the enclosing hybrid
+statement binding.

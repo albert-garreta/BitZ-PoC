@@ -157,7 +157,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         "{}",
         json!({
             "schema": "bitz/falcon-hybrid/v3",
-            "protocol": "bitz/falcon1024-ct/hybrid/non-zk/v5",
+            "protocol": "bitz/falcon1024-ct/hybrid/non-zk/v6",
+            "integer_bridge": "wfbitz-joint-limbs",
             "event": "prepared",
             "batch": options.batch,
             "capacity": prepared.capacity(),

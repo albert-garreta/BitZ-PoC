@@ -152,6 +152,102 @@ fn packed_forest_matches_dense_for_constant_bits() {
     }
 }
 
+#[test]
+fn partial_forest_matches_dense_and_binds_interleaved_images() {
+    // A tiny materialized case, the JIT path, and the wide prescaled path.
+    for (row_bits, column_bits) in [(4, 3), (6, 6), (6, 10)] {
+        let rows = 1usize << row_bits;
+        let columns = 1usize << column_bits;
+        let mut state = 0x47D2_9AE3_C168_05B9;
+        let original: Vec<Vec<u64>> = (0..columns.div_ceil(64))
+            .map(|_| (0..rows).map(|_| next_word(&mut state)).collect())
+            .collect();
+        let packed: Vec<Vec<u64>> = original
+            .iter()
+            .map(|group| group.iter().flat_map(|&bits| [bits, bits]).collect())
+            .collect();
+        let images: Vec<Gf> = (0..2 * rows).map(|_| next_field(&mut state)).collect();
+        let mut leaves = Vec::with_capacity(2 * rows * columns);
+        for (row, &image) in images.iter().enumerate() {
+            for column in 0..columns {
+                let bit = (original[column / 64][row / 2] >> (column % 64)) & 1;
+                leaves.push(if bit == 0 { Gf::one() } else { image });
+            }
+        }
+        let zeta: Vec<Gf> = (0..column_bits + 1)
+            .map(|i| match i % 3 {
+                0 => Gf::zero(),
+                1 => Gf::one(),
+                _ => next_field(&mut state),
+            })
+            .collect();
+        let (roots, witnesses) =
+            GrandProductCircuit::new(leaves.clone()).batched_eval(2 * columns);
+        // Roots are columns first, then the unmultiplied low row bit (limb).
+        for limb in 0..2 {
+            for column in 0..columns {
+                let expected = (0..rows).fold(Gf::one(), |acc, row| {
+                    if (original[column / 64][row] >> (column % 64)) & 1 == 0 {
+                        acc
+                    } else {
+                        acc * images[2 * row + limb]
+                    }
+                });
+                assert_eq!(roots[limb * columns + column], expected);
+            }
+        }
+        let root_claim = evaluate(roots, &zeta);
+        let session = "forest-partial-parity/v1";
+        let instance = format!("rows={row_bits};columns={column_bits}");
+        let mut dense = build_prover(session, instance.as_str());
+        let dense_terminal = gpgkr_prove(&mut dense, &zeta, witnesses);
+        let dense_proof = dense.finish();
+        let mut prover = build_prover(session, instance.as_str());
+        let terminal = Forest::new(row_bits + 1, column_bits, &packed, &images)
+            .prove_depth(&mut prover, &zeta, row_bits);
+        let proof = prover.finish();
+        assert_eq!(terminal, dense_terminal);
+        assert_eq!(proof, dense_proof);
+        assert_eq!(terminal.1, evaluate(leaves, &terminal.0));
+
+        // Authenticate the common source bits from [column | limb | row].
+        // This oracle evaluates equality weights directly, independently of
+        // the forest's table builders and variable-binding order.
+        let eq_at = |point: &[Gf], index: usize| {
+            point.iter().enumerate().fold(Gf::one(), |acc, (bit, &r)| {
+                acc * if index >> bit & 1 == 0 { Gf::one() + r } else { r }
+            })
+        };
+        let column_point = &terminal.0[..column_bits];
+        let limb_point = terminal.0[column_bits];
+        let row_point = &terminal.0[column_bits + 1..];
+        let mut target = Gf::zero();
+        for row in 0..rows {
+            let image_weight = (Gf::one() + limb_point) * (images[2 * row] + Gf::one())
+                + limb_point * (images[2 * row + 1] + Gf::one());
+            let low = eq_at(row_point, row) * image_weight;
+            for column in 0..columns {
+                if (original[column / 64][row] >> (column % 64)) & 1 != 0 {
+                    target += low * eq_at(column_point, column);
+                }
+            }
+        }
+        assert_eq!(target, terminal.1 + Gf::one());
+
+        let mut verifier = build_verifier(session, instance.as_str(), &proof);
+        assert_eq!(
+            gpgkr_verify(&mut verifier, root_claim, &zeta, row_bits as u32),
+            Some(terminal)
+        );
+        verifier.check_eof().unwrap();
+
+        let mut changed = proof.clone();
+        changed.narg_string[0] ^= 1;
+        let mut verifier = build_verifier(session, instance.as_str(), &changed);
+        assert!(gpgkr_verify(&mut verifier, root_claim, &zeta, row_bits as u32).is_none());
+    }
+}
+
 #[cfg(feature = "parallel")]
 #[test]
 fn packed_forest_transcript_is_independent_of_thread_count() {

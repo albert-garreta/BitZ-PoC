@@ -15,8 +15,8 @@ the remaining auxiliary witness is not guaranteed to be hidden.
 
 ## Public signatures and independent benchmark inputs
 
-The outer commitment-bound statement uses `v4`. The hybrid statement uses `v5`
-to bind its geometry-derived bridge grinding schedule; see
+The outer commitment-bound statement uses `v4`. The hybrid statement uses `v6`
+to bind the wfbitz bridge and its geometry-derived grinding schedule; see
 [BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md).
 Every CT signature byte has a linear equality against its eight committed bits,
 including the nonce and signed coefficient payload. Absorbing signatures into
@@ -874,3 +874,54 @@ upstream Falcon integration tests. Both alternate JIT forest configurations
 passed six tests each. Field validation passed 35 native, 33 PCLMUL-only, and
 31 portable GF128 unit tests, plus six integration tests in each configuration.
 Portable hybrid and serial Falcon build checks and scoped formatting passed.
+
+
+## wfbitz forest integration
+
+The `falcon-hybrid` feature includes `bitz-parity`. Its arithmetic bridge now
+uses the optimized wfbitz forest/GKR, including the wide-table prescaling and
+column-packed witness paths from `world-bitz-port` through `a3be3bd1`.
+The two bounded prime limbs remain batched in one forest: the limb is the
+lowest geometric row bit, and GKR reduces only the 13 original row dimensions.
+The final limb coordinate contracts the two public image vectors back onto one
+claim on the committed source bits. No dense virtual-map transpose is needed.
+
+The generic GKR transcript adapter keeps every root, sumcheck, and child-fold
+challenge inside Falcon's existing computational grinding model. The accepted
+bridge still has numerator 487..887 and 17/18-bit grinding at target 128. The
+hybrid statement/transcript is now v6 and the bridge grinding domain v4 because
+the GKR variable order and proof representation changed. Earlier hybrid proofs
+must be regenerated. Ordinary wfbitz proofs retain their original transcript.
+See [BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md) for the index mapping and
+complete budget.
+
+SHAKE, HashToPoint, the exact public signature bytes, and every signature's norm
+bound remain enforced. The binary Keccak PIOP, joint source-link sumcheck, and
+shared three-root ring-switch/Ligerito opening retain their constraints. The
+new GKR is used in the arithmetic opening bridge; the final shared PCS is not
+replaced by separate per-source openings.
+
+
+With the same native CPU, target 128, 16 threads, seed 42, and 1024 distinct
+signatures described above, one warmup plus three measured trials gave:
+
+| Configuration | Full prover ms/signature | Signatures/second | Peak RSS |
+| --- | ---: | ---: | ---: |
+| Matched rebased v5 baseline | 4.899 | 204.1 | 7.20 GiB |
+| Integrated wfbitz v6 | **4.685** | **213.4** | **5.21 GiB** |
+
+Full proving took 4.798 seconds per batch, 4.35% less than the matched rerun;
+verification took 2.671 seconds. All warmup and measured proofs verified, with
+identical inputs and commitment roots. A separate cold diagnostic at batch 256
+measured the complete arithmetic bridge at 0.803 to 0.459 ms/signature. This
+43% bridge reduction is not an end-to-end reduction of that size; prime
+arithmetic and the other stages remain. The new transcript changes grinding
+seeds, so timings are workload-specific. Raw medians, command/binary/source
+hashes, profiles, and test logs are in
+`bench_results/falcon-wfbitz-20260926/` (ignored local artifacts).
+
+Validation passed 622 native release library tests (seven ignored), three
+upstream Falcon integration tests, six forest parity/oracle tests, and 29
+targeted hybrid tests. Portable hybrid, serial legacy Falcon, and serial wfbitz
+build checks passed. The full release test run used a 16 MiB test worker stack;
+benchmark processes used their normal default stacks.

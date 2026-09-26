@@ -71,6 +71,59 @@ fn batch_inverse(xs: &[Gf]) -> Vec<Gf> {
     out
 }
 
+/// The GKR prover's message interface. A composition may use its own
+/// transcript, provided each pair is absorbed before the next challenge.
+/// The caller binds the statement and root claim before entering GKR.
+pub trait GkrProverTranscript {
+    fn write_pair(&mut self, pair: [Gf; 2]);
+    fn challenge(&mut self) -> Gf;
+
+    /// Draw after the two terminal children, which has its own native stage.
+    fn close_challenge(&mut self) -> Gf {
+        self.challenge()
+    }
+}
+
+/// The matching verifier interface. `read_pair` must absorb exactly the
+/// pair returned; the caller rejects any unconsumed proof messages.
+pub trait GkrVerifierTranscript {
+    fn read_pair(&mut self) -> Option<[Gf; 2]>;
+    /// Reject a malformed challenge frame or invalid grinding nonce.
+    fn challenge(&mut self) -> Option<Gf>;
+
+    fn close_challenge(&mut self) -> Option<Gf> {
+        self.challenge()
+    }
+}
+
+impl GkrProverTranscript for ProverState {
+    fn write_pair(&mut self, pair: [Gf; 2]) {
+        self.prover_message(&pair);
+    }
+
+    fn challenge(&mut self) -> Gf {
+        self.native_scalar(super::grinding::Stage::GkrRound)
+    }
+
+    fn close_challenge(&mut self) -> Gf {
+        self.native_scalar(super::grinding::Stage::GkrClose)
+    }
+}
+
+impl GkrVerifierTranscript for VerifierState<'_> {
+    fn read_pair(&mut self) -> Option<[Gf; 2]> {
+        self.prover_message().ok()
+    }
+
+    fn challenge(&mut self) -> Option<Gf> {
+        self.native_scalar(super::grinding::Stage::GkrRound).ok()
+    }
+
+    fn close_challenge(&mut self) -> Option<Gf> {
+        self.native_scalar(super::grinding::Stage::GkrClose).ok()
+    }
+}
+
 /// The batched product tree: leaves at the bottom, `groups` roots at the
 /// top, product pairs `(i, i + half)` on the top index bit.
 pub struct GrandProductCircuit {
@@ -110,7 +163,11 @@ impl GrandProductCircuit {
 /// Proves the reduction from a claim at `point` on the output layer down to
 /// a claim on the leaves; returns the leaf point and the claimed leaf MLE
 /// value.
-pub fn gpgkr_prove(ps: &mut ProverState, point: &[Gf], witnesses: LayerWitnesses) -> (Vec<Gf>, Gf) {
+pub fn gpgkr_prove(
+    ps: &mut impl GkrProverTranscript,
+    point: &[Gf],
+    witnesses: LayerWitnesses,
+) -> (Vec<Gf>, Gf) {
     let mut point = point.to_owned();
     point.reverse();
     let mut point = VecDeque::from(point);
@@ -124,7 +181,7 @@ pub fn gpgkr_prove(ps: &mut ProverState, point: &[Gf], witnesses: LayerWitnesses
     (point, claim)
 }
 
-fn prove_layer(ps: &mut ProverState, point: Point, mut wnext: Vec<Gf>) -> (Point, Gf) {
+fn prove_layer(ps: &mut impl GkrProverTranscript, point: Point, mut wnext: Vec<Gf>) -> (Point, Gf) {
     let mid = wnext.len() / 2;
     let (mle_l, mle_r) = wnext.split_at_mut(mid);
     prove_layer_from(ps, point, mle_l, mle_r, 0, Gf::one(), VecDeque::new())
@@ -135,7 +192,7 @@ fn prove_layer(ps: &mut ProverState, point: Point, mut wnext: Vec<Gf>) -> (Point
 /// `next_point`, their eq factors in `factor`) and `mle_l`/`mle_r` are the
 /// two halves folded that far.
 pub(crate) fn prove_layer_from(
-    ps: &mut ProverState,
+    ps: &mut impl GkrProverTranscript,
     point: Point,
     mle_l: &mut [Gf],
     mle_r: &mut [Gf],
@@ -162,7 +219,7 @@ pub(crate) fn prove_layer_from(
 /// built; once only column bits remain the table is small and built as is.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prove_layer_tensor(
-    ps: &mut ProverState,
+    ps: &mut impl GkrProverTranscript,
     point: Point,
     mle_l: &mut [Gf],
     mle_r: &mut [Gf],
@@ -198,7 +255,7 @@ fn fold_halves(v: &mut [Gf], rho: Gf) {
 /// back out of its `2^s` entries.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prove_dense_rounds(
-    ps: &mut ProverState,
+    ps: &mut impl GkrProverTranscript,
     point: Point,
     mut mle_l: &mut [Gf],
     mut mle_r: &mut [Gf],
@@ -298,9 +355,9 @@ pub(crate) fn prove_dense_rounds(
                 kernels::round_sums(lo_l, hi_l, lo_r, hi_r, weights, send_one)
             }
         };
-        ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
+        ps.write_pair([factor * sum_endpoint, factor * sum_inf]);
 
-        let r: Gf = ps.native_scalar(super::grinding::Stage::GkrRound);
+        let r = ps.challenge();
         next_point.push_back(r);
         pending = Some(r);
         // The folded table (once `r` is applied) has `h` entries per half;
@@ -315,8 +372,8 @@ pub(crate) fn prove_dense_rounds(
         mle_l[0] = mle_l[0] + rho * (mle_l[1] - mle_l[0]);
         mle_r[0] = mle_r[0] + rho * (mle_r[1] - mle_r[0]);
     }
-    ps.prover_message(&[mle_l[0], mle_r[0]]);
-    let r: Gf = ps.native_scalar(super::grinding::Stage::GkrClose);
+    ps.write_pair([mle_l[0], mle_r[0]]);
+    let r = ps.close_challenge();
     next_point.push_front(r);
     let claim = mle_l[0] + r * (mle_r[0] - mle_l[0]);
     (next_point, claim)
@@ -335,7 +392,7 @@ pub(crate) fn eq_table(point: &[Gf]) -> Vec<Gf> {
 /// check or short read.
 #[must_use]
 pub fn gpgkr_verify(
-    vs: &mut VerifierState<'_>,
+    vs: &mut impl GkrVerifierTranscript,
     mut claim: Gf,
     point: &[Gf],
     rounds: u32,
@@ -351,20 +408,20 @@ pub fn gpgkr_verify(
     Some((point, claim))
 }
 
-fn verify_layer(vs: &mut VerifierState<'_>, mut claim: Gf, point: Point) -> Option<(Point, Gf)> {
+fn verify_layer(vs: &mut impl GkrVerifierTranscript, mut claim: Gf, point: Point) -> Option<(Point, Gf)> {
     let one = Gf::one();
     let mut prefix = one;
     let mut next_point: Point = VecDeque::new();
 
     for z in point {
-        let [sum_endpoint, suminf]: [Gf; 2] = vs.prover_message().ok()?;
+        let [sum_endpoint, suminf] = vs.read_pair()?;
         let (sum0, sum1) = if z == Gf::zero() {
             (claim, sum_endpoint)
         } else {
             let eqjsum0 = (one - z) * sum_endpoint;
             (sum_endpoint, (claim - eqjsum0) / z)
         };
-        let r: Gf = vs.native_scalar(super::grinding::Stage::GkrRound).ok()?;
+        let r = vs.challenge()?;
         next_point.push_back(r);
         let factor = eq_factor(r, z);
         let bracket = (sum1 - sum0) + (r - one) * suminf;
@@ -372,11 +429,11 @@ fn verify_layer(vs: &mut VerifierState<'_>, mut claim: Gf, point: Point) -> Opti
         prefix = prefix * factor;
     }
 
-    let elem_lr: [Gf; 2] = vs.prover_message().ok()?;
+    let elem_lr = vs.read_pair()?;
     if prefix * elem_lr[0] * elem_lr[1] != claim {
         return None;
     }
-    let r: Gf = vs.native_scalar(super::grinding::Stage::GkrClose).ok()?;
+    let r = vs.close_challenge()?;
     next_point.push_front(r);
     claim = elem_lr[0] + r * (elem_lr[1] - elem_lr[0]);
     Some((next_point, claim))

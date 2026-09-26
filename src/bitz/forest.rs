@@ -40,9 +40,8 @@ use rayon::prelude::*;
 pub(crate) use self::nibble::NibbleRows;
 use self::nibble::{BitSelectors, Selector};
 use super::eq_factor;
-use super::gkr::{Point, Weighing, eq_table, prove_dense_rounds, prove_layer_tensor, weighable};
+use super::gkr::{GkrProverTranscript, Point, Weighing, eq_table, prove_dense_rounds, prove_layer_tensor, weighable};
 use super::kernels;
-use super::transcript::ProverState;
 use crate::{cfg_chunks_mut, cfg_into_iter};
 use field::Gf128 as Gf;
 
@@ -245,7 +244,23 @@ impl<'a> Forest<'a> {
 
     /// Their `gpgkr_prove` over this tree: from the claim at `zeta` on the
     /// roots down to the leaf point and the claimed leaf value.
-    pub(crate) fn prove(&self, ps: &mut ProverState, zeta: &[Gf]) -> (Vec<Gf>, Gf) {
+    pub(crate) fn prove(&self, ps: &mut impl GkrProverTranscript, zeta: &[Gf]) -> (Vec<Gf>, Gf) {
+        self.prove_depth(ps, zeta, self.t)
+    }
+
+    /// Proves `depth` product layers, leaving the low `t - depth` row bits
+    /// unmultiplied. The root point is `[column | unmultiplied row]`; the
+    /// returned leaf point is `[column | all row]`, both little-endian.
+    /// For example, interleaving distinct row images in the low row bit
+    /// batches two forests without multiplying their roots together.
+    pub(crate) fn prove_depth(
+        &self,
+        ps: &mut impl GkrProverTranscript,
+        zeta: &[Gf],
+        depth: usize,
+    ) -> (Vec<Gf>, Gf) {
+        assert!(depth > 0 && depth <= self.t, "invalid product-tree depth");
+        assert_eq!(zeta.len(), self.s + self.t - depth, "root point shape");
         let t = self.t;
         let started = std::time::Instant::now();
         // The materialised path for tiny `t`: level 3 in full, the levels
@@ -296,7 +311,7 @@ impl<'a> Forest<'a> {
         // Each table-driven level's tables have `2^{t+5}` entries; the buffer
         // goes from level 3 down to level 0 instead of a fresh one per level.
         let mut spare_tables: Vec<Gf> = Vec::new();
-        for ell in (0..t).rev() {
+        for ell in (0..depth).rev() {
             let started = std::time::Instant::now();
             (point, claim) = if let Some(mut wnext) = levels[ell].take() {
                 let mid = wnext.len() / 2;
@@ -380,7 +395,7 @@ impl<'a> Forest<'a> {
     /// accumulated eq factor and the next point so far.
     fn bit_rounds(
         &self,
-        ps: &mut ProverState,
+        ps: &mut impl GkrProverTranscript,
         ell: usize,
         k: usize,
         point: &Point,
@@ -398,8 +413,8 @@ impl<'a> Forest<'a> {
             let send_one = z == Gf::zero();
             let (sum_endpoint, sum_inf) = self.bit_round(ell, j, &challenges, external, send_one);
             super::trace(&format!("    L{ell} bit round {j}"), started);
-            ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
-            let r: Gf = ps.native_scalar(super::grinding::Stage::GkrRound);
+            ps.write_pair([factor * sum_endpoint, factor * sum_inf]);
+            let r = ps.challenge();
             next_point.push_back(r);
             challenges.push(r);
             factor = factor * eq_factor(r, z);
@@ -423,7 +438,7 @@ impl<'a> Forest<'a> {
     /// off buckets).
     fn one_pass_bit_rounds(
         &self,
-        ps: &mut ProverState,
+        ps: &mut impl GkrProverTranscript,
         ell: usize,
         k: usize,
         point: &Point,
@@ -439,8 +454,8 @@ impl<'a> Forest<'a> {
         for j in 1..=k {
             let send_one = z[j - 1] == Gf::zero();
             let (sum_endpoint, sum_inf) = cross_round_sums(&cross, k, j, &z, &challenges, send_one);
-            ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
-            let r: Gf = ps.native_scalar(super::grinding::Stage::GkrRound);
+            ps.write_pair([factor * sum_endpoint, factor * sum_inf]);
+            let r = ps.challenge();
             next_point.push_back(r);
             challenges.push(r);
             factor = factor * eq_factor(r, z[j - 1]);
@@ -582,7 +597,7 @@ impl<'a> Forest<'a> {
     #[allow(clippy::too_many_arguments)]
     fn prove_jit_level(
         &self,
-        ps: &mut ProverState,
+        ps: &mut impl GkrProverTranscript,
         ell: usize,
         point: Point,
         tables: Option<Tables>,
@@ -613,8 +628,8 @@ impl<'a> Forest<'a> {
         let eq_y = eq_table(&external[s..s + low_bits - 1]);
         let (sum_endpoint, sum_inf) = self.jit_round_sums(&tables, ell, k, &eq_c, &eq_y, send_one);
         super::trace(&format!("    L{ell} jit round"), started);
-        ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
-        let r1: Gf = ps.native_scalar(super::grinding::Stage::GkrRound);
+        ps.write_pair([factor * sum_endpoint, factor * sum_inf]);
+        let r1 = ps.challenge();
         next_point.push_back(r1);
         factor = factor * eq_factor(r1, z);
 
@@ -651,8 +666,8 @@ impl<'a> Forest<'a> {
         };
         let (sum_endpoint, sum_inf) = fold(arena);
         super::trace(&format!("    L{ell} jit fold"), started);
-        ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
-        let r2: Gf = ps.native_scalar(super::grinding::Stage::GkrRound);
+        ps.write_pair([factor * sum_endpoint, factor * sum_inf]);
+        let r2 = ps.challenge();
         next_point.push_back(r2);
         factor = factor * eq_factor(r2, z);
         // The tables are done with: their buffer serves the next level.
@@ -684,7 +699,7 @@ impl<'a> Forest<'a> {
 
     /// The pre-arena path for tiny `t`: `k` rounds off the bits, then the
     /// folded halves are materialised and the dense rounds continue.
-    fn prove_bit_level(&self, ps: &mut ProverState, ell: usize, point: Point) -> (Point, Gf) {
+    fn prove_bit_level(&self, ps: &mut impl GkrProverTranscript, ell: usize, point: Point) -> (Point, Gf) {
         let k = (MATERIALISED_LEVEL - ell).min(self.t - ell - 1);
         let external: Vec<Gf> = point.iter().rev().copied().collect();
         let (challenges, factor, next_point) = self.bit_rounds(ps, ell, k, &point, &external);
