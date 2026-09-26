@@ -51,6 +51,20 @@ impl Tables {
     fn at(&self, q: usize) -> &[Gf] {
         &self.data[q * self.len..(q + 1) * self.len]
     }
+
+    /// Absorb the next fold into each position table once, so columns can
+    /// evaluate `(1-rho)·T0[a] + rho·T1[b]` with two lookups and an XOR.
+    fn scale_fold(&mut self, low_bits: usize, rho: Gf) {
+        let side_len = (1usize << (low_bits - 1)) * self.len;
+        let chunk_len = PARALLEL_MIN_LANES.min(side_len);
+        let weights = [Gf::one() - rho, rho];
+        cfg_chunks_mut!(self.data, chunk_len)
+            .enumerate()
+            .for_each(|(i, values)| {
+                let side = (i * chunk_len / side_len) & 1;
+                kernels::scale_in_place(values, &weights[side]);
+            });
+    }
 }
 
 pub(crate) struct Forest<'a> {
@@ -103,7 +117,7 @@ impl<'a> Forest<'a> {
         // for `2^{t−4+s}` more entries of peak: 256 MB here, 4 GB at
         // n = 32.)
         let mut arena: Vec<Gf> = Vec::new();
-        let tables3 = if self.jit() {
+        let mut tables3 = if self.jit() {
             let tables = self.fold_table(MATERIALISED_LEVEL, 0, &[]);
             super::trace("    L3 value tables", started);
             let started = std::time::Instant::now();
@@ -150,7 +164,7 @@ impl<'a> Forest<'a> {
                 let (l, r) = arena.split_at_mut(mid);
                 prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s)
             } else if self.jit() {
-                let tables = if ell == MATERIALISED_LEVEL { tables3.as_ref() } else { None };
+                let tables = if ell == MATERIALISED_LEVEL { tables3.take() } else { None };
                 self.prove_jit_level(ps, ell, point, tables, &mut arena)
             } else {
                 self.prove_bit_level(ps, ell, point)
@@ -208,7 +222,7 @@ impl<'a> Forest<'a> {
         ps: &mut ProverState,
         ell: usize,
         point: Point,
-        tables: Option<&Tables>,
+        tables: Option<Tables>,
         arena: &mut Vec<Gf>,
     ) -> (Point, Gf) {
         let t = self.t;
@@ -220,13 +234,9 @@ impl<'a> Forest<'a> {
         debug_assert!(low_bits >= 2);
 
         let started = std::time::Instant::now();
-        let owned;
-        let tables = match tables {
+        let mut tables = match tables {
             Some(tables) if k == 0 => tables,
-            _ => {
-                owned = self.fold_table(ell, k, &challenges);
-                &owned
-            }
+            _ => self.fold_table(ell, k, &challenges),
         };
         let eq_c = eq_table(&external[..s]);
         super::trace(&format!("    L{ell} tables"), started);
@@ -236,21 +246,29 @@ impl<'a> Forest<'a> {
         let z = point[k];
         let send_one = z == Gf::zero();
         let eq_y = eq_table(&external[s..s + low_bits - 1]);
-        let (sum_endpoint, sum_inf) = self.jit_round_sums(tables, ell, k, &eq_c, &eq_y, send_one);
+        let (sum_endpoint, sum_inf) = self.jit_round_sums(&tables, ell, k, &eq_c, &eq_y, send_one);
         super::trace(&format!("    L{ell} jit round"), started);
         ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
         let r1: Gf = ps.verifier_message();
         next_point.push_back(r1);
         factor = factor * eq_factor(r1, z);
 
-        // Round k + 2 off the tables, `r1` folded in registers, the folded
-        // halves written to the arena.
+        // Round k + 2 writes the folded halves to the arena. On wide rows,
+        // pre-scale the shared tables instead of multiplying every column;
+        // narrow rows retain the in-register fold to avoid the extra pass.
         let started = std::time::Instant::now();
         let z = point[k + 1];
         let send_one = z == Gf::zero();
         let eq_y = eq_table(&external[s..s + low_bits - 2]);
-        let (sum_endpoint, sum_inf) =
-            self.jit_fold_round(tables, ell, k, r1, &eq_c, &eq_y, send_one, arena);
+        // Scaling costs one multiply per table entry; the original fold
+        // costs one per pair of tables per column. Require at least a 2x
+        // reduction in those multiplies to offset the table read/write pass.
+        let (sum_endpoint, sum_inf) = if (1usize << s) >= 4 * tables.len {
+            tables.scale_fold(low_bits, r1);
+            self.jit_fold_round::<true>(&tables, ell, k, r1, &eq_c, &eq_y, send_one, arena)
+        } else {
+            self.jit_fold_round::<false>(&tables, ell, k, r1, &eq_c, &eq_y, send_one, arena)
+        };
         super::trace(&format!("    L{ell} jit fold"), started);
         ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
         let r2: Gf = ps.verifier_message();
@@ -569,11 +587,12 @@ impl<'a> Forest<'a> {
     }
 
     /// Round `k + 2` of level `ell` through its `k`-fold tables with the
-    /// previous challenge `rho` folded on the fly: writes the once-folded
+    /// previous challenge `rho` absorbed in the tables or folded on the fly:
+    /// writes the once-folded
     /// halves (`E'` then `O'`, each `2^{low_bits−1}` rows of `2^s`) into
     /// `arena` and returns this round's sums over the corners `(b2, y2)`.
     #[allow(clippy::too_many_arguments)]
-    fn jit_fold_round(
+    fn jit_fold_round<const PRE_SCALED: bool>(
         &self,
         tables: &Tables,
         ell: usize,
@@ -595,7 +614,7 @@ impl<'a> Forest<'a> {
             // First fill: through the spare capacity, no memset.
             arena.clear();
             let spare = &mut arena.spare_capacity_mut()[..len];
-            let sums = self.jit_fold_into(tables, ell, k, rho, eq_c, eq_y, send_one, spare);
+            let sums = self.jit_fold_into::<PRE_SCALED>(tables, ell, k, rho, eq_c, eq_y, send_one, spare);
             // SAFETY: `jit_fold_into` writes every slot of both halves.
             unsafe { arena.set_len(len) };
             sums
@@ -606,12 +625,12 @@ impl<'a> Forest<'a> {
             let view = unsafe {
                 std::slice::from_raw_parts_mut(slots.as_mut_ptr().cast::<MaybeUninit<Gf>>(), len)
             };
-            self.jit_fold_into(tables, ell, k, rho, eq_c, eq_y, send_one, view)
+            self.jit_fold_into::<PRE_SCALED>(tables, ell, k, rho, eq_c, eq_y, send_one, view)
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn jit_fold_into(
+    fn jit_fold_into<const PRE_SCALED: bool>(
         &self,
         tables: &Tables,
         ell: usize,
@@ -655,7 +674,7 @@ impl<'a> Forest<'a> {
                     let base_c = g << 6;
                     let width = 64.min(cols - base_c);
                     let range = base_c..base_c + width;
-                    kernels::jit_fold_group(
+                    kernels::jit_fold_group::<PRE_SCALED>(
                         tab,
                         &pats,
                         &rho,
@@ -1116,6 +1135,10 @@ fn transpose8x8(mut x: u64) -> u64 {
     x ^= t ^ (t << 28);
     x
 }
+
+#[cfg(test)]
+#[path = "forest_tests.rs"]
+mod parity_tests;
 
 #[cfg(test)]
 mod tests {

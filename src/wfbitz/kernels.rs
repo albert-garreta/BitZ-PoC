@@ -254,9 +254,10 @@ pub(crate) fn jit_bucket_finish(tab_e: [&[Gf]; 2], send_one: bool, bk: &SumBucke
 /// `b2` this round's bit); writes the folded values
 /// `E'(b2) = E(b1=0, b2) + rho·(E(1, b2) − E(0, b2))` to `out_l[b2]` (and
 /// `O'` to `out_r`, both `out_l[b].len()` columns wide) and accumulates
-/// the round sums over the folded pairs.
+/// the round sums over the folded pairs. With `PRE_SCALED`, the tables
+/// already include the `1 + rho` and `rho` weights, so a fold is an addition.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn jit_fold_group(
+pub(crate) fn jit_fold_group<const PRE_SCALED: bool>(
     tab: [&[Gf]; 8],
     pat: &[[u8; 64]; 8],
     rho: &Gf,
@@ -267,9 +268,17 @@ pub(crate) fn jit_fold_group(
     sums: &mut Sums,
 ) {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    neon::jit_fold_group(tab, pat, rho, eq_t, send_one, out_l, out_r, &mut sums.0);
+    neon::jit_fold_group::<PRE_SCALED>(tab, pat, rho, eq_t, send_one, out_l, out_r, &mut sums.0);
     #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-    generic::jit_fold_group(tab, pat, rho, eq_t, send_one, out_l, out_r, &mut sums.0);
+    generic::jit_fold_group::<PRE_SCALED>(tab, pat, rho, eq_t, send_one, out_l, out_r, &mut sums.0);
+}
+
+/// Multiply every value by the same scalar.
+pub(crate) fn scale_in_place(values: &mut [Gf], scalar: &Gf) {
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    neon::scale_in_place(values, scalar);
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    generic::scale_in_place(values, scalar);
 }
 
 /// One group of a product level: `out[c] = tab[0][pat[0][m]] · tab[1][pat[1][m]]`
@@ -563,7 +572,7 @@ pub(crate) mod generic {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn jit_fold_group(
+    pub(crate) fn jit_fold_group<const PRE_SCALED: bool>(
         tab: [&[Gf]; 8],
         pat: &[[u8; 64]; 8],
         rho: &Gf,
@@ -577,21 +586,28 @@ pub(crate) mod generic {
         let [out_l0, out_l1] = out_l;
         let [out_r0, out_r1] = out_r;
         let width = out_l0.len();
+        let combine = |v0, v1| if PRE_SCALED { v0 + v1 } else { fold(*rho, v0, v1) };
         for m in 0..64 {
             let c = super::col_of(m);
             if c >= width {
                 continue;
             }
             let v = |i: usize| tab[i][pat[i][m] as usize];
-            let fl0 = fold(*rho, v(0b000), v(0b010));
-            let fl1 = fold(*rho, v(0b001), v(0b011));
-            let fr0 = fold(*rho, v(0b100), v(0b110));
-            let fr1 = fold(*rho, v(0b101), v(0b111));
+            let fl0 = combine(v(0b000), v(0b010));
+            let fl1 = combine(v(0b001), v(0b011));
+            let fr0 = combine(v(0b100), v(0b110));
+            let fr1 = combine(v(0b101), v(0b111));
             out_l0[c].write(fl0);
             out_l1[c].write(fl1);
             out_r0[c].write(fr0);
             out_r1[c].write(fr1);
             sums.slot(eq_t[m], fl0, fl1, fr0, fr1, send_one);
+        }
+    }
+
+    pub(crate) fn scale_in_place(values: &mut [Gf], scalar: &Gf) {
+        for value in values {
+            *value = *value * *scalar;
         }
     }
 
@@ -1068,7 +1084,7 @@ pub(crate) mod neon {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn jit_fold_group(
+    pub(crate) fn jit_fold_group<const PRE_SCALED: bool>(
         tab: [&[Gf]; 8],
         pat: &[[u8; 64]; 8],
         rho: &Gf,
@@ -1087,9 +1103,12 @@ pub(crate) mod neon {
         // SAFETY: as `jit_sums_group`; a store's column is checked
         // against `width` (never taken for a full group).
         unsafe {
-            let (rl, rh) = prep_fixed(rho);
             let g = vdupq_n_u64(0x87);
             let z = vdupq_n_u64(0);
+            let (rl, rh) = if PRE_SCALED { (z, z) } else { prep_fixed(rho) };
+            let combine = |v0, v1| {
+                if PRE_SCALED { veorq_u64(v0, v1) } else { fold1(rl, rh, g, z, v0, v1) }
+            };
             let (mut eb, mut ib) = (acc_zero(), acc_zero());
             macro_rules! column {
                 ($m:expr, $end:expr, $inf:expr) => {{
@@ -1097,10 +1116,10 @@ pub(crate) mod neon {
                     let c = super::col_of(m);
                     if c < width {
                         let v = |i: usize| ld(tab[i].get_unchecked(pat[i][m] as usize));
-                        let fl0 = fold1(rl, rh, g, z, v(0b000), v(0b010));
-                        let fl1 = fold1(rl, rh, g, z, v(0b001), v(0b011));
-                        let fr0 = fold1(rl, rh, g, z, v(0b100), v(0b110));
-                        let fr1 = fold1(rl, rh, g, z, v(0b101), v(0b111));
+                        let fl0 = combine(v(0b000), v(0b010));
+                        let fl1 = combine(v(0b001), v(0b011));
+                        let fr0 = combine(v(0b100), v(0b110));
+                        let fr1 = combine(v(0b101), v(0b111));
                         st_uninit(out_l0.get_unchecked_mut(c), fl0);
                         st_uninit(out_l1.get_unchecked_mut(c), fl1);
                         st_uninit(out_r0.get_unchecked_mut(c), fr0);
@@ -1117,6 +1136,27 @@ pub(crate) mod neon {
             }
             acc_add(&mut sums.end, eb);
             acc_add(&mut sums.inf, ib);
+        }
+    }
+
+    pub(crate) fn scale_in_place(values: &mut [Gf], scalar: &Gf) {
+        // SAFETY: as `neon::pmull_lo`; every index is bounded by `values`.
+        unsafe {
+            let (rl, rh) = prep_fixed(scalar);
+            let g = vdupq_n_u64(0x87);
+            let z = vdupq_n_u64(0);
+            let mut i = 0usize;
+            while i + 2 <= values.len() {
+                let p0 = mul_fixed(ld(values.get_unchecked(i)), rl, rh, g, z);
+                let p1 = mul_fixed(ld(values.get_unchecked(i + 1)), rl, rh, g, z);
+                st(values.get_unchecked_mut(i), p0);
+                st(values.get_unchecked_mut(i + 1), p1);
+                i += 2;
+            }
+            if i < values.len() {
+                let p = mul_fixed(ld(values.get_unchecked(i)), rl, rh, g, z);
+                st(values.get_unchecked_mut(i), p);
+            }
         }
     }
 
@@ -1417,7 +1457,7 @@ mod tests {
                     let (l, r) = out.split_at_mut(2);
                     let (l0, l1) = l.split_at_mut(1);
                     let (r0, r1) = r.split_at_mut(1);
-                    jit_fold_group(
+                    jit_fold_group::<false>(
                         tab8, &pats, &rho, &w, send_one, [&mut l0[0], &mut l1[0]], [&mut r0[0], &mut r1[0]],
                         &mut got,
                     );
@@ -1427,7 +1467,7 @@ mod tests {
                     let (l, r) = want_out.split_at_mut(2);
                     let (l0, l1) = l.split_at_mut(1);
                     let (r0, r1) = r.split_at_mut(1);
-                    generic::jit_fold_group(
+                    generic::jit_fold_group::<false>(
                         tab8, &pats, &rho, &w, send_one, [&mut l0[0], &mut l1[0]], [&mut r0[0], &mut r1[0]],
                         &mut want,
                     );
@@ -1442,6 +1482,77 @@ mod tests {
             jit_product_group(tab2, &pat2, &mut got);
             generic::jit_product_group(tab2, &pat2, &mut want);
             assert_eq!(init(&[got]), init(&[want]), "product n {n}");
+        }
+    }
+
+    #[test]
+    fn pre_scaled_jit_fold_matches_the_original_fold() {
+        let tabs: Vec<Vec<Gf>> = (0..8).map(|i| elements(256, 110 + i)).collect();
+        let pats: [[u8; 64]; 8] =
+            std::array::from_fn(|i| std::array::from_fn(|m| (53 * i + 17 * m) as u8));
+        let w = elements(64, 120);
+        for rho in [Gf::zero(), Gf::one(), elements(1, 121)[0]] {
+            let scaled: Vec<Vec<Gf>> = tabs.iter().enumerate().map(|(i, table)| {
+                let weight = if i & 2 == 0 { Gf::one() + rho } else { rho };
+                table.iter().map(|&value| value * weight).collect()
+            }).collect();
+            let tab8: [&[Gf]; 8] = std::array::from_fn(|i| &tabs[i][..]);
+            let scaled8: [&[Gf]; 8] = std::array::from_fn(|i| &scaled[i][..]);
+            for n in [0usize, 1, 2, 3, 5, 31, 63, 64] {
+                for send_one in [false, true] {
+                    let mut want_out = vec![vec![MaybeUninit::new(Gf::zero()); n]; 4];
+                    let mut want = generic::Sums::zero();
+                    {
+                        let (l, r) = want_out.split_at_mut(2);
+                        let (l0, l1) = l.split_at_mut(1);
+                        let (r0, r1) = r.split_at_mut(1);
+                        generic::jit_fold_group::<false>(
+                            tab8, &pats, &rho, &w, send_one,
+                            [&mut l0[0], &mut l1[0]], [&mut r0[0], &mut r1[0]], &mut want,
+                        );
+                    }
+                    let want = want.finish();
+                    for portable in [false, true] {
+                        let mut out = vec![vec![MaybeUninit::new(Gf::zero()); n]; 4];
+                        let (l, r) = out.split_at_mut(2);
+                        let (l0, l1) = l.split_at_mut(1);
+                        let (r0, r1) = r.split_at_mut(1);
+                        let got = if portable {
+                            let mut sums = generic::Sums::zero();
+                            generic::jit_fold_group::<true>(
+                                scaled8, &pats, &rho, &w, send_one,
+                                [&mut l0[0], &mut l1[0]], [&mut r0[0], &mut r1[0]], &mut sums,
+                            );
+                            sums.finish()
+                        } else {
+                            let mut sums = Sums::zero();
+                            jit_fold_group::<true>(
+                                scaled8, &pats, &rho, &w, send_one,
+                                [&mut l0[0], &mut l1[0]], [&mut r0[0], &mut r1[0]], &mut sums,
+                            );
+                            sums.finish()
+                        };
+                        assert_eq!(got, want, "n {n} send_one {send_one} portable {portable}");
+                        assert_eq!(init(&out), init(&want_out));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn scale_in_place_matches_the_field_multiply() {
+        for n in [0usize, 1, 2, 3, 7, 64, 65, 255, 256, 257] {
+            let values = elements(n, 130);
+            for scalar in [Gf::zero(), Gf::one(), elements(1, 131)[0]] {
+                let want: Vec<Gf> = values.iter().map(|&value| value * scalar).collect();
+                let mut got = values.clone();
+                scale_in_place(&mut got, &scalar);
+                assert_eq!(got, want, "n {n}");
+                let mut portable = values.clone();
+                generic::scale_in_place(&mut portable, &scalar);
+                assert_eq!(portable, want, "portable n {n}");
+            }
         }
     }
 
