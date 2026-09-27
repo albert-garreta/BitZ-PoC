@@ -1246,7 +1246,7 @@ impl StreamingCoefficientSource for BindingForm<'_> {
         })())
     }
 
-    fn for_each_partition_folded(
+    fn for_each_partition_folded_final(
         &self,
         partition: usize,
         weights: &[F],

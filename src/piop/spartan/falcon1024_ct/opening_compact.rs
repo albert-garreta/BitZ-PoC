@@ -291,6 +291,7 @@ impl<A: WordAccumulator> CoefficientSink for WordSink<'_, A> {
 }
 
 impl CompiledCoefficients {
+    /// Emit each folded coefficient's final sum once in increasing index order.
     pub(super) fn emit_folded(
         &self,
         base: usize,
@@ -1077,9 +1078,12 @@ mod tests {
                         })
                         .collect();
                     let mut folded = vec![field.zero(); reference.len()];
+                    let mut next = base / width;
                     compact
                         .emit_folded(base, &weights, &field, &mut |index, value| {
-                            folded[index] = field.add(&folded[index], &value);
+                            assert!(index >= next, "folded replay must contain final sums");
+                            next = index + 1;
+                            folded[index] = value;
                             Ok(())
                         })
                         .unwrap();

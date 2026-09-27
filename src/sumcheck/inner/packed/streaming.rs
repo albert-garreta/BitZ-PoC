@@ -53,6 +53,20 @@ pub(crate) trait StreamingCoefficientSource: Sync {
     ) -> Option<Result<(), SumcheckError>> {
         None
     }
+
+    /// Optional folded replay of final sums in strictly increasing index order.
+    /// Indices use the same folded domain as `for_each_partition_folded`.
+    /// Each index occurs at most once; omitted coefficients are zero. This
+    /// allows consumers to assign directly and finish adjacent pairs during
+    /// replay. Return `None` without invoking `emit` when unsupported.
+    fn for_each_partition_folded_final(
+        &self,
+        _partition: usize,
+        _weights: &[Field],
+        _emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+    ) -> Option<Result<(), SumcheckError>> {
+        None
+    }
 }
 
 /// A streaming source deliberately has no random-access coefficient operation.
@@ -156,6 +170,28 @@ impl<'a, S: StreamingCoefficientSource + ?Sized> StreamingMle<'a, S> {
                 emit(index, value)
             })
     }
+
+    fn visit_folded_final_checked<const K: usize>(
+        &self,
+        partition: usize,
+        weights: &[Field],
+        cfg: &FieldConfig,
+        mut emit: impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+    ) -> Option<Result<(), SumcheckError>> {
+        let start = partition * self.source.partition_len();
+        let end = (start + self.source.partition_len()).min(self.source.live_len());
+        let mut next = start >> K;
+        let end = end.div_ceil(1 << K);
+        self.source
+            .for_each_partition_folded_final(partition, weights, &mut |index, value| {
+                if index < next || index >= end {
+                    return Err(SumcheckError::InvalidProductDimensions);
+                }
+                validate_field_values(std::slice::from_ref(&value), cfg)?;
+                next = index + 1;
+                emit(index, value)
+            })
+    }
 }
 
 impl<S: StreamingCoefficientSource + ?Sized> InnerSumcheckMleSource for StreamingMle<'_, S> {
@@ -227,6 +263,17 @@ impl<S: StreamingCoefficientSource + ?Sized> InnerSumcheckMleSource for Streamin
                 // The final even-length padding slot has no source coefficient.
                 if partition * width >= suffix_count {
                     return Ok(());
+                }
+                if let Some(result) = self.visit_folded_final_checked::<K>(
+                    partition,
+                    &weights,
+                    cfg,
+                    |index, value| {
+                        values[index - partition * width] = raw_montgomery(&value);
+                        Ok(())
+                    },
+                ) {
+                    return result;
                 }
                 if let Some(result) =
                     self.visit_folded_checked::<K>(partition, &weights, cfg, |index, value| {
@@ -337,6 +384,35 @@ impl<S: StreamingCoefficientSource + ?Sized> InnerSumcheckMleSource for Streamin
                         one,
                     )
                 };
+
+                // Final folded coefficients complete a pair as soon as the
+                // next pair arrives. Missing coefficients retain their zero
+                // slots; entirely omitted pairs contribute zero to both
+                // round coefficients and need no witness loads or products.
+                let mut pending_pair = None;
+                if let Some(result) = self.visit_folded_final_checked::<K>(
+                    partition,
+                    prefix_weights,
+                    cfg,
+                    |index, value| {
+                        let suffix = index - offset;
+                        let pair = suffix / 2;
+                        if let Some(previous) = pending_pair {
+                            if previous != pair {
+                                accumulate(&mut accumulators, values, previous)?;
+                            }
+                        }
+                        pending_pair = Some(pair);
+                        values[suffix] = raw_montgomery(&value);
+                        Ok(())
+                    },
+                ) {
+                    result?;
+                    if let Some(pair) = pending_pair {
+                        accumulate(&mut accumulators, values, pair)?;
+                    }
+                    return Ok(accumulators);
+                }
 
                 if let Some(result) = self.visit_folded_checked::<K>(
                     partition,
@@ -999,6 +1075,213 @@ mod tests {
         }
     }
 
+    struct FinalFolded<'a> {
+        blocks: Blocks<'a>,
+        cfg: &'a FieldConfig,
+    }
+
+    impl StreamingCoefficientSource for FinalFolded<'_> {
+        fn num_vars(&self) -> usize {
+            self.blocks.num_vars()
+        }
+        fn live_len(&self) -> usize {
+            self.blocks.live_len()
+        }
+        fn partition_len(&self) -> usize {
+            self.blocks.partition_len()
+        }
+        fn for_each_coefficient(
+            &self,
+            _: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+        ) -> Result<(), SumcheckError> {
+            panic!("final folded source used the scatter path")
+        }
+        fn for_each_partition_block(
+            &self,
+            partition: usize,
+            width: usize,
+            emit: &mut impl FnMut(usize, &[Field]) -> Result<(), SumcheckError>,
+        ) -> Option<Result<(), SumcheckError>> {
+            self.blocks.for_each_partition_block(partition, width, emit)
+        }
+        fn for_each_partition_folded(
+            &self,
+            _: usize,
+            _: &[Field],
+            _: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+        ) -> Option<Result<(), SumcheckError>> {
+            panic!("final folded source used the additive folded path")
+        }
+        fn for_each_partition_folded_final(
+            &self,
+            partition: usize,
+            weights: &[Field],
+            emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+        ) -> Option<Result<(), SumcheckError>> {
+            Some((|| {
+                let start = partition * self.partition_len();
+                let end = (start + self.partition_len()).min(self.live_len());
+                for base in (start..end).step_by(weights.len()) {
+                    let value = self.blocks.values[base..end.min(base + weights.len())]
+                        .iter()
+                        .zip(weights)
+                        .fold(self.cfg.zero(), |sum, (value, weight)| {
+                            self.cfg.add(&sum, &self.cfg.mul(value, weight))
+                        });
+                    if value != self.cfg.zero() {
+                        emit(base / weights.len(), value)?;
+                    }
+                }
+                Ok(())
+            })())
+        }
+    }
+
+    #[test]
+    fn ordered_final_folded_replay_matches_complete_dense_proofs() {
+        let cfg = spartan_bitz_field_config();
+        for live_len in [1usize, 13, 32, 33, 193, 256, 2045, 2048, 16377] {
+            // The largest one-partition case retains the separate parallel
+            // tail scan at K=3; smaller partitions exercise the fused path.
+            let domain = live_len.next_power_of_two().max(2048);
+            let num_vars = domain.ilog2() as usize;
+            let (_, mut coefficients, bits, _) = fixture(num_vars, live_len, &cfg);
+            for (i, value) in coefficients.iter_mut().enumerate() {
+                // Empty partitions, missing adjacent pairs, only-high and
+                // only-low pairs, and a partial last word with a live value.
+                if i + 1 != live_len && matches!((i / 8) % 16, 0..=7 | 10 | 13) {
+                    *value = cfg.zero();
+                }
+            }
+            let witness: Vec<_> = (0..domain)
+                .map(|i| {
+                    if i < live_len && bits[i / 64] >> (i % 64) & 1 != 0 {
+                        cfg.one()
+                    } else {
+                        cfg.zero()
+                    }
+                })
+                .collect();
+            let mut dense = coefficients.clone();
+            dense.resize(domain, cfg.zero());
+            let claim = dense
+                .iter()
+                .zip(&witness)
+                .fold(cfg.zero(), |sum, (a, b)| cfg.add(&sum, &cfg.mul(a, b)));
+            let mut reference_transcript = Blake3Transcript::new();
+            let expected = prove_inner_sumcheck(
+                &cfg,
+                &mut reference_transcript,
+                claim,
+                witness,
+                dense,
+                &mut UngrindedRoundBoundary,
+            )
+            .unwrap();
+            let reference_challenge = reference_transcript.get_challenge::<u128>();
+            for partition_len in [16, 64, domain] {
+                let source = FinalFolded {
+                    blocks: Blocks {
+                        values: &coefficients,
+                        zero: cfg.zero(),
+                        num_vars,
+                        partition_len,
+                    },
+                    cfg: &cfg,
+                };
+                for prefix in 0..=4 {
+                    let mut transcript = Blake3Transcript::new();
+                    let actual = prove_inner_sumcheck(
+                        &cfg,
+                        &mut transcript,
+                        claim,
+                        PackedInput::new(
+                            &StreamingMle::new(&source),
+                            &bits,
+                            num_vars,
+                            live_len,
+                            prefix,
+                        ),
+                        (),
+                        &mut UngrindedRoundBoundary,
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        actual, expected,
+                        "live={live_len}, partition={partition_len}, prefix={prefix}"
+                    );
+                    assert_eq!(transcript.get_challenge::<u128>(), reference_challenge);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn ordered_final_folded_replay_skips_absent_pairs_and_handles_partial_last_word() {
+        struct CountedBits(AtomicUsize);
+        impl Sha256InnerBitSource for CountedBits {
+            fn bit_at(&self, _: usize) -> Result<u64, SumcheckError> {
+                unreachable!("the packed byte interface must be used")
+            }
+            fn bits_at(&self, _: usize, count: usize) -> Result<u64, SumcheckError> {
+                self.0.fetch_add(1, Ordering::Relaxed);
+                Ok(low_bits_mask(count))
+            }
+        }
+        let cfg = spartan_bitz_field_config();
+        let zero = cfg.zero();
+        let one = cfg.one();
+        let mut coefficients = vec![zero; 65];
+        for i in [16, 40, 64] {
+            coefficients[i] = Field::from_with_cfg(i as u64 + 1, &cfg);
+        }
+        let source = FinalFolded {
+            blocks: Blocks {
+                values: &coefficients,
+                zero,
+                num_vars: 7,
+                partition_len: 32,
+            },
+            cfg: &cfg,
+        };
+        let challenges = [Field::from_with_cfg(3u64, &cfg); 3];
+        let weights =
+            PreparedPrefixWeights::new(equality_weights_lsb(&challenges, &zero, &one, &cfg), &cfg);
+        let bits = CountedBits(AtomicUsize::new(0));
+        let (table, round) = StreamingMle::new(&source)
+            .fold_prefix_table_and_prepare_tail::<3, _>(
+                7,
+                65,
+                &challenges,
+                &weights,
+                &bits,
+                &cfg,
+                &zero,
+                &one,
+            )
+            .unwrap();
+        // Two occupied pairs need both witness bytes, even when one side's
+        // coefficient is absent. The last pair has one partial witness byte.
+        assert_eq!(bits.0.load(Ordering::Relaxed), 5);
+        let reference = StreamingMle::new(&source.blocks)
+            .fold_prefix_table::<3>(7, 65, &challenges, &cfg, &zero, &one)
+            .unwrap();
+        assert_eq!(table.values, reference.values);
+        assert_eq!(
+            round,
+            sum_first_tail_round::<3, _>(
+                &reference,
+                65,
+                &[u64::MAX, 1][..],
+                &weights,
+                &cfg,
+                &zero,
+                &one,
+            )
+            .unwrap()
+        );
+    }
+
     #[test]
     fn cached_bit_blocks_match_dense_sumcheck_for_every_byte() {
         let cfg = spartan_bitz_field_config();
@@ -1309,6 +1592,15 @@ mod tests {
                         partition_len,
                     };
                     let stream = StreamingMle::new(&source);
+                    let final_source = FinalFolded {
+                        blocks: Blocks {
+                            values: &dense,
+                            zero,
+                            num_vars: 10,
+                            partition_len,
+                        },
+                        cfg,
+                    };
                     for challenge_kind in 0..3 {
                         let challenges: Vec<_> = (0..K)
                             .map(|i| match challenge_kind {
@@ -1349,6 +1641,21 @@ mod tests {
                         assert_eq!(actual_table.values, expected_table.values);
                         assert_eq!(actual_table.suffix_count, expected_table.suffix_count);
                         assert_eq!(actual_round, expected_round);
+                        let (final_table, final_round) = StreamingMle::new(&final_source)
+                            .fold_prefix_table_and_prepare_tail::<K, _>(
+                                10,
+                                live_len,
+                                &challenges,
+                                &weights,
+                                &bits,
+                                cfg,
+                                &zero,
+                                &one,
+                            )
+                            .unwrap();
+                        assert_eq!(final_table.values, expected_table.values);
+                        assert_eq!(final_table.suffix_count, expected_table.suffix_count);
+                        assert_eq!(final_round, expected_round);
                     }
                 }
             }
@@ -1507,6 +1814,91 @@ mod tests {
                     Blake3Transcript::new().get_challenge::<u128>()
                 );
             }
+        }
+    }
+
+    #[test]
+    fn ordered_final_folded_replays_reject_bad_order_bounds_and_residues() {
+        struct InvalidFinal<'a> {
+            cfg: &'a FieldConfig,
+            fault: usize,
+        }
+        impl StreamingCoefficientSource for InvalidFinal<'_> {
+            fn num_vars(&self) -> usize {
+                6
+            }
+            fn live_len(&self) -> usize {
+                37
+            }
+            fn partition_len(&self) -> usize {
+                32
+            }
+            fn for_each_coefficient(
+                &self,
+                _: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+            ) -> Result<(), SumcheckError> {
+                panic!("invalid final replay fell back to scalar replay")
+            }
+            fn for_each_partition_folded_final(
+                &self,
+                partition: usize,
+                weights: &[Field],
+                emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+            ) -> Option<Result<(), SumcheckError>> {
+                let first = partition * 32 / weights.len();
+                Some(match self.fault {
+                    0 => emit(first, self.cfg.one()).and_then(|_| emit(first, self.cfg.one())),
+                    1 => emit(first + 1, self.cfg.one()).and_then(|_| emit(first, self.cfg.one())),
+                    2 => emit(first + 32 / weights.len(), self.cfg.one()),
+                    3 => emit(usize::MAX, self.cfg.one()),
+                    4 => emit(
+                        first,
+                        crate::piop::spartan::noncanonical_test_value(self.cfg),
+                    ),
+                    5 if partition == 1 => emit(first - 1, self.cfg.one()),
+                    6 if partition == 1 => emit(37usize.div_ceil(weights.len()), self.cfg.one()),
+                    5 | 6 => Ok(()),
+                    _ => unreachable!(),
+                })
+            }
+        }
+        fn check<const K: usize>(source: &InvalidFinal<'_>) {
+            let cfg = source.cfg;
+            let zero = cfg.zero();
+            let one = cfg.one();
+            let challenges = [one; K];
+            let weights = PreparedPrefixWeights::new(
+                equality_weights_lsb(&challenges, &zero, &one, cfg),
+                cfg,
+            );
+            let stream = StreamingMle::new(source);
+            assert!(
+                stream
+                    .fold_prefix_table::<K>(6, 37, &challenges, cfg, &zero, &one)
+                    .is_err()
+            );
+            assert!(
+                stream
+                    .fold_prefix_table_and_prepare_tail::<K, _>(
+                        6,
+                        37,
+                        &challenges,
+                        &weights,
+                        &[0u64][..],
+                        cfg,
+                        &zero,
+                        &one,
+                    )
+                    .is_err()
+            );
+        }
+        let cfg = spartan_bitz_field_config();
+        for fault in 0..7 {
+            let source = InvalidFinal { cfg: &cfg, fault };
+            check::<0>(&source);
+            check::<1>(&source);
+            check::<3>(&source);
+            check::<4>(&source);
         }
     }
 

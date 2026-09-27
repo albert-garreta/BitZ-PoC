@@ -557,11 +557,16 @@ mod tests {
     fn benchmark_x86_nonce_kernels() {
         use std::{hint::black_box, time::Instant};
         type Scan = unsafe fn(&[u8], u64, u64, u32) -> Option<u64>;
-        let kernels: [(&str, bool, Scan); 2] = [
+        let kernels: [(&str, bool, Scan); 3] = [
             (
                 "avx2",
                 std::is_x86_feature_detected!("avx2"),
                 avx2::first_pow_nonce,
+            ),
+            (
+                "avx512-generic",
+                std::is_x86_feature_detected!("avx512f"),
+                avx512::first_pow_nonce_generic,
             ),
             (
                 "avx512",

@@ -9,6 +9,7 @@ use crate::ligerito::transpose_8x8_bits;
 use crate::transcript::{Blake3Transcript, traits::Transcript};
 use crate::utils::{cfg_chunks_mut, cfg_into_iter};
 use flock_core::field::Gf128 as F;
+pub(crate) mod table;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
@@ -92,6 +93,11 @@ pub(crate) fn byte_table(coefficients: &[F; 128]) -> Vec<F> {
 }
 
 pub(crate) fn apply(table: &[F], packed: F) -> F {
+    // `byte_table` represents a linear map, so a zero packed source word
+    // contributes zero even when its authenticated coefficient is nonzero.
+    if packed == F::ZERO {
+        return F::ZERO;
+    }
     let bytes = ((packed.lo as u128) | ((packed.hi as u128) << 64)).to_le_bytes();
     bytes
         .iter()
@@ -306,31 +312,13 @@ pub(crate) fn dense_fold(
                 .enumerate()
                 .map(|(c, (xo, wo))| {
                     let base = c * CHUNK;
-                    let mut u0 = F::ZERO;
-                    let mut u2 = F::ZERO;
-                    let mut k = 0;
-                    while k + 1 < xo.len() {
-                        let i = 2 * (base + k);
-                        let x0 = x[i] + r * (x[i] + x[i + 1]);
-                        let x1 = x[i + 2] + r * (x[i + 2] + x[i + 3]);
-                        let w0 = w[i] + r * (w[i] + w[i + 1]);
-                        let w1 = w[i + 2] + r * (w[i + 2] + w[i + 3]);
-                        xo[k].write(x0);
-                        xo[k + 1].write(x1);
-                        wo[k].write(w0);
-                        wo[k + 1].write(w1);
-                        u0 += x0 * w0;
-                        u2 += (x0 + x1) * (w0 + w1);
-                        k += 2;
-                    }
-                    if k < xo.len() {
-                        // Only the final fold (n = 1) has an unpaired element;
-                        // its message is never sent.
-                        let i = 2 * (base + k);
-                        xo[k].write(x[i] + r * (x[i] + x[i + 1]));
-                        wo[k].write(w[i] + r * (w[i] + w[i + 1]));
-                    }
-                    [u0, u2]
+                    table::dense(
+                        &x[2 * base..2 * (base + xo.len())],
+                        &w[2 * base..2 * (base + wo.len())],
+                        xo,
+                        wo,
+                        r,
+                    )
                 }),
         )
     };

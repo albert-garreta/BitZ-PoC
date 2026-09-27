@@ -201,13 +201,12 @@ pub unsafe fn ghash_mul_unreduced_x86(a: Gf128, b: Gf128) -> Gf128Product {
 // -----------------------------------------------------------------------
 // AVX-512 + VPCLMULQDQ: 4 independent GF(2^128) multiplies per instruction.
 //
-// Lane-parallel port of `ghash_mul_binius` above — same 4 product CLMULs +
-// two-stage `0x87` reduction, applied independently in each 128-bit lane of
+// Three-product Karatsuba + the two-stage `0x87` reduction, applied
+// independently in each 128-bit lane of
 // a `__m512i`. A `__m512i` holds 4 contiguous `Gf128` (lane i = {lo_i, hi_i});
 // since `Gf128` is `repr(C, align(16))` little-endian, 4 elements load
 // directly with `_mm512_loadu_si512` — no shuffles. The reduction is the
-// same field element as the scalar `ghash_mul_binius` (cross-checked in the
-// ntt module's tests), reached by the identical operation sequence.
+// same field element as the scalar `ghash_mul_binius`.
 // -----------------------------------------------------------------------
 
 /// Per-lane reduction-poly low word: each 128-bit lane = {lo: 0x87, hi: 0}.
@@ -243,6 +242,27 @@ unsafe fn gf2_128_reduce_x4(mut t0: __m512i, t1: __m512i) -> __m512i {
     }
 }
 
+/// Per lane, return the exact low, cross, and high polynomial products.
+/// The cross term is `x.lo*y.hi + x.hi*y.lo`, so both reduced and deferred
+/// consumers retain their existing polynomial representation.
+#[cfg(all(
+    target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "vpclmulqdq"
+))]
+#[inline]
+#[target_feature(enable = "avx512f,avx512bw,vpclmulqdq")]
+unsafe fn karatsuba_parts_x4(x: __m512i, y: __m512i) -> (__m512i, __m512i, __m512i) {
+    let lo = _mm512_clmulepi64_epi128::<0x00>(x, y);
+    let hi = _mm512_clmulepi64_epi128::<0x11>(x, y);
+    // The shuffle swaps the two 64-bit words within each 128-bit lane.
+    let x_sum = _mm512_xor_si512(x, _mm512_shuffle_epi32::<0x4e>(x));
+    let y_sum = _mm512_xor_si512(y, _mm512_shuffle_epi32::<0x4e>(y));
+    let mixed = _mm512_clmulepi64_epi128::<0x00>(x_sum, y_sum);
+    let cross = _mm512_xor_si512(mixed, _mm512_xor_si512(lo, hi));
+    (lo, cross, hi)
+}
+
 /// 4 independent GF(2^128) products. `x` and `y` each hold 4 contiguous
 /// `Gf128`; the result holds the 4 reduced products. Field-identical to
 /// applying `ghash_mul_binius` to each lane.
@@ -260,22 +280,14 @@ unsafe fn gf2_128_reduce_x4(mut t0: __m512i, t1: __m512i) -> __m512i {
 pub unsafe fn ghash_mul_x4(x: __m512i, y: __m512i) -> __m512i {
     // SAFETY: caller carries avx512f+avx512bw+vpclmulqdq.
     unsafe {
-        // Cross terms: x.hi·y.lo (imm 0x01) ^ x.lo·y.hi (imm 0x10), at x^64.
-        let t1a = _mm512_clmulepi64_epi128::<0x01>(x, y);
-        let t1b = _mm512_clmulepi64_epi128::<0x10>(x, y);
-        let mut t1 = _mm512_xor_si512(t1a, t1b);
-        // High product x.hi·y.hi (imm 0x11), folded into the cross.
-        let t2 = _mm512_clmulepi64_epi128::<0x11>(x, y);
-        t1 = gf2_128_reduce_x4(t1, t2);
-        // Low product x.lo·y.lo (imm 0x00), then fold t1 down to the result.
-        let t0 = _mm512_clmulepi64_epi128::<0x00>(x, y);
-        gf2_128_reduce_x4(t0, t1)
+        let (lo, cross, hi) = karatsuba_parts_x4(x, y);
+        gf2_128_reduce_x4(lo, gf2_128_reduce_x4(cross, hi))
     }
 }
 
 // -----------------------------------------------------------------------
 // Deferred-reduction 4-lane accumulator (port of binius `WideGhashProduct`,
-// 4 lanes wide). Widen each product with 4 CLMULs but DON'T reduce; XOR many
+// 4 lanes wide). Widen each product with 3 CLMULs but DON'T reduce; XOR many
 // into the accumulator; reduce once at the end. Per 128-bit lane the
 // unreduced product is `lo + mid·x^64 + hi·x^128` with `lo = x.lo·y.lo`,
 // `hi = x.hi·y.hi`, `mid = x.hi·y.lo ⊕ x.lo·y.hi` — the same limb split the
@@ -384,14 +396,13 @@ impl WideGhashX4 {
     #[inline]
     #[target_feature(enable = "avx512f,avx512bw,vpclmulqdq")]
     pub unsafe fn mul_acc(&mut self, x: __m512i, y: __m512i) {
-        // Register-only widen (4 CLMULs) + XOR-accumulate; cfg-gated.
-        self.lo = _mm512_xor_si512(self.lo, _mm512_clmulepi64_epi128::<0x00>(x, y));
-        self.hi = _mm512_xor_si512(self.hi, _mm512_clmulepi64_epi128::<0x11>(x, y));
-        let m = _mm512_xor_si512(
-            _mm512_clmulepi64_epi128::<0x01>(x, y),
-            _mm512_clmulepi64_epi128::<0x10>(x, y),
-        );
-        self.mid = _mm512_xor_si512(self.mid, m);
+        // SAFETY: this function carries every feature the helper requires.
+        unsafe {
+            let (lo, cross, hi) = karatsuba_parts_x4(x, y);
+            self.lo = _mm512_xor_si512(self.lo, lo);
+            self.hi = _mm512_xor_si512(self.hi, hi);
+            self.mid = _mm512_xor_si512(self.mid, cross);
+        }
     }
 
     /// Reduce each accumulator lane separately, preserving all four sums.
@@ -443,5 +454,179 @@ pub unsafe fn ghash_square_x86(a: Gf128) -> Gf128 {
         let lo2 = pmull(a.lo, a.lo);
         let hi2 = pmull(a.hi, a.hi);
         ghash_reduce(lane0(lo2), lane1(lo2), lane0(hi2), lane1(hi2))
+    }
+}
+
+#[cfg(all(
+    test,
+    target_feature = "avx512f",
+    target_feature = "avx512bw",
+    target_feature = "vpclmulqdq"
+))]
+mod tests {
+    use super::*;
+    use crate::gf128::kernels::software;
+
+    fn lanes(value: __m512i) -> [Gf128; 4] {
+        let mut out = [Gf128::ZERO; 4];
+        // SAFETY: the module has the complete ISA and out holds four lanes.
+        unsafe { _mm512_storeu_si512(out.as_mut_ptr().cast(), value) };
+        out
+    }
+
+    fn packed(values: &[Gf128; 4]) -> __m512i {
+        // SAFETY: the module has the complete ISA and values holds four lanes.
+        unsafe { f128x4_loadu(values.as_ptr()) }
+    }
+
+    fn monomial(bit: usize) -> Gf128 {
+        if bit < 64 {
+            Gf128::new(1u64 << bit, 0)
+        } else {
+            Gf128::new(0, 1u64 << (bit - 64))
+        }
+    }
+
+    fn random(state: &mut u64) -> Gf128 {
+        let mut next = || {
+            *state ^= *state << 13;
+            *state ^= *state >> 7;
+            *state ^= *state << 17;
+            *state
+        };
+        Gf128::new(next(), next())
+    }
+
+    #[test]
+    fn four_lane_products_match_every_monomial_pair() {
+        // Every pair of polynomial basis vectors tests all cross-word and
+        // reduction boundaries. Adjacent lanes have different right operands.
+        for left in 0..128 {
+            for right in (0..128).step_by(4) {
+                let x = [monomial(left); 4];
+                let y = std::array::from_fn(|lane| monomial(right + lane));
+                // SAFETY: the native test gate covers every called intrinsic.
+                let got = lanes(unsafe { ghash_mul_x4(packed(&x), packed(&y)) });
+                for lane in 0..4 {
+                    assert_eq!(
+                        got[lane],
+                        software::ghash_mul(x[lane], y[lane]),
+                        "monomials {left}, {}",
+                        right + lane,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn four_lane_products_match_scalar_with_offsets_and_boundary_words() {
+        let edges = [
+            Gf128::ZERO,
+            Gf128::ONE,
+            Gf128::new(0x87, 0),
+            Gf128::new(1 << 63, 0),
+            Gf128::new(0, 1),
+            Gf128::new(0, 1 << 63),
+            Gf128::new(u64::MAX, u64::MAX),
+            Gf128::new(0x5555_5555_5555_5555, 0xAAAA_AAAA_AAAA_AAAA),
+        ];
+        let mut state = 0xAA43_C71D_291F_F091;
+        for trial in 0..128 {
+            let x: [Gf128; 11] = std::array::from_fn(|i| {
+                if trial < edges.len() {
+                    edges[(trial + i) % edges.len()]
+                } else {
+                    random(&mut state)
+                }
+            });
+            let y: [Gf128; 11] = std::array::from_fn(|i| {
+                if trial < edges.len() {
+                    edges[(trial * 3 + i) % edges.len()]
+                } else {
+                    random(&mut state)
+                }
+            });
+            for offset in 0..8 {
+                // SAFETY: offset+4<=11 and the native ISA is enabled.
+                let got = lanes(unsafe {
+                    ghash_mul_x4(
+                        f128x4_loadu(x.as_ptr().add(offset)),
+                        f128x4_loadu(y.as_ptr().add(offset)),
+                    )
+                });
+                for lane in 0..4 {
+                    let (a, b) = (x[offset + lane], y[offset + lane]);
+                    // The scalar schoolbook implementation is independent of
+                    // the new Karatsuba helper and keeps its original schedule.
+                    let scalar = unsafe { ghash_mul_schoolbook(a, b) };
+                    assert_eq!(
+                        got[lane], scalar,
+                        "trial {trial}, offset {offset}, lane {lane}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn wide_lanes_preserve_exact_parts_accumulation_and_cancellation() {
+        let mut state = 0x70F1_B55A_9850_1003;
+        // SAFETY: the native test gate covers every accumulator instruction.
+        let mut acc = unsafe { WideGhashX4::zero() };
+        let mut lo = [Gf128::ZERO; 4];
+        let mut hi = [Gf128::ZERO; 4];
+        let mut cross = [Gf128::ZERO; 4];
+        let mut expected = [Gf128Product::zero(); 4];
+        let mut inputs = Vec::new();
+        for step in 0..129 {
+            let x = std::array::from_fn(|_| random(&mut state));
+            let y = std::array::from_fn(|lane| {
+                if step % 3 == 0 {
+                    x[lane]
+                } else {
+                    random(&mut state)
+                }
+            });
+            inputs.push((x, y));
+            unsafe { acc.mul_acc(packed(&x), packed(&y)) };
+            for lane in 0..4 {
+                let p0 = software::clmul_64x64(x[lane].lo, y[lane].lo);
+                let p2 = software::clmul_64x64(x[lane].hi, y[lane].hi);
+                let p01 = software::clmul_64x64(x[lane].lo, y[lane].hi);
+                let p10 = software::clmul_64x64(x[lane].hi, y[lane].lo);
+                lo[lane] += Gf128::new(p0[0], p0[1]);
+                hi[lane] += Gf128::new(p2[0], p2[1]);
+                cross[lane] += Gf128::new(p01[0] ^ p10[0], p01[1] ^ p10[1]);
+                expected[lane] ^= unsafe { ghash_mul_unreduced_x86(x[lane], y[lane]) };
+            }
+            assert_eq!(lanes(acc.lo), lo, "low parts after {step}");
+            assert_eq!(lanes(acc.hi), hi, "high parts after {step}");
+            assert_eq!(lanes(acc.mid), cross, "cross parts after {step}");
+            assert_eq!(
+                lanes(unsafe { acc.reduce_lanes() }),
+                expected.map(Gf128Product::reduce),
+                "lane reductions after {step}",
+            );
+            let folded = expected
+                .iter()
+                .copied()
+                .fold(Gf128Product::zero(), |a, b| a ^ b);
+            assert_eq!(
+                unsafe { acc.fold() },
+                folded,
+                "exact folded polynomial after {step}"
+            );
+        }
+        // Replaying every product cancels the unreduced accumulators too,
+        // rather than merely producing a polynomial whose remainder is zero.
+        for (x, y) in inputs.into_iter().rev() {
+            unsafe { acc.mul_acc(packed(&x), packed(&y)) };
+        }
+        assert_eq!(lanes(acc.lo), [Gf128::ZERO; 4]);
+        assert_eq!(lanes(acc.hi), [Gf128::ZERO; 4]);
+        assert_eq!(lanes(acc.mid), [Gf128::ZERO; 4]);
+        assert_eq!(unsafe { acc.fold() }, Gf128Product::zero());
+        assert_eq!(lanes(unsafe { acc.reduce_lanes() }), [Gf128::ZERO; 4]);
     }
 }

@@ -66,8 +66,19 @@ impl<T: Transcript + Send> Challenger for ZincChallenger<'_, T> {
     }
 
     fn grind_pow(&mut self, bits: u32) -> u64 {
-        let _g = tracing::info_span!("lig:grind_pow").entered();
+        let span = tracing::info_span!(
+            "lig:grind_pow",
+            bits,
+            nonce = tracing::field::Empty,
+            seed_lo = tracing::field::Empty,
+            seed_hi = tracing::field::Empty,
+        );
+        let _g = span.enter();
         let seed = self.pow_seed();
+        // Diagnostics use the same public Fiat–Shamir seed and chosen nonce;
+        // recording them does not sample or absorb any transcript bytes.
+        span.record("seed_lo", u64::from_le_bytes(seed[..8].try_into().unwrap()));
+        span.record("seed_hi", u64::from_le_bytes(seed[8..].try_into().unwrap()));
         // Parallel smallest-nonce search (prover-side only; the verifier
         // checks whatever nonce arrives): every pool thread takes chunks of
         // the nonce space in order and the running minimum hit ends the
@@ -89,6 +100,7 @@ impl<T: Transcript + Send> Challenger for ZincChallenger<'_, T> {
         } else {
             first_pow_nonce(&seed, 0, u64::MAX, bits).expect("a nonce below 2^64")
         };
+        span.record("nonce", nonce);
         self.0.absorb_slice(&nonce.to_le_bytes());
         nonce
     }

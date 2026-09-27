@@ -181,27 +181,84 @@ fn sum_pairs(iter: impl Iterator<Item = [F; 2]>) -> [F; 2] {
 
 struct TensorState {
     low: Vec<F>,
-    high: Vec<F>,
+    high: TensorHigh,
     marginals: Vec<F>,
 }
 
+enum TensorHigh {
+    Dense(Vec<F>),
+    /// Cached bit marginals need no full high equality table. Split that
+    /// table at a position-tile boundary; after seven rounds the tensor's
+    /// arbitrary low factor is one scalar, folded into the tile scale.
+    Factored {
+        low: Vec<F>,
+        high: Vec<F>,
+    },
+}
+
+const POSITION_TILE_LOG: usize = 6;
+const POSITION_TILE: usize = 1 << POSITION_TILE_LOG;
+
 impl TensorState {
-    fn new(tensor: &Tensor, packed: &[F]) -> Self {
+    fn new(tensor: &Tensor, packed: &[F], tile_vars: usize) -> Self {
         let consume = 7usize.saturating_sub(tensor.low.len().ilog2() as usize);
         let extension = eq_table(&tensor.high_point[..consume]);
         let low: Vec<_> = extension
             .into_iter()
             .flat_map(|weight| tensor.low.iter().map(move |&value| weight * value))
             .collect();
-        let high = eq_table(&tensor.high_point[consume..]);
-        let marginals = tensor
-            .marginals
-            .clone()
-            .unwrap_or_else(|| kernels::bit_marginals(packed, &high, low.len() / 128));
+        let point = &tensor.high_point[consume..];
+        let (high, marginals) = match &tensor.marginals {
+            Some(marginals) if low.len() == 128 => {
+                let split = tile_vars.min(point.len());
+                (
+                    TensorHigh::Factored {
+                        low: eq_table(&point[..split]),
+                        high: eq_table(&point[split..]),
+                    },
+                    marginals.clone(),
+                )
+            }
+            cached => {
+                let high = eq_table(point);
+                let marginals = cached
+                    .clone()
+                    .unwrap_or_else(|| kernels::bit_marginals(packed, &high, low.len() / 128));
+                (TensorHigh::Dense(high), marginals)
+            }
+        };
         Self {
             low,
             high,
             marginals,
+        }
+    }
+
+    /// Add coefficients after the packed prefix for one aligned position tile.
+    /// The range excludes physical padding, whose coefficient stays zero.
+    fn tile_weights(&self, range: std::ops::Range<usize>, mut emit: impl FnMut(usize, F)) {
+        if range.is_empty() {
+            return;
+        }
+        match &self.high {
+            TensorHigh::Dense(high) => {
+                for word in range {
+                    emit(
+                        word,
+                        self.low[word % self.low.len()] * high[word / self.low.len()],
+                    );
+                }
+            }
+            TensorHigh::Factored { low, high } => {
+                debug_assert_eq!(self.low.len(), 1);
+                let tile = range.start / low.len();
+                debug_assert_eq!(tile, (range.end - 1) / low.len());
+                let scale = self.low[0] * high[tile];
+                let mask = low.len() - 1; // Equality table lengths are powers of two.
+                for word in range {
+                    emit(word, scale * low[word & mask]);
+                }
+            }
         }
     }
 }
@@ -438,30 +495,21 @@ impl LaneLayout {
         Self::new(self.width / 2, active)
     }
 
-    fn get(values: &[F], column: usize) -> F {
-        if column == usize::MAX {
-            F::ZERO
-        } else {
-            values[column]
+    fn kernel(&self) -> kernels::table::Lanes<'_> {
+        kernels::table::Lanes {
+            columns: self.active.len(),
+            pairs: &self.pairs,
         }
     }
 
     fn message(&self, witness: &[F], weights: &[F]) -> [F; 2] {
-        let mut message = [F::ZERO; 2];
-        for &[left, right] in &self.pairs {
-            let x0 = Self::get(witness, left);
-            let x1 = Self::get(witness, right);
-            let w0 = Self::get(weights, left);
-            let w1 = Self::get(weights, right);
-            message[0] += x0 * w0;
-            message[1] += (x0 + x1) * (w0 + w1);
-        }
-        message
+        kernels::table::message(witness, weights, self.kernel())
     }
 
     /// Fold a compact lane table and compute the next message while the
     /// outputs are in registers. After the support becomes dense, the normal
     /// fused dense kernel takes over without copying or reordering a table.
+    #[tracing::instrument(name = "falcon_joint:compact", skip_all)]
     fn fold(&self, scratch: &mut Scratch, r: F) -> (Self, [F; 2]) {
         let next = self.folded();
         let columns = self.active.len();
@@ -478,44 +526,18 @@ impl LaneLayout {
                 ))
                 .enumerate()
                 .map(|(chunk, (xo, wo))| {
-                    let mut message = [F::ZERO; 2];
-                    let mut previous = [F::ZERO; 2];
-                    for (group, (xo, wo)) in xo
-                        .chunks_exact_mut(next_columns)
-                        .zip(wo.chunks_exact_mut(next_columns))
-                        .enumerate()
-                    {
-                        let base = (chunk * 64 + group) * columns;
-                        let x = &scratch.witness[base..base + columns];
-                        let w = &scratch.weights[base..base + columns];
-                        let mut xf = [F::ZERO; 16];
-                        let mut wf = [F::ZERO; 16];
-                        for (column, &[left, right]) in self.pairs.iter().enumerate() {
-                            let x0 = Self::get(x, left);
-                            let x1 = Self::get(x, right);
-                            let w0 = Self::get(w, left);
-                            let w1 = Self::get(w, right);
-                            xf[column] = x0 + r * (x0 + x1);
-                            wf[column] = w0 + r * (w0 + w1);
-                            xo[column].write(xf[column]);
-                            wo[column].write(wf[column]);
-                        }
-                        if next.width == 1 {
-                            // The next coordinate is a position coordinate,
-                            // so its pairs straddle consecutive lane groups.
-                            if group & 1 == 0 {
-                                previous = [xf[0], wf[0]];
-                            } else {
-                                message[0] += previous[0] * previous[1];
-                                message[1] += (previous[0] + xf[0]) * (previous[1] + wf[0]);
-                            }
-                        } else {
-                            let term = next.message(&xf, &wf);
-                            message[0] += term[0];
-                            message[1] += term[1];
-                        }
-                    }
-                    message
+                    let start = chunk * 64 * columns;
+                    let end = start + xo.len() / next_columns * columns;
+                    kernels::table::lanes(
+                        &scratch.witness[start..end],
+                        &scratch.weights[start..end],
+                        xo,
+                        wo,
+                        self.kernel(),
+                        next.kernel(),
+                        next.width == 1,
+                        r,
+                    )
                 }),
         );
         // SAFETY: each output chunk writes all its occupied columns exactly
@@ -536,12 +558,19 @@ impl<'a, const N: usize> input::Input<field::Gf128Ops> for Input<'a, N> {
     type State = State<'a, N>;
     type Codec = CompressedCodec;
 
+    #[tracing::instrument(name = "falcon_joint:packed_setup", skip_all)]
     fn prepare(self, _: &field::Gf128Ops, _: ()) -> Result<Self::State, SumcheckError> {
         let tensors = std::array::from_fn(|branch| {
             self.coefficients[branch]
                 .tensors
                 .iter()
-                .map(|tensor| TensorState::new(tensor, self.sources[branch]))
+                .map(|tensor| {
+                    TensorState::new(
+                        tensor,
+                        self.sources[branch],
+                        POSITION_TILE_LOG + self.geometry.lane_logs[branch],
+                    )
+                })
                 .collect()
         });
         let gathers = std::array::from_fn(|branch| {
@@ -566,6 +595,7 @@ impl<'a, const N: usize> input::Input<field::Gf128Ops> for Input<'a, N> {
 }
 
 impl<const N: usize> State<'_, N> {
+    #[tracing::instrument(name = "falcon_joint:prepare", skip_all)]
     fn prepare_lanes(&mut self) {
         for tensor in self.tensors.iter_mut().flatten() {
             tensor.marginals = Vec::new();
@@ -600,64 +630,61 @@ impl<const N: usize> State<'_, N> {
         // avoids materializing the empty virtual lanes or scanning the newly
         // built tables again just to compute the first round.
         self.next = sum_pairs(
-            cfg_chunks_mut!(&mut witness.spare_capacity_mut()[..n], 64 * columns)
-                .zip(cfg_chunks_mut!(
-                    &mut weights.spare_capacity_mut()[..n],
-                    64 * columns
-                ))
-                .enumerate()
-                .map(|(chunk, (xo, wo))| {
-                    let first_group = chunk * 64;
-                    let end_group = first_group + xo.len() / columns;
-                    let mut x = [F::ZERO; 1024];
-                    let mut w = [F::ZERO; 1024];
-                    for branch in 0..N {
-                        let k = geometry.lane_logs[branch];
-                        let width = 1 << k;
-                        for group in first_group..end_group {
-                            let dest = (group - first_group) * columns + offsets[branch];
-                            for lane in 0..width {
-                                let index = (group << k) | lane;
-                                // Include physical source padding in the
-                                // witness; its coefficient is zero. The PCS
-                                // separately authenticates that padding.
-                                x[dest + lane] = kernels::apply(&table, sources[branch][index]);
-                                if index < 1 << geometry.logs[branch] {
-                                    for tensor in &self.tensors[branch] {
-                                        w[dest + lane] += tensor.low[index % tensor.low.len()]
-                                            * tensor.high[index / tensor.low.len()];
-                                    }
-                                }
-                            }
-                        }
-                        let first_word = first_group << k;
-                        let end_word = (end_group << k).min(1 << geometry.logs[branch]);
-                        for state in &self.gathers[branch] {
-                            state.folded_in_range(first_word..end_word, |word, coefficient| {
-                                let dest = ((word >> k) - first_group) * columns
-                                    + offsets[branch]
-                                    + (word & (width - 1));
-                                w[dest] += coefficient;
-                            });
+            cfg_chunks_mut!(
+                &mut witness.spare_capacity_mut()[..n],
+                POSITION_TILE * columns
+            )
+            .zip(cfg_chunks_mut!(
+                &mut weights.spare_capacity_mut()[..n],
+                POSITION_TILE * columns
+            ))
+            .enumerate()
+            .map(|(chunk, (xo, wo))| {
+                let first_group = chunk * POSITION_TILE;
+                let end_group = first_group + xo.len() / columns;
+                let mut x = [F::ZERO; 1024];
+                let mut w = [F::ZERO; 1024];
+                for branch in 0..N {
+                    let k = geometry.lane_logs[branch];
+                    let width = 1 << k;
+                    for group in first_group..end_group {
+                        let dest = (group - first_group) * columns + offsets[branch];
+                        for lane in 0..width {
+                            let index = (group << k) | lane;
+                            // Include physical source padding in the
+                            // witness; its coefficient is zero. The PCS
+                            // separately authenticates that padding.
+                            x[dest + lane] = kernels::apply(&table, sources[branch][index]);
                         }
                     }
-                    let mut message = [F::ZERO; 2];
-                    for (x, w) in x[..xo.len()]
-                        .chunks_exact(columns)
-                        .zip(w[..wo.len()].chunks_exact(columns))
-                    {
-                        let term = layout.message(x, w);
-                        message[0] += term[0];
-                        message[1] += term[1];
+                    let first_word = first_group << k;
+                    let end_word = (end_group << k).min(1 << geometry.logs[branch]);
+                    for tensor in &self.tensors[branch] {
+                        tensor.tile_weights(first_word..end_word, |word, coefficient| {
+                            let dest = ((word >> k) - first_group) * columns
+                                + offsets[branch]
+                                + (word & (width - 1));
+                            w[dest] += coefficient;
+                        });
                     }
-                    for (dst, &value) in xo.iter_mut().zip(&x) {
-                        dst.write(value);
+                    for state in &self.gathers[branch] {
+                        state.folded_in_range(first_word..end_word, |word, coefficient| {
+                            let dest = ((word >> k) - first_group) * columns
+                                + offsets[branch]
+                                + (word & (width - 1));
+                            w[dest] += coefficient;
+                        });
                     }
-                    for (dst, &value) in wo.iter_mut().zip(&w) {
-                        dst.write(value);
-                    }
-                    message
-                }),
+                }
+                let message = layout.message(&x[..xo.len()], &w[..wo.len()]);
+                for (dst, &value) in xo.iter_mut().zip(&x) {
+                    dst.write(value);
+                }
+                for (dst, &value) in wo.iter_mut().zip(&w) {
+                    dst.write(value);
+                }
+                message
+            }),
         );
         // SAFETY: every tile initializes every occupied lane in both outputs.
         unsafe {
@@ -719,6 +746,7 @@ impl<const N: usize> input::State<field::Gf128Ops> for State<'_, N> {
             self.lanes = (next_lanes.active.len() < next_lanes.width).then_some(next_lanes);
             self.round += 1;
         } else {
+            let _span = tracing::info_span!("falcon_joint:dense").entered();
             let s = &mut *self.input.scratch;
             self.next = kernels::dense_fold(
                 &mut s.witness,
@@ -885,6 +913,91 @@ mod tests {
                 hi: self.0.rotate_left(29),
             }
         }
+    }
+
+    #[test]
+    fn cached_tensor_tile_factors_match_full_high_tables_and_padding() {
+        let mut random = Random(0x461966ec);
+        for low_vars in [0usize, 5, 7, 8] {
+            for high_vars in [0usize, 3, 7, 10] {
+                let source_vars = low_vars.max(7) + high_vars;
+                let live_words = 1usize << (source_vars - 7);
+                let packed: Vec<_> = (0..live_words).map(|_| random.next()).collect();
+                let mut tensor = Tensor {
+                    low: (0..1 << low_vars).map(|_| random.next()).collect(),
+                    high_point: (0..source_vars - low_vars).map(|_| random.next()).collect(),
+                    marginals: None,
+                };
+                let dense = TensorState::new(&tensor, &packed, 0);
+                tensor.marginals = Some(dense.marginals.clone());
+                let TensorHigh::Dense(high) = &dense.high else {
+                    panic!("uncached tensors must retain the dense fallback");
+                };
+                for tile_vars in [0usize, 2, 6, 9] {
+                    for point_kind in 0..3 {
+                        let mut actual = TensorState::new(&tensor, &packed, tile_vars);
+                        assert_eq!(actual.marginals, dense.marginals);
+                        assert_eq!(
+                            matches!(actual.high, TensorHigh::Factored { .. }),
+                            low_vars <= 7,
+                        );
+                        let mut reference_low = dense.low.clone();
+                        for _ in 0..7 {
+                            let r = match point_kind {
+                                0 => F::ZERO,
+                                1 => F::ONE,
+                                _ => random.next(),
+                            };
+                            kernels::fold(&mut actual.low, r);
+                            kernels::fold(&mut reference_low, r);
+                        }
+                        let tile_words = 1usize << tile_vars;
+                        let physical_words = live_words.max(tile_words) * 2;
+                        let mut got = vec![F::ZERO; physical_words];
+                        for first in (0..physical_words).step_by(tile_words) {
+                            actual.tile_weights(
+                                first..(first + tile_words).min(live_words),
+                                |word, weight| got[word] += weight,
+                            );
+                        }
+                        for (word, &value) in got.iter().enumerate() {
+                            let expected = if word < live_words {
+                                reference_low[word % reference_low.len()]
+                                    * high[word / reference_low.len()]
+                            } else {
+                                F::ZERO
+                            };
+                            assert_eq!(
+                                value, expected,
+                                "low={low_vars}, high={high_vars}, tile={tile_vars}, point={point_kind}, word={word}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cached_keccak_tensor_high_storage_is_bounded_by_tile_factors() {
+        let mut total = 0;
+        for (high_vars, tile_vars) in [(23, 9), (23, 9), (21, 7), (21, 7)] {
+            let tensor = Tensor {
+                low: vec![F::ONE; 128],
+                high_point: vec![F::ONE; high_vars],
+                marginals: Some(vec![F::ZERO; 128]),
+            };
+            // Cached marginals must not trigger another source scan or a
+            // full 2^high_vars allocation during preparation.
+            let state = TensorState::new(&tensor, &[], tile_vars);
+            let TensorHigh::Factored { low, high } = state.high else {
+                panic!("cached Keccak tensor must use factored high weights");
+            };
+            assert_eq!(low.len(), 1 << tile_vars);
+            assert_eq!(high.len(), 1 << (high_vars - tile_vars));
+            total += (low.len() + high.len()) * std::mem::size_of::<F>();
+        }
+        assert_eq!(total, 1_069_056);
     }
 
     fn transcript(reverse_roots: bool) -> Blake3Transcript {
