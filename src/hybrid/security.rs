@@ -157,10 +157,13 @@ pub(super) fn account_terms(
     let config = resolved.security();
     config.validate().map_err(Error::Config)?;
     for (index, level) in config.levels.iter().enumerate() {
-        let (pg, query) = level.paper_predicted_bits();
+        let (_, query) = level.paper_predicted_bits();
         add(
             "Ligerito proximity folds",
-            level.k_recursive as f64 * 2f64.powf(-pg - level.fold_grinding_bits as f64),
+            crate::ligerito_flock::fold_round_bits(level)
+                .into_iter()
+                .map(|bits| 2f64.powf(-bits))
+                .sum(),
         );
         add(
             "Ligerito queries",

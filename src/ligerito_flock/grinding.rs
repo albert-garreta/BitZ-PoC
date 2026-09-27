@@ -33,7 +33,13 @@ impl GrindingPlan {
             };
             for round in 0..folds {
                 let native = (params.fold_grinding_bits as u32).saturating_sub(round as u32);
-                let error = 2f64.powf(-pg - round as f64) + 2. * gf_error;
+                // Johnson: the row union shrinks by one bit per round (the taper's
+                // justification). Unique decoding: every round carries the same term.
+                let raw = match params.regime {
+                    ligerito::SoundnessRegime::JohnsonOod => pg + round as f64,
+                    ligerito::SoundnessRegime::Udr => pg,
+                };
+                let error = 2f64.powf(-raw) + 2. * gf_error;
                 if level > 0 && round == 0 && native == 0 {
                     // Introduce beta and the unground first fold have no
                     // intervening observation. Their errors share one budget.
