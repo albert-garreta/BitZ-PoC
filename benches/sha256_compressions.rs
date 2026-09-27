@@ -41,7 +41,7 @@
 //! `2^(vars - t)` columns; the prime narrows to the split's one-forest width,
 //! so every split opens one forest). `BITZ_SHA_OPENING_LAYOUT=inner` (default) takes the inner-sumcheck
 //! path; `=product` keeps the direct product opening on the transposed,
-//! instance-major product tensor (`t >= 15`).
+//! instance-major product tensor (`t >= 14`).
 //!
 //! `BITZ_BENCH_LAMBDA=100|128|sha128-reference-schedule` selects the security
 //! profile the run measures at (default `Lambda100`; the two-prime
@@ -161,6 +161,18 @@ impl BenchProof {
             #[cfg(feature = "bitz-parity")]
             Self::Wfbitz(proof) => (proof.inner().round_polynomials.len(), proof.inner_nonces().len()),
         }
+    }
+
+    /// (product-sumcheck rounds, product nonces)
+    fn product(&self) -> (usize, usize) {
+        let product = match self {
+            Self::Forest(proof) => proof.product(),
+            #[cfg(feature = "bitz-parity")]
+            Self::Wfbitz(proof) => proof.product(),
+        };
+        product.map_or((0, 0), |product| {
+            (product.rounds().round_polynomials.len(), product.nonces().len())
+        })
     }
 }
 
@@ -1126,9 +1138,13 @@ fn run_once(
 
     let bitz_bytes = proof.open_bytes();
     let (inner_rounds, inner_nonces) = proof.inner();
-    let spartan_elements = 3 * inner_rounds;
+    // The product sumcheck: four coefficients per round and three terminal
+    // evaluations.
+    let (product_rounds, product_nonces) = proof.product();
+    let product_elements = if product_rounds == 0 { 0 } else { 4 * product_rounds + 3 };
+    let spartan_elements = 3 * inner_rounds + product_elements;
     let field_bytes = <field::Fp<2> as SpartanField>::canonical_encoding_width();
-    let spartan_bytes = spartan_elements * field_bytes + 8 * (inner_nonces + 2);
+    let spartan_bytes = spartan_elements * field_bytes + 8 * (inner_nonces + product_nonces + 2);
 
     let timing = RepTiming {
         witness_ms,

@@ -14,11 +14,14 @@
 //! 2. the initial grinding boundary, the runtime prime, the runtime
 //!    relation frames;
 //! 3. `ξ`, `η`, the terminal boundary, the constant-one batch challenge,
-//!    the public-IO batch challenges; the relation's batching;
+//!    the public-IO batch challenges; the relation's batching; for a
+//!    relation with product slots, the product sumcheck
+//!    ([`super::product`]) and the draw that folds its three terminal
+//!    claims into one rank-one functional at its instance point;
 //! 4. (legacy) the inner sumcheck; the opening claim frame;
 //! 5. the virtual opening of the derived grid.
 
-use crate::sumcheck::boundary::ProverGrindingRoundBoundary;
+use crate::sumcheck::boundary::{ProverGrindingRoundBoundary, VerifierGrindingRoundBoundary};
 use crate::sumcheck::inner::{
     packed::{PackedInput, Sha256InnerGrinding},
     prove_inner_sumcheck,
@@ -44,9 +47,13 @@ use {
     circuit::linear_map::binary::VirtualMap,
 };
 
+use super::product::{
+    InstanceBits, LinearProductGrinding, ProductSlots, ProductSumcheckProof,
+    prove_product_sumcheck, reduced_local_weights, verify_product_sumcheck,
+};
 use super::{
     super::{
-        absorb_spartan_message,
+        absorb_field_elements, absorb_spartan_message,
         sha256::inner_sumcheck::{SHA256_INNER_PREFIX_MAX_VARS, Sha256InnerBitSource},
         squeeze_field,
         sumcheck::SumcheckProof,
@@ -90,6 +97,27 @@ pub(crate) trait LinearBatching {
         point: &[SpartanBitzField],
         config: &FieldConfig,
     ) -> Result<SpartanBitzField, ProtocolError>;
+
+    /// The collapsed local coefficients `β`, one per local assignment column.
+    fn local_coefficients(&self) -> &[SpartanBitzField];
+
+    /// `κ = Kᵀ eq(·, ξ)` padded to a power of two, when the relation has
+    /// product slots.
+    fn product_slot_weights(&self) -> Option<&[SpartanBitzField]> {
+        None
+    }
+
+    /// The same batching at another instance point, with other local
+    /// coefficients and claim (the product sumcheck's reduced claim).
+    fn reanchored(
+        &self,
+        instance_point: &[SpartanBitzField],
+        local_coefficients: Vec<SpartanBitzField>,
+        claim: SpartanBitzField,
+        config: &FieldConfig,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
 }
 
 /// The rank-one functional the virtual opening discharges: the canonical
@@ -201,6 +229,20 @@ pub(crate) trait LinearRelationSpec: Sync {
 
     /// The derived rows the opening runs against.
     fn opened_rows<'a>(&self, witness: &'a Self::Witness) -> Result<&'a [Vec<u64>], ProtocolError>;
+
+    /// The relation's local product slots, if its rows carry any.
+    fn product_slots(&self) -> Option<ProductSlots<'_>> {
+        None
+    }
+
+    /// Prover-side per-instance access to the opened assignment's bits, for
+    /// the product sumcheck.
+    fn instance_bits<'a>(
+        &'a self,
+        _witness: &'a Self::Witness,
+    ) -> Result<Box<dyn InstanceBits + 'a>, ProtocolError> {
+        Err(ProtocolError::UnsupportedKernel)
+    }
 }
 
 /// A linear-relation proof: the boundary nonces, the legacy inner sumcheck
@@ -212,6 +254,8 @@ pub struct LinearProof<B = IntEvalRsLigVirtProof> {
     inner: SumcheckProof<SpartanBitzField, 3>,
     inner_nonces: Vec<u64>,
     terminal_nonce: u64,
+    /// The product sumcheck, for relations with product slots.
+    product: Option<ProductSumcheckProof>,
     bitz: B,
 }
 
@@ -236,10 +280,21 @@ impl<B> LinearProof<B> {
         &self.bitz
     }
 
+    pub const fn product(&self) -> Option<&ProductSumcheckProof> {
+        self.product.as_ref()
+    }
+
+    pub fn product_mut(&mut self) -> Option<&mut ProductSumcheckProof> {
+        self.product.as_mut()
+    }
+
     /// PIOP payload bytes: the two boundary nonces, the inner round
-    /// coefficients and their nonces.
+    /// coefficients and their nonces, and the product sumcheck.
     pub fn piop_bytes(&self) -> usize {
-        2 * 8 + 3 * 16 * self.inner.round_polynomials.len() + 8 * self.inner_nonces.len()
+        2 * 8
+            + 3 * 16 * self.inner.round_polynomials.len()
+            + 8 * self.inner_nonces.len()
+            + self.product.as_ref().map_or(0, ProductSumcheckProof::bytes)
     }
 
     pub fn initial_nonce_mut(&mut self) -> &mut u64 {
@@ -501,6 +556,47 @@ where
             config,
         )?
     };
+    let (batching, product) = match spec.product_slots() {
+        None => (batching, None),
+        Some(slots) => {
+            let _scope = tracing::info_span!("sha256:product_sumcheck_prove").entered();
+            let slot_weights = batching
+                .product_slot_weights()
+                .ok_or(ProtocolError::InvalidGeometry)?;
+            let bits = spec.instance_bits(witness)?;
+            let mut boundary = ProverGrindingRoundBoundary::<LinearProductGrinding>::with_round_offset(
+                security.piop_round_grinding_bits,
+                0,
+            );
+            let output = prove_product_sumcheck(
+                transcript,
+                config,
+                &instance_point,
+                batching.local_coefficients(),
+                slot_weights,
+                slots,
+                &*bits,
+                batching.initial_claim(),
+                &mut boundary,
+            )?;
+            let (reduced, value) = product_terminal_batch(
+                transcript,
+                config,
+                &batching,
+                slot_weights,
+                slots,
+                &output.slot_point,
+                &output.terminal,
+            )?;
+            let batching = batching.reanchored(&output.instance_point, reduced, value, config)?;
+            let proof = ProductSumcheckProof {
+                rounds: output.rounds,
+                nonces: boundary.into_nonces(),
+                terminal: output.terminal,
+            };
+            (batching, Some(proof))
+        }
+    };
 
     let (inner, inner_nonces, claim, assignment) = if spec.product_layout() {
         drop(step3_scope);
@@ -606,8 +702,37 @@ where
         inner,
         inner_nonces,
         terminal_nonce,
+        product,
         bitz,
     })
+}
+
+/// The transcript domain of the draw that folds the product sumcheck's
+/// three terminal claims into one.
+const PRODUCT_TERMINAL_BATCH_DOMAIN: &[u8] = b"bitz/spartan-linear/product-terminal-batch/v1";
+
+/// Absorbs the product sumcheck's terminal evaluations, draws `γ₁, γ₂`, and
+/// returns the reduced claim's local weights and value.
+fn product_terminal_batch<T: Transcript, Bt: LinearBatching>(
+    transcript: &mut T,
+    config: &FieldConfig,
+    batching: &Bt,
+    slot_weights: &[SpartanBitzField],
+    slots: ProductSlots<'_>,
+    slot_point: &[SpartanBitzField],
+    terminal: &[SpartanBitzField; 3],
+) -> Result<(Vec<SpartanBitzField>, SpartanBitzField), ProtocolError> {
+    absorb_field_elements(transcript, terminal, config);
+    let gamma = challenge_point(transcript, PRODUCT_TERMINAL_BATCH_DOMAIN, 2, config)?;
+    reduced_local_weights(
+        config,
+        batching.local_coefficients(),
+        slot_weights,
+        slots,
+        slot_point,
+        terminal,
+        [gamma[0], gamma[1]],
+    )
 }
 
 /// Verifies a linear-relation proof, re-deriving the prime from the bound
@@ -657,6 +782,7 @@ where
     if commitment.params.m != f_layout.row_vars + f_layout.col_vars
         || proof.inner.round_polynomials.len() != expected_inner_rounds
         || (product_layout && !proof.inner_nonces.is_empty())
+        || spec.product_slots().is_some() != proof.product.is_some()
     {
         return Err(ProtocolError::InvalidGeometry);
     }
@@ -732,6 +858,42 @@ where
             &reducer,
             config,
         )?
+    };
+    let batching = match (spec.product_slots(), proof.product.as_ref()) {
+        (Some(slots), Some(product)) => {
+            let _scope = tracing::info_span!("sha256:product_sumcheck_verify").entered();
+            let slot_weights = batching
+                .product_slot_weights()
+                .ok_or(ProtocolError::InvalidGeometry)?;
+            if !slot_weights.len().is_power_of_two() {
+                return Err(ProtocolError::InvalidGeometry);
+            }
+            let mut boundary = VerifierGrindingRoundBoundary::<LinearProductGrinding>::new(
+                security.piop_round_grinding_bits,
+                &product.nonces,
+            );
+            let (instance_point, slot_point) = verify_product_sumcheck(
+                transcript,
+                config,
+                product,
+                &instance_point,
+                slot_weights.len().ilog2() as usize,
+                batching.initial_claim(),
+                &mut boundary,
+            )?;
+            let (reduced, value) = product_terminal_batch(
+                transcript,
+                config,
+                &batching,
+                slot_weights,
+                slots,
+                &slot_point,
+                &product.terminal,
+            )?;
+            batching.reanchored(&instance_point, reduced, value, config)?
+        }
+        (None, None) => batching,
+        _ => return Err(ProtocolError::InvalidGeometry),
     };
 
     let (claim, assignment) = if product_layout {

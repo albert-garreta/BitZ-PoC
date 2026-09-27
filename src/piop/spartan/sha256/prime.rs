@@ -57,7 +57,9 @@ pub const SHA256_TAU_LOCAL_VARS: u32 = 8;
 /// below any sampled prime (Bit assignment, coefficients `< 2^33`, a
 /// few hundred entries per row — `< 2^96` conservatively), the Step-5.1
 /// lift sums `2^t` terms, and the opening is the VIRTUAL path (fold width
-/// capped from `q_bits`, so the one-chunk fold bound does not gate q).
+/// capped from `q_bits`, so the one-chunk fold bound does not gate q). The
+/// `Ch` product slots add `< 2^34` to a row's defect and are reduced by a
+/// cubic sumcheck, so a PIOP round message has degree 3.
 pub(super) const fn sha256_instance_facts(log_instance_capacity: u32) -> IopInstanceFacts {
     IopInstanceFacts {
         defect_log2_bound: 96,
@@ -66,7 +68,7 @@ pub(super) const fn sha256_instance_facts(log_instance_capacity: u32) -> IopInst
         opening_word_bits: 1,
         direct_opening: false,
         tau_arity: SHA256_TAU_LOCAL_VARS + log_instance_capacity,
-        piop_degree: 2,
+        piop_degree: 3,
         step50_magnitude_log2: 0,
     }
 }

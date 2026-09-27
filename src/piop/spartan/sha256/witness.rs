@@ -9,7 +9,10 @@
 use std::array;
 
 use circuit::{
-    sha256::{COMPRESSION_HINT_BITS, COMPRESSION_INPUT_BITS, ROUND_CONSTANTS, compression_circuit},
+    sha256::{
+        COMPRESSION_HINT_BITS, COMPRESSION_INPUT_BITS, ROUND_CONSTANTS,
+        compression_circuit_ch_product,
+    },
     witgen::{PackedWitness, Witgen},
 };
 use thiserror::Error;
@@ -320,7 +323,7 @@ fn generate_one(
         &input_bits,
         COMPRESSION_INPUT_BITS + COMPRESSION_HINT_BITS,
     );
-    let output_bits = compression_circuit(&mut generator, &input_bits);
+    let output_bits = compression_circuit_ch_product(&mut generator, &input_bits);
     let (f, h_bar) = generator.into_witnesses();
     finish_packed_shard(f, h_bar, &output_bits)
 }
@@ -661,21 +664,21 @@ mod tests {
         let h_layout = prepared.assignment_params();
 
         assert_eq!((f_layout.row_vars, f_layout.col_vars), (7, 6));
-        assert_eq!((h_layout.row_vars, h_layout.col_vars), (8, 7));
+        assert_eq!((h_layout.row_vars, h_layout.col_vars), (7, 7));
 
         // Source sequence cell 1 is block[0]'s low bit. In native PCS order
         // it is row 1 of column 0, not row 0 of column 1.
         assert_eq!(witness.source_rows()[0][0] >> 1 & 1, 1);
 
         // The nonidentity Bit map copies that source bit to local
-        // assignment cell 257. Native order makes this row 1 of column 1.
+        // assignment cell 257. Native order makes this row 1 of column 2.
         assert!(prepared.map().column_rows(1).unwrap().any(|row| row == 257));
-        assert_eq!(witness.assignment_rows()[1][0] >> 1 & 1, 1);
+        assert_eq!(witness.assignment_rows()[2][0] >> 1 & 1, 1);
     }
 
     #[test]
     fn instance_major_product_rows_match_the_virtual_map() {
-        let prepared = prepare_sha256_compression_batch_for_product_t_test(1, 15).unwrap();
+        let prepared = prepare_sha256_compression_batch_for_product_t_test(1, 14).unwrap();
         let inputs = [abc_input(), abc_input()];
         let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
         let f_layout = prepared.source_params();
@@ -684,7 +687,7 @@ mod tests {
         let product_rows = witness.product_assignment_rows().unwrap();
 
         assert_eq!(prepared.product_layout_name(), Some("local_rows"));
-        assert_eq!((product_p_h.row_vars, product_p_h.col_vars), (15, 1));
+        assert_eq!((product_p_h.row_vars, product_p_h.col_vars), (14, 1));
         let mut mapped = vec![false; product_p_h.cells()];
         for source in 0..f_layout.cells() {
             if !witness.source_bit(source).unwrap() {
@@ -799,7 +802,7 @@ mod tests {
     }
 
     #[test]
-    fn packed_assignment_satisfies_the_exact_signed_linear_relation() {
+    fn packed_assignment_satisfies_the_exact_signed_relation_with_products() {
         let prepared = prepare_sha256_compression_batch_for_test(1).unwrap();
         let mut second = abc_input();
         second.1[0] ^= 0x0102_0304;
@@ -823,6 +826,22 @@ mod tests {
                 {
                     let flat_row = prepared.flat_constraint_row(instance, local_row).unwrap();
                     residuals[flat_row] += *coefficient;
+                }
+            }
+            // Product slots: K[row, s] · h[left_s] · (h[plus_s] − h[minus_s]).
+            let terms = prepared.product_terms();
+            let bit = |local_column: u32| {
+                let flat = prepared
+                    .flat_assignment_column(instance, local_column as usize)
+                    .unwrap();
+                i64::from(witness.assignment_bit(flat).unwrap())
+            };
+            for slot in 0..terms.slots() {
+                let (plus, minus) = terms.right()[slot];
+                let value = bit(terms.left()[slot]) * (bit(plus) - bit(minus));
+                for (local_row, coefficient) in terms.k().column(slot).expect("product slot") {
+                    let flat_row = prepared.flat_constraint_row(instance, local_row).unwrap();
+                    residuals[flat_row] += *coefficient * value;
                 }
             }
         }

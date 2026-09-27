@@ -146,7 +146,11 @@ fn sha_profiles_layouts_and_boundaries_preflight() {
                 p.security().ood.is_some(),
                 selection == LigeritoSelection::JOHNSON
             );
-            let rows = prepare_sha256_compression_batch_for_assignment_rows(exponent + 14)
+            // `2^(k + 14)` cells hold `2^k` compressions of the `2^14`-stride
+            // relation up to `k = 9` and a few more beyond; at `k = 16` they
+            // would need capacity `2^17`, so the largest shape uses `2^29`.
+            let log_rows = if exponent == 16 { 29 } else { exponent + 14 };
+            let rows = prepare_sha256_compression_batch_for_assignment_rows(log_rows)
                 .unwrap()
                 .with_ligerito(selection)
                 .unwrap();

@@ -71,33 +71,33 @@ const PINS: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "sha256/2p7/lambda100",
-        "107b5655bae3d6860a47e2f2d8e76b93c3881bd1bce07ee3e7ff79f08c4182b7",
-        "66e87f0af701b784f485fe96c899401c7e32affd4fe881bebbc2efc1740e1069",
-        "5693477e6b1fd7f45be26688436957ff792f9285a94d4bde98b1eee23b716a0d",
+        "d2615a8cf40432f197e84cd1092e2936c9311b50f7681e64bf4a897d0902557b",
+        "a2340389d324631f299b075815f6e74868322313f7bd5b9d6789e1485f5fd46b",
+        "739db1ccb4eeddc0f5b6136826a92c36475ce3bfde6ab1ad898a394e718e5861",
     ),
     (
         "sha256/2p7/lambda128",
-        "e2b797cdb46ce735cca77d11efb3071b32f4fbcfaaeda8a3a48c94e6d9d7c1b2",
-        "c83b610466776d7d98123c55209281f487ffca228fe0bff7fc9bf71602d39587",
-        "7825e191e87c0195e44bba291e0ea35d04161c92403583516766dae805836558",
+        "410161621b922b309796510a86e707aba5fae8cf8ec85acfb3fc980dc42f18c4",
+        "e54ddf6829fa7026cbe9f14e5a8efdb4ff7f2c0ffbe663b0bdb84e9d24dbdbad",
+        "8d0fe7327af82a06c60e5330815c66413f70d92627a9f4f1dd8f2b47e19cdd00",
     ),
     (
         "sha256/2p7/reference",
-        "ba3d2b76e75809b9936fd304b91e1577e4b5d385c7e683fa8283bd090fc98e5f",
-        "32f3295ab41f52fedecada0d952cbad66dd26bf86d9d7f372e80ae32b5559391",
-        "cefc1bf3284fc1bb71d74e0f53a57c8810672a7b8c8f499872396f3cf269b8bd",
+        "8ca22aaaae01be579ab997e09b22ad8f0f3b61de7142b91d75a034841b6be0f3",
+        "04cb090c72cb592fb2b8e69f2b93ced6ac4380ba76aea0447f3d03dae551585d",
+        "b2738f18c6239803cc580b0ff8d71151ff1a3d051ad1b3a0910dae7453626c67",
     ),
     (
         "sha256/2p7/wfbitz/lambda100",
-        "1ca4f9299040895e13e108e6e6fd9108a6154532dd9c0c87e1487e596f0487bc",
-        "1ca4f9299040895e13e108e6e6fd9108a6154532dd9c0c87e1487e596f0487bc",
-        "9ad541204ec5f2a2a8f2370b872934a9936db01ac4c727498141d5ca42541838",
+        "64399c38bcf1b4408081443a5285f178903b04dad7ad0c825f463bec858f1e79",
+        "64399c38bcf1b4408081443a5285f178903b04dad7ad0c825f463bec858f1e79",
+        "8ae0faf93d174fb0db2d71613c75ce2231ed0582dd606753686cec4d8f10e91d",
     ),
     (
-        "sha256/legacy-rows21/lambda100",
-        "5af2461d489e30d47fd8fca2d39f575bc24344beaa3c328caf669c566bde31a5",
-        "ffc13f7fb113859bf5a4770af582a2e8febc822e764ac5c70674025ea49108e4",
-        "e1a03bcdf965fc0cda54763fc13e2143ad68812be0af52228d295de6d5845deb",
+        "sha256/legacy-rows24/lambda100",
+        "9cba7e07e447f3d1f24f3435a4ace0b92e582956a1a1b6deafd3a7c565e27429",
+        "df01a8ff3e43efd580294b929553bac8435cedc77ace17495c3b56864800967d",
+        "e6b7bcdd10dca4d6f62560efde977e9c13e5325a1a505d3fc256237af6b937a9",
     ),
     (
         "u128_mul/2p15/lambda100",
@@ -453,12 +453,16 @@ fn sha256_2p7_lambda128() {
     sha256_pin("sha256/2p7/lambda128", &prepared);
 }
 
+/// The legacy inner-sumcheck path needs a non-power-of-two batch: `2^24`
+/// cells hold 1025 compressions of the `2^14`-stride relation (`2^21`, the
+/// old choice, now holds exactly 128 and opens the product tensor).
 #[test]
-fn sha256_legacy_inner_sumcheck_rows21_lambda100() {
+fn sha256_legacy_inner_sumcheck_rows24_lambda100() {
     let prepared =
-        prepare_sha256_compression_batch_for_assignment_rows_with_profile::<Lambda100>(21)
+        prepare_sha256_compression_batch_for_assignment_rows_with_profile::<Lambda100>(24)
             .expect("prepare");
-    sha256_pin("sha256/legacy-rows21/lambda100", &prepared);
+    assert_eq!(prepared.instances(), 1025);
+    sha256_pin("sha256/legacy-rows24/lambda100", &prepared);
 }
 
 /// The default SHA opener: worldfnd/BitZ on the `Id ⊗ M` block-layout
