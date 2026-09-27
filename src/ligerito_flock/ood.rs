@@ -50,6 +50,18 @@ impl ProverOod {
             ProverState::AtOpening(_) => None,
         }
     }
+
+    /// [`Self::claim`] for an opener outside this module, called where the
+    /// crate's own opening consumes the state: the claim bound before the
+    /// PIOP, or Round 0 run here when the parameters left it for the
+    /// opening; `None` when no round is due.
+    pub(crate) fn opening_claim(
+        self,
+        transcript: &mut (impl Transcript + Send),
+        hint: &FlockCommitHint,
+    ) -> Option<OodProverClaim> {
+        self.claim(transcript, hint)
+    }
 }
 
 /// Opaque verifier state, tied to the exact Round-0 payload already checked.
@@ -110,6 +122,19 @@ impl VerifierOod {
             VerifierState::Bound(claim) => claim,
             VerifierState::AtOpening(_) => None,
         }
+    }
+
+    /// [`Self::claim`] for an opener outside this module, with the proof's
+    /// round, called where the crate's own opening consumes the state: the
+    /// same presence rule (a round bound before the PIOP must be the
+    /// proof's; a record where no round is due is rejected, not ignored).
+    pub(crate) fn opening_claim(
+        self,
+        transcript: &mut (impl Transcript + Send),
+        packed_vars: usize,
+        round: Option<&OodRound>,
+    ) -> Result<Option<OodVerifierClaim>, FlockRsError> {
+        self.claim(transcript, packed_vars, round)
     }
 }
 

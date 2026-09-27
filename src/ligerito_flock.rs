@@ -18387,6 +18387,40 @@ mod ood_round_tests {
         assert!(sha_lig_configs(10).is_err());
     }
 
+    /// The presence rule an opener outside this module applies through
+    /// `opening_claim`: where no round is due, nothing is absorbed and a
+    /// Round-0 record is rejected, whether the state was bound before the
+    /// PIOP or left for the opening.
+    #[test]
+    fn an_opening_with_no_round_due_rejects_a_record() {
+        let round = OodRound {
+            y: Gf::one(),
+            nonce: None,
+        };
+        let mut transcript = Blake3Transcript::new();
+        let fresh = transcript.state_digest();
+        assert!(matches!(
+            VerifierOod::from(None).opening_claim(&mut transcript, 15, None),
+            Ok(None)
+        ));
+        let bound = bind_verifier_ood(&mut transcript, 15, None, None).unwrap();
+        assert!(matches!(
+            bound.opening_claim(&mut transcript, 15, None),
+            Ok(None)
+        ));
+        assert_eq!(transcript.state_digest(), fresh);
+        let states = [
+            VerifierOod::from(None),
+            bind_verifier_ood(&mut transcript, 15, None, None).unwrap(),
+        ];
+        for state in states {
+            assert!(matches!(
+                state.opening_claim(&mut transcript, 15, Some(&round)),
+                Err(FlockRsError::OodRound)
+            ));
+        }
+    }
+
     /// `eq(b, r) mod q` over `b ∈ {0,1}^{r.len()}` (index bit `k` ↔ `r[k]`).
     fn eq_table_mod_q(arith: &field::FpCtx<2>, r: &[u128]) -> Vec<u128> {
         let q = arith.modulus_u128();

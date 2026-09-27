@@ -288,7 +288,7 @@ where
             };
             let setup_ms = setup.elapsed().as_secs_f64() * 1000.;
             let security_params = prefix.security();
-            let (opening_bits, opening_binding) = opener.opening_bits();
+            let (opening_bits, opening_binding) = opener.opening_bits(security_params.ood);
             let ladder_config = opener.security();
             let security = json!({
                 "profile":if security_params.lambda==128 {Lambda128::NAME}else{Lambda100::NAME},
