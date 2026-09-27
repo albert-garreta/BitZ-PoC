@@ -22,9 +22,10 @@
 //! per proof into [`nibble::NibbleRows`] (the sixteen such bits of each
 //! `(y, column)` as one `u16`) and each pass selects its indices from them
 //! with nibble lookups, instead of gathering eight strided words and
-//! transposing them per 64 columns in every pass (`WFBITZ_NIBBLE=0`
-//! restores that path; `WFBITZ_PATTERN_CACHE=1` also keeps a level's JIT
-//! patterns for the passes that reread them).
+//! transposing them per 64 columns in every pass, on grids of `2^23` bits
+//! and more (`WFBITZ_NIBBLE=0` restores the gathers everywhere,
+//! `WFBITZ_NIBBLE_FROM=n` moves the threshold; `WFBITZ_PATTERN_CACHE=1`
+//! also keeps a level's JIT patterns for the passes that reread them).
 
 use std::collections::VecDeque;
 use std::mem::MaybeUninit;
@@ -52,6 +53,13 @@ const MATERIALISED_LEVEL: usize = 3;
 /// above those are products of the level below, read back from memory.
 const FUSED_UPPER_LEVELS: usize = 3;
 const PARALLEL_MIN_LANES: usize = 1 << 12;
+/// `log2` of the smallest grid (`t + s`) that reads its indices off the
+/// nibble rows. At `n = 22` (`t = 13`, `s = 9`) they measured 0.92× the
+/// gathers at one thread but 1.08× at ten, the excess also landing in
+/// phases outside the forest (column folds, Ligerito, ring switch) with
+/// the page faults unchanged; from `n = 23` on they win at every thread
+/// count.
+const NIBBLE_FROM: usize = 23;
 
 /// The per-position value tables of one level after some folds, flat:
 /// position `q` owns `data[q·len..(q+1)·len]`.
@@ -91,10 +99,14 @@ pub(crate) struct PatternMode {
     /// again: the JIT fold after its level's JIT round, and level 3's round
     /// and fold and level 4's rebuild after the build pass.
     pub(crate) cache: bool,
+    /// The nibble rows serve grids of `2^{nibble_from}` bits and more;
+    /// smaller ones gather.
+    pub(crate) nibble_from: usize,
 }
 
 impl PatternMode {
-    /// `WFBITZ_NIBBLE` / `WFBITZ_PATTERN_CACHE` (`0` or `1`), read once.
+    /// `WFBITZ_NIBBLE` / `WFBITZ_PATTERN_CACHE` (`0` or `1`) and
+    /// `WFBITZ_NIBBLE_FROM` (default [`NIBBLE_FROM`]), read once.
     pub(crate) fn from_env() -> Self {
         static MODE: OnceLock<PatternMode> = OnceLock::new();
         *MODE.get_or_init(|| {
@@ -106,6 +118,10 @@ impl PatternMode {
             PatternMode {
                 nibble: flag("WFBITZ_NIBBLE", true),
                 cache: flag("WFBITZ_PATTERN_CACHE", false),
+                nibble_from: std::env::var("WFBITZ_NIBBLE_FROM")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(NIBBLE_FROM),
             }
         })
     }
@@ -156,11 +172,12 @@ impl<'a> Forest<'a> {
         self
     }
 
-    /// The nibble rows, when the mode uses them and the table-driven
-    /// levels run their JIT rounds (`t ≥ 6`; the small-`t` path gathers).
-    /// Call outside parallel regions: the first call builds them.
+    /// The nibble rows, when the mode uses them, the grid has at least
+    /// `2^{nibble_from}` bits and the table-driven levels run their JIT
+    /// rounds (`t ≥ 6`; the small-`t` path gathers). Call outside parallel
+    /// regions: the first call builds them.
     fn nibbles(&self) -> Option<&NibbleRows> {
-        (self.mode.nibble && self.jit()).then(|| {
+        (self.mode.nibble && self.jit() && self.t + self.s >= self.mode.nibble_from).then(|| {
             self.nibble_rows
                 .get_or_init(|| NibbleRows::new(self.t, self.packed_cols, (1usize << self.s).div_ceil(64)))
         })
@@ -1522,7 +1539,9 @@ mod tests {
             let mut runs = Vec::new();
             for nibble in [false, true] {
                 for cache in [false, true] {
-                    let forest = Forest::new(t, s, &packed, &images).with_patterns(PatternMode { nibble, cache });
+                    // `nibble_from: 0`: these small grids would gather otherwise.
+                    let mode = PatternMode { nibble, cache, nibble_from: 0 };
+                    let forest = Forest::new(t, s, &packed, &images).with_patterns(mode);
                     let mut ps = build_prover(b"forest-patterns/v1", b"instance");
                     let (point, claim) = forest.prove(&mut ps, &zeta);
                     runs.push((nibble, cache, point, claim, ps.finish().narg_string));
