@@ -304,8 +304,8 @@ bench-internals = []
 bitz-parity = ["dep:spongefish", "dep:crypto-bigint", "field/spongefish"]
 # The SHA-256 compression relation with every nonlinear or XOR summand as
 # product slots (Ch, Maj, Σ0, Σ1, σ0, σ1): the integer witness is the lifted
-# Boolean witness alone (7 145 cells, a 2^13 stride). Without it only Ch is a
-# product (16 361 cells, a 2^14 stride).
+# Boolean witness plus one Maj parity word per two rounds (8 169 cells, a
+# 2^13 stride). Without it only Ch is a product (16 361 cells, a 2^14 stride).
 sha-all-products = []
 # Composed SHA-256/P-256 arithmetization and its split Spartan adapter.
 ecdsa = ["circuit/full"]

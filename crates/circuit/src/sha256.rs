@@ -474,33 +474,31 @@ where
     })
 }
 
-/// Returns a Z expression equal to twice SHA-256's `Maj(x, y, z)` without
-/// materializing any derived bit: per bit `Maj = y + (x − y)² (z − y)`, one
-/// three-factor product slot each. The words must keep their bit lifts.
-fn majority_product_twice<CS>(
+/// Returns a Z expression equal to twice SHA-256's `Maj` through a lifted
+/// parity `d` of two of its inputs: when those two agree `Maj` is either of
+/// them (`base`), else the third (`other`), so per bit `Maj = base + d
+/// (other − base)`, one two-factor product slot each. The words must keep
+/// their bit lifts.
+fn majority_parity_twice<CS>(
     circuit: &mut CS,
-    x: &UInt32<CS>,
-    y: &UInt32<CS>,
-    z: &UInt32<CS>,
+    d: &UInt32<CS>,
+    base: &UInt32<CS>,
+    other: &UInt32<CS>,
 ) -> ShaZ<CS>
 where
     CS: Circuit,
 {
     assert!(
-        x.z_bits.len() == 32 && y.z_bits.len() == 32 && z.z_bits.len() == 32,
-        "Maj as a product needs the bit lifts of all three words"
+        d.z_bits.len() == 32 && base.z_bits.len() == 32 && other.z_bits.len() == 32,
+        "Maj through a parity needs the bit lifts of all three words"
     );
     let mut two = ShaCoefficient::<CS>::one();
     two += ShaCoefficient::<CS>::one();
-    let mut sum = y.int_value() * two.clone();
+    let mut sum = base.int_value() * two.clone();
     let mut weight = two;
     for bit in 0..32 {
-        let difference = x.z_bits[bit].clone() - y.z_bits[bit].clone();
-        let product = circuit.product3::<SHA256_Z_LIMBS>(
-            difference.clone(),
-            difference,
-            z.z_bits[bit].clone() - y.z_bits[bit].clone(),
-        );
+        let difference = other.z_bits[bit].clone() - base.z_bits[bit].clone();
+        let product = circuit.product::<SHA256_Z_LIMBS>(d.z_bits[bit].clone(), difference);
         sum += product * weight.clone();
         weight += weight.clone();
     }
@@ -549,9 +547,11 @@ where
 }
 
 /// [`compress_ch_product`] with every nonlinear or XOR summand as product
-/// slots too: `Maj` per bit as `b + (a − b)² (c − b)` and every `Σ0`, `Σ1`,
-/// `σ0`, `σ1` bit as `x − y + z − 2 (x − y)² (z − y)`. No derived word is
-/// lifted, so the integer witness is exactly the lifted Boolean witness.
+/// slots too: every `Σ0`, `Σ1`, `σ0`, `σ1` bit as `x − y + z − 2 (x − y)²
+/// (z − y)`, and `Maj` per bit as `b + D (c − b)` through the lifted parity
+/// `D = a_t ⊕ a_{t−1}`, which rounds `t` and `t + 1` share (round `t + 1`
+/// reads it as `b ⊕ c`: `Maj = c + D (a − c)`). The integer witness is the
+/// lifted Boolean witness plus those 32 parity words.
 pub fn compress_all_products<CS>(
     circuit: &mut CS,
     block: [Word<CS::Bool, 32>; 16],
@@ -624,6 +624,9 @@ where
     }
 
     let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = state.clone();
+    // All-products `Maj`: the parity `a_t ⊕ a_{t−1}` of an even round serves
+    // the next round too (there it is `b ⊕ c`).
+    let mut shared_parity: Option<UInt32<CS>> = None;
 
     for i in 0..64 {
         let big_sigma_1 = if ALL_PRODUCTS {
@@ -653,7 +656,16 @@ where
             uint_from_word(circuit, big_sigma_0_word)
         };
         let majority = if ALL_PRODUCTS {
-            majority_product_twice(circuit, &a, &b, &c)
+            if i % 2 == 0 {
+                let parity = a.word.xor(circuit, &b.word);
+                let parity = uint_from_word_with_bits(circuit, parity);
+                let value = majority_parity_twice(circuit, &parity, &b, &c);
+                shared_parity = Some(parity);
+                value
+            } else {
+                let parity = shared_parity.take().expect("the even round's a ⊕ b");
+                majority_parity_twice(circuit, &parity, &c, &a)
+            }
         } else {
             majority_twice(circuit, &a, &b, &c)
         };
@@ -1184,7 +1196,7 @@ mod tests {
     }
 
     #[test]
-    fn all_products_variant_keeps_the_witness_and_lifts_nothing_else() {
+    fn all_products_variant_keeps_the_witness_and_lifts_only_the_majority_parities() {
         let inputs: [bool; COMPRESSION_INPUT_BITS] =
             array::from_fn(|bit| bit % 7 == 1 || bit % 13 == 4);
         let capacity = COMPRESSION_INPUT_BITS + COMPRESSION_HINT_BITS;
@@ -1199,8 +1211,9 @@ mod tests {
         let symbolic_inputs = generator.inputs();
         let _ = compression_circuit_all_products(&mut generator, &symbolic_inputs);
         let matrices = generator.into_matrices();
-        // Only the committed bits are lifted: one integer cell per Boolean one.
-        assert_eq!(matrices.m.row_count(), 7_145);
+        // The committed bits are lifted one integer cell per Boolean one, plus
+        // one `a_t ⊕ a_{t−1}` parity word per two rounds for `Maj`.
+        assert_eq!(matrices.m.row_count(), 7_145 + 32 * 32);
         assert_eq!(matrices.m.column_count(), 7_145);
         assert_eq!(matrices.c.row_count(), 184);
         assert_eq!(matrices.a.nnz() + matrices.b.nnz(), 0);

@@ -56,12 +56,13 @@ pub const SHA256_F_INSTANCE_BITS: usize = SHA256_F_BAR_LIVE_BITS - 1;
 /// ([`SHA256_PRODUCT_SLOTS`]), not through the derived words `e ⊕ f` and
 /// `e ⊕ g`, so a compression lifts `20_457 − 64 · 64` bits: a `2^14` stride.
 /// With `sha-all-products`, `Maj` and every `Σ`/`σ` bit are products too and
-/// nothing but the committed bits is lifted: `1 + 7_144`, a `2^13` stride.
+/// only the committed bits and one `Maj` parity word per two rounds are
+/// lifted: `1 + 7_144 + 32 · 32`, a `2^13` stride.
 #[cfg(not(feature = "sha-all-products"))]
 pub const SHA256_H_BAR_LIVE_BITS: usize = 16_361;
 /// Live integer-assignment bits (see the Ch-only definition).
 #[cfg(feature = "sha-all-products")]
-pub const SHA256_H_BAR_LIVE_BITS: usize = 7_145;
+pub const SHA256_H_BAR_LIVE_BITS: usize = 8_169;
 
 /// The compression circuit the relation is generated from.
 #[cfg(not(feature = "sha-all-products"))]
@@ -1649,7 +1650,7 @@ mod tests {
 
         assert_eq!(
             instances,
-            if cfg!(feature = "sha-all-products") { 293 } else { 128 }
+            if cfg!(feature = "sha-all-products") { 256 } else { 128 }
         );
         assert_eq!(prepared.instances(), instances);
         assert_eq!(
