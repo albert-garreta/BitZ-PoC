@@ -517,8 +517,6 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
     protocol::prove_reduced(transcript, &prepared.inner, assignment, hint)
 }
 
-/// Verifies the MultiSwap proof, re-deriving both primes from the bound
-/// transcript.
 /// [`prove_multiswap_mod_r1cs`] with the reduced claim discharged through the
 /// worldfnd/BitZ scheme's virtual opening (feature `bitz-parity`): the same
 /// prefix, lift and second prime, then that scheme's fold, GKR and opening
@@ -548,6 +546,8 @@ pub fn verify_multiswap_mod_r1cs_wfbitz<T: Transcript + Send>(
     protocol::wfbitz_opener::verify_reduced(transcript, &prepared.inner, commitment, proof)
 }
 
+/// Verifies the MultiSwap proof, re-deriving both primes from the bound
+/// transcript.
 pub fn verify_multiswap_mod_r1cs<T: Transcript + Send>(
     transcript: &mut T,
     prepared: &PreparedMultiswapRelation,

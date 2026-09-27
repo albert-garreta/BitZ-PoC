@@ -13,9 +13,10 @@
 //! of the low gate coordinates — and BitZ's `LinearClaim` is exactly that:
 //! row weights, column weights, a target modulo `q`. The commitment is the
 //! same flock commitment over the same per-column bit rows. BitZ's fold
-//! bound (`(q − 1)(2^t + 1) < 2^127`) coincides with the direct-opening
-//! prime cap the profile already enforces at word width one
-//! (`q_bits ≤ 126 − t`), so the profile's primes need no change.
+//! gate (`(q − 1)(2^t + 1) < 2^128 − 1 = ord(g)`, [`BitZParams::new`]) is
+//! implied by the direct-opening prime cap the profile already enforces at
+//! word width one (`q_bits ≤ c_w = 126 − t`, under which
+//! `(q − 1)(2^t + 1) < 2^127`), so the profile's primes need no change.
 //!
 //! BitZ runs its own transcript (spongefish with a hint channel). It is
 //! forked from the outer transcript after the terminal grinding boundary:

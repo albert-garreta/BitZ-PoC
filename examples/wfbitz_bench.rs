@@ -9,10 +9,10 @@
 //! on a forked transcript. It commits `R` times (median), proves once to
 //! warm up and then `R` times (medians of the wall time and of every traced
 //! phase, the paper's buckets summed from them), verifies every timed proof
-//! (median), and prints one `RESULT` line. The claimed value is computed
-//! once, outside the timers (as the CLI does). One size per process so the
-//! peak resident set is the shape's; the thread count is rayon's
-//! (`RAYON_NUM_THREADS`).
+//! (median), and prints one `RESULT` line (with the source revision, as the
+//! header does). The claimed value is computed once, outside the timers (as
+//! the CLI does). One size per process so the peak resident set is the
+//! shape's; the thread count is rayon's (`RAYON_NUM_THREADS`).
 //!
 //! Buckets, as the paper's table splits the F2Z prover: grand products =
 //! `fold+images` + `gkr` (the integer folds, the images, the batched GKR);
@@ -62,17 +62,38 @@ fn peak_rss_bytes() -> u64 {
     usage.ru_maxrss as u64
 }
 
+/// The source revision, probed as the `bitz` CLI's generated tables record
+/// it (`git describe --always --dirty --abbrev=9` of the crate, else the
+/// build's `BITZ_REVISION`, else `unknown`).
+fn revision() -> String {
+    let root = env!("CARGO_MANIFEST_DIR");
+    std::path::Path::new(root)
+        .join(".git")
+        .exists()
+        .then(|| {
+            std::process::Command::new("git")
+                .args(["-C", root, "describe", "--always", "--dirty", "--abbrev=9"])
+                .output()
+                .ok()
+        })
+        .flatten()
+        .filter(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| option_env!("BITZ_REVISION").unwrap_or("unknown").to_owned())
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut n: Option<usize> = None;
     let mut reps = 5usize;
     let mut seed = 1u64;
-    // `fast` = flock's embedded ladder as shipped; otherwise one of the
-    // crate's validated selections (`custom:1:4` = the paper's rate-1/2
-    // Johnson ladder, `custom:3:4` = rate 1/8), resolved at 100 bits. A
-    // Johnson ladder runs Round 0; a unique-decoding one (`udr`, `udrg`)
-    // does not need it.
-    let mut ladder = String::from("fast");
+    // One of the crate's validated selections, resolved at 100 bits
+    // (`custom:1:4`, the default as in the `bitz` CLI = the paper's
+    // rate-1/2 Johnson ladder, `custom:3:4` = rate 1/8), or `fast` =
+    // flock's embedded ladder as shipped. A Johnson ladder runs Round 0; a
+    // unique-decoding one (`udr`, `udrg`) does not need it.
+    let mut ladder = String::from("custom:1:4");
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -94,7 +115,7 @@ fn main() {
             }
         }
     }
-    let n = n.expect("usage: bitz_bench <n> [--reps R] [--seed S] [--ladder fast|custom:r:k]");
+    let n = n.expect("usage: bitz_bench <n> [--reps R] [--seed S] [--ladder custom:r:k|fast]");
     let shape = Shape::reference(n).expect("shape");
     let (t, s) = (shape.log_rows(), shape.log_columns());
     let layout = shape.layout();
@@ -110,8 +131,10 @@ fn main() {
     let threads = rayon::current_num_threads();
     #[cfg(not(feature = "parallel"))]
     let threads = 1;
+    // The revision the rows come from, probed before any timer.
+    let rev = revision();
     println!(
-        "bitz_bench n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder} q_bits={q_bits} round0={round0}"
+        "bitz_bench n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder} q_bits={q_bits} round0={round0} commit={rev}"
     );
 
     // The committed bits.
@@ -194,7 +217,7 @@ fn main() {
     let rss = peak_rss_bytes();
     println!("peak rss: {:.2} GB", rss as f64 / 1e9);
     println!(
-        "RESULT schema=bitz-bench/2 n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder} q_bits={q_bits} round0={} commit_ms={:.3} prove_ms={:.3} grand_ms={:.3} ring_ms={:.3} lig_ms={:.3} verify_ms={:.3} narg_bytes={} hints_bytes={} ood_bytes={} encoded_bytes={} peak_rss_bytes={rss}",
+        "RESULT schema=bitz-bench/2 commit={rev} n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder} q_bits={q_bits} round0={} commit_ms={:.3} prove_ms={:.3} grand_ms={:.3} ring_ms={:.3} lig_ms={:.3} verify_ms={:.3} narg_bytes={} hints_bytes={} ood_bytes={} encoded_bytes={} peak_rss_bytes={rss}",
         u8::from(round0), ms(commit), ms(prove), ms(grand), ms(ring), ms(lig), ms(verify), sizes.0, sizes.1, sizes.2, sizes.3
     );
 }

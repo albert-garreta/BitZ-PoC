@@ -21,9 +21,12 @@ are selectable; the u64 multiplication SNARK is the first user.
 - `src/piop/spartan/protocol/wfbitz_opener.rs`: `WfbitzOpener::prepare::<P,
   _>(spec, ladder, target)` → the relation prefix (its security parameters
   carrying the ladder's Round-0 accounting) and the opener; `commit(rows)`,
-  `prove(...)`, `verify(...)`, `opening_bits()`; `WfbitzLigerito::{Fast,
-  Selected(LigeritoSelection)}` (`fast | udr:<r>:<k> | custom:<r>:<k>`);
-  `WfbitzOpeningProof` (narg string, hints, the Round-0 messages).
+  `prove(...)`, `verify(...)`, `opening_bits(ood)`; `prove_standalone` /
+  `verify_standalone` / `standalone_evaluation` (a standalone claim, bound
+  as the `bitz` CLI binds it); `WfbitzLigerito::{Fast,
+  Selected(LigeritoSelection)}` (`fast | udr:<r>:<k> | udrg:<r>:<k> |
+  custom:<r>:<k>`); `WfbitzOpeningProof` (narg string, hints, the Round-0
+  messages).
 - `MulLayout::wfbitz_split(extra)`: the row/column split this opener
   proves fastest (below).
 - `examples/u64_mul_probe.rs`: `BITZ_OPENER=forest|wfbitz`,
@@ -33,25 +36,33 @@ are selectable; the u64 multiplication SNARK is the first user.
   (`--ligerito fast` = the ladder as shipped); the case identity carries
   `bitz.opener`; `scripts/mul_table.py` keys the rows `bitz-wf@<rate>`.
 - `examples/wfbitz_parity.rs` (the byte-parity harness against their
-  `dump_bitz`/`verify_bitz`), `wfbitz_bench.rs` (their raw-PCS metrics),
-  `wfbitz_root_probe.rs`; `docs/wfbitz-parity-notes.md` (the parity
-  sessions' notes: the loop, the profile, the head-to-head of the two PCSs).
+  `dump_bitz`/`verify_bitz`), `wfbitz_bench.rs` (the raw-PCS row: the
+  `bitz` CLI's claim through `wfbitz_opener::prove_standalone` — the
+  statement frame, Round 0 for a Johnson ladder, a transcript-sampled prime
+  of `min(113, 126 − t)` bits and point, then BitZ's scheme on a forked
+  transcript; `custom:1:4` unless `--ladder` says otherwise, the source
+  revision in its header and `RESULT` line), `wfbitz_root_probe.rs`;
+  `docs/wfbitz-parity-notes.md` (the parity sessions' notes: the loop, the
+  profile, the head-to-head of the two PCSs).
 
 ## How the opener plugs in
 
 The unified runner binds the statement (then a resolved ladder's policy
 digest and Round 0), grinds and draws the Step-2 prime, runs the Spartan
 PIOP under per-draw grinding, bitifies the terminal claim and grinds the
-terminal boundary. The wfbitz opener replaces
-the last step: the bitified claim is a rank-one functional over the
-committed bit tensor — dense row weights times the column table — and
-their `LinearClaim` is exactly that; the commitment is the same flock
-commitment over the same per-column bit rows under the ladder's level 0;
-their fold bound `(q − 1)(2^t + 1) < 2^127` is the profile's direct-opening
-prime cap at word width one. Their transcript (spongefish with a hint
-channel) is forked after the terminal boundary: the fork's instance tag is
-a 32-byte squeeze of the outer state, the bridge digest is absorbed again
-inside, nothing is drawn from the outer transcript after the fork.
+terminal boundary. The wfbitz opener replaces the last step: the bitified
+claim is a rank-one functional over the committed bit tensor — dense row
+weights times the column table — and their `LinearClaim` is exactly that;
+the commitment is the same flock commitment over the same per-column bit
+rows under the ladder's level 0 (checked against the opener's
+configuration up front on both sides, as the runner checks it); their fold
+gate `(q − 1)(2^t + 1) < 2^128 − 1 = ord(g)` (`BitZParams::new`) is implied
+by the profile's direct-opening prime cap at word width one
+(`q_bits ≤ 126 − t` keeps the product below `2^127`). Their transcript
+(spongefish with a hint channel) is forked after the terminal boundary:
+the fork's instance tag is a 32-byte squeeze of the outer state, the
+bridge digest is absorbed again inside, nothing is drawn from the outer
+transcript after the fork.
 
 ## Round 0
 
@@ -68,10 +79,24 @@ their final Ligerito opening: `η_ood·eq(·, ζ⃗)` into the packed basis
 (`add_ood_basis`), `η_ood·y` into the target, the verifier's succinct
 basis evaluation adding `ood_residual_evals`; `η_ood` is drawn on the
 forked transcript after the point and the value are absorbed. Off for
-unique-decoding ladders. The proof carries `y` and the grinding nonce.
-`opening_bits()` reports the weakest of the ladder's proximity-gap and
-query terms (with their grinding), the Round-0 collision bound (with its
-grinding) and the `GF(2^128)` floor.
+unique-decoding ladders, where a proof carrying a Round-0 record is
+rejected rather than ignored, as the crate's own opening rejects it. The
+proof carries `y` and the grinding nonce. The standalone opening
+(`prove_standalone`, the raw rows of `examples/wfbitz_bench`) runs the
+round the same way right after its statement frame, at the ladder's own
+target, before the prime and point draws.
+
+`opening_bits(ood)` reports the weakest of the ladder's fold rounds (the
+proximity-gap term plus that round's own fold grinding: flock grinds
+`fold_grinding_bits − j` at fold round `j`, which only the Johnson row
+union makes up; `weakest_fold_round_grinding`) and query terms (with their
+grinding), the Round-0 collision bound (with the grinding the proof runs:
+`ood` is the relation's `prefix.security().ood`, adopted at the profile's
+λ) and the `GF(2^128)` floor. The scheme grinds none of its own
+`GF(2^128)` rounds, so `prepare` also drops the profile's forest and
+ring-switch grinding and books those two terms bare
+(`adopt_ungrinded_opener`); a profile they cannot reach (`λ ≥ 127`) is
+refused.
 
 ## The split
 
@@ -104,7 +129,8 @@ every `n`, the second buys little more time for much more proof, and one
 variable in the other direction costs 10–40 %. The verifier prefers the
 smaller `t` as well (n = 28: 3.2–3.7 ms at t ≤ 16, 4.4 at 17, 7.6 at 18;
 n = 30: 5.3–6.3 at t ≤ 17, 8.5 at 18, 12.8 at 19). Under the rule the
-raw sweep (`examples/wfbitz_bench`, 8 threads, flock's fast ladder,
+raw sweep (`examples/wfbitz_bench` as it was then: a random instance at
+the fixed `q = 2^100 − 15`, no Round 0; 8 threads, flock's fast ladder,
 `PerfRuns/wfbitz-rule-20260924c/raw_n*.txt`) reads, reference → rule,
 commit + prove ms / verify ms / proof KB: n = 22 14.2 → 13.3 / 1.32 →
 1.26 / 118 → 122; 24 30.0 → 24.8 / 1.73 → 1.50 / 152 → 160; 26 71.6 →
@@ -198,7 +224,13 @@ two efficiency cores on any workload (u32 2^23: 1962 ms at 8 threads vs
 `fast` (their embedded ladder: rate 1/2, k = 4, Johnson, 100-bit, 16 bits
 of query grinding) and the crate's `custom:1:4` give the same proof within
 0.2 % and the same prover within 2 % at 2^21; `udr:1:4` saves 7 ms of
-Ligerito for larger proofs. `fast` is the default.
+Ligerito for larger proofs. The paper's rows run the crate's `custom:1:4`
+(rate 1/2) and `custom:3:4` (rate 1/8) with Round 0
+(`scripts/run_wfbitz_paper_campaign.sh`); `benches/mul` defaults to
+`custom:1:4` (`LigeritoSelection::for_target(100)`), the default of every
+forest bench, of the `bitz` CLI and of `examples/wfbitz_bench`. `fast`
+(BitZ as shipped) stays the default of `examples/u64_mul_probe`
+(`BITZ_WFBITZ_LADDER`).
 
 ## How to run
 
@@ -210,9 +242,9 @@ B=$CARGO_TARGET_DIR/release/examples/u64_mul_probe
 RAYON_NUM_THREADS=10 $B 21 3                      # the forest
 BITZ_OPENER=wfbitz RAYON_NUM_THREADS=10 $B 21 3   # wfbitz at its split
 BITZ_OPENER=wfbitz BITZ_TRACE=1 RAYON_NUM_THREADS=10 $B 21 2   # its phases
-# the paper's campaign rows through the launcher
+# the paper's campaign rows through the launcher (rate 1/8: --ligerito custom:3:4)
 python3 scripts/run_multiplication_benchmarks.py bitz --output PerfRuns/<label> -- \
-  proof --workload u64 --opener wfbitz --ligerito fast --bitz-profile 100 \
+  proof --workload u64 --opener wfbitz --ligerito custom:1:4 --bitz-profile 100 \
   --log-n 15,17,19,21 --threads 1,10 --reps 5 --warmups 1 --memory rss
 RUSTFLAGS="-C target-cpu=native" cargo test --release --features bitz-parity,parallel --lib wfbitz
 # byte parity with their implementation (their examples built in ~/f2z-benchmark)

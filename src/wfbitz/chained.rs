@@ -49,8 +49,8 @@ use circuit::linear_map::binary::{
 use field::Gf128 as Gf;
 use spongefish::Encoding;
 
-/// Rows of both grids: the largest the single-fold bound admits for a
-/// 113-bit modulus, `(q − 1)(2^14 + 1) < 2^128`.
+/// Rows of both grids: the largest the single-fold gate admits for a
+/// 113-bit modulus, `(q − 1)(2^14 + 1) < 2^128 − 1` (`BitZParams::new`).
 pub const LOG_ROWS: usize = 14;
 
 const CHAINED_STATEMENT_LABEL: &[u8] = b"bitz/chained-virtual-statement/v1";

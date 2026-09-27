@@ -7,10 +7,12 @@
 # m = 22) and the fields-witch shapes (m = 23, 25, 27, 29, W = 1, both rates,
 # threads 1 and 10). The multiplication rows go through the opener (Round 0
 # included); the raw rows use `examples/wfbitz_bench` on the paper's ladder
-# WITHOUT Round 0 (about 2 % of prover time, a few bytes of proof).
+# through the standalone opening (the statement frame, Round 0, a
+# transcript-sampled prime and point: the `bitz` CLI's raw claim).
 # Outputs: PerfRuns/cs-mul-<stamp>-* (mul-bench/v2 campaign dirs, the table
 # generators read them with the scheme key `bitz-wf@<rate>`) and
-# PerfRuns/wfbitz-raw-<stamp>/*.txt (RESULT lines of wfbitz_bench).
+# PerfRuns/wfbitz-raw-<stamp>/*.txt (RESULT lines of wfbitz_bench, each with
+# its `commit=`; provenance.txt keeps every campaign start line).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 export RUSTFLAGS="${RUSTFLAGS:--C target-cpu=native}"
@@ -23,7 +25,7 @@ B="$CARGO_TARGET_DIR/release/examples/wfbitz_bench"
 mkdir -p PerfRuns "$RAW"
 [ -x "$B" ] || { echo "missing $B (build: cargo build --release --features bitz-parity --example wfbitz_bench)"; exit 1; }
 idle=$(top -l 2 -n 0 | grep "CPU usage" | tail -1 | sed -E 's/.* ([0-9.]+)% idle.*/\1/')
-echo "campaign start $(date) | cpu idle ${idle}% | tree $(git rev-parse --short HEAD)$(git status --porcelain | grep -q . && echo -dirty)"
+echo "campaign start $(date) | cpu idle ${idle}% | tree $(git rev-parse --short HEAD)$(git status --porcelain | grep -q . && echo -dirty)" | tee -a "$RAW/provenance.txt"
 launch() { # label -- rust args
   local label=$1; shift
   local dir="$OUT-$label"
