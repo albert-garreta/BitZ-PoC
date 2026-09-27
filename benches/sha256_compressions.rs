@@ -29,7 +29,7 @@
 //! To size the batch by the packed assignment domain instead, set
 //! `BITZ_SHA_MNUMROWS_LOG2S`. For example, `BITZ_SHA_MNUMROWS_LOG2S="24 25"`
 //! benchmarks the largest batch fitting in `MnumRows = 2^24` and `2^25`.
-//! Every compression occupies 20,456 adjacent assignment cells, all batches
+//! Every compression occupies 16,360 adjacent assignment cells, all batches
 //! share one leading constant cell, and any unused cells are one trailing
 //! zero suffix.
 //! Power-of-two compression batches of at least 128 instances open the
