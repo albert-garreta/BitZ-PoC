@@ -134,7 +134,7 @@ fn main() {
     // The revision the rows come from, probed before any timer.
     let rev = revision();
     println!(
-        "bitz_bench n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder} q_bits={q_bits} round0={round0} commit={rev}"
+        "bitz_bench n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder} q_bits={q_bits} round0={round0} git_revision={rev}"
     );
 
     // The committed bits.
@@ -217,7 +217,7 @@ fn main() {
     let rss = peak_rss_bytes();
     println!("peak rss: {:.2} GB", rss as f64 / 1e9);
     println!(
-        "RESULT schema=bitz-bench/2 commit={rev} n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder} q_bits={q_bits} round0={} commit_ms={:.3} prove_ms={:.3} grand_ms={:.3} ring_ms={:.3} lig_ms={:.3} verify_ms={:.3} narg_bytes={} hints_bytes={} ood_bytes={} encoded_bytes={} peak_rss_bytes={rss}",
+        "RESULT schema=bitz-bench/2 git_revision={rev} n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder} q_bits={q_bits} round0={} commit_ms={:.3} prove_ms={:.3} grand_ms={:.3} ring_ms={:.3} lig_ms={:.3} verify_ms={:.3} narg_bytes={} hints_bytes={} ood_bytes={} encoded_bytes={} peak_rss_bytes={rss}",
         u8::from(round0), ms(commit), ms(prove), ms(grand), ms(ring), ms(lig), ms(verify), sizes.0, sizes.1, sizes.2, sizes.3
     );
 }

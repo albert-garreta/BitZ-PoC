@@ -12,7 +12,7 @@
 # Outputs: PerfRuns/cs-mul-<stamp>-* (mul-bench/v2 campaign dirs, the table
 # generators read them with the scheme key `bitz-wf@<rate>`) and
 # PerfRuns/wfbitz-raw-<stamp>/*.txt (RESULT lines of wfbitz_bench, each with
-# its `commit=`; provenance.txt keeps every campaign start line).
+# its `git_revision=`; provenance.log keeps every campaign start line).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 export RUSTFLAGS="${RUSTFLAGS:--C target-cpu=native}"
@@ -25,7 +25,7 @@ B="$CARGO_TARGET_DIR/release/examples/wfbitz_bench"
 mkdir -p PerfRuns "$RAW"
 [ -x "$B" ] || { echo "missing $B (build: cargo build --release --features bitz-parity --example wfbitz_bench)"; exit 1; }
 idle=$(top -l 2 -n 0 | grep "CPU usage" | tail -1 | sed -E 's/.* ([0-9.]+)% idle.*/\1/')
-echo "campaign start $(date) | cpu idle ${idle}% | tree $(git rev-parse --short HEAD)$(git status --porcelain | grep -q . && echo -dirty)" | tee -a "$RAW/provenance.txt"
+echo "campaign start $(date) | cpu idle ${idle}% | tree $(git rev-parse --short HEAD)$(git status --porcelain | grep -q . && echo -dirty)" | tee -a "$RAW/provenance.log"
 launch() { # label -- rust args
   local label=$1; shift
   local dir="$OUT-$label"

@@ -96,7 +96,10 @@ grinding), the Round-0 collision bound (with the grinding the proof runs:
 `GF(2^128)` rounds, so `prepare` also drops the profile's forest and
 ring-switch grinding and books those two terms bare
 (`adopt_ungrinded_opener`); a profile they cannot reach (`λ ≥ 127`) is
-refused.
+refused (design-only schedules excepted, as at instantiation), and the
+direct `prove`/`verify` refuse a prefix that credits either grinding. This
+covers the relations built through `prepare`; SHA-256 + ECDSA keeps its
+own accounting.
 
 ## The split
 
@@ -227,8 +230,9 @@ of query grinding) and the crate's `custom:1:4` give the same proof within
 Ligerito for larger proofs. The paper's rows run the crate's `custom:1:4`
 (rate 1/2) and `custom:3:4` (rate 1/8) with Round 0
 (`scripts/run_wfbitz_paper_campaign.sh`); `benches/mul` defaults to
-`custom:1:4` (`LigeritoSelection::for_target(100)`), the default of every
-forest bench, of the `bitz` CLI and of `examples/wfbitz_bench`. `fast`
+`custom:1:4` (`LigeritoSelection::for_target(100)`), the λ = 100 default
+of the forest benches (MultiSwap runs `udrg:3:4:114`), of the `bitz` CLI
+and of `examples/wfbitz_bench`. `fast`
 (BitZ as shipped) stays the default of `examples/u64_mul_probe`
 (`BITZ_WFBITZ_LADDER`).
 
@@ -242,7 +246,8 @@ B=$CARGO_TARGET_DIR/release/examples/u64_mul_probe
 RAYON_NUM_THREADS=10 $B 21 3                      # the forest
 BITZ_OPENER=wfbitz RAYON_NUM_THREADS=10 $B 21 3   # wfbitz at its split
 BITZ_OPENER=wfbitz BITZ_TRACE=1 RAYON_NUM_THREADS=10 $B 21 2   # its phases
-# the paper's campaign rows through the launcher (rate 1/8: --ligerito custom:3:4)
+# u64 rows at the paper's ladder through the launcher (the paper's campaign:
+# scripts/run_wfbitz_paper_campaign.sh; rate 1/8: --ligerito custom:3:4)
 python3 scripts/run_multiplication_benchmarks.py bitz --output PerfRuns/<label> -- \
   proof --workload u64 --opener wfbitz --ligerito custom:1:4 --bitz-profile 100 \
   --log-n 15,17,19,21 --threads 1,10 --reps 5 --warmups 1 --memory rss

@@ -1027,7 +1027,24 @@ fn wfbitz_security_uses_the_committed_ladder() {
                     chained.ligerito.digest(),
                     "{case}"
                 );
+                // The other order: `with_ligerito` re-resolves the opener's
+                // block-layout ladder and checks it.
+                let reordered = prepare_sha256_ecdsa_on(circuit, exponent, 100, OuterMode::Split)
+                    .unwrap()
+                    .with_opener(Sha256EcdsaOpener::Wfbitz)
+                    .with_ligerito(selection)
+                    .unwrap();
+                assert_eq!(
+                    reordered.ligerito_configuration().digest(),
+                    chained.ligerito.digest(),
+                    "{case}"
+                );
                 let security = prepared.security().unwrap();
+                assert_eq!(
+                    format!("{:?}", reordered.security().unwrap()),
+                    format!("{security:?}"),
+                    "{case}"
+                );
                 let round0 = security
                     .blocks
                     .iter()

@@ -581,6 +581,8 @@ impl Case {
                 "the wfbitz opener commits bits (W=1)"
             } else if f.opener.as_deref() == Some("wfbitz") && self.workload == Workload::BabyBear {
                 "the wfbitz opener is wired for the integer workloads"
+            } else if f.opener.as_deref() == Some("wfbitz") && f.profile == Some(128) {
+                "the wfbitz opener grinds none of its GF(2^128) rounds (profile <= 126)"
             } else if (self.mode == Mode::Pcs || self.workload == Workload::BabyBear)
                 && (f.w != 1 || f.split != 0)
             {

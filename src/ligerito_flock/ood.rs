@@ -40,17 +40,8 @@ impl ProverOod {
     }
 }
 
+#[cfg(feature = "bitz-parity")]
 impl ProverOod {
-    /// The claim a composed caller bound before its PIOP
-    /// ([`bind_prover_ood`]), for an opener outside this module; `None`
-    /// when no round ran (or the state was never bound).
-    pub(crate) fn into_bound_claim(self) -> Option<OodProverClaim> {
-        match self.0 {
-            ProverState::Bound(claim) => claim,
-            ProverState::AtOpening(_) => None,
-        }
-    }
-
     /// [`Self::claim`] for an opener outside this module, called where the
     /// crate's own opening consumes the state: the claim bound before the
     /// PIOP, or Round 0 run here when the parameters left it for the
@@ -114,16 +105,8 @@ impl VerifierOod {
     }
 }
 
+#[cfg(feature = "bitz-parity")]
 impl VerifierOod {
-    /// The claim and the proof's round a composed caller checked before its
-    /// PIOP ([`bind_verifier_ood`]); `None` when no round ran.
-    pub(crate) fn into_bound_claim(self) -> Option<(OodVerifierClaim, OodRound)> {
-        match self.0 {
-            VerifierState::Bound(claim) => claim,
-            VerifierState::AtOpening(_) => None,
-        }
-    }
-
     /// [`Self::claim`] for an opener outside this module, with the proof's
     /// round, called where the crate's own opening consumes the state: the
     /// same presence rule (a round bound before the PIOP must be the

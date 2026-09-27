@@ -296,4 +296,27 @@ mod tests {
         assert!(v.finish());
         assert_eq!(pt.get_challenge::<u128>(), vt.get_challenge::<u128>());
     }
+
+    /// A unique-decoding level charges every fold round the same
+    /// proximity-gap term (no row union shrinks it), and flock's taper
+    /// leaves each round its own `fold_grinding_bits − j` bits: MultiSwap's
+    /// `udrg:3:4:114` at 2^25 committed bits.
+    #[test]
+    fn udr_fold_rounds_share_one_term() {
+        let config = crate::ligerito_flock::custom_udr_grind_config_bits(25, 3, 4, Some(114));
+        let plan = GrindingPlan::resolve(&config, 114).unwrap();
+        let level = &config.levels[0];
+        let (pg, _) = level.paper_predicted_bits();
+        for round in 0..config.initial_k {
+            let block = plan
+                .blocks
+                .iter()
+                .find(|block| block.label == format!("fold/0/{round}"))
+                .expect("fold block");
+            assert_eq!(block.raw_error, 2f64.powf(-pg) + 2. * 2f64.powi(-128), "round {round}");
+            let native = level.fold_grinding_bits as u32 - round as u32;
+            assert_eq!((block.native_bits, block.bits), (Some(native), native), "round {round}");
+            assert!(pg + f64::from(block.bits) >= 114., "round {round}");
+        }
+    }
 }

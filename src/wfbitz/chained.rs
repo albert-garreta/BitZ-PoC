@@ -61,14 +61,17 @@ pub enum ChainedError {
     /// The instance count is not a power of two in `8..=128` (the block
     /// transposes read an instance row as one word of at most 128 bits).
     Instances,
-    /// The local relation has more rows than two sub-blocks hold, or fewer
-    /// than one block (then the tail would share blocks with the SHA rows).
+    /// The local relation fills two sub-blocks or more (the tail must start
+    /// inside the second, where the prover's layout puts the constant), or
+    /// has fewer rows than one block (then the tail would share blocks with
+    /// the SHA rows).
     LocalRows,
     /// More nonconstant local cells than half a block.
     LocalCells,
     /// The tail map is not the identity, its offsets are not the chain's,
-    /// its row 0 is not the shared constant, or its cells are not
-    /// word-aligned for the transposes.
+    /// its row 0 is not the shared constant, another alias does not read a
+    /// cell of the last instance's block, or its cells are not word-aligned
+    /// for the transposes.
     Tail,
     /// The chain link reads the constant, or the first instance's boundary
     /// map reads nonconstant cells: the tensors carry neither.
@@ -123,7 +126,7 @@ impl ChainedGeometry {
         }
         let log_instances = instances.ilog2() as usize;
         let local_rows = parts.local.rows();
-        if local_rows > 2 << LOG_ROWS || local_rows < 1 << LOG_ROWS {
+        if local_rows >= 2 << LOG_ROWS || local_rows < 1 << LOG_ROWS {
             return Err(ChainedError::LocalRows);
         }
         let local_cells = parts.local.cols().saturating_sub(1);
@@ -146,6 +149,13 @@ impl ChainedGeometry {
         let h_offset = local_rows * instances;
         let f_offset = 1 + local_cells * instances;
         let aliases = tail.aliases.len();
+        // The digest aliases are nonconstant cells of the last instance's
+        // block (their tensor has that one block).
+        let on_last_block = |source: usize| {
+            source != 0
+                && source < f_offset
+                && ((source - 1) / local_cells) >> 1 == (instances - 1) >> 1
+        };
         if !tail.map.is_identity()
             || tail.map.rows() != tail.map.cols()
             || tail.row_offset != h_offset
@@ -153,6 +163,7 @@ impl ChainedGeometry {
             || aliases == 0
             // Tail row 0 is the shared constant.
             || tail.aliases[0] != 0
+            || !tail.aliases[1..].iter().all(|&source| on_last_block(source))
             // The tail cells start on an instance-row word of the transposes.
             || (aliases - 1) % instances != 0
             || aliases > tail.map.cols()
@@ -972,14 +983,24 @@ mod geometry_tests {
             .expect("map")
     }
 
-    /// The four local maps; `prev` and `first` take the given entries.
-    fn locals(prev: &[(usize, usize)], first: &[(usize, usize)]) -> [PreparedVirtualMap; 4] {
+    /// The four local maps with `rows` rows; `prev` and `first` take the
+    /// given entries.
+    fn locals(rows: usize, prev: &[(usize, usize)], first: &[(usize, usize)]) -> [PreparedVirtualMap; 4] {
         [
-            map(LOCAL_ROWS, LOCAL_COLUMNS, &[(0, 0), (1, 1), (2, 2), (LOCAL_ROWS - 1, 1)]),
-            map(LOCAL_ROWS, LOCAL_COLUMNS, prev),
-            map(LOCAL_ROWS, LOCAL_COLUMNS, first),
-            map(LOCAL_ROWS, LOCAL_COLUMNS, &[(9, 0), (9, 2)]),
+            map(rows, LOCAL_COLUMNS, &[(0, 0), (1, 1), (2, 2), (rows - 1, 1)]),
+            map(rows, LOCAL_COLUMNS, prev),
+            map(rows, LOCAL_COLUMNS, first),
+            map(rows, LOCAL_COLUMNS, &[(9, 0), (9, 2)]),
         ]
+    }
+
+    /// An alias prefix of length `len` for `n` instances: the constant, then
+    /// reads cycling over the last instance's cells.
+    fn digest(n: usize, len: usize) -> Vec<usize> {
+        let first = 1 + (n - 1) * (LOCAL_COLUMNS - 1);
+        (0..len)
+            .map(|sigma| if sigma == 0 { 0 } else { first + (sigma - 1) % (LOCAL_COLUMNS - 1) })
+            .collect()
     }
 
     /// `ChainedGeometry::new` on `n` instances of the maps with an identity
@@ -995,38 +1016,49 @@ mod geometry_tests {
         let parts = ChainedPackedSourceParts { local, prev, first, last, instances: n };
         let tail = ChainedSourceTail {
             map: &tail_map,
-            row_offset: LOCAL_ROWS * n,
+            row_offset: local.rows() * n,
             source_offset: 1 + (LOCAL_COLUMNS - 1) * n,
             aliases,
         };
-        let cells = LOCAL_ROWS * n + TAIL_ROWS;
+        let cells = local.rows() * n + TAIL_ROWS;
         let native_bits = (n.ilog2() as usize + LOG_ROWS + 1).max(cells.next_power_of_two().ilog2() as usize);
         ChainedGeometry::new(&parts, &tail, native_bits)
     }
 
     #[test]
     fn geometry_admits_only_what_the_tensors_carry() {
-        let good = locals(&[(5, 1), (5, 2)], &[(7, 0)]);
-        let aliases: Vec<usize> = (0..257).collect();
+        let good = locals(LOCAL_ROWS, &[(5, 1), (5, 2)], &[(7, 0)]);
         for n in [8usize, 16, 128] {
-            assert!(geometry(n, &good, &aliases).is_ok(), "n = {n}");
+            assert!(geometry(n, &good, &digest(n, 257)).is_ok(), "n = {n}");
         }
+        let aliases = digest(8, 257);
         // The transposes read an instance row as one word of 8..=128 bits.
         for n in [2usize, 4, 256, 512] {
-            assert_eq!(geometry(n, &good, &aliases), Err(ChainedError::Instances), "n = {n}");
+            assert_eq!(geometry(n, &good, &digest(n, 257)), Err(ChainedError::Instances), "n = {n}");
+        }
+        // The prover's layout starts the tail inside the second sub-block.
+        for rows in [(1 << LOG_ROWS) - 1, 2 << LOG_ROWS] {
+            let local_rows = locals(rows, &[(5, 1), (5, 2)], &[(7, 0)]);
+            assert_eq!(geometry(8, &local_rows, &aliases), Err(ChainedError::LocalRows), "{rows} rows");
         }
         // The tail cells start off an instance-row word.
-        let unaligned: Vec<usize> = (0..258).collect();
-        assert_eq!(geometry(8, &good, &unaligned), Err(ChainedError::Tail));
+        assert_eq!(geometry(8, &good, &digest(8, 258)), Err(ChainedError::Tail));
         // Tail row 0 is not the constant.
         let mut shifted = aliases.clone();
         shifted[0] = 1;
         assert_eq!(geometry(8, &good, &shifted), Err(ChainedError::Tail));
+        // A digest alias reads the constant, the first instance's block or
+        // a tail cell.
+        for source in [0, 1, 1 + (LOCAL_COLUMNS - 1) * 8] {
+            let mut stray = aliases.clone();
+            stray[1] = source;
+            assert_eq!(geometry(8, &good, &stray), Err(ChainedError::Tail), "source {source}");
+        }
         // The chain link reads the constant.
-        let prev_constant = locals(&[(5, 0), (5, 2)], &[(7, 0)]);
+        let prev_constant = locals(LOCAL_ROWS, &[(5, 0), (5, 2)], &[(7, 0)]);
         assert_eq!(geometry(8, &prev_constant, &aliases), Err(ChainedError::Boundary));
         // The first instance's boundary map reads a nonconstant cell.
-        let first_cell = locals(&[(5, 1), (5, 2)], &[(7, 0), (8, 1)]);
+        let first_cell = locals(LOCAL_ROWS, &[(5, 1), (5, 2)], &[(7, 0), (8, 1)]);
         assert_eq!(geometry(8, &first_cell, &aliases), Err(ChainedError::Boundary));
     }
 }
