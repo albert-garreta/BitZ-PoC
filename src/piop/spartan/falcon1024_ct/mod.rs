@@ -1,11 +1,10 @@
-//! Falcon-1024 constant-time verification, expressed as an exact-integer
-//! trace over one binary source witness.
+//! Falcon-1024 constant-time verification over authenticated binary witnesses.
 //!
-//! Native trace construction stays independent of the proof modulus: every
-//! value is decoded from bits and every arithmetic identity is formed over
-//! the integers before projection. The commitment-bound adapter then runs the
-//! Spartan reductions and opens their shared terminal against the same BitZ
-//! binary commitment.
+//! The hybrid prover checks the Falcon equation in its native polynomial ring,
+//! authenticates the ideal projection through bounded integer coordinate carries,
+//! and shares one arithmetic binder with HashToPoint and norm reductions. Binary
+//! Keccak sources and the arithmetic source share the final opening. The existing
+//! standalone backend retains its exact-integer relation.
 
 mod constraints;
 mod format;
@@ -22,6 +21,7 @@ mod hybrid_keccak;
 mod hybrid_sumcheck;
 mod keccak;
 mod layout;
+mod native_ring;
 mod opening;
 mod piop;
 mod source;
@@ -38,6 +38,7 @@ pub use format::{
 pub use hash_to_point::{HashToPointTrace, hash_to_point_ct};
 pub use keccak::{KeccakTrace, shake256_with_trace};
 pub use layout::{FalconSourceLayout, FalconTraceCounts};
+pub use native_ring::{Ext as FalconNativeExtension, NativeRingProof as FalconNativeRingProof};
 pub use opening::{FalconBitzProof, FalconPublicStatement, prove_falcon_bitz, verify_falcon_bitz};
 pub use piop::{FalconPiopProof, FalconSecuritySchedule, prove_falcon_piop, verify_falcon_piop};
 pub use source::{

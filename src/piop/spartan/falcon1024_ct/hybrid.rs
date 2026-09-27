@@ -29,6 +29,9 @@ use flock_core::{
 use rayon::prelude::*;
 use std::sync::Mutex;
 
+#[path = "hybrid_size.rs"]
+mod size;
+
 fn error(e: impl std::fmt::Display) -> FalconError {
     FalconError::Piop(e.to_string())
 }
@@ -175,11 +178,11 @@ impl PreparedFalconHybrid {
             ),
             (
                 "HashToPoint initial row point",
-                prime(13 + d, schedule.outer_point_bits),
+                prime(11 + d, schedule.outer_point_bits),
             ),
             (
                 "HashToPoint product sumcheck",
-                prime(3 * (13 + d), schedule.cubic_round_bits),
+                prime(3 * (11 + d), schedule.cubic_round_bits),
             ),
             (
                 "ordered compaction fingerprints",
@@ -190,12 +193,28 @@ impl PreparedFalconHybrid {
                 prime(165 + 10 * (2 * b - 1) + 22 * b, schedule.cubic_round_bits),
             ),
             (
+                "compaction leaf instance batching",
+                prime(d, schedule.norm_instance_bits),
+            ),
+            (
+                "compaction leaf sumcheck",
+                prime(3 * (11 + d), schedule.cubic_round_bits),
+            ),
+            (
+                "native ideal batching and projection",
+                (d + 2046) as f64 / ((super::Q as f64).powi(11) - super::Q as f64),
+            ),
+            (
+                "native coordinate carry batching",
+                prime(10, if self.target_bits == 128 { 12 } else { 0 }),
+            ),
+            (
                 "linear constraints and terminal batching",
-                prime(14 + d + 2 * b + 8, schedule.linear_point_bits),
+                prime(13 + d + b + 12, schedule.linear_point_bits),
             ),
             (
                 "prime source sumcheck",
-                prime(2 * (18 + d), schedule.binding_round_bits),
+                prime(2 * (17 + d), schedule.binding_round_bits),
             ),
             (
                 "batched integer-to-binary forest",
@@ -337,7 +356,7 @@ impl PreparedFalconHybrid {
     ) -> Result<(Blake3Transcript, [u8; 32]), FalconError> {
         statement.public.validate(self.batch())?;
         let mut h = blake3::Hasher::new();
-        h.update(b"bitz/falcon1024-ct/hybrid/non-zk/v6");
+        h.update(b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v1");
         for n in [
             self.batch(),
             self.capacity(),
@@ -348,7 +367,22 @@ impl PreparedFalconHybrid {
         ] {
             h.update(&(n as u64).to_le_bytes());
         }
-        // The v6 wfbitz schedule is public and deterministic, but bind it explicitly
+        h.update(b"bounded14:low13+4097*top;native:Q12289,theta11+theta+14;Dlen1023;carry22528BN");
+        let schedule = super::FalconSecuritySchedule::for_layout(self.target_bits, &self.layout)
+            .expect("prepared security");
+        for bits in [
+            schedule.norm_instance_bits,
+            schedule.outer_point_bits,
+            schedule.quadratic_round_bits,
+            schedule.cubic_round_bits,
+            schedule.fingerprint_bits,
+            schedule.linear_point_bits,
+            schedule.binding_round_bits,
+            if self.target_bits == 128 { 12 } else { 0 },
+        ] {
+            h.update(&bits.to_le_bytes());
+        }
+        // The wfbitz schedule is public and deterministic, but bind it explicitly
         // so proofs cannot be replayed under a different bridge error budget.
         let bridge_numerator = hybrid_bridge::error_numerator(&self.layout);
         h.update(&(bridge_numerator as u64).to_le_bytes());
@@ -375,7 +409,7 @@ impl PreparedFalconHybrid {
         }
         let digest = *h.finalize().as_bytes();
         let mut t = Blake3Transcript::new();
-        t.absorb_slice(b"bitz/falcon-hybrid/statement/v6");
+        t.absorb_slice(b"bitz/falcon-hybrid/native-ring/statement/v1");
         t.absorb_slice(&digest);
         self.ligerito.bind(&mut t);
         Ok((t, digest))
@@ -849,7 +883,7 @@ mod tests {
                     bits,
                     if target == 100 {
                         0
-                    } else if batch == 1 {
+                    } else if numerator <= 512 {
                         17
                     } else {
                         18
@@ -866,7 +900,7 @@ mod tests {
                     (numerator as f64) * 2f64.powi(-128 - bits as i32)
                 );
                 assert!(bridge_error <= 2f64.powi(-(target as i32) - 8));
-                assert_eq!(prepared.layout.local_counts().total(), 198_935);
+                assert_eq!(prepared.layout.local_counts().total(), 100_578);
             }
         }
         assert!(PreparedFalconHybrid::new(1025, 128).is_err());
@@ -975,7 +1009,7 @@ mod tests {
         let committed = prepared.commit(public(9)).unwrap();
         assert_eq!(
             prepared.source_bits_per_signature(),
-            [1 << 18, 1 << 20, 1 << 18]
+            [1 << 17, 1 << 20, 1 << 18]
         );
         let native = super::super::verification_trace(PK, MSG, SIG).unwrap();
         for trace in &committed.traces {

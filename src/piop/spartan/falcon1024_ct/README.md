@@ -1,4 +1,4 @@
-# Falcon-1024 CT proofs, public signatures and experimental hybrid
+# Falcon-1024 CT proofs, public signatures and native-ring hybrid
 
 This module contains two non-ZK proof backends for Falcon-1024 constant-time
 signatures. The `falcon` backend supports 1–32 signatures and one BitZ source
@@ -15,14 +15,16 @@ the remaining auxiliary witness is not guaranteed to be hidden.
 
 ## Public signatures and independent benchmark inputs
 
-The outer commitment-bound statement uses `v4`. The hybrid statement uses `v6`
-to bind the wfbitz bridge and its geometry-derived grinding schedule; see
+The outer commitment-bound statement uses `v4`. The hybrid statement uses
+`native-ring/non-zk/v1`, binding its decoder, native field, and security schedule.
+See [NATIVE_RING.md](NATIVE_RING.md) for the current arithmetic and counts, and
 [BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md).
 Every CT signature byte has a linear equality against its eight committed bits,
 including the nonce and signed coefficient payload. Absorbing signatures into
 the transcript complements these equality constraints; it does not replace them.
-There are 931,752 linear rows per legacy signature and 10,152 per hybrid signature,
-which fit the existing row domains. The internal nonlinear PIOP is unchanged.
+There are 931,752 linear rows per standalone signature and 4,458 per hybrid
+signature. The hybrid has a rejection-only outer sumcheck, a cubic compaction
+leaf reduction, and a native ideal check authenticated through the same binder.
 
 Both proof benchmarks use only distinct keypairs and 32-byte messages generated
 reproducibly with `fn-dsa = 0.3.0` in `HASH_ID_ORIGINAL_FALCON` mode. The default
@@ -208,9 +210,10 @@ committed witness so its large buffers can be folded without cloning.
 The experimental proof currently has an in-memory Rust API, without a wire
 serialization format.
 
-The arithmetic source has **198,935 live bits**, padded to **2^18 bits per
+The arithmetic source has **100,578 live bits**, padded to **2^17 bits per
 capacity slot**. It contains the encoded signature, the 1311 sampled words,
-HashToPoint/compaction auxiliaries, ring witnesses, and norm slack. The binary
+HashToPoint auxiliaries, centered coefficient encodings, and norm slack. It
+has no committed ring quotient or compaction product columns. The binary
 sources reserve **16 × 2^16 + 4 × 2^16 bits per capacity slot**, in two
 separately committed permutation groups. This removes the old 12 dummy
 permutations per signature. Padded signature slots still contain valid Keccak
@@ -319,30 +322,14 @@ model**: a block with raw error `e` and `g` grinding bits contributes
 to interactive soundness. BLAKE3's 128-bit collision bound is stated separately
 and is not an extra algebraic error term in this report.
 
-The prime field satisfies `p > 2^125`. The 100-bit hybrid profile leaves prime
-grinding disabled: even at 1024 signatures the combined prime contribution is
-below `2^-103.969`, before adding the separately reported binary stages. At
-target 128, the hybrid derives each prime difficulty from the actual batch:
-
-```text
-g(n) = max(0, 128 + 5 + ceil(log2(n)) - 125), with g(0) = 0.
-```
-
-Here `n` is that stage's audited degree/occurrence numerator. The shared cubic
-difficulty covers the sum of the HashToPoint product-sumcheck and entire
-compaction-forest numerators. This avoids charging a one-signature proof for
-the maximum 2048-tree forest. Seven prime category budgets of `2^-133`, six
-binary-stage budgets of `2^-136` (including both Keccak prefixes), a whole-PCS
-budget of `2^-130`, and the
-`2^-144` whole-search prime-sampling term give a conservative whole-composition
-bound above 129 bits:
-
-```text
-error / 2^-128 <= 7/32 + 6/256 + 1/4 + 2^-16 < 0.493.
-```
-
-These are analytical bounds under the stated grinding model, not measured attack costs
-or performance results. The legacy backend retains its separate schedule.
+The prime field satisfies `p >= 2^125`. At target128, each prime reduction
+category uses `g(n)=max(0,128+5+ceil(log2(n))-125)`, with g(0)=0.
+Norm and leaf instance draws share a budget; rejection, leaf, and forest cubic
+rounds share another. The new native carry collapse uses its own12-bit block.
+The native ideal batching/projection error is bounded over F_(12289^11).
+The complete dynamic report is authoritative; tests cover both supported
+security targets and every batch size1..1024. See [NATIVE_RING.md](NATIVE_RING.md)
+for the exact coordinate carry and no-wrap conditions.
 
 For the two binary Keccak prefixes, `m = 20 + log2(capacity)` and
 `m = 18 + log2(capacity)` respectively, except for the small-batch padding
@@ -365,8 +352,9 @@ be consumed and verified.
 The legacy commitment-bound statement uses `v4`; its internal PIOP headers use
 `v3` and existing forest domains retain `v2`. The hybrid has its own versioned
 statement and different source layouts; hybrid roots are not interchangeable
-with legacy roots. The hybrid statement and transcript use **v6**, with the
-wfbitz bridge numerator and difficulty explicitly bound. Bridge grinding uses `v4`;
+with standalone roots. The hybrid statement and transcript use
+**native-ring/non-zk/v1**, with the complete arithmetic schedule and native
+representation explicitly bound. Bridge grinding uses `v4`;
 integer-fold and Keccak-prefix domains remain `v2`. All permutation groups and
 roots remain bound. **Regenerate proofs from earlier hybrid versions.** The
 revised schedule preserves the arithmetic, SHAKE, HashToPoint, and individual
@@ -955,3 +943,16 @@ upstream Falcon integration tests, six forest parity/oracle tests, and 29
 targeted hybrid tests. Portable hybrid, serial legacy Falcon, and serial wfbitz
 build checks passed. The full release test run used a 16 MiB test worker stack;
 benchmark processes used their normal default stacks.
+
+## Native-ring implementation (2026-09-26)
+
+The current hybrid uses native Falcon polynomial arithmetic and a batched ideal
+check, authenticated through bounded coordinate carries and the existing source
+binder. It has 100,578 live arithmetic bits in a 131,072-bit slot, with no committed
+ring quotient or compaction intermediates. The code has one hybrid arithmetic
+path and retains the existing three commitments and shared opening.
+
+Native release, batch1024, 16 threads, target128: **2.908 ms/signature**, compared
+with **3.268 ms/signature** for the matched saved-baseline rerun (11.0% reduction).
+All proofs verified; the full library suite passed 645 tests, with seven ignored.
+See [NATIVE_RING.md](NATIVE_RING.md) for the protocol and complete measurements.

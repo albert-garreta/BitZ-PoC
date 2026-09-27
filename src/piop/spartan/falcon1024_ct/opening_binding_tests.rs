@@ -1,7 +1,7 @@
 use super::super::{
     piop::{
-        CompactionProof, NormProof, PrimeProductForestProof, PrimeProductTreeProof,
-        QuadraticRelationProof,
+        CompactionLeafProof, CompactionProof, NormProof, PrimeProductForestProof,
+        PrimeProductTreeProof, QuadraticRelationProof,
     },
     verification_trace,
 };
@@ -71,6 +71,9 @@ fn reference_ring_weights(
     weights: &crate::poly::mle::EqualityWeights<F>,
     field: &Cfg,
 ) -> Vec<Vec<F>> {
+    if layout.is_hybrid() {
+        return Vec::new();
+    }
     let ring_start = layout.linear_rows() - N;
     statement
         .public_keys
@@ -157,6 +160,18 @@ fn emit_binding_reference(binding: &BindingForm<'_>, sink: &mut impl Coefficient
         binding.field,
     )
     .unwrap();
+    if binding.layout.is_hybrid() {
+        native::add_leaf_claims(
+            sink,
+            &mut target,
+            &mut scale,
+            binding.eta,
+            binding.layout,
+            binding.proof,
+            binding.field,
+        )
+        .unwrap();
+    }
     add_product_tree_claims(
         sink,
         &mut target,
@@ -167,6 +182,34 @@ fn emit_binding_reference(binding: &BindingForm<'_>, sink: &mut impl Coefficient
         binding.field,
     )
     .unwrap();
+    if let Some(native) = &binding.native_claim {
+        // Independent bit-level expansion of sum W*(c - bounded14(v) + 6144).
+        let offsets = binding.layout.offsets();
+        let field = binding.field;
+        let mut constant = field.zero();
+        for (index, &weight) in native.weights.iter().enumerate() {
+            let instance = index / N;
+            let coefficient = index % N;
+            let base = instance * binding.layout.signature_stride() + 14 * coefficient;
+            let scaled = field.mul(&scale, &weight);
+            constant = field.add(&constant, &mul_i(scaled, 6_144, field));
+            for bit in 0..14 {
+                sink.add(
+                    base + offsets.hash_point + bit,
+                    mul_i(scaled, 1 << bit, field),
+                );
+                let decoded_weight = if bit == 13 { 4_097 } else { 1 << bit };
+                sink.add(
+                    base + offsets.s1 + bit,
+                    mul_i(scaled, -decoded_weight, field),
+                );
+            }
+        }
+        target = field.add(
+            &target,
+            &field.sub(&field.mul(&scale, &native.target), &constant),
+        );
+    }
     target
 }
 
@@ -206,6 +249,7 @@ fn terminal_fixture(keccak_point: Vec<F>, field: &Cfg) -> FalconPiopProof {
         compaction_rank_scale: field.zero(),
         compaction: Vec::new(),
         compaction_forest: PrimeProductForestProof { layers: Vec::new() },
+        compaction_leaf: None,
     }
 }
 
@@ -671,8 +715,43 @@ fn full_terminal_fixture(layout: &FalconSourceLayout, field: &Cfg) -> FalconPiop
         .collect();
     if layout.is_hybrid() {
         proof.keccak_chi = None;
+        proof.compact_products.point = point(11 + batch_vars, field);
+        for pair in &mut proof.compaction {
+            pair.candidate.terminal_point = point(11, field);
+            pair.output.terminal_point = point(11, field);
+        }
+        proof.compaction_leaf = Some(CompactionLeafProof {
+            instance_point: point(batch_vars, field),
+            instance_nonce: None,
+            sumcheck: SumcheckProof {
+                round_polynomials: Vec::new(),
+            },
+            terminal: [
+                unsigned(17, field),
+                unsigned(19, field),
+                unsigned(23, field),
+            ],
+            point: point(11 + batch_vars, field),
+            grinding_nonces: Vec::new(),
+        });
     }
     proof
+}
+
+// These arbitrary terminal fixtures exercise the linear operator, not proof
+// validity. Valid-trace tests below run the complete native certificate prover.
+fn native_claim_fixture(
+    layout: &FalconSourceLayout,
+    field: &Cfg,
+) -> Option<super::super::native_ring::PreparedNativeClaim> {
+    layout
+        .is_hybrid()
+        .then(|| super::super::native_ring::PreparedNativeClaim {
+            weights: (0..layout.batch() * N)
+                .map(|i| unsigned((i * i + 17 * i + 37) as u128, field))
+                .collect(),
+            target: unsigned(43, field),
+        })
 }
 
 #[test]
@@ -703,6 +782,7 @@ fn full_binding_endpoint_matches_dense_with_distinct_keys_and_padded_instance() 
         &proof,
         &linear_point,
         &field,
+        native_claim_fixture(&layout, &field),
     )
     .unwrap();
     let mut dense = DenseSink::new(layout.source_bits(), &field);
@@ -741,7 +821,7 @@ fn statement_with_key_groups(groups: &[usize]) -> FalconPublicStatement {
 
 #[cfg(feature = "falcon-hybrid")]
 #[test]
-fn shared_key_binding_matches_per_instance_reference_at_degenerate_points() {
+fn native_binding_matches_dense_reference_at_degenerate_points() {
     let field = config();
     for groups in [&[0, 0, 0][..], &[0, 1, 0, 2, 1], &[0, 1, 2]] {
         let layout = FalconSourceLayout::new_hybrid(groups.len()).unwrap();
@@ -749,8 +829,6 @@ fn shared_key_binding_matches_per_instance_reference_at_degenerate_points() {
         let proof = full_terminal_fixture(&layout, &field);
         let local_rows = layout.linear_stride().ilog2() as usize;
         let local_bits = layout.signature_stride().ilog2() as usize;
-        // The ring row interval is not a complete aligned Boolean subcube.
-        assert_ne!((layout.linear_rows() - N) % N, 0);
         for selected_instance in [None, Some(layout.batch() - 1), Some(layout.capacity() - 1)] {
             let mut linear_point = point(linear_rounds(&layout), &field);
             linear_point[0] = field.zero();
@@ -770,6 +848,7 @@ fn shared_key_binding_matches_per_instance_reference_at_degenerate_points() {
                 &proof,
                 &linear_point,
                 &field,
+                native_claim_fixture(&layout, &field),
             )
             .unwrap();
             assert_eq!(binding.eta, eta);
@@ -833,14 +912,7 @@ fn shared_key_binding_matches_per_instance_reference_at_degenerate_points() {
                 })
                 .unwrap();
             assert!(actual.values.iter().all(|value| *value == field.zero()));
-            let cache = binding.prover_ring_cache.get().unwrap();
-            let distinct = groups
-                .iter()
-                .copied()
-                .collect::<std::collections::BTreeSet<_>>()
-                .len();
-            assert_eq!(cache.adjoints.len(), distinct);
-            assert_eq!(cache.instance_keys.len(), layout.batch());
+            assert!(binding.prover_ring_cache.get().is_none());
             assert_eq!(
                 actual_endpoint,
                 evaluate_mle_in_place(&mut expected.values, &endpoint, &field).unwrap(),
@@ -885,6 +957,7 @@ fn compact_binding_targets_match_constants_oracle_at_boolean_points() {
                     &proof,
                     &linear_point,
                     &field,
+                    native_claim_fixture(&layout, &field),
                 )
                 .unwrap();
                 binding.eta = eta;
@@ -899,7 +972,7 @@ fn compact_binding_targets_match_constants_oracle_at_boolean_points() {
 
 #[cfg(feature = "falcon-hybrid")]
 #[test]
-fn shared_key_binding_preserves_inner_sumcheck_transcript() {
+fn native_binding_preserves_inner_sumcheck_transcript() {
     let field = config();
     let layout = FalconSourceLayout::new_hybrid(3).unwrap();
     let statement = statement_with_key_groups(&[0, 1, 0]);
@@ -913,6 +986,7 @@ fn shared_key_binding_preserves_inner_sumcheck_transcript() {
         &proof,
         &linear_point,
         &field,
+        native_claim_fixture(&layout, &field),
     )
     .unwrap();
     let mut reference = DenseSink::new(layout.source_bits(), &field);
@@ -985,9 +1059,19 @@ fn shared_key_binding_preserves_inner_sumcheck_transcript() {
 
 #[test]
 fn norm_binding_matches_weighted_words_and_slack_for_padded_batch() {
+    check_norm_binding(FalconSourceLayout::new(3).unwrap());
+}
+
+#[cfg(feature = "falcon-hybrid")]
+#[test]
+fn bounded_norm_binding_matches_signed_words_and_slack_for_padded_batch() {
+    check_norm_binding(FalconSourceLayout::new_hybrid(3).unwrap());
+}
+
+fn check_norm_binding(layout: FalconSourceLayout) {
     let field = config();
-    let layout = FalconSourceLayout::new(3).unwrap();
     let mut traces = vec![verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap(); 3];
+    traces[0].s1[1] = 6_144;
     traces[1].s1[0] = 0;
     traces[2].s1[N - 1] = -6_144;
     traces[1].norm_slack += 7;
@@ -1167,6 +1251,7 @@ fn public_signature_bytes_are_constrained_to_the_committed_source() {
                 &proof,
                 &linear_point,
                 &field,
+                native_claim_fixture(&layout, &field),
             )
             .unwrap();
             binding.eta = field.zero();
@@ -1177,6 +1262,92 @@ fn public_signature_bytes_are_constrained_to_the_committed_source() {
         }
         assert_ne!(SIGNATURE[byte], encoded[byte]);
     }
+}
+
+#[cfg(feature = "falcon-hybrid")]
+#[test]
+fn native_affine_claim_authenticates_the_same_committed_coefficients() {
+    let field = config();
+    let layout = FalconSourceLayout::new_hybrid(3).unwrap();
+    let mut traces = vec![verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap(); 3];
+    let statement = FalconPublicStatement::from_bytes(
+        &[PUBLIC_KEY, PUBLIC_KEY, PUBLIC_KEY],
+        &[MESSAGE, MESSAGE, MESSAGE],
+        &[SIGNATURE, SIGNATURE, SIGNATURE],
+    )
+    .unwrap();
+    let pack = |traces: &[super::super::FalconVerificationTrace]| {
+        FalconSourceWitness::from_traces(
+            layout,
+            &[MESSAGE, MESSAGE, MESSAGE],
+            &[SIGNATURE, SIGNATURE, SIGNATURE],
+            traces,
+        )
+        .unwrap()
+    };
+    let source = pack(&traces);
+    let mut transcript = Blake3Transcript::new();
+    for row in source.rows() {
+        for word in row {
+            transcript.absorb_slice(&word.to_le_bytes());
+        }
+    }
+    let mut verifier = transcript.clone();
+    let (native_proof, claim) = super::super::native_ring::prove(
+        &mut transcript,
+        &layout,
+        &statement,
+        &traces,
+        &field,
+        100,
+    )
+    .unwrap();
+    assert_eq!(
+        super::super::native_ring::verify(
+            &mut verifier,
+            &layout,
+            &statement,
+            &native_proof,
+            &field,
+            100,
+        )
+        .unwrap(),
+        claim
+    );
+    let proof = full_terminal_fixture(&layout, &field);
+    let binding = prepare_binding_form(
+        &mut transcript,
+        &layout,
+        &statement,
+        &proof,
+        &point(linear_rounds(&layout), &field),
+        &field,
+        Some(claim),
+    )
+    .unwrap();
+    let mut dense = DenseSink::new(layout.source_bits(), &field);
+    let mut target = field.zero();
+    binding
+        .add_native_claim(&mut dense, &mut target, unsigned(47, &field))
+        .unwrap();
+    assert_eq!(dot_packed_source(&dense.values, &source, &field), target);
+    assert!(
+        dense.values[layout.batch() * layout.signature_stride()..]
+            .iter()
+            .all(|x| *x == field.zero())
+    );
+
+    traces[1].hash_to_point.point[17] ^= 1;
+    assert_ne!(
+        dot_packed_source(&dense.values, &pack(&traces), &field),
+        target
+    );
+    traces[1].hash_to_point.point[17] ^= 1;
+    traces[2].s1[31] += if traces[2].s1[31] == 6_144 { -1 } else { 1 };
+    assert_ne!(
+        dot_packed_source(&dense.values, &pack(&traces), &field),
+        target
+    );
 }
 
 #[cfg(feature = "falcon-hybrid")]
@@ -1222,8 +1393,10 @@ fn compact_prefix_binds_word_products_and_weighted_norm_to_source() {
     )
     .unwrap();
     assert!(proof.piop.keccak_chi.is_none());
-    assert_eq!(proof.piop.compact_products.point.len(), 15);
-    assert_eq!(proof.binding_point.len(), 20);
+    assert_eq!(proof.piop.compact_products.point.len(), 13);
+    assert_eq!(proof.binding_point.len(), 19);
+    assert!(proof.native_ring.is_some());
+    assert!(proof.piop.compaction_leaf.is_some());
     let verified =
         verify_binding_prefix(&mut fresh_transcript(), &layout, &statement, &proof, 100).unwrap();
     assert_eq!(verified.modulus, claim.modulus);

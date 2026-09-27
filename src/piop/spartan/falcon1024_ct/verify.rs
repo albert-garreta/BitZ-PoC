@@ -16,6 +16,9 @@ pub struct FalconVerificationTrace {
     pub s1: Box<[i16; N]>,
     /// Exact quotient in `C - H*S2 - S1 = q*K`.
     pub quotient: Box<[i64; N]>,
+    /// Quotient of the native residual by `X^1024 + 1` over F_12289.
+    /// These are the reduced negatives of the high coefficients of `H*S2`.
+    pub native_quotient: Box<[u16; N - 1]>,
     pub norm: u64,
     pub norm_slack: u64,
 }
@@ -39,6 +42,7 @@ pub(super) fn trace_from_parts(
     fast_convolution: bool,
 ) -> Result<FalconVerificationTrace, FalconError> {
     let mut convolution = Box::new([0i64; N]);
+    let mut high_product = Box::new([0i64; N - 1]);
     if fast_convolution {
         let left: Vec<_> = public_key.h.iter().map(|&h| i64::from(h)).collect();
         let right: Vec<_> = signature.s2.iter().map(|&s| i64::from(s)).collect();
@@ -46,6 +50,7 @@ pub(super) fn trace_from_parts(
         for i in 0..N {
             convolution[i] = product[i] - product[i + N];
         }
+        high_product.copy_from_slice(&product[N..2 * N - 1]);
     } else {
         for (i, &h) in public_key.h.iter().enumerate() {
             for (j, &s) in signature.s2.iter().enumerate() {
@@ -55,6 +60,7 @@ pub(super) fn trace_from_parts(
                     convolution[index] += product;
                 } else {
                     convolution[index - N] -= product;
+                    high_product[index - N] += product;
                 }
             }
         }
@@ -89,6 +95,9 @@ pub(super) fn trace_from_parts(
         convolution,
         s1,
         quotient,
+        native_quotient: Box::new(std::array::from_fn(|j| {
+            (-high_product[j]).rem_euclid(Q) as u16
+        })),
         norm,
         norm_slack: BETA_SQUARED - norm,
     })
@@ -153,6 +162,37 @@ mod tests {
                     - i64::from(trace.s1[i]),
                 Q * trace.quotient[i]
             );
+        }
+    }
+
+    #[test]
+    fn cached_native_quotient_matches_full_product_and_fast_trace() {
+        let slow = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+        let fast = trace_from_parts(
+            slow.public_key.clone(),
+            slow.signature.clone(),
+            slow.hash_to_point.clone(),
+            true,
+        )
+        .unwrap();
+        assert_eq!(slow, fast);
+        let mut product = [0i64; 2 * N - 1];
+        for (i, &h) in slow.public_key.h.iter().enumerate() {
+            for (j, &s) in slow.signature.s2.iter().enumerate() {
+                product[i + j] += i64::from(h) * i64::from(s);
+            }
+        }
+        for j in 0..2 * N - 1 {
+            let mut residual = -product[j];
+            if j < N {
+                residual += i64::from(slow.hash_to_point.point[j]) - i64::from(slow.s1[j]);
+            }
+            let quotient = if j == N - 1 {
+                0
+            } else {
+                slow.native_quotient[j % N]
+            };
+            assert_eq!(residual.rem_euclid(Q), i64::from(quotient));
         }
     }
 

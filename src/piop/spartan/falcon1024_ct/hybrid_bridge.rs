@@ -313,11 +313,11 @@ mod tests {
             let s = p.col_vars + 1;
             assert_eq!(p.word_bits, 1);
             assert_eq!(d, 13);
-            assert_eq!(s, 6 + layout.capacity().ilog2() as usize);
+            assert_eq!(s, 5 + layout.capacity().ilog2() as usize);
             // Count the accepted verifier rounds independently of the formula.
             let sumcheck_rounds: usize = (0..d).map(|ell| ell + s).sum();
             assert_eq!(error_numerator(&layout), s + 3 * sumcheck_rounds + d);
-            assert!((487..=887).contains(&error_numerator(&layout)));
+            assert!((447..=847).contains(&error_numerator(&layout)));
             assert_eq!(mod_q_chunk_width(&p), 113);
             for prime_bits in [126, 127] {
                 assert_eq!(mod_q_num_chunks(&p, prime_bits), 2);

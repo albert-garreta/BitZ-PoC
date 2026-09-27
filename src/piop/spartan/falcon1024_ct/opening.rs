@@ -49,6 +49,8 @@ use super::{
 
 #[path = "opening_compact.rs"]
 mod compact;
+#[path = "opening_native.rs"]
+mod native;
 
 type F = SpartanBitzField;
 type Cfg = <F as SpartanField>::Config;
@@ -151,6 +153,7 @@ impl FalconPublicStatement {
 #[derive(Clone, Debug)]
 pub struct FalconBindingPrefixProof {
     pub piop: FalconPiopProof,
+    pub native_ring: Option<super::native_ring::NativeRingProof>,
     pub linear_point_nonce: Option<u64>,
     pub binding: SumcheckProof<F, 3>,
     pub binding_point: Vec<F>,
@@ -248,6 +251,19 @@ pub(super) fn prove_binding_prefix(
     }
     let algebraic = prove_falcon_piop(transcript, layout, traces, target_bits)?;
     let field = field_from_modulus(algebraic.modulus)?;
+    let (native_ring, native_claim) = if layout.is_hybrid() {
+        let (proof, claim) = super::native_ring::prove(
+            transcript,
+            layout,
+            statement,
+            traces,
+            &field,
+            target_bits as u32,
+        )?;
+        (Some(proof), Some(claim))
+    } else {
+        (None, None)
+    };
 
     let linear_point_nonce = grind_linear_point(transcript, layout, target_bits, None)?;
     let linear_point = sample_point(transcript, linear_rounds(layout), &field)?;
@@ -258,6 +274,7 @@ pub(super) fn prove_binding_prefix(
         &algebraic,
         &linear_point,
         &field,
+        native_claim,
     )?;
     let target_span = tracing::info_span!("falcon_arithmetic:binding_target").entered();
     let target = binding.target()?;
@@ -266,7 +283,9 @@ pub(super) fn prove_binding_prefix(
     let _binding_span = tracing::info_span!("falcon_arithmetic:binding_inner").entered();
     // Finish the shared cache before coefficient partitions start. In
     // particular, do not make Rayon workers wait on a parallel initializer.
-    binding.prover_ring_cache();
+    if !layout.is_hybrid() {
+        binding.prover_ring_cache();
+    }
     if layout.is_hybrid() {
         let _template_span = tracing::info_span!("falcon_arithmetic:binding_template").entered();
         binding.prepared_compact_template()?;
@@ -314,6 +333,7 @@ pub(super) fn prove_binding_prefix(
     let claim = opening_claim(layout, &output.point, binding_terminal[1], &field)?;
     let prefix = FalconBindingPrefixProof {
         piop: algebraic,
+        native_ring,
         linear_point_nonce,
         binding: output.proof,
         binding_point: output.point,
@@ -378,6 +398,18 @@ pub(super) fn verify_binding_prefix(
     }
     verify_falcon_piop(transcript, layout, &proof.piop, target_bits)?;
     let field = field_from_modulus(proof.piop.modulus)?;
+    let native_claim = match (layout.is_hybrid(), &proof.native_ring) {
+        (true, Some(native)) => Some(super::native_ring::verify(
+            transcript,
+            layout,
+            statement,
+            native,
+            &field,
+            target_bits as u32,
+        )?),
+        (false, None) => None,
+        _ => return Err(piop("native ring proof does not match source layout")),
+    };
 
     grind_linear_point(transcript, layout, target_bits, proof.linear_point_nonce)?;
     let linear_point = sample_point(transcript, linear_rounds(layout), &field)?;
@@ -388,6 +420,7 @@ pub(super) fn verify_binding_prefix(
         &proof.piop,
         &linear_point,
         &field,
+        native_claim,
     )?;
     let target = binding.target()?;
     transcript.absorb_slice(b"bitz/falcon1024-ct/shared-inner/v1");
@@ -581,6 +614,7 @@ struct BindingForm<'a> {
     compact_weights: OnceLock<compact::PreparedWeights>,
     local_linear_point: Vec<F>,
     eta: F,
+    native_claim: Option<super::native_ring::PreparedNativeClaim>,
 }
 
 /// Unscaled adjoints shared by instances with the same complete public key.
@@ -722,17 +756,18 @@ fn prepare_binding_form<'a>(
     proof: &'a FalconPiopProof,
     linear_point: &[F],
     field: &'a Cfg,
+    native_claim: Option<super::native_ring::PreparedNativeClaim>,
 ) -> Result<BindingForm<'a>, FalconError> {
     let linear_weights = factored_weights(linear_point, field)?;
     // The preceding linear-point nonce protects one atomic challenge block:
     // its row coordinates followed by eta. No prover message intervenes.
-    // Include eta's degree (2*batch + 8 in hybrid mode) in that block's bound.
+    // Include eta's degree (batch + 12 in hybrid mode) in that block's bound.
     transcript.absorb_slice(b"bitz/falcon1024-ct/terminal-collapse/v1");
     let eta = squeeze(transcript, field)?;
     let local_linear_vars = layout.linear_stride().ilog2() as usize;
     let local_linear_weights = factored_weights(&linear_point[..local_linear_vars], field)?;
     let ring_start = layout.linear_rows() - N;
-    let ring_row_weights = (0..N)
+    let ring_row_weights = (0..if layout.is_hybrid() { 0 } else { N })
         .map(|i| local_linear_weights.at(ring_start + i))
         .collect();
     let mut ring_instance_weights = eq_table(&linear_point[local_linear_vars..], field)
@@ -753,6 +788,7 @@ fn prepare_binding_form<'a>(
         compact_weights: OnceLock::new(),
         local_linear_point: linear_point[..local_linear_vars].to_vec(),
         eta,
+        native_claim,
     })
 }
 
@@ -964,7 +1000,7 @@ impl BindingForm<'_> {
         } = self;
         let linear_constant =
             add_linear_constraints(coefficients, linear_weights, layout, statement, field)?;
-        if coefficients.enabled() {
+        if coefficients.enabled() && !layout.is_hybrid() {
             let ring_cache = self.prover_ring_cache();
             let offsets = layout.offsets();
             for instance in coefficients.instances(layout.batch()) {
@@ -1010,6 +1046,17 @@ impl BindingForm<'_> {
             proof,
             field,
         )?;
+        if layout.is_hybrid() {
+            native::add_leaf_claims(
+                coefficients,
+                &mut target,
+                &mut scale,
+                *eta,
+                layout,
+                proof,
+                field,
+            )?;
+        }
         add_product_tree_claims(
             coefficients,
             &mut target,
@@ -1019,6 +1066,7 @@ impl BindingForm<'_> {
             proof,
             field,
         )?;
+        self.add_native_claim(coefficients, &mut target, scale)?;
         Ok(target)
     }
 
@@ -1033,6 +1081,9 @@ impl BindingForm<'_> {
     fn evaluate(&self, point: &[F]) -> Result<F, FalconError> {
         if point.len() != source_rounds(self.layout) {
             return Err(piop("binding endpoint dimension mismatch"));
+        }
+        if self.layout.is_hybrid() {
+            return self.evaluate_compact(point);
         }
         let field = self.field;
         let layout = self.layout;
@@ -1290,7 +1341,7 @@ fn add_linear_constraints(
             residual(&terms, -i128::from(expected));
         }
 
-        for i in 0..N {
+        for i in 0..if layout.is_hybrid() { 0 } else { N } {
             let mut terms = Vec::with_capacity(16);
             for bit in 0..11 {
                 terms.push((s2_bit_index(&offsets, i, bit), 1));
@@ -1396,19 +1447,25 @@ fn add_linear_constraints(
                 3,
                 -i128::from(Q),
             );
-            push_unsigned_terms(&mut division, offsets.hash_remainders + 14 * i, 14, -1);
+            push_value_terms(
+                &mut division,
+                offsets.hash_remainders + 14 * i,
+                -1,
+                layout.is_hybrid(),
+            );
             residual(&division, 0);
 
-            let mut range = Vec::with_capacity(28);
-            push_unsigned_terms(&mut range, offsets.hash_remainders + 14 * i, 14, 1);
-            push_unsigned_terms(&mut range, offsets.hash_remainder_slack + 14 * i, 14, 1);
-            residual(&range, -12_288);
+            if !layout.is_hybrid() {
+                let mut range = Vec::with_capacity(28);
+                push_unsigned_terms(&mut range, offsets.hash_remainders + 14 * i, 14, 1);
+                push_unsigned_terms(&mut range, offsets.hash_remainder_slack + 14 * i, 14, 1);
+                residual(&range, -12_288);
 
-            let mut q_range = Vec::with_capacity(6);
-            push_unsigned_terms(&mut q_range, offsets.hash_quotients + 3 * i, 3, 1);
-            push_unsigned_terms(&mut q_range, offsets.hash_quotient_slack + 3 * i, 3, 1);
-            residual(&q_range, -5);
-
+                let mut q_range = Vec::with_capacity(6);
+                push_unsigned_terms(&mut q_range, offsets.hash_quotients + 3 * i, 3, 1);
+                push_unsigned_terms(&mut q_range, offsets.hash_quotient_slack + 3 * i, 3, 1);
+                residual(&q_range, -5);
+            }
             let mut prefix = Vec::with_capacity(23);
             push_unsigned_terms(&mut prefix, offsets.hash_prefixes + 11 * (i + 1), 11, 1);
             push_unsigned_terms(&mut prefix, offsets.hash_prefixes + 11 * i, 11, -1);
@@ -1423,24 +1480,26 @@ fn add_linear_constraints(
             -1,
         );
 
-        for i in 0..N {
-            let mut range = Vec::with_capacity(28);
-            push_unsigned_terms(&mut range, offsets.s1 + 14 * i, 14, 1);
-            push_unsigned_terms(&mut range, offsets.s1_range_slack + 14 * i, 14, 1);
-            residual(&range, -12_288);
-        }
+        if !layout.is_hybrid() {
+            for i in 0..N {
+                let mut range = Vec::with_capacity(28);
+                push_unsigned_terms(&mut range, offsets.s1 + 14 * i, 14, 1);
+                push_unsigned_terms(&mut range, offsets.s1_range_slack + 14 * i, 14, 1);
+                residual(&range, -12_288);
+            }
 
-        for i in 0..N {
-            let mut ring = Vec::with_capacity(51);
-            push_unsigned_terms(&mut ring, offsets.hash_point + 14 * i, 14, 1);
-            push_unsigned_terms(&mut ring, offsets.s1 + 14 * i, 14, -1);
-            push_signed_terms(
-                &mut ring,
-                offsets.ring_quotients + 23 * i,
-                23,
-                -i128::from(Q),
-            );
-            residual(&ring, 6_144);
+            for i in 0..N {
+                let mut ring = Vec::with_capacity(51);
+                push_unsigned_terms(&mut ring, offsets.hash_point + 14 * i, 14, 1);
+                push_unsigned_terms(&mut ring, offsets.s1 + 14 * i, 14, -1);
+                push_signed_terms(
+                    &mut ring,
+                    offsets.ring_quotients + 23 * i,
+                    23,
+                    -i128::from(Q),
+                );
+                residual(&ring, 6_144);
+            }
         }
         if row != layout.linear_rows() {
             return Err(piop(format!(
@@ -1504,11 +1563,11 @@ fn add_norm_claims_prepared(
                     &weights.at(instance * N + i),
                 );
                 if side == 0 {
-                    add_unsigned_scaled(
+                    add_value_scaled(
                         coefficients,
                         base + offsets.s1 + 14 * i,
-                        14,
                         weight,
+                        layout.is_hybrid(),
                         field,
                     );
                     if coefficients.needs_constants() {
@@ -1533,11 +1592,11 @@ fn add_norm_claims_prepared(
             for i in 0..N {
                 let weight = field.mul(scale, &weights.at(instance * N + i));
                 if side == 0 {
-                    add_unsigned_scaled(
+                    add_value_scaled(
                         coefficients,
                         base + offsets.s1 + 14 * i,
-                        14,
                         weight,
+                        layout.is_hybrid(),
                         field,
                     );
                     if coefficients.needs_constants() {
@@ -1741,6 +1800,33 @@ fn add_compaction_product_claims_prepared(
     field: &Cfg,
     weights: &crate::poly::mle::EqualityWeights<F>,
 ) -> Result<(), FalconError> {
+    if layout.is_hybrid() {
+        let offsets = layout.offsets();
+        let claims = [
+            proof.compact_products.terminal.ax,
+            proof.compact_products.terminal.bx,
+            proof.compact_products.terminal.cx,
+        ];
+        for (coordinate, claim) in claims.into_iter().enumerate() {
+            for instance in coefficients.instances(layout.batch()) {
+                let base = instance * layout.signature_stride();
+                for i in 0..HASH_TO_POINT_SAMPLES {
+                    let index = match coordinate {
+                        0 => offsets.hash_quotients + 3 * i + 2,
+                        1 => offsets.hash_quotients + 3 * i,
+                        _ => offsets.hash_accept_ands + i,
+                    };
+                    coefficients.add(
+                        base + index,
+                        field.mul(scale, &weights.at(instance * COMPACTION_LEAVES + i)),
+                    );
+                }
+            }
+            add_claim_target(target, *scale, claim, field.zero(), field);
+            *scale = field.mul(scale, &eta);
+        }
+        return Ok(());
+    }
     let stride = COMPACTION_LEAVES * layout.capacity();
     let offsets = layout.offsets();
     let claims = [
@@ -1801,7 +1887,7 @@ fn add_product_tree_claims(
 ) -> Result<(), FalconError> {
     let offsets = layout.offsets();
     let instances = coefficients.instances(layout.batch());
-    for _ in 0..2 * instances.start {
+    for _ in 0..(if layout.is_hybrid() { 1 } else { 2 }) * instances.start {
         *scale = field.mul(scale, &eta);
     }
     for instance in instances {
@@ -1811,6 +1897,9 @@ fn add_product_tree_claims(
             .into_iter()
             .zip([&pair.candidate, &pair.output])
         {
+            if candidate && layout.is_hybrid() {
+                continue;
+            }
             let weights =
                 eq_table(&tree.terminal_point, field).map_err(|error| piop(error.to_string()))?;
             let mut constant = field.zero();
@@ -1868,6 +1957,30 @@ fn add_product_tree_claims(
         }
     }
     Ok(())
+}
+
+fn add_value_scaled(
+    values: &mut impl CoefficientSink,
+    base: usize,
+    scale: F,
+    bounded: bool,
+    field: &Cfg,
+) {
+    values.add_word(base, 14, false, scale, field);
+    if bounded {
+        values.add(base + 13, mul_i(scale, -4095, field));
+    }
+}
+
+fn push_value_terms(terms: &mut Vec<(usize, i128)>, base: usize, scale: i128, bounded: bool) {
+    for bit in 0..14 {
+        let weight = if bounded && bit == 13 {
+            4097
+        } else {
+            1i128 << bit
+        };
+        terms.push((base + bit, scale * weight));
+    }
 }
 
 fn add_claim_target(target: &mut F, scale: F, claimed: F, constant: F, field: &Cfg) {

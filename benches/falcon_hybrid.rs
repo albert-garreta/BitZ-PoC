@@ -157,8 +157,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         "{}",
         json!({
             "schema": "bitz/falcon-hybrid/v3",
-            "protocol": "bitz/falcon1024-ct/hybrid/non-zk/v6",
+            "protocol": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v1",
             "integer_bridge": "wfbitz-joint-limbs",
+            "arithmetic_live_bits_per_signature": 100578,
+            "arithmetic_auxiliary_values_per_signature": 8605,
             "event": "prepared",
             "batch": options.batch,
             "capacity": prepared.capacity(),
@@ -253,6 +255,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "roots": statement.roots.map(|root| root.iter().map(|byte| format!("{byte:02x}")).collect::<String>()),
                 "input_digest": input_digest,
                 "proof_debug_digest": proof_debug_digest,
+                "proof_payload_bytes": proof.payload_size_bytes(),
+                "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
                 "verified": true,
             })
         );

@@ -81,19 +81,20 @@ impl FalconSecuritySchedule {
         let d = layout.capacity().trailing_zeros() as usize;
         let batch = layout.batch();
         Some(Self {
-            norm_instance_bits: component_grinding_bits(target_bits, d),
+            // Independent instance batching for norms and candidate leaves.
+            norm_instance_bits: component_grinding_bits(target_bits, 2 * d),
             quadratic_round_bits: component_grinding_bits(target_bits, 4 * (10 + d)),
-            outer_point_bits: component_grinding_bits(target_bits, 13 + d),
-            // One shared difficulty covers H2P cubic rounds and the complete
+            outer_point_bits: component_grinding_bits(target_bits, 11 + d),
+            // One shared difficulty covers rejection and leaf cubic rounds and the complete
             // product forest: 55 cubic rounds, ten tree-combination draws,
             // and eleven line draws for each of the 2*batch trees.
             cubic_round_bits: component_grinding_bits(
                 target_bits,
-                3 * (13 + d) + 165 + 10 * (2 * batch - 1) + 22 * batch,
+                6 * (11 + d) + 165 + 10 * (2 * batch - 1) + 22 * batch,
             ),
             fingerprint_bits: component_grinding_bits(target_bits, 2048 * batch),
-            linear_point_bits: component_grinding_bits(target_bits, 14 + d + 2 * batch + 8),
-            binding_round_bits: component_grinding_bits(target_bits, 2 * (18 + d)),
+            linear_point_bits: component_grinding_bits(target_bits, 13 + d + batch + 12),
+            binding_round_bits: component_grinding_bits(target_bits, 2 * (17 + d)),
         })
     }
 
@@ -170,6 +171,16 @@ impl GrindingDomain for ForestRoundGrinding {
     const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/grinding/forest-round/v2";
 }
 
+struct LeafInstanceGrinding;
+impl GrindingDomain for LeafInstanceGrinding {
+    const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/grinding/leaf-instances/v1";
+}
+
+struct LeafRoundGrinding;
+impl GrindingDomain for LeafRoundGrinding {
+    const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/grinding/leaf-round/v1";
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NormProof {
     /// Random instance weights are sampled after the source commitment and
@@ -226,6 +237,22 @@ pub struct CompactionProof {
     pub output: PrimeProductTreeProof,
 }
 
+/// Authenticates the candidate forest leaves without committed selected-value
+/// columns. Operand C includes the instance and forest evaluation weights;
+/// it is the MLE of that weighted table, not a product of operand MLEs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompactionLeafProof {
+    pub instance_point: Vec<F>,
+    pub instance_nonce: Option<u64>,
+    pub sumcheck: SumcheckProof<F, 4>,
+    /// MLE evaluations of 1-d, 1-P_10, and beta*eq(forest)*(gamma-1+rho*P+r).
+    /// All three tables vanish on padded candidates and signatures.
+    pub terminal: [F; 3],
+    /// Local candidate coordinates first, followed by instance coordinates.
+    pub point: Vec<F>,
+    pub grinding_nonces: Vec<u64>,
+}
+
 /// Proof through the norm, Keccak chi, compaction-product, and compaction
 /// witness-product layers.  The terminal claims must subsequently be
 /// collapsed and opened against the source commitment.
@@ -240,6 +267,7 @@ pub struct FalconPiopProof {
     pub compaction_rank_scale: F,
     pub compaction: Vec<CompactionProof>,
     pub compaction_forest: PrimeProductForestProof,
+    pub compaction_leaf: Option<CompactionLeafProof>,
 }
 
 /// Proves the nonlinear Falcon relation layers.  `target_bits` controls the
@@ -297,6 +325,20 @@ pub fn prove_falcon_piop(
         security_schedule(layout, target_bits)?,
         &field,
     )?;
+    let compaction_leaf = if layout.is_hybrid() {
+        Some(prove_compaction_leaf(
+            transcript,
+            layout,
+            traces,
+            &compaction,
+            gamma,
+            rank_scale,
+            target_bits,
+            &field,
+        )?)
+    } else {
+        None
+    };
 
     Ok(FalconPiopProof {
         modulus: field.modulus_u128(),
@@ -308,6 +350,7 @@ pub fn prove_falcon_piop(
         compaction_rank_scale: rank_scale,
         compaction,
         compaction_forest,
+        compaction_leaf,
     })
 }
 
@@ -379,6 +422,22 @@ pub fn verify_falcon_piop(
         security_schedule(layout, target_bits)?,
         &field,
     )?;
+    match (layout.is_hybrid(), &proof.compaction_leaf) {
+        (true, Some(leaf)) => verify_compaction_leaf(
+            transcript,
+            layout,
+            &proof.compaction,
+            leaf,
+            target_bits,
+            &field,
+        )?,
+        (false, None) => {}
+        _ => {
+            return Err(piop(
+                "compaction leaf proof does not match the source layout",
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -394,7 +453,11 @@ fn validate_inputs(
 }
 
 fn bind_header(transcript: &mut impl Transcript, layout: &FalconSourceLayout, target_bits: usize) {
-    transcript.absorb_slice(b"bitz/falcon1024-ct/piop/v3");
+    transcript.absorb_slice(if layout.is_hybrid() {
+        b"bitz/falcon1024-ct/piop/native-ring/v1"
+    } else {
+        b"bitz/falcon1024-ct/piop/v3"
+    });
     transcript.absorb_slice(&[u8::from(layout.is_hybrid())]);
     transcript.absorb_slice(&(layout.batch() as u64).to_le_bytes());
     transcript.absorb_slice(&(layout.capacity() as u64).to_le_bytes());
@@ -722,6 +785,7 @@ fn prove_compaction_products(
     let rows = CompactionRows {
         traces,
         stride: COMPACTION_LEAVES * layout.capacity(),
+        rejection_only: layout.is_hybrid(),
         field,
     };
     prove_quadratic(
@@ -741,12 +805,17 @@ fn prove_compaction_products(
 struct CompactionRows<'a> {
     traces: &'a [FalconVerificationTrace],
     stride: usize,
+    rejection_only: bool,
     field: &'a Cfg,
 }
 
 impl CompactionRows<'_> {
     fn candidate(&self, row: usize) -> Option<(&super::HashToPointTrace, usize, usize)> {
-        let block = row / self.stride;
+        let block = if self.rejection_only {
+            3
+        } else {
+            row / self.stride
+        };
         let index = row % self.stride;
         let candidate = index % COMPACTION_LEAVES;
         let trace = self.traces.get(index / COMPACTION_LEAVES)?;
@@ -759,7 +828,12 @@ impl OuterRows for CompactionRows<'_> {
     type C = F;
 
     fn dimensions(&self) -> (usize, usize, usize) {
-        (4 * self.stride, 4 * self.stride, 4 * self.stride)
+        let rows = if self.rejection_only {
+            self.stride
+        } else {
+            4 * self.stride
+        };
+        (rows, rows, rows)
     }
 
     fn a(&self, row: usize) -> F {
@@ -1374,6 +1448,233 @@ fn verify_product_forest(
     Ok(())
 }
 
+fn bind_compaction_leaf(
+    transcript: &mut impl Transcript,
+    compaction: &[CompactionProof],
+    field: &Cfg,
+) {
+    transcript.absorb_slice(b"bitz/falcon1024-ct/compaction/leaf/v1");
+    let claims: Vec<_> = compaction
+        .iter()
+        .map(|pair| pair.candidate.terminal_claim)
+        .collect();
+    absorb_field_elements(transcript, &claims, field);
+}
+
+fn leaf_initial_claim(compaction: &[CompactionProof], weights: &[F], field: &Cfg) -> F {
+    compaction
+        .iter()
+        .zip(weights)
+        .fold(field.zero(), |sum, (pair, weight)| {
+            field.add(
+                &sum,
+                &field.mul(
+                    weight,
+                    &field.sub(&pair.candidate.terminal_claim, &field.one()),
+                ),
+            )
+        })
+}
+
+#[tracing::instrument(skip_all, name = "falcon_arithmetic:compaction_leaf")]
+fn prove_compaction_leaf(
+    transcript: &mut impl Transcript,
+    layout: &FalconSourceLayout,
+    traces: &[FalconVerificationTrace],
+    compaction: &[CompactionProof],
+    gamma: F,
+    rank_scale: F,
+    target_bits: usize,
+    field: &Cfg,
+) -> Result<CompactionLeafProof, FalconError> {
+    let security = security_schedule(layout, target_bits)?;
+    bind_compaction_leaf(transcript, compaction, field);
+    let instance_rounds = layout.capacity().trailing_zeros() as usize;
+    let instance_nonce = if target_bits == 128 && instance_rounds != 0 {
+        Some(
+            grind_and_absorb(
+                transcript,
+                GrindingRound::<LeafInstanceGrinding>::new(0),
+                security.norm_instance_bits,
+            )
+            .map_err(|error| piop(error.to_string()))?,
+        )
+    } else {
+        None
+    };
+    let instance_point = sample_point(transcript, instance_rounds, field)?;
+    let weights = eq_table(&instance_point, field).map_err(|error| piop(error.to_string()))?;
+    let forest_weights = eq_table(&compaction[0].candidate.terminal_point, field)
+        .map_err(|error| piop(error.to_string()))?;
+    let gamma_minus_one = field.sub(&gamma, &field.one());
+    let mut values = vec![[field.zero(); 3]; COMPACTION_LEAVES * layout.capacity()];
+    #[cfg(feature = "parallel")]
+    let chunks = values.par_chunks_mut(COMPACTION_LEAVES);
+    #[cfg(not(feature = "parallel"))]
+    let chunks = values.chunks_mut(COMPACTION_LEAVES);
+    chunks.enumerate().for_each(|(instance, values)| {
+        let Some(trace) = traces.get(instance) else {
+            return;
+        };
+        let hash = &trace.hash_to_point;
+        for i in 0..HASH_TO_POINT_SAMPLES {
+            let fingerprint = field.add(
+                &field.add(
+                    &gamma_minus_one,
+                    &field.mul(&rank_scale, &unsigned(hash.prefix[i].into(), field)),
+                ),
+                &unsigned(hash.remainders[i].into(), field),
+            );
+            values[i] = [
+                unsigned(u128::from(hash.accepted[i]), field),
+                unsigned(u128::from(1 - ((hash.prefix[i] >> 10) & 1)), field),
+                field.mul(
+                    &field.mul(&weights[instance], &forest_weights[i]),
+                    &fingerprint,
+                ),
+            ];
+        }
+    });
+    let mut claim = leaf_initial_claim(compaction, &weights, field);
+    let mut boundary = ProverGrindingRoundBoundary::<LeafRoundGrinding>::with_round_offset(
+        if target_bits == 128 {
+            security.cubic_round_bits
+        } else {
+            0
+        },
+        0,
+    );
+    let rounds = 11 + instance_rounds;
+    let mut point = Vec::with_capacity(rounds);
+    let mut round_polynomials = Vec::with_capacity(rounds);
+    for _ in 0..rounds {
+        // The linear coefficient is recovered from g(0)+g(1)=claim. Computing
+        // only coefficients 0, 2 and 3 saves three field products per pair.
+        let blocks: Vec<_> = (0..values.len() / 2).step_by(4096).collect();
+        let polynomials: Vec<[F; 3]> = crate::utils::cfg_iter!(blocks)
+            .map(|&start| {
+                let mut polynomial = [field.zero(); 3];
+                for i in start..(start + 4096).min(values.len() / 2) {
+                    let [a, b, c] = values[2 * i];
+                    let [ar, br, cr] = values[2 * i + 1];
+                    let ad = field.sub(&ar, &a);
+                    let bd = field.sub(&br, &b);
+                    let cd = field.sub(&cr, &c);
+                    let ab = field.mul(&a, &b);
+                    let cross = field.add(&field.mul(&a, &bd), &field.mul(&ad, &b));
+                    let high = field.mul(&ad, &bd);
+                    polynomial[0] = field.add(&polynomial[0], &field.mul(&ab, &c));
+                    polynomial[1] = field.add(
+                        &polynomial[1],
+                        &field.add(&field.mul(&cross, &cd), &field.mul(&high, &c)),
+                    );
+                    polynomial[2] = field.add(&polynomial[2], &field.mul(&high, &cd));
+                }
+                polynomial
+            })
+            .collect();
+        let polynomial = polynomials.into_iter().fold([field.zero(); 3], |sum, p| {
+            std::array::from_fn(|i| field.add(&sum[i], &p[i]))
+        });
+        let challenge = recover_full_round_polynomial_and_sample_next_challenge_with_boundary(
+            transcript,
+            &mut claim,
+            &polynomial,
+            &mut round_polynomials,
+            &mut point,
+            &field.zero(),
+            field,
+            &mut boundary,
+        )
+        .map_err(|error| piop(error.to_string()))?;
+        let mut next = vec![[field.zero(); 3]; values.len() / 2];
+        crate::utils::cfg_iter_mut!(next)
+            .enumerate()
+            .for_each(|(i, row)| {
+                *row = std::array::from_fn(|j| {
+                    affine(values[2 * i][j], values[2 * i + 1][j], challenge, field)
+                });
+            });
+        values = next;
+    }
+    let terminal = values[0];
+    if claim != field.mul(&field.mul(&terminal[0], &terminal[1]), &terminal[2]) {
+        return Err(piop("compaction leaf terminal identity failed"));
+    }
+    absorb_field_elements(transcript, &terminal, field);
+    Ok(CompactionLeafProof {
+        instance_point,
+        instance_nonce,
+        sumcheck: SumcheckProof { round_polynomials },
+        terminal,
+        point,
+        grinding_nonces: boundary.into_nonces(),
+    })
+}
+
+fn verify_compaction_leaf(
+    transcript: &mut impl Transcript,
+    layout: &FalconSourceLayout,
+    compaction: &[CompactionProof],
+    proof: &CompactionLeafProof,
+    target_bits: usize,
+    field: &Cfg,
+) -> Result<(), FalconError> {
+    let security = security_schedule(layout, target_bits)?;
+    bind_compaction_leaf(transcript, compaction, field);
+    let instance_rounds = layout.capacity().trailing_zeros() as usize;
+    match (
+        target_bits == 128 && instance_rounds != 0,
+        proof.instance_nonce,
+    ) {
+        (true, Some(nonce)) => verify_and_absorb(
+            transcript,
+            GrindingRound::<LeafInstanceGrinding>::new(0),
+            security.norm_instance_bits,
+            nonce,
+        )
+        .map_err(|error| piop(error.to_string()))?,
+        (false, None) => {}
+        _ => return Err(piop("invalid leaf-instance grinding nonce")),
+    }
+    let instance_point = sample_point(transcript, instance_rounds, field)?;
+    if instance_point != proof.instance_point {
+        return Err(piop("compaction leaf instance point mismatch"));
+    }
+    validate_field_elements(&proof.terminal, field).map_err(|error| piop(error.to_string()))?;
+    let weights = eq_table(&instance_point, field).map_err(|error| piop(error.to_string()))?;
+    let initial = leaf_initial_claim(compaction, &weights, field);
+    let mut boundary = VerifierGrindingRoundBoundary::<LeafRoundGrinding>::new(
+        if target_bits == 128 {
+            security.cubic_round_bits
+        } else {
+            0
+        },
+        &proof.grinding_nonces,
+    );
+    let (point, final_claim) = proof
+        .sumcheck
+        .verify_with_round_boundary(
+            transcript,
+            initial,
+            11 + instance_rounds,
+            field,
+            &mut boundary,
+        )
+        .map_err(|error| piop(error.to_string()))?;
+    if point != proof.point
+        || final_claim
+            != field.mul(
+                &field.mul(&proof.terminal[0], &proof.terminal[1]),
+                &proof.terminal[2],
+            )
+    {
+        return Err(piop("compaction leaf terminal identity failed"));
+    }
+    absorb_field_elements(transcript, &proof.terminal, field);
+    Ok(())
+}
+
 fn sample_point(
     transcript: &mut impl Transcript,
     rounds: usize,
@@ -1412,7 +1713,7 @@ fn keccak_rounds(layout: &FalconSourceLayout) -> usize {
 }
 
 fn compaction_product_rounds(layout: &FalconSourceLayout) -> usize {
-    13 + layout.capacity().trailing_zeros() as usize
+    (if layout.is_hybrid() { 11 } else { 13 }) + layout.capacity().trailing_zeros() as usize
 }
 
 pub(super) fn security_schedule(
@@ -1438,6 +1739,213 @@ mod tests {
     const MESSAGE: &[u8; 32] = include_bytes!("fixtures/message.bin");
     const SIGNATURE: &[u8; super::super::CT_SIGNATURE_BYTES] =
         include_bytes!("fixtures/signature_ct.bin");
+
+    #[test]
+    fn hybrid_rejection_rows_match_dense_padded_relation() {
+        let field = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
+        let traces = vec![verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap(); 3];
+        let layout = FalconSourceLayout::new_hybrid(3).unwrap();
+        let stride = COMPACTION_LEAVES * layout.capacity();
+        let rows = CompactionRows {
+            traces: &traces,
+            stride,
+            rejection_only: true,
+            field: &field,
+        };
+        assert_eq!(rows.dimensions(), (stride, stride, stride));
+        let mut dense = OuterInputs {
+            ax: vec![field.zero(); stride],
+            bx: vec![field.zero(); stride],
+            cx: vec![field.zero(); stride],
+        };
+        for (s, trace) in traces.iter().enumerate() {
+            for i in 0..HASH_TO_POINT_SAMPLES {
+                let q = trace.hash_to_point.quotients[i];
+                dense.ax[s * COMPACTION_LEAVES + i] = unsigned(((q >> 2) & 1).into(), &field);
+                dense.bx[s * COMPACTION_LEAVES + i] = unsigned((q & 1).into(), &field);
+                dense.cx[s * COMPACTION_LEAVES + i] =
+                    unsigned(u128::from(!trace.hash_to_point.accepted[i]), &field);
+            }
+        }
+        for i in 0..stride {
+            assert_eq!(
+                [rows.a(i), rows.b(i), rows.c(i)],
+                [dense.ax[i], dense.bx[i], dense.cx[i]]
+            );
+        }
+        let mut dense_transcript = Blake3Transcript::new();
+        dense_transcript.absorb_slice(b"bitz/falcon1024-ct/compaction-products/v3");
+        let expected = prove_quadratic(
+            &mut dense_transcript,
+            dense,
+            13,
+            100,
+            security_schedule(&layout, 100).unwrap(),
+            &field,
+        )
+        .unwrap();
+        let actual =
+            prove_compaction_products(&mut Blake3Transcript::new(), &layout, &traces, 100, &field)
+                .unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn hybrid_piop_leaf_roundtrips_and_rejects_tampering() {
+        let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+        for (batch, target) in [(1, 100), (3, 100), (3, 128)] {
+            let layout = FalconSourceLayout::new_hybrid(batch).unwrap();
+            let mut prover = Blake3Transcript::new();
+            let proof =
+                prove_falcon_piop(&mut prover, &layout, &vec![trace.clone(); batch], target)
+                    .unwrap();
+            let field = field::FpCtx::from_prime_u128(proof.modulus);
+            let leaf = proof.compaction_leaf.as_ref().unwrap();
+            assert_eq!(
+                leaf.point.len(),
+                11 + layout.capacity().trailing_zeros() as usize
+            );
+            assert_eq!(proof.compact_products.point.len(), leaf.point.len());
+            let mut verifier = Blake3Transcript::new();
+            verify_falcon_piop(&mut verifier, &layout, &proof, target).unwrap();
+            assert_eq!(
+                squeeze(&mut prover, &field).unwrap(),
+                squeeze(&mut verifier, &field).unwrap()
+            );
+            let reject = |bad: &FalconPiopProof| {
+                assert!(
+                    verify_falcon_piop(&mut Blake3Transcript::new(), &layout, bad, target).is_err()
+                );
+            };
+            for operand in 0..3 {
+                let mut bad = proof.clone();
+                let value = &mut bad.compaction_leaf.as_mut().unwrap().terminal[operand];
+                *value = field.add(value, &field.one());
+                reject(&bad);
+            }
+            let mut bad = proof.clone();
+            bad.compaction_leaf = None;
+            reject(&bad);
+            let mut bad = proof.clone();
+            bad.compaction_leaf.as_mut().unwrap().point[0] = field.zero();
+            reject(&bad);
+            let mut bad = proof.clone();
+            bad.compaction_leaf
+                .as_mut()
+                .unwrap()
+                .sumcheck
+                .round_polynomials[0][0] = field.zero();
+            reject(&bad);
+            let mut bad = proof.clone();
+            bad.compaction_leaf.as_mut().unwrap().grinding_nonces = vec![0];
+            reject(&bad);
+            if batch > 1 {
+                let mut bad = proof.clone();
+                bad.compaction_leaf.as_mut().unwrap().instance_point[0] = field.zero();
+                reject(&bad);
+                let mut bad = proof.clone();
+                bad.compaction_leaf.as_mut().unwrap().instance_nonce =
+                    if target == 128 { None } else { Some(0) };
+                reject(&bad);
+            }
+            let mut bad = proof.clone();
+            bad.compaction[0].candidate.terminal_claim = field.zero();
+            reject(&bad);
+        }
+    }
+
+    #[test]
+    fn compaction_leaf_terminals_match_masked_weighted_tables() {
+        let field = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
+        let layout = FalconSourceLayout::new_hybrid(3).unwrap();
+        let traces = vec![verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap(); 3];
+        let gamma = unsigned(17, &field);
+        let rho = unsigned(31, &field);
+        let forest_point: Vec<_> = (0..11).map(|i| unsigned(13 + i, &field)).collect();
+        let forest_weights = eq_table(&forest_point, &field).unwrap();
+        let compaction: Vec<_> = traces
+            .iter()
+            .map(|trace| {
+                let (candidate, output) = compaction_leaves(trace, gamma, rho, &field);
+                CompactionProof {
+                    candidate: PrimeProductTreeProof {
+                        root: field.zero(),
+                        terminal_point: forest_point.clone(),
+                        terminal_claim: weighted_sum(&candidate, &forest_weights, &field),
+                    },
+                    output: PrimeProductTreeProof {
+                        root: field.zero(),
+                        terminal_point: forest_point.clone(),
+                        terminal_claim: weighted_sum(&output, &forest_weights, &field),
+                    },
+                }
+            })
+            .collect();
+        let proof = prove_compaction_leaf(
+            &mut Blake3Transcript::new(),
+            &layout,
+            &traces,
+            &compaction,
+            gamma,
+            rho,
+            100,
+            &field,
+        )
+        .unwrap();
+        verify_compaction_leaf(
+            &mut Blake3Transcript::new(),
+            &layout,
+            &compaction,
+            &proof,
+            100,
+            &field,
+        )
+        .unwrap();
+        let weights = eq_table(&proof.point, &field).unwrap();
+        let beta = eq_table(&proof.instance_point, &field).unwrap();
+        let mut expected = [field.zero(); 3];
+        for (s, trace) in traces.iter().enumerate() {
+            for i in 0..HASH_TO_POINT_SAMPLES {
+                let hash = &trace.hash_to_point;
+                let values = [
+                    unsigned(u128::from(hash.accepted[i]), &field),
+                    unsigned(u128::from((hash.prefix[i] & 1024) == 0), &field),
+                    field.mul(
+                        &field.mul(&beta[s], &forest_weights[i]),
+                        &field.add(
+                            &field.add(
+                                &field.sub(&gamma, &field.one()),
+                                &field.mul(&rho, &unsigned(hash.prefix[i].into(), &field)),
+                            ),
+                            &unsigned(hash.remainders[i].into(), &field),
+                        ),
+                    ),
+                ];
+                for k in 0..3 {
+                    expected[k] = field.add(
+                        &expected[k],
+                        &field.mul(&weights[s * COMPACTION_LEAVES + i], &values[k]),
+                    );
+                }
+            }
+        }
+        assert_eq!(proof.terminal, expected);
+        let mut bad = compaction;
+        bad[1].candidate.terminal_claim = field.add(&bad[1].candidate.terminal_claim, &field.one());
+        assert!(
+            prove_compaction_leaf(
+                &mut Blake3Transcript::new(),
+                &layout,
+                &traces,
+                &bad,
+                gamma,
+                rho,
+                100,
+                &field
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn parallel_forest_rounds_match_direct_cubic_evaluations() {
@@ -1671,6 +2179,7 @@ mod tests {
         let rows = CompactionRows {
             traces: &traces,
             stride,
+            rejection_only: false,
             field: &field,
         };
         for row in 0..4 * stride {

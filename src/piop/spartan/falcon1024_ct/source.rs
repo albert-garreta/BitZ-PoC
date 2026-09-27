@@ -16,9 +16,9 @@ use super::{
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-/// Start offsets of each committed column inside one `2^22`-bit signature
-/// stride.  The interval ending at `end` is live; `[end,2^22)` is canonical
-/// zero padding.
+/// Start offsets of committed columns within one signature stride. Deleted
+/// hybrid columns have zero length and share the next column's offset. The
+/// interval ending at `end` is live; the remainder of the stride is zero.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FalconSourceOffsets {
     pub shared_one: usize,
@@ -122,9 +122,10 @@ pub struct FalconSourceWitness {
 }
 
 impl FalconSourceWitness {
-    /// Packs already-validated native traces.  All integer encodings are
-    /// little-endian within their fixed-width source column; the raw Falcon
-    /// bytes retain byte order and use least-significant-bit-first byte bits.
+    /// Packs already-validated native traces. Integer bit strings are stored
+    /// little-endian; hybrid remainders and biased s1 use `bounded14_encode`.
+    /// Raw Falcon bytes retain byte order and use least-significant-bit-first
+    /// byte bits.
     pub fn from_traces(
         layout: FalconSourceLayout,
         messages: &[&[u8]],
@@ -180,20 +181,22 @@ impl FalconSourceWitness {
                         8,
                     );
                 }
-                for (i, &coefficient) in trace.signature.s2.iter().enumerate() {
-                    let encoded = (i32::from(coefficient) as u32) & 0xfff;
-                    let low_sum = (encoded & 0x7ff).count_ones();
-                    let sign = encoded >> 11;
-                    let slack = low_sum
-                        .checked_sub(sign)
-                        .expect("canonical CT decoding excludes signed minimum");
-                    put_unsigned(
-                        &mut rows,
-                        &p,
-                        base + offsets.s2_non_min_slack + 4 * i,
-                        u64::from(slack),
-                        4,
-                    );
+                if !layout.is_hybrid() {
+                    for (i, &coefficient) in trace.signature.s2.iter().enumerate() {
+                        let encoded = (i32::from(coefficient) as u32) & 0xfff;
+                        let low_sum = (encoded & 0x7ff).count_ones();
+                        let sign = encoded >> 11;
+                        let slack = low_sum
+                            .checked_sub(sign)
+                            .expect("canonical CT decoding excludes signed minimum");
+                        put_unsigned(
+                            &mut rows,
+                            &p,
+                            base + offsets.s2_non_min_slack + 4 * i,
+                            u64::from(slack),
+                            4,
+                        );
+                    }
                 }
                 if !layout.is_hybrid() {
                     for (word_index, &word) in trace.hash_to_point.shake.chi_ands.iter().enumerate()
@@ -293,23 +296,29 @@ impl FalconSourceWitness {
                         &mut rows,
                         &p,
                         base + offsets.hash_remainders + 14 * i,
-                        u64::from(remainder),
+                        u64::from(if layout.is_hybrid() {
+                            bounded14_encode(remainder)
+                        } else {
+                            remainder
+                        }),
                         14,
                     );
-                    put_unsigned(
-                        &mut rows,
-                        &p,
-                        base + offsets.hash_remainder_slack + 14 * i,
-                        u64::from(12_288 - remainder),
-                        14,
-                    );
-                    put_unsigned(
-                        &mut rows,
-                        &p,
-                        base + offsets.hash_quotient_slack + 3 * i,
-                        u64::from(5 - quotient),
-                        3,
-                    );
+                    if !layout.is_hybrid() {
+                        put_unsigned(
+                            &mut rows,
+                            &p,
+                            base + offsets.hash_remainder_slack + 14 * i,
+                            u64::from(12_288 - remainder),
+                            14,
+                        );
+                        put_unsigned(
+                            &mut rows,
+                            &p,
+                            base + offsets.hash_quotient_slack + 3 * i,
+                            u64::from(5 - quotient),
+                            3,
+                        );
+                    }
                     put_unsigned(
                         &mut rows,
                         &p,
@@ -327,38 +336,40 @@ impl FalconSourceWitness {
                         11,
                     );
                 }
-                for i in 0..HASH_TO_POINT_SAMPLES {
-                    let selected =
-                        trace.hash_to_point.accepted[i] && trace.hash_to_point.prefix[i] < 1024;
-                    put_unsigned(
-                        &mut rows,
-                        &p,
-                        base + offsets.compact_selectors + i,
-                        u64::from(selected),
-                        1,
-                    );
-                    put_unsigned(
-                        &mut rows,
-                        &p,
-                        base + offsets.compact_selected_prefixes + 11 * i,
-                        if selected {
-                            u64::from(trace.hash_to_point.prefix[i])
-                        } else {
-                            0
-                        },
-                        11,
-                    );
-                    put_unsigned(
-                        &mut rows,
-                        &p,
-                        base + offsets.compact_selected_remainders + 14 * i,
-                        if selected {
-                            u64::from(trace.hash_to_point.remainders[i])
-                        } else {
-                            0
-                        },
-                        14,
-                    );
+                if !layout.is_hybrid() {
+                    for i in 0..HASH_TO_POINT_SAMPLES {
+                        let selected =
+                            trace.hash_to_point.accepted[i] && trace.hash_to_point.prefix[i] < 1024;
+                        put_unsigned(
+                            &mut rows,
+                            &p,
+                            base + offsets.compact_selectors + i,
+                            u64::from(selected),
+                            1,
+                        );
+                        put_unsigned(
+                            &mut rows,
+                            &p,
+                            base + offsets.compact_selected_prefixes + 11 * i,
+                            if selected {
+                                u64::from(trace.hash_to_point.prefix[i])
+                            } else {
+                                0
+                            },
+                            11,
+                        );
+                        put_unsigned(
+                            &mut rows,
+                            &p,
+                            base + offsets.compact_selected_remainders + 14 * i,
+                            if selected {
+                                u64::from(trace.hash_to_point.remainders[i])
+                            } else {
+                                0
+                            },
+                            14,
+                        );
+                    }
                 }
                 for i in 0..N {
                     put_unsigned(
@@ -373,23 +384,29 @@ impl FalconSourceWitness {
                         &mut rows,
                         &p,
                         base + offsets.s1 + 14 * i,
-                        biased_s1 as u64,
+                        if layout.is_hybrid() {
+                            u64::from(bounded14_encode(biased_s1 as u16))
+                        } else {
+                            biased_s1 as u64
+                        },
                         14,
                     );
-                    put_unsigned(
-                        &mut rows,
-                        &p,
-                        base + offsets.s1_range_slack + 14 * i,
-                        (12_288 - biased_s1) as u64,
-                        14,
-                    );
-                    put_signed(
-                        &mut rows,
-                        &p,
-                        base + offsets.ring_quotients + 23 * i,
-                        trace.quotient[i],
-                        23,
-                    );
+                    if !layout.is_hybrid() {
+                        put_unsigned(
+                            &mut rows,
+                            &p,
+                            base + offsets.s1_range_slack + 14 * i,
+                            (12_288 - biased_s1) as u64,
+                            14,
+                        );
+                        put_signed(
+                            &mut rows,
+                            &p,
+                            base + offsets.ring_quotients + 23 * i,
+                            trace.quotient[i],
+                            23,
+                        );
+                    }
                 }
                 debug_assert_eq!(trace.norm + trace.norm_slack, BETA_SQUARED);
                 put_unsigned(
@@ -422,6 +439,24 @@ impl FalconSourceWitness {
         let c = flat >> p.row_vars;
         self.rows[c][b / 64] >> (b % 64) & 1 == 1
     }
+}
+
+/// Canonical encoder for the native hybrid decoder
+/// `low_13_bits + 4097 * top_bit`. Alternate encodings are permitted by the
+/// relation, but witness generation chooses the top bit only above 8191.
+pub(super) const fn bounded14_encode(value: u16) -> u16 {
+    assert!(value <= 12_288);
+    if value > 8_191 {
+        (1 << 13) | (value - 4_097)
+    } else {
+        value
+    }
+}
+
+/// Every 14-bit string decodes into `0..=12288`; injectivity is not required.
+pub(super) const fn bounded14_decode(encoded: u16) -> u16 {
+    assert!(encoded < 1 << 14);
+    (encoded & 0x1fff) + 4_097 * (encoded >> 13)
 }
 
 /// Validator-gated production opener configurations for this source shape.
@@ -491,6 +526,96 @@ mod tests {
         (0..width).fold(0, |value, bit| {
             value | (u64::from(witness.bit(flat + bit)) << bit)
         })
+    }
+
+    #[test]
+    fn bounded_decoder_covers_exactly_the_falcon_coefficient_range() {
+        let mut multiplicities = [0u8; 12_289];
+        for encoded in 0..1 << 14 {
+            let value = bounded14_decode(encoded);
+            multiplicities[usize::from(value)] += 1;
+        }
+        assert!(multiplicities.iter().all(|&count| (1..=2).contains(&count)));
+        assert_eq!(
+            multiplicities.iter().filter(|&&count| count == 2).count(),
+            4_095
+        );
+        for value in 0..=12_288 {
+            let encoded = bounded14_encode(value);
+            assert_eq!(bounded14_decode(encoded), value);
+            assert_eq!(encoded >> 13 != 0, value > 8_191);
+        }
+        assert_eq!(bounded14_decode(1 << 13), 4_097);
+        assert_eq!(bounded14_decode((1 << 14) - 1), 12_288);
+    }
+
+    #[cfg(feature = "falcon-hybrid")]
+    #[test]
+    fn native_hybrid_source_packs_all_columns_without_removed_witnesses() {
+        let mut trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+        // A removed quotient must never be encoded, even into an aliased offset.
+        trace.quotient.fill(i64::MAX);
+        for batch in [1, 3] {
+            let layout = FalconSourceLayout::new_hybrid(batch).unwrap();
+            let traces = vec![trace.clone(); batch];
+            let witness = FalconSourceWitness::from_traces(
+                layout,
+                &vec![MESSAGE.as_slice(); batch],
+                &vec![SIGNATURE.as_slice(); batch],
+                &traces,
+            )
+            .unwrap();
+            let offsets = layout.offsets();
+            for instance in 0..batch {
+                let base = instance * layout.signature_stride();
+                let read = |offset, width| read_unsigned(&witness, base + offset, width);
+                assert_eq!(read(offsets.shared_one, 1), 1);
+                for (i, &byte) in MESSAGE.iter().enumerate() {
+                    assert_eq!(read(offsets.message + 8 * i, 8), u64::from(byte));
+                }
+                for (i, &byte) in SIGNATURE.iter().enumerate() {
+                    assert_eq!(read(offsets.encoded_signature + 8 * i, 8), u64::from(byte));
+                }
+                for i in 0..HASH_TO_POINT_SAMPLES {
+                    assert_eq!(
+                        read(offsets.hash_words + 16 * i, 16),
+                        u64::from(trace.hash_to_point.words[i])
+                    );
+                    assert_eq!(
+                        read(offsets.hash_quotients + 3 * i, 3),
+                        u64::from(trace.hash_to_point.quotients[i])
+                    );
+                    let encoded = read(offsets.hash_remainders + 14 * i, 14) as u16;
+                    assert_eq!(bounded14_decode(encoded), trace.hash_to_point.remainders[i]);
+                    assert_eq!(
+                        read(offsets.hash_accept_ands + i, 1),
+                        u64::from(!trace.hash_to_point.accepted[i])
+                    );
+                }
+                for i in 0..=HASH_TO_POINT_SAMPLES {
+                    assert_eq!(
+                        read(offsets.hash_prefixes + 11 * i, 11),
+                        u64::from(trace.hash_to_point.prefix[i])
+                    );
+                }
+                for i in 0..N {
+                    assert_eq!(
+                        read(offsets.hash_point + 14 * i, 14),
+                        u64::from(trace.hash_to_point.point[i])
+                    );
+                    let encoded = read(offsets.s1 + 14 * i, 14) as u16;
+                    assert_eq!(
+                        i32::from(bounded14_decode(encoded)) - 6_144,
+                        i32::from(trace.s1[i])
+                    );
+                }
+                assert_eq!(read(offsets.norm_slack, 27), trace.norm_slack);
+                assert!((offsets.end..layout.signature_stride()).all(|i| !witness.bit(base + i)));
+            }
+            assert!(
+                (batch * layout.signature_stride()..layout.source_bits()).all(|i| !witness.bit(i))
+            );
+        }
     }
 
     #[test]

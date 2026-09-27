@@ -17,7 +17,7 @@ pub struct FalconConstraintCounts {
     pub keccak_linear_bits: usize,
     /// The two quadratic chi identities, one pair per Keccak bit.
     pub keccak_quadratic_rows: usize,
-    /// Division, two ranges and prefix recurrence per candidate.
+    /// Division and prefix recurrence, plus range rows for the integer layout.
     pub hash_to_point_linear: usize,
     /// Biased centered-lift range equalities.
     pub s1_ranges: usize,
@@ -27,12 +27,29 @@ pub struct FalconConstraintCounts {
     pub norm_terms: usize,
     /// Leaves in each stable-compaction product tree after padding.
     pub compaction_leaves: usize,
-    /// Four word products: selector, selected prefix, selected remainder,
-    /// and rejection from the quotient bits.
+    /// Rejection rows; the integer layout also commits and checks the selector,
+    /// selected prefix, and selected remainder products.
     pub compaction_product_rows: usize,
 }
 
 impl FalconConstraintCounts {
+    /// Scalar relation inventory for the source layout. Native ring membership
+    /// and the cubic compaction leaf reduction are separate proof obligations.
+    pub const fn for_layout(layout: &FalconSourceLayout) -> Self {
+        let mut counts = Self::per_signature();
+        if layout.is_hybrid() {
+            counts.s2_canonical = 0;
+            counts.keccak_column_parity_bits = 0;
+            counts.keccak_linear_bits = 0;
+            counts.keccak_quadratic_rows = 0;
+            counts.hash_to_point_linear = 2 * HASH_TO_POINT_SAMPLES + 2;
+            counts.s1_ranges = 0;
+            counts.ring_coefficients = 0;
+            counts.compaction_product_rows = HASH_TO_POINT_SAMPLES;
+        }
+        counts
+    }
+
     pub const fn per_signature() -> Self {
         Self {
             public_input_bindings: 1 + 32 * 8 + super::CT_SIGNATURE_BYTES,
@@ -85,6 +102,9 @@ impl FalconConstraintCounts {
 pub fn check_exact_constraints(trace: &FalconVerificationTrace) -> Result<(), FalconError> {
     check_keccak_constraints(trace)?;
     let hash = &trace.hash_to_point;
+    if hash.prefix[0] != 0 {
+        return violation("hash-prefix-initial", 0);
+    }
     for i in 0..HASH_TO_POINT_SAMPLES {
         let word = i64::from(hash.words[i]);
         let quotient = i64::from(hash.quotients[i]);
@@ -102,11 +122,7 @@ pub fn check_exact_constraints(trace: &FalconVerificationTrace) -> Result<(), Fa
         if hash.accepted[i] != (reject_and == 0) {
             return violation("hash-accept-and", i);
         }
-        if hash.prefix[i + 1]
-            != hash.prefix[i]
-                .checked_add(u16::from(hash.accepted[i]))
-                .unwrap()
-        {
+        if Some(hash.prefix[i + 1]) != hash.prefix[i].checked_add(u16::from(hash.accepted[i])) {
             return violation("hash-prefix", i);
         }
     }
@@ -281,6 +297,22 @@ mod tests {
         assert_eq!(counts.product_round_degree(), 3);
     }
 
+    #[cfg(feature = "falcon-hybrid")]
+    #[test]
+    fn native_scalar_counts_exclude_ideal_norm_and_leaf_reductions() {
+        let layout = FalconSourceLayout::new_hybrid(3).unwrap();
+        let counts = FalconConstraintCounts::for_layout(&layout);
+        assert_eq!(counts.public_input_bindings, 1_834);
+        assert_eq!(counts.hash_to_point_linear, 2_624);
+        assert_eq!(counts.linear_rows(), 4_458);
+        assert_eq!(counts.compaction_product_rows, 1_311);
+        assert_eq!(counts.compaction_leaves, 2_048);
+        assert_eq!(counts.norm_terms, 2_048);
+        assert_eq!(counts.ring_coefficients, 0);
+        assert_eq!(counts.s1_ranges, 0);
+        assert_eq!(counts.s2_canonical, 0);
+    }
+
     #[test]
     fn corrupted_auxiliary_witness_is_rejected() {
         let mut trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
@@ -290,6 +322,21 @@ mod tests {
             Err(FalconError::ConstraintViolation {
                 family: "hash-division",
                 index: 17
+            })
+        ));
+    }
+
+    #[test]
+    fn shifted_prefix_witness_is_rejected_at_the_initial_boundary() {
+        let mut trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+        for prefix in trace.hash_to_point.prefix.iter_mut() {
+            *prefix += 1;
+        }
+        assert!(matches!(
+            check_exact_constraints(&trace),
+            Err(FalconError::ConstraintViolation {
+                family: "hash-prefix-initial",
+                index: 0
             })
         ));
     }

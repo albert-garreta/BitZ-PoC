@@ -64,7 +64,7 @@ impl FalconTraceCounts {
     }
 }
 
-/// Auditable packed layout for batches of one through 32 signatures.
+/// Packed source layout for the integer and native-ring hybrid provers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FalconSourceLayout {
     batch: usize,
@@ -121,7 +121,7 @@ impl FalconSourceLayout {
 
     pub const fn signature_stride(&self) -> usize {
         if self.hybrid {
-            1 << 18
+            1 << 17
         } else {
             Self::SIGNATURE_STRIDE
         }
@@ -130,6 +130,7 @@ impl FalconSourceLayout {
     pub const fn local_counts(&self) -> FalconTraceCounts {
         let mut counts = Self::counts();
         if self.hybrid {
+            counts.s2_non_min_slack = 0;
             counts.keccak_chi_inputs = 0;
             counts.keccak_chi_ands = 0;
             counts.keccak_round_states = 0;
@@ -137,6 +138,13 @@ impl FalconSourceLayout {
             counts.keccak_column_parity_quotients = 0;
             counts.keccak_parity_quotients = 0;
             counts.hash_words = HASH_TO_POINT_SAMPLES * 16;
+            counts.hash_remainder_slack = 0;
+            counts.hash_quotient_slack = 0;
+            counts.compact_selectors = 0;
+            counts.compact_selected_prefixes = 0;
+            counts.compact_selected_remainders = 0;
+            counts.s1_range_slack = 0;
+            counts.ring_quotients = 0;
         }
         counts
     }
@@ -146,16 +154,11 @@ impl FalconSourceLayout {
     }
 
     pub const fn linear_rows(&self) -> usize {
-        let full = super::FalconConstraintCounts::per_signature().linear_rows();
-        if self.hybrid {
-            full - 20 * 24 * 30 * 64
-        } else {
-            full
-        }
+        super::FalconConstraintCounts::for_layout(self).linear_rows()
     }
 
     pub const fn linear_stride(&self) -> usize {
-        if self.hybrid { 1 << 14 } else { 1 << 20 }
+        if self.hybrid { 1 << 13 } else { 1 << 20 }
     }
 
     pub const fn batch(&self) -> usize {
@@ -177,7 +180,7 @@ impl FalconSourceLayout {
     pub const fn col_vars(&self) -> usize {
         // log2(2^22 * capacity) - row_vars.
         if self.hybrid {
-            5 + self.capacity.trailing_zeros() as usize
+            4 + self.capacity.trailing_zeros() as usize
         } else {
             9 + self.capacity.trailing_zeros() as usize
         }
@@ -261,5 +264,52 @@ mod tests {
                 layout.source_bits().trailing_zeros() as usize
             );
         }
+    }
+
+    #[cfg(feature = "falcon-hybrid")]
+    #[test]
+    fn native_hybrid_layout_has_only_required_arithmetic_columns() {
+        for batch in 1..=1024 {
+            let layout = FalconSourceLayout::new_hybrid(batch).unwrap();
+            let counts = layout.local_counts();
+            assert_eq!(counts.total(), 100_578);
+            assert_eq!(layout.offsets().end, counts.total());
+            assert_eq!(layout.signature_stride(), 131_072);
+            assert_eq!(layout.capacity(), batch.next_power_of_two());
+            assert_eq!(layout.source_bits(), 131_072 * layout.capacity());
+            assert_eq!(layout.linear_rows(), 4_458);
+            assert_eq!(layout.linear_stride(), 8_192);
+            assert_eq!(layout.row_vars(), 13);
+            assert_eq!(
+                layout.row_vars() + layout.col_vars(),
+                layout.source_bits().trailing_zeros() as usize
+            );
+            assert_eq!(
+                counts.shared_one + counts.message + counts.encoded_signature,
+                12_873
+            );
+            assert_eq!(counts.total() - 12_873, 87_705);
+            assert_eq!(
+                counts.hash_words / 16
+                    + counts.hash_quotients / 3
+                    + counts.hash_remainders / 14
+                    + counts.hash_accept_ands
+                    + counts.hash_prefixes / 11
+                    + counts.hash_point / 14
+                    + counts.s1 / 14
+                    + counts.norm_slack / 27,
+                8_605
+            );
+            assert_eq!(counts.s2_non_min_slack, 0);
+            assert_eq!(counts.hash_remainder_slack, 0);
+            assert_eq!(counts.hash_quotient_slack, 0);
+            assert_eq!(counts.compact_selectors, 0);
+            assert_eq!(counts.compact_selected_prefixes, 0);
+            assert_eq!(counts.compact_selected_remainders, 0);
+            assert_eq!(counts.s1_range_slack, 0);
+            assert_eq!(counts.ring_quotients, 0);
+        }
+        assert!(FalconSourceLayout::new_hybrid(0).is_err());
+        assert!(FalconSourceLayout::new_hybrid(1025).is_err());
     }
 }
