@@ -7,6 +7,7 @@ use rayon::prelude::*;
 
 use crate::cfg_into_iter;
 
+use super::forest::NibbleRows;
 use super::params::{LinearClaim, Shape};
 use super::transcript::{ProverState, VerifierState};
 use super::{BitZProver, BitZVerifier};
@@ -224,12 +225,27 @@ impl BitZProver {
         rows: &[Vec<u64>],
         transcript: &mut ProverState,
     ) -> Result<Fold, SendError> {
+        self.send_fold_with(claim, rows, None, transcript)
+    }
+
+    /// [`BitZProver::send_fold`], the folds read off the forest's nibble
+    /// rows when it has them (the same integers).
+    pub(crate) fn send_fold_with(
+        &self,
+        claim: &LinearClaim,
+        rows: &[Vec<u64>],
+        nibble: Option<&NibbleRows>,
+        transcript: &mut ProverState,
+    ) -> Result<Fold, SendError> {
         let shape = self.params().shape();
         if rows.len() != shape.columns() {
             return Err(SendError::ShapeMismatch);
         }
         let started = std::time::Instant::now();
-        let folds = fold_columns(shape, rows, claim.row_exponents());
+        let folds = match nibble {
+            Some(nibble) => nibble.column_folds(shape.log_rows(), claim.row_exponents(), shape.columns()),
+            None => fold_columns(shape, rows, claim.row_exponents()),
+        };
         super::trace("  column folds", started);
         for fold in &folds {
             transcript.prover_message(&fold.to_le_bytes());

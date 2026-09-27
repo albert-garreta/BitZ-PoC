@@ -40,7 +40,8 @@ use std::sync::OnceLock;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use self::nibble::{BitSelectors, NibbleRows, PatternCache, Selector};
+pub(crate) use self::nibble::NibbleRows;
+use self::nibble::{BitSelectors, PatternCache, Selector};
 use super::eq_factor;
 use super::gkr::{Point, Weighing, eq_table, prove_dense_rounds, prove_layer_tensor, weighable};
 use super::kernels;
@@ -133,6 +134,16 @@ impl PatternMode {
     }
 }
 
+/// The nibble rows a forest over this grid reads its indices off (the rule
+/// of [`Forest::nibbles`] for the environment's [`PatternMode`]), built
+/// ahead of it so the column folds can read them too
+/// ([`NibbleRows::column_folds`]); `None` where the forest gathers.
+pub(crate) fn nibble_rows_for(t: usize, s: usize, packed_cols: &[Vec<u64>]) -> Option<NibbleRows> {
+    let mode = PatternMode::from_env();
+    (mode.nibble && t >= MATERIALISED_LEVEL + 3 && t + s >= mode.nibble_from)
+        .then(|| NibbleRows::new(t, packed_cols, (1usize << s).div_ceil(64)))
+}
+
 /// Whether levels with several bit rounds take them all from one pass
 /// (`WFBITZ_ONE_PASS`, `0` or `1`, default on), read once.
 fn one_pass_from_env() -> bool {
@@ -190,6 +201,14 @@ impl<'a> Forest<'a> {
     /// The same forest with its indices read the way `mode` says.
     pub(crate) fn with_patterns(mut self, mode: PatternMode) -> Self {
         self.mode = mode;
+        self
+    }
+
+    /// The same forest with the nibble rows [`nibble_rows_for`] built for its
+    /// grid (the column folds read them first).
+    pub(crate) fn with_nibble_rows(mut self, rows: NibbleRows) -> Self {
+        assert!(rows.fits(self.t, (1usize << self.s).div_ceil(64)), "nibble rows of another grid");
+        self.nibble_rows = OnceLock::from(rows);
         self
     }
 
@@ -286,7 +305,8 @@ impl<'a> Forest<'a> {
         // for `2^{t−4+s}` more entries of peak: 256 MB here, 4 GB at
         // n = 32.)
         let mut arena: Vec<Gf> = Vec::new();
-        if self.nibbles().is_some() {
+        let prebuilt = self.nibble_rows.get().is_some();
+        if self.nibbles().is_some() && !prebuilt {
             super::trace("    nibble rows", started);
         }
         // Level 3's patterns, kept from the build pass for level 4's
@@ -1831,7 +1851,8 @@ mod tests {
     #[test]
     fn nibble_selections_match_the_gathered_patterns() {
         // `t = 5, 6` build their rows 2 and 4 at a time, the rest 8 (`t = 4`,
-        // one row, has no second row for the paired round's read).
+        // one row, has no second row for the paired round's read; the
+        // column-fold test covers its build).
         for (t, s) in [(5usize, 6usize), (6, 3), (6, 6), (7, 7), (9, 8)] {
             let (packed, images) = random_grid(t, s, (t * 100 + s) as u64);
             let forest = Forest::new(t, s, &packed, &images);
@@ -1942,6 +1963,34 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    /// The column folds off the nibble rows are the integers the bit walk
+    /// gives, at every grid shape the rows are built for.
+    #[test]
+    fn column_folds_match_the_bits() {
+        for (t, s) in [(4usize, 0usize), (4, 5), (5, 6), (6, 3), (7, 7), (9, 8), (10, 6)] {
+            let (packed, _) = random_grid(t, s, (t * 31 + s) as u64);
+            let mut state = 0xC0DE_F01D ^ (t * 7 + s) as u64;
+            let mut word = move || {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                state
+            };
+            // Exponents near 2^127, so the sums wrap.
+            let exponents: Vec<u128> = (0..1usize << t).map(|_| (u128::from(word()) << 64 | u128::from(word())) >> 1).collect();
+            let cols = 1usize << s;
+            let rows = NibbleRows::new(t, &packed, cols.div_ceil(64));
+            let want: Vec<u128> = (0..cols)
+                .map(|c| {
+                    (0..1usize << t)
+                        .filter(|&b| (packed[c / 64][b] >> (c % 64)) & 1 == 1)
+                        .fold(0u128, |acc, b| acc.wrapping_add(exponents[b]))
+                })
+                .collect();
+            assert_eq!(rows.column_folds(t, &exponents, cols), want, "t={t} s={s}");
         }
     }
 
