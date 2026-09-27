@@ -836,9 +836,9 @@ fn reduced_pcs(opener: &Opener, committed: &Shape) -> Result<BitzPcs, ProtocolEr
 
 /// The derived grid `h = M·f` the claim is about, as per-column bit rows of
 /// the opening layout: the relation's own derived rows when it materialises
-/// them, the committed rows under an identity map, and otherwise the map
-/// applied to the committed rows (every source cell XORed into the derived
-/// cells it feeds; `O(nnz)`).
+/// them, the committed rows under an identity map between equal grids (the
+/// statement's direct case), and otherwise the map applied to the committed
+/// rows (every source cell XORed into the derived cells it feeds; `O(nnz)`).
 fn derived_bit_rows<S: RelationSpec>(
     spec: &S,
     witness: &S::Witness,
@@ -850,7 +850,7 @@ fn derived_bit_rows<S: RelationSpec>(
         return derived;
     }
     let map = match spec.map() {
-        Some(map) if !map.is_identity() => map,
+        Some(map) if !crate::ligerito_flock::virtual_id_fast_eligible(map, opening, committed) => map,
         _ => return rows.to_vec(),
     };
     use circuit::linear_map::binary::VirtualMap;

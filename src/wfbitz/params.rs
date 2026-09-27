@@ -181,10 +181,13 @@ pub struct Root(pub [u8; 32]);
 pub enum ClaimError {
     RowWeightCountMismatch,
     ColumnWeightCountMismatch,
+    /// A weight or the target is not a canonical residue below `q`.
+    NotCanonical,
 }
 
 /// Their `LinearClaim<Fq<Q>>`: the caller's `x_core`, weights as canonical
-/// residues below `q` and the value they are claimed to give.
+/// residues below `q` and the value they are claimed to give. Their type
+/// makes the residues canonical; here the constructor checks it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinearClaim {
     row_weights: Vec<u128>,
@@ -205,6 +208,10 @@ impl LinearClaim {
         }
         if column_weights.len() != shape.columns() {
             return Err(ClaimError::ColumnWeightCountMismatch);
+        }
+        let q = params.q();
+        if target >= q || row_weights.iter().chain(&column_weights).any(|&weight| weight >= q) {
+            return Err(ClaimError::NotCanonical);
         }
         Ok(Self {
             row_weights,
@@ -368,5 +375,41 @@ impl Encoding<[u8]> for LinearClaimGf {
         }
         bytes.extend_from_slice(&gf_to_bytes(self.target));
         bytes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn linear_claim_takes_canonical_residues_only() {
+        const Q: u128 = (1u128 << 100) - 15;
+        let shape = Shape::new(7, 1).unwrap();
+        let alpha: Gf = crate::pcs::smallest_generator().into();
+        let params = BitZParams::new(shape, Q, alpha).unwrap();
+        let (rows, columns) = (vec![Q - 1; shape.rows()], vec![Q - 1; shape.columns()]);
+        assert!(LinearClaim::new(&params, rows.clone(), columns.clone(), Q - 1).is_ok());
+        for weight in [Q, u128::MAX] {
+            let mut high = rows.clone();
+            high[shape.rows() - 1] = weight;
+            assert_eq!(
+                LinearClaim::new(&params, high, columns.clone(), 0),
+                Err(ClaimError::NotCanonical),
+                "row weight {weight}"
+            );
+            let mut high = columns.clone();
+            high[0] = weight;
+            assert_eq!(
+                LinearClaim::new(&params, rows.clone(), high, 0),
+                Err(ClaimError::NotCanonical),
+                "column weight {weight}"
+            );
+            assert_eq!(
+                LinearClaim::new(&params, rows.clone(), columns.clone(), weight),
+                Err(ClaimError::NotCanonical),
+                "target {weight}"
+            );
+        }
     }
 }

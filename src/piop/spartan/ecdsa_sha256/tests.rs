@@ -646,3 +646,58 @@ fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
         );
     }
 }
+
+/// The structured wfbitz opening takes the instance counts its block
+/// transposes read, up to 2^7 compressions; from 2^8 on the relation keeps
+/// the dense virtual opening.
+#[cfg(feature = "bitz-parity")]
+#[test]
+fn wfbitz_structured_opening_stops_at_its_transpose_width() {
+    for (log_compressions, structured) in [(7, true), (8, false)] {
+        let prepared = prepare_sha256_ecdsa(log_compressions, 100, OuterMode::Split)
+            .unwrap()
+            .with_opener(Sha256EcdsaOpener::Wfbitz);
+        assert_eq!(
+            prepared.wfbitz.is_some(),
+            structured,
+            "2^{log_compressions} compressions"
+        );
+    }
+}
+
+/// 2^8 compressions through the dense wfbitz opening: proves and verifies
+/// (2^23 derived cells; run with `--ignored`).
+#[cfg(feature = "bitz-parity")]
+#[test]
+#[ignore = "2^8 compressions end to end"]
+fn wfbitz_dense_opening_proves_and_verifies_at_256_compressions() {
+    use crate::transcript::Blake3Transcript;
+    use crate::transcript::traits::Transcript;
+    let (statement, message) = fixture_at(8);
+    let prepared = prepare_sha256_ecdsa(8, 100, OuterMode::Split)
+        .unwrap()
+        .with_ligerito(crate::ligerito_flock::LigeritoSelection::JOHNSON)
+        .unwrap()
+        .with_opener(Sha256EcdsaOpener::Wfbitz);
+    assert!(prepared.wfbitz.is_none());
+    let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
+    let hint = commit_sha256_ecdsa(&prepared, &witness).unwrap();
+    let mut prover_transcript = Blake3Transcript::new();
+    let mut verifier_transcript = Blake3Transcript::new();
+    let proof =
+        prove_sha256_ecdsa(&mut prover_transcript, &prepared, &statement, &witness, &hint, 4)
+            .unwrap();
+    assert!(matches!(proof.opening, Sha256EcdsaOpening::Wfbitz(_)));
+    verify_sha256_ecdsa(
+        &mut verifier_transcript,
+        &prepared,
+        &statement,
+        &hint.commitment,
+        &proof,
+    )
+    .unwrap();
+    assert_eq!(
+        prover_transcript.get_challenge::<u128>(),
+        verifier_transcript.get_challenge::<u128>()
+    );
+}

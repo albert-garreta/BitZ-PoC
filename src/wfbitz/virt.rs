@@ -44,10 +44,10 @@ const VIRTUAL_STATEMENT_LABEL: &[u8] = b"bitz/virtual-statement/v1";
 /// A statement or map the virtual opening cannot take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VirtualError {
-    /// The map has more derived cells than the claim grid.
-    ClaimShapeTooSmall,
-    /// The map has more source cells than the committed grid.
-    CommittedShapeTooSmall,
+    /// The map's derived cells are not the claim grid's cells.
+    ClaimShapeMismatch,
+    /// The map's source cells are not the committed grid's cells.
+    CommittedShapeMismatch,
     /// The claim's weights do not match the claim grid.
     Claim(ClaimError),
     /// The single-column committed shape is not a valid shape.
@@ -71,19 +71,21 @@ pub struct VirtualStatement<'a, M: VirtualMap> {
 }
 
 impl<'a, M: VirtualMap> VirtualStatement<'a, M> {
-    /// Checks the map and the claim against both grids. The statement keeps
-    /// the borrowed map and claim; the map must not change underneath it.
+    /// Checks the map and the claim against both grids: the map spans each
+    /// grid exactly, as the crate's virtual opening requires of its maps. The
+    /// statement keeps the borrowed map and claim; the map must not change
+    /// underneath it.
     pub fn new(
         claim_params: BitZParams,
         committed: Shape,
         map: &'a M,
         claim: &'a LinearClaim,
     ) -> Result<Self, VirtualError> {
-        if map.rows() > 1usize << claim_params.shape().log_bits() {
-            return Err(VirtualError::ClaimShapeTooSmall);
+        if map.rows() != 1usize << claim_params.shape().log_bits() {
+            return Err(VirtualError::ClaimShapeMismatch);
         }
-        if map.cols() > 1usize << committed.log_bits() {
-            return Err(VirtualError::CommittedShapeTooSmall);
+        if map.cols() != 1usize << committed.log_bits() {
+            return Err(VirtualError::CommittedShapeMismatch);
         }
         if claim.row_weights().len() != claim_params.shape().rows() {
             return Err(VirtualError::Claim(ClaimError::RowWeightCountMismatch));
@@ -117,6 +119,9 @@ impl<'a, M: VirtualMap> VirtualStatement<'a, M> {
 
     /// Whether the map is the identity between two identical grids, so the
     /// derived grid is the committed one and no transposition is needed.
+    /// [`Self::new`] makes the map span both grids, so this is `h = f` cell
+    /// for cell: the crate's
+    /// [`virtual_id_fast_eligible`](crate::ligerito_flock::virtual_id_fast_eligible).
     pub fn is_direct(&self) -> bool {
         self.map.is_identity() && *self.claim_params.shape() == self.committed
     }
@@ -443,6 +448,50 @@ mod tests {
                 )
                 .is_err()
         );
+    }
+
+    /// The map must span both grids: an identity on part of the cells is
+    /// not `h = f`, so it is refused rather than opened as the direct case,
+    /// and an identity between two splits of one cell count is transposed.
+    #[test]
+    fn the_map_spans_both_grids() {
+        let identity = |rows: usize, cols: usize| {
+            let matrix = CscMatrix::try_from_binary_csc(rows, (0..=cols).collect(), (0..cols).collect())
+                .expect("csc");
+            PreparedVirtualMap::from_implicit(matrix).expect("map")
+        };
+        let alpha: Gf = crate::pcs::smallest_generator().into();
+        let ones = |params: &BitZParams| {
+            let shape = params.shape();
+            LinearClaim::new(params, vec![1; shape.rows()], vec![1; shape.columns()], 0).unwrap()
+        };
+        let committed = Shape::new(8, 4).unwrap();
+        let params = BitZParams::new(committed, Q, alpha).unwrap();
+        let claim = ones(&params);
+
+        let full = identity(1 << 12, 1 << 12);
+        assert!(full.is_identity());
+        let statement = VirtualStatement::new(params, committed, &full, &claim).unwrap();
+        assert!(statement.is_direct());
+
+        let half = identity(1 << 11, 1 << 11);
+        assert!(half.is_identity());
+        assert!(matches!(
+            VirtualStatement::new(params, committed, &half, &claim),
+            Err(VirtualError::ClaimShapeMismatch)
+        ));
+
+        let narrow = identity(1 << 12, 1 << 11);
+        assert!(matches!(
+            VirtualStatement::new(params, committed, &narrow, &claim),
+            Err(VirtualError::CommittedShapeMismatch)
+        ));
+
+        let derived = Shape::new(7, 5).unwrap();
+        let resplit = BitZParams::new(derived, Q, alpha).unwrap();
+        let claim = ones(&resplit);
+        let statement = VirtualStatement::new(resplit, committed, &full, &claim).unwrap();
+        assert!(!statement.is_direct());
     }
 
     #[test]

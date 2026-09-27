@@ -217,10 +217,14 @@ impl BitSelectors {
 /// tasks that own disjoint `(p, y)`, then read.
 pub(crate) struct PatternCache {
     data: Vec<MaybeUninit<u8>>,
+    /// `data`'s buffer, taken once: every write and read goes through it.
+    ptr: *mut MaybeUninit<u8>,
     h: usize,
     groups: usize,
 }
 
+// SAFETY: `ptr` points into the buffer `data` owns, which moves with it.
+unsafe impl Send for PatternCache {}
 // SAFETY: blocks are written through `write` by tasks owning disjoint
 // `(p, y)` before any `read` of them (the passes are sequential).
 unsafe impl Sync for PatternCache {}
@@ -231,7 +235,8 @@ impl PatternCache {
         let mut data = Vec::with_capacity(len);
         // SAFETY: `MaybeUninit` needs no initialisation.
         unsafe { data.set_len(len) };
-        Self { data, h, groups }
+        let ptr = data.as_mut_ptr();
+        Self { data, ptr, h, groups }
     }
 
     #[inline(always)]
@@ -249,7 +254,7 @@ impl PatternCache {
         assert!(at + 64 <= self.data.len());
         // SAFETY: in bounds; exclusive per the contract.
         unsafe {
-            let dst = self.data.as_ptr().add(at).cast::<u8>().cast_mut();
+            let dst = self.ptr.add(at).cast::<u8>();
             std::ptr::copy_nonoverlapping(block.as_ptr(), dst, 64);
         }
     }
@@ -263,7 +268,7 @@ impl PatternCache {
         let at = self.offset(p, y, g);
         assert!(at + 64 <= self.data.len());
         // SAFETY: in bounds; initialised per the contract.
-        unsafe { &*self.data.as_ptr().add(at).cast::<[u8; 64]>() }
+        unsafe { &*self.ptr.add(at).cast::<[u8; 64]>() }
     }
 }
 
