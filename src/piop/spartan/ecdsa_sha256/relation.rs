@@ -541,7 +541,15 @@ impl Sha256EcdsaOpener {
 }
 
 impl PreparedSha256Ecdsa {
+    /// The Ligerito ladder that commits and opens the sources, and that the
+    /// security accounting, Round 0 and the statement binding use: the
+    /// structured wfbitz opening's block-layout ladder when one was
+    /// prepared, else the native `f_layout` one.
     pub fn ligerito_configuration(&self) -> &crate::ligerito_flock::ResolvedLigerito {
+        #[cfg(feature = "bitz-parity")]
+        if let Some(chained) = &self.wfbitz {
+            return &chained.ligerito;
+        }
         &self.ligerito
     }
 
@@ -614,12 +622,12 @@ impl PreparedSha256Ecdsa {
                 self.lambda as usize,
             )
             .map_err(error)?;
-        self.security()?;
         #[cfg(feature = "bitz-parity")]
         if self.wfbitz.is_some() {
             // Keep the structured opener's ladder on the same selection.
             self.wfbitz = Some(self.chained_geometry()?);
         }
+        self.security()?;
         Ok(self)
     }
 

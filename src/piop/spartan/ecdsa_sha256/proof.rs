@@ -187,7 +187,7 @@ fn bind_statement<T: Transcript>(
         b"commitment",
         &bincode::serialize(commitment).map_err(error)?,
     );
-    prepared.ligerito.bind(t);
+    prepared.ligerito_configuration().bind(t);
     Ok(())
 }
 

@@ -25,11 +25,11 @@
 //!
 //! With that, every committed cell's weight is `(row factor)·(block factor)`
 //! per map part and sub-block: the local relation, the chain link, the last
-//! instance, the tail (its row factor is `u1` itself), the digest aliases
-//! (one sparse row vector on the last instance's block) and the constant —
-//! 13 tensors over the committed grid, each with a `2^LOG_ROWS`-entry row
-//! vector the verifier derives from `u1` and the local maps in `O(nnz)` and
-//! a block vector read off `u2`.
+//! instance, the tail (`u1`, cut to the tail's real cells), the digest
+//! aliases (one sparse row vector on the last instance's block) and the
+//! constant — 15 to 17 tensors over the committed grid, each with a
+//! `2^LOG_ROWS`-entry row vector the verifier derives from `u1` and the
+//! local maps in `O(nnz)` and a block vector read off `u2`.
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -630,7 +630,7 @@ impl<'a> ChainedStatement<'a> {
         let g = &self.geometry;
         let (n, blocks) = (g.instances, shape.columns());
         let block_weight = |b: usize| if b < blocks { u2[b] } else { Gf::zero() };
-        let mut terms: Vec<(Vec<Gf>, Vec<Gf>)> = Vec::with_capacity(13);
+        let mut terms: Vec<(Vec<Gf>, Vec<Gf>)> = Vec::with_capacity(20);
 
         // The local relation and the chain link: instance `2β + u`'s cells
         // feed its own rows (blocks `2β + u + n·v`) and the next instance's.
@@ -669,17 +669,73 @@ impl<'a> ChainedStatement<'a> {
             cols[g.last_block()] = block_weight(n - 1 + n * v);
             terms.push((self.row_vector(&last[v], 1), cols));
         }
-        // The tail: its cells mirror their derived rows.
-        let cols: Vec<Gf> = (0..blocks)
-            .map(|beta| {
-                if beta >= g.sha_blocks {
-                    block_weight(beta - g.sha_blocks + n)
-                } else {
-                    Gf::zero()
+        // The tail: only its own cells (`aliases ≤ σ < tail_rows`) sit at the
+        // mirror of their derived rows; every other mirror position (the SHA
+        // rows above the boundary, the aliased rows `0 < σ < aliases`, the
+        // rows past the tail's end) holds no source and weighs nothing, as in
+        // the dense transpose. Derived indices `[lo, hi)` meet chunk `m` in
+        // the lexicographic `(row, instance)` range `[p_lo, p_hi)` of
+        // `p = n·row + instance`: whole chunks share one `u1` tensor, a
+        // partial one takes a row-range tensor and at most two single-row
+        // tensors.
+        {
+            let lo = g.h_offset + g.aliases;
+            let hi = g.h_offset + g.tail_rows;
+            let chunk_cells = n << LOG_ROWS;
+            let committed = |derived_block: usize| derived_block - n + g.sha_blocks;
+            let mut whole_chunks = false;
+            let mut full_cols = vec![Gf::zero(); blocks];
+            let chunk_cols = |m: usize, keep: &dyn Fn(usize) -> bool| -> Vec<Gf> {
+                let mut cols = vec![Gf::zero(); blocks];
+                for i in 0..n {
+                    let b = n * m + i;
+                    if b < blocks && keep(i) {
+                        cols[committed(b)] = u2[b];
+                    }
                 }
-            })
-            .collect();
-        terms.push((u1.to_vec(), cols));
+                cols
+            };
+            if lo < hi {
+                for m in lo / chunk_cells..=(hi - 1) / chunk_cells {
+                    let start = m * chunk_cells;
+                    let p_lo = lo.max(start) - start;
+                    let p_hi = hi.min(start + chunk_cells) - start;
+                    if p_lo == 0 && p_hi == chunk_cells {
+                        whole_chunks = true;
+                        for i in 0..n {
+                            let b = n * m + i;
+                            if b < blocks {
+                                full_cols[committed(b)] = u2[b];
+                            }
+                        }
+                        continue;
+                    }
+                    let (r0, r1) = (p_lo.div_ceil(n), p_hi / n);
+                    if r0 < r1 {
+                        let mut rows = vec![Gf::zero(); shape.rows()];
+                        rows[r0..r1].copy_from_slice(&u1[r0..r1]);
+                        terms.push((rows, chunk_cols(m, &|_| true)));
+                    }
+                    let same_row = p_lo / n == p_hi / n;
+                    if p_lo % n != 0 {
+                        let (r, i_lo) = (p_lo / n, p_lo % n);
+                        let i_hi = if same_row { p_hi % n } else { n };
+                        let mut rows = vec![Gf::zero(); shape.rows()];
+                        rows[r] = u1[r];
+                        terms.push((rows, chunk_cols(m, &|i| i >= i_lo && i < i_hi)));
+                    }
+                    if p_hi % n != 0 && !(p_lo % n != 0 && same_row) {
+                        let (r, i_hi) = (p_hi / n, p_hi % n);
+                        let mut rows = vec![Gf::zero(); shape.rows()];
+                        rows[r] = u1[r];
+                        terms.push((rows, chunk_cols(m, &|i| i < i_hi)));
+                    }
+                }
+            }
+            if whole_chunks {
+                terms.push((u1.to_vec(), full_cols));
+            }
+        }
         // The digest aliases: the last instance's cells the tail reads.
         let mut alias_rows = vec![Gf::zero(); shape.rows()];
         let mut alias_cols = vec![Gf::zero(); blocks];
@@ -703,7 +759,7 @@ impl<'a> ChainedStatement<'a> {
         alias_cols[g.last_block()] = Gf::one();
         terms.push((alias_rows, alias_cols));
         // The constant: every instance's rows from source column 0 (the
-        // tail's own row 0 already reaches its mirror through the tail term).
+        // tail's row 0 too, below).
         let first = Self::local_sums(self.parts.first, u1);
         let mut kappa = Gf::zero();
         for v in 0..2 {
@@ -715,6 +771,10 @@ impl<'a> ChainedStatement<'a> {
             kappa += first[v][0] * block_weight(n * v);
             kappa += last[v][0] * block_weight(n - 1 + n * v);
         }
+        // Tail row 0 is the constant's own mirror (`aliases[0] = 0`), outside
+        // the tail term.
+        let (dr, db) = g.derived_position(g.h_offset);
+        kappa += u1[dr] * block_weight(db);
         let (row0, block0) = g.committed_tail_position(0);
         let mut const_rows = vec![Gf::zero(); shape.rows()];
         const_rows[row0] = kappa;
