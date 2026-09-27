@@ -51,8 +51,14 @@ impl BindingHasher {
         }
     }
 
-    /// Raw bytes, no framing.
+    /// Raw bytes, no framing (long strings hashed in parallel: the same
+    /// digest).
     pub fn bytes(&mut self, bytes: &[u8]) -> &mut Self {
+        #[cfg(feature = "parallel")]
+        if bytes.len() >= 1 << 17 {
+            self.hasher.update_rayon(bytes);
+            return self;
+        }
         self.hasher.update(bytes);
         self
     }

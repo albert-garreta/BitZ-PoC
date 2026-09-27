@@ -167,7 +167,8 @@ fn from_i128(config: &FieldConfig, modulus: u128, value: i128) -> F {
     }
 }
 
-/// `D(i) = ⟨β, h_i⟩` for every instance slot, from nibble tables of `β`.
+/// `D(i) = ⟨β, h_i⟩` for every instance slot, from nibble tables of `β`
+/// (nibbles where `β` vanishes are skipped).
 fn instance_linear_values(
     config: &FieldConfig,
     modulus: u128,
@@ -178,25 +179,28 @@ fn instance_linear_values(
     let beta = canonical_u128(config, local_coefficients);
     let nibbles = local_coefficients.len().div_ceil(4);
     assert!(nibbles <= 16 * words, "the local coefficients outrun the local bits");
-    // table[4 n + v] for nibble n and value v: Σ of β over v's set bits,
-    // each entry reduced, so 4096 of them still fit a u128 sum.
-    let mut table = vec![0u128; 16 * nibbles];
-    for nibble in 0..nibbles {
+    let active = (0..nibbles)
+        .filter(|nibble| beta[4 * nibble..(4 * nibble + 4).min(beta.len())].iter().any(|b| *b != 0))
+        .collect::<Vec<_>>();
+    // table[16 k + v] for the k-th active nibble and value v: Σ of β over
+    // v's set bits, each entry reduced, so 4096 of them still fit a u128 sum.
+    let mut table = vec![0u128; 16 * active.len()];
+    for (index, nibble) in active.iter().enumerate() {
         for value in 1..16usize {
             let low = value.trailing_zeros() as usize;
             let column = 4 * nibble + low;
             let term = beta.get(column).copied().unwrap_or(0);
-            let entry = (table[16 * nibble + (value & (value - 1))] + term) % modulus;
-            table[16 * nibble + value] = entry;
+            let entry = (table[16 * index + (value & (value - 1))] + term) % modulus;
+            table[16 * index + value] = entry;
         }
     }
-    assert!(nibbles as u128 * modulus < u128::MAX / 2);
+    assert!(active.len() as u128 * modulus < u128::MAX / 2);
     let one_instance = |local: &mut Vec<u64>, instance: usize| {
         bits.read_local_words(instance, local);
         let mut sum = 0u128;
-        for nibble in 0..nibbles {
+        for (index, nibble) in active.iter().enumerate() {
             let value = (local[nibble / 16] >> (4 * (nibble % 16))) & 0xf;
-            sum += table[16 * nibble + value as usize];
+            sum += table[16 * index + value as usize];
         }
         from_u128(config, modulus, sum)
     };
@@ -368,8 +372,10 @@ impl FoldValues {
 }
 
 /// The instance tables between rounds: `[Ê, F]` of every remaining instance
-/// row and slot, stored as codes while the entries still come from a few bits.
+/// row and slot, stored as codes while the entries still come from a few bits
+/// (or, on the word path, not stored at all: its cross terms).
 enum Tables {
+    Words(Vec<F>),
     Fold1(Vec<u8>),
     Fold2(Vec<u16>),
     Field(Vec<[F; 2]>),
@@ -466,27 +472,397 @@ fn fold2(config: &FieldConfig, r: &F, [e0, f0]: [F; 2], [e1, f1]: [F; 2]) -> [F;
     ]
 }
 
+/// Instance rounds the word path takes from cross terms (blocks of
+/// `2^WORD_ROUNDS` instances) before it materializes the field tables.
+const WORD_ROUNDS: usize = 4;
+
+/// [`WORD_ROUNDS`], or `BITZ_PRODUCT_WORD_ROUNDS` (0 to 4; 0 is the per-slot
+/// path). The choice only moves prover work: the transcript is the same.
+fn word_rounds() -> usize {
+    static ROUNDS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *ROUNDS.get_or_init(|| {
+        std::env::var("BITZ_PRODUCT_WORD_ROUNDS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .map_or(WORD_ROUNDS, |rounds: usize| rounds.min(WORD_ROUNDS))
+    })
+}
+
+/// Quadratic slots in groups of 32 that read bit `i` of three words:
+/// slot `32 g + i` is `h[e_g + i] · (h[p_g + i] − h[m_g + i])` with weight
+/// `κ_{32 g} · 2^i` (SHA-256's `Ch`, one group per round).
+struct QuadraticWords {
+    /// `[e_g, p_g, m_g]`.
+    columns: Vec<[u32; 3]>,
+    /// `κ_{32 g}`, canonical, as its low and high 64-bit halves.
+    weights: Vec<(u64, u64)>,
+}
+
+impl QuadraticWords {
+    /// The groups, when every live slot belongs to one.
+    fn detect(
+        config: &FieldConfig,
+        slots: QuadraticSlots<'_>,
+        slot_weights: &[F],
+        words: usize,
+    ) -> Option<Self> {
+        let live = slots.left.len();
+        if live == 0 || live % 32 != 0 {
+            return None;
+        }
+        let limit = 64 * words as u64;
+        let mut columns = Vec::with_capacity(live / 32);
+        let mut weights = Vec::with_capacity(live / 32);
+        for first in (0..live).step_by(32) {
+            let (e, (p, m)) = (slots.left[first], slots.right[first]);
+            if [e, p, m].iter().any(|column| u64::from(*column) + 32 > limit) {
+                return None;
+            }
+            let mut weight = slot_weights[first];
+            for i in 0..32 {
+                let slot = first + i as usize;
+                if slots.left[slot] != e + i
+                    || slots.right[slot] != (p + i, m + i)
+                    || slot_weights[slot] != weight
+                {
+                    return None;
+                }
+                weight = config.add(&weight, &weight);
+            }
+            let weight = u128::from(config.to_integer(&slot_weights[first]));
+            columns.push([e, p, m]);
+            weights.push((weight as u64, (weight >> 64) as u64));
+        }
+        Some(Self { columns, weights })
+    }
+}
+
+/// The transpose of the 8 × 8 bit matrix whose row `r` is byte `r`
+/// (bit `8 r + c` goes to bit `8 c + r`).
+#[inline]
+fn transpose8(mut x: u64) -> u64 {
+    let t = (x ^ (x >> 7)) & 0x00aa_00aa_00aa_00aa;
+    x ^= t ^ (t << 7);
+    let t = (x ^ (x >> 14)) & 0x0000_cccc_0000_cccc;
+    x ^= t ^ (t << 14);
+    let t = (x ^ (x >> 28)) & 0x0000_0000_f0f0_f0f0;
+    x ^= t ^ (t << 28);
+    x
+}
+
+/// Bits `column..column + 32` of an instance's local words.
+#[inline]
+fn word32(words: &[u64], column: u32) -> u32 {
+    let (index, shift) = ((column / 64) as usize, column % 64);
+    let low = words[index] >> shift;
+    if shift > 32 {
+        (low | (words[index + 1] << (64 - shift))) as u32
+    } else {
+        low as u32
+    }
+}
+
+/// Reads the `(e, p, m)` words of every group for the instances
+/// `first..first + count` into `out[g · count + b]`.
+fn read_group_words(
+    words: &QuadraticWords,
+    bits: &dyn InstanceBits,
+    first: usize,
+    count: usize,
+    local: &mut [u64],
+    out: &mut [[u32; 3]],
+) {
+    for b in 0..count {
+        bits.read_local_words(first + b, local);
+        for (g, [e, p, m]) in words.columns.iter().enumerate() {
+            out[g * count + b] = [word32(local, *e), word32(local, *p), word32(local, *m)];
+        }
+    }
+}
+
+/// `C(u, v) = Σ_s κ_s e_s(u) f_s(v)` for every instance pair of every block
+/// of `2^rounds` instances (block-major, then `u`-major). One word group
+/// contributes `κ_{32 g} · (int(E_u ∧ P_v) − int(E_u ∧ M_v))`, all 32 of its
+/// slots at once.
+fn word_cross_terms(
+    config: &FieldConfig,
+    modulus: u128,
+    words: &QuadraticWords,
+    bits: &dyn InstanceBits,
+    rounds: usize,
+) -> Vec<F> {
+    let size = 1usize << rounds;
+    let groups = words.columns.len();
+    // The low halves' sums stay below `2^96 · groups`, the high ones' below
+    // `2^83 · groups`.
+    assert!(groups < 1 << 30);
+    let two64 = from_u128(config, modulus, (1u128 << 64) % modulus);
+    let scratch = || {
+        (
+            vec![0u64; bits.words_per_instance()],
+            vec![[0u32; 3]; groups * size],
+            vec![[0i128; 2]; size * size],
+        )
+    };
+    let block = |(local, group_words, acc): &mut (Vec<u64>, Vec<[u32; 3]>, Vec<[i128; 2]>),
+                 index: usize,
+                 out: &mut [F]| {
+        read_group_words(words, bits, index * size, size, local, group_words);
+        acc.fill([0; 2]);
+        for (g, (low, high)) in words.weights.iter().enumerate() {
+            let (low, high) = (i128::from(*low), i128::from(*high));
+            let group = &group_words[g * size..(g + 1) * size];
+            for (u, [e, _, _]) in group.iter().enumerate() {
+                for (entry, [_, p, m]) in acc[u * size..(u + 1) * size].iter_mut().zip(group) {
+                    let x = i128::from(i64::from(e & p) - i64::from(e & m));
+                    entry[0] += low * x;
+                    entry[1] += high * x;
+                }
+            }
+        }
+        for (value, [low, high]) in out.iter_mut().zip(acc.iter()) {
+            *value = config.add(
+                &from_i128(config, modulus, *low),
+                &config.mul(&two64, &from_i128(config, modulus, *high)),
+            );
+        }
+    };
+    let blocks = bits.instance_capacity() >> rounds;
+    let mut cross = vec![config.zero(); blocks * size * size];
+    #[cfg(feature = "parallel")]
+    cross
+        .par_chunks_mut(size * size)
+        .enumerate()
+        .for_each_init(scratch, |scratch, (index, out)| block(scratch, index, out));
+    #[cfg(not(feature = "parallel"))]
+    {
+        let mut scratch = scratch();
+        for (index, out) in cross.chunks_mut(size * size).enumerate() {
+            block(&mut scratch, index, out);
+        }
+    }
+    cross
+}
+
+/// The sums of instance round `k = point.len() < rounds` from the cross
+/// terms: per row pair `(a, b)` (rows of `2^k` instances, weights
+/// `w = eq(r, ·)`), `S(x, y) = Σ_{j, j'} w_j w_j' C(x_j, y_j')` gives
+/// `eq_q · [D_a + S(a, a), D_b + S(b, b), S(a, a) + S(b, b) − S(a, b) − S(b, a)]`.
+fn word_round_sums(
+    config: &FieldConfig,
+    cross: &[F],
+    rounds: usize,
+    point: &[F],
+    eq: &[F],
+    d: &[F],
+) -> Result<[F; 3], ProtocolError> {
+    let zero = config.zero();
+    let size = 1usize << rounds;
+    let width = 1usize << point.len();
+    let pairs = size / (2 * width);
+    let w = eq_table(point, config).map_err(SpartanError::from)?;
+    let ww = (0..width * width)
+        .map(|x| config.mul(&w[x / width], &w[x % width]))
+        .collect::<Vec<_>>();
+    let block = |(index, cross): (usize, &[F])| -> [F; 3] {
+        let form = |x: usize, y: usize| {
+            let mut acc = Acc::zero();
+            for j in 0..width {
+                let row = &cross[(x + j) * size + y..(x + j) * size + y + width];
+                for (weight, value) in ww[j * width..(j + 1) * width].iter().zip(row) {
+                    config.mul_acc(&mut acc, weight, value);
+                }
+            }
+            config.reduce(acc)
+        };
+        let mut total = [zero, zero, zero];
+        for q in 0..pairs {
+            let (a, b) = (2 * q * width, (2 * q + 1) * width);
+            let (aa, bb) = (form(a, a), form(b, b));
+            let across = config.add(&form(a, b), &form(b, a));
+            let pair = index * pairs + q;
+            let e = &eq[pair];
+            let sums = [
+                config.mul(e, &config.add(&d[2 * pair], &aa)),
+                config.mul(e, &config.add(&d[2 * pair + 1], &bb)),
+                config.mul(e, &config.sub(&config.add(&aa, &bb), &across)),
+            ];
+            total = sum3(config, total, sums);
+        }
+        total
+    };
+    #[cfg(feature = "parallel")]
+    let sums = cross
+        .par_chunks(size * size)
+        .enumerate()
+        .map(block)
+        .reduce(|| [zero, zero, zero], |a, b| sum3(config, a, b));
+    #[cfg(not(feature = "parallel"))]
+    let sums = cross
+        .chunks(size * size)
+        .enumerate()
+        .map(block)
+        .fold([zero, zero, zero], |a, b| sum3(config, a, b));
+    Ok(sums)
+}
+
+/// The word path's tables after `rounds = point.len()` folds: `[κ_s E, F]`
+/// for every row (one block of instances) and slot, `E` and `F` read off
+/// the slot's bit codes through byte tables of `eq(r, ·)`. With two rows or
+/// more it also returns the next round's sums (`weigh`).
+#[allow(clippy::too_many_arguments)]
+fn word_materialize(
+    config: &FieldConfig,
+    words: &QuadraticWords,
+    slot_weights: &[F],
+    bits: &dyn InstanceBits,
+    point: &[F],
+    rows: usize,
+    weigh: &(dyn Fn(usize, PairSums) -> [F; 3] + Sync),
+) -> Result<(Vec<[F; 2]>, [F; 3]), ProtocolError> {
+    let zero = config.zero();
+    let size = 1usize << point.len();
+    let slot_count = slot_weights.len();
+    let live = 32 * words.columns.len();
+    let group = rows.min(2);
+    let w = eq_table(point, config).map_err(SpartanError::from)?;
+    // tables[256 t + c] = Σ of w[8 t + b] over c's set bits b.
+    let bytes = size.div_ceil(8);
+    let mut tables = vec![zero; 256 * bytes];
+    for t in 0..bytes {
+        for c in 1..256usize {
+            let low = c.trailing_zeros() as usize;
+            let term = w.get(8 * t + low).copied().unwrap_or(zero);
+            tables[256 * t + c] = config.add(&tables[256 * t + (c & (c - 1))], &term);
+        }
+    }
+    let value = |code: u32| -> F {
+        let mut value = tables[(code & 0xff) as usize];
+        for t in 1..bytes {
+            value = config.add(&value, &tables[256 * t + ((code >> (8 * t)) & 0xff) as usize]);
+        }
+        value
+    };
+    let groups = words.columns.len();
+    let scratch = || (vec![0u64; bits.words_per_instance()], vec![[0u32; 3]; groups * size]);
+    let mut out = uninit_table(rows * slot_count);
+    let sums = over_chunks(
+        config,
+        &mut out,
+        group * slot_count,
+        scratch,
+        |(local, group_words), q, out| {
+            for r in 0..group {
+                let row = group * q + r;
+                read_group_words(words, bits, row * size, size, local, group_words);
+                let out = &mut out[r * slot_count..(r + 1) * slot_count];
+                for g in 0..groups {
+                    // codes[i][kind] bit b = bit i of instance b's word:
+                    // 8 × 8 bit transposes of byte lanes, eight instances each.
+                    let mut codes = [[0u32; 3]; 32];
+                    let triples = &group_words[g * size..(g + 1) * size];
+                    for (half, chunk) in triples.chunks(8).enumerate() {
+                        for kind in 0..3 {
+                            for lane in 0..4 {
+                                let rows = chunk.iter().enumerate().fold(0u64, |x, (b, triple)| {
+                                    x | (u64::from((triple[kind] >> (8 * lane)) as u8) << (8 * b))
+                                });
+                                let columns = transpose8(rows);
+                                for j in 0..8 {
+                                    codes[8 * lane + j][kind] |=
+                                        u32::from((columns >> (8 * j)) as u8) << (8 * half);
+                                }
+                            }
+                        }
+                    }
+                    for (i, [e, p, m]) in codes.iter().enumerate() {
+                        let slot = 32 * g + i;
+                        let f = config.sub(&value(*p), &value(*m));
+                        out[slot].write([config.mul(&slot_weights[slot], &value(*e)), f]);
+                    }
+                }
+                for entry in &mut out[live..] {
+                    entry.write([zero, zero]);
+                }
+            }
+            if group < 2 {
+                return [zero, zero, zero];
+            }
+            let (a, b) = out.split_at(slot_count);
+            let mut pair = PairSums::new();
+            for (a, b) in a[..live].iter().zip(&b[..live]) {
+                // SAFETY: both rows were written in full above.
+                let (a, b) = unsafe { (a.assume_init_ref(), b.assume_init_ref()) };
+                pair.add(config, *a, *b);
+            }
+            weigh(q, pair)
+        },
+    );
+    // SAFETY: every chunk wrote each of its entries.
+    Ok((unsafe { assume_init(out) }, sums))
+}
+
 /// Proves `μ = Σ_{i, s} P(i, s)` (see the module documentation).
 ///
 /// `slot_weights` is `κ` padded to a power of two; slots past
 /// `slots.left.len()` carry zero weight and zero factors.
 ///
-/// Round 0 reads the bits directly (`E ∈ {0, 1}`, `F ∈ {−1, 0, 1}`, so its
-/// sums are exact small multiples of `κ`). After the first and second
-/// instance folds the tables are one- and two-byte codes into small value
-/// tables; from the third fold on they are field tables. Every fold pass also
-/// accumulates the next round's sums, so each round reads its table once.
+/// Slots in word groups ([`QuadraticWords`]) take their first instance
+/// rounds from word-level cross terms and then materialize field tables.
+/// With `free` ([`LinearBatching::product_free_coefficients`]) they also
+/// take `D` from those cross terms, which holds for a witness that
+/// satisfies the relation.
+///
+/// Otherwise round 0 reads the bits directly (`E ∈ {0, 1}`, `F ∈ {−1, 0,
+/// 1}`, so its sums are exact small multiples of `κ`). After the first and
+/// second instance folds the tables are one- and two-byte codes into small
+/// value tables; from the third fold on they are field tables. Every fold
+/// pass also accumulates the next round's sums, so each round reads its
+/// table once.
+///
+/// [`LinearBatching::product_free_coefficients`]: super::linear::LinearBatching::product_free_coefficients
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prove_product_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
     transcript: &mut T,
     config: &FieldConfig,
     instance_point: &[F],
     local_coefficients: &[F],
+    free: Option<&[(u32, F)]>,
     slot_weights: &[F],
     slots: QuadraticSlots<'_>,
     bits: &dyn InstanceBits,
     claim: &F,
     boundary: &mut B,
+) -> Result<ProductProverOutput, ProtocolError> {
+    prove_product_sumcheck_with(
+        transcript,
+        config,
+        instance_point,
+        local_coefficients,
+        free,
+        slot_weights,
+        slots,
+        bits,
+        claim,
+        boundary,
+        word_rounds(),
+    )
+}
+
+/// [`prove_product_sumcheck`] with at most `word_rounds` word-path rounds.
+#[allow(clippy::too_many_arguments)]
+fn prove_product_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
+    transcript: &mut T,
+    config: &FieldConfig,
+    instance_point: &[F],
+    local_coefficients: &[F],
+    free: Option<&[(u32, F)]>,
+    slot_weights: &[F],
+    slots: QuadraticSlots<'_>,
+    bits: &dyn InstanceBits,
+    claim: &F,
+    boundary: &mut B,
+    word_rounds: usize,
 ) -> Result<ProductProverOutput, ProtocolError> {
     let instance_vars = instance_point.len();
     let slot_count = slot_weights.len();
@@ -514,10 +890,50 @@ pub(crate) fn prove_product_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
     let one = config.one();
     let words = bits.words_per_instance();
     let live_slots = slots.left.len();
+    let groups = if word_rounds > 0 {
+        QuadraticWords::detect(config, slots, slot_weights, words)
+    } else {
+        None
+    };
+    let word_rounds = if groups.is_some() {
+        word_rounds.min(instance_vars)
+    } else {
+        0
+    };
+    let cross = groups.as_ref().map(|groups| {
+        let _scope = tracing::info_span!("product:word_cross_terms").entered();
+        word_cross_terms(config, modulus, groups, bits, word_rounds)
+    });
 
-    let mut d = {
-        let _scope = tracing::info_span!("product:instance_linear_values").entered();
-        instance_linear_values(config, modulus, local_coefficients, bits)
+    let mut d = match (&cross, free) {
+        (Some(cross), Some(free)) => {
+            // On a satisfying witness `⟨Cᵀ eq(ξ), h_i⟩ = −Σ_s κ_s e_s f_s`,
+            // the cross term `C(i, i)`: only the free terms are read.
+            let _scope = tracing::info_span!("product:free_linear_values").entered();
+            let mut extra = vec![zero; local_coefficients.len()];
+            for (column, coefficient) in free {
+                let entry = extra
+                    .get_mut(*column as usize)
+                    .ok_or(ProtocolError::InvalidGeometry)?;
+                *entry = config.add(entry, coefficient);
+            }
+            let mut d = instance_linear_values(config, modulus, &extra, bits);
+            let size = 1usize << word_rounds;
+            for (instance, value) in d.iter_mut().enumerate() {
+                let (block, u) = (instance >> word_rounds, instance & (size - 1));
+                *value = config.sub(value, &cross[(block * size + u) * size + u]);
+            }
+            debug_assert_eq!(
+                d,
+                instance_linear_values(config, modulus, local_coefficients, bits),
+                "the witness does not satisfy the relation"
+            );
+            d
+        }
+        _ => {
+            let _scope = tracing::info_span!("product:instance_linear_values").entered();
+            instance_linear_values(config, modulus, local_coefficients, bits)
+        }
     };
     let mut rounds = Vec::with_capacity(instance_vars + slot_vars);
     let mut point = Vec::with_capacity(instance_vars + slot_vars);
@@ -526,7 +942,11 @@ pub(crate) fn prove_product_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
 
     // Round 0 reads the bits directly: `E ∈ {0, 1}` and `F ∈ {−1, 0, 1}`,
     // so every slot contributes a small multiple of κ, summed exactly.
-    let mut sums = {
+    let mut sums = if let Some(cross) = &cross {
+        let _scope = tracing::info_span!("product:round0").entered();
+        let rest = eq_table(&instance_point[1..], config).map_err(SpartanError::from)?;
+        word_round_sums(config, cross, word_rounds, &[], &rest, &d)?
+    } else {
         let _scope = tracing::info_span!("product:round0").entered();
         let kappa = canonical_u128(config, slot_weights);
         let rest = eq_table(&instance_point[1..], config).map_err(SpartanError::from)?;
@@ -570,7 +990,7 @@ pub(crate) fn prove_product_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
         }
     };
 
-    let mut tables: Option<Tables> = None;
+    let mut tables: Option<Tables> = cross.map(Tables::Words);
     let mut values: Option<FoldValues> = None;
     for round in 0..instance_vars {
         let eta = &instance_point[round];
@@ -607,6 +1027,17 @@ pub(crate) fn prove_product_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
             None => [zero, zero, zero],
         };
         let (folded, next_sums) = match tables.take() {
+            Some(Tables::Words(cross)) if round + 1 < word_rounds => {
+                let eq = next.as_deref().ok_or(ProtocolError::InvalidGeometry)?;
+                let sums = word_round_sums(config, &cross, word_rounds, &point, eq, &d)?;
+                (Tables::Words(cross), sums)
+            }
+            Some(Tables::Words(_)) => {
+                let groups = groups.as_ref().ok_or(ProtocolError::InvalidGeometry)?;
+                let (table, sums) =
+                    word_materialize(config, groups, slot_weights, bits, &point, rows, &weigh)?;
+                (Tables::Field(table), sums)
+            }
             None => {
                 // Instances → first-fold codes.
                 let fv = FoldValues::first(config, modulus, slot_weights, &r);
@@ -1001,13 +1432,293 @@ fn weigh3(config: &FieldConfig, eq: &F, da: &F, db: &F, sums: [F; 4]) -> [F; 4] 
 }
 
 /// The per-instance local columns between instance rounds, stored as codes
-/// of their bit histories while those stay small.
+/// of their bit histories while those stay small (or, on the word path, not
+/// yet stored: its cross terms).
 enum Base {
+    Words(Vec<F>),
     /// `2^level` bits per column (levels 1 to 3), one byte each.
     Byte(Vec<u8>, usize),
     /// Sixteen bits per column.
     Word(Vec<u16>),
     Field(Vec<F>),
+}
+
+/// Instance rounds the three-factor word path takes from cross terms
+/// (blocks of `2^WORD_ROUNDS3` instances, `8^WORD_ROUNDS3` terms per group).
+const WORD_ROUNDS3: usize = 2;
+
+/// [`WORD_ROUNDS3`], or `BITZ_PRODUCT3_WORD_ROUNDS` (0 to 2).
+fn word_rounds3() -> usize {
+    static ROUNDS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *ROUNDS.get_or_init(|| {
+        std::env::var("BITZ_PRODUCT3_WORD_ROUNDS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .map_or(WORD_ROUNDS3, |rounds: usize| rounds.min(WORD_ROUNDS3))
+    })
+}
+
+/// Where one side of a word group's factor reads bit `i` from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Operand {
+    Zero,
+    /// One column for every bit (the constant one).
+    Broadcast(u32),
+    /// Bit `(i + amount) mod 32` of the word at `base`.
+    Rotate(u32, u32),
+    /// Bit `i + amount` of the word at `base`, zero past bit 31.
+    Shift(u32, u32),
+}
+
+impl Operand {
+    /// The operand of the 32 columns `columns[i]` (bit `i`), if it has one
+    /// of the four shapes and its words lie below `limit`.
+    fn detect(columns: &[u32; 32], limit: u64) -> Option<Self> {
+        if columns.iter().all(|c| *c == NO_COLUMN) {
+            return Some(Self::Zero);
+        }
+        if columns.iter().all(|c| *c == columns[0]) {
+            return (u64::from(columns[0]) < limit).then_some(Self::Broadcast(columns[0]));
+        }
+        let live = columns.iter().take_while(|c| **c != NO_COLUMN).count();
+        if live < 32 {
+            let amount = 32 - live as u32;
+            let base = columns[0].checked_sub(amount)?;
+            let fits = columns[live..].iter().all(|c| *c == NO_COLUMN)
+                && (0..live).all(|i| columns[i] == columns[0] + i as u32)
+                && u64::from(base) + 32 <= limit;
+            return fits.then_some(Self::Shift(base, amount));
+        }
+        let base = *columns.iter().min()?;
+        let amount = columns[0] - base;
+        let fits = amount < 32
+            && u64::from(base) + 32 <= limit
+            && (0..32u32).all(|i| columns[i as usize] == base + (i + amount) % 32);
+        fits.then_some(Self::Rotate(base, amount))
+    }
+
+    #[inline]
+    fn read(self, words: &[u64]) -> u32 {
+        match self {
+            Self::Zero => 0,
+            Self::Broadcast(column) => 0u32.wrapping_sub(bit(words, column) as u32),
+            Self::Rotate(base, amount) => word32(words, base).rotate_right(amount),
+            Self::Shift(base, amount) => word32(words, base) >> amount,
+        }
+    }
+}
+
+/// Three-factor slots in groups of 32: slot `32 g + i` reads bit `i` of
+/// each of its factors' two operands, with weight `κ_{32 g} · 2^i` (SHA-256's
+/// `Ch`, `Maj` and `Σ`/`σ` parities of the all-products relation).
+struct CubicWords {
+    /// `[A+, A−, B+, B−, C+, C−]` per group.
+    operands: Vec<[Operand; 6]>,
+    /// `κ_{32 g}`, canonical, as its low and high 64-bit halves.
+    weights: Vec<(u64, u64)>,
+}
+
+impl CubicWords {
+    fn detect(
+        config: &FieldConfig,
+        factors: &[[(u32, u32); 3]],
+        slot_weights: &[F],
+        words: usize,
+    ) -> Option<Self> {
+        let live = factors.len();
+        if live == 0 || live % 32 != 0 {
+            return None;
+        }
+        let limit = 64 * words as u64;
+        let mut operands = Vec::with_capacity(live / 32);
+        let mut weights = Vec::with_capacity(live / 32);
+        for first in (0..live).step_by(32) {
+            let side = |k: usize| -> [u32; 32] {
+                std::array::from_fn(|i| {
+                    let (plus, minus) = factors[first + i][k / 2];
+                    if k % 2 == 0 { plus } else { minus }
+                })
+            };
+            let group: [Operand; 6] = [
+                Operand::detect(&side(0), limit)?,
+                Operand::detect(&side(1), limit)?,
+                Operand::detect(&side(2), limit)?,
+                Operand::detect(&side(3), limit)?,
+                Operand::detect(&side(4), limit)?,
+                Operand::detect(&side(5), limit)?,
+            ];
+            let mut weight = slot_weights[first];
+            for slot in first..first + 32 {
+                if slot_weights[slot] != weight {
+                    return None;
+                }
+                weight = config.add(&weight, &weight);
+            }
+            let weight = u128::from(config.to_integer(&slot_weights[first]));
+            operands.push(group);
+            weights.push((weight as u64, (weight >> 64) as u64));
+        }
+        Some(Self { operands, weights })
+    }
+}
+
+/// A factor's bits on one instance as `(positive, negative)` masks.
+#[inline]
+fn trits(plus: u32, minus: u32) -> (u32, u32) {
+    (plus & !minus, !plus & minus)
+}
+
+/// `T(u, v, w) = Σ_s κ_s A_s(u) B_s(v) C_s(w)` for every instance triple of
+/// every block of `2^rounds` instances (block-major, then `u`, `v`, `w`): per
+/// word group, the positive and negative masks of the three-trit products
+/// weigh all 32 slots at once.
+fn cubic_cross_terms(
+    config: &FieldConfig,
+    modulus: u128,
+    words: &CubicWords,
+    bits: &dyn InstanceBits,
+    rounds: usize,
+) -> Vec<F> {
+    let size = 1usize << rounds;
+    let cube = size * size * size;
+    let groups = words.operands.len();
+    assert!(groups < 1 << 30);
+    let two64 = from_u128(config, modulus, (1u128 << 64) % modulus);
+    let scratch = || {
+        (
+            vec![0u64; bits.words_per_instance()],
+            vec![[(0u32, 0u32); 3]; groups * size],
+            vec![[0i128; 2]; cube],
+        )
+    };
+    let block = |(local, masks, acc): &mut (Vec<u64>, Vec<[(u32, u32); 3]>, Vec<[i128; 2]>),
+                 index: usize,
+                 out: &mut [F]| {
+        for b in 0..size {
+            bits.read_local_words(index * size + b, local);
+            for (g, operands) in words.operands.iter().enumerate() {
+                let read = |k: usize| operands[k].read(local);
+                masks[g * size + b] = [
+                    trits(read(0), read(1)),
+                    trits(read(2), read(3)),
+                    trits(read(4), read(5)),
+                ];
+            }
+        }
+        acc.fill([0; 2]);
+        for (g, (low, high)) in words.weights.iter().enumerate() {
+            let (low, high) = (i128::from(*low), i128::from(*high));
+            let group = &masks[g * size..(g + 1) * size];
+            for (u, [(pa, na), _, _]) in group.iter().enumerate() {
+                for (v, [_, (pb, nb), _]) in group.iter().enumerate() {
+                    let (pab, nab) = ((pa & pb) | (na & nb), (pa & nb) | (na & pb));
+                    if pab | nab == 0 {
+                        continue;
+                    }
+                    let row = &mut acc[(u * size + v) * size..(u * size + v + 1) * size];
+                    for (entry, [_, _, (pc, nc)]) in row.iter_mut().zip(group) {
+                        let positive = (pab & pc) | (nab & nc);
+                        let negative = (pab & nc) | (nab & pc);
+                        let x = i128::from(i64::from(positive) - i64::from(negative));
+                        entry[0] += low * x;
+                        entry[1] += high * x;
+                    }
+                }
+            }
+        }
+        for (value, [low, high]) in out.iter_mut().zip(acc.iter()) {
+            *value = config.add(
+                &from_i128(config, modulus, *low),
+                &config.mul(&two64, &from_i128(config, modulus, *high)),
+            );
+        }
+    };
+    let blocks = bits.instance_capacity() >> rounds;
+    let mut cross = vec![config.zero(); blocks * cube];
+    #[cfg(feature = "parallel")]
+    cross
+        .par_chunks_mut(cube)
+        .enumerate()
+        .for_each_init(scratch, |scratch, (index, out)| block(scratch, index, out));
+    #[cfg(not(feature = "parallel"))]
+    {
+        let mut scratch = scratch();
+        for (index, out) in cross.chunks_mut(cube).enumerate() {
+            block(&mut scratch, index, out);
+        }
+    }
+    cross
+}
+
+/// The sums of three-factor instance round `k = point.len() < rounds` from
+/// the cross terms: per row pair (`2^(k+1)` instances `t`, each factor
+/// `Σ_t μ_t(X) · factor(t)` with `μ = (1 − X, X) ⊗ eq(r, ·)`), `l(X) = Σ
+/// μ_t μ_t' μ_t'' T(t, t', t'')` at `X = 0, 1, 2, ∞`.
+fn cubic_word_round_sums(
+    config: &FieldConfig,
+    cross: &[F],
+    rounds: usize,
+    point: &[F],
+    eq: &[F],
+    d: &[F],
+) -> Result<[F; 4], ProtocolError> {
+    let zero = config.zero();
+    let one = config.one();
+    let size = 1usize << rounds;
+    let cube = size * size * size;
+    let width = 1usize << point.len();
+    let span = 2 * width;
+    let pairs = size / span;
+    let w = eq_table(point, config).map_err(SpartanError::from)?;
+    let two = config.add(&one, &one);
+    let minus_one = config.neg(&one);
+    // (λ_0(X), λ_1(X)) at X = 0, 1, 2 and the leading coefficient.
+    let lambdas = [(one, zero), (zero, one), (minus_one, two), (minus_one, one)];
+    let coefficients = lambdas.map(|(l0, l1)| {
+        let mu = (0..span)
+            .map(|t| {
+                let (lambda, j) = if t < width { (&l0, t) } else { (&l1, t - width) };
+                config.mul(lambda, &w[j])
+            })
+            .collect::<Vec<_>>();
+        (0..span * span * span)
+            .map(|t| {
+                let (t1, t2, t3) = (t / (span * span), (t / span) % span, t % span);
+                config.mul(&config.mul(&mu[t1], &mu[t2]), &mu[t3])
+            })
+            .collect::<Vec<_>>()
+    });
+    let block = |(index, cross): (usize, &[F])| -> [F; 4] {
+        let mut total = [zero; 4];
+        for q in 0..pairs {
+            let o = q * span;
+            let mut acc: [Acc; 4] = std::array::from_fn(|_| Acc::zero());
+            for t in 0..span * span * span {
+                let (t1, t2, t3) = (t / (span * span), (t / span) % span, t % span);
+                let value = &cross[((o + t1) * size + o + t2) * size + o + t3];
+                for (acc, coefficients) in acc.iter_mut().zip(&coefficients) {
+                    config.mul_acc(acc, &coefficients[t], value);
+                }
+            }
+            let pair = index * pairs + q;
+            let sums = acc.map(|sum| config.reduce(sum));
+            total = sum4(config, total, weigh3(config, &eq[pair], &d[2 * pair], &d[2 * pair + 1], sums));
+        }
+        total
+    };
+    #[cfg(feature = "parallel")]
+    let sums = cross
+        .par_chunks(cube)
+        .enumerate()
+        .map(block)
+        .reduce(|| [zero; 4], |a, b| sum4(config, a, b));
+    #[cfg(not(feature = "parallel"))]
+    let sums = cross
+        .chunks(cube)
+        .enumerate()
+        .map(block)
+        .fold([zero; 4], |a, b| sum4(config, a, b));
+    Ok(sums)
 }
 
 /// What the three-factor prover returns.
@@ -1027,17 +1738,52 @@ pub(crate) struct Product3ProverOutput {
 /// codes of their bit histories for four folds (value tables of 4, 16, 256
 /// and 65 536 entries), field values after that. Each fold pass accumulates
 /// the next round's sums at `X = 0, 1, 2, ∞`.
+///
+/// Slots in word groups ([`CubicWords`]) take their first instance rounds
+/// from word-level cross terms, and with `free` also `D` (see
+/// [`prove_product_sumcheck`]).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prove_product3_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
     transcript: &mut T,
     config: &FieldConfig,
     instance_point: &[F],
     local_coefficients: &[F],
+    free: Option<&[(u32, F)]>,
     slot_weights: &[F],
     factors: &[[(u32, u32); 3]],
     bits: &dyn InstanceBits,
     claim: &F,
     boundary: &mut B,
+) -> Result<Product3ProverOutput, ProtocolError> {
+    prove_product3_sumcheck_with(
+        transcript,
+        config,
+        instance_point,
+        local_coefficients,
+        free,
+        slot_weights,
+        factors,
+        bits,
+        claim,
+        boundary,
+        word_rounds3(),
+    )
+}
+
+/// [`prove_product3_sumcheck`] with at most `word_rounds` word-path rounds.
+#[allow(clippy::too_many_arguments)]
+fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
+    transcript: &mut T,
+    config: &FieldConfig,
+    instance_point: &[F],
+    local_coefficients: &[F],
+    free: Option<&[(u32, F)]>,
+    slot_weights: &[F],
+    factors: &[[(u32, u32); 3]],
+    bits: &dyn InstanceBits,
+    claim: &F,
+    boundary: &mut B,
+    word_rounds: usize,
 ) -> Result<Product3ProverOutput, ProtocolError> {
     let instance_vars = instance_point.len();
     let slot_count = slot_weights.len();
@@ -1063,17 +1809,62 @@ pub(crate) fn prove_product3_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
     let words = bits.words_per_instance();
     let columns = 64 * words;
     let kappa = &slot_weights[..factors.len()];
+    let groups = if word_rounds > 0 {
+        CubicWords::detect(config, factors, slot_weights, words)
+    } else {
+        None
+    };
+    let word_rounds = if groups.is_some() {
+        word_rounds.min(instance_vars)
+    } else {
+        0
+    };
+    let cross = groups.as_ref().map(|groups| {
+        let _scope = tracing::info_span!("product3:word_cross_terms").entered();
+        cubic_cross_terms(config, modulus, groups, bits, word_rounds)
+    });
 
-    let mut d = {
-        let _scope = tracing::info_span!("product3:instance_linear_values").entered();
-        instance_linear_values(config, modulus, local_coefficients, bits)
+    let mut d = match (&cross, free) {
+        (Some(cross), Some(free)) => {
+            // On a satisfying witness `⟨Cᵀ eq(ξ), h_i⟩ = −Σ_s κ_s A_s B_s C_s`,
+            // the cross term `T(i, i, i)`: only the free terms are read.
+            let _scope = tracing::info_span!("product3:free_linear_values").entered();
+            let mut extra = vec![zero; local_coefficients.len()];
+            for (column, coefficient) in free {
+                let entry = extra
+                    .get_mut(*column as usize)
+                    .ok_or(ProtocolError::InvalidGeometry)?;
+                *entry = config.add(entry, coefficient);
+            }
+            let mut d = instance_linear_values(config, modulus, &extra, bits);
+            let size = 1usize << word_rounds;
+            for (instance, value) in d.iter_mut().enumerate() {
+                let (block, u) = (instance >> word_rounds, instance & (size - 1));
+                let diagonal = block * size * size * size + (u * size + u) * size + u;
+                *value = config.sub(value, &cross[diagonal]);
+            }
+            debug_assert_eq!(
+                d,
+                instance_linear_values(config, modulus, local_coefficients, bits),
+                "the witness does not satisfy the relation"
+            );
+            d
+        }
+        _ => {
+            let _scope = tracing::info_span!("product3:instance_linear_values").entered();
+            instance_linear_values(config, modulus, local_coefficients, bits)
+        }
     };
     let mut rounds = Vec::with_capacity(instance_vars + slot_vars);
     let mut point = Vec::with_capacity(instance_vars + slot_vars);
     let mut current = claim.clone();
     let mut scale = one;
 
-    let mut sums = {
+    let mut sums = if let Some(cross) = &cross {
+        let _scope = tracing::info_span!("product3:round0").entered();
+        let rest = eq_table(&instance_point[1..], config).map_err(SpartanError::from)?;
+        cubic_word_round_sums(config, cross, word_rounds, &[], &rest, &d)?
+    } else {
         let _scope = tracing::info_span!("product3:round0").entered();
         let kappa_c = canonical_u128(config, kappa);
         let rest = eq_table(&instance_point[1..], config).map_err(SpartanError::from)?;
@@ -1116,7 +1907,7 @@ pub(crate) fn prove_product3_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
         }
     };
 
-    let mut base: Option<Base> = None;
+    let mut base: Option<Base> = cross.map(Base::Words);
     let mut values: Vec<F> = Vec::new();
     for round in 0..instance_vars {
         let eta = &instance_point[round];
@@ -1166,10 +1957,55 @@ pub(crate) fn prove_product3_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
             Some(eq) => weigh3(config, &eq[q], &d[2 * q], &d[2 * q + 1], sums),
             None => [zero; 4],
         };
-        let pair_of = |a: &dyn Fn(u32) -> F, b: &dyn Fn(u32) -> F| {
-            cubic_pair_sums(config, factors, kappa, a, b)
-        };
         let (folded, next_sums) = match base.take() {
+            Some(Base::Words(cross)) if round + 1 < word_rounds => {
+                let eq = next.as_deref().ok_or(ProtocolError::InvalidGeometry)?;
+                let sums = cubic_word_round_sums(config, &cross, word_rounds, &point, eq, &d)?;
+                (Base::Words(cross), sums)
+            }
+            Some(Base::Words(_)) => {
+                // Instances → codes of `2^level` bits per column, level =
+                // the word rounds, with their value table `eq(r, ·)` sums.
+                let level = word_rounds;
+                let size = 1usize << level;
+                let weights = eq_table(&point, config).map_err(SpartanError::from)?;
+                let mut table = vec![zero; 1usize << size];
+                for c in 1..table.len() {
+                    let low = c.trailing_zeros() as usize;
+                    table[c] = config.add(&table[c & (c - 1)], &weights[low]);
+                }
+                let mut codes = vec![0u8; rows * columns];
+                let scratch = || vec![vec![0u64; words]; group * size];
+                let sums = over_chunks4(config, &mut codes, chunk_len, scratch, |w, q, out| {
+                    for (k, buffer) in w.iter_mut().enumerate() {
+                        bits.read_local_words(group * size * q + k, buffer);
+                    }
+                    for (row, codes) in out.chunks_mut(columns).enumerate() {
+                        let instances = &w[row * size..(row + 1) * size];
+                        for (column, code) in codes.iter_mut().enumerate() {
+                            let c = column as u32;
+                            *code = instances
+                                .iter()
+                                .enumerate()
+                                .fold(0u8, |code, (b, words)| code | ((bit(words, c) as u8) << b));
+                        }
+                    }
+                    if group < 2 {
+                        return [zero; 4];
+                    }
+                    let (ra, rb) = out.split_at(columns);
+                    let sums = cubic_pair_sums(
+                        config,
+                        factors,
+                        kappa,
+                        |c| table[usize::from(ra[c as usize])],
+                        |c| table[usize::from(rb[c as usize])],
+                    );
+                    weigh(q, sums)
+                });
+                values = table;
+                (Base::Byte(codes, level), sums)
+            }
             None => {
                 let mut codes = vec![0u8; rows * columns];
                 let scratch = || -> [Vec<u64>; 4] { std::array::from_fn(|_| vec![0u64; words]) };
@@ -1188,9 +2024,12 @@ pub(crate) fn prove_product3_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
                         return [zero; 4];
                     }
                     let (ra, rb) = out.split_at(columns);
-                    let sums = pair_of(
-                        &|c| next_values[usize::from(ra[c as usize])],
-                        &|c| next_values[usize::from(rb[c as usize])],
+                    let sums = cubic_pair_sums(
+                        config,
+                        factors,
+                        kappa,
+                        |c| next_values[usize::from(ra[c as usize])],
+                        |c| next_values[usize::from(rb[c as usize])],
                     );
                     weigh(q, sums)
                 });
@@ -1212,9 +2051,12 @@ pub(crate) fn prove_product3_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
                         return [zero; 4];
                     }
                     let (ra, rb) = out.split_at(columns);
-                    let sums = pair_of(
-                        &|c| next_values[usize::from(ra[c as usize])],
-                        &|c| next_values[usize::from(rb[c as usize])],
+                    let sums = cubic_pair_sums(
+                        config,
+                        factors,
+                        kappa,
+                        |c| next_values[usize::from(ra[c as usize])],
+                        |c| next_values[usize::from(rb[c as usize])],
                     );
                     weigh(q, sums)
                 });
@@ -1236,9 +2078,12 @@ pub(crate) fn prove_product3_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
                         return [zero; 4];
                     }
                     let (ra, rb) = out.split_at(columns);
-                    let sums = pair_of(
-                        &|c| next_values[usize::from(ra[c as usize])],
-                        &|c| next_values[usize::from(rb[c as usize])],
+                    let sums = cubic_pair_sums(
+                        config,
+                        factors,
+                        kappa,
+                        |c| next_values[usize::from(ra[c as usize])],
+                        |c| next_values[usize::from(rb[c as usize])],
                     );
                     weigh(q, sums)
                 });
@@ -1260,7 +2105,13 @@ pub(crate) fn prove_product3_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
                         return [zero; 4];
                     }
                     let (ra, rb) = out.split_at(columns);
-                    let sums = pair_of(&|c| ra[c as usize], &|c| rb[c as usize]);
+                    let sums = cubic_pair_sums(
+                        config,
+                        factors,
+                        kappa,
+                        |c| ra[c as usize],
+                        |c| rb[c as usize],
+                    );
                     weigh(q, sums)
                 });
                 (Base::Field(out_values), sums)
@@ -1280,7 +2131,13 @@ pub(crate) fn prove_product3_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
                         return [zero; 4];
                     }
                     let (ra, rb) = out.split_at(columns);
-                    let sums = pair_of(&|c| ra[c as usize], &|c| rb[c as usize]);
+                    let sums = cubic_pair_sums(
+                        config,
+                        factors,
+                        kappa,
+                        |c| ra[c as usize],
+                        |c| rb[c as usize],
+                    );
                     weigh(q, sums)
                 });
                 (Base::Field(out_values), sums)
@@ -1299,7 +2156,7 @@ pub(crate) fn prove_product3_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
         Some(Base::Byte(codes, _)) => codes.iter().map(|c| values[usize::from(*c)]).collect(),
         Some(Base::Word(codes)) => codes.iter().map(|c| values[usize::from(*c)]).collect(),
         Some(Base::Field(values)) => values,
-        None => return Err(ProtocolError::InvalidGeometry),
+        Some(Base::Words(_)) | None => return Err(ProtocolError::InvalidGeometry),
     };
     let read = |c: u32| row[c as usize];
     let mut ehat = vec![zero; slot_count];
@@ -1606,6 +2463,7 @@ mod tests {
             &config,
             &eta,
             &beta,
+            None,
             &kappa,
             slots,
             &rows,
@@ -1656,6 +2514,222 @@ mod tests {
         assert!(verify(&proof, &config.add(&claim, &one)).is_err());
     }
 
+    #[test]
+    fn transpose8_moves_bit_8r_plus_c_to_8c_plus_r() {
+        let mut seed = 0x7a_u64;
+        for _ in 0..64 {
+            let x = next(&mut seed) ^ (next(&mut seed) << 40);
+            let t = transpose8(x);
+            for r in 0..8 {
+                for c in 0..8 {
+                    assert_eq!((x >> (8 * r + c)) & 1, (t >> (8 * c + r)) & 1);
+                }
+            }
+        }
+    }
+
+    /// Slots in word groups: the word path (one to four cross-term rounds)
+    /// sends exactly what the per-slot path sends, over one to six instance
+    /// variables and unaligned group columns.
+    #[test]
+    fn word_path_matches_the_slot_path() {
+        let config = F::make_cfg(&Uint::from(FQ_MOD)).unwrap();
+        for instance_vars in 1..=6 {
+            let mut seed = 0x3057_u64 ^ instance_vars as u64;
+            let (columns, groups, slot_count) = (256usize, 3usize, 128usize);
+            let (rows, eta, beta, mut kappa) =
+                setup(&config, &mut seed, instance_vars, columns, slot_count);
+            let mut left = Vec::new();
+            let mut right = Vec::new();
+            for g in 0..groups {
+                let base = |seed: &mut u64| 1 + (next(seed) % (columns as u64 - 33)) as u32;
+                let (e, p, m) = (base(&mut seed), base(&mut seed), base(&mut seed));
+                let mut weight = kappa[32 * g];
+                for i in 0..32u32 {
+                    left.push(e + i);
+                    right.push((p + i, m + i));
+                    kappa[32 * g + i as usize] = weight;
+                    weight = config.add(&weight, &weight);
+                }
+            }
+            let slots = QuadraticSlots {
+                left: &left,
+                right: &right,
+            };
+            let claim = claim(
+                &config,
+                &rows,
+                &eta,
+                &beta,
+                &kappa,
+                |w, s| bit(w, left[s]) * (bit(w, right[s].0) - bit(w, right[s].1)),
+                left.len(),
+            );
+            let prove = |word_rounds: usize| {
+                prove_product_sumcheck_with(
+                    &mut Blake3Transcript::new(),
+                    &config,
+                    &eta,
+                    &beta,
+                    None,
+                    &kappa,
+                    slots,
+                    &rows,
+                    &claim,
+                    &mut UngrindedRoundBoundary,
+                    word_rounds,
+                )
+                .unwrap()
+            };
+            let reference = prove(0);
+            for word_rounds in 1..=WORD_ROUNDS {
+                let output = prove(word_rounds);
+                assert_eq!(
+                    output.rounds, reference.rounds,
+                    "instance_vars={instance_vars} word_rounds={word_rounds}"
+                );
+                assert_eq!(output.terminal, reference.terminal);
+                assert_eq!(output.instance_point, reference.instance_point);
+                assert_eq!(output.slot_point, reference.slot_point);
+            }
+        }
+    }
+
+    /// A relation the witness satisfies, `Σ_i 2^i (pos_i − neg_i) − Σ_i 2^i
+    /// e_i (p_i − m_i) = 0` per group (`pos = e ∧ p`, `neg = e ∧ m`): the word
+    /// path's `D` from the free terms and the cross terms is the dense
+    /// `⟨β, h_i⟩`, so the proof is the per-slot path's and reduces to `β`.
+    #[test]
+    fn word_path_takes_d_from_a_satisfied_relation() {
+        let config = F::make_cfg(&Uint::from(FQ_MOD)).unwrap();
+        let (groups, words) = (2usize, 6usize);
+        let columns = 64 * words;
+        for instance_vars in 1..=6 {
+            let mut seed = 0xd0d0_u64 ^ instance_vars as u64;
+            // Group g: e, p, m, pos, neg words at 1 + 160 g + 32 k.
+            let base = |g: usize, k: usize| (1 + 160 * g + 32 * k) as u32;
+            let rows = Rows {
+                words,
+                instances: (0..1usize << instance_vars)
+                    .map(|instance| {
+                        let mut local = vec![0u64; words];
+                        // The last instance is an all-zero padding slot.
+                        if instance + 1 == 1 << instance_vars && instance_vars > 1 {
+                            return local;
+                        }
+                        let mut put = |column: u32, word: u32| {
+                            for i in 0..32 {
+                                if (word >> i) & 1 == 1 {
+                                    let c = column + i;
+                                    local[(c / 64) as usize] |= 1 << (c % 64);
+                                }
+                            }
+                        };
+                        put(0, 1);
+                        for g in 0..groups {
+                            let (e, p, m) = (next(&mut seed) as u32, next(&mut seed) as u32, next(&mut seed) as u32);
+                            for (k, word) in [e, p, m, e & p, e & m].into_iter().enumerate() {
+                                put(base(g, k), word);
+                            }
+                        }
+                        local
+                    })
+                    .collect(),
+            };
+            let slot_count = (32 * groups).next_power_of_two();
+            let mut left = Vec::new();
+            let mut right = Vec::new();
+            let mut kappa = vec![config.zero(); slot_count];
+            let mut beta = vec![config.zero(); columns];
+            for g in 0..groups {
+                // Row weight t_g: β gets ±t_g 2^i on pos/neg, κ gets −t_g 2^i.
+                let mut weight = element(&config, next(&mut seed));
+                for i in 0..32u32 {
+                    let slot = 32 * g + i as usize;
+                    left.push(base(g, 0) + i);
+                    right.push((base(g, 1) + i, base(g, 2) + i));
+                    kappa[slot] = config.neg(&weight);
+                    beta[(base(g, 3) + i) as usize] = weight;
+                    beta[(base(g, 4) + i) as usize] = config.neg(&weight);
+                    weight = config.add(&weight, &weight);
+                }
+            }
+            let free = [0u32, 7, 200, 333, 7]
+                .map(|column| (column, element(&config, next(&mut seed))));
+            for (column, coefficient) in &free {
+                beta[*column as usize] = config.add(&beta[*column as usize], coefficient);
+            }
+            let eta = (0..instance_vars)
+                .map(|_| element(&config, next(&mut seed)))
+                .collect::<Vec<_>>();
+            let slots = QuadraticSlots {
+                left: &left,
+                right: &right,
+            };
+            let claim = claim(
+                &config,
+                &rows,
+                &eta,
+                &beta,
+                &kappa,
+                |w, s| bit(w, left[s]) * (bit(w, right[s].0) - bit(w, right[s].1)),
+                left.len(),
+            );
+            let mut free_part = vec![config.zero(); columns];
+            for (column, coefficient) in &free {
+                free_part[*column as usize] = config.add(&free_part[*column as usize], coefficient);
+            }
+            assert_eq!(claim, functional(&config, &eta, &free_part, &rows));
+            let prove = |free: Option<&[(u32, F)]>, word_rounds: usize| {
+                prove_product_sumcheck_with(
+                    &mut Blake3Transcript::new(),
+                    &config,
+                    &eta,
+                    &beta,
+                    free,
+                    &kappa,
+                    slots,
+                    &rows,
+                    &claim,
+                    &mut UngrindedRoundBoundary,
+                    word_rounds,
+                )
+                .unwrap()
+            };
+            let reference = prove(None, 0);
+            let output = prove(Some(&free[..]), WORD_ROUNDS);
+            assert_eq!(output.rounds, reference.rounds, "instance_vars={instance_vars}");
+            assert_eq!(output.terminal, reference.terminal);
+            let proof = ProductSumcheckProof {
+                rounds: ProductRounds::Quadratic(output.rounds),
+                nonces: Vec::new(),
+                terminal: output.terminal.to_vec(),
+            };
+            let (instance_point, slot_point) = verify_product_sumcheck(
+                &mut Blake3Transcript::new(),
+                &config,
+                &proof,
+                &eta,
+                slot_count.ilog2() as usize,
+                &claim,
+                &mut UngrindedRoundBoundary,
+            )
+            .unwrap();
+            let gamma = [element(&config, 5), element(&config, 9)];
+            let (weights, value) = reduced_local_weights(
+                &config,
+                &beta,
+                &kappa,
+                ProductSlots::Quadratic(slots),
+                &slot_point,
+                &proof.terminal,
+                &gamma,
+            )
+            .unwrap();
+            assert_eq!(functional(&config, &instance_point, &weights, &rows), value);
+        }
+    }
+
     /// Three-factor slots over one to six instance variables: the columns
     /// leave the instance rounds as one-byte codes at levels one to three,
     /// sixteen-bit codes, and field values.
@@ -1699,6 +2773,7 @@ mod tests {
             &config,
             &eta,
             &beta,
+            None,
             &kappa,
             &factors,
             &rows,
@@ -1747,5 +2822,85 @@ mod tests {
             Err(ProtocolError::InvalidProductTerminalClaim)
         ));
         assert!(verify(&proof, &config.add(&claim, &one)).is_err());
+    }
+
+    /// Three-factor slots in word groups of every operand shape (rotated and
+    /// shifted words, the broadcast constant, zero): the word path sends
+    /// exactly what the per-column path sends.
+    #[test]
+    fn cubic_word_path_matches_the_column_path() {
+        let config = F::make_cfg(&Uint::from(FQ_MOD)).unwrap();
+        let columns = 256usize;
+        for instance_vars in 1..=5 {
+            let mut seed = 0x3c3c_u64 ^ instance_vars as u64;
+            let slot_count = 256usize;
+            let (rows, eta, beta, mut kappa) =
+                setup(&config, &mut seed, instance_vars, columns, slot_count);
+            let word = |seed: &mut u64| 1 + (next(seed) % (columns as u64 - 33)) as u32;
+            let mut factors = Vec::new();
+            // (x ⊕ y ⊕ z)-style: one source word, rotations, a shifted third.
+            let (source, other) = (word(&mut seed), word(&mut seed));
+            for (g, (rx, ry, rz, shift)) in
+                [(7u32, 18u32, 3u32, true), (6, 11, 25, false), (0, 5, 0, false)].into_iter().enumerate()
+            {
+                let base = if g == 2 { other } else { source };
+                for i in 0..32u32 {
+                    let x = base + (i + rx) % 32;
+                    let y = base + (i + ry) % 32;
+                    let z = if shift {
+                        if i + rz < 32 { base + i + rz } else { NO_COLUMN }
+                    } else {
+                        base + (i + rz) % 32
+                    };
+                    factors.push([(x, y), (x, y), (z, y)]);
+                }
+            }
+            // Ch-style: a bit, a difference, the constant one; and a zero factor.
+            let (e, f, h) = (word(&mut seed), word(&mut seed), word(&mut seed));
+            for i in 0..32u32 {
+                factors.push([(e + i, NO_COLUMN), (f + i, h + i), (0, NO_COLUMN)]);
+            }
+            for i in 0..32u32 {
+                factors.push([(NO_COLUMN, e + i), (NO_COLUMN, NO_COLUMN), (f + i, NO_COLUMN)]);
+            }
+            for g in 0..factors.len() / 32 {
+                let mut weight = kappa[32 * g];
+                for i in 0..32 {
+                    kappa[32 * g + i] = weight;
+                    weight = config.add(&weight, &weight);
+                }
+            }
+            let slot_value = |w: &[u64], s: usize| {
+                factors[s].iter().map(|f| factor_bits(w, *f)).product::<i32>()
+            };
+            let claim = claim(&config, &rows, &eta, &beta, &kappa, slot_value, factors.len());
+            let prove = |word_rounds: usize| {
+                prove_product3_sumcheck_with(
+                    &mut Blake3Transcript::new(),
+                    &config,
+                    &eta,
+                    &beta,
+                    None,
+                    &kappa,
+                    &factors,
+                    &rows,
+                    &claim,
+                    &mut UngrindedRoundBoundary,
+                    word_rounds,
+                )
+                .unwrap()
+            };
+            let reference = prove(0);
+            for word_rounds in 1..=WORD_ROUNDS3 {
+                let output = prove(word_rounds);
+                assert_eq!(
+                    output.rounds, reference.rounds,
+                    "instance_vars={instance_vars} word_rounds={word_rounds}"
+                );
+                assert_eq!(output.terminal, reference.terminal);
+                assert_eq!(output.instance_point, reference.instance_point);
+                assert_eq!(output.slot_point, reference.slot_point);
+            }
+        }
     }
 }

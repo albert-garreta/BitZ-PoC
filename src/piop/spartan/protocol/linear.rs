@@ -27,6 +27,8 @@ use crate::sumcheck::inner::{
     prove_inner_sumcheck,
 };
 use field::RingOps;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 use flock_core::pcs::{
     commit::Commitment,
     ligerito::{ProverConfig as LigProverConfig, VerifierConfig as LigVerifierConfig},
@@ -105,6 +107,15 @@ pub(crate) trait LinearBatching {
     /// `κ = Kᵀ eq(·, ξ)` padded to a power of two, when the relation has
     /// product slots.
     fn product_slot_weights(&self) -> Option<&[SpartanBitzField]> {
+        None
+    }
+
+    /// The terms of `β` beyond the collapsed relation `Cᵀ eq(·, ξ)` (the
+    /// constant-one and public batching), as `(column, coefficient)` pairs.
+    /// When the witness satisfies the relation, `⟨β, h_i⟩` is their value
+    /// on `h_i` minus `Σ_s κ_s slot_s(h_i)`, which the product prover may
+    /// use instead of the dense `⟨β, h_i⟩`.
+    fn product_free_coefficients(&self) -> Option<&[(u32, SpartanBitzField)]> {
         None
     }
 
@@ -391,7 +402,7 @@ fn claim_digest(
     assignment: Option<(&[SpartanBitzField], &SpartanBitzField)>,
     challenges: &BatchChallenges,
     claim: &OpeningClaim<'_>,
-    rows: &impl ModQWeightSource,
+    rows: &(impl ModQWeightSource + Sync),
     field_config: &FieldConfig,
 ) -> Result<[u8; 32], ProtocolError> {
     let mut hasher = BindingHasher::new();
@@ -422,12 +433,20 @@ fn claim_digest(
     }
     hasher.element(&challenges.public_io_batch, field_config);
     hasher.usize(rows.row_count())?;
-    for row in 0..rows.row_count() {
+    // Every row weight's little-endian bytes in order, as one string.
+    let mut weights = vec![0u8; 16 * rows.row_count()];
+    let write = |(row, out): (usize, &mut [u8])| -> Result<(), ProtocolError> {
         let weight = rows
             .canonical_weight(row)
             .ok_or(ProtocolError::InvalidGeometry)?;
-        hasher.u128_le(weight);
-    }
+        out.copy_from_slice(&weight.to_le_bytes());
+        Ok(())
+    };
+    #[cfg(feature = "parallel")]
+    weights.par_chunks_mut(16).enumerate().try_for_each(write)?;
+    #[cfg(not(feature = "parallel"))]
+    weights.chunks_mut(16).enumerate().try_for_each(write)?;
+    hasher.bytes(&weights);
     hasher.usize(claim.cols.len())?;
     for weight in &claim.cols {
         hasher.u128_le(*weight);
@@ -576,6 +595,7 @@ where
                         config,
                         &instance_point,
                         batching.local_coefficients(),
+                        batching.product_free_coefficients(),
                         slot_weights,
                         quadratic,
                         &*bits,
@@ -595,6 +615,7 @@ where
                         config,
                         &instance_point,
                         batching.local_coefficients(),
+                        batching.product_free_coefficients(),
                         slot_weights,
                         factors,
                         &*bits,

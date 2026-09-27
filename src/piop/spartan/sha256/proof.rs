@@ -943,6 +943,9 @@ struct ProductLinearBatching {
     initial_claim: SpartanBitzField,
     /// `κ = Kᵀ eq(·, ξ)`: the product slots' collapsed row weights.
     slot_weights: Vec<SpartanBitzField>,
+    /// The constant-one and public batching terms of `local_coefficients`:
+    /// what they add to the collapsed relation `Cᵀ eq(·, ξ)`.
+    free_coefficients: Vec<(u32, SpartanBitzField)>,
 }
 
 impl ProductLinearBatching {
@@ -981,6 +984,8 @@ impl ProductLinearBatching {
             &(local_coefficients[SHA256_SHARED_CONSTANT_CELL]),
             &(&constant_weight),
         );
+        let mut free_coefficients = Vec::with_capacity(1 + slot_weights.len());
+        free_coefficients.push((SHA256_SHARED_CONSTANT_CELL as u32, constant_weight.clone()));
         for (slot, slot_weight) in slot_weights.iter().enumerate() {
             let word_slot = slot / SHA256_PUBLIC_WORD_BITS;
             let bit = slot % SHA256_PUBLIC_WORD_BITS;
@@ -991,6 +996,7 @@ impl ProductLinearBatching {
                 .get_mut(local_column)
                 .ok_or(ProtocolError::InvalidGeometry)?;
             *coefficient = field_config.add(coefficient, &public_coefficient);
+            free_coefficients.push((local_column as u32, public_coefficient));
         }
         let shared_coefficient = field_config.mul(
             &(active_instance_sum.clone()),
@@ -998,27 +1004,49 @@ impl ProductLinearBatching {
         );
 
         // Compress each eight-bit public dot product into a lookup table once.
-        // This computes μ without visiting all 1,024 public bits per instance.
-        let byte_tables = weighted_byte_tables(&slot_weights, field_config);
-        let mut initial_claim = field_config.mul(&(constant_weight), &(&active_instance_sum));
-        for (instance, statement) in public_statement.iter().enumerate() {
-            let mut statement_value = SpartanBitzField::zero_with_cfg(field_config);
+        // This computes μ without visiting all 1,024 public bits per instance:
+        // μ = c · Σ_i eq_i + p · Σ_i eq_i ⟨w, statement_i⟩.
+        // Canonical residues: a statement's 128 table entries sum in a u128.
+        let modulus = u128::from(*field_config.modulus());
+        if (4 * SHA256_PUBLIC_WORDS as u128).saturating_mul(modulus) >> 127 != 0 {
+            return Err(ProtocolError::InvalidGeometry);
+        }
+        let byte_tables = weighted_byte_tables(&slot_weights, field_config)
+            .iter()
+            .map(|table| {
+                table
+                    .iter()
+                    .map(|entry| u128::from(field_config.to_integer(entry)))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let zero = SpartanBitzField::zero_with_cfg(field_config);
+        let weighted_statement = |(statement, weight): (&Sha256CompressionStatement, &SpartanBitzField)| {
+            let mut sum = 0u128;
             for (word_slot, word) in statement.words().enumerate() {
                 for byte in 0..4 {
-                    let value = ((word >> (8 * byte)) & 0xff) as usize;
-                    statement_value = field_config.add(
-                        &(statement_value),
-                        &(&byte_tables[4 * word_slot + byte][value]),
-                    );
+                    sum += byte_tables[4 * word_slot + byte][((word >> (8 * byte)) & 0xff) as usize];
                 }
             }
-            let mut coefficient = field_config.mul(
-                &(instance_weights[instance].clone()),
-                &(&public_batch_weight),
-            );
-            coefficient = field_config.mul(&(coefficient), &(&statement_value));
-            initial_claim = field_config.add(&(initial_claim), &(&coefficient));
-        }
+            let statement_value = field_config.from_canonical_integer(&Uint::<2>::from(sum % modulus));
+            field_config.mul(weight, &statement_value)
+        };
+        #[cfg(feature = "parallel")]
+        let statements = public_statement
+            .par_iter()
+            .zip(&instance_weights)
+            .map(weighted_statement)
+            .reduce(|| zero.clone(), |a, b| field_config.add(&a, &b));
+        #[cfg(not(feature = "parallel"))]
+        let statements = public_statement
+            .iter()
+            .zip(&instance_weights)
+            .map(weighted_statement)
+            .fold(zero.clone(), |a, b| field_config.add(&a, &b));
+        let initial_claim = field_config.add(
+            &field_config.mul(&constant_weight, &active_instance_sum),
+            &field_config.mul(&public_batch_weight, &statements),
+        );
 
         Ok(Self {
             instances: prepared.instances(),
@@ -1028,6 +1056,7 @@ impl ProductLinearBatching {
             shared_coefficient,
             initial_claim,
             slot_weights: product_slot_weights,
+            free_coefficients,
         })
     }
 
@@ -1067,6 +1096,7 @@ impl ProductLinearBatching {
             shared_coefficient,
             initial_claim: claim,
             slot_weights: self.slot_weights.clone(),
+            free_coefficients: Vec::new(),
         })
     }
 
@@ -1206,6 +1236,10 @@ impl LinearBatching for ProductLinearBatching {
 
     fn product_slot_weights(&self) -> Option<&[SpartanBitzField]> {
         Some(&self.slot_weights)
+    }
+
+    fn product_free_coefficients(&self) -> Option<&[(u32, SpartanBitzField)]> {
+        (!self.free_coefficients.is_empty()).then_some(&self.free_coefficients[..])
     }
 
     fn reanchored(
@@ -2452,11 +2486,17 @@ fn public_statement_binding(
     let mut hash = Hasher::new();
     hash.update(SHA256_PUBLIC_STATEMENT_DOMAIN);
     hash_usize(&mut hash, public_statement.len())?;
+    // Every word's little-endian bytes in order, hashed as one string.
+    let mut bytes = Vec::with_capacity(4 * SHA256_PUBLIC_WORDS * public_statement.len());
     for statement in public_statement {
         for word in statement.words() {
-            hash.update(&word.to_le_bytes());
+            bytes.extend_from_slice(&word.to_le_bytes());
         }
     }
+    #[cfg(feature = "parallel")]
+    hash.update_rayon(&bytes);
+    #[cfg(not(feature = "parallel"))]
+    hash.update(&bytes);
     Ok(*hash.finalize().as_bytes())
 }
 
