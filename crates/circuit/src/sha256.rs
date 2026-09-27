@@ -259,9 +259,12 @@ where
 
 /// Decomposes a sum into `WIDTH` bits, constrains the decomposition, and
 /// returns its low 32 bits.
+///
+/// With `keep_bits`, the result also keeps the Z lift of each of its bits.
 fn sum_32<const WIDTH: usize, const TERMS: usize, CS>(
     circuit: &mut CS,
     terms: [UInt32<CS>; TERMS],
+    keep_bits: bool,
 ) -> UInt32<CS>
 where
     CS: Circuit,
@@ -279,7 +282,11 @@ where
             .sum::<u64>();
         HintResult::Ok(PackedBits::from_u64(sum))
     });
-    let wide = uint_from_word(circuit, Word::from_repr(bits));
+    let wide = if keep_bits {
+        uint_from_word_with_bits(circuit, Word::from_repr(bits))
+    } else {
+        uint_from_word(circuit, Word::from_repr(bits))
+    };
 
     let input_sum = terms
         .into_iter()
@@ -294,7 +301,7 @@ where
     UInt {
         word: Word::new(array::from_fn(|i| wide.word.bit(i))),
         z_values,
-        z_bits: Vec::new(),
+        z_bits: wide.z_bits,
     }
 }
 
@@ -398,6 +405,108 @@ where
     sum
 }
 
+/// A three-input XOR word whose integer value is built from product slots
+/// instead of lifted parity bits: per bit `x ⊕ y ⊕ z = x − y + z −
+/// 2 (x − y)² (z − y)`, one three-factor slot each. `word` is the XOR word
+/// itself (hints evaluate it); `inputs(i)` gives bit `i`'s three lifted
+/// inputs, `None` for a bit a shift cleared.
+fn xor3_product_uint<CS>(
+    circuit: &mut CS,
+    word: Word<CS::Bool, 32>,
+    inputs: impl Fn(usize) -> (ShaZ<CS>, ShaZ<CS>, Option<ShaZ<CS>>),
+) -> UInt32<CS>
+where
+    CS: Circuit,
+{
+    let mut two = ShaCoefficient::<CS>::one();
+    two += ShaCoefficient::<CS>::one();
+    let mut full = ShaZ::<CS>::zero();
+    let mut power = ShaCoefficient::<CS>::one();
+    for bit in 0..32 {
+        let (x, y, z) = inputs(bit);
+        let z = z.unwrap_or_else(ShaZ::<CS>::zero);
+        let difference = x.clone() - y.clone();
+        let product =
+            circuit.product3::<SHA256_Z_LIMBS>(difference.clone(), difference, z.clone() - y.clone());
+        let value = x - y + z - product * two.clone();
+        full += value * power.clone();
+        power += power.clone();
+    }
+    UInt {
+        word,
+        z_values: ZValues {
+            low_32: full.clone(),
+            full,
+        },
+        z_bits: Vec::new(),
+    }
+}
+
+/// `x ⊕ y ⊕ z` of the words `x ⋙ rx`, `y ⋙ ry` and `z` shifted or rotated
+/// right by `rz` ([`xor3_product_uint`]); all three read one word's bit lifts.
+fn xor3_rotations_product<CS>(
+    circuit: &mut CS,
+    source: &UInt32<CS>,
+    (rx, ry, rz): (usize, usize, usize),
+    shift_z: bool,
+) -> UInt32<CS>
+where
+    CS: Circuit,
+{
+    assert_eq!(source.z_bits.len(), 32, "the source word keeps its bit lifts");
+    let third = if shift_z {
+        source.word.shift_right(rz)
+    } else {
+        source.word.rotate_right(rz)
+    };
+    let word = source
+        .word
+        .rotate_right(rx)
+        .xor3(circuit, &source.word.rotate_right(ry), &third);
+    let bits = &source.z_bits;
+    xor3_product_uint(circuit, word, |bit| {
+        let z = if shift_z {
+            (bit + rz < 32).then(|| bits[bit + rz].clone())
+        } else {
+            Some(bits[(bit + rz) % 32].clone())
+        };
+        (bits[(bit + rx) % 32].clone(), bits[(bit + ry) % 32].clone(), z)
+    })
+}
+
+/// Returns a Z expression equal to twice SHA-256's `Maj(x, y, z)` without
+/// materializing any derived bit: per bit `Maj = y + (x − y)² (z − y)`, one
+/// three-factor product slot each. The words must keep their bit lifts.
+fn majority_product_twice<CS>(
+    circuit: &mut CS,
+    x: &UInt32<CS>,
+    y: &UInt32<CS>,
+    z: &UInt32<CS>,
+) -> ShaZ<CS>
+where
+    CS: Circuit,
+{
+    assert!(
+        x.z_bits.len() == 32 && y.z_bits.len() == 32 && z.z_bits.len() == 32,
+        "Maj as a product needs the bit lifts of all three words"
+    );
+    let mut two = ShaCoefficient::<CS>::one();
+    two += ShaCoefficient::<CS>::one();
+    let mut sum = y.int_value() * two.clone();
+    let mut weight = two;
+    for bit in 0..32 {
+        let difference = x.z_bits[bit].clone() - y.z_bits[bit].clone();
+        let product = circuit.product3::<SHA256_Z_LIMBS>(
+            difference.clone(),
+            difference,
+            z.z_bits[bit].clone() - y.z_bits[bit].clone(),
+        );
+        sum += product * weight.clone();
+        weight += weight.clone();
+    }
+    sum
+}
+
 /// Returns a Z expression equal to twice SHA-256's `Maj(x, y, z)`.
 fn majority_twice<CS>(circuit: &mut CS, x: &UInt32<CS>, y: &UInt32<CS>, z: &UInt32<CS>) -> ShaZ<CS>
 where
@@ -422,7 +531,7 @@ pub fn compress<CS>(
 where
     CS: Circuit,
 {
-    compress_impl::<CS, false>(circuit, block, state)
+    compress_impl::<CS, false, false>(circuit, block, state)
 }
 
 /// [`compress`] with `Ch` as product slots ([`Circuit::product`]) instead of
@@ -436,10 +545,25 @@ pub fn compress_ch_product<CS>(
 where
     CS: Circuit,
 {
-    compress_impl::<CS, true>(circuit, block, state)
+    compress_impl::<CS, true, false>(circuit, block, state)
 }
 
-fn compress_impl<CS, const CH_PRODUCT: bool>(
+/// [`compress_ch_product`] with every nonlinear or XOR summand as product
+/// slots too: `Maj` per bit as `b + (a − b)² (c − b)` and every `Σ0`, `Σ1`,
+/// `σ0`, `σ1` bit as `x − y + z − 2 (x − y)² (z − y)`. No derived word is
+/// lifted, so the integer witness is exactly the lifted Boolean witness.
+pub fn compress_all_products<CS>(
+    circuit: &mut CS,
+    block: [Word<CS::Bool, 32>; 16],
+    state: [Word<CS::Bool, 32>; 8],
+) -> [UInt32<CS>; 8]
+where
+    CS: Circuit,
+{
+    compress_impl::<CS, true, true>(circuit, block, state)
+}
+
+fn compress_impl<CS, const CH_PRODUCT: bool, const ALL_PRODUCTS: bool>(
     circuit: &mut CS,
     block: [Word<CS::Bool, 32>; 16],
     state: [Word<CS::Bool, 32>; 8],
@@ -456,25 +580,36 @@ where
     });
     let mut schedule: Vec<UInt32<CS>> = Vec::with_capacity(64);
     for word in block {
-        schedule.push(uint_from_word(circuit, word));
+        schedule.push(if ALL_PRODUCTS {
+            uint_from_word_with_bits(circuit, word)
+        } else {
+            uint_from_word(circuit, word)
+        });
     }
 
     for i in 16..64 {
-        let word_15 = &schedule[i - 15].word;
-        let sigma_0 = word_15.rotate_right(7).xor3(
-            circuit,
-            &word_15.rotate_right(18),
-            &word_15.shift_right(3),
-        );
-        let sigma_0 = uint_from_word(circuit, sigma_0);
+        let (sigma_0, sigma_1) = if ALL_PRODUCTS {
+            (
+                xor3_rotations_product(circuit, &schedule[i - 15], (7, 18, 3), true),
+                xor3_rotations_product(circuit, &schedule[i - 2], (17, 19, 10), true),
+            )
+        } else {
+            let word_15 = &schedule[i - 15].word;
+            let sigma_0 = word_15.rotate_right(7).xor3(
+                circuit,
+                &word_15.rotate_right(18),
+                &word_15.shift_right(3),
+            );
+            let sigma_0 = uint_from_word(circuit, sigma_0);
 
-        let word_2 = &schedule[i - 2].word;
-        let sigma_1 = word_2.rotate_right(17).xor3(
-            circuit,
-            &word_2.rotate_right(19),
-            &word_2.shift_right(10),
-        );
-        let sigma_1 = uint_from_word(circuit, sigma_1);
+            let word_2 = &schedule[i - 2].word;
+            let sigma_1 = word_2.rotate_right(17).xor3(
+                circuit,
+                &word_2.rotate_right(19),
+                &word_2.shift_right(10),
+            );
+            (sigma_0, uint_from_word(circuit, sigma_1))
+        };
 
         schedule.push(sum_32::<34, 4, _>(
             circuit,
@@ -484,31 +619,44 @@ where
                 schedule[i - 7].clone(),
                 sigma_1,
             ],
+            ALL_PRODUCTS,
         ));
     }
 
     let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = state.clone();
 
     for i in 0..64 {
-        let big_sigma_1_word = e.word.rotate_right(6).xor3(
-            circuit,
-            &e.word.rotate_right(11),
-            &e.word.rotate_right(25),
-        );
-        let big_sigma_1 = uint_from_word(circuit, big_sigma_1_word);
+        let big_sigma_1 = if ALL_PRODUCTS {
+            xor3_rotations_product(circuit, &e, (6, 11, 25), false)
+        } else {
+            let big_sigma_1_word = e.word.rotate_right(6).xor3(
+                circuit,
+                &e.word.rotate_right(11),
+                &e.word.rotate_right(25),
+            );
+            uint_from_word(circuit, big_sigma_1_word)
+        };
         let choice = if CH_PRODUCT {
             choice_product_twice(circuit, &e, &f, &g)
         } else {
             choice_twice(circuit, &e, &f, &g)
         };
 
-        let big_sigma_0_word = a.word.rotate_right(2).xor3(
-            circuit,
-            &a.word.rotate_right(13),
-            &a.word.rotate_right(22),
-        );
-        let big_sigma_0 = uint_from_word(circuit, big_sigma_0_word);
-        let majority = majority_twice(circuit, &a, &b, &c);
+        let big_sigma_0 = if ALL_PRODUCTS {
+            xor3_rotations_product(circuit, &a, (2, 13, 22), false)
+        } else {
+            let big_sigma_0_word = a.word.rotate_right(2).xor3(
+                circuit,
+                &a.word.rotate_right(13),
+                &a.word.rotate_right(22),
+            );
+            uint_from_word(circuit, big_sigma_0_word)
+        };
+        let majority = if ALL_PRODUCTS {
+            majority_product_twice(circuit, &a, &b, &c)
+        } else {
+            majority_twice(circuit, &a, &b, &c)
+        };
 
         let old_a = a;
         let old_b = b;
@@ -557,12 +705,12 @@ where
                 DoubledValue::Choice(old_e.word.clone(), old_f.word.clone(), old_g.word.clone()),
                 DoubledValue::Majority(old_a.word.clone(), old_b.word.clone(), old_c.word.clone()),
             ],
-            false,
+            ALL_PRODUCTS,
         );
     }
 
     let working = [a, b, c, d, e, f, g, h];
-    array::from_fn(|i| sum_32::<33, 2, _>(circuit, [state[i].clone(), working[i].clone()]))
+    array::from_fn(|i| sum_32::<33, 2, _>(circuit, [state[i].clone(), working[i].clone()], false))
 }
 
 /// Flattened counterpart of [`compress`], matching Freigen's `permCirc'`.
@@ -592,6 +740,20 @@ where
 {
     let (block, state) = compression_words(input);
     let output = compress_ch_product(circuit, block, state);
+    array::from_fn(|i| output[i / 32].word.bit(i % 32))
+}
+
+/// [`compression_circuit`] with every nonlinear or XOR summand as product
+/// slots ([`compress_all_products`]).
+pub fn compression_circuit_all_products<CS>(
+    circuit: &mut CS,
+    input: &[CS::Bool; COMPRESSION_INPUT_BITS],
+) -> [CS::Bool; 256]
+where
+    CS: Circuit,
+{
+    let (block, state) = compression_words(input);
+    let output = compress_all_products(circuit, block, state);
     array::from_fn(|i| output[i / 32].word.bit(i % 32))
 }
 
@@ -1019,6 +1181,48 @@ mod tests {
         matrices
             .check_witness(product.witness())
             .expect("the Ch-product relation should accept the honest witness");
+    }
+
+    #[test]
+    fn all_products_variant_keeps_the_witness_and_lifts_nothing_else() {
+        let inputs: [bool; COMPRESSION_INPUT_BITS] =
+            array::from_fn(|bit| bit % 7 == 1 || bit % 13 == 4);
+        let capacity = COMPRESSION_INPUT_BITS + COMPRESSION_HINT_BITS;
+        let mut plain = Witgen::with_inputs_and_capacity(&inputs, capacity);
+        let plain_output = compression_circuit(&mut plain, &inputs);
+        let mut all = Witgen::with_inputs_and_capacity(&inputs, capacity);
+        let all_output = compression_circuit_all_products(&mut all, &inputs);
+        assert_eq!(plain_output, all_output);
+        assert_eq!(plain.witness(), all.witness());
+
+        let mut generator = ConstraintGenerator::new(COMPRESSION_INPUT_BITS);
+        let symbolic_inputs = generator.inputs();
+        let _ = compression_circuit_all_products(&mut generator, &symbolic_inputs);
+        let matrices = generator.into_matrices();
+        // Only the committed bits are lifted: one integer cell per Boolean one.
+        assert_eq!(matrices.m.row_count(), 7_145);
+        assert_eq!(matrices.m.column_count(), 7_145);
+        assert_eq!(matrices.c.row_count(), 184);
+        assert_eq!(matrices.a.nnz() + matrices.b.nnz(), 0);
+        // Ch, Maj, Σ0, Σ1 per round and bit; σ0, σ1 per schedule step and bit.
+        let slots = 4 * 64 * 32 + 2 * 48 * 32;
+        for factors in [&matrices.pa, &matrices.pb, &matrices.pc] {
+            assert_eq!(factors.row_count(), slots);
+        }
+        assert_eq!(matrices.k.column_count(), slots);
+        assert_m_w_matches_witgen(&matrices, &all);
+        assert!(matrices.is_satisfied(all.witness()));
+
+        // Any flipped bit of round 5's hints breaks a row.
+        let hints = COMPRESSION_INPUT_BITS + 48 * 34 + 5 * 70;
+        for bit in 0..70 {
+            let mut flipped = (0..all.witness().bit_len())
+                .map(|index| all.witness().bit(index))
+                .collect::<Vec<_>>();
+            flipped[hints + bit] ^= true;
+            let tampered = Witgen::with_inputs(&flipped);
+            assert!(!matrices.is_satisfied(tampered.witness()), "bit {bit}");
+        }
     }
 
     #[test]

@@ -566,6 +566,17 @@ pub trait Circuit {
         unimplemented!("this circuit backend has no product slots")
     }
 
+    /// [`Circuit::product`] with three linear factors: `a * b * c`.
+    fn product3<const LIMBS: usize>(
+        &mut self,
+        a: Self::Z<LIMBS>,
+        b: Self::Z<LIMBS>,
+        c: Self::Z<LIMBS>,
+    ) -> Self::Z<LIMBS> {
+        let _ = (a, b, c);
+        unimplemented!("this circuit backend has no product slots")
+    }
+
     /// Explicitly changes a Z witness into a wider local representation.
     fn sign_extend_z<const FROM_LIMBS: usize, const TO_LIMBS: usize>(
         &mut self,

@@ -99,6 +99,38 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "df01a8ff3e43efd580294b929553bac8435cedc77ace17495c3b56864800967d",
         "e6b7bcdd10dca4d6f62560efde977e9c13e5325a1a505d3fc256237af6b937a9",
     ),
+    // The all-products relation (`sha-all-products`: `Maj` and the `Σ`/`σ`
+    // parities as three-factor slots as well), on the same instances.
+    (
+        "sha256/2p7/lambda100/all-products",
+        "bebfaed212c8fbbc00a1a2468b394056feff7fc4ebe6c3c42c522816ac08aa55",
+        "304a8eb596c4680f2b101178f1d94641a64b89341d8d98107ed299501c057a50",
+        "1d012579d1a5fc30fc92db8549885c21bef8a0a57eee1ea306cac6deccffd895",
+    ),
+    (
+        "sha256/2p7/lambda128/all-products",
+        "4deb0da76db74e1126a467408ed33999210edcb205ae448505349baca694157f",
+        "5b4f1403411f06ee34705266a7f2f454359bae69a8945e6ee6af795044fdf94a",
+        "f575e676fb040d819558517dddfa505b185b463eb3e6be6a95786ff83025760b",
+    ),
+    (
+        "sha256/2p7/reference/all-products",
+        "8e755b8c66891f107ed32a3e964aa372e770c6dd9f5bad1ebe12b182f66f3286",
+        "cbce65e12f977bc5eaeb31d1bd11dc3983a2548b8a5dfdb60f1fcb69663cde04",
+        "8736b406b1fdb505019d9cf49bebc597d5876ab3b0bcd412b2c9c23fb4222cb0",
+    ),
+    (
+        "sha256/2p7/wfbitz/lambda100/all-products",
+        "f6c8a45d80acf105b8acf480bfc091a647ab7d11f2dfaba84977e9d7a0455440",
+        "f6c8a45d80acf105b8acf480bfc091a647ab7d11f2dfaba84977e9d7a0455440",
+        "9e3fa09941dff2b3ffc495f40172cba9690e03b16939088008675f8df3bac5e0",
+    ),
+    (
+        "sha256/legacy-rows24/lambda100/all-products",
+        "327e33eeda078390d7b8fd3e8d7c2ba9748b5659367c0e3f6ee67b079a34ccc8",
+        "3491ff5c1ce354b00f896ee674a81eb71c73a24342e4adeec850481466b1c323",
+        "201578b87314641f72343092f5d20f70ef67c3dceb4cd5ef89b0a89ad06aa037",
+    ),
     (
         "u128_mul/2p15/lambda100",
         "96dff9b7d608b46a384222ae6cf1b3a16dffde7e8b13c0c0807539ce6d176e35",
@@ -402,6 +434,16 @@ fn sha256_inputs(instances: usize) -> Vec<([u32; 8], [u32; 16])> {
         .collect()
 }
 
+/// The SHA relation's pin name: the `Ch`-product relation by default, the
+/// all-products one (`sha-all-products`) under its own names.
+fn sha_relation_pin(name: &str) -> String {
+    if cfg!(feature = "sha-all-products") {
+        format!("{name}/all-products")
+    } else {
+        name.to_owned()
+    }
+}
+
 fn sha256_pin(name: &str, prepared: &bitz::piop::spartan::PreparedSha256CompressionBatch) {
     let inputs = sha256_inputs(prepared.instances());
     let witness = generate_sha256_compression_witnesses(prepared, &inputs).expect("witness");
@@ -427,7 +469,7 @@ fn sha256_pin(name: &str, prepared: &bitz::piop::spartan::PreparedSha256Compress
             .chain([proof.initial_nonce(), proof.terminal_nonce()]),
     );
     pin(
-        name,
+        &sha_relation_pin(name),
         &pt,
         &vt,
         &[&hint.commitment.root, &bitz_bytes, &nonces],
@@ -454,14 +496,16 @@ fn sha256_2p7_lambda128() {
 }
 
 /// The legacy inner-sumcheck path needs a non-power-of-two batch: `2^24`
-/// cells hold 1025 compressions of the `2^14`-stride relation (`2^21`, the
-/// old choice, now holds exactly 128 and opens the product tensor).
+/// cells hold 1025 compressions of the `2^14`-stride relation and 2348 of
+/// the all-products one (`2^21`, the old choice, now holds exactly 128 of
+/// the first and opens the product tensor).
 #[test]
 fn sha256_legacy_inner_sumcheck_rows24_lambda100() {
     let prepared =
         prepare_sha256_compression_batch_for_assignment_rows_with_profile::<Lambda100>(24)
             .expect("prepare");
-    assert_eq!(prepared.instances(), 1025);
+    let expected = if cfg!(feature = "sha-all-products") { 2348 } else { 1025 };
+    assert_eq!(prepared.instances(), expected);
     sha256_pin("sha256/legacy-rows24/lambda100", &prepared);
 }
 
@@ -495,7 +539,7 @@ fn sha256_2p7_wfbitz_lambda100() {
     let opening = proof.bitz().to_bytes();
     let nonces = nonces_le([proof.initial_nonce(), proof.terminal_nonce()]);
     pin(
-        "sha256/2p7/wfbitz/lambda100",
+        &sha_relation_pin("sha256/2p7/wfbitz/lambda100"),
         &pt,
         &vt,
         &[&hint.commitment.root, &opening, &nonces],

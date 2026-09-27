@@ -163,15 +163,21 @@ impl BenchProof {
         }
     }
 
-    /// (product-sumcheck rounds, product nonces)
-    fn product(&self) -> (usize, usize) {
+    /// (product-sumcheck rounds, coefficients per round, terminal
+    /// evaluations, nonces)
+    fn product(&self) -> (usize, usize, usize, usize) {
         let product = match self {
             Self::Forest(proof) => proof.product(),
             #[cfg(feature = "bitz-parity")]
             Self::Wfbitz(proof) => proof.product(),
         };
-        product.map_or((0, 0), |product| {
-            (product.rounds().round_polynomials.len(), product.nonces().len())
+        product.map_or((0, 0, 0, 0), |product| {
+            (
+                product.round_count(),
+                product.coefficients_per_round(),
+                product.terminal().len(),
+                product.nonces().len(),
+            )
         })
     }
 }
@@ -1138,10 +1144,10 @@ fn run_once(
 
     let bitz_bytes = proof.open_bytes();
     let (inner_rounds, inner_nonces) = proof.inner();
-    // The product sumcheck: four coefficients per round and three terminal
-    // evaluations.
-    let (product_rounds, product_nonces) = proof.product();
-    let product_elements = if product_rounds == 0 { 0 } else { 4 * product_rounds + 3 };
+    // The product sumcheck: its round messages (four or five coefficients)
+    // and terminal evaluations.
+    let (product_rounds, product_width, product_terminal, product_nonces) = proof.product();
+    let product_elements = product_width * product_rounds + product_terminal;
     let spartan_elements = 3 * inner_rounds + product_elements;
     let field_bytes = <field::Fp<2> as SpartanField>::canonical_encoding_width();
     let spartan_bytes = spartan_elements * field_bytes + 8 * (inner_nonces + product_nonces + 2);

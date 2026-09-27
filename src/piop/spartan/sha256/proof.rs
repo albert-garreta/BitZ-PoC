@@ -63,7 +63,7 @@ use super::super::{
             LinearBatching, LinearDomains, LinearProveOptions, LinearRelationSpec, OpeningClaim,
             frame, prove_linear, verify_linear,
         },
-        product::{InstanceBits, ProductSlots},
+        product::{InstanceBits, ProductSlots, QuadraticSlots},
     },
     sumcheck::SumcheckError,
 };
@@ -408,9 +408,11 @@ impl<M: VirtualMap> LinearRelationSpec for Sha256CompressionSpec<'_, M> {
                 )
                 .map_err(SpartanError::from)
             };
+            let mut kappa = collapse(self.prepared.product_terms().k())?;
+            kappa.resize(kappa.len().next_power_of_two(), SpartanBitzField::zero_with_cfg(config));
             (
                 collapse(self.prepared.linear_relation().native_matrix())?,
-                collapse(self.prepared.product_terms().k())?,
+                kappa,
             )
         };
         ProductLinearBatching::new(
@@ -497,9 +499,9 @@ impl<M: VirtualMap> LinearRelationSpec for Sha256CompressionSpec<'_, M> {
 
     fn product_slots(&self) -> Option<ProductSlots<'_>> {
         let terms = self.prepared.product_terms();
-        Some(ProductSlots {
-            left: terms.left(),
-            right: terms.right(),
+        Some(match terms.quadratic() {
+            Some((left, right)) => ProductSlots::Quadratic(QuadraticSlots { left, right }),
+            None => ProductSlots::Cubic(terms.factors()),
         })
     }
 
@@ -2601,8 +2603,12 @@ mod tests {
         }
 
         let by_rows = prepare_sha256_compression_batch_for_assignment_rows(21).unwrap();
-        assert_eq!(by_rows.instances(), 128);
-        assert_eq!(by_rows.log_instance_capacity(), 7);
+        let instances = ((1usize << 21) - 1) / super::super::constraints::SHA256_H_INSTANCE_BITS;
+        assert_eq!(by_rows.instances(), instances);
+        assert_eq!(
+            by_rows.log_instance_capacity(),
+            instances.next_power_of_two().ilog2() as usize
+        );
         assert_eq!(by_rows.assignment_params().cells(), 1 << 21);
         sha256_compression_configs(&by_rows).unwrap();
         Sha256PrimeProfile::from_security(by_rows.security(), by_rows.log_instance_capacity())
@@ -2752,7 +2758,7 @@ mod tests {
             let h_layout = *prepared.opening_params();
             assert_eq!(
                 (h_layout.row_vars, h_layout.row_vars + h_layout.col_vars),
-                (row_vars, 21)
+                (row_vars, 7 + SHA256_H_LOCAL_VARS)
             );
             let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
             let public_statement = public_statements(&inputs, witness.outputs());
@@ -2776,7 +2782,7 @@ mod tests {
             );
             assert_eq!(
                 proof.inner().round_polynomials.len(),
-                21,
+                7 + SHA256_H_LOCAL_VARS,
                 "inner rounds at t={row_vars}"
             );
             let mut verifier_transcript = Blake3Transcript::new();
@@ -2814,7 +2820,8 @@ mod tests {
         let inputs = (0..1usize << LOG_COMPRESSIONS)
             .map(input)
             .collect::<Vec<_>>();
-        for row_vars in [14usize, 17, 21] {
+        let local = SHA256_H_LOCAL_VARS;
+        for row_vars in [local, local + 3, local + 7] {
             let prepared = prepare_sha256_compression_batch_with_profile_and_layout::<Lambda100>(
                 LOG_COMPRESSIONS,
                 Sha256OpeningLayout::ProductTransposed { row_vars },
@@ -2825,7 +2832,7 @@ mod tests {
             let h_layout = *prepared.opening_params();
             assert_eq!(
                 (h_layout.row_vars, h_layout.row_vars + h_layout.col_vars),
-                (row_vars, 21)
+                (row_vars, 7 + local)
             );
             let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
             let public_statement = public_statements(&inputs, witness.outputs());
@@ -2844,7 +2851,7 @@ mod tests {
             .unwrap();
             assert_eq!(proof.bitz().mfs.len(), 1, "forests at t={row_vars}");
             assert!(proof.inner().round_polynomials.is_empty());
-            assert_eq!(proof.bitz().us[0].len(), 1 << (21 - row_vars));
+            assert_eq!(proof.bitz().us[0].len(), 1 << (7 + local - row_vars));
             let mut verifier_transcript = Blake3Transcript::new();
             verify_sha256_compressions_with_config(
                 &mut verifier_transcript,
@@ -2856,7 +2863,7 @@ mod tests {
             )
             .unwrap();
         }
-        for row_vars in [13usize, 22] {
+        for row_vars in [local - 1, local + 8] {
             assert!(matches!(
                 prepare_sha256_compression_batch_with_profile_and_layout::<Lambda100>(
                     LOG_COMPRESSIONS,
@@ -3493,8 +3500,7 @@ mod tests {
                 i64::from(witness.assignment_bit(flat).unwrap())
             };
             for slot in 0..terms.slots() {
-                let (plus, minus) = terms.right()[slot];
-                let value = bit(terms.left()[slot]) * (bit(plus) - bit(minus));
+                let value = terms.value(slot, &bit);
                 let term = field_config.mul(&kappa[slot], &instance_weights[instance]);
                 product_part = match value {
                     1 => field_config.add(&product_part, &term),
@@ -4016,9 +4022,9 @@ mod tests {
                 let t = prepared.opening_params().row_vars;
                 let q_bits = 128 - prepared.security().projection_max.leading_zeros() as usize;
                 assert!(q_bits <= 127 - t - 1, "t = {t}: q has {q_bits} bits");
-                // Source blocks are `2^13` cells, derived ones `2^14`.
+                // Source blocks are `2^13` cells, derived ones `2^local`.
                 let block = prepared.wfbitz_block().unwrap();
-                assert_eq!(block.layout.row_vars, t - 1);
+                assert_eq!(block.layout.row_vars, t + 13 - SHA256_H_LOCAL_VARS);
                 assert_eq!(block.layout.col_vars, prepared.opening_params().col_vars);
             }
             assert_eq!(
@@ -4026,7 +4032,7 @@ mod tests {
                     .unwrap()
                     .opening_params()
                     .row_vars,
-                14
+                SHA256_H_LOCAL_VARS
             );
         }
 

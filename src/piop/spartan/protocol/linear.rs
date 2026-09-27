@@ -48,8 +48,9 @@ use {
 };
 
 use super::product::{
-    InstanceBits, LinearProductGrinding, ProductSlots, ProductSumcheckProof,
-    prove_product_sumcheck, reduced_local_weights, verify_product_sumcheck,
+    InstanceBits, LinearProductGrinding, ProductRounds, ProductSlots, ProductSumcheckProof,
+    prove_product3_sumcheck, prove_product_sumcheck, reduced_local_weights,
+    verify_product3_sumcheck, verify_product_sumcheck,
 };
 use super::{
     super::{
@@ -568,31 +569,60 @@ where
                 security.piop_round_grinding_bits,
                 0,
             );
-            let output = prove_product_sumcheck(
-                transcript,
-                config,
-                &instance_point,
-                batching.local_coefficients(),
-                slot_weights,
-                slots,
-                &*bits,
-                batching.initial_claim(),
-                &mut boundary,
-            )?;
+            let (rounds, terminal, instance_point, slot_point) = match slots {
+                ProductSlots::Quadratic(quadratic) => {
+                    let output = prove_product_sumcheck(
+                        transcript,
+                        config,
+                        &instance_point,
+                        batching.local_coefficients(),
+                        slot_weights,
+                        quadratic,
+                        &*bits,
+                        batching.initial_claim(),
+                        &mut boundary,
+                    )?;
+                    (
+                        ProductRounds::Quadratic(output.rounds),
+                        output.terminal.to_vec(),
+                        output.instance_point,
+                        output.slot_point,
+                    )
+                }
+                ProductSlots::Cubic(factors) => {
+                    let output = prove_product3_sumcheck(
+                        transcript,
+                        config,
+                        &instance_point,
+                        batching.local_coefficients(),
+                        slot_weights,
+                        factors,
+                        &*bits,
+                        batching.initial_claim(),
+                        &mut boundary,
+                    )?;
+                    (
+                        ProductRounds::Cubic(output.rounds),
+                        output.terminal.to_vec(),
+                        output.instance_point,
+                        output.slot_point,
+                    )
+                }
+            };
             let (reduced, value) = product_terminal_batch(
                 transcript,
                 config,
                 &batching,
                 slot_weights,
                 slots,
-                &output.slot_point,
-                &output.terminal,
+                &slot_point,
+                &terminal,
             )?;
-            let batching = batching.reanchored(&output.instance_point, reduced, value, config)?;
+            let batching = batching.reanchored(&instance_point, reduced, value, config)?;
             let proof = ProductSumcheckProof {
-                rounds: output.rounds,
+                rounds,
                 nonces: boundary.into_nonces(),
-                terminal: output.terminal,
+                terminal,
             };
             (batching, Some(proof))
         }
@@ -720,10 +750,15 @@ fn product_terminal_batch<T: Transcript, Bt: LinearBatching>(
     slot_weights: &[SpartanBitzField],
     slots: ProductSlots<'_>,
     slot_point: &[SpartanBitzField],
-    terminal: &[SpartanBitzField; 3],
+    terminal: &[SpartanBitzField],
 ) -> Result<(Vec<SpartanBitzField>, SpartanBitzField), ProtocolError> {
     absorb_field_elements(transcript, terminal, config);
-    let gamma = challenge_point(transcript, PRODUCT_TERMINAL_BATCH_DOMAIN, 2, config)?;
+    let gamma = challenge_point(
+        transcript,
+        PRODUCT_TERMINAL_BATCH_DOMAIN,
+        terminal.len().saturating_sub(1),
+        config,
+    )?;
     reduced_local_weights(
         config,
         batching.local_coefficients(),
@@ -731,7 +766,7 @@ fn product_terminal_batch<T: Transcript, Bt: LinearBatching>(
         slots,
         slot_point,
         terminal,
-        [gamma[0], gamma[1]],
+        &gamma,
     )
 }
 
@@ -872,15 +907,27 @@ where
                 security.piop_round_grinding_bits,
                 &product.nonces,
             );
-            let (instance_point, slot_point) = verify_product_sumcheck(
-                transcript,
-                config,
-                product,
-                &instance_point,
-                slot_weights.len().ilog2() as usize,
-                batching.initial_claim(),
-                &mut boundary,
-            )?;
+            let slot_vars = slot_weights.len().ilog2() as usize;
+            let (instance_point, slot_point) = match slots {
+                ProductSlots::Quadratic(_) => verify_product_sumcheck(
+                    transcript,
+                    config,
+                    product,
+                    &instance_point,
+                    slot_vars,
+                    batching.initial_claim(),
+                    &mut boundary,
+                )?,
+                ProductSlots::Cubic(_) => verify_product3_sumcheck(
+                    transcript,
+                    config,
+                    product,
+                    &instance_point,
+                    slot_vars,
+                    batching.initial_claim(),
+                    &mut boundary,
+                )?,
+            };
             let (reduced, value) = product_terminal_batch(
                 transcript,
                 config,

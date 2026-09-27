@@ -46,18 +46,27 @@ impl GrindingDomain for LinearProductGrinding {
     const DOMAIN: &'static [u8] = b"bitz/spartan-linear/grinding/product-slots/v1";
 }
 
-/// The product-slot sumcheck: `instance_vars + slot_vars` round messages
-/// (cubic coefficient form), their grinding nonces, and the three terminal
-/// evaluations `[D(r_i), Ê(r_i, r_s), F(r_i, r_s)]`.
+/// The round messages of a product sumcheck: cubic for two-factor slots,
+/// quartic for three-factor slots (coefficient form).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ProductRounds {
+    Quadratic(SumcheckProof<F, 4>),
+    Cubic(SumcheckProof<F, 5>),
+}
+
+/// The product-slot sumcheck: `instance_vars + slot_vars` round messages,
+/// their grinding nonces, and the terminal evaluations
+/// `[D(r_i), Ê(r_i, r_s), B(r_i, r_s)(, C(r_i, r_s))]` (`B` is `F` for
+/// two-factor slots).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProductSumcheckProof {
-    pub(crate) rounds: SumcheckProof<F, 4>,
+    pub(crate) rounds: ProductRounds,
     pub(crate) nonces: Vec<u64>,
-    pub(crate) terminal: [F; 3],
+    pub(crate) terminal: Vec<F>,
 }
 
 impl ProductSumcheckProof {
-    pub const fn rounds(&self) -> &SumcheckProof<F, 4> {
+    pub const fn rounds(&self) -> &ProductRounds {
         &self.rounds
     }
 
@@ -65,29 +74,58 @@ impl ProductSumcheckProof {
         &self.nonces
     }
 
-    pub const fn terminal(&self) -> &[F; 3] {
+    pub fn terminal(&self) -> &[F] {
         &self.terminal
     }
 
-    pub fn rounds_mut(&mut self) -> &mut SumcheckProof<F, 4> {
+    pub fn rounds_mut(&mut self) -> &mut ProductRounds {
         &mut self.rounds
     }
 
-    pub fn terminal_mut(&mut self) -> &mut [F; 3] {
+    pub fn terminal_mut(&mut self) -> &mut [F] {
         &mut self.terminal
+    }
+
+    /// Number of round messages.
+    pub fn round_count(&self) -> usize {
+        match &self.rounds {
+            ProductRounds::Quadratic(rounds) => rounds.round_polynomials.len(),
+            ProductRounds::Cubic(rounds) => rounds.round_polynomials.len(),
+        }
+    }
+
+    /// Field elements per round message.
+    pub const fn coefficients_per_round(&self) -> usize {
+        match &self.rounds {
+            ProductRounds::Quadratic(_) => 4,
+            ProductRounds::Cubic(_) => 5,
+        }
     }
 
     /// Serialized payload: 16-byte coefficients, 8-byte nonces.
     pub fn bytes(&self) -> usize {
-        16 * (4 * self.rounds.round_polynomials.len() + 3) + 8 * self.nonces.len()
+        16 * (self.coefficients_per_round() * self.round_count() + self.terminal.len())
+            + 8 * self.nonces.len()
     }
 }
 
-/// The local product slots: slot `s` is `h[left_s] · (h[plus_s] − h[minus_s])`.
+/// Two-factor product slots: slot `s` is `h[left_s] · (h[plus_s] − h[minus_s])`.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct ProductSlots<'a> {
+pub(crate) struct QuadraticSlots<'a> {
     pub left: &'a [u32],
     pub right: &'a [(u32, u32)],
+}
+
+/// Marks an absent side of a three-factor slot's factor.
+pub(crate) const NO_COLUMN: u32 = u32::MAX;
+
+/// A relation's local product slots.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ProductSlots<'a> {
+    Quadratic(QuadraticSlots<'a>),
+    /// Slot `s` is `A_s · B_s · C_s`, each factor `h[plus] − h[minus]` with
+    /// either side possibly [`NO_COLUMN`] (the constant one is `h[0]`).
+    Cubic(&'a [[(u32, u32); 3]]),
 }
 
 /// Per-instance read access to the opened assignment's bits.
@@ -445,7 +483,7 @@ pub(crate) fn prove_product_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
     instance_point: &[F],
     local_coefficients: &[F],
     slot_weights: &[F],
-    slots: ProductSlots<'_>,
+    slots: QuadraticSlots<'_>,
     bits: &dyn InstanceBits,
     claim: &F,
     boundary: &mut B,
@@ -761,9 +799,11 @@ pub(crate) fn verify_product_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
     if instance_vars == 0 {
         return Err(ProtocolError::InvalidGeometry);
     }
+    let (ProductRounds::Quadratic(rounds), [d, ehat, f]) = (&proof.rounds, &proof.terminal[..]) else {
+        return Err(ProtocolError::InvalidGeometry);
+    };
     validate_field_elements(&proof.terminal, config).map_err(SpartanError::from)?;
-    let (mut point, last) = proof
-        .rounds
+    let (mut point, last) = rounds
         .verify_with_round_boundary(
             transcript,
             claim.clone(),
@@ -778,7 +818,6 @@ pub(crate) fn verify_product_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
     let prefix = slot_point
         .iter()
         .fold(one, |acc, r| config.mul(&acc, &config.sub(&one, r)));
-    let [d, ehat, f] = &proof.terminal;
     let expected = config.mul(
         &scale,
         &config.add(&config.mul(d, &prefix), &config.mul(ehat, f)),
@@ -789,44 +828,621 @@ pub(crate) fn verify_product_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
     Ok((point, slot_point))
 }
 
-/// The local weights of the reduced claim and its value:
-/// `w = β + γ₁ Σ_s eq(r_s, s) κ_s e_{l_s} + γ₂ Σ_s eq(r_s, s) (e_{p_s} − e_{m_s})`,
-/// `v = D* + γ₁ Ê* + γ₂ F*`.
+/// The local weights of the reduced claim and its value: `β` plus, per
+/// factor `j` of every slot, `γ_j eq(r_s, s)` (times `κ_s` for the first
+/// factor) on the factor's columns, and `v = D* + Σ_j γ_j T_j*` over the
+/// terminal factor evaluations `T* = (Ê*, B*(, C*))`.
 pub(crate) fn reduced_local_weights(
     config: &FieldConfig,
     local_coefficients: &[F],
     slot_weights: &[F],
     slots: ProductSlots<'_>,
     slot_point: &[F],
-    terminal: &[F; 3],
-    [g1, g2]: [F; 2],
+    terminal: &[F],
+    gamma: &[F],
 ) -> Result<(Vec<F>, F), ProtocolError> {
     let eq_slot = eq_table(slot_point, config).map_err(SpartanError::from)?;
-    if eq_slot.len() != slot_weights.len() || slots.left.len() > slot_weights.len() {
+    let live = match slots {
+        ProductSlots::Quadratic(slots) => slots.left.len(),
+        ProductSlots::Cubic(factors) => factors.len(),
+    };
+    let factors = match slots {
+        ProductSlots::Quadratic(_) => 2,
+        ProductSlots::Cubic(_) => 3,
+    };
+    if eq_slot.len() != slot_weights.len()
+        || live > slot_weights.len()
+        || terminal.len() != factors + 1
+        || gamma.len() != factors
+    {
         return Err(ProtocolError::InvalidGeometry);
     }
     let mut weights = local_coefficients.to_vec();
     let mut add = |column: u32, value: &F| -> Result<(), ProtocolError> {
+        if column == NO_COLUMN {
+            return Ok(());
+        }
         let entry = weights
             .get_mut(column as usize)
             .ok_or(ProtocolError::InvalidGeometry)?;
         *entry = config.add(entry, value);
         Ok(())
     };
-    for slot in 0..slots.left.len() {
-        let left = config.mul(&g1, &config.mul(&eq_slot[slot], &slot_weights[slot]));
-        let right = config.mul(&g2, &eq_slot[slot]);
-        let (plus, minus) = slots.right[slot];
-        add(slots.left[slot], &left)?;
-        add(plus, &right)?;
-        add(minus, &config.neg(&right))?;
+    for slot in 0..live {
+        let first = config.mul(&gamma[0], &config.mul(&eq_slot[slot], &slot_weights[slot]));
+        match slots {
+            ProductSlots::Quadratic(slots) => {
+                let right = config.mul(&gamma[1], &eq_slot[slot]);
+                let (plus, minus) = slots.right[slot];
+                add(slots.left[slot], &first)?;
+                add(plus, &right)?;
+                add(minus, &config.neg(&right))?;
+            }
+            ProductSlots::Cubic(factors) => {
+                let [a, b, c] = factors[slot];
+                let weights = [
+                    first,
+                    config.mul(&gamma[1], &eq_slot[slot]),
+                    config.mul(&gamma[2], &eq_slot[slot]),
+                ];
+                for ((plus, minus), weight) in [a, b, c].into_iter().zip(weights) {
+                    add(plus, &weight)?;
+                    add(minus, &config.neg(&weight))?;
+                }
+            }
+        }
     }
-    let [d, ehat, f] = terminal;
-    let value = config.add(
-        d,
-        &config.add(&config.mul(&g1, ehat), &config.mul(&g2, f)),
-    );
+    let value = gamma
+        .iter()
+        .zip(&terminal[1..])
+        .fold(terminal[0], |value, (g, t)| config.add(&value, &config.mul(g, t)));
     Ok((weights, value))
+}
+
+/// A three-factor slot factor `h[plus] − h[minus]` on one instance's bits.
+#[inline]
+fn factor_bits(words: &[u64], (plus, minus): (u32, u32)) -> i32 {
+    let side = |column: u32| if column == NO_COLUMN { 0 } else { bit(words, column) };
+    side(plus) - side(minus)
+}
+
+/// A three-factor slot factor `h[plus] − h[minus]` on column values.
+#[inline]
+fn factor_value(config: &FieldConfig, (plus, minus): (u32, u32), value: &impl Fn(u32) -> F) -> F {
+    match (plus != NO_COLUMN, minus != NO_COLUMN) {
+        (true, true) => config.sub(&value(plus), &value(minus)),
+        (true, false) => value(plus),
+        (false, true) => config.neg(&value(minus)),
+        (false, false) => config.zero(),
+    }
+}
+
+/// `scale · eq(η_j, X) · l(X)` in coefficient form for the cubic `l` given by
+/// `l(0)`, `l(1)`, `l(2)` and its `X³` coefficient `l(∞)`.
+fn instance_round_polynomial3(
+    config: &FieldConfig,
+    scale: &F,
+    eta: &F,
+    half: &F,
+    [l0, l1, l2, linf]: [F; 4],
+) -> [F; 5] {
+    let one = config.one();
+    let a = config.sub(&one, eta);
+    let b = config.sub(&config.add(eta, eta), &one);
+    let three = config.add(&linf, &config.add(&linf, &linf));
+    let six = config.add(&three, &three);
+    // l(2) − 2 l(1) + l(0) = 2 c2 + 6 c3.
+    let second = config.add(&config.sub(&l2, &config.add(&l1, &l1)), &l0);
+    let c2 = config.mul(half, &config.sub(&second, &six));
+    let c1 = config.sub(&config.sub(&config.sub(&l1, &l0), &c2), &linf);
+    let coefficients = [
+        config.mul(&a, &l0),
+        config.add(&config.mul(&a, &c1), &config.mul(&b, &l0)),
+        config.add(&config.mul(&a, &c2), &config.mul(&b, &c1)),
+        config.add(&config.mul(&a, &linf), &config.mul(&b, &c2)),
+        config.mul(&b, &linf),
+    ];
+    coefficients.map(|c| config.mul(scale, &c))
+}
+
+fn evaluate_coefficients(config: &FieldConfig, coefficients: &[F], x: &F) -> F {
+    coefficients
+        .iter()
+        .rev()
+        .fold(config.zero(), |acc, c| config.add(&config.mul(&acc, x), c))
+}
+
+fn sum4(config: &FieldConfig, a: [F; 4], b: [F; 4]) -> [F; 4] {
+    std::array::from_fn(|i| config.add(&a[i], &b[i]))
+}
+
+/// One row pair's cubic sums `Σ_s κ_s A B C` at `X = 0, 1, 2, ∞` over the
+/// slots, reading the rows' column values through `read_a` / `read_b`.
+fn cubic_pair_sums(
+    config: &FieldConfig,
+    factors: &[[(u32, u32); 3]],
+    kappa: &[F],
+    read_a: impl Fn(u32) -> F,
+    read_b: impl Fn(u32) -> F,
+) -> [F; 4] {
+    let mut acc: [Acc; 4] = std::array::from_fn(|_| Acc::zero());
+    let twice = |x: &F, y: &F| config.sub(&config.add(y, y), x);
+    for (slot, [fa, fb, fc]) in factors.iter().enumerate() {
+        let weight = &kappa[slot];
+        let ea = config.mul(weight, &factor_value(config, *fa, &read_a));
+        let eb = config.mul(weight, &factor_value(config, *fa, &read_b));
+        let (ba, bb) = (factor_value(config, *fb, &read_a), factor_value(config, *fb, &read_b));
+        let (ca, cb) = (factor_value(config, *fc, &read_a), factor_value(config, *fc, &read_b));
+        config.mul_acc(&mut acc[0], &config.mul(&ea, &ba), &ca);
+        config.mul_acc(&mut acc[1], &config.mul(&eb, &bb), &cb);
+        config.mul_acc(
+            &mut acc[2],
+            &config.mul(&twice(&ea, &eb), &twice(&ba, &bb)),
+            &twice(&ca, &cb),
+        );
+        config.mul_acc(
+            &mut acc[3],
+            &config.mul(&config.sub(&eb, &ea), &config.sub(&bb, &ba)),
+            &config.sub(&cb, &ca),
+        );
+    }
+    acc.map(|sum| config.reduce(sum))
+}
+
+/// `eq · [D_a + S(0), D_b + S(1), 2 D_b − D_a + S(2), S(∞)]`.
+fn weigh3(config: &FieldConfig, eq: &F, da: &F, db: &F, sums: [F; 4]) -> [F; 4] {
+    let d2 = config.sub(&config.add(db, db), da);
+    [
+        config.mul(eq, &config.add(da, &sums[0])),
+        config.mul(eq, &config.add(db, &sums[1])),
+        config.mul(eq, &config.add(&d2, &sums[2])),
+        config.mul(eq, &sums[3]),
+    ]
+}
+
+/// The per-instance local columns between instance rounds, stored as codes
+/// of their bit histories while those stay small.
+enum Base {
+    /// `2^level` bits per column (levels 1 to 3), one byte each.
+    Byte(Vec<u8>, usize),
+    /// Sixteen bits per column.
+    Word(Vec<u16>),
+    Field(Vec<F>),
+}
+
+/// What the three-factor prover returns.
+pub(crate) struct Product3ProverOutput {
+    pub rounds: SumcheckProof<F, 5>,
+    pub terminal: [F; 4],
+    pub instance_point: Vec<F>,
+    pub slot_point: Vec<F>,
+}
+
+/// Proves `μ = Σ_{i, s} eq(η, i) [D(i) [s = 0] + Ê(i, s) B(i, s) C(i, s)]`
+/// for three-factor slots, `Ê = κ_s A`.
+///
+/// The instance rounds fold each instance's local columns, not per-slot
+/// factors: the factors are read off the folded columns on the fly. Round 0
+/// reads the bits (exact small multiples of `κ`); the folded columns are
+/// codes of their bit histories for four folds (value tables of 4, 16, 256
+/// and 65 536 entries), field values after that. Each fold pass accumulates
+/// the next round's sums at `X = 0, 1, 2, ∞`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prove_product3_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
+    transcript: &mut T,
+    config: &FieldConfig,
+    instance_point: &[F],
+    local_coefficients: &[F],
+    slot_weights: &[F],
+    factors: &[[(u32, u32); 3]],
+    bits: &dyn InstanceBits,
+    claim: &F,
+    boundary: &mut B,
+) -> Result<Product3ProverOutput, ProtocolError> {
+    let instance_vars = instance_point.len();
+    let slot_count = slot_weights.len();
+    if !slot_count.is_power_of_two()
+        || factors.len() > slot_count
+        || bits.instance_capacity() != 1usize << instance_vars
+        || instance_vars == 0
+    {
+        return Err(ProtocolError::InvalidGeometry);
+    }
+    let slot_vars = slot_count.ilog2() as usize;
+    boundary
+        .validate(instance_vars + slot_vars)
+        .map_err(SpartanError::from)?;
+    let modulus = u128::from(*config.modulus());
+    // Round 0 flushes its i128 sums every 64 slots: `64 · 27 q < 2^126`.
+    if modulus >> 115 != 0 {
+        return Err(ProtocolError::InvalidGeometry);
+    }
+    let zero = config.zero();
+    let one = config.one();
+    let half = from_u128(config, modulus, modulus.div_ceil(2));
+    let words = bits.words_per_instance();
+    let columns = 64 * words;
+    let kappa = &slot_weights[..factors.len()];
+
+    let mut d = {
+        let _scope = tracing::info_span!("product3:instance_linear_values").entered();
+        instance_linear_values(config, modulus, local_coefficients, bits)
+    };
+    let mut rounds = Vec::with_capacity(instance_vars + slot_vars);
+    let mut point = Vec::with_capacity(instance_vars + slot_vars);
+    let mut current = claim.clone();
+    let mut scale = one;
+
+    let mut sums = {
+        let _scope = tracing::info_span!("product3:round0").entered();
+        let kappa_c = canonical_u128(config, kappa);
+        let rest = eq_table(&instance_point[1..], config).map_err(SpartanError::from)?;
+        let pair_sums = |(w0, w1): &mut (Vec<u64>, Vec<u64>), p: usize| -> [F; 4] {
+            bits.read_local_words(2 * p, w0);
+            bits.read_local_words(2 * p + 1, w1);
+            let mut total = [zero; 4];
+            for (block, chunk) in factors.chunks(64).enumerate() {
+                let mut acc = [0i128; 4];
+                for (offset, [fa, fb, fc]) in chunk.iter().enumerate() {
+                    let (a0, a1) = (factor_bits(w0, *fa), factor_bits(w1, *fa));
+                    let (b0, b1) = (factor_bits(w0, *fb), factor_bits(w1, *fb));
+                    let (c0, c1) = (factor_bits(w0, *fc), factor_bits(w1, *fc));
+                    let weight = kappa_c[64 * block + offset] as i128;
+                    acc[0] += weight * i128::from(a0 * b0 * c0);
+                    acc[1] += weight * i128::from(a1 * b1 * c1);
+                    acc[2] += weight
+                        * i128::from((2 * a1 - a0) * (2 * b1 - b0) * (2 * c1 - c0));
+                    acc[3] += weight * i128::from((a1 - a0) * (b1 - b0) * (c1 - c0));
+                }
+                total = sum4(config, total, acc.map(|v| from_i128(config, modulus, v)));
+            }
+            weigh3(config, &rest[p], &d[2 * p], &d[2 * p + 1], total)
+        };
+        let buffers = || (vec![0u64; words], vec![0u64; words]);
+        let half_instances = 1usize << (instance_vars - 1);
+        #[cfg(feature = "parallel")]
+        {
+            (0..half_instances)
+                .into_par_iter()
+                .map_init(buffers, pair_sums)
+                .reduce(|| [zero; 4], |a, b| sum4(config, a, b))
+        }
+        #[cfg(not(feature = "parallel"))]
+        {
+            let mut buffers = buffers();
+            (0..half_instances)
+                .map(|p| pair_sums(&mut buffers, p))
+                .fold([zero; 4], |a, b| sum4(config, a, b))
+        }
+    };
+
+    let mut base: Option<Base> = None;
+    let mut values: Vec<F> = Vec::new();
+    for round in 0..instance_vars {
+        let eta = &instance_point[round];
+        let coefficients = instance_round_polynomial3(config, &scale, eta, &half, sums);
+        debug_assert_eq!(
+            config.add(&coefficients[0], &evaluate_coefficients(config, &coefficients, &one)),
+            current
+        );
+        absorb_field_elements(transcript, &coefficients, config);
+        boundary
+            .after_round(transcript, round)
+            .map_err(SpartanError::from)?;
+        let r: F = squeeze_field(transcript, config).map_err(SpartanError::from)?;
+        current = evaluate_coefficients(config, &coefficients, &r);
+        let factor = config.add(
+            &config.sub(&one, eta),
+            &config.mul(&r, &config.sub(&config.add(eta, eta), &one)),
+        );
+        scale = config.mul(&scale, &factor);
+        rounds.push(coefficients);
+        point.push(r);
+        fold_in_place(config, &mut d, &r);
+
+        let _scope = tracing::info_span!("product3:fold").entered();
+        let rows = d.len();
+        let group = rows.min(2);
+        let chunk_len = group * columns;
+        let next = if rows >= 2 {
+            Some(eq_table(&instance_point[round + 2..], config).map_err(SpartanError::from)?)
+        } else {
+            None
+        };
+        let fold = |a: &F, b: &F| config.add(a, &config.mul(&r, &config.sub(b, a)));
+        // The value table of the codes this round produces.
+        let next_values: Vec<F> = match &base {
+            None => vec![zero, config.sub(&one, &r), r, one],
+            Some(Base::Byte(_, level)) => {
+                let width = 1usize << level;
+                let mask = (1usize << width) - 1;
+                (0..1usize << (2 * width))
+                    .map(|c| fold(&values[c & mask], &values[c >> width]))
+                    .collect()
+            }
+            _ => Vec::new(),
+        };
+        let weigh = |q: usize, sums: [F; 4]| match &next {
+            Some(eq) => weigh3(config, &eq[q], &d[2 * q], &d[2 * q + 1], sums),
+            None => [zero; 4],
+        };
+        let pair_of = |a: &dyn Fn(u32) -> F, b: &dyn Fn(u32) -> F| {
+            cubic_pair_sums(config, factors, kappa, a, b)
+        };
+        let (folded, next_sums) = match base.take() {
+            None => {
+                let mut codes = vec![0u8; rows * columns];
+                let scratch = || -> [Vec<u64>; 4] { std::array::from_fn(|_| vec![0u64; words]) };
+                let sums = over_chunks4(config, &mut codes, chunk_len, scratch, |w, q, out| {
+                    for (k, buffer) in w.iter_mut().enumerate().take(2 * group) {
+                        bits.read_local_words(2 * group * q + k, buffer);
+                    }
+                    for (row, codes) in out.chunks_mut(columns).enumerate() {
+                        let (w0, w1) = (&w[2 * row], &w[2 * row + 1]);
+                        for (column, code) in codes.iter_mut().enumerate() {
+                            let c = column as u32;
+                            *code = (bit(w0, c) | (bit(w1, c) << 1)) as u8;
+                        }
+                    }
+                    if group < 2 {
+                        return [zero; 4];
+                    }
+                    let (ra, rb) = out.split_at(columns);
+                    let sums = pair_of(
+                        &|c| next_values[usize::from(ra[c as usize])],
+                        &|c| next_values[usize::from(rb[c as usize])],
+                    );
+                    weigh(q, sums)
+                });
+                (Base::Byte(codes, 1), sums)
+            }
+            Some(Base::Byte(source, level)) if level < 3 => {
+                let width = 1u32 << level;
+                let mut codes = vec![0u8; rows * columns];
+                let sums = over_chunks4(config, &mut codes, chunk_len, || (), |_, q, out| {
+                    let base = 2 * q * chunk_len;
+                    for (row, codes) in out.chunks_mut(columns).enumerate() {
+                        let a = &source[base + 2 * row * columns..base + (2 * row + 1) * columns];
+                        let b = &source[base + (2 * row + 1) * columns..base + (2 * row + 2) * columns];
+                        for ((code, a), b) in codes.iter_mut().zip(a).zip(b) {
+                            *code = a | (b << width);
+                        }
+                    }
+                    if group < 2 {
+                        return [zero; 4];
+                    }
+                    let (ra, rb) = out.split_at(columns);
+                    let sums = pair_of(
+                        &|c| next_values[usize::from(ra[c as usize])],
+                        &|c| next_values[usize::from(rb[c as usize])],
+                    );
+                    weigh(q, sums)
+                });
+                (Base::Byte(codes, level + 1), sums)
+            }
+            Some(Base::Byte(source, _)) => {
+                // Level 3 → sixteen-bit codes.
+                let mut codes = vec![0u16; rows * columns];
+                let sums = over_chunks4(config, &mut codes, chunk_len, || (), |_, q, out| {
+                    let base = 2 * q * chunk_len;
+                    for (row, codes) in out.chunks_mut(columns).enumerate() {
+                        let a = &source[base + 2 * row * columns..base + (2 * row + 1) * columns];
+                        let b = &source[base + (2 * row + 1) * columns..base + (2 * row + 2) * columns];
+                        for ((code, a), b) in codes.iter_mut().zip(a).zip(b) {
+                            *code = u16::from(*a) | (u16::from(*b) << 8);
+                        }
+                    }
+                    if group < 2 {
+                        return [zero; 4];
+                    }
+                    let (ra, rb) = out.split_at(columns);
+                    let sums = pair_of(
+                        &|c| next_values[usize::from(ra[c as usize])],
+                        &|c| next_values[usize::from(rb[c as usize])],
+                    );
+                    weigh(q, sums)
+                });
+                (Base::Word(codes), sums)
+            }
+            Some(Base::Word(source)) => {
+                let table = &values;
+                let mut out_values = vec![zero; rows * columns];
+                let sums = over_chunks4(config, &mut out_values, chunk_len, || (), |_, q, out| {
+                    let base = 2 * q * chunk_len;
+                    for (row, values) in out.chunks_mut(columns).enumerate() {
+                        let a = &source[base + 2 * row * columns..base + (2 * row + 1) * columns];
+                        let b = &source[base + (2 * row + 1) * columns..base + (2 * row + 2) * columns];
+                        for ((value, a), b) in values.iter_mut().zip(a).zip(b) {
+                            *value = fold(&table[usize::from(*a)], &table[usize::from(*b)]);
+                        }
+                    }
+                    if group < 2 {
+                        return [zero; 4];
+                    }
+                    let (ra, rb) = out.split_at(columns);
+                    let sums = pair_of(&|c| ra[c as usize], &|c| rb[c as usize]);
+                    weigh(q, sums)
+                });
+                (Base::Field(out_values), sums)
+            }
+            Some(Base::Field(source)) => {
+                let mut out_values = vec![zero; rows * columns];
+                let sums = over_chunks4(config, &mut out_values, chunk_len, || (), |_, q, out| {
+                    let base = 2 * q * chunk_len;
+                    for (row, values) in out.chunks_mut(columns).enumerate() {
+                        let a = &source[base + 2 * row * columns..base + (2 * row + 1) * columns];
+                        let b = &source[base + (2 * row + 1) * columns..base + (2 * row + 2) * columns];
+                        for ((value, a), b) in values.iter_mut().zip(a).zip(b) {
+                            *value = fold(a, b);
+                        }
+                    }
+                    if group < 2 {
+                        return [zero; 4];
+                    }
+                    let (ra, rb) = out.split_at(columns);
+                    let sums = pair_of(&|c| ra[c as usize], &|c| rb[c as usize]);
+                    weigh(q, sums)
+                });
+                (Base::Field(out_values), sums)
+            }
+        };
+        if !next_values.is_empty() {
+            values = next_values;
+        }
+        base = Some(folded);
+        sums = next_sums;
+    }
+
+    // One instance row is left: its columns as field values, then per slot
+    // `Ê = κ A`, `B`, `C` (zero past the live slots).
+    let row: Vec<F> = match base {
+        Some(Base::Byte(codes, _)) => codes.iter().map(|c| values[usize::from(*c)]).collect(),
+        Some(Base::Word(codes)) => codes.iter().map(|c| values[usize::from(*c)]).collect(),
+        Some(Base::Field(values)) => values,
+        None => return Err(ProtocolError::InvalidGeometry),
+    };
+    let read = |c: u32| row[c as usize];
+    let mut ehat = vec![zero; slot_count];
+    let mut b_values = vec![zero; slot_count];
+    let mut c_values = vec![zero; slot_count];
+    for (slot, [fa, fb, fc]) in factors.iter().enumerate() {
+        ehat[slot] = config.mul(&kappa[slot], &factor_value(config, *fa, &read));
+        b_values[slot] = factor_value(config, *fb, &read);
+        c_values[slot] = factor_value(config, *fc, &read);
+    }
+
+    // Slot rounds: `scale · [D · [s = 0] + Ê(s) B(s) C(s)]`, cubic in `X`.
+    let d_star = d[0];
+    let mut prefix = one;
+    for round in 0..slot_vars {
+        let pairs = ehat.len() / 2;
+        let mut k = [zero; 4];
+        for q in 0..pairs {
+            let (e0, b0, c0) = (ehat[2 * q], b_values[2 * q], c_values[2 * q]);
+            let de = config.sub(&ehat[2 * q + 1], &e0);
+            let db = config.sub(&b_values[2 * q + 1], &b0);
+            let dc = config.sub(&c_values[2 * q + 1], &c0);
+            let (eb, ed) = (config.mul(&e0, &b0), config.mul(&de, &db));
+            k[0] = config.add(&k[0], &config.mul(&eb, &c0));
+            let cross = config.add(&config.mul(&de, &b0), &config.mul(&e0, &db));
+            k[1] = config.add(&k[1], &config.add(&config.mul(&cross, &c0), &config.mul(&eb, &dc)));
+            k[2] = config.add(&k[2], &config.add(&config.mul(&ed, &c0), &config.mul(&cross, &dc)));
+            k[3] = config.add(&k[3], &config.mul(&ed, &dc));
+        }
+        let linear = config.mul(&d_star, &prefix);
+        let coefficients = [
+            config.mul(&scale, &config.add(&linear, &k[0])),
+            config.mul(&scale, &config.sub(&k[1], &linear)),
+            config.mul(&scale, &k[2]),
+            config.mul(&scale, &k[3]),
+            zero,
+        ];
+        debug_assert_eq!(
+            config.add(&coefficients[0], &evaluate_coefficients(config, &coefficients, &one)),
+            current
+        );
+        absorb_field_elements(transcript, &coefficients, config);
+        boundary
+            .after_round(transcript, instance_vars + round)
+            .map_err(SpartanError::from)?;
+        let r: F = squeeze_field(transcript, config).map_err(SpartanError::from)?;
+        current = evaluate_coefficients(config, &coefficients, &r);
+        prefix = config.mul(&prefix, &config.sub(&one, &r));
+        fold_in_place(config, &mut ehat, &r);
+        fold_in_place(config, &mut b_values, &r);
+        fold_in_place(config, &mut c_values, &r);
+        rounds.push(coefficients);
+        point.push(r);
+    }
+    let terminal = [d_star, ehat[0], b_values[0], c_values[0]];
+    debug_assert_eq!(
+        config.mul(
+            &scale,
+            &config.add(
+                &config.mul(&d_star, &prefix),
+                &config.mul(&config.mul(&ehat[0], &b_values[0]), &c_values[0])
+            )
+        ),
+        current
+    );
+    let slot_point = point.split_off(instance_vars);
+    Ok(Product3ProverOutput {
+        rounds: SumcheckProof {
+            round_polynomials: rounds,
+        },
+        terminal,
+        instance_point: point,
+        slot_point,
+    })
+}
+
+/// [`over_chunks`] for four sums.
+fn over_chunks4<T: Send, S>(
+    config: &FieldConfig,
+    out: &mut [T],
+    chunk_len: usize,
+    scratch: impl Fn() -> S + Sync + Send,
+    chunk: impl Fn(&mut S, usize, &mut [T]) -> [F; 4] + Sync + Send,
+) -> [F; 4] {
+    let zero = config.zero();
+    #[cfg(feature = "parallel")]
+    {
+        out.par_chunks_mut(chunk_len)
+            .enumerate()
+            .map_init(scratch, |scratch, (q, rows)| chunk(scratch, q, rows))
+            .reduce(|| [zero; 4], |a, b| sum4(config, a, b))
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        let mut scratch = scratch();
+        out.chunks_mut(chunk_len)
+            .enumerate()
+            .map(|(q, rows)| chunk(&mut scratch, q, rows))
+            .fold([zero; 4], |a, b| sum4(config, a, b))
+    }
+}
+
+/// Verifies the three-factor rounds and the terminal identity
+/// `eq(η, r_i) · (D* · Π_l (1 − r_s,l) + Ê* · B* · C*)`, returning
+/// `(r_i, r_s)`.
+pub(crate) fn verify_product3_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
+    transcript: &mut T,
+    config: &FieldConfig,
+    proof: &ProductSumcheckProof,
+    instance_point: &[F],
+    slot_vars: usize,
+    claim: &F,
+    boundary: &mut B,
+) -> Result<(Vec<F>, Vec<F>), ProtocolError> {
+    let instance_vars = instance_point.len();
+    let (ProductRounds::Cubic(rounds), [d, ehat, b, c]) = (&proof.rounds, &proof.terminal[..]) else {
+        return Err(ProtocolError::InvalidGeometry);
+    };
+    if instance_vars == 0 {
+        return Err(ProtocolError::InvalidGeometry);
+    }
+    validate_field_elements(&proof.terminal, config).map_err(SpartanError::from)?;
+    let (mut point, last) = rounds
+        .verify_with_round_boundary(
+            transcript,
+            claim.clone(),
+            instance_vars + slot_vars,
+            config,
+            boundary,
+        )
+        .map_err(SpartanError::from)?;
+    let slot_point = point.split_off(instance_vars);
+    let scale = eq_eval(instance_point, &point, config).map_err(SpartanError::from)?;
+    let one = config.one();
+    let prefix = slot_point
+        .iter()
+        .fold(one, |acc, r| config.mul(&acc, &config.sub(&one, r)));
+    let product = config.mul(&config.mul(ehat, b), c);
+    let expected = config.mul(&scale, &config.add(&config.mul(d, &prefix), &product));
+    if expected != last {
+        return Err(ProtocolError::InvalidProductTerminalClaim);
+    }
+    Ok((point, slot_point))
 }
 
 #[cfg(test)]
@@ -881,65 +1497,112 @@ mod tests {
         total
     }
 
+    /// Random instance bits (column 0 is the constant one), `η`, `β`, `κ`.
+    fn setup(
+        config: &FieldConfig,
+        seed: &mut u64,
+        instance_vars: usize,
+        columns: usize,
+        slot_count: usize,
+    ) -> (Rows, Vec<F>, Vec<F>, Vec<F>) {
+        let rows = Rows {
+            words: columns / 64,
+            instances: (0..1 << instance_vars)
+                .map(|_| {
+                    let mut words = (0..columns / 64)
+                        .map(|_| next(seed) ^ (next(seed) << 40))
+                        .collect::<Vec<_>>();
+                    words[0] |= 1;
+                    words
+                })
+                .collect(),
+        };
+        let eta = (0..instance_vars).map(|_| element(config, next(seed))).collect();
+        let beta = (0..columns - 3).map(|_| element(config, next(seed))).collect();
+        let kappa = (0..slot_count).map(|_| element(config, next(seed))).collect();
+        (rows, eta, beta, kappa)
+    }
+
+    /// `Σ_i eq(η, i) [⟨β, h_i⟩ + Σ_s κ_s · slot_s(h_i)]`.
+    fn claim(
+        config: &FieldConfig,
+        rows: &Rows,
+        eta: &[F],
+        beta: &[F],
+        kappa: &[F],
+        slot: impl Fn(&[u64], usize) -> i32,
+        live: usize,
+    ) -> F {
+        let eq = eq_table(eta, config).unwrap();
+        let mut claim = functional(config, eta, beta, rows);
+        for (instance, words) in rows.instances.iter().enumerate() {
+            for s in 0..live {
+                let term = config.mul(&eq[instance], &kappa[s]);
+                claim = match slot(words, s) {
+                    1 => config.add(&claim, &term),
+                    -1 => config.sub(&claim, &term),
+                    0 => claim,
+                    other => panic!("slot value {other}"),
+                };
+            }
+        }
+        claim
+    }
+
+    fn tamper(proof: &ProductSumcheckProof, round: usize) -> ProductSumcheckProof {
+        let one = F::make_cfg(&Uint::from(FQ_MOD)).map(|c| c.one()).unwrap();
+        let config = F::make_cfg(&Uint::from(FQ_MOD)).unwrap();
+        let mut tampered = proof.clone();
+        match &mut tampered.rounds {
+            ProductRounds::Quadratic(rounds) => {
+                rounds.round_polynomials[round][1] =
+                    config.add(&rounds.round_polynomials[round][1], &one)
+            }
+            ProductRounds::Cubic(rounds) => {
+                rounds.round_polynomials[round][1] =
+                    config.add(&rounds.round_polynomials[round][1], &one)
+            }
+        }
+        tampered
+    }
+
     /// One to five instance variables: the last instance row comes out of
     /// the first-fold codes, the second-fold codes, the first field pass,
     /// and field-to-field passes.
     #[test]
     fn product_sumcheck_roundtrips_and_reduces_to_one_rank_one_functional() {
         for instance_vars in 1..=5 {
-            roundtrip(instance_vars);
+            quadratic_roundtrip(instance_vars);
         }
     }
 
-    fn roundtrip(instance_vars: usize) {
+    fn quadratic_roundtrip(instance_vars: usize) {
         let config = F::make_cfg(&Uint::from(FQ_MOD)).unwrap();
         let mut seed = 0x5eed_u64 ^ instance_vars as u64;
         let (columns, live_slots, slot_count) = (128usize, 6usize, 8usize);
-        let rows = Rows {
-            words: columns / 64,
-            instances: (0..1 << instance_vars)
-                .map(|_| (0..columns / 64).map(|_| next(&mut seed) ^ (next(&mut seed) << 40)).collect())
-                .collect(),
-        };
-        let eta = (0..instance_vars)
-            .map(|_| element(&config, next(&mut seed)))
-            .collect::<Vec<_>>();
-        let beta = (0..columns - 3)
-            .map(|_| element(&config, next(&mut seed)))
-            .collect::<Vec<_>>();
-        let kappa = (0..slot_count)
-            .map(|_| element(&config, next(&mut seed)))
-            .collect::<Vec<_>>();
+        let (rows, eta, beta, kappa) = setup(&config, &mut seed, instance_vars, columns, slot_count);
         let left = (0..live_slots)
-            .map(|_| (next(&mut seed) % (columns as u64 - 3)) as u32)
+            .map(|_| 1 + (next(&mut seed) % (columns as u64 - 4)) as u32)
             .collect::<Vec<_>>();
         let right = (0..live_slots)
             .map(|s| (3 * s as u32 + 1, 3 * s as u32 + 2))
             .collect::<Vec<_>>();
-        let slots = ProductSlots {
+        let slots = QuadraticSlots {
             left: &left,
             right: &right,
         };
+        let claim = claim(
+            &config,
+            &rows,
+            &eta,
+            &beta,
+            &kappa,
+            |w, s| bit(w, left[s]) * (bit(w, right[s].0) - bit(w, right[s].1)),
+            live_slots,
+        );
 
-        // μ = Σ_i eq(η, i) [⟨β, h_i⟩ + Σ_s κ_s h_i[l_s] (h_i[p_s] − h_i[m_s])].
-        let eq_eta = eq_table(&eta, &config).unwrap();
-        let mut claim = functional(&config, &eta, &beta, &rows);
-        for (instance, words) in rows.instances.iter().enumerate() {
-            for slot in 0..live_slots {
-                let (plus, minus) = right[slot];
-                let value = bit(words, left[slot]) * (bit(words, plus) - bit(words, minus));
-                let term = config.mul(&eq_eta[instance], &kappa[slot]);
-                claim = match value {
-                    1 => config.add(&claim, &term),
-                    -1 => config.sub(&claim, &term),
-                    _ => claim,
-                };
-            }
-        }
-
-        let mut prover = Blake3Transcript::new();
         let output = prove_product_sumcheck(
-            &mut prover,
+            &mut Blake3Transcript::new(),
             &config,
             &eta,
             &beta,
@@ -951,9 +1614,9 @@ mod tests {
         )
         .unwrap();
         let proof = ProductSumcheckProof {
-            rounds: output.rounds,
+            rounds: ProductRounds::Quadratic(output.rounds),
             nonces: Vec::new(),
-            terminal: output.terminal,
+            terminal: output.terminal.to_vec(),
         };
         let verify = |proof: &ProductSumcheckProof, claim: &F| {
             verify_product_sumcheck(
@@ -969,29 +1632,116 @@ mod tests {
         let (instance_point, slot_point) = verify(&proof, &claim).unwrap();
         assert_eq!(instance_point, output.instance_point);
         assert_eq!(slot_point, output.slot_point);
-
-        // The three terminal claims are the stated functionals of `h`, so
-        // their combination is one functional at the instance point.
         let gamma = [element(&config, 7), element(&config, 11)];
         let (weights, value) = reduced_local_weights(
             &config,
             &beta,
             &kappa,
-            slots,
+            ProductSlots::Quadratic(slots),
             &slot_point,
             &proof.terminal,
-            gamma,
+            &gamma,
         )
         .unwrap();
         assert_eq!(functional(&config, &instance_point, &weights, &rows), value);
 
         let one = config.one();
-        let mut tampered = proof.clone();
-        tampered.rounds.round_polynomials[instance_vars][1] =
-            config.add(&tampered.rounds.round_polynomials[instance_vars][1], &one);
-        assert!(verify(&tampered, &claim).is_err());
+        assert!(verify(&tamper(&proof, instance_vars), &claim).is_err());
         let mut tampered = proof.clone();
         tampered.terminal[1] = config.add(&tampered.terminal[1], &one);
+        assert!(matches!(
+            verify(&tampered, &claim),
+            Err(ProtocolError::InvalidProductTerminalClaim)
+        ));
+        assert!(verify(&proof, &config.add(&claim, &one)).is_err());
+    }
+
+    /// Three-factor slots over one to six instance variables: the columns
+    /// leave the instance rounds as one-byte codes at levels one to three,
+    /// sixteen-bit codes, and field values.
+    #[test]
+    fn product3_sumcheck_roundtrips_and_reduces_to_one_rank_one_functional() {
+        for instance_vars in 1..=6 {
+            cubic_roundtrip(instance_vars);
+        }
+    }
+
+    fn cubic_roundtrip(instance_vars: usize) {
+        let config = F::make_cfg(&Uint::from(FQ_MOD)).unwrap();
+        let mut seed = 0xc0be_u64 ^ instance_vars as u64;
+        let (columns, live_slots, slot_count) = (128usize, 13usize, 16usize);
+        let (rows, eta, beta, kappa) = setup(&config, &mut seed, instance_vars, columns, slot_count);
+        // Every factor shape: a bit, a negated bit, a difference, the
+        // constant one, zero.
+        let factor = |seed: &mut u64| -> (u32, u32) {
+            let column = |seed: &mut u64| 1 + (next(seed) % (columns as u64 - 4)) as u32;
+            match next(seed) % 5 {
+                0 => (column(seed), NO_COLUMN),
+                1 => (NO_COLUMN, column(seed)),
+                2 => (column(seed), column(seed)),
+                3 => (0, NO_COLUMN),
+                _ => (NO_COLUMN, NO_COLUMN),
+            }
+        };
+        let factors = (0..live_slots)
+            .map(|_| [factor(&mut seed), factor(&mut seed), factor(&mut seed)])
+            .collect::<Vec<_>>();
+        let slot_value = |w: &[u64], s: usize| {
+            factors[s]
+                .iter()
+                .map(|f| factor_bits(w, *f))
+                .product::<i32>()
+        };
+        let claim = claim(&config, &rows, &eta, &beta, &kappa, slot_value, live_slots);
+
+        let output = prove_product3_sumcheck(
+            &mut Blake3Transcript::new(),
+            &config,
+            &eta,
+            &beta,
+            &kappa,
+            &factors,
+            &rows,
+            &claim,
+            &mut UngrindedRoundBoundary,
+        )
+        .unwrap();
+        let proof = ProductSumcheckProof {
+            rounds: ProductRounds::Cubic(output.rounds),
+            nonces: Vec::new(),
+            terminal: output.terminal.to_vec(),
+        };
+        let verify = |proof: &ProductSumcheckProof, claim: &F| {
+            verify_product3_sumcheck(
+                &mut Blake3Transcript::new(),
+                &config,
+                proof,
+                &eta,
+                slot_count.ilog2() as usize,
+                claim,
+                &mut UngrindedRoundBoundary,
+            )
+        };
+        let (instance_point, slot_point) = verify(&proof, &claim).unwrap();
+        assert_eq!(instance_point, output.instance_point);
+        assert_eq!(slot_point, output.slot_point);
+        let gamma = [element(&config, 7), element(&config, 11), element(&config, 13)];
+        let (weights, value) = reduced_local_weights(
+            &config,
+            &beta,
+            &kappa,
+            ProductSlots::Cubic(&factors),
+            &slot_point,
+            &proof.terminal,
+            &gamma,
+        )
+        .unwrap();
+        assert_eq!(functional(&config, &instance_point, &weights, &rows), value);
+
+        let one = config.one();
+        assert!(verify(&tamper(&proof, instance_vars), &claim).is_err());
+        let mut tampered = proof.clone();
+        tampered.terminal[3] = config.add(&tampered.terminal[3], &one);
         assert!(matches!(
             verify(&tampered, &claim),
             Err(ProtocolError::InvalidProductTerminalClaim)

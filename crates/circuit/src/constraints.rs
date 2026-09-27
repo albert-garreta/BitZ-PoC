@@ -47,12 +47,15 @@ pub struct ConstraintMatrices {
     /// Left factors of the product slots: row `s` is the integer linear form
     /// `(PA z)_s` (see [`crate::Circuit::product`]).
     pub pa: CsrMatrix<IntegerTable>,
-    /// Right factors of the product slots.
+    /// Second factors of the product slots.
     pub pb: CsrMatrix<IntegerTable>,
+    /// Third factors of the product slots (the constant one for a
+    /// two-factor [`crate::Circuit::product`]).
+    pub pc: CsrMatrix<IntegerTable>,
     /// Product-slot weights of the output side: row `j` adds
-    /// `Σ_s K[j, s] (PA z)_s (PB z)_s` to `(C z)_j`, so every row reads
-    /// `(A z)(B z) = C z + K (PA z ∘ PB z)`. Empty unless the circuit
-    /// uses product slots.
+    /// `Σ_s K[j, s] (PA z)_s (PB z)_s (PC z)_s` to `(C z)_j`, so every row
+    /// reads `(A z)(B z) = C z + K (PA z ∘ PB z ∘ PC z)`. Empty unless the
+    /// circuit uses product slots.
     pub k: CsrMatrix<IntegerTable>,
     row_checks: Vec<RowCheck>,
 }
@@ -171,7 +174,10 @@ fn check_integer_constraint<const L: usize>(
     for (slot, coefficient) in matrices.k.row(row).unwrap().iter() {
         let left = evaluate_integer_row::<L>(&matrices.pa, slot, witness);
         let right = evaluate_integer_row::<L>(&matrices.pb, slot, witness);
-        let term = IntegerOps.mul_wide(&left, &right).checked_resize_ct::<L>();
+        let third = evaluate_integer_row::<L>(&matrices.pc, slot, witness);
+        let pair = IntegerOps.mul_wide(&left, &right).checked_resize_ct::<L>();
+        let term = IntegerOps.mul_wide(pair.value(), &third).checked_resize_ct::<L>();
+        valid = valid & pair.validity();
         let coefficient = Z::<L>::from_twos_complement_words(
             coefficient
                 .as_words()
@@ -495,6 +501,7 @@ pub struct ConstraintGenerator {
     c: CsrBuilder<IntegerTable>,
     pa: CsrBuilder<IntegerTable>,
     pb: CsrBuilder<IntegerTable>,
+    pc: CsrBuilder<IntegerTable>,
     k: CsrBuilder<IntegerTable>,
     /// The declared limb width of each product slot.
     product_limbs: Vec<usize>,
@@ -513,6 +520,7 @@ impl ConstraintGenerator {
             c: CsrBuilder::new(IntegerTable::default()),
             pa: CsrBuilder::new(IntegerTable::default()),
             pb: CsrBuilder::new(IntegerTable::default()),
+            pc: CsrBuilder::new(IntegerTable::default()),
             k: CsrBuilder::new(IntegerTable::default()),
             product_limbs: Vec::new(),
             row_checks: Vec::new(),
@@ -560,6 +568,7 @@ impl ConstraintGenerator {
             c,
             pa,
             pb,
+            pc,
             k,
             product_limbs,
             row_checks,
@@ -592,6 +601,9 @@ impl ConstraintGenerator {
                 .finish(integer_columns)
                 .expect("allocated integer columns"),
             pb: pb
+                .finish(integer_columns)
+                .expect("allocated integer columns"),
+            pc: pc
                 .finish(integer_columns)
                 .expect("allocated integer columns"),
             k: k.finish(product_limbs.len())
@@ -673,9 +685,19 @@ impl Circuit for ConstraintGenerator {
         a: LinearCombination<LIMBS>,
         b: LinearCombination<LIMBS>,
     ) -> LinearCombination<LIMBS> {
+        self.product3(a, b, LinearCombination::from(Z::<LIMBS>::one()))
+    }
+
+    fn product3<const LIMBS: usize>(
+        &mut self,
+        a: LinearCombination<LIMBS>,
+        b: LinearCombination<LIMBS>,
+        c: LinearCombination<LIMBS>,
+    ) -> LinearCombination<LIMBS> {
         let slot = self.product_limbs.len();
         a.append_to(&mut self.pa);
         b.append_to(&mut self.pb);
+        c.append_to(&mut self.pc);
         self.product_limbs.push(LIMBS);
         LinearCombination::product_slot(slot)
     }

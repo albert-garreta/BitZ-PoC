@@ -238,6 +238,10 @@ impl Circuit for WitnessOnly {
         a * b
     }
 
+    fn product3<const LIMBS: usize>(&mut self, a: Z<LIMBS>, b: Z<LIMBS>, c: Z<LIMBS>) -> Z<LIMBS> {
+        a * b * c
+    }
+
     fn sign_extend_z<const FROM_LIMBS: usize, const TO_LIMBS: usize>(
         &mut self,
         value: Z<FROM_LIMBS>,
@@ -381,6 +385,10 @@ impl Circuit for Witgen {
         a * b
     }
 
+    fn product3<const LIMBS: usize>(&mut self, a: Z<LIMBS>, b: Z<LIMBS>, c: Z<LIMBS>) -> Z<LIMBS> {
+        a * b * c
+    }
+
     fn sign_extend_z<const FROM_LIMBS: usize, const TO_LIMBS: usize>(
         &mut self,
         value: Z<FROM_LIMBS>,
@@ -499,6 +507,10 @@ impl Circuit for ProductWitgen {
 
     fn product<const LIMBS: usize>(&mut self, a: Z<LIMBS>, b: Z<LIMBS>) -> Z<LIMBS> {
         a * b
+    }
+
+    fn product3<const LIMBS: usize>(&mut self, a: Z<LIMBS>, b: Z<LIMBS>, c: Z<LIMBS>) -> Z<LIMBS> {
+        a * b * c
     }
 
     fn sign_extend_z<const FROM_LIMBS: usize, const TO_LIMBS: usize>(

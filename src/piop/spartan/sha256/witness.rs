@@ -9,10 +9,7 @@
 use std::array;
 
 use circuit::{
-    sha256::{
-        COMPRESSION_HINT_BITS, COMPRESSION_INPUT_BITS, ROUND_CONSTANTS,
-        compression_circuit_ch_product,
-    },
+    sha256::{COMPRESSION_HINT_BITS, COMPRESSION_INPUT_BITS, ROUND_CONSTANTS},
     witgen::{PackedWitness, Witgen},
 };
 use thiserror::Error;
@@ -323,7 +320,7 @@ fn generate_one(
         &input_bits,
         COMPRESSION_INPUT_BITS + COMPRESSION_HINT_BITS,
     );
-    let output_bits = compression_circuit_ch_product(&mut generator, &input_bits);
+    let output_bits = super::constraints::sha256_relation_circuit(&mut generator, &input_bits);
     let (f, h_bar) = generator.into_witnesses();
     finish_packed_shard(f, h_bar, &output_bits)
 }
@@ -664,7 +661,8 @@ mod tests {
         let h_layout = prepared.assignment_params();
 
         assert_eq!((f_layout.row_vars, f_layout.col_vars), (7, 6));
-        assert_eq!((h_layout.row_vars, h_layout.col_vars), (7, 7));
+        let vars = SHA256_H_BAR_LIVE_BITS.next_power_of_two().ilog2() as usize;
+        assert_eq!((h_layout.row_vars, h_layout.col_vars), (vars.div_ceil(2), vars / 2));
 
         // Source sequence cell 1 is block[0]'s low bit. In native PCS order
         // it is row 1 of column 0, not row 0 of column 1.
@@ -678,7 +676,8 @@ mod tests {
 
     #[test]
     fn instance_major_product_rows_match_the_virtual_map() {
-        let prepared = prepare_sha256_compression_batch_for_product_t_test(1, 14).unwrap();
+        let local = super::super::constraints::SHA256_H_LOCAL_VARS;
+        let prepared = prepare_sha256_compression_batch_for_product_t_test(1, local).unwrap();
         let inputs = [abc_input(), abc_input()];
         let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
         let f_layout = prepared.source_params();
@@ -687,7 +686,7 @@ mod tests {
         let product_rows = witness.product_assignment_rows().unwrap();
 
         assert_eq!(prepared.product_layout_name(), Some("local_rows"));
-        assert_eq!((product_p_h.row_vars, product_p_h.col_vars), (14, 1));
+        assert_eq!((product_p_h.row_vars, product_p_h.col_vars), (local, 1));
         let mut mapped = vec![false; product_p_h.cells()];
         for source in 0..f_layout.cells() {
             if !witness.source_bit(source).unwrap() {
@@ -837,8 +836,7 @@ mod tests {
                 i64::from(witness.assignment_bit(flat).unwrap())
             };
             for slot in 0..terms.slots() {
-                let (plus, minus) = terms.right()[slot];
-                let value = bit(terms.left()[slot]) * (bit(plus) - bit(minus));
+                let value = terms.value(slot, &bit);
                 for (local_row, coefficient) in terms.k().column(slot).expect("product slot") {
                     let flat_row = prepared.flat_constraint_row(instance, local_row).unwrap();
                     residuals[flat_row] += *coefficient * value;
