@@ -1535,6 +1535,73 @@ impl Operand {
     }
 }
 
+/// Montgomery arithmetic on raw `u128` residues with lazy reduction: sums
+/// stay below a small multiple of `q` and only products reduce. REDC needs
+/// just `a · b < q · 2^128`, which holds for `a, b < 8 q` when `q < 2^122`.
+#[derive(Clone, Copy, Debug)]
+struct Lazy {
+    q: u128,
+    q0: u64,
+    q1: u64,
+    neg_inv: u64,
+}
+
+impl Lazy {
+    fn new(config: &FieldConfig) -> Option<Self> {
+        let q = u128::from(*config.modulus());
+        if q >> 122 != 0 || q & 1 == 0 {
+            return None;
+        }
+        let q0 = q as u64;
+        // q0 · inv ≡ 1 mod 2^64 by Newton's iteration (6 steps from 1).
+        let mut inv = 1u64;
+        for _ in 0..6 {
+            inv = inv.wrapping_mul(2u64.wrapping_sub(q0.wrapping_mul(inv)));
+        }
+        Some(Self {
+            q,
+            q0,
+            q1: (q >> 64) as u64,
+            neg_inv: inv.wrapping_neg(),
+        })
+    }
+
+    /// `v − q` when `v ≥ q`.
+    #[inline(always)]
+    fn reduce_once(self, v: u128) -> u128 {
+        let (reduced, borrow) = v.overflowing_sub(self.q);
+        if borrow { v } else { reduced }
+    }
+
+    /// `a · b / 2^128 mod q`, canonical, for `a · b < q · 2^128`.
+    #[inline(always)]
+    fn mul(self, a: u128, b: u128) -> u128 {
+        let (a0, a1, b0, b1) = (a as u64, (a >> 64) as u64, b as u64, (b >> 64) as u64);
+        let p00 = u128::from(a0) * u128::from(b0);
+        let p01 = u128::from(a0) * u128::from(b1);
+        let p10 = u128::from(a1) * u128::from(b0);
+        let p11 = u128::from(a1) * u128::from(b1);
+        let mid = (p00 >> 64) + u128::from(p01 as u64) + u128::from(p10 as u64);
+        let mid2 = (mid >> 64) + (p01 >> 64) + (p10 >> 64) + u128::from(p11 as u64);
+        let (t0, t1, t2, t3) = (p00 as u64, mid as u64, mid2 as u64, ((mid2 >> 64) + (p11 >> 64)) as u64);
+        let m0 = t0.wrapping_mul(self.neg_inv);
+        let mq0 = u128::from(m0) * u128::from(self.q0);
+        let mq1 = u128::from(m0) * u128::from(self.q1);
+        let c0 = u128::from(t0) + u128::from(mq0 as u64);
+        let c1 = u128::from(t1) + (mq0 >> 64) + u128::from(mq1 as u64) + (c0 >> 64);
+        let c2 = u128::from(t2) + (mq1 >> 64) + (c1 >> 64);
+        let c3 = u128::from(t3) + (c2 >> 64);
+        let m1 = (c1 as u64).wrapping_mul(self.neg_inv);
+        let n0 = u128::from(m1) * u128::from(self.q0);
+        let n1 = u128::from(m1) * u128::from(self.q1);
+        let d1 = u128::from(c1 as u64) + u128::from(n0 as u64);
+        let d2 = u128::from(c2 as u64) + (n0 >> 64) + u128::from(n1 as u64) + (d1 >> 64);
+        let d3 = u128::from(c3 as u64) + (n1 >> 64) + (d2 >> 64);
+        // The product bound keeps the result below 2q < 2^123.
+        self.reduce_once(u128::from(d2 as u64) | (u128::from(d3 as u64) << 64))
+    }
+}
+
 /// Three-factor slots in groups of 32: slot `32 g + i` reads bit `i` of
 /// each of its factors' two operands, with weight `κ_{32 g} · 2^i` (SHA-256's
 /// `Ch`, `Maj` and `Σ`/`σ` parities of the all-products relation).
@@ -1545,6 +1612,8 @@ struct CubicWords {
     weights: Vec<(u64, u64)>,
     /// `κ_{32 g}`.
     scales: Vec<F>,
+    /// The lazy arithmetic of the group sums, when the modulus allows it.
+    lazy: Option<Lazy>,
 }
 
 impl CubicWords {
@@ -1593,6 +1662,8 @@ impl CubicWords {
             operands,
             weights,
             scales,
+            // The group totals sum `groups` canonical residues in a u128.
+            lazy: Lazy::new(config).filter(|lazy| (live as u128 / 32).saturating_mul(lazy.q) >> 127 == 0),
         })
     }
 }
@@ -1813,6 +1884,9 @@ fn cubic_group_sums(
     read_a: impl Fn(u32) -> F,
     read_b: impl Fn(u32) -> F,
 ) -> [F; 4] {
+    if let Some(lazy) = words.lazy {
+        return cubic_group_sums_lazy(config, lazy, words, with_one, read_a, read_b);
+    }
     let zero = config.zero();
     let mut acc: [Acc; 4] = std::array::from_fn(|_| Acc::zero());
     for (ops, scale) in words.operands.iter().zip(&words.scales) {
@@ -1882,6 +1956,103 @@ fn cubic_group_sums(
     acc.map(|sum| config.reduce(sum))
 }
 
+/// Operand `op`'s raw column value at bit `i` of a row.
+#[inline(always)]
+fn operand_raw(op: Operand, i: u32, read: &impl Fn(u32) -> F) -> u128 {
+    use crate::sumcheck::inner::native::raw_shared;
+    match op {
+        Operand::Zero => 0,
+        Operand::Broadcast(column) => raw_shared(read(column)),
+        Operand::Rotate(base, amount) => raw_shared(read(base + (i + amount) % 32)),
+        Operand::Shift(base, amount) if i + amount < 32 => raw_shared(read(base + i + amount)),
+        Operand::Shift(..) => 0,
+    }
+}
+
+/// [`cubic_group_sums`] on raw residues ([`Lazy`]): a factor is
+/// `plus + q − minus < 2q`, its values at `X = 2` and `∞` stay below `6q`
+/// and `4q`, every product is canonical, and the Horner doubling reduces
+/// with two conditional subtractions.
+fn cubic_group_sums_lazy(
+    config: &FieldConfig,
+    lazy: Lazy,
+    words: &CubicWords,
+    with_one: bool,
+    read_a: impl Fn(u32) -> F,
+    read_b: impl Fn(u32) -> F,
+) -> [F; 4] {
+    use crate::sumcheck::inner::native::{raw_shared, shared_raw};
+    let q = lazy.q;
+    let side = |(plus, minus): (Operand, Operand), i: u32, row: bool| -> u128 {
+        if row {
+            operand_raw(plus, i, &read_b) + q - operand_raw(minus, i, &read_b)
+        } else {
+            operand_raw(plus, i, &read_a) + q - operand_raw(minus, i, &read_a)
+        }
+    };
+    // (value at 0, at 2, at ∞) of a factor from its two rows (< 2q each).
+    let points = |f0: u128, f1: u128| (f0, 2 * f1 + 2 * q - f0, f1 + 2 * q - f0);
+    let horner = |u: u128, t: u128| lazy.reduce_once(lazy.reduce_once(2 * u + t));
+    let mut total = [0u128; 4];
+    for (ops, scale) in words.operands.iter().zip(&words.scales) {
+        let (fa, fb, fc) = ((ops[0], ops[1]), (ops[2], ops[3]), (ops[4], ops[5]));
+        let square = fa == fb;
+        let uniform = |op: Operand| matches!(op, Operand::Zero | Operand::Broadcast(_));
+        let outer = uniform(ops[4]) && uniform(ops[5]);
+        let mut u = [0u128; 4];
+        for i in (0..32u32).rev() {
+            let (a0, a1) = (side(fa, i, false), side(fa, i, true));
+            let (pa0, pa2, pai) = points(a0, a1);
+            let mut terms = if square {
+                [
+                    lazy.mul(pa0, pa0),
+                    if with_one { lazy.mul(a1, a1) } else { 0 },
+                    lazy.mul(pa2, pa2),
+                    lazy.mul(pai, pai),
+                ]
+            } else {
+                let (b0, b1) = (side(fb, i, false), side(fb, i, true));
+                let (pb0, pb2, pbi) = points(b0, b1);
+                [
+                    lazy.mul(pa0, pb0),
+                    if with_one { lazy.mul(a1, b1) } else { 0 },
+                    lazy.mul(pa2, pb2),
+                    lazy.mul(pai, pbi),
+                ]
+            };
+            if !outer {
+                let (c0, c1) = (side(fc, i, false), side(fc, i, true));
+                let (pc0, pc2, pci) = points(c0, c1);
+                terms = [
+                    lazy.mul(terms[0], pc0),
+                    if with_one { lazy.mul(terms[1], c1) } else { 0 },
+                    lazy.mul(terms[2], pc2),
+                    lazy.mul(terms[3], pci),
+                ];
+            }
+            for (u, term) in u.iter_mut().zip(terms) {
+                *u = horner(*u, term);
+            }
+        }
+        if outer {
+            let (c0, c1) = (side(fc, 0, false), side(fc, 0, true));
+            let (pc0, pc2, pci) = points(c0, c1);
+            u = [
+                lazy.mul(u[0], pc0),
+                lazy.mul(u[1], c1),
+                lazy.mul(u[2], pc2),
+                lazy.mul(u[3], pci),
+            ];
+        }
+        let scale = raw_shared(*scale);
+        for (total, u) in total.iter_mut().zip(u) {
+            // `groups · q < 2^127` ([`CubicWords::detect`]).
+            *total += lazy.mul(scale, u);
+        }
+    }
+    total.map(|sum| shared_raw(config, sum % q))
+}
+
 /// A row pair's three-factor sums, by word group when the slots have them.
 #[inline]
 #[allow(clippy::too_many_arguments)]
@@ -1914,9 +2085,9 @@ pub(crate) struct Product3ProverOutput {
 /// The instance rounds fold each instance's local columns, not per-slot
 /// factors: the factors are read off the folded columns on the fly. Round 0
 /// reads the bits (exact small multiples of `κ`); the folded columns are
-/// codes of their bit histories for four folds (value tables of 4, 16 and
-/// 256 entries, then two 256-entry halves), field values after that. Each
-/// fold pass accumulates the next round's sums at `X = 0, 1, 2, ∞`.
+/// codes of their bit histories for four folds (value tables of 4, 16, 256
+/// and 65 536 entries), field values after that. Each fold pass accumulates
+/// the next round's sums at `X = 0, 1, 2, ∞`.
 ///
 /// Slots in word groups ([`CubicWords`]) take their first instance rounds
 /// from word-level cross terms, and with `free` also `D` (see
@@ -2127,14 +2298,6 @@ fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
         // The value table of the codes this round produces.
         let next_values: Vec<F> = match &base {
             None => vec![zero, config.sub(&one, &r), r, one],
-            // Sixteen-bit codes: `(1 − r) V[low] + r V[high]` from two
-            // 256-entry halves, not one 65 536-entry table.
-            Some(Base::Byte(_, 3)) => {
-                let low = config.sub(&one, &r);
-                (0..512)
-                    .map(|x| config.mul(if x < 256 { &low } else { &r }, &values[x % 256]))
-                    .collect()
-            }
             Some(Base::Byte(_, level)) => {
                 let width = 1usize << level;
                 let mask = (1usize << width) - 1;
@@ -2143,10 +2306,6 @@ fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
                     .collect()
             }
             _ => Vec::new(),
-        };
-        // A sixteen-bit code's value from its two halves.
-        let word_value = |table: &[F], code: u16| {
-            config.add(&table[usize::from(code & 0xff)], &table[256 + usize::from(code >> 8)])
         };
         let weigh = |q: usize, sums: [F; 4]| match &next {
             Some(eq) => weigh3(config, &eq[q], &d[2 * q], &d[2 * q + 1], sums),
@@ -2291,8 +2450,8 @@ fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
                         kappa,
                         groups.as_ref(),
                         with_one,
-                        |c| word_value(&next_values, ra[c as usize]),
-                        |c| word_value(&next_values, rb[c as usize]),
+                        |c| next_values[usize::from(ra[c as usize])],
+                        |c| next_values[usize::from(rb[c as usize])],
                     );
                     weigh(q, sums)
                 });
@@ -2307,7 +2466,7 @@ fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
                         let a = &source[base + 2 * row * columns..base + (2 * row + 1) * columns];
                         let b = &source[base + (2 * row + 1) * columns..base + (2 * row + 2) * columns];
                         for ((value, a), b) in values.iter_mut().zip(a).zip(b) {
-                            *value = fold(&word_value(table, *a), &word_value(table, *b));
+                            *value = fold(&table[usize::from(*a)], &table[usize::from(*b)]);
                         }
                     }
                     if group < 2 {
@@ -2368,10 +2527,7 @@ fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
     // `Ê = κ A`, `B`, `C` (zero past the live slots).
     let row: Vec<F> = match base {
         Some(Base::Byte(codes, _)) => codes.iter().map(|c| values[usize::from(*c)]).collect(),
-        Some(Base::Word(codes)) => codes
-            .iter()
-            .map(|c| config.add(&values[usize::from(c & 0xff)], &values[256 + usize::from(c >> 8)]))
-            .collect(),
+        Some(Base::Word(codes)) => codes.iter().map(|c| values[usize::from(*c)]).collect(),
         Some(Base::Field(values)) => values,
         Some(Base::Words(_)) | None => return Err(ProtocolError::InvalidGeometry),
     };
