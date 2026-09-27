@@ -63,7 +63,10 @@ pub struct FalconSecuritySchedule {
     pub norm_instance_bits: u32,
     pub outer_point_bits: u32,
     pub quadratic_round_bits: u32,
+    /// Degree-three rejection, leaf, and forest sumcheck challenges.
     pub cubic_round_bits: u32,
+    /// Forest powers batching and per-tree line reductions.
+    pub forest_claim_bits: u32,
     pub fingerprint_bits: u32,
     pub linear_point_bits: u32,
     pub binding_round_bits: u32,
@@ -80,18 +83,14 @@ impl FalconSecuritySchedule {
         }
         let d = layout.capacity().trailing_zeros() as usize;
         let batch = layout.batch();
+        let (cubic_round_bits, forest_claim_bits) = compaction_grinding_bits(target_bits, d, batch);
         Some(Self {
             // Independent instance batching for norms and candidate leaves.
             norm_instance_bits: component_grinding_bits(target_bits, 2 * d),
             quadratic_round_bits: component_grinding_bits(target_bits, 4 * (10 + d)),
             outer_point_bits: component_grinding_bits(target_bits, 11 + d),
-            // One shared difficulty covers rejection and leaf cubic rounds and the complete
-            // product forest: 55 cubic rounds, ten tree-combination draws,
-            // and eleven line draws for each of the 2*batch trees.
-            cubic_round_bits: component_grinding_bits(
-                target_bits,
-                6 * (11 + d) + 165 + 10 * (2 * batch - 1) + 22 * batch,
-            ),
+            cubic_round_bits,
+            forest_claim_bits,
             fingerprint_bits: component_grinding_bits(target_bits, 2048 * batch),
             linear_point_bits: component_grinding_bits(target_bits, 13 + d + batch + 12),
             binding_round_bits: component_grinding_bits(target_bits, 2 * (17 + d)),
@@ -105,6 +104,7 @@ impl FalconSecuritySchedule {
                 outer_point_bits: 0,
                 quadratic_round_bits: 0,
                 cubic_round_bits: 0,
+                forest_claim_bits: 0,
                 fingerprint_bits: 0,
                 linear_point_bits: 0,
                 binding_round_bits: 0,
@@ -114,6 +114,7 @@ impl FalconSecuritySchedule {
                 outer_point_bits: OUTER_POINT_GRINDING_BITS,
                 quadratic_round_bits: QUADRATIC_GRINDING_BITS,
                 cubic_round_bits: CUBIC_GRINDING_BITS,
+                forest_claim_bits: CUBIC_GRINDING_BITS,
                 fingerprint_bits: FINGERPRINT_GRINDING_BITS,
                 linear_point_bits: LINEAR_POINT_GRINDING_BITS,
                 binding_round_bits: BINDING_GRINDING_BITS,
@@ -129,6 +130,42 @@ const fn component_grinding_bits(target_bits: usize, numerator: usize) -> u32 {
     }
     let ceil_log2 = usize::BITS - (numerator - 1).leading_zeros();
     (target_bits as u32 + 5 + ceil_log2).saturating_sub(125)
+}
+
+/// Minimize expected nonce attempts without increasing the previous combined
+/// error budget. There are 2*(11+d)+55 degree-three rounds, ten powers draws
+/// of degree 2*batch-1, and eleven line draws with one error term per tree.
+///
+/// Compare A/2^round_bits + H/2^claim_bits <= (A+H)/2^uniform_bits
+/// exactly, using a common power-of-two denominator. The unchanged uniform
+/// schedule is always feasible. Searching up to one bit above it bounds the
+/// work of an individual high-degree boundary; this is a local cost optimum,
+/// not a claim of optimality over every possible schedule.
+const fn compaction_grinding_bits(target_bits: usize, d: usize, batch: usize) -> (u32, u32) {
+    let rounds = 2 * (11 + d) + 55;
+    let a = (3 * rounds) as u128;
+    let h = (10 * (2 * batch - 1) + 22 * batch) as u128;
+    let uniform = component_grinding_bits(target_bits, (a + h) as usize);
+    let denominator_bits = uniform + 1;
+    let budget = (a + h) << 1;
+    let mut best = (uniform, uniform);
+    let mut work = ((rounds + 21) as u128) << uniform;
+    let mut round_bits = 1;
+    while round_bits <= denominator_bits {
+        let mut claim_bits = 1;
+        while claim_bits <= denominator_bits {
+            let error =
+                (a << (denominator_bits - round_bits)) + (h << (denominator_bits - claim_bits));
+            let candidate_work = ((rounds as u128) << round_bits) + (21u128 << claim_bits);
+            if error <= budget && candidate_work < work {
+                best = (round_bits, claim_bits);
+                work = candidate_work;
+            }
+            claim_bits += 1;
+        }
+        round_bits += 1;
+    }
+    best
 }
 
 struct NormInstanceGrinding;
@@ -1053,8 +1090,8 @@ fn compaction_leaves(
 /// one per tree. With the 21-bit grind, their union bound is at most
 /// (10*63 + 55*3 + 11*64) / (2^125 * 2^21) < 2^-135. No tree's root equality
 /// is replaced by an equality between products across different signatures.
-/// The hybrid profile allows 2048 trees and derives its difficulty from the
-/// actual tree count together with the H2P cubic-round numerator.
+/// The hybrid profile allows 2048 trees and separately accounts for cubic
+/// rounds and the higher-degree tree-batching/line challenges.
 #[tracing::instrument(skip_all, name = "falcon_arithmetic:compaction_forest")]
 fn prove_product_forest(
     transcript: &mut impl Transcript,
@@ -1312,7 +1349,7 @@ fn prove_forest_nonce<D: GrindingDomain>(
         grind_and_absorb(
             transcript,
             GrindingRound::<D>::new(level as u64),
-            security.cubic_round_bits,
+            security.forest_claim_bits,
         )
         .map(Some)
         .map_err(|error| piop(error.to_string()))
@@ -1332,7 +1369,7 @@ fn verify_forest_nonce<D: GrindingDomain>(
         (128, Some(nonce)) => verify_and_absorb(
             transcript,
             GrindingRound::<D>::new(level as u64),
-            security.cubic_round_bits,
+            security.forest_claim_bits,
             nonce,
         )
         .map_err(|error| piop(error.to_string())),
@@ -1739,6 +1776,91 @@ mod tests {
     const MESSAGE: &[u8; 32] = include_bytes!("fixtures/message.bin");
     const SIGNATURE: &[u8; super::super::CT_SIGNATURE_BYTES] =
         include_bytes!("fixtures/signature_ct.bin");
+
+    #[test]
+    fn split_grinding_preserves_exact_error_and_work_budgets_for_every_batch() {
+        for batch in 1..=1024 {
+            let layout = FalconSourceLayout::new_hybrid(batch).unwrap();
+            let d = layout.capacity().ilog2() as usize;
+            let schedule = FalconSecuritySchedule::for_layout(128, &layout).unwrap();
+            // Count challenges from the actual forest levels independently
+            // of the schedule's closed-form expressions.
+            let rounds = 2 * (11 + d) + (0..11).sum::<usize>();
+            let claims = (1..11).map(|_| 2 * batch - 1).sum::<usize>()
+                + (0..11).map(|_| 2 * batch).sum::<usize>();
+            let numerator = 3 * rounds + claims;
+            let old_bits = 8 + usize::BITS - (numerator - 1).leading_zeros();
+            let denominator = old_bits
+                .max(schedule.cubic_round_bits)
+                .max(schedule.forest_claim_bits);
+            let old_error = (numerator as u128) << (denominator - old_bits);
+            let new_error = ((3 * rounds) as u128) << (denominator - schedule.cubic_round_bits);
+            let new_error =
+                new_error + ((claims as u128) << (denominator - schedule.forest_claim_bits));
+            assert!(new_error <= old_error, "error budget at batch {batch}");
+            let old_work = ((rounds + 21) as u128) << old_bits;
+            let new_work = ((rounds as u128) << schedule.cubic_round_bits)
+                + (21u128 << schedule.forest_claim_bits);
+            assert!(new_work <= old_work, "nonce work at batch {batch}");
+            let unground = FalconSecuritySchedule::for_layout(100, &layout).unwrap();
+            assert_eq!(
+                (unground.cubic_round_bits, unground.forest_claim_bits),
+                (0, 0)
+            );
+        }
+        let largest =
+            FalconSecuritySchedule::for_layout(128, &FalconSourceLayout::new_hybrid(1024).unwrap())
+                .unwrap();
+        assert_eq!(
+            (largest.cubic_round_bits, largest.forest_claim_bits),
+            (18, 25)
+        );
+    }
+
+    #[test]
+    fn forest_rejects_a_proof_made_under_either_weaker_grinding_schedule() {
+        let layout = FalconSourceLayout::new_hybrid(32).unwrap();
+        let expected = FalconSecuritySchedule::for_layout(128, &layout).unwrap();
+        assert_ne!(expected.cubic_round_bits, expected.forest_claim_bits);
+        let field = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
+        let leaves = vec![vec![field.one(); COMPACTION_LEAVES]; 2 * layout.batch()];
+        for weaken_rounds in [false, true] {
+            let mut weaker = expected;
+            if weaken_rounds {
+                weaker.cubic_round_bits -= 1;
+            } else {
+                weaker.forest_claim_bits -= 1;
+            }
+            let (proof, terminals) = prove_product_forest(
+                &mut Blake3Transcript::new(),
+                leaves.clone(),
+                128,
+                weaker,
+                &field,
+            )
+            .unwrap();
+            verify_product_forest(
+                &mut Blake3Transcript::new(),
+                &proof,
+                &terminals,
+                128,
+                weaker,
+                &field,
+            )
+            .unwrap();
+            assert!(
+                verify_product_forest(
+                    &mut Blake3Transcript::new(),
+                    &proof,
+                    &terminals,
+                    128,
+                    expected,
+                    &field,
+                )
+                .is_err()
+            );
+        }
+    }
 
     #[test]
     fn hybrid_rejection_rows_match_dense_padded_relation() {

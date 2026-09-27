@@ -10,6 +10,7 @@ use crate::hybrid::{
     opening::Geometry,
     sumcheck::{self as kernels, CompressedCodec, Scratch, eq_table},
 };
+use crate::ligerito::transpose_8x8_bits;
 use crate::piop::spartan::grinding::GrindingDomain;
 use crate::sumcheck::{
     RoundBoundaryPolicy, SumcheckError,
@@ -226,15 +227,118 @@ impl TensorState {
     }
 }
 
+/// A sparse gather only needs the words touched by its local coefficients.
+/// Fold the repeat axis once, before the seven packed rounds:
+/// `marginals[word, bit] = sum_repeat high[repeat] * source[word, repeat, bit]`.
+/// The resulting dense coefficient blocks use the same packed-round kernel as
+/// a tensor. Gaps between words do not matter until the dense suffix, which
+/// still uses the original gather indices.
+struct GatherState {
+    high: Vec<F>,
+    low: Vec<F>,
+    marginals: Vec<F>,
+}
+
+impl GatherState {
+    fn new(gather: &Gather, packed: &[F], source_vars: usize) -> Self {
+        let high = eq_table(&gather.high_point);
+        let mut words = Vec::new();
+        let mut low = Vec::new();
+        for &(index, coefficient) in &gather.entries {
+            let word = index >> 7;
+            if words.last() != Some(&word) {
+                words.push(word);
+                low.resize(low.len() + 128, F::ZERO);
+            }
+            low[(words.len() - 1) * 128 + (index & 127)] += coefficient;
+        }
+        let mut marginals = vec![F::ZERO; low.len()];
+        let repeat_start = gather.axis(source_vars);
+        // Sixteen words keep each task's marginal accumulators in L1. Each
+        // source word is loaded once; transposing eight repeats replaces 128
+        // field multiplications with subset-sum lookups and additions.
+        cfg_chunks_mut!(marginals, 16 * 128)
+            .enumerate()
+            .for_each(|(task, output)| {
+                let words = &words[task * 16..task * 16 + output.len() / 128];
+                for (group, weights) in high.chunks(8).enumerate() {
+                    if weights.len() == 8 {
+                        let mut subsets = [[F::ZERO; 16]; 2];
+                        for half in 0..2 {
+                            for bit in 0..4 {
+                                let end = 1 << bit;
+                                for mask in 0..end {
+                                    subsets[half][end + mask] =
+                                        subsets[half][mask] + weights[half * 4 + bit];
+                                }
+                            }
+                        }
+                        for (&word, accumulators) in words.iter().zip(output.chunks_mut(128)) {
+                            let bytes: [[u8; 16]; 8] = std::array::from_fn(|offset| {
+                                let source = packed[gather.index(
+                                    word * 128,
+                                    group * 8 + offset,
+                                    repeat_start,
+                                ) >> 7];
+                                (source.lo as u128 | ((source.hi as u128) << 64)).to_le_bytes()
+                            });
+                            for byte in 0..16 {
+                                let column = bytes
+                                    .iter()
+                                    .enumerate()
+                                    .fold(0u64, |v, (row, b)| v | ((b[byte] as u64) << (8 * row)));
+                                for (bit, mask) in transpose_8x8_bits(column)
+                                    .to_le_bytes()
+                                    .into_iter()
+                                    .enumerate()
+                                {
+                                    accumulators[8 * byte + bit] += subsets[0]
+                                        [(mask & 15) as usize]
+                                        + subsets[1][(mask >> 4) as usize];
+                                }
+                            }
+                        }
+                    } else {
+                        for (&word, accumulators) in words.iter().zip(output.chunks_mut(128)) {
+                            for (offset, &weight) in weights.iter().enumerate() {
+                                let source = packed[gather.index(
+                                    word * 128,
+                                    group * 8 + offset,
+                                    repeat_start,
+                                ) >> 7];
+                                for (half, mut bits) in
+                                    [source.lo, source.hi].into_iter().enumerate()
+                                {
+                                    while bits != 0 {
+                                        accumulators[half * 64 + bits.trailing_zeros() as usize] +=
+                                            weight;
+                                        bits &= bits - 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        Self {
+            high,
+            low,
+            marginals,
+        }
+    }
+}
+
 /// Apply a prefix equality table to the low `prefix.len()` bits. The table's
 /// unused byte positions have zero coefficients, including partial bytes.
+#[cfg(test)]
 fn prefix_bits(table: &[F], bits: u128, bytes: usize) -> F {
     (0..bytes).fold(F::ZERO, |sum, byte| {
         sum + table[byte * 256 + ((bits >> (8 * byte)) & 255) as usize]
     })
 }
 
-fn gather_round(
+#[cfg(test)]
+fn gather_round_reference(
     gather: &Gather,
     high: &[F],
     repeat_start: usize,
@@ -280,7 +384,7 @@ struct Input<'a, const N: usize> {
 struct State<'a, const N: usize> {
     input: Input<'a, N>,
     tensors: [Vec<TensorState>; N],
-    gather_high: [Vec<Vec<F>>; N],
+    gathers: [Vec<GatherState>; N],
     point: [F; 7],
     round: usize,
     next: [F; 2],
@@ -300,17 +404,19 @@ impl<'a, const N: usize> input::Input<field::Gf128Ops> for Input<'a, N> {
                 .map(|tensor| TensorState::new(tensor, self.sources[branch]))
                 .collect()
         });
-        let gather_high = std::array::from_fn(|branch| {
+        let gathers = std::array::from_fn(|branch| {
             self.coefficients[branch]
                 .gathers
                 .iter()
-                .map(|gather| eq_table(&gather.high_point))
+                .map(|gather| {
+                    GatherState::new(gather, self.sources[branch], self.geometry.logs[branch] + 7)
+                })
                 .collect()
         });
         Ok(State {
             input: self,
             tensors,
-            gather_high,
+            gathers,
             point: [F::ZERO; 7],
             round: 0,
             next: [F::ZERO; 2],
@@ -322,6 +428,10 @@ impl<const N: usize> State<'_, N> {
     fn prepare_dense(&mut self) {
         for tensor in self.tensors.iter_mut().flatten() {
             tensor.marginals = Vec::new();
+        }
+        for gather in self.gathers.iter_mut().flatten() {
+            gather.marginals = Vec::new();
+            gather.low = Vec::new();
         }
         let geometry = self.input.geometry;
         let sources = self.input.sources;
@@ -384,10 +494,10 @@ impl<const N: usize> State<'_, N> {
                     if first_bit >= end_bit {
                         continue;
                     }
-                    for (gather, high) in self.input.coefficients[branch]
+                    for (gather, state) in self.input.coefficients[branch]
                         .gathers
                         .iter()
-                        .zip(&self.gather_high[branch])
+                        .zip(&self.gathers[branch])
                     {
                         gather.in_range(
                             gather.axis(bits),
@@ -398,7 +508,7 @@ impl<const N: usize> State<'_, N> {
                                     + geometry.offset(branch)
                                     + (word & ((1 << k) - 1));
                                 weights[virtual_word - start] +=
-                                    coefficient * high[repeat] * prefix[index & 127];
+                                    coefficient * state.high[repeat] * prefix[index & 127];
                             },
                         );
                     }
@@ -417,7 +527,7 @@ impl<const N: usize> State<'_, N> {
                 }),
         );
         self.tensors = std::array::from_fn(|_| Vec::new());
-        self.gather_high = std::array::from_fn(|_| Vec::new());
+        self.gathers = std::array::from_fn(|_| Vec::new());
         scratch.witness = witness;
         scratch.weights = weights;
     }
@@ -441,20 +551,9 @@ impl<const N: usize> input::State<field::Gf128Ops> for State<'_, N> {
                 sum[0] += term[0];
                 sum[1] += term[1];
             }
-            for (gather, high) in self.input.coefficients[branch]
-                .gathers
-                .iter()
-                .zip(&self.gather_high[branch])
-            {
-                let repeat_start = gather.axis(self.input.geometry.logs[branch] + 7);
-                let term = gather_round(
-                    gather,
-                    high,
-                    repeat_start,
-                    self.input.sources[branch],
-                    &prefix,
-                    self.round,
-                );
+            for gather in &self.gathers[branch] {
+                let term =
+                    kernels::packed_round(&gather.marginals, &gather.low, &prefix, self.round);
                 sum[0] += term[0];
                 sum[1] += term[1];
             }
@@ -467,6 +566,9 @@ impl<const N: usize> input::State<field::Gf128Ops> for State<'_, N> {
             self.point[self.round] = *r;
             for tensor in self.tensors.iter_mut().flatten() {
                 kernels::fold(&mut tensor.low, *r);
+            }
+            for gather in self.gathers.iter_mut().flatten() {
+                kernels::fold(&mut gather.low, *r);
             }
             self.round += 1;
             if self.round == 7 {
@@ -808,6 +910,70 @@ mod tests {
             },
             point,
         )
+    }
+
+    #[test]
+    fn cached_gather_rounds_match_repeat_scan_for_every_axis_and_round() {
+        let mut random = Random(0x3894abc012);
+        for source_vars in [10usize, 14] {
+            // The physical source can extend past the gather's logical domain.
+            // Keep that padding nonzero so accidental inclusion changes a sum.
+            let packed: Vec<_> = (0..1 << (source_vars - 6)).map(|_| random.next()).collect();
+            for repeat_vars in [0, 1, 2, 3, source_vars - 7] {
+                let local_bits = source_vars - repeat_vars;
+                let mut axes = vec![7, (7 + local_bits) / 2, local_bits];
+                axes.sort_unstable();
+                axes.dedup();
+                for axis in axes {
+                    let repeated = random.next();
+                    let mut entries = vec![
+                        (0, random.next()),
+                        (127, random.next()),
+                        ((1 << local_bits) - 1, random.next()),
+                        (63, repeated),
+                        (63, repeated),
+                        (63, random.next()),
+                        (64, F::ZERO),
+                    ];
+                    for _ in 0..257 {
+                        let index = random.next().lo as usize & ((1 << local_bits) - 1);
+                        entries.push((index, random.next()));
+                    }
+                    let high_point = (0..repeat_vars).map(|_| random.next()).collect();
+                    let gather = Gather::repeated_at(entries, high_point, axis);
+                    let mut state = GatherState::new(&gather, &packed, source_vars);
+                    let mut words: Vec<_> = gather.entries.iter().map(|&(i, _)| i >> 7).collect();
+                    words.dedup();
+                    assert_eq!(state.marginals.len(), words.len() * 128);
+                    let logical =
+                        GatherState::new(&gather, &packed[..1 << (source_vars - 7)], source_vars);
+                    assert_eq!(state.marginals, logical.marginals);
+                    let point: [F; 7] = std::array::from_fn(|_| random.next());
+                    for round in 0..7 {
+                        let prefix = eq_table(&point[..round]);
+                        let actual =
+                            kernels::packed_round(&state.marginals, &state.low, &prefix, round);
+                        let expected = gather_round_reference(
+                            &gather,
+                            &state.high,
+                            axis,
+                            &packed,
+                            &prefix,
+                            round,
+                        );
+                        assert_eq!(
+                            actual, expected,
+                            "source_vars={source_vars}, repeat_vars={repeat_vars}, axis={axis}, round={round}"
+                        );
+                        kernels::fold(&mut state.low, point[round]);
+                    }
+                }
+            }
+        }
+        let empty = GatherState::new(&Gather::default(), &[], 7);
+        assert!(empty.marginals.is_empty());
+        assert!(empty.low.is_empty());
+        assert_eq!(kernels::packed_round(&[], &[], &[F::ONE], 0), [F::ZERO; 2]);
     }
 
     #[test]

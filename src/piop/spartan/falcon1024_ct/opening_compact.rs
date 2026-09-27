@@ -604,34 +604,35 @@ impl BindingForm<'_> {
             .iter()
             .fold(field.zero(), |sum, weight| field.add(&sum, weight));
         constant = field.mul(&constant, &instance_sum);
-        for ((message, signature), alpha) in self
-            .statement
-            .messages
-            .iter()
-            .zip(&self.statement.signatures)
-            .zip(&self.ring_instance_weights)
-        {
-            let mut bits = field.zero();
-            for bit in 0..256 {
-                if (message[bit / 8] >> (bit % 8)) & 1 == 1 {
-                    bits = field.add(&bits, &self.local_linear_weights.at(1 + bit));
-                }
-            }
-            constant = field.sub(&constant, &field.mul(alpha, &bits));
-            let encoded = super::super::encode_signature_ct(signature)?;
-            let mut signature_bytes = field.zero();
-            // The common header constant is already in linear_constant().
-            for (byte, &value) in encoded.iter().enumerate().skip(1) {
-                signature_bytes = field.add(
-                    &signature_bytes,
-                    &mul_i(
-                        self.local_linear_weights.at(1 + 256 + byte),
-                        i128::from(value),
-                        field,
-                    ),
-                );
-            }
-            constant = field.sub(&constant, &field.mul(alpha, &signature_bytes));
+        let public_constants: Result<Vec<F>, FalconError> =
+            crate::utils::cfg_into_iter!(0..self.layout.batch())
+                .map(|s| {
+                    let message = &self.statement.messages[s];
+                    let alpha = &self.ring_instance_weights[s];
+                    let mut bits = field.zero();
+                    for bit in 0..256 {
+                        if (message[bit / 8] >> (bit % 8)) & 1 == 1 {
+                            bits = field.add(&bits, &self.local_linear_weights.at(1 + bit));
+                        }
+                    }
+                    let encoded = super::super::encode_signature_ct(&self.statement.signatures[s])?;
+                    let mut signature_bytes = field.zero();
+                    // The common header constant is already in linear_constant().
+                    for (byte, &value) in encoded.iter().enumerate().skip(1) {
+                        signature_bytes = field.add(
+                            &signature_bytes,
+                            &mul_i(
+                                self.local_linear_weights.at(1 + 256 + byte),
+                                i128::from(value),
+                                field,
+                            ),
+                        );
+                    }
+                    Ok(field.mul(alpha, &field.add(&bits, &signature_bytes)))
+                })
+                .collect();
+        for contribution in public_constants? {
+            constant = field.sub(&constant, &contribution);
         }
         let mut target = field.sub(&field.zero(), &constant);
         let norm_instances =

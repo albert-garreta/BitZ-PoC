@@ -442,6 +442,44 @@ fn finish_partition<const K: usize>(
     Ok(scatter_beta_values::<K>(&beta, zero, cfg))
 }
 
+/// Three-variable bit blocks have only 256 possible ternary extensions. Each
+/// entry is an integer in [-4, 4], so the whole table occupies only 6.75 KiB.
+/// As in the existing zero-skipping accumulator, accesses depend on witness
+/// bits; this packed prover does not provide constant-time witness processing.
+static BIT_EXTENSIONS_3: [[i8; 27]; 256] = bit_extensions_3();
+
+const fn bit_extensions_3() -> [[i8; 27]; 256] {
+    let mut table = [[0; 27]; 256];
+    let mut word = 0;
+    while word < 256 {
+        let mut beta = 0;
+        while beta < 27 {
+            let mut index = 0;
+            while index < 8 {
+                let mut term = ((word >> index) & 1) as i8;
+                let mut digits = beta;
+                let mut axis = 0;
+                while axis < 3 {
+                    let bit = ((index >> axis) & 1) as i8;
+                    // The ternary coordinates are (slope, at zero, at one).
+                    term *= match digits % 3 {
+                        0 => 2 * bit - 1,
+                        1 => 1 - bit,
+                        _ => bit,
+                    };
+                    digits /= 3;
+                    axis += 1;
+                }
+                table[word][beta] += term;
+                index += 1;
+            }
+            beta += 1;
+        }
+        word += 1;
+    }
+    table
+}
+
 fn accumulate_block<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     state: &mut PrefixBuildState,
     block: usize,
@@ -460,13 +498,27 @@ fn accumulate_block<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     }
     state.v_values.clear();
     state.v_values.extend_from_slice(values);
+    extend_lsb::<Field, K, _>(&mut state.v_values, &mut state.v_scratch, zero, |hi, lo| {
+        cfg.sub(hi, lo)
+    });
+    if K == 3 {
+        for (beta, &coefficient) in BIT_EXTENSIONS_3[word as usize].iter().enumerate() {
+            if coefficient != 0 {
+                linear_multiply_accumulate_signed(
+                    cfg,
+                    &mut state.partial_sums[beta],
+                    &state.v_values[beta],
+                    i64::from(coefficient),
+                    zero,
+                );
+            }
+        }
+        return Ok(());
+    }
     state.h_values.clear();
     state
         .h_values
         .extend((0..width).map(|i| ((word >> i) & 1) as i64));
-    extend_lsb::<Field, K, _>(&mut state.v_values, &mut state.v_scratch, zero, |hi, lo| {
-        cfg.sub(hi, lo)
-    });
     extend_lsb::<i64, K, _>(&mut state.h_values, &mut state.h_scratch, &0, |hi, lo| {
         hi - lo
     });
@@ -493,6 +545,20 @@ mod tests {
     use crate::sumcheck::UngrindedRoundBoundary;
     use crate::sumcheck::inner::{prove_batched_inner_sumcheck, prove_inner_sumcheck};
     use crate::transcript::{Blake3Transcript, traits::Transcript};
+
+    #[test]
+    fn cached_three_variable_bits_match_recursive_extension_exhaustively() {
+        for (word, cached) in BIT_EXTENSIONS_3.iter().enumerate() {
+            let mut reference: Vec<i64> = (0..8).map(|i| ((word >> i) & 1) as i64).collect();
+            extend_lsb::<i64, 3, _>(&mut reference, &mut Vec::new(), &0, |hi, lo| hi - lo);
+            assert_eq!(
+                cached.map(i64::from).as_slice(),
+                reference,
+                "witness byte {word}",
+            );
+            assert!(cached.iter().all(|value| (-4..=4).contains(value)));
+        }
+    }
 
     struct Updates {
         num_vars: usize,
@@ -819,6 +885,65 @@ mod tests {
                 Ok(())
             })())
         }
+    }
+
+    #[test]
+    fn cached_bit_blocks_match_dense_sumcheck_for_every_byte() {
+        let cfg = spartan_bitz_field_config();
+        let mut bits = vec![0u64; 32];
+        for word in 0..256 {
+            bits[word / 8] |= (word as u64) << (8 * (word % 8));
+        }
+        let coefficients: Vec<_> = (0..2048)
+            .map(|i| {
+                let value = Field::from_with_cfg((i * 8191 + 17) as u64, &cfg);
+                if i % 3 == 0 { cfg.neg(&value) } else { value }
+            })
+            .collect();
+        let witness: Vec<_> = (0..2048)
+            .map(|i| {
+                if bits[i / 64] >> (i % 64) & 1 == 0 {
+                    cfg.zero()
+                } else {
+                    cfg.one()
+                }
+            })
+            .collect();
+        let claim = coefficients
+            .iter()
+            .zip(&witness)
+            .fold(cfg.zero(), |sum, (a, b)| cfg.add(&sum, &cfg.mul(a, b)));
+        let blocks = Blocks {
+            values: &coefficients,
+            zero: cfg.zero(),
+            num_vars: 11,
+            partition_len: 64,
+        };
+        let mut actual_transcript = Blake3Transcript::new();
+        let actual = prove_inner_sumcheck(
+            &cfg,
+            &mut actual_transcript,
+            claim,
+            PackedInput::new(&StreamingMle::new(&blocks), &bits, 11, 2048, 3),
+            (),
+            &mut UngrindedRoundBoundary,
+        )
+        .unwrap();
+        let mut reference_transcript = Blake3Transcript::new();
+        let reference = prove_inner_sumcheck(
+            &cfg,
+            &mut reference_transcript,
+            claim,
+            witness,
+            coefficients,
+            &mut UngrindedRoundBoundary,
+        )
+        .unwrap();
+        assert_eq!(actual, reference);
+        assert_eq!(
+            actual_transcript.get_challenge::<u128>(),
+            reference_transcript.get_challenge::<u128>(),
+        );
     }
 
     #[test]

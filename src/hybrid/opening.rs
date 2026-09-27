@@ -161,6 +161,63 @@ impl<const N: usize> Geometry<N> {
         }
         bases
     }
+
+    /// Add the sum of `padding_bases(point, eta)` without traversing the
+    /// virtual domain once per branch. At Boolean indices the restricted
+    /// bases cancel the full equality basis exactly on the disjoint logical
+    /// supports, leaving `eta * eq(point, index)` only on padding.
+    fn add_padding_basis(&self, basis: &mut [F], point: &[Gf], eta: Gf) {
+        use super::sumcheck::eq_table;
+
+        assert_eq!(point.len(), self.packed_log());
+        assert_eq!(basis.len(), 1 << point.len());
+        let lanes = self.lanes();
+        let mut live_groups = vec![0usize; lanes];
+        let mut min_group_log = self.position_log;
+        for branch in 0..N {
+            let group_log = self.logs[branch] - self.lane_logs[branch];
+            min_group_log = min_group_log.min(group_log);
+            let start = self.offset(branch);
+            let width = 1 << self.lane_logs[branch];
+            live_groups[start..start + width].fill(1 << group_log);
+        }
+        // Every support boundary is a multiple of the block size in groups,
+        // so a lane is either live throughout a block or padded throughout.
+        // Splitting the equality table also avoids another full-domain table.
+        let block_log = self
+            .packed_log()
+            .min(12)
+            .min(self.virtual_lane_log + min_group_log);
+        let block = 1 << block_log;
+        let tail = eq_table(&point[..block_log]);
+        let mut head = eq_table(&point[block_log..]);
+        for scale in &mut head {
+            *scale *= eta;
+        }
+        crate::utils::cfg_chunks_mut!(basis, block)
+            .enumerate()
+            .for_each(|(hi, chunk)| {
+                let first_group = hi * (block / lanes);
+                let mut padded_lanes = [0usize; 16];
+                let mut count = 0;
+                for (lane, &live) in live_groups.iter().enumerate() {
+                    if first_group >= live {
+                        padded_lanes[count] = lane;
+                        count += 1;
+                    }
+                }
+                if count == 0 {
+                    return;
+                }
+                let scale = head[hi];
+                for (group, values) in chunk.chunks_exact_mut(lanes).enumerate() {
+                    for &lane in &padded_lanes[..count] {
+                        values[lane] += scale * tail[group * lanes + lane];
+                    }
+                }
+            });
+    }
+
     pub fn virtual_packed(&self, sources: [&[F]; N]) -> Vec<F> {
         let lanes = self.lanes();
         let mut out = vec![F::ZERO; 1 << self.packed_log()];
@@ -216,6 +273,51 @@ mod geometry_tests {
         }
         assert!(Geometry::new([13, 13, 13]).is_err());
         assert!(Geometry::<0>::new([]).is_err());
+    }
+
+    fn check_direct_padding<const N: usize>(logs: [usize; N]) {
+        use rand::{RngExt, SeedableRng, rngs::StdRng};
+
+        let geometry = Geometry::new(logs).unwrap();
+        let mut rng = StdRng::seed_from_u64(0x50414444494e47);
+        let mut sample = || F {
+            lo: rng.random(),
+            hi: rng.random(),
+        };
+        let size = 1 << geometry.packed_log();
+        let packed: Vec<_> = (0..size).map(|_| sample()).collect();
+        let initial: Vec<_> = (0..size).map(|_| sample()).collect();
+        for case in 0..5 {
+            let point: Vec<_> = (0..geometry.packed_log())
+                .map(|i| match case {
+                    1 => F::ZERO,
+                    2 => F::ONE,
+                    3 if i % 3 == 0 => F::ZERO,
+                    3 if i % 3 == 1 => F::ONE,
+                    _ => sample(),
+                })
+                .collect();
+            let eta = if case == 4 { F::ZERO } else { sample() };
+            let mut reference = initial.clone();
+            for (basis_point, scale) in geometry.padding_bases(point.clone(), eta) {
+                add_ood_basis(&mut reference, &packed, &basis_point, scale, None);
+            }
+            let mut direct = initial.clone();
+            geometry.add_padding_basis(&mut direct, &point, eta);
+            assert_eq!(direct, reference, "logs={logs:?}, case={case}");
+        }
+    }
+
+    #[test]
+    fn direct_padding_matches_separate_basis_updates() {
+        // Include a completely occupied virtual domain, unused lanes,
+        // unequal source sizes, and logical zeros inside physical slices.
+        check_direct_padding([9, 9]);
+        check_direct_padding([9]);
+        check_direct_padding([9, 13]);
+        check_direct_padding([9, 12, 10]);
+        check_direct_padding([9, 13, 10]);
+        check_direct_padding([10, 9, 9, 12]);
     }
 }
 
@@ -340,9 +442,9 @@ pub(crate) fn prove_with_security<const N: usize>(
     }
     // Sample after all ring-switch messages. The authenticated target of this
     // independent claim is zero; a nonzero padded message cannot be discarded.
-    for (point, scale) in sample_padding(t, geometry) {
-        add_ood_basis(&mut basis, &packed, &point, scale, None);
-    }
+    let padding = sample_padding(t, geometry);
+    let (padding_point, padding_scale) = &padding[0];
+    geometry.add_padding_basis(&mut basis, padding_point, *padding_scale);
     drop(basis_scope);
     let _lig_scope = tracing::info_span!("op:ligerito").entered();
     let pc = resolved.prover();

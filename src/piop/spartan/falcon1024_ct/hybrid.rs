@@ -189,8 +189,12 @@ impl PreparedFalconHybrid {
                 prime(2048 * b, schedule.fingerprint_bits),
             ),
             (
-                "ordered compaction forest",
-                prime(165 + 10 * (2 * b - 1) + 22 * b, schedule.cubic_round_bits),
+                "ordered compaction forest sumchecks",
+                prime(165, schedule.cubic_round_bits),
+            ),
+            (
+                "ordered compaction forest claim reductions",
+                prime(10 * (2 * b - 1) + 22 * b, schedule.forest_claim_bits),
             ),
             (
                 "compaction leaf instance batching",
@@ -356,7 +360,7 @@ impl PreparedFalconHybrid {
     ) -> Result<(Blake3Transcript, [u8; 32]), FalconError> {
         statement.public.validate(self.batch())?;
         let mut h = blake3::Hasher::new();
-        h.update(b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v1");
+        h.update(b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v2");
         for n in [
             self.batch(),
             self.capacity(),
@@ -375,6 +379,7 @@ impl PreparedFalconHybrid {
             schedule.outer_point_bits,
             schedule.quadratic_round_bits,
             schedule.cubic_round_bits,
+            schedule.forest_claim_bits,
             schedule.fingerprint_bits,
             schedule.linear_point_bits,
             schedule.binding_round_bits,
@@ -409,7 +414,7 @@ impl PreparedFalconHybrid {
         }
         let digest = *h.finalize().as_bytes();
         let mut t = Blake3Transcript::new();
-        t.absorb_slice(b"bitz/falcon-hybrid/native-ring/statement/v1");
+        t.absorb_slice(b"bitz/falcon-hybrid/native-ring/statement/v2");
         t.absorb_slice(&digest);
         self.ligerito.bind(&mut t);
         Ok((t, digest))
@@ -877,6 +882,33 @@ mod tests {
                 let prepared = PreparedFalconHybrid::new(batch, target).unwrap();
                 let security = prepared.security();
                 assert!(security.algebraic_bits >= target as f64);
+                // Reconstruct the old uniform-grinding group, leaving every
+                // other term in the complete protocol budget unchanged.
+                let d = prepared.capacity().ilog2() as usize;
+                let old_numerator = 6 * (11 + d) + 165 + 10 * (2 * batch - 1) + 22 * batch;
+                let old_bits = if target == 100 {
+                    0
+                } else {
+                    8 + usize::BITS - (old_numerator - 1).leading_zeros()
+                };
+                let changed_names = [
+                    "HashToPoint product sumcheck",
+                    "ordered compaction forest sumchecks",
+                    "ordered compaction forest claim reductions",
+                    "compaction leaf sumcheck",
+                ];
+                let unchanged: f64 = security
+                    .terms
+                    .iter()
+                    .filter(|(name, _)| !changed_names.contains(name))
+                    .map(|(_, error)| error)
+                    .sum();
+                let previous = unchanged + old_numerator as f64 * 2f64.powi(-125 - old_bits as i32);
+                let current: f64 = security.terms.iter().map(|(_, error)| error).sum();
+                assert!(
+                    current <= previous * (1.0 + 1e-14),
+                    "full bound at {batch}/{target}"
+                );
                 let numerator = hybrid_bridge::error_numerator(&prepared.layout);
                 let bits = prepared.binary_grinding(numerator);
                 assert_eq!(

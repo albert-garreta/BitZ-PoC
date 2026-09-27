@@ -16,9 +16,10 @@ the remaining auxiliary witness is not guaranteed to be hidden.
 ## Public signatures and independent benchmark inputs
 
 The outer commitment-bound statement uses `v4`. The hybrid statement uses
-`native-ring/non-zk/v1`, binding its decoder, native field, and security schedule.
+`native-ring/non-zk/v2`, binding its decoder, native field, and security schedule.
 See [NATIVE_RING.md](NATIVE_RING.md) for the current arithmetic and counts, and
-[BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md).
+[OPTIMIZATION_SECURITY.md](OPTIMIZATION_SECURITY.md) for the split grinding
+budget. The bridge is covered in [BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md).
 Every CT signature byte has a linear equality against its eight committed bits,
 including the nonce and signed coefficient payload. Absorbing signatures into
 the transcript complements these equality constraints; it does not replace them.
@@ -353,7 +354,7 @@ The legacy commitment-bound statement uses `v4`; its internal PIOP headers use
 `v3` and existing forest domains retain `v2`. The hybrid has its own versioned
 statement and different source layouts; hybrid roots are not interchangeable
 with standalone roots. The hybrid statement and transcript use
-**native-ring/non-zk/v1**, with the complete arithmetic schedule and native
+**native-ring/non-zk/v2**, with the complete arithmetic schedule and native
 representation explicitly bound. Bridge grinding uses `v4`;
 integer-fold and Keccak-prefix domains remain `v2`. All permutation groups and
 roots remain bound. **Regenerate proofs from earlier hybrid versions.** The

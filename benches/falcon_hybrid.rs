@@ -157,7 +157,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         "{}",
         json!({
             "schema": "bitz/falcon-hybrid/v3",
-            "protocol": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v1",
+            "protocol": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v2",
             "integer_bridge": "wfbitz-joint-limbs",
             "arithmetic_live_bits_per_signature": 100578,
             "arithmetic_auxiliary_values_per_signature": 8605,
