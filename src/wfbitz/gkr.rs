@@ -26,6 +26,56 @@ const PARALLEL_MIN_LANES: usize = 1 << 12;
 
 pub(crate) type Point = VecDeque<Gf>;
 
+/// Whether [`prove_dense_rounds`] keeps the column weights `eq_c` of its
+/// in-tree rounds inside the left half ([`kernels::Left`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Weighing {
+    /// Every slot multiplies by its column weight.
+    Off,
+    /// The first fused in-tree round multiplies the left half by `eq_c`,
+    /// in place of its slots' own multiplies, and the in-tree rounds after
+    /// it skip them — on layers [`weighable`] by their point.
+    On,
+    /// The left half arrives multiplied by `eq_c` already.
+    Carried,
+}
+
+impl Weighing {
+    /// `On` unless `WFBITZ_WEIGH=0`, read once.
+    pub(crate) fn from_env() -> Self {
+        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let on = *ON.get_or_init(|| !matches!(std::env::var("WFBITZ_WEIGH").as_deref(), Ok("0")));
+        if on { Self::On } else { Self::Off }
+    }
+}
+
+/// Whether a layer at the point with little-endian coordinates `external`
+/// (the low `s` of them column coordinates) can carry `eq_c` in its left
+/// half: it needs column coordinates, at least one in-tree round, and
+/// every weight invertible, i.e. no column coordinate equal to 0 or 1 —
+/// the weights leave the half again before the column rounds.
+pub(crate) fn weighable(external: &[Gf], s: usize) -> bool {
+    s > 0 && external.len() > s && external[..s].iter().all(|&z| z != Gf::zero() && z != Gf::one())
+}
+
+/// `1/x` for every entry (none zero): one inversion and `3(n − 1)`
+/// multiplies.
+fn batch_inverse(xs: &[Gf]) -> Vec<Gf> {
+    let mut prefix = Vec::with_capacity(xs.len());
+    let mut acc = Gf::one();
+    for &x in xs {
+        prefix.push(acc);
+        acc = acc * x;
+    }
+    let mut inv = acc.inverse_or_zero();
+    let mut out = vec![Gf::zero(); xs.len()];
+    for i in (0..xs.len()).rev() {
+        out[i] = inv * prefix[i];
+        inv = inv * xs[i];
+    }
+    out
+}
+
 /// The batched product tree: leaves at the bottom, `groups` roots at the
 /// top, product pairs `(i, i + half)` on the top index bit.
 pub struct GrandProductCircuit {
@@ -102,7 +152,7 @@ pub(crate) fn prove_layer_from(
     factor: Gf,
     next_point: VecDeque<Gf>,
 ) -> (Point, Gf) {
-    prove_layer_tensor(ps, point, mle_l, mle_r, skip, factor, next_point, 0)
+    prove_layer_tensor(ps, point, mle_l, mle_r, skip, factor, next_point, 0, Weighing::Off)
 }
 
 /// [`prove_layer_from`] told that the low `s` index bits are column bits:
@@ -119,8 +169,18 @@ pub(crate) fn prove_layer_tensor(
     factor: Gf,
     next_point: VecDeque<Gf>,
     s: usize,
+    weighing: Weighing,
 ) -> (Point, Gf) {
-    prove_dense_rounds(ps, point, mle_l, mle_r, skip, None, factor, next_point, s)
+    prove_dense_rounds(ps, point, mle_l, mle_r, skip, None, factor, next_point, s, weighing)
+}
+
+/// The first half of `v` folded with its second: `v[i] + rho·(v[i+half] − v[i])`.
+fn fold_halves(v: &mut [Gf], rho: Gf) {
+    let half = v.len() / 2;
+    let (lo, hi) = v.split_at_mut(half);
+    for (a, &b) in lo.iter_mut().zip(hi.iter()) {
+        *a = *a + rho * (b - *a);
+    }
 }
 
 /// The dense rounds from round `first` on, each round's fold deferred into
@@ -129,7 +189,10 @@ pub(crate) fn prove_layer_tensor(
 /// registers while accumulating that round's sums, so every table is swept
 /// once per round instead of twice. With a fold pending at entry the halves
 /// hold `2^{total − first + 1}` entries each (the unfolded table), else
-/// `2^{total − first}`. The folded tables occupy the prefixes.
+/// `2^{total − first}`. The folded tables occupy the prefixes. With
+/// `weighing`, the in-tree rounds keep the column weights in the left half
+/// (it arrives so when `Carried`), and the first column round divides them
+/// back out of its `2^s` entries.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prove_dense_rounds(
     ps: &mut ProverState,
@@ -141,6 +204,7 @@ pub(crate) fn prove_dense_rounds(
     mut factor: Gf,
     mut next_point: VecDeque<Gf>,
     s: usize,
+    weighing: Weighing,
 ) -> (Point, Gf) {
     // The eq table a round needs is the one over the coordinates not yet
     // bound, in little-endian (external) order: the external prefix.
@@ -152,10 +216,30 @@ pub(crate) fn prove_dense_rounds(
     );
     let eq_c = if s > 0 && total > s { eq_table(&external[..s]) } else { Vec::new() };
     let one = [Gf::one()];
+    let may_weigh = weighing != Weighing::Off && weighable(&external, s);
+    let mut weighted = weighing == Weighing::Carried;
+    assert!(!weighted || may_weigh, "a weighted left half on a layer that cannot carry weights");
 
     for (round, z) in point.into_iter().enumerate().skip(first) {
         let remaining = total - 1 - round;
         let h = 1usize << remaining;
+        let in_tree = s > 0 && remaining >= s;
+        if weighted && !in_tree {
+            // All in-tree bits are bound: the left half's `2^s` entries are
+            // indexed by column. Apply the pending fold and take `eq_c` out;
+            // the column rounds weigh their slots as usual.
+            if let Some(rho) = pending.take() {
+                fold_halves(mle_l, rho);
+                fold_halves(mle_r, rho);
+                mle_l = &mut mle_l[..2 * h];
+                mle_r = &mut mle_r[..2 * h];
+            }
+            assert_eq!(mle_l.len(), eq_c.len());
+            for (value, inverse) in mle_l.iter_mut().zip(batch_inverse(&eq_c)) {
+                *value = *value * inverse;
+            }
+            weighted = false;
+        }
 
         // At z = 0 the incoming claim determines the value at zero, so send
         // the value at one. Otherwise send the value at zero as usual.
@@ -178,11 +262,20 @@ pub(crate) fn prove_dense_rounds(
                 let (q01_r, q23_r) = mle_r.split_at_mut(2 * h);
                 let (q0_r, q1_r) = q01_r.split_at_mut(h);
                 let (q2_r, q3_r) = q23_r.split_at(h);
+                let left = if weighted {
+                    kernels::Left::Weighted
+                } else if in_tree && may_weigh {
+                    weighted = true;
+                    kernels::Left::Weigh
+                } else {
+                    kernels::Left::Plain
+                };
                 kernels::fused_fold_round(
-                    q0_l, q1_l, q2_l, q3_l, q0_r, q1_r, q2_r, q3_r, rho, weights, send_one,
+                    q0_l, q1_l, q2_l, q3_l, q0_r, q1_r, q2_r, q3_r, rho, weights, send_one, left,
                 )
             }
             None => {
+                debug_assert!(!weighted, "a weighted left half always has a fold pending");
                 debug_assert_eq!(mle_l.len(), 2 * h);
                 let (lo_l, hi_l) = mle_l.split_at(h);
                 let (lo_r, hi_r) = mle_r.split_at(h);
@@ -200,6 +293,7 @@ pub(crate) fn prove_dense_rounds(
         mle_r = &mut mle_r[..2 * h];
         factor = factor * eq_factor(r, z);
     }
+    debug_assert!(!weighted, "the column rounds take the weights out");
 
     if let Some(rho) = pending {
         mle_l[0] = mle_l[0] + rho * (mle_l[1] - mle_l[0]);
@@ -270,4 +364,66 @@ fn verify_layer(vs: &mut VerifierState<'_>, mut claim: Gf, point: Point) -> Opti
     next_point.push_front(r);
     claim = elem_lr[0] + r * (elem_lr[1] - elem_lr[0]);
     Some((next_point, claim))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wfbitz::transcript::build_prover;
+
+    fn field(state: &mut u64) -> Gf {
+        let mut next = || {
+            *state ^= *state << 13;
+            *state ^= *state >> 7;
+            *state ^= *state << 17;
+            *state
+        };
+        Gf::from_polynomial_words([next(), next()])
+    }
+
+    /// The dense rounds send the same bytes and reach the same point and
+    /// claim whether the column weights ride in the left half or in every
+    /// slot: from a plain start, from a half that arrives weighted with a
+    /// fold pending, and when a column coordinate is 0 or 1 (no weighing).
+    #[test]
+    fn dense_rounds_weigh_identically() {
+        for (tree, s) in [(1usize, 3usize), (2, 1), (3, 4), (4, 6), (5, 2), (6, 7), (3, 0), (0, 4)] {
+            let total = tree + s;
+            for special in [None, Some(Gf::zero()), Some(Gf::one())] {
+                let mut state = 0x9E37_79B9 ^ (tree * 97 + s) as u64;
+                let mut external: Vec<Gf> = (0..total).map(|_| field(&mut state)).collect();
+                if let (Some(value), true) = (special, s > 0) {
+                    external[s / 2] = value;
+                }
+                let point: Point = external.iter().rev().copied().collect();
+                let run = |l: &[Gf], r: &[Gf], first: usize, pending: Option<Gf>, weighing: Weighing| {
+                    let (mut l, mut r) = (l.to_vec(), r.to_vec());
+                    let mut ps = build_prover(b"dense-weigh/v1", b"instance");
+                    let next_point: VecDeque<Gf> = point.iter().take(first).copied().collect();
+                    let (p, claim) =
+                        prove_dense_rounds(&mut ps, point.clone(), &mut l, &mut r, first, pending, Gf::one(), next_point, s, weighing);
+                    (p, claim, ps.finish().narg_string)
+                };
+                let label = format!("tree={tree} s={s} special={special:?}");
+                let l: Vec<Gf> = (0..1usize << total).map(|_| field(&mut state)).collect();
+                let r: Vec<Gf> = (0..1usize << total).map(|_| field(&mut state)).collect();
+                let want = run(&l, &r, 0, None, Weighing::Off);
+                assert!(run(&l, &r, 0, None, Weighing::On) == want, "plain start {label}");
+                if tree == 0 {
+                    continue;
+                }
+                // One round in, its challenge pending: `2^total` entries per
+                // half, the low `s` index bits the column.
+                let rho = field(&mut state);
+                let want = run(&l, &r, 1, Some(rho), Weighing::Off);
+                assert!(run(&l, &r, 1, Some(rho), Weighing::On) == want, "pending start {label}");
+                if weighable(&external, s) {
+                    let eq_c = eq_table(&external[..s]);
+                    let mask = (1usize << s) - 1;
+                    let weighted: Vec<Gf> = l.iter().enumerate().map(|(i, &x)| eq_c[i & mask] * x).collect();
+                    assert!(run(&weighted, &r, 1, Some(rho), Weighing::Carried) == want, "carried {label}");
+                }
+            }
+        }
+    }
 }
