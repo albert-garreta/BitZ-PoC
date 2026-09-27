@@ -173,6 +173,9 @@ pub const KNOWN_BITZ_ENV: &[&str] = &[
     "BITZ_MULTISWAP_TRACE_PATH",
     "BITZ_PAIR2_FACTORED",
     "BITZ_PAR_CHUNK",
+    // Product-slot sumcheck: cross-term rounds of the word paths.
+    "BITZ_PRODUCT_WORD_ROUNDS",
+    "BITZ_PRODUCT3_WORD_ROUNDS",
     "BITZ_BINIUS_LOG_INV_RATE",
     "BITZ_BINIUS_LIGERITO_LOG_INV_RATE",
     "BITZ_PLONKY3_LOG_INV_RATE",

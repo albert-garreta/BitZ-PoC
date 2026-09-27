@@ -1472,9 +1472,9 @@ enum Base {
 
 /// Instance rounds the three-factor word path takes from cross terms
 /// (blocks of `2^WORD_ROUNDS3` instances, `8^WORD_ROUNDS3` terms per group).
-const WORD_ROUNDS3: usize = 2;
+const WORD_ROUNDS3: usize = 3;
 
-/// [`WORD_ROUNDS3`], or `BITZ_PRODUCT3_WORD_ROUNDS` (0 to 2).
+/// [`WORD_ROUNDS3`], or `BITZ_PRODUCT3_WORD_ROUNDS` (0 to 3).
 fn word_rounds3() -> usize {
     static ROUNDS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
     *ROUNDS.get_or_init(|| {
@@ -1606,7 +1606,9 @@ fn trits(plus: u32, minus: u32) -> (u32, u32) {
 /// `T(u, v, w) = Σ_s κ_s A_s(u) B_s(v) C_s(w)` for every instance triple of
 /// every block of `2^rounds` instances (block-major, then `u`, `v`, `w`): per
 /// word group, the positive and negative masks of the three-trit products
-/// weigh all 32 slots at once.
+/// weigh all 32 slots at once. Groups whose first two factors coincide (the
+/// squares) are symmetric in `(u, v)`: they run over `u ≤ v` only, into a
+/// second accumulator mirrored at the end.
 fn cubic_cross_terms(
     config: &FieldConfig,
     modulus: u128,
@@ -1619,16 +1621,21 @@ fn cubic_cross_terms(
     let groups = words.operands.len();
     assert!(groups < 1 << 30);
     let two64 = from_u128(config, modulus, (1u128 << 64) % modulus);
-    let scratch = || {
+    let square = words
+        .operands
+        .iter()
+        .map(|ops| ops[0] == ops[2] && ops[1] == ops[3])
+        .collect::<Vec<_>>();
+    type Scratch = (Vec<u64>, Vec<[(u32, u32); 3]>, Vec<[i128; 2]>, Vec<[i128; 2]>);
+    let scratch = || -> Scratch {
         (
             vec![0u64; bits.words_per_instance()],
             vec![[(0u32, 0u32); 3]; groups * size],
             vec![[0i128; 2]; cube],
+            vec![[0i128; 2]; cube],
         )
     };
-    let block = |(local, masks, acc): &mut (Vec<u64>, Vec<[(u32, u32); 3]>, Vec<[i128; 2]>),
-                 index: usize,
-                 out: &mut [F]| {
+    let block = |(local, masks, acc, sym): &mut Scratch, index: usize, out: &mut [F]| {
         for b in 0..size {
             bits.read_local_words(index * size + b, local);
             for (g, operands) in words.operands.iter().enumerate() {
@@ -1641,16 +1648,19 @@ fn cubic_cross_terms(
             }
         }
         acc.fill([0; 2]);
+        sym.fill([0; 2]);
         for (g, (low, high)) in words.weights.iter().enumerate() {
             let (low, high) = (i128::from(*low), i128::from(*high));
             let group = &masks[g * size..(g + 1) * size];
+            let (target, symmetric) = if square[g] { (&mut *sym, true) } else { (&mut *acc, false) };
             for (u, [(pa, na), _, _]) in group.iter().enumerate() {
-                for (v, [_, (pb, nb), _]) in group.iter().enumerate() {
+                let first = if symmetric { u } else { 0 };
+                for (v, [_, (pb, nb), _]) in group.iter().enumerate().skip(first) {
                     let (pab, nab) = ((pa & pb) | (na & nb), (pa & nb) | (na & pb));
                     if pab | nab == 0 {
                         continue;
                     }
-                    let row = &mut acc[(u * size + v) * size..(u * size + v + 1) * size];
+                    let row = &mut target[(u * size + v) * size..(u * size + v + 1) * size];
                     for (entry, [_, _, (pc, nc)]) in row.iter_mut().zip(group) {
                         let positive = (pab & pc) | (nab & nc);
                         let negative = (pab & nc) | (nab & pc);
@@ -1661,10 +1671,14 @@ fn cubic_cross_terms(
                 }
             }
         }
-        for (value, [low, high]) in out.iter_mut().zip(acc.iter()) {
+        for (t, value) in out.iter_mut().enumerate() {
+            let (u, v, w) = (t / (size * size), (t / size) % size, t % size);
+            let mirrored = (u.min(v) * size + u.max(v)) * size + w;
+            let [low, high] = acc[t];
+            let (low, high) = (low + sym[mirrored][0], high + sym[mirrored][1]);
             *value = config.add(
-                &from_i128(config, modulus, *low),
-                &config.mul(&two64, &from_i128(config, modulus, *high)),
+                &from_i128(config, modulus, low),
+                &config.mul(&two64, &from_i128(config, modulus, high)),
             );
         }
     };
