@@ -40,7 +40,8 @@ use std::sync::OnceLock;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use self::nibble::{BitSelectors, NibbleRows, PatternCache, Selector};
+pub(crate) use self::nibble::NibbleRows;
+use self::nibble::{BitSelectors, PatternCache, Selector};
 use super::eq_factor;
 use super::gkr::{Point, Weighing, eq_table, prove_dense_rounds, prove_layer_tensor, weighable};
 use super::kernels;
@@ -133,6 +134,16 @@ impl PatternMode {
     }
 }
 
+/// The nibble rows a forest over this grid reads its indices off (the rule
+/// of [`Forest::nibbles`] for the environment's [`PatternMode`]), built
+/// ahead of it so the column folds can read them too
+/// ([`NibbleRows::column_folds`]); `None` where the forest gathers.
+pub(crate) fn nibble_rows_for(t: usize, s: usize, packed_cols: &[Vec<u64>]) -> Option<NibbleRows> {
+    let mode = PatternMode::from_env();
+    (mode.nibble && t >= MATERIALISED_LEVEL + 3 && t + s >= mode.nibble_from)
+        .then(|| NibbleRows::new(t, packed_cols, (1usize << s).div_ceil(64)))
+}
+
 /// Whether levels with several bit rounds take them all from one pass
 /// (`WFBITZ_ONE_PASS`, `0` or `1`, default on), read once.
 fn one_pass_from_env() -> bool {
@@ -190,6 +201,14 @@ impl<'a> Forest<'a> {
     /// The same forest with its indices read the way `mode` says.
     pub(crate) fn with_patterns(mut self, mode: PatternMode) -> Self {
         self.mode = mode;
+        self
+    }
+
+    /// The same forest with the nibble rows [`nibble_rows_for`] built for its
+    /// grid (the column folds read them first).
+    pub(crate) fn with_nibble_rows(mut self, rows: NibbleRows) -> Self {
+        assert!(rows.fits(self.t, (1usize << self.s).div_ceil(64)), "nibble rows of another grid");
+        self.nibble_rows = OnceLock::from(rows);
         self
     }
 
@@ -286,7 +305,8 @@ impl<'a> Forest<'a> {
         // for `2^{t−4+s}` more entries of peak: 256 MB here, 4 GB at
         // n = 32.)
         let mut arena: Vec<Gf> = Vec::new();
-        if self.nibbles().is_some() {
+        let prebuilt = self.nibble_rows.get().is_some();
+        if self.nibbles().is_some() && !prebuilt {
             super::trace("    nibble rows", started);
         }
         // Level 3's patterns, kept from the build pass for level 4's
@@ -317,6 +337,9 @@ impl<'a> Forest<'a> {
         point.reverse();
         let mut point: Point = VecDeque::from(point);
         let mut claim = Gf::zero();
+        // Each table-driven level's tables have `2^{t+5}` entries; the buffer
+        // goes from level 3 down to level 0 instead of a fresh one per level.
+        let mut spare_tables: Vec<Gf> = Vec::new();
         for ell in (0..t).rev() {
             let started = std::time::Instant::now();
             (point, claim) = if let Some(mut wnext) = levels[ell].take() {
@@ -346,7 +369,7 @@ impl<'a> Forest<'a> {
                 let level_cache = if ell == MATERIALISED_LEVEL { cache3.take() } else { self.pattern_cache() };
                 // Level 3's cache arrives filled by the build pass.
                 let filled = ell == MATERIALISED_LEVEL;
-                self.prove_jit_level(ps, ell, point, tables, &mut arena, level_cache.as_ref(), filled)
+                self.prove_jit_level(ps, ell, point, tables, &mut spare_tables, &mut arena, level_cache.as_ref(), filled)
             } else {
                 self.prove_bit_level(ps, ell, point)
             };
@@ -472,10 +495,7 @@ impl<'a> Forest<'a> {
             for g in 0..groups {
                 let idx = self.pair_bytes(ell, kk, y, y_bits, g, nib);
                 let eq_g = &eq_t[g << 6..(g + 1) << 6];
-                kernels::scatter_add(&mut bk.ll, &idx[0], eq_g);
-                kernels::scatter_add(&mut bk.hh, &idx[1], eq_g);
-                kernels::scatter_add(&mut bk.lh, &idx[2], eq_g);
-                kernels::scatter_add(&mut bk.hl, &idx[3], eq_g);
+                kernels::scatter_add4([&mut bk.ll, &mut bk.hh, &mut bk.lh, &mut bk.hl], &idx, eq_g);
             }
             // Corner `α = (v, x)`'s leaf `u` for half `p`.
             let image = |p: usize, alpha: usize, u: usize| {
@@ -576,6 +596,7 @@ impl<'a> Forest<'a> {
         ell: usize,
         point: Point,
         tables: Option<Tables>,
+        spare_tables: &mut Vec<Gf>,
         arena: &mut Vec<Gf>,
         cache: Option<&PatternCache>,
         filled: bool,
@@ -591,7 +612,7 @@ impl<'a> Forest<'a> {
         let started = std::time::Instant::now();
         let mut tables = match tables {
             Some(tables) if k == 0 => tables,
-            _ => self.fold_table(ell, k, &challenges),
+            _ => self.fold_table_in(ell, k, &challenges, std::mem::take(spare_tables)),
         };
         let eq_c = eq_table(&external[..s]);
         super::trace(&format!("    L{ell} tables"), started);
@@ -643,6 +664,8 @@ impl<'a> Forest<'a> {
         let r2: Gf = ps.verifier_message();
         next_point.push_back(r2);
         factor = factor * eq_factor(r2, z);
+        // The tables are done with: their buffer serves the next level.
+        *spare_tables = std::mem::take(&mut tables.data);
 
         let started = std::time::Instant::now();
         let half = arena.len() / 2;
@@ -692,27 +715,38 @@ impl<'a> Forest<'a> {
     /// `2^{ell+kk}`-bit pattern of the column's bits at rows
     /// `y | v ≪ (t−ell−1−kk) | p ≪ (t−ell−1) | u ≪ (t−ell)`, bit `v·2^ell + u`.
     fn fold_table(&self, ell: usize, kk: usize, r: &[Gf]) -> Tables {
+        self.fold_table_in(ell, kk, r, Vec::new())
+    }
+
+    /// [`Forest::fold_table`] into `buf`'s allocation (its contents are
+    /// dropped): each position's table is built in a stack buffer — the
+    /// `2^kk` factor tables, then their outer sum in place — and written
+    /// out once.
+    fn fold_table_in(&self, ell: usize, kk: usize, r: &[Gf], mut buf: Vec<Gf>) -> Tables {
         let t = self.t;
         let low_bits = t - ell - 1 - kk;
         let positions = 1usize << (t - ell - kk);
         let sub_entries = 1usize << (1usize << ell);
         let len = 1usize << (1usize << (ell + kk));
+        assert!(len <= 256, "a position table has at most 256 entries");
         let eq_v: Vec<Gf> = if kk == 0 {
             vec![Gf::one()]
         } else {
             let reversed: Vec<Gf> = r[..kk].iter().rev().copied().collect();
             eq_table(&reversed)
         };
-        let mut data: Vec<Gf> = Vec::with_capacity(positions * len);
-        let spare = &mut data.spare_capacity_mut()[..positions * len];
+        buf.clear();
+        buf.reserve(positions * len);
+        let spare = &mut buf.spare_capacity_mut()[..positions * len];
         cfg_chunks_mut!(spare, len).enumerate().for_each(|(q, out)| {
             let p = q >> low_bits;
             let y = q & ((1usize << low_bits) - 1);
-            let mut table: Vec<Gf> = Vec::new();
+            let mut table = [Gf::zero(); 256];
+            let mut w = [Gf::zero(); 256];
+            let mut filled = 1usize;
             for v in 0..(1usize << kk) {
                 let base = y | (v << low_bits) | (p << (t - ell - 1));
                 // W_v[sub] = eq_v[v] · Π_{u ∈ sub} A(base + u·2^{t−ell}).
-                let mut w = vec![Gf::zero(); sub_entries];
                 w[0] = eq_v[v];
                 for u in 0..(1usize << ell) {
                     let a = self.images[base | (u << (t - ell))];
@@ -722,23 +756,27 @@ impl<'a> Forest<'a> {
                     }
                 }
                 if v == 0 {
-                    table = w;
+                    table[..sub_entries].copy_from_slice(&w[..sub_entries]);
                 } else {
-                    // Outer sum: new[x | sub ≪ (v·2^ell)] = table[x] + w[sub].
-                    let mut next = Vec::with_capacity(table.len() * sub_entries);
-                    for &ws in &w {
-                        next.extend(table.iter().map(|&x| x + ws));
+                    // Outer sum: new[x | sub ≪ (v·2^ell)] = table[x] + w[sub],
+                    // the highest `sub` first so every block reads the old
+                    // first one.
+                    for sub in (0..sub_entries).rev() {
+                        for x in 0..filled {
+                            table[sub * filled + x] = table[x] + w[sub];
+                        }
                     }
-                    table = next;
                 }
+                filled *= sub_entries;
             }
-            for (slot, value) in out.iter_mut().zip(table) {
+            debug_assert_eq!(filled, len);
+            for (slot, &value) in out.iter_mut().zip(&table[..len]) {
                 slot.write(value);
             }
         });
         // SAFETY: every one of the `positions · len` slots was written above.
-        unsafe { data.set_len(positions * len) };
-        Tables { data, len }
+        unsafe { buf.set_len(positions * len) };
+        Tables { data: buf, len }
     }
 
     /// Level `ell` in full: index `y·2^s + c`.
@@ -1289,10 +1327,7 @@ impl<'a> Forest<'a> {
             } else if let Some((rows, BitSelectors::Pairs(sel))) = nib {
                 let mut idx = [[0u8; 64]; 4];
                 nibble::select(rows.block(yr, g), sel, &mut idx);
-                kernels::scatter_add(&mut bk.ll, &idx[0], eq_g);
-                kernels::scatter_add(&mut bk.hh, &idx[1], eq_g);
-                kernels::scatter_add(&mut bk.lh, &idx[2], eq_g);
-                kernels::scatter_add(&mut bk.hl, &idx[3], eq_g);
+                kernels::scatter_add4([&mut bk.ll, &mut bk.hh, &mut bk.lh, &mut bk.hl], &idx, eq_g);
             } else if nb <= 2 {
                 // Tuple byte: corner `i`'s pattern at bits `i·nb..`.
                 words = [0u64; 8];
@@ -1809,7 +1844,10 @@ mod tests {
     /// gather-and-transpose path produces.
     #[test]
     fn nibble_selections_match_the_gathered_patterns() {
-        for (t, s) in [(6usize, 3usize), (6, 6), (7, 7), (9, 8)] {
+        // `t = 5, 6` build their rows 2 and 4 at a time, the rest 8 (`t = 4`,
+        // one row, has no second row for the paired round's read; the
+        // column-fold test covers its build).
+        for (t, s) in [(5usize, 6usize), (6, 3), (6, 6), (7, 7), (9, 8)] {
             let (packed, images) = random_grid(t, s, (t * 100 + s) as u64);
             let forest = Forest::new(t, s, &packed, &images);
             let groups = (1usize << s).div_ceil(64);
@@ -1880,6 +1918,73 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    /// Every position table is the definition's sum over `v` of
+    /// `eq(v, r)·Π_{u ∈ sub_v} A(base_v + u·2^{t−ℓ})`, also when built into a
+    /// buffer that held another level's tables.
+    #[test]
+    fn fold_tables_match_the_definition() {
+        let t = 7usize;
+        let (packed, images) = random_grid(t, 6, 77);
+        let forest = Forest::new(t, 6, &packed, &images);
+        let mut state = 0xF01D_7AB1u64;
+        let r: Vec<Gf> = (0..3).map(|_| random_gf(&mut state)).collect();
+        let stale: Vec<Gf> = (0..1usize << 13).map(|_| random_gf(&mut state)).collect();
+        for (ell, kk) in [(0usize, 0usize), (0, 1), (0, 2), (0, 3), (1, 0), (1, 1), (1, 2), (2, 0), (2, 1), (3, 0)] {
+            let reversed: Vec<Gf> = r[..kk].iter().rev().copied().collect();
+            let eq_v = if kk == 0 { vec![Gf::one()] } else { eq_table(&reversed) };
+            let low_bits = t - ell - 1 - kk;
+            let nb = 1usize << ell;
+            for tables in [forest.fold_table(ell, kk, &r), forest.fold_table_in(ell, kk, &r, stale.clone())] {
+                assert_eq!(tables.len, 1usize << (nb << kk));
+                for q in 0..1usize << (t - ell - kk) {
+                    let (p, y) = (q >> low_bits, q & ((1usize << low_bits) - 1));
+                    for (x, &got) in tables.at(q).iter().enumerate() {
+                        let mut want = Gf::zero();
+                        for v in 0..1usize << kk {
+                            let base = y | (v << low_bits) | (p << (t - ell - 1));
+                            let mut term = eq_v[v];
+                            for u in 0..nb {
+                                if (x >> ((v << ell) | u)) & 1 == 1 {
+                                    term = term * images[base | (u << (t - ell))];
+                                }
+                            }
+                            want += term;
+                        }
+                        assert_eq!(got, want, "ell={ell} kk={kk} q={q} x={x}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// The column folds off the nibble rows are the integers the bit walk
+    /// gives, at every grid shape the rows are built for.
+    #[test]
+    fn column_folds_match_the_bits() {
+        for (t, s) in [(4usize, 0usize), (4, 5), (5, 6), (6, 3), (7, 7), (9, 8), (10, 6)] {
+            let (packed, _) = random_grid(t, s, (t * 31 + s) as u64);
+            let mut state = 0xC0DE_F01D ^ (t * 7 + s) as u64;
+            let mut word = move || {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                state
+            };
+            // Exponents near 2^127, so the sums wrap.
+            let exponents: Vec<u128> = (0..1usize << t).map(|_| (u128::from(word()) << 64 | u128::from(word())) >> 1).collect();
+            let cols = 1usize << s;
+            let rows = NibbleRows::new(t, &packed, cols.div_ceil(64));
+            let want: Vec<u128> = (0..cols)
+                .map(|c| {
+                    (0..1usize << t)
+                        .filter(|&b| (packed[c / 64][b] >> (c % 64)) & 1 == 1)
+                        .fold(0u128, |acc, b| acc.wrapping_add(exponents[b]))
+                })
+                .collect();
+            assert_eq!(rows.column_folds(t, &exponents, cols), want, "t={t} s={s}");
         }
     }
 

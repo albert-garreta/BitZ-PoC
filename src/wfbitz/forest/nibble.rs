@@ -39,29 +39,112 @@ pub(crate) struct NibbleRows {
 
 impl NibbleRows {
     /// One pass over `packed_cols` (`packed_cols[g][row]`: bit `row` of
-    /// columns `64g..64g+63`, `2^t` rows).
+    /// columns `64g..64g+63`, `2^t` rows). A row's sixteen words lie `2^H`
+    /// apart — at our shapes a multiple of the L1 set stride, so all sixteen
+    /// share one set and evict each other before the next row reads the rest
+    /// of their lines — so a task takes eight consecutive rows and loads each
+    /// line once.
     pub(crate) fn new(t: usize, packed_cols: &[Vec<u64>], groups: usize) -> Self {
         let h = t - 4;
+        let block = 8usize.min(1 << h);
         let len = (1usize << h) * groups * 64;
         let mut data: Vec<u16> = Vec::with_capacity(len);
         let spare = &mut data.spare_capacity_mut()[..len];
-        cfg_chunks_mut!(spare, groups * 64).enumerate().for_each(|(y, row)| {
-            for (g, out) in row.chunks_mut(64).enumerate() {
+        cfg_chunks_mut!(spare, block * groups * 64).enumerate().for_each(|(i, rows)| {
+            let y0 = i * block;
+            for g in 0..groups {
                 let col = &packed_cols[g];
-                let mut lo = [0u64; 8];
-                let mut hi = [0u64; 8];
-                for w in 0..8 {
-                    lo[w] = col[y | (w << h)];
-                    hi[w] = col[y | ((w + 8) << h)];
+                // lines[w][j]: the word of row y0 + j at nibble position w.
+                let mut lines = [[0u64; 8]; 16];
+                for (w, line) in lines.iter_mut().enumerate() {
+                    let start = y0 | (w << h);
+                    line[..block].copy_from_slice(&col[start..start + block]);
                 }
-                let lo = transposed_patterns(&mut lo);
-                let hi = transposed_patterns(&mut hi);
-                interleave_bytes(&lo, &hi, out);
+                for j in 0..block {
+                    let mut lo: [u64; 8] = std::array::from_fn(|w| lines[w][j]);
+                    let mut hi: [u64; 8] = std::array::from_fn(|w| lines[w + 8][j]);
+                    let lo = transposed_patterns(&mut lo);
+                    let hi = transposed_patterns(&mut hi);
+                    let at = (j * groups + g) * 64;
+                    interleave_bytes(&lo, &hi, &mut rows[at..at + 64]);
+                }
             }
         });
         // SAFETY: every row chunk was written in full above.
         unsafe { data.set_len(len) };
         Self { data, groups }
+    }
+
+    /// Every column's integer fold `Σ_b exponents[b]·bit(c, b)` (wrapping,
+    /// the same `u128`s as [`crate::wfbitz::fold::fold_columns`]) off the
+    /// rows: entry `(y, c)` holds the bits of rows `y + w·2^H`, so for each
+    /// `y` two 256-entry tables of subset sums of those rows' exponents
+    /// (`w < 8` and `w ≥ 8`) make it two lookups, and every entry is read
+    /// once, in order.
+    pub(crate) fn column_folds(&self, t: usize, exponents: &[u128], cols: usize) -> Vec<u128> {
+        let h = t - 4;
+        let rows = 1usize << h;
+        let lanes = self.groups * 64;
+        assert_eq!(exponents.len(), 1usize << t);
+        assert_eq!(self.data.len(), rows * lanes);
+        assert!(cols <= lanes);
+        let fold_rows = |range: std::ops::Range<usize>, acc: &mut [u128]| {
+            let mut lo = [0u128; 256];
+            let mut hi = [0u128; 256];
+            for y in range {
+                for v in 1..256usize {
+                    let w = v.trailing_zeros() as usize;
+                    lo[v] = lo[v & (v - 1)].wrapping_add(exponents[y | (w << h)]);
+                    hi[v] = hi[v & (v - 1)].wrapping_add(exponents[y | ((w + 8) << h)]);
+                }
+                let entries = &self.data[y * lanes..(y + 1) * lanes];
+                for (a, &e) in acc.iter_mut().zip(entries) {
+                    let sum = lo[(e & 0xFF) as usize].wrapping_add(hi[(e >> 8) as usize]);
+                    *a = a.wrapping_add(sum);
+                }
+            }
+        };
+        #[cfg(feature = "parallel")]
+        let acc = {
+            let chunk = rows.div_ceil(4 * rayon::current_num_threads().max(1)).max(1);
+            (0..rows.div_ceil(chunk))
+                .into_par_iter()
+                .map(|i| {
+                    let mut acc = vec![0u128; lanes];
+                    fold_rows(i * chunk..((i + 1) * chunk).min(rows), &mut acc);
+                    acc
+                })
+                .reduce(
+                    || vec![0u128; lanes],
+                    |mut a, b| {
+                        for (x, y) in a.iter_mut().zip(b) {
+                            *x = x.wrapping_add(y);
+                        }
+                        a
+                    },
+                )
+        };
+        #[cfg(not(feature = "parallel"))]
+        let acc = {
+            let mut acc = vec![0u128; lanes];
+            fold_rows(0..rows, &mut acc);
+            acc
+        };
+        // Entry `64g + m` is column `64g + col_of(m)`.
+        let mut folds = vec![0u128; cols];
+        for (i, &a) in acc.iter().enumerate() {
+            let c = (i & !63) | super::kernels::col_of(i & 63);
+            if c < cols {
+                folds[c] = a;
+            }
+        }
+        folds
+    }
+
+    /// Whether these rows are the ones [`NibbleRows::new`] builds for `2^t`
+    /// rows and `groups` column groups.
+    pub(crate) fn fits(&self, t: usize, groups: usize) -> bool {
+        t >= 4 && self.groups == groups && self.data.len() == (1usize << (t - 4)) * groups * 64
     }
 
     /// The 64 entries of `(y, g)`.

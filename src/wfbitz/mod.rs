@@ -167,14 +167,23 @@ impl BitZProver {
         transcript.public_message(&self.params);
 
         // Steps 3 and 4: integer column folds, then GKR to a factored bit claim.
+        // The forest's nibble rows come first: the folds read them too.
         trace_start();
         let started = std::time::Instant::now();
+        let nibble = {
+            let started = std::time::Instant::now();
+            let nibble = forest::nibble_rows_for(shape.log_rows(), shape.log_columns(), hint.packed_cols());
+            if nibble.is_some() {
+                trace("  nibble rows", started);
+            }
+            nibble
+        };
         let fold = self
-            .send_fold(claim, rows, transcript)
+            .send_fold_with(claim, rows, nibble.as_ref(), transcript)
             .map_err(ProveError::Fold)?;
         trace("fold+images", started);
         let started = std::time::Instant::now();
-        let query = reduce::gkr_reduce_prove(transcript, &fold, &shape, hint)
+        let query = reduce::gkr_reduce_prove_with(transcript, &fold, &shape, hint, nibble)
             .map_err(ProveError::Reduction)?;
         trace("gkr", started);
 
