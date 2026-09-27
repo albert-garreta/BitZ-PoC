@@ -39,9 +39,10 @@ are selectable; the u64 multiplication SNARK is the first user.
 
 ## How the opener plugs in
 
-The unified runner binds the statement (and Round 0), grinds and draws the
-Step-2 prime, runs the Spartan PIOP under per-draw grinding, bitifies the
-terminal claim and grinds the terminal boundary. The wfbitz opener replaces
+The unified runner binds the statement (then a resolved ladder's policy
+digest and Round 0), grinds and draws the Step-2 prime, runs the Spartan
+PIOP under per-draw grinding, bitifies the terminal claim and grinds the
+terminal boundary. The wfbitz opener replaces
 the last step: the bitified claim is a rank-one functional over the
 committed bit tensor — dense row weights times the column table — and
 their `LinearClaim` is exactly that; the commitment is the same flock
@@ -57,7 +58,9 @@ inside, nothing is drawn from the outer transcript after the fork.
 A Johnson ladder needs the out-of-domain sample that pins the list before
 the first fold challenge (paper `a:OOD`); BitZ ships without one. Here the
 crate's Round 0 runs exactly as for the crate's own opener — bound on the
-outer transcript right after the statement, before the prime draw, with
+outer transcript right after the statement and a resolved ladder's policy
+digest (`Opener::Resolved`, as `PreparedRelation::with_ligerito` carries
+it; BitZ's `fast` ladder has none), before the prime draw, with
 the profile's grinding (`WfbitzOpener::prepare` adopts
 `ood_round_bits(ladder, packed_vars)` into the security parameters as the
 `step0:ood-draw` term) — and the claim `MLE[P](ζ⃗) = y` is batched into

@@ -40,7 +40,8 @@
 //! list before the first fold challenge (paper `a:OOD`). BitZ ships
 //! without one; here the crate's Round 0 runs exactly as it does for the
 //! crate's own opener — bound on the outer transcript right after the
-//! statement, before the prime draw, with the profile's grinding
+//! statement and a resolved ladder's policy digest, before the prime
+//! draw, with the profile's grinding
 //! ([`WfbitzOpener::prepare`] adopts the ladder's Round-0 accounting into
 //! the security parameters) — and its claim `MLE[P](ζ⃗) = y` is batched
 //! into BitZ's final Ligerito opening (`η_ood·eq(·, ζ⃗)` into the basis,
@@ -57,7 +58,9 @@ use crate::{
         pcs::Pcs as BitzPcs,
         transcript::{Proof as BitzTranscriptProof, build_prover, build_verifier},
     },
-    ligerito_flock::{FlockCommitHint, LigeritoSelection, OodRound, ood_round_bits},
+    ligerito_flock::{
+        FlockCommitHint, LigeritoSelection, OodRound, ResolvedLigerito, ood_round_bits,
+    },
     pcs::IntegerMatrixLayout,
     piop::spartan::profile::IopSecurityProfile,
     transcript::traits::Transcript,
@@ -117,6 +120,10 @@ pub struct WfbitzOpener {
     security: LigeritoSecurityConfig,
     /// The ladder's identity, bound with the statement.
     digest: [u8; 32],
+    /// A resolved selection as the crate's own opener carries it (`None`
+    /// for BitZ's `fast` ladder): its policy digest is bound after the
+    /// statement, before Round 0.
+    resolved: Option<ResolvedLigerito>,
     /// `log₂` of the packed message (`m − 7`): the Round-0 point's arity.
     packed_vars: usize,
 }
@@ -136,7 +143,7 @@ impl WfbitzOpener {
         }
         let shape = Shape::new(layout.row_vars, layout.col_vars)
             .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ shape: {error:?}")))?;
-        let (pcs, security, digest) = match ligerito {
+        let (pcs, security, digest, resolved) = match ligerito {
             WfbitzLigerito::Fast => {
                 let pcs = BitzPcs::new(&shape, HashKind::Blake3)
                     .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ pcs: {error:?}")))?;
@@ -149,7 +156,7 @@ impl WfbitzOpener {
                     .map_err(ProtocolError::LigeritoConfig)?;
                 security.hash = "blake3".to_owned();
                 let digest = *blake3::hash(source.as_bytes()).as_bytes();
-                (pcs, security, digest)
+                (pcs, security, digest, None)
             }
             WfbitzLigerito::Selected(selection) => {
                 let resolved = selection
@@ -157,7 +164,8 @@ impl WfbitzOpener {
                     .map_err(ProtocolError::LigeritoConfig)?;
                 let pcs = BitzPcs::with_security(&shape, resolved.security(), LigeritoProfile::Fast)
                     .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ pcs: {error:?}")))?;
-                (pcs, resolved.security().clone(), resolved.digest())
+                let (security, digest) = (resolved.security().clone(), resolved.digest());
+                (pcs, security, digest, Some(resolved))
             }
         };
         Ok(Self {
@@ -167,6 +175,7 @@ impl WfbitzOpener {
             ligerito,
             security,
             digest,
+            resolved,
             packed_vars: packed_variables(&layout)?,
         })
     }
@@ -219,13 +228,19 @@ impl WfbitzOpener {
         &self.pcs
     }
 
-    /// The opener configuration the statement binding covers: the ladder's
-    /// prover and verifier configurations (no policy digest of the crate's
-    /// kind, no Round 0).
+    /// The opener configuration the statement binding covers: a resolved
+    /// selection as [`super::PreparedRelation::with_ligerito`] carries it
+    /// (its policy digest bound after the statement, before Round 0; its
+    /// configurations are the ones the scheme runs), and BitZ's `fast`
+    /// ladder as its prover and verifier configurations (no policy digest
+    /// of the crate's kind).
     pub fn opener(&self) -> Opener {
-        Opener::Custom {
-            prover: Some(self.pcs.prover_config().clone()),
-            verifier: Some(self.pcs.verifier_config().clone()),
+        match &self.resolved {
+            Some(resolved) => Opener::Resolved(resolved.clone()),
+            None => Opener::Custom {
+                prover: Some(self.pcs.prover_config().clone()),
+                verifier: Some(self.pcs.verifier_config().clone()),
+            },
         }
     }
 
@@ -435,6 +450,9 @@ pub fn prove<T: Transcript + Send, S: RelationSpec>(
     }
     validate_bit_rows(opener.layout(), hint.rows())?;
     validate_commitment(opener.layout(), &hint.commitment, opener.pcs().prover_config())?;
+    // The statement, a resolved ladder's policy digest and Round 0, as the
+    // runner binds them; then the session and the ladder's identity (the
+    // `fast` ladder's only digest: it has no policy digest).
     let configuration = opener.opener();
     let (binding, ood) = bind_prover_statement(transcript, prefix, &configuration, hint)?;
     transcript.absorb_slice(SESSION);
@@ -840,6 +858,72 @@ mod tests {
         let proof = prove(&mut Blake3Transcript::new(), &prefix, &fast, &witness, &hint).unwrap();
         verify(&mut Blake3Transcript::new(), &prefix, &fast, &hint.commitment, &proof).unwrap();
         assert!(verify(&mut Blake3Transcript::new(), &udr_prefix, &udr, &hint.commitment, &proof).is_err());
+    }
+
+    /// Under a resolved ladder the statement phase is the crate's own
+    /// runner's ([`PreparedRelation::with_ligerito`]): the configuration
+    /// the statement binds is the one the scheme runs, the commitment is
+    /// the runner's, and the statement, the policy digest and Round 0 are
+    /// absorbed in the runner's order, so the Round-0 record of a proof is
+    /// the forest proof's.
+    #[test]
+    fn statement_phase_matches_the_runner() {
+        use crate::piop::spartan::{mul::MulWord, protocol as runner};
+
+        fn check<T: MulWord>(input: impl FnMut(usize) -> (T, T))
+        where
+            MulLayout<T>: RelationSpec<Witness = MulWitness<T>>,
+        {
+            let layout = MulLayout::<T>::new(1 << 15).unwrap().wfbitz_split(0).unwrap();
+            let witness = MulWitness::from_fn_with_layout(layout, input).unwrap();
+            let selection = LigeritoSelection::JOHNSON;
+            let forest =
+                PreparedRelation::new_with_profile_and_ligerito::<Lambda100>(layout, selection)
+                    .unwrap();
+            let (prefix, opener) = WfbitzOpener::prepare::<Lambda100, _>(
+                layout,
+                WfbitzLigerito::Selected(selection),
+                100,
+            )
+            .unwrap();
+            let configuration = opener.opener();
+            let resolved = configuration.resolved().expect("a resolved ladder");
+            assert_eq!(resolved.digest(), forest.ligerito_configuration().digest());
+            assert_eq!(resolved.digest(), opener.digest());
+            // What the statement binds and the commitment is checked against
+            // is what BitZ commits and opens under.
+            let bound = configuration.binding_config().unwrap();
+            assert_eq!(format!("{bound:?}"), format!("{:?}", opener.pcs().prover_config()));
+            assert_eq!(
+                format!("{:?}", configuration.verifier().unwrap()),
+                format!("{:?}", opener.pcs().verifier_config())
+            );
+            assert_eq!(prefix.security().ood, forest.security().ood);
+            assert!(prefix.security().ood.is_some());
+
+            let rows = witness.bitz_bit_rows();
+            let forest_hint = runner::commit(&forest, rows.clone()).unwrap();
+            let hint = opener.commit(rows).unwrap();
+            assert_eq!(hint.commitment.root, forest_hint.commitment.root);
+            let forest_proof =
+                runner::prove(&mut Blake3Transcript::new(), &forest, &witness, &forest_hint)
+                    .unwrap();
+            let proof =
+                prove(&mut Blake3Transcript::new(), &prefix, &opener, &witness, &hint).unwrap();
+            verify(&mut Blake3Transcript::new(), &prefix, &opener, &hint.commitment, &proof)
+                .unwrap();
+            assert!(proof.bitz().ood().is_some());
+            assert_eq!(proof.bitz().ood(), forest_proof.bitz().ood());
+        }
+
+        check::<u32>(|i| {
+            let i = i as u32;
+            (i.wrapping_mul(0x9e37_79b9) ^ 0x5bd1_e995, i.wrapping_mul(0x85eb_ca6b) ^ 0xc2b2_ae35)
+        });
+        check::<u64>(|i| {
+            let i = i as u64;
+            (i.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ 0x243f_6a88_85a3_08d3, !i.rotate_left(17))
+        });
     }
 
     /// The commitment is checked against the opener's configuration up
