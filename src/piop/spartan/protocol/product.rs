@@ -242,78 +242,6 @@ fn instance_linear_values(
     }
 }
 
-/// Exact sums `Σ_g c_g · x_g` of 115-bit weights times 33-bit signed
-/// integers in `i64` lanes: the weight as four 29-bit limbs, the integer as
-/// a low 16-bit half and a signed high half, so every product is below
-/// `2^45` and up to `2^18` terms fit. Lane `(2k + h) · entries + e` holds
-/// entry `e`'s limb-`k`, half-`h` sum; the innermost loops run over
-/// contiguous entries (widening multiply-adds).
-struct LimbSums {
-    entries: usize,
-    lanes: Vec<i64>,
-}
-
-impl LimbSums {
-    const LIMB_BITS: u32 = 29;
-
-    fn new(entries: usize) -> Self {
-        Self {
-            entries,
-            lanes: vec![0; 8 * entries],
-        }
-    }
-
-    fn clear(&mut self) {
-        self.lanes.fill(0);
-    }
-
-    /// The four 29-bit limbs of a canonical weight below `2^116`.
-    fn limbs(weight: u128) -> [i32; 4] {
-        std::array::from_fn(|k| ((weight >> (Self::LIMB_BITS * k as u32)) & ((1 << Self::LIMB_BITS) - 1)) as i32)
-    }
-
-    /// Adds `c · x[j]` to entries `first..first + x.len()`, `x` given as
-    /// its halves (`x = high · 2^16 + low`).
-    #[inline(always)]
-    fn add(&mut self, limbs: &[i32; 4], first: usize, low: &[i32], high: &[i32]) {
-        let entries = self.entries;
-        for (k, &limb) in limbs.iter().enumerate() {
-            let limb = i64::from(limb);
-            for (h, half) in [low, high].into_iter().enumerate() {
-                let lane = &mut self.lanes[(2 * k + h) * entries + first..][..half.len()];
-                for (acc, &x) in lane.iter_mut().zip(half) {
-                    *acc += limb * i64::from(x);
-                }
-            }
-        }
-    }
-
-    /// Entry `e`'s exact sum (plus entry `other`'s, when given) as a field
-    /// element.
-    fn value(&self, config: &FieldConfig, modulus: u128, two58: &F, e: usize, other: Option<(&Self, usize)>) -> F {
-        let lane = |k: usize, h: usize| {
-            let mut v = i128::from(self.lanes[(2 * k + h) * self.entries + e]);
-            if let Some((other, o)) = other {
-                v += i128::from(other.lanes[(2 * k + h) * other.entries + o]);
-            }
-            v
-        };
-        let limb = |k: usize| lane(k, 0) + (lane(k, 1) << 16);
-        let low = limb(0) + (limb(1) << Self::LIMB_BITS);
-        let high = limb(2) + (limb(3) << Self::LIMB_BITS);
-        config.add(&from_i128(config, modulus, low), &config.mul(two58, &from_i128(config, modulus, high)))
-    }
-}
-
-/// The halves of 33-bit signed integers: `x = high · 2^16 + low`.
-#[inline(always)]
-fn halves(x: &[i64], low: &mut [i32], high: &mut [i32]) {
-    for ((x, l), h) in x.iter().zip(low.iter_mut()).zip(high.iter_mut()) {
-        *l = (x & 0xffff) as i32;
-        *h = (x >> 16) as i32;
-    }
-}
-
 /// `scale · eq(η_j, X) · (l0 + (l1 − l0 − l∞) X + l∞ X²)` in coefficient form.
 fn instance_round_polynomial(
     config: &FieldConfig,
@@ -693,8 +621,8 @@ fn read_group_words(
 /// `C(u, v) = Σ_s κ_s e_s(u) f_s(v)` for every instance pair of every block
 /// of `2^rounds` instances (block-major, then `u`-major). One word group
 /// contributes `κ_{32 g} · (int(E_u ∧ P_v) − int(E_u ∧ M_v))`, all 32 of its
-/// slots at once ([`LimbSums`]). With `free`, also every instance's
-/// `⟨free, h_i⟩`, read in the same pass.
+/// slots at once. With `free`, also every instance's `⟨free, h_i⟩`, read in
+/// the same pass.
 fn word_cross_terms(
     config: &FieldConfig,
     modulus: u128,
@@ -705,20 +633,19 @@ fn word_cross_terms(
 ) -> (Vec<F>, Vec<F>) {
     let size = 1usize << rounds;
     let groups = words.columns.len();
-    assert!(groups < 1 << 18 && modulus >> 115 == 0);
-    let two58 = from_u128(config, modulus, (1u128 << 58) % modulus);
-    let limbs = words.weights.iter().map(|(low, high)| LimbSums::limbs(u128::from(*low) | (u128::from(*high) << 64))).collect::<Vec<_>>();
-    type Scratch = (Vec<u64>, Vec<[u32; 3]>, LimbSums, [Vec<i64>; 1], [Vec<i32>; 2]);
+    // The low halves' sums stay below `2^96 · groups`, the high ones' below
+    // `2^83 · groups`.
+    assert!(groups < 1 << 30);
+    let two64 = from_u128(config, modulus, (1u128 << 64) % modulus);
+    type Scratch = (Vec<u64>, Vec<[u32; 3]>, Vec<[i128; 2]>);
     let scratch = || -> Scratch {
         (
             vec![0u64; bits.words_per_instance()],
             vec![[0u32; 3]; groups * size],
-            LimbSums::new(size * size),
-            [vec![0i64; size]],
-            [vec![0i32; size], vec![0i32; size]],
+            vec![[0i128; 2]; size * size],
         )
     };
-    let block = |(local, group_words, sums, [x], [low, high]): &mut Scratch,
+    let block = |(local, group_words, acc): &mut Scratch,
                  index: usize,
                  out: &mut [F],
                  free_out: &mut [F]| {
@@ -731,19 +658,23 @@ fn word_cross_terms(
                 free_out[b] = free.value(config, local);
             }
         }
-        sums.clear();
-        for (g, limbs) in limbs.iter().enumerate() {
+        acc.fill([0; 2]);
+        for (g, (low, high)) in words.weights.iter().enumerate() {
+            let (low, high) = (i128::from(*low), i128::from(*high));
             let group = &group_words[g * size..(g + 1) * size];
             for (u, [e, _, _]) in group.iter().enumerate() {
-                for (x, [_, p, m]) in x.iter_mut().zip(group) {
-                    *x = i64::from(e & p) - i64::from(e & m);
+                for (entry, [_, p, m]) in acc[u * size..(u + 1) * size].iter_mut().zip(group) {
+                    let x = i128::from(i64::from(e & p) - i64::from(e & m));
+                    entry[0] += low * x;
+                    entry[1] += high * x;
                 }
-                halves(x, low, high);
-                sums.add(limbs, u * size, low, high);
             }
         }
-        for (e, value) in out.iter_mut().enumerate() {
-            *value = sums.value(config, modulus, &two58, e, None);
+        for (value, [low, high]) in out.iter_mut().zip(acc.iter()) {
+            *value = config.add(
+                &from_i128(config, modulus, *low),
+                &config.mul(&two64, &from_i128(config, modulus, *high)),
+            );
         }
     };
     let blocks = bits.instance_capacity() >> rounds;
@@ -1862,10 +1793,13 @@ fn trits(plus: u32, minus: u32) -> (u32, u32) {
 /// `T(u, v, w) = Σ_s κ_s A_s(u) B_s(v) C_s(w)` for every instance triple of
 /// every block of `2^rounds` instances (block-major, then `u`, `v`, `w`): per
 /// word group, the positive and negative masks of the three-trit products
-/// weigh all 32 slots at once ([`LimbSums`]). Groups whose first two factors
-/// coincide (the squares) are symmetric in `(u, v)`: they run over `u ≤ v`
-/// only, into a second accumulator mirrored at the end. With `free`, also
-/// every instance's `⟨free, h_i⟩`, read in the same pass.
+/// weigh all 32 slots at once. Groups whose first two factors coincide (the
+/// squares) are symmetric in `(u, v)`: they run over `u ≤ v` only, into a
+/// second accumulator mirrored at the end. Groups whose third factor is the
+/// same for every bit (a broadcast column, like `Ch`'s constant one) add
+/// `C(w) · T₂(u, v)`: their `(u, v)` sums are kept once per distinct third
+/// factor and spread over `w` at the end. With `free`, also every
+/// instance's `⟨free, h_i⟩`, read in the same pass.
 fn cubic_cross_terms(
     config: &FieldConfig,
     modulus: u128,
@@ -1877,29 +1811,41 @@ fn cubic_cross_terms(
     let size = 1usize << rounds;
     let cube = size * size * size;
     let groups = words.operands.len();
-    assert!(groups < 1 << 18 && modulus >> 115 == 0);
-    let two58 = from_u128(config, modulus, (1u128 << 58) % modulus);
-    let limbs = words
-        .weights
-        .iter()
-        .map(|(low, high)| LimbSums::limbs(u128::from(*low) | (u128::from(*high) << 64)))
-        .collect::<Vec<_>>();
+    assert!(groups < 1 << 30);
+    let two64 = from_u128(config, modulus, (1u128 << 64) % modulus);
     let square = words
         .operands
         .iter()
         .map(|ops| ops[0] == ops[2] && ops[1] == ops[3])
         .collect::<Vec<_>>();
-    type Scratch = (Vec<u64>, Vec<[(u32, u32); 3]>, [LimbSums; 2], Vec<i64>, [Vec<i32>; 2]);
+    // The distinct uniform third factors and each group's index among them.
+    let uniform = |op: Operand| matches!(op, Operand::Zero | Operand::Broadcast(_));
+    let mut outer_factors: Vec<(Operand, Operand)> = Vec::new();
+    let outer = words
+        .operands
+        .iter()
+        .map(|ops| {
+            (uniform(ops[4]) && uniform(ops[5])).then(|| {
+                let factor = (ops[4], ops[5]);
+                outer_factors.iter().position(|f| *f == factor).unwrap_or_else(|| {
+                    outer_factors.push(factor);
+                    outer_factors.len() - 1
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    type Scratch = (Vec<u64>, Vec<[(u32, u32); 3]>, Vec<[i128; 2]>, Vec<[i128; 2]>, Vec<[i128; 2]>, Vec<i32>);
     let scratch = || -> Scratch {
         (
             vec![0u64; bits.words_per_instance()],
             vec![[(0u32, 0u32); 3]; groups * size],
-            [LimbSums::new(cube), LimbSums::new(cube)],
-            vec![0i64; size],
-            [vec![0i32; size], vec![0i32; size]],
+            vec![[0i128; 2]; cube],
+            vec![[0i128; 2]; cube],
+            vec![[0i128; 2]; outer_factors.len() * size * size],
+            vec![0i32; outer_factors.len() * size],
         )
     };
-    let block = |(local, masks, [acc, sym], x, [low, high]): &mut Scratch,
+    let block = |(local, masks, acc, sym, flat, third): &mut Scratch,
                  index: usize,
                  out: &mut [F],
                  free_out: &mut [F]| {
@@ -1916,11 +1862,31 @@ fn cubic_cross_terms(
             if let Some(free) = free {
                 free_out[b] = free.value(config, local);
             }
+            // The uniform third factors' value on this instance (bit 0 of
+            // the broadcast word).
+            for (f, (plus, minus)) in outer_factors.iter().enumerate() {
+                third[f * size + b] = (plus.read(local) & 1) as i32 - (minus.read(local) & 1) as i32;
+            }
         }
-        acc.clear();
-        sym.clear();
-        for (g, limbs) in limbs.iter().enumerate() {
+        acc.fill([0; 2]);
+        sym.fill([0; 2]);
+        flat.fill([0; 2]);
+        for (g, (low, high)) in words.weights.iter().enumerate() {
+            let (low, high) = (i128::from(*low), i128::from(*high));
             let group = &masks[g * size..(g + 1) * size];
+            if let Some(f) = outer[g] {
+                // T₂(u, v) = Σ_i 2^i A_i(u) B_i(v): the product's trit masks.
+                let plane = &mut flat[f * size * size..(f + 1) * size * size];
+                for (u, [(pa, na), _, _]) in group.iter().enumerate() {
+                    for (entry, [_, (pb, nb), _]) in plane[u * size..(u + 1) * size].iter_mut().zip(group) {
+                        let (pab, nab) = ((pa & pb) | (na & nb), (pa & nb) | (na & pb));
+                        let x = i128::from(i64::from(pab) - i64::from(nab));
+                        entry[0] += low * x;
+                        entry[1] += high * x;
+                    }
+                }
+                continue;
+            }
             let (target, symmetric) = if square[g] { (&mut *sym, true) } else { (&mut *acc, false) };
             for (u, [(pa, na), _, _]) in group.iter().enumerate() {
                 let first = if symmetric { u } else { 0 };
@@ -1929,20 +1895,33 @@ fn cubic_cross_terms(
                     if pab | nab == 0 {
                         continue;
                     }
-                    for (x, [_, _, (pc, nc)]) in x.iter_mut().zip(group) {
+                    let row = &mut target[(u * size + v) * size..(u * size + v + 1) * size];
+                    for (entry, [_, _, (pc, nc)]) in row.iter_mut().zip(group) {
                         let positive = (pab & pc) | (nab & nc);
                         let negative = (pab & nc) | (nab & pc);
-                        *x = i64::from(positive) - i64::from(negative);
+                        let x = i128::from(i64::from(positive) - i64::from(negative));
+                        entry[0] += low * x;
+                        entry[1] += high * x;
                     }
-                    halves(x, low, high);
-                    target.add(limbs, (u * size + v) * size, low, high);
                 }
             }
         }
         for (t, value) in out.iter_mut().enumerate() {
             let (u, v, w) = (t / (size * size), (t / size) % size, t % size);
             let mirrored = (u.min(v) * size + u.max(v)) * size + w;
-            *value = acc.value(config, modulus, &two58, t, Some((sym, mirrored)));
+            let [mut low, mut high] = acc[t];
+            low += sym[mirrored][0];
+            high += sym[mirrored][1];
+            for f in 0..outer_factors.len() {
+                let c = i128::from(third[f * size + w]);
+                let [l, h] = flat[f * size * size + u * size + v];
+                low += c * l;
+                high += c * h;
+            }
+            *value = config.add(
+                &from_i128(config, modulus, low),
+                &config.mul(&two64, &from_i128(config, modulus, high)),
+            );
         }
     };
     let blocks = bits.instance_capacity() >> rounds;
