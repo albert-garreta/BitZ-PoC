@@ -16,19 +16,32 @@
 //! pairwise products of its table values; the levels above are products of
 //! the level below. The round sums are the same field sums their dense pass
 //! computes, so every message is byte-identical.
+//!
+//! Every table index these levels read is eight (or fewer) bits of one
+//! column at rows `y + w·2^{t−4}`, so the packed columns are regrouped once
+//! per proof into [`nibble::NibbleRows`] (the sixteen such bits of each
+//! `(y, column)` as one `u16`) and each pass selects its indices from them
+//! with nibble lookups, instead of gathering eight strided words and
+//! transposing them per 64 columns in every pass (`WFBITZ_NIBBLE=0`
+//! restores that path; `WFBITZ_PATTERN_CACHE=1` also keeps a level's JIT
+//! patterns for the passes that reread them).
 
 use std::collections::VecDeque;
 use std::mem::MaybeUninit;
+use std::sync::OnceLock;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
+use self::nibble::{BitSelectors, NibbleRows, PatternCache, Selector};
 use super::eq_factor;
 use super::gkr::{Point, eq_table, prove_dense_rounds, prove_layer_tensor};
 use super::kernels;
 use super::transcript::ProverState;
 use field::Gf128 as Gf;
 use crate::{cfg_chunks_mut, cfg_into_iter};
+
+mod nibble;
 
 /// Levels below this run `MATERIALISED_LEVEL − ℓ` rounds off the bits;
 /// this level's own rounds read its tables; the levels above are
@@ -67,6 +80,45 @@ impl Tables {
     }
 }
 
+/// How the table-driven levels obtain their table indices (the proof is the
+/// same either way).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PatternMode {
+    /// Read every index off the [`NibbleRows`] built once per proof instead
+    /// of gathering and transposing the packed words in every pass.
+    pub(crate) nibble: bool,
+    /// Keep a level's JIT patterns for the passes that read the same ones
+    /// again: the JIT fold after its level's JIT round, and level 3's round
+    /// and fold and level 4's rebuild after the build pass.
+    pub(crate) cache: bool,
+}
+
+impl PatternMode {
+    /// `WFBITZ_NIBBLE` / `WFBITZ_PATTERN_CACHE` (`0` or `1`), read once.
+    pub(crate) fn from_env() -> Self {
+        static MODE: OnceLock<PatternMode> = OnceLock::new();
+        *MODE.get_or_init(|| {
+            let flag = |name: &str, default: bool| match std::env::var(name).as_deref() {
+                Ok("0") => false,
+                Ok("1") => true,
+                _ => default,
+            };
+            PatternMode {
+                nibble: flag("WFBITZ_NIBBLE", true),
+                cache: flag("WFBITZ_PATTERN_CACHE", false),
+            }
+        })
+    }
+}
+
+/// Which [`PatternCache`] a pass fills or reads, if any.
+#[derive(Clone, Copy)]
+enum CacheUse<'c> {
+    Off,
+    Fill(&'c PatternCache),
+    Read(&'c PatternCache),
+}
+
 pub(crate) struct Forest<'a> {
     /// `log2` rows (the paper's `t`).
     t: usize,
@@ -76,6 +128,10 @@ pub(crate) struct Forest<'a> {
     packed_cols: &'a [Vec<u64>],
     /// `A(b) = g^{w_b}`, one per row.
     images: &'a [Gf],
+    mode: PatternMode,
+    /// The packed columns regrouped for the table-driven levels, built on
+    /// first use when `mode.nibble`.
+    nibble_rows: OnceLock<NibbleRows>,
 }
 
 impl<'a> Forest<'a> {
@@ -89,7 +145,68 @@ impl<'a> Forest<'a> {
             s,
             packed_cols,
             images,
+            mode: PatternMode::from_env(),
+            nibble_rows: OnceLock::new(),
         }
+    }
+
+    /// The same forest with its indices read the way `mode` says.
+    pub(crate) fn with_patterns(mut self, mode: PatternMode) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    /// The nibble rows, when the mode uses them and the table-driven
+    /// levels run their JIT rounds (`t ≥ 6`; the small-`t` path gathers).
+    /// Call outside parallel regions: the first call builds them.
+    fn nibbles(&self) -> Option<&NibbleRows> {
+        (self.mode.nibble && self.jit()).then(|| {
+            self.nibble_rows
+                .get_or_init(|| NibbleRows::new(self.t, self.packed_cols, (1usize << self.s).div_ceil(64)))
+        })
+    }
+
+    /// Corners `(0, y)` and `(1, y)` of level `ell`'s JIT patterns
+    /// (`ell + kk = 3`, `y < 2^{t−4}`) in group `g`: read from `cache`,
+    /// else selected from the nibble rows (`jit_sel` = level `ell`'s
+    /// selectors), else gathered and transposed — and stored when filling.
+    #[inline(always)]
+    fn jit_patterns(
+        &self,
+        ell: usize,
+        y: usize,
+        g: usize,
+        nib: Option<(&NibbleRows, &[Selector; 2])>,
+        cache: CacheUse<'_>,
+    ) -> [[u8; 64]; 2] {
+        if let CacheUse::Read(c) = cache {
+            // SAFETY: the pass that filled this level's cache has finished.
+            return unsafe { [*c.read(0, y, g), *c.read(1, y, g)] };
+        }
+        let mut out = [[0u8; 64]; 2];
+        match nib {
+            Some((rows, sel)) => nibble::select(rows.block(y, g), sel, &mut out),
+            None => {
+                let mut words = [0u64; 8];
+                for (p, block) in out.iter_mut().enumerate() {
+                    self.corner_words(ell, MATERIALISED_LEVEL - ell, p, y, g, &mut words);
+                    *block = transposed_patterns(&mut words);
+                }
+            }
+        }
+        if let CacheUse::Fill(c) = cache {
+            // SAFETY: the calling task owns row `y` of this level.
+            unsafe {
+                c.write(0, y, g, &out[0]);
+                c.write(1, y, g, &out[1]);
+            }
+        }
+        out
+    }
+
+    /// A pattern cache for one level, when the mode keeps them.
+    fn pattern_cache(&self) -> Option<PatternCache> {
+        (self.mode.cache && self.jit()).then(|| PatternCache::new(self.t - 4, (1usize << self.s).div_ceil(64)))
     }
 
     /// Whether the table-driven levels have two in-tree rounds left after
@@ -117,13 +234,21 @@ impl<'a> Forest<'a> {
         // for `2^{t−4+s}` more entries of peak: 256 MB here, 4 GB at
         // n = 32.)
         let mut arena: Vec<Gf> = Vec::new();
+        if self.nibbles().is_some() {
+            super::trace("    nibble rows", started);
+        }
+        // Level 3's patterns, kept from the build pass for level 4's
+        // rebuild and level 3's own JIT round and fold.
+        let mut cache3 = self.pattern_cache();
         let mut tables3 = if self.jit() {
+            let started = std::time::Instant::now();
             let tables = self.fold_table(MATERIALISED_LEVEL, 0, &[]);
             super::trace("    L3 value tables", started);
             let started = std::time::Instant::now();
             arena = Vec::with_capacity(1usize << (t - MATERIALISED_LEVEL - 1 + self.s));
             let fused = (t - MATERIALISED_LEVEL - 2).min(FUSED_UPPER_LEVELS);
-            self.upper_levels_into(&tables, &mut arena, fused);
+            let fill = cache3.as_ref().map_or(CacheUse::Off, CacheUse::Fill);
+            self.upper_levels_into(&tables, &mut arena, fused, fill);
             super::trace(&format!("    levels {}..{} build", MATERIALISED_LEVEL + 2, t - 1), started);
             Some(tables)
         } else {
@@ -158,14 +283,18 @@ impl<'a> Forest<'a> {
                 // longer hide behind a memory stream.)
                 let rebuilt = std::time::Instant::now();
                 arena.clear();
-                self.product_level_into(tables3.as_ref().expect("jit"), &mut arena);
+                let read = cache3.as_ref().map_or(CacheUse::Off, CacheUse::Read);
+                self.product_level_into_with(tables3.as_ref().expect("jit"), &mut arena, read);
                 super::trace("    L4 rebuild", rebuilt);
                 let mid = arena.len() / 2;
                 let (l, r) = arena.split_at_mut(mid);
                 prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s)
             } else if self.jit() {
                 let tables = if ell == MATERIALISED_LEVEL { tables3.take() } else { None };
-                self.prove_jit_level(ps, ell, point, tables, &mut arena)
+                let level_cache = if ell == MATERIALISED_LEVEL { cache3.take() } else { self.pattern_cache() };
+                // Level 3's cache arrives filled by the build pass.
+                let filled = ell == MATERIALISED_LEVEL;
+                self.prove_jit_level(ps, ell, point, tables, &mut arena, level_cache.as_ref(), filled)
             } else {
                 self.prove_bit_level(ps, ell, point)
             };
@@ -217,6 +346,9 @@ impl<'a> Forest<'a> {
     /// A level at or below [`MATERIALISED_LEVEL`]: `k` rounds off the bits,
     /// two rounds through the `k`-fold tables (the second writing the
     /// once-folded halves into `arena`), then the dense rounds on the arena.
+    /// With a `cache`, the JIT fold reads the patterns the JIT round
+    /// stored there (or both read them, when the cache arrives `filled`).
+    #[allow(clippy::too_many_arguments)]
     fn prove_jit_level(
         &self,
         ps: &mut ProverState,
@@ -224,6 +356,8 @@ impl<'a> Forest<'a> {
         point: Point,
         tables: Option<Tables>,
         arena: &mut Vec<Gf>,
+        cache: Option<&PatternCache>,
+        filled: bool,
     ) -> (Point, Gf) {
         let t = self.t;
         let s = self.s;
@@ -246,7 +380,12 @@ impl<'a> Forest<'a> {
         let z = point[k];
         let send_one = z == Gf::zero();
         let eq_y = eq_table(&external[s..s + low_bits - 1]);
-        let (sum_endpoint, sum_inf) = self.jit_round_sums(&tables, ell, k, &eq_c, &eq_y, send_one);
+        let round_cache = match cache {
+            Some(c) if filled => CacheUse::Read(c),
+            Some(c) => CacheUse::Fill(c),
+            None => CacheUse::Off,
+        };
+        let (sum_endpoint, sum_inf) = self.jit_round_sums_with(&tables, ell, k, &eq_c, &eq_y, send_one, round_cache);
         super::trace(&format!("    L{ell} jit round"), started);
         ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
         let r1: Gf = ps.verifier_message();
@@ -260,14 +399,15 @@ impl<'a> Forest<'a> {
         let z = point[k + 1];
         let send_one = z == Gf::zero();
         let eq_y = eq_table(&external[s..s + low_bits - 2]);
+        let fold_cache = cache.map_or(CacheUse::Off, CacheUse::Read);
         // Scaling costs one multiply per table entry; the original fold
         // costs one per pair of tables per column. Require at least a 2x
         // reduction in those multiplies to offset the table read/write pass.
         let (sum_endpoint, sum_inf) = if (1usize << s) >= 4 * tables.len {
             tables.scale_fold(low_bits, r1);
-            self.jit_fold_round::<true>(&tables, ell, k, r1, &eq_c, &eq_y, send_one, arena)
+            self.jit_fold_round_with::<true>(&tables, ell, k, r1, &eq_c, &eq_y, send_one, arena, fold_cache)
         } else {
-            self.jit_fold_round::<false>(&tables, ell, k, r1, &eq_c, &eq_y, send_one, arena)
+            self.jit_fold_round_with::<false>(&tables, ell, k, r1, &eq_c, &eq_y, send_one, arena, fold_cache)
         };
         super::trace(&format!("    L{ell} jit fold"), started);
         ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
@@ -426,6 +566,11 @@ impl<'a> Forest<'a> {
     /// table values — entry `(y, c)` is `T[(0, y)][pat] · T[(1, y)][pat]` —
     /// written into the (empty, pre-sized) `out`.
     fn product_level_into(&self, tables: &Tables, out: &mut Vec<Gf>) {
+        self.product_level_into_with(tables, out, CacheUse::Off);
+    }
+
+    /// [`Forest::product_level_into`], its patterns through `cache`.
+    fn product_level_into_with(&self, tables: &Tables, out: &mut Vec<Gf>, cache: CacheUse<'_>) {
         let t = self.t;
         let ell = MATERIALISED_LEVEL;
         let cols = 1usize << self.s;
@@ -433,16 +578,13 @@ impl<'a> Forest<'a> {
         let rows = 1usize << (t - ell - 1);
         let len = rows * cols;
         assert!(out.is_empty() && out.capacity() >= len);
+        let sel = nibble::jit_selectors(ell);
+        let nib = self.nibbles().map(|rows| (rows, &sel));
         let spare = &mut out.spare_capacity_mut()[..len];
         cfg_chunks_mut!(spare, cols).enumerate().for_each(|(y, chunk)| {
             let tab = [tables.at(y), tables.at(y | (1 << (t - ell - 1)))];
-            let mut words = [0u64; 8];
-            let mut pats = [[0u8; 64]; 2];
             for g in 0..groups {
-                for b in 0..2 {
-                    self.corner_words(ell, 0, b, y, g, &mut words);
-                    pats[b] = transposed_patterns(&mut words);
-                }
+                let pats = self.jit_patterns(ell, y, g, nib, cache);
                 let base_c = g << 6;
                 let width = 64.min(cols - base_c);
                 kernels::jit_product_group(tab, &pats, &mut chunk[base_c..base_c + width]);
@@ -461,7 +603,7 @@ impl<'a> Forest<'a> {
     /// above those as products of the level below. Level 4 itself is
     /// rebuilt into the arena when its turn comes
     /// ([`Forest::product_level_into`]).
-    fn upper_levels_into(&self, tables: &Tables, arena: &mut Vec<Gf>, fused: usize) {
+    fn upper_levels_into(&self, tables: &Tables, arena: &mut Vec<Gf>, fused: usize, cache: CacheUse<'_>) {
         let t = self.t;
         let ell = MATERIALISED_LEVEL;
         let cols = 1usize << self.s;
@@ -470,6 +612,8 @@ impl<'a> Forest<'a> {
         let total = self.upper_region(t - 1).end;
         assert!(arena.is_empty() && arena.capacity() >= total);
         assert!(fused >= 1 && fused + ell + 2 <= t, "level {} does not exist", ell + 1 + fused);
+        let sel = nibble::jit_selectors(ell);
+        let nib = self.nibbles().map(|rows| (rows, &sel));
         let spare = &mut arena.spare_capacity_mut()[..total];
         // Rows of level `4 + fused` = tasks; level `4 + i` has `sub ≪ (fused − i)`.
         let sub = rows >> fused;
@@ -477,8 +621,6 @@ impl<'a> Forest<'a> {
             .map(|i| RowsPtr::new(&mut spare[self.upper_region(ell + 1 + i)], cols))
             .collect();
         cfg_into_iter!(0..sub, 1).for_each(|y0| {
-            let mut words = [0u64; 8];
-            let mut pats = [[0u8; 64]; 2];
             let mut l4 = [[MaybeUninit::<Gf>::uninit(); 64]; 1 << FUSED_UPPER_LEVELS];
             for g in 0..groups {
                 let base_c = g << 6;
@@ -487,10 +629,8 @@ impl<'a> Forest<'a> {
                 for (b, row) in l4.iter_mut().enumerate().take(1 << fused) {
                     let y = y0 + b * sub;
                     let tab = [tables.at(y), tables.at(y | (1 << (t - ell - 1)))];
-                    for p in 0..2 {
-                        self.corner_words(ell, 0, p, y, g, &mut words);
-                        pats[p] = transposed_patterns(&mut words);
-                    }
+                    // This task owns rows `y0 + b·sub`: its cache blocks too.
+                    let pats = self.jit_patterns(ell, y, g, nib, cache);
                     kernels::jit_product_group(tab, &pats, &mut row[..width]);
                 }
                 for i in 1..=fused {
@@ -543,26 +683,44 @@ impl<'a> Forest<'a> {
         eq_y: &[Gf],
         send_one: bool,
     ) -> (Gf, Gf) {
+        self.jit_round_sums_with(tables, ell, k, eq_c, eq_y, send_one, CacheUse::Off)
+    }
+
+    /// [`Forest::jit_round_sums`], its patterns through `cache`.
+    #[allow(clippy::too_many_arguments)]
+    fn jit_round_sums_with(
+        &self,
+        tables: &Tables,
+        ell: usize,
+        k: usize,
+        eq_c: &[Gf],
+        eq_y: &[Gf],
+        send_one: bool,
+        cache: CacheUse<'_>,
+    ) -> (Gf, Gf) {
+        debug_assert_eq!(ell + k, MATERIALISED_LEVEL);
         let low_bits = self.t - ell - 1 - k;
         let cols = 1usize << self.s;
         let groups = cols.div_ceil(64);
         let rows = 1usize << (low_bits - 1);
         debug_assert_eq!(eq_y.len(), rows);
         let eq_t = transposed_eq(eq_c);
+        let sel = nibble::jit_selectors(ell);
+        let nib = self.nibbles().map(|rows| (rows, &sel));
         let row = |y1: usize, bk: &mut kernels::SumBuckets| {
             bk.clear();
-            let mut words = [0u64; 8];
             let mut pats = [[0u8; 64]; 4];
             let tab: [&[Gf]; 4] = std::array::from_fn(|corner| {
                 let (p, b1) = (corner >> 1, corner & 1);
                 tables.at((p << low_bits) | (b1 << (low_bits - 1)) | y1)
             });
             for g in 0..groups {
-                for corner in 0..4 {
-                    let (p, b1) = (corner >> 1, corner & 1);
-                    let y = y1 | (b1 << (low_bits - 1));
-                    self.corner_words(ell, k, p, y, g, &mut words);
-                    pats[corner] = transposed_patterns(&mut words);
+                // Corner `(p, b1)` is `2p + b1`; this task owns rows `y1`
+                // and `y1 + 2^{low_bits−1}`.
+                for b1 in 0..2 {
+                    let [p0, p1] = self.jit_patterns(ell, y1 | (b1 << (low_bits - 1)), g, nib, cache);
+                    pats[b1] = p0;
+                    pats[2 + b1] = p1;
                 }
                 kernels::jit_bucket_group([tab[2], tab[3]], &pats, &eq_t[g << 6..(g + 1) << 6], send_one, bk);
             }
@@ -603,6 +761,23 @@ impl<'a> Forest<'a> {
         send_one: bool,
         arena: &mut Vec<Gf>,
     ) -> (Gf, Gf) {
+        self.jit_fold_round_with::<PRE_SCALED>(tables, ell, k, rho, eq_c, eq_y, send_one, arena, CacheUse::Off)
+    }
+
+    /// [`Forest::jit_fold_round`], its patterns through `cache`.
+    #[allow(clippy::too_many_arguments)]
+    fn jit_fold_round_with<const PRE_SCALED: bool>(
+        &self,
+        tables: &Tables,
+        ell: usize,
+        k: usize,
+        rho: Gf,
+        eq_c: &[Gf],
+        eq_y: &[Gf],
+        send_one: bool,
+        arena: &mut Vec<Gf>,
+        cache: CacheUse<'_>,
+    ) -> (Gf, Gf) {
         let low_bits = self.t - ell - 1 - k;
         let cols = 1usize << self.s;
         let rows = 1usize << (low_bits - 2);
@@ -614,7 +789,7 @@ impl<'a> Forest<'a> {
             // First fill: through the spare capacity, no memset.
             arena.clear();
             let spare = &mut arena.spare_capacity_mut()[..len];
-            let sums = self.jit_fold_into::<PRE_SCALED>(tables, ell, k, rho, eq_c, eq_y, send_one, spare);
+            let sums = self.jit_fold_into::<PRE_SCALED>(tables, ell, k, rho, eq_c, eq_y, send_one, spare, cache);
             // SAFETY: `jit_fold_into` writes every slot of both halves.
             unsafe { arena.set_len(len) };
             sums
@@ -625,7 +800,7 @@ impl<'a> Forest<'a> {
             let view = unsafe {
                 std::slice::from_raw_parts_mut(slots.as_mut_ptr().cast::<MaybeUninit<Gf>>(), len)
             };
-            self.jit_fold_into::<PRE_SCALED>(tables, ell, k, rho, eq_c, eq_y, send_one, view)
+            self.jit_fold_into::<PRE_SCALED>(tables, ell, k, rho, eq_c, eq_y, send_one, view, cache)
         }
     }
 
@@ -640,7 +815,9 @@ impl<'a> Forest<'a> {
         eq_y: &[Gf],
         send_one: bool,
         out: &mut [MaybeUninit<Gf>],
+        cache: CacheUse<'_>,
     ) -> (Gf, Gf) {
+        debug_assert_eq!(ell + k, MATERIALISED_LEVEL);
         let low_bits = self.t - ell - 1 - k;
         let cols = 1usize << self.s;
         let groups = cols.div_ceil(64);
@@ -650,6 +827,8 @@ impl<'a> Forest<'a> {
         let (e_lo, e_hi) = e_half.split_at_mut(half / 2);
         let (o_lo, o_hi) = o_half.split_at_mut(half / 2);
         let eq_t = transposed_eq(eq_c);
+        let sel = nibble::jit_selectors(ell);
+        let nib = self.nibbles().map(|rows| (rows, &sel));
         let partials: Vec<(Gf, Gf)> = cfg_chunks_mut!(e_lo, cols)
             .zip(cfg_chunks_mut!(e_hi, cols))
             .zip(cfg_chunks_mut!(o_lo, cols))
@@ -658,18 +837,19 @@ impl<'a> Forest<'a> {
             .map(|(y2, (((el, eh), ol), oh))| {
                 debug_assert!(y2 < rows);
                 let mut sums = kernels::Sums::zero();
-                let mut words = [0u64; 8];
                 let mut pats = [[0u8; 64]; 8];
                 let tab: [&[Gf]; 8] = std::array::from_fn(|corner| {
                     let (p, b1, b2) = (corner >> 2, (corner >> 1) & 1, corner & 1);
                     tables.at((p << low_bits) | (b1 << (low_bits - 1)) | (b2 << (low_bits - 2)) | y2)
                 });
                 for g in 0..groups {
-                    for corner in 0..8 {
-                        let (p, b1, b2) = (corner >> 2, (corner >> 1) & 1, corner & 1);
+                    // Corner `(p, b1, b2)` is `4p + 2b1 + b2`.
+                    for b in 0..4 {
+                        let (b1, b2) = (b >> 1, b & 1);
                         let y = y2 | (b2 << (low_bits - 2)) | (b1 << (low_bits - 1));
-                        self.corner_words(ell, k, p, y, g, &mut words);
-                        pats[corner] = transposed_patterns(&mut words);
+                        let [p0, p1] = self.jit_patterns(ell, y, g, nib, cache);
+                        pats[b] = p0;
+                        pats[4 + b] = p1;
                     }
                     let base_c = g << 6;
                     let width = 64.min(cols - base_c);
@@ -730,11 +910,14 @@ impl<'a> Forest<'a> {
         // two terms ([`Forest::bit_row_pair`]).
         let paired = nb == 1 && rows >= 2;
         let tasks = if paired { rows / 2 } else { rows };
+        let rows_nib = self.nibbles();
+        let selectors = rows_nib.map(|_| BitSelectors::new(ell, j, paired));
+        let nib = rows_nib.zip(selectors.as_ref());
         let task = |i: usize, buckets: &mut Buckets| {
             if paired {
-                self.bit_row_pair(&tables, ell, kk, 2 * i, y_bits, &eq_t, &eq_y, send_one, buckets)
+                self.bit_row_pair(&tables, ell, kk, 2 * i, y_bits, &eq_t, &eq_y, send_one, buckets, nib)
             } else {
-                let (end, inf) = self.bit_row(&tables, ell, kk, nb, i, y_bits, &eq_t, send_one, buckets);
+                let (end, inf) = self.bit_row(&tables, ell, kk, nb, i, y_bits, &eq_t, send_one, buckets, nib);
                 let w = eq_y[i];
                 (end * w, inf * w)
             }
@@ -775,6 +958,7 @@ impl<'a> Forest<'a> {
         eq_y: &[Gf],
         send_one: bool,
         bk: &mut Buckets,
+        nib: Option<(&NibbleRows, &BitSelectors)>,
     ) -> (Gf, Gf) {
         debug_assert_eq!(ell + kk, 0);
         let low_bits = y_bits + 1;
@@ -786,14 +970,24 @@ impl<'a> Forest<'a> {
         let corner_p = |corner: usize| corner >> 1;
         let mut tmp = [0u64; 8];
         let mut words = [0u64; 8];
+        // Nibble rows `y0` and `y0 + 1` (`y0` even) share `q = y0 >> H`.
+        let h = self.t - 4;
+        let (q, yr) = (y0 >> h, y0 & ((1usize << h) - 1));
         for g in 0..groups {
-            for i in 0..2 {
-                for corner in 0..4 {
-                    self.corner_words(ell, kk, corner_p(corner), corner_y(y0 + i, corner), g, &mut tmp);
-                    words[4 * i + corner] = tmp[0];
+            let idx = match nib {
+                Some((rows, BitSelectors::Paired(sel))) => {
+                    nibble::select_pair(rows.block(yr, g), rows.block(yr + 1, g), &sel[q][0], &sel[q][1])
                 }
-            }
-            let idx = transposed_patterns(&mut words);
+                _ => {
+                    for i in 0..2 {
+                        for corner in 0..4 {
+                            self.corner_words(ell, kk, corner_p(corner), corner_y(y0 + i, corner), g, &mut tmp);
+                            words[4 * i + corner] = tmp[0];
+                        }
+                    }
+                    transposed_patterns(&mut words)
+                }
+            };
             kernels::scatter_add(&mut bk.tuples, &idx, &eq_t[g << 6..(g + 1) << 6]);
         }
         // The marginals: row `y0`'s tuple is the low nibble.
@@ -839,6 +1033,7 @@ impl<'a> Forest<'a> {
         eq_t: &[Gf],
         send_one: bool,
         bk: &mut Buckets,
+        nib: Option<(&NibbleRows, &BitSelectors)>,
     ) -> (Gf, Gf) {
         let low_bits = y_bits + 1;
         let entries = 1usize << nb;
@@ -853,9 +1048,22 @@ impl<'a> Forest<'a> {
         let mut words = [0u64; 8];
         let mut lh = [0u8; 64];
         let mut hl = [0u8; 64];
+        let h = self.t - 4;
+        let (q, yr) = (y >> h, y & ((1usize << h) - 1));
         for g in 0..groups {
             let eq_g = &eq_t[g << 6..(g + 1) << 6];
-            if nb <= 2 {
+            if let Some((rows, BitSelectors::Tuple(sel))) = nib {
+                let mut idx = [[0u8; 64]; 1];
+                nibble::select(rows.block(yr, g), core::array::from_ref(&sel[q]), &mut idx);
+                kernels::scatter_add(&mut bk.tuples, &idx[0], eq_g);
+            } else if let Some((rows, BitSelectors::Pairs(sel))) = nib {
+                let mut idx = [[0u8; 64]; 4];
+                nibble::select(rows.block(yr, g), sel, &mut idx);
+                kernels::scatter_add(&mut bk.ll, &idx[0], eq_g);
+                kernels::scatter_add(&mut bk.hh, &idx[1], eq_g);
+                kernels::scatter_add(&mut bk.lh, &idx[2], eq_g);
+                kernels::scatter_add(&mut bk.hl, &idx[3], eq_g);
+            } else if nb <= 2 {
                 // Tuple byte: corner `i`'s pattern at bits `i·nb..`.
                 words = [0u64; 8];
                 for corner in 0..4 {
@@ -1189,6 +1397,141 @@ mod tests {
                 let mut out = [0u8; 64];
                 patterns(&words, &mut out);
                 assert_eq!(out, naive_patterns(&words), "len {len}");
+            }
+        }
+    }
+
+    /// A random grid: `2^t` rows, `2^s` columns packed 64 to a word (bits
+    /// past the last column zero), and random row images.
+    fn random_grid(t: usize, s: usize, seed: u64) -> (Vec<Vec<u64>>, Vec<Gf>) {
+        let mut state = seed | 1;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let cols = 1usize << s;
+        let groups = cols.div_ceil(64);
+        let packed = (0..groups)
+            .map(|g| {
+                let live = (cols - 64 * g).min(64);
+                let mask = if live == 64 { u64::MAX } else { (1u64 << live) - 1 };
+                (0..1usize << t).map(|_| next() & mask).collect()
+            })
+            .collect();
+        let images = (0..1usize << t).map(|_| Gf::new(next(), next())).collect();
+        (packed, images)
+    }
+
+    /// Every index the nibble rows produce — each level's JIT patterns and
+    /// every bit round's tuple, pair and paired bytes — equals the one the
+    /// gather-and-transpose path produces.
+    #[test]
+    fn nibble_selections_match_the_gathered_patterns() {
+        for (t, s) in [(6usize, 3usize), (6, 6), (7, 7), (9, 8)] {
+            let (packed, images) = random_grid(t, s, (t * 100 + s) as u64);
+            let forest = Forest::new(t, s, &packed, &images);
+            let groups = (1usize << s).div_ceil(64);
+            let rows = NibbleRows::new(t, &packed, groups);
+            let h = t - 4;
+            let mut words = [0u64; 8];
+            for ell in 0..=MATERIALISED_LEVEL {
+                let sel = nibble::jit_selectors(ell);
+                for y in 0..1usize << h {
+                    for g in 0..groups {
+                        let mut got = [[0u8; 64]; 2];
+                        nibble::select(rows.block(y, g), &sel, &mut got);
+                        for (p, block) in got.iter().enumerate() {
+                            forest.corner_words(ell, MATERIALISED_LEVEL - ell, p, y, g, &mut words);
+                            assert_eq!(*block, transposed_patterns(&mut words), "jit t={t} s={s} ell={ell} p={p} y={y} g={g}");
+                        }
+                    }
+                }
+            }
+            for (ell, j) in [(0usize, 1usize), (0, 2), (0, 3), (1, 1), (1, 2), (2, 1)] {
+                let kk = j - 1;
+                let nb = 1usize << (ell + kk);
+                let y_bits = t - ell - 1 - j;
+                let paired = nb == 1;
+                let selectors = BitSelectors::new(ell, j, paired);
+                let corner_y = |y: usize, corner: usize| y | ((corner & 1) << y_bits);
+                for y in (0..1usize << y_bits).step_by(if paired { 2 } else { 1 }) {
+                    let (q, yr) = (y >> h, y & ((1usize << h) - 1));
+                    for g in 0..groups {
+                        let mut tmp = [0u64; 8];
+                        let mut words = [0u64; 8];
+                        match &selectors {
+                            BitSelectors::Paired(sel) => {
+                                for i in 0..2 {
+                                    for corner in 0..4 {
+                                        forest.corner_words(ell, kk, corner >> 1, corner_y(y + i, corner), g, &mut tmp);
+                                        words[4 * i + corner] = tmp[0];
+                                    }
+                                }
+                                let got = nibble::select_pair(rows.block(yr, g), rows.block(yr + 1, g), &sel[q][0], &sel[q][1]);
+                                assert_eq!(got, transposed_patterns(&mut words), "paired t={t} s={s} y={y} g={g}");
+                            }
+                            BitSelectors::Tuple(sel) => {
+                                for corner in 0..4 {
+                                    forest.corner_words(ell, kk, corner >> 1, corner_y(y, corner), g, &mut tmp);
+                                    words[corner * nb..(corner + 1) * nb].copy_from_slice(&tmp[..nb]);
+                                }
+                                let mut got = [[0u8; 64]; 1];
+                                nibble::select(rows.block(yr, g), core::array::from_ref(&sel[q]), &mut got);
+                                assert_eq!(got[0], transposed_patterns(&mut words), "tuple t={t} s={s} ell={ell} j={j} y={y} g={g}");
+                            }
+                            BitSelectors::Pairs(sel) => {
+                                let mut want = [[0u8; 64]; 2];
+                                for (out, e_corner, o_corner) in [(0usize, 0usize, 2usize), (1, 1, 3)] {
+                                    forest.corner_words(ell, kk, o_corner >> 1, corner_y(y, o_corner), g, &mut tmp);
+                                    words[..4].copy_from_slice(&tmp[..4]);
+                                    forest.corner_words(ell, kk, e_corner >> 1, corner_y(y, e_corner), g, &mut tmp);
+                                    words[4..8].copy_from_slice(&tmp[..4]);
+                                    want[out] = transposed_patterns(&mut words);
+                                }
+                                let lh: [u8; 64] = std::array::from_fn(|m| (want[0][m] & 0xF0) | (want[1][m] & 0x0F));
+                                let hl: [u8; 64] = std::array::from_fn(|m| (want[1][m] & 0xF0) | (want[0][m] & 0x0F));
+                                let mut got = [[0u8; 64]; 4];
+                                nibble::select(rows.block(yr, g), sel, &mut got);
+                                assert_eq!(got, [want[0], want[1], lh, hl], "pairs t={t} s={s} ell={ell} j={j} y={y} g={g}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The four pattern modes prove the same: same point, claim and
+    /// transcript bytes.
+    #[test]
+    fn pattern_modes_prove_identically() {
+        use crate::wfbitz::transcript::build_prover;
+        for (t, s) in [(4usize, 5usize), (5, 6), (6, 3), (6, 6), (7, 7), (9, 6), (10, 8), (11, 7)] {
+            let (packed, images) = random_grid(t, s, (t * 1000 + s) as u64);
+            let mut state = 0x5151_5eed ^ (t * 31 + s) as u64;
+            let zeta: Vec<Gf> = (0..s)
+                .map(|_| {
+                    state ^= state << 13;
+                    state ^= state >> 7;
+                    state ^= state << 17;
+                    Gf::new(state, state.rotate_left(29))
+                })
+                .collect();
+            let mut runs = Vec::new();
+            for nibble in [false, true] {
+                for cache in [false, true] {
+                    let forest = Forest::new(t, s, &packed, &images).with_patterns(PatternMode { nibble, cache });
+                    let mut ps = build_prover(b"forest-patterns/v1", b"instance");
+                    let (point, claim) = forest.prove(&mut ps, &zeta);
+                    runs.push((nibble, cache, point, claim, ps.finish().narg_string));
+                }
+            }
+            let (_, _, point, claim, narg) = &runs[0];
+            for (nibble, cache, p, c, n) in &runs[1..] {
+                assert_eq!((p, c), (point, claim), "t={t} s={s} nibble={nibble} cache={cache}");
+                assert!(n == narg, "transcript t={t} s={s} nibble={nibble} cache={cache}");
             }
         }
     }
