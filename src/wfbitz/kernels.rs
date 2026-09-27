@@ -112,12 +112,35 @@ pub(crate) fn round_sums(
     total(partials)
 }
 
+/// What the left half of a fused round holds. A slot's weight is its
+/// column's `eq_c[c]` (the row's `eq_y[y]` multiplies the task's sums), and
+/// that factor commutes with the folds along the rows, so a left half
+/// multiplied by it once stays so for every later in-tree round, whose
+/// slots then need two carry-less products instead of two multiplies more.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Left {
+    /// Plain values in and out; each slot multiplies by its weight.
+    Plain,
+    /// Plain values in, weighted out: the two folded left values are
+    /// multiplied by the weight (the slot's own two multiplies, moved) and
+    /// stored so.
+    Weigh,
+    /// Weighted values in and out.
+    Weighted,
+}
+
+/// [`Left`] as the kernels' const parameter.
+pub(crate) const PLAIN: u8 = 0;
+pub(crate) const WEIGH: u8 = 1;
+pub(crate) const WEIGHTED: u8 = 2;
+
 /// The deferred fold of the previous round fused with this round's sums:
 /// the four quarters `q0..q3` of each half (the previous round's top index
 /// bit selects `q0 q1` against `q2 q3`, this round's the odd quarters) are
 /// folded with `rho` — `q0 + rho·(q2 − q0)` into `q0`, `q1 + rho·(q3 − q1)`
 /// into `q1` — and the round sums are accumulated over the folded pairs
-/// `(q0, q1)` in the same pass.
+/// `(q0, q1)` in the same pass; `left` says whether the left half carries
+/// the column weights.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn fused_fold_round(
     q0_l: &mut [Gf],
@@ -131,6 +154,7 @@ pub(crate) fn fused_fold_round(
     rho: Gf,
     w: Weights<'_>,
     send_one: bool,
+    left: Left,
 ) -> (Gf, Gf) {
     let h = w.width() * w.rows();
     for q in [&*q0_l, &*q1_l, q2_l, q3_l, &*q0_r, &*q1_r, q2_r, q3_r] {
@@ -149,7 +173,11 @@ pub(crate) fn fused_fold_round(
         .map(|(i, (((((((a0, a1), a2), a3), b0), b1), b2), b3))| {
             let (y, c0) = w.task_pos(i);
             let ec = &w.eq_c[c0..c0 + a0.len()];
-            let (e, f) = fused_task(a0, a1, a2, a3, b0, b1, b2, b3, &rho, ec, send_one);
+            let (e, f) = match left {
+                Left::Plain => fused_task::<PLAIN>(a0, a1, a2, a3, b0, b1, b2, b3, &rho, ec, send_one),
+                Left::Weigh => fused_task::<WEIGH>(a0, a1, a2, a3, b0, b1, b2, b3, &rho, ec, send_one),
+                Left::Weighted => fused_task::<WEIGHTED>(a0, a1, a2, a3, b0, b1, b2, b3, &rho, ec, send_one),
+            };
             let wy = w.eq_y[y];
             (e * wy, f * wy)
         })
@@ -256,8 +284,10 @@ pub(crate) fn jit_bucket_finish(tab_e: [&[Gf]; 2], send_one: bool, bk: &SumBucke
 /// `O'` to `out_r`, both `out_l[b].len()` columns wide) and accumulates
 /// the round sums over the folded pairs. With `PRE_SCALED`, the tables
 /// already include the `1 + rho` and `rho` weights, so a fold is an addition.
+/// With `WEIGH`, `out_l` gets `eq_t[m]·E'` instead (the slot's two
+/// multiplies, moved; see [`Left::Weigh`]).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn jit_fold_group<const PRE_SCALED: bool>(
+pub(crate) fn jit_fold_group<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
     tab: [&[Gf]; 8],
     pat: &[[u8; 64]; 8],
     rho: &Gf,
@@ -268,9 +298,9 @@ pub(crate) fn jit_fold_group<const PRE_SCALED: bool>(
     sums: &mut Sums,
 ) {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    neon::jit_fold_group::<PRE_SCALED>(tab, pat, rho, eq_t, send_one, out_l, out_r, &mut sums.0);
+    neon::jit_fold_group::<PRE_SCALED, WEIGH_LEFT>(tab, pat, rho, eq_t, send_one, out_l, out_r, &mut sums.0);
     #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-    generic::jit_fold_group::<PRE_SCALED>(tab, pat, rho, eq_t, send_one, out_l, out_r, &mut sums.0);
+    generic::jit_fold_group::<PRE_SCALED, WEIGH_LEFT>(tab, pat, rho, eq_t, send_one, out_l, out_r, &mut sums.0);
 }
 
 /// Multiply every value by the same scalar.
@@ -360,7 +390,7 @@ fn round_sums_task(
 
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 #[allow(clippy::too_many_arguments)]
-fn fused_task(
+fn fused_task<const LEFT: u8>(
     q0_l: &mut [Gf],
     q1_l: &mut [Gf],
     q2_l: &[Gf],
@@ -373,12 +403,12 @@ fn fused_task(
     w: &[Gf],
     send_one: bool,
 ) -> (Gf, Gf) {
-    neon::fused_task(q0_l, q1_l, q2_l, q3_l, q0_r, q1_r, q2_r, q3_r, rho, w, send_one)
+    neon::fused_task::<LEFT>(q0_l, q1_l, q2_l, q3_l, q0_r, q1_r, q2_r, q3_r, rho, w, send_one)
 }
 
 #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
 #[allow(clippy::too_many_arguments)]
-fn fused_task(
+fn fused_task<const LEFT: u8>(
     q0_l: &mut [Gf],
     q1_l: &mut [Gf],
     q2_l: &[Gf],
@@ -391,7 +421,7 @@ fn fused_task(
     w: &[Gf],
     send_one: bool,
 ) -> (Gf, Gf) {
-    generic::fused_task(q0_l, q1_l, q2_l, q3_l, q0_r, q1_r, q2_r, q3_r, rho, w, send_one)
+    generic::fused_task::<LEFT>(q0_l, q1_l, q2_l, q3_l, q0_r, q1_r, q2_r, q3_r, rho, w, send_one)
 }
 
 /// The portable kernels: the field's own operators and the delayed-
@@ -439,6 +469,18 @@ pub(crate) mod generic {
                 &<Gf as WideMulAcc>::mul_wide(&ed, &(r1 - r0)),
             );
         }
+
+        /// [`Sums::slot`] with the weight already in the left pair:
+        /// `end += l_end·r_end`, `inf += (l1 − l0)·(r1 − r0)`.
+        #[inline(always)]
+        fn slot_weighted(&mut self, l0: Gf, l1: Gf, r0: Gf, r1: Gf, send_one: bool) {
+            let (le, re) = if send_one { (l1, r1) } else { (l0, r0) };
+            <Gf as WideMulAcc>::wide_add_assign(&mut self.end, &<Gf as WideMulAcc>::mul_wide(&le, &re));
+            <Gf as WideMulAcc>::wide_add_assign(
+                &mut self.inf,
+                &<Gf as WideMulAcc>::mul_wide(&(l1 - l0), &(r1 - r0)),
+            );
+        }
     }
 
     #[inline(always)]
@@ -462,7 +504,7 @@ pub(crate) mod generic {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn fused_task(
+    pub(crate) fn fused_task<const LEFT: u8>(
         q0_l: &mut [Gf],
         q1_l: &mut [Gf],
         q2_l: &[Gf],
@@ -477,15 +519,23 @@ pub(crate) mod generic {
     ) -> (Gf, Gf) {
         let mut sums = Sums::zero();
         for c in 0..w.len() {
-            let fl0 = fold(*rho, q0_l[c], q2_l[c]);
-            let fl1 = fold(*rho, q1_l[c], q3_l[c]);
+            let mut fl0 = fold(*rho, q0_l[c], q2_l[c]);
+            let mut fl1 = fold(*rho, q1_l[c], q3_l[c]);
             let fr0 = fold(*rho, q0_r[c], q2_r[c]);
             let fr1 = fold(*rho, q1_r[c], q3_r[c]);
+            if LEFT == super::WEIGH {
+                fl0 = w[c] * fl0;
+                fl1 = w[c] * fl1;
+            }
             q0_l[c] = fl0;
             q1_l[c] = fl1;
             q0_r[c] = fr0;
             q1_r[c] = fr1;
-            sums.slot(w[c], fl0, fl1, fr0, fr1, send_one);
+            if LEFT == super::PLAIN {
+                sums.slot(w[c], fl0, fl1, fr0, fr1, send_one);
+            } else {
+                sums.slot_weighted(fl0, fl1, fr0, fr1, send_one);
+            }
         }
         sums.finish()
     }
@@ -572,7 +622,7 @@ pub(crate) mod generic {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn jit_fold_group<const PRE_SCALED: bool>(
+    pub(crate) fn jit_fold_group<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
         tab: [&[Gf]; 8],
         pat: &[[u8; 64]; 8],
         rho: &Gf,
@@ -593,15 +643,23 @@ pub(crate) mod generic {
                 continue;
             }
             let v = |i: usize| tab[i][pat[i][m] as usize];
-            let fl0 = combine(v(0b000), v(0b010));
-            let fl1 = combine(v(0b001), v(0b011));
+            let mut fl0 = combine(v(0b000), v(0b010));
+            let mut fl1 = combine(v(0b001), v(0b011));
             let fr0 = combine(v(0b100), v(0b110));
             let fr1 = combine(v(0b101), v(0b111));
+            if WEIGH_LEFT {
+                fl0 = eq_t[m] * fl0;
+                fl1 = eq_t[m] * fl1;
+            }
             out_l0[c].write(fl0);
             out_l1[c].write(fl1);
             out_r0[c].write(fr0);
             out_r1[c].write(fr1);
-            sums.slot(eq_t[m], fl0, fl1, fr0, fr1, send_one);
+            if WEIGH_LEFT {
+                sums.slot_weighted(fl0, fl1, fr0, fr1, send_one);
+            } else {
+                sums.slot(eq_t[m], fl0, fl1, fr0, fr1, send_one);
+            }
         }
     }
 
@@ -804,6 +862,27 @@ pub(crate) mod neon {
         }
     }
 
+    /// [`slot`] with the weight already in the left pair:
+    /// `end += l_end⊗r_end`, `inf += (l1⊕l0)⊗(r1⊕r0)`, unreduced — the
+    /// same products, since `w·l` was reduced where it was formed.
+    #[inline(always)]
+    unsafe fn slot_weighted(
+        l0: uint64x2_t,
+        l1: uint64x2_t,
+        r0: uint64x2_t,
+        r1: uint64x2_t,
+        send_one: bool,
+        end: &mut Acc,
+        inf: &mut Acc,
+    ) {
+        // SAFETY: as `neon::pmull_lo`.
+        unsafe {
+            let (le, re) = if send_one { (l1, r1) } else { (l0, r0) };
+            acc_add(end, clmul_256(le, re));
+            acc_add(inf, clmul_256(veorq_u64(l1, l0), veorq_u64(r1, r0)));
+        }
+    }
+
     pub(crate) struct Sums {
         end: Acc,
         inf: Acc,
@@ -893,7 +972,7 @@ pub(crate) mod neon {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn fused_task(
+    pub(crate) fn fused_task<const LEFT: u8>(
         q0_l: &mut [Gf],
         q1_l: &mut [Gf],
         q2_l: &[Gf],
@@ -930,15 +1009,24 @@ pub(crate) mod neon {
             macro_rules! column {
                 ($c:expr, $end:expr, $inf:expr) => {{
                     let c = $c;
-                    let fl0 = fold1(rl, rh, g, z, ld(q0_l.get_unchecked(c)), ld(q2_l.get_unchecked(c)));
-                    let fl1 = fold1(rl, rh, g, z, ld(q1_l.get_unchecked(c)), ld(q3_l.get_unchecked(c)));
+                    let mut fl0 = fold1(rl, rh, g, z, ld(q0_l.get_unchecked(c)), ld(q2_l.get_unchecked(c)));
+                    let mut fl1 = fold1(rl, rh, g, z, ld(q1_l.get_unchecked(c)), ld(q3_l.get_unchecked(c)));
                     let fr0 = fold1(rl, rh, g, z, ld(q0_r.get_unchecked(c)), ld(q2_r.get_unchecked(c)));
                     let fr1 = fold1(rl, rh, g, z, ld(q1_r.get_unchecked(c)), ld(q3_r.get_unchecked(c)));
+                    if LEFT == super::WEIGH {
+                        let wc = ld(w.get_unchecked(c));
+                        fl0 = mul_red(wc, fl0, g, z);
+                        fl1 = mul_red(wc, fl1, g, z);
+                    }
                     st(q0_l.get_unchecked_mut(c), fl0);
                     st(q1_l.get_unchecked_mut(c), fl1);
                     st(q0_r.get_unchecked_mut(c), fr0);
                     st(q1_r.get_unchecked_mut(c), fr1);
-                    slot(ld(w.get_unchecked(c)), fl0, fl1, fr0, fr1, send_one, g, z, $end, $inf);
+                    if LEFT == super::PLAIN {
+                        slot(ld(w.get_unchecked(c)), fl0, fl1, fr0, fr1, send_one, g, z, $end, $inf);
+                    } else {
+                        slot_weighted(fl0, fl1, fr0, fr1, send_one, $end, $inf);
+                    }
                 }};
             }
             let mut c = 0usize;
@@ -1084,7 +1172,7 @@ pub(crate) mod neon {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn jit_fold_group<const PRE_SCALED: bool>(
+    pub(crate) fn jit_fold_group<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
         tab: [&[Gf]; 8],
         pat: &[[u8; 64]; 8],
         rho: &Gf,
@@ -1116,15 +1204,24 @@ pub(crate) mod neon {
                     let c = super::col_of(m);
                     if c < width {
                         let v = |i: usize| ld(tab[i].get_unchecked(pat[i][m] as usize));
-                        let fl0 = combine(v(0b000), v(0b010));
-                        let fl1 = combine(v(0b001), v(0b011));
+                        let mut fl0 = combine(v(0b000), v(0b010));
+                        let mut fl1 = combine(v(0b001), v(0b011));
                         let fr0 = combine(v(0b100), v(0b110));
                         let fr1 = combine(v(0b101), v(0b111));
+                        let wm = ld(eq_t.get_unchecked(m));
+                        if WEIGH_LEFT {
+                            fl0 = mul_red(wm, fl0, g, z);
+                            fl1 = mul_red(wm, fl1, g, z);
+                        }
                         st_uninit(out_l0.get_unchecked_mut(c), fl0);
                         st_uninit(out_l1.get_unchecked_mut(c), fl1);
                         st_uninit(out_r0.get_unchecked_mut(c), fr0);
                         st_uninit(out_r1.get_unchecked_mut(c), fr1);
-                        slot(ld(eq_t.get_unchecked(m)), fl0, fl1, fr0, fr1, send_one, g, z, $end, $inf);
+                        if WEIGH_LEFT {
+                            slot_weighted(fl0, fl1, fr0, fr1, send_one, $end, $inf);
+                        } else {
+                            slot(wm, fl0, fl1, fr0, fr1, send_one, g, z, $end, $inf);
+                        }
                     }
                 }};
             }
@@ -1334,7 +1431,7 @@ mod tests {
                 let (a1, rest) = rest.split_at_mut(1);
                 let (b0, rest_r) = q_r.split_at_mut(1);
                 let (b1, rest_r) = rest_r.split_at_mut(1);
-                let got = fused_task(
+                let got = fused_task::<PLAIN>(
                     &mut a0[0], &mut a1[0], &rest[0], &rest[1], &mut b0[0], &mut b1[0], &rest_r[0],
                     &rest_r[1], &rho, &w, send_one,
                 );
@@ -1342,13 +1439,70 @@ mod tests {
                 let (c1, rest) = rest.split_at_mut(1);
                 let (d0, rest_r) = want_r.split_at_mut(1);
                 let (d1, rest_r) = rest_r.split_at_mut(1);
-                let want = generic::fused_task(
+                let want = generic::fused_task::<PLAIN>(
                     &mut c0[0], &mut c1[0], &rest[0], &rest[1], &mut d0[0], &mut d1[0], &rest_r[0],
                     &rest_r[1], &rho, &w, send_one,
                 );
                 assert_eq!(got, want, "n {n} send_one {send_one}");
                 assert_eq!(q_l, want_l);
                 assert_eq!(q_r, want_r);
+            }
+        }
+    }
+
+    /// One fused task over copies of the quarters: its sums and the four
+    /// quarters afterwards (the first two of each half folded).
+    fn run_fused<const LEFT: u8>(
+        q_l: &[Vec<Gf>],
+        q_r: &[Vec<Gf>],
+        rho: &Gf,
+        w: &[Gf],
+        send_one: bool,
+        portable: bool,
+    ) -> ((Gf, Gf), Vec<Vec<Gf>>, Vec<Vec<Gf>>) {
+        let (mut l, mut r) = (q_l.to_vec(), q_r.to_vec());
+        let (a0, rest) = l.split_at_mut(1);
+        let (a1, rest) = rest.split_at_mut(1);
+        let (b0, rest_r) = r.split_at_mut(1);
+        let (b1, rest_r) = rest_r.split_at_mut(1);
+        let args = (&mut a0[0][..], &mut a1[0][..], &rest[0][..], &rest[1][..]);
+        let sums = if portable {
+            generic::fused_task::<LEFT>(
+                args.0, args.1, args.2, args.3, &mut b0[0], &mut b1[0], &rest_r[0], &rest_r[1], rho, w, send_one,
+            )
+        } else {
+            fused_task::<LEFT>(
+                args.0, args.1, args.2, args.3, &mut b0[0], &mut b1[0], &rest_r[0], &rest_r[1], rho, w, send_one,
+            )
+        };
+        (sums, l, r)
+    }
+
+    /// Weighing the left half in a fused round, or carrying it weighed,
+    /// gives the plain round's sums, and leaves `w·l` where the plain round
+    /// leaves `l`.
+    #[test]
+    fn weighted_fused_tasks_match_the_plain_one() {
+        for n in [1usize, 2, 3, 7, 64, 65, 200] {
+            let q_l: Vec<Vec<Gf>> = (0..4).map(|i| elements(n, 140 + i)).collect();
+            let q_r: Vec<Vec<Gf>> = (0..4).map(|i| elements(n, 150 + i)).collect();
+            let w = elements(n, 160);
+            let rho = elements(1, 161)[0];
+            let weigh = |q: &[Vec<Gf>]| -> Vec<Vec<Gf>> {
+                q.iter().map(|row| row.iter().zip(&w).map(|(&x, &wc)| wc * x).collect()).collect()
+            };
+            let q_l_weighted = weigh(&q_l);
+            for send_one in [false, true] {
+                for portable in [false, true] {
+                    let (plain, l, r) = run_fused::<PLAIN>(&q_l, &q_r, &rho, &w, send_one, portable);
+                    let want_l = weigh(&l[..2]);
+                    let (sums, wl, wr) = run_fused::<WEIGH>(&q_l, &q_r, &rho, &w, send_one, portable);
+                    assert_eq!(sums, plain, "weigh n {n} send_one {send_one} portable {portable}");
+                    assert_eq!((&wl[..2], &wr), (&want_l[..], &r), "weigh stores n {n}");
+                    let (sums, wl, wr) = run_fused::<WEIGHTED>(&q_l_weighted, &q_r, &rho, &w, send_one, portable);
+                    assert_eq!(sums, plain, "weighted n {n} send_one {send_one} portable {portable}");
+                    assert_eq!((&wl[..2], &wr), (&want_l[..], &r), "weighted stores n {n}");
+                }
             }
         }
     }
@@ -1457,7 +1611,7 @@ mod tests {
                     let (l, r) = out.split_at_mut(2);
                     let (l0, l1) = l.split_at_mut(1);
                     let (r0, r1) = r.split_at_mut(1);
-                    jit_fold_group::<false>(
+                    jit_fold_group::<false, false>(
                         tab8, &pats, &rho, &w, send_one, [&mut l0[0], &mut l1[0]], [&mut r0[0], &mut r1[0]],
                         &mut got,
                     );
@@ -1467,7 +1621,7 @@ mod tests {
                     let (l, r) = want_out.split_at_mut(2);
                     let (l0, l1) = l.split_at_mut(1);
                     let (r0, r1) = r.split_at_mut(1);
-                    generic::jit_fold_group::<false>(
+                    generic::jit_fold_group::<false, false>(
                         tab8, &pats, &rho, &w, send_one, [&mut l0[0], &mut l1[0]], [&mut r0[0], &mut r1[0]],
                         &mut want,
                     );
@@ -1506,7 +1660,7 @@ mod tests {
                         let (l, r) = want_out.split_at_mut(2);
                         let (l0, l1) = l.split_at_mut(1);
                         let (r0, r1) = r.split_at_mut(1);
-                        generic::jit_fold_group::<false>(
+                        generic::jit_fold_group::<false, false>(
                             tab8, &pats, &rho, &w, send_one,
                             [&mut l0[0], &mut l1[0]], [&mut r0[0], &mut r1[0]], &mut want,
                         );
@@ -1519,14 +1673,14 @@ mod tests {
                         let (r0, r1) = r.split_at_mut(1);
                         let got = if portable {
                             let mut sums = generic::Sums::zero();
-                            generic::jit_fold_group::<true>(
+                            generic::jit_fold_group::<true, false>(
                                 scaled8, &pats, &rho, &w, send_one,
                                 [&mut l0[0], &mut l1[0]], [&mut r0[0], &mut r1[0]], &mut sums,
                             );
                             sums.finish()
                         } else {
                             let mut sums = Sums::zero();
-                            jit_fold_group::<true>(
+                            jit_fold_group::<true, false>(
                                 scaled8, &pats, &rho, &w, send_one,
                                 [&mut l0[0], &mut l1[0]], [&mut r0[0], &mut r1[0]], &mut sums,
                             );
@@ -1535,6 +1689,75 @@ mod tests {
                         assert_eq!(got, want, "n {n} send_one {send_one} portable {portable}");
                         assert_eq!(init(&out), init(&want_out));
                     }
+                }
+            }
+        }
+    }
+
+    /// One JIT fold group into fresh buffers: its sums and the four
+    /// output quarters (`n` columns each).
+    fn run_jit_fold<const PRE: bool, const WEIGH_L: bool>(
+        tab: [&[Gf]; 8],
+        pats: &[[u8; 64]; 8],
+        rho: &Gf,
+        w: &[Gf],
+        send_one: bool,
+        n: usize,
+        portable: bool,
+    ) -> ((Gf, Gf), Vec<Vec<Gf>>) {
+        let mut out = vec![vec![MaybeUninit::new(Gf::zero()); n]; 4];
+        let sums = {
+            let (l, r) = out.split_at_mut(2);
+            let (l0, l1) = l.split_at_mut(1);
+            let (r0, r1) = r.split_at_mut(1);
+            let (out_l, out_r) = ([&mut l0[0][..], &mut l1[0][..]], [&mut r0[0][..], &mut r1[0][..]]);
+            if portable {
+                let mut sums = generic::Sums::zero();
+                generic::jit_fold_group::<PRE, WEIGH_L>(tab, pats, rho, w, send_one, out_l, out_r, &mut sums);
+                sums.finish()
+            } else {
+                let mut sums = Sums::zero();
+                jit_fold_group::<PRE, WEIGH_L>(tab, pats, rho, w, send_one, out_l, out_r, &mut sums);
+                sums.finish()
+            }
+        };
+        (sums, init(&out))
+    }
+
+    /// The JIT fold that weighs its left half gives the plain fold's sums
+    /// and stores `w·E'`, with and without pre-scaled tables.
+    #[test]
+    fn weighed_jit_fold_matches_the_plain_one() {
+        let tabs: Vec<Vec<Gf>> = (0..8).map(|i| elements(256, 170 + i)).collect();
+        let pats: [[u8; 64]; 8] = std::array::from_fn(|i| std::array::from_fn(|m| (29 * i + 71 * m + 5) as u8));
+        let w = elements(64, 180);
+        let rho = elements(1, 181)[0];
+        let scaled: Vec<Vec<Gf>> = tabs
+            .iter()
+            .enumerate()
+            .map(|(i, table)| {
+                let weight = if i & 2 == 0 { Gf::one() + rho } else { rho };
+                table.iter().map(|&value| value * weight).collect()
+            })
+            .collect();
+        let tab8: [&[Gf]; 8] = std::array::from_fn(|i| &tabs[i][..]);
+        let scaled8: [&[Gf]; 8] = std::array::from_fn(|i| &scaled[i][..]);
+        for n in [0usize, 1, 2, 5, 31, 63, 64] {
+            for send_one in [false, true] {
+                for portable in [false, true] {
+                    let (plain, out) = run_jit_fold::<false, false>(tab8, &pats, &rho, &w, send_one, n, portable);
+                    let mut want = out.clone();
+                    for m in 0..64 {
+                        let c = col_of(m);
+                        if c < n {
+                            want[0][c] = w[m] * out[0][c];
+                            want[1][c] = w[m] * out[1][c];
+                        }
+                    }
+                    let got = run_jit_fold::<false, true>(tab8, &pats, &rho, &w, send_one, n, portable);
+                    assert_eq!(got, (plain, want.clone()), "n {n} send_one {send_one} portable {portable}");
+                    let got = run_jit_fold::<true, true>(scaled8, &pats, &rho, &w, send_one, n, portable);
+                    assert_eq!(got, (plain, want), "pre-scaled n {n} send_one {send_one} portable {portable}");
                 }
             }
         }

@@ -42,7 +42,7 @@ use rayon::prelude::*;
 
 use self::nibble::{BitSelectors, NibbleRows, PatternCache, Selector};
 use super::eq_factor;
-use super::gkr::{Point, eq_table, prove_dense_rounds, prove_layer_tensor};
+use super::gkr::{Point, Weighing, eq_table, prove_dense_rounds, prove_layer_tensor, weighable};
 use super::kernels;
 use super::transcript::ProverState;
 use field::Gf128 as Gf;
@@ -161,6 +161,9 @@ pub(crate) struct Forest<'a> {
     /// Levels 0 and 1 run their bit rounds off one pass
     /// ([`Forest::one_pass_bit_rounds`]).
     one_pass: bool,
+    /// Whether the dense rounds keep the column weights in the left half
+    /// ([`Weighing`]); the table-driven levels' JIT fold writes it so.
+    weighing: Weighing,
     /// The packed columns regrouped for the table-driven levels, built on
     /// first use when `mode.nibble`.
     nibble_rows: OnceLock<NibbleRows>,
@@ -179,6 +182,7 @@ impl<'a> Forest<'a> {
             images,
             mode: PatternMode::from_env(),
             one_pass: one_pass_from_env(),
+            weighing: Weighing::from_env(),
             nibble_rows: OnceLock::new(),
         }
     }
@@ -192,6 +196,14 @@ impl<'a> Forest<'a> {
     /// The same forest with its bit rounds taken from one pass or not.
     pub(crate) fn with_one_pass(mut self, one_pass: bool) -> Self {
         self.one_pass = one_pass;
+        self
+    }
+
+    /// The same forest with its dense rounds weighing the way `weighing`
+    /// says (`On` or `Off`).
+    pub(crate) fn with_weighing(mut self, weighing: Weighing) -> Self {
+        assert_ne!(weighing, Weighing::Carried, "a forest's layers start plain");
+        self.weighing = weighing;
         self
     }
 
@@ -310,12 +322,12 @@ impl<'a> Forest<'a> {
             (point, claim) = if let Some(mut wnext) = levels[ell].take() {
                 let mid = wnext.len() / 2;
                 let (l, r) = wnext.split_at_mut(mid);
-                prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s)
+                prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s, self.weighing)
             } else if ell >= MATERIALISED_LEVEL + 2 {
                 let region = &mut arena[self.upper_region(ell)];
                 let mid = region.len() / 2;
                 let (l, r) = region.split_at_mut(mid);
-                prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s)
+                prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s, self.weighing)
             } else if ell == MATERIALISED_LEVEL + 1 {
                 // Level 4 rebuilt in place of the proved upper levels. (Its
                 // first round fused into the rebuild was measured slower:
@@ -328,7 +340,7 @@ impl<'a> Forest<'a> {
                 super::trace("    L4 rebuild", rebuilt);
                 let mid = arena.len() / 2;
                 let (l, r) = arena.split_at_mut(mid);
-                prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s)
+                prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s, self.weighing)
             } else if self.jit() {
                 let tables = if ell == MATERIALISED_LEVEL { tables3.take() } else { None };
                 let level_cache = if ell == MATERIALISED_LEVEL { cache3.take() } else { self.pattern_cache() };
@@ -612,12 +624,20 @@ impl<'a> Forest<'a> {
         // Scaling costs one multiply per table entry; the original fold
         // costs one per pair of tables per column. Require at least a 2x
         // reduction in those multiplies to offset the table read/write pass.
-        let (sum_endpoint, sum_inf) = if (1usize << s) >= 4 * tables.len {
+        let pre_scaled = (1usize << s) >= 4 * tables.len;
+        if pre_scaled {
             tables.scale_fold(low_bits, r1);
-            self.jit_fold_round_with::<true>(&tables, ell, k, r1, &eq_c, &eq_y, send_one, arena, fold_cache)
-        } else {
-            self.jit_fold_round_with::<false>(&tables, ell, k, r1, &eq_c, &eq_y, send_one, arena, fold_cache)
+        }
+        // Carrying the column weights, the fold stores `eq_c·E'` (its
+        // slots' own two multiplies, moved) and the dense rounds skip them.
+        let carry = self.weighing != Weighing::Off && weighable(&external, s);
+        let fold = |arena: &mut Vec<Gf>| match (pre_scaled, carry) {
+            (true, true) => self.jit_fold_round_with::<true, true>(&tables, ell, k, r1, &eq_c, &eq_y, send_one, arena, fold_cache),
+            (true, false) => self.jit_fold_round_with::<true, false>(&tables, ell, k, r1, &eq_c, &eq_y, send_one, arena, fold_cache),
+            (false, true) => self.jit_fold_round_with::<false, true>(&tables, ell, k, r1, &eq_c, &eq_y, send_one, arena, fold_cache),
+            (false, false) => self.jit_fold_round_with::<false, false>(&tables, ell, k, r1, &eq_c, &eq_y, send_one, arena, fold_cache),
         };
+        let (sum_endpoint, sum_inf) = fold(arena);
         super::trace(&format!("    L{ell} jit fold"), started);
         ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
         let r2: Gf = ps.verifier_message();
@@ -627,7 +647,8 @@ impl<'a> Forest<'a> {
         let started = std::time::Instant::now();
         let half = arena.len() / 2;
         let (l, r) = arena.split_at_mut(half);
-        let out = prove_dense_rounds(ps, point, l, r, k + 2, Some(r2), factor, next_point, s);
+        let weighing = if carry { Weighing::Carried } else { self.weighing };
+        let out = prove_dense_rounds(ps, point, l, r, k + 2, Some(r2), factor, next_point, s, weighing);
         super::trace(&format!("    L{ell} dense tail"), started);
         out
     }
@@ -641,7 +662,7 @@ impl<'a> Forest<'a> {
         let mut folded = self.materialise_folded(ell, k, &challenges);
         let half = folded.len() / 2;
         let (l, r) = folded.split_at_mut(half);
-        prove_layer_tensor(ps, point, l, r, k, factor, next_point, self.s)
+        prove_layer_tensor(ps, point, l, r, k, factor, next_point, self.s, self.weighing)
     }
 
     /// The row of corner `(p, y)` of level `ell` after `kk` folds, pattern
@@ -970,12 +991,12 @@ impl<'a> Forest<'a> {
         send_one: bool,
         arena: &mut Vec<Gf>,
     ) -> (Gf, Gf) {
-        self.jit_fold_round_with::<PRE_SCALED>(tables, ell, k, rho, eq_c, eq_y, send_one, arena, CacheUse::Off)
+        self.jit_fold_round_with::<PRE_SCALED, false>(tables, ell, k, rho, eq_c, eq_y, send_one, arena, CacheUse::Off)
     }
 
     /// [`Forest::jit_fold_round`], its patterns through `cache`.
     #[allow(clippy::too_many_arguments)]
-    fn jit_fold_round_with<const PRE_SCALED: bool>(
+    fn jit_fold_round_with<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
         &self,
         tables: &Tables,
         ell: usize,
@@ -998,7 +1019,7 @@ impl<'a> Forest<'a> {
             // First fill: through the spare capacity, no memset.
             arena.clear();
             let spare = &mut arena.spare_capacity_mut()[..len];
-            let sums = self.jit_fold_into::<PRE_SCALED>(tables, ell, k, rho, eq_c, eq_y, send_one, spare, cache);
+            let sums = self.jit_fold_into::<PRE_SCALED, WEIGH_LEFT>(tables, ell, k, rho, eq_c, eq_y, send_one, spare, cache);
             // SAFETY: `jit_fold_into` writes every slot of both halves.
             unsafe { arena.set_len(len) };
             sums
@@ -1009,12 +1030,12 @@ impl<'a> Forest<'a> {
             let view = unsafe {
                 std::slice::from_raw_parts_mut(slots.as_mut_ptr().cast::<MaybeUninit<Gf>>(), len)
             };
-            self.jit_fold_into::<PRE_SCALED>(tables, ell, k, rho, eq_c, eq_y, send_one, view, cache)
+            self.jit_fold_into::<PRE_SCALED, WEIGH_LEFT>(tables, ell, k, rho, eq_c, eq_y, send_one, view, cache)
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn jit_fold_into<const PRE_SCALED: bool>(
+    fn jit_fold_into<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
         &self,
         tables: &Tables,
         ell: usize,
@@ -1063,7 +1084,7 @@ impl<'a> Forest<'a> {
                     let base_c = g << 6;
                     let width = 64.min(cols - base_c);
                     let range = base_c..base_c + width;
-                    kernels::jit_fold_group::<PRE_SCALED>(
+                    kernels::jit_fold_group::<PRE_SCALED, WEIGH_LEFT>(
                         tab,
                         &pats,
                         &rho,
@@ -1918,6 +1939,38 @@ mod tests {
                 let (per_round, one_pass) = (prove(false), prove(true));
                 assert_eq!((&one_pass.0, &one_pass.1), (&per_round.0, &per_round.1), "t={t} s={s} nibble={nibble}");
                 assert!(one_pass.2 == per_round.2, "transcript t={t} s={s} nibble={nibble}");
+            }
+        }
+    }
+
+    /// Keeping the column weights in the dense rounds' left half proves the
+    /// same: same point, claim and transcript bytes, on the table-driven
+    /// levels (whose JIT fold writes the weighted half) and the materialised
+    /// ones, with and without the one-pass bit rounds.
+    #[test]
+    fn weighing_proves_identically() {
+        use crate::wfbitz::transcript::build_prover;
+        for (t, s) in [(4usize, 0usize), (4, 5), (5, 6), (6, 0), (6, 1), (6, 3), (7, 7), (9, 6), (10, 8), (11, 7)] {
+            let (packed, images) = random_grid(t, s, (t * 5003 + s) as u64);
+            let mut state = 0x7e16_4ed0 ^ (t * 37 + s) as u64;
+            let zeta: Vec<Gf> = (0..s).map(|_| random_gf(&mut state)).collect();
+            for nibble in [false, true] {
+                let mode = PatternMode { nibble, cache: false, nibble_from: 0 };
+                for one_pass in [false, true] {
+                    let prove = |weighing: Weighing| {
+                        let forest = Forest::new(t, s, &packed, &images)
+                            .with_patterns(mode)
+                            .with_one_pass(one_pass)
+                            .with_weighing(weighing);
+                        let mut ps = build_prover(b"forest-weighing/v1", b"instance");
+                        let (point, claim) = forest.prove(&mut ps, &zeta);
+                        (point, claim, ps.finish().narg_string)
+                    };
+                    let (off, on) = (prove(Weighing::Off), prove(Weighing::On));
+                    let label = format!("t={t} s={s} nibble={nibble} one_pass={one_pass}");
+                    assert_eq!((&on.0, &on.1), (&off.0, &off.1), "{label}");
+                    assert!(on.2 == off.2, "transcript {label}");
+                }
             }
         }
     }
