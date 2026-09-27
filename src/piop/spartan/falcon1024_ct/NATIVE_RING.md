@@ -1,9 +1,8 @@
 # Native-ring batch Falcon prover
 
 `PreparedFalconHybrid` uses one native-ring arithmetic path. Its statement domain
-is `bitz/falcon1024-ct/hybrid/native-ring/non-zk/v3`; earlier hybrid proofs are
-incompatible. There is no arithmetic-mode selector. The standalone nonhybrid
-backend remains a separate existing implementation.
+is `bitz/falcon1024-ct/hybrid/native-ring/non-zk/v4`; earlier proofs are
+incompatible. This is the only Falcon proving backend.
 
 The public statement still contains each public key, 32-byte message, and exact
 CT signature. The prover is not zero knowledge. Binary Keccak, SHAKE wiring,
@@ -18,17 +17,16 @@ Every bit string decodes into [0,12288]; s1 is the decoded value minus6144.
 The honest encoder sets the top bit exactly when the value exceeds8191.
 Representations may overlap, but every source map uses the same decoder.
 
-| Per live signature | Previous hybrid | Native ring |
-| --- | ---: | ---: |
-| Auxiliary arithmetic values | 18232 | 8605 |
-| Auxiliary committed bits | 186062 | 87705 |
-| Public/constant copy bits | 12873 | 12873 |
-| Live arithmetic bits | 198935 | 100578 |
-| Arithmetic allocation per capacity slot | 262144 | 131072 |
-| Linear rows, live / padded | 10152 / 16384 | 4458 / 8192 |
-| Rejection/product outer rows, live / padded | 5244 / 8192 | 1311 / 2048 |
-| Additional cubic leaf rows, live / padded | — | 1311 / 2048 |
-| Total live arithmetic and binary bits | 1030955 | 932598 |
+| Per live signature | Native ring |
+| --- | ---: |
+| Auxiliary arithmetic values | 8605 |
+| Auxiliary committed bits | 87705 |
+| Public/constant copy bits | 12873 |
+| Live arithmetic bits | 100578 |
+| Arithmetic allocation per capacity slot | 131072 |
+| Linear rows, live / padded | 4458 / 8192 |
+| Rejection outer rows, live / padded | 1311 / 2048 |
+| Cubic leaf rows, live / padded | 1311 / 2048 |
 
 Auxiliary columns are w(1311*16), q(1311*3), r(1311*14), d(1311),
 P(1312*11), c(1024*14), v(1024*14), and T(27).
@@ -103,11 +101,11 @@ all configured batch sizes must meet the target in the complete union bound.
 These are the repository's computational grinding bounds, not statistical128-bit
 soundness. Every carry and certificate precedes the challenge testing it.
 
-The v3 schedule uses equality-weight forest batching and a nonzero-vector
-line bound. The fingerprint uses a fixed incorrect signature argument. Exact
-regressions preserve the complete v2 bound for every supported live batch.
-At batch1024, cubic, forest, and fingerprint difficulties are18,17,19 bits;
-partial batches use20 fingerprint bits. See the
+The current schedule uses equality-weight forest batching, a nonzero-vector
+line bound, and a fixed incorrect signature argument for fingerprints. Each
+prime reduction group has an explicit budget independent of earlier schedules.
+At batch1024, cubic, forest, and fingerprint difficulties are17,17,19 bits;
+fingerprint difficulty is19 for every batch. See the
 [security ledger](OPTIMIZATION_SECURITY.md) and
 [compaction argument](COMPACTION_SOUNDNESS.md).
 
@@ -118,61 +116,9 @@ shared opening. The historical matched baseline is3.160ms/signature.
 Native projection/certificate/carry spans are reported separately. New proof
 transcripts are not expected to match historical Debug digests.
 
-## Initial native-ring measurement (v1)
+## Prior kernel measurements
 
-The matched native-release benchmark measured **2.908 ms/signature** versus
-**3.268 ms/signature** for the saved baseline rerun: **11.0% less proving time**.
-This is also below the earlier 3.160 ms target. Batch verification measured
-0.112 seconds versus 2.687 seconds. All matched proofs verified.
-
-The full library suite passed 645 tests (seven ignored). Native release proofs
-also verified for batches 3, 32, and 1024. The stored proof payload at batch1024
-is 2,444,036 bytes, excluding Falcon transport framing and the public statement;
-there is still no Falcon wire codec.
-
-See [the complete benchmark report](../../../../bench_results/falcon-native-ring-20260926/results.md)
-for timing boundaries, memory, payload accounting, stage profiles, and validation.
-
-## Bottleneck optimizations (v2)
-
-The v2 matched benchmark measured **2.282 ms/signature** versus **2.818** for
-the saved v1 executable rerun: **19.0% less proving time**, or 438 signatures/s.
-Batch verification decreases from 110.038 to 71.847 ms. The same 1024 distinct
-signatures, seed 42, 16 threads, native release, and 128-bit target were used;
-all 32 timing proofs across batches 1, 3, 32, 1024 and both diagnostic proofs verified.
-
-The implementation splits grinding under an exact non-increasing error budget,
-caches binary wiring marginals and eight-bit binder transforms, parallelizes
-public binding targets, and combines PCS padding updates. Witness and constraint
-counts are unchanged. The complete work-normalized security report improves
-from 129.359618 to 129.365218 bits at batch 1024. These remain computational bounds
-under the existing model described in [OPTIMIZATION_SECURITY.md](OPTIMIZATION_SECURITY.md).
-
-The full library suite passed 651 tests (seven ignored), with three upstream
-Falcon integration tests and the serial build check also passing. The stored
-batch proof payload is 2,440,260 bytes. See [the v2 benchmark report](../../../../bench_results/falcon-bottlenecks-20260926/results.md)
-for phase timings, small batches, nonce-search variability, and validation details.
-
-## Throughput optimizations (v3)
-
-All six planned changes are implemented. At batch1024, seed42, threads16 and
-target128, the matched rerun improves from **2.311 to1.169ms/signature**
-(**856 signatures/second**,49.4% less proving time). Across seeds42,43,44,
-the optimized medians are1.169,1.223,1.230ms/signature; the median of those
-is1.223ms/signature (818 signatures/second). The1ms target is not yet reached.
-
-Witness and constraint counts are unchanged. The complete reported
-work-normalized bound improves from129.365218 to129.375910bits. All50 benchmark
-proofs verified;662 distinct library tests and three upstream tests passed.
-See [THROUGHPUT.md](THROUGHPUT.md) for the implementations, full measurements,
-remaining bottlenecks, small-batch results, and exact reproducibility details.
-
-### Kernel follow-up (same v3 protocol)
-
-The four subsequent kernel optimizations preserve exact proof transcripts and
-all security parameters. A fresh matched seed-42 comparison improves from
-1.195 to 1.047 ms/signature (955 signatures/second), with peak RSS falling from
-4.540 to 3.532 GiB. The 1 ms objective remains unmet. Witness and constraint
-counts and the reported security bound are unchanged. See
-[KERNEL_THROUGHPUT.md](KERNEL_THROUGHPUT.md) for all input seeds, complete
-measurements, implementation details and validation.
+The v3 measurement reports predate the current grinding allocation. They do
+not measure this cleanup. No runtime validation was performed for this change.
+See [KERNEL_THROUGHPUT.md](KERNEL_THROUGHPUT.md) for the previous kernel
+measurements.

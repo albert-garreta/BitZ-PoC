@@ -1,6 +1,6 @@
-# Compaction soundness in native hybrid v3
+# Compaction soundness in the native Falcon prover
 
-This note justifies the v3 fingerprint and forest bounds. It uses the same
+This note justifies the current fingerprint and forest bounds. It uses the same
 commitment binding, Fiat–Shamir, and work-normalized grinding assumptions as
 [the security ledger](OPTIMIZATION_SECURITY.md). It does not upgrade those
 assumptions to unconditional statistical security.
@@ -71,42 +71,31 @@ existing candidate-leaf proof, output-leaf reconstruction, and shared binder.
 Their batching errors remain separately present in the complete ledger.
 No equality across different signatures replaces any individual root check.
 
-## Preserve the saved v2 budget
+## Current security budget
 
-Let `R=2*(11+d)+55`, `A=3*R`, and `H_old=10*(2*B-1)+22*B`.
-Recover the saved v2 difficulty pair `(r_old,c_old)` using its original exact
-integer search. The new search minimizes expected work `R*2^r+21*2^c`
-subject to
+Let `R=2*(11+d)+55`, `A=3*R`, and `H=10*(d+1)+11`. At target 128,
+the cubic difficulty `r` and forest-claim difficulty `c` satisfy
 
 ```
-A/2^r + (10*(d+1)+11)/2^c <= A/2^r_old + H_old/2^c_old.
+A/2^r + H/2^c <= 1/256.
 ```
 
-The comparison is exact using `u128` at a common power-of-two denominator;
-no floating-point value controls protocol parameters. At `B=1024`, the
-pair changes from `(18,25)` to `(18,17)`. This group's expected nonce work
-falls from 730,071,040 to 28,180,480 attempts, and its bound improves.
+Since `p>=2^125`, the combined contribution is at most `2^-133`.
+The deterministic allocation uses exact integers and minimizes nonce work
+within its bounded search range. It has no dependency on historical schedules.
+Fingerprint difficulty is 19 for every batch: `2048/(2^125*2^19)=2^-133`.
+Target 100 remains unground. The other groups retain separate budgets in
+[the complete ledger](OPTIMIZATION_SECURITY.md).
 
-The fingerprint changes from difficulty `19+ceil(log2(B))` to 19 for power-of-two
-batches and 20 otherwise. The extra bit for partial batches preserves v2's
-rounding margin: `2048/2^g_new <= 2048*B/2^g_old` for every supported batch.
-Target 100 remains unground. Other security contributions and difficulty
-schedules remain unchanged.
-
-The hybrid proof and statement transcripts are versioned to v3 and bind the
-new batching descriptor and full schedule. The forest and forest batching
-nonce domains identify equality batching. The standalone arithmetic prover
-also uses this forest, retaining its older conservative difficulty schedule;
-its nested forest domain rejects prior forest transcripts.
+The statement transcripts are versioned to v4 and bind the full schedule.
+The forest and its nonce domains separately identify equality batching.
 
 ## Implementation validation
 
-Exact regression tests compare the changed group and fingerprint bounds with
-v2 for every batch `1..1024`. Complete-ledger tests include all unchanged
-terms at targets 100 and 128. Reference tests cover padded equality batching,
-parallel norm preparation, candidate leaves, arithmetic binder messages,
-compact binary lane folds, and the complete shared-opening transcript.
+Direct rational-budget tests cover every live batch from 1 through 1024.
+Complete-ledger tests include all terms at targets 100 and 128. Independent
+reference tests cover padded equality batching, candidate leaves, arithmetic
+binder messages, binary lane folds, and the shared-opening transcript.
 Tampering tests retain individual root checks, altered terminals, incorrect
-schedules, source padding, and the existing norm/ring/hash links.
-These checks validate implementation invariants, not a replacement security
-proof or an independent audit of the repository's grinding convention.
+schedules, source padding, and norm/ring/hash links. During this cleanup these
+tests were compiled only, not executed.

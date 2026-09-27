@@ -3,8 +3,7 @@
 //! The hybrid prover checks the Falcon equation in its native polynomial ring,
 //! authenticates the ideal projection through bounded integer coordinate carries,
 //! and shares one arithmetic binder with HashToPoint and norm reductions. Binary
-//! Keccak sources and the arithmetic source share the final opening. The existing
-//! standalone backend retains its exact-integer relation.
+//! Keccak sources and the arithmetic source share the final opening.
 
 mod constraints;
 mod format;
@@ -13,8 +12,6 @@ mod hash_to_point;
 mod hybrid;
 #[cfg(feature = "falcon-hybrid")]
 mod hybrid_bridge;
-#[cfg(feature = "falcon-hybrid")]
-pub mod hybrid_hash_to_point;
 #[cfg(feature = "falcon-hybrid")]
 mod hybrid_keccak;
 #[cfg(feature = "falcon-hybrid")]
@@ -39,11 +36,9 @@ pub use hash_to_point::{HashToPointTrace, hash_to_point_ct};
 pub use keccak::{KeccakTrace, shake256_with_trace};
 pub use layout::{FalconSourceLayout, FalconTraceCounts};
 pub use native_ring::{Ext as FalconNativeExtension, NativeRingProof as FalconNativeRingProof};
-pub use opening::{FalconBitzProof, FalconPublicStatement, prove_falcon_bitz, verify_falcon_bitz};
+pub use opening::FalconPublicStatement;
 pub use piop::{FalconPiopProof, FalconSecuritySchedule, prove_falcon_piop, verify_falcon_piop};
-pub use source::{
-    FalconSourceOffsets, FalconSourceWitness, commit_falcon_source, falcon_ligerito_configs,
-};
+pub use source::{FalconSourceOffsets, FalconSourceWitness};
 pub use verify::{FalconVerificationTrace, verification_trace, verify_falcon1024_ct};
 
 /// Falcon-1024 cyclotomic degree.
@@ -82,7 +77,7 @@ pub enum FalconError {
     HashToPointUnderflow { accepted: usize },
     #[error("Falcon squared norm {actual} exceeds {BETA_SQUARED}")]
     NormTooLarge { actual: u64 },
-    #[error("unsupported Falcon batch size (legacy: 1..=32; hybrid: 1..=1024)")]
+    #[error("unsupported Falcon batch size (expected 1..=1024)")]
     InvalidBatchCapacity,
     #[error("the Falcon source layout or opening exceeds its configured capacity")]
     SourceStrideOverflow,

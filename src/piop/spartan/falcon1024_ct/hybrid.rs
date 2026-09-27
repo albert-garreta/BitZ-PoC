@@ -101,7 +101,7 @@ impl PreparedFalconHybrid {
         if !matches!(target_bits, 100 | 128) {
             return Err(error("hybrid security must be 100 or 128 bits"));
         }
-        let layout = FalconSourceLayout::new_hybrid(batch)?;
+        let layout = FalconSourceLayout::new(batch)?;
         let keccak = [
             PreparedKeccak::new_slab(batch, 0, 16).map_err(error)?,
             PreparedKeccak::new_slab(batch, 16, 4).map_err(error)?,
@@ -360,7 +360,7 @@ impl PreparedFalconHybrid {
     ) -> Result<(Blake3Transcript, [u8; 32]), FalconError> {
         statement.public.validate(self.batch())?;
         let mut h = blake3::Hasher::new();
-        h.update(b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v3");
+        h.update(b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v4");
         for n in [
             self.batch(),
             self.capacity(),
@@ -415,7 +415,7 @@ impl PreparedFalconHybrid {
         }
         let digest = *h.finalize().as_bytes();
         let mut t = Blake3Transcript::new();
-        t.absorb_slice(b"bitz/falcon-hybrid/native-ring/statement/v3");
+        t.absorb_slice(b"bitz/falcon-hybrid/native-ring/statement/v4");
         t.absorb_slice(&digest);
         self.ligerito.bind(&mut t);
         Ok((t, digest))
@@ -427,7 +427,7 @@ impl PreparedFalconHybrid {
     ) -> Result<FalconHybridProof, FalconError> {
         let (mut t, digest) = self.transcript(&committed.statement)?;
         let arithmetic_span = tracing::info_span!("falcon_hybrid:arithmetic_prefix").entered();
-        let (arithmetic, claim) = prove_binding_prefix(
+        let (arithmetic, row_weights) = prove_binding_prefix(
             &mut t,
             &self.layout,
             &committed.statement.public,
@@ -443,9 +443,9 @@ impl PreparedFalconHybrid {
             &arithmetic.binding_point,
             arithmetic.piop.modulus,
             self.binary_grinding(hybrid_bridge::error_numerator(&self.layout)),
-            &claim.row_weights,
+            &row_weights,
         )?;
-        drop(claim);
+        drop(row_weights);
         drop(bridge_span);
         let keccak_span = tracing::info_span!("falcon_hybrid:keccak_prefix").entered();
         let mut prefixes = Vec::new();
@@ -880,43 +880,6 @@ mod tests {
                 let prepared = PreparedFalconHybrid::new(batch, target).unwrap();
                 let security = prepared.security();
                 assert!(security.algebraic_bits >= target as f64);
-                // Compare to the saved v2 split schedule, not its weaker v1
-                // predecessor. All untouched error terms remain in the sum.
-                let d = prepared.capacity().ilog2() as usize;
-                let rounds = 2 * (11 + d) + 55;
-                let old_claims = 10 * (2 * batch - 1) + 22 * batch;
-                let (old_r, old_c) = if target == 100 {
-                    (0, 0)
-                } else {
-                    super::super::piop::tests::previous_compaction_schedule(batch)
-                };
-                let old_fingerprint = if target == 100 {
-                    0
-                } else {
-                    8 + usize::BITS - (2048 * batch - 1).leading_zeros()
-                };
-                let changed_names = [
-                    "ordered compaction fingerprints",
-                    "HashToPoint product sumcheck",
-                    "ordered compaction forest sumchecks",
-                    "ordered compaction forest claim reductions",
-                    "compaction leaf sumcheck",
-                ];
-                let unchanged: f64 = security
-                    .terms
-                    .iter()
-                    .filter(|(name, _)| !changed_names.contains(name))
-                    .map(|(_, error)| error)
-                    .sum();
-                let previous = unchanged
-                    + (3 * rounds) as f64 * 2f64.powi(-125 - old_r as i32)
-                    + old_claims as f64 * 2f64.powi(-125 - old_c as i32)
-                    + (2048 * batch) as f64 * 2f64.powi(-125 - old_fingerprint as i32);
-                let current: f64 = security.terms.iter().map(|(_, error)| error).sum();
-                assert!(
-                    current <= previous * (1.0 + 1e-14),
-                    "full bound at {batch}/{target}"
-                );
                 let numerator = hybrid_bridge::error_numerator(&prepared.layout);
                 let bits = prepared.binary_grinding(numerator);
                 assert_eq!(
@@ -940,7 +903,7 @@ mod tests {
                     (numerator as f64) * 2f64.powi(-128 - bits as i32)
                 );
                 assert!(bridge_error <= 2f64.powi(-(target as i32) - 8));
-                assert_eq!(prepared.layout.local_counts().total(), 100_578);
+                assert_eq!(FalconSourceLayout::counts().total(), 100_578);
             }
         }
         assert!(PreparedFalconHybrid::new(1025, 128).is_err());
@@ -951,7 +914,8 @@ mod tests {
         let prepared = PreparedFalconHybrid::new(1, 100).unwrap();
         let committed = prepared.commit(public(1)).unwrap();
         let native = super::super::verification_trace(PK, MSG, SIG).unwrap();
-        assert_eq!(committed.traces[0].convolution, native.convolution);
+        assert_eq!(committed.traces[0].s1, native.s1);
+        assert_eq!(committed.traces[0].native_quotient, native.native_quotient);
         assert_eq!(
             committed.traces[0].hash_to_point.words,
             native.hash_to_point.words

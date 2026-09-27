@@ -22,35 +22,6 @@ pub(super) fn prepare<'a, const N: usize>(
     }
 }
 
-fn live_groups<const N: usize>(geometry: &Geometry<N>) -> [usize; 16] {
-    let mut live = [0; 16];
-    for branch in 0..N {
-        let k = geometry.lane_logs[branch];
-        live[geometry.offset(branch)..geometry.offset(branch) + (1 << k)]
-            .fill(1 << (geometry.logs[branch] - k));
-    }
-    live
-}
-
-fn write_words<const N: usize>(
-    geometry: &Geometry<N>,
-    sources: [&[F]; N],
-    first_group: usize,
-    words: &mut [F],
-) {
-    // The tile's unoccupied lanes are initialized once and remain zero across
-    // reuse. Every physically committed source word, including its padding,
-    // is copied on every pass.
-    for (local, group) in words.chunks_exact_mut(16).enumerate() {
-        let g = first_group + local;
-        for branch in 0..N {
-            let k = geometry.lane_logs[branch];
-            let start = geometry.offset(branch);
-            group[start..start + (1 << k)].copy_from_slice(&sources[branch][g << k..(g + 1) << k]);
-        }
-    }
-}
-
 fn merge(mut a: [Gf128Product; 8], b: [Gf128Product; 8]) -> [Gf128Product; 8] {
     for (a, b) in a.iter_mut().zip(b) {
         *a ^= b;
@@ -67,35 +38,19 @@ fn initial_messages<const N: usize>(
     ood: Option<(&[Gf], Gf)>,
 ) -> (ligerito::SumcheckMessage, ligerito::FoldLookahead) {
     let _scope = tracing::info_span!("op:initial_messages").entered();
-    let low = geometry.packed_log().min(12);
-    let block = 1 << low;
-    let ring = EqualityTiles::new(point, low, F::ONE);
-    let padding_eq = EqualityTiles::new(padding.0, low, padding.1);
-    let ood = ood.map(|(point, scale)| EqualityTiles::new(point, low, scale));
-    let phi = phi_byte_tables(eq_r2, F::ONE);
-    let live = live_groups(geometry);
+    let tiles = InitialBasisTiles::new(geometry, point, eq_r2, padding, ood);
+    let block = tiles.block_len();
     // Several tiles per task amortize allocation; each worker needs 128 KiB
     // of reusable scratch rather than two full-domain vectors.
     const TILES: usize = 16;
-    let partials: Vec<_> = crate::utils::cfg_into_iter!(0..ring.head.len().div_ceil(TILES))
+    let partials: Vec<_> = crate::utils::cfg_into_iter!(0..tiles.tile_count().div_ceil(TILES))
         .map(|task| {
             let mut words = vec![F::ZERO; block];
             let mut basis = vec![F::ZERO; block];
             let mut acc = [Gf128Product::zero(); 8];
-            for hi in task * TILES..((task + 1) * TILES).min(ring.head.len()) {
-                let first_group = hi * block / 16;
-                write_words(geometry, sources, first_group, &mut words);
-                for (lo, coefficient) in basis.iter_mut().enumerate() {
-                    let weight = ring.head[hi] * ring.tail[lo];
-                    let mut value = phi_from_words(*weight.as_words(), &phi);
-                    if first_group + lo / 16 >= live[lo % 16] {
-                        value += padding_eq.head[hi] * padding_eq.tail[lo];
-                    }
-                    if let Some(ood) = &ood {
-                        value += ood.head[hi] * ood.tail[lo];
-                    }
-                    *coefficient = value;
-                }
+            for hi in task * TILES..((task + 1) * TILES).min(tiles.tile_count()) {
+                geometry.write_words(sources, hi * block / geometry.lanes(), &mut words);
+                tiles.write(hi, &mut basis);
                 acc = merge(acc, ligerito::lookahead_accumulate(&words, &basis));
             }
             acc
@@ -156,7 +111,7 @@ fn folded_tables<const N: usize>(
             .fold(F::ZERO, |sum, (&w, e)| sum + w * e);
         EqualityTiles::new(&point[2..], low, scale * contraction)
     });
-    let live = live_groups(geometry);
+    let live = geometry.live_groups();
     let size = 1 << (geometry.packed_log() - 2);
     // All slots are overwritten below, including unoccupied witness lanes.
     let mut f = flock_core::scratch::take_f128(size);
@@ -167,7 +122,7 @@ fn folded_tables<const N: usize>(
         .map(|(hi, (f, basis))| {
             let first_group = hi * block / 4;
             let mut words = vec![F::ZERO; 4 * f.len()];
-            write_words(geometry, sources, first_group, &mut words);
+            geometry.write_words(sources, first_group, &mut words);
             ligerito::fold_two_into(&words, f, folds[0], folds[1]);
             for (lo, coefficient) in basis.iter_mut().enumerate() {
                 let weight = ring.head[hi] * ring.tail[lo];

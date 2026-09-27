@@ -1,82 +1,52 @@
 use super::{FalconError, HASH_TO_POINT_SAMPLES, N};
 use crate::pcs::IntegerMatrixLayout;
 
-/// Fixed-width source columns used by the optimized Falcon relation.
-/// Counts are per signature and deliberately include only committed bits;
-/// copies and reconstructions are handled by the terminal linear binder.
+/// Fixed-width committed arithmetic columns for one Falcon signature.
+/// Binary Keccak has its own source; the binder authenticates all reconstructions.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FalconTraceCounts {
     pub shared_one: usize,
     pub message: usize,
     pub encoded_signature: usize,
-    pub s2_non_min_slack: usize,
-    pub keccak_chi_inputs: usize,
-    pub keccak_chi_ands: usize,
-    pub keccak_round_states: usize,
-    pub keccak_column_parities: usize,
-    pub keccak_column_parity_quotients: usize,
-    pub keccak_parity_quotients: usize,
     pub hash_words: usize,
     pub hash_quotients: usize,
     pub hash_remainders: usize,
-    pub hash_remainder_slack: usize,
-    pub hash_quotient_slack: usize,
     pub hash_accept_ands: usize,
     pub hash_prefixes: usize,
-    pub compact_selectors: usize,
-    pub compact_selected_prefixes: usize,
-    pub compact_selected_remainders: usize,
     pub hash_point: usize,
     pub s1: usize,
-    pub s1_range_slack: usize,
-    pub ring_quotients: usize,
     pub norm_slack: usize,
 }
 
 impl FalconTraceCounts {
-    /// Total committed source bits for one verification.
     pub const fn total(self) -> usize {
         self.shared_one
             + self.message
             + self.encoded_signature
-            + self.s2_non_min_slack
-            + self.keccak_chi_inputs
-            + self.keccak_chi_ands
-            + self.keccak_round_states
-            + self.keccak_column_parities
-            + self.keccak_column_parity_quotients
-            + self.keccak_parity_quotients
             + self.hash_words
             + self.hash_quotients
             + self.hash_remainders
-            + self.hash_remainder_slack
-            + self.hash_quotient_slack
             + self.hash_accept_ands
             + self.hash_prefixes
-            + self.compact_selectors
-            + self.compact_selected_prefixes
-            + self.compact_selected_remainders
             + self.hash_point
             + self.s1
-            + self.s1_range_slack
-            + self.ring_quotients
             + self.norm_slack
     }
 }
 
-/// Packed source layout for the integer and native-ring hybrid provers.
+/// Compact arithmetic source shared by the native ideal and norm proofs.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FalconSourceLayout {
     batch: usize,
     capacity: usize,
-    hybrid: bool,
 }
 
 impl FalconSourceLayout {
-    pub const SIGNATURE_STRIDE: usize = 1 << 22;
+    pub const SIGNATURE_STRIDE: usize = 1 << 17;
 
+    /// Supports 1..=1024 signatures, padded to the next power of two.
     pub fn new(batch: usize) -> Result<Self, FalconError> {
-        if !(1..=32).contains(&batch) {
+        if !(1..=1024).contains(&batch) {
             return Err(FalconError::InvalidBatchCapacity);
         }
         if Self::counts().total() > Self::SIGNATURE_STRIDE {
@@ -85,109 +55,38 @@ impl FalconSourceLayout {
         Ok(Self {
             batch,
             capacity: batch.next_power_of_two(),
-            hybrid: false,
         })
     }
 
-    /// Compact arithmetic source; SHAKE is proved by the binary branch.
-    /// The 16-bit samples are linked to that branch by authenticated wiring.
-    #[cfg(feature = "falcon-hybrid")]
-    pub fn new_hybrid(batch: usize) -> Result<Self, FalconError> {
-        if !(1..=1024).contains(&batch) {
-            return Err(FalconError::InvalidBatchCapacity);
-        }
-        let layout = Self {
-            batch,
-            capacity: batch.next_power_of_two(),
-            hybrid: true,
-        };
-        if layout.local_counts().total() > layout.signature_stride() {
-            return Err(FalconError::SourceStrideOverflow);
-        }
-        Ok(layout)
-    }
-
-    pub const fn is_hybrid(&self) -> bool {
-        self.hybrid
-    }
-
-    pub(super) const fn single_instance(&self) -> Self {
-        Self {
-            batch: 1,
-            capacity: 1,
-            hybrid: self.hybrid,
-        }
-    }
-
     pub const fn signature_stride(&self) -> usize {
-        if self.hybrid {
-            1 << 17
-        } else {
-            Self::SIGNATURE_STRIDE
-        }
+        Self::SIGNATURE_STRIDE
     }
-
-    pub const fn local_counts(&self) -> FalconTraceCounts {
-        let mut counts = Self::counts();
-        if self.hybrid {
-            counts.s2_non_min_slack = 0;
-            counts.keccak_chi_inputs = 0;
-            counts.keccak_chi_ands = 0;
-            counts.keccak_round_states = 0;
-            counts.keccak_column_parities = 0;
-            counts.keccak_column_parity_quotients = 0;
-            counts.keccak_parity_quotients = 0;
-            counts.hash_words = HASH_TO_POINT_SAMPLES * 16;
-            counts.hash_remainder_slack = 0;
-            counts.hash_quotient_slack = 0;
-            counts.compact_selectors = 0;
-            counts.compact_selected_prefixes = 0;
-            counts.compact_selected_remainders = 0;
-            counts.s1_range_slack = 0;
-            counts.ring_quotients = 0;
-        }
-        counts
-    }
-
     pub const fn offsets(&self) -> super::FalconSourceOffsets {
-        super::FalconSourceOffsets::from_counts(self.local_counts())
+        super::FalconSourceOffsets::new()
     }
-
     pub const fn linear_rows(&self) -> usize {
-        super::FalconConstraintCounts::for_layout(self).linear_rows()
+        super::FalconConstraintCounts::per_signature().linear_rows()
     }
-
     pub const fn linear_stride(&self) -> usize {
-        if self.hybrid { 1 << 13 } else { 1 << 20 }
+        1 << 13
     }
-
     pub const fn batch(&self) -> usize {
         self.batch
     }
-
     pub const fn capacity(&self) -> usize {
         self.capacity
     }
-
     pub const fn source_bits(&self) -> usize {
-        self.signature_stride() * self.capacity
+        Self::SIGNATURE_STRIDE * self.capacity
     }
-
     pub const fn row_vars(&self) -> usize {
         13
     }
-
     pub const fn col_vars(&self) -> usize {
-        // log2(2^22 * capacity) - row_vars.
-        if self.hybrid {
-            4 + self.capacity.trailing_zeros() as usize
-        } else {
-            9 + self.capacity.trailing_zeros() as usize
-        }
+        4 + self.capacity.trailing_zeros() as usize
     }
 
-    /// Physical `W=1` source-commitment tensor.  Flat source index `i` is
-    /// stored at `b = i mod 2^t`, `c = floor(i/2^t)`.
+    /// Flat source index i is stored at row i mod 2^13, column floor(i/2^13).
     pub const fn bitz_params(&self) -> IntegerMatrixLayout {
         IntegerMatrixLayout {
             row_vars: self.row_vars(),
@@ -200,42 +99,17 @@ impl FalconSourceLayout {
         FalconTraceCounts {
             shared_one: 1,
             message: 32 * 8,
-            // Complete CT signature: header, nonce and 12-bit s2 payload.
-            encoded_signature: 1_577 * 8,
-            // `sum(low eleven bits) = sign + d`, `d in [0,11]`.
-            s2_non_min_slack: N * 4,
-            // B lanes entering every chi layer.
-            keccak_chi_inputs: 20 * 24 * 25 * 64,
-            // 20 permutations * 24 rounds * 25 lanes * 64 bits.
-            keccak_chi_ands: 20 * 24 * 25 * 64,
-            // Sparse round checkpoints, after chi and iota.
-            keccak_round_states: 20 * 24 * 25 * 64,
-            // Shared theta column parities and their two-bit exact quotients.
-            keccak_column_parities: 20 * 24 * 5 * 64,
-            keccak_column_parity_quotients: 20 * 24 * 5 * 64 * 2,
-            // One-bit exact parity quotient for every theta/rho/pi output.
-            keccak_parity_quotients: 20 * 24 * 25 * 64,
-            hash_words: 0,
+            // Complete CT signature: header, nonce and signed 12-bit s2 payload.
+            encoded_signature: super::CT_SIGNATURE_BYTES * 8,
+            hash_words: HASH_TO_POINT_SAMPLES * 16,
             hash_quotients: HASH_TO_POINT_SAMPLES * 3,
+            // bounded14 decodes every bit string into 0..=12288.
             hash_remainders: HASH_TO_POINT_SAMPLES * 14,
-            hash_remainder_slack: HASH_TO_POINT_SAMPLES * 14,
-            hash_quotient_slack: HASH_TO_POINT_SAMPLES * 3,
             hash_accept_ands: HASH_TO_POINT_SAMPLES,
-            // P_0..P_1311, each at most 1311.
             hash_prefixes: (HASH_TO_POINT_SAMPLES + 1) * 11,
-            // `a_i * (1 - msb(P_i))` selects the first 1024 accepts.
-            compact_selectors: HASH_TO_POINT_SAMPLES,
-            // Products with the selector make the product-tree leaves linear.
-            compact_selected_prefixes: HASH_TO_POINT_SAMPLES * 11,
-            compact_selected_remainders: HASH_TO_POINT_SAMPLES * 14,
-            // Stable-compaction output, tied to the candidates by GKR.
             hash_point: N * 14,
-            // Centered values in [-6144,6144].
+            // bounded14 value minus 6144, shared by norms and the native ideal.
             s1: N * 14,
-            // `12288 - (s1 + 6144)` proves the biased encoding is canonical.
-            s1_range_slack: N * 14,
-            // Safe signed width for the schoolbook negacyclic quotient.
-            ring_quotients: N * 23,
             norm_slack: 27,
         }
     }
@@ -246,32 +120,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn source_layout_fits_four_megabit_stride() {
-        let counts = FalconSourceLayout::counts();
-        assert_eq!(counts.keccak_chi_ands, 768_000);
-        assert_eq!(counts.keccak_chi_inputs, 768_000);
-        assert_eq!(counts.keccak_round_states, 768_000);
-        assert_eq!(counts.keccak_column_parities, 153_600);
-        assert_eq!(counts.keccak_column_parity_quotients, 307_200);
-        assert_eq!(counts.keccak_parity_quotients, 768_000);
-        assert!(counts.total() < FalconSourceLayout::SIGNATURE_STRIDE);
-        assert_eq!(counts.total(), 3_710_759);
-        assert_eq!(FalconSourceLayout::SIGNATURE_STRIDE, 1 << 22);
-        for batch in 1..=32 {
-            let layout = FalconSourceLayout::new(batch).unwrap();
-            assert_eq!(
-                layout.row_vars() + layout.col_vars(),
-                layout.source_bits().trailing_zeros() as usize
-            );
-        }
-    }
-
-    #[cfg(feature = "falcon-hybrid")]
-    #[test]
-    fn native_hybrid_layout_has_only_required_arithmetic_columns() {
+    fn source_layout_has_only_required_arithmetic_columns() {
         for batch in 1..=1024 {
-            let layout = FalconSourceLayout::new_hybrid(batch).unwrap();
-            let counts = layout.local_counts();
+            let layout = FalconSourceLayout::new(batch).unwrap();
+            let counts = FalconSourceLayout::counts();
             assert_eq!(counts.total(), 100_578);
             assert_eq!(layout.offsets().end, counts.total());
             assert_eq!(layout.signature_stride(), 131_072);
@@ -300,16 +152,8 @@ mod tests {
                     + counts.norm_slack / 27,
                 8_605
             );
-            assert_eq!(counts.s2_non_min_slack, 0);
-            assert_eq!(counts.hash_remainder_slack, 0);
-            assert_eq!(counts.hash_quotient_slack, 0);
-            assert_eq!(counts.compact_selectors, 0);
-            assert_eq!(counts.compact_selected_prefixes, 0);
-            assert_eq!(counts.compact_selected_remainders, 0);
-            assert_eq!(counts.s1_range_slack, 0);
-            assert_eq!(counts.ring_quotients, 0);
         }
-        assert!(FalconSourceLayout::new_hybrid(0).is_err());
-        assert!(FalconSourceLayout::new_hybrid(1025).is_err());
+        assert!(FalconSourceLayout::new(0).is_err());
+        assert!(FalconSourceLayout::new(1025).is_err());
     }
 }

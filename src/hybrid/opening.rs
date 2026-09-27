@@ -269,6 +269,31 @@ impl<const N: usize> Geometry<N> {
         marginal
     }
 
+    fn live_groups(&self) -> [usize; 16] {
+        let mut live = [0; 16];
+        for branch in 0..N {
+            let k = self.lane_logs[branch];
+            live[self.offset(branch)..self.offset(branch) + (1 << k)]
+                .fill(1 << (self.logs[branch] - k));
+        }
+        live
+    }
+
+    /// Copy every physically committed word, including source padding. The
+    /// caller zero-initializes unused lanes when allocating the tile; reuse
+    /// leaves those lanes untouched.
+    fn write_words(&self, sources: [&[F]; N], first_group: usize, words: &mut [F]) {
+        for (local, group) in words.chunks_exact_mut(self.lanes()).enumerate() {
+            let g = first_group + local;
+            for branch in 0..N {
+                let k = self.lane_logs[branch];
+                let start = self.offset(branch);
+                group[start..start + (1 << k)]
+                    .copy_from_slice(&sources[branch][g << k..(g + 1) << k]);
+            }
+        }
+    }
+
     /// Materialize the two tables needed by Ligerito exactly once. Equality
     /// factors fit in tiles; ring, OOD and padding coefficients are combined
     /// before being written. The same pass computes the first message and
@@ -283,47 +308,17 @@ impl<const N: usize> Geometry<N> {
     ) -> InitialTables {
         use flock_core::field::Gf128Product;
 
-        let block_log = self.packed_log().min(12);
-        let block = 1 << block_log;
-        let ring = EqualityTiles::new(point, block_log, Gf::one());
-        let padding_eq = EqualityTiles::new(padding.0, block_log, padding.1);
-        let ood = ood.map(|(point, scale)| EqualityTiles::new(point, block_log, scale));
-        let phi = phi_byte_tables(eq_r2, Gf::one());
+        let tiles = InitialBasisTiles::new(self, point, eq_r2, padding, ood);
+        let block = tiles.block_len();
         let size = 1 << self.packed_log();
         let mut packed = vec![F::ZERO; size];
         let mut basis = vec![F::ZERO; size];
-        let mut live_groups = [0usize; 16];
-        for branch in 0..N {
-            let k = self.lane_logs[branch];
-            live_groups[self.offset(branch)..self.offset(branch) + (1 << k)]
-                .fill(1 << (self.logs[branch] - k));
-        }
         let partials: Vec<_> = crate::utils::cfg_chunks_mut!(packed, block)
             .zip(crate::utils::cfg_chunks_mut!(basis, block))
             .enumerate()
             .map(|(hi, (words, coefficients))| {
-                let first_group = hi * block / self.lanes();
-                for (local_group, group) in words.chunks_exact_mut(self.lanes()).enumerate() {
-                    let g = first_group + local_group;
-                    for branch in 0..N {
-                        let k = self.lane_logs[branch];
-                        let start = self.offset(branch);
-                        group[start..start + (1 << k)]
-                            .copy_from_slice(&sources[branch][g << k..(g + 1) << k]);
-                    }
-                }
-                for (lo, coefficient) in coefficients.iter_mut().enumerate() {
-                    let weight = ring.head[hi] * ring.tail[lo];
-                    let mut value = phi_from_words(*weight.as_words(), &phi);
-                    let group = first_group + lo / self.lanes();
-                    if group >= live_groups[lo % self.lanes()] {
-                        value += padding_eq.head[hi] * padding_eq.tail[lo];
-                    }
-                    if let Some(ood) = &ood {
-                        value += ood.head[hi] * ood.tail[lo];
-                    }
-                    *coefficient = value;
-                }
+                self.write_words(sources, hi * block / self.lanes(), words);
+                tiles.write(hi, coefficients);
                 ligerito::lookahead_accumulate(words, coefficients)
             })
             .collect();
@@ -356,6 +351,59 @@ impl EqualityTiles {
             *value *= scale;
         }
         Self { tail, head }
+    }
+}
+
+/// Initial basis coefficients shared by dense and streamed PCS tables.
+/// Allocation and the deferred two-fold basis remain separate from this tile writer.
+struct InitialBasisTiles {
+    ring: EqualityTiles,
+    padding: EqualityTiles,
+    ood: Option<EqualityTiles>,
+    phi: Vec<Gf>,
+    live_groups: [usize; 16],
+}
+
+impl InitialBasisTiles {
+    fn new<const N: usize>(
+        geometry: &Geometry<N>,
+        point: &[Gf],
+        eq_r2: &[Gf],
+        padding: (&[Gf], Gf),
+        ood: Option<(&[Gf], Gf)>,
+    ) -> Self {
+        let low = geometry.packed_log().min(12);
+        Self {
+            ring: EqualityTiles::new(point, low, Gf::one()),
+            padding: EqualityTiles::new(padding.0, low, padding.1),
+            ood: ood.map(|(point, scale)| EqualityTiles::new(point, low, scale)),
+            phi: phi_byte_tables(eq_r2, Gf::one()),
+            live_groups: geometry.live_groups(),
+        }
+    }
+
+    fn block_len(&self) -> usize {
+        self.ring.tail.len()
+    }
+
+    fn tile_count(&self) -> usize {
+        self.ring.head.len()
+    }
+
+    fn write(&self, hi: usize, coefficients: &mut [Gf]) {
+        let lanes = self.live_groups.len();
+        let first_group = hi * self.block_len() / lanes;
+        for (lo, coefficient) in coefficients.iter_mut().enumerate() {
+            let weight = self.ring.head[hi] * self.ring.tail[lo];
+            let mut value = phi_from_words(*weight.as_words(), &self.phi);
+            if first_group + lo / lanes >= self.live_groups[lo % lanes] {
+                value += self.padding.head[hi] * self.padding.tail[lo];
+            }
+            if let Some(ood) = &self.ood {
+                value += ood.head[hi] * ood.tail[lo];
+            }
+            *coefficient = value;
+        }
     }
 }
 

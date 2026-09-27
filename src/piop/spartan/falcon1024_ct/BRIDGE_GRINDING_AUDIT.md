@@ -1,16 +1,13 @@
 # Falcon hybrid bridge grinding audit
 
-The v6 Falcon hybrid uses one partially reduced `wfbitz` forest over both
+The native Falcon prover uses one partially reduced `wfbitz` forest over both
 bounded integer limbs of its prime-field row weights. SHAKE, HashToPoint,
 Falcon arithmetic, every signature's norm bound, the three committed sources,
-and the joint binary sumcheck and shared PCS opening remain enforced. This
-change replaces the bridge's GKR implementation and coordinate order while
-preserving the two-limb batching and its error budget.
+and the joint binary sumcheck and shared PCS opening remain enforced.
 
-The hybrid statement and transcript use v6; the bridge grinding domain uses
-v4. The statement digest binds the derived bridge numerator and grinding
-difficulty. Previous hybrid proofs must be regenerated. The former v5
-merged-forest implementation is recorded below for comparison.
+The statement uses `native-ring/non-zk/v4` and its transcript uses
+`native-ring/statement/v4`; the bridge grinding domain remains v4.
+The statement digest binds the derived bridge numerator and grinding difficulty.
 
 ## Scope and model
 
@@ -23,10 +20,10 @@ security beyond the separately stated BLAKE3 bound.
 
 Supported live batch sizes are 1 through 1024, padded to their next power of
 two. The arithmetic source has `word_bits=1`, `d=row_vars=13`, and
-`c=col_vars=5+log2(capacity)`. There are exactly two bounded limbs. The forest
+`c=col_vars=4+log2(capacity)`. There are exactly two bounded limbs. The forest
 uses an interleaved row grid of geometric width `t=d+1=14`, but reduces only
 `d=13` product-tree levels. Its root-table width is therefore
-`s=c+1=6+log2(capacity)`, ranging from 6 to 16. The unreduced coordinate is the
+`s=c+1=5+log2(capacity)`, ranging from 5 to 15. The unreduced coordinate is the
 limb index; it is not multiplied away.
 
 ## Integer binding has no probabilistic loss
@@ -179,17 +176,17 @@ handing buffers to the optimized forest.
 
 | Capacity | s | Sumcheck rounds R | Challenge blocks | Numerator | Bits at target 128 |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 6 | 156 | 170 | 487 | 17 |
-| 2 | 7 | 169 | 183 | 527 | 18 |
-| 4 | 8 | 182 | 196 | 567 | 18 |
-| 8 | 9 | 195 | 209 | 607 | 18 |
-| 16 | 10 | 208 | 222 | 647 | 18 |
-| 32 | 11 | 221 | 235 | 687 | 18 |
-| 64 | 12 | 234 | 248 | 727 | 18 |
-| 128 | 13 | 247 | 261 | 767 | 18 |
-| 256 | 14 | 260 | 274 | 807 | 18 |
-| 512 | 15 | 273 | 287 | 847 | 18 |
-| 1024 | 16 | 286 | 300 | 887 | 18 |
+| 1 | 5 | 143 | 157 | 447 | 17 |
+| 2 | 6 | 156 | 170 | 487 | 17 |
+| 4 | 7 | 169 | 183 | 527 | 18 |
+| 8 | 8 | 182 | 196 | 567 | 18 |
+| 16 | 9 | 195 | 209 | 607 | 18 |
+| 32 | 10 | 208 | 222 | 647 | 18 |
+| 64 | 11 | 221 | 235 | 687 | 18 |
+| 128 | 12 | 234 | 248 | 727 | 18 |
+| 256 | 13 | 247 | 261 | 767 | 18 |
+| 512 | 14 | 260 | 274 | 807 | 18 |
+| 1024 | 15 | 273 | 287 | 847 | 18 |
 
 The numerator is derived from the validated layout. The unchanged category
 allocator uses
@@ -199,37 +196,25 @@ g = max(0, target + 8 + ceil(log2(numerator)) - 128).
 ```
 
 The bridge therefore remains at most `2^-(target+8)`. Target 100 needs zero
-grinding throughout the supported range. Target 128 needs 17 bits for one
-signature and 18 bits for every larger capacity. These counts and difficulties
-match the previous v5 merged-forest bridge, although its different variable
-order and the changed domains produce different messages and nonce seeds.
+grinding throughout the supported range. Target 128 needs 17 bits for capacities
+one and two, and 18 bits for larger capacities. These counts and difficulties
+are derived directly from the current forest geometry.
 
-The surrounding union allocation is unchanged: seven prime category budgets
+The complete native-ring composition includes seven prime category budgets
 of `2^-133`, six binary budgets of `2^-136` including the bridge and both
-Keccak slabs, a PCS budget of `2^-130`, and the prime sampling term `2^-144`.
-Their normalized sum is at most
+Keccak slabs, a PCS budget of `2^-130`, and prime sampling `2^-144`.
+Native carry batching additionally contributes at most `10/2^137`.
+For native ideal batching/projection, `Q^11-Q>2^149` and `d+2046<2^12`,
+so its error is below `2^-137`. The normalized sum is therefore at most
 
 ```
-7/32 + 6/256 + 1/4 + 2^-16 < 0.493
+7/32 + 6/256 + 10/512 + 1/512 + 1/4 + 2^-16 < 0.514
 ```
 
-at target 128. The whole-composition report checks actual terms at both
-supported security targets for every live batch size, including batches
-whose capacity exceeds their live count.
-
-## Previous v5 implementation
-
-The v5 statement used bridge grinding domain v3 and `merged_forest` over both
-limbs. Its terminal point was `[row | column | limb]`; v6 uses
-`[column | limb | row]`. Both retain the limb among the root coordinates,
-reduce 13 original source-row coordinates, and contract the limb weights
-into a single binary claim. Hence their degree/error accounting is identical.
-The optimized `wfbitz` forest computes its rounds using prescaled tables,
-bit-driven lower levels, fused dense folding, and an arena for the larger
-levels. This is an implementation change within that shared algebraic
-schedule, not authorization to reuse old proof transcripts or drop grinding.
-Before v5, the bridge used a conservative constant 4096 numerator and 20-bit
-grinding at target 128.
+at target 128 under the repository's computational grinding convention.
+The whole-composition report checks actual terms at both supported targets for
+every live batch size, including padded batches. See
+[OPTIMIZATION_SECURITY.md](OPTIMIZATION_SECURITY.md) for the current allocation.
 
 ## Regression coverage
 
@@ -263,9 +248,8 @@ independent cryptographic audit of the global Fiat-Shamir model.
   full-order generator checks.
 - `hybrid_keccak/grinding.rs` and `src/piop/spartan/grinding.rs`: block
   boundaries and domain-, difficulty-, and index-bound nonces.
-- `hybrid.rs`: v6 statement binding, category accounting, existing joint
+- `hybrid.rs`: native-ring/v4 statement binding, category accounting, joint
   binary sumcheck, and shared PCS authentication.
 
-The separate legacy `commitment-bound/v4` wrapper in `opening.rs` remains
-unchanged. The hybrid calls its prefix helpers under the enclosing hybrid
-statement binding.
+The prefix helpers in `opening.rs` run under the enclosing Falcon statement
+binding and feed this bridge directly.

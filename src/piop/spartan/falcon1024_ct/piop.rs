@@ -33,7 +33,7 @@ use crate::{
 
 use super::{
     BETA_SQUARED, FalconError, FalconSourceLayout, FalconVerificationTrace, HASH_TO_POINT_SAMPLES,
-    N, keccak::ROUND_CONSTANTS,
+    N,
 };
 
 type F = SpartanBitzField;
@@ -41,20 +41,7 @@ type Cfg = <F as SpartanField>::Config;
 
 const PRIME_MIN: u128 = 1u128 << 125;
 const PRIME_MAX: u128 = (1u128 << 126) - 1;
-const KECCAK_BITS: usize = 20 * 24 * 25 * 64;
-const KECCAK_GATE_STRIDE: usize = 1 << 20;
 const COMPACTION_LEAVES: usize = 1 << 11;
-// Each 128-bit block has about four bits of margin before the union bound
-// across norm, cubic-product, fingerprint, linear-collapse and final-binding
-// failures. The occurrence counts use the maximum supported batch of 32.
-const QUADRATIC_GRINDING_BITS: u32 = 13;
-// The per-instance norm residual has degree at most five at batch 32.
-const NORM_INSTANCE_GRINDING_BITS: u32 = 14;
-const OUTER_POINT_GRINDING_BITS: u32 = 14;
-const CUBIC_GRINDING_BITS: u32 = 21;
-const FINGERPRINT_GRINDING_BITS: u32 = 23;
-pub(super) const LINEAR_POINT_GRINDING_BITS: u32 = 14;
-pub(super) const BINDING_GRINDING_BITS: u32 = 13;
 
 /// Proof-of-work schedule used to lift the 126-bit projection field to the
 /// requested computational soundness target.
@@ -73,40 +60,11 @@ pub struct FalconSecuritySchedule {
 }
 
 impl FalconSecuritySchedule {
-    /// Batch-specific hybrid schedule. At target 128, each of seven prime
-    /// reduction groups receives at most 2^-(target+5) work-normalized error.
-    /// Target 100 needs no grinding: its whole unground prime bound already
-    /// exceeds 103 bits, including at the maximum supported batch.
+    /// At target 128, each of seven prime-reduction groups receives at most
+    /// 2^-(target+5) work-normalized error. Target 100 needs no grinding.
     pub const fn for_layout(target_bits: usize, layout: &FalconSourceLayout) -> Option<Self> {
-        if target_bits != 128 || !layout.is_hybrid() {
-            return Self::for_target(target_bits);
-        }
-        let d = layout.capacity().trailing_zeros() as usize;
-        let batch = layout.batch();
-        let (cubic_round_bits, forest_claim_bits) = compaction_grinding_bits(target_bits, d, batch);
-        Some(Self {
-            // Independent instance batching for norms and candidate leaves.
-            norm_instance_bits: component_grinding_bits(target_bits, 2 * d),
-            quadratic_round_bits: component_grinding_bits(target_bits, 4 * (10 + d)),
-            outer_point_bits: component_grinding_bits(target_bits, 11 + d),
-            cubic_round_bits,
-            forest_claim_bits,
-            // All sources are fixed before the common fingerprint. Acceptance
-            // requires every root equality, hence one fixed bad signature's
-            // nonzero polynomial must vanish; there is no union over B here.
-            // The old ceil(log2 B) rounding left extra margin for partial
-            // batches. Preserve it with one extra bit when B is not a power
-            // of two, rather than spending the old protocol's spare budget.
-            fingerprint_bits: component_grinding_bits(target_bits, 2048)
-                + if batch.is_power_of_two() { 0 } else { 1 },
-            linear_point_bits: component_grinding_bits(target_bits, 13 + d + batch + 12),
-            binding_round_bits: component_grinding_bits(target_bits, 2 * (17 + d)),
-        })
-    }
-
-    pub const fn for_target(target_bits: usize) -> Option<Self> {
-        match target_bits {
-            100 => Some(Self {
+        if target_bits == 100 {
+            return Some(Self {
                 norm_instance_bits: 0,
                 outer_point_bits: 0,
                 quadratic_round_bits: 0,
@@ -115,73 +73,60 @@ impl FalconSecuritySchedule {
                 fingerprint_bits: 0,
                 linear_point_bits: 0,
                 binding_round_bits: 0,
-            }),
-            128 => Some(Self {
-                norm_instance_bits: NORM_INSTANCE_GRINDING_BITS,
-                outer_point_bits: OUTER_POINT_GRINDING_BITS,
-                quadratic_round_bits: QUADRATIC_GRINDING_BITS,
-                cubic_round_bits: CUBIC_GRINDING_BITS,
-                forest_claim_bits: CUBIC_GRINDING_BITS,
-                fingerprint_bits: FINGERPRINT_GRINDING_BITS,
-                linear_point_bits: LINEAR_POINT_GRINDING_BITS,
-                binding_round_bits: BINDING_GRINDING_BITS,
-            }),
-            _ => None,
+            });
         }
+        if target_bits != 128 {
+            return None;
+        }
+        let d = layout.capacity().trailing_zeros() as usize;
+        let (cubic_round_bits, forest_claim_bits) = compaction_grinding_bits(d);
+        Some(Self {
+            // Independent instance batching for norms and candidate leaves.
+            norm_instance_bits: component_grinding_bits(2 * d),
+            quadratic_round_bits: component_grinding_bits(4 * (10 + d)),
+            outer_point_bits: component_grinding_bits(11 + d),
+            cubic_round_bits,
+            forest_claim_bits,
+            // Acceptance checks every root equality, so one fixed incorrect
+            // signature suffices: there is no union over the batch here.
+            fingerprint_bits: component_grinding_bits(2048),
+            linear_point_bits: component_grinding_bits(13 + d + layout.batch() + 12),
+            binding_round_bits: component_grinding_bits(2 * (17 + d)),
+        })
     }
 }
 
-const fn component_grinding_bits(target_bits: usize, numerator: usize) -> u32 {
+// p >= 2^125 and target+5 = 133: each group's weighted numerator must
+// be at most 2^-8 before division by p.
+const PRIME_GROUP_MARGIN: u32 = 8;
+
+const fn component_grinding_bits(numerator: usize) -> u32 {
     if numerator == 0 {
         return 0;
     }
-    let ceil_log2 = usize::BITS - (numerator - 1).leading_zeros();
-    (target_bits as u32 + 5 + ceil_log2).saturating_sub(125)
+    PRIME_GROUP_MARGIN + usize::BITS - (numerator - 1).leading_zeros()
 }
 
-/// Preserve the v2 error budget exactly while allocating nonce work to the
-/// v3 challenge degrees. Recover the previous optimum first so no supported
-/// batch silently spends the extra margin left by its old rounded schedule.
-/// The v3 forest uses ten multilinear equality draws of degree d+1, and
-/// eleven line draws preserving a nonzero vector with error at most 1/p each.
-const fn compaction_grinding_bits(target_bits: usize, d: usize, batch: usize) -> (u32, u32) {
+/// Minimize expected nonce trials for the current cubic and forest claims
+/// subject to their shared 2^-133 error budget. The cubic rounds have total
+/// degree 3R; the ten equality draws and eleven vector-line draws have total
+/// degree 10(d+1)+11. Twenty-one claim challenge blocks pay the second cost.
+const fn compaction_grinding_bits(d: usize) -> (u32, u32) {
     let rounds = 2 * (11 + d) + 55;
-    let a = (3 * rounds) as u128;
-    let h = (10 * (2 * batch - 1) + 22 * batch) as u128;
-    let uniform = component_grinding_bits(target_bits, (a + h) as usize);
-    let denominator_bits = uniform + 1;
-    let previous = allocate_compaction_grinding(
-        rounds,
-        h,
-        ((a + h) << 1, denominator_bits),
-        (uniform, uniform),
-    );
-    let budget = (a << (denominator_bits - previous.0)) + (h << (denominator_bits - previous.1));
-    allocate_compaction_grinding(
-        rounds,
-        (10 * (d + 1) + 11) as u128,
-        (budget, denominator_bits),
-        previous,
-    )
-}
-
-/// All budget comparisons have one common power-of-two denominator and use
-/// exact integers. The feasible initial pair remains available on cost ties.
-const fn allocate_compaction_grinding(
-    rounds: usize,
-    claim_degree: u128,
-    budget: (u128, u32),
-    initial: (u32, u32),
-) -> (u32, u32) {
-    let (budget, denominator_bits) = budget;
-    let a = (3 * rounds) as u128;
-    let mut best = initial;
-    let mut work = ((rounds as u128) << initial.0) + (21u128 << initial.1);
-    let mut round_bits = 1;
+    let cubic_degree = (3 * rounds) as u128;
+    let claim_degree = (10 * (d + 1) + 11) as u128;
+    let uniform = component_grinding_bits((cubic_degree + claim_degree) as usize);
+    // A difficulty above uniform+2 cannot beat the initial work: its single
+    // cost is >=21*8*2^uniform, while R+21 <=118 for d<=10.
+    let denominator_bits = uniform + 2;
+    let budget = 1u128 << (denominator_bits - PRIME_GROUP_MARGIN);
+    let mut best = (uniform, uniform);
+    let mut work = ((rounds + 21) as u128) << uniform;
+    let mut round_bits = 0;
     while round_bits <= denominator_bits {
-        let mut claim_bits = 1;
+        let mut claim_bits = 0;
         while claim_bits <= denominator_bits {
-            let error = (a << (denominator_bits - round_bits))
+            let error = (cubic_degree << (denominator_bits - round_bits))
                 + (claim_degree << (denominator_bits - claim_bits));
             let candidate_work = ((rounds as u128) << round_bits) + (21u128 << claim_bits);
             if error <= budget && candidate_work < work {
@@ -317,27 +262,24 @@ pub struct CompactionLeafProof {
     pub grinding_nonces: Vec<u64>,
 }
 
-/// Proof through the norm, Keccak chi, compaction-product, and compaction
+/// Proof through the norm, rejection, and compaction
 /// witness-product layers.  The terminal claims must subsequently be
 /// collapsed and opened against the source commitment.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FalconPiopProof {
     pub modulus: u128,
     pub norm: NormProof,
-    pub keccak_chi: Option<QuadraticRelationProof>,
     pub compact_products: QuadraticRelationProof,
     pub fingerprint_nonce: Option<u64>,
     pub compaction_gamma: F,
     pub compaction_rank_scale: F,
     pub compaction: Vec<CompactionProof>,
     pub compaction_forest: PrimeProductForestProof,
-    pub compaction_leaf: Option<CompactionLeafProof>,
+    pub compaction_leaf: CompactionLeafProof,
 }
 
-/// Proves the nonlinear Falcon relation layers.  `target_bits` controls the
-/// per-round grinding needed above the 126-bit prime-field ceiling: target
-/// 100 uses none. Target 128 uses a conservative schedule that accounts for
-/// all supported batch-32 sumchecks and the degree-2048 fingerprints.
+/// Proves the nonlinear Falcon relation layers. Target 100 uses no grinding;
+/// target 128 allocates the prime reductions a batch-specific error budget.
 pub fn prove_falcon_piop(
     transcript: &mut impl Transcript,
     layout: &FalconSourceLayout,
@@ -350,14 +292,6 @@ pub fn prove_falcon_piop(
 
     let norm = prove_norm(transcript, layout, traces, target_bits, &field)
         .map_err(|error| piop(format!("norm: {error}")))?;
-    let keccak_chi = if layout.is_hybrid() {
-        None
-    } else {
-        Some(
-            prove_keccak_chi(transcript, layout, traces, target_bits, &field)
-                .map_err(|error| piop(format!("keccak chi: {error}")))?,
-        )
-    };
     let compact_products =
         prove_compaction_products(transcript, layout, traces, target_bits, &field)
             .map_err(|error| piop(format!("compaction products: {error}")))?;
@@ -394,25 +328,20 @@ pub fn prove_falcon_piop(
         security_schedule(layout, target_bits)?,
         &field,
     )?;
-    let compaction_leaf = if layout.is_hybrid() {
-        Some(prove_compaction_leaf(
-            transcript,
-            layout,
-            traces,
-            &compaction,
-            gamma,
-            rank_scale,
-            target_bits,
-            &field,
-        )?)
-    } else {
-        None
-    };
+    let compaction_leaf = prove_compaction_leaf(
+        transcript,
+        layout,
+        traces,
+        &compaction,
+        gamma,
+        rank_scale,
+        target_bits,
+        &field,
+    )?;
 
     Ok(FalconPiopProof {
         modulus: field.modulus_u128(),
         norm,
-        keccak_chi,
         compact_products,
         fingerprint_nonce,
         compaction_gamma: gamma,
@@ -441,21 +370,6 @@ pub fn verify_falcon_piop(
         return Err(piop("transcript prime mismatch"));
     }
     verify_norm(transcript, layout, &proof.norm, target_bits, &field)?;
-    match (layout.is_hybrid(), &proof.keccak_chi) {
-        (false, Some(keccak_chi)) => {
-            transcript.absorb_slice(b"bitz/falcon1024-ct/keccak-chi/v1");
-            verify_quadratic(
-                transcript,
-                keccak_rounds(layout),
-                keccak_chi,
-                target_bits,
-                security_schedule(layout, target_bits)?,
-                &field,
-            )?;
-        }
-        (true, None) => {}
-        _ => return Err(piop("Keccak proof does not match the source layout")),
-    }
     transcript.absorb_slice(b"bitz/falcon1024-ct/compaction-products/v3");
     verify_quadratic(
         transcript,
@@ -491,22 +405,14 @@ pub fn verify_falcon_piop(
         security_schedule(layout, target_bits)?,
         &field,
     )?;
-    match (layout.is_hybrid(), &proof.compaction_leaf) {
-        (true, Some(leaf)) => verify_compaction_leaf(
-            transcript,
-            layout,
-            &proof.compaction,
-            leaf,
-            target_bits,
-            &field,
-        )?,
-        (false, None) => {}
-        _ => {
-            return Err(piop(
-                "compaction leaf proof does not match the source layout",
-            ));
-        }
-    }
+    verify_compaction_leaf(
+        transcript,
+        layout,
+        &proof.compaction,
+        &proof.compaction_leaf,
+        target_bits,
+        &field,
+    )?;
     Ok(())
 }
 
@@ -522,12 +428,7 @@ fn validate_inputs(
 }
 
 fn bind_header(transcript: &mut impl Transcript, layout: &FalconSourceLayout, target_bits: usize) {
-    transcript.absorb_slice(if layout.is_hybrid() {
-        b"bitz/falcon1024-ct/piop/native-ring/v3"
-    } else {
-        b"bitz/falcon1024-ct/piop/v3"
-    });
-    transcript.absorb_slice(&[u8::from(layout.is_hybrid())]);
+    transcript.absorb_slice(b"bitz/falcon1024-ct/piop/native-ring/v4");
     transcript.absorb_slice(&(layout.batch() as u64).to_le_bytes());
     transcript.absorb_slice(&(layout.capacity() as u64).to_le_bytes());
     transcript.absorb_slice(&(target_bits as u64).to_le_bytes());
@@ -747,111 +648,6 @@ fn verify_norm(
     Ok(())
 }
 
-fn prove_keccak_chi(
-    transcript: &mut impl Transcript,
-    layout: &FalconSourceLayout,
-    traces: &[FalconVerificationTrace],
-    target_bits: usize,
-    field: &Cfg,
-) -> Result<QuadraticRelationProof, FalconError> {
-    transcript.absorb_slice(b"bitz/falcon1024-ct/keccak-chi/v1");
-    let rows = KeccakRows {
-        traces,
-        half: KECCAK_GATE_STRIDE * layout.capacity(),
-        field,
-        two_inv: unsigned((field.modulus_u128() + 1) / 2, field),
-    };
-    prove_quadratic(
-        transcript,
-        rows,
-        keccak_rounds(layout),
-        target_bits,
-        security_schedule(layout, target_bits)?,
-        field,
-    )
-}
-
-/// Read the original row operands from packed trace words. Only the first
-/// challenge fold allocates field tables; padding never needs source storage.
-struct KeccakRows<'a> {
-    traces: &'a [FalconVerificationTrace],
-    half: usize,
-    field: &'a Cfg,
-    two_inv: F,
-}
-
-impl KeccakRows<'_> {
-    fn gate(&self, row: usize) -> Option<(&super::keccak::KeccakTrace, usize, usize, bool)> {
-        let xor = row >= self.half;
-        let index = row % self.half;
-        let gate = index % KECCAK_GATE_STRIDE;
-        let trace = self.traces.get(index / KECCAK_GATE_STRIDE)?;
-        (gate < KECCAK_BITS).then_some((&trace.hash_to_point.shake, gate >> 6, gate & 63, xor))
-    }
-}
-
-impl OuterRows for KeccakRows<'_> {
-    type AB = F;
-    type C = F;
-
-    fn dimensions(&self) -> (usize, usize, usize) {
-        (2 * self.half, 2 * self.half, 2 * self.half)
-    }
-
-    fn a(&self, row: usize) -> F {
-        let Some((shake, word, bit, xor)) = self.gate(row) else {
-            return self.field.zero();
-        };
-        if xor {
-            bit_field(shake.chi_inputs[word], bit, self.field)
-        } else {
-            let neighbor = word - word % 5 + (word + 1) % 5;
-            self.field.sub(
-                &self.field.one(),
-                &bit_field(shake.chi_inputs[neighbor], bit, self.field),
-            )
-        }
-    }
-
-    fn b(&self, row: usize) -> F {
-        let Some((shake, word, bit, xor)) = self.gate(row) else {
-            return self.field.zero();
-        };
-        let value = if xor {
-            shake.chi_ands[word]
-        } else {
-            shake.chi_inputs[word - word % 5 + (word + 2) % 5]
-        };
-        bit_field(value, bit, self.field)
-    }
-
-    fn c(&self, row: usize) -> F {
-        let Some((shake, word, bit, xor)) = self.gate(row) else {
-            return self.field.zero();
-        };
-        let z = bit_field(shake.chi_ands[word], bit, self.field);
-        if !xor {
-            return z;
-        }
-        let round = (word / 25) % 24;
-        let y = shake.round_states[word]
-            ^ if word % 25 == 0 {
-                ROUND_CONSTANTS[round]
-            } else {
-                0
-            };
-        self.field.mul(
-            &self.field.sub(
-                &self
-                    .field
-                    .add(&bit_field(shake.chi_inputs[word], bit, self.field), &z),
-                &bit_field(y, bit, self.field),
-            ),
-            &self.two_inv,
-        )
-    }
-}
-
 #[tracing::instrument(skip_all, name = "falcon_arithmetic:hash_to_point_products")]
 fn prove_compaction_products(
     transcript: &mut impl Transcript,
@@ -864,7 +660,6 @@ fn prove_compaction_products(
     let rows = CompactionRows {
         traces,
         stride: COMPACTION_LEAVES * layout.capacity(),
-        rejection_only: layout.is_hybrid(),
         field,
     };
     prove_quadratic(
@@ -877,28 +672,19 @@ fn prove_compaction_products(
     )
 }
 
-/// Four word relations per candidate: selection, selected rank, selected
-/// remainder, and rejection. All words already have bounded binary source
-/// encodings, so word equality is equivalent to the former bitwise products.
-/// Original operands stay packed until the outer sumcheck's first fold.
+/// Rejection relation q_bit2 * q_bit0 = d. Original operands stay packed
+/// until the outer sumcheck's first fold; padded candidates contribute zero.
 struct CompactionRows<'a> {
     traces: &'a [FalconVerificationTrace],
     stride: usize,
-    rejection_only: bool,
     field: &'a Cfg,
 }
 
 impl CompactionRows<'_> {
-    fn candidate(&self, row: usize) -> Option<(&super::HashToPointTrace, usize, usize)> {
-        let block = if self.rejection_only {
-            3
-        } else {
-            row / self.stride
-        };
-        let index = row % self.stride;
-        let candidate = index % COMPACTION_LEAVES;
-        let trace = self.traces.get(index / COMPACTION_LEAVES)?;
-        (candidate < HASH_TO_POINT_SAMPLES).then_some((&trace.hash_to_point, candidate, block))
+    fn candidate(&self, row: usize) -> Option<(&super::HashToPointTrace, usize)> {
+        let candidate = row % COMPACTION_LEAVES;
+        let trace = self.traces.get(row / COMPACTION_LEAVES)?;
+        (candidate < HASH_TO_POINT_SAMPLES).then_some((&trace.hash_to_point, candidate))
     }
 }
 
@@ -907,66 +693,25 @@ impl OuterRows for CompactionRows<'_> {
     type C = F;
 
     fn dimensions(&self) -> (usize, usize, usize) {
-        let rows = if self.rejection_only {
-            self.stride
-        } else {
-            4 * self.stride
-        };
-        (rows, rows, rows)
+        (self.stride, self.stride, self.stride)
     }
 
     fn a(&self, row: usize) -> F {
-        let Some((hash, i, block)) = self.candidate(row) else {
-            return self.field.zero();
-        };
-        let value = match block {
-            0 => u128::from(hash.accepted[i]),
-            1 | 2 => u128::from(hash.accepted[i] && hash.prefix[i] < N as u16),
-            3 => u128::from((hash.quotients[i] >> 2) & 1),
-            _ => unreachable!(),
-        };
-        unsigned(value, self.field)
+        self.candidate(row).map_or(self.field.zero(), |(hash, i)| {
+            unsigned(u128::from((hash.quotients[i] >> 2) & 1), self.field)
+        })
     }
 
     fn b(&self, row: usize) -> F {
-        let Some((hash, i, block)) = self.candidate(row) else {
-            return self.field.zero();
-        };
-        let value = match block {
-            0 => u128::from(1 - ((hash.prefix[i] >> 10) & 1)),
-            1 => u128::from(hash.prefix[i]),
-            2 => u128::from(hash.remainders[i]),
-            3 => u128::from(hash.quotients[i] & 1),
-            _ => unreachable!(),
-        };
-        unsigned(value, self.field)
+        self.candidate(row).map_or(self.field.zero(), |(hash, i)| {
+            unsigned(u128::from(hash.quotients[i] & 1), self.field)
+        })
     }
 
     fn c(&self, row: usize) -> F {
-        let Some((hash, i, block)) = self.candidate(row) else {
-            return self.field.zero();
-        };
-        let selected = hash.accepted[i] && hash.prefix[i] < N as u16;
-        let value = match block {
-            0 => u128::from(selected),
-            1 => {
-                if selected {
-                    u128::from(hash.prefix[i])
-                } else {
-                    0
-                }
-            }
-            2 => {
-                if selected {
-                    u128::from(hash.remainders[i])
-                } else {
-                    0
-                }
-            }
-            3 => u128::from(!hash.accepted[i]),
-            _ => unreachable!(),
-        };
-        unsigned(value, self.field)
+        self.candidate(row).map_or(self.field.zero(), |(hash, i)| {
+            unsigned(u128::from(!hash.accepted[i]), self.field)
+        })
     }
 }
 
@@ -1794,20 +1539,12 @@ fn signed(value: i128, field: &Cfg) -> F {
     }
 }
 
-fn bit_field(word: u64, bit: usize, field: &Cfg) -> F {
-    unsigned(u128::from((word >> bit) & 1), field)
-}
-
 fn affine(left: F, right: F, point: F, field: &Cfg) -> F {
     field.add(&left, &field.mul(&point, &field.sub(&right, &left)))
 }
 
-fn keccak_rounds(layout: &FalconSourceLayout) -> usize {
-    21 + layout.capacity().trailing_zeros() as usize
-}
-
 fn compaction_product_rounds(layout: &FalconSourceLayout) -> usize {
-    (if layout.is_hybrid() { 11 } else { 13 }) + layout.capacity().trailing_zeros() as usize
+    11 + layout.capacity().trailing_zeros() as usize
 }
 
 pub(super) fn security_schedule(
@@ -1823,7 +1560,7 @@ fn piop(message: impl Into<String>) -> FalconError {
 }
 
 #[cfg(test)]
-pub(super) mod tests {
+mod tests {
     use super::*;
     use crate::sumcheck::outer::OuterInputs;
     use crate::{piop::spartan::falcon1024_ct::verification_trace, transcript::Blake3Transcript};
@@ -1834,81 +1571,67 @@ pub(super) mod tests {
     const SIGNATURE: &[u8; super::super::CT_SIGNATURE_BYTES] =
         include_bytes!("fixtures/signature_ct.bin");
 
-    // Independent reproduction of the saved v2 schedule. Keep the old powers
-    // batching and per-tree line bound here: this is a regression oracle.
-    pub(crate) fn previous_compaction_schedule(batch: usize) -> (u32, u32) {
-        let d = batch.next_power_of_two().ilog2() as usize;
-        let rounds = 2 * (11 + d) + (0..11).sum::<usize>();
-        let claims = 10 * (2 * batch - 1) + 22 * batch;
-        let numerator = 3 * rounds + claims;
-        let uniform = 8 + usize::BITS - (numerator - 1).leading_zeros();
-        let denominator = uniform + 1;
-        let budget = 2 * numerator as u128;
-        let mut best = (uniform, uniform);
-        let mut work = ((rounds + 21) as u128) << uniform;
-        for r in 1..=denominator {
-            for c in 1..=denominator {
-                let error = ((3 * rounds) as u128) << (denominator - r);
-                let error = error + ((claims as u128) << (denominator - c));
-                let candidate = ((rounds as u128) << r) + (21u128 << c);
-                if error <= budget && candidate < work {
-                    best = (r, c);
-                    work = candidate;
-                }
-            }
-        }
-        best
-    }
-
     #[test]
-    fn split_grinding_preserves_exact_error_and_work_budgets_for_every_batch() {
+    fn current_grinding_schedule_meets_each_prime_group_budget() {
+        let expected = [
+            (16, 16),
+            (16, 17),
+            (16, 18),
+            (17, 15),
+            (17, 15),
+            (17, 16),
+            (17, 16),
+            (17, 16),
+            (17, 16),
+            (17, 16),
+            (17, 17),
+        ];
         for batch in 1..=1024 {
-            let layout = FalconSourceLayout::new_hybrid(batch).unwrap();
+            let layout = FalconSourceLayout::new(batch).unwrap();
             let d = layout.capacity().ilog2() as usize;
             let schedule = FalconSecuritySchedule::for_layout(128, &layout).unwrap();
-            let rounds = 2 * (11 + d) + (0..11).sum::<usize>();
-            let previous_claims = 10 * (2 * batch - 1) + 22 * batch;
-            let claims = 10 * (2 * batch).next_power_of_two().ilog2() as usize + 11;
-            let (old_r, old_c) = previous_compaction_schedule(batch);
-            let denominator = old_r
-                .max(old_c)
-                .max(schedule.cubic_round_bits)
-                .max(schedule.forest_claim_bits);
-            let old_error = ((3 * rounds) as u128) << (denominator - old_r);
-            let old_error = old_error + ((previous_claims as u128) << (denominator - old_c));
-            let new_error = ((3 * rounds) as u128) << (denominator - schedule.cubic_round_bits);
-            let new_error =
-                new_error + ((claims as u128) << (denominator - schedule.forest_claim_bits));
-            assert!(new_error <= old_error, "error budget at batch {batch}");
-            let old_work = ((rounds as u128) << old_r) + (21u128 << old_c);
-            let new_work = ((rounds as u128) << schedule.cubic_round_bits)
-                + (21u128 << schedule.forest_claim_bits);
-            assert!(new_work <= old_work, "nonce work at batch {batch}");
-            let old_fingerprint = component_grinding_bits(128, 2048 * batch);
-            let denom = old_fingerprint.max(schedule.fingerprint_bits);
-            assert!(
-                (2048u128 << (denom - schedule.fingerprint_bits))
-                    <= ((2048 * batch) as u128) << (denom - old_fingerprint)
+            assert_eq!(
+                (schedule.cubic_round_bits, schedule.forest_claim_bits),
+                expected[d]
             );
+            for (numerator, bits) in [
+                (2 * d, schedule.norm_instance_bits),
+                (4 * (10 + d), schedule.quadratic_round_bits),
+                (11 + d, schedule.outer_point_bits),
+                (2048, schedule.fingerprint_bits),
+                (13 + d + batch + 12, schedule.linear_point_bits),
+                (2 * (17 + d), schedule.binding_round_bits),
+            ] {
+                assert!((numerator as u128) << 8 <= 1u128 << bits);
+            }
+            let denominator = schedule.cubic_round_bits.max(schedule.forest_claim_bits);
+            let cubic = (3 * (2 * (11 + d) + 55)) as u128;
+            let claims = (10 * (d + 1) + 11) as u128;
+            let error = (cubic << (denominator - schedule.cubic_round_bits))
+                + (claims << (denominator - schedule.forest_claim_bits));
+            assert!(error << 8 <= 1u128 << denominator, "batch {batch}");
             let unground = FalconSecuritySchedule::for_layout(100, &layout).unwrap();
             assert_eq!(
-                (unground.cubic_round_bits, unground.forest_claim_bits),
-                (0, 0)
+                unground,
+                FalconSecuritySchedule {
+                    norm_instance_bits: 0,
+                    outer_point_bits: 0,
+                    quadratic_round_bits: 0,
+                    cubic_round_bits: 0,
+                    forest_claim_bits: 0,
+                    fingerprint_bits: 0,
+                    linear_point_bits: 0,
+                    binding_round_bits: 0,
+                }
             );
         }
-        let largest =
-            FalconSecuritySchedule::for_layout(128, &FalconSourceLayout::new_hybrid(1024).unwrap())
-                .unwrap();
-        assert_eq!(
-            (largest.cubic_round_bits, largest.forest_claim_bits),
-            (18, 17)
-        );
-        assert_eq!(largest.fingerprint_bits, 19);
+        let layout = FalconSourceLayout::new(1).unwrap();
+        assert!(FalconSecuritySchedule::for_layout(127, &layout).is_none());
     }
 
     #[test]
     fn forest_rejects_a_proof_made_under_either_weaker_grinding_schedule() {
-        let layout = FalconSourceLayout::new_hybrid(32).unwrap();
+        let layout = FalconSourceLayout::new(32).unwrap();
         let expected = FalconSecuritySchedule::for_layout(128, &layout).unwrap();
         assert_ne!(expected.cubic_round_bits, expected.forest_claim_bits);
         let field = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
@@ -1952,15 +1675,14 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn hybrid_rejection_rows_match_dense_padded_relation() {
+    fn rejection_rows_match_dense_padded_relation() {
         let field = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
         let traces = vec![verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap(); 3];
-        let layout = FalconSourceLayout::new_hybrid(3).unwrap();
+        let layout = FalconSourceLayout::new(3).unwrap();
         let stride = COMPACTION_LEAVES * layout.capacity();
         let rows = CompactionRows {
             traces: &traces,
             stride,
-            rejection_only: true,
             field: &field,
         };
         assert_eq!(rows.dimensions(), (stride, stride, stride));
@@ -2002,16 +1724,16 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn hybrid_piop_leaf_roundtrips_and_rejects_tampering() {
+    fn piop_leaf_roundtrips_and_rejects_tampering() {
         let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
         for (batch, target) in [(1, 100), (3, 100), (3, 128)] {
-            let layout = FalconSourceLayout::new_hybrid(batch).unwrap();
+            let layout = FalconSourceLayout::new(batch).unwrap();
             let mut prover = Blake3Transcript::new();
             let proof =
                 prove_falcon_piop(&mut prover, &layout, &vec![trace.clone(); batch], target)
                     .unwrap();
             let field = field::FpCtx::from_prime_u128(proof.modulus);
-            let leaf = proof.compaction_leaf.as_ref().unwrap();
+            let leaf = &proof.compaction_leaf;
             assert_eq!(
                 leaf.point.len(),
                 11 + layout.capacity().trailing_zeros() as usize
@@ -2030,33 +1752,25 @@ pub(super) mod tests {
             };
             for operand in 0..3 {
                 let mut bad = proof.clone();
-                let value = &mut bad.compaction_leaf.as_mut().unwrap().terminal[operand];
+                let value = &mut bad.compaction_leaf.terminal[operand];
                 *value = field.add(value, &field.one());
                 reject(&bad);
             }
             let mut bad = proof.clone();
-            bad.compaction_leaf = None;
+            bad.compaction_leaf.point[0] = field.zero();
             reject(&bad);
             let mut bad = proof.clone();
-            bad.compaction_leaf.as_mut().unwrap().point[0] = field.zero();
+            bad.compaction_leaf.sumcheck.round_polynomials[0][0] = field.zero();
             reject(&bad);
             let mut bad = proof.clone();
-            bad.compaction_leaf
-                .as_mut()
-                .unwrap()
-                .sumcheck
-                .round_polynomials[0][0] = field.zero();
-            reject(&bad);
-            let mut bad = proof.clone();
-            bad.compaction_leaf.as_mut().unwrap().grinding_nonces = vec![0];
+            bad.compaction_leaf.grinding_nonces = vec![0];
             reject(&bad);
             if batch > 1 {
                 let mut bad = proof.clone();
-                bad.compaction_leaf.as_mut().unwrap().instance_point[0] = field.zero();
+                bad.compaction_leaf.instance_point[0] = field.zero();
                 reject(&bad);
                 let mut bad = proof.clone();
-                bad.compaction_leaf.as_mut().unwrap().instance_nonce =
-                    if target == 128 { None } else { Some(0) };
+                bad.compaction_leaf.instance_nonce = if target == 128 { None } else { Some(0) };
                 reject(&bad);
             }
             let mut bad = proof.clone();
@@ -2068,7 +1782,7 @@ pub(super) mod tests {
     #[test]
     fn compaction_leaf_terminals_match_masked_weighted_tables() {
         let field = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
-        let layout = FalconSourceLayout::new_hybrid(3).unwrap();
+        let layout = FalconSourceLayout::new(3).unwrap();
         let traces = vec![verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap(); 3];
         let gamma = unsigned(17, &field);
         let rho = unsigned(31, &field);
@@ -2192,7 +1906,7 @@ pub(super) mod tests {
             &scales,
             initial,
             100,
-            FalconSecuritySchedule::for_target(100).unwrap(),
+            FalconSecuritySchedule::for_layout(100, &FalconSourceLayout::new(1).unwrap()).unwrap(),
             &field,
         )
         .unwrap();
@@ -2358,88 +2072,6 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn lazy_compaction_word_rows_match_dense_proof_with_padding() {
-        let field = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
-        let traces = vec![verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap(); 3];
-        let layout = FalconSourceLayout::new(3).unwrap();
-        let stride = COMPACTION_LEAVES * layout.capacity();
-        let mut dense = OuterInputs {
-            ax: vec![field.zero(); 4 * stride],
-            bx: vec![field.zero(); 4 * stride],
-            cx: vec![field.zero(); 4 * stride],
-        };
-        for (instance, trace) in traces.iter().enumerate() {
-            let hash = &trace.hash_to_point;
-            for i in 0..HASH_TO_POINT_SAMPLES {
-                let reject = !hash.accepted[i];
-                let selector = hash.accepted[i] && hash.prefix[i] < 1024;
-                let selected_prefix = if selector { hash.prefix[i] } else { 0 };
-                let selected_remainder = if selector { hash.remainders[i] } else { 0 };
-                let operands = [
-                    [
-                        u128::from(!reject),
-                        u128::from((hash.prefix[i] & 1024) == 0),
-                        u128::from(selector),
-                    ],
-                    [
-                        u128::from(selector),
-                        hash.prefix[i].into(),
-                        selected_prefix.into(),
-                    ],
-                    [
-                        u128::from(selector),
-                        hash.remainders[i].into(),
-                        selected_remainder.into(),
-                    ],
-                    [
-                        u128::from((hash.quotients[i] & 4) != 0),
-                        u128::from((hash.quotients[i] & 1) != 0),
-                        u128::from(reject),
-                    ],
-                ];
-                for (block, values) in operands.into_iter().enumerate() {
-                    let index = block * stride + instance * COMPACTION_LEAVES + i;
-                    dense.ax[index] = unsigned(values[0], &field);
-                    dense.bx[index] = unsigned(values[1], &field);
-                    dense.cx[index] = unsigned(values[2], &field);
-                }
-            }
-        }
-        let rows = CompactionRows {
-            traces: &traces,
-            stride,
-            rejection_only: false,
-            field: &field,
-        };
-        for row in 0..4 * stride {
-            assert_eq!(
-                [rows.a(row), rows.b(row), rows.c(row)],
-                [dense.ax[row], dense.bx[row], dense.cx[row]]
-            );
-        }
-        let mut dense_transcript = Blake3Transcript::new();
-        dense_transcript.absorb_slice(b"bitz/falcon1024-ct/compaction-products/v3");
-        let dense_proof = prove_quadratic(
-            &mut dense_transcript,
-            dense,
-            15,
-            100,
-            FalconSecuritySchedule::for_target(100).unwrap(),
-            &field,
-        )
-        .unwrap();
-        let mut lazy_transcript = Blake3Transcript::new();
-        let lazy_proof =
-            prove_compaction_products(&mut lazy_transcript, &layout, &traces, 100, &field).unwrap();
-        assert_eq!(lazy_proof.point.len(), 13 + 2);
-        assert_eq!(lazy_proof, dense_proof);
-        assert_eq!(
-            squeeze(&mut lazy_transcript, &field).unwrap(),
-            squeeze(&mut dense_transcript, &field).unwrap()
-        );
-    }
-
-    #[test]
     fn algebraic_piop_roundtrips() {
         let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
         let layout = FalconSourceLayout::new(1).unwrap();
@@ -2456,15 +2088,6 @@ pub(super) mod tests {
         let mut prover = Blake3Transcript::new();
         let proof = prove_falcon_piop(&mut prover, &layout, &[trace], 128).unwrap();
         assert!(!proof.norm.grinding_nonces.is_empty());
-        assert!(
-            !proof
-                .keccak_chi
-                .as_ref()
-                .unwrap()
-                .grinding_nonces
-                .is_empty()
-        );
-        assert!(proof.keccak_chi.as_ref().unwrap().point_nonce.is_some());
         assert!(proof.compact_products.point_nonce.is_some());
         let mut verifier = Blake3Transcript::new();
         verify_falcon_piop(&mut verifier, &layout, &proof, 128).unwrap();
@@ -2504,85 +2127,6 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn lazy_keccak_rows_preserve_dense_proof_and_transcript() {
-        let traces = [verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap()];
-        let layout = FalconSourceLayout::new(1).unwrap();
-        let field = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
-        let half = KECCAK_GATE_STRIDE;
-        let mut dense = OuterInputs {
-            ax: vec![field.zero(); 2 * half],
-            bx: vec![field.zero(); 2 * half],
-            cx: vec![field.zero(); 2 * half],
-        };
-        // Independent original dense construction, including iota and the
-        // linear XOR operand rather than substituting the honest product.
-        let shake = &traces[0].hash_to_point.shake;
-        let two_inv = unsigned((field.modulus_u128() + 1) / 2, &field);
-        for gate in 0..KECCAK_BITS {
-            let word = gate / 64;
-            let bit = gate % 64;
-            let lane = word % 25;
-            let round = word / 25 % 24;
-            let neighbor = |offset| word - lane + lane / 5 * 5 + (lane + offset) % 5;
-            let b = bit_field(shake.chi_inputs[word], bit, &field);
-            let z = bit_field(shake.chi_ands[word], bit, &field);
-            let mut y = shake.round_states[word] >> bit & 1;
-            if lane == 0 {
-                y ^= ROUND_CONSTANTS[round] >> bit & 1;
-            }
-            dense.ax[gate] = field.sub(
-                &field.one(),
-                &bit_field(shake.chi_inputs[neighbor(1)], bit, &field),
-            );
-            dense.bx[gate] = bit_field(shake.chi_inputs[neighbor(2)], bit, &field);
-            dense.cx[gate] = z;
-            dense.ax[half + gate] = b;
-            dense.bx[half + gate] = z;
-            dense.cx[half + gate] = field.mul(
-                &field.sub(&field.add(&b, &z), &unsigned(y.into(), &field)),
-                &two_inv,
-            );
-        }
-        let mut dense_transcript = Blake3Transcript::new();
-        dense_transcript.absorb_slice(b"bitz/falcon1024-ct/keccak-chi/v1");
-        let dense_proof = prove_quadratic(
-            &mut dense_transcript,
-            dense,
-            keccak_rounds(&layout),
-            100,
-            FalconSecuritySchedule::for_target(100).unwrap(),
-            &field,
-        )
-        .unwrap();
-        let mut lazy_transcript = Blake3Transcript::new();
-        let lazy_proof =
-            prove_keccak_chi(&mut lazy_transcript, &layout, &traces, 100, &field).unwrap();
-        assert_eq!(lazy_proof, dense_proof);
-        assert_eq!(
-            squeeze(&mut lazy_transcript, &field).unwrap(),
-            squeeze(&mut dense_transcript, &field).unwrap()
-        );
-
-        // A non-power-of-two batch has both per-signature padding and a
-        // completely empty capacity slot, including in the XOR row block.
-        let traces = vec![traces[0].clone(); 3];
-        let rows = KeccakRows {
-            traces: &traces,
-            half: 4 * half,
-            field: &field,
-            two_inv,
-        };
-        for row in [
-            KECCAK_BITS,
-            3 * half,
-            rows.half + KECCAK_BITS,
-            rows.half + 3 * half,
-        ] {
-            assert_eq!([rows.a(row), rows.b(row), rows.c(row)], [field.zero(); 3]);
-        }
-    }
-
-    #[test]
     fn forest_batches_distinct_trees_and_rejects_tampering() {
         let field = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
         for batch in [1, 3, 32] {
@@ -2600,7 +2144,8 @@ pub(super) mod tests {
                 &mut prover,
                 leaves,
                 100,
-                FalconSecuritySchedule::for_target(100).unwrap(),
+                FalconSecuritySchedule::for_layout(100, &FalconSourceLayout::new(1).unwrap())
+                    .unwrap(),
                 &field,
             )
             .unwrap();
@@ -2610,7 +2155,8 @@ pub(super) mod tests {
                 &forest,
                 &compaction,
                 100,
-                FalconSecuritySchedule::for_target(100).unwrap(),
+                FalconSecuritySchedule::for_layout(100, &FalconSourceLayout::new(1).unwrap())
+                    .unwrap(),
                 &field,
             )
             .unwrap();
@@ -2633,7 +2179,11 @@ pub(super) mod tests {
                         forest,
                         trees,
                         100,
-                        FalconSecuritySchedule::for_target(100).unwrap(),
+                        FalconSecuritySchedule::for_layout(
+                            100,
+                            &FalconSourceLayout::new(1).unwrap()
+                        )
+                        .unwrap(),
                         &field
                     )
                     .is_err()

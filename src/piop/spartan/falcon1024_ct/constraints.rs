@@ -9,74 +9,32 @@ use super::{
 pub struct FalconConstraintCounts {
     /// Public one/message-bit/signature-byte bindings.
     pub public_input_bindings: usize,
-    /// Canonical CT `s2 != -2048` range equalities.
-    pub s2_canonical: usize,
-    /// Shared theta column parity equations, one per column bit.
-    pub keccak_column_parity_bits: usize,
-    /// Sparse theta/rho/pi parity equations, one per Keccak bit.
-    pub keccak_linear_bits: usize,
-    /// The two quadratic chi identities, one pair per Keccak bit.
-    pub keccak_quadratic_rows: usize,
-    /// Division and prefix recurrence, plus range rows for the integer layout.
+    /// Division and prefix recurrence, plus initial/final prefix boundaries.
     pub hash_to_point_linear: usize,
-    /// Biased centered-lift range equalities.
-    pub s1_ranges: usize,
-    /// Coefficients in the exact negacyclic Falcon ring equation.
-    pub ring_coefficients: usize,
     /// Terms in the degree-2 norm sumcheck.
     pub norm_terms: usize,
     /// Leaves in each stable-compaction product tree after padding.
     pub compaction_leaves: usize,
-    /// Rejection rows; the integer layout also commits and checks the selector,
-    /// selected prefix, and selected remainder products.
+    /// Rejection rows; selection is reduced by the separate cubic leaf proof.
     pub compaction_product_rows: usize,
 }
 
 impl FalconConstraintCounts {
     /// Scalar relation inventory for the source layout. Native ring membership
     /// and the cubic compaction leaf reduction are separate proof obligations.
-    pub const fn for_layout(layout: &FalconSourceLayout) -> Self {
-        let mut counts = Self::per_signature();
-        if layout.is_hybrid() {
-            counts.s2_canonical = 0;
-            counts.keccak_column_parity_bits = 0;
-            counts.keccak_linear_bits = 0;
-            counts.keccak_quadratic_rows = 0;
-            counts.hash_to_point_linear = 2 * HASH_TO_POINT_SAMPLES + 2;
-            counts.s1_ranges = 0;
-            counts.ring_coefficients = 0;
-            counts.compaction_product_rows = HASH_TO_POINT_SAMPLES;
-        }
-        counts
-    }
-
     pub const fn per_signature() -> Self {
         Self {
             public_input_bindings: 1 + 32 * 8 + super::CT_SIGNATURE_BYTES,
-            s2_canonical: N,
-            keccak_column_parity_bits: 20 * 24 * 5 * 64,
-            keccak_linear_bits: 20 * 24 * 25 * 64,
-            keccak_quadratic_rows: 2 * 20 * 24 * 25 * 64,
-            // Division/output tie, two ranges, prefix recurrence, plus the
-            // initial-prefix and final-count checks.
-            hash_to_point_linear: 4 * HASH_TO_POINT_SAMPLES + 2,
-            s1_ranges: N,
-            ring_coefficients: N,
+            hash_to_point_linear: 2 * HASH_TO_POINT_SAMPLES + 2,
             norm_terms: 2 * N,
             compaction_leaves: HASH_TO_POINT_SAMPLES.next_power_of_two(),
-            compaction_product_rows: 4 * HASH_TO_POINT_SAMPLES,
+            compaction_product_rows: HASH_TO_POINT_SAMPLES,
         }
     }
 
     /// Rows batched by the single random linear/ideal-check binder.
     pub const fn linear_rows(self) -> usize {
-        self.public_input_bindings
-            + self.s2_canonical
-            + self.keccak_column_parity_bits
-            + self.keccak_linear_bits
-            + self.hash_to_point_linear
-            + self.s1_ranges
-            + self.ring_coefficients
+        self.public_input_bindings + self.hash_to_point_linear
     }
 
     /// Number of variables in the batched coefficient domain.
@@ -140,13 +98,36 @@ pub fn check_exact_constraints(trace: &FalconVerificationTrace) -> Result<(), Fa
         return violation("hash-stable-compaction", 0);
     }
 
+    // Recompute the product from the public key and signature so this checker
+    // remains independent of the prover's cached native-ring witness.
+    for (i, &s2) in trace.signature.s2.iter().enumerate() {
+        if !(-2047..=2047).contains(&s2) {
+            return violation("s2-canonical", i);
+        }
+    }
+    let mut product = [0i64; 2 * N];
+    for (i, &h) in trace.public_key.h.iter().enumerate() {
+        if i64::from(h) >= Q {
+            return violation("public-key-range", i);
+        }
+        for (j, &s2) in trace.signature.s2.iter().enumerate() {
+            product[i + j] += i64::from(h) * i64::from(s2);
+        }
+    }
+    for i in 0..N - 1 {
+        if i64::from(trace.native_quotient[i]) != (-product[N + i]).rem_euclid(Q) {
+            return violation("native-quotient", i);
+        }
+    }
+
     let mut norm = 0u64;
     for i in 0..N {
         let s1 = i64::from(trace.s1[i]);
         if !(-6_144..=6_144).contains(&s1) {
             return violation("s1-centered-range", i);
         }
-        if i64::from(hash.point[i]) - trace.convolution[i] - s1 != Q * trace.quotient[i] {
+        let convolution = product[i] - product[i + N];
+        if (i64::from(hash.point[i]) - convolution - s1).rem_euclid(Q) != 0 {
             return violation("falcon-ring", i);
         }
         norm = norm
@@ -288,29 +269,37 @@ mod tests {
     fn fixture_satisfies_the_exact_relation() {
         let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
         check_exact_constraints(&trace).unwrap();
-        let counts = FalconConstraintCounts::per_signature();
-        assert_eq!(counts.keccak_column_parity_bits, 153_600);
-        assert_eq!(counts.linear_rows(), 931_752);
-        assert!(counts.linear_rows() < 1 << 20);
-        assert_eq!(counts.norm_round_degree(), 2);
-        assert_eq!(counts.compaction_product_rows, 4 * HASH_TO_POINT_SAMPLES);
-        assert_eq!(counts.product_round_degree(), 3);
     }
 
-    #[cfg(feature = "falcon-hybrid")]
     #[test]
     fn native_scalar_counts_exclude_ideal_norm_and_leaf_reductions() {
-        let layout = FalconSourceLayout::new_hybrid(3).unwrap();
-        let counts = FalconConstraintCounts::for_layout(&layout);
+        let counts = FalconConstraintCounts::per_signature();
         assert_eq!(counts.public_input_bindings, 1_834);
         assert_eq!(counts.hash_to_point_linear, 2_624);
         assert_eq!(counts.linear_rows(), 4_458);
         assert_eq!(counts.compaction_product_rows, 1_311);
         assert_eq!(counts.compaction_leaves, 2_048);
         assert_eq!(counts.norm_terms, 2_048);
-        assert_eq!(counts.ring_coefficients, 0);
-        assert_eq!(counts.s1_ranges, 0);
-        assert_eq!(counts.s2_canonical, 0);
+        assert_eq!(counts.norm_round_degree(), 2);
+        assert_eq!(counts.product_round_degree(), 3);
+    }
+
+    #[test]
+    fn checker_binds_the_public_key_and_native_quotient() {
+        let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+        let mut corrupted = trace.clone();
+        corrupted.public_key.h[0] = (corrupted.public_key.h[0] + 1) % Q as u16;
+        assert!(check_exact_constraints(&corrupted).is_err());
+
+        let mut corrupted = trace;
+        corrupted.native_quotient[0] ^= 1;
+        assert!(matches!(
+            check_exact_constraints(&corrupted),
+            Err(FalconError::ConstraintViolation {
+                family: "native-quotient",
+                index: 0,
+            })
+        ));
     }
 
     #[test]

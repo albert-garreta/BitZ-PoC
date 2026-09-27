@@ -6,8 +6,7 @@ use super::*;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum WordKind {
     Unsigned,
-    Signed,
-    Encoded { offset: u8, weighted: bool },
+    Encoded { offset: u8 },
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -43,7 +42,7 @@ impl FoldedWords {
             let mut sums = [field.zero(); 32];
             let mut power = field.one();
             for bit in 0..usize::from(word.width) {
-                let (index, negative, weighted) = word.bit_position(bit);
+                let (index, negative) = word.bit_position(bit);
                 let weight = field.mul(&power, &weights[index & (weights.len() - 1)]);
                 let slot = &mut sums[(index >> vars) - base];
                 *slot = if negative {
@@ -51,9 +50,7 @@ impl FoldedWords {
                 } else {
                     field.add(slot, &weight)
                 };
-                if weighted {
-                    power = field.add(&power, &power);
-                }
+                power = field.add(&power, &power);
             }
             terms.extend(sums.into_iter().enumerate().filter_map(|(offset, value)| {
                 (value != field.zero()).then_some((base + offset, value))
@@ -69,17 +66,12 @@ impl FoldedWords {
 }
 
 impl Word {
-    fn bit_position(self, bit: usize) -> (usize, bool, bool) {
+    fn bit_position(self, bit: usize) -> (usize, bool) {
         match self.kind {
-            WordKind::Unsigned => (self.base + bit, false, true),
-            WordKind::Signed => (self.base + bit, bit + 1 == usize::from(self.width), true),
-            WordKind::Encoded { offset, weighted } => {
+            WordKind::Unsigned => (self.base + bit, false),
+            WordKind::Encoded { offset } => {
                 let stream = usize::from(offset) + 11 - bit;
-                (
-                    self.base + 8 * (stream / 8) + 7 - stream % 8,
-                    bit == 11,
-                    weighted,
-                )
+                (self.base + 8 * (stream / 8) + 7 - stream % 8, bit == 11)
             }
         }
     }
@@ -264,26 +256,16 @@ impl<A: WordAccumulator> CoefficientSink for WordSink<'_, A> {
         self.word(index, 1, WordKind::Unsigned, value);
     }
 
-    fn add_word(&mut self, base: usize, width: usize, signed: bool, scale: F, _: &Cfg) {
-        self.word(
-            base,
-            width,
-            if signed {
-                WordKind::Signed
-            } else {
-                WordKind::Unsigned
-            },
-            scale,
-        );
+    fn add_word(&mut self, base: usize, width: usize, scale: F, _: &Cfg) {
+        self.word(base, width, WordKind::Unsigned, scale);
     }
 
-    fn add_encoded_word(&mut self, base: usize, offset: usize, weighted: bool, scale: F, _: &Cfg) {
+    fn add_encoded_word(&mut self, base: usize, offset: usize, scale: F, _: &Cfg) {
         self.word(
             base,
             12,
             WordKind::Encoded {
                 offset: offset as u8,
-                weighted,
             },
             scale,
         );
@@ -443,16 +425,14 @@ fn flush_folded(
 
 fn accumulate_word<const W: usize>(word: Word, mut scale: F, pending: &mut [F; W], field: &Cfg) {
     for bit in 0..usize::from(word.width) {
-        let (index, negative, weighted) = word.bit_position(bit);
+        let (index, negative) = word.bit_position(bit);
         let slot = &mut pending[index & (W - 1)];
         *slot = if negative {
             field.sub(slot, &scale)
         } else {
             field.add(slot, &scale)
         };
-        if weighted {
-            scale = field.add(&scale, &scale);
-        }
+        scale = field.add(&scale, &scale);
     }
 }
 
@@ -502,8 +482,6 @@ pub(super) struct PreparedWeights {
     norm_instances: Vec<F>,
     products: crate::poly::mle::EqualityWeights<F>,
     leaf: native::LeafWeights,
-    trees: Vec<Vec<F>>,
-    tree_indices: Vec<usize>,
     tree_scales: Vec<F>,
 }
 
@@ -513,37 +491,14 @@ impl BindingForm<'_> {
             return Ok(weights);
         }
         let field = self.field;
-        let mut trees = Vec::new();
-        let mut tree_indices = Vec::new();
         let mut tree_scales = Vec::new();
-        let mut known = HashMap::new();
         let mut scale = self.eta;
         for _ in 0..11 {
             scale = field.mul(&scale, &self.eta);
         }
-        for pair in &self.proof.compaction {
-            for tree in [&pair.output] {
-                let key: Vec<_> = tree
-                    .terminal_point
-                    .iter()
-                    .map(|&x| canonical(x, field))
-                    .collect();
-                let index = match known.get(&key) {
-                    Some(&index) => index,
-                    None => {
-                        let index = trees.len();
-                        trees.push(
-                            eq_table(&tree.terminal_point, field)
-                                .map_err(|error| piop(error.to_string()))?,
-                        );
-                        known.insert(key, index);
-                        index
-                    }
-                };
-                tree_indices.push(index);
-                tree_scales.push(scale);
-                scale = field.mul(&scale, &self.eta);
-            }
+        for _ in &self.proof.compaction {
+            tree_scales.push(scale);
+            scale = field.mul(&scale, &self.eta);
         }
         let weights = PreparedWeights {
             norm: factored_weights(&self.proof.norm.point, field)?,
@@ -551,8 +506,6 @@ impl BindingForm<'_> {
                 .map_err(|error| piop(error.to_string()))?,
             products: factored_weights(&self.proof.compact_products.point, field)?,
             leaf: native::LeafWeights::new(self.layout, self.proof, field)?,
-            trees,
-            tree_indices,
             tree_scales,
         };
         // Concurrent first partitions may prepare a small duplicate, but never
@@ -603,7 +556,7 @@ impl BindingForm<'_> {
         let mut sink = template.sink(
             instance,
             instance * self.layout.signature_stride(),
-            self.ring_instance_weights[instance],
+            self.linear_instance_weights[instance],
             self.field,
         );
         self.emit_compact_instance_terms(instance, &mut sink, self.prepared_compact_weights()?)?;
@@ -654,13 +607,12 @@ impl BindingForm<'_> {
             field,
             &prepared.leaf,
         )?;
-        let weights = &prepared.trees[prepared.tree_indices[instance]];
+        let weights = &prepared.leaf.forest;
         let tree_scale = prepared.tree_scales[instance];
         for (i, &weight) in weights.iter().take(N).enumerate() {
             sink.add_word(
                 base + offsets.hash_point + 14 * i,
                 14,
-                false,
                 field.mul(&tree_scale, &weight),
                 field,
             );
@@ -684,16 +636,14 @@ impl BindingForm<'_> {
                 let mut sum = field.zero();
                 let mut power = field.one();
                 for bit in 0..usize::from(word.width) {
-                    let (index, negative, weighted) = word.bit_position(bit);
+                    let (index, negative) = word.bit_position(bit);
                     let value = field.mul(&power, &local[index]);
                     sum = if negative {
                         field.sub(&sum, &value)
                     } else {
                         field.add(&sum, &value)
                     };
-                    if weighted {
-                        power = field.add(&power, &power);
-                    }
+                    power = field.add(&power, &power);
                 }
                 sum
             })
@@ -727,13 +677,12 @@ impl BindingForm<'_> {
                     .iter()
                     .any(|tree| tree.terminal_point.len() != 11)
             })
-            || proof.keccak_chi.is_some()
         {
             return Err(piop("hybrid binding terminal dimensions mismatch"));
         }
         let mut constant = linear_constant(&self.local_linear_point, field);
         let instance_sum = self
-            .ring_instance_weights
+            .linear_instance_weights
             .iter()
             .fold(field.zero(), |sum, weight| field.add(&sum, weight));
         constant = field.mul(&constant, &instance_sum);
@@ -741,7 +690,7 @@ impl BindingForm<'_> {
             crate::utils::cfg_into_iter!(0..self.layout.batch())
                 .map(|s| {
                     let message = &self.statement.messages[s];
-                    let alpha = &self.ring_instance_weights[s];
+                    let alpha = &self.linear_instance_weights[s];
                     let mut bits = field.zero();
                     for bit in 0..256 {
                         if (message[bit / 8] >> (bit % 8)) & 1 == 1 {
@@ -810,10 +759,7 @@ impl BindingForm<'_> {
             add_claim_target(&mut target, scale, claim, field.zero(), field);
             scale = field.mul(&scale, &self.eta);
         }
-        let leaf = proof
-            .compaction_leaf
-            .as_ref()
-            .ok_or_else(|| piop("missing compaction leaf"))?;
+        let leaf = &proof.compaction_leaf;
         let weights = &self.prepared_compact_weights()?.leaf;
         let local_sum = weights.local[..HASH_TO_POINT_SAMPLES]
             .iter()
@@ -874,10 +820,7 @@ impl BindingForm<'_> {
             );
             scale = field.mul(&scale, &self.eta);
         }
-        let native = self
-            .native_claim
-            .as_ref()
-            .ok_or_else(|| piop("missing native ring claim"))?;
+        let native = &self.native_claim;
         let native_sum = native
             .weights
             .iter()
@@ -930,21 +873,14 @@ fn emit_linear_template(
         sink.add(offsets.message + bit, next());
     }
     for byte in 0..super::super::CT_SIGNATURE_BYTES {
-        sink.add_word(
-            offsets.encoded_signature + 8 * byte,
-            8,
-            false,
-            next(),
-            field,
-        );
+        sink.add_word(offsets.encoded_signature + 8 * byte, 8, next(), field);
     }
     for i in 0..HASH_TO_POINT_SAMPLES {
         let weight = next();
-        sink.add_word(offsets.hash_words + 16 * i, 16, false, weight, field);
+        sink.add_word(offsets.hash_words + 16 * i, 16, weight, field);
         sink.add_word(
             offsets.hash_quotients + 3 * i,
             3,
-            false,
             mul_i(weight, -i128::from(Q), field),
             field,
         );
@@ -952,27 +888,19 @@ fn emit_linear_template(
             sink,
             offsets.hash_remainders + 14 * i,
             field.neg(&weight),
-            true,
             field,
         );
         let weight = next();
-        sink.add_word(
-            offsets.hash_prefixes + 11 * (i + 1),
-            11,
-            false,
-            weight,
-            field,
-        );
+        sink.add_word(offsets.hash_prefixes + 11 * (i + 1), 11, weight, field);
         sink.add_word(
             offsets.hash_prefixes + 11 * i,
             11,
-            false,
             field.neg(&weight),
             field,
         );
         sink.add(offsets.hash_accept_ands + i, weight);
     }
-    sink.add_word(offsets.hash_prefixes, 11, false, next(), field);
+    sink.add_word(offsets.hash_prefixes, 11, next(), field);
     sink.add(
         offsets.hash_prefixes + 11 * HASH_TO_POINT_SAMPLES + 10,
         next(),
@@ -994,19 +922,18 @@ mod tests {
         scale: F,
         field: &Cfg,
     ) {
-        // Signed and ordinary words cross every sliding-window/block boundary.
+        // Word and isolated-bit terms overlap across every window/block boundary.
         for local in [0, 15, 31, 63, 127, 224] {
-            sink.add_word(base + local, 27, true, scale, field);
-            sink.add_word(base + local + 1, 14, false, scale, field);
+            sink.add_word(base + local, 27, scale, field);
+            sink.add_word(base + local + 1, 14, scale, field);
             sink.add(base + local + 26, field.neg(&scale));
         }
         // CT encoding has a reversed bit order and alternates nibble offsets.
         for (local, offset) in [(8, 0), (24, 4), (56, 4), (120, 0), (224, 4)] {
-            sink.add_encoded_word(base + local, offset, true, scale, field);
-            sink.add_encoded_word(base + local, offset, false, scale, field);
+            sink.add_encoded_word(base + local, offset, scale, field);
         }
-        sink.add_word(base + 192, 8, false, scale, field);
-        sink.add_word(base + 192, 8, false, field.neg(&scale), field);
+        sink.add_word(base + 192, 8, scale, field);
+        sink.add_word(base + 192, 8, field.neg(&scale), field);
     }
 
     struct Dense<'a> {
@@ -1110,7 +1037,7 @@ mod tests {
         // Build with all-zero dynamic scales, then replay nonzero instances.
         // Slots cannot be dropped just because this first instance is zero.
         overlapping_words_scaled(&mut record, 0, field.zero(), &field);
-        record.add_word(300, 8, false, field.zero(), &field);
+        record.add_word(300, 8, field.zero(), &field);
         let template = CompiledTemplate::new(common.finish(), record.accumulator.0);
         for (instance, alpha, dynamic_scale) in [
             (0, field.zero(), field.zero()),
@@ -1121,7 +1048,7 @@ mod tests {
             let base = instance * 512;
             let mut indexed = template.sink(instance, base, alpha, &field);
             overlapping_words_scaled(&mut indexed, base, dynamic_scale, &field);
-            indexed.add_word(base + 300, 8, false, dynamic_scale, &field);
+            indexed.add_word(base + 300, 8, dynamic_scale, &field);
             let compact = indexed.finish();
             assert!(std::sync::Arc::ptr_eq(&compact.words, &template.words));
             let mut expected = Dense {
@@ -1135,7 +1062,7 @@ mod tests {
                 &field,
             );
             overlapping_words_scaled(&mut expected, base, dynamic_scale, &field);
-            expected.add_word(base + 300, 8, false, dynamic_scale, &field);
+            expected.add_word(base + 300, 8, dynamic_scale, &field);
             let mut actual = vec![field.zero(); 1024];
             compact
                 .emit(base, &field, &mut |index, value| {

@@ -229,7 +229,7 @@ fn validate_context(
     target_bits: u32,
 ) -> Result<(), FalconError> {
     statement.validate(layout.batch())?;
-    if !layout.is_hybrid() || !matches!(target_bits, 100 | 128) {
+    if !matches!(target_bits, 100 | 128) {
         return Err(error("unsupported native ring layout or security target"));
     }
     if field.modulus_u128() <= no_wrap_bound(layout.batch()) {
@@ -666,7 +666,7 @@ mod tests {
             messages: vec![*include_bytes!("fixtures/message.bin"); batch],
         };
         (
-            FalconSourceLayout::new_hybrid(batch).unwrap(),
+            FalconSourceLayout::new(batch).unwrap(),
             statement,
             vec![trace; batch],
         )

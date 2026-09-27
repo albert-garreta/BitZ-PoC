@@ -71,7 +71,7 @@ fn arithmetic_bytes(proof: &FalconBindingPrefixProof) -> usize {
         binding_nonces,
     } = proof;
     piop_bytes(piop)
-        + native_ring.as_ref().map_or(0, native_bytes)
+        + native_bytes(native_ring)
         + nonce_bytes(linear_point_nonce)
         + sumcheck_bytes(binding)
         + FIELD_BYTES * (binding_point.len() + binding_terminal.len())
@@ -95,7 +95,6 @@ fn piop_bytes(proof: &FalconPiopProof) -> usize {
     let FalconPiopProof {
         modulus: _,
         norm,
-        keccak_chi,
         compact_products,
         fingerprint_nonce,
         compaction_gamma: _,
@@ -107,7 +106,6 @@ fn piop_bytes(proof: &FalconPiopProof) -> usize {
     // The stored modulus and both stored fingerprint challenges.
     3 * FIELD_BYTES
         + norm_bytes(norm)
-        + keccak_chi.as_ref().map_or(0, quadratic_bytes)
         + quadratic_bytes(compact_products)
         + nonce_bytes(fingerprint_nonce)
         + compaction
@@ -115,7 +113,7 @@ fn piop_bytes(proof: &FalconPiopProof) -> usize {
             .map(|CompactionProof { candidate, output }| tree_bytes(candidate) + tree_bytes(output))
             .sum::<usize>()
         + forest_bytes(compaction_forest)
-        + compaction_leaf.as_ref().map_or(0, leaf_bytes)
+        + leaf_bytes(compaction_leaf)
 }
 
 fn norm_bytes(proof: &NormProof) -> usize {

@@ -14,20 +14,21 @@ impl LeafWeights {
         proof: &FalconPiopProof,
         field: &Cfg,
     ) -> Result<Self, FalconError> {
-        let leaf = proof
-            .compaction_leaf
-            .as_ref()
-            .ok_or_else(|| piop("missing compaction leaf proof"))?;
+        let leaf = &proof.compaction_leaf;
         let d = layout.capacity().ilog2() as usize;
         if leaf.point.len() != 11 + d || leaf.instance_point.len() != d {
             return Err(piop("compaction leaf binding dimensions"));
         }
-        let point = &proof.compaction[0].candidate.terminal_point;
+        let point = &proof
+            .compaction
+            .first()
+            .ok_or_else(|| piop("missing compaction forest"))?
+            .candidate
+            .terminal_point;
         if point.len() != 11
-            || proof
-                .compaction
-                .iter()
-                .any(|pair| pair.candidate.terminal_point != *point)
+            || proof.compaction.iter().any(|pair| {
+                pair.candidate.terminal_point != *point || pair.output.terminal_point != *point
+            })
         {
             return Err(piop("compaction forest endpoint mismatch"));
         }
@@ -40,6 +41,7 @@ impl LeafWeights {
     }
 }
 
+#[cfg(test)]
 pub(super) fn add_leaf_claims(
     sink: &mut impl CoefficientSink,
     target: &mut F,
@@ -63,10 +65,7 @@ pub(super) fn add_leaf_claims_prepared(
     field: &Cfg,
     weights: &LeafWeights,
 ) -> Result<(), FalconError> {
-    let leaf = proof
-        .compaction_leaf
-        .as_ref()
-        .ok_or_else(|| piop("missing compaction leaf proof"))?;
+    let leaf = &proof.compaction_leaf;
     let offsets = layout.offsets();
     for coordinate in 0..3 {
         let mut constant = field.zero();
@@ -94,17 +93,10 @@ pub(super) fn add_leaf_claims_prepared(
                     sink.add_word(
                         base + offsets.hash_prefixes + 11 * i,
                         11,
-                        false,
                         field.mul(&weight, &proof.compaction_rank_scale),
                         field,
                     );
-                    add_value_scaled(
-                        sink,
-                        base + offsets.hash_remainders + 14 * i,
-                        weight,
-                        true,
-                        field,
-                    );
+                    add_value_scaled(sink, base + offsets.hash_remainders + 14 * i, weight, field);
                     if sink.needs_constants() {
                         constant = field.add(
                             &constant,
@@ -127,13 +119,7 @@ impl BindingForm<'_> {
         target: &mut F,
         scale: F,
     ) -> Result<(), FalconError> {
-        let Some(claim) = &self.native_claim else {
-            return if self.layout.is_hybrid() {
-                Err(piop("missing native ring source claim"))
-            } else {
-                Ok(())
-            };
-        };
+        let claim = &self.native_claim;
         let field = self.field;
         if claim.weights.len() != self.layout.batch() * N {
             return Err(piop("native ring source dimensions"));
@@ -144,14 +130,8 @@ impl BindingForm<'_> {
             let base = s * self.layout.signature_stride();
             for j in 0..N {
                 let weight = field.mul(&scale, &claim.weights[s * N + j]);
-                sink.add_word(base + offsets.hash_point + 14 * j, 14, false, weight, field);
-                add_value_scaled(
-                    sink,
-                    base + offsets.s1 + 14 * j,
-                    field.neg(&weight),
-                    true,
-                    field,
-                );
+                sink.add_word(base + offsets.hash_point + 14 * j, 14, weight, field);
+                add_value_scaled(sink, base + offsets.s1 + 14 * j, field.neg(&weight), field);
                 if sink.needs_constants() {
                     constant = field.add(&constant, &mul_i(weight, 6144, field));
                 }

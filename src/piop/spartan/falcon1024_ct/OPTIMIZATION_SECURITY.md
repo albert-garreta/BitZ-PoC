@@ -1,138 +1,94 @@
-# Falcon optimization security accounting
+# Falcon security accounting
 
-The current v3 implementation is covered first below. The later v2 sections
-record the saved baseline used by the exact regression tests.
+The sole Falcon proving backend combines native-ring arithmetic, binary Keccak,
+and one shared PCS opening. This note describes its current budget directly.
 
-## Current v3 changes
+## Security model
 
-The relation, witness counts, commitment parameters, and native ideal/carry
-checks are unchanged. V3 replaces forest powers batching with equality weights,
-uses the nonzero error-vector invariant for line reductions, and removes the
-unnecessary batch-size union factor from the compaction fingerprint.
-[COMPACTION_SOUNDNESS.md](COMPACTION_SOUNDNESS.md) gives the argument, challenge
-order, and exact comparison against the saved v2 budget.
+A challenge with algebraic error numerator `n`, field size `p`, and grinding
+difficulty `g` contributes `n / (p * 2^g)` under the repository's computational
+proof-of-work/random-oracle convention. The arithmetic prime satisfies
+`p >= 2^125`. This convention does not improve an interactive sumcheck's raw
+statistical soundness and is not an independent proof of Fiat–Shamir security.
+BLAKE3's 128-bit collision bound is stated separately.
 
-At batch 1024, cubic/forest/fingerprint difficulties are 18/17/19 bits, versus
-18/25/29 in v2. Partial batches use 20 fingerprint bits to preserve the previous
-rounding margin. Every batch from 1 through 1024 retains a complete
-work-normalized bound at least as strong as v2, at both supported targets.
-The hybrid proof and statement domains are v3. The forest binds its new
-equality-weight batching domain even in the standalone prover, whose older
-difficulty schedule remains conservative. Earlier proofs must be regenerated.
+`PreparedFalconHybrid::security()` sums all configured terms. Preparation
+rejects a configuration below the requested target. Target 100 needs no
+arithmetic grinding; target 128 uses the budgets below.
 
-The remaining changes preserve the same field computations: parallel norm and
-compaction preparation, witness-byte grouping in the binder prefix, direct
-folded-word replay, compact live binary lanes, and fused shared-opening tables
-with the existing Ligerito lookahead continuation. Reference tests compare
-messages, transcripts, padding, and full shared-opening proofs. Physical
-padding remains authenticated; the full virtual binary domain is unchanged.
+## Prime reduction groups
 
-## Saved v2 implementation
+Let `B` be the live batch and `d = log2(next_power_of_two(B))`. Each of seven
+prime reduction groups receives at most `2^-(target+5)` work-normalized error:
 
-The v2 performance changes preserve the same Falcon relation, witness layout,
-field sizes, native certificate/carry bounds, commitment configuration, and
-challenge ordering. The grinding schedule changes; the remaining optimizations
-are exact evaluations of the existing prover computations.
+| Group | Error numerator before grinding |
+| --- | ---: |
+| Norm and leaf instance batching together | `2*d` |
+| Norm sumchecks | `4*(10+d)` |
+| HashToPoint initial row point | `11+d` |
+| Rejection, leaf, and forest reductions together | Defined below |
+| Ordered compaction fingerprints | `2048` |
+| Linear constraints and terminal batching | `13+d+B+12` |
+| Prime source sumcheck | `2*(17+d)` |
 
-## What the security claim means
+For a single numerator `n`, use
+`g(n) = max(0, target+5+ceil(log2(n))-125)`, with `g(0)=0`.
+The fingerprint argument fixes one incorrect signature before the challenge;
+it needs no batch-size union factor or partial-batch rounding adjustment.
 
-The repository assigns a challenge with algebraic error numerator `n` and
-grinding difficulty `g` the work-normalized contribution `n / (p * 2^g)`.
-The Falcon arithmetic prime satisfies `p >= 2^125`. The reported protocol
-security sums these contributions with every other protocol error term.
+## Current compaction allocation
 
-This is the existing computational proof-of-work/random-oracle convention.
-It is not a statement that grinding improves an interactive sumcheck's raw
-statistical soundness, nor an independent proof of the Fiat–Shamir or grinding
-model. The optimization establishes a non-increasing bound within that model.
+The two cubic sample/leaf sumchecks and product forest have
+`R = 2*(11+d)+55` rounds, with total numerator `A=3*R`.
+Ten forest equality-weight draws and eleven line draws have total numerator
+`H=10*(d+1)+11`. See [COMPACTION_SOUNDNESS.md](COMPACTION_SOUNDNESS.md) for the
+nonzero-vector argument and challenge order.
 
-## Count every changed challenge
-
-Let `B` be the live batch and `d = log2(next_power_of_two(B))`.
-
-| Challenge family | Draws | Error numerator |
-| --- | ---: | ---: |
-| Rejection sumcheck | `11+d` | `3*(11+d)` |
-| Candidate-leaf sumcheck | `11+d` | `3*(11+d)` |
-| Product-forest sumchecks | `sum(level=1..10, level)=55` | `165` |
-| Product-forest powers batching | `10` | `10*(2*B-1)` |
-| Product-forest line reductions | `11` | `11*(2*B)` |
-
-Each signature retains its individual input/output root equality. The line
-numerator conservatively includes a degree-one failure for each of the `2*B`
-trees. Neither the reductions nor their batching polynomials change.
-
-Define `R = 2*(11+d)+55`, `A = 3*R`, and `H = 10*(2*B-1)+22*B`.
-The previous uniform difficulty was `u = 8+ceil(log2(A+H))`, giving
+At target 128, choose cubic difficulty `r` and forest-claim difficulty `c`
+subject to the explicit group budget
 
 ```
-old_group_error <= (A+H) / (2^125 * 2^u).
+A/2^r + H/2^c <= 1/256.
 ```
 
-The new schedule chooses cubic-round difficulty `r` and forest-claim difficulty
-`c` only when
+Multiplying by `1/p <= 2^-125` gives the required `2^-133` group bound.
+One deterministic integer search minimizes `R*2^r + 21*2^c` within its bounded
+candidate range, using a common power-of-two denominator. The initial uniform
+pair is feasible by construction. No floating-point decision or saved protocol
+schedule determines these difficulties. Target 100 uses `(0,0)`.
 
-```
-A / 2^r + H / 2^c <= (A+H) / 2^u.
-```
+## Remaining terms and composition
 
-`compaction_grinding_bits` performs this comparison with exact `u128` integers
-at common denominator `2^(u+1)`, without floating-point decisions. The old pair
-`(u,u)` is always feasible. Among pairs from 1 through `u+1`, it minimizes
-expected nonce attempts `R*2^r + 21*2^c`, retaining the old pair on equal cost.
-The search is bounded and deterministic from public layout parameters.
+The complete report also includes:
 
-For `B=1024`, `R=97`, `A=291`, `H=42998`, and `u=24`. It selects `(r,c)=(18,25)`:
+- Prime sampling error `2^-144`.
+- Native ideal batching/projection error at most
+  `(d+2046)/(12289^11-12289)`.
+- Native coordinate carry batching, `10/p`, with 12 grinding bits at target 128.
+- The wfbitz integer-to-binary bridge, both binary Keccak prefixes, SHAKE wiring,
+  binary claim batching, the joint sumcheck, ring switching, and support padding.
+  These binary components reserve an eight-bit margin over the requested target.
+- Shared Ligerito. If its plan has `k` challenge blocks, each targets
+  `target+2+ceil(log2(k))`, so their sum is at most `2^-(target+2)`.
 
-```
-old numerator at denominator 2^25: 43289*2             = 86578
-new numerator at denominator 2^25: 291*128 + 42998     = 80246
-new/old group error = 80246/86578                     = 0.926864
-new/old expected work = (97*2^18+21*2^25)/(118*2^24)  = 0.368776
-```
+The seven prime groups together spend at most `7/32` of the target error
+budget, leaving room for these separately counted terms. Native carries and
+certificates precede their challenges, and all three source roots and public
+inputs precede the reductions they authenticate.
 
-Thus this group's bound improves by 7.31% and expected nonce work decreases
-by 63.12%. These are analytical quantities; actual latency depends on the
-transcript-derived nonce searches. Other schedules, including the 29-bit
-fingerprint, 12-bit native carry boundary, binary protocols, and PCS, retain
-their previous settings. Target 100 remains unground. The standalone nonhybrid
-backend retains its previous difficulty schedule.
+## Enforcement and validation
 
-## Enforcement and compatibility
+Prover and verifier derive difficulties from the same validated layout; proofs
+cannot supply a weaker schedule. The header binds every schedule field, and
+nonce seeds bind domain, round, and difficulty. Every nonce is consumed.
+The statement and arithmetic PIOP domains are updated for this allocation;
+old proofs must be regenerated. There is no historical backend selector.
 
-Prover and verifier derive the schedule from the same validated batch layout.
-Cubic sumcheck boundaries use `cubic_round_bits`; only forest powers and line
-boundaries use `forest_claim_bits`. Proofs cannot supply either difficulty.
-The grinding seed already binds its domain, round index, and difficulty.
+Direct budget tests cover every live batch from 1 through 1024. The complete
+ledger covers both supported targets, and weaker-nonce rejection tests remain.
+Reference checks cover padding, equality batching, candidate leaves, optimized
+arithmetic kernels, and binary/PCS transcripts. These are implementation checks,
+not substitutes for the underlying security argument.
 
-The native hybrid domain is versioned to
-`bitz/falcon1024-ct/hybrid/native-ring/non-zk/v2`, and its statement transcript to
-`bitz/falcon-hybrid/native-ring/statement/v2`. The header binds the additional
-schedule field before challenges. Earlier proofs must be regenerated.
-
-## Exact prover computation changes
-
-- Sparse binary gathers sum signature-weighted bits once per referenced word;
-  cached values produce the same seven round messages. Repeat-axis insertion,
-  duplicate entries, and logical padding retain their original interpretation.
-- The arithmetic binder caches all 256 ternary extensions of an 8-bit witness
-  block, widening exact signed table entries into the existing field operations.
-  Public target contributions are computed independently and reduced in the
-  same field. These prover kernels are not advertised as constant time.
-- The shared PCS combines padding basis updates. On the Boolean cube, the full
-  equality basis plus each disjoint source restriction is exactly the equality
-  basis supported on padding. The same challenges and verifier identity remain.
-
-## Validation obligations
-
-Tests compare the changed group's exact rational error and expected work with
-the previous schedule for every `B=1..1024`; the complete protocol ledger also
-checks both supported targets and every batch. Forest proofs generated with a
-weaker cubic or claim difficulty must fail the expected verifier schedule.
-
-Reference parity tests cover every cached witness byte, complete arithmetic
-sumcheck transcripts, every packed binary round and repeat-axis placement,
-duplicate/canceling entries, physical padding, and direct versus separate PCS
-padding updates. Existing malformed-proof and commitment-link tampering tests
-remain applicable. These tests check implementation invariants; they do not
-substitute for the underlying protocol security argument.
+This cleanup was validated by static review, compilation, and linting only;
+its runtime tests and benchmarks were not executed.

@@ -1,196 +1,18 @@
-# Falcon-1024 CT proofs, public signatures and native-ring hybrid
+# Falcon-1024 CT proofs
 
-This module contains two non-ZK proof backends for Falcon-1024 constant-time
-signatures. The `falcon` backend supports 1–32 signatures and one BitZ source
-commitment. The experimental `falcon-hybrid` backend supports 1–1024 signatures,
-with separate arithmetic and binary Keccak commitments authenticated through one
-joint opening. Both prove SHAKE256, HashToPoint rejection and ordered compaction,
-the Falcon ring equation, and the norm bound. Native witness generation is not
-used as a substitute for those proof constraints.
+The `falcon-hybrid` feature provides one non-ZK Falcon prover for 1–1024
+signatures, using native-ring arithmetic, binary Keccak, and one shared opening
+of three source commitments. It proves SHAKE256, HashToPoint rejection and
+ordered compaction, the Falcon ring equation, and each signature's norm bound.
+Native witness generation does not substitute for proof constraints.
 
-Public statements contain the public keys, 32-byte messages, and exact signatures
-(nonce and `s2`). Both backends bind the canonical CT signature bytes to their
-authenticated witness copies. These protocols do not provide zero knowledge;
-the remaining auxiliary witness is not guaranteed to be hidden.
+The public statement contains each public key, 32-byte message, and exact CT
+signature (nonce and `s2`). Every signature byte has a linear equality against
+its committed bits. The auxiliary witness is not guaranteed to be hidden.
+The `falcon` feature also exposes native verification and reference helpers;
+it does not select a second proving backend.
 
-## Public signatures and independent benchmark inputs
-
-The outer commitment-bound statement uses `v4`. The hybrid statement uses
-`native-ring/non-zk/v3`, binding its decoder, native field, and security schedule.
-See [NATIVE_RING.md](NATIVE_RING.md) for the current arithmetic and counts, and
-[OPTIMIZATION_SECURITY.md](OPTIMIZATION_SECURITY.md) for the split grinding
-budget and [COMPACTION_SOUNDNESS.md](COMPACTION_SOUNDNESS.md) for the v3 forest
-and fingerprint arguments. The bridge is covered in [BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md).
-Current v3 kernel performance and validation are in
-[KERNEL_THROUGHPUT.md](KERNEL_THROUGHPUT.md); the preceding v3 protocol changes
-are measured in [THROUGHPUT.md](THROUGHPUT.md).
-Every CT signature byte has a linear equality against its eight committed bits,
-including the nonce and signed coefficient payload. Absorbing signatures into
-the transcript complements these equality constraints; it does not replace them.
-There are 931,752 linear rows per standalone signature and 4,458 per hybrid
-signature. The hybrid has a rejection-only outer sumcheck, a cubic compaction
-leaf reduction, and a native ideal check authenticated through the same binder.
-
-Both proof benchmarks use only distinct keypairs and 32-byte messages generated
-reproducibly with `fn-dsa = 0.3.0` in `HASH_ID_ORIGINAL_FALCON` mode. The default
-batch contains 32 signatures; each selected batch size generates that many keys
-and signatures. Fixture manifests, file overrides, and repeated-input pools have
-been removed. Obsolete fixture arguments and environment variables are rejected.
-Upstream generation and verification, CT conversion, and native preflight checks
-run before prover timing. Every measured trial still constructs and commits the
-complete witness, proves it, and verifies the proof. Upstream native verification
-is reported separately for the same batch. The fixed seed is for benchmark keys
-only. The benchmark records the seed, upstream version, input digest, and public
-input relation so runs can be reproduced.
-The hybrid benchmark's JSON schema is `bitz/falcon-hybrid/v3`; `input_digest`
-identifies the generated batch in the preparation and trial records.
-
-The performance tables below predate public-signature binding and independent
-generated inputs unless explicitly marked otherwise; they are historical data.
-
-### Generated-input validation on 2026-09-26
-
-The portable release build, with no `RUSTFLAGS` override, verified a warmup and
-three measured batches of 32 distinct upstream-generated signatures at target
-128, seed 42, and 16 Rayon threads on an AMD Ryzen 9 9950X3D. Median times:
-
-| Stage | Milliseconds per 32-signature batch |
-| --- | ---: |
-| Upstream native verification, sequential, including key decoding | 0.580 |
-| Witness construction and commitments | 146.018 |
-| Proof generation | 553.180 |
-| Total prover | 699.198 |
-| Proof verification | 136.530 |
-
-Input generation and preflight took 298.116 ms, and reusable preparation took
-3.440 ms; both are outside total prover time. Total prover throughput was
-45.77 signatures/second (21.85 ms/signature). This is a measurement of the new
-public-signature relation on distinct keys, not a matched speedup comparison
-with the historical repeated-fixture tables. Raw trials, source hashes, and
-validation logs are retained locally in `bench_results/falcon-upstream-20260926/`.
-The legacy benchmark also verified a warmup and one measured 32-signature batch
-with the same input digest, target, and thread count. Its single measured sample
-took 4,428.833 ms for the total prover and 296.928 ms for proof verification;
-this is a smoke measurement rather than a median.
-
-Validation passed all 72 Falcon library tests and three upstream integration
-tests. These include canonical conversion, reproducible distinct inputs, direct
-public-byte/source equality checks, and rejection when a proof is paired with
-a different valid signature for the same public key and message.
-
-## Changes in v3
-
-[piop.rs](piop.rs) now checks the norm bound separately for every signature.
-It samples an instance equality point after commitment and proves the randomly
-weighted per-instance norm identities, including each signature's bounded
-slack. An excessive norm in one signature can no longer consume unused slack
-from another. The binder authenticates both weighted and unweighted terminal
-operands. Padded instances have zero contribution.
-
-HashToPoint's nonlinear rows use four word relations per candidate: selection,
-selected rank, selected remainder, and rejection. This replaces the former
-27 bit-product rows; fixed-width source encodings and the other range constraints
-justify the word equalities. Compaction still proves that the first 1024
-accepted samples appear in order.
-
-The 128-bit profile additionally grinds the initial random row point of every
-outer product sumcheck. Grinding only the later sumcheck rounds would leave the
-initial random collapse unprotected above the prime-field ceiling. The new
-norm-instance point has its own grinding boundary. Source and PIOP transcript
-headers are versioned `v3`.
-
-## Structured binding
-
-`BindingForm` describes the claim `sum_i c_i f_i = T` without allocating its full
-coefficient vector. It retains factored equality weights, batching challenges,
-and a lazy prover cache with one 1024-element ring adjoint per distinct public
-key. Complete key equality determines reuse, without changing instance order.
-The common local row weights are independent of the instance factor; the
-prover scales a shared adjoint while emitting each signature's coefficients.
-It does not store a scaled adjoint copy for every repeated key.
-The adjoint contracts Falcon's
-negacyclic multiplication at the coefficient level before distributing signed
-bit weights. Its polynomial multiplication uses Karatsuba above 32 coefficients
-and schoolbook multiplication below, entirely in the proof field.
-
-The prover streams additive coefficient updates into `StreamingMle` and the
-shared packed inner-sumcheck engine. One traversal accumulates four prefix rounds;
-a second writes the coefficient table already folded over those coordinates.
-For the hybrid source, [opening_compact.rs](opening_compact.rs) first combines
-all contributions to each integer word. It caches these compact coefficients
-across both traversals and emits their bit weights in source order, combining
-overlapping words and individual-bit corrections before each bit is emitted.
-The repeated linear template and common terminal equality tables are shared
-across signatures. Signed bit weights use successive doublings. The target is
-computed from affine constants and live-instance equality contractions, without
-replaying the coefficient emitter. The legacy emitter remains an independent
-oracle for coefficient and transcript equivalence tests.
-Overlapping updates and cache evictions preserve the same ordinary sumcheck
-messages as a dense table. The verifier evaluates `C(r)` directly, contracting
-shared instance factors before evaluating local wiring. It never constructs or
-folds a full-domain coefficient vector. For the ring contribution, it first
-forms `h_eff = sum_s alpha_s * beta_s * h_s` in the proof field, where `alpha_s`
-is the linear-row instance weight and `beta_s` the source-endpoint instance
-weight. It computes one adjoint of this effective key even when all keys differ,
-then evaluates the local signed-bit functional. Only live instances contribute.
-Target calculation and verification never initialize the prover's adjoint cache.
-These are explicit forward/adjoint kernels; Falcon does not instantiate the
-generic Wengert tape. This reuse and contraction preserve the v3 proof format,
-transcript, constraints, and grinding schedule.
-
-## Prime-field Keccak layout
-
-[keccak.rs](keccak.rs) reuses column parities rather than expanding eleven input
-bits for every theta output. Before the rho/pi permutation, the exact equations
-are
-
-```text
-sum_y A[x,y,z] = C[x,z] + 2*u[x,z]
-A[x,y,z] + C[x-1,z] + C[x+1,z-1] = B[x,y,z] + 2*v[x,y,z]
-```
-
-Here `u` has two committed bits and `v` has one. Boolean source bits and these
-integer equalities enforce parity and quotient ranges. The relation stays in the
-prime field. [layout.rs](layout.rs) and [source.rs](source.rs) define the packing:
-
-| Per signature | v1 | v2 |
-| --- | ---: | ---: |
-| Live source bits | 4,785,959 | 3,710,759 |
-| Padded source bits | 2^23 | 2^22 |
-| Linear rows | 776,583 | 930,183 |
-| Padded linear-row stride | 2^20 | 2^20 |
-
-`KeccakRows` reads chi operands from packed trace words, preserving iota, padding,
-and unused batch slots. It removes the three initial dense outer-product tables;
-field-valued tables are still allocated after the first challenge fold.
-
-## Shared compaction forest
-
-Each signature retains separate candidate/output trees of 2048 leaves and its
-own root-equality check. Corresponding layers across all trees share a sumcheck
-of `eq(r,x) * sum_t eq(tau,t) L_t(x) R_t(x)`. Every non-root layer gets a fresh
-batching point after its claims are fixed. Child evaluations are absorbed
-before the shared line challenge; final leaf claims remain bound to source bits.
-
-For `T=2*B` trees, the forest has 55 cubic round challenges, ten equality
-batching points of total degree at most `ceil(log2(T))`, and eleven line
-challenges. The line bound preserves one nonzero error vector, so it costs
-one degree per draw rather than one per tree. See
-[COMPACTION_SOUNDNESS.md](COMPACTION_SOUNDNESS.md) for the full argument.
-The standalone backend retains its conservative 21-bit schedule. The hybrid
-allocates cubic and forest difficulties separately while preserving its saved
-v2 budget. Other argument blocks retain their separate security budgets;
-target 100 remains unground.
-The forest supplies cubic group arithmetic but reuses the shared sumcheck round
-helper and verifier. The ordinary outer engine accepts only one `A*B-C` terminal
-triple, and the batched inner engine handles degree-two products.
-
-## Experimental binary Keccak composition
-
-[hybrid.rs](hybrid.rs) exports `PreparedFalconHybrid`, `CommittedFalconHybrid`,
-`FalconHybridStatement`, `FalconHybridProof`, and `FalconHybridSecurity` through
-[mod.rs](mod.rs). The public API supports security targets 100 and 128 and rounds
-the live batch length up to a power-of-two capacity. Preparation is reusable:
+## API
 
 ```rust,ignore
 use bitz::piop::spartan::falcon1024_ct::{
@@ -206,755 +28,116 @@ prepared.verify(&statement, &proof)?;
 let report = prepared.security();
 ```
 
-Here `public_keys`, `messages`, and `signatures` are slices of byte slices;
-messages have the supported fixed length of 32 bytes. `prove` consumes the
-committed witness so its large buffers can be folded without cloning.
-The experimental proof currently has an in-memory Rust API, without a wire
-serialization format.
+The inputs above are slices of byte slices. Preparation is reusable for the same
+live batch size and security target (100 or 128). Proving consumes the committed
+witness so large buffers can be folded without cloning. Proofs currently have
+an in-memory Rust API, without a Falcon wire codec. `payload_size_bytes()`
+counts stored proof payload, excluding public statements and transport framing.
 
-The arithmetic source has **100,578 live bits**, padded to **2^17 bits per
-capacity slot**. It contains the encoded signature, the 1311 sampled words,
-HashToPoint auxiliaries, centered coefficient encodings, and norm slack. It
-has no committed ring quotient or compaction product columns. The binary
-sources reserve **16 × 2^16 + 4 × 2^16 bits per capacity slot**, in two
-separately committed permutation groups. This removes the old 12 dummy
-permutations per signature. Padded signature slots still contain valid Keccak
-chains. At batch one only, the four-permutation group has a second padded
-signature slot to satisfy Flock's eight-block minimum.
+`FalconSourceLayout::new` rounds the live batch up to a power-of-two capacity.
+There is one arithmetic layout and one compact binder. See
+[NATIVE_RING.md](NATIVE_RING.md) for the native ideal proof and coordinate carry
+bounds, and [COMPACTION_SOUNDNESS.md](COMPACTION_SOUNDNESS.md) for the ordered
+compaction argument.
 
-For capacity at least eight, a chain-aware witness producer executes each
-permutation once, emitting its compact circuit witness and retaining output
-lanes for the next permutation and for SHAKE sample extraction. Smaller
-capacities use the reference setup and packed producer. Physical addresses are
-`[7 in-word | signature | permutation within group | 9 chunk]`.
+## Committed sources and constraints
 
-[hybrid_keccak.rs](hybrid_keccak.rs) uses Flock's compact Keccak encoder: each
-permutation stores input, output, and 24 chi-AND vectors in a 65,536-bit block
-whose useful prefix has 42,560 bits. Intermediate theta/rho/pi states are
-implicit binary linear functions. The circuit's transpose recurrence evaluates
-their contributions without expanding the corresponding dense matrices.
-The prefix uses the existing binary commitment and caller transcript and stops
-at two normalized linear claims; it does not make another commitment.
+| Arithmetic source per signature | Bits |
+| --- | ---: |
+| Constant, message, and encoded signature | 12,873 |
+| HashToPoint words | 20,976 |
+| Quotients, bounded remainders, and rejection bits | 23,598 |
+| Prefix counts | 14,432 |
+| HashToPoint output | 14,336 |
+| Biased centered `s1` | 14,336 |
+| Norm slack | 27 |
+| Total live arithmetic bits | **100,578** |
+| Allocated arithmetic slot | **131,072** |
 
-The three sources are connected by authenticated random linear copy checks:
+Each signature has 4,458 scalar linear rows padded to 8,192, and 1,311
+rejection rows padded to 2,048. Norm, native ideal, compaction forest, and cubic
+leaf reductions are separate obligations. No range-slack, selected-product,
+prime-field Keccak, or integer ring-quotient columns are committed.
 
-1. The first Keccak input contains the arithmetic source's 40-byte nonce,
-   the public message, and the exact SHAKE suffix/padding and capacity zeros.
-2. Each of the next 19 permutation inputs equals the preceding 1600-bit output.
-3. The extracted rate bytes equal the arithmetic source's 1311 big-endian
-   16-bit words, which feed the proved HashToPoint calculation.
+Keccak uses two permutation-major slabs of 16 and 4 permutations. Each
+permutation occupies a 65,536-bit compact circuit block. At batch one, the
+four-permutation slab has a second padded signature slot to satisfy Flock's
+minimum geometry. Padded slots contain valid Keccak chains. The optimized
+chain producer handles capacities at least eight; smaller capacities retain
+the reference setup and packed producer.
 
-These checks include the full sponge state, not only the output rate. Public
-messages and all three roots enter the common transcript before proof challenges.
-Two unrelated proofs sharing an opener would not establish these equalities.
+Authenticated copy checks connect the sources:
 
-[hybrid_bridge.rs](hybrid_bridge.rs) converts the prime-field source claim to
-one binary linear claim using a merged exponent-fold forest. The 126-bit row
-weights have 113-bit and 13-bit limbs. Both integer folds share a nibble-table
-scan of the existing source rows, and both limbs share one forest's challenge
-rounds. Flat power tables and borrowed bit rows avoid repacking the source.
-Both limb sums are bound before any forest challenges; the final limb coordinate
-contracts their row weights into one claim on the same committed bits. This
-does not identify a prime-field MLE with a binary-field MLE.
-The conservative merged-forest error numerator is
-`s + 3*(d*(d-1)/2 + d*s) + d`, where `d=13` and `s=col_vars+1` includes the
-limb coordinate. This gives 487 through 887 across supported capacities and is
-used directly in the security report and grinding allocation. At target 128,
-the bridge uses 17 grinding bits for capacity one and 18 for larger capacities,
-previously 20. Its category error remains at most `2^-136` under the existing
-computational grinding model. Target 100 still needs no bridge grinding.
-[hybrid_sumcheck.rs](hybrid_sumcheck.rs) combines these claims, the Keccak claims,
-and the copy checks using structured tensor and gather terms. It folds the
-first seven bits without constructing a full field-element coefficient table,
-then hands one terminal to a shared ring switch and Ligerito continuation.
-All three roots remain authenticated, including the chain link from permutation 15
-to permutation 16 across the two Keccak commitments. The current hybrid selects the
-unique-decoding Ligerito profile and has no Round-0 OOD message.
+1. The first Keccak input contains the committed nonce, public message, and
+   exact SHAKE suffix, padding, and capacity zeros.
+2. Every subsequent input equals the previous full 1600-bit output, including
+   the transition between the two slabs.
+3. Extracted rate bytes equal the 1,311 big-endian words consumed by HashToPoint.
 
-The `falcon-hybrid` feature currently enables `falcon`, the existing `hybrid`
-feature, and the vendored `flock-prover` dependency. Consequently its build also
-includes the existing Binius64 and metrics dependencies inherited through
-`hybrid`; this Keccak circuit itself uses Flock, not the Binius SHA-256 circuit.
+The arithmetic terminal passes through a two-limb integer-to-binary bridge
+using the wfbitz forest. The joint binary sumcheck binds arithmetic, both Keccak
+claims, and these copy checks to the shared ring-switch/Ligerito opening.
+Falcon uses `MATCHED_UDR` with no initial OOD message. Physical padding and all
+three roots remain authenticated. See
+[BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md) for the bridge's index map
+and error bound.
 
-### Binary HashToPoint experiment
+## Security and protocol domains
 
-[hybrid_hash_to_point.rs](hybrid_hash_to_point.rs) implements a separate Binius64
-word circuit for all 1311 candidates. It constrains 16-bit inputs, reduction
-modulo 12289, rejection at 61445, and the first 1024 accepted residues in order.
-A fixed nine-pass compaction network routes records containing a residue and
-its original displacement. Range checks reject underflow through the invalid
-record sentinel. Selection uses XOR/AND masks rather than Binius's generic
-selector, keeping the circuit free of integer/binary multiplication oracles.
+`PreparedFalconHybrid::security()` reports the complete configured error sum;
+preparation rejects a profile below its requested target. The report uses the
+repository's computational grinding convention: raw challenge error `e` with
+`g` grinding bits contributes `e / 2^g` per unit of adversarial work. This is
+not unconditional statistical soundness. BLAKE3's collision bound is separate.
 
-`add_hash_to_point` accepts private or public wires. `BinaryHashToPoint` exposes
-a complete standalone proof with the exact sample and output arrays as public
-inputs, plus circuit statistics and online timings. It is not connected to
-`PreparedFalconHybrid`: the latter continues to prove HashToPoint in its prime
-branch. A shared composition would additionally need authenticated sample/output
-copy checks and a security budget for all reductions. The standalone constructor's
-security parameter controls the FRI query target only, not that full budget.
+The current schedule allocates explicit budgets to current protocol groups;
+it does not reconstruct historical schedules. See
+[OPTIMIZATION_SECURITY.md](OPTIMIZATION_SECURITY.md) for the allocation and
+validation obligations. Both targets and every batch from 1 through 1024 are
+covered by the complete-ledger tests.
 
-The isolated benchmark includes witness generation, commitment and opening but
-excludes SHAKE and Falcon arithmetic. It must not be reported as full signature
-proving or as an equivalent 128-bit composition:
+The statement domains are `native-ring/non-zk/v4` and
+`native-ring/statement/v4`. Earlier proofs must be regenerated. Current
+subprotocol domain separators retain their own versions: those labels separate
+live proof phases and do not enable old backends or old-proof parsing.
+
+## Validation and benchmarking
+
+Independent checks include native signature verification, upstream `fn-dsa`
+interoperability, RustCrypto SHAKE comparisons, scalar/matrix reference
+computations, transcript parity, source padding, and malformed-proof rejection.
+The native exact checker recomputes the public-key/signature product rather
+than trusting cached arithmetic. Reference implementations remain independent
+of the optimized prover.
+
+Compile-only validation:
 
 ```sh
-CARGO_TARGET_DIR=target/falcon-native RUSTFLAGS="-C target-cpu=native" \
-  cargo bench --offline --profile release --features falcon-hybrid \
-  --bench falcon_hash_to_point -- --batch 1 --security 128 --threads 16
+cargo check --offline --locked --lib --tests --benches --features falcon-hybrid
+cargo check --offline --locked --lib --no-default-features --features falcon
 ```
 
-`--prepare-only` reports the circuit's allocation without proving; larger batches
-should first be checked for witness growth. The existing full Falcon benchmark
-continues to include SHAKE, HashToPoint, commitments, and all proof stages.
-
-## Hybrid security report
-
-`PreparedFalconHybrid::security()` returns the actual configured union-bound
-terms as error probabilities and `algebraic_bits = -log2(sum(terms))`.
-Preparation rejects a profile whose report misses the requested target. The
-report covers prime sampling, per-signature norms, initial row points and
-sumchecks, compaction fingerprints and forest, terminal binding, integer-to-binary
-forests, binary Keccak, SHAKE wiring and batching, joint sumcheck, ring switching,
-support padding, and shared Ligerito.
-
-This is algebraic/IOP accounting in the existing **computational grinding
-model**: a block with raw error `e` and `g` grinding bits contributes
-`e / 2^g` per unit of adversarial work. It is not an unconditional improvement
-to interactive soundness. BLAKE3's 128-bit collision bound is stated separately
-and is not an extra algebraic error term in this report.
-
-The prime field satisfies `p >= 2^125`. At target128, each prime reduction
-category uses `g(n)=max(0,128+5+ceil(log2(n))-125)`, with g(0)=0.
-Norm and leaf instance draws share a budget; rejection, leaf, and forest cubic
-rounds share another. The new native carry collapse uses its own12-bit block.
-The native ideal batching/projection error is bounded over F_(12289^11).
-The complete dynamic report is authoritative; tests cover both supported
-security targets and every batch size1..1024. See [NATIVE_RING.md](NATIVE_RING.md)
-for the exact coordinate carry and no-wrap conditions.
-
-For the two binary Keccak prefixes, `m = 20 + log2(capacity)` and
-`m = 18 + log2(capacity)` respectively, except for the small-batch padding
-noted above. Each raw error is bounded by `(4*m + 256) / 2^128`; the security
-report adds both contributions. A caller component target of `target + 8` gives
-zero extra grinding at target 100 and 17 bits at target 128. Each uninterrupted
-challenge block has one nonce; vector coordinates share it. The bound includes
-the constant-column check across all permutations, and tests check that the
-seven fixed zerocheck coordinates give an injective encoding of all 128 Boolean
-residuals. The other binary stages reserve the same eight-bit margin. Ligerito
-reserves two bits for the whole PCS; if its schedule has `k` challenge blocks,
-each block targets `target + 2 + ceil(log2(k))` bits. Their sum is at most
-`2^-(target+2)`. This allocation stays within the implementation's grinding cap
-while preserving the complete composition budget. The actual report and its
-preparation-time target check remain authoritative. Every supplied nonce must
-be consumed and verified.
-
-## Compatibility and memory
-
-The legacy commitment-bound statement uses `v4`; its internal PIOP headers use
-`v3`; forest equality batching uses its own `eq/v3` domain. The hybrid has its own versioned
-statement and different source layouts; hybrid roots are not interchangeable
-with standalone roots. The hybrid statement and transcript use
-**native-ring/non-zk/v3**, with the complete arithmetic schedule and native
-representation explicitly bound. Bridge grinding uses `v4`;
-integer-fold and Keccak-prefix domains remain `v2`. All permutation groups and
-roots remain bound. **Regenerate proofs from earlier hybrid versions.** The
-revised schedule preserves the arithmetic, SHAKE, HashToPoint, and individual
-norm constraints; it changes transcript challenges at both security targets.
-
-Streaming eliminates the full binding coefficient vector, but does not make the
-entire prover constant-memory. For one signature, coefficient-cache values use
-at most 1 MiB plus metadata, and the four-coordinate folded coefficient table
-uses 4 MiB. The folded table scales with batch capacity. The first Keccak outer
-fold still uses about 48 MiB per capacity slot. Packed witnesses, subsequent
-folds, and commitment/opening state also remain. Prefix accumulation and
-coefficient replay run on disjoint signature partitions. Each active worker
-has its own bounded coefficient cache; folded-table writes need no atomics.
-Whole-process peak RSS includes these allocations and must not be interpreted
-as binder-only memory. These figures
-describe the legacy prime-Keccak backend.
-
-The hybrid also retains substantial witness and opening state. At capacity
-1024, its packed arithmetic and Keccak sources alone occupy 32 MiB and 160 MiB.
-The virtual shared-opening table is half the previous two-source table.
-Keccak A/B buffers, a lincheck copy, folded field tables, Merkle codewords, and
-shared-opening workspaces add to this. Structured wiring avoids a dense table
-over the entire bit domain; it does not make the full prover constant-memory.
-
-The prover prepares all distinct-key adjoints before launching coefficient
-partitions. These convolutions run in parallel, share the challenge operand's
-Karatsuba tree, and reuse bounded scratch buffers. Leaf products accumulate in
-five limbs and reduce once per output coefficient; the public product count
-selects the appropriate field reducer. Shared-key instances still reuse one
-adjoint, while verifier contraction still computes just one combined adjoint.
-
-The compact binder compiles word descriptors and their addition order once,
-then fills indexed coefficient arrays for each instance. Descriptors are shared
-across the batch instead of hashed and sorted again per signature. The packed
-inner sumcheck combines suffix-table construction with the first tail round
-when enough signature partitions are available; small batches retain the
-separate parallel scan. These are prover implementation changes: source bits,
-constraints, challenge schedules, and proof messages are unchanged.
-The hybrid uses three packed prefix rounds, reducing ternary-prefix work at
-the cost of a 512 MiB compact coefficient table at capacity 1024 (four rounds
-use 256 MiB). The legacy backend keeps four rounds.
-
-A matched native run on the Ryzen 9 9950X3D, 16 threads, target 128, and 1024
-distinct signatures measured **3.160 ms/signature (316.4 signatures/sec)**,
-versus a fresh **4.650 ms/signature** baseline at `e9cf4a1d`. These are medians
-of three measured trials after one warmup, including witnesses, commitments,
-SHAKE, HashToPoint, and all proof stages. All twelve proofs across the baseline,
-optimized four-round prefix, and final three-round prefix verified with matching
-inputs, roots, complete proof Debug digests, and security reports. The optimized
-four-round variant measured 3.273 ms/signature. Peak RSS remained about 5.2 GiB.
-The separate cold batch-256 profile reduced binding/inner time from 2.082 to
-0.732 ms/signature. Raw results, configuration, and reproduction commands are
-in `bench_results/falcon-prime-inner-20260926/` (ignored local artifacts).
-
-## Validation
-
-RustCrypto's `sha3` crate is a test-only SHAKE256 oracle. Differential tests in
-[keccak.rs](keccak.rs) cover absorption and squeezing at 136-byte rate boundaries,
-including Falcon's 72-byte input and full 2,622-byte output. Tests in
-[hash_to_point.rs](hash_to_point.rs) independently hash the nonce followed by the
-message and check the sampled words and selected residues. The hybrid test in
-[hybrid.rs](hybrid.rs) checks both the samples and their packed source bits against
-RustCrypto for batches 1, 3, and 8, including the transition between Keccak groups.
-
-[opening_binding_tests.rs](opening_binding_tests.rs) compares the ring adjoint
-against an explicit negacyclic matrix and structured endpoints against dense
-binding with distinct keys and padded instances. Tests in [piop.rs](piop.rs)
-compare lazy Keccak proofs/transcripts with the original dense construction,
-check forest batches 1/3/32 against direct leaf evaluations, and reject tampered
-roots, terminals, layers, messages, and nonces. Exact-constraint and end-to-end
-tests cover corrupted parity witnesses. New tests cover per-instance norm
-overspending, packed HashToPoint products, binary Keccak input/chaining/sample
-mapping, constant-wire pins, prefix transcript replay, dense coefficient
-oracles, and corrupted proofs/roots/nonces. Shared streaming tests cover prefix
-lengths 0–4, overlapping signed updates, eviction, padding, and malformed input.
-Adjoint-reuse tests compare complete coefficients and sumcheck transcripts with
-the former per-instance construction, including repeated, mixed, and distinct
-keys, zero instance weights, and padded endpoints. An explicit negacyclic matrix
-checks the field-valued adjoint on coefficients much larger than Falcon's modulus.
-Verifier and target evaluation tests also check that the prover cache stays empty.
-
-On 2026-09-25, the complete release library suite with `falcon-hybrid` enabled
-passed **574 tests**, with zero failures and five ignored tests. The native build
-also covers the new three-source padding mask, dense sumcheck equivalence with
-cached marginals, every fused Keccak witness buffer, cross-group chain-link
-rejection, partitioned streaming, and direct cubic forest evaluations. This includes
-end-to-end proofs at both security targets and preparation checks through
-1024 signatures. The existing `falcon1024_ct` and `hybrid_u32_sha256` benchmark
-clients also pass `cargo check` with `falcon-hybrid` enabled.
-
-Run from the repository root:
-
-```sh
-cargo test --offline --release --features falcon-hybrid --test falcon_upstream
-cargo test --offline --release --features falcon-hybrid --lib rustcrypto
-cargo test --offline --release --features falcon --lib falcon1024_ct
-cargo test --offline --release --features falcon --lib streaming_
-cargo test --offline --release --features falcon-hybrid --lib falcon1024_ct
-cargo test --offline --release --features falcon-hybrid --lib
-```
-
-The complete hybrid benchmark verifies every generated proof and reports
-witness/commit time, proving time, verification time, total prover throughput,
-and process peak RSS. Fetch dependencies once with `cargo fetch` before using
-the offline benchmark script on a fresh checkout. Security must be selected explicitly:
+The retained benchmark generates distinct upstream keys, messages, and
+signatures, converts through the canonical CT encoder, and verifies both the
+upstream signature and the native BitZ relation. Total prover time includes
+witness generation, all commitments, and every proof stage; key generation,
+preparation, statement decoding, and verification are excluded.
 
 ```sh
 scripts/bench_falcon_native.sh \
-  --batch 32 --security 128 --seed 42 --threads 16 --warmup 1 --iterations 3
+  --batch 1024 --security 128 --seed 42 --threads 16 --warmup 1 --iterations 3
 ```
 
-The legacy proof benchmark uses the same independent generator and seed:
-
-```sh
-BITZ_FALCON_BATCH=32 BITZ_FALCON_SEED=42 BITZ_BENCH_LAMBDA=128 \
-  RAYON_NUM_THREADS=16 cargo bench --offline --profile release \
-  --features falcon,span-metrics --bench falcon1024_ct
-```
-
-The upstream native-verification baseline is sequential and includes public-key
-decoding; the prover and proof verifier use the configured Rayon thread pool.
-
-The script builds for the host CPU with `-C target-cpu=native` in an isolated
-`target/falcon-native` directory; this binary is hardware-specific. Ordinary
-Cargo builds retain their portable defaults. Benchmark metadata reports the
-selected GF(2^128) kernel and compiled features. Explicit `RUSTFLAGS` override
-the script's default. To collect diagnostic stage timings, set
-`BITZ_FALCON_STAGE_TIMINGS=1`; JSON stage records go to stderr and nested times
-overlap. Run latency measurements separately with that variable unset.
-
-Run larger batches only with sufficient memory. Every input is generated by the
-independent Rust implementation. Compare the total prover column when witness
-generation and commitments must count toward throughput; input generation and
-public-statement decoding are excluded from this column.
-
-## Adjoint reuse: matched 16-thread comparison
-
-On 2026-09-25, the executable from the initial hybrid implementation was
-preserved before adding key reuse and verifier contraction. Both executables
-then ran the same repeated-key fixture at target 128 on the Ryzen 9 9950X3D,
-with 16 Rayon threads, identical release codegen, and no `RUSTFLAGS` override.
-Runs were sequential without concurrent tests or compilation. Fixture digests,
-commitment roots, and configured security bounds match between each pair.
-
-Batches 32 and 256 used one warmup plus three measured trials per executable;
-the table reports medians. Batch 1024 used one cold trial per executable and is
-preliminary. All 18 trials, including warmups, verified. Full prover time includes
-witness generation, both commitments, and proof generation.
-
-| Batch | Full prover before | Full prover after | Verify before | Verify after |
-| --- | ---: | ---: | ---: | ---: |
-| 32 | 1.899 s | 1.847 s | 0.205 s | 0.151 s |
-| 256 | 11.733 s | 11.369 s | 1.357 s | 0.929 s |
-| 1024 | 48.013 s | 46.893 s | 5.331 s | 3.603 s |
-
-Verification time fell by **26.1%, 31.6%, and 32.4%**, respectively. Observed
-full-prover times fell by 2.7%, 3.1%, and 2.3%; these small gains are less
-conclusive because the three-trial prover ranges overlap. For example, at
-batch 256 the before range was 11.722–11.788 s and the after range was
-11.368–11.747 s, while verifier ranges were clearly separated at
-1.354–1.359 s and 0.925–0.930 s. Witness/commitment time was essentially unchanged.
-
-The resulting full-prover cost is **57.73, 44.41, and 45.79 ms/signature** for
-these batches; the 1 ms goal remains unmet. This benchmark measures shared-key
-prover reuse. Mixed and distinct keys are covered by differential tests, but
-their performance was not measured in this campaign. Raw trials, timing ranges,
-executable/source hashes, and the before/after source snapshots are retained in
-`bench_results/falcon-adjoint-reuse-20260925/`.
-
-## Initial hybrid performance: 16 threads
-
-These measurements precede the adjoint reuse and contraction comparison above.
-
-Measured on 2026-09-25 on the same AMD Ryzen 9 9950X3D, with 16 Rayon threads.
-Cases ran sequentially without concurrent compilation or tests, and every
-generated proof verified. Batches 1 and 32 used one warmup and three measured
-trials; batches 256 and 1024 used one measured trial without warmup, so their
-numbers are preliminary. All cases repeat the bundled valid signature fixture.
-
-The total prover column includes SHAKE/HashToPoint witness generation, both
-commitments, and the complete proof. Verification and reusable preparation are
-separate. Each median is computed from its own trial measurements; total prover
-time uses the median of the per-trial sums. RSS is the whole-process peak.
-
-| Batch | Target | Witness + commit | Prove batch | Total prover / signature | Verify batch | Peak RSS |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 100 | 0.005 s | 0.084 s | 89.97 ms | 0.039 s | 0.05 GiB |
-| 1 | 128 | 0.006 s | 0.469 s | 475.25 ms | 0.043 s | 0.05 GiB |
-| 32 | 100 | 0.217 s | 1.143 s | 42.50 ms | 0.204 s | 0.36 GiB |
-| 32 | 128 | 0.219 s | 1.669 s | 59.02 ms | 0.204 s | 0.36 GiB |
-| 256 | 100 | 2.048 s | 8.897 s | 42.75 ms | 1.354 s | 1.83 GiB |
-| 256 | 128 | 2.039 s | 9.801 s | 46.25 ms | 1.360 s | 1.83 GiB |
-| 1024 | 100 | 8.941 s | 35.558 s | 43.46 ms | 5.312 s | 6.71 GiB |
-| 1024 | 128 | 8.937 s | 38.804 s | 46.62 ms | 5.318 s | 6.74 GiB |
-
-At batch 32 and target 128, the historical v2 total prover median was
-443.04 ms/signature; this hybrid is **7.51× faster**, at 59.02 ms/signature.
-That is a historical comparison across protocols: the hybrid includes the v3
-norm and challenge-boundary fixes described above. The old executable used
-the bench profile with debug information; this measurement used the release
-profile without it. Both use fat LTO, one codegen unit, and no `RUSTFLAGS`
-override. The release benchmark was built with
-`cargo test --offline --release --features falcon-hybrid --lib --bench falcon_hybrid --no-run`
-and its executable was invoked directly with the options documented above.
-
-**The 1 ms/signature goal is not reached.** Target-128 throughput levels off
-around 46 ms/signature (about 21.5 signatures/second); moving from batch 256
-to 1024 does not improve it in these samples. Even witness generation plus
-commitment alone costs about 8–9 ms/signature at those batch sizes. Further
-improvement needs faster per-signature kernels, not only a larger batch.
-
-Raw JSONL, `/usr/bin/time -v` output, executable/source hashes, sample counts,
-and the historical comparison are saved locally in
-`bench_results/falcon-hybrid-20260925/`. Proof byte size is not reported because
-the experimental proof does not yet have a wire codec. The following tables
-retain the historical v2 measurements and do not measure the hybrid or v3 fixes.
-
-## Historical v2 performance: one thread
-
-A 32-signature batch at the 100-bit target, with one Rayon thread on an AMD
-Ryzen 9 9950X3D, measured the following against revision
-`2f2ac242a85d51684b8006bee19217021edd86a4`:
-
-| Metric | v1 | v2 |
-| --- | ---: | ---: |
-| Proof generation | 76.67 s | 41.16 s |
-| Verification | 19.36 s | 420 ms |
-| Whole-process peak RSS | 5.87 GiB | 2.45 GiB |
-
-Both binaries used the default bench profile and `falcon,span-metrics` features.
-Each ran one warmup and one measured trial using the repeated bundled fixture;
-all proofs verified. These are preliminary single-sample timings. Peak RSS
-includes the entire benchmark process, not only binding or verification.
-
-
-The candidate also verified at batch 32 with the 128-bit profile: 44.33 s proving,
-424 ms verification, and 2.45 GiB peak RSS, using the same warmup/sample setup.
-No batch-32 128-bit baseline was measured. Those v2 runs retained the v1 grinding
-difficulties; they predate the v3 boundaries and the hybrid's derived schedule.
-
-## Historical v2 performance: 16 threads
-
-The same optimized executable was rerun with `RAYON_NUM_THREADS=16` on the
-same Ryzen 9 9950X3D. Cases ran sequentially, without concurrent compilation or
-tests. Each case used one warmup and three measured trials; the table reports
-medians. Every trial reported 16 Rayon threads and verified successfully.
-The one-thread column is the previous measurement, with its smaller sample count.
-
-| Batch | Target | Proving, 1 thread | Proving, 16 threads | Prover speedup | Verification, 16 threads |
-| --- | --- | ---: | ---: | ---: | ---: |
-| 1 | 100 | 1.239 s | 0.475 s | 2.61× | 184.5 ms |
-| 1 | 128 | 4.405 s | 0.720 s | 6.12× | 185.6 ms |
-| 32 | 100 | 41.155 s | 13.254 s | 3.11× | 423.8 ms |
-| 32 | 128 | 44.335 s | 13.474 s | 3.29× | 425.2 ms |
-
-These compare thread counts for v2, not v1 against v2. Witness generation and
-commitment are excluded from the proving column, matching the earlier tables.
-Verification stays close to the one-thread values (187–188 ms for one signature
-and 420–424 ms for batch 32). The sumcheck kernels and expensive nonce searches
-use Rayon; coefficient streaming, verifier binding evaluation, and product-forest
-arithmetic still use serial loops. This limits parallel speedup. These timings
-do not isolate the contribution of each stage.
-
-
-## Native kernels and parallel prover: 16-thread results
-
-The previous 44.41 ms/signature measurement used portable GF(2^128) arithmetic.
-The native rebuild selects the existing PCLMUL kernel and available AVX-512,
-VPCLMUL, and GFNI paths. Native baseline commitments exactly match the portable
-baseline commitments. The library's default build remains portable; use the
-native benchmark script above to reproduce accelerated timings.
-
-A 2026-09-25 campaign on the same Ryzen 9 9950X3D used target 128, batch 256,
-16 Rayon threads, release fat LTO, and one codegen unit. Native baseline and
-optimized binaries each ran one warmup plus three measured trials, sequentially
-without concurrent builds or tests. Every trial verified. The fixture repeats
-the bundled signature and shared public key.
-
-| Implementation | Witness + commitments | Proof generation | Full prover/signature | Verification/batch |
-| --- | ---: | ---: | ---: | ---: |
-| Previous reported portable build | 2017.27 ms | 9353.14 ms | 44.41 ms | 928.59 ms |
-| Native rebuild of c1e75c53 | 46.47 ms | 6953.60 ms | 27.34 ms | 890.97 ms |
-| Native with parallel binding/forest and compact Keccak groups | 33.50 ms | 1636.33 ms | **6.52 ms** | 919.24 ms |
-
-Each phase is its own median; full prover uses the median of combined per-trial
-times and includes witness generation, all commitments, and proof generation.
-It excludes reusable preparation and verification. Optimized samples span
-6.450–6.541 ms/signature, versus 27.264–27.404 ms for the matched native baseline.
-This is 4.19x faster than that native baseline and 6.81x faster than the earlier
-reported portable result, with throughput of 153.35 signatures/s. Verification
-did not improve in this campaign. Process peak RSS across the trials fell from
-2,690,364 KiB to 1,447,640 KiB.
-
-A separate cold diagnostic profile identifies the remaining proof costs:
-
-| Stage | Time/signature |
-| --- | ---: |
-| Prime arithmetic prefix | 3.38 ms |
-| Prime-to-binary conversion | 2.23 ms |
-| Joint binary sumcheck | 0.65 ms |
-| Shared opening | 0.28 ms |
-| Both Keccak prefixes | 0.17 ms |
-
-The arithmetic prefix includes binding target construction (0.58 ms/signature),
-binding coefficient streams plus inner sumcheck (1.54 ms), compaction forest
-(0.80 ms), HashToPoint products (0.18 ms), norm (0.09 ms), and sampling/fingerprint
-work. Nested spans overlap; do not add these arithmetic substeps to the
-arithmetic total. This diagnostic run is excluded from the latency medians.
-
-Raw JSONL, process timings, stage profile, and build metadata are retained in
-`bench_results/falcon-native-20260925/` (an ignored local artifact directory).
-
-A final single cold trial at batch 1024, target 128 and 16 threads verified
-successfully: full prover 6.522 s (**6.37 ms/signature**), witness/commit 0.191 s,
-proof generation 6.331 s, verification 3.599 s, and peak RSS 4,063,324 KiB.
-This maximum-batch result is preliminary (one trial), not a multi-trial median.
-It was run through `scripts/bench_falcon_native.sh` after the final test build.
-
-## Compact word binding and merged bridge: 16-thread results
-
-A second 2026-09-25 campaign compared the saved native `7a461976` executable
-with compact word binding and the hybrid v3 merged bridge. Both used the same
-Ryzen 9 9950X3D, native release kernels, target 128, batch 256, 16 Rayon threads,
-and repeated bundled signature/shared key. Each ran one warmup and three
-measured trials. Every trial verified and all three commitment roots exactly
-matched the baseline. Our compilation and tests finished before the candidate
-timing runs; cases ran sequentially.
-
-| Metric | Native 7a461976, rerun | Compact binding + merged bridge |
-| --- | ---: | ---: |
-| Witness + commitments/batch | 35.54 ms | 34.61 ms |
-| Proof generation/batch | 1717.50 ms | 1319.22 ms |
-| Full prover/batch | 1752.67 ms | 1354.53 ms |
-| Full prover/signature | 6.85 ms | **5.29 ms** |
-| Verification/batch | 920.88 ms | **691.78 ms** |
-| Whole-process peak RSS | 1,458,920 KiB | 1,611,272 KiB |
-
-The full prover is 1.294x faster (22.7% less time); verification takes 24.9% less
-time. Compact coefficient retention increases batch-256 process peak RSS by
-10.4%. Phase medians are computed separately, while full prover uses each
-trial's witness/commit plus proof time. Candidate samples span 5.288–5.424
-ms/signature; baseline samples span 6.718–7.177. The earlier 6.52 ms result is
-a historical measurement, not this campaign's matched baseline. Changing the
-transcript changes deterministic grinding seeds; this repeated fixture does
-not measure their variation across fresh signatures.
-
-A separate cold profile measured binding target construction at **0.001
-ms/signature**, coefficient emission plus inner sumcheck at **0.85 ms**, and
-the complete prime-to-binary bridge at **1.41 ms**. The complete arithmetic
-prefix was 2.66 ms, prime compaction forest 0.81 ms, joint binary sumcheck
-0.68 ms, Keccak prefixes 0.19 ms, and shared opening 0.31 ms. These nested
-diagnostic times are excluded from the medians. Integer folds and power tables
-accounted for only 1.44 ms of the bridge's 360.07 ms/batch; its merged forest
-remains the main bridge cost. Explicit grinding spans recorded 597.77 ms across
-the whole diagnostic run and are subsets of the enclosing protocol stages.
-
-One cold maximum-batch trial at 1024 signatures also verified: full prover
-5.084 s (**4.96 ms/signature**), witness/commit 187.63 ms, proof 4.896 s,
-verification 2.620 s, and process peak RSS 4,042,572 KiB. This is preliminary,
-not a multi-trial median. Neither measured batch reaches 1 ms/signature.
-
-The standalone binary HashToPoint candidate verified all trials at the FRI-128
-setting, using one warmup and three samples per case:
-
-| Batch | Witness + commitment + standalone proof/signature |
-| --- | ---: |
-| 1 | 4.41 ms |
-| 16 | 1.98 ms |
-| 256 | 2.10 ms |
-
-Its per-signature circuit uses 35,336 AND constraints and 9,521 zero constraints,
-with 41,498 live hidden words and 2,335 public words. The committed allocation is
-65,536 64-bit words (2^22 bits), with no multiplication oracles. Reusable setup
-at batch 256 took 24.39 s and is excluded from online timings. This experiment
-alone already exceeds the 1 ms target, grows the source substantially, and has
-not demonstrated a faster complete Falcon composition. It remains separate;
-the default hybrid continues to prove SHAKE and HashToPoint with its existing
-authenticated links and accounted security profile.
-
-Validation passed 583 native release library tests, with zero failures and five
-ignored tests, including the binary HashToPoint proof and boundary tampering,
-compact/dense coefficient and transcript equivalence, both merged-forest
-schedules, and compensating limb-sum forgeries. Serial Falcon and the legacy/new
-benchmark clients passed `cargo check`. Raw trials, diagnostic spans, build/test
-logs and executable/source hashes are retained in
-`bench_results/falcon-word-binder-20260925/` (ignored local artifacts).
-
-## GKR buffer reuse and AVX-512 grinding: 16-thread results
-
-The next implementation preserves the hybrid v3 constraints, security schedule,
-and transcript. It adds runtime-dispatched AVX512F BLAKE3 nonce scans (16 lanes,
-with AVX2/scalar fallbacks), and uses 256-nonce work chunks for short AVX-512
-parallel searches while retaining 1024-nonce chunks for longer searches. The
-parallel threshold and grinding difficulties are unchanged. Isolated native
-kernel measurements on the Ryzen 9 9950X3D measured about 1.92x AVX2 throughput.
-
-The multi-claim bridge forest now supports contiguous storage, recycles its
-buffers through a prepared-object workspace, and shares witness-bit selector
-decoding across the two limbs. Limb weights and field products remain distinct.
-Lookup tables move into their final consumers instead of being cloned. The
-bridge also reuses the arithmetic prefix's canonical row weights. Scratch is
-reset on geometry changes, bounded in retained capacity, and reuses matching
-allocation size classes so small root layers cannot consume large JIT buffers.
-
-Matched native release runs compared the saved `e5f46958` library with these
-changes using the same updated benchmark harness, target 128, 16 Rayon threads,
-one warmup and three measured trials per case. Every one of the 40 proofs
-verified. Each of the 20 corresponding baseline/candidate pairs had identical
-commitment roots and complete proof Debug digests. This digest is an exact-build
-comparison aid, not a canonical wire encoding. All 15 measured trial pairs were
-faster after the changes.
-
-| Workload | Batch | Baseline ms/signature | Optimized ms/signature | Less time, ratio of medians |
-| --- | ---: | ---: | ---: | ---: |
-| Repeated bundled signature, shared key | 256 | 5.205 | **4.036** | 22.5% |
-| Repeated bundled signature, shared key | 1024 | 5.138 | **3.842** | 25.2% |
-| Four signatures, shared key | 256 | 5.400 | **4.494** | 16.8% |
-| Eight signatures, two keys | 256 | 5.141 | **4.026** | 21.7% |
-| Eight signatures, two keys | 1024 | 5.031 | **3.815** | 24.2% |
-
-Full prover time includes witness generation, commitments, SHAKE, HashToPoint,
-and all proof stages. It excludes fixture loading, public-statement decoding,
-reusable setup, verification, and proof Debug hashing. Varied cases cycle their
-four/eight valid fixture pool across the batch and rotate the starting offset
-between trials; they are not batches of hundreds of unique signatures. The
-fixtures were generated and checked with the local Falcon reference signer.
-Grinding varies across these transcripts: paired trial reductions range from
-11.4% to 27.5%, so unpaired minima/maxima should not be used to infer a speedup.
-Process order alternates across cases; the three-sample medians still have
-ordinary run-to-run uncertainty.
-
-Buffer retention has a measurable memory cost. Repeated-fixture process peak
-RSS grew from **1.52 to 2.03 GiB** at batch 256 and **5.14 to 7.16 GiB** at batch
-1024. These are whole-process high-water marks including warmup, verification,
-and retained workspaces. The existing `BITZ_FLAT_FOREST=0` override keeps the
-lower-memory per-tree path while retaining the faster grinding kernel:
-
-| Mode | Batch 256 ms/signature / peak RSS | Batch 1024 ms/signature / peak RSS |
-| --- | ---: | ---: |
-| Default flat forest with reuse | 4.036 / 2.03 GiB | 3.842 / 7.16 GiB |
-| `BITZ_FLAT_FOREST=0` | 4.170 / 1.53 GiB | 3.990 / 5.14 GiB |
-
-This separate ablation attributes roughly 3–4% additional whole-prover time
-reduction to the flat/reuse path; most of the overall gain comes from grinding.
-Both modes produced identical proofs. Retaining more tree levels was also
-tested: the existing L4 schedule was about 10–12% slower than automatic L8 on
-the baseline at these batch sizes and used more memory. L8 remains the default;
-the unsupported multi-claim L2 schedule was not added.
-
-Separate single-trial cold diagnostic runs measured grinding at **2.32 to 1.26
-ms/signature** and the two inclusive GKR forest stages at **2.34 to 1.63 ms**.
-Those timings overlap and are excluded from the latency medians. Diagnostic
-events now record full span ancestry to attribute grinding to its enclosing
-forest, arithmetic, or opening stage.
-
-These historical runs used fixture manifests and file overrides. That harness
-has been removed; current proof benchmarks generate distinct inputs with
-`fn-dsa` as described above. The historical results remain for reference.
-Validation passed **590 native release library tests**, with zero failures and
-seven ignored tests. All six merged-forest tests also passed separately with
-`BITZ_JIT_R1=0` and `BITZ_JIT_GRID=0`, covering the alternative JIT paths. The
-serial Falcon configuration passed `cargo check`; native and generic-target
-grinding checks matched scalar BLAKE3, including nonce carries and search tails.
-Raw trials, generated fixtures, executable/source hashes, comparison scripts,
-profiles, and validation logs are in
-`bench_results/falcon-gkr-reuse-20260925/` (ignored local artifacts).
-
-## Native SIMD, direct binding blocks, and bridge budget
-
-Native x86 builds with PCLMUL, SSE4.1, AVX-512F/BW, and VPCLMUL now use four-lane
-field kernels for the GKR grid, deferred-fold round, and in-place folding paths.
-Grid coordinates share vector registers and products accumulate before reduction.
-Partial vectors use scalar tails. PCLMUL-only, portable, and ARM paths remain
-available; the instruction selection is compile-time, so an ordinary portable
-build does not select these kernels just because the host supports them.
-
-The compact Falcon binder now emits ordered coefficient blocks directly from a
-64-field sliding window. The packed inner sumcheck validates their canonical
-values, ordering, alignment, partition bounds, and zero padding, then consumes
-each block without the generic scatter cache. Suffix folding reduces a buffered
-dot product once per block. Other additive coefficient sources keep their scatter
-path. The implementation changes preserve the complete v4 proof transcript.
-
-The v5 bridge schedule separately replaces the fixed error numerator 4096 with
-the audited value for the actual layout. See
-[BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md) for the accepted verifier's
-round counts, degrees, integer exponent bounds, and composition budget. This
-change preserves all constraints and requires regenerated proofs because its
-versioned transcript differs.
-
-To reproduce native measurements on the benchmarking host:
-
-```sh
-CARGO_TARGET_DIR=target/falcon-native RUSTFLAGS='-C target-cpu=native' \
-  cargo bench --offline --profile release --features falcon-hybrid \
-  --bench falcon_hybrid -- --batch 1024 --security 128 --seed 42 \
-  --threads 16 --warmup 1 --iterations 3
-```
-
-These runs use 1024 distinct upstream-generated keypairs, messages, and signatures.
-The reported full prover time includes witness generation, all commitments,
-SHAKE, HashToPoint, and every proof stage. Input key generation/signing, reusable
-preparation, public-statement decoding, verification, and proof Debug hashing
-are excluded. Raw measurements, saved executables, build configuration, and test
-logs are in `bench_results/falcon-simd-blocks-20260926/` (ignored local artifacts).
-
-On an AMD Ryzen 9 9950X3D, target 128, 16 threads, seed 42, with one warmup and
-three measured trials, the medians were:
-
-| Configuration | Full prover ms/signature | Signatures/second |
-| --- | ---: | ---: |
-| Saved portable v4 reference | 17.328 | 57.7 |
-| Current v4 native baseline (`f7bfbb84`) | 5.225 | 191.4 |
-| Native SIMD and direct blocks, v4 schedule | 4.943 | 202.3 |
-| All changes, v5 bridge schedule | **4.846** | **206.4** |
-
-The final run uses 7.3% less prover time than the matched native baseline and
-has 3.58 times the throughput of the saved portable reference. Final batch
-proving took 4.962 seconds; verification took 2.658 seconds. Whole-process peak
-RSS was 7.20 GiB. Every warmup and measured proof verified. The portable, native
-baseline, and SIMD/block runs have identical input digests, commitment roots,
-and complete proof Debug digests. The v5 run retains the same inputs and roots;
-its proof changes with the versioned challenge schedule. These Debug digests
-are comparison aids, not canonical wire encodings.
-
-The schedule change also changes deterministic grinding seeds throughout the
-proof, so its measured incremental gain is specific to this input batch.
-Separate single-trial diagnostic profiles at batch 256 measured binding at
-2.251 to 2.082 ms/signature, the inclusive bridge forest at 1.164 to 0.758 ms,
-and joint sumcheck at 0.814 to 0.669 ms. Nested grinding times overlap these
-stages and must not be added to them.
-
-Validation passed 597 native release library tests (seven ignored) and three
-upstream Falcon integration tests. Both alternate JIT forest configurations
-passed six tests each. Field validation passed 35 native, 33 PCLMUL-only, and
-31 portable GF128 unit tests, plus six integration tests in each configuration.
-Portable hybrid and serial Falcon build checks and scoped formatting passed.
-
-
-## wfbitz forest integration
-
-The `falcon-hybrid` feature includes `bitz-parity`. Its arithmetic bridge now
-uses the optimized wfbitz forest/GKR, including the wide-table prescaling and
-column-packed witness paths from `world-bitz-port` through `a3be3bd1`.
-The two bounded prime limbs remain batched in one forest: the limb is the
-lowest geometric row bit, and GKR reduces only the 13 original row dimensions.
-The final limb coordinate contracts the two public image vectors back onto one
-claim on the committed source bits. No dense virtual-map transpose is needed.
-
-The generic GKR transcript adapter keeps every root, sumcheck, and child-fold
-challenge inside Falcon's existing computational grinding model. The accepted
-bridge still has numerator 487..887 and 17/18-bit grinding at target 128. The
-hybrid statement/transcript is now v6 and the bridge grinding domain v4 because
-the GKR variable order and proof representation changed. Earlier hybrid proofs
-must be regenerated. Ordinary wfbitz proofs retain their original transcript.
-See [BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md) for the index mapping and
-complete budget.
-
-SHAKE, HashToPoint, the exact public signature bytes, and every signature's norm
-bound remain enforced. The binary Keccak PIOP, joint source-link sumcheck, and
-shared three-root ring-switch/Ligerito opening retain their constraints. The
-new GKR is used in the arithmetic opening bridge; the final shared PCS is not
-replaced by separate per-source openings.
-
-
-With the same native CPU, target 128, 16 threads, seed 42, and 1024 distinct
-signatures described above, one warmup plus three measured trials gave:
-
-| Configuration | Full prover ms/signature | Signatures/second | Peak RSS |
-| --- | ---: | ---: | ---: |
-| Matched rebased v5 baseline | 4.899 | 204.1 | 7.20 GiB |
-| Integrated wfbitz v6 | **4.685** | **213.4** | **5.21 GiB** |
-
-Full proving took 4.798 seconds per batch, 4.35% less than the matched rerun;
-verification took 2.671 seconds. All warmup and measured proofs verified, with
-identical inputs and commitment roots. A separate cold diagnostic at batch 256
-measured the complete arithmetic bridge at 0.803 to 0.459 ms/signature. This
-43% bridge reduction is not an end-to-end reduction of that size; prime
-arithmetic and the other stages remain. The new transcript changes grinding
-seeds, so timings are workload-specific. Raw medians, command/binary/source
-hashes, profiles, and test logs are in
-`bench_results/falcon-wfbitz-20260926/` (ignored local artifacts).
-
-Validation passed 622 native release library tests (seven ignored), three
-upstream Falcon integration tests, six forest parity/oracle tests, and 29
-targeted hybrid tests. Portable hybrid, serial legacy Falcon, and serial wfbitz
-build checks passed. The full release test run used a 16 MiB test worker stack;
-benchmark processes used their normal default stacks.
-
-## Native-ring implementation (2026-09-26)
-
-The current hybrid uses native Falcon polynomial arithmetic and a batched ideal
-check, authenticated through bounded coordinate carries and the existing source
-binder. It has 100,578 live arithmetic bits in a 131,072-bit slot, with no committed
-ring quotient or compaction intermediates. The code has one hybrid arithmetic
-path and retains the existing three commitments and shared opening.
-
-Native release, batch1024, 16 threads, target128: **2.908 ms/signature**, compared
-with **3.268 ms/signature** for the matched saved-baseline rerun (11.0% reduction).
-All proofs verified; the full library suite passed 645 tests, with seven ignored.
-See [NATIVE_RING.md](NATIVE_RING.md) for the protocol and complete measurements.
+The script selects native CPU instructions in an isolated target directory;
+ordinary Cargo builds remain portable. `BITZ_FALCON_STAGE_TIMINGS=1` enables
+diagnostic spans. Nested timings overlap and must not be added together.
+
+## Existing measurement reports
+
+These reports describe the v3 implementation before backend retirement and the
+current explicit budget. They are historical measurements, not results of this
+cleanup; no runtime tests or benchmarks were executed for this change.
+
+Current v3 kernel performance and validation are in
+[KERNEL_THROUGHPUT.md](KERNEL_THROUGHPUT.md); the preceding v3 protocol changes
+are measured in [THROUGHPUT.md](THROUGHPUT.md).

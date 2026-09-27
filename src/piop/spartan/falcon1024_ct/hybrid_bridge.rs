@@ -307,7 +307,7 @@ mod tests {
     #[test]
     fn wfbitz_joint_limb_forest_fits_security_budget() {
         for batch in 1..=1024 {
-            let layout = FalconSourceLayout::new_hybrid(batch).unwrap();
+            let layout = FalconSourceLayout::new(batch).unwrap();
             let p = layout.bitz_params();
             let d = p.row_vars;
             let s = p.col_vars + 1;
@@ -331,7 +331,7 @@ mod tests {
     }
 
     #[test]
-    fn revised_bridge_domain_and_difficulty_reject_old_nonces() {
+    fn bridge_rejects_nonces_from_other_domains_and_difficulties() {
         use crate::piop::spartan::grinding::{
             GrindingRound, derive_grinding_seed, derive_grinding_seed_in_domain,
             grinding_nonce_is_valid, verify_and_absorb,
@@ -346,27 +346,23 @@ mod tests {
             BITS,
         )
         .unwrap();
-        let legacy = derive_grinding_seed_in_domain(
-            &mut initial.clone(),
-            b"bitz/falcon-hybrid/bridge-grinding/v3",
-            0,
-            BITS,
-        )
-        .unwrap();
+        let other_domain =
+            derive_grinding_seed_in_domain(&mut initial.clone(), b"unrelated-test-domain", 0, BITS)
+                .unwrap();
         let other_difficulty = derive_grinding_seed(
             &mut initial.clone(),
             GrindingRound::<BridgeGrinding>::new(0),
             BITS + 1,
         )
         .unwrap();
-        assert_ne!(current, legacy);
+        assert_ne!(current, other_domain);
         assert_ne!(current, other_difficulty);
-        for (old_seed, old_bits) in [(&legacy, BITS), (&other_difficulty, BITS + 1)] {
+        for (other_seed, other_bits) in [(&other_domain, BITS), (&other_difficulty, BITS + 1)] {
             // Choose a nonce whose rejection is certain, independent of a
             // chance nonce collision across the two independent seeds.
-            let old_nonce = (0..u64::MAX)
+            let other_nonce = (0..u64::MAX)
                 .find(|&nonce| {
-                    grinding_nonce_is_valid(old_seed, nonce, old_bits).unwrap()
+                    grinding_nonce_is_valid(other_seed, nonce, other_bits).unwrap()
                         && !grinding_nonce_is_valid(&current, nonce, BITS).unwrap()
                 })
                 .unwrap();
@@ -375,7 +371,7 @@ mod tests {
                     &mut initial.clone(),
                     GrindingRound::<BridgeGrinding>::new(0),
                     BITS,
-                    old_nonce,
+                    other_nonce,
                 )
                 .is_err()
             );
@@ -387,7 +383,7 @@ mod tests {
         const PK: &[u8] = include_bytes!("fixtures/public_key.bin");
         const MSG: &[u8] = include_bytes!("fixtures/message.bin");
         const SIG: &[u8] = include_bytes!("fixtures/signature_ct.bin");
-        let layout = FalconSourceLayout::new_hybrid(1).unwrap();
+        let layout = FalconSourceLayout::new(1).unwrap();
         let trace = verification_trace(PK, MSG, SIG).unwrap();
         let source =
             FalconSourceWitness::from_traces(layout.clone(), &[MSG], &[SIG], &[trace]).unwrap();

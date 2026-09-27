@@ -2,7 +2,7 @@
 //! The deterministic seed is for reproducible benchmark keys only.
 
 use bitz::piop::spartan::falcon1024_ct::{
-    CT_SIGNATURE_BYTES, N, NONCE_BYTES, decode_signature_ct, verify_falcon1024_ct,
+    FalconSignatureCt, N, NONCE_BYTES, encode_signature_ct, verify_falcon1024_ct,
 };
 use fn_dsa::{
     DOMAIN_NONE, FN_DSA_LOGN_1024, HASH_ID_ORIGINAL_FALCON, KeyPairGenerator, KeyPairGenerator1024,
@@ -113,17 +113,9 @@ pub fn compressed_to_ct(signature: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
     if !fn_dsa_comm::codec::comp_decode(&signature[1 + NONCE_BYTES..], &mut s2) {
         return Err("noncanonical compressed Falcon signature".into());
     }
-    let mut ct = Vec::with_capacity(CT_SIGNATURE_BYTES);
-    ct.push(0x5a);
-    ct.extend_from_slice(&signature[1..1 + NONCE_BYTES]);
-    for pair in s2.chunks_exact(2) {
-        let a = (pair[0] as u16) & 0x0fff;
-        let b = (pair[1] as u16) & 0x0fff;
-        ct.extend_from_slice(&[(a >> 4) as u8, ((a << 4) | (b >> 8)) as u8, b as u8]);
-    }
-    let decoded = decode_signature_ct(&ct)?;
-    if decoded.nonce.as_slice() != &signature[1..1 + NONCE_BYTES] || decoded.s2.as_ref() != &s2 {
-        return Err("Falcon CT conversion changed the nonce or signature coefficients".into());
-    }
-    Ok(ct)
+    Ok(encode_signature_ct(&FalconSignatureCt {
+        nonce: signature[1..1 + NONCE_BYTES].try_into()?,
+        s2: Box::new(s2),
+    })?
+    .to_vec())
 }

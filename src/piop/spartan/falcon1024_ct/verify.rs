@@ -10,12 +10,8 @@ pub struct FalconVerificationTrace {
     pub public_key: FalconPublicKey,
     pub signature: FalconSignatureCt,
     pub hash_to_point: HashToPointTrace,
-    /// Exact coefficients of `H*S2` in `Z[X]/(X^1024+1)` before reduction.
-    pub convolution: Box<[i64; N]>,
     /// Centered short lift `S1 = C - H*S2 (mod q)`.
     pub s1: Box<[i16; N]>,
-    /// Exact quotient in `C - H*S2 - S1 = q*K`.
-    pub quotient: Box<[i64; N]>,
     /// Quotient of the native residual by `X^1024 + 1` over F_12289.
     /// These are the reduced negatives of the high coefficients of `H*S2`.
     pub native_quotient: Box<[u16; N - 1]>,
@@ -67,7 +63,6 @@ pub(super) fn trace_from_parts(
     }
 
     let mut s1 = Box::new([0i16; N]);
-    let mut quotient = Box::new([0i64; N]);
     let mut norm = 0u64;
     for i in 0..N {
         let difference = i64::from(hash_to_point.point[i]) - convolution[i];
@@ -77,10 +72,7 @@ pub(super) fn trace_from_parts(
         } else {
             residue
         };
-        let k = (difference - centered) / Q;
-        debug_assert_eq!(difference, centered + Q * k);
         s1[i] = centered as i16;
-        quotient[i] = k;
         norm += centered.unsigned_abs().pow(2);
         norm += i64::from(signature.s2[i]).unsigned_abs().pow(2);
     }
@@ -92,9 +84,7 @@ pub(super) fn trace_from_parts(
         public_key,
         signature,
         hash_to_point,
-        convolution,
         s1,
-        quotient,
         native_quotient: Box::new(std::array::from_fn(|j| {
             (-high_product[j]).rem_euclid(Q) as u16
         })),
@@ -155,14 +145,7 @@ mod tests {
         let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
         assert!(trace.norm <= BETA_SQUARED);
         assert_eq!(trace.norm + trace.norm_slack, BETA_SQUARED);
-        for i in 0..N {
-            assert_eq!(
-                i64::from(trace.hash_to_point.point[i])
-                    - trace.convolution[i]
-                    - i64::from(trace.s1[i]),
-                Q * trace.quotient[i]
-            );
-        }
+        super::super::check_exact_constraints(&trace).unwrap();
     }
 
     #[test]

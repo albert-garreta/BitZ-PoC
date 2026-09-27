@@ -110,17 +110,7 @@ harness = false
 required-features = ["span-metrics", "ecdsa"]
 
 [[bench]]
-name = "falcon1024_ct"
-harness = false
-required-features = ["span-metrics", "falcon"]
-
-[[bench]]
 name = "falcon_hybrid"
-harness = false
-required-features = ["falcon-hybrid"]
-
-[[bench]]
-name = "falcon_hash_to_point"
 harness = false
 required-features = ["falcon-hybrid"]
 
@@ -313,7 +303,7 @@ bench-peak-memory = []
 bench-internals = []
 # Composed SHA-256/P-256 arithmetization and its split Spartan adapter.
 ecdsa = ["circuit/full"]
-# Falcon-1024 constant-time verification trace and BitZ benchmark adapter.
+# Falcon-1024 native verification and arithmetic/reference helpers.
 falcon = []
 # Binary Keccak plus the compact Falcon arithmetic branch and shared opening.
 falcon-hybrid = ["falcon", "hybrid", "parallel", "dep:flock-prover", "bitz-parity"]
