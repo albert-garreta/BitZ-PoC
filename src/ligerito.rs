@@ -854,16 +854,14 @@ pub(crate) fn xi_combined_rows_packed(
             for (g, tg) in tables.iter().enumerate() {
                 let src = &packed_cols[g][base..base + chunk.len()];
                 for (slot, &x) in chunk.iter_mut().zip(src.iter()) {
-                    let mut x = x;
-                    let mut pos = 0usize;
-                    while x != 0 {
-                        let byte = (x & 0xFF) as usize;
-                        if byte != 0 {
-                            *slot += tg[(pos << 8) | byte];
-                        }
-                        x >>= 8;
-                        pos += 1;
+                    if x == 0 {
+                        continue;
                     }
+                    // Entry 0 of every byte table is zero, so each word takes
+                    // its eight lookups without a branch, summed in pairs to
+                    // keep the additions off one dependency chain.
+                    let b = |pos: usize| tg[(pos << 8) | ((x >> (8 * pos)) & 0xFF) as usize];
+                    *slot += ((b(0) + b(1)) + (b(2) + b(3))) + ((b(4) + b(5)) + (b(6) + b(7)));
                 }
             }
         });
@@ -1985,6 +1983,54 @@ mod tests {
     fn sample(seed: u64) -> Gf {
         let hi = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(29) ^ 0x1234_5678_9ABC_DEF0;
         Gf::from_polynomial_words([seed ^ 0xA5A5_5A5A_0F0F_F0F0, hi])
+    }
+
+    /// The packed column combination (eight branch-free byte lookups per
+    /// word) equals the per-bit reference on dense, sparse and all-zero
+    /// words, including a partial column group.
+    #[test]
+    fn packed_combination_matches_the_bit_walk() {
+        for (t, s) in [(7usize, 3usize), (8, 6), (9, 7), (10, 8)] {
+            let p = IntegerMatrixLayout { row_vars: t, col_vars: s, word_bits: 1 };
+            let (cols, words) = (1usize << s, 1usize << (t - 6));
+            let mut state = (t * 131 + s) as u64 | 1;
+            let mut next = move || {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                state
+            };
+            // Column c: dense for c % 3 == 0, sparse for 1, all zero words for 2.
+            let rows: Vec<Vec<u64>> = (0..cols)
+                .map(|c| {
+                    (0..words)
+                        .map(|_| match c % 3 {
+                            0 => next(),
+                            1 => next() & next() & next() & next(),
+                            _ => 0,
+                        })
+                        .collect()
+                })
+                .collect();
+            let groups = cols.div_ceil(64);
+            let packed: Vec<Vec<u64>> = (0..groups)
+                .map(|g| {
+                    (0..1usize << t)
+                        .map(|b| {
+                            (0..64.min(cols - 64 * g)).fold(0u64, |word, lane| {
+                                word | (((rows[64 * g + lane][b / 64] >> (b % 64)) & 1) << lane)
+                            })
+                        })
+                        .collect()
+                })
+                .collect();
+            let eq_xi: Vec<Gf> = (0..cols).map(|c| sample(c as u64 * 7 + 3)).collect();
+            assert_eq!(
+                xi_combined_rows_packed(&p, &packed, &eq_xi),
+                xi_combined_rows(&p, &rows, &eq_xi),
+                "t={t} s={s}"
+            );
+        }
     }
 
     /// `rows_from_packed_cols` inverts `pack_columns_from_rows` exactly
