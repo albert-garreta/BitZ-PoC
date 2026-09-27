@@ -1830,7 +1830,9 @@ mod tests {
     /// gather-and-transpose path produces.
     #[test]
     fn nibble_selections_match_the_gathered_patterns() {
-        for (t, s) in [(6usize, 3usize), (6, 6), (7, 7), (9, 8)] {
+        // `t = 5, 6` build their rows 2 and 4 at a time, the rest 8 (`t = 4`,
+        // one row, has no second row for the paired round's read).
+        for (t, s) in [(5usize, 6usize), (6, 3), (6, 6), (7, 7), (9, 8)] {
             let (packed, images) = random_grid(t, s, (t * 100 + s) as u64);
             let forest = Forest::new(t, s, &packed, &images);
             let groups = (1usize << s).div_ceil(64);
