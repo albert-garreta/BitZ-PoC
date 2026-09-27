@@ -26,6 +26,12 @@
 //! and more (`WFBITZ_NIBBLE=0` restores the gathers everywhere,
 //! `WFBITZ_NIBBLE_FROM=n` moves the threshold; `WFBITZ_PATTERN_CACHE=1`
 //! also keeps a level's JIT patterns for the passes that reread them).
+//!
+//! Levels 0 and 1 have more than one bit round, and the buckets of their
+//! last one already pair every E corner with every O corner of the bits
+//! those rounds bind, so all of a level's bit rounds are read off that one
+//! pass ([`Forest::one_pass_bit_rounds`]; `WFBITZ_ONE_PASS=0` runs a pass
+//! per round again).
 
 use std::collections::VecDeque;
 use std::mem::MaybeUninit;
@@ -127,6 +133,13 @@ impl PatternMode {
     }
 }
 
+/// Whether levels with several bit rounds take them all from one pass
+/// (`WFBITZ_ONE_PASS`, `0` or `1`, default on), read once.
+fn one_pass_from_env() -> bool {
+    static ONE_PASS: OnceLock<bool> = OnceLock::new();
+    *ONE_PASS.get_or_init(|| !matches!(std::env::var("WFBITZ_ONE_PASS").as_deref(), Ok("0")))
+}
+
 /// Which [`PatternCache`] a pass fills or reads, if any.
 #[derive(Clone, Copy)]
 enum CacheUse<'c> {
@@ -145,6 +158,9 @@ pub(crate) struct Forest<'a> {
     /// `A(b) = g^{w_b}`, one per row.
     images: &'a [Gf],
     mode: PatternMode,
+    /// Levels 0 and 1 run their bit rounds off one pass
+    /// ([`Forest::one_pass_bit_rounds`]).
+    one_pass: bool,
     /// The packed columns regrouped for the table-driven levels, built on
     /// first use when `mode.nibble`.
     nibble_rows: OnceLock<NibbleRows>,
@@ -162,6 +178,7 @@ impl<'a> Forest<'a> {
             packed_cols,
             images,
             mode: PatternMode::from_env(),
+            one_pass: one_pass_from_env(),
             nibble_rows: OnceLock::new(),
         }
     }
@@ -169,6 +186,12 @@ impl<'a> Forest<'a> {
     /// The same forest with its indices read the way `mode` says.
     pub(crate) fn with_patterns(mut self, mode: PatternMode) -> Self {
         self.mode = mode;
+        self
+    }
+
+    /// The same forest with its bit rounds taken from one pass or not.
+    pub(crate) fn with_one_pass(mut self, one_pass: bool) -> Self {
+        self.one_pass = one_pass;
         self
     }
 
@@ -342,6 +365,9 @@ impl<'a> Forest<'a> {
         point: &Point,
         external: &[Gf],
     ) -> (Vec<Gf>, Gf, VecDeque<Gf>) {
+        if self.one_pass && k >= 2 {
+            return self.one_pass_bit_rounds(ps, ell, k, point, external);
+        }
         let mut factor = Gf::one();
         let mut next_point = VecDeque::with_capacity(point.len() + 1);
         let mut challenges: Vec<Gf> = Vec::with_capacity(k);
@@ -358,6 +384,172 @@ impl<'a> Forest<'a> {
             factor = factor * eq_factor(r, z);
         }
         (challenges, factor, next_point)
+    }
+
+    /// [`Forest::bit_rounds`] for a level with `k ≥ 2` of them, all read off
+    /// one pass.
+    ///
+    /// Round `j`'s two sums are bilinear in E and O folded over the
+    /// challenges `r_1..r_{j−1}`, so they are fixed combinations — weights
+    /// `eq(r, ·)` on both corners' already-bound bits, `eq(z, ·)` on the bits
+    /// still to come — of the cross sums
+    /// `Ĉ[α][β] = Σ_{y,c} eq_y[y]·eq_c[c]·E_α(y, c)·O_β(y, c)` over the
+    /// corners `α, β ∈ {0,1}^k` of the bits these rounds bind
+    /// ([`Forest::cross_sums`]). Those need only the last round's scatters,
+    /// done once before the first message: the messages are the per-round
+    /// ones, byte for byte (the small-value accumulators of Bagad, Dao,
+    /// Domb and Thaler, "Speeding Up Sum-Check Proving", Algorithm 4, read
+    /// off buckets).
+    fn one_pass_bit_rounds(
+        &self,
+        ps: &mut ProverState,
+        ell: usize,
+        k: usize,
+        point: &Point,
+        external: &[Gf],
+    ) -> (Vec<Gf>, Gf, VecDeque<Gf>) {
+        let started = std::time::Instant::now();
+        let cross = self.cross_sums(ell, k, external);
+        super::trace(&format!("    L{ell} one-pass bit rounds"), started);
+        let z: Vec<Gf> = (0..k).map(|i| point[i]).collect();
+        let mut factor = Gf::one();
+        let mut next_point = VecDeque::with_capacity(point.len() + 1);
+        let mut challenges: Vec<Gf> = Vec::with_capacity(k);
+        for j in 1..=k {
+            let send_one = z[j - 1] == Gf::zero();
+            let (sum_endpoint, sum_inf) = cross_round_sums(&cross, k, j, &z, &challenges, send_one);
+            ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
+            let r: Gf = ps.verifier_message();
+            next_point.push_back(r);
+            challenges.push(r);
+            factor = factor * eq_factor(r, z[j - 1]);
+        }
+        (challenges, factor, next_point)
+    }
+
+    /// The cross sums of level `ell`'s `k = 3 − ell ≥ 2` bit rounds, entry
+    /// `α·2^k + β`, corner `α = (b_1 … b_k)` with `b_1` (the first round's
+    /// bit) high.
+    ///
+    /// A term of the last round is a row `y` of `t − 4` bits and a column:
+    /// sixteen leaves, the `2^{ℓ+k−1}` of each of its four corners
+    /// `(p, b_k)`. Each of that round's pair bytes holds the E pattern of
+    /// every corner with `b_k = x` and the O pattern of every corner with
+    /// `b_k = x'` (corner `(v, x)`'s leaves `u` at bits `(v << ℓ) | u` of its
+    /// nibble), so scattering `eq_c` by the four bytes, exactly as that round
+    /// does, and contracting each row's buckets with the unfolded corner
+    /// tables ([`cross_row_leaves`], [`cross_row_pairs`]) gives every
+    /// `Ĉ[α][β]`.
+    fn cross_sums(&self, ell: usize, k: usize, external: &[Gf]) -> [Gf; 64] {
+        debug_assert!(ell + k == MATERIALISED_LEVEL && k >= 2);
+        let t = self.t;
+        let s = self.s;
+        let kk = k - 1;
+        let y_bits = t - 4;
+        let groups = (1usize << s).div_ceil(64);
+        let eq_t = transposed_eq(&eq_table(&external[..s]));
+        let eq_y = eq_table(&external[s..s + y_bits]);
+        let rows_nib = self.nibbles();
+        let selectors = rows_nib.map(|_| BitSelectors::new(ell, k, false));
+        let nib = rows_nib.zip(selectors.as_ref().map(|sel| match sel {
+            BitSelectors::Pairs(sel) => sel,
+            _ => unreachable!("the last bit round reads pair bytes"),
+        }));
+        let row = |y: usize, bk: &mut Buckets, acc: &mut [Gf; 64]| {
+            bk.reset(4);
+            for g in 0..groups {
+                let idx = self.pair_bytes(ell, kk, y, y_bits, g, nib);
+                let eq_g = &eq_t[g << 6..(g + 1) << 6];
+                kernels::scatter_add(&mut bk.ll, &idx[0], eq_g);
+                kernels::scatter_add(&mut bk.hh, &idx[1], eq_g);
+                kernels::scatter_add(&mut bk.lh, &idx[2], eq_g);
+                kernels::scatter_add(&mut bk.hl, &idx[3], eq_g);
+            }
+            // Corner `α = (v, x)`'s leaf `u` for half `p`.
+            let image = |p: usize, alpha: usize, u: usize| {
+                let (v, x) = (alpha >> 1, alpha & 1);
+                self.images[y | (x << y_bits) | (v << (y_bits + 1)) | (p << (t - ell - 1)) | (u << (t - ell))]
+            };
+            if ell == 0 {
+                let delta = |p: usize| -> [Gf; 8] { std::array::from_fn(|alpha| image(p, alpha, 0) - Gf::one()) };
+                cross_row_leaves(bk, &delta(0), &delta(1), eq_y[y], acc);
+            } else {
+                let tables = |p: usize| -> [[Gf; 4]; 4] {
+                    std::array::from_fn(|alpha| {
+                        let (a0, a1) = (image(p, alpha, 0), image(p, alpha, 1));
+                        [Gf::one(), a0, a1, a0 * a1]
+                    })
+                };
+                cross_row_pairs(bk, &tables(0), &tables(1), eq_y[y], acc);
+            }
+        };
+        let rows = 1usize << y_bits;
+        let add = |mut a: [Gf; 64], b: [Gf; 64]| {
+            for (x, y) in a.iter_mut().zip(b) {
+                *x += y;
+            }
+            a
+        };
+        #[cfg(feature = "parallel")]
+        let cross = (0..rows)
+            .into_par_iter()
+            .with_min_len(1)
+            .fold(
+                || (Buckets::new(), [Gf::zero(); 64]),
+                |(mut bk, mut acc), y| {
+                    row(y, &mut bk, &mut acc);
+                    (bk, acc)
+                },
+            )
+            .map(|(_, acc)| acc)
+            .reduce(|| [Gf::zero(); 64], add);
+        #[cfg(not(feature = "parallel"))]
+        let cross = {
+            let _ = add;
+            let mut bk = Buckets::new();
+            let mut acc = [Gf::zero(); 64];
+            for y in 0..rows {
+                row(y, &mut bk, &mut acc);
+            }
+            acc
+        };
+        cross
+    }
+
+    /// The four pair bytes `ll, hh, lh, hl` of the last bit round (`nb = 4`)
+    /// of level `ell` at row `y`, group `g` — each its O pattern low and its
+    /// E pattern high, as [`Forest::bit_row`] builds them.
+    #[inline(always)]
+    fn pair_bytes(
+        &self,
+        ell: usize,
+        kk: usize,
+        y: usize,
+        y_bits: usize,
+        g: usize,
+        nib: Option<(&NibbleRows, &[Selector; 4])>,
+    ) -> [[u8; 64]; 4] {
+        let mut idx = [[0u8; 64]; 4];
+        if let Some((rows, sel)) = nib {
+            // The last round's rows are below `2^{t−4}`: `q = 0`.
+            nibble::select(rows.block(y, g), sel, &mut idx);
+            return idx;
+        }
+        let corner_y = |corner: usize| y | ((corner & 1) << y_bits);
+        let mut tmp = [0u64; 8];
+        let mut words = [0u64; 8];
+        for (out, e_corner, o_corner) in [(0usize, 0usize, 2usize), (1, 1, 3)] {
+            self.corner_words(ell, kk, o_corner >> 1, corner_y(o_corner), g, &mut tmp);
+            words[..4].copy_from_slice(&tmp[..4]);
+            self.corner_words(ell, kk, e_corner >> 1, corner_y(e_corner), g, &mut tmp);
+            words[4..8].copy_from_slice(&tmp[..4]);
+            idx[out] = transposed_patterns(&mut words);
+        }
+        for m in 0..64 {
+            idx[2][m] = (idx[0][m] & 0xF0) | (idx[1][m] & 0x0F);
+            idx[3][m] = (idx[1][m] & 0xF0) | (idx[0][m] & 0x0F);
+        }
+        idx
     }
 
     /// A level at or below [`MATERIALISED_LEVEL`]: `k` rounds off the bits,
@@ -1175,6 +1367,156 @@ impl Buckets {
     }
 }
 
+/// The last bit round's pair buckets with the half of each side's corners
+/// they hold: `(bucket, x, x')` for E corners with `b_k = x` and O corners
+/// with `b_k = x'`.
+fn pair_buckets(bk: &Buckets) -> [(&[Gf], usize, usize); 4] {
+    [
+        (bk.ll.as_slice(), 0, 0),
+        (bk.hh.as_slice(), 1, 1),
+        (bk.lh.as_slice(), 0, 1),
+        (bk.hl.as_slice(), 1, 0),
+    ]
+}
+
+/// The sum of 16 values and, for each index bit `b`, the sum of those whose
+/// index has bit `b` set: one tree, 26 additions.
+#[inline(always)]
+fn bit_sums(f: &[Gf]) -> (Gf, [Gf; 4]) {
+    let p1: [Gf; 8] = std::array::from_fn(|i| f[2 * i] + f[2 * i + 1]);
+    let p2: [Gf; 4] = std::array::from_fn(|i| p1[2 * i] + p1[2 * i + 1]);
+    let (p3_lo, p3_hi) = (p2[0] + p2[1], p2[2] + p2[3]);
+    let b0 = f[1] + f[3] + f[5] + f[7] + f[9] + f[11] + f[13] + f[15];
+    let b1 = p1[1] + p1[3] + p1[5] + p1[7];
+    (p3_lo + p3_hi, [b0, b1, p2[1] + p2[3], p3_hi])
+}
+
+/// One row of level 0's cross sums: every corner is one leaf,
+/// `E_α = 1 + e_α·δ_α` with `δ_α = A_α − 1` (`delta_e`, `delta_o`), so
+/// `Σ_c eq_c E_α O_β = W + δ_α·S^E_α + δ_β·S^O_β + δ_α·δ_β·P_αβ` with `W`
+/// the row's total weight, `S` the weight of the columns whose corner bit is
+/// set and `P` of those with both set — single-bit marginals of the
+/// buckets. Adds `eps` times them to `acc`.
+fn cross_row_leaves(bk: &Buckets, delta_e: &[Gf; 8], delta_o: &[Gf; 8], eps: Gf, acc: &mut [Gf; 64]) {
+    let zero = Gf::zero();
+    let mut w = zero;
+    let mut s_e = [zero; 8];
+    let mut s_o = [zero; 8];
+    let mut both = [[zero; 8]; 8];
+    for (bucket, x, xo) in pair_buckets(bk) {
+        // Per E pattern: its total and its sums by O bit.
+        let mut total = [zero; 16];
+        let mut by_o = [[zero; 16]; 4];
+        for e in 0..16 {
+            let (sum, bits) = bit_sums(&bucket[16 * e..16 * e + 16]);
+            total[e] = sum;
+            for (v2, &b) in bits.iter().enumerate() {
+                by_o[v2][e] = b;
+            }
+        }
+        for (v2, column) in by_o.iter().enumerate() {
+            let (sum, bits) = bit_sums(column);
+            let beta = (v2 << 1) | xo;
+            if x == xo {
+                s_o[beta] = sum;
+            }
+            for (v, &b) in bits.iter().enumerate() {
+                both[(v << 1) | x][beta] = b;
+            }
+        }
+        if x == xo {
+            let (sum, bits) = bit_sums(&total);
+            w = sum;
+            for (v, &b) in bits.iter().enumerate() {
+                s_e[(v << 1) | x] = b;
+            }
+        }
+    }
+    let ew = eps * w;
+    let a: [Gf; 8] = std::array::from_fn(|alpha| eps * delta_e[alpha]);
+    let ea: [Gf; 8] = std::array::from_fn(|alpha| a[alpha] * s_e[alpha]);
+    let eb: [Gf; 8] = std::array::from_fn(|beta| eps * delta_o[beta] * s_o[beta]);
+    for alpha in 0..8 {
+        for beta in 0..8 {
+            acc[8 * alpha + beta] += ew + ea[alpha] + eb[beta] + a[alpha] * delta_o[beta] * both[alpha][beta];
+        }
+    }
+}
+
+/// One row of level 1's cross sums: corner `(v, x)` has the two leaves at
+/// nibble bits `2v`, `2v + 1` and the 4-entry table `tab_e[α]` (`tab_o`),
+/// so each bucket is marginalised onto every (E corner, O corner) pair of
+/// patterns and contracted with the two tables. Adds `eps` times the sums
+/// to `acc`.
+fn cross_row_pairs(bk: &Buckets, tab_e: &[[Gf; 4]; 4], tab_o: &[[Gf; 4]; 4], eps: Gf, acc: &mut [Gf; 64]) {
+    let zero = Gf::zero();
+    for (bucket, x, xo) in pair_buckets(bk) {
+        // by_o[v2][e][b]: the E pattern `e` with O corner `v2`'s pattern `b`.
+        let mut by_o = [[[zero; 4]; 16]; 2];
+        for e in 0..16 {
+            let r = &bucket[16 * e..16 * e + 16];
+            for b in 0..4 {
+                by_o[0][e][b] = r[b] + r[b + 4] + r[b + 8] + r[b + 12];
+                by_o[1][e][b] = r[4 * b] + r[4 * b + 1] + r[4 * b + 2] + r[4 * b + 3];
+            }
+        }
+        for v in 0..2 {
+            for (v2, by) in by_o.iter().enumerate() {
+                let (alpha, beta) = ((v << 1) | x, (v2 << 1) | xo);
+                let mut c = zero;
+                for a in 0..4 {
+                    let mut inner = zero;
+                    for b in 0..4 {
+                        let m = if v == 0 {
+                            by[a][b] + by[a + 4][b] + by[a + 8][b] + by[a + 12][b]
+                        } else {
+                            by[4 * a][b] + by[4 * a + 1][b] + by[4 * a + 2][b] + by[4 * a + 3][b]
+                        };
+                        inner += tab_o[beta][b] * m;
+                    }
+                    c += tab_e[alpha][a] * inner;
+                }
+                acc[4 * alpha + beta] += eps * c;
+            }
+        }
+    }
+}
+
+/// Round `j`'s `(Σ eq·E_end·O_end, Σ eq·(E_hi − E_lo)(O_hi − O_lo))` from
+/// the cross sums of a level's `k` bit rounds ([`Forest::cross_sums`]):
+/// both corners' bits `b_1..b_{j−1}` weighted by `eq(r, ·)`, their shared
+/// bits `b_{j+1}..b_k` by `eq(z, ·)` (`z[i − 1]` is round `i`'s coordinate),
+/// and bit `b_j` at the endpoint on both sides or summed over all four
+/// combinations.
+fn cross_round_sums(cross: &[Gf; 64], k: usize, j: usize, z: &[Gf], r: &[Gf], send_one: bool) -> (Gf, Gf) {
+    let one = Gf::one();
+    let corners = 1usize << k;
+    let lo_bits = k - j;
+    let eq_bit = |b: usize, x: Gf| if b == 1 { x } else { one - x };
+    // Bit `j − 1 − i` of `hi` is `b_i`; bit `k − i` of `lo` is `b_i`.
+    let w: Vec<Gf> = (0..1usize << (j - 1))
+        .map(|hi| (1..j).fold(one, |acc, i| acc * eq_bit((hi >> (j - 1 - i)) & 1, r[i - 1])))
+        .collect();
+    let ez: Vec<Gf> = (0..1usize << lo_bits)
+        .map(|lo| ((j + 1)..=k).fold(one, |acc, i| acc * eq_bit((lo >> (k - i)) & 1, z[i - 1])))
+        .collect();
+    let end_bit = usize::from(send_one);
+    let (mut end, mut inf) = (Gf::zero(), Gf::zero());
+    for (hi, &w_e) in w.iter().enumerate() {
+        for (hi2, &w_o) in w.iter().enumerate() {
+            let ww = w_e * w_o;
+            for (lo, &e_z) in ez.iter().enumerate() {
+                let corner = |h: usize, b: usize| (h << (lo_bits + 1)) | (b << lo_bits) | lo;
+                let at = |b: usize, b2: usize| cross[corner(hi, b) * corners + corner(hi2, b2)];
+                let weight = ww * e_z;
+                end += weight * at(end_bit, end_bit);
+                inf += weight * (at(0, 0) + at(0, 1) + at(1, 0) + at(1, 1));
+            }
+        }
+    }
+    (end, inf)
+}
+
 /// One level up: `out[i] = lower[i] · lower[i + half]`.
 fn level_up(lower: &[Gf]) -> Vec<Gf> {
     let half = lower.len() / 2;
@@ -1516,6 +1858,66 @@ mod tests {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// A random field element from an xorshift state.
+    fn random_gf(state: &mut u64) -> Gf {
+        *state ^= *state << 13;
+        *state ^= *state >> 7;
+        *state ^= *state << 17;
+        Gf::new(*state, state.rotate_left(29))
+    }
+
+    /// Every bit round's two sums of levels 0 and 1 — either endpoint, any
+    /// challenges — equal the ones combined from the one pass's cross sums.
+    #[test]
+    fn cross_sums_give_every_bit_round() {
+        for (t, s) in [(4usize, 0usize), (4, 6), (5, 3), (6, 7), (7, 6), (9, 8)] {
+            let (packed, images) = random_grid(t, s, (t * 7919 + s) as u64);
+            let mut state = 0xC0FF_EE00 ^ (t * 131 + s) as u64;
+            for nibble in [false, true] {
+                let mode = PatternMode { nibble, cache: false, nibble_from: 0 };
+                let forest = Forest::new(t, s, &packed, &images).with_patterns(mode);
+                for ell in 0..2 {
+                    let k = MATERIALISED_LEVEL - ell;
+                    let point: Vec<Gf> = (0..t - ell - 1 + s).map(|_| random_gf(&mut state)).collect();
+                    let external: Vec<Gf> = point.iter().rev().copied().collect();
+                    let cross = forest.cross_sums(ell, k, &external);
+                    let r: Vec<Gf> = (0..k).map(|_| random_gf(&mut state)).collect();
+                    for j in 1..=k {
+                        for send_one in [false, true] {
+                            let want = forest.bit_round(ell, j, &r[..j - 1], &external, send_one);
+                            let got = cross_round_sums(&cross, k, j, &point[..k], &r[..j - 1], send_one);
+                            assert_eq!(got, want, "t={t} s={s} nibble={nibble} ell={ell} j={j} send_one={send_one}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Taking the bit rounds from one pass proves the same: same point,
+    /// claim and transcript bytes, on both index paths.
+    #[test]
+    fn one_pass_bit_rounds_prove_identically() {
+        use crate::wfbitz::transcript::build_prover;
+        for (t, s) in [(4usize, 0usize), (4, 5), (5, 6), (6, 0), (6, 3), (6, 6), (7, 7), (9, 6), (10, 8), (11, 7)] {
+            let (packed, images) = random_grid(t, s, (t * 1000 + s) as u64);
+            let mut state = 0x5151_5eed ^ (t * 31 + s) as u64;
+            let zeta: Vec<Gf> = (0..s).map(|_| random_gf(&mut state)).collect();
+            for nibble in [false, true] {
+                let mode = PatternMode { nibble, cache: false, nibble_from: 0 };
+                let prove = |one_pass: bool| {
+                    let forest = Forest::new(t, s, &packed, &images).with_patterns(mode).with_one_pass(one_pass);
+                    let mut ps = build_prover(b"forest-one-pass/v1", b"instance");
+                    let (point, claim) = forest.prove(&mut ps, &zeta);
+                    (point, claim, ps.finish().narg_string)
+                };
+                let (per_round, one_pass) = (prove(false), prove(true));
+                assert_eq!((&one_pass.0, &one_pass.1), (&per_round.0, &per_round.1), "t={t} s={s} nibble={nibble}");
+                assert!(one_pass.2 == per_round.2, "transcript t={t} s={s} nibble={nibble}");
             }
         }
     }
