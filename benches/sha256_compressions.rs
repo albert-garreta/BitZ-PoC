@@ -96,6 +96,65 @@ use bitz::piop::spartan::{
     SHA256_FIXED_98_PRIME, prepare_sha256_compression_batch_for_product_t_fixed98,
 };
 
+/// `BITZ_OPENER=wfbitz`: discharge the claim through the worldfnd/BitZ
+/// scheme on the block-layout commitment (needs `--features bitz-parity`);
+/// `forest` (default): the crate's own opener. Set once in [`run`].
+static WFBITZ: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+fn wfbitz() -> bool {
+    WFBITZ.get().copied().unwrap_or(false)
+}
+
+#[cfg(feature = "bitz-parity")]
+fn prepare_wfbitz<P: IopSecurityProfile>(
+    exponent: usize,
+) -> Result<PreparedSha256CompressionBatch, Sha256ConstraintError> {
+    bitz::piop::spartan::prepare_sha256_compression_batch_wfbitz_with_profile::<P>(exponent)
+}
+
+#[cfg(not(feature = "bitz-parity"))]
+fn prepare_wfbitz<P: IopSecurityProfile>(
+    _exponent: usize,
+) -> Result<PreparedSha256CompressionBatch, Sha256ConstraintError> {
+    panic!("BITZ_OPENER=wfbitz needs --features bitz-parity")
+}
+
+/// A proof under either opener.
+enum BenchProof {
+    Forest(bitz::piop::spartan::protocol::linear::LinearProof),
+    #[cfg(feature = "bitz-parity")]
+    Wfbitz(bitz::piop::spartan::Sha256WfbitzProof),
+}
+
+impl BenchProof {
+    fn forests(&self) -> usize {
+        match self {
+            Self::Forest(proof) => proof.bitz().mfs.len(),
+            #[cfg(feature = "bitz-parity")]
+            Self::Wfbitz(_) => 1,
+        }
+    }
+
+    fn open_bytes(&self) -> usize {
+        match self {
+            Self::Forest(proof) => proof.bitz().to_bytes().len(),
+            #[cfg(feature = "bitz-parity")]
+            Self::Wfbitz(proof) => {
+                bitz::piop::spartan::protocol::OpeningProof::to_bytes(proof.bitz()).len()
+            }
+        }
+    }
+
+    /// (inner-sumcheck rounds, inner nonces)
+    fn inner(&self) -> (usize, usize) {
+        match self {
+            Self::Forest(proof) => (proof.inner().round_polynomials.len(), proof.inner_nonces().len()),
+            #[cfg(feature = "bitz-parity")]
+            Self::Wfbitz(proof) => (proof.inner().round_polynomials.len(), proof.inner_nonces().len()),
+        }
+    }
+}
+
 /// One rep's raw measurements; step extraction happens in `common`.
 struct RepTiming {
     witness_ms: f64,
@@ -156,10 +215,18 @@ impl BenchShape {
         layout: Sha256OpeningLayout,
     ) -> Result<PreparedSha256CompressionBatch, Sha256ConstraintError> {
         match self {
+            Self::Compressions(exponent) if wfbitz() => {
+                assert!(
+                    layout == Sha256OpeningLayout::Default,
+                    "BITZ_OPENER=wfbitz runs the opener's own split; drop BITZ_SHA_OPENING_T"
+                );
+                prepare_wfbitz::<P>(exponent)
+            }
             Self::Compressions(exponent) => {
                 prepare_sha256_compression_batch_with_profile_and_layout::<P>(exponent, layout)
             }
             Self::AssignmentRows(exponent) => {
+                assert!(!wfbitz(), "BITZ_OPENER=wfbitz applies to compression-count shapes only");
                 assert!(
                     layout == Sha256OpeningLayout::Default,
                     "BITZ_SHA_OPENING_T applies to compression-count shapes only"
@@ -810,6 +877,8 @@ pub(crate) struct Env {
     opening_t: Option<usize>,
     #[arg(long, env = "BITZ_SHA_OPENING_LAYOUT")]
     opening_layout: Option<String>,
+    #[arg(long, env = "BITZ_OPENER", default_value = "forest")]
+    opener: String,
     #[arg(long, env = "BITZ_SHA_TRACE_PATH")]
     trace_path: Option<PathBuf>,
     #[arg(long, env = "BITZ_SHA_RESULT_PATH")]
@@ -953,25 +1022,55 @@ fn run_once(
     let prover_scope = tracing::info_span!("sha256-trace:end_to_end_prove").entered();
     let hint = {
         let _scope = tracing::info_span!("sha256-trace:commit").entered();
-        commit_sha256_compression_witness_with_config(prepared, &witness, pc)
-            .expect("SHA source commitment succeeds")
+        if wfbitz() {
+            #[cfg(feature = "bitz-parity")]
+            {
+                bitz::piop::spartan::commit_sha256_compression_witness_wfbitz(prepared, &witness)
+                    .expect("SHA block-layout commitment succeeds")
+            }
+            #[cfg(not(feature = "bitz-parity"))]
+            unreachable!("prepare_wfbitz panics first")
+        } else {
+            commit_sha256_compression_witness_with_config(prepared, &witness, pc)
+                .expect("SHA source commitment succeeds")
+        }
     };
 
     let mut prover_transcript = Blake3Transcript::new();
     let proof = {
         let _scope = tracing::info_span!("sha256-trace:proof").entered();
-        prove_sha256_compressions_with_prefix_vars_and_config(
-            &mut prover_transcript,
-            prepared,
-            &statements,
-            &witness,
-            &hint,
-            inner_prefix_vars,
-            pc,
-        )
-        .expect("SHA proof succeeds")
+        if wfbitz() {
+            #[cfg(feature = "bitz-parity")]
+            {
+                BenchProof::Wfbitz(
+                    bitz::piop::spartan::prove_sha256_compressions_wfbitz(
+                        &mut prover_transcript,
+                        prepared,
+                        &statements,
+                        &witness,
+                        &hint,
+                    )
+                    .expect("SHA proof succeeds"),
+                )
+            }
+            #[cfg(not(feature = "bitz-parity"))]
+            unreachable!("prepare_wfbitz panics first")
+        } else {
+            BenchProof::Forest(
+                prove_sha256_compressions_with_prefix_vars_and_config(
+                    &mut prover_transcript,
+                    prepared,
+                    &statements,
+                    &witness,
+                    &hint,
+                    inner_prefix_vars,
+                    pc,
+                )
+                .expect("SHA proof succeeds"),
+            )
+        }
     };
-    let forests = proof.bitz().mfs.len();
+    let forests = proof.forests();
     if prepared.opening_layout() == Sha256OpeningLayout::Default {
         assert_eq!(
             forests, 1,
@@ -989,14 +1088,24 @@ fn run_once(
     let mut verifier_transcript = Blake3Transcript::new();
     {
         let _scope = tracing::info_span!("sha256-trace:verification").entered();
-        verify_sha256_compressions_with_config(
-            &mut verifier_transcript,
-            prepared,
-            &statements,
-            &hint.commitment,
-            &proof,
-            vc,
-        )
+        match &proof {
+            BenchProof::Forest(proof) => verify_sha256_compressions_with_config(
+                &mut verifier_transcript,
+                prepared,
+                &statements,
+                &hint.commitment,
+                proof,
+                vc,
+            ),
+            #[cfg(feature = "bitz-parity")]
+            BenchProof::Wfbitz(proof) => bitz::piop::spartan::verify_sha256_compressions_wfbitz(
+                &mut verifier_transcript,
+                prepared,
+                &statements,
+                &hint.commitment,
+                proof,
+            ),
+        }
         .expect("SHA proof verifies");
     }
     drop(verified_trial_scope);
@@ -1011,10 +1120,11 @@ fn run_once(
         bitz::observability::phase_totals(&intervals, "sha256-trace:verification").unwrap();
     black_box(&proof);
 
-    let bitz_bytes = proof.bitz().to_bytes().len();
-    let spartan_elements = 3 * proof.inner().round_polynomials.len();
+    let bitz_bytes = proof.open_bytes();
+    let (inner_rounds, inner_nonces) = proof.inner();
+    let spartan_elements = 3 * inner_rounds;
     let field_bytes = <field::Fp<2> as SpartanField>::canonical_encoding_width();
-    let spartan_bytes = spartan_elements * field_bytes + 8 * (proof.inner_nonces().len() + 2);
+    let spartan_bytes = spartan_elements * field_bytes + 8 * (inner_nonces + 2);
 
     let timing = RepTiming {
         witness_ms,
@@ -1167,6 +1277,14 @@ fn bench_shape<P: IopSecurityProfile>(
     }
     {
         let opening = prepared.opening_params();
+        if let Some(committed) = prepared.wfbitz_committed_params() {
+            println!(
+                "  wfbitz opener: BitZ fold+GKR on the product tensor, Id⊗M block-layout commitment 2^{} rows × 2^{} columns (2^13-cell instance blocks), q < 2^{}",
+                committed.row_vars,
+                committed.col_vars,
+                128 - prepared.security().projection_max.leading_zeros(),
+            );
+        }
         let kind = match prepared.opening_layout() {
             Sha256OpeningLayout::Default if prepared.instances().is_power_of_two() => {
                 "direct product opening"
@@ -1320,6 +1438,12 @@ pub(crate) fn main() {
 }
 
 pub(crate) fn run(env: Env) {
+    let opener = common::cli::value(
+        "BITZ_OPENER",
+        env.opener.as_str(),
+        clap::builder::PossibleValuesParser::new(["forest", "wfbitz"]),
+    );
+    WFBITZ.set(opener == "wfbitz").expect("the opener is chosen once");
     let reps = env.reps;
     let root_seed = env.root_seed;
     let inner_prefix_vars = env.inner_prefix_vars;

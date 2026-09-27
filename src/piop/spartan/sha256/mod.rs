@@ -32,6 +32,15 @@ pub use constraints::{
     prepare_sha256_compression_batch_with_profile,
     prepare_sha256_compression_batch_with_profile_and_layout,
 };
+#[cfg(feature = "bitz-parity")]
+pub use constraints::{
+    prepare_sha256_compression_batch_wfbitz_at, prepare_sha256_compression_batch_wfbitz_with_profile,
+};
+#[cfg(feature = "bitz-parity")]
+pub use proof::{
+    Sha256WfbitzProof, commit_sha256_compression_witness_wfbitz, prove_sha256_compressions_wfbitz,
+    verify_sha256_compressions_wfbitz,
+};
 pub use prime::{
     SHA256_COMMITMENT_FIELD_BITS, SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS,
     Sha256PrimeError,

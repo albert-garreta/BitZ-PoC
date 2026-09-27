@@ -30,6 +30,7 @@
     clippy::cast_precision_loss
 )]
 
+pub mod block;
 pub mod chained;
 pub mod codec;
 pub mod fold;
@@ -49,6 +50,7 @@ use field::Gf128 as Gf;
 pub use params::{BitZParams, LinearClaim, ParamsError, Root, Shape, ShapeError, SumClaimGf};
 pub use pcs::{OpeningQuery, Pcs, StatementBinding};
 pub use transcript::{Proof, ProverState, VerifierState, build_prover, build_verifier};
+pub use block::{BlockError, BlockRepeatedMap, BlockStatement};
 pub use chained::{ChainedError, ChainedGeometry, ChainedStatement};
 pub use virt::{VirtualError, VirtualStatement};
 
@@ -101,6 +103,8 @@ pub enum ProveError {
     Virtual(virt::VirtualError),
     /// The structured (chained-map) statement does not fit.
     Chained(chained::ChainedError),
+    /// The block-layout (`Id ⊗ M`) statement does not fit.
+    Block(block::BlockError),
 }
 
 /// A proof the verifier rejects.
@@ -118,6 +122,8 @@ pub enum VerifyError {
     Virtual(virt::VirtualError),
     /// The structured (chained-map) statement does not fit.
     Chained(chained::ChainedError),
+    /// The block-layout (`Id ⊗ M`) statement does not fit.
+    Block(block::BlockError),
 }
 
 impl BitZProver {

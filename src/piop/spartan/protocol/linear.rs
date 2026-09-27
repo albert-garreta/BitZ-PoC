@@ -33,8 +33,8 @@ use {
     crate::{
         ligerito::packed_vars,
         ligerito_flock::{
-            FlockCommitHint, IntEvalRsLigVirtProof, LigeritoStatementConfig, ResolvedLigerito,
-            bind_prover_ood, bind_verifier_ood,
+            FlockCommitHint, IntEvalRsLigVirtProof, LigeritoStatementConfig, OodRound, ProverOod,
+            ResolvedLigerito, VerifierOod, bind_prover_ood, bind_verifier_ood,
             prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
             verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
         },
@@ -204,17 +204,18 @@ pub(crate) trait LinearRelationSpec: Sync {
 }
 
 /// A linear-relation proof: the boundary nonces, the legacy inner sumcheck
-/// (empty on the product path) and the virtual opening.
+/// (empty on the product path) and the virtual opening (`B`: the forest's
+/// by default, or another opener's, see [`LinearProverOpener`]).
 #[derive(Clone)]
-pub struct LinearProof {
+pub struct LinearProof<B = IntEvalRsLigVirtProof> {
     initial_nonce: u64,
     inner: SumcheckProof<SpartanBitzField, 3>,
     inner_nonces: Vec<u64>,
     terminal_nonce: u64,
-    bitz: IntEvalRsLigVirtProof,
+    bitz: B,
 }
 
-impl LinearProof {
+impl<B> LinearProof<B> {
     pub const fn initial_nonce(&self) -> u64 {
         self.initial_nonce
     }
@@ -231,7 +232,7 @@ impl LinearProof {
         self.terminal_nonce
     }
 
-    pub const fn bitz(&self) -> &IntEvalRsLigVirtProof {
+    pub const fn bitz(&self) -> &B {
         &self.bitz
     }
 
@@ -257,7 +258,7 @@ impl LinearProof {
         &mut self.terminal_nonce
     }
 
-    pub fn bitz_mut(&mut self) -> &mut IntEvalRsLigVirtProof {
+    pub fn bitz_mut(&mut self) -> &mut B {
         &mut self.bitz
     }
 }
@@ -379,7 +380,8 @@ fn claim_digest(
     Ok(hasher.finalize())
 }
 
-/// Proves a linear relation against its committed source rows.
+/// Proves a linear relation against its committed source rows, the claim
+/// discharged by the crate's forest opener.
 pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
     transcript: &mut T,
     spec: &S,
@@ -389,18 +391,42 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
     pc: &LigProverConfig,
     options: LinearProveOptions,
 ) -> Result<LinearProof, ProtocolError> {
+    prove_linear_with(
+        transcript,
+        spec,
+        statement,
+        witness,
+        hint,
+        options,
+        &ForestProverOpener { pc },
+    )
+}
+
+/// [`prove_linear`] with the step-5 opener as a parameter.
+pub(crate) fn prove_linear_with<T, S, O>(
+    transcript: &mut T,
+    spec: &S,
+    statement: &S::Statement,
+    witness: &S::Witness,
+    hint: &FlockCommitHint,
+    options: LinearProveOptions,
+    opener: &O,
+) -> Result<LinearProof<O::Opening>, ProtocolError>
+where
+    T: Transcript + Send,
+    S: LinearRelationSpec,
+    O: LinearProverOpener<S>,
+{
     spec.validate_statement(statement)?;
-    spec.validate_opener_config(pc)?;
-    spec.validate_witness(statement, witness, hint)?;
+    opener.validate(spec, statement, witness, hint)?;
     if options.prefix_vars > SHA256_INNER_PREFIX_MAX_VARS {
         return Err(ProtocolError::InvalidInnerPrefix {
             actual: options.prefix_vars,
             max: SHA256_INNER_PREFIX_MAX_VARS,
         });
     }
-    crate::ligerito_flock::validate_ligerito_commitment(&hint.commitment, pc)
-        .map_err(ProtocolError::Bitz)?;
-    let f_layout = spec.source_layout();
+    opener.validate_commitment(hint)?;
+    let f_layout = opener.committed_layout(spec);
     if hint.commitment.params.m != f_layout.row_vars + f_layout.col_vars {
         return Err(ProtocolError::InvalidGeometry);
     }
@@ -409,11 +435,11 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
 
     let binding = {
         let _scope = tracing::info_span!("sha256:statement_bind_prover").entered();
-        let (frames, binding) = spec.statement_frames(statement, &hint.commitment, pc)?;
+        let (frames, binding) = spec.statement_frames(statement, &hint.commitment, opener.config())?;
         absorb_frames(transcript, &frames);
         binding
     };
-    spec.ligerito()?.bind(transcript);
+    opener.bind(spec, transcript)?;
     let ood = bind_prover_ood(transcript, hint, security.ood);
 
     // Commit first, then derive the one runtime prime. The exact signed
@@ -572,22 +598,7 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
     let bitz = {
         let _step5 = tracing::info_span!("step5:open_prove").entered();
         let _scope = tracing::info_span!("sha256:bitz_prove").entered();
-        prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime(
-            transcript,
-            hint,
-            spec.opened_rows(witness)?,
-            spec.opened_layout(),
-            f_layout,
-            spec.map(),
-            &rows,
-            prime.modulus_u128(),
-            prime.modulus_bits(),
-            bitz_generator(),
-            security.forest_round_grinding_bits,
-            ood,
-            pc,
-        )
-        .map_err(ProtocolError::Bitz)?
+        opener.open(transcript, spec, witness, hint, &claim, &rows, &prime, ood)?
     };
 
     Ok(LinearProof {
@@ -600,7 +611,7 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
 }
 
 /// Verifies a linear-relation proof, re-deriving the prime from the bound
-/// transcript.
+/// transcript; the claim is discharged by the crate's forest opener.
 pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
     transcript: &mut T,
     spec: &S,
@@ -609,11 +620,33 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
     proof: &LinearProof,
     vc: &LigVerifierConfig,
 ) -> Result<(), ProtocolError> {
+    verify_linear_with(
+        transcript,
+        spec,
+        statement,
+        commitment,
+        proof,
+        &ForestVerifierOpener { vc },
+    )
+}
+
+/// [`verify_linear`] with the step-5 opener as a parameter.
+pub(crate) fn verify_linear_with<T, S, O>(
+    transcript: &mut T,
+    spec: &S,
+    statement: &S::Statement,
+    commitment: &Commitment,
+    proof: &LinearProof<O::Opening>,
+    opener: &O,
+) -> Result<(), ProtocolError>
+where
+    T: Transcript + Send,
+    S: LinearRelationSpec,
+    O: LinearVerifierOpener<S>,
+{
     spec.validate_statement(statement)?;
-    spec.validate_opener_config(vc)?;
-    crate::ligerito_flock::validate_ligerito_commitment(commitment, vc)
-        .map_err(ProtocolError::Bitz)?;
-    let f_layout = spec.source_layout();
+    opener.validate(spec, commitment)?;
+    let f_layout = opener.committed_layout(spec);
     let opened = spec.opened_layout();
     let product_layout = spec.product_layout();
     let expected_inner_rounds = if product_layout {
@@ -632,16 +665,16 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
 
     let binding = {
         let _scope = tracing::info_span!("sha256:statement_bind_verifier").entered();
-        let (frames, binding) = spec.statement_frames(statement, commitment, vc)?;
+        let (frames, binding) = spec.statement_frames(statement, commitment, opener.config())?;
         absorb_frames(transcript, &frames);
         binding
     };
-    spec.ligerito()?.bind(transcript);
+    opener.bind(spec, transcript)?;
     let ood = bind_verifier_ood(
         transcript,
         packed_vars(f_layout),
         security.ood,
-        proof.bitz.ood.as_ref(),
+        opener.ood_round(&proof.bitz),
     )
     .map_err(ProtocolError::Bitz)?;
 
@@ -757,22 +790,392 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
 
     let _step5 = tracing::info_span!("step5:open_verify").entered();
     let _scope = tracing::info_span!("sha256:bitz_verify").entered();
-    verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime(
-        transcript,
-        commitment,
-        &proof.bitz,
-        opened,
-        f_layout,
-        spec.map(),
-        &rows,
-        &claim.cols,
-        bitz_generator(),
-        claim.claimed,
-        prime.modulus_u128(),
-        prime.modulus_bits(),
-        security.forest_round_grinding_bits,
-        ood,
-        vc,
-    )
-    .map_err(ProtocolError::Bitz)
+    opener.verify(transcript, spec, commitment, &proof.bitz, &claim, &rows, &prime, ood)
+}
+
+/// Step 5's opener on the prover side: the configuration the statement
+/// frames cite, the checks before any transcript work, what the opener
+/// binds between the relation's frames and Round 0, and the discharge of
+/// the rank-one claim. [`ForestProverOpener`] makes exactly the calls the
+/// runner made before openers were pluggable, in the same order.
+pub(crate) trait LinearProverOpener<S: LinearRelationSpec> {
+    type Opening;
+
+    fn config(&self) -> &dyn LigeritoStatementConfig;
+
+    /// The committed grid: the commitment's `m` and Round 0's arity.
+    fn committed_layout<'s>(&self, spec: &'s S) -> &'s IntegerMatrixLayout {
+        spec.source_layout()
+    }
+
+    fn validate(
+        &self,
+        spec: &S,
+        statement: &S::Statement,
+        witness: &S::Witness,
+        hint: &FlockCommitHint,
+    ) -> Result<(), ProtocolError>;
+
+    fn validate_commitment(&self, hint: &FlockCommitHint) -> Result<(), ProtocolError>;
+
+    fn bind<T: Transcript>(&self, spec: &S, transcript: &mut T) -> Result<(), ProtocolError>;
+
+    #[allow(clippy::too_many_arguments)]
+    fn open<T: Transcript + Send, W: ModQWeightSource + Sync + ?Sized>(
+        &self,
+        transcript: &mut T,
+        spec: &S,
+        witness: &S::Witness,
+        hint: &FlockCommitHint,
+        claim: &OpeningClaim<'_>,
+        rows: &W,
+        prime: &field::FpCtx<2>,
+        ood: ProverOod,
+    ) -> Result<Self::Opening, ProtocolError>;
+}
+
+/// Step 5's opener on the verifier side (see [`LinearProverOpener`]).
+pub(crate) trait LinearVerifierOpener<S: LinearRelationSpec> {
+    type Opening;
+
+    fn config(&self) -> &dyn LigeritoStatementConfig;
+
+    fn committed_layout<'s>(&self, spec: &'s S) -> &'s IntegerMatrixLayout {
+        spec.source_layout()
+    }
+
+    fn validate(&self, spec: &S, commitment: &Commitment) -> Result<(), ProtocolError>;
+
+    fn bind<T: Transcript>(&self, spec: &S, transcript: &mut T) -> Result<(), ProtocolError>;
+
+    /// The Round-0 messages the opening carries.
+    fn ood_round<'p>(&self, opening: &'p Self::Opening) -> Option<&'p OodRound>;
+
+    #[allow(clippy::too_many_arguments)]
+    fn verify<T: Transcript + Send, W: ModQWeightSource + Sync + ?Sized>(
+        &self,
+        transcript: &mut T,
+        spec: &S,
+        commitment: &Commitment,
+        opening: &Self::Opening,
+        claim: &OpeningClaim<'_>,
+        rows: &W,
+        prime: &field::FpCtx<2>,
+        ood: VerifierOod,
+    ) -> Result<(), ProtocolError>;
+}
+
+/// The crate's own opener: the chunked exponent-fold forest over the derived
+/// grid, then the dual-basis ring switch and Ligerito on the commitment.
+pub(crate) struct ForestProverOpener<'c> {
+    pub pc: &'c LigProverConfig,
+}
+
+impl<S: LinearRelationSpec> LinearProverOpener<S> for ForestProverOpener<'_> {
+    type Opening = IntEvalRsLigVirtProof;
+
+    fn config(&self) -> &dyn LigeritoStatementConfig {
+        self.pc
+    }
+
+    fn validate(
+        &self,
+        spec: &S,
+        statement: &S::Statement,
+        witness: &S::Witness,
+        hint: &FlockCommitHint,
+    ) -> Result<(), ProtocolError> {
+        spec.validate_opener_config(self.pc)?;
+        spec.validate_witness(statement, witness, hint)
+    }
+
+    fn validate_commitment(&self, hint: &FlockCommitHint) -> Result<(), ProtocolError> {
+        crate::ligerito_flock::validate_ligerito_commitment(&hint.commitment, self.pc)
+            .map_err(ProtocolError::Bitz)
+    }
+
+    fn bind<T: Transcript>(&self, spec: &S, transcript: &mut T) -> Result<(), ProtocolError> {
+        spec.ligerito()?.bind(transcript);
+        Ok(())
+    }
+
+    fn open<T: Transcript + Send, W: ModQWeightSource + Sync + ?Sized>(
+        &self,
+        transcript: &mut T,
+        spec: &S,
+        witness: &S::Witness,
+        hint: &FlockCommitHint,
+        _claim: &OpeningClaim<'_>,
+        rows: &W,
+        prime: &field::FpCtx<2>,
+        ood: ProverOod,
+    ) -> Result<IntEvalRsLigVirtProof, ProtocolError> {
+        prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime(
+            transcript,
+            hint,
+            spec.opened_rows(witness)?,
+            spec.opened_layout(),
+            spec.source_layout(),
+            spec.map(),
+            rows,
+            prime.modulus_u128(),
+            prime.modulus_bits(),
+            bitz_generator(),
+            spec.security().forest_round_grinding_bits,
+            ood,
+            self.pc,
+        )
+        .map_err(ProtocolError::Bitz)
+    }
+}
+
+/// The verifier side of [`ForestProverOpener`].
+pub(crate) struct ForestVerifierOpener<'c> {
+    pub vc: &'c LigVerifierConfig,
+}
+
+impl<S: LinearRelationSpec> LinearVerifierOpener<S> for ForestVerifierOpener<'_> {
+    type Opening = IntEvalRsLigVirtProof;
+
+    fn config(&self) -> &dyn LigeritoStatementConfig {
+        self.vc
+    }
+
+    fn validate(&self, spec: &S, commitment: &Commitment) -> Result<(), ProtocolError> {
+        spec.validate_opener_config(self.vc)?;
+        crate::ligerito_flock::validate_ligerito_commitment(commitment, self.vc)
+            .map_err(ProtocolError::Bitz)
+    }
+
+    fn bind<T: Transcript>(&self, spec: &S, transcript: &mut T) -> Result<(), ProtocolError> {
+        spec.ligerito()?.bind(transcript);
+        Ok(())
+    }
+
+    fn ood_round<'p>(&self, opening: &'p IntEvalRsLigVirtProof) -> Option<&'p OodRound> {
+        opening.ood.as_ref()
+    }
+
+    fn verify<T: Transcript + Send, W: ModQWeightSource + Sync + ?Sized>(
+        &self,
+        transcript: &mut T,
+        spec: &S,
+        commitment: &Commitment,
+        opening: &IntEvalRsLigVirtProof,
+        claim: &OpeningClaim<'_>,
+        rows: &W,
+        prime: &field::FpCtx<2>,
+        ood: VerifierOod,
+    ) -> Result<(), ProtocolError> {
+        verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime(
+            transcript,
+            commitment,
+            opening,
+            spec.opened_layout(),
+            spec.source_layout(),
+            spec.map(),
+            rows,
+            &claim.cols,
+            bitz_generator(),
+            claim.claimed,
+            prime.modulus_u128(),
+            prime.modulus_bits(),
+            spec.security().forest_round_grinding_bits,
+            ood,
+            self.vc,
+        )
+        .map_err(ProtocolError::Bitz)
+    }
+}
+
+/// The session tag of a block-layout BitZ opening's forked transcript.
+#[cfg(feature = "bitz-parity")]
+const WFBITZ_BLOCK_SESSION: &[u8] = b"bitz/linear/wfbitz-block/v1";
+
+/// Step 5 through the worldfnd/BitZ scheme on a block-layout commitment
+/// (`crate::wfbitz::block`): the rank-one claim on the derived grid is
+/// BitZ's `LinearClaim` as it stands (canonical row weights, column
+/// weights, target mod `q`), the fold and the GKR run over the derived rows
+/// on a transcript forked after the claim frame, and the GKR's exit claim
+/// is transposed through the block map and opened on the commitment under
+/// the relation's resolved ladder. Nothing is drawn from the outer
+/// transcript after the fork; Round 0 is the runner's, batched into the
+/// final Ligerito opening as in [`super::wfbitz_opener`].
+#[cfg(feature = "bitz-parity")]
+pub(crate) struct WfbitzBlockOpener<'a, C> {
+    /// The resolved ladder's configuration: what the statement frames cite
+    /// and the commitment is checked against.
+    pub config: &'a C,
+    /// BitZ's scheme over the committed block grid, under the same ladder.
+    pub pcs: &'a crate::wfbitz::Pcs,
+    pub map: &'a crate::wfbitz::BlockRepeatedMap,
+}
+
+#[cfg(feature = "bitz-parity")]
+impl<C> WfbitzBlockOpener<'_, C> {
+    fn bind_opener<T: Transcript, S: LinearRelationSpec>(
+        &self,
+        spec: &S,
+        transcript: &mut T,
+    ) -> Result<(), ProtocolError> {
+        spec.ligerito()?.bind(transcript);
+        absorb_frames(
+            transcript,
+            &[
+                frame(b"opener", WFBITZ_BLOCK_SESSION),
+                frame(b"wfbitz-block-map", self.map.digest()),
+            ],
+        );
+        Ok(())
+    }
+
+    /// The claim as BitZ states it, and the committed grid it is opened on.
+    fn statement<S: LinearRelationSpec, W: ModQWeightSource + Sync + ?Sized>(
+        spec: &S,
+        claim: &OpeningClaim<'_>,
+        rows: &W,
+        prime: &field::FpCtx<2>,
+    ) -> Result<(crate::wfbitz::BitZParams, crate::wfbitz::Shape, crate::wfbitz::LinearClaim), ProtocolError>
+    {
+        let bitz = |what: &str, error: &dyn core::fmt::Debug| {
+            ProtocolError::LigeritoConfig(format!("BitZ {what}: {error:?}"))
+        };
+        let opened = spec.opened_layout();
+        let source = spec.source_layout();
+        if opened.word_bits != 1 || source.word_bits != 1 {
+            return Err(ProtocolError::InvalidGeometry);
+        }
+        let derived = crate::wfbitz::Shape::new(opened.row_vars, opened.col_vars)
+            .map_err(|e| bitz("derived shape", &e))?;
+        let committed = crate::wfbitz::Shape::new(source.row_vars, source.col_vars)
+            .map_err(|e| bitz("committed shape", &e))?;
+        let params = crate::wfbitz::BitZParams::new(derived, prime.modulus_u128(), bitz_generator())
+            .map_err(|e| bitz("parameters", &e))?;
+        let row_weights = (0..rows.row_count())
+            .map(|row| rows.canonical_weight(row).ok_or(ProtocolError::InvalidGeometry))
+            .collect::<Result<Vec<_>, _>>()?;
+        let linear =
+            crate::wfbitz::LinearClaim::new(&params, row_weights, claim.cols.clone(), claim.claimed)
+                .map_err(|e| bitz("claim", &e))?;
+        Ok((params, committed, linear))
+    }
+}
+
+#[cfg(feature = "bitz-parity")]
+impl<S: LinearRelationSpec> LinearProverOpener<S> for WfbitzBlockOpener<'_, LigProverConfig> {
+    type Opening = super::wfbitz_opener::WfbitzOpeningProof;
+
+    fn config(&self) -> &dyn LigeritoStatementConfig {
+        self.config
+    }
+
+    fn validate(
+        &self,
+        spec: &S,
+        statement: &S::Statement,
+        witness: &S::Witness,
+        hint: &FlockCommitHint,
+    ) -> Result<(), ProtocolError> {
+        spec.validate_opener_config(self.config)?;
+        spec.validate_witness(statement, witness, hint)
+    }
+
+    fn validate_commitment(&self, hint: &FlockCommitHint) -> Result<(), ProtocolError> {
+        crate::ligerito_flock::validate_ligerito_commitment(&hint.commitment, self.config)
+            .map_err(ProtocolError::Bitz)
+    }
+
+    fn bind<T: Transcript>(&self, spec: &S, transcript: &mut T) -> Result<(), ProtocolError> {
+        self.bind_opener(spec, transcript)
+    }
+
+    fn open<T: Transcript + Send, W: ModQWeightSource + Sync + ?Sized>(
+        &self,
+        transcript: &mut T,
+        spec: &S,
+        witness: &S::Witness,
+        hint: &FlockCommitHint,
+        claim: &OpeningClaim<'_>,
+        rows: &W,
+        prime: &field::FpCtx<2>,
+        ood: ProverOod,
+    ) -> Result<Self::Opening, ProtocolError> {
+        let (params, committed, linear) = Self::statement(spec, claim, rows, prime)?;
+        let statement = crate::wfbitz::BlockStatement::new(params, committed, self.map, &linear)
+            .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ block statement: {e:?}")))?;
+        let ood = ood.into_bound_claim();
+        let tag = super::wfbitz_opener::fork_tag(transcript);
+        let mut state = crate::wfbitz::build_prover(WFBITZ_BLOCK_SESSION, &tag);
+        crate::wfbitz::BitZProver::new(params, crate::wfbitz::WINDOW)
+            .prove_block(
+                &statement,
+                self.pcs,
+                hint,
+                spec.opened_rows(witness)?,
+                &mut state,
+                ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+            )
+            .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ prove: {e:?}")))?;
+        let crate::wfbitz::Proof { narg_string, hints } = state.finish();
+        Ok(super::wfbitz_opener::WfbitzOpeningProof {
+            narg: narg_string,
+            hints,
+            ood: ood.map(|claim| claim.round),
+        })
+    }
+}
+
+#[cfg(feature = "bitz-parity")]
+impl<S: LinearRelationSpec> LinearVerifierOpener<S> for WfbitzBlockOpener<'_, LigVerifierConfig> {
+    type Opening = super::wfbitz_opener::WfbitzOpeningProof;
+
+    fn config(&self) -> &dyn LigeritoStatementConfig {
+        self.config
+    }
+
+    fn validate(&self, spec: &S, commitment: &Commitment) -> Result<(), ProtocolError> {
+        spec.validate_opener_config(self.config)?;
+        crate::ligerito_flock::validate_ligerito_commitment(commitment, self.config)
+            .map_err(ProtocolError::Bitz)
+    }
+
+    fn bind<T: Transcript>(&self, spec: &S, transcript: &mut T) -> Result<(), ProtocolError> {
+        self.bind_opener(spec, transcript)
+    }
+
+    fn ood_round<'p>(&self, opening: &'p Self::Opening) -> Option<&'p OodRound> {
+        opening.ood.as_ref()
+    }
+
+    fn verify<T: Transcript + Send, W: ModQWeightSource + Sync + ?Sized>(
+        &self,
+        transcript: &mut T,
+        spec: &S,
+        commitment: &Commitment,
+        opening: &Self::Opening,
+        claim: &OpeningClaim<'_>,
+        rows: &W,
+        prime: &field::FpCtx<2>,
+        ood: VerifierOod,
+    ) -> Result<(), ProtocolError> {
+        let (params, committed, linear) = Self::statement(spec, claim, rows, prime)?;
+        let statement = crate::wfbitz::BlockStatement::new(params, committed, self.map, &linear)
+            .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ block statement: {e:?}")))?;
+        let ood = ood.into_bound_claim();
+        let tag = super::wfbitz_opener::fork_tag(transcript);
+        let proof = crate::wfbitz::Proof {
+            narg_string: opening.narg.clone(),
+            hints: opening.hints.clone(),
+        };
+        let state = crate::wfbitz::build_verifier(WFBITZ_BLOCK_SESSION, &tag, &proof);
+        crate::wfbitz::BitZVerifier::new(params, crate::wfbitz::WINDOW)
+            .verify_block(
+                &statement,
+                self.pcs,
+                crate::wfbitz::Root(commitment.root),
+                state,
+                ood.as_ref().map(|(claim, _)| (claim.point.as_slice(), claim.y)),
+            )
+            .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ verify: {e:?}")))
+    }
 }

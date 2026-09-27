@@ -163,6 +163,10 @@ pub enum Sha256ConstraintError {
     /// The fixed field must exceed every exact Bit SHA row residual.
     #[error("the fixed 98-bit SHA prime does not exceed the exact Bit residual bound")]
     FixedPrimeResidualBound,
+
+    /// The worldfnd/BitZ block-layout opening does not fit this batch.
+    #[error("SHA-256 BitZ block opening: {0}")]
+    WfbitzBlock(String),
 }
 
 /// A q-independent SHA-256 compression relation prepared for a packed batch.
@@ -217,9 +221,40 @@ pub struct PreparedSha256CompressionBatch {
     ligerito: Option<crate::ligerito_flock::ResolvedLigerito>,
     prime_profile: Sha256PrimeProfile,
     opening_layout: Sha256OpeningLayout,
+    /// The worldfnd/BitZ opener's block-layout commitment, when the batch was
+    /// prepared for it ([`prepare_sha256_compression_batch_wfbitz_with_profile`]).
+    wfbitz: Option<Sha256WfbitzBlock>,
+}
+
+/// The committed source as the worldfnd/BitZ opener lays it out: instance
+/// `i`'s local source column `j` (column 0 = its own copy of the constant)
+/// at cell `i·2^13 + j`, so the map to the product tensor is exactly
+/// `Id_N ⊗ M_local` ([`crate::wfbitz::BlockRepeatedMap`]) and the opening's
+/// transposed claim is rank one. The derived product tensor is unchanged;
+/// every instance's derived constant cell is pinned to one by the PIOP's
+/// constant batch, so its source copy is too.
+#[derive(Clone, Debug)]
+#[cfg_attr(not(feature = "bitz-parity"), allow(dead_code))]
+pub(crate) struct Sha256WfbitzBlock {
+    #[cfg(feature = "bitz-parity")]
+    pub(crate) map: crate::wfbitz::BlockRepeatedMap,
+    /// The committed grid: `2^(13+r)` rows (`2^r` instance blocks per
+    /// column) by `2^(k−r)` columns, where the product tensor has `2^(15+r)`.
+    pub(crate) layout: IntegerMatrixLayout,
 }
 
 impl PreparedSha256CompressionBatch {
+    /// The worldfnd/BitZ opener's block layout, when prepared for it.
+    #[cfg_attr(not(feature = "bitz-parity"), allow(dead_code))]
+    pub(crate) fn wfbitz_block(&self) -> Option<&Sha256WfbitzBlock> {
+        self.wfbitz.as_ref()
+    }
+
+    /// The committed grid of the worldfnd/BitZ opener's block layout.
+    pub fn wfbitz_committed_params(&self) -> Option<&IntegerMatrixLayout> {
+        self.wfbitz.as_ref().map(|block| &block.layout)
+    }
+
     /// Select only this batch's Ligerito opener; the enclosing target is retained.
     pub fn with_ligerito(
         mut self,
@@ -537,6 +572,90 @@ pub fn prepare_sha256_compression_batch_with_profile_and_layout<P: IopSecurityPr
     Ok(prepared)
 }
 
+#[cfg(feature = "bitz-parity")]
+/// [`prepare_sha256_compression_batch_with_profile`] for the worldfnd/BitZ
+/// opener (`crate::wfbitz`): the product tensor at the opener's split
+/// `t = ⌈0.6 n⌉ − 1` (the 2026-09-24 wfbitz decision, clamped to
+/// `[15, 15 + k]`), the prime capped at the one-fold width `c_w = 127 − t − 1`
+/// (the scheme's fold bound `(q − 1)(2^t + 1) < 2^128` needs it), and the
+/// committed source in the block layout ([`Sha256WfbitzBlock`]). Power-of-two
+/// batches of at least `2^7`. Commit with
+/// `commit_sha256_compression_witness_wfbitz`.
+pub fn prepare_sha256_compression_batch_wfbitz_with_profile<P: IopSecurityProfile>(
+    log_compressions: usize,
+) -> Result<PreparedSha256CompressionBatch, Sha256ConstraintError> {
+    let instances = validate_batch_exponent(log_compressions)?;
+    let assignment_vars = packed_domain_vars(instances, SHA256_H_INSTANCE_BITS)?;
+    let local_bits = SHA256_H_BAR_LIVE_BITS.next_power_of_two().ilog2() as usize;
+    let row_vars = balanced_product_row_vars(assignment_vars, local_bits, log_compressions)
+        .saturating_sub(1)
+        .max(local_bits);
+    prepare_sha256_compression_batch_wfbitz_at::<P>(log_compressions, row_vars)
+}
+
+#[cfg(feature = "bitz-parity")]
+/// [`prepare_sha256_compression_batch_wfbitz_with_profile`] at an explicit
+/// product-tensor row split (`15 ≤ row_vars ≤ 15 + k`).
+pub fn prepare_sha256_compression_batch_wfbitz_at<P: IopSecurityProfile>(
+    log_compressions: usize,
+    row_vars: usize,
+) -> Result<PreparedSha256CompressionBatch, Sha256ConstraintError> {
+    if !(64..=128).contains(&P::LIGERITO_TARGET_BITS) {
+        return Err(Sha256ConstraintError::UnsupportedLigeritoTargetBits {
+            actual: P::LIGERITO_TARGET_BITS,
+        });
+    }
+    if log_compressions < LOG_PACKING {
+        return Err(Sha256ConstraintError::InvalidBatchExponent);
+    }
+    let instances = validate_batch_exponent(log_compressions)?;
+    validate_instance_capacity(instances)?;
+    let mut prepared = prepare_sha256_compression_instances(
+        instances,
+        Sha256OpeningLayout::ProductTransposed { row_vars },
+        None,
+        |facts| P::instantiate(facts).map_err(Sha256ConstraintError::from),
+        false,
+        true,
+    )?;
+    prepared.wfbitz = Some(prepared.wfbitz_block_layout()?);
+    let selection = crate::ligerito_flock::LigeritoSelection::for_target(
+        prepared.security.ligerito_target_bits,
+    );
+    let prepared = prepared.with_ligerito(selection)?;
+    validate_prepared_protocol(&prepared)?;
+    Ok(prepared)
+}
+
+#[cfg(feature = "bitz-parity")]
+impl PreparedSha256CompressionBatch {
+    /// The block layout that pairs with this batch's instance-major product
+    /// tensor: the local map repeated over `2^13`-cell source blocks, the
+    /// committed grid with the product tensor's column split.
+    fn wfbitz_block_layout(&self) -> Result<Sha256WfbitzBlock, Sha256ConstraintError> {
+        let error = |what: String| Sha256ConstraintError::WfbitzBlock(what);
+        let (Some(product), Some(product_map)) = (self.product_p_h.as_ref(), self.product_map.as_ref())
+        else {
+            return Err(error("the opening needs the product tensor".into()));
+        };
+        if product_map.order() != PackedSourceOrder::InstanceMajor {
+            return Err(error("the opening needs the instance-major product tensor".into()));
+        }
+        let map = crate::wfbitz::BlockRepeatedMap::new(self.local.map.clone(), self.log_instance_capacity)
+            .map_err(|e| error(format!("{e:?}")))?;
+        if 1usize << map.log_derived_block() != product_map.local_stride() {
+            return Err(error("the derived block is not the product tensor's local stride".into()));
+        }
+        let layout = map
+            .committed_layout(product.row_vars)
+            .map_err(|e| error(format!("{e:?}")))?;
+        if layout.row_vars + layout.col_vars != self.f_layout.row_vars + self.f_layout.col_vars {
+            return Err(error("the block layout and the packed source differ in size".into()));
+        }
+        Ok(Sha256WfbitzBlock { map, layout })
+    }
+}
+
 /// Controlled `2^14`-compression geometry used by the fixed-98-bit `t,s`
 /// sweep. This is intentionally feature-gated and does not change the
 /// production transcript-derived-prime profile.
@@ -558,6 +677,7 @@ pub fn prepare_sha256_compression_batch_for_product_t_fixed98(
         Some(product_t),
         |_| Ok(fixed_98_security_params()),
         true,
+        false,
     )?;
     let selection = crate::ligerito_flock::LigeritoSelection::for_target(
         prepared.security.ligerito_target_bits,
@@ -642,6 +762,7 @@ pub(super) fn prepare_sha256_compression_batch_for_product_t_test(
         Some(product_t),
         |facts| Lambda100::instantiate(facts).map_err(Sha256ConstraintError::from),
         false,
+        false,
     )
 }
 
@@ -664,6 +785,7 @@ fn prepare_sha256_compression_instances_with_profile_and_layout<P: IopSecurityPr
         None,
         |facts| P::instantiate(facts).map_err(Sha256ConstraintError::from),
         false,
+        false,
     )
 }
 
@@ -675,6 +797,7 @@ fn prepare_sha256_compression_instances(
         &super::super::profile::IopInstanceFacts,
     ) -> Result<IopSecurityParams, Sha256ConstraintError>,
     fixed_98: bool,
+    one_forest_prime: bool,
 ) -> Result<PreparedSha256CompressionBatch, Sha256ConstraintError> {
     let log_instance_capacity = instances
         .checked_next_power_of_two()
@@ -796,6 +919,13 @@ fn prepare_sha256_compression_instances(
         // arity follows the larger of the two.
         facts.lift_arity_log2 = facts.lift_arity_log2.max(facts.opening_t);
     }
+    // Opt-in: size the prime to the product opening's one-chunk fold width
+    // `c_w = 127 - t - W`, as the standalone opener does, so the balanced
+    // layout (t >= 15, no-wrap width 128 - t = c_w + 2) opens one forest
+    // instead of two. Transcript-changing, hence off by default.
+    if product_p_h.is_some() && !fixed_98 && (one_forest_prime || prime_one_forest()) {
+        facts.direct_opening = true;
+    }
     let security = make_security(&facts)?;
     let prime_profile = if fixed_98 {
         Sha256PrimeProfile::fixed_98(&security, log_instance_capacity)?
@@ -815,6 +945,7 @@ fn prepare_sha256_compression_instances(
         ligerito: None, // Explicit algebra fixtures omit a production PCS policy.
         prime_profile,
         opening_layout: layout,
+        wfbitz: None,
     })
 }
 
@@ -937,6 +1068,12 @@ const fn single_forest_binary_params(vars: usize) -> IntegerMatrixLayout {
 /// local width rather than with the batch. `r` is chosen to land on the same
 /// balance point the rest of the instantiation uses, `t = ceil(0.6 · n)`,
 /// clamped to the range this layout can represent, `r in [0, k]`.
+/// `BITZ_SHA_PRIME_ONE_FOREST=1`: cap the SHA prime at the product opening's
+/// one-forest width (see `prepare_sha256_compression_instances`).
+fn prime_one_forest() -> bool {
+    std::env::var("BITZ_SHA_PRIME_ONE_FOREST").is_ok_and(|v| v != "0")
+}
+
 const fn balanced_product_row_vars(
     assignment_vars: usize,
     local_bits: usize,

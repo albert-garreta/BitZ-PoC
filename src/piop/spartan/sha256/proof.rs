@@ -70,7 +70,7 @@ use super::super::{
 use super::{
     constraints::{
         PreparedSha256CompressionBatch, PreparedSha256LinearRelation, SHA256_CONSTRAINTS,
-        SHA256_H_BAR_LIVE_BITS, SHA256_PUBLIC_WORD_BITS, SHA256_PUBLIC_WORDS,
+        SHA256_H_BAR_LIVE_BITS, SHA256_PUBLIC_WORD_BITS, SHA256_PUBLIC_WORDS, Sha256WfbitzBlock,
         sha256_public_f_column, sha256_public_h_column,
     },
     inner_sumcheck::Sha256InnerBitSource,
@@ -80,6 +80,11 @@ use super::{
 
 #[cfg(test)]
 use super::{inner_sumcheck::SHA256_INNER_PREFIX_MAX_VARS, prime::Sha256PrimeProfile};
+#[cfg(feature = "bitz-parity")]
+use super::super::protocol::{
+    linear::{WfbitzBlockOpener, prove_linear_with, verify_linear_with},
+    wfbitz_opener::WfbitzOpeningProof,
+};
 
 const SHA256_OPENING_CLAIM_DOMAIN: &[u8] = b"bitz/spartan-sha256-opening/v7";
 const SHA256_CONSTANT_ONE_BATCH_DOMAIN: &[u8] = b"bitz/spartan-sha256/constant-one-batch/v3";
@@ -168,6 +173,9 @@ struct Sha256CompressionSpec<'p, M> {
     /// The product tensor's order; `None` on the legacy path.
     order: Option<PackedSourceOrder>,
     instance_vars: usize,
+    /// The worldfnd/BitZ opener's block-layout commitment, in place of the
+    /// packed source (`None` for the crate's own opener).
+    block: Option<&'p Sha256WfbitzBlock>,
 }
 
 enum Sha256CompressionRelation<'p> {
@@ -191,6 +199,7 @@ impl<'p> Sha256CompressionRelation<'p> {
                     opened: product_p_h,
                     order: Some(product_map.order()),
                     instance_vars,
+                    block: None,
                 }))
             }
             (None, None) => Ok(Self::Legacy(Sha256CompressionSpec {
@@ -199,6 +208,7 @@ impl<'p> Sha256CompressionRelation<'p> {
                 opened: h_layout,
                 order: None,
                 instance_vars,
+                block: None,
             })),
             _ => Err(ProtocolError::InvalidGeometry),
         }
@@ -224,7 +234,8 @@ impl<M: VirtualMap> LinearRelationSpec for Sha256CompressionSpec<'_, M> {
     }
 
     fn source_layout(&self) -> &IntegerMatrixLayout {
-        self.prepared.source_params()
+        self.block
+            .map_or(self.prepared.source_params(), |block| &block.layout)
     }
 
     fn opened_layout(&self) -> &IntegerMatrixLayout {
@@ -280,9 +291,15 @@ impl<M: VirtualMap> LinearRelationSpec for Sha256CompressionSpec<'_, M> {
             (None, None) => {}
             _ => return Err(ProtocolError::InvalidGeometry),
         }
+        // The committed rows: the packed source itself, or its block layout
+        // (a regrouping the opener checks against the map, not re-derived here).
+        let committed = match self.block {
+            None => hint.rows() == witness.source_rows(),
+            Some(block) => validate_rows(&block.layout, hint.rows()).is_ok(),
+        };
         if witness.instances() != prepared.instances()
             || witness.outputs().len() != prepared.instances()
-            || hint.rows() != witness.source_rows()
+            || !committed
         {
             return Err(ProtocolError::InvalidGeometry);
         }
@@ -330,8 +347,8 @@ impl<M: VirtualMap> LinearRelationSpec for Sha256CompressionSpec<'_, M> {
                 b"assignment-column-vars",
                 prepared.assignment_params().col_vars,
             ),
-            (b"source-row-vars", prepared.source_params().row_vars),
-            (b"source-column-vars", prepared.source_params().col_vars),
+            (b"source-row-vars", self.source_layout().row_vars),
+            (b"source-column-vars", self.source_layout().col_vars),
         ] {
             frames.push(frame(tag, (value as u64).to_le_bytes()));
         }
@@ -605,6 +622,183 @@ pub fn verify_sha256_compressions<T: Transcript + Send>(
         commitment_f,
         proof,
         &vc,
+    )
+}
+
+#[cfg(feature = "bitz-parity")]
+/// A compression-batch proof discharged through the worldfnd/BitZ scheme
+/// on the block-layout commitment.
+pub type Sha256WfbitzProof = LinearProof<WfbitzOpeningProof>;
+
+#[cfg(feature = "bitz-parity")]
+/// The product-layout spec over the block-layout commitment.
+fn wfbitz_spec(
+    prepared: &PreparedSha256CompressionBatch,
+) -> Result<(Sha256CompressionSpec<'_, PackedSourceRepeatedVirtualMap>, &Sha256WfbitzBlock), ProtocolError>
+{
+    let block = prepared.wfbitz_block().ok_or(ProtocolError::InvalidGeometry)?;
+    match Sha256CompressionRelation::new(prepared)? {
+        Sha256CompressionRelation::Product(mut spec) => {
+            spec.block = Some(block);
+            Ok((spec, block))
+        }
+        Sha256CompressionRelation::Legacy(_) => Err(ProtocolError::InvalidGeometry),
+    }
+}
+
+#[cfg(feature = "bitz-parity")]
+/// BitZ's scheme over the committed block grid under the batch's resolved
+/// ladder (the same prover/verifier configurations the statement cites).
+fn wfbitz_pcs(
+    block: &Sha256WfbitzBlock,
+    resolved: &ResolvedLigerito,
+) -> Result<crate::wfbitz::Pcs, ProtocolError> {
+    let shape = crate::wfbitz::Shape::new(block.layout.row_vars, block.layout.col_vars)
+        .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ committed shape: {e:?}")))?;
+    crate::wfbitz::Pcs::from_configs(&shape, resolved.prover().clone(), resolved.verifier().clone())
+        .map_err(|e| ProtocolError::LigeritoConfig(format!("BitZ pcs: {e:?}")))
+}
+
+#[cfg(feature = "bitz-parity")]
+/// Bits `[position, position + 64)` of the packed source in its cell order
+/// (cell `c·2^t + b` = row `b` of column `c`); cells past the grid read zero.
+fn packed_bits64(rows: &[Vec<u64>], row_vars: usize, position: usize) -> u64 {
+    let column_bits = 1usize << row_vars;
+    let column = position >> row_vars;
+    let offset = position & (column_bits - 1);
+    let (word, shift) = (offset / 64, offset % 64);
+    let read = |c: usize, w: usize| rows.get(c).and_then(|row| row.get(w)).copied().unwrap_or(0);
+    let low = read(column, word);
+    if shift == 0 {
+        return low;
+    }
+    let (next_column, next_word) = if (word + 1) * 64 < column_bits {
+        (column, word + 1)
+    } else {
+        (column + 1, 0)
+    };
+    (low >> shift) | (read(next_column, next_word) << (64 - shift))
+}
+
+#[cfg(feature = "bitz-parity")]
+/// The packed source regrouped into the block layout: instance `i`'s local
+/// column `j ≥ 1` (packed cell `1 + i·w + j − 1`, `w` nonconstant cells per
+/// instance) at block cell `i·2^a + j`, its own constant one at block cell
+/// `i·2^a`, zeros in the rest of the block. Each block's `w + 1` bits are the
+/// packed cells `i·w .. i·w + w` read 64 at a time, with the first
+/// overwritten by the constant.
+fn wfbitz_block_rows(
+    prepared: &PreparedSha256CompressionBatch,
+    witness: &Sha256CompressionWitnessBatch,
+) -> Result<Vec<Vec<u64>>, ProtocolError> {
+    let block = prepared.wfbitz_block().ok_or(ProtocolError::InvalidGeometry)?;
+    let packed = prepared.source_params();
+    let source = witness.source_rows();
+    validate_rows(packed, source)?;
+    validate_shared_constant(source)?;
+    let width = block.map.local().cols() - 1;
+    let a = block.map.log_source_block();
+    let layout = &block.layout;
+    let per_column = 1usize << (layout.row_vars - a);
+    let words = layout.rows() / 64;
+    let span_words = (width + 1).div_ceil(64);
+    let tail_bits = (width + 1) % 64;
+    let instances = prepared.instances();
+    if instances != per_column * layout.cols() || a < 6 {
+        return Err(ProtocolError::InvalidGeometry);
+    }
+    let fill = |column: usize| {
+        let mut row = vec![0u64; words];
+        for low in 0..per_column {
+            let instance = column * per_column + low;
+            let base = (low << a) / 64;
+            for word in 0..span_words {
+                let mut bits = packed_bits64(source, packed.row_vars, instance * width + 64 * word);
+                if word + 1 == span_words && tail_bits != 0 {
+                    bits &= (1u64 << tail_bits) - 1;
+                }
+                row[base + word] = bits;
+            }
+            row[base] |= 1;
+        }
+        row
+    };
+    #[cfg(feature = "parallel")]
+    let rows = (0..layout.cols()).into_par_iter().map(fill).collect();
+    #[cfg(not(feature = "parallel"))]
+    let rows = (0..layout.cols()).map(fill).collect();
+    Ok(rows)
+}
+
+#[cfg(feature = "bitz-parity")]
+/// Commits a witness for the worldfnd/BitZ opener: the packed source in the
+/// block layout, under the batch's resolved ladder.
+pub fn commit_sha256_compression_witness_wfbitz(
+    prepared: &PreparedSha256CompressionBatch,
+    witness: &Sha256CompressionWitnessBatch,
+) -> Result<FlockCommitHint, ProtocolError> {
+    let block = prepared.wfbitz_block().ok_or(ProtocolError::InvalidGeometry)?;
+    let resolved = prepared.ligerito_configuration()?;
+    let rows = wfbitz_block_rows(prepared, witness)?;
+    let hint = commit_rs_ligerito_rows(&block.layout, rows, resolved.prover());
+    validate_ligerito_commitment(&hint.commitment, resolved.prover()).map_err(ProtocolError::Bitz)?;
+    Ok(hint)
+}
+
+#[cfg(feature = "bitz-parity")]
+/// Proves a batch prepared for the worldfnd/BitZ opener
+/// (`prepare_sha256_compression_batch_wfbitz_with_profile`): the same
+/// statement binding, prime and linear PIOP as the crate's own opener, the
+/// rank-one claim discharged by BitZ over the product tensor and opened on
+/// the block-layout commitment (`crate::wfbitz::block`).
+pub fn prove_sha256_compressions_wfbitz<T: Transcript + Send>(
+    transcript: &mut T,
+    prepared: &PreparedSha256CompressionBatch,
+    public_statement: &[Sha256CompressionStatement],
+    witness: &Sha256CompressionWitnessBatch,
+    hint: &FlockCommitHint,
+) -> Result<Sha256WfbitzProof, ProtocolError> {
+    let (spec, block) = wfbitz_spec(prepared)?;
+    let resolved = prepared.ligerito_configuration()?;
+    let pcs = wfbitz_pcs(block, resolved)?;
+    prove_linear_with(
+        transcript,
+        &spec,
+        public_statement,
+        witness,
+        hint,
+        LinearProveOptions::default(),
+        &WfbitzBlockOpener {
+            config: resolved.prover(),
+            pcs: &pcs,
+            map: &block.map,
+        },
+    )
+}
+
+#[cfg(feature = "bitz-parity")]
+/// Verifies a [`prove_sha256_compressions_wfbitz`] proof.
+pub fn verify_sha256_compressions_wfbitz<T: Transcript + Send>(
+    transcript: &mut T,
+    prepared: &PreparedSha256CompressionBatch,
+    public_statement: &[Sha256CompressionStatement],
+    commitment: &Commitment,
+    proof: &Sha256WfbitzProof,
+) -> Result<(), ProtocolError> {
+    let (spec, block) = wfbitz_spec(prepared)?;
+    let resolved = prepared.ligerito_configuration()?;
+    let pcs = wfbitz_pcs(block, resolved)?;
+    verify_linear_with(
+        transcript,
+        &spec,
+        public_statement,
+        commitment,
+        proof,
+        &WfbitzBlockOpener {
+            config: resolved.verifier(),
+            pcs: &pcs,
+            map: &block.map,
+        },
     )
 }
 
@@ -3566,5 +3760,160 @@ mod tests {
             );
         }
         assert_eq!(claimed, u128::from(field_config.to_integer(&initial_claim)));
+    }
+
+    #[cfg(feature = "bitz-parity")]
+    mod wfbitz {
+        use super::*;
+        use crate::piop::spartan::{
+            Lambda100,
+            sha256::{
+                prepare_sha256_compression_batch_wfbitz_at,
+                prepare_sha256_compression_batch_wfbitz_with_profile,
+            },
+        };
+
+        /// The production split at `2^7` (`r = 0`: one instance block per
+        /// committed column) and an explicit `t = 17` (`r = 2`: four).
+        fn batches() -> Vec<PreparedSha256CompressionBatch> {
+            vec![
+                prepare_sha256_compression_batch_wfbitz_with_profile::<Lambda100>(7).unwrap(),
+                prepare_sha256_compression_batch_wfbitz_at::<Lambda100>(7, 17).unwrap(),
+            ]
+        }
+
+        fn bit(rows: &[Vec<u64>], layout: &IntegerMatrixLayout, cell: usize) -> u64 {
+            let (column, row) = (cell >> layout.row_vars, cell & (layout.rows() - 1));
+            (rows[column][row / 64] >> (row % 64)) & 1
+        }
+
+        /// The prime fits one fold at the opener's split, and the split is the
+        /// wfbitz rule `⌈0.6 n⌉ − 1` clamped to the local bits.
+        #[test]
+        fn prepared_batches_fit_one_fold() {
+            for prepared in batches() {
+                let t = prepared.opening_params().row_vars;
+                let q_bits = 128 - prepared.security().projection_max.leading_zeros() as usize;
+                assert!(q_bits <= 127 - t - 1, "t = {t}: q has {q_bits} bits");
+                let block = prepared.wfbitz_block().unwrap();
+                assert_eq!(block.layout.row_vars, t - 2);
+                assert_eq!(block.layout.col_vars, prepared.opening_params().col_vars);
+            }
+            assert_eq!(
+                prepare_sha256_compression_batch_wfbitz_with_profile::<Lambda100>(7)
+                    .unwrap()
+                    .opening_params()
+                    .row_vars,
+                15
+            );
+        }
+
+        /// The block rows under the block map are the product tensor, bit for
+        /// bit; every instance's constant copy is one and its padding zero.
+        #[test]
+        fn block_rows_under_the_block_map_are_the_product_tensor() {
+            for prepared in batches() {
+                let block = prepared.wfbitz_block().unwrap();
+                let inputs = (0..prepared.instances()).map(input).collect::<Vec<_>>();
+                let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
+                let rows = wfbitz_block_rows(&prepared, &witness).unwrap();
+                let committed = &block.layout;
+                let opened = prepared.opening_params();
+                let mut derived = vec![vec![0u64; opened.rows() / 64]; opened.cols()];
+                for (column, row) in rows.iter().enumerate() {
+                    for (word_index, &word) in row.iter().enumerate() {
+                        let mut bits = word;
+                        while bits != 0 {
+                            let b = word_index * 64 + bits.trailing_zeros() as usize;
+                            bits &= bits - 1;
+                            let source = (column << committed.row_vars) | b;
+                            for d in block.map.column_rows(source).unwrap() {
+                                let (c, r) = (d >> opened.row_vars, d & (opened.rows() - 1));
+                                derived[c][r / 64] ^= 1 << (r % 64);
+                            }
+                        }
+                    }
+                }
+                assert_eq!(
+                    derived.as_slice(),
+                    witness.product_assignment_rows().unwrap(),
+                    "t = {}",
+                    opened.row_vars
+                );
+                let a = block.map.log_source_block();
+                let width = block.map.local().cols();
+                for instance in 0..prepared.instances() {
+                    assert_eq!(bit(&rows, committed, instance << a), 1);
+                    for j in width..1 << a {
+                        assert_eq!(bit(&rows, committed, (instance << a) + j), 0);
+                    }
+                }
+            }
+        }
+
+        /// Commit, prove and verify through the block opener; a wrong output,
+        /// a changed opening stream, or a commitment whose instance-5 constant
+        /// copy is zero is rejected.
+        #[test]
+        fn roundtrips_and_rejects_tampering() {
+            for prepared in batches() {
+                let block = prepared.wfbitz_block().unwrap();
+                let inputs = (0..prepared.instances()).map(input).collect::<Vec<_>>();
+                let witness = generate_sha256_compression_witnesses(&prepared, &inputs).unwrap();
+                let statements = public_statements(&inputs, witness.outputs());
+                let hint = commit_sha256_compression_witness_wfbitz(&prepared, &witness).unwrap();
+                let prove = |hint: &FlockCommitHint| {
+                    prove_sha256_compressions_wfbitz(
+                        &mut Blake3Transcript::new(),
+                        &prepared,
+                        &statements,
+                        &witness,
+                        hint,
+                    )
+                };
+                let verify = |statements: &[Sha256CompressionStatement],
+                              commitment: &Commitment,
+                              proof: &Sha256WfbitzProof| {
+                    verify_sha256_compressions_wfbitz(
+                        &mut Blake3Transcript::new(),
+                        &prepared,
+                        statements,
+                        commitment,
+                        proof,
+                    )
+                };
+                let proof = prove(&hint).unwrap();
+                verify(&statements, &hint.commitment, &proof).unwrap();
+                assert_eq!(proof.bitz().ood.is_some(), prepared.security().ood.is_some());
+                assert!(proof.inner().round_polynomials.is_empty());
+
+                let mut wrong = statements.clone();
+                let mut output = witness.outputs()[3];
+                output[0] ^= 1;
+                wrong[3] = Sha256CompressionStatement::new(inputs[3], output);
+                assert!(verify(&wrong, &hint.commitment, &proof).is_err());
+
+                let mut tampered = proof.clone();
+                tampered.bitz_mut().narg[7] ^= 1;
+                assert!(verify(&statements, &hint.commitment, &tampered).is_err());
+                let mut tampered = proof.clone();
+                let last = tampered.bitz().hints.len() - 1;
+                tampered.bitz_mut().hints[last] ^= 1;
+                assert!(verify(&statements, &hint.commitment, &tampered).is_err());
+
+                let mut rows = wfbitz_block_rows(&prepared, &witness).unwrap();
+                let cell = 5usize << block.map.log_source_block();
+                let (column, row) = (cell >> block.layout.row_vars, cell & (block.layout.rows() - 1));
+                rows[column][row / 64] &= !(1 << (row % 64));
+                let bad = commit_rs_ligerito_rows(
+                    &block.layout,
+                    rows,
+                    prepared.ligerito_configuration().unwrap().prover(),
+                );
+                if let Ok(proof) = prove(&bad) {
+                    assert!(verify(&statements, &bad.commitment, &proof).is_err());
+                }
+            }
+        }
     }
 }

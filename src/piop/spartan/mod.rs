@@ -112,6 +112,12 @@ pub use sha256::{
     prove_sha256_compressions_with_prefix_vars_and_config, sha256_compression_configs,
     verify_sha256_compressions, verify_sha256_compressions_with_config,
 };
+#[cfg(feature = "bitz-parity")]
+pub use sha256::{
+    Sha256WfbitzProof, commit_sha256_compression_witness_wfbitz,
+    prepare_sha256_compression_batch_wfbitz_at, prepare_sha256_compression_batch_wfbitz_with_profile,
+    prove_sha256_compressions_wfbitz, verify_sha256_compressions_wfbitz,
+};
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
 pub use sha256::{
