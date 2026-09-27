@@ -41,6 +41,18 @@ pub(crate) trait StreamingCoefficientSource: Sync {
     ) -> Option<Result<(), SumcheckError>> {
         None
     }
+
+    /// Optional additive replay after binding the low variables with the given
+    /// equality weights. Indices are in the original domain divided by the
+    /// weights' length; padding and omitted entries remain zero.
+    fn for_each_partition_folded(
+        &self,
+        _partition: usize,
+        _weights: &[Field],
+        _emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+    ) -> Option<Result<(), SumcheckError>> {
+        None
+    }
 }
 
 /// A streaming source deliberately has no random-access coefficient operation.
@@ -124,6 +136,26 @@ impl<'a, S: StreamingCoefficientSource + ?Sized> StreamingMle<'a, S> {
                 emit(base, values)
             })
     }
+
+    fn visit_folded_checked<const K: usize>(
+        &self,
+        partition: usize,
+        weights: &[Field],
+        cfg: &FieldConfig,
+        mut emit: impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+    ) -> Option<Result<(), SumcheckError>> {
+        let start = partition * self.source.partition_len();
+        let end = (start + self.source.partition_len()).min(self.source.live_len());
+        let range = (start >> K)..end.div_ceil(1 << K);
+        self.source
+            .for_each_partition_folded(partition, weights, &mut |index, value| {
+                if !range.contains(&index) {
+                    return Err(SumcheckError::InvalidProductDimensions);
+                }
+                validate_field_values(std::slice::from_ref(&value), cfg)?;
+                emit(index, value)
+            })
+    }
 }
 
 impl<S: StreamingCoefficientSource + ?Sized> InnerSumcheckMleSource for StreamingMle<'_, S> {
@@ -195,6 +227,15 @@ impl<S: StreamingCoefficientSource + ?Sized> InnerSumcheckMleSource for Streamin
                 // The final even-length padding slot has no source coefficient.
                 if partition * width >= suffix_count {
                     return Ok(());
+                }
+                if let Some(result) =
+                    self.visit_folded_checked::<K>(partition, &weights, cfg, |index, value| {
+                        let slot = &mut values[index - partition * width];
+                        *slot = raw_montgomery(&cfg.add(&field_from_raw(slot, cfg), &value));
+                        Ok(())
+                    })
+                {
+                    return result;
                 }
                 if let Some(result) =
                     self.visit_blocks_checked::<K>(partition, cfg, |base, block| {
@@ -297,6 +338,23 @@ impl<S: StreamingCoefficientSource + ?Sized> InnerSumcheckMleSource for Streamin
                     )
                 };
 
+                if let Some(result) = self.visit_folded_checked::<K>(
+                    partition,
+                    prefix_weights,
+                    cfg,
+                    |index, value| {
+                        let slot = &mut values[index - offset];
+                        *slot = raw_montgomery(&cfg.add(&field_from_raw(slot, cfg), &value));
+                        Ok(())
+                    },
+                ) {
+                    result?;
+                    for pair in 0..values.len() / 2 {
+                        accumulate(&mut accumulators, values, pair)?;
+                    }
+                    return Ok(accumulators);
+                }
+
                 // Ordered final-sum blocks complete each adjacent V pair as
                 // soon as the next pair arrives. Consume it while it is hot;
                 // omitted pairs have V0 = V1 = 0 and contribute nothing.
@@ -367,6 +425,45 @@ impl<S: StreamingCoefficientSource + ?Sized> StreamingMle<'_, S> {
         zero: &Field,
     ) -> Result<PrefixAccumulators, SumcheckError> {
         let mut state = PrefixBuildState::new::<K>(zero);
+        // For a fixed witness byte, every prefix accumulator is linear in its
+        // eight coefficient values. Sum those values before the ternary
+        // extension, so a large partition extends at most 255 blocks instead
+        // of one block for every eight source positions. Small partitions keep
+        // the direct path to avoid initializing the 32 KiB bucket table.
+        if K == 3 && self.source.partition_len() >= 1 << 12 {
+            let mut buckets = vec![*zero; 256 * 8];
+            let mut occupied = [false; 256];
+            if let Some(result) = self.visit_blocks_checked::<K>(partition, cfg, |base, values| {
+                let active = 8.min(live_len - base);
+                let word = bits.bits_at(base, active)?;
+                if word & !low_bits_mask(active) != 0 {
+                    return Err(SumcheckError::InvalidProductDimensions);
+                }
+                // The multilinear extension of an all-zero witness block is
+                // zero everywhere, including at the ternary prefix points.
+                if word != 0 {
+                    occupied[word as usize] = true;
+                    for (sum, value) in buckets[8 * word as usize..][..8].iter_mut().zip(values) {
+                        *sum = cfg.add(sum, value);
+                    }
+                }
+                Ok(())
+            }) {
+                result?;
+                for (word, used) in occupied.into_iter().enumerate() {
+                    if used {
+                        accumulate_three_variable_block(
+                            &mut state,
+                            &buckets[8 * word..][..8],
+                            word,
+                            cfg,
+                            zero,
+                        );
+                    }
+                }
+                return finish_partition::<K>(state, cfg, zero);
+            }
+        }
         if let Some(result) = self.visit_blocks_checked::<K>(partition, cfg, |base, values| {
             accumulate_block::<K, _>(&mut state, base >> K, values, bits, live_len, cfg, zero)
         }) {
@@ -448,6 +545,31 @@ fn finish_partition<const K: usize>(
 /// bits; this packed prover does not provide constant-time witness processing.
 static BIT_EXTENSIONS_3: [[i8; 27]; 256] = bit_extensions_3();
 
+fn accumulate_three_variable_block(
+    state: &mut PrefixBuildState,
+    values: &[Field],
+    word: usize,
+    cfg: &FieldConfig,
+    zero: &Field,
+) {
+    state.v_values.clear();
+    state.v_values.extend_from_slice(values);
+    extend_lsb::<Field, 3, _>(&mut state.v_values, &mut state.v_scratch, zero, |hi, lo| {
+        cfg.sub(hi, lo)
+    });
+    for (beta, &coefficient) in BIT_EXTENSIONS_3[word].iter().enumerate() {
+        if coefficient != 0 {
+            linear_multiply_accumulate_signed(
+                cfg,
+                &mut state.partial_sums[beta],
+                &state.v_values[beta],
+                i64::from(coefficient),
+                zero,
+            );
+        }
+    }
+}
+
 const fn bit_extensions_3() -> [[i8; 27]; 256] {
     let mut table = [[0; 27]; 256];
     let mut word = 0;
@@ -496,25 +618,15 @@ fn accumulate_block<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     if word & !low_bits_mask(active) != 0 {
         return Err(SumcheckError::InvalidProductDimensions);
     }
+    if K == 3 {
+        accumulate_three_variable_block(state, values, word as usize, cfg, zero);
+        return Ok(());
+    }
     state.v_values.clear();
     state.v_values.extend_from_slice(values);
     extend_lsb::<Field, K, _>(&mut state.v_values, &mut state.v_scratch, zero, |hi, lo| {
         cfg.sub(hi, lo)
     });
-    if K == 3 {
-        for (beta, &coefficient) in BIT_EXTENSIONS_3[word as usize].iter().enumerate() {
-            if coefficient != 0 {
-                linear_multiply_accumulate_signed(
-                    cfg,
-                    &mut state.partial_sums[beta],
-                    &state.v_values[beta],
-                    i64::from(coefficient),
-                    zero,
-                );
-            }
-        }
-        return Ok(());
-    }
     state.h_values.clear();
     state
         .h_values
@@ -947,6 +1059,67 @@ mod tests {
     }
 
     #[test]
+    fn grouped_witness_patterns_match_dense_with_repetition_cancellation_and_padding() {
+        let cfg = spartan_bitz_field_config();
+        // Repeat every witness pattern within each partition. Coefficients
+        // include negatives and cancellation, while the last partial block and
+        // capacity tail exercise independent coefficient/witness padding.
+        let num_vars = 14;
+        let live_len: usize = (1 << num_vars) - 13;
+        let mut bits = vec![0u64; live_len.div_ceil(64)];
+        let mut coefficients = vec![cfg.zero(); 1 << num_vars];
+        let mut witness = vec![cfg.zero(); 1 << num_vars];
+        for i in 0..live_len {
+            let word = (i / 8) % 256;
+            if word >> (i % 8) & 1 != 0 {
+                bits[i / 64] |= 1 << (i % 64);
+                witness[i] = cfg.one();
+            }
+            let value = Field::from_with_cfg((i % 2048 + 1) as u64, &cfg);
+            coefficients[i] = if i / 2048 % 2 == 0 {
+                value
+            } else {
+                cfg.neg(&value)
+            };
+        }
+        let claim = coefficients
+            .iter()
+            .zip(&witness)
+            .fold(cfg.zero(), |sum, (a, b)| cfg.add(&sum, &cfg.mul(a, b)));
+        let blocks = Blocks {
+            values: &coefficients[..live_len],
+            zero: cfg.zero(),
+            num_vars,
+            partition_len: 1 << 12,
+        };
+        let mut actual_transcript = Blake3Transcript::new();
+        let actual = prove_inner_sumcheck(
+            &cfg,
+            &mut actual_transcript,
+            claim,
+            PackedInput::new(&StreamingMle::new(&blocks), &bits, num_vars, live_len, 3),
+            (),
+            &mut UngrindedRoundBoundary,
+        )
+        .unwrap();
+        let mut reference_transcript = Blake3Transcript::new();
+        let reference = prove_inner_sumcheck(
+            &cfg,
+            &mut reference_transcript,
+            claim,
+            witness,
+            coefficients,
+            &mut UngrindedRoundBoundary,
+        )
+        .unwrap();
+        assert_eq!(actual, reference);
+        assert_eq!(
+            actual_transcript.get_challenge::<u128>(),
+            reference_transcript.get_challenge::<u128>(),
+        );
+    }
+
+    #[test]
     fn ordered_blocks_match_scatter_proofs_with_partition_tails_and_zero_blocks() {
         let cfg = spartan_bitz_field_config();
         for live_len in [1, 13, 32, 33, 193, 256] {
@@ -997,6 +1170,117 @@ mod tests {
                 .unwrap();
                 assert_eq!(actual, expected, "live={live_len}, prefix={prefix}");
                 assert_eq!(a.get_challenge::<u128>(), b.get_challenge::<u128>());
+            }
+        }
+    }
+
+    #[test]
+    fn direct_folded_replays_match_dense_transcripts_across_partition_tails() {
+        struct Folded<'a> {
+            blocks: Blocks<'a>,
+            cfg: &'a FieldConfig,
+        }
+        impl StreamingCoefficientSource for Folded<'_> {
+            fn num_vars(&self) -> usize {
+                self.blocks.num_vars()
+            }
+            fn live_len(&self) -> usize {
+                self.blocks.live_len()
+            }
+            fn partition_len(&self) -> usize {
+                self.blocks.partition_len()
+            }
+            fn for_each_coefficient(
+                &self,
+                _: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+            ) -> Result<(), SumcheckError> {
+                panic!("unexpected scalar replay")
+            }
+            fn for_each_partition_block(
+                &self,
+                partition: usize,
+                width: usize,
+                emit: &mut impl FnMut(usize, &[Field]) -> Result<(), SumcheckError>,
+            ) -> Option<Result<(), SumcheckError>> {
+                self.blocks.for_each_partition_block(partition, width, emit)
+            }
+            fn for_each_partition_folded(
+                &self,
+                partition: usize,
+                weights: &[Field],
+                emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+            ) -> Option<Result<(), SumcheckError>> {
+                Some((|| {
+                    let start = partition * self.partition_len();
+                    let end = (start + self.partition_len()).min(self.live_len());
+                    // Repeat destinations and emit in reverse order, which
+                    // catches accidentally treating additive updates as final.
+                    for i in (start..end).rev() {
+                        emit(
+                            i / weights.len(),
+                            self.cfg
+                                .mul(&self.blocks.values[i], &weights[i % weights.len()]),
+                        )?;
+                    }
+                    Ok(())
+                })())
+            }
+        }
+        let cfg = spartan_bitz_field_config();
+        for live_len in [1, 13, 32, 33, 193, 256] {
+            let (_, coefficients, bits, _) = fixture(8, live_len, &cfg);
+            let mut witness = vec![cfg.zero(); 256];
+            for i in 0..live_len {
+                if bits[i / 64] >> (i % 64) & 1 != 0 {
+                    witness[i] = cfg.one();
+                }
+            }
+            let mut dense = coefficients.clone();
+            dense.resize(256, cfg.zero());
+            let claim = dense
+                .iter()
+                .zip(&witness)
+                .fold(cfg.zero(), |sum, (a, b)| cfg.add(&sum, &cfg.mul(a, b)));
+            for partition_len in [16, 64, 256] {
+                let source = Folded {
+                    blocks: Blocks {
+                        values: &coefficients,
+                        zero: cfg.zero(),
+                        num_vars: 8,
+                        partition_len,
+                    },
+                    cfg: &cfg,
+                };
+                for prefix in 0..=4 {
+                    let mut actual_transcript = Blake3Transcript::new();
+                    let actual = prove_inner_sumcheck(
+                        &cfg,
+                        &mut actual_transcript,
+                        claim,
+                        PackedInput::new(&StreamingMle::new(&source), &bits, 8, live_len, prefix),
+                        (),
+                        &mut UngrindedRoundBoundary,
+                    )
+                    .unwrap();
+                    let mut expected_transcript = Blake3Transcript::new();
+                    let expected = prove_inner_sumcheck(
+                        &cfg,
+                        &mut expected_transcript,
+                        claim,
+                        witness.clone(),
+                        dense.clone(),
+                        &mut UngrindedRoundBoundary,
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        actual, expected,
+                        "live={live_len}, partition={partition_len}, prefix={prefix}"
+                    );
+                    assert_eq!(
+                        actual_transcript.get_challenge::<u128>(),
+                        expected_transcript.get_challenge::<u128>()
+                    );
+                }
             }
         }
     }
@@ -1220,6 +1504,73 @@ mod tests {
                     Blake3Transcript::new().get_challenge::<u128>()
                 );
             }
+        }
+    }
+
+    #[test]
+    fn direct_folded_replays_reject_wrong_partition_and_noncanonical_values() {
+        struct InvalidFolded<'a> {
+            cfg: &'a FieldConfig,
+            fault: usize,
+        }
+        impl StreamingCoefficientSource for InvalidFolded<'_> {
+            fn num_vars(&self) -> usize {
+                5
+            }
+            fn live_len(&self) -> usize {
+                29
+            }
+            fn partition_len(&self) -> usize {
+                16
+            }
+            fn for_each_coefficient(
+                &self,
+                _: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+            ) -> Result<(), SumcheckError> {
+                panic!("unexpected scalar replay")
+            }
+            fn for_each_partition_folded(
+                &self,
+                partition: usize,
+                weights: &[Field],
+                emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+            ) -> Option<Result<(), SumcheckError>> {
+                let first = partition * 16 / weights.len();
+                Some(match self.fault {
+                    0 => emit(first + 16 / weights.len(), self.cfg.one()),
+                    1 => emit(usize::MAX, self.cfg.one()),
+                    2 => emit(
+                        first,
+                        crate::piop::spartan::noncanonical_test_value(self.cfg),
+                    ),
+                    _ => unreachable!(),
+                })
+            }
+        }
+        let cfg = spartan_bitz_field_config();
+        for fault in 0..3 {
+            let source = InvalidFolded { cfg: &cfg, fault };
+            let stream = StreamingMle::new(&source);
+            macro_rules! check {
+                ($k:expr) => {
+                    assert!(
+                        stream
+                            .fold_prefix_table::<$k>(
+                                5,
+                                29,
+                                &[cfg.one(); $k],
+                                &cfg,
+                                &cfg.zero(),
+                                &cfg.one(),
+                            )
+                            .is_err()
+                    );
+                };
+            }
+            check!(0);
+            check!(1);
+            check!(3);
+            check!(4);
         }
     }
 }

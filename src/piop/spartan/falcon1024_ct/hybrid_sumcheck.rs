@@ -3,6 +3,9 @@
 //! Coefficients are sums of tensor products and sparse additive gathers. The
 //! first seven rounds operate on packed bits; only then are the coefficient
 //! and witness tables materialized, with one field element per packed word.
+//! The following lane rounds retain only occupied source lanes. Missing lanes
+//! are still zero operands of the same virtual polynomial, not a smaller
+//! sumcheck domain. Physical source padding remains in the witness table.
 //! The caller must bind all commitments and all claims defining the public
 //! coefficients, and sample any claim-batching scalars, before this reduction.
 use crate::hybrid::{
@@ -388,6 +391,132 @@ struct State<'a, const N: usize> {
     point: [F; 7],
     round: usize,
     next: [F; 2],
+    lanes: Option<LaneLayout>,
+}
+
+/// Compact columns for the occupied lanes of each virtual position. A pair
+/// may have a missing operand, represented by `usize::MAX`; it still performs
+/// the original Boolean-coordinate fold with that operand equal to zero.
+struct LaneLayout {
+    width: usize,
+    active: Vec<usize>,
+    pairs: Vec<[usize; 2]>,
+}
+
+impl LaneLayout {
+    fn new(width: usize, active: Vec<usize>) -> Self {
+        let mut pairs: Vec<[usize; 2]> = Vec::new();
+        let mut previous = usize::MAX;
+        for (column, &lane) in active.iter().enumerate() {
+            if lane / 2 != previous {
+                pairs.push([usize::MAX; 2]);
+                previous = lane / 2;
+            }
+            pairs.last_mut().expect("occupied pair")[lane & 1] = column;
+        }
+        Self {
+            width,
+            active,
+            pairs,
+        }
+    }
+
+    fn folded(&self) -> Self {
+        let mut active: Vec<_> = self.active.iter().map(|lane| lane / 2).collect();
+        active.dedup();
+        Self::new(self.width / 2, active)
+    }
+
+    fn get(values: &[F], column: usize) -> F {
+        if column == usize::MAX {
+            F::ZERO
+        } else {
+            values[column]
+        }
+    }
+
+    fn message(&self, witness: &[F], weights: &[F]) -> [F; 2] {
+        let mut message = [F::ZERO; 2];
+        for &[left, right] in &self.pairs {
+            let x0 = Self::get(witness, left);
+            let x1 = Self::get(witness, right);
+            let w0 = Self::get(weights, left);
+            let w1 = Self::get(weights, right);
+            message[0] += x0 * w0;
+            message[1] += (x0 + x1) * (w0 + w1);
+        }
+        message
+    }
+
+    /// Fold a compact lane table and compute the next message while the
+    /// outputs are in registers. After the support becomes dense, the normal
+    /// fused dense kernel takes over without copying or reordering a table.
+    fn fold(&self, scratch: &mut Scratch, r: F) -> (Self, [F; 2]) {
+        let next = self.folded();
+        let columns = self.active.len();
+        let next_columns = next.active.len();
+        let groups = scratch.witness.len() / columns;
+        let n = groups * next_columns;
+        let mut witness = kernels::take_cleared(&mut scratch.spare_x, n);
+        let mut weights = kernels::take_cleared(&mut scratch.spare_w, n);
+        let message = sum_pairs(
+            cfg_chunks_mut!(&mut witness.spare_capacity_mut()[..n], 64 * next_columns)
+                .zip(cfg_chunks_mut!(
+                    &mut weights.spare_capacity_mut()[..n],
+                    64 * next_columns
+                ))
+                .enumerate()
+                .map(|(chunk, (xo, wo))| {
+                    let mut message = [F::ZERO; 2];
+                    let mut previous = [F::ZERO; 2];
+                    for (group, (xo, wo)) in xo
+                        .chunks_exact_mut(next_columns)
+                        .zip(wo.chunks_exact_mut(next_columns))
+                        .enumerate()
+                    {
+                        let base = (chunk * 64 + group) * columns;
+                        let x = &scratch.witness[base..base + columns];
+                        let w = &scratch.weights[base..base + columns];
+                        let mut xf = [F::ZERO; 16];
+                        let mut wf = [F::ZERO; 16];
+                        for (column, &[left, right]) in self.pairs.iter().enumerate() {
+                            let x0 = Self::get(x, left);
+                            let x1 = Self::get(x, right);
+                            let w0 = Self::get(w, left);
+                            let w1 = Self::get(w, right);
+                            xf[column] = x0 + r * (x0 + x1);
+                            wf[column] = w0 + r * (w0 + w1);
+                            xo[column].write(xf[column]);
+                            wo[column].write(wf[column]);
+                        }
+                        if next.width == 1 {
+                            // The next coordinate is a position coordinate,
+                            // so its pairs straddle consecutive lane groups.
+                            if group & 1 == 0 {
+                                previous = [xf[0], wf[0]];
+                            } else {
+                                message[0] += previous[0] * previous[1];
+                                message[1] += (previous[0] + xf[0]) * (previous[1] + wf[0]);
+                            }
+                        } else {
+                            let term = next.message(&xf, &wf);
+                            message[0] += term[0];
+                            message[1] += term[1];
+                        }
+                    }
+                    message
+                }),
+        );
+        // SAFETY: each output chunk writes all its occupied columns exactly
+        // once. The table has `groups * next_columns` initialized entries.
+        unsafe {
+            witness.set_len(n);
+            weights.set_len(n);
+        }
+        scratch.spare_x = std::mem::replace(&mut scratch.witness, witness);
+        scratch.spare_w = std::mem::replace(&mut scratch.weights, weights);
+        (next, message)
+    }
 }
 
 impl<const N: usize> input::sealed::Input for Input<'_, N> {}
@@ -420,12 +549,13 @@ impl<'a, const N: usize> input::Input<field::Gf128Ops> for Input<'a, N> {
             point: [F::ZERO; 7],
             round: 0,
             next: [F::ZERO; 2],
+            lanes: None,
         })
     }
 }
 
 impl<const N: usize> State<'_, N> {
-    fn prepare_dense(&mut self) {
+    fn prepare_lanes(&mut self) {
         for tensor in self.tensors.iter_mut().flatten() {
             tensor.marginals = Vec::new();
         }
@@ -438,94 +568,107 @@ impl<const N: usize> State<'_, N> {
         let scratch = &mut *self.input.scratch;
         let prefix: [F; 128] = eq_table(&self.point).try_into().expect("seven coordinates");
         let table = kernels::byte_table(&prefix);
-        let n = 1usize << geometry.packed_log();
-        let lanes = geometry.lanes();
+        let mut active: Vec<_> = (0..N)
+            .flat_map(|branch| {
+                (0..1 << geometry.lane_logs[branch])
+                    .map(move |local| geometry.offset(branch) + local)
+            })
+            .collect();
+        active.sort_unstable();
+        let layout = LaneLayout::new(geometry.lanes(), active);
+        let columns = layout.active.len();
+        let offsets: [usize; N] = std::array::from_fn(|branch| {
+            layout
+                .active
+                .partition_point(|&lane| lane < geometry.offset(branch))
+        });
+        let n = (1usize << geometry.position_log) * columns;
         let mut witness = kernels::take_cleared(&mut scratch.witness, n);
         let mut weights = kernels::take_cleared(&mut scratch.weights, n);
-        {
-            let sx = &mut witness.spare_capacity_mut()[..n];
-            let sw = &mut weights.spare_capacity_mut()[..n];
-            cfg_chunks_mut!(sx, lanes)
-                .zip(cfg_chunks_mut!(sw, lanes))
+        // Build one small position tile, including all sparse gathers, before
+        // emitting its first lane-round message and writing its tables. This
+        // avoids materializing the empty virtual lanes or scanning the newly
+        // built tables again just to compute the first round.
+        self.next = sum_pairs(
+            cfg_chunks_mut!(&mut witness.spare_capacity_mut()[..n], 64 * columns)
+                .zip(cfg_chunks_mut!(
+                    &mut weights.spare_capacity_mut()[..n],
+                    64 * columns
+                ))
                 .enumerate()
-                .for_each(|(group, (x, w))| {
-                    for lane in 0..lanes {
-                        let mut value = F::ZERO;
-                        let mut coefficient = F::ZERO;
-                        if let Some(branch) = (0..N).find(|&branch| {
-                            let start = geometry.offset(branch);
-                            (start..start + (1 << geometry.lane_logs[branch])).contains(&lane)
-                        }) {
-                            let local_lane = lane - geometry.offset(branch);
-                            let k = geometry.lane_logs[branch];
-                            let index = (group << k) | local_lane;
-                            value = kernels::apply(&table, sources[branch][index]);
-                            if index < 1 << geometry.logs[branch] {
-                                for tensor in &self.tensors[branch] {
-                                    coefficient += tensor.low[index % tensor.low.len()]
-                                        * tensor.high[index / tensor.low.len()];
+                .map(|(chunk, (xo, wo))| {
+                    let first_group = chunk * 64;
+                    let end_group = first_group + xo.len() / columns;
+                    let mut x = [F::ZERO; 1024];
+                    let mut w = [F::ZERO; 1024];
+                    for branch in 0..N {
+                        let k = geometry.lane_logs[branch];
+                        let width = 1 << k;
+                        for group in first_group..end_group {
+                            let dest = (group - first_group) * columns + offsets[branch];
+                            for lane in 0..width {
+                                let index = (group << k) | lane;
+                                // Include physical source padding in the
+                                // witness; its coefficient is zero. The PCS
+                                // separately authenticates that padding.
+                                x[dest + lane] = kernels::apply(&table, sources[branch][index]);
+                                if index < 1 << geometry.logs[branch] {
+                                    for tensor in &self.tensors[branch] {
+                                        w[dest + lane] += tensor.low[index % tensor.low.len()]
+                                            * tensor.high[index / tensor.low.len()];
+                                    }
                                 }
                             }
                         }
-                        x[lane].write(value);
-                        w[lane].write(coefficient);
+                        let first_bit = (first_group << k) * 128;
+                        let bits = geometry.logs[branch] + 7;
+                        let end_bit = ((end_group << k) * 128).min(1 << bits);
+                        if first_bit >= end_bit {
+                            continue;
+                        }
+                        for (gather, state) in self.input.coefficients[branch]
+                            .gathers
+                            .iter()
+                            .zip(&self.gathers[branch])
+                        {
+                            gather.in_range(
+                                gather.axis(bits),
+                                first_bit..end_bit,
+                                |index, repeat, coefficient| {
+                                    let word = index >> 7;
+                                    let dest = ((word >> k) - first_group) * columns
+                                        + offsets[branch]
+                                        + (word & (width - 1));
+                                    w[dest] +=
+                                        coefficient * state.high[repeat] * prefix[index & 127];
+                                },
+                            );
+                        }
                     }
-                });
-        }
-        // SAFETY: the disjoint groups above initialize all n slots of both buffers.
+                    let mut message = [F::ZERO; 2];
+                    for (x, w) in x[..xo.len()]
+                        .chunks_exact(columns)
+                        .zip(w[..wo.len()].chunks_exact(columns))
+                    {
+                        let term = layout.message(x, w);
+                        message[0] += term[0];
+                        message[1] += term[1];
+                    }
+                    for (dst, &value) in xo.iter_mut().zip(&x) {
+                        dst.write(value);
+                    }
+                    for (dst, &value) in wo.iter_mut().zip(&w) {
+                        dst.write(value);
+                    }
+                    message
+                }),
+        );
+        // SAFETY: every tile initializes every occupied lane in both outputs.
         unsafe {
             witness.set_len(n);
             weights.set_len(n);
         }
-        // Sorted source indices map monotonically into virtual lane groups.
-        // Each task owns whole groups, so arbitrary overlapping gathers can be
-        // added without atomics or a second coefficient table.
-        cfg_chunks_mut!(weights, 1024)
-            .enumerate()
-            .for_each(|(chunk, weights)| {
-                let start = chunk * 1024;
-                let first_group = start / lanes;
-                let end_group = (start + weights.len()) / lanes;
-                for branch in 0..N {
-                    let k = geometry.lane_logs[branch];
-                    let first_bit = (first_group << k) * 128;
-                    let bits = geometry.logs[branch] + 7;
-                    let end_bit = ((end_group << k) * 128).min(1 << bits);
-                    if first_bit >= end_bit {
-                        continue;
-                    }
-                    for (gather, state) in self.input.coefficients[branch]
-                        .gathers
-                        .iter()
-                        .zip(&self.gathers[branch])
-                    {
-                        gather.in_range(
-                            gather.axis(bits),
-                            first_bit..end_bit,
-                            |index, repeat, coefficient| {
-                                let word = index >> 7;
-                                let virtual_word = ((word >> k) << geometry.virtual_lane_log)
-                                    + geometry.offset(branch)
-                                    + (word & ((1 << k) - 1));
-                                weights[virtual_word - start] +=
-                                    coefficient * state.high[repeat] * prefix[index & 127];
-                            },
-                        );
-                    }
-                }
-            });
-        self.next = sum_pairs(
-            cfg_chunks!(&witness, 1024)
-                .zip(cfg_chunks!(&weights, 1024))
-                .map(|(x, w)| {
-                    let mut sum = [F::ZERO; 2];
-                    for (x, w) in x.chunks_exact(2).zip(w.chunks_exact(2)) {
-                        sum[0] += x[0] * w[0];
-                        sum[1] += (x[0] + x[1]) * (w[0] + w[1]);
-                    }
-                    sum
-                }),
-        );
+        self.lanes = (columns < geometry.lanes()).then_some(layout);
         self.tensors = std::array::from_fn(|_| Vec::new());
         self.gathers = std::array::from_fn(|_| Vec::new());
         scratch.witness = witness;
@@ -572,8 +715,13 @@ impl<const N: usize> input::State<field::Gf128Ops> for State<'_, N> {
             }
             self.round += 1;
             if self.round == 7 {
-                self.prepare_dense();
+                self.prepare_lanes();
             }
+        } else if let Some(lanes) = self.lanes.take() {
+            let (next_lanes, message) = lanes.fold(self.input.scratch, *r);
+            self.next = message;
+            self.lanes = (next_lanes.active.len() < next_lanes.width).then_some(next_lanes);
+            self.round += 1;
         } else {
             let s = &mut *self.input.scratch;
             self.next = kernels::dense_fold(
@@ -1016,15 +1164,16 @@ mod tests {
                 .unwrap(),
                 actual.1
             );
-            // All retained dense buffers are bounded by the packed virtual
-            // domain, including when the same scratch is reused.
+            // No buffer reserves columns for unoccupied virtual lanes,
+            // including when the same scratch is reused.
+            let occupied_words: usize = geometry.physical_logs.iter().map(|log| 1 << log).sum();
             for capacity in [
                 scratch.witness.capacity(),
                 scratch.weights.capacity(),
                 scratch.spare_x.capacity(),
                 scratch.spare_w.capacity(),
             ] {
-                assert!(capacity <= 1 << geometry.packed_log());
+                assert!(capacity <= occupied_words);
             }
             let repeated = prove(
                 &mut transcript(false),
@@ -1042,7 +1191,7 @@ mod tests {
 
     #[test]
     fn three_root_joint_sumcheck_and_cached_marginals_match_dense_transcript() {
-        for logs in [[9, 11, 9], [9, 11, 10], [9, 13, 10]] {
+        for logs in [[9, 11, 9], [9, 11, 10], [9, 13, 10], [9, 12, 10]] {
             let geometry = Geometry::new(logs).unwrap();
             let mut random = Random(0x791abc98);
             let packed: [Vec<F>; 3] = std::array::from_fn(|branch| {
@@ -1114,6 +1263,138 @@ mod tests {
                 cached.1
             );
         }
+    }
+
+    #[test]
+    fn compact_lane_folds_match_dense_for_every_nonempty_lane_support() {
+        let mut random = Random(0x3453ad9);
+        for mask in 1usize..1 << 16 {
+            let active: Vec<_> = (0..16).filter(|lane| mask & (1 << lane) != 0).collect();
+            let layout = LaneLayout::new(16, active.clone());
+            let mut x = [F::ZERO; 16];
+            let mut w = [F::ZERO; 16];
+            for &lane in &active {
+                x[lane] = random.next();
+                w[lane] = random.next();
+            }
+            let compact_x: Vec<_> = active.iter().map(|&lane| x[lane]).collect();
+            let compact_w: Vec<_> = active.iter().map(|&lane| w[lane]).collect();
+            let mut expected = [F::ZERO; 2];
+            for (x, w) in x.chunks_exact(2).zip(w.chunks_exact(2)) {
+                expected[0] += x[0] * w[0];
+                expected[1] += (x[0] + x[1]) * (w[0] + w[1]);
+            }
+            assert_eq!(layout.message(&compact_x, &compact_w), expected);
+            let folded = layout.folded();
+            let expected_support: Vec<_> = (0..8)
+                .filter(|pair| mask & (3 << (pair * 2)) != 0)
+                .collect();
+            assert_eq!(folded.active, expected_support);
+        }
+    }
+
+    fn check_source_count<const N: usize>(logs: [usize; N]) {
+        let geometry = Geometry::new(logs).unwrap();
+        let mut random = Random(0xdefd317);
+        let packed: [Vec<F>; N] = std::array::from_fn(|branch| {
+            (0..1 << geometry.physical_logs[branch])
+                .map(|_| random.next())
+                .collect()
+        });
+        let coefficients: [Coefficients; N] = std::array::from_fn(|branch| Coefficients {
+            tensors: vec![Tensor {
+                low: vec![random.next(); 128],
+                high_point: (0..logs[branch]).map(|_| random.next()).collect(),
+                marginals: None,
+            }],
+            gathers: Vec::new(),
+        });
+        let sources = packed.each_ref().map(Vec::as_slice);
+        let claims = coefficients.each_ref();
+        let (witness, weights, target) = dense_tables(&geometry, sources, claims);
+        let mut reference = transcript(false);
+        let expected = dense_prove(&mut reference, &geometry, witness, weights, target, 0);
+        let mut actual_t = transcript(false);
+        let actual = prove(
+            &mut actual_t,
+            &geometry,
+            sources,
+            claims,
+            target,
+            0,
+            &mut Scratch::default(),
+        )
+        .unwrap();
+        assert_eq!(actual, expected);
+        assert_eq!(
+            actual_t.get_challenge::<u128>(),
+            reference.get_challenge::<u128>()
+        );
+    }
+
+    #[test]
+    fn compact_lane_sumcheck_supports_one_and_four_sources() {
+        check_source_count([9]);
+        check_source_count([9, 10, 9, 12]);
+    }
+
+    #[test]
+    fn compact_lane_tables_preserve_physical_padding_at_the_opening_endpoint() {
+        let (geometry, mut packed, coefficients) = fixture([9, 13]);
+        let claims = coefficients.each_ref();
+        let (_, _, target) = dense_tables(&geometry, packed.each_ref().map(Vec::as_slice), claims);
+        let original = prove(
+            &mut transcript(false),
+            &geometry,
+            packed.each_ref().map(Vec::as_slice),
+            claims,
+            target,
+            0,
+            &mut Scratch::default(),
+        )
+        .unwrap();
+        // This bit is outside the logical source but inside its committed
+        // physical polynomial. It has zero coefficient, so the initial claim
+        // and packed rounds stay fixed; its final PCS evaluation must change.
+        assert!(geometry.physical_logs[0] > geometry.logs[0]);
+        packed[0][1 << geometry.logs[0]].lo ^= 1;
+        let (witness, weights, altered_target) =
+            dense_tables(&geometry, packed.each_ref().map(Vec::as_slice), claims);
+        assert_eq!(target, altered_target);
+        let altered = prove(
+            &mut transcript(false),
+            &geometry,
+            packed.each_ref().map(Vec::as_slice),
+            claims,
+            target,
+            0,
+            &mut Scratch::default(),
+        )
+        .unwrap();
+        let expected = dense_prove(
+            &mut transcript(false),
+            &geometry,
+            witness,
+            weights,
+            target,
+            0,
+        );
+        assert_eq!(altered, expected);
+        assert_eq!(&original.0.rounds[..7], &altered.0.rounds[..7]);
+        assert_ne!(original.0.value, altered.0.value);
+        let mut substituted = altered.0;
+        substituted.value = original.0.value;
+        assert!(
+            verify(
+                &mut transcript(false),
+                &geometry,
+                claims,
+                target,
+                0,
+                &substituted
+            )
+            .is_err()
+        );
     }
 
     #[test]

@@ -322,47 +322,7 @@ pub(crate) fn sv_fold_mfr<T: PackedBits>(wit: &[T], eq: &[Gf]) -> Vec<Gf> {
         .map(|c| {
             let lo = c * CHUNK;
             let hi = (lo + CHUNK).min(wit.len());
-            let mut s = vec![Gf::zero(); 128];
-            let mut y = lo;
-            while y + 8 <= hi {
-                // Zero words contribute nothing: a block of eight zero
-                // words (a virtual layout's unused lanes, zero padding)
-                // skips its subset-sum tables and transposes.
-                if wit[y..y + 8].iter().all(|w| w.bit_words() == [0, 0]) {
-                    y += 8;
-                    continue;
-                }
-                let lo_tbl = subset_sums_4([eq[y], eq[y + 1], eq[y + 2], eq[y + 3]]);
-                let hi_tbl = subset_sums_4([eq[y + 4], eq[y + 5], eq[y + 6], eq[y + 7]]);
-                let mut m_bytes = [[0u8; 16]; 8];
-                for (e, slot) in m_bytes.iter_mut().enumerate() {
-                    let w = wit[y + e].bit_words();
-                    slot[..8].copy_from_slice(&w[0].to_le_bytes());
-                    slot[8..].copy_from_slice(&w[1].to_le_bytes());
-                }
-                for r_byte in 0..16 {
-                    let combined: u64 = (m_bytes[0][r_byte] as u64)
-                        | ((m_bytes[1][r_byte] as u64) << 8)
-                        | ((m_bytes[2][r_byte] as u64) << 16)
-                        | ((m_bytes[3][r_byte] as u64) << 24)
-                        | ((m_bytes[4][r_byte] as u64) << 32)
-                        | ((m_bytes[5][r_byte] as u64) << 40)
-                        | ((m_bytes[6][r_byte] as u64) << 48)
-                        | ((m_bytes[7][r_byte] as u64) << 56);
-                    let tb = transpose_8x8_bits(combined).to_le_bytes();
-                    let base = r_byte * 8;
-                    for (p, &mask) in tb.iter().enumerate() {
-                        s[base + p] +=
-                            lo_tbl[(mask & 0x0F) as usize] + hi_tbl[(mask >> 4) as usize];
-                    }
-                }
-                y += 8;
-            }
-            while y < hi {
-                sv_scalar_accum(&mut s, wit[y].bit_words(), eq[y]);
-                y += 1;
-            }
-            s
+            sv_fold_mfr_chunk(&wit[lo..hi], &eq[lo..hi])
         })
         .collect();
     let mut s = vec![Gf::zero(); 128];
@@ -372,6 +332,87 @@ pub(crate) fn sv_fold_mfr<T: PackedBits>(wit: &[T], eq: &[Gf]) -> Vec<Gf> {
         }
     }
     s
+}
+
+/// Serial chunk of the four-Russians marginal kernel. The caller owns
+/// parallelism, allowing equality weights to be factored per chunk.
+fn sv_fold_mfr_chunk<T: PackedBits>(wit: &[T], eq: &[Gf]) -> Vec<Gf> {
+    let mut s = vec![Gf::zero(); 128];
+    let mut y = 0;
+    while y + 8 <= wit.len() {
+        // Zero words contribute nothing: a block of eight zero
+        // words (a virtual layout's unused lanes, zero padding)
+        // skips its subset-sum tables and transposes.
+        if wit[y..y + 8].iter().all(|w| w.bit_words() == [0, 0]) {
+            y += 8;
+            continue;
+        }
+        let lo_tbl = subset_sums_4([eq[y], eq[y + 1], eq[y + 2], eq[y + 3]]);
+        let hi_tbl = subset_sums_4([eq[y + 4], eq[y + 5], eq[y + 6], eq[y + 7]]);
+        let mut m_bytes = [[0u8; 16]; 8];
+        for (e, slot) in m_bytes.iter_mut().enumerate() {
+            let w = wit[y + e].bit_words();
+            slot[..8].copy_from_slice(&w[0].to_le_bytes());
+            slot[8..].copy_from_slice(&w[1].to_le_bytes());
+        }
+        for r_byte in 0..16 {
+            let combined: u64 = (m_bytes[0][r_byte] as u64)
+                | ((m_bytes[1][r_byte] as u64) << 8)
+                | ((m_bytes[2][r_byte] as u64) << 16)
+                | ((m_bytes[3][r_byte] as u64) << 24)
+                | ((m_bytes[4][r_byte] as u64) << 32)
+                | ((m_bytes[5][r_byte] as u64) << 40)
+                | ((m_bytes[6][r_byte] as u64) << 48)
+                | ((m_bytes[7][r_byte] as u64) << 56);
+            let tb = transpose_8x8_bits(combined).to_le_bytes();
+            let base = r_byte * 8;
+            for (p, &mask) in tb.iter().enumerate() {
+                s[base + p] += lo_tbl[(mask & 0x0F) as usize] + hi_tbl[(mask >> 4) as usize];
+            }
+        }
+        y += 8;
+    }
+    while y < wit.len() {
+        sv_scalar_accum(&mut s, wit[y].bit_words(), eq[y]);
+        y += 1;
+    }
+    s
+}
+
+/// Compute the ring-switch marginal without constructing the full equality
+/// table. For a chunk `h`, `eq(r, h || l) = eq_head[h] * eq_tail[l]`.
+/// Factor the head weight outside each of the 128 bit sums; this replaces
+/// a full-size field table with two smaller equality factors and
+/// only 128 field multiplications per chunk.
+pub(crate) fn sv_fold_eq_tiled<T: PackedBits>(wit: &[T], point: &[Gf]) -> Vec<Gf> {
+    assert_eq!(wit.len(), 1usize << point.len());
+    let low = point.len().min(12);
+    let eq = |p: &[Gf]| {
+        if p.is_empty() {
+            vec![Gf::one()]
+        } else {
+            build_eq_x_r_vec(p, &()).expect("nonempty equality point")
+        }
+    };
+    let tail = eq(&point[..low]);
+    let head = eq(&point[low..]);
+    let partials: Vec<_> = cfg_into_iter!(0..head.len())
+        .map(|hi| {
+            let words = &wit[hi * tail.len()..(hi + 1) * tail.len()];
+            let mut partial = sv_fold_mfr_chunk(words, &tail);
+            for value in &mut partial {
+                *value *= head[hi];
+            }
+            partial
+        })
+        .collect();
+    let mut result = vec![Gf::zero(); 128];
+    for partial in partials {
+        for (value, term) in result.iter_mut().zip(partial) {
+            *value += term;
+        }
+    }
+    result
 }
 
 /// 16 byte-position subset-sum tables of `scale·eq_r2`:
@@ -454,16 +495,7 @@ pub fn ring_switch_prove_with<T: PackedBits, O: Send>(
     // s_v = Σ_y eq_hi[y] · bit_v(P[y]): parallel partial accumulators over
     // y-chunks, merged by field addition (exact, order-independent).
     let s = sv_fold_mfr(p_msg, &eq_hi);
-    absorb_sv(transcript, &s);
-    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
-    let eq_r2 = build_eq_x_r_vec(&r2, &()).expect("r2 non-empty");
-
-    // β₀ = Σ_u eq_r2[u]·s_u via the bit transpose.
-    let s_u = transpose_bits_128(&s);
-    let beta0 = s_u
-        .iter()
-        .zip(eq_r2.iter())
-        .fold(Gf::zero(), |acc, (su, e)| acc + *su * *e);
+    let (ring, eq_r2, beta0) = ring_switch_prove_marginal(transcript, s);
 
     // B(y) = Φ_{r″}(eq_hi[y]) = Σ_{u: bit_u(eq_hi[y])} eq_r2[u]. Parallel per y.
     let phi_slow = |y: usize| {
@@ -492,7 +524,28 @@ pub fn ring_switch_prove_with<T: PackedBits, O: Send>(
         "ring-switch recombination identity"
     );
 
-    (RingSwitchProof { s_v: s }, b_tbl, beta0)
+    (ring, b_tbl, beta0)
+}
+
+/// Complete the ring switch from an exactly computed in-pack marginal.
+/// Basis construction is independent of the transcript after this call.
+pub(crate) fn ring_switch_prove_marginal(
+    transcript: &mut impl Transcript,
+    s: Vec<Gf>,
+) -> (RingSwitchProof, Vec<Gf>, Gf) {
+    assert_eq!(s.len(), 128);
+    absorb_sv(transcript, &s);
+    let r2: Vec<Gf> = transcript.get_field_challenges(LOG_PACKING, &());
+    let eq_r2 = build_eq_x_r_vec(&r2, &()).expect("r2 non-empty");
+
+    // β₀ = Σ_u eq_r2[u]·s_u via the bit transpose.
+    let s_u = transpose_bits_128(&s);
+    let beta0 = s_u
+        .iter()
+        .zip(eq_r2.iter())
+        .fold(Gf::zero(), |acc, (su, e)| acc + *su * *e);
+
+    (RingSwitchProof { s_v: s }, eq_r2, beta0)
 }
 
 /// Verifier: check `Σ_v eq(r_lo,v)·s_v = μ`, absorb, draw `r″`, and return

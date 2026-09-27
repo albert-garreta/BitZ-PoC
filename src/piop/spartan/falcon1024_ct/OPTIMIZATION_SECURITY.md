@@ -1,5 +1,34 @@
 # Falcon optimization security accounting
 
+The current v3 implementation is covered first below. The later v2 sections
+record the saved baseline used by the exact regression tests.
+
+## Current v3 changes
+
+The relation, witness counts, commitment parameters, and native ideal/carry
+checks are unchanged. V3 replaces forest powers batching with equality weights,
+uses the nonzero error-vector invariant for line reductions, and removes the
+unnecessary batch-size union factor from the compaction fingerprint.
+[COMPACTION_SOUNDNESS.md](COMPACTION_SOUNDNESS.md) gives the argument, challenge
+order, and exact comparison against the saved v2 budget.
+
+At batch 1024, cubic/forest/fingerprint difficulties are 18/17/19 bits, versus
+18/25/29 in v2. Partial batches use 20 fingerprint bits to preserve the previous
+rounding margin. Every batch from 1 through 1024 retains a complete
+work-normalized bound at least as strong as v2, at both supported targets.
+The hybrid proof and statement domains are v3. The forest binds its new
+equality-weight batching domain even in the standalone prover, whose older
+difficulty schedule remains conservative. Earlier proofs must be regenerated.
+
+The remaining changes preserve the same field computations: parallel norm and
+compaction preparation, witness-byte grouping in the binder prefix, direct
+folded-word replay, compact live binary lanes, and fused shared-opening tables
+with the existing Ligerito lookahead continuation. Reference tests compare
+messages, transcripts, padding, and full shared-opening proofs. Physical
+padding remains authenticated; the full virtual binary domain is unchanged.
+
+## Saved v2 implementation
+
 The v2 performance changes preserve the same Falcon relation, witness layout,
 field sizes, native certificate/carry bounds, commitment configuration, and
 challenge ordering. The grinding schedule changes; the remaining optimizations

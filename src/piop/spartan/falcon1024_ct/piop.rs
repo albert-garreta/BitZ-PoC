@@ -65,7 +65,7 @@ pub struct FalconSecuritySchedule {
     pub quadratic_round_bits: u32,
     /// Degree-three rejection, leaf, and forest sumcheck challenges.
     pub cubic_round_bits: u32,
-    /// Forest powers batching and per-tree line reductions.
+    /// Forest equality-weight batching and vector line reductions.
     pub forest_claim_bits: u32,
     pub fingerprint_bits: u32,
     pub linear_point_bits: u32,
@@ -91,7 +91,14 @@ impl FalconSecuritySchedule {
             outer_point_bits: component_grinding_bits(target_bits, 11 + d),
             cubic_round_bits,
             forest_claim_bits,
-            fingerprint_bits: component_grinding_bits(target_bits, 2048 * batch),
+            // All sources are fixed before the common fingerprint. Acceptance
+            // requires every root equality, hence one fixed bad signature's
+            // nonzero polynomial must vanish; there is no union over B here.
+            // The old ceil(log2 B) rounding left extra margin for partial
+            // batches. Preserve it with one extra bit when B is not a power
+            // of two, rather than spending the old protocol's spare budget.
+            fingerprint_bits: component_grinding_bits(target_bits, 2048)
+                + if batch.is_power_of_two() { 0 } else { 1 },
             linear_point_bits: component_grinding_bits(target_bits, 13 + d + batch + 12),
             binding_round_bits: component_grinding_bits(target_bits, 2 * (17 + d)),
         })
@@ -132,30 +139,50 @@ const fn component_grinding_bits(target_bits: usize, numerator: usize) -> u32 {
     (target_bits as u32 + 5 + ceil_log2).saturating_sub(125)
 }
 
-/// Minimize expected nonce attempts without increasing the previous combined
-/// error budget. There are 2*(11+d)+55 degree-three rounds, ten powers draws
-/// of degree 2*batch-1, and eleven line draws with one error term per tree.
-///
-/// Compare A/2^round_bits + H/2^claim_bits <= (A+H)/2^uniform_bits
-/// exactly, using a common power-of-two denominator. The unchanged uniform
-/// schedule is always feasible. Searching up to one bit above it bounds the
-/// work of an individual high-degree boundary; this is a local cost optimum,
-/// not a claim of optimality over every possible schedule.
+/// Preserve the v2 error budget exactly while allocating nonce work to the
+/// v3 challenge degrees. Recover the previous optimum first so no supported
+/// batch silently spends the extra margin left by its old rounded schedule.
+/// The v3 forest uses ten multilinear equality draws of degree d+1, and
+/// eleven line draws preserving a nonzero vector with error at most 1/p each.
 const fn compaction_grinding_bits(target_bits: usize, d: usize, batch: usize) -> (u32, u32) {
     let rounds = 2 * (11 + d) + 55;
     let a = (3 * rounds) as u128;
     let h = (10 * (2 * batch - 1) + 22 * batch) as u128;
     let uniform = component_grinding_bits(target_bits, (a + h) as usize);
     let denominator_bits = uniform + 1;
-    let budget = (a + h) << 1;
-    let mut best = (uniform, uniform);
-    let mut work = ((rounds + 21) as u128) << uniform;
+    let previous = allocate_compaction_grinding(
+        rounds,
+        h,
+        ((a + h) << 1, denominator_bits),
+        (uniform, uniform),
+    );
+    let budget = (a << (denominator_bits - previous.0)) + (h << (denominator_bits - previous.1));
+    allocate_compaction_grinding(
+        rounds,
+        (10 * (d + 1) + 11) as u128,
+        (budget, denominator_bits),
+        previous,
+    )
+}
+
+/// All budget comparisons have one common power-of-two denominator and use
+/// exact integers. The feasible initial pair remains available on cost ties.
+const fn allocate_compaction_grinding(
+    rounds: usize,
+    claim_degree: u128,
+    budget: (u128, u32),
+    initial: (u32, u32),
+) -> (u32, u32) {
+    let (budget, denominator_bits) = budget;
+    let a = (3 * rounds) as u128;
+    let mut best = initial;
+    let mut work = ((rounds as u128) << initial.0) + (21u128 << initial.1);
     let mut round_bits = 1;
     while round_bits <= denominator_bits {
         let mut claim_bits = 1;
         while claim_bits <= denominator_bits {
-            let error =
-                (a << (denominator_bits - round_bits)) + (h << (denominator_bits - claim_bits));
+            let error = (a << (denominator_bits - round_bits))
+                + (claim_degree << (denominator_bits - claim_bits));
             let candidate_work = ((rounds as u128) << round_bits) + (21u128 << claim_bits);
             if error <= budget && candidate_work < work {
                 best = (round_bits, claim_bits);
@@ -195,7 +222,7 @@ impl GrindingDomain for FingerprintGrinding {
 
 struct ForestBatchGrinding;
 impl GrindingDomain for ForestBatchGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/grinding/forest-batch/v2";
+    const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/grinding/forest-batch/eq/v3";
 }
 
 struct ForestLineGrinding;
@@ -350,11 +377,16 @@ pub fn prove_falcon_piop(
     };
     let gamma = squeeze(transcript, &field)?;
     let rank_scale = squeeze(transcript, &field)?;
-    let mut leaves = Vec::with_capacity(2 * layout.batch());
-    for trace in traces {
-        let (candidate, output) = compaction_leaves(trace, gamma, rank_scale, &field);
-        leaves.extend([candidate, output]);
-    }
+    let ranks = compaction_ranks(gamma, rank_scale, &field);
+    let leaves: Vec<_> = crate::utils::cfg_iter!(traces)
+        .map(|trace| {
+            let (candidate, output) = compaction_leaves_with_ranks(trace, &ranks, &field);
+            [candidate, output]
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .flatten()
+        .collect();
     let (compaction_forest, compaction) = prove_product_forest(
         transcript,
         leaves,
@@ -491,7 +523,7 @@ fn validate_inputs(
 
 fn bind_header(transcript: &mut impl Transcript, layout: &FalconSourceLayout, target_bits: usize) {
     transcript.absorb_slice(if layout.is_hybrid() {
-        b"bitz/falcon1024-ct/piop/native-ring/v1"
+        b"bitz/falcon1024-ct/piop/native-ring/v3"
     } else {
         b"bitz/falcon1024-ct/piop/v3"
     });
@@ -540,26 +572,36 @@ fn prove_norm(
     let mut s2 = vec![zero; len];
     let mut weighted_s1 = vec![zero; len];
     let mut weighted_s2 = vec![zero; len];
-    let mut claims = [zero; 2];
-    let mut slack = zero;
-    for (instance, trace) in traces.iter().enumerate() {
-        for i in 0..N {
-            let index = instance * N + i;
-            s1[index] = signed(i128::from(trace.s1[i]), field);
-            s2[index] = signed(i128::from(trace.signature.s2[i]), field);
-            weighted_s1[index] = field.mul(&instance_weights[instance], &s1[index]);
-            weighted_s2[index] = field.mul(&instance_weights[instance], &s2[index]);
-            claims[0] = field.add(&claims[0], &field.mul(&weighted_s1[index], &s1[index]));
-            claims[1] = field.add(&claims[1], &field.mul(&weighted_s2[index], &s2[index]));
-        }
-        slack = field.add(
-            &slack,
-            &field.mul(
-                &instance_weights[instance],
-                &unsigned(u128::from(trace.norm_slack), field),
-            ),
-        );
-    }
+    let contributions: Vec<[F; 3]> = crate::utils::cfg_chunks_mut!(s1, N)
+        .zip(crate::utils::cfg_chunks_mut!(s2, N))
+        .zip(crate::utils::cfg_chunks_mut!(weighted_s1, N))
+        .zip(crate::utils::cfg_chunks_mut!(weighted_s2, N))
+        .zip(crate::utils::cfg_iter!(traces))
+        .zip(crate::utils::cfg_iter!(&instance_weights[..layout.batch()]))
+        .map(
+            |(((((s1, s2), weighted_s1), weighted_s2), trace), weight)| {
+                let mut sums = [0u64; 2];
+                for i in 0..N {
+                    let a = i64::from(trace.s1[i]);
+                    let b = i64::from(trace.signature.s2[i]);
+                    s1[i] = signed(i128::from(a), field);
+                    s2[i] = signed(i128::from(b), field);
+                    weighted_s1[i] = field.mul(weight, &s1[i]);
+                    weighted_s2[i] = field.mul(weight, &s2[i]);
+                    // Both coefficients are i16, so each integer sum is <=2^40.
+                    // Apply the common signature weight once after summation.
+                    sums[0] += (a * a) as u64;
+                    sums[1] += (b * b) as u64;
+                }
+                [sums[0], sums[1], trace.norm_slack]
+                    .map(|value| field.mul(weight, &unsigned(u128::from(value), field)))
+            },
+        )
+        .collect();
+    let [claim1, claim2, slack] = contributions.into_iter().fold([zero; 3], |sum, value| {
+        std::array::from_fn(|i| field.add(&sum[i], &value[i]))
+    });
+    let claims = [claim1, claim2];
     let beta = unsigned(BETA_SQUARED as u128, field);
     let instance_sum = instance_weights[..layout.batch()]
         .iter()
@@ -1042,56 +1084,55 @@ fn verify_quadratic(
     Ok(())
 }
 
+#[cfg(test)]
 fn compaction_leaves(
     trace: &FalconVerificationTrace,
     gamma: F,
     rank_scale: F,
     field: &Cfg,
 ) -> (Vec<F>, Vec<F>) {
+    compaction_leaves_with_ranks(trace, &compaction_ranks(gamma, rank_scale, field), field)
+}
+
+fn compaction_ranks(gamma: F, rank_scale: F, field: &Cfg) -> [F; N] {
+    let mut next = gamma;
+    std::array::from_fn(|_| {
+        let value = next;
+        next = field.add(&next, &rank_scale);
+        value
+    })
+}
+
+fn compaction_leaves_with_ranks(
+    trace: &FalconVerificationTrace,
+    ranks: &[F; N],
+    field: &Cfg,
+) -> (Vec<F>, Vec<F>) {
     let one = field.one();
-    let zero = field.zero();
     let mut candidate = vec![one; COMPACTION_LEAVES];
     let mut output = vec![one; COMPACTION_LEAVES];
     for i in 0..HASH_TO_POINT_SAMPLES {
         let selected = trace.hash_to_point.accepted[i] && trace.hash_to_point.prefix[i] < 1024;
-        let selector = if selected { one } else { zero };
-        let selected_prefix = if selected {
-            unsigned(u128::from(trace.hash_to_point.prefix[i]), field)
-        } else {
-            zero
-        };
-        let selected_remainder = if selected {
-            unsigned(u128::from(trace.hash_to_point.remainders[i]), field)
-        } else {
-            zero
-        };
-        candidate[i] = field.add(
-            &field.add(
-                &field.add(&one, &field.mul(&selector, &field.sub(&gamma, &one))),
-                &field.mul(&rank_scale, &selected_prefix),
-            ),
-            &selected_remainder,
-        );
+        if selected {
+            candidate[i] = field.add(
+                &ranks[usize::from(trace.hash_to_point.prefix[i])],
+                &unsigned(u128::from(trace.hash_to_point.remainders[i]), field),
+            );
+        }
     }
     for (rank, leaf) in output.iter_mut().take(N).enumerate() {
         *leaf = field.add(
-            &field.add(
-                &gamma,
-                &field.mul(&rank_scale, &unsigned(rank as u128, field)),
-            ),
+            &ranks[rank],
             &unsigned(u128::from(trace.hash_to_point.point[rank]), field),
         );
     }
     (candidate, output)
 }
 
-/// The legacy forest uses at most 64 trees. Ten batching draws have degree
-/// <=63, 55 sumcheck draws have degree three, and eleven line draws have degree
-/// one per tree. With the 21-bit grind, their union bound is at most
-/// (10*63 + 55*3 + 11*64) / (2^125 * 2^21) < 2^-135. No tree's root equality
-/// is replaced by an equality between products across different signatures.
-/// The hybrid profile allows 2048 trees and separately accounts for cubic
-/// rounds and the higher-degree tree-batching/line challenges.
+/// Every signature keeps its own input/output root equality. Ten equality
+/// batching draws have degree ceil(log2(trees)); eleven line draws each lose
+/// a nonzero error vector with probability at most 1/p. The 55 cubic rounds
+/// are accounted separately. See COMPACTION_SOUNDNESS.md for the invariant.
 #[tracing::instrument(skip_all, name = "falcon_arithmetic:compaction_forest")]
 fn prove_product_forest(
     transcript: &mut impl Transcript,
@@ -1158,8 +1199,7 @@ fn prove_product_forest(
                 target_bits,
                 security,
             )?;
-            let rho = squeeze(transcript, field)?;
-            let scales = powers(rho, groups.len(), field);
+            let scales = forest_scales(transcript, groups.len(), field)?;
             let initial = weighted_sum(&claims, &scales, field);
             let (proof, evaluations, next_point, nonces) = prove_forest_layer(
                 transcript,
@@ -1212,11 +1252,29 @@ fn prove_product_forest(
 }
 
 fn bind_forest(transcript: &mut impl Transcript, roots: &[F], field: &Cfg) {
-    transcript.absorb_slice(b"bitz/falcon1024-ct/compaction/forest/v2");
+    transcript.absorb_slice(b"bitz/falcon1024-ct/compaction/forest/eq/v3");
     transcript.absorb_slice(&(roots.len() as u64).to_le_bytes());
     absorb_field_elements(transcript, roots, field);
 }
 
+fn forest_scales(
+    transcript: &mut impl Transcript,
+    trees: usize,
+    field: &Cfg,
+) -> Result<Vec<F>, FalconError> {
+    // Pad the error vector with zeros. Its unique multilinear extension is
+    // nonzero whenever any live tree claim is false, with degree log2(capacity).
+    let point = sample_point(
+        transcript,
+        trees.next_power_of_two().ilog2() as usize,
+        field,
+    )?;
+    let mut scales = eq_table(&point, field).map_err(|error| piop(error.to_string()))?;
+    scales.truncate(trees);
+    Ok(scales)
+}
+
+#[cfg(test)]
 fn powers(value: F, len: usize, field: &Cfg) -> Vec<F> {
     let mut power = field.one();
     (0..len)
@@ -1432,8 +1490,7 @@ fn verify_product_forest(
                 security,
                 layer.batching_nonce,
             )?;
-            let rho = squeeze(transcript, field)?;
-            let scales = powers(rho, terminals.len(), field);
+            let scales = forest_scales(transcript, terminals.len(), field)?;
             let initial = weighted_sum(&claims, &scales, field);
             let mut boundary = VerifierGrindingRoundBoundary::<ForestRoundGrinding>::new(
                 if target_bits == 128 {
@@ -1766,7 +1823,7 @@ fn piop(message: impl Into<String>) -> FalconError {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use crate::sumcheck::outer::OuterInputs;
     use crate::{piop::spartan::falcon1024_ct::verification_trace, transcript::Blake3Transcript};
@@ -1777,31 +1834,62 @@ mod tests {
     const SIGNATURE: &[u8; super::super::CT_SIGNATURE_BYTES] =
         include_bytes!("fixtures/signature_ct.bin");
 
+    // Independent reproduction of the saved v2 schedule. Keep the old powers
+    // batching and per-tree line bound here: this is a regression oracle.
+    pub(crate) fn previous_compaction_schedule(batch: usize) -> (u32, u32) {
+        let d = batch.next_power_of_two().ilog2() as usize;
+        let rounds = 2 * (11 + d) + (0..11).sum::<usize>();
+        let claims = 10 * (2 * batch - 1) + 22 * batch;
+        let numerator = 3 * rounds + claims;
+        let uniform = 8 + usize::BITS - (numerator - 1).leading_zeros();
+        let denominator = uniform + 1;
+        let budget = 2 * numerator as u128;
+        let mut best = (uniform, uniform);
+        let mut work = ((rounds + 21) as u128) << uniform;
+        for r in 1..=denominator {
+            for c in 1..=denominator {
+                let error = ((3 * rounds) as u128) << (denominator - r);
+                let error = error + ((claims as u128) << (denominator - c));
+                let candidate = ((rounds as u128) << r) + (21u128 << c);
+                if error <= budget && candidate < work {
+                    best = (r, c);
+                    work = candidate;
+                }
+            }
+        }
+        best
+    }
+
     #[test]
     fn split_grinding_preserves_exact_error_and_work_budgets_for_every_batch() {
         for batch in 1..=1024 {
             let layout = FalconSourceLayout::new_hybrid(batch).unwrap();
             let d = layout.capacity().ilog2() as usize;
             let schedule = FalconSecuritySchedule::for_layout(128, &layout).unwrap();
-            // Count challenges from the actual forest levels independently
-            // of the schedule's closed-form expressions.
             let rounds = 2 * (11 + d) + (0..11).sum::<usize>();
-            let claims = (1..11).map(|_| 2 * batch - 1).sum::<usize>()
-                + (0..11).map(|_| 2 * batch).sum::<usize>();
-            let numerator = 3 * rounds + claims;
-            let old_bits = 8 + usize::BITS - (numerator - 1).leading_zeros();
-            let denominator = old_bits
+            let previous_claims = 10 * (2 * batch - 1) + 22 * batch;
+            let claims = 10 * (2 * batch).next_power_of_two().ilog2() as usize + 11;
+            let (old_r, old_c) = previous_compaction_schedule(batch);
+            let denominator = old_r
+                .max(old_c)
                 .max(schedule.cubic_round_bits)
                 .max(schedule.forest_claim_bits);
-            let old_error = (numerator as u128) << (denominator - old_bits);
+            let old_error = ((3 * rounds) as u128) << (denominator - old_r);
+            let old_error = old_error + ((previous_claims as u128) << (denominator - old_c));
             let new_error = ((3 * rounds) as u128) << (denominator - schedule.cubic_round_bits);
             let new_error =
                 new_error + ((claims as u128) << (denominator - schedule.forest_claim_bits));
             assert!(new_error <= old_error, "error budget at batch {batch}");
-            let old_work = ((rounds + 21) as u128) << old_bits;
+            let old_work = ((rounds as u128) << old_r) + (21u128 << old_c);
             let new_work = ((rounds as u128) << schedule.cubic_round_bits)
                 + (21u128 << schedule.forest_claim_bits);
             assert!(new_work <= old_work, "nonce work at batch {batch}");
+            let old_fingerprint = component_grinding_bits(128, 2048 * batch);
+            let denom = old_fingerprint.max(schedule.fingerprint_bits);
+            assert!(
+                (2048u128 << (denom - schedule.fingerprint_bits))
+                    <= ((2048 * batch) as u128) << (denom - old_fingerprint)
+            );
             let unground = FalconSecuritySchedule::for_layout(100, &layout).unwrap();
             assert_eq!(
                 (unground.cubic_round_bits, unground.forest_claim_bits),
@@ -1813,8 +1901,9 @@ mod tests {
                 .unwrap();
         assert_eq!(
             (largest.cubic_round_bits, largest.forest_claim_bits),
-            (18, 25)
+            (18, 17)
         );
+        assert_eq!(largest.fingerprint_bits, 19);
     }
 
     #[test]
@@ -2229,6 +2318,24 @@ mod tests {
             .unwrap();
             assert_eq!(proof.instance_nonce.is_some(), target == 128);
             assert_ne!(proof.terminal[0][0], proof.terminal[0][1]);
+            let weights = eq_table(&proof.instance_point, &field).unwrap();
+            let mut reference = [field.zero(); 3];
+            for (trace, weight) in traces.iter().zip(&weights) {
+                for j in 0..N {
+                    for (a, value) in [trace.s1[j], trace.signature.s2[j]].into_iter().enumerate() {
+                        let value = signed(value.into(), &field);
+                        reference[a] = field.add(
+                            &reference[a],
+                            &field.mul(weight, &field.mul(&value, &value)),
+                        );
+                    }
+                }
+                reference[2] = field.add(
+                    &reference[2],
+                    &field.mul(weight, &unsigned(trace.norm_slack.into(), &field)),
+                );
+            }
+            assert_eq!(reference, [proof.claims[0], proof.claims[1], proof.slack]);
             verify_norm(
                 &mut Blake3Transcript::new(),
                 &layout,
@@ -2551,6 +2658,152 @@ mod tests {
             let mut bad = forest.clone();
             bad.layers[1].sumcheck.as_mut().unwrap().round_polynomials[0][0] = field.zero();
             reject(&bad, &compaction);
+        }
+    }
+
+    #[test]
+    fn forest_equality_batching_preserves_nonzero_six_tree_error_vectors() {
+        // Six live trees occupy a three-variable cube with two zero entries.
+        // Boolean evaluations recover every error coordinate, so padding and
+        // arbitrary cancellation between live errors cannot make its MLE zero.
+        let field = field::FpCtx::from_prime_u128(7);
+        let errors: Vec<Vec<F>> = (0..6)
+            .map(|bad| {
+                (0..6)
+                    .map(|i| unsigned(u128::from(i == bad), &field))
+                    .collect()
+            })
+            .chain([
+                vec![1, 6, 2, 5, 3, 4]
+                    .into_iter()
+                    .map(|v| unsigned(v, &field))
+                    .collect(),
+                vec![field.one(); 6],
+            ])
+            .collect();
+        for error in errors {
+            assert!(error.iter().any(|value| *value != field.zero()));
+            for vertex in 0..8 {
+                let point: Vec<_> = (0..3)
+                    .map(|i| unsigned((vertex >> i & 1) as u128, &field))
+                    .collect();
+                let scales = eq_table(&point, &field).unwrap();
+                assert_eq!(
+                    weighted_sum(&error, &scales[..6], &field),
+                    error.get(vertex).copied().unwrap_or(field.zero())
+                );
+            }
+            // Enumerate a complete small field, including challenge collisions,
+            // and check the total-degree-three Schwartz–Zippel bound directly.
+            let mut zeros = 0;
+            for x in 0..7 {
+                for y in 0..7 {
+                    for z in 0..7 {
+                        let point = [x, y, z].map(|value| unsigned(value, &field));
+                        let scales = eq_table(&point, &field).unwrap();
+                        zeros +=
+                            usize::from(weighted_sum(&error, &scales[..6], &field) == field.zero());
+                    }
+                }
+            }
+            assert!(zeros <= 3 * 7 * 7);
+        }
+
+        // The production draw consumes the whole three-coordinate point after
+        // one batching boundary, then truncates only its padded weights.
+        let field = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
+        let mut actual = Blake3Transcript::new();
+        let scales = forest_scales(&mut actual, 6, &field).unwrap();
+        let mut reference = Blake3Transcript::new();
+        let point = sample_point(&mut reference, 3, &field).unwrap();
+        assert_eq!(scales, eq_table(&point, &field).unwrap()[..6]);
+        assert_eq!(
+            squeeze(&mut actual, &field).unwrap(),
+            squeeze(&mut reference, &field).unwrap()
+        );
+    }
+
+    #[test]
+    fn forest_common_line_has_at_most_one_root_for_a_nonzero_error_vector() {
+        let field = field::FpCtx::from_prime_u128(7);
+        // Exhaust all endpoint errors in two distinct coordinates of a six-tree
+        // vector. Errors may have different roots or share one root. Acceptance
+        // needs every coordinate to vanish, so their union of roots is irrelevant.
+        for values in 1usize..7usize.pow(4) {
+            let mut remaining = values;
+            let endpoints: [F; 4] = std::array::from_fn(|_| {
+                let value = unsigned((remaining % 7) as u128, &field);
+                remaining /= 7;
+                value
+            });
+            let mut left = [field.zero(); 6];
+            let mut right = [field.zero(); 6];
+            [left[1], left[5], right[1], right[5]] = endpoints;
+            let common_roots = (0..7)
+                .filter(|&challenge| {
+                    let challenge = unsigned(challenge, &field);
+                    left.iter().zip(&right).all(|(&left, &right)| {
+                        affine(left, right, challenge, &field) == field.zero()
+                    })
+                })
+                .count();
+            assert!(common_roots <= 1);
+        }
+    }
+
+    #[test]
+    fn shared_compaction_ranks_match_direct_leaf_formulas() {
+        let field = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
+        let original = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+        let mut boundary_cases = original.clone();
+        for i in 0..HASH_TO_POINT_SAMPLES {
+            boundary_cases.hash_to_point.accepted[i] = i % 5 != 4;
+            boundary_cases.hash_to_point.prefix[i] = [0, 1023, 1024, 1311, 1023][i % 5];
+            boundary_cases.hash_to_point.remainders[i] = (i * 41 % 12289) as u16;
+        }
+        let challenge_pairs = [
+            [field.zero(), field.zero()],
+            [field.one(), field.one()],
+            [unsigned(73, &field), unsigned(91, &field)],
+            [
+                unsigned(field.modulus_u128() - 2, &field),
+                unsigned(field.modulus_u128() - 1, &field),
+            ],
+        ];
+        for trace in [&original, &boundary_cases] {
+            for [gamma, rho] in challenge_pairs {
+                let ranks = compaction_ranks(gamma, rho, &field);
+                let (candidate, output) = compaction_leaves_with_ranks(trace, &ranks, &field);
+                let mut expected_candidate = vec![field.one(); COMPACTION_LEAVES];
+                let mut expected_output = expected_candidate.clone();
+                for (i, expected) in expected_candidate
+                    .iter_mut()
+                    .take(HASH_TO_POINT_SAMPLES)
+                    .enumerate()
+                {
+                    let prefix = trace.hash_to_point.prefix[i];
+                    let selected = unsigned(
+                        u128::from(trace.hash_to_point.accepted[i] && prefix < 1024),
+                        &field,
+                    );
+                    let term = field.add(
+                        &field.add(
+                            &field.sub(&gamma, &field.one()),
+                            &field.mul(&rho, &unsigned(prefix.into(), &field)),
+                        ),
+                        &unsigned(trace.hash_to_point.remainders[i].into(), &field),
+                    );
+                    *expected = field.add(&field.one(), &field.mul(&selected, &term));
+                }
+                for (rank, expected) in expected_output.iter_mut().take(N).enumerate() {
+                    *expected = field.add(
+                        &field.add(&gamma, &field.mul(&rho, &unsigned(rank as u128, &field))),
+                        &unsigned(trace.hash_to_point.point[rank].into(), &field),
+                    );
+                }
+                assert_eq!(candidate, expected_candidate);
+                assert_eq!(output, expected_output);
+            }
         }
     }
 }

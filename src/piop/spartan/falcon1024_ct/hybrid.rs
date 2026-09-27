@@ -186,7 +186,7 @@ impl PreparedFalconHybrid {
             ),
             (
                 "ordered compaction fingerprints",
-                prime(2048 * b, schedule.fingerprint_bits),
+                prime(2048, schedule.fingerprint_bits),
             ),
             (
                 "ordered compaction forest sumchecks",
@@ -194,7 +194,7 @@ impl PreparedFalconHybrid {
             ),
             (
                 "ordered compaction forest claim reductions",
-                prime(10 * (2 * b - 1) + 22 * b, schedule.forest_claim_bits),
+                prime(10 * (d + 1) + 11, schedule.forest_claim_bits),
             ),
             (
                 "compaction leaf instance batching",
@@ -360,7 +360,7 @@ impl PreparedFalconHybrid {
     ) -> Result<(Blake3Transcript, [u8; 32]), FalconError> {
         statement.public.validate(self.batch())?;
         let mut h = blake3::Hasher::new();
-        h.update(b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v2");
+        h.update(b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v3");
         for n in [
             self.batch(),
             self.capacity(),
@@ -372,6 +372,7 @@ impl PreparedFalconHybrid {
             h.update(&(n as u64).to_le_bytes());
         }
         h.update(b"bounded14:low13+4097*top;native:Q12289,theta11+theta+14;Dlen1023;carry22528BN");
+        h.update(b"compaction:fixed-bad-signature;forest:eq-batching,nonzero-vector-line/v3");
         let schedule = super::FalconSecuritySchedule::for_layout(self.target_bits, &self.layout)
             .expect("prepared security");
         for bits in [
@@ -414,7 +415,7 @@ impl PreparedFalconHybrid {
         }
         let digest = *h.finalize().as_bytes();
         let mut t = Blake3Transcript::new();
-        t.absorb_slice(b"bitz/falcon-hybrid/native-ring/statement/v2");
+        t.absorb_slice(b"bitz/falcon-hybrid/native-ring/statement/v3");
         t.absorb_slice(&digest);
         self.ligerito.bind(&mut t);
         Ok((t, digest))
@@ -503,9 +504,6 @@ impl PreparedFalconHybrid {
         .map_err(error)?;
         drop(joint_span);
         let opening_span = tracing::info_span!("falcon_hybrid:shared_opening").entered();
-        let packed = self
-            .geometry
-            .virtual_packed(committed.packed.each_ref().map(Vec::as_slice));
         let mut pcs_nonces = Vec::new();
         let mut pcs = GrindingContext {
             plan: &self.pcs_grinding,
@@ -515,11 +513,11 @@ impl PreparedFalconHybrid {
             &mut t,
             self.binary_grinding(256),
         );
-        let opening = shared::prove_with_security(
+        let opening = shared::prove_sources_with_security(
             &mut opening_t,
             &self.geometry,
             &digest,
-            packed,
+            committed.packed.each_ref().map(Vec::as_slice),
             None,
             &self.ligerito,
             committed.data.each_ref(),
@@ -882,16 +880,23 @@ mod tests {
                 let prepared = PreparedFalconHybrid::new(batch, target).unwrap();
                 let security = prepared.security();
                 assert!(security.algebraic_bits >= target as f64);
-                // Reconstruct the old uniform-grinding group, leaving every
-                // other term in the complete protocol budget unchanged.
+                // Compare to the saved v2 split schedule, not its weaker v1
+                // predecessor. All untouched error terms remain in the sum.
                 let d = prepared.capacity().ilog2() as usize;
-                let old_numerator = 6 * (11 + d) + 165 + 10 * (2 * batch - 1) + 22 * batch;
-                let old_bits = if target == 100 {
+                let rounds = 2 * (11 + d) + 55;
+                let old_claims = 10 * (2 * batch - 1) + 22 * batch;
+                let (old_r, old_c) = if target == 100 {
+                    (0, 0)
+                } else {
+                    super::super::piop::tests::previous_compaction_schedule(batch)
+                };
+                let old_fingerprint = if target == 100 {
                     0
                 } else {
-                    8 + usize::BITS - (old_numerator - 1).leading_zeros()
+                    8 + usize::BITS - (2048 * batch - 1).leading_zeros()
                 };
                 let changed_names = [
+                    "ordered compaction fingerprints",
                     "HashToPoint product sumcheck",
                     "ordered compaction forest sumchecks",
                     "ordered compaction forest claim reductions",
@@ -903,7 +908,10 @@ mod tests {
                     .filter(|(name, _)| !changed_names.contains(name))
                     .map(|(_, error)| error)
                     .sum();
-                let previous = unchanged + old_numerator as f64 * 2f64.powi(-125 - old_bits as i32);
+                let previous = unchanged
+                    + (3 * rounds) as f64 * 2f64.powi(-125 - old_r as i32)
+                    + old_claims as f64 * 2f64.powi(-125 - old_c as i32)
+                    + (2048 * batch) as f64 * 2f64.powi(-125 - old_fingerprint as i32);
                 let current: f64 = security.terms.iter().map(|(_, error)| error).sum();
                 assert!(
                     current <= previous * (1.0 + 1e-14),

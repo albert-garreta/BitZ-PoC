@@ -20,6 +20,69 @@ struct Word {
 pub(super) struct CompiledCoefficients {
     words: std::sync::Arc<[Word]>,
     coefficients: Vec<F>,
+    folded: std::sync::Arc<std::sync::OnceLock<FoldedWords>>,
+}
+
+/// Binding low variables is linear in each word's coefficient. The physical
+/// bit-to-word map is shared across signatures, so compile its weighted image
+/// once, then replay whole-word contributions instead of expanding every bit.
+struct FoldedWords {
+    weights: Vec<F>,
+    starts: Vec<usize>,
+    terms: Vec<(usize, F)>,
+}
+
+impl FoldedWords {
+    fn new(words: &[Word], weights: &[F], field: &Cfg) -> Self {
+        let vars = weights.len().ilog2() as usize;
+        let mut starts = Vec::with_capacity(words.len() + 1);
+        let mut terms = Vec::new();
+        for &word in words {
+            starts.push(terms.len());
+            let base = word.base >> vars;
+            let mut sums = [field.zero(); 32];
+            let mut power = field.one();
+            for bit in 0..usize::from(word.width) {
+                let (index, negative, weighted) = word.bit_position(bit);
+                let weight = field.mul(&power, &weights[index & (weights.len() - 1)]);
+                let slot = &mut sums[(index >> vars) - base];
+                *slot = if negative {
+                    field.sub(slot, &weight)
+                } else {
+                    field.add(slot, &weight)
+                };
+                if weighted {
+                    power = field.add(&power, &power);
+                }
+            }
+            terms.extend(sums.into_iter().enumerate().filter_map(|(offset, value)| {
+                (value != field.zero()).then_some((base + offset, value))
+            }));
+        }
+        starts.push(terms.len());
+        Self {
+            weights: weights.to_vec(),
+            starts,
+            terms,
+        }
+    }
+}
+
+impl Word {
+    fn bit_position(self, bit: usize) -> (usize, bool, bool) {
+        match self.kind {
+            WordKind::Unsigned => (self.base + bit, false, true),
+            WordKind::Signed => (self.base + bit, bit + 1 == usize::from(self.width), true),
+            WordKind::Encoded { offset, weighted } => {
+                let stream = usize::from(offset) + 11 - bit;
+                (
+                    self.base + 8 * (stream / 8) + 7 - stream % 8,
+                    bit == 11,
+                    weighted,
+                )
+            }
+        }
+    }
 }
 
 /// All instances share the public operator and the same dynamic addition order.
@@ -29,6 +92,7 @@ pub(super) struct CompiledTemplate {
     words: std::sync::Arc<[Word]>,
     common: Vec<(usize, F)>,
     dynamic_slots: Vec<usize>,
+    folded: std::sync::Arc<std::sync::OnceLock<FoldedWords>>,
 }
 
 trait WordAccumulator {
@@ -105,6 +169,7 @@ impl<'a> WordSink<'a> {
         CompiledCoefficients {
             words: words.into(),
             coefficients,
+            folded: Default::default(),
         }
     }
 }
@@ -143,6 +208,7 @@ impl CompiledTemplate {
             words: words.into(),
             common,
             dynamic_slots,
+            folded: Default::default(),
         }
     }
 
@@ -180,6 +246,7 @@ impl WordSink<'_, IndexedWords<'_>> {
         CompiledCoefficients {
             words: std::sync::Arc::clone(&self.accumulator.template.words),
             coefficients: self.accumulator.coefficients,
+            folded: std::sync::Arc::clone(&self.accumulator.template.folded),
         }
     }
 }
@@ -224,6 +291,69 @@ impl<A: WordAccumulator> CoefficientSink for WordSink<'_, A> {
 }
 
 impl CompiledCoefficients {
+    pub(super) fn emit_folded(
+        &self,
+        base: usize,
+        weights: &[F],
+        field: &Cfg,
+        emit: &mut impl FnMut(usize, F) -> Result<(), crate::sumcheck::SumcheckError>,
+    ) -> Result<(), crate::sumcheck::SumcheckError> {
+        if !weights.len().is_power_of_two()
+            || weights.len() > 1 << crate::sumcheck::inner::packed::SHA256_INNER_PREFIX_MAX_VARS
+            || base % weights.len() != 0
+        {
+            return Err(crate::sumcheck::SumcheckError::InvalidProductDimensions);
+        }
+        // Initialization does no Rayon work: workers can share one compiled
+        // map without nested parallel initialization or per-instance copies.
+        let cached = self
+            .folded
+            .get_or_init(|| FoldedWords::new(&self.words, weights, field));
+        let alternative;
+        let folded = if cached.weights == weights {
+            cached
+        } else {
+            // Reference tests may reuse a source with another prefix. A source
+            // belongs to one proving invocation in the production binder.
+            alternative = FoldedWords::new(&self.words, weights, field);
+            &alternative
+        };
+        type Accumulator = <Cfg as BatchMulAcc<F>>::Accumulator;
+        let base = base / weights.len();
+        let vars = weights.len().ilog2() as usize;
+        let mut pending = std::array::from_fn(|_| Accumulator::zero());
+        let mut occupied = [false; 32];
+        let mut cursor = 0;
+        for (word, scale) in self.coefficients.iter().enumerate() {
+            if *scale == field.zero() {
+                continue;
+            }
+            flush_folded(
+                &mut cursor,
+                self.words[word].base >> vars,
+                &mut pending,
+                &mut occupied,
+                base,
+                field,
+                emit,
+            )?;
+            for &(index, weight) in &folded.terms[folded.starts[word]..folded.starts[word + 1]] {
+                field.mul_acc(&mut pending[index & 31], scale, &weight);
+                occupied[index & 31] = true;
+            }
+        }
+        let end = cursor + 32;
+        flush_folded(
+            &mut cursor,
+            end,
+            &mut pending,
+            &mut occupied,
+            base,
+            field,
+            emit,
+        )
+    }
+
     pub(super) fn emit(
         &self,
         base: usize,
@@ -284,20 +414,35 @@ impl CompiledCoefficients {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn flush_folded(
+    cursor: &mut usize,
+    end: usize,
+    pending: &mut [<Cfg as BatchMulAcc<F>>::Accumulator; 32],
+    occupied: &mut [bool; 32],
+    base: usize,
+    field: &Cfg,
+    emit: &mut impl FnMut(usize, F) -> Result<(), crate::sumcheck::SumcheckError>,
+) -> Result<(), crate::sumcheck::SumcheckError> {
+    use field::Reduce;
+    for index in *cursor..end.min(*cursor + 32) {
+        let slot = index & 31;
+        if occupied[slot] {
+            let sum = std::mem::replace(
+                &mut pending[slot],
+                <Cfg as BatchMulAcc<F>>::Accumulator::zero(),
+            );
+            emit(base + index, field.reduce(sum))?;
+            occupied[slot] = false;
+        }
+    }
+    *cursor = end;
+    Ok(())
+}
+
 fn accumulate_word<const W: usize>(word: Word, mut scale: F, pending: &mut [F; W], field: &Cfg) {
     for bit in 0..usize::from(word.width) {
-        let (index, negative, weighted) = match word.kind {
-            WordKind::Unsigned => (word.base + bit, false, true),
-            WordKind::Signed => (word.base + bit, bit + 1 == usize::from(word.width), true),
-            WordKind::Encoded { offset, weighted } => {
-                let stream = usize::from(offset) + 11 - bit;
-                (
-                    word.base + 8 * (stream / 8) + 7 - stream % 8,
-                    bit == 11,
-                    weighted,
-                )
-            }
-        };
+        let (index, negative, weighted) = word.bit_position(bit);
         let slot = &mut pending[index & (W - 1)];
         *slot = if negative {
             field.sub(slot, &scale)
@@ -538,20 +683,7 @@ impl BindingForm<'_> {
                 let mut sum = field.zero();
                 let mut power = field.one();
                 for bit in 0..usize::from(word.width) {
-                    let (index, negative, weighted) = match word.kind {
-                        WordKind::Unsigned => (word.base + bit, false, true),
-                        WordKind::Signed => {
-                            (word.base + bit, bit + 1 == usize::from(word.width), true)
-                        }
-                        WordKind::Encoded { offset, weighted } => {
-                            let stream = usize::from(offset) + 11 - bit;
-                            (
-                                word.base + 8 * (stream / 8) + 7 - stream % 8,
-                                bit == 11,
-                                weighted,
-                            )
-                        }
-                    };
+                    let (index, negative, weighted) = word.bit_position(bit);
                     let value = field.mul(&power, &local[index]);
                     sum = if negative {
                         field.sub(&sum, &value)
@@ -923,6 +1055,39 @@ mod tests {
                     })
                     .unwrap();
                 assert_eq!(actual, expected.values, "base={base}, width={width}");
+                for point_kind in 0..3 {
+                    let point: Vec<_> = (0..width.ilog2())
+                        .map(|i| match point_kind {
+                            0 => field.zero(),
+                            1 => field.one(),
+                            _ => unsigned(19 + u128::from(i), &field),
+                        })
+                        .collect();
+                    let weights = eq_table(&point, &field).unwrap();
+                    let reference: Vec<_> = expected
+                        .values
+                        .chunks(width)
+                        .map(|block| {
+                            block
+                                .iter()
+                                .zip(&weights)
+                                .fold(field.zero(), |sum, (v, w)| {
+                                    field.add(&sum, &field.mul(v, w))
+                                })
+                        })
+                        .collect();
+                    let mut folded = vec![field.zero(); reference.len()];
+                    compact
+                        .emit_folded(base, &weights, &field, &mut |index, value| {
+                            folded[index] = field.add(&folded[index], &value);
+                            Ok(())
+                        })
+                        .unwrap();
+                    assert_eq!(
+                        folded, reference,
+                        "base={base}, width={width}, point={point_kind}"
+                    );
+                }
             }
         }
     }
@@ -975,6 +1140,28 @@ mod tests {
                 })
                 .unwrap();
             assert_eq!(actual, expected.values);
+            let weights = eq_table(&[unsigned(7, &field); 3], &field).unwrap();
+            let mut folded = vec![field.zero(); expected.values.len() / weights.len()];
+            compact
+                .emit_folded(base, &weights, &field, &mut |index, value| {
+                    folded[index] = field.add(&folded[index], &value);
+                    Ok(())
+                })
+                .unwrap();
+            let reference: Vec<_> = expected
+                .values
+                .chunks(weights.len())
+                .map(|block| {
+                    block
+                        .iter()
+                        .zip(&weights)
+                        .fold(field.zero(), |sum, (v, w)| {
+                            field.add(&sum, &field.mul(v, w))
+                        })
+                })
+                .collect();
+            assert_eq!(folded, reference);
+            assert!(std::sync::Arc::ptr_eq(&compact.folded, &template.folded));
             for width in [1, 2, 4, 8, 16] {
                 actual.fill(field.zero());
                 compact
@@ -1006,6 +1193,11 @@ mod tests {
             assert!(
                 compact
                     .emit_blocks(base, width, &field, &mut |_, _| Ok(()))
+                    .is_err()
+            );
+            assert!(
+                compact
+                    .emit_folded(base, &vec![field.one(); width], &field, &mut |_, _| Ok(()))
                     .is_err()
             );
         }

@@ -15,7 +15,10 @@
 //! core IOP); nothing here re-derives a bound.
 use super::{CompositionProfile, Error, Gf};
 use crate::{
-    ligerito::{RingSwitchProof, residual_b_evals, ring_switch_prove_with, ring_switch_verify},
+    ligerito::{
+        RingSwitchProof, phi_byte_tables, phi_from_words, residual_b_evals,
+        ring_switch_prove_marginal, ring_switch_prove_with, ring_switch_verify, sv_fold_eq_tiled,
+    },
     ligerito_flock::{
         OodProverClaim, OodRound, OodRoundParams, OodVerifierClaim, ZincChallenger, add_ood_basis,
         ood_residual_evals, prove_ood_round_packed, verify_ood_round,
@@ -235,6 +238,138 @@ impl<const N: usize> Geometry<N> {
             });
         out
     }
+
+    /// The virtual equality weight restricted to a physical branch is a
+    /// scalar times an equality weight on that branch. Include its *physical*
+    /// padding: the separately sampled padding claim authenticates that it is
+    /// zero, so discarding these coefficients here would change the protocol.
+    fn ring_marginal(&self, sources: [&[F]; N], point: &[Gf]) -> Vec<Gf> {
+        assert_eq!(point.len(), self.packed_log());
+        let mut marginal = vec![Gf::zero(); 128];
+        for branch in 0..N {
+            assert_eq!(sources[branch].len(), 1 << self.physical_logs[branch]);
+            let k = self.lane_logs[branch];
+            let mut branch_point = point[..k].to_vec();
+            branch_point.extend_from_slice(&point[self.virtual_lane_log..]);
+            let mut scale = Gf::one();
+            for (coordinate, &r) in point.iter().enumerate().take(4).skip(k) {
+                scale *= if self.offset(branch) >> coordinate & 1 == 1 {
+                    r
+                } else {
+                    Gf::one() + r
+                };
+            }
+            let partial = sv_fold_eq_tiled(sources[branch], &branch_point);
+            for (value, term) in marginal.iter_mut().zip(partial) {
+                *value += scale * term;
+            }
+        }
+        marginal
+    }
+
+    /// Materialize the two tables needed by Ligerito exactly once. Equality
+    /// factors fit in tiles; ring, OOD and padding coefficients are combined
+    /// before being written. The same pass computes the first message and
+    /// next-round lookahead, eliminating the full-size entry fold/read pass.
+    fn initial_tables(
+        &self,
+        sources: [&[F]; N],
+        point: &[Gf],
+        eq_r2: &[Gf],
+        padding: (&[Gf], Gf),
+        ood: Option<(&[Gf], Gf)>,
+    ) -> InitialTables {
+        use flock_core::field::Gf128Product;
+
+        let block_log = self.packed_log().min(12);
+        let block = 1 << block_log;
+        let ring = EqualityTiles::new(point, block_log, Gf::one());
+        let padding_eq = EqualityTiles::new(padding.0, block_log, padding.1);
+        let ood = ood.map(|(point, scale)| EqualityTiles::new(point, block_log, scale));
+        let phi = phi_byte_tables(eq_r2, Gf::one());
+        let size = 1 << self.packed_log();
+        let mut packed = vec![F::ZERO; size];
+        let mut basis = vec![F::ZERO; size];
+        let mut live_groups = [0usize; 16];
+        for branch in 0..N {
+            let k = self.lane_logs[branch];
+            live_groups[self.offset(branch)..self.offset(branch) + (1 << k)]
+                .fill(1 << (self.logs[branch] - k));
+        }
+        let partials: Vec<_> = crate::utils::cfg_chunks_mut!(packed, block)
+            .zip(crate::utils::cfg_chunks_mut!(basis, block))
+            .enumerate()
+            .map(|(hi, (words, coefficients))| {
+                let first_group = hi * block / self.lanes();
+                for (local_group, group) in words.chunks_exact_mut(self.lanes()).enumerate() {
+                    let g = first_group + local_group;
+                    for branch in 0..N {
+                        let k = self.lane_logs[branch];
+                        let start = self.offset(branch);
+                        group[start..start + (1 << k)]
+                            .copy_from_slice(&sources[branch][g << k..(g + 1) << k]);
+                    }
+                }
+                for (lo, coefficient) in coefficients.iter_mut().enumerate() {
+                    let weight = ring.head[hi] * ring.tail[lo];
+                    let mut value = phi_from_words(*weight.as_words(), &phi);
+                    let group = first_group + lo / self.lanes();
+                    if group >= live_groups[lo % self.lanes()] {
+                        value += padding_eq.head[hi] * padding_eq.tail[lo];
+                    }
+                    if let Some(ood) = &ood {
+                        value += ood.head[hi] * ood.tail[lo];
+                    }
+                    *coefficient = value;
+                }
+                let mut acc = [Gf128Product::zero(); 8];
+                for (fq, bq) in words.chunks_exact(4).zip(coefficients.chunks_exact(4)) {
+                    ligerito::lookahead_accum_group(
+                        fq.try_into().expect("four words"),
+                        bq.try_into().expect("four coefficients"),
+                        &mut acc,
+                    );
+                }
+                acc
+            })
+            .collect();
+        let mut acc = [Gf128Product::zero(); 8];
+        for partial in partials {
+            for (value, term) in acc.iter_mut().zip(partial) {
+                *value ^= term;
+            }
+        }
+        let (first_message, lookahead) = ligerito::lookahead_finish(acc);
+        InitialTables {
+            packed,
+            basis,
+            first_message,
+            lookahead,
+        }
+    }
+}
+
+struct EqualityTiles {
+    tail: Vec<Gf>,
+    head: Vec<Gf>,
+}
+
+impl EqualityTiles {
+    fn new(point: &[Gf], low: usize, scale: Gf) -> Self {
+        let tail = super::sumcheck::eq_table(&point[..low]);
+        let mut head = super::sumcheck::eq_table(&point[low..]);
+        for value in &mut head {
+            *value *= scale;
+        }
+        Self { tail, head }
+    }
+}
+
+struct InitialTables {
+    packed: Vec<F>,
+    basis: Vec<F>,
+    first_message: ligerito::SumcheckMessage,
+    lookahead: ligerito::FoldLookahead,
 }
 
 #[cfg(test)]
@@ -318,6 +453,193 @@ mod geometry_tests {
         check_direct_padding([9, 12, 10]);
         check_direct_padding([9, 13, 10]);
         check_direct_padding([10, 9, 9, 12]);
+    }
+
+    fn check_streamed_tables<const N: usize>(logs: [usize; N]) {
+        use crate::transcript::Blake3Transcript;
+        use rand::{RngExt, SeedableRng, rngs::StdRng};
+
+        let geometry = Geometry::new(logs).unwrap();
+        let mut rng = StdRng::seed_from_u64(0x53545245414d);
+        let mut sample = || F {
+            lo: rng.random(),
+            hi: rng.random(),
+        };
+        // Deliberately nonzero physical padding tests that streaming never
+        // discards it before the separate zero-padding claim authenticates it.
+        let sources: [Vec<_>; N] = std::array::from_fn(|branch| {
+            (0..1 << geometry.physical_logs[branch])
+                .map(|_| sample())
+                .collect()
+        });
+        let borrowed = sources.each_ref().map(Vec::as_slice);
+        let packed = geometry.virtual_packed(borrowed);
+        for case in 0..3 {
+            let point: Vec<_> = (0..geometry.packed_log())
+                .map(|i| match case {
+                    1 if i % 3 == 0 => F::ZERO,
+                    1 if i % 3 == 1 => F::ONE,
+                    _ => sample(),
+                })
+                .collect();
+            let mut dense_t = Blake3Transcript::new();
+            let (dense_ring, mut dense_basis, dense_target) =
+                ring_switch_prove_with(&mut dense_t, &packed, &point, |v| v);
+            let mut streamed_t = Blake3Transcript::new();
+            let (streamed_ring, eq_r2, streamed_target) = ring_switch_prove_marginal(
+                &mut streamed_t,
+                geometry.ring_marginal(borrowed, &point),
+            );
+            assert_eq!(streamed_ring.s_v, dense_ring.s_v);
+            assert_eq!(streamed_target, dense_target);
+            assert_eq!(
+                streamed_t.get_field_challenge::<Gf>(&()),
+                dense_t.get_field_challenge::<Gf>(&()),
+            );
+            let padding: Vec<_> = (0..geometry.packed_log()).map(|_| sample()).collect();
+            let padding_scale = sample();
+            let ood_point: Vec<_> = (0..geometry.packed_log()).map(|_| sample()).collect();
+            let ood_scale = sample();
+            let ood = (case == 2).then_some((ood_point.as_slice(), ood_scale));
+            if let Some((point, scale)) = ood {
+                add_ood_basis(&mut dense_basis, &packed, point, scale, None);
+            }
+            geometry.add_padding_basis(&mut dense_basis, &padding, padding_scale);
+            let initial =
+                geometry.initial_tables(borrowed, &point, &eq_r2, (&padding, padding_scale), ood);
+            assert_eq!(initial.packed, packed);
+            assert_eq!(initial.basis, dense_basis);
+            let (mut reference, first) =
+                ligerito::SumcheckProver::new(packed.clone(), dense_basis, dense_target);
+            assert_eq!(initial.first_message, first);
+            let (mut streamed, _) = ligerito::SumcheckProver::new_with_first_msg(
+                initial.packed,
+                initial.basis,
+                streamed_target,
+                initial.first_message,
+            );
+            let r = sample();
+            assert_eq!(streamed.fold_skip(&initial.lookahead, r), reference.fold(r),);
+            streamed.drain_pending_fold();
+            assert_eq!(streamed.f(), reference.f());
+        }
+    }
+
+    #[test]
+    fn streamed_ring_switch_and_initial_tables_match_dense_reference() {
+        check_streamed_tables([9, 9]);
+        check_streamed_tables([9, 13]);
+        check_streamed_tables([9, 11, 10]);
+        check_streamed_tables([9, 14, 10]);
+    }
+
+    fn check_streamed_proof<const N: usize>(logs: [usize; N], with_ood: bool) {
+        use crate::{ligerito_flock::LigeritoSelection, transcript::Blake3Transcript};
+        use flock_core::pcs::commit::commit;
+
+        let geometry = Geometry::new(logs).unwrap();
+        let selection = if with_ood {
+            LigeritoSelection::JOHNSON
+        } else {
+            LigeritoSelection::MATCHED_UDR
+        };
+        let resolved = selection.resolve(geometry.packed_log(), 100).unwrap();
+        let sources: [Vec<_>; N] = std::array::from_fn(|branch| {
+            (0..1 << geometry.physical_logs[branch])
+                .map(|i| {
+                    if i < 1 << logs[branch] {
+                        F {
+                            lo: (i as u64).wrapping_mul(0x9e3779b97f4a7c15),
+                            hi: ((i + branch) as u64).wrapping_mul(0x85ebca6b27d4eb2f),
+                        }
+                    } else {
+                        F::ZERO
+                    }
+                })
+                .collect()
+        });
+        let committed: [_; N] = std::array::from_fn(|branch| {
+            commit(
+                &sources[branch],
+                &geometry.params(branch, resolved.prover().log_inv_rates[0]),
+            )
+        });
+        let borrowed = sources.each_ref().map(Vec::as_slice);
+        let packed = geometry.virtual_packed(borrowed);
+        let statement = [0x53; 32];
+        let mut dense_t = Blake3Transcript::new();
+        let mut streamed_t = Blake3Transcript::new();
+        let params = with_ood.then_some(OodRoundParams { grinding_bits: 0 });
+        let dense_ood = prove_ood(&mut dense_t, params, &packed);
+        let streamed_ood = prove_ood(&mut streamed_t, params, &packed);
+        let point: Vec<_> = (0..geometry.bit_log())
+            .map(|i| F {
+                lo: i as u64 + 17,
+                hi: 42,
+            })
+            .collect();
+        let data = committed.each_ref().map(|(_, data)| data);
+        let dense = prove(
+            &mut dense_t,
+            &geometry,
+            &statement,
+            packed,
+            dense_ood.as_ref(),
+            &resolved,
+            data,
+            &point,
+        )
+        .unwrap();
+        let streamed = prove_sources_with_security(
+            &mut streamed_t,
+            &geometry,
+            &statement,
+            borrowed,
+            streamed_ood.as_ref(),
+            &resolved,
+            data,
+            &point,
+            None,
+        )
+        .unwrap();
+        assert_eq!(dense.ring.s_v, streamed.ring.s_v);
+        assert_eq!(dense.paths, streamed.paths);
+        assert_eq!(
+            bincode::serialize(&dense.ligerito).unwrap(),
+            bincode::serialize(&streamed.ligerito).unwrap(),
+        );
+        assert_eq!(
+            streamed_t.get_field_challenge::<Gf>(&()),
+            dense_t.get_field_challenge::<Gf>(&()),
+        );
+        let mut verifier_t = Blake3Transcript::new();
+        let ood = verify_ood(&mut verifier_t, &geometry, params, streamed.ood.as_ref()).unwrap();
+        let value = streamed
+            .ring
+            .s_v
+            .iter()
+            .zip(eq_table(&point[..7]))
+            .fold(F::ZERO, |sum, (&marginal, weight)| sum + marginal * weight);
+        verify(
+            &mut verifier_t,
+            &geometry,
+            &statement,
+            &committed.each_ref().map(|(commitment, _)| commitment.root),
+            &point,
+            value,
+            ood.as_ref(),
+            &resolved,
+            &streamed,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn streamed_shared_opening_preserves_entire_proof_and_transcript() {
+        check_streamed_proof([9, 13], false);
+        check_streamed_proof([9, 13, 10], true);
+        // Domain large enough for the precomputed two-round lookahead path.
+        check_streamed_proof([9, 14, 10], false);
     }
 }
 
@@ -446,41 +768,122 @@ pub(crate) fn prove_with_security<const N: usize>(
     let (padding_point, padding_scale) = &padding[0];
     geometry.add_padding_basis(&mut basis, padding_point, *padding_scale);
     drop(basis_scope);
+    continue_prove(
+        t, geometry, statement, packed, basis, target, ring, None, ood, resolved, data, security,
+    )
+}
+
+/// Branch-aware shared opener: preserve the dense prover's messages while
+/// avoiding its full virtual witness/equality allocation during ring switch.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prove_sources_with_security<const N: usize>(
+    t: &mut (impl Transcript + Send),
+    geometry: &Geometry<N>,
+    statement: &Hash,
+    sources: [&[F]; N],
+    ood: Option<&OodProverClaim>,
+    resolved: &crate::ligerito_flock::ResolvedLigerito,
+    data: [&ProverData; N],
+    point: &[Gf],
+    security: Option<&mut crate::ligerito_flock::grinding::GrindingContext<'_>>,
+) -> Result<Proof<N>, Error> {
+    let ring_scope = tracing::info_span!("op:ring_switch").entered();
+    let marginal = geometry.ring_marginal(sources, &point[7..]);
+    let (ring, eq_r2, mut target) = ring_switch_prove_marginal(t, marginal);
+    drop(ring_scope);
+    let basis_scope = tracing::info_span!("op:extra_bases").entered();
+    let ood_basis = ood.map(|ood| {
+        let eta: Gf = t.get_field_challenge(&());
+        target += eta * ood.y;
+        (ood.point.as_slice(), eta)
+    });
+    let padding = sample_padding(t, geometry);
+    let (padding_point, padding_scale) = &padding[0];
+    let initial = geometry.initial_tables(
+        sources,
+        &point[7..],
+        &eq_r2,
+        (padding_point, *padding_scale),
+        ood_basis,
+    );
+    drop(basis_scope);
+    continue_prove(
+        t,
+        geometry,
+        statement,
+        initial.packed,
+        initial.basis,
+        target,
+        ring,
+        Some((initial.first_message, initial.lookahead)),
+        ood,
+        resolved,
+        data,
+        security,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn continue_prove<const N: usize>(
+    t: &mut (impl Transcript + Send),
+    geometry: &Geometry<N>,
+    statement: &Hash,
+    packed: Vec<F>,
+    basis: Vec<F>,
+    target: F,
+    ring: RingSwitchProof,
+    precomputed: Option<(ligerito::SumcheckMessage, ligerito::FoldLookahead)>,
+    ood: Option<&OodProverClaim>,
+    resolved: &crate::ligerito_flock::ResolvedLigerito,
+    data: [&ProverData; N],
+    security: Option<&mut crate::ligerito_flock::grinding::GrindingContext<'_>>,
+) -> Result<Proof<N>, Error> {
     let _lig_scope = tracing::info_span!("op:ligerito").entered();
     let pc = resolved.prover();
     let mut paths = std::array::from_fn(|_| Vec::new());
     macro_rules! run {
-        ($challenger:expr) => {
-            ligerito::recursive_prover_with_basis_initial(
-                &pc,
-                packed,
-                basis,
-                target,
-                *statement,
-                |positions, lanes, queries| {
-                    let mut rows = vec![vec![F::ZERO; lanes]; queries.len()];
-                    for branch in 0..N {
-                        let width = 1 << geometry.lane_logs[branch];
-                        let start = geometry.offset(branch);
-                        for (row, &q) in rows.iter_mut().zip(queries) {
-                            row[start..start + width].copy_from_slice(
-                                &data[branch].codeword[q * width..(q + 1) * width],
-                            );
-                        }
-                        paths[branch] = merkle::merkle_multi_proof(
-                            &data[branch].merkle_tree,
-                            positions,
-                            queries,
-                        );
+        ($challenger:expr) => {{
+            let open_initial = |positions, lanes, queries: &[usize]| {
+                let mut rows = vec![vec![F::ZERO; lanes]; queries.len()];
+                for branch in 0..N {
+                    let width = 1 << geometry.lane_logs[branch];
+                    let start = geometry.offset(branch);
+                    for (row, &q) in rows.iter_mut().zip(queries) {
+                        row[start..start + width]
+                            .copy_from_slice(&data[branch].codeword[q * width..(q + 1) * width]);
                     }
-                    RecursiveProof {
-                        opened_rows: rows,
-                        merkle_proof: Vec::new(),
-                    }
-                },
-                $challenger,
-            )
-        };
+                    paths[branch] =
+                        merkle::merkle_multi_proof(&data[branch].merkle_tree, positions, queries);
+                }
+                RecursiveProof {
+                    opened_rows: rows,
+                    merkle_proof: Vec::new(),
+                }
+            };
+            if let Some((message, lookahead)) = precomputed {
+                ligerito::recursive_prover_with_basis_initial_precomputed_round0(
+                    &pc,
+                    packed,
+                    basis,
+                    target,
+                    *statement,
+                    open_initial,
+                    message,
+                    Some(lookahead),
+                    $challenger,
+                )
+            } else {
+                ligerito::recursive_prover_with_basis_initial(
+                    &pc,
+                    packed,
+                    basis,
+                    target,
+                    *statement,
+                    open_initial,
+                    $challenger,
+                )
+            }
+        }};
     }
     let proof = if let Some(security) = security {
         let mut challenger = crate::ligerito_flock::grinding::GrindingChallenger::new(t, security);

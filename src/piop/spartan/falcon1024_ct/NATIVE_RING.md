@@ -1,7 +1,7 @@
 # Native-ring batch Falcon prover
 
 `PreparedFalconHybrid` uses one native-ring arithmetic path. Its statement domain
-is `bitz/falcon1024-ct/hybrid/native-ring/non-zk/v2`; earlier hybrid proofs are
+is `bitz/falcon1024-ct/hybrid/native-ring/non-zk/v3`; earlier hybrid proofs are
 incompatible. There is no arithmetic-mode selector. The standalone nonhybrid
 backend remains a separate existing implementation.
 
@@ -103,12 +103,13 @@ all configured batch sizes must meet the target in the complete union bound.
 These are the repository's computational grinding bounds, not statistical128-bit
 soundness. Every carry and certificate precedes the challenge testing it.
 
-The v2 schedule separates degree-three sumcheck rounds from forest powers/line
-challenges. Its combined error is no greater than v1 for every supported live
-batch, checked with exact integer arithmetic. At batch1024 the respective
-difficulties are18 and25 bits (formerly24 for both); the fingerprint remains29.
-The complete ledger, assumptions, and regression tests are documented in
-[the optimization security note](OPTIMIZATION_SECURITY.md).
+The v3 schedule uses equality-weight forest batching and a nonzero-vector
+line bound. The fingerprint uses a fixed incorrect signature argument. Exact
+regressions preserve the complete v2 bound for every supported live batch.
+At batch1024, cubic, forest, and fingerprint difficulties are18,17,19 bits;
+partial batches use20 fingerprint bits. See the
+[security ledger](OPTIMIZATION_SECURITY.md) and
+[compaction argument](COMPACTION_SOUNDNESS.md).
 
 Run the existing benchmark at batch1024, security128, seed42, threads16,
 one warmup and three measured trials with `-C target-cpu=native`. Compare total
@@ -134,7 +135,7 @@ for timing boundaries, memory, payload accounting, stage profiles, and validatio
 
 ## Bottleneck optimizations (v2)
 
-The matched benchmark now measures **2.282 ms/signature** versus **2.818** for
+The v2 matched benchmark measured **2.282 ms/signature** versus **2.818** for
 the saved v1 executable rerun: **19.0% less proving time**, or 438 signatures/s.
 Batch verification decreases from 110.038 to 71.847 ms. The same 1024 distinct
 signatures, seed 42, 16 threads, native release, and 128-bit target were used;
@@ -151,3 +152,17 @@ The full library suite passed 651 tests (seven ignored), with three upstream
 Falcon integration tests and the serial build check also passing. The stored
 batch proof payload is 2,440,260 bytes. See [the v2 benchmark report](../../../../bench_results/falcon-bottlenecks-20260926/results.md)
 for phase timings, small batches, nonce-search variability, and validation details.
+
+## Throughput optimizations (v3)
+
+All six planned changes are implemented. At batch1024, seed42, threads16 and
+target128, the matched rerun improves from **2.311 to1.169ms/signature**
+(**856 signatures/second**,49.4% less proving time). Across seeds42,43,44,
+the optimized medians are1.169,1.223,1.230ms/signature; the median of those
+is1.223ms/signature (818 signatures/second). The1ms target is not yet reached.
+
+Witness and constraint counts are unchanged. The complete reported
+work-normalized bound improves from129.365218 to129.375910bits. All50 benchmark
+proofs verified;662 distinct library tests and three upstream tests passed.
+See [THROUGHPUT.md](THROUGHPUT.md) for the implementations, full measurements,
+remaining bottlenecks, small-batch results, and exact reproducibility details.

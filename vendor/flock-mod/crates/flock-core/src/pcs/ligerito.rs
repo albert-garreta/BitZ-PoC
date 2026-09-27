@@ -3520,6 +3520,39 @@ where
     )
 }
 
+/// Continue an externally authenticated basis opening with the exact first
+/// sumcheck message and optional next-round coefficients computed while
+/// constructing the basis. This only skips redundant table passes; transcript
+/// messages, grinding boundaries and authenticated opening rows are unchanged.
+#[allow(clippy::too_many_arguments)]
+pub fn recursive_prover_with_basis_initial_precomputed_round0<'a, Ch, O>(
+    config: &ProverConfig,
+    packed_witness: impl Into<Cow<'a, [Gf128]>>,
+    b_initial: Vec<Gf128>,
+    target: Gf128,
+    initial_root: Hash,
+    open_initial: O,
+    first_msg: SumcheckMessage,
+    round1_lookahead: Option<FoldLookahead>,
+    challenger: &mut Ch,
+) -> LigeritoProof
+where
+    Ch: Challenger,
+    O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
+{
+    recursive_prover_with_basis_initial_impl(
+        config,
+        packed_witness,
+        b_initial,
+        target,
+        initial_root,
+        open_initial,
+        Some(first_msg),
+        round1_lookahead,
+        challenger,
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn recursive_prover_with_basis_initial_impl<'a, Ch, O>(
     config: &ProverConfig,

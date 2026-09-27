@@ -16,10 +16,12 @@ the remaining auxiliary witness is not guaranteed to be hidden.
 ## Public signatures and independent benchmark inputs
 
 The outer commitment-bound statement uses `v4`. The hybrid statement uses
-`native-ring/non-zk/v2`, binding its decoder, native field, and security schedule.
+`native-ring/non-zk/v3`, binding its decoder, native field, and security schedule.
 See [NATIVE_RING.md](NATIVE_RING.md) for the current arithmetic and counts, and
 [OPTIMIZATION_SECURITY.md](OPTIMIZATION_SECURITY.md) for the split grinding
-budget. The bridge is covered in [BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md).
+budget and [COMPACTION_SOUNDNESS.md](COMPACTION_SOUNDNESS.md) for the v3 forest
+and fingerprint arguments. The bridge is covered in [BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md).
+Current v3 performance and validation are in [THROUGHPUT.md](THROUGHPUT.md).
 Every CT signature byte has a linear equality against its eight committed bits,
 including the nonce and signed coefficient payload. Absorbing signatures into
 the transcript complements these equality constraints; it does not replace them.
@@ -164,22 +166,19 @@ field-valued tables are still allocated after the first challenge fold.
 
 Each signature retains separate candidate/output trees of 2048 leaves and its
 own root-equality check. Corresponding layers across all trees share a sumcheck
-of `eq(r,x) * sum_t rho^t L_t(x) R_t(x)`. Every non-root layer gets a fresh
-batching challenge after its claims are fixed. Child evaluations are absorbed
+of `eq(r,x) * sum_t eq(tau,t) L_t(x) R_t(x)`. Every non-root layer gets a fresh
+batching point after its claims are fixed. Child evaluations are absorbed
 before the shared line challenge; final leaf claims remain bound to source bits.
 
-For the legacy backend's maximum 64 trees, there are 55 cubic round challenges, ten batching
-challenges of degree at most 63, and eleven line challenges of degree one per
-tree. The 128-bit profile grinds every such challenge at 21 bits with separate
-round, batching, and line domains. Under the existing computational grinding
-analysis, the forest error contribution is bounded by
-
-```text
-(55*3 + 10*63 + 11*64) / (2^125 * 2^21) < 2^-135.
-```
-
-Other argument blocks retain their separate security budgets. The 100-bit profile
-uses no grinding; the same forest numerator over `2^125` is below `2^-114`.
+For `T=2*B` trees, the forest has 55 cubic round challenges, ten equality
+batching points of total degree at most `ceil(log2(T))`, and eleven line
+challenges. The line bound preserves one nonzero error vector, so it costs
+one degree per draw rather than one per tree. See
+[COMPACTION_SOUNDNESS.md](COMPACTION_SOUNDNESS.md) for the full argument.
+The standalone backend retains its conservative 21-bit schedule. The hybrid
+allocates cubic and forest difficulties separately while preserving its saved
+v2 budget. Other argument blocks retain their separate security budgets;
+target 100 remains unground.
 The forest supplies cubic group arithmetic but reuses the shared sumcheck round
 helper and verifier. The ordinary outer engine accepts only one `A*B-C` terminal
 triple, and the batched inner engine handles degree-two products.
@@ -351,10 +350,10 @@ be consumed and verified.
 ## Compatibility and memory
 
 The legacy commitment-bound statement uses `v4`; its internal PIOP headers use
-`v3` and existing forest domains retain `v2`. The hybrid has its own versioned
+`v3`; forest equality batching uses its own `eq/v3` domain. The hybrid has its own versioned
 statement and different source layouts; hybrid roots are not interchangeable
 with standalone roots. The hybrid statement and transcript use
-**native-ring/non-zk/v2**, with the complete arithmetic schedule and native
+**native-ring/non-zk/v3**, with the complete arithmetic schedule and native
 representation explicitly bound. Bridge grinding uses `v4`;
 integer-fold and Keccak-prefix domains remain `v2`. All permutation groups and
 roots remain bound. **Regenerate proofs from earlier hybrid versions.** The
