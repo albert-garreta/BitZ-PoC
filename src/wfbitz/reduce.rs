@@ -4,7 +4,7 @@
 //! `Σ u1[row]·u2[column]·bit(column, row)`.
 
 use super::fold::Fold;
-use super::forest::Forest;
+use super::forest::{Forest, NibbleRows};
 use super::gkr::gpgkr_verify;
 use super::params::{ClaimError, LinearClaimGf, Shape};
 use super::pcs::OpeningQuery;
@@ -96,6 +96,24 @@ pub(crate) fn gkr_reduce_prove(
     hint: &FlockCommitHint,
 ) -> Result<OpeningQuery, ClaimError> {
     gkr_reduce_prove_packed(transcript, fold, shape, hint.packed_cols())
+}
+
+/// [`gkr_reduce_prove`] with the committed grid's nibble rows already built
+/// ([`super::forest::nibble_rows_for`]).
+pub(crate) fn gkr_reduce_prove_with(
+    transcript: &mut ProverState,
+    fold: &Fold,
+    shape: &Shape,
+    hint: &FlockCommitHint,
+    nibble: Option<NibbleRows>,
+) -> Result<OpeningQuery, ClaimError> {
+    let Some(nibble) = nibble else {
+        return gkr_reduce_prove(transcript, fold, shape, hint);
+    };
+    let forest = Forest::new(shape.log_rows(), shape.log_columns(), hint.packed_cols(), &fold.row_images)
+        .with_nibble_rows(nibble);
+    let (point, claim) = forest.prove(transcript, &fold.zeta);
+    query_from_terminal(fold, shape, point, claim)
 }
 
 /// [`gkr_reduce_prove`] over any grid's 64-lane packed columns

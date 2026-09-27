@@ -414,7 +414,7 @@ fn ghash_kernels_here(reps: usize, seed: u64) -> Vec<(&'static str, f64)> {
     let t = time_it(reps, || {
         let mut acc = Gf::zero();
         for _ in 0..PASSES {
-            let (x, y) = kernels::neon::fused_task(
+            let (x, y) = kernels::neon::fused_task::<{ kernels::PLAIN }>(
                 &mut q0l, &mut q1l, &q2l, &q3l, &mut q0r, &mut q1r, &q2r, &q3r, &rho, &w, false,
             );
             acc += x + y;
@@ -422,6 +422,17 @@ fn ghash_kernels_here(reps: usize, seed: u64) -> Vec<(&'static str, f64)> {
         black_box(acc);
     });
     res.push(("fused fold+round column (4 fixed + slot)", per(t, ops)));
+    let t = time_it(reps, || {
+        let mut acc = Gf::zero();
+        for _ in 0..PASSES {
+            let (x, y) = kernels::neon::fused_task::<{ kernels::WEIGHTED }>(
+                &mut q0l, &mut q1l, &q2l, &q3l, &mut q0r, &mut q1r, &q2r, &q3r, &rho, &w, false,
+            );
+            acc += x + y;
+        }
+        black_box(acc);
+    });
+    res.push(("fused fold+round column, weighted left (4 fixed + 2 unred)", per(t, ops)));
     res
 }
 
