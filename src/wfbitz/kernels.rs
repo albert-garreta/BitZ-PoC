@@ -329,6 +329,16 @@ pub(crate) fn product_into(a: &[Gf], b: &[Gf], out: &mut [MaybeUninit<Gf>]) {
     generic::product_into(a, b, out);
 }
 
+/// [`scatter_add`] into four buckets at once (`buckets[j][idx[j][m]] +=
+/// eq_t[m]`): each weight loaded once for its four additions — the pair
+/// buckets of the bit rounds' last pass.
+pub(crate) fn scatter_add4(buckets: [&mut [Gf]; 4], idx: &[[u8; 64]; 4], eq_t: &[Gf]) {
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    neon::scatter_add4(buckets, idx, eq_t);
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    generic::scatter_add4(buckets, idx, eq_t);
+}
+
 /// `bucket[idx[m]] += eq_t[m]` over a transposed block — the bit rounds'
 /// one addition per term. `bucket` must hold 256 entries so every byte
 /// index is in bounds; `eq_t` has 64 entries.
@@ -692,6 +702,12 @@ pub(crate) mod generic {
         assert_eq!(eq_t.len(), 64);
         for (&i, &e) in idx.iter().zip(eq_t) {
             bucket[i as usize] += e;
+        }
+    }
+
+    pub(crate) fn scatter_add4(buckets: [&mut [Gf]; 4], idx: &[[u8; 64]; 4], eq_t: &[Gf]) {
+        for (bucket, idx) in buckets.into_iter().zip(idx) {
+            scatter_add(bucket, idx, eq_t);
         }
     }
 
@@ -1322,6 +1338,29 @@ pub(crate) mod neon {
         }
     }
 
+    pub(crate) fn scatter_add4(buckets: [&mut [Gf]; 4], idx: &[[u8; 64]; 4], eq_t: &[Gf]) {
+        assert_eq!(eq_t.len(), 64);
+        assert!(buckets.iter().all(|b| b.len() >= 256));
+        // SAFETY: as `scatter_add`, for four distinct buckets (four `&mut`).
+        unsafe {
+            let base: [*mut u64; 4] = buckets.map(|b| b.as_mut_ptr().cast::<u64>());
+            let mut m = 0usize;
+            while m < 64 {
+                let e0 = ld(eq_t.get_unchecked(m));
+                let e1 = ld(eq_t.get_unchecked(m + 1));
+                for j in 0..4 {
+                    let p0 = base[j].add(2 * *idx.get_unchecked(j).get_unchecked(m) as usize);
+                    vst1q_u64(p0, veorq_u64(vld1q_u64(p0), e0));
+                }
+                for j in 0..4 {
+                    let p1 = base[j].add(2 * *idx.get_unchecked(j).get_unchecked(m + 1) as usize);
+                    vst1q_u64(p1, veorq_u64(vld1q_u64(p1), e1));
+                }
+                m += 2;
+            }
+        }
+    }
+
     pub(crate) fn dot(a: &[Gf], b: &[Gf]) -> Gf {
         let n = a.len();
         assert_eq!(b.len(), n);
@@ -1527,6 +1566,16 @@ mod tests {
             scatter_add(&mut got, &idx, &eq);
             generic::scatter_add(&mut want, &idx, &eq);
             assert_eq!(got, want, "scatter seed {seed}");
+            // Four buckets at once, indices colliding within and across them.
+            let idx4: [[u8; 64]; 4] = std::array::from_fn(|j| std::array::from_fn(|m| idx[(m + 7 * j) % 64] >> (j % 3)));
+            let mut got4: Vec<Vec<Gf>> = (0..4).map(|j| elements(256, seed + 10 * j as u64)).collect();
+            let mut want4 = got4.clone();
+            let [a, b, c, d] = &mut got4[..] else { unreachable!() };
+            scatter_add4([&mut a[..], &mut b[..], &mut c[..], &mut d[..]], &idx4, &eq);
+            for (bucket, ix) in want4.iter_mut().zip(&idx4) {
+                generic::scatter_add(bucket, ix, &eq);
+            }
+            assert_eq!(got4, want4, "scatter4 seed {seed}");
         }
         for entries in [2usize, 4, 16] {
             let t_e = elements(entries, 71);

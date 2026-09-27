@@ -495,10 +495,7 @@ impl<'a> Forest<'a> {
             for g in 0..groups {
                 let idx = self.pair_bytes(ell, kk, y, y_bits, g, nib);
                 let eq_g = &eq_t[g << 6..(g + 1) << 6];
-                kernels::scatter_add(&mut bk.ll, &idx[0], eq_g);
-                kernels::scatter_add(&mut bk.hh, &idx[1], eq_g);
-                kernels::scatter_add(&mut bk.lh, &idx[2], eq_g);
-                kernels::scatter_add(&mut bk.hl, &idx[3], eq_g);
+                kernels::scatter_add4([&mut bk.ll, &mut bk.hh, &mut bk.lh, &mut bk.hl], &idx, eq_g);
             }
             // Corner `α = (v, x)`'s leaf `u` for half `p`.
             let image = |p: usize, alpha: usize, u: usize| {
@@ -1330,10 +1327,7 @@ impl<'a> Forest<'a> {
             } else if let Some((rows, BitSelectors::Pairs(sel))) = nib {
                 let mut idx = [[0u8; 64]; 4];
                 nibble::select(rows.block(yr, g), sel, &mut idx);
-                kernels::scatter_add(&mut bk.ll, &idx[0], eq_g);
-                kernels::scatter_add(&mut bk.hh, &idx[1], eq_g);
-                kernels::scatter_add(&mut bk.lh, &idx[2], eq_g);
-                kernels::scatter_add(&mut bk.hl, &idx[3], eq_g);
+                kernels::scatter_add4([&mut bk.ll, &mut bk.hh, &mut bk.lh, &mut bk.hl], &idx, eq_g);
             } else if nb <= 2 {
                 // Tuple byte: corner `i`'s pattern at bits `i·nb..`.
                 words = [0u64; 8];
