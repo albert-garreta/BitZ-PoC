@@ -71,21 +71,27 @@ const PINS: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "sha256/2p7/lambda100",
-        "ac6d91d9b9d51cb88a5f1cb5b67a49cdb833ff4bfb03a292a4f3aa04e2fecf0b",
-        "c4304ceb0e63926ca5bbe653a11e6b354a53b418fe4f2047325910c04a6c471c",
-        "c94b8d886b48b0911b8071544a666b22e4d70bc828d8745f809b1f5332d0da1a",
+        "107b5655bae3d6860a47e2f2d8e76b93c3881bd1bce07ee3e7ff79f08c4182b7",
+        "66e87f0af701b784f485fe96c899401c7e32affd4fe881bebbc2efc1740e1069",
+        "5693477e6b1fd7f45be26688436957ff792f9285a94d4bde98b1eee23b716a0d",
     ),
     (
         "sha256/2p7/lambda128",
-        "f533399b44008c8bee8881ff8851606db05b978c1bad2ddc4b78445982d47b58",
-        "d3ab988fb7af81cf7fa36582ce8034b108959ba5cb1b8e9c0096df13f66a631c",
-        "a271b8e240a4074e75b549c50ac1cecf3594b62390c7f6a2c372357b6ac4284b",
+        "e2b797cdb46ce735cca77d11efb3071b32f4fbcfaaeda8a3a48c94e6d9d7c1b2",
+        "c83b610466776d7d98123c55209281f487ffca228fe0bff7fc9bf71602d39587",
+        "7825e191e87c0195e44bba291e0ea35d04161c92403583516766dae805836558",
     ),
     (
         "sha256/2p7/reference",
-        "ec2ce1b805bf904768c5fd2723aaa6df6bde77011a8d7b01fec5644fee4165e0",
-        "8cf91a240b3a77f228c4c0ce554c5b98ef7cf48bfb0e1c15b9eb0344aadbbb7e",
-        "2b7f570b24c15b66b45fd2bda9d0042a7a6dfaa681f01d36f36fc3a2a1b6cf6a",
+        "ba3d2b76e75809b9936fd304b91e1577e4b5d385c7e683fa8283bd090fc98e5f",
+        "32f3295ab41f52fedecada0d952cbad66dd26bf86d9d7f372e80ae32b5559391",
+        "cefc1bf3284fc1bb71d74e0f53a57c8810672a7b8c8f499872396f3cf269b8bd",
+    ),
+    (
+        "sha256/2p7/wfbitz/lambda100",
+        "1ca4f9299040895e13e108e6e6fd9108a6154532dd9c0c87e1487e596f0487bc",
+        "1ca4f9299040895e13e108e6e6fd9108a6154532dd9c0c87e1487e596f0487bc",
+        "9ad541204ec5f2a2a8f2370b872934a9936db01ac4c727498141d5ca42541838",
     ),
     (
         "sha256/legacy-rows21/lambda100",
@@ -453,6 +459,43 @@ fn sha256_legacy_inner_sumcheck_rows21_lambda100() {
         prepare_sha256_compression_batch_for_assignment_rows_with_profile::<Lambda100>(21)
             .expect("prepare");
     sha256_pin("sha256/legacy-rows21/lambda100", &prepared);
+}
+
+/// The default SHA opener: worldfnd/BitZ on the `Id ⊗ M` block-layout
+/// commitment (the opening forks its own transcript after the claim frame).
+#[cfg(feature = "bitz-parity")]
+#[test]
+fn sha256_2p7_wfbitz_lambda100() {
+    use bitz::piop::spartan::{
+        commit_sha256_compression_witness_wfbitz,
+        prepare_sha256_compression_batch_wfbitz_with_profile, protocol::OpeningProof,
+        prove_sha256_compressions_wfbitz, verify_sha256_compressions_wfbitz,
+    };
+    let prepared =
+        prepare_sha256_compression_batch_wfbitz_with_profile::<Lambda100>(7).expect("prepare");
+    let inputs = sha256_inputs(prepared.instances());
+    let witness = generate_sha256_compression_witnesses(&prepared, &inputs).expect("witness");
+    let statements: Vec<_> = inputs
+        .iter()
+        .copied()
+        .zip(witness.outputs().iter().copied())
+        .map(|(input, output)| Sha256CompressionStatement::new(input, output))
+        .collect();
+    let hint = commit_sha256_compression_witness_wfbitz(&prepared, &witness).expect("commit");
+    let mut pt = Blake3Transcript::new();
+    let proof = prove_sha256_compressions_wfbitz(&mut pt, &prepared, &statements, &witness, &hint)
+        .expect("prove");
+    let mut vt = Blake3Transcript::new();
+    verify_sha256_compressions_wfbitz(&mut vt, &prepared, &statements, &hint.commitment, &proof)
+        .expect("verify");
+    let opening = proof.bitz().to_bytes();
+    let nonces = nonces_le([proof.initial_nonce(), proof.terminal_nonce()]);
+    pin(
+        "sha256/2p7/wfbitz/lambda100",
+        &pt,
+        &vt,
+        &[&hint.commitment.root, &opening, &nonces],
+    );
 }
 
 #[cfg(feature = "bench-internals")]

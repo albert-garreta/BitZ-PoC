@@ -11,7 +11,10 @@ The default shapes are `7 8 10`: 128, 256 and 1,024 compressions. Each
 workload/shape runs in a fresh process. The runner builds the benchmark
 with `cargo bench --locked`, discovers their executables from Cargo JSON,
 and invokes those executables directly. It selects only the normal BitZ
-features plus `unchecked`; no comparison backend is enabled.
+features plus `unchecked` and `bitz-parity`; no comparison backend is
+enabled. The opener is the worldfnd/BitZ scheme on the `Id ⊗ M` block-layout
+commitment; `BITZ_OPENER=forest` runs the exponent-fold forest instead,
+always as one merged forest.
 
 For a minimal run using cached dependencies:
 

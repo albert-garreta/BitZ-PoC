@@ -61,7 +61,7 @@ def main() -> int:
     }
     env.update(RAYON_NUM_THREADS=str(args.threads), BITZ_BENCH_REPS=str(args.reps),
                BITZ_BENCH_SEED=hex(args.seed), BITZ_BENCH_LAMBDA=args.security)
-    features = ["span-metrics"] if args.checked else ["unchecked", "span-metrics"]
+    features = ["span-metrics", "bitz-parity"] if args.checked else ["unchecked", "span-metrics", "bitz-parity"]
     build = ["cargo", "bench", "--locked", "--no-run", "--message-format=json-render-diagnostics"]
     if args.offline:
         build.append("--offline")

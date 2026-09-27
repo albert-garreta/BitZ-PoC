@@ -20,7 +20,7 @@ fn run(executable: &Path, directory: &Path, args: &[&str], env: &[(&str, &str)])
 fn every_entrypoint_handles_help_and_errors_before_work() {
     let build = Command::new(env!("CARGO")).current_dir(env!("CARGO_MANIFEST_DIR"))
         .args(["build", "--benches", "--bin", "hybrid-u32-sha256", "--profile", "dev",
-            "--features", "span-metrics,bench-internals,native-mul-compare,native-sha256-compare,sha256-ecdsa-compare,hybrid,bench-peak-memory",
+            "--features", "span-metrics,bench-internals,native-mul-compare,native-sha256-compare,sha256-ecdsa-compare,hybrid,bench-peak-memory,bitz-parity",
             "--message-format=json", "--offline"])
         .stderr(Stdio::inherit()).output().unwrap();
     assert!(build.status.success(), "benchmark build failed");

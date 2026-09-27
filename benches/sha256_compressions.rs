@@ -14,8 +14,17 @@
 //!
 //! ```text
 //! BITZ_BENCH_SHAPES="10 12" BITZ_BENCH_REPS=1 \
-//!   cargo bench --bench sha256_compressions --features unchecked
+//!   cargo bench --bench sha256_compressions --features unchecked,span-metrics,bitz-parity
 //! ```
+//!
+//! The opener is the worldfnd/BitZ scheme (`BITZ_OPENER=wfbitz`, the default
+//! for compression-count shapes): its fold and GKR over the product tensor at
+//! the split `t = ⌈0.6 n⌉ − 1`, opened on the `Id ⊗ M` block-layout
+//! commitment. `BITZ_OPENER=forest` runs the crate's exponent-fold forest on
+//! the packed source instead, always as one merged forest (the prime capped
+//! at the split's one-forest width). The forest-only modes below (explicit
+//! opening splits, assignment-row-sized batches) select the forest when
+//! `BITZ_OPENER` is unset.
 //!
 //! To size the batch by the packed assignment domain instead, set
 //! `BITZ_SHA_MNUMROWS_LOG2S`. For example, `BITZ_SHA_MNUMROWS_LOG2S="24 25"`
@@ -28,9 +37,9 @@
 //! packed inner sumcheck. `BITZ_SHA_INNER_PREFIX_VARS=0..4` configures that
 //! path and non-power-of-two assignment-row batches.
 //! `BITZ_SHA_OPENING_T=<t>` gives every compression-count shape an explicit
-//! BitZ split of `2^t` rows (the read-off vector then has `2^(vars - t)`
-//! columns; splits above the one-forest cap open with one forest per weight
-//! chunk). `BITZ_SHA_OPENING_LAYOUT=inner` (default) takes the inner-sumcheck
+//! BitZ split of `2^t` rows for the forest (the read-off vector then has
+//! `2^(vars - t)` columns; the prime narrows to the split's one-forest width,
+//! so every split opens one forest). `BITZ_SHA_OPENING_LAYOUT=inner` (default) takes the inner-sumcheck
 //! path; `=product` keeps the direct product opening on the transposed,
 //! instance-major product tensor (`t >= 15`).
 //!
@@ -877,8 +886,8 @@ pub(crate) struct Env {
     opening_t: Option<usize>,
     #[arg(long, env = "BITZ_SHA_OPENING_LAYOUT")]
     opening_layout: Option<String>,
-    #[arg(long, env = "BITZ_OPENER", default_value = "forest")]
-    opener: String,
+    #[arg(long, env = "BITZ_OPENER")]
+    opener: Option<String>,
     #[arg(long, env = "BITZ_SHA_TRACE_PATH")]
     trace_path: Option<PathBuf>,
     #[arg(long, env = "BITZ_SHA_RESULT_PATH")]
@@ -1071,12 +1080,7 @@ fn run_once(
         }
     };
     let forests = proof.forests();
-    if prepared.opening_layout() == Sha256OpeningLayout::Default {
-        assert_eq!(
-            forests, 1,
-            "every production-layout SHA proof uses exactly one merged forest"
-        );
-    }
+    assert_eq!(forests, 1, "every SHA proof opens exactly one merged forest");
     drop(prover_scope);
     // Capture before verifier allocations and proof serialization. This
     // includes the live input/setup baseline and witness-generation peak.
@@ -1438,10 +1442,27 @@ pub(crate) fn main() {
 }
 
 pub(crate) fn run(env: Env) {
-    let opener = common::cli::value(
-        "BITZ_OPENER",
-        env.opener.as_str(),
-        clap::builder::PossibleValuesParser::new(["forest", "wfbitz"]),
+    // wfbitz is the default opener; the forest-only modes (explicit opening
+    // splits, assignment-row-sized batches, the fixed-98 product sweep) run
+    // the forest.
+    let forest_only = env.opening_t.is_some()
+        || env
+            .shapes
+            .iter()
+            .any(|shape| !matches!(shape, BenchShape::Compressions(_)));
+    let opener = match env.opener.as_deref() {
+        Some(choice) => common::cli::value(
+            "BITZ_OPENER",
+            choice,
+            clap::builder::PossibleValuesParser::new(["forest", "wfbitz"]),
+        ),
+        None if forest_only => "forest".to_owned(),
+        None => "wfbitz".to_owned(),
+    };
+    assert!(
+        !(forest_only && opener == "wfbitz"),
+        "BITZ_OPENER=wfbitz runs compression-count shapes at its own split; \
+         explicit opening splits and assignment-row sizes are forest-only"
     );
     WFBITZ.set(opener == "wfbitz").expect("the opener is chosen once");
     let reps = env.reps;
@@ -1481,6 +1502,14 @@ pub(crate) fn run(env: Env) {
             .expect("create SHA result output")
     });
     println!("SHA-256: flat packed [1|f₀|f₁|…], h=Mf; direct product opening + virtual BitZ");
+    println!(
+        "opener: {}",
+        if wfbitz() {
+            "wfbitz (BitZ fold + GKR on the product tensor, Id⊗M block-layout commitment)"
+        } else {
+            "forest (one merged forest on the packed source)"
+        }
+    );
     #[cfg(feature = "parallel")]
     println!("rayon threads: {threads}");
     println!(

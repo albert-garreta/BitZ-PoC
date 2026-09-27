@@ -198,7 +198,6 @@ pub const KNOWN_BITZ_ENV: &[&str] = &[
     "BITZ_SHA_MNUMROWS_LOG2S",
     "BITZ_SHA_OPENING_LAYOUT",
     "BITZ_SHA_OPENING_T",
-    "BITZ_SHA_PRIME_ONE_FOREST",
     // The wfbitz opener's per-phase stderr trace (`crate::wfbitz::trace`).
     "BITZ_TRACE",
     "BITZ_SHA_PRODUCT_TS",

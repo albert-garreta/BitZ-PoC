@@ -185,20 +185,20 @@ pub enum Sha256OpeningLayout {
     /// balanced split capped at one forest.
     Default,
     /// Run the inner sumcheck and split the flat assignment domain as
-    /// `2^row_vars` BitZ rows × `2^(vars - row_vars)` columns. Splits above
-    /// the one-forest cap are allowed: the opening then carries one merged
-    /// forest per mod-q weight chunk, while the read-off vector sent in the
-    /// clear shrinks to `2^(vars - row_vars)` integers per chunk. The
-    /// security derivation runs against the chosen split (its integer lift
-    /// sums `2^t` terms, which narrows the prime interval once `t > k`).
+    /// `2^row_vars` BitZ rows × `2^(vars - row_vars)` columns. The prime
+    /// narrows to the split's one-forest width `127 - t - 1`, so the opening
+    /// carries one merged forest at any split, and the read-off vector sent
+    /// in the clear shrinks to `2^(vars - row_vars)` integers. The security
+    /// derivation runs against the chosen split (its integer lift sums `2^t`
+    /// terms, which narrows the prime interval once `t > k`).
     InnerSumcheck { row_vars: usize },
     /// Keep the direct product opening (no inner sumcheck) but lay the
     /// product tensor out instance-major, so the 15 local bits plus the low
     /// `row_vars - 15` instance bits form the `2^row_vars` BitZ rows and only
     /// the remaining high instance bits form the columns. The rank-one
     /// coefficient `eq(instance) · d[local]` factors across that split too.
-    /// Power-of-two batches only; `15 ≤ row_vars ≤ 15 + k`; splits above the
-    /// one-forest cap open with one forest per weight chunk.
+    /// Power-of-two batches only; `15 ≤ row_vars ≤ 15 + k`; one forest, the
+    /// prime narrowed to the split's one-forest width.
     ProductTransposed { row_vars: usize },
 }
 
@@ -616,7 +616,6 @@ pub fn prepare_sha256_compression_batch_wfbitz_at<P: IopSecurityProfile>(
         None,
         |facts| P::instantiate(facts).map_err(Sha256ConstraintError::from),
         false,
-        true,
     )?;
     prepared.wfbitz = Some(prepared.wfbitz_block_layout()?);
     let selection = crate::ligerito_flock::LigeritoSelection::for_target(
@@ -677,7 +676,6 @@ pub fn prepare_sha256_compression_batch_for_product_t_fixed98(
         Some(product_t),
         |_| Ok(fixed_98_security_params()),
         true,
-        false,
     )?;
     let selection = crate::ligerito_flock::LigeritoSelection::for_target(
         prepared.security.ligerito_target_bits,
@@ -762,7 +760,6 @@ pub(super) fn prepare_sha256_compression_batch_for_product_t_test(
         Some(product_t),
         |facts| Lambda100::instantiate(facts).map_err(Sha256ConstraintError::from),
         false,
-        false,
     )
 }
 
@@ -785,7 +782,6 @@ fn prepare_sha256_compression_instances_with_profile_and_layout<P: IopSecurityPr
         None,
         |facts| P::instantiate(facts).map_err(Sha256ConstraintError::from),
         false,
-        false,
     )
 }
 
@@ -797,7 +793,6 @@ fn prepare_sha256_compression_instances(
         &super::super::profile::IopInstanceFacts,
     ) -> Result<IopSecurityParams, Sha256ConstraintError>,
     fixed_98: bool,
-    one_forest_prime: bool,
 ) -> Result<PreparedSha256CompressionBatch, Sha256ConstraintError> {
     let log_instance_capacity = instances
         .checked_next_power_of_two()
@@ -919,11 +914,13 @@ fn prepare_sha256_compression_instances(
         // arity follows the larger of the two.
         facts.lift_arity_log2 = facts.lift_arity_log2.max(facts.opening_t);
     }
-    // Opt-in: size the prime to the product opening's one-chunk fold width
-    // `c_w = 127 - t - W`, as the standalone opener does, so the balanced
-    // layout (t >= 15, no-wrap width 128 - t = c_w + 2) opens one forest
-    // instead of two. Transcript-changing, hence off by default.
-    if product_p_h.is_some() && !fixed_98 && (one_forest_prime || prime_one_forest()) {
+    // One forest only: the prime is sized to the opening's one-chunk fold
+    // width `c_w = 127 - t - W`, as the standalone opener does (at the
+    // balanced product split, t >= 15, the no-wrap width alone would leave it
+    // at `128 - t = c_w + 2` bits and split the weights over two forests).
+    // The worldfnd/BitZ opener's fold bound needs the same cap. The fixed-98
+    // sweep's prime is already below every one-chunk width it runs.
+    if !fixed_98 {
         facts.direct_opening = true;
     }
     let security = make_security(&facts)?;
@@ -988,9 +985,7 @@ fn validate_prepared_protocol(
         u128::BITS as usize - prepared.security.projection_max.leading_zeros() as usize;
     let opening_params = prepared.product_p_h.as_ref().unwrap_or(&prepared.h_layout);
     let forest_count = mod_q_num_chunks(opening_params, max_q_bits);
-    let single_forest_required = prepared.prime_profile.is_fixed()
-        || matches!(prepared.opening_layout, Sha256OpeningLayout::Default);
-    if single_forest_required && forest_count != 1 {
+    if forest_count != 1 {
         return Err(Sha256ConstraintError::UnsupportedOpeningForestCount {
             actual: forest_count,
         });
@@ -1068,12 +1063,6 @@ const fn single_forest_binary_params(vars: usize) -> IntegerMatrixLayout {
 /// local width rather than with the batch. `r` is chosen to land on the same
 /// balance point the rest of the instantiation uses, `t = ceil(0.6 · n)`,
 /// clamped to the range this layout can represent, `r in [0, k]`.
-/// `BITZ_SHA_PRIME_ONE_FOREST=1`: cap the SHA prime at the product opening's
-/// one-forest width (see `prepare_sha256_compression_instances`).
-fn prime_one_forest() -> bool {
-    std::env::var("BITZ_SHA_PRIME_ONE_FOREST").is_ok_and(|v| v != "0")
-}
-
 const fn balanced_product_row_vars(
     assignment_vars: usize,
     local_bits: usize,
@@ -1481,6 +1470,12 @@ mod tests {
                 1,
                 "log-compressions={exponent}"
             );
+            // The opened product tensor too: one forest is the only option.
+            assert_eq!(
+                mod_q_num_chunks(prepared.opening_params(), max_q_bits),
+                1,
+                "log-compressions={exponent}"
+            );
             if exponent >= 10 {
                 assert_eq!(
                     *prepared.assignment_params(),
@@ -1495,11 +1490,12 @@ mod tests {
         }
 
         let prepared = prepare_sha256_compression_batch(14).unwrap();
-        // The balanced `Id_{2^r} ⊗ M` opening lifts `2^t` terms rather than
-        // `2^min(k,13)`, so the no-wrap bound narrows the prime accordingly.
+        // The balanced `Id_{2^r} ⊗ M` opening (t = 18 at 2^14) lifts `2^t`
+        // terms, and one forest caps the prime at `127 - t - 1 = 108` bits
+        // (the no-wrap bound alone would allow 110 and need two forests).
         assert_eq!(
             u128::BITS as usize - prepared.security().projection_max.leading_zeros() as usize,
-            110
+            108
         );
     }
 

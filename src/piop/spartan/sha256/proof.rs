@@ -2465,7 +2465,7 @@ mod tests {
             .unwrap();
             assert_eq!(
                 proof.bitz().mfs.len(),
-                2,
+                1,
                 "production product layout forests"
             );
             verify_sha256_compressions_with_config(
@@ -2545,18 +2545,19 @@ mod tests {
     }
 
     #[test]
-    fn explicit_inner_sumcheck_layout_roundtrips_across_forest_counts() {
+    fn explicit_inner_sumcheck_layout_roundtrips_in_one_forest() {
         use super::super::super::{
             Sha256OpeningLayout, prepare_sha256_compression_batch_with_profile_and_layout,
         };
         use crate::piop::spartan::profile::Lambda100;
-        // 2^7 compressions: 2^22 assignment cells. t = 13 keeps one forest
-        // (113-bit primes, c_w = 113); t = 15 narrows c_w to 111 and needs two.
+        // 2^7 compressions: 2^22 assignment cells. t = 13 keeps the 113-bit
+        // prime (c_w = 113); t = 15 narrows c_w, and with it the prime, to 111
+        // bits, so both open one forest.
         const LOG_COMPRESSIONS: usize = 7;
         let inputs = (0..1usize << LOG_COMPRESSIONS)
             .map(input)
             .collect::<Vec<_>>();
-        for (row_vars, expected_forests) in [(13usize, 1usize), (15, 2)] {
+        for (row_vars, expected_forests) in [(13usize, 1usize), (15, 1)] {
             let prepared = prepare_sha256_compression_batch_with_profile_and_layout::<Lambda100>(
                 LOG_COMPRESSIONS,
                 Sha256OpeningLayout::InnerSumcheck { row_vars },
@@ -2626,7 +2627,8 @@ mod tests {
         };
         use crate::piop::spartan::profile::Lambda100;
         // 2^7 compressions: 2^22 assignment cells, local stride 2^15. Every
-        // admissible split has t >= 15, so two forests at 113-bit primes.
+        // admissible split has t >= 15; the prime narrows to 127 - t - 1 bits
+        // so each opens one forest.
         const LOG_COMPRESSIONS: usize = 7;
         let inputs = (0..1usize << LOG_COMPRESSIONS)
             .map(input)
@@ -2659,7 +2661,7 @@ mod tests {
                 &pc,
             )
             .unwrap();
-            assert_eq!(proof.bitz().mfs.len(), 2, "forests at t={row_vars}");
+            assert_eq!(proof.bitz().mfs.len(), 1, "forests at t={row_vars}");
             assert!(proof.inner().round_polynomials.is_empty());
             assert_eq!(proof.bitz().us[0].len(), 1 << (22 - row_vars));
             let mut verifier_transcript = Blake3Transcript::new();
