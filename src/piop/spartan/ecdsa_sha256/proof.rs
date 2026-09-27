@@ -72,10 +72,6 @@ pub enum Sha256EcdsaOpening {
 }
 
 impl Sha256EcdsaOpening {
-    const FOREST_TAG: u8 = 0;
-    #[cfg(feature = "bitz-parity")]
-    const WFBITZ_TAG: u8 = 1;
-
     pub(crate) fn ood(&self) -> Option<&crate::ligerito_flock::OodRound> {
         match self {
             Self::Forest(opening) => opening.ood.as_ref(),
@@ -84,36 +80,42 @@ impl Sha256EcdsaOpening {
         }
     }
 
-    /// One tag byte, then the variant's own encoding.
+    /// The opener that produced this opening.
+    pub(crate) fn opener(&self) -> super::Sha256EcdsaOpener {
+        match self {
+            Self::Forest(_) => super::Sha256EcdsaOpener::Forest,
+            #[cfg(feature = "bitz-parity")]
+            Self::Wfbitz(_) => super::Sha256EcdsaOpener::Wfbitz,
+        }
+    }
+
+    /// The variant's own encoding, untagged: the proof's magic names the
+    /// variant.
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
-            Self::Forest(opening) => {
-                let mut bytes = vec![Self::FOREST_TAG];
-                bytes.extend_from_slice(&opening.to_bytes());
-                bytes
-            }
+            Self::Forest(opening) => opening.to_bytes(),
             #[cfg(feature = "bitz-parity")]
             Self::Wfbitz(opening) => {
                 use crate::piop::spartan::protocol::OpeningProof;
-                let mut bytes = vec![Self::WFBITZ_TAG];
-                bytes.extend_from_slice(&opening.to_bytes());
-                bytes
+                opening.to_bytes()
             }
         }
     }
 
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        match bytes.split_first() {
-            Some((&Self::FOREST_TAG, rest)) => {
-                IntEvalRsLigVirtProof::from_bytes(rest).map(Self::Forest).map_err(error)
+    /// Decodes the variant the proof's magic named.
+    pub fn from_bytes(opener: super::Sha256EcdsaOpener, bytes: &[u8]) -> Result<Self> {
+        match opener {
+            super::Sha256EcdsaOpener::Forest => {
+                IntEvalRsLigVirtProof::from_bytes(bytes).map(Self::Forest).map_err(error)
             }
             #[cfg(feature = "bitz-parity")]
-            Some((&Self::WFBITZ_TAG, rest)) => {
-                crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof::from_bytes(rest)
+            super::Sha256EcdsaOpener::Wfbitz => {
+                crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof::from_bytes(bytes)
                     .map(Self::Wfbitz)
                     .ok_or_else(|| error("malformed wfbitz opening"))
             }
-            _ => Err(error("unknown opening variant")),
+            #[cfg(not(feature = "bitz-parity"))]
+            super::Sha256EcdsaOpener::Wfbitz => Err(error("unknown opening variant")),
         }
     }
 }
@@ -566,6 +568,12 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         (Sha256EcdsaOpening::Forest(opening), super::Sha256EcdsaOpener::Forest) => opening,
         #[cfg(feature = "bitz-parity")]
         (Sha256EcdsaOpening::Wfbitz(opening), super::Sha256EcdsaOpener::Wfbitz) => {
+            // The wfbitz opening grinds inside its own transcript and consumes
+            // no host nonces; as the forest's grinding context consumes
+            // `flock_nonces` exactly, refuse any.
+            if !proof.flock_nonces.is_empty() {
+                return Err(error("the wfbitz opening takes no host grinding nonces"));
+            }
             let target = u128::from(cfg.to_integer(&inner_final_claim));
             return super::wfbitz::verify_opening(
                 transcript,

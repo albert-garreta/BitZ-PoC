@@ -281,17 +281,14 @@ impl PreparedHybrid {
         })
     }
 
-    /// Selects the multiplication side's grand-product scheme (default: the forest).
-    pub fn with_mul_opener(mut self, opener: MulOpener) -> Self {
-        if opener != self.mul_opener {
-            // The multiplication grid's split follows the opener: rebuild.
-            match Self::build(self.parameters, self.ligerito.selection(), opener) {
-                Ok(rebuilt) => return rebuilt,
-                Err(error) => tracing::warn!("hybrid: keeping the default split ({error:?})"),
-            }
+    /// Selects the multiplication side's grand-product scheme (default: the
+    /// forest). The multiplication grid's split follows the opener, so the
+    /// statement is rebuilt; a shape the opener cannot take is an error.
+    pub fn with_mul_opener(self, opener: MulOpener) -> Result<Self, Error> {
+        if opener == self.mul_opener {
+            return Ok(self);
         }
-        self.mul_opener = opener;
-        self
+        Self::build(self.parameters, self.ligerito.selection(), opener)
     }
 
     pub fn mul_opener(&self) -> MulOpener {
@@ -670,7 +667,7 @@ mod tests {
 
     /// The multiplication side reduced by the worldfnd/BitZ scheme's fold and
     /// GKR: the composition proves, round-trips through bytes and verifies,
-    /// and each opener refuses the other's proof.
+    /// and each opener refuses the other's proof and its encoding.
     #[cfg(feature = "bitz-parity")]
     #[test]
     fn wfbitz_multiplication_side_roundtrips_and_is_bound_to_its_opener() {
@@ -686,22 +683,37 @@ mod tests {
             .collect();
         let prepared = PreparedHybrid::new(parameters)
             .unwrap()
-            .with_mul_opener(MulOpener::Wfbitz);
+            .with_mul_opener(MulOpener::Wfbitz)
+            .unwrap();
+        assert_eq!(prepared.mul_opener(), MulOpener::Wfbitz);
+        let layout = MulLayout::<u32>::new(parameters.multiplications).unwrap();
+        let expected = layout.wfbitz_split(0).unwrap().bitz_params().col_vars as i64
+            - layout.bitz_params().col_vars as i64;
+        assert_eq!(i64::from(prepared.mul_split_shift), expected);
         let committed = prepared.commit(&inputs, &blocks).unwrap();
         let proof = prepared.prove(&committed).unwrap();
         prepared.verify(committed.statement(), &proof).unwrap();
         let bytes = proof.to_bytes();
+        assert_eq!(&bytes[..8], b"BZSW\x01\0\0\0");
         let decoded = prepared
             .proof_from_bytes(committed.statement(), &bytes)
             .unwrap();
         prepared.verify(committed.statement(), &decoded).unwrap();
         let forest = PreparedHybrid::new(parameters).unwrap();
         assert!(forest.verify(committed.statement(), &proof).is_err());
+        assert!(forest.proof_from_bytes(committed.statement(), &bytes).is_err());
         // The openers commit the multiplication grid at different splits, so
         // the forest proof comes with the forest's own commitment.
         let forest_committed = forest.commit(&inputs, &blocks).unwrap();
         let forest_proof = forest.prove(&forest_committed).unwrap();
         assert!(prepared.verify(forest_committed.statement(), &forest_proof).is_err());
+        let forest_bytes = forest_proof.to_bytes();
+        assert_eq!(&forest_bytes[..8], b"BZSH\x06\0\0\0");
+        assert!(
+            prepared
+                .proof_from_bytes(forest_committed.statement(), &forest_bytes)
+                .is_err()
+        );
         // A changed multiplication row is still caught.
         let mut rows: Vec<_> = committed.multiplication_rows().collect();
         rows[7].lo ^= 1;
@@ -712,6 +724,33 @@ mod tests {
                     .verify(invalid.statement(), &prepared.prove(&invalid).unwrap())
                     .is_err()
         );
+    }
+
+    /// Switching the multiplication-side opener rebuilds the statement at
+    /// the new opener's split, in both directions.
+    #[test]
+    fn with_mul_opener_rebuilds_the_statement() {
+        let parameters = Parameters {
+            multiplications: 1 << 9,
+            sha_compressions: 1 << 9,
+        };
+        let layout = MulLayout::<u32>::new(parameters.multiplications).unwrap();
+        let expected = layout.wfbitz_split(0).unwrap().bitz_params().col_vars as i64
+            - layout.bitz_params().col_vars as i64;
+        // The two openers' splits differ at this shape.
+        assert_ne!(expected, 0);
+        let forest = PreparedHybrid::new(parameters).unwrap();
+        assert_eq!(forest.mul_opener(), MulOpener::Forest);
+        assert_eq!(forest.mul_split_shift, 0);
+        let wfbitz = forest.with_mul_opener(MulOpener::Wfbitz).unwrap();
+        assert_eq!(wfbitz.mul_opener(), MulOpener::Wfbitz);
+        assert_eq!(i64::from(wfbitz.mul_split_shift), expected);
+        let wfbitz = wfbitz.with_mul_opener(MulOpener::Wfbitz).unwrap();
+        assert_eq!(wfbitz.mul_opener(), MulOpener::Wfbitz);
+        assert_eq!(i64::from(wfbitz.mul_split_shift), expected);
+        let forest = wfbitz.with_mul_opener(MulOpener::Forest).unwrap();
+        assert_eq!(forest.mul_opener(), MulOpener::Forest);
+        assert_eq!(forest.mul_split_shift, 0);
     }
 
     #[test]

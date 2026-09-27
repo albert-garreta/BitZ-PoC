@@ -566,7 +566,8 @@ fn rejects_a_valid_sha_trace_joined_to_an_unrelated_valid_signature_trace() {
 /// The worldfnd/BitZ scheme's virtual opening in place of the forest's:
 /// both outer modes prove, round-trip through bytes and verify on the
 /// paper's Johnson ladder (Round 0 on); a forest proof is refused by a
-/// verifier prepared for the other opener.
+/// verifier prepared for the other opener, and neither decodes under the
+/// other's magic.
 #[cfg(feature = "bitz-parity")]
 #[test]
 fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
@@ -592,6 +593,7 @@ fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
                 .unwrap();
         assert!(matches!(proof.opening, Sha256EcdsaOpening::Wfbitz(_)));
         let bytes = proof.to_bytes();
+        assert_eq!(&bytes[..8], b"BITZSW01");
         let proof = Sha256EcdsaProof::from_bytes(&bytes).unwrap();
         assert_eq!(proof.to_bytes(), bytes);
         verify_sha256_ecdsa(
@@ -605,6 +607,21 @@ fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
         assert_eq!(
             prover_transcript.get_challenge::<u128>(),
             verifier_transcript.get_challenge::<u128>()
+        );
+        // As on the forest path, a host nonce the opening never consumes is
+        // refused.
+        let mut padded = proof.clone();
+        padded.flock_nonces.push(0);
+        let padded = Sha256EcdsaProof::from_bytes(&padded.to_bytes()).unwrap();
+        assert!(
+            verify_sha256_ecdsa(
+                &mut Blake3Transcript::new(),
+                &prepared,
+                &statement,
+                &hint.commitment,
+                &padded
+            )
+            .is_err()
         );
         // The same statement prepared for the forest refuses this proof, and a
         // forest proof is refused by the wfbitz-prepared verifier.
@@ -644,6 +661,16 @@ fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
             )
             .is_err()
         );
+        // The magic names the opening: forest proofs keep `BITZSE03`, and
+        // neither opening decodes under the other's magic.
+        let forest_bytes = forest_proof.to_bytes();
+        assert_eq!(&forest_bytes[..8], b"BITZSE03");
+        let mut swapped = bytes.clone();
+        swapped[..8].copy_from_slice(b"BITZSE03");
+        assert!(Sha256EcdsaProof::from_bytes(&swapped).is_err());
+        let mut swapped = forest_bytes;
+        swapped[..8].copy_from_slice(b"BITZSW01");
+        assert!(Sha256EcdsaProof::from_bytes(&swapped).is_err());
     }
 }
 

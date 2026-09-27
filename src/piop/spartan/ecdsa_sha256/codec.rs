@@ -11,11 +11,21 @@ use crate::{
 use field::Uint;
 
 const MAGIC: &[u8] = b"BITZSE03";
+/// The same layout with the terminal claim opened by the wfbitz scheme
+/// (feature `bitz-parity`); forest proofs keep `BITZSE03`.
+const MAGIC_WFBITZ: &[u8] = b"BITZSW01";
+
+fn magic(opener: super::Sha256EcdsaOpener) -> &'static [u8] {
+    match opener {
+        super::Sha256EcdsaOpener::Forest => MAGIC,
+        super::Sha256EcdsaOpener::Wfbitz => MAGIC_WFBITZ,
+    }
+}
 
 impl Sha256EcdsaProof {
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut w = Writer::new();
-        w.bytes(MAGIC);
+        w.bytes(magic(self.opening.opener()));
         let field = field::FpCtx::from_prime_u128(self.modulus);
         w.u128(self.modulus);
         w.bytes(&self.initial_nonce.to_le_bytes());
@@ -42,9 +52,13 @@ impl Sha256EcdsaProof {
     /// re-derives it from the bound commitment, relation and public statement.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         let mut r = Reader::new(bytes);
-        if r.take(MAGIC.len()).map_err(error)? != MAGIC {
-            return Err(error("invalid proof version"));
-        }
+        let opener = match r.take(MAGIC.len()).map_err(error)? {
+            m if m == MAGIC => super::Sha256EcdsaOpener::Forest,
+            m if cfg!(feature = "bitz-parity") && m == MAGIC_WFBITZ => {
+                super::Sha256EcdsaOpener::Wfbitz
+            }
+            _ => return Err(error("invalid proof version")),
+        };
         let q = r.u128().map_err(error)?;
         if !((1u128 << 112)..(1u128 << 113)).contains(&q) {
             return Err(error("invalid encoded modulus"));
@@ -62,7 +76,7 @@ impl Sha256EcdsaProof {
         let inner = read_rounds(&mut r, q, &cfg)?;
         let inner_nonces = read_nonces(&mut r)?;
         let len = r.len().map_err(error)?;
-        let opening = Sha256EcdsaOpening::from_bytes(r.take(len).map_err(error)?)?;
+        let opening = Sha256EcdsaOpening::from_bytes(opener, r.take(len).map_err(error)?)?;
         if r.remaining() != 0 {
             return Err(error("trailing proof bytes"));
         }
