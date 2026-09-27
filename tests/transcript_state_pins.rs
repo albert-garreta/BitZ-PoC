@@ -46,6 +46,10 @@ use bitz::transcript::Blake3Transcript;
 const PINS: &[(&str, &str, &str, &str)] = &[
     // Recorded after the BitZ hashing-domain and proof-codec namespace migration.
     // Spartan domains use v2; hybrid wire encoding uses version 6.
+    // The lambda128 entries and sha256/2p7/reference moved with the UDR
+    // fold-grinding margin: flock tapers a level's fold grinding by one bit
+    // per round, and the last level-0 fold round of these UDR ladders now
+    // reaches the 128-bit target instead of about 125 bits.
     (
         "baby_bear/2p15/lambda100",
         "eb77e02494e687a921603fab5a7b789cec3d27e77ad41462940c66ea76062b83",
@@ -54,9 +58,9 @@ const PINS: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "baby_bear/2p15/lambda128",
-        "272df05ae695d3576ac071629608d5904cdd3830e00f65150d32b50d9ed86c50",
-        "1fed2c175959adeb6aee2e96f305f07fe42b6d8b42f752f2177b30cc1229c445",
-        "7230969be62c9e19852fbee2e92554a301f01abfbad12ce1131f8bde8519fd4b",
+        "333f1bae1e5679a88cd16572d83910f3eaa2c899d7796419e906754e942f37bd",
+        "cd8317f2dc09034f0a4cd334099861129403892cc424313f0d4fbb3a6f9b101d",
+        "de367bd10b6b632a74707807f2ad75bc99ab3527d4c40f325ee483be3e9678a1",
     ),
     (
         "cm_and/2p15/lambda100",
@@ -78,9 +82,9 @@ const PINS: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "sha256_chain/2p7/lambda128",
-        "70578a67e25ae159b741729147dca146b5feaf44fc699609fd8f5117775d1836",
-        "7ba565d08a4787eaf98d83188f5dabac9c1a330b09aaee8e51dba26c21e3f1bb",
-        "774c5232e32bfd4333794940d4c69724bb3eb5b7f3f2af5520ef9d12f68fe24f",
+        "eb88f2facf19747eb4501f0c804389a1249fef07b83e8d1c1c02a9c34fbb2284",
+        "fea49c53213fa9bbac6d6d86d5bbdfc03631f23db8e1a86ef2d0e0f75bd184c0",
+        "de7853aad282ec4e92a02c945d5a5baabd75028948a9e26f8fbd83681dac7574",
     ),
     (
         "sha256/2p7/lambda100",
@@ -90,15 +94,15 @@ const PINS: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "sha256/2p7/lambda128",
-        "f533399b44008c8bee8881ff8851606db05b978c1bad2ddc4b78445982d47b58",
-        "d3ab988fb7af81cf7fa36582ce8034b108959ba5cb1b8e9c0096df13f66a631c",
-        "a271b8e240a4074e75b549c50ac1cecf3594b62390c7f6a2c372357b6ac4284b",
+        "b90f8c87327620dfd7cab8c54d932b359a120c081220255d9e402a1127370993",
+        "5173233f12ac1dc6deb1c72e5cd396ee27bcef567e099b7592a2d66cccfb3bfe",
+        "274ac009753a9236dd01e767dcfe0a85d4591c03acaf7d47f383f0744a5d75b8",
     ),
     (
         "sha256/2p7/reference",
-        "ec2ce1b805bf904768c5fd2723aaa6df6bde77011a8d7b01fec5644fee4165e0",
-        "8cf91a240b3a77f228c4c0ce554c5b98ef7cf48bfb0e1c15b9eb0344aadbbb7e",
-        "2b7f570b24c15b66b45fd2bda9d0042a7a6dfaa681f01d36f36fc3a2a1b6cf6a",
+        "72c05f65808ebd9b414ccf636ae03cec07fbf3eb7953110a7dd64079b7cbcfdf",
+        "a163c982054d7b5fc9acfea4fef088dcd1580b5450121c4c783821833a602761",
+        "abc41ebd892cc4e5b3822ba7cbfc16051195a7229b0f40e05681d1c8f660afda",
     ),
     (
         "sha256/legacy-rows21/lambda100",
@@ -120,9 +124,9 @@ const PINS: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "u32_mul/2p15/w1/lambda128",
-        "d0285a82cca8f45c3b6634c1a02fdf64e28cb9b5d881c0aaaa46c93b19958716",
-        "462d3ea2e828dea1b266773349e7b9833411ee1eb73b3a3b8497c20199351da6",
-        "d36f6ccbaa9e7b3ab595676d76c24f842164909e5fc240b9631f66c88baf2400",
+        "59726f3875068983c366e8727908eda5b5e4c8a758628f5e7e0c647f951e68ce",
+        "888aca9072cae901905781d64794367df3147e4edd42dd81ea5cc93a229d93cb",
+        "0c19ec3923c478f6991829ee793c87e1301bc6662e5dd5a7c09a2ce7384b2c41",
     ),
     (
         "u32_mul/2p15/w8/lambda100",
@@ -150,9 +154,9 @@ const PINS: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "sha256_ecdsa/2p3/allrows/lambda128",
-        "46d72414ae99fb288b20084759e0ff1cb7e9b881c48d15ac7f611d476a1c5c0c",
-        "46d72414ae99fb288b20084759e0ff1cb7e9b881c48d15ac7f611d476a1c5c0c",
-        "3fc21ed3d18d036466255cdbb8e768ccd419d944312baa2869ae06762ad235d7",
+        "c5914b5efe3ae11eb2bbedb293671701388f04dd4e01c497a97b4067d4e9f859",
+        "c5914b5efe3ae11eb2bbedb293671701388f04dd4e01c497a97b4067d4e9f859",
+        "6ab28499ed3a471546089fd20ed888185501ef35bc1cff5741f9597e3373f3f2",
     ),
     (
         "sha256_ecdsa/2p3/split/lambda100",
@@ -162,9 +166,9 @@ const PINS: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "sha256_ecdsa/2p3/split/lambda128",
-        "15c0fb99ac07d68ddd4845f5dd714816400a831471d8c0261d5fad944ea88874",
-        "15c0fb99ac07d68ddd4845f5dd714816400a831471d8c0261d5fad944ea88874",
-        "385d46f3a6fd6ef04cbcf7a464cd84556a3553e58099e8e9268173b2119c4957",
+        "687604d9a0e4ce7c29c6406d5d2d1bcb66ac964f08d7ca366adbd5a05661675a",
+        "687604d9a0e4ce7c29c6406d5d2d1bcb66ac964f08d7ca366adbd5a05661675a",
+        "55c723cf65f7baf3126214ca68387dae80fdad70be2ca6334b3be9b51cb9d981",
     ),
     (
         "sha256/fixed98-t13/2p14",
