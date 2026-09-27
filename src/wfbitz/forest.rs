@@ -1536,3 +1536,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(all(test, feature = "parallel", target_arch = "aarch64", target_feature = "aes"))]
+mod cost_probe;
