@@ -142,10 +142,6 @@ fn sha_profiles_layouts_and_boundaries_preflight() {
             let r = p.ligerito_configuration().unwrap();
             ResolvedLigerito::validate_report(&r.report(&selection.name(), p.security().ood))
                 .unwrap();
-            let p = prepare_sha256_chain_batch(exponent)
-                .unwrap()
-                .with_ligerito(selection)
-                .unwrap();
             assert_eq!(
                 p.security().ood.is_some(),
                 selection == LigeritoSelection::JOHNSON
@@ -185,7 +181,6 @@ fn sha_profiles_layouts_and_boundaries_preflight() {
     }
     for exponent in [0, 4, 5, 6, 17] {
         assert!(prepare_sha256_compression_batch(exponent).is_err());
-        assert!(prepare_sha256_chain_batch(exponent).is_err());
     }
 }
 

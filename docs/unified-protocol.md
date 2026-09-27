@@ -61,7 +61,6 @@ supplies everything marked *relation*; the runner owns the rest.
 | CM-AND (`cm.rs`) | `CmAndSpec` | virtual | plain |
 | Hybrid mod-2^32 × SHA (`bitz/hybrid.rs`) | `MulLayout<u32>` prefix | `prove_piop` + the hybrid's own forest discharge | univariate skip K=3 |
 | SHA-256 compressions (`sha256/proof.rs`) | `Sha256CompressionSpec` | linear (product opening, or legacy inner sumcheck for non-power-of-two batches) | — |
-| SHA-256 chain (`sha256/chain.rs`) | `PreparedSha256ChainBatch` | linear (product opening) | — |
 | SHA-256 + P-256 ECDSA (`ecdsa_sha256/proof.rs`) | — | its own composite kernel (grinded outer sumcheck, batched matrix + linear rows in one inner sumcheck, opening with per-block flock grinding) on the shared boundaries | composite |
 
 Multiplication and BabyBear callers use the shared runner directly. Relation

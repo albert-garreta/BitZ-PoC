@@ -81,7 +81,7 @@ elif name == 'hybrid':
         self.assertEqual(names.count('scripts/bench_gate.py'), 1)
         self.assertEqual(names, [
             'scripts/bench_gate.py',
-            'scripts/run_sha256_ecdsa_compare.py', 'scripts/run_sha256_chain_compare.py',
+            'scripts/run_sha256_ecdsa_compare.py',
             'scripts/run_multiplication_benchmarks.py', 'scripts/run_matched_multiswap_campaign.py',
             'scripts/hybrid_table.py'])
         multiplication = next(c['args'] for c in scripts if c['args'][0].endswith('run_multiplication_benchmarks.py'))
@@ -95,15 +95,15 @@ elif name == 'hybrid':
         self.assertEqual({c['rate'] for c in hybrid}, {'1','3'})
         self.assertEqual({c['threads'] for c in hybrid}, {'1','10'})
         self.assertTrue(all(c['cargo_target_dir'] == '/reused/build-cache' for c in commands))
-        self.assertEqual([f'[{n}/7]' in result.stdout for n in range(1,8)], [True]*7)
-        self.assertIn('All seven campaigns completed.', result.stdout)
+        self.assertEqual([f'[{n}/6]' in result.stdout for n in range(1,7)], [True]*6)
+        self.assertIn('All six campaigns completed.', result.stdout)
 
     def test_smoke_reduces_sizes_and_samples_but_keeps_backends_rates_and_threads(self):
         result = self.run_wrapper('--smoke', '--no-gate')
         self.assertEqual(result.returncode, 0, result.stderr)
         commands = self.commands()
         self.assertFalse(any('scripts/bench_gate.py' in c['args'] for c in commands))
-        for script in ['run_sha256_ecdsa_compare.py', 'run_sha256_chain_compare.py', 'run_multiplication_benchmarks.py']:
+        for script in ['run_sha256_ecdsa_compare.py', 'run_multiplication_benchmarks.py']:
             args = next(c['args'] for c in commands if c['args'][0] == 'scripts/'+script)
             self.assertEqual(args[args.index('--reps')+1], '1')
             self.assertEqual(args[args.index('--threads')+1:args.index('--threads')+3], ['1','10'])
@@ -113,7 +113,7 @@ elif name == 'hybrid':
         self.assertTrue(all(c['args'][c['args'].index('--iterations')+1] == '1' for c in hybrid))
         layout = next(c for c in commands if 'sha256_product_layout' in c['args'])
         self.assertEqual((layout['layout'],layout['reps']), ('13','1'))
-        self.assertIn('All seven campaigns completed.', result.stdout)
+        self.assertIn('All six campaigns completed.', result.stdout)
 
     def test_dry_run_never_starts_tools_or_creates_output(self):
         result = self.run_wrapper('--smoke', '--dry-run')
@@ -133,11 +133,11 @@ elif name == 'hybrid':
         self.assertEqual(marker.read_text(), 'unchanged')
 
     def test_failed_campaign_keeps_logs_and_cannot_claim_success(self):
-        result = self.run_wrapper('--smoke', FAIL_STEP='run_sha256_chain_compare.py')
+        result = self.run_wrapper('--smoke', FAIL_STEP='run_multiplication_benchmarks.py')
         self.assertEqual(result.returncode, 7)
-        self.assertTrue((self.output/'sha256-chain.log').is_file())
-        self.assertNotIn('[3/7]', result.stdout)
-        self.assertNotIn('All seven campaigns completed.', result.stdout)
+        self.assertTrue((self.output/'multiplication-u32-mod32.log').is_file())
+        self.assertNotIn('[3/6]', result.stdout)
+        self.assertNotIn('All six campaigns completed.', result.stdout)
 
     def test_darwin_sampler_is_used_and_its_artifacts_are_moved(self):
         uname = self.bin / 'uname'

@@ -112,7 +112,6 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
         ("multiswap", "BITZ_BENCH_REPS"),
         ("lambda_sweep", "BITZ_BENCH_REPS"),
         ("sha256_compressions", "BITZ_BENCH_REPS"),
-        ("sha256_chain", "BITZ_BENCH_REPS"),
         ("sha256_product_layout", "BITZ_BENCH_REPS"),
         ("sha256_e2e_compare", "BITZ_SHA_COMPARE_REPS"),
     ] {
@@ -135,7 +134,6 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
     }
     for (name, variable, value) in [
         ("cm_and", "BITZ_CM_EXPONENTS", "14"),
-        ("sha256_chain", "BITZ_BENCH_SHAPES", "6"),
         ("lambda_sweep", "BITZ_BENCH_SHAPES", "17"),
         ("pcs", "BITZ_BENCH_FILL", "0"),
         ("pcs", "BITZ_BENCH_FILL", "1.1"),

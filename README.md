@@ -119,21 +119,7 @@ gate sha-ecdsa-p256 12 python3 scripts/run_sha256_ecdsa_compare.py \
   2>&1 | tee "$RUN_DIR/sha256-ecdsa-p256.log"
 ```
 
-### 3. SHA-256 chains: BitZ, Binius64, Binius64-Ligerito
-
-```bash
-gate sha256-chain 12 python3 scripts/run_sha256_chain_compare.py \
-  --methods bitz binius64 binius64-ligerito \
-  --exponents 7 8 9 10 11 12 13 14 15 16 \
-  --threads 1 10 \
-  --reps 5 \
-  --bitz-profiles custom:1:4 custom:3:4 \
-  --binius-rates 1 3 \
-  --output "$RUN_DIR/sha256-chain" \
-  2>&1 | tee "$RUN_DIR/sha256-chain.log"
-```
-
-### 4. Multiplication comparisons: BitZ, Binius64, Binius64-Ligerito, Limber
+### 3. Multiplication comparisons: BitZ, Binius64, Binius64-Ligerito, Limber
 
 The launcher builds once, validates every selection with the Rust case
 planner, runs one worker process per case, records a separate single-proof
@@ -169,7 +155,7 @@ Binius64 at rate 1/2 reach `2^21`; BitZ reaches `2^23`
 for u32 and u64; the others page first. Add `--log-n 21` (or `23`) runs for
 the backends that fit and record the rest as exclusions.
 
-### 5. Multiplication: the Zinc+ rows
+### 4. Multiplication: the Zinc+ rows
 
 Zinc+ cannot be linked into this crate (it pins `crypto-bigint = 0.7.0-rc.9`
 against `vendor/field`'s 0.7.5), so its rows come from an external worker
@@ -194,7 +180,7 @@ gate zinc-plus 12 python3 scripts/run_zinc_plus_campaign.py \
   2>&1 | tee "$RUN_DIR/zinc-plus.log"
 ```
 
-### 6. BitZ full-product u32 × u32 → u64, with component breakdown
+### 5. BitZ full-product u32 × u32 → u64, with component breakdown
 
 ```bash
 cargo +1.98.1 run --release --locked --bin bitz \
@@ -208,7 +194,7 @@ cargo +1.98.1 run --release --locked --bin bitz \
   2>&1 | tee "$RUN_DIR/u32-full-product.log"
 ```
 
-### 7. MultiSwap: BitZ, Limber-Hyrax, Limber-Brakedown
+### 6. MultiSwap: BitZ, Limber-Hyrax, Limber-Brakedown
 
 This uses the Limber checkout in `LIMBER_DIR`. `MSCFG=paper` is a workload
 name and does not require a manuscript directory. `--draft` runs proofs and
@@ -229,7 +215,7 @@ gate multiswap 10 python3 scripts/run_matched_multiswap_campaign.py \
   2>&1 | tee "$RUN_DIR/multiswap.log"
 ```
 
-### 8. SHA-256 layout parameter sweep over s and t
+### 7. SHA-256 layout parameter sweep over s and t
 
 The `sha256_product_layout` benchmark holds the workload at `2^14` SHA-256
 compressions and sweeps the layout split with `s + t = 29`. By default, it runs
@@ -250,7 +236,7 @@ To select particular splits and change the sample count, prepend
 `(t, s) = (13, 16)` and `(17, 12)`, with five measured samples per split.
 Add `--no-run` to the Cargo command to compile without executing the sweep.
 
-### 9. Hybrid SHA-256 chain + multiplication modulo 2^32
+### 8. Hybrid SHA-256 chain + multiplication modulo 2^32
 
 This is the paper's **"Modular multiplications and bit operations"** experiment
 (table label `tab:hybrid-sha256-mul`). It proves `N` relations

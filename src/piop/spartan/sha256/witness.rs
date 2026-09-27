@@ -9,7 +9,7 @@
 use std::array;
 
 use circuit::{
-    sha256::{COMPRESSION_HINT_BITS, COMPRESSION_INPUT_BITS, compression_circuit},
+    sha256::{COMPRESSION_HINT_BITS, COMPRESSION_INPUT_BITS, ROUND_CONSTANTS, compression_circuit},
     witgen::{PackedWitness, Witgen},
 };
 use thiserror::Error;
@@ -23,6 +23,43 @@ use super::constraints::{
     PreparedSha256CompressionBatch, SHA256_F_INSTANCE_BITS, SHA256_F_LIVE_BITS,
     SHA256_H_BAR_LIVE_BITS, SHA256_H_INSTANCE_BITS,
 };
+
+/// One SHA-256 compression, natively (FIPS 180-4 §6.2.2), on parsed words.
+pub fn sha256_compress(state: [u32; 8], block: [u32; 16]) -> [u32; 8] {
+    let mut w = [0u32; 64];
+    w[..16].copy_from_slice(&block);
+    for i in 16..64 {
+        let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
+        let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
+        w[i] = w[i - 16]
+            .wrapping_add(s0)
+            .wrapping_add(w[i - 7])
+            .wrapping_add(s1);
+    }
+    let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = state;
+    for i in 0..64 {
+        let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+        let ch = (e & f) ^ (!e & g);
+        let t1 = h
+            .wrapping_add(s1)
+            .wrapping_add(ch)
+            .wrapping_add(ROUND_CONSTANTS[i])
+            .wrapping_add(w[i]);
+        let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+        let maj = (a & b) ^ (a & c) ^ (b & c);
+        let t2 = s0.wrapping_add(maj);
+        h = g;
+        g = f;
+        f = e;
+        e = d.wrapping_add(t1);
+        d = c;
+        c = b;
+        b = a;
+        a = t1.wrapping_add(t2);
+    }
+    let working = [a, b, c, d, e, f, g, h];
+    array::from_fn(|i| state[i].wrapping_add(working[i]))
+}
 
 /// One independent SHA-256 compression input: chaining state and message block.
 pub type Sha256CompressionInput = ([u32; 8], [u32; 16]);
@@ -795,6 +832,26 @@ mod tests {
             residuals
                 .iter()
                 .all(|residual| residual == &BigInt::default())
+        );
+    }
+}
+
+#[cfg(test)]
+mod native_tests {
+    use super::sha256_compress;
+    use circuit::sha256::INITIAL_STATE;
+
+    #[test]
+    fn native_compression_matches_fips_abc() {
+        let block = [
+            0x61626380, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x00000018,
+        ];
+        assert_eq!(
+            sha256_compress(INITIAL_STATE, block),
+            [
+                0xba7816bf, 0x8f01cfea, 0x414140de, 0x5dae2223, 0xb00361a3, 0x96177a9c, 0xb410ff61,
+                0xf20015ad,
+            ]
         );
     }
 }

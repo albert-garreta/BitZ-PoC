@@ -215,8 +215,10 @@ medians): step 5.3 (ring switch + Ligerito) 149 → 16 ms at 2^12 and
 646 → 63 ms at 2^14 (`h` 365 → ~30 ms, `a'` 243 → ~26 ms, Ligerito proper
 ~10 ms; the forest now dominates the opening at >95 %).
 
-A CHAINED relation — the SHA-256 Merkle–Damgård chain of `sha256_chain`,
-where instance `i`'s chaining-state rows read instance `i − 1`'s committed
+A CHAINED relation — a SHA-256 Merkle–Damgård chain (built for the since
+removed `sha256_chain` relation; the SHA-256 + ECDSA relation's chained SHA
+part uses the same map), where instance `i`'s chaining-state rows read
+instance `i − 1`'s committed
 output cells instead of cells of their own — uses `ChainedPackedSourceMap`:
 the same packed source and local-major product tensor, but four local maps
 compose the global one — `local` (every instance, its own cells), `prev`

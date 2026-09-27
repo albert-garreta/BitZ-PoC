@@ -30,12 +30,11 @@ use bitz::piop::spartan::multiswap::{
 };
 use bitz::piop::spartan::{
     BabyBearMulWitness, IopSecurityProfile, Lambda100, Lambda128, Sha128ReferenceSchedule,
-    Sha256CompressionStatement, commit_sha256_chain_witness, commit_sha256_compression_witness,
-    generate_sha256_chain_witnesses, generate_sha256_compression_witnesses,
-    prepare_sha256_chain_batch_with_profile,
+    Sha256CompressionStatement, commit_sha256_compression_witness,
+    generate_sha256_compression_witnesses,
     prepare_sha256_compression_batch_for_assignment_rows_with_profile,
-    prepare_sha256_compression_batch_with_profile, prove_sha256_chain, prove_sha256_compressions,
-    verify_sha256_chain, verify_sha256_compressions,
+    prepare_sha256_compression_batch_with_profile, prove_sha256_compressions,
+    verify_sha256_compressions,
 };
 use bitz::transcript::Blake3Transcript;
 
@@ -69,18 +68,6 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "f31653acaa7adc17f289cb7d47eda8201b583183868241a66511097a5b34e364",
         "7c6bfbc5e95af60d7419425613ee8fd8dfebc1873e38b689eeb39d59b80df4fe",
         "c4c8e5970bfda242807c072eb9a4aa8d22fb65aeabe184ff242e83889d2f1b1c",
-    ),
-    (
-        "sha256_chain/2p7/lambda100",
-        "0b2b7998f47c02cb70aca8fd7561c8a1ad6e8142f5f6029355cf2760a3732cad",
-        "9b33b7404442b04f65fb830ffd1aa8c4c4b75f5aabb4b0798e64c3355c667663",
-        "ba1819388576efff8efed3bfeb7db37e2e1de4adc9d6dd52ac0d264ee3ba40f2",
-    ),
-    (
-        "sha256_chain/2p7/lambda128",
-        "70578a67e25ae159b741729147dca146b5feaf44fc699609fd8f5117775d1836",
-        "7ba565d08a4787eaf98d83188f5dabac9c1a330b09aaee8e51dba26c21e3f1bb",
-        "774c5232e32bfd4333794940d4c69724bb3eb5b7f3f2af5520ef9d12f68fe24f",
     ),
     (
         "sha256/2p7/lambda100",
@@ -475,41 +462,6 @@ fn sha256_fixed98_product_t13_2p14() {
         bitz::piop::spartan::prepare_sha256_compression_batch_for_product_t_fixed98(14, 13)
             .expect("prepare");
     sha256_pin("sha256/fixed98-t13/2p14", &prepared);
-}
-
-// ---------------------------------------------------------------- SHA-256 chain
-
-fn sha256_chain_pin<P: IopSecurityProfile>(name: &str) {
-    const EXPONENT: usize = 7;
-    let prepared = prepare_sha256_chain_batch_with_profile::<P>(EXPONENT).expect("prepare");
-    let blocks: Vec<[u32; 16]> = (0..1usize << EXPONENT)
-        .map(|i| std::array::from_fn(|j| (i as u32).wrapping_mul(0x9e37_79b9) ^ (j as u32)))
-        .collect();
-    let witness = generate_sha256_chain_witnesses(&prepared, &blocks).expect("witness");
-    let statement = witness.statement();
-    let hint = commit_sha256_chain_witness(&prepared, &witness).expect("commit");
-    let mut pt = Blake3Transcript::new();
-    let proof = prove_sha256_chain(&mut pt, &prepared, &statement, &witness, &hint).expect("prove");
-    let mut vt = Blake3Transcript::new();
-    verify_sha256_chain(&mut vt, &prepared, &statement, &hint.commitment, &proof).expect("verify");
-    let bitz_bytes = proof.bitz().to_bytes();
-    let nonces = nonces_le([proof.initial_nonce(), proof.terminal_nonce()]);
-    pin(
-        name,
-        &pt,
-        &vt,
-        &[&hint.commitment.root, &bitz_bytes, &nonces],
-    );
-}
-
-#[test]
-fn sha256_chain_2p7_lambda100() {
-    sha256_chain_pin::<Lambda100>("sha256_chain/2p7/lambda100");
-}
-
-#[test]
-fn sha256_chain_2p7_lambda128() {
-    sha256_chain_pin::<Lambda128>("sha256_chain/2p7/lambda128");
 }
 
 // ---------------------------------------------------------------- CM-AND

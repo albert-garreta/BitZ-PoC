@@ -38,7 +38,6 @@ capacity guarantee. Comparison backends and runners may impose tighter limits.
 | Terminal u32 / BabyBear PCS comparisons; `mul_compare pcs` | Prepared terminal opener retains resolved Ligerito policy; fixed-q BabyBear exposes explicit `_with_ligerito` APIs | Terminal and combined adapter roundtrips; same committed-source shape eligibility |
 | CM-AND; `cm_and` | `PreparedCmAndRelation::with_ligerito`; 100-bit Ligerito policy | L=15..28 configuration preflight; both-regime `ligerito_protocols` proof/codec checks. Tiny algebra fixtures have no production security claim |
 | SHA compression; `sha256_compressions`, `sha256_e2e_compare` BitZ arm | Prepared SHA compression policy, target inherited from enclosing profile | K=7..16; explicit inner-sumcheck, assignment-row-sized, and product layouts; proof/public-output tests |
-| SHA chain; `sha256_chain` | Prepared SHA chain policy | K=7..16; both-regime chain proof and public-statement tampering tests |
 | SHA layout sweep; `sha256_product_layout` | Same prepared SHA policy; explicitly labelled fixed-98 projection experiment | t=7..28 shape preflight and existing layout/forest-count tests; this is not a new complete-protocol 100-bit claim |
 | `lambda_sweep` | Lambda100 arm defaults Johnson; higher-target arms preserve their UDR defaults | SHA profile preflights and higher-security roundtrips |
 | Raw PCS; `pcs`, `bitz` / `bitz --sweep` | Resolver and early OOD before prime/point sampling; extension wrapper also binds OOD before projection | m=20..35 resolver tests; mod-q, extension, virtual proof/codec tests |
@@ -49,7 +48,7 @@ capacity guarantee. Comparison backends and runners may impose tighter limits.
 | `ligerito_bounds` | Dedicated Johnson/UDR comparison within BitZ | Compiled only in this pass; paired timing and RSS measurements are deferred |
 
 SHA's algebraic prime-profile minimum remains K=4. Production Ligerito
-requires m>=20, making K=7 the current compression/chain proof minimum.
+requires m>=20, making K=7 the current compression proof minimum.
 K=4..6 is rejected at production preparation; extending it is separate work.
 Hybrid's Binius SHA arithmetization supports its own smaller sizes.
 
@@ -135,7 +134,7 @@ targets enabled for `ecdsa`, `hybrid`, `bench-internals`,
 
 Correctness coverage includes resolver and shape boundaries; early-OOD
 order/payload checks; mod-q and extension codecs; u32/u64/u128/BabyBear
-proofs; CM-AND; SHA compression and chain; SHA+ECDSA outer modes; and
+proofs; CM-AND; SHA compression; SHA+ECDSA outer modes; and
 balanced/padded hybrid proofs. The normally ignored u32 W=8, BabyBear terminal and
 combined-adapter correctness tests were run explicitly. Reader tests cover
 identity rejection, resume compatibility, Johnson/UDR captions and runner

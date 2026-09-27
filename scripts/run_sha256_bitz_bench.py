@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and measure only the two BitZ SHA-256 workloads."""
+"""Build and measure only the BitZ SHA-256 compressions workload."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from bench_support import command_text, cpu_name, write_csv, run_logged, cargo_e
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BENCHES = {"compressions": "sha256_compressions", "chain": "sha256_chain"}
+BENCHES = {"compressions": "sha256_compressions"}
 
 
 def fields(line: str) -> dict[str, str]:

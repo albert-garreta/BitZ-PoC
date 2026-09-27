@@ -173,16 +173,6 @@ harness = false
 # (alias BITZ_SHA_REPS); profile via BITZ_BENCH_LAMBDA.
 
 [[bench]]
-name = "sha256_chain"
-required-features = ["span-metrics"]
-harness = false
-# CHAINED SHA-256 compressions (the Merkle–Damgård chain over 2^k blocks,
-# intermediate chaining values as witness) through the same linear PIOP +
-# direct product opening, on the chained virtual map. Unified output
-# schema (benches/common/output.rs). Exponents via BITZ_BENCH_SHAPES; reps via
-# BITZ_BENCH_REPS; profile via BITZ_BENCH_LAMBDA.
-
-[[bench]]
 name = "sha256_e2e_compare"
 harness = false
 required-features = ["span-metrics", "bench-internals", "native-sha256-compare"]
@@ -190,15 +180,6 @@ required-features = ["span-metrics", "bench-internals", "native-sha256-compare"]
 # Plonky3 SHA AIR/WHIR, Binius64, and integer-mod Limber/Brakedown.
 # Exponents via BITZ_SHA_COMPARE_EXPONENTS (default 7,8,10..16), one warmup and
 # 21 measured verified samples by default.
-
-[[bench]]
-name = "sha256_chain_compare"
-harness = false
-required-features = ["span-metrics", "binius64-bench"]
-
-[[test]]
-name = "sha256_chain_comparison"
-required-features = ["span-metrics", "binius64-bench"]
 
 [[bench]]
 name = "hybrid_u32_sha256"
