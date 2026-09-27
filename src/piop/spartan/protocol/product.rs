@@ -382,26 +382,31 @@ enum Tables {
 }
 
 /// One row pair's round sums: `Σ_s Ê_a F_a`, `Σ_s Ê_b F_b` and
-/// `Σ_s (Ê_b − Ê_a)(F_b − F_a)`, unreduced.
+/// `Σ_s (Ê_b − Ê_a)(F_b − F_a)`, unreduced. Without `one` the middle sum is
+/// skipped: the round's claim gives it.
 struct PairSums {
     a: Acc,
     b: Acc,
     inf: Acc,
+    one: bool,
 }
 
 impl PairSums {
-    fn new() -> Self {
+    fn new(one: bool) -> Self {
         Self {
             a: Acc::zero(),
             b: Acc::zero(),
             inf: Acc::zero(),
+            one,
         }
     }
 
     #[inline]
     fn add(&mut self, config: &FieldConfig, [ea, fa]: [F; 2], [eb, fb]: [F; 2]) {
         config.mul_acc(&mut self.a, &ea, &fa);
-        config.mul_acc(&mut self.b, &eb, &fb);
+        if self.one {
+            config.mul_acc(&mut self.b, &eb, &fb);
+        }
         config.mul_acc(&mut self.inf, &config.sub(&eb, &ea), &config.sub(&fb, &fa));
     }
 
@@ -718,6 +723,7 @@ fn word_materialize(
     bits: &dyn InstanceBits,
     point: &[F],
     rows: usize,
+    with_one: bool,
     weigh: &(dyn Fn(usize, PairSums) -> [F; 3] + Sync),
 ) -> Result<(Vec<[F; 2]>, [F; 3]), ProtocolError> {
     let zero = config.zero();
@@ -789,7 +795,7 @@ fn word_materialize(
                 return [zero, zero, zero];
             }
             let (a, b) = out.split_at(slot_count);
-            let mut pair = PairSums::new();
+            let mut pair = PairSums::new(with_one);
             for (a, b) in a[..live].iter().zip(&b[..live]) {
                 // SAFETY: both rows were written in full above.
                 let (a, b) = unsafe { (a.assume_init_ref(), b.assume_init_ref()) };
@@ -992,8 +998,15 @@ fn prove_product_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
 
     let mut tables: Option<Tables> = cross.map(Tables::Words);
     let mut values: Option<FoldValues> = None;
+    let mut derive_one = false;
     for round in 0..instance_vars {
         let eta = &instance_point[round];
+        if derive_one {
+            // l(1) from the claim: scale · [(1 − η) l(0) + η l(1)] = current.
+            let inverse = *field::FieldOps::inverse_ct(config, &config.mul(&scale, eta)).value();
+            let low = config.mul(&scale, &config.mul(&config.sub(&one, eta), &sums[0]));
+            sums[1] = config.mul(&config.sub(&current, &low), &inverse);
+        }
         let coefficients = instance_round_polynomial(config, &scale, eta, sums);
         debug_assert_eq!(
             config.add(&coefficients[0], &evaluate(config, &coefficients, &one)),
@@ -1026,6 +1039,11 @@ fn prove_product_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
             Some(eq) => pair.weighted(config, &eq[q], &d[2 * q], &d[2 * q + 1]),
             None => [zero, zero, zero],
         };
+        // The next round's `X = 1` sums come from its claim when they can.
+        let derive_next = instance_point
+            .get(round + 1)
+            .is_some_and(|eta| config.mul(&scale, eta) != zero);
+        let with_one = !derive_next;
         let (folded, next_sums) = match tables.take() {
             Some(Tables::Words(cross)) if round + 1 < word_rounds => {
                 let eq = next.as_deref().ok_or(ProtocolError::InvalidGeometry)?;
@@ -1034,8 +1052,16 @@ fn prove_product_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
             }
             Some(Tables::Words(_)) => {
                 let groups = groups.as_ref().ok_or(ProtocolError::InvalidGeometry)?;
-                let (table, sums) =
-                    word_materialize(config, groups, slot_weights, bits, &point, rows, &weigh)?;
+                let (table, sums) = word_materialize(
+                    config,
+                    groups,
+                    slot_weights,
+                    bits,
+                    &point,
+                    rows,
+                    with_one,
+                    &weigh,
+                )?;
                 (Tables::Field(table), sums)
             }
             None => {
@@ -1047,7 +1073,7 @@ fn prove_product_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
                     for (k, buffer) in w.iter_mut().enumerate().take(2 * group) {
                         bits.read_local_words(2 * group * q + k, buffer);
                     }
-                    let mut pair = PairSums::new();
+                    let mut pair = PairSums::new(with_one);
                     for slot in 0..live_slots {
                         let (l, right) = (slots.left[slot], slots.right[slot]);
                         let a = fold1_code(&w[0], &w[1], l, right);
@@ -1072,7 +1098,7 @@ fn prove_product_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
                 let sums = over_chunks(config, &mut codes, chunk_len, || (), |_, q, out| {
                     let base = 2 * q * chunk_len;
                     let row = |k: usize| &source[base + k * slot_count..base + (k + 1) * slot_count];
-                    let mut pair = PairSums::new();
+                    let mut pair = PairSums::new(with_one);
                     for slot in 0..live_slots {
                         let a = fold2_code(row(0)[slot], row(1)[slot]);
                         out[slot] = a;
@@ -1095,7 +1121,7 @@ fn prove_product_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
                     let value = |k: usize, slot: usize| {
                         fv.second_values(slot, source[base + k * slot_count + slot])
                     };
-                    let mut pair = PairSums::new();
+                    let mut pair = PairSums::new(with_one);
                     for slot in 0..slot_count {
                         let a = fold2(config, &r, value(0, slot), value(1, slot));
                         out[slot].write(a);
@@ -1117,7 +1143,7 @@ fn prove_product_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
                 let sums = over_chunks(config, &mut out, chunk_len, || (), |_, q, out| {
                     let base = 2 * q * chunk_len;
                     let value = |k: usize, slot: usize| source[base + k * slot_count + slot];
-                    let mut pair = PairSums::new();
+                    let mut pair = PairSums::new(with_one);
                     for slot in 0..slot_count {
                         let a = fold2(config, &r, value(0, slot), value(1, slot));
                         out[slot].write(a);
@@ -1137,6 +1163,7 @@ fn prove_product_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
         };
         tables = Some(folded);
         sums = next_sums;
+        derive_one = derive_next;
     }
 
     // One instance row is left: its slot entries as field values.
@@ -1516,6 +1543,8 @@ struct CubicWords {
     operands: Vec<[Operand; 6]>,
     /// `κ_{32 g}`, canonical, as its low and high 64-bit halves.
     weights: Vec<(u64, u64)>,
+    /// `κ_{32 g}`.
+    scales: Vec<F>,
 }
 
 impl CubicWords {
@@ -1532,6 +1561,7 @@ impl CubicWords {
         let limit = 64 * words as u64;
         let mut operands = Vec::with_capacity(live / 32);
         let mut weights = Vec::with_capacity(live / 32);
+        let mut scales = Vec::with_capacity(live / 32);
         for first in (0..live).step_by(32) {
             let side = |k: usize| -> [u32; 32] {
                 std::array::from_fn(|i| {
@@ -1557,8 +1587,13 @@ impl CubicWords {
             let weight = u128::from(config.to_integer(&slot_weights[first]));
             operands.push(group);
             weights.push((weight as u64, (weight >> 64) as u64));
+            scales.push(slot_weights[first]);
         }
-        Some(Self { operands, weights })
+        Some(Self {
+            operands,
+            weights,
+            scales,
+        })
     }
 }
 
@@ -1721,6 +1756,136 @@ fn cubic_word_round_sums(
     Ok(sums)
 }
 
+/// Operand `op`'s column value at bit `i` of a row.
+#[inline]
+fn operand_value(op: Operand, i: u32, read: &impl Fn(u32) -> F, zero: &F) -> F {
+    match op {
+        Operand::Zero => *zero,
+        Operand::Broadcast(column) => read(column),
+        Operand::Rotate(base, amount) => read(base + (i + amount) % 32),
+        Operand::Shift(base, amount) if i + amount < 32 => read(base + i + amount),
+        Operand::Shift(..) => *zero,
+    }
+}
+
+/// The factor `plus − minus` at bit `i` of a row.
+#[inline]
+fn operand_factor(
+    config: &FieldConfig,
+    (plus, minus): (Operand, Operand),
+    i: u32,
+    read: &impl Fn(u32) -> F,
+    zero: &F,
+) -> F {
+    match (plus, minus) {
+        (_, Operand::Zero) => operand_value(plus, i, read, zero),
+        (Operand::Zero, _) => config.neg(&operand_value(minus, i, read, zero)),
+        _ => config.sub(
+            &operand_value(plus, i, read, zero),
+            &operand_value(minus, i, read, zero),
+        ),
+    }
+}
+
+/// [`cubic_pair_sums`] by word group: `κ_{32 g} · Σ_i 2^i A_i B_i C_i` with
+/// the powers of two applied by doubling (Horner over `i`), a factor that
+/// is its own pair squared, and a third factor that is the same for every
+/// bit pulled out of the group sum. Without `with_one` the `X = 1` sum is
+/// left zero: the caller derives it from the round claim.
+fn cubic_group_sums(
+    config: &FieldConfig,
+    words: &CubicWords,
+    with_one: bool,
+    read_a: impl Fn(u32) -> F,
+    read_b: impl Fn(u32) -> F,
+) -> [F; 4] {
+    let zero = config.zero();
+    let mut acc: [Acc; 4] = std::array::from_fn(|_| Acc::zero());
+    for (ops, scale) in words.operands.iter().zip(&words.scales) {
+        let (fa, fb, fc) = ((ops[0], ops[1]), (ops[2], ops[3]), (ops[4], ops[5]));
+        let square = fa == fb;
+        let uniform = |op: Operand| matches!(op, Operand::Zero | Operand::Broadcast(_));
+        let outer = uniform(ops[4]) && uniform(ops[5]);
+        let twice = |x: &F, y: &F| config.sub(&config.add(y, y), x);
+        let mut u = [zero; 4];
+        for i in (0..32u32).rev() {
+            let (a0, a1) = (
+                operand_factor(config, fa, i, &read_a, &zero),
+                operand_factor(config, fa, i, &read_b, &zero),
+            );
+            let (a2, da) = (twice(&a0, &a1), config.sub(&a1, &a0));
+            let mut terms = if square {
+                [
+                    config.square(&a0),
+                    if with_one { config.square(&a1) } else { zero },
+                    config.square(&a2),
+                    config.square(&da),
+                ]
+            } else {
+                let (b0, b1) = (
+                    operand_factor(config, fb, i, &read_a, &zero),
+                    operand_factor(config, fb, i, &read_b, &zero),
+                );
+                [
+                    config.mul(&a0, &b0),
+                    if with_one { config.mul(&a1, &b1) } else { zero },
+                    config.mul(&a2, &twice(&b0, &b1)),
+                    config.mul(&da, &config.sub(&b1, &b0)),
+                ]
+            };
+            if !outer {
+                let (c0, c1) = (
+                    operand_factor(config, fc, i, &read_a, &zero),
+                    operand_factor(config, fc, i, &read_b, &zero),
+                );
+                terms = [
+                    config.mul(&terms[0], &c0),
+                    if with_one { config.mul(&terms[1], &c1) } else { zero },
+                    config.mul(&terms[2], &twice(&c0, &c1)),
+                    config.mul(&terms[3], &config.sub(&c1, &c0)),
+                ];
+            }
+            for (u, term) in u.iter_mut().zip(&terms) {
+                *u = config.add(&config.add(u, u), term);
+            }
+        }
+        if outer {
+            let (c0, c1) = (
+                operand_factor(config, fc, 0, &read_a, &zero),
+                operand_factor(config, fc, 0, &read_b, &zero),
+            );
+            u = [
+                config.mul(&u[0], &c0),
+                config.mul(&u[1], &c1),
+                config.mul(&u[2], &twice(&c0, &c1)),
+                config.mul(&u[3], &config.sub(&c1, &c0)),
+            ];
+        }
+        for (acc, u) in acc.iter_mut().zip(&u) {
+            config.mul_acc(acc, scale, u);
+        }
+    }
+    acc.map(|sum| config.reduce(sum))
+}
+
+/// A row pair's three-factor sums, by word group when the slots have them.
+#[inline]
+#[allow(clippy::too_many_arguments)]
+fn pair_sums3(
+    config: &FieldConfig,
+    factors: &[[(u32, u32); 3]],
+    kappa: &[F],
+    groups: Option<&CubicWords>,
+    with_one: bool,
+    read_a: impl Fn(u32) -> F,
+    read_b: impl Fn(u32) -> F,
+) -> [F; 4] {
+    match groups {
+        Some(groups) => cubic_group_sums(config, groups, with_one, read_a, read_b),
+        None => cubic_pair_sums(config, factors, kappa, read_a, read_b),
+    }
+}
+
 /// What the three-factor prover returns.
 pub(crate) struct Product3ProverOutput {
     pub rounds: SumcheckProof<F, 5>,
@@ -1735,13 +1900,14 @@ pub(crate) struct Product3ProverOutput {
 /// The instance rounds fold each instance's local columns, not per-slot
 /// factors: the factors are read off the folded columns on the fly. Round 0
 /// reads the bits (exact small multiples of `κ`); the folded columns are
-/// codes of their bit histories for four folds (value tables of 4, 16, 256
-/// and 65 536 entries), field values after that. Each fold pass accumulates
-/// the next round's sums at `X = 0, 1, 2, ∞`.
+/// codes of their bit histories for four folds (value tables of 4, 16 and
+/// 256 entries, then two 256-entry halves), field values after that. Each
+/// fold pass accumulates the next round's sums at `X = 0, 1, 2, ∞`.
 ///
 /// Slots in word groups ([`CubicWords`]) take their first instance rounds
 /// from word-level cross terms, and with `free` also `D` (see
-/// [`prove_product_sumcheck`]).
+/// [`prove_product_sumcheck`]); their later sums run by group
+/// ([`cubic_group_sums`]), `X = 1` from the round claim.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prove_product3_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
     transcript: &mut T,
@@ -1766,11 +1932,12 @@ pub(crate) fn prove_product3_sumcheck<T: Transcript, B: RoundBoundaryPolicy>(
         bits,
         claim,
         boundary,
-        word_rounds3(),
+        Some(word_rounds3()),
     )
 }
 
-/// [`prove_product3_sumcheck`] with at most `word_rounds` word-path rounds.
+/// [`prove_product3_sumcheck`] with at most `word_rounds` cross-term rounds
+/// on word groups (`None`: the per-column path, no word groups at all).
 #[allow(clippy::too_many_arguments)]
 fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
     transcript: &mut T,
@@ -1783,7 +1950,7 @@ fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
     bits: &dyn InstanceBits,
     claim: &F,
     boundary: &mut B,
-    word_rounds: usize,
+    word_rounds: Option<usize>,
 ) -> Result<Product3ProverOutput, ProtocolError> {
     let instance_vars = instance_point.len();
     let slot_count = slot_weights.len();
@@ -1809,17 +1976,12 @@ fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
     let words = bits.words_per_instance();
     let columns = 64 * words;
     let kappa = &slot_weights[..factors.len()];
-    let groups = if word_rounds > 0 {
-        CubicWords::detect(config, factors, slot_weights, words)
-    } else {
-        None
+    let groups = word_rounds.and_then(|_| CubicWords::detect(config, factors, slot_weights, words));
+    let word_rounds = match (&groups, word_rounds) {
+        (Some(_), Some(rounds)) => rounds.min(instance_vars),
+        _ => 0,
     };
-    let word_rounds = if groups.is_some() {
-        word_rounds.min(instance_vars)
-    } else {
-        0
-    };
-    let cross = groups.as_ref().map(|groups| {
+    let cross = groups.as_ref().filter(|_| word_rounds > 0).map(|groups| {
         let _scope = tracing::info_span!("product3:word_cross_terms").entered();
         cubic_cross_terms(config, modulus, groups, bits, word_rounds)
     });
@@ -1909,8 +2071,15 @@ fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
 
     let mut base: Option<Base> = cross.map(Base::Words);
     let mut values: Vec<F> = Vec::new();
+    let mut derive_one = false;
     for round in 0..instance_vars {
         let eta = &instance_point[round];
+        if derive_one {
+            // l(1) from the claim: scale · [(1 − η) l(0) + η l(1)] = current.
+            let inverse = *field::FieldOps::inverse_ct(config, &config.mul(&scale, eta)).value();
+            let low = config.mul(&scale, &config.mul(&config.sub(&one, eta), &sums[0]));
+            sums[1] = config.mul(&config.sub(&current, &low), &inverse);
+        }
         let coefficients = instance_round_polynomial3(config, &scale, eta, &half, sums);
         debug_assert_eq!(
             config.add(&coefficients[0], &evaluate_coefficients(config, &coefficients, &one)),
@@ -1944,6 +2113,14 @@ fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
         // The value table of the codes this round produces.
         let next_values: Vec<F> = match &base {
             None => vec![zero, config.sub(&one, &r), r, one],
+            // Sixteen-bit codes: `(1 − r) V[low] + r V[high]` from two
+            // 256-entry halves, not one 65 536-entry table.
+            Some(Base::Byte(_, 3)) => {
+                let low = config.sub(&one, &r);
+                (0..512)
+                    .map(|x| config.mul(if x < 256 { &low } else { &r }, &values[x % 256]))
+                    .collect()
+            }
             Some(Base::Byte(_, level)) => {
                 let width = 1usize << level;
                 let mask = (1usize << width) - 1;
@@ -1953,10 +2130,20 @@ fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
             }
             _ => Vec::new(),
         };
+        // A sixteen-bit code's value from its two halves.
+        let word_value = |table: &[F], code: u16| {
+            config.add(&table[usize::from(code & 0xff)], &table[256 + usize::from(code >> 8)])
+        };
         let weigh = |q: usize, sums: [F; 4]| match &next {
             Some(eq) => weigh3(config, &eq[q], &d[2 * q], &d[2 * q + 1], sums),
             None => [zero; 4],
         };
+        // Word groups skip the next round's `X = 1` sums when its claim gives them.
+        let derive_next = groups.is_some()
+            && instance_point
+                .get(round + 1)
+                .is_some_and(|eta| config.mul(&scale, eta) != zero);
+        let with_one = !derive_next;
         let (folded, next_sums) = match base.take() {
             Some(Base::Words(cross)) if round + 1 < word_rounds => {
                 let eq = next.as_deref().ok_or(ProtocolError::InvalidGeometry)?;
@@ -1994,10 +2181,12 @@ fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
                         return [zero; 4];
                     }
                     let (ra, rb) = out.split_at(columns);
-                    let sums = cubic_pair_sums(
+                    let sums = pair_sums3(
                         config,
                         factors,
                         kappa,
+                        groups.as_ref(),
+                        with_one,
                         |c| table[usize::from(ra[c as usize])],
                         |c| table[usize::from(rb[c as usize])],
                     );
@@ -2024,10 +2213,12 @@ fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
                         return [zero; 4];
                     }
                     let (ra, rb) = out.split_at(columns);
-                    let sums = cubic_pair_sums(
+                    let sums = pair_sums3(
                         config,
                         factors,
                         kappa,
+                        groups.as_ref(),
+                        with_one,
                         |c| next_values[usize::from(ra[c as usize])],
                         |c| next_values[usize::from(rb[c as usize])],
                     );
@@ -2051,10 +2242,12 @@ fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
                         return [zero; 4];
                     }
                     let (ra, rb) = out.split_at(columns);
-                    let sums = cubic_pair_sums(
+                    let sums = pair_sums3(
                         config,
                         factors,
                         kappa,
+                        groups.as_ref(),
+                        with_one,
                         |c| next_values[usize::from(ra[c as usize])],
                         |c| next_values[usize::from(rb[c as usize])],
                     );
@@ -2078,12 +2271,14 @@ fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
                         return [zero; 4];
                     }
                     let (ra, rb) = out.split_at(columns);
-                    let sums = cubic_pair_sums(
+                    let sums = pair_sums3(
                         config,
                         factors,
                         kappa,
-                        |c| next_values[usize::from(ra[c as usize])],
-                        |c| next_values[usize::from(rb[c as usize])],
+                        groups.as_ref(),
+                        with_one,
+                        |c| word_value(&next_values, ra[c as usize]),
+                        |c| word_value(&next_values, rb[c as usize]),
                     );
                     weigh(q, sums)
                 });
@@ -2098,17 +2293,19 @@ fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
                         let a = &source[base + 2 * row * columns..base + (2 * row + 1) * columns];
                         let b = &source[base + (2 * row + 1) * columns..base + (2 * row + 2) * columns];
                         for ((value, a), b) in values.iter_mut().zip(a).zip(b) {
-                            *value = fold(&table[usize::from(*a)], &table[usize::from(*b)]);
+                            *value = fold(&word_value(table, *a), &word_value(table, *b));
                         }
                     }
                     if group < 2 {
                         return [zero; 4];
                     }
                     let (ra, rb) = out.split_at(columns);
-                    let sums = cubic_pair_sums(
+                    let sums = pair_sums3(
                         config,
                         factors,
                         kappa,
+                        groups.as_ref(),
+                        with_one,
                         |c| ra[c as usize],
                         |c| rb[c as usize],
                     );
@@ -2131,10 +2328,12 @@ fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
                         return [zero; 4];
                     }
                     let (ra, rb) = out.split_at(columns);
-                    let sums = cubic_pair_sums(
+                    let sums = pair_sums3(
                         config,
                         factors,
                         kappa,
+                        groups.as_ref(),
+                        with_one,
                         |c| ra[c as usize],
                         |c| rb[c as usize],
                     );
@@ -2148,13 +2347,17 @@ fn prove_product3_sumcheck_with<T: Transcript, B: RoundBoundaryPolicy>(
         }
         base = Some(folded);
         sums = next_sums;
+        derive_one = derive_next;
     }
 
     // One instance row is left: its columns as field values, then per slot
     // `Ê = κ A`, `B`, `C` (zero past the live slots).
     let row: Vec<F> = match base {
         Some(Base::Byte(codes, _)) => codes.iter().map(|c| values[usize::from(*c)]).collect(),
-        Some(Base::Word(codes)) => codes.iter().map(|c| values[usize::from(*c)]).collect(),
+        Some(Base::Word(codes)) => codes
+            .iter()
+            .map(|c| config.add(&values[usize::from(c & 0xff)], &values[256 + usize::from(c >> 8)]))
+            .collect(),
         Some(Base::Field(values)) => values,
         Some(Base::Words(_)) | None => return Err(ProtocolError::InvalidGeometry),
     };
@@ -2874,7 +3077,7 @@ mod tests {
                 factors[s].iter().map(|f| factor_bits(w, *f)).product::<i32>()
             };
             let claim = claim(&config, &rows, &eta, &beta, &kappa, slot_value, factors.len());
-            let prove = |word_rounds: usize| {
+            let prove = |word_rounds: Option<usize>| {
                 prove_product3_sumcheck_with(
                     &mut Blake3Transcript::new(),
                     &config,
@@ -2890,9 +3093,9 @@ mod tests {
                 )
                 .unwrap()
             };
-            let reference = prove(0);
-            for word_rounds in 1..=WORD_ROUNDS3 {
-                let output = prove(word_rounds);
+            let reference = prove(None);
+            for word_rounds in 0..=WORD_ROUNDS3 {
+                let output = prove(Some(word_rounds));
                 assert_eq!(
                     output.rounds, reference.rounds,
                     "instance_vars={instance_vars} word_rounds={word_rounds}"
