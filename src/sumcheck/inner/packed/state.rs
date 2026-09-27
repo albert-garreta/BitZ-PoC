@@ -33,7 +33,7 @@ pub struct PrefixState<'a, S: ?Sized, H: ?Sized, const K: usize> {
     lagrange: Vec<Field>,
     point: [Field; SHA256_INNER_PREFIX_MAX_VARS],
     table: Option<CompactPrefixVTable>,
-    prefix_weights: Vec<Field>,
+    prefix_weights: PreparedPrefixWeights,
     next: [Field; 2],
     stride: usize,
 }
@@ -70,7 +70,7 @@ impl<'a, S: InnerSumcheckMleSource + ?Sized, H: Sha256InnerBitSource + ?Sized, c
             lagrange: if K > 0 { vec![f.one()] } else { Vec::new() },
             point: [zero; SHA256_INNER_PREFIX_MAX_VARS],
             table: None,
-            prefix_weights: Vec::new(),
+            prefix_weights: PreparedPrefixWeights::default(),
             next: [zero; 2],
             stride: 1,
         };
@@ -84,7 +84,8 @@ impl<'a, S: InnerSumcheckMleSource + ?Sized, H: Sha256InnerBitSource + ?Sized, c
         self.accumulators = None;
         self.lagrange = Vec::new();
         let (zero, one) = (f.zero(), f.one());
-        self.prefix_weights = equality_weights_lsb(&self.point[..K], &zero, &one, f);
+        self.prefix_weights =
+            PreparedPrefixWeights::new(equality_weights_lsb(&self.point[..K], &zero, &one, f), f);
         let (table, next) = self
             .input
             .coefficients

@@ -314,6 +314,9 @@ where
         if let Some(span) = ctx.span(id) {
             if span.name().starts_with("falcon")
                 || span.name().starts_with("inner_packed:")
+                || span.name().starts_with("op:")
+                || span.name().starts_with("lig:")
+                || span.name().starts_with("wfbitz:")
                 || span.name() == "spartan:grinding"
             {
                 span.extensions_mut().insert(Instant::now());

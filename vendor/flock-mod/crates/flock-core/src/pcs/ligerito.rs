@@ -29,6 +29,8 @@
 //!    b. Last step: send remaining poly + open f^i.
 //!    c. Else: commit f^{i+2}, open f^{i+1}, induce next basis, glue.
 
+mod lookahead;
+
 use crate::challenger::Challenger;
 use crate::field::Gf128;
 use crate::lincheck::build_eq_table;
@@ -2808,6 +2810,18 @@ pub fn lookahead_accum_group(fq: &[Gf128; 4], bq: &[Gf128; 4], acc: &mut [Gf128P
     acc[7] ^= n2;
 }
 
+/// Accumulate complete groups of four with architecture-selected slice kernels.
+/// The returned unreduced coefficients exactly match `lookahead_accum_group`.
+pub fn lookahead_accumulate(f: &[Gf128], b: &[Gf128]) -> [Gf128Product; 8] {
+    lookahead::accumulate(f, b)
+}
+
+/// Fold two low Boolean coordinates into a preallocated output slice.
+pub fn fold_two_into(source: &[Gf128], out: &mut [Gf128], a: Gf128, b: Gf128) {
+    assert_eq!(source.len(), 4 * out.len());
+    lookahead::fold_two(source, 0, out, a, b);
+}
+
 /// Reduce the 8 lookahead accumulators into `(msg, coeffs)`.
 #[inline]
 pub fn lookahead_finish(acc: [Gf128Product; 8]) -> (SumcheckMessage, FoldLookahead) {
@@ -2858,28 +2872,9 @@ fn fold1_lookahead_lsb(
         .enumerate()
         .map(|(ci, (fc, bc))| {
             let base = ci * CHUNK;
-            let len = fc.len();
-            debug_assert!(len.is_multiple_of(4) || len == half - base);
-            let mut acc = [Gf128Product::zero(); 8];
-            // Fold this slice (1 mul per output per array)…
-            for t in 0..len {
-                let j = base + t;
-                let f0 = f[2 * j];
-                let f1 = f[2 * j + 1];
-                let b0 = b[2 * j];
-                let b1 = b[2 * j + 1];
-                fc[t] = f0 + (f0 + f1) * r;
-                bc[t] = b0 + (b0 + b1) * r;
-            }
-            // …then message + lookahead over groups of 4 just-written outputs.
-            let mut g = 0;
-            while g + 4 <= len {
-                let fq = [fc[g], fc[g + 1], fc[g + 2], fc[g + 3]];
-                let bq = [bc[g], bc[g + 1], bc[g + 2], bc[g + 3]];
-                lookahead_accum_group(&fq, &bq, &mut acc);
-                g += 4;
-            }
-            acc
+            crate::field::f128_slice::fold_pairs(f, base, fc, r);
+            crate::field::f128_slice::fold_pairs(b, base, bc, r);
+            lookahead::accumulate(fc, bc)
         })
         .reduce(|| [Gf128Product::zero(); 8], xor_acc8);
     let (msg, la) = lookahead_finish(acc);
@@ -2915,33 +2910,9 @@ fn fold2_lookahead_lsb(
         .enumerate()
         .map(|(ci, (fc, bc))| {
             let base = ci * CHUNK;
-            let len = fc.len();
-            let mut acc = [Gf128Product::zero(); 8];
-            // Fold 4→1 (3 muls per output per array), 4 outputs per group.
-            let mut g = 0;
-            while g < len {
-                let glen = (len - g).min(4);
-                let mut fq = [Gf128::ZERO; 4];
-                let mut bq = [Gf128::ZERO; 4];
-                for t in 0..glen {
-                    let j = base + g + t;
-                    let i = 4 * j;
-                    let gf0 = f[i] + (f[i] + f[i + 1]) * r_a;
-                    let gf1 = f[i + 2] + (f[i + 2] + f[i + 3]) * r_a;
-                    let gb0 = b[i] + (b[i] + b[i + 1]) * r_a;
-                    let gb1 = b[i + 2] + (b[i + 2] + b[i + 3]) * r_a;
-                    let vf = gf0 + (gf0 + gf1) * r_b;
-                    let vb = gb0 + (gb0 + gb1) * r_b;
-                    fc[g + t] = vf;
-                    bc[g + t] = vb;
-                    fq[t] = vf;
-                    bq[t] = vb;
-                }
-                debug_assert_eq!(glen, 4);
-                lookahead_accum_group(&fq, &bq, &mut acc);
-                g += glen;
-            }
-            acc
+            lookahead::fold_two(f, base, fc, r_a, r_b);
+            lookahead::fold_two(b, base, bc, r_a, r_b);
+            lookahead::accumulate(fc, bc)
         })
         .reduce(|| [Gf128Product::zero(); 8], xor_acc8);
     let (msg, la) = lookahead_finish(acc);
@@ -2963,15 +2934,8 @@ fn fold_pair_no_msg(f: &[Gf128], b: &[Gf128], r: Gf128) -> (Vec<Gf128>, Vec<Gf12
         .enumerate()
         .for_each(|(ci, (fc, bc))| {
             let base = ci * CHUNK;
-            for t in 0..fc.len() {
-                let j = base + t;
-                let f0 = f[2 * j];
-                let f1 = f[2 * j + 1];
-                let b0 = b[2 * j];
-                let b1 = b[2 * j + 1];
-                fc[t] = f0 + (f0 + f1) * r;
-                bc[t] = b0 + (b0 + b1) * r;
-            }
+            crate::field::f128_slice::fold_pairs(f, base, fc, r);
+            crate::field::f128_slice::fold_pairs(b, base, bc, r);
         });
     (nf, nb)
 }
@@ -3465,8 +3429,12 @@ fn recursive_prover_with_basis_impl<'a, Ch: Challenger>(
     let initial_root = *l0_tree.last().expect("nonempty initial Merkle tree");
     recursive_prover_with_basis_initial_impl(
         config,
-        packed_witness,
-        b_initial,
+        InitialBasis::Dense {
+            packed: packed_witness.into(),
+            basis: b_initial,
+            first_msg,
+            lookahead: round1_lookahead,
+        },
         target,
         initial_root,
         |positions, lanes, queries| {
@@ -3480,8 +3448,6 @@ fn recursive_prover_with_basis_impl<'a, Ch: Challenger>(
                 merkle_proof: merkle_multi_proof_for(l0_tree, positions, queries),
             }
         },
-        first_msg,
-        round1_lookahead,
         challenger,
     )
 }
@@ -3509,13 +3475,15 @@ where
 {
     recursive_prover_with_basis_initial_impl(
         config,
-        packed_witness,
-        b_initial,
+        InitialBasis::Dense {
+            packed: packed_witness.into(),
+            basis: b_initial,
+            first_msg: None,
+            lookahead: None,
+        },
         target,
         initial_root,
         open_initial,
-        None,
-        None,
         challenger,
     )
 }
@@ -3542,13 +3510,88 @@ where
 {
     recursive_prover_with_basis_initial_impl(
         config,
-        packed_witness,
-        b_initial,
+        InitialBasis::Dense {
+            packed: packed_witness.into(),
+            basis: b_initial,
+            first_msg: Some(first_msg),
+            lookahead: round1_lookahead,
+        },
         target,
         initial_root,
         open_initial,
-        Some(first_msg),
-        round1_lookahead,
+        challenger,
+    )
+}
+
+/// Two folded tables and the exact messages produced while constructing them.
+pub struct DeferredFold {
+    pub f: Vec<Gf128>,
+    pub basis: Vec<Gf128>,
+    pub message: SumcheckMessage,
+    pub lookahead: FoldLookahead,
+}
+
+/// An initial oracle that can produce its first two folds without first
+/// materializing either original table. The callback receives the two original
+/// fold challenges, after the unchanged messages and grinding boundaries.
+pub struct DeferredInitial<'a> {
+    pub log_n: usize,
+    pub first_msg: SumcheckMessage,
+    pub lookahead: FoldLookahead,
+    pub fold: Box<dyn FnOnce(Gf128, Gf128) -> DeferredFold + 'a>,
+}
+
+enum InitialBasis<'a> {
+    Dense {
+        packed: Cow<'a, [Gf128]>,
+        basis: Vec<Gf128>,
+        first_msg: Option<SumcheckMessage>,
+        lookahead: Option<FoldLookahead>,
+    },
+    Deferred(DeferredInitial<'a>),
+}
+
+impl InitialBasis<'_> {
+    fn log_n(&self) -> usize {
+        match self {
+            Self::Dense { packed, basis, .. } => {
+                assert!(packed.len().is_power_of_two());
+                assert_eq!(packed.len(), basis.len());
+                packed.len().ilog2() as usize
+            }
+            Self::Deferred(initial) => initial.log_n,
+        }
+    }
+}
+
+fn lookahead_enabled(config: &ProverConfig, log_n: usize) -> bool {
+    log_n >= 14 && log_n >= config.initial_k + 4 && std::env::var("LIG_LOOKAHEAD_DISABLE").is_err()
+}
+
+/// Whether the current continuation can consume a deferred two-round oracle.
+pub fn supports_deferred_initial(config: &ProverConfig, log_n: usize) -> bool {
+    config.initial_k >= 2 && lookahead_enabled(config, log_n)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn recursive_prover_with_basis_initial_deferred<'a, Ch, O>(
+    config: &ProverConfig,
+    initial: DeferredInitial<'a>,
+    target: Gf128,
+    initial_root: Hash,
+    open_initial: O,
+    challenger: &mut Ch,
+) -> LigeritoProof
+where
+    Ch: Challenger,
+    O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
+{
+    recursive_prover_with_basis_initial_impl(
+        config,
+        InitialBasis::Deferred(initial),
+        target,
+        initial_root,
+        open_initial,
         challenger,
     )
 }
@@ -3556,26 +3599,20 @@ where
 #[allow(clippy::too_many_arguments)]
 fn recursive_prover_with_basis_initial_impl<'a, Ch, O>(
     config: &ProverConfig,
-    packed_witness: impl Into<Cow<'a, [Gf128]>>,
-    b_initial: Vec<Gf128>,
+    initial: InitialBasis<'a>,
     target: Gf128,
     initial_root: Hash,
     open_initial: O,
-    first_msg: Option<SumcheckMessage>,
-    round1_lookahead: Option<FoldLookahead>,
     challenger: &mut Ch,
 ) -> LigeritoProof
 where
     Ch: Challenger,
     O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
 {
-    let packed_witness = packed_witness.into();
-    let log_n = packed_witness.len().trailing_zeros() as usize;
+    let log_n = initial.log_n();
     let r = config.recursive_steps;
     let initial_k = config.initial_k;
 
-    assert_eq!(packed_witness.len(), 1usize << log_n);
-    assert_eq!(b_initial.len(), 1usize << log_n);
     assert_eq!(config.recursive_ks.len(), r);
     assert_eq!(config.log_inv_rates.len(), r + 1);
     assert!(r >= 1);
@@ -3619,9 +3656,35 @@ where
     let ood_count = |lvl: usize| -> usize { config.ood_samples.get(lvl).copied().unwrap_or(0) };
 
     let _t = std::time::Instant::now();
-    let (mut sc_prover, start_msg) = match first_msg {
-        Some(msg) => SumcheckProver::new_with_first_msg(packed_witness, b_initial, target, msg),
-        None => SumcheckProver::new(packed_witness, b_initial, target),
+    let use_lookahead = lookahead_enabled(config, log_n);
+    let (mut sc_prover, start_msg, round1_lookahead, mut deferred_fold) = match initial {
+        InitialBasis::Dense {
+            packed,
+            basis,
+            first_msg,
+            lookahead,
+        } => {
+            let (prover, msg) = match first_msg {
+                Some(msg) => SumcheckProver::new_with_first_msg(packed, basis, target, msg),
+                None => SumcheckProver::new(packed, basis, target),
+            };
+            (prover, msg, lookahead, None)
+        }
+        InitialBasis::Deferred(initial) => {
+            assert!(
+                use_lookahead && initial_k >= 2,
+                "deferred initial basis requires two lookahead rounds"
+            );
+            // Round zero only evaluates the supplied lookahead coefficients.
+            // No table is accessed before round one installs both folded tables.
+            let (prover, msg) = SumcheckProver::new_with_first_msg(
+                Vec::new(),
+                Vec::new(),
+                target,
+                initial.first_msg,
+            );
+            (prover, msg, Some(initial.lookahead), Some(initial.fold))
+        }
     };
     challenger.observe_f128(start_msg.u_0);
     challenger.observe_f128(start_msg.u_2);
@@ -3636,11 +3699,6 @@ where
     // [`FoldLookahead`]). LIG_LOOKAHEAD_DISABLE=1 restores the per-round
     // fused folds (A/B toggle). Small instances (< 2^14, where pass shapes
     // and scratch reuse don't pay) stay on the per-round path.
-    let use_lookahead = {
-        let n = sc_prover.f_len();
-        // Big enough to pay, and every pass keeps `quarter` a multiple of 4.
-        n >= (1 << 14) && (n >> initial_k) >= 16
-    } && std::env::var("LIG_LOOKAHEAD_DISABLE").is_err();
     let mut r_lane_fold = Vec::with_capacity(initial_k);
     // Entry coefficients from the pcs combine (computed in the same pass as
     // the round-0 prime) make round 0 itself a skip round: the full-size
@@ -3673,7 +3731,20 @@ where
             sc_prover.fold_skip(&la, r)
         } else if sc_prover.has_pending_fold() {
             // Pass round: fold the deferred challenge + this one together.
-            let (msg, la) = sc_prover.fold2_lookahead(r);
+            let (msg, la) = if let Some(fold) = deferred_fold.take() {
+                let a = sc_prover
+                    .pending_fold
+                    .take()
+                    .expect("first fold is pending");
+                let folded = fold(a, r);
+                assert_eq!(folded.f.len(), 1usize << (log_n - 2));
+                assert_eq!(folded.basis.len(), folded.f.len());
+                sc_prover.replace_folded(folded.f, folded.basis);
+                sc_prover.transcript.push(folded.message);
+                (folded.message, folded.lookahead)
+            } else {
+                sc_prover.fold2_lookahead(r)
+            };
             lookahead = Some(la);
             msg
         } else {

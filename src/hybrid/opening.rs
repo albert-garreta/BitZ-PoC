@@ -13,6 +13,8 @@
 //! target, and the verifier folds that term succinctly. Every primitive is
 //! the audited one of [`crate::ligerito_flock`] (Round 0 of the paper's
 //! core IOP); nothing here re-derives a bound.
+mod streamed;
+
 use super::{CompositionProfile, Error, Gf};
 use crate::{
     ligerito::{
@@ -322,15 +324,7 @@ impl<const N: usize> Geometry<N> {
                     }
                     *coefficient = value;
                 }
-                let mut acc = [Gf128Product::zero(); 8];
-                for (fq, bq) in words.chunks_exact(4).zip(coefficients.chunks_exact(4)) {
-                    ligerito::lookahead_accum_group(
-                        fq.try_into().expect("four words"),
-                        bq.try_into().expect("four coefficients"),
-                        &mut acc,
-                    );
-                }
-                acc
+                ligerito::lookahead_accumulate(words, coefficients)
             })
             .collect();
         let mut acc = [Gf128Product::zero(); 8];
@@ -636,10 +630,23 @@ mod geometry_tests {
 
     #[test]
     fn streamed_shared_opening_preserves_entire_proof_and_transcript() {
+        // Keep the materialized fallback covered below the lookahead cutoff.
+        check_streamed_proof([9, 12, 10], true);
         check_streamed_proof([9, 13], false);
         check_streamed_proof([9, 13, 10], true);
         // Domain large enough for the precomputed two-round lookahead path.
         check_streamed_proof([9, 14, 10], false);
+    }
+
+    #[test]
+    fn deferred_initial_requires_two_supported_lookahead_rounds() {
+        let resolved = crate::ligerito_flock::LigeritoSelection::MATCHED_UDR
+            .resolve(15, 100)
+            .unwrap();
+        let mut config = resolved.prover().clone();
+        assert!(!ligerito::supports_deferred_initial(&config, 13));
+        config.initial_k = 1;
+        assert!(!ligerito::supports_deferred_initial(&config, 15));
     }
 }
 
@@ -769,7 +776,20 @@ pub(crate) fn prove_with_security<const N: usize>(
     geometry.add_padding_basis(&mut basis, padding_point, *padding_scale);
     drop(basis_scope);
     continue_prove(
-        t, geometry, statement, packed, basis, target, ring, None, ood, resolved, data, security,
+        t,
+        geometry,
+        statement,
+        PreparedInitial::Dense {
+            packed,
+            basis,
+            precomputed: None,
+        },
+        target,
+        ring,
+        ood,
+        resolved,
+        data,
+        security,
     )
 }
 
@@ -799,28 +819,43 @@ pub(crate) fn prove_sources_with_security<const N: usize>(
     });
     let padding = sample_padding(t, geometry);
     let (padding_point, padding_scale) = &padding[0];
-    let initial = geometry.initial_tables(
-        sources,
-        &point[7..],
-        &eq_r2,
-        (padding_point, *padding_scale),
-        ood_basis,
-    );
+    let initial = if ligerito::supports_deferred_initial(&resolved.prover(), geometry.packed_log())
+    {
+        PreparedInitial::Deferred(streamed::prepare(
+            geometry,
+            sources,
+            &point[7..],
+            &eq_r2,
+            (padding_point, *padding_scale),
+            ood_basis,
+        ))
+    } else {
+        let tables = geometry.initial_tables(
+            sources,
+            &point[7..],
+            &eq_r2,
+            (padding_point, *padding_scale),
+            ood_basis,
+        );
+        PreparedInitial::Dense {
+            packed: tables.packed,
+            basis: tables.basis,
+            precomputed: Some((tables.first_message, tables.lookahead)),
+        }
+    };
     drop(basis_scope);
     continue_prove(
-        t,
-        geometry,
-        statement,
-        initial.packed,
-        initial.basis,
-        target,
-        ring,
-        Some((initial.first_message, initial.lookahead)),
-        ood,
-        resolved,
-        data,
-        security,
+        t, geometry, statement, initial, target, ring, ood, resolved, data, security,
     )
+}
+
+enum PreparedInitial<'a> {
+    Dense {
+        packed: Vec<F>,
+        basis: Vec<F>,
+        precomputed: Option<(ligerito::SumcheckMessage, ligerito::FoldLookahead)>,
+    },
+    Deferred(ligerito::DeferredInitial<'a>),
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -828,11 +863,9 @@ fn continue_prove<const N: usize>(
     t: &mut (impl Transcript + Send),
     geometry: &Geometry<N>,
     statement: &Hash,
-    packed: Vec<F>,
-    basis: Vec<F>,
+    initial: PreparedInitial<'_>,
     target: F,
     ring: RingSwitchProof,
-    precomputed: Option<(ligerito::SumcheckMessage, ligerito::FoldLookahead)>,
     ood: Option<&OodProverClaim>,
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     data: [&ProverData; N],
@@ -860,8 +893,22 @@ fn continue_prove<const N: usize>(
                     merkle_proof: Vec::new(),
                 }
             };
-            if let Some((message, lookahead)) = precomputed {
-                ligerito::recursive_prover_with_basis_initial_precomputed_round0(
+            match initial {
+                PreparedInitial::Deferred(initial) => {
+                    ligerito::recursive_prover_with_basis_initial_deferred(
+                        &pc,
+                        initial,
+                        target,
+                        *statement,
+                        open_initial,
+                        $challenger,
+                    )
+                }
+                PreparedInitial::Dense {
+                    packed,
+                    basis,
+                    precomputed: Some((message, lookahead)),
+                } => ligerito::recursive_prover_with_basis_initial_precomputed_round0(
                     &pc,
                     packed,
                     basis,
@@ -871,9 +918,12 @@ fn continue_prove<const N: usize>(
                     message,
                     Some(lookahead),
                     $challenger,
-                )
-            } else {
-                ligerito::recursive_prover_with_basis_initial(
+                ),
+                PreparedInitial::Dense {
+                    packed,
+                    basis,
+                    precomputed: None,
+                } => ligerito::recursive_prover_with_basis_initial(
                     &pc,
                     packed,
                     basis,
@@ -881,7 +931,7 @@ fn continue_prove<const N: usize>(
                     *statement,
                     open_initial,
                     $challenger,
-                )
+                ),
             }
         }};
     }

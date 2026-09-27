@@ -1,5 +1,8 @@
 # Native Falcon throughput optimizations (v3)
 
+For the subsequent optimizations that preserve this protocol and its exact
+proof transcripts, see [KERNEL_THROUGHPUT.md](KERNEL_THROUGHPUT.md).
+
 Implemented the six planned changes. The matched seed-42 benchmark improves
 from **2.311 to 1.169 ms/signature**,
 from 432.8 to **855.7 signatures/second**,

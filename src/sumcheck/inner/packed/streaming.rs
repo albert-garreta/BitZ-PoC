@@ -270,7 +270,7 @@ impl<S: StreamingCoefficientSource + ?Sized> InnerSumcheckMleSource for Streamin
         num_vars: usize,
         live_len: usize,
         challenges: &[Field],
-        prefix_weights: &[Field],
+        prefix_weights: &PreparedPrefixWeights,
         bits: &H,
         cfg: &FieldConfig,
         zero: &Field,
@@ -1317,7 +1317,10 @@ mod tests {
                                 _ => cfg.neg(&Field::from_with_cfg(101 + i as u64, cfg)),
                             })
                             .collect();
-                        let weights = equality_weights_lsb(&challenges, &zero, &one, cfg);
+                        let weights = PreparedPrefixWeights::new(
+                            equality_weights_lsb(&challenges, &zero, &one, cfg),
+                            cfg,
+                        );
                         let expected_table = stream
                             .fold_prefix_table::<K>(10, live_len, &challenges, cfg, &zero, &one)
                             .unwrap();

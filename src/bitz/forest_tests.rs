@@ -199,10 +199,10 @@ fn partial_forest_matches_dense_and_binds_interleaved_images() {
         let root_claim = evaluate(roots, &zeta);
         let session = "forest-partial-parity/v1";
         let instance = format!("rows={row_bits};columns={column_bits}");
-        let mut dense = build_prover(session, instance.as_str());
+        let mut dense = build_kernel_prover(session, instance.as_str());
         let dense_terminal = gpgkr_prove(&mut dense, &zeta, witnesses);
         let dense_proof = dense.finish();
-        let mut prover = build_prover(session, instance.as_str());
+        let mut prover = build_kernel_prover(session, instance.as_str());
         let terminal = Forest::new(row_bits + 1, column_bits, &packed, &images)
             .prove_depth(&mut prover, &zeta, row_bits);
         let proof = prover.finish();
@@ -234,7 +234,7 @@ fn partial_forest_matches_dense_and_binds_interleaved_images() {
         }
         assert_eq!(target, terminal.1 + Gf::one());
 
-        let mut verifier = build_verifier(session, instance.as_str(), &proof);
+        let mut verifier = build_kernel_verifier(session, instance.as_str(), &proof);
         assert_eq!(
             gpgkr_verify(&mut verifier, root_claim, &zeta, row_bits as u32),
             Some(terminal)
@@ -243,7 +243,7 @@ fn partial_forest_matches_dense_and_binds_interleaved_images() {
 
         let mut changed = proof.clone();
         changed.narg_string[0] ^= 1;
-        let mut verifier = build_verifier(session, instance.as_str(), &changed);
+        let mut verifier = build_kernel_verifier(session, instance.as_str(), &changed);
         assert!(gpgkr_verify(&mut verifier, root_claim, &zeta, row_bits as u32).is_none());
     }
 }

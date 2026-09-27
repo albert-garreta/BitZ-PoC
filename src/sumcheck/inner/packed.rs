@@ -27,6 +27,38 @@ type LinearAccumulator = field::FpLinearAcc<2, 1>;
 type ProductAccumulator = <field::FpCtx<2> as BatchMulAcc<Field>>::Accumulator;
 type RawMontgomery = [u64; 2];
 
+/// Equality weights fixed after the packed prefix challenges. At K=3 the
+/// folded witness block has only 256 possible values, so prepare those values
+/// once and reuse them in tail preparation and the first tail fold. The table
+/// adds 4 KiB, rather than retaining one field value per witness block.
+#[derive(Default)]
+pub(crate) struct PreparedPrefixWeights {
+    weights: Vec<Field>,
+    byte_sums: Option<Box<[Field; 256]>>,
+}
+
+impl PreparedPrefixWeights {
+    fn new(weights: Vec<Field>, cfg: &FieldConfig) -> Self {
+        let byte_sums = (weights.len() == 8).then(|| {
+            let mut sums = Box::new([cfg.zero(); 256]);
+            for pattern in 1usize..256 {
+                let bit = pattern.trailing_zeros() as usize;
+                sums[pattern] = cfg.add(&sums[pattern & (pattern - 1)], &weights[bit]);
+            }
+            sums
+        });
+        Self { weights, byte_sums }
+    }
+}
+
+impl std::ops::Deref for PreparedPrefixWeights {
+    type Target = [Field];
+
+    fn deref(&self) -> &[Field] {
+        &self.weights
+    }
+}
+
 /// Lazy Bit source for the flat assignment table.
 ///
 /// A packed word slice retains strict canonical-padding validation. A callback
@@ -222,7 +254,7 @@ pub(crate) trait InnerSumcheckMleSource: Sync {
         num_vars: usize,
         live_len: usize,
         challenges: &[Field],
-        prefix_weights: &[Field],
+        prefix_weights: &PreparedPrefixWeights,
         bits: &H,
         field_cfg: &FieldConfig,
         zero: &Field,
@@ -1322,7 +1354,7 @@ fn folded_packed_h<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     suffix: usize,
     live_len: usize,
     h_source: &H,
-    prefix_weights: &[Field],
+    prefix_weights: &PreparedPrefixWeights,
     field_cfg: &FieldConfig,
     zero: &Field,
     one: &Field,
@@ -1335,6 +1367,14 @@ fn folded_packed_h<const K: usize, H: Sha256InnerBitSource + ?Sized>(
 
     let active_prefixes = (1usize << K).min(live_len - base);
     let word = h_source.bits_at(base, active_prefixes)?;
+    if word & !low_bits_mask(active_prefixes) != 0 {
+        return Err(SumcheckError::InvalidProductDimensions);
+    }
+    if let Some(sums) = &prefix_weights.byte_sums {
+        // Partial final blocks have zero high bits, checked above. Their
+        // lookup therefore excludes every coefficient beyond live_len.
+        return Ok(sums[word as usize]);
+    }
     let mut accumulator = linear_accumulator_zero();
     // Branch-free: the bits are random, so multiplying by 0/1 beats skipping.
     for (prefix, weight) in prefix_weights.iter().take(active_prefixes).enumerate() {
@@ -1354,7 +1394,7 @@ fn accumulate_first_tail_pair<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     pair: usize,
     live_len: usize,
     h_source: &H,
-    prefix_weights: &[Field],
+    prefix_weights: &PreparedPrefixWeights,
     field_cfg: &FieldConfig,
     zero: &Field,
     one: &Field,
@@ -1381,7 +1421,7 @@ fn accumulate_first_tail_values<const K: usize, H: Sha256InnerBitSource + ?Sized
     pair: usize,
     live_len: usize,
     h_source: &H,
-    prefix_weights: &[Field],
+    prefix_weights: &PreparedPrefixWeights,
     field_cfg: &FieldConfig,
     zero: &Field,
     one: &Field,
@@ -1431,7 +1471,7 @@ fn sum_first_tail_round<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     table: &CompactPrefixVTable,
     live_len: usize,
     h_source: &H,
-    prefix_weights: &[Field],
+    prefix_weights: &PreparedPrefixWeights,
     field_cfg: &FieldConfig,
     zero: &Field,
     one: &Field,
@@ -1490,7 +1530,7 @@ fn fold_first_tail_pair_in_place<const K: usize, H: Sha256InnerBitSource + ?Size
     suffix_count: usize,
     live_len: usize,
     h_source: &H,
-    prefix_weights: &[Field],
+    prefix_weights: &PreparedPrefixWeights,
     challenge: &Field,
     field_cfg: &FieldConfig,
     zero: &Field,
@@ -1542,7 +1582,7 @@ fn fold_first_tail_round_in_place<const K: usize, H: Sha256InnerBitSource + ?Siz
     table: &mut CompactPrefixVTable,
     live_len: usize,
     h_source: &H,
-    prefix_weights: &[Field],
+    prefix_weights: &PreparedPrefixWeights,
     challenge: &Field,
     field_cfg: &FieldConfig,
     zero: &Field,
@@ -1593,7 +1633,7 @@ fn fold_first_tail_round_and_prepare_next_in_place<
     table: &mut CompactPrefixVTable,
     live_len: usize,
     h_source: &H,
-    prefix_weights: &[Field],
+    prefix_weights: &PreparedPrefixWeights,
     challenge: &Field,
     field_cfg: &FieldConfig,
     zero: &Field,
@@ -2103,6 +2143,102 @@ mod tests {
         Field::from_with_cfg(value, field_cfg)
     }
 
+    #[test]
+    fn prepared_witness_byte_sums_match_weighted_bits_and_partial_blocks() {
+        for bit_width in [100, 125, 126] {
+            let cfg = crate::ext_proj::sample_prime_context(
+                &mut Blake3Transcript::new(),
+                1u128 << (bit_width - 1),
+                (1u128 << bit_width) - 1,
+                128,
+            )
+            .unwrap();
+            for point in [
+                [cfg.zero(); 3],
+                [cfg.one(); 3],
+                [field(19, &cfg), cfg.neg(&field(43, &cfg)), field(101, &cfg)],
+            ] {
+                let weights = equality_weights_lsb(&point, &cfg.zero(), &cfg.one(), &cfg);
+                let prepared = PreparedPrefixWeights::new(weights.clone(), &cfg);
+                assert_eq!(prepared.as_ref(), weights.as_slice());
+                for pattern in 0..256u64 {
+                    for active in 1..=8 {
+                        let mask = pattern & low_bits_mask(active);
+                        // Read a noninitial suffix to exercise physical bit
+                        // offsets independently of the table's byte index.
+                        let bits = [mask << 16];
+                        let actual = folded_packed_h::<3, _>(
+                            2,
+                            16 + active,
+                            bits.as_slice(),
+                            &prepared,
+                            &cfg,
+                            &cfg.zero(),
+                            &cfg.one(),
+                        )
+                        .unwrap();
+                        let expected =
+                            weights.iter().enumerate().fold(cfg.zero(), |sum, (i, w)| {
+                                cfg.add(&sum, &cfg.mul(w, &field((mask >> i) & 1, &cfg)))
+                            });
+                        assert_eq!(
+                            actual, expected,
+                            "bits={bit_width}, pattern={pattern}, active={active}"
+                        );
+                    }
+                }
+            }
+            for width in [1, 2, 4, 16] {
+                let prepared = PreparedPrefixWeights::new(vec![cfg.one(); width], &cfg);
+                assert!(prepared.byte_sums.is_none(), "generic prefix width={width}");
+            }
+        }
+    }
+
+    #[test]
+    fn prepared_witness_byte_lookup_rejects_noncanonical_bit_blocks() {
+        struct UnmaskedBits(u64);
+        impl Sha256InnerBitSource for UnmaskedBits {
+            fn bit_at(&self, _: usize) -> Result<u64, SumcheckError> {
+                Ok(self.0)
+            }
+            fn bits_at(&self, _: usize, _: usize) -> Result<u64, SumcheckError> {
+                Ok(self.0)
+            }
+        }
+        let cfg = spartan_bitz_field_config();
+        let prepared = PreparedPrefixWeights::new(vec![cfg.one(); 8], &cfg);
+        for active in 1..=8 {
+            for word in [1 << active, u64::MAX] {
+                assert!(matches!(
+                    folded_packed_h::<3, _>(
+                        0,
+                        active,
+                        &UnmaskedBits(word),
+                        &prepared,
+                        &cfg,
+                        &cfg.zero(),
+                        &cfg.one(),
+                    ),
+                    Err(SumcheckError::InvalidProductDimensions)
+                ));
+            }
+        }
+        let fallback = PreparedPrefixWeights::new(vec![cfg.one(); 16], &cfg);
+        assert!(matches!(
+            folded_packed_h::<4, _>(
+                0,
+                16,
+                &UnmaskedBits(1 << 16),
+                &fallback,
+                &cfg,
+                &cfg.zero(),
+                &cfg.one(),
+            ),
+            Err(SumcheckError::InvalidProductDimensions)
+        ));
+    }
+
     fn fixture(
         num_vars: usize,
         field_cfg: &FieldConfig,
@@ -2452,7 +2588,10 @@ mod tests {
         let prefix_challenges = (0..K)
             .map(|index| field(11 * index as u64 + 7, &field_cfg))
             .collect::<Vec<_>>();
-        let prefix_weights = equality_weights_lsb(&prefix_challenges, &zero, &one, &field_cfg);
+        let prefix_weights = PreparedPrefixWeights::new(
+            equality_weights_lsb(&prefix_challenges, &zero, &one, &field_cfg),
+            &field_cfg,
+        );
         let table = fold_prefix_v_table::<K, _>(
             NUM_VARS,
             LIVE_LEN,

@@ -2315,6 +2315,73 @@ mod tests {
         }
     }
 
+    /// Partial-depth forests retain their unmultiplied row coordinates
+    /// across the upstream lookup, one-pass, and carried-weight paths.
+    #[test]
+    fn partial_depth_modes_match_dense() {
+        use crate::bitz::gkr::{GrandProductCircuit, gpgkr_prove, gpgkr_verify};
+        use crate::bitz::transcript::{build_kernel_prover, build_kernel_verifier};
+
+        // Tiny fallback, first JIT geometry with two row bits retained,
+        // and the upper arena/rebuild path with prescaled lookup tables.
+        for (t, s, depth) in [(5usize, 3usize, 4usize), (6, 7, 4), (8, 10, 7)] {
+            let (mut packed, images) = random_grid(t, s, (t * 503 + s) as u64);
+            let cols = 1usize << s;
+            if cols < 64 {
+                for word in &mut packed[0] {
+                    *word |= !((1u64 << cols) - 1);
+                }
+            }
+            let mut leaves = Vec::with_capacity((1usize << t) * cols);
+            for (row, &image) in images.iter().enumerate() {
+                for column in 0..cols {
+                    let bit = packed[column / 64][row] >> (column % 64) & 1;
+                    leaves.push(if bit == 0 { Gf::one() } else { image });
+                }
+            }
+            let mut state = 0x7061_7274_6961_6c00 ^ (t * 31 + s) as u64;
+            let random_point: Vec<Gf> = (0..s + t - depth).map(|_| random_gf(&mut state)).collect();
+            for special in [None, Some(Gf::zero()), Some(Gf::one())] {
+                let mut zeta = random_point.clone();
+                if let Some(value) = special {
+                    zeta[s / 2] = value;
+                }
+                let session = b"forest-partial-modes/v1";
+                let instance = format!("t={t};s={s};depth={depth};special={special:?}");
+                let (roots, witnesses) = GrandProductCircuit::new(leaves.clone()).batched_eval(1usize << zeta.len());
+                let root_claim = roots.iter().zip(eq_table(&zeta)).fold(Gf::zero(), |acc, (&v, w)| acc + v * w);
+                let mut dense = build_kernel_prover(session, instance.as_str());
+                let expected_terminal = gpgkr_prove(&mut dense, &zeta, witnesses);
+                let expected_proof = dense.finish();
+
+                // Cover each switch and the combined path without a full
+                // Cartesian product of implementation choices.
+                for (nibble, one_pass, weighing) in [
+                    (false, false, Weighing::Off),
+                    (false, false, Weighing::On),
+                    (true, true, Weighing::Off),
+                    (false, true, Weighing::On),
+                    (true, true, Weighing::On),
+                ] {
+                    let mode = PatternMode { nibble, nibble_from: 0 };
+                    let forest = Forest::new(t, s, &packed, &images)
+                        .with_patterns(mode)
+                        .with_one_pass(one_pass)
+                        .with_weighing(weighing);
+                    let mut ps = build_kernel_prover(session, instance.as_str());
+                    let terminal = forest.prove_depth(&mut ps, &zeta, depth);
+                    let proof = ps.finish();
+                    let label = format!("{instance};nibble={nibble};one_pass={one_pass};weighing={weighing:?}");
+                    assert_eq!(terminal, expected_terminal, "terminal: {label}");
+                    assert_eq!(proof, expected_proof, "transcript: {label}");
+                    let mut verifier = build_kernel_verifier(session, instance.as_str(), &proof);
+                    assert_eq!(gpgkr_verify(&mut verifier, root_claim, &zeta, depth as u32), Some(terminal), "verification: {label}");
+                    verifier.check_eof().expect("all partial-depth messages consumed");
+                }
+            }
+        }
+    }
+
     /// The two pattern modes prove the same: same point, claim and
     /// transcript bytes.
     #[test]

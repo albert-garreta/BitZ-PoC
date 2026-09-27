@@ -166,3 +166,13 @@ work-normalized bound improves from129.365218 to129.375910bits. All50 benchmark
 proofs verified;662 distinct library tests and three upstream tests passed.
 See [THROUGHPUT.md](THROUGHPUT.md) for the implementations, full measurements,
 remaining bottlenecks, small-batch results, and exact reproducibility details.
+
+### Kernel follow-up (same v3 protocol)
+
+The four subsequent kernel optimizations preserve exact proof transcripts and
+all security parameters. A fresh matched seed-42 comparison improves from
+1.195 to 1.047 ms/signature (955 signatures/second), with peak RSS falling from
+4.540 to 3.532 GiB. The 1 ms objective remains unmet. Witness and constraint
+counts and the reported security bound are unchanged. See
+[KERNEL_THROUGHPUT.md](KERNEL_THROUGHPUT.md) for all input seeds, complete
+measurements, implementation details and validation.

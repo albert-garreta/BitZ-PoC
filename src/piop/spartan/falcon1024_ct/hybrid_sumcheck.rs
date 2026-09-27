@@ -83,30 +83,6 @@ impl Gather {
             | (repeat << start)
             | ((local >> start) << (start + self.high_point.len()))
     }
-
-    fn in_range(
-        &self,
-        start: usize,
-        range: std::ops::Range<usize>,
-        mut emit: impl FnMut(usize, usize, F),
-    ) {
-        let outer_shift = start + self.high_point.len();
-        for outer in range.start >> outer_shift..=((range.end - 1) >> outer_shift) {
-            let base = outer << outer_shift;
-            let first = range.start.saturating_sub(base);
-            let end = (range.end - base).min(1 << outer_shift);
-            for repeat in first >> start..=((end - 1) >> start) {
-                let segment = base + (repeat << start);
-                let first_local = (outer << start) + range.start.saturating_sub(segment);
-                let end_local = (outer << start) + (range.end - segment).min(1 << start);
-                let first = self.entries.partition_point(|&(i, _)| i < first_local);
-                let end = self.entries.partition_point(|&(i, _)| i < end_local);
-                for &(index, coefficient) in &self.entries[first..end] {
-                    emit(self.index(index, repeat, start), repeat, coefficient);
-                }
-            }
-        }
-    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -237,6 +213,9 @@ impl TensorState {
 /// a tensor. Gaps between words do not matter until the dense suffix, which
 /// still uses the original gather indices.
 struct GatherState {
+    /// Sorted local word IDs, retained through all seven bit folds.
+    words: Vec<usize>,
+    word_axis: usize,
     high: Vec<F>,
     low: Vec<F>,
     marginals: Vec<F>,
@@ -324,9 +303,41 @@ impl GatherState {
                 }
             });
         Self {
+            words,
+            word_axis: repeat_start - 7,
             high,
             low,
             marginals,
+        }
+    }
+
+    /// After the seven packed rounds, each low entry is the complete folded
+    /// coefficient of one local word. Insert the unchanged repeat coordinates
+    /// in word units; no per-bit coefficients need to be replayed.
+    fn folded_in_range(&self, range: std::ops::Range<usize>, mut emit: impl FnMut(usize, F)) {
+        debug_assert_eq!(self.words.len(), self.low.len());
+        if range.is_empty() || self.words.is_empty() {
+            return;
+        }
+        let start = self.word_axis;
+        let outer_shift = start + self.high.len().ilog2() as usize;
+        for outer in range.start >> outer_shift..=((range.end - 1) >> outer_shift) {
+            let base = outer << outer_shift;
+            let first = range.start.saturating_sub(base);
+            let end = (range.end - base).min(1 << outer_shift);
+            for repeat in first >> start..=((end - 1) >> start) {
+                let segment = base + (repeat << start);
+                let first_local = (outer << start) + range.start.saturating_sub(segment);
+                let end_local = (outer << start) + (range.end - segment).min(1 << start);
+                let first = self.words.partition_point(|&i| i < first_local);
+                let end = self.words.partition_point(|&i| i < end_local);
+                for (&word, &coefficient) in
+                    self.words[first..end].iter().zip(&self.low[first..end])
+                {
+                    let index = segment + (word & ((1 << start) - 1));
+                    emit(index, coefficient * self.high[repeat]);
+                }
+            }
         }
     }
 }
@@ -561,7 +572,6 @@ impl<const N: usize> State<'_, N> {
         }
         for gather in self.gathers.iter_mut().flatten() {
             gather.marginals = Vec::new();
-            gather.low = Vec::new();
         }
         let geometry = self.input.geometry;
         let sources = self.input.sources;
@@ -620,29 +630,15 @@ impl<const N: usize> State<'_, N> {
                                 }
                             }
                         }
-                        let first_bit = (first_group << k) * 128;
-                        let bits = geometry.logs[branch] + 7;
-                        let end_bit = ((end_group << k) * 128).min(1 << bits);
-                        if first_bit >= end_bit {
-                            continue;
-                        }
-                        for (gather, state) in self.input.coefficients[branch]
-                            .gathers
-                            .iter()
-                            .zip(&self.gathers[branch])
-                        {
-                            gather.in_range(
-                                gather.axis(bits),
-                                first_bit..end_bit,
-                                |index, repeat, coefficient| {
-                                    let word = index >> 7;
-                                    let dest = ((word >> k) - first_group) * columns
-                                        + offsets[branch]
-                                        + (word & (width - 1));
-                                    w[dest] +=
-                                        coefficient * state.high[repeat] * prefix[index & 127];
-                                },
-                            );
+                        let first_word = first_group << k;
+                        let end_word = (end_group << k).min(1 << geometry.logs[branch]);
+                        for state in &self.gathers[branch] {
+                            state.folded_in_range(first_word..end_word, |word, coefficient| {
+                                let dest = ((word >> k) - first_group) * columns
+                                    + offsets[branch]
+                                    + (word & (width - 1));
+                                w[dest] += coefficient;
+                            });
                         }
                     }
                     let mut message = [F::ZERO; 2];
@@ -1115,6 +1111,30 @@ mod tests {
                         );
                         kernels::fold(&mut state.low, point[round]);
                     }
+                    let prefix = eq_table(&point);
+                    let word_count = 1 << (source_vars - 7);
+                    let mut expected = vec![F::ZERO; word_count];
+                    for (repeat, &weight) in state.high.iter().enumerate() {
+                        for &(index, coefficient) in &gather.entries {
+                            expected[gather.index(index, repeat, axis) >> 7] +=
+                                coefficient * weight * prefix[index & 127];
+                        }
+                    }
+                    for chunk in [1, 3, 64, word_count] {
+                        let mut actual = vec![F::ZERO; word_count];
+                        for start in (0..word_count).step_by(chunk) {
+                            let end = (start + chunk).min(word_count);
+                            state.folded_in_range(start..end, |word, coefficient| {
+                                assert!((start..end).contains(&word));
+                                actual[word] += coefficient;
+                            });
+                        }
+                        assert_eq!(
+                            actual, expected,
+                            "folded replay: vars={source_vars}, repeat={repeat_vars}, axis={axis}, chunk={chunk}"
+                        );
+                    }
+                    state.folded_in_range(0..0, |_, _| panic!("empty word interval"));
                 }
             }
         }

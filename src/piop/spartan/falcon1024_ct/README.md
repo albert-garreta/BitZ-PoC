@@ -21,7 +21,9 @@ See [NATIVE_RING.md](NATIVE_RING.md) for the current arithmetic and counts, and
 [OPTIMIZATION_SECURITY.md](OPTIMIZATION_SECURITY.md) for the split grinding
 budget and [COMPACTION_SOUNDNESS.md](COMPACTION_SOUNDNESS.md) for the v3 forest
 and fingerprint arguments. The bridge is covered in [BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md).
-Current v3 performance and validation are in [THROUGHPUT.md](THROUGHPUT.md).
+Current v3 kernel performance and validation are in
+[KERNEL_THROUGHPUT.md](KERNEL_THROUGHPUT.md); the preceding v3 protocol changes
+are measured in [THROUGHPUT.md](THROUGHPUT.md).
 Every CT signature byte has a linear equality against its eight committed bits,
 including the nonce and signed coefficient payload. Absorbing signatures into
 the transcript complements these equality constraints; it does not replace them.
