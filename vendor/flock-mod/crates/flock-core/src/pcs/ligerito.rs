@@ -31,7 +31,7 @@
 
 use crate::challenger::Challenger;
 use crate::field::Gf128;
-use crate::lincheck::build_eq_table;
+use crate::lincheck::{build_eq_table, build_eq_table_into};
 use crate::merkle::{self, Hash, HashKind};
 use crate::ntt::additive_ntt_f128::AdditiveNttF128;
 use serde::{Deserialize, Serialize};
@@ -3123,6 +3123,12 @@ impl<'a> SumcheckProver<'a> {
     /// Combine the introduced basis into `combined_basis` with separation α.
     /// `combined_basis[j] += α · b_new[j]` (pointwise), `T_r += α · h_new`.
     pub fn glue(&mut self, alpha: Gf128) {
+        drop(self.glue_reclaim(alpha));
+    }
+
+    /// [`Self::glue`], handing the introduced basis buffer back to the caller
+    /// (e.g. to rebuild the next OOD `eq(z, ·)` table in the same allocation).
+    pub fn glue_reclaim(&mut self, alpha: Gf128) -> Vec<Gf128> {
         use rayon::prelude::*;
         let (b_new, h_new) = self
             .pending_glue
@@ -3142,6 +3148,7 @@ impl<'a> SumcheckProver<'a> {
                 .for_each(|(acc, &v)| *acc += alpha * v);
         }
         self.t_r += alpha * h_new;
+        b_new
     }
 
     pub fn f(&self) -> &[Gf128] {
@@ -3510,6 +3517,17 @@ where
     )
 }
 
+/// Whether the recursive levels' OOD `eq(z, ·)` tables are built by
+/// [`build_eq_table_into`] (a parallel tensor product, one multiplication
+/// per entry, one buffer reused across samples and levels) instead of a
+/// fresh serial [`build_eq_table`] per sample (`LIG_OOD_EQ_PAR`, `0` or `1`,
+/// default on), read once. Byte-identical either way.
+fn ood_eq_par_from_env() -> bool {
+    use std::sync::OnceLock;
+    static PAR: OnceLock<bool> = OnceLock::new();
+    *PAR.get_or_init(|| !matches!(std::env::var("LIG_OOD_EQ_PAR").as_deref(), Ok("0")))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn recursive_prover_with_basis_initial_impl<'a, Ch, O>(
     config: &ProverConfig,
@@ -3670,6 +3688,11 @@ where
     }
     challenger.observe_bytes(&wtns_1.root());
 
+    // One `eq(z, ·)` buffer serves every OOD sample of every level (the
+    // levels shrink), when `ood_eq_par` builds the tables in place.
+    let ood_eq_par = ood_eq_par_from_env();
+    let mut eq_z_buf: Vec<Gf128> = Vec::new();
+
     // OOD binding for the L1 commit: each sample evaluates f1's multilinear
     // extension at a random transcript point z ∈ F^{n1}, sends the claimed
     // value, and folds the claim `Σ_x f1(x)·eq(z,x) = y` into the running
@@ -3682,14 +3705,22 @@ where
             // Build eq(z, ·) once and fuse the MLE eval `y = f̂1(z)` into the
             // introduce round message (single pass over f1 + eq_z), instead of
             // a separate `mle_eval_inline` fold.
-            let eq_z = build_eq_table(&z);
+            let eq_z = if ood_eq_par {
+                build_eq_table_into(&z, &mut eq_z_buf);
+                std::mem::take(&mut eq_z_buf)
+            } else {
+                build_eq_table(&z)
+            };
             let (intro, y) = sc_prover.introduce_new_with_eval(eq_z);
             challenger.observe_f128(y);
             ood_values.push(y);
             challenger.observe_f128(intro.u_0);
             challenger.observe_f128(intro.u_2);
             let beta = challenger.sample_f128();
-            sc_prover.glue(beta);
+            let used = sc_prover.glue_reclaim(beta);
+            if ood_eq_par {
+                eq_z_buf = used;
+            }
         }
         if trace {
             t_ood += _t.elapsed();
@@ -3878,14 +3909,22 @@ where
             let _t = std::time::Instant::now();
             for _ in 0..ood_count(i + 2) {
                 let z = challenger.sample_f128_vec(n_next);
-                let eq_z = build_eq_table(&z);
+                let eq_z = if ood_eq_par {
+                    build_eq_table_into(&z, &mut eq_z_buf);
+                    std::mem::take(&mut eq_z_buf)
+                } else {
+                    build_eq_table(&z)
+                };
                 let (intro, y) = sc_prover.introduce_new_with_eval(eq_z);
                 challenger.observe_f128(y);
                 ood_values.push(y);
                 challenger.observe_f128(intro.u_0);
                 challenger.observe_f128(intro.u_2);
                 let beta = challenger.sample_f128();
-                sc_prover.glue(beta);
+                let used = sc_prover.glue_reclaim(beta);
+                if ood_eq_par {
+                    eq_z_buf = used;
+                }
             }
             if trace {
                 t_ood += _t.elapsed();
