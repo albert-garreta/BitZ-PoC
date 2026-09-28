@@ -78,6 +78,10 @@ pub struct InterleavedNttSchedule {
     /// layer (`NTT_DEEP_TAIL_DF`, default off: it measured neutral at
     /// n = 28 and 30, 1 and 10 threads).
     pub depth_first_tail: bool,
+    /// Run all blocks of a top pass as one parallel region instead of one
+    /// region, and one join, per block (`NTT_TOP_FLAT`, default on; only at > 1 thread,
+    /// where each join waits for the slowest core).
+    pub flat_top: bool,
 }
 
 impl InterleavedNttSchedule {
@@ -85,6 +89,7 @@ impl InterleavedNttSchedule {
     pub const BASELINE: Self = Self {
         twiddle_walk: false,
         depth_first_tail: false,
+        flat_top: false,
     };
 
     /// The environment's switches (`0` or `1` each; unset keeps the
@@ -100,6 +105,7 @@ impl InterleavedNttSchedule {
             Self {
                 twiddle_walk: flag("NTT_TWIDDLE_WALK", true),
                 depth_first_tail: flag("NTT_DEEP_TAIL_DF", false),
+                flat_top: flag("NTT_TOP_FLAT", true),
             }
         })
     }
@@ -557,9 +563,9 @@ impl AdditiveNttF128 {
     target_feature = "sse4.1",
             target_feature = "vpclmulqdq"
         ));
+        let flat = schedule.flat_top && rayon::current_num_threads() > 1;
         let mut layer = start_layer.min(n_top);
         while layer < n_top {
-            let num_blocks = 1usize << layer;
             let block_size = 1usize << (log_d - layer);
             let block_bytes = block_size * num_ntts;
 
@@ -567,7 +573,7 @@ impl AdditiveNttF128 {
                 // Fuse four layers (layer..layer+4): one read+write per block
                 // instead of four. Each block contributes a 16-point butterfly.
                 let sixteenth = block_size >> 4;
-                for block in 0..num_blocks {
+                for_each_top_block(data, block_bytes, flat, |block, chunk| {
                     let mut tw = [Gf128 { lo: 0, hi: 0 }; 15];
                     tw[0] = self.twiddle(layer, block);
                     for s in 0..2 {
@@ -579,45 +585,27 @@ impl AdditiveNttF128 {
                     for s in 0..8 {
                         tw[7 + s] = self.twiddle(layer + 3, 8 * block + s);
                     }
-                    let start = block * block_bytes;
-                    butterfly_interleaved_fused_4layer_par_rows(
-                        &mut data[start..start + block_bytes],
-                        &tw,
-                        sixteenth,
-                        num_ntts,
-                    );
-                }
+                    butterfly_interleaved_fused_4layer_par_rows(chunk, &tw, sixteenth, num_ntts);
+                });
                 layer += 4;
             } else if layer + 1 < n_top && block_size >= 4 {
                 // Fuse layers (layer, layer+1).
                 let quarter = block_size >> 2;
-                for block in 0..num_blocks {
+                for_each_top_block(data, block_bytes, flat, |block, chunk| {
                     let t_outer = self.twiddle(layer, block);
                     let t_inner_a = self.twiddle(layer + 1, 2 * block);
                     let t_inner_b = self.twiddle(layer + 1, 2 * block + 1);
-                    let start = block * block_bytes;
                     butterfly_interleaved_fused_2layer_par_rows(
-                        &mut data[start..start + block_bytes],
-                        t_outer,
-                        t_inner_a,
-                        t_inner_b,
-                        quarter,
-                        num_ntts,
+                        chunk, t_outer, t_inner_a, t_inner_b, quarter, num_ntts,
                     );
-                }
+                });
                 layer += 2;
             } else {
                 let block_size_half = block_size >> 1;
-                for block in 0..num_blocks {
+                for_each_top_block(data, block_bytes, flat, |block, chunk| {
                     let t = self.twiddle(layer, block);
-                    let start = block * block_bytes;
-                    butterfly_interleaved_block_par_rows(
-                        &mut data[start..start + block_bytes],
-                        t,
-                        block_size_half,
-                        num_ntts,
-                    );
-                }
+                    butterfly_interleaved_block_par_rows(chunk, t, block_size_half, num_ntts);
+                });
                 layer += 1;
             }
         }
@@ -1196,6 +1184,31 @@ fn butterfly_interleaved_fused_2layer_par_rows(
     }
 }
 
+/// Run `op(block, chunk)` on every `block_bytes` chunk of a top pass: in
+/// order on the caller when not `flat`; otherwise as one parallel region,
+/// so the pass pays one join instead of one per block (each `op` still
+/// parallelizes over its rows; nested regions are stolen into, not joined
+/// separately). Blocks are disjoint, so the output cannot depend on this.
+#[cfg(any(
+    all(target_arch = "aarch64", target_feature = "aes"),
+    all(target_arch = "x86_64", target_feature = "pclmulqdq"),
+))]
+fn for_each_top_block<F>(data: &mut [Gf128], block_bytes: usize, flat: bool, op: F)
+where
+    F: Fn(usize, &mut [Gf128]) + Sync + Send,
+{
+    use rayon::prelude::*;
+    if flat && data.len() > block_bytes {
+        data.par_chunks_mut(block_bytes)
+            .enumerate()
+            .for_each(|(block, chunk)| op(block, chunk));
+    } else {
+        for (block, chunk) in data.chunks_mut(block_bytes).enumerate() {
+            op(block, chunk);
+        }
+    }
+}
+
 #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
 use field::gf128::kernels::aarch64::mul_polynomial_u64;
 
@@ -1500,10 +1513,11 @@ mod tests {
 
     /// Every combination of the schedule switches.
     fn all_schedules() -> Vec<InterleavedNttSchedule> {
-        (0..4u8)
+        (0..8u8)
             .map(|bits| InterleavedNttSchedule {
                 twiddle_walk: bits & 1 != 0,
                 depth_first_tail: bits & 2 != 0,
+                flat_top: bits & 4 != 0,
             })
             .collect()
     }
@@ -1533,7 +1547,8 @@ mod tests {
     /// scalar reference: shapes with fused and single top layers, a fused
     /// deep pass ending on a single layer before the tail, sub-groups whose
     /// first deep layer is already in the tail, and start layers 0..=2, at
-    /// 1 and 4 threads (the thread count moves the top/deep split).
+    /// 1 and 4 threads (the thread count moves the top/deep split and gates
+    /// `flat_top`).
     #[test]
     fn schedules_match_scalar() {
         let mut rng = Rng::new(0x5CED);
