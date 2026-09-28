@@ -2183,6 +2183,10 @@ pub fn induce_sumcheck_poly_via_ntt(
 ///
 /// Both paths are byte-identical (see `induce_sumcheck_poly_via_ntt_matches_dense`),
 /// so a mis-dispatch only costs time. Tuned/validated at blake m=30.
+///
+/// With [`induce_cost_gate_from_env`] on (the default) the rule is
+/// [`induce_ntt_is_cheaper`] instead, which also takes the recursive levels'
+/// shapes, and the recursive levels dispatch through here too.
 pub(crate) fn induce_sumcheck_poly_auto(
     log_msg_cols: usize,
     log_inv_rate: usize,
@@ -2193,8 +2197,11 @@ pub(crate) fn induce_sumcheck_poly_auto(
     alpha: &[Gf128],
 ) -> (Vec<Gf128>, Gf128) {
     let log_block = log_msg_cols + log_inv_rate;
-    let use_ntt =
-        log_msg_cols >= 12 && queries.len() > 4 * (1usize << log_inv_rate) * log_block.max(1);
+    let use_ntt = if induce_cost_gate_from_env() {
+        induce_ntt_is_cheaper(log_msg_cols, log_inv_rate, queries.len())
+    } else {
+        log_msg_cols >= 12 && queries.len() > 4 * (1usize << log_inv_rate) * log_block.max(1)
+    };
     if use_ntt {
         induce_sumcheck_poly_via_ntt(
             log_msg_cols,
@@ -2214,6 +2221,46 @@ pub(crate) fn induce_sumcheck_poly_auto(
             alpha,
         )
     }
+}
+
+/// Whether the induce dispatch uses the multiplication-count rule
+/// [`induce_ntt_is_cheaper`], the recursive levels dispatch through
+/// [`induce_sumcheck_poly_auto`] instead of always taking the dense path, and
+/// the sparse NTT runs each few-block layer as one parallel pass
+/// (`LIG_INDUCE_COST_GATE`, `0` or `1`, default on), read once. Off restores
+/// the L0-only `Q > 4·2^rate·log_block` rule and the per-block passes.
+/// Byte-identical either way.
+fn induce_cost_gate_from_env() -> bool {
+    use std::sync::OnceLock;
+    static GATE: OnceLock<bool> = OnceLock::new();
+    *GATE.get_or_init(|| !matches!(std::env::var("LIG_INDUCE_COST_GATE").as_deref(), Ok("0")))
+}
+
+/// Whether the sparse-NTT induce is clearly cheaper than the dense one, by
+/// multiplication count.
+///
+/// The dense path spends one multiplication per basis entry per query,
+/// `Q · 2^log_msg_cols`. The sparse NTT ([`transpose_forward_ntt_sparse`])
+/// spends `k · 2^(k−1)` per active `2^k` window (at most `Q` of them; `k = 8`
+/// once `log_block ≥ 12`) and then `2^(log_block−1)` per remaining layer. The
+/// NTT is taken when the dense count is more than twice its count (margin
+/// for the NTT's per-layer passes and window bookkeeping), and never below
+/// `log_msg_cols = 12`, the old rule's floor.
+///
+/// Whenever the old rule `Q > 4 · 2^rate · log_block` fires this one does
+/// too, so L0 stays on the NTT. It adds the recursive L1 shape
+/// (`log_msg_cols = 14`, rate 1/4, 90 queries at m = 28: 1.47M dense against
+/// 0.35M NTT multiplications), which the old rule rejected (90 ≤ 256).
+fn induce_ntt_is_cheaper(log_msg_cols: usize, log_inv_rate: usize, n_queries: usize) -> bool {
+    if log_msg_cols < 12 {
+        return false;
+    }
+    let log_block = log_msg_cols + log_inv_rate;
+    let k = 8usize;
+    let windows = n_queries.min(1usize << (log_block - k));
+    let ntt = windows * (k << k) / 2 + (log_block - k) * (1usize << log_block) / 2;
+    let dense = n_queries << log_msg_cols;
+    dense > 2 * ntt
 }
 
 /// Sparse-prefix variant of [`transpose_forward_ntt`]: exploits that the input
@@ -2310,6 +2357,31 @@ fn transpose_forward_ntt_sparse(
                         *b_ref = t * sab + b;
                     }
                 });
+        } else if induce_cost_gate_from_env() {
+            // Fewer blocks than threads: ONE parallel pass over the layer's
+            // butterflies, cut into chunks, instead of one rayon call per
+            // block. At the recursive levels' sizes (2^16 entries at L1,
+            // m = 28) the per-block dispatches cost more than their work.
+            // Same butterflies, so the same output.
+            const CHUNK: usize = 1 << 10;
+            let mut tasks: Vec<(Gf128, &mut [Gf128], &mut [Gf128])> =
+                Vec::with_capacity(num_blocks * bsh.div_ceil(CHUNK));
+            for (block, chunk) in data.chunks_mut(block_size).enumerate() {
+                let t = ntt.twiddle(layer, block);
+                let (top, bot) = chunk.split_at_mut(bsh);
+                for (a, b) in top.chunks_mut(CHUNK).zip(bot.chunks_mut(CHUNK)) {
+                    tasks.push((t, a, b));
+                }
+            }
+            tasks.into_par_iter().for_each(|(t, top, bot)| {
+                for (a_ref, b_ref) in top.iter_mut().zip(bot.iter_mut()) {
+                    let a = *a_ref;
+                    let b = *b_ref;
+                    let sab = a + b;
+                    *a_ref = sab;
+                    *b_ref = t * sab + b;
+                }
+            });
         } else {
             for block in 0..num_blocks {
                 let t = ntt.twiddle(layer, block);
@@ -3950,14 +4022,32 @@ where
 
         let sks_vks_i = eval_sk_at_vks(n_next);
         let _t = std::time::Instant::now();
-        let (basis_i_induced, enforced_sum_i) = induce_sumcheck_poly(
-            n_next,
-            &sks_vks_i,
-            &opened_rows_i,
-            &level_rs,
-            &queries_i,
-            &alpha_i,
-        );
+        // The opened level's codeword is `2^(n_next + log_inv_rates[i+1])`
+        // positions: its message is the current `2^n_next` basis domain.
+        // Large levels (L1) take the sparse-NTT induce when it is clearly
+        // cheaper (see `induce_ntt_is_cheaper`); both paths are byte-identical.
+        let log_inv_rate_prev = config.log_inv_rates[i + 1];
+        debug_assert_eq!(wtns_prev.block_len, 1usize << (n_next + log_inv_rate_prev));
+        let (basis_i_induced, enforced_sum_i) = if induce_cost_gate_from_env() {
+            induce_sumcheck_poly_auto(
+                n_next,
+                log_inv_rate_prev,
+                &sks_vks_i,
+                &opened_rows_i,
+                &level_rs,
+                &queries_i,
+                &alpha_i,
+            )
+        } else {
+            induce_sumcheck_poly(
+                n_next,
+                &sks_vks_i,
+                &opened_rows_i,
+                &level_rs,
+                &queries_i,
+                &alpha_i,
+            )
+        };
         if trace {
             t_induce += _t.elapsed();
         }
@@ -6606,6 +6696,12 @@ mod tests {
             (8, 3, 3, 71),
             (5, 5, 3, 43),
             (0, 2, 1, 3),
+            // The recursive L1 shape the cost gate sends to the NTT at m = 28
+            // (rate 1/4, k = 3, 90 queries): log_block ≥ 12, so this is the
+            // k = 8 sparse-prefix branch at a rate below 1/2.
+            (14, 2, 3, 90),
+            // L2 at m = 30 (rate 1/8, 60 queries), just under the gate.
+            (13, 3, 3, 60),
         ];
         for (si, &(log_msg, log_inv_rate, log_int, n_queries)) in shapes.iter().enumerate() {
             let block_len = 1usize << (log_msg + log_inv_rate);
@@ -6645,6 +6741,39 @@ mod tests {
             assert_eq!(ntt.1, dense.1, "shape {si}: enforced_sum");
             assert_eq!(ntt.0, dense.0, "shape {si}: basis_poly");
         }
+    }
+
+    /// The multiplication-count gate takes the NTT whenever the old
+    /// `Q > 4·2^rate·log_block` rule did (so L0 never moves back to the
+    /// dense path), and it takes the recursive L1 shapes of the rate-1/2
+    /// Johnson ladder (`custom:1:4`) at m = 28 and m = 30, but not L2.
+    #[test]
+    fn induce_cost_gate_extends_the_old_rule() {
+        for log_msg in 0..=26usize {
+            for log_inv_rate in 0..=6usize {
+                let log_block = log_msg + log_inv_rate;
+                for n_queries in [1usize, 30, 60, 90, 150, 196, 300, 1000, 5000] {
+                    let old = log_msg >= 12
+                        && n_queries > 4 * (1usize << log_inv_rate) * log_block.max(1);
+                    if old {
+                        assert!(
+                            induce_ntt_is_cheaper(log_msg, log_inv_rate, n_queries),
+                            "log_msg={log_msg} rate={log_inv_rate} Q={n_queries}"
+                        );
+                    }
+                }
+            }
+        }
+        // L0 at m = 28 / 30 (log_msg 17 / 19, rate 1/2, ~196 queries).
+        assert!(induce_ntt_is_cheaper(17, 1, 196));
+        assert!(induce_ntt_is_cheaper(19, 1, 196));
+        // L1 (rate 1/4, 90 queries): log_msg 14 at m = 28, 16 at m = 30.
+        assert!(induce_ntt_is_cheaper(14, 2, 90));
+        assert!(induce_ntt_is_cheaper(16, 2, 90));
+        // L2 (rate 1/8, 60 queries) and deeper stay dense.
+        assert!(!induce_ntt_is_cheaper(11, 3, 60));
+        assert!(!induce_ntt_is_cheaper(13, 3, 60));
+        assert!(!induce_ntt_is_cheaper(10, 4, 45));
     }
 
     /// The sparse-prefix transpose must equal the baseline dense transpose on
