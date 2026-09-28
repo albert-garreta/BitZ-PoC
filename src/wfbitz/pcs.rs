@@ -11,8 +11,10 @@ use field::Gf128 as FlockF128;
 use flock_core::merkle::{Hash, HashKind};
 use flock_core::pcs::commit::PcsParams;
 use flock_core::pcs::ligerito::{
-    LigeritoProfile, LigeritoProof, LigeritoSecurityConfig, ProverConfig, VerifierConfig,
-    embedded_security_config, recursive_prover_with_basis, recursive_verifier_with_basis_succinct,
+    FoldLookahead, LigeritoProfile, LigeritoProof, LigeritoSecurityConfig, ProverConfig,
+    VerifierConfig, embedded_security_config, lookahead_accum_group, lookahead_finish,
+    recursive_prover_with_basis, recursive_prover_with_basis_precomputed_round0,
+    recursive_verifier_with_basis_succinct,
 };
 use flock_core::pcs::pack::{LOG_PACKING, PACKING_WIDTH as CLAIM_COUNT};
 use flock_core::pcs::ring_switch::{
@@ -28,10 +30,11 @@ use super::colstats::ZStats;
 use super::params::{LinearClaimGf, SumClaimGf, Root, Shape};
 use super::sumcheck;
 use super::transcript::{ProverState, PublicTranscript, VerifierState};
+use crate::ligerito::{phi_byte_tables_into, phi_from_words};
 use crate::ligerito_flock::{
     FlockCommitHint, add_ood_basis, commit_rs_ligerito_rows, ood_residual_evals,
 };
-use field::Gf128 as Gf;
+use field::{Gf128 as Gf, Gf128Product};
 
 /// flock's field element is this crate's `Gf128`: the conversions are the identity.
 #[inline]
@@ -495,25 +498,53 @@ impl Pcs {
         let started = std::time::Instant::now();
         let batching_weights = build_eq(&batching_point);
         let mut packed_target = batch_claims(&claims, &batching_weights);
-        let mut packed_basis = match &suffix {
-            SuffixEq::Dense(tensor) => fold_b128_elems(tensor, &batching_weights),
-            SuffixEq::Split { lo, hi } => fold_b128_elems_split(lo, hi, &batching_weights),
+        let fused = match &suffix {
+            SuffixEq::Split { lo, hi } if path.fuse != Fuse::Off => Some((lo, hi)),
+            _ => None,
         };
-        debug_assert_eq!(packed_basis.len(), suffix.len());
-        super::trace("    rs basis", started);
+        let (packed_basis, first_messages) = if let Some((lo, hi)) = fused {
+            // The Round-0 claim is bound first here, so the one basis pass
+            // can write its term: the pass absorbs nothing, so the
+            // transcript order is the unfused one's below.
+            let ood = match ood {
+                Some((point, y)) => {
+                    if point.len() != ring_switch.suffix_dimension() {
+                        return Err(ProveError::Internal);
+                    }
+                    let eta = bind_ood_claim(transcript, point, y);
+                    packed_target = packed_target + eta * y;
+                    Some((point, eta))
+                }
+                None => None,
+            };
+            let lookahead = path.fuse.lookahead()
+                && ligerito_takes_lookahead(packed.len(), self.prover_config.initial_k);
+            let (basis, round0, lookahead) =
+                fused_basis(packed, lo, hi, &batching_weights, ood, lookahead);
+            super::trace("    rs basis", started);
+            (basis, Some((round0, lookahead)))
+        } else {
+            let mut packed_basis = match &suffix {
+                SuffixEq::Dense(tensor) => fold_b128_elems(tensor, &batching_weights),
+                SuffixEq::Split { lo, hi } => fold_b128_elems_split(lo, hi, &batching_weights),
+            };
+            debug_assert_eq!(packed_basis.len(), suffix.len());
+            super::trace("    rs basis", started);
 
-        // The caller's Round-0 claim joins the batch: `η_ood·eq(·, point)`
-        // into the basis, `η_ood·y` into the target.
-        if let Some((point, y)) = ood {
-            if point.len() != ring_switch.suffix_dimension() {
-                return Err(ProveError::Internal);
+            // The caller's Round-0 claim joins the batch: `η_ood·eq(·, point)`
+            // into the basis, `η_ood·y` into the target.
+            if let Some((point, y)) = ood {
+                if point.len() != ring_switch.suffix_dimension() {
+                    return Err(ProveError::Internal);
+                }
+                let started = std::time::Instant::now();
+                let eta = bind_ood_claim(transcript, point, y);
+                add_ood_basis(&mut packed_basis, packed, point, eta, None);
+                packed_target = packed_target + eta * y;
+                super::trace("    rs ood", started);
             }
-            let started = std::time::Instant::now();
-            let eta = bind_ood_claim(transcript, point, y);
-            add_ood_basis(&mut packed_basis, packed, point, eta, None);
-            packed_target = packed_target + eta * y;
-            super::trace("    rs ood", started);
-        }
+            (packed_basis, None)
+        };
 
         super::trace("  ring switch", started_rs);
 
@@ -526,15 +557,28 @@ impl Pcs {
         } else {
             Cow::Owned(packed.to_vec())
         };
-        let ligerito = recursive_prover_with_basis(
-            &self.prover_config,
-            witness,
-            packed_basis,
-            packed_target,
-            &data.codeword,
-            &data.merkle_tree,
-            &mut challenger,
-        );
+        let ligerito = match first_messages {
+            Some((round0, lookahead)) => recursive_prover_with_basis_precomputed_round0(
+                &self.prover_config,
+                witness,
+                packed_basis,
+                packed_target,
+                &data.codeword,
+                &data.merkle_tree,
+                round0,
+                lookahead,
+                &mut challenger,
+            ),
+            None => recursive_prover_with_basis(
+                &self.prover_config,
+                witness,
+                packed_basis,
+                packed_target,
+                &data.codeword,
+                &data.merkle_tree,
+                &mut challenger,
+            ),
+        };
         if challenger.failed() {
             return Err(ProveError::Internal);
         }
@@ -661,6 +705,170 @@ pub(crate) struct OpeningPath {
     /// ring switch's fold (`WFBITZ_ZSTATS`: `0` off, `1` wherever it fits,
     /// default where it pays).
     pub(crate) zstats: ZStats,
+    /// With the split suffix, the basis pass also accumulates Ligerito's
+    /// first messages ([`Fuse`], `WFBITZ_RS_FUSE`).
+    pub(crate) fuse: Fuse,
+}
+
+/// What the basis pass computes for Ligerito besides the basis, read once
+/// from `WFBITZ_RS_FUSE`: `0` nothing (Ligerito reads `(packed, basis)`
+/// again for its round-0 message), `round0` that message, `1` also the
+/// round-1 lookahead coefficients (Ligerito's round 0 becomes a skip round
+/// and its first pass folds two challenges off the original arrays), and
+/// by default `auto`: the lookahead above one thread only. The Round-0
+/// claim's term is written in the same pass either way.
+///
+/// Per packed element the pass adds the element's read and one unreduced
+/// multiply for the message (two with the lookahead); Ligerito drops a
+/// reduced-multiply pass over `(packed, basis)` (and with the lookahead
+/// its full-size entry fold: ~90 MB of traffic at `n = 28`). One thread is
+/// compute-bound and the lookahead's extra multiplies about cancel the
+/// saved pass, so `auto` keeps it for more threads, where the passes are
+/// bandwidth-bound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Fuse {
+    Off,
+    Round0,
+    Lookahead,
+    Auto,
+}
+
+impl Fuse {
+    fn from_env() -> Self {
+        match std::env::var("WFBITZ_RS_FUSE").as_deref() {
+            Ok("0") => Self::Off,
+            Ok("round0") => Self::Round0,
+            Ok("1") => Self::Lookahead,
+            _ => Self::Auto,
+        }
+    }
+
+    /// Whether the pass accumulates the round-1 lookahead too.
+    fn lookahead(self) -> bool {
+        match self {
+            Self::Off | Self::Round0 => false,
+            Self::Lookahead => true,
+            Self::Auto => threads() > 1,
+        }
+    }
+}
+
+fn threads() -> usize {
+    #[cfg(feature = "parallel")]
+    {
+        rayon::current_num_threads()
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        1
+    }
+}
+
+/// The vendored Ligerito prover's rule for its initial-round lookahead
+/// (`recursive_prover_with_basis_initial_impl`): a round-1 lookahead handed
+/// to it is used exactly then, so the basis pass computes one only then.
+fn ligerito_takes_lookahead(packed_len: usize, initial_k: usize) -> bool {
+    packed_len >= 1 << 14
+        && (packed_len >> initial_k) >= 16
+        && std::env::var_os("LIG_LOOKAHEAD_DISABLE").is_none()
+}
+
+/// The Ligerito basis `Φ(lo[i]·hi[j])` at `j·|lo| + i` — flock's split
+/// basis (`fold_b128_elems_split`), `Φ` the byte tables of the batching
+/// `weights` — plus `η·eq(·, ζ)` for a Round-0 claim `(ζ, η)`, written block
+/// by block into a buffer from flock's scratch pool. While a block is in
+/// cache, Ligerito's round-0 message `(Σ f₀b₀, Σ (f₀+f₁)(b₀+b₁))` over
+/// `(packed, basis)` accumulates from it, and with `lookahead` flock's
+/// round-1 coefficients (`lookahead_accum_group` over groups of four,
+/// which carries the message too). Every value is an exact field sum over
+/// the final basis, so Ligerito's transcript is the one it computes from
+/// `(packed, basis)` itself.
+fn fused_basis(
+    packed: &[FlockF128],
+    lo: &[FlockF128],
+    hi: &[FlockF128],
+    weights: &[FlockF128],
+    ood: Option<(&[Gf], Gf)>,
+    lookahead: bool,
+) -> (Vec<FlockF128>, (FlockF128, FlockF128), Option<FoldLookahead>) {
+    #[cfg(feature = "parallel")]
+    use rayon::prelude::*;
+    let block = lo.len();
+    assert!(block.is_multiple_of(4) && packed.len() == block * hi.len());
+    let mut tables = vec![Gf::zero(); 16 * 256];
+    phi_byte_tables_into(&mut tables, |bit| weights[bit]);
+    // `η·eq(ζ, j·|lo| + i)` splits like the basis: `η·eq(ζ_hi, j)·eq(ζ_lo, i)`.
+    let ood = ood.map(|(point, eta)| {
+        let split = block.trailing_zeros() as usize;
+        let hi: Vec<Gf> = build_eq(&point[split..]).into_iter().map(|e| eta * e).collect();
+        (build_eq(&point[..split]), hi)
+    });
+    let fill = |j: usize, out: &mut [Gf]| {
+        let scale = hi[j];
+        for (slot, &low) in out.iter_mut().zip(lo) {
+            *slot = phi_from_words(*(low * scale).as_words(), &tables);
+        }
+        if let Some((ood_lo, ood_hi)) = &ood {
+            let scale = ood_hi[j];
+            for (slot, &low) in out.iter_mut().zip(ood_lo) {
+                *slot += scale * low;
+            }
+        }
+    };
+    let mut basis = flock_core::scratch::take_f128(packed.len());
+    if lookahead {
+        let block_sums = |(j, out): (usize, &mut [Gf])| {
+            fill(j, out);
+            let mut acc = [Gf128Product::zero(); 8];
+            for (f, b) in packed[j * block..(j + 1) * block].chunks_exact(4).zip(out.chunks_exact(4)) {
+                lookahead_accum_group(&[f[0], f[1], f[2], f[3]], &[b[0], b[1], b[2], b[3]], &mut acc);
+            }
+            acc
+        };
+        let xor = |mut a: [Gf128Product; 8], b: [Gf128Product; 8]| {
+            for (x, y) in a.iter_mut().zip(b) {
+                *x ^= y;
+            }
+            a
+        };
+        #[cfg(feature = "parallel")]
+        let acc = basis
+            .par_chunks_mut(block)
+            .enumerate()
+            .map(block_sums)
+            .reduce(|| [Gf128Product::zero(); 8], xor);
+        #[cfg(not(feature = "parallel"))]
+        let acc = basis
+            .chunks_mut(block)
+            .enumerate()
+            .map(block_sums)
+            .fold([Gf128Product::zero(); 8], xor);
+        let (message, coefficients) = lookahead_finish(acc);
+        (basis, (message.u_0, message.u_2), Some(coefficients))
+    } else {
+        let block_sums = |(j, out): (usize, &mut [Gf])| {
+            fill(j, out);
+            let (mut u0, mut u2) = (Gf128Product::zero(), Gf128Product::zero());
+            for (f, b) in packed[j * block..(j + 1) * block].chunks_exact(2).zip(out.chunks_exact(2)) {
+                u0 ^= f[0].mul_unreduced(b[0]);
+                u2 ^= (f[0] + f[1]).mul_unreduced(b[0] + b[1]);
+            }
+            (u0, u2)
+        };
+        let xor = |(a0, a2): (Gf128Product, Gf128Product), (b0, b2): (Gf128Product, Gf128Product)| {
+            (a0 ^ b0, a2 ^ b2)
+        };
+        let zero = (Gf128Product::zero(), Gf128Product::zero());
+        #[cfg(feature = "parallel")]
+        let (u0, u2) = basis
+            .par_chunks_mut(block)
+            .enumerate()
+            .map(block_sums)
+            .reduce(|| zero, xor);
+        #[cfg(not(feature = "parallel"))]
+        let (u0, u2) = basis.chunks_mut(block).enumerate().map(block_sums).fold(zero, xor);
+        (basis, (u0.reduce(), u2.reduce()), None)
+    }
 }
 
 impl OpeningPath {
@@ -677,6 +885,7 @@ impl OpeningPath {
                 borrow: flag("WFBITZ_RS_BORROW", true),
                 split: flag("WFBITZ_RS_SPLIT", true),
                 zstats: ZStats::from_env(),
+                fuse: Fuse::from_env(),
             }
         })
     }
@@ -1508,6 +1717,7 @@ mod tests {
         borrow: false,
         split: false,
         zstats: ZStats::Off,
+        fuse: Fuse::Off,
     };
 
     /// Every path the knobs select (the statistics forced wherever they
@@ -1517,9 +1727,59 @@ mod tests {
             OpeningPath { borrow: true, ..REFERENCE },
             OpeningPath { split: true, ..REFERENCE },
             OpeningPath { zstats: ZStats::Force, ..REFERENCE },
-            OpeningPath { borrow: true, split: true, zstats: ZStats::Force },
-            OpeningPath { borrow: true, split: true, zstats: ZStats::Auto },
+            OpeningPath { split: true, fuse: Fuse::Round0, ..REFERENCE },
+            OpeningPath { split: true, fuse: Fuse::Lookahead, ..REFERENCE },
+            OpeningPath { borrow: true, split: true, zstats: ZStats::Force, fuse: Fuse::Off },
+            OpeningPath { borrow: true, split: true, zstats: ZStats::Force, fuse: Fuse::Lookahead },
+            OpeningPath { borrow: true, split: true, zstats: ZStats::Auto, fuse: Fuse::Auto },
         ]
+    }
+
+    /// The fused pass writes flock's split basis plus the Round-0 term, and
+    /// its round-0 message and round-1 lookahead are what separate passes
+    /// over that final basis give.
+    #[test]
+    fn fused_basis_matches_the_separate_passes() {
+        for (log_lo, log_hi) in [(4usize, 0usize), (4, 3), (5, 2), (6, 5)] {
+            let vars = log_lo + log_hi;
+            let mut state = 0xf05e_ba5e ^ (log_lo * 31 + log_hi) as u64;
+            let suffix: Vec<Gf> = (0..vars).map(|_| random_gf(&mut state)).collect();
+            let (lo, hi) = build_eq_split(&suffix, log_lo);
+            let packed: Vec<Gf> = (0..1usize << vars).map(|_| random_gf(&mut state)).collect();
+            let batching: Vec<Gf> = (0..LOG_PACKING).map(|_| random_gf(&mut state)).collect();
+            let weights = build_eq(&batching);
+            let ood_point: Vec<Gf> = (0..vars).map(|_| random_gf(&mut state)).collect();
+            let eta = random_gf(&mut state);
+            for with_ood in [false, true] {
+                let mut expected = fold_b128_elems_split(&lo, &hi, &weights);
+                if with_ood {
+                    add_ood_basis(&mut expected, &packed, &ood_point, eta, None);
+                }
+                let (mut u0, mut u2) = (Gf::zero(), Gf::zero());
+                for (f, b) in packed.chunks_exact(2).zip(expected.chunks_exact(2)) {
+                    u0 += f[0] * b[0];
+                    u2 += (f[0] + f[1]) * (b[0] + b[1]);
+                }
+                let mut acc = [Gf128Product::zero(); 8];
+                for (f, b) in packed.chunks_exact(4).zip(expected.chunks_exact(4)) {
+                    lookahead_accum_group(&[f[0], f[1], f[2], f[3]], &[b[0], b[1], b[2], b[3]], &mut acc);
+                }
+                let (_, expected_lookahead) = lookahead_finish(acc);
+                for lookahead in [false, true] {
+                    let ood = with_ood.then(|| (ood_point.as_slice(), eta));
+                    let (basis, round0, coefficients) =
+                        fused_basis(&packed, &lo, &hi, &weights, ood, lookahead);
+                    let case = format!("lo={log_lo} hi={log_hi} ood={with_ood} lookahead={lookahead}");
+                    assert!(basis == expected, "{case}");
+                    assert_eq!(round0, (u0, u2), "{case}");
+                    assert_eq!(
+                        coefficients.map(|c| format!("{c:?}")),
+                        lookahead.then(|| format!("{expected_lookahead:?}")),
+                        "{case}"
+                    );
+                }
+            }
+        }
     }
 
     /// Every opening path proves the reference's bytes, which verify: an
