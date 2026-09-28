@@ -17,8 +17,10 @@ use flock_core::pcs::ligerito::{
 use flock_core::pcs::pack::{LOG_PACKING, PACKING_WIDTH as CLAIM_COUNT};
 use flock_core::pcs::ring_switch::{
     build_eq_split, claim_check, eval_rs_eq_finish_from_prefix_binary_q, eval_rs_eq_prefix,
-    fold_1b_rows_naive, fold_b128_elems, inner_product, tensor_algebra_transpose,
+    fold_1b_rows_naive, fold_1b_rows_split, fold_b128_elems, fold_b128_elems_split,
+    inner_product, split_n_lo, tensor_algebra_transpose,
 };
+use flock_core::zerocheck::PaddingSpec;
 use flock_core::zerocheck::univariate_skip::build_eq;
 use spongefish::Encoding;
 
@@ -438,13 +440,25 @@ impl Pcs {
         let started_rs = std::time::Instant::now();
         let packed = hint.packed_message();
         let started = std::time::Instant::now();
-        let (prefix_tensor, suffix_tensor) = build_eq_split(&ring_switch.point, LOG_PACKING);
+        let suffix_point = &ring_switch.point[LOG_PACKING..];
+        let (prefix_tensor, suffix) = if path.split && suffix_point.len() >= SPLIT_MIN_VARS {
+            let (lo, hi) = build_eq_split(suffix_point, split_n_lo(suffix_point.len()));
+            (build_eq(&ring_switch.point[..LOG_PACKING]), SuffixEq::Split { lo, hi })
+        } else {
+            let (prefix, tensor) = build_eq_split(&ring_switch.point, LOG_PACKING);
+            (prefix, SuffixEq::Dense(tensor))
+        };
         super::trace("    rs eq", started);
-        if suffix_tensor.len() != packed.len() {
+        if suffix.len() != packed.len() {
             return Err(ProveError::PackedWitnessLengthMismatch);
         }
         let started = std::time::Instant::now();
-        let claims = fold_1b_rows_naive(packed, &suffix_tensor);
+        let claims = match &suffix {
+            SuffixEq::Dense(tensor) => fold_1b_rows_naive(packed, tensor),
+            SuffixEq::Split { lo, hi } => {
+                fold_1b_rows_split(packed, lo, hi, &PaddingSpec::dense(self.params.m))
+            }
+        };
         super::trace("    rs fold 1b", started);
         let claims: [FlockF128; CLAIM_COUNT] = claims
             .try_into()
@@ -463,8 +477,11 @@ impl Pcs {
         let started = std::time::Instant::now();
         let batching_weights = build_eq(&batching_point);
         let mut packed_target = batch_claims(&claims, &batching_weights);
-        let mut packed_basis = fold_b128_elems(&suffix_tensor, &batching_weights);
-        debug_assert_eq!(packed_basis.len(), suffix_tensor.len());
+        let mut packed_basis = match &suffix {
+            SuffixEq::Dense(tensor) => fold_b128_elems(tensor, &batching_weights),
+            SuffixEq::Split { lo, hi } => fold_b128_elems_split(lo, hi, &batching_weights),
+        };
+        debug_assert_eq!(packed_basis.len(), suffix.len());
         super::trace("    rs basis", started);
 
         // The caller's Round-0 claim joins the batch: `η_ood·eq(·, point)`
@@ -611,6 +628,15 @@ pub(crate) struct OpeningPath {
     /// flock's scratch pool after the first fold (`WFBITZ_RS_BORROW`,
     /// default on).
     pub(crate) borrow: bool,
+    /// `eq(·, point[7..])` stays two factors of `2^{⌊(m−7)/2⌋}` and
+    /// `2^{⌈(m−7)/2⌉}` entries (flock's `build_eq_split` at `split_n_lo`)
+    /// instead of the `2^{m−7}`-entry tensor: the claims come from flock's
+    /// split fold (the subset-sum tables built once, no tensor stream) and
+    /// the basis from its split fold, one multiply per entry, into a pooled
+    /// buffer. No tensor build (`2^{m−6}` multiplies), no fresh 32/128 MB
+    /// per proof for the tensor or the basis (`WFBITZ_RS_SPLIT`, default
+    /// on; needs `m ≥ 11`).
+    pub(crate) split: bool,
 }
 
 impl OpeningPath {
@@ -625,8 +651,30 @@ impl OpeningPath {
             };
             OpeningPath {
                 borrow: flag("WFBITZ_RS_BORROW", true),
+                split: flag("WFBITZ_RS_SPLIT", true),
             }
         })
+    }
+}
+
+/// The fewest suffix variables the split takes: flock's split fold walks
+/// whole 16-element chunks of the low factor (`split_n_lo ≥ 4`).
+const SPLIT_MIN_VARS: usize = 4;
+
+/// `eq(·, point[7..])` over the packed positions: the tensor, or its two
+/// factors, entry `j·|lo| + i` being `lo[i]·hi[j]` (exactly: the field
+/// multiply is exact, so the product has the tensor entry's bits).
+enum SuffixEq {
+    Dense(Vec<FlockF128>),
+    Split { lo: Vec<FlockF128>, hi: Vec<FlockF128> },
+}
+
+impl SuffixEq {
+    fn len(&self) -> usize {
+        match self {
+            Self::Dense(tensor) => tensor.len(),
+            Self::Split { lo, hi } => lo.len() * hi.len(),
+        }
     }
 }
 
@@ -1429,12 +1477,16 @@ mod tests {
         }
     }
 
-    /// The original opening: a copy for Ligerito.
-    const REFERENCE: OpeningPath = OpeningPath { borrow: false };
+    /// The original opening: the suffix tensor, a copy for Ligerito.
+    const REFERENCE: OpeningPath = OpeningPath { borrow: false, split: false };
 
     /// Every path the knobs select.
     fn paths() -> Vec<OpeningPath> {
-        vec![OpeningPath { borrow: true }]
+        vec![
+            OpeningPath { borrow: true, ..REFERENCE },
+            OpeningPath { split: true, ..REFERENCE },
+            OpeningPath { borrow: true, split: true },
+        ]
     }
 
     /// Every opening path proves the reference's bytes, which verify: an
