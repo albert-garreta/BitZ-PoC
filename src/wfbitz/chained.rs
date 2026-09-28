@@ -25,11 +25,11 @@
 //!
 //! With that, every committed cell's weight is `(row factor)·(block factor)`
 //! per map part and sub-block: the local relation, the chain link, the last
-//! instance, the tail (its row factor is `u1` itself), the digest aliases
-//! (one sparse row vector on the last instance's block) and the constant —
-//! 13 tensors over the committed grid, each with a `2^LOG_ROWS`-entry row
-//! vector the verifier derives from `u1` and the local maps in `O(nnz)` and
-//! a block vector read off `u2`.
+//! instance, the tail (`u1`, cut to the tail's real cells), the digest
+//! aliases (one sparse row vector on the last instance's block) and the
+//! constant — 15 to 17 tensors over the committed grid, each with a
+//! `2^LOG_ROWS`-entry row vector the verifier derives from `u1` and the
+//! local maps in `O(nnz)` and a block vector read off `u2`.
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -43,12 +43,14 @@ use super::{
 };
 use crate::ligerito_flock::FlockCommitHint;
 use crate::pcs::IntegerMatrixLayout;
-use circuit::linear_map::binary::{ChainedPackedSourceParts, ChainedSourceTail, PreparedVirtualMap};
+use circuit::linear_map::binary::{
+    ChainedPackedSourceMap, ChainedPackedSourceParts, ChainedSourceTail, PreparedVirtualMap,
+};
 use field::Gf128 as Gf;
 use spongefish::Encoding;
 
-/// Rows of both grids: the largest the single-fold bound admits for a
-/// 113-bit modulus, `(q − 1)(2^14 + 1) < 2^128`.
+/// Rows of both grids: the largest the single-fold gate admits for a
+/// 113-bit modulus, `(q − 1)(2^14 + 1) < 2^128 − 1` (`BitZParams::new`).
 pub const LOG_ROWS: usize = 14;
 
 const CHAINED_STATEMENT_LABEL: &[u8] = b"bitz/chained-virtual-statement/v1";
@@ -56,15 +58,24 @@ const CHAINED_STATEMENT_LABEL: &[u8] = b"bitz/chained-virtual-statement/v1";
 /// A map or claim the structured opening cannot take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChainedError {
-    /// The instance count is not a power of two of at least two.
+    /// The instance count is not a power of two in `8..=128` (the block
+    /// transposes read an instance row as one word of at most 128 bits).
     Instances,
-    /// The local relation has more rows than two sub-blocks hold, or fewer
-    /// than one block (then the tail would share blocks with the SHA rows).
+    /// The local relation fills two sub-blocks or more (the tail must start
+    /// inside the second, where the prover's layout puts the constant), or
+    /// has fewer rows than one block (then the tail would share blocks with
+    /// the SHA rows).
     LocalRows,
     /// More nonconstant local cells than half a block.
     LocalCells,
-    /// The tail map is not the identity, or its offsets are not the chain's.
+    /// The tail map is not the identity, its offsets are not the chain's,
+    /// its row 0 is not the shared constant, another alias does not read a
+    /// cell of the last instance's block, or its cells are not word-aligned
+    /// for the transposes.
     Tail,
+    /// The chain link reads the constant, or the first instance's boundary
+    /// map reads nonconstant cells: the tensors carry neither.
+    Boundary,
     /// The native derived index width is too small for the grids.
     Width,
     /// The claim does not match the derived grid or has noncanonical residues.
@@ -109,12 +120,13 @@ impl ChainedGeometry {
         native_bits: usize,
     ) -> Result<Self, ChainedError> {
         let instances = parts.instances;
-        if instances < 2 || !instances.is_power_of_two() {
+        // The block transposes read one instance row as a word of 8..=128 bits.
+        if !instances.is_power_of_two() || !(8..=128).contains(&instances) {
             return Err(ChainedError::Instances);
         }
         let log_instances = instances.ilog2() as usize;
         let local_rows = parts.local.rows();
-        if local_rows > 2 << LOG_ROWS || local_rows < 1 << LOG_ROWS {
+        if local_rows >= 2 << LOG_ROWS || local_rows < 1 << LOG_ROWS {
             return Err(ChainedError::LocalRows);
         }
         let local_cells = parts.local.cols().saturating_sub(1);
@@ -126,14 +138,34 @@ impl ChainedGeometry {
                 return Err(ChainedError::LocalRows);
             }
         }
+        // The tensors carry `first` through its constant column only and no
+        // constant read of the chain link (which `ChainedPackedSourceMap::new`
+        // refuses too): other maps are not eligible for this opening.
+        if parts.prev.matrix().column(0).is_none_or(|column| !column.is_empty())
+            || ChainedPackedSourceMap::nonconstant_column_span(parts.first) != (0, 0)
+        {
+            return Err(ChainedError::Boundary);
+        }
         let h_offset = local_rows * instances;
         let f_offset = 1 + local_cells * instances;
         let aliases = tail.aliases.len();
+        // The digest aliases are nonconstant cells of the last instance's
+        // block (their tensor has that one block).
+        let on_last_block = |source: usize| {
+            source != 0
+                && source < f_offset
+                && ((source - 1) / local_cells) >> 1 == (instances - 1) >> 1
+        };
         if !tail.map.is_identity()
             || tail.map.rows() != tail.map.cols()
             || tail.row_offset != h_offset
             || tail.source_offset != f_offset
             || aliases == 0
+            // Tail row 0 is the shared constant.
+            || tail.aliases[0] != 0
+            || !tail.aliases[1..].iter().all(|&source| on_last_block(source))
+            // The tail cells start on an instance-row word of the transposes.
+            || (aliases - 1) % instances != 0
             || aliases > tail.map.cols()
         {
             return Err(ChainedError::Tail);
@@ -609,7 +641,7 @@ impl<'a> ChainedStatement<'a> {
         let g = &self.geometry;
         let (n, blocks) = (g.instances, shape.columns());
         let block_weight = |b: usize| if b < blocks { u2[b] } else { Gf::zero() };
-        let mut terms: Vec<(Vec<Gf>, Vec<Gf>)> = Vec::with_capacity(13);
+        let mut terms: Vec<(Vec<Gf>, Vec<Gf>)> = Vec::with_capacity(20);
 
         // The local relation and the chain link: instance `2β + u`'s cells
         // feed its own rows (blocks `2β + u + n·v`) and the next instance's.
@@ -648,17 +680,73 @@ impl<'a> ChainedStatement<'a> {
             cols[g.last_block()] = block_weight(n - 1 + n * v);
             terms.push((self.row_vector(&last[v], 1), cols));
         }
-        // The tail: its cells mirror their derived rows.
-        let cols: Vec<Gf> = (0..blocks)
-            .map(|beta| {
-                if beta >= g.sha_blocks {
-                    block_weight(beta - g.sha_blocks + n)
-                } else {
-                    Gf::zero()
+        // The tail: only its own cells (`aliases ≤ σ < tail_rows`) sit at the
+        // mirror of their derived rows; every other mirror position (the SHA
+        // rows above the boundary, the aliased rows `0 < σ < aliases`, the
+        // rows past the tail's end) holds no source and weighs nothing, as in
+        // the dense transpose. Derived indices `[lo, hi)` meet chunk `m` in
+        // the lexicographic `(row, instance)` range `[p_lo, p_hi)` of
+        // `p = n·row + instance`: whole chunks share one `u1` tensor, a
+        // partial one takes a row-range tensor and at most two single-row
+        // tensors.
+        {
+            let lo = g.h_offset + g.aliases;
+            let hi = g.h_offset + g.tail_rows;
+            let chunk_cells = n << LOG_ROWS;
+            let committed = |derived_block: usize| derived_block - n + g.sha_blocks;
+            let mut whole_chunks = false;
+            let mut full_cols = vec![Gf::zero(); blocks];
+            let chunk_cols = |m: usize, keep: &dyn Fn(usize) -> bool| -> Vec<Gf> {
+                let mut cols = vec![Gf::zero(); blocks];
+                for i in 0..n {
+                    let b = n * m + i;
+                    if b < blocks && keep(i) {
+                        cols[committed(b)] = u2[b];
+                    }
                 }
-            })
-            .collect();
-        terms.push((u1.to_vec(), cols));
+                cols
+            };
+            if lo < hi {
+                for m in lo / chunk_cells..=(hi - 1) / chunk_cells {
+                    let start = m * chunk_cells;
+                    let p_lo = lo.max(start) - start;
+                    let p_hi = hi.min(start + chunk_cells) - start;
+                    if p_lo == 0 && p_hi == chunk_cells {
+                        whole_chunks = true;
+                        for i in 0..n {
+                            let b = n * m + i;
+                            if b < blocks {
+                                full_cols[committed(b)] = u2[b];
+                            }
+                        }
+                        continue;
+                    }
+                    let (r0, r1) = (p_lo.div_ceil(n), p_hi / n);
+                    if r0 < r1 {
+                        let mut rows = vec![Gf::zero(); shape.rows()];
+                        rows[r0..r1].copy_from_slice(&u1[r0..r1]);
+                        terms.push((rows, chunk_cols(m, &|_| true)));
+                    }
+                    let same_row = p_lo / n == p_hi / n;
+                    if p_lo % n != 0 {
+                        let (r, i_lo) = (p_lo / n, p_lo % n);
+                        let i_hi = if same_row { p_hi % n } else { n };
+                        let mut rows = vec![Gf::zero(); shape.rows()];
+                        rows[r] = u1[r];
+                        terms.push((rows, chunk_cols(m, &|i| i >= i_lo && i < i_hi)));
+                    }
+                    if p_hi % n != 0 && !(p_lo % n != 0 && same_row) {
+                        let (r, i_hi) = (p_hi / n, p_hi % n);
+                        let mut rows = vec![Gf::zero(); shape.rows()];
+                        rows[r] = u1[r];
+                        terms.push((rows, chunk_cols(m, &|i| i < i_hi)));
+                    }
+                }
+            }
+            if whole_chunks {
+                terms.push((u1.to_vec(), full_cols));
+            }
+        }
         // The digest aliases: the last instance's cells the tail reads.
         let mut alias_rows = vec![Gf::zero(); shape.rows()];
         let mut alias_cols = vec![Gf::zero(); blocks];
@@ -682,7 +770,7 @@ impl<'a> ChainedStatement<'a> {
         alias_cols[g.last_block()] = Gf::one();
         terms.push((alias_rows, alias_cols));
         // The constant: every instance's rows from source column 0 (the
-        // tail's own row 0 already reaches its mirror through the tail term).
+        // tail's row 0 too, below).
         let first = Self::local_sums(self.parts.first, u1);
         let mut kappa = Gf::zero();
         for v in 0..2 {
@@ -694,6 +782,10 @@ impl<'a> ChainedStatement<'a> {
             kappa += first[v][0] * block_weight(n * v);
             kappa += last[v][0] * block_weight(n - 1 + n * v);
         }
+        // Tail row 0 is the constant's own mirror (`aliases[0] = 0`), outside
+        // the tail term.
+        let (dr, db) = g.derived_position(g.h_offset);
+        kappa += u1[dr] * block_weight(db);
         let (row0, block0) = g.committed_tail_position(0);
         let mut const_rows = vec![Gf::zero(); shape.rows()];
         const_rows[row0] = kappa;
@@ -868,5 +960,105 @@ mod layout_tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod geometry_tests {
+    use super::*;
+    use circuit::linear_map::CscMatrix;
+
+    /// Rows of the synthetic local maps: one more than a block.
+    const LOCAL_ROWS: usize = (1 << LOG_ROWS) + 1;
+    /// Their source columns: the constant and two cells.
+    const LOCAL_COLUMNS: usize = 3;
+    const TAIL_ROWS: usize = 300;
+
+    fn map(rows: usize, columns: usize, entries: &[(usize, usize)]) -> PreparedVirtualMap {
+        let mut table = vec![Vec::new(); rows];
+        for &(row, column) in entries {
+            table[row].push(column);
+        }
+        PreparedVirtualMap::from_implicit(CscMatrix::try_from_binary_rows(columns, table).expect("csr"))
+            .expect("map")
+    }
+
+    /// The four local maps with `rows` rows; `prev` and `first` take the
+    /// given entries.
+    fn locals(rows: usize, prev: &[(usize, usize)], first: &[(usize, usize)]) -> [PreparedVirtualMap; 4] {
+        [
+            map(rows, LOCAL_COLUMNS, &[(0, 0), (1, 1), (2, 2), (rows - 1, 1)]),
+            map(rows, LOCAL_COLUMNS, prev),
+            map(rows, LOCAL_COLUMNS, first),
+            map(rows, LOCAL_COLUMNS, &[(9, 0), (9, 2)]),
+        ]
+    }
+
+    /// An alias prefix of length `len` for `n` instances: the constant, then
+    /// reads cycling over the last instance's cells.
+    fn digest(n: usize, len: usize) -> Vec<usize> {
+        let first = 1 + (n - 1) * (LOCAL_COLUMNS - 1);
+        (0..len)
+            .map(|sigma| if sigma == 0 { 0 } else { first + (sigma - 1) % (LOCAL_COLUMNS - 1) })
+            .collect()
+    }
+
+    /// `ChainedGeometry::new` on `n` instances of the maps with an identity
+    /// tail whose alias prefix is `aliases`, at the narrowest width the
+    /// grids admit.
+    fn geometry(
+        n: usize,
+        [local, prev, first, last]: &[PreparedVirtualMap; 4],
+        aliases: &[usize],
+    ) -> Result<ChainedGeometry, ChainedError> {
+        let identity: Vec<(usize, usize)> = (0..TAIL_ROWS).map(|row| (row, row)).collect();
+        let tail_map = map(TAIL_ROWS, TAIL_ROWS, &identity);
+        let parts = ChainedPackedSourceParts { local, prev, first, last, instances: n };
+        let tail = ChainedSourceTail {
+            map: &tail_map,
+            row_offset: local.rows() * n,
+            source_offset: 1 + (LOCAL_COLUMNS - 1) * n,
+            aliases,
+        };
+        let cells = local.rows() * n + TAIL_ROWS;
+        let native_bits = (n.ilog2() as usize + LOG_ROWS + 1).max(cells.next_power_of_two().ilog2() as usize);
+        ChainedGeometry::new(&parts, &tail, native_bits)
+    }
+
+    #[test]
+    fn geometry_admits_only_what_the_tensors_carry() {
+        let good = locals(LOCAL_ROWS, &[(5, 1), (5, 2)], &[(7, 0)]);
+        for n in [8usize, 16, 128] {
+            assert!(geometry(n, &good, &digest(n, 257)).is_ok(), "n = {n}");
+        }
+        let aliases = digest(8, 257);
+        // The transposes read an instance row as one word of 8..=128 bits.
+        for n in [2usize, 4, 256, 512] {
+            assert_eq!(geometry(n, &good, &digest(n, 257)), Err(ChainedError::Instances), "n = {n}");
+        }
+        // The prover's layout starts the tail inside the second sub-block.
+        for rows in [(1 << LOG_ROWS) - 1, 2 << LOG_ROWS] {
+            let local_rows = locals(rows, &[(5, 1), (5, 2)], &[(7, 0)]);
+            assert_eq!(geometry(8, &local_rows, &aliases), Err(ChainedError::LocalRows), "{rows} rows");
+        }
+        // The tail cells start off an instance-row word.
+        assert_eq!(geometry(8, &good, &digest(8, 258)), Err(ChainedError::Tail));
+        // Tail row 0 is not the constant.
+        let mut shifted = aliases.clone();
+        shifted[0] = 1;
+        assert_eq!(geometry(8, &good, &shifted), Err(ChainedError::Tail));
+        // A digest alias reads the constant, the first instance's block or
+        // a tail cell.
+        for source in [0, 1, 1 + (LOCAL_COLUMNS - 1) * 8] {
+            let mut stray = aliases.clone();
+            stray[1] = source;
+            assert_eq!(geometry(8, &good, &stray), Err(ChainedError::Tail), "source {source}");
+        }
+        // The chain link reads the constant.
+        let prev_constant = locals(LOCAL_ROWS, &[(5, 0), (5, 2)], &[(7, 0)]);
+        assert_eq!(geometry(8, &prev_constant, &aliases), Err(ChainedError::Boundary));
+        // The first instance's boundary map reads a nonconstant cell.
+        let first_cell = locals(LOCAL_ROWS, &[(5, 1), (5, 2)], &[(7, 0), (8, 1)]);
+        assert_eq!(geometry(8, &first_cell, &aliases), Err(ChainedError::Boundary));
     }
 }

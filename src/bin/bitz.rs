@@ -150,17 +150,16 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio, exit};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use bitz::ext_proj::{ExtProjParams, sample_proj_point, sample_proj_prime};
 use bitz::ligerito::packed_vars;
 use bitz::ligerito_flock::FlockCommitHint;
 use bitz::ligerito_flock::LigeritoSelection;
 use bitz::ligerito_flock::{
     OodRoundParams, absorb_standalone_mod_q_claim, absorb_standalone_mod_q_statement,
-    ood_round_params, prove_mle_eval_mod_q_ligerito_with_ood,
-    verify_mle_eval_mod_q_ligerito_runtime,
+    ood_round_params, prove_mle_eval_mod_q_ligerito_with_ood, sample_standalone_instance,
+    standalone_q_bits, verify_mle_eval_mod_q_ligerito_runtime, weakest_fold_round_grinding,
 };
 use bitz::ligerito_flock::{commit_rs_ligerito_rows, mle_eval_mod_q_lig_size_breakdown};
-use bitz::pcs::{IntegerMatrixLayout, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
+use bitz::pcs::{IntegerMatrixLayout, mod_q_num_chunks, smallest_generator};
 use bitz::piop::spartan::{IopSecurityProfile, Lambda100, Lambda128};
 use bitz::transcript::Blake3Transcript;
 use flock_core::pcs::ligerito::LigeritoSecurityConfig;
@@ -222,76 +221,6 @@ fn peak_mb() -> f64 {
     PEAK.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0)
 }
 
-/// The evaluation prime of the single-claim path is SAMPLED from the
-/// transcript after the commitment, uniformly among the primes of the
-/// widest admissible dyadic interval `[2^(b−1), 2^b)`: the paper's
-/// Strategy-1 field policy (`b ≤ 113`) capped by the one-chunk exponent-
-/// fold width `c_w = 127 − t − W` (so the fold integers never wrap and the
-/// forest runs once) — exactly the width rule of the Spartan security
-/// profile's derived interval. The claim `⟨eq(·, r₁) ⊗ eq(·, r₂), f⟩ = μ`
-/// then uses a transcript-sampled point `(r₁, r₂) ∈ F_q^{t+s}`.
-fn standalone_q_bits(p: &IntegerMatrixLayout) -> usize {
-    mod_q_chunk_width(p).min(113)
-}
-
-/// Miller–Rabin rounds of the transcript prime sampler (the library
-/// default: a composite survives with probability `≈ 2^-128`).
-fn standalone_prime_sampler(q_bits: usize) -> ExtProjParams {
-    ExtProjParams {
-        prime_bits: q_bits,
-        ..ExtProjParams::default()
-    }
-}
-
-/// The transcript-sampled instance of a standalone claim: the prime, the
-/// evaluation point, and the `eq` weight tables over `F_q` it induces.
-struct StandaloneInstance {
-    q: u128,
-    row_weights_q: Vec<u128>,
-    col_weights_q: Vec<u128>,
-}
-
-/// Round-1-style draw after the statement is bound: `q` from the interval,
-/// then the point coordinates uniformly mod `q`. Both sides run this; the
-/// prover's precomputed instance must match (asserted by the caller).
-fn sample_standalone_instance(
-    transcript: &mut Blake3Transcript,
-    p: &IntegerMatrixLayout,
-    q_bits: usize,
-) -> StandaloneInstance {
-    let _g = tracing::info_span!("mq:sample_instance").entered();
-    let q = sample_proj_prime(transcript, &standalone_prime_sampler(q_bits))
-        .expect("bounded standalone prime search");
-    let arith = field::FpCtx::from_prime_u128(q);
-    let r1: Vec<u128> = (0..p.row_vars)
-        .map(|_| sample_proj_point(transcript, q))
-        .collect();
-    let r2: Vec<u128> = (0..p.col_vars)
-        .map(|_| sample_proj_point(transcript, q))
-        .collect();
-    StandaloneInstance {
-        q,
-        row_weights_q: eq_table_mod_q(&arith, &r1),
-        col_weights_q: eq_table_mod_q(&arith, &r2),
-    }
-}
-
-/// `eq(b, r) mod q` over `b ∈ {0,1}^{r.len()}` (index bit `k` ↔ `r[k]`).
-fn eq_table_mod_q(arith: &field::FpCtx<2>, r: &[u128]) -> Vec<u128> {
-    let q = arith.modulus_u128();
-    let mut table = vec![1u128 % q];
-    for &coord in r {
-        let mut next = Vec::with_capacity(table.len() * 2);
-        for &v in &table {
-            let v1 = arith.mul_u128(v, coord);
-            let v0 = if v >= v1 { v - v1 } else { v + q - v1 };
-            next.push(v0);
-            next.push(v1);
-        }
-        table = next;
-    }
-    table
-}
 
 fn median(mut v: Vec<f64>) -> f64 {
     v.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -811,7 +740,9 @@ fn lig_security(cfg: &LigeritoSecurityConfig) -> LigSecurity {
     let mut min = f64::INFINITY;
     for lv in &cfg.levels {
         let q = lv.expected_eps_query_bits + lv.grinding_bits as f64;
-        let pg = lv.expected_eps_pg_bits + lv.fold_grinding_bits as f64;
+        // The weakest fold round: a UDR level's taper leaves its last round
+        // `k − 1` bits short of `fold_grinding_bits`.
+        let pg = lv.expected_eps_pg_bits + weakest_fold_round_grinding(lv) as f64;
         min = min.min(q).min(pg);
         if let Some(ood) = lv.expected_eps_ood_bits {
             min = min.min(ood);

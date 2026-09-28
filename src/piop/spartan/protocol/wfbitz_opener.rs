@@ -13,9 +13,10 @@
 //! of the low gate coordinates — and BitZ's `LinearClaim` is exactly that:
 //! row weights, column weights, a target modulo `q`. The commitment is the
 //! same flock commitment over the same per-column bit rows. BitZ's fold
-//! bound (`(q − 1)(2^t + 1) < 2^127`) coincides with the direct-opening
-//! prime cap the profile already enforces at word width one
-//! (`q_bits ≤ 126 − t`), so the profile's primes need no change.
+//! gate (`(q − 1)(2^t + 1) < 2^128 − 1 = ord(g)`, [`BitZParams::new`]) is
+//! implied by the direct-opening prime cap the profile already enforces at
+//! word width one (`q_bits ≤ c_w = 126 − t`, under which
+//! `(q − 1)(2^t + 1) < 2^127`), so the profile's primes need no change.
 //!
 //! BitZ runs its own transcript (spongefish with a hint channel). It is
 //! forked from the outer transcript after the terminal grinding boundary:
@@ -28,17 +29,23 @@
 //! Soundness of the opening: BitZ draws only `GF(2^128)` challenges (the
 //! fold batching point, the GKR rounds, the reduction sumcheck, the ring
 //! switch) — every term sits at the field floor — plus flock's Ligerito at
-//! the selected ladder; there is no mod-`q` draw and nothing to grind
-//! outside Ligerito. Ligerito's grinding is the ladder's ([`WfbitzLigerito`]):
+//! the selected ladder; there is no mod-`q` draw and nothing is ground
+//! outside Ligerito, so [`WfbitzOpener::prepare`] books the GKR and
+//! ring-switch terms without grinding and refuses a profile they cannot
+//! reach (`λ ≥ 127`; design-only schedules excepted, as at instantiation),
+//! and [`prove`] and [`verify`] refuse a prefix that credits either
+//! grinding. Ligerito's grinding is the ladder's ([`WfbitzLigerito`]):
 //! BitZ's embedded `fast` ladder is a 100-bit Johnson ladder with query
-//! and fold grinding as shipped; the crate's validated unique-decoding
-//! ladders carry fold grinding to the profile's target.
+//! and fold grinding as shipped; the crate's `udrg` ladders (and bare
+//! `udr` = `udrg:1:4`) carry fold grinding to the profile's target, while
+//! `udr:<r>:<k>` validates without it.
 //!
 //! Round 0. A Johnson ladder needs the out-of-domain sample that pins the
 //! list before the first fold challenge (paper `a:OOD`). BitZ ships
 //! without one; here the crate's Round 0 runs exactly as it does for the
 //! crate's own opener — bound on the outer transcript right after the
-//! statement, before the prime draw, with the profile's grinding
+//! statement and a resolved ladder's policy digest, before the prime
+//! draw, with the profile's grinding
 //! ([`WfbitzOpener::prepare`] adopts the ladder's Round-0 accounting into
 //! the security parameters) — and its claim `MLE[P](ζ⃗) = y` is batched
 //! into BitZ's final Ligerito opening (`η_ood·eq(·, ζ⃗)` into the basis,
@@ -55,7 +62,9 @@ use crate::{
         pcs::Pcs as BitzPcs,
         transcript::{Proof as BitzTranscriptProof, build_prover, build_verifier},
     },
-    ligerito_flock::{FlockCommitHint, LigeritoSelection, OodRound, ood_round_bits},
+    ligerito_flock::{
+        FlockCommitHint, LigeritoSelection, OodRound, ResolvedLigerito, ood_round_bits,
+    },
     pcs::IntegerMatrixLayout,
     piop::spartan::profile::IopSecurityProfile,
     transcript::traits::Transcript,
@@ -81,9 +90,9 @@ pub enum WfbitzLigerito {
     /// 100-bit Johnson ladder, rate 1/2, `k = 4`, query and fold grinding).
     Fast,
     /// One of the crate's resolved selections at the profile's target
-    /// (`udr:<r>:<k>` validated unique decoding with fold grinding; a
-    /// Johnson `custom:<r>:<k>` ladder runs but without the crate's early
-    /// Round 0).
+    /// (`udr:<r>:<k>` validated unique decoding, `udrg:<r>:<k>` the same
+    /// with fold grinding; a Johnson `custom:<r>:<k>` ladder, which
+    /// [`WfbitzOpener::prepare`] pairs with the crate's Round 0).
     Selected(LigeritoSelection),
 }
 
@@ -115,6 +124,10 @@ pub struct WfbitzOpener {
     security: LigeritoSecurityConfig,
     /// The ladder's identity, bound with the statement.
     digest: [u8; 32],
+    /// A resolved selection as the crate's own opener carries it (`None`
+    /// for BitZ's `fast` ladder): its policy digest is bound after the
+    /// statement, before Round 0.
+    resolved: Option<ResolvedLigerito>,
     /// `log₂` of the packed message (`m − 7`): the Round-0 point's arity.
     packed_vars: usize,
 }
@@ -134,7 +147,7 @@ impl WfbitzOpener {
         }
         let shape = Shape::new(layout.row_vars, layout.col_vars)
             .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ shape: {error:?}")))?;
-        let (pcs, security, digest) = match ligerito {
+        let (pcs, security, digest, resolved) = match ligerito {
             WfbitzLigerito::Fast => {
                 let pcs = BitzPcs::new(&shape, HashKind::Blake3)
                     .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ pcs: {error:?}")))?;
@@ -147,7 +160,7 @@ impl WfbitzOpener {
                     .map_err(ProtocolError::LigeritoConfig)?;
                 security.hash = "blake3".to_owned();
                 let digest = *blake3::hash(source.as_bytes()).as_bytes();
-                (pcs, security, digest)
+                (pcs, security, digest, None)
             }
             WfbitzLigerito::Selected(selection) => {
                 let resolved = selection
@@ -155,7 +168,8 @@ impl WfbitzOpener {
                     .map_err(ProtocolError::LigeritoConfig)?;
                 let pcs = BitzPcs::with_security(&shape, resolved.security(), LigeritoProfile::Fast)
                     .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ pcs: {error:?}")))?;
-                (pcs, resolved.security().clone(), resolved.digest())
+                let (security, digest) = (resolved.security().clone(), resolved.digest());
+                (pcs, security, digest, Some(resolved))
             }
         };
         Ok(Self {
@@ -165,6 +179,7 @@ impl WfbitzOpener {
             ligerito,
             security,
             digest,
+            resolved,
             packed_vars: packed_variables(&layout)?,
         })
     }
@@ -173,7 +188,10 @@ impl WfbitzOpener {
     /// security parameters adopt the ladder's Round-0 accounting (the
     /// out-of-domain sample and its grinding for a Johnson ladder; nothing
     /// in unique decoding), so [`prove`] runs Round 0 exactly as the
-    /// crate's own opener does ([`super::PreparedRelation::with_ligerito`]).
+    /// crate's own opener does ([`super::PreparedRelation::with_ligerito`]),
+    /// and drop the forest and ring-switch grinding the scheme does not run
+    /// (a profile those bare terms cannot reach, `λ ≥ 127`, is refused;
+    /// design-only schedules excepted, as at instantiation).
     pub fn prepare<P: IopSecurityProfile, S: RelationSpec>(
         spec: S,
         ligerito: WfbitzLigerito,
@@ -183,6 +201,7 @@ impl WfbitzOpener {
         let opener = Self::new(spec.committed_layout(), ligerito, target_bits)?;
         let mut security = instantiate_profile::<P, S>(&spec)?;
         security.adopt_ood_round(opener.ood_bits())?;
+        security.adopt_ungrinded_opener(P::DESIGN_ONLY)?;
         let prefix = PreparedRelationPrefix::with_security(spec, security)?;
         Ok((prefix, opener))
     }
@@ -214,13 +233,19 @@ impl WfbitzOpener {
         &self.pcs
     }
 
-    /// The opener configuration the statement binding covers: the ladder's
-    /// prover and verifier configurations (no policy digest of the crate's
-    /// kind, no Round 0).
+    /// The opener configuration the statement binding covers: a resolved
+    /// selection as [`super::PreparedRelation::with_ligerito`] carries it
+    /// (its policy digest bound after the statement, before Round 0; its
+    /// configurations are the ones the scheme runs), and BitZ's `fast`
+    /// ladder as its prover and verifier configurations (no policy digest
+    /// of the crate's kind).
     pub fn opener(&self) -> Opener {
-        Opener::Custom {
-            prover: Some(self.pcs.prover_config().clone()),
-            verifier: Some(self.pcs.verifier_config().clone()),
+        match &self.resolved {
+            Some(resolved) => Opener::Resolved(resolved.clone()),
+            None => Opener::Custom {
+                prover: Some(self.pcs.prover_config().clone()),
+                verifier: Some(self.pcs.verifier_config().clone()),
+            },
         }
     }
 
@@ -232,6 +257,7 @@ impl WfbitzOpener {
             .pcs
             .commit(&self.shape, rows)
             .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ commit: {error:?}")))?;
+        validate_commitment(&self.layout, &hint.commitment, self.pcs.prover_config())?;
         Ok(hint)
     }
 
@@ -241,14 +267,34 @@ impl WfbitzOpener {
             .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ parameters: {error:?}")))
     }
 
+    /// Round 0 as it runs under `ood` (the executed parameters): the
+    /// collision bound plus that grinding, the profile's `step0:ood-draw`
+    /// term; `None` when no round runs.
+    fn round_0_bits(&self, ood: Option<crate::ligerito_flock::OodRoundParams>) -> Option<f64> {
+        Some(self.ood_bits()? + f64::from(ood?.grinding_bits))
+    }
+
     /// The round-by-round accounting of the opening: the ladder's weakest
     /// level (its paper-predicted proximity-gap and query terms with their
-    /// grinding) and the `GF(2^128)` floor of every other draw.
-    pub fn opening_bits(&self) -> (f64, &'static str) {
+    /// grinding), Round 0 under the parameters the proof runs (`ood`: a
+    /// relation's `prefix.security().ood`, which [`Self::prepare`] adopts at
+    /// the profile's λ) and the `GF(2^128)` floor of every other draw.
+    pub fn opening_bits(
+        &self,
+        ood: Option<crate::ligerito_flock::OodRoundParams>,
+    ) -> (f64, &'static str) {
+        // Round 0 runs exactly for a Johnson ladder; any other pairing is
+        // inconsistent (as a Ligerito report is, `validate_report`), and
+        // nothing is credited.
+        if self.ood_bits().is_some() != ood.is_some() {
+            return (0.0, "round 0 inconsistent with the ladder");
+        }
         let mut weakest = (f64::INFINITY, "ligerito");
         for level in &self.security.levels {
             let (pg, query) = level.paper_predicted_bits();
-            let pg = pg + level.fold_grinding_bits as f64;
+            // The level's weakest fold round (a unique-decoding level's last
+            // round keeps `k − 1` bits less than `fold_grinding_bits`).
+            let pg = pg + crate::ligerito_flock::weakest_fold_round_grinding(level) as f64;
             let query = query + level.grinding_bits as f64;
             if pg < weakest.0 {
                 weakest = (pg, "ligerito proximity gap");
@@ -258,15 +304,9 @@ impl WfbitzOpener {
             }
         }
         // Round 0 (a Johnson ladder): the collision bound plus its grinding.
-        if let Some(bits) = self.ood_bits() {
-            let grinding = crate::ligerito_flock::ood_round_params(
-                &self.security,
-                self.packed_vars,
-                self.security.target_security_bits as u32,
-            )
-            .map_or(0.0, |params| f64::from(params.grinding_bits));
-            if bits + grinding < weakest.0 {
-                weakest = (bits + grinding, "round 0 (ood collision)");
+        if let Some(bits) = self.round_0_bits(ood) {
+            if bits < weakest.0 {
+                weakest = (bits, "round 0 (ood collision)");
             }
         }
         // Every other draw is a GF(2^128) challenge: the crate's floor.
@@ -330,18 +370,22 @@ impl OpeningProof for WfbitzOpeningProof {
 
 impl WfbitzOpeningProof {
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        let mut at = 0;
+        let mut at = 0usize;
         let mut read = |len: Option<usize>| -> Option<Vec<u8>> {
             let len = match len {
                 Some(len) => len,
                 None => {
-                    let len = u64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?) as usize;
-                    at += 8;
+                    let end = at.checked_add(8)?;
+                    let word = bytes.get(at..end)?.try_into().ok()?;
+                    let len = usize::try_from(u64::from_le_bytes(word)).ok()?;
+                    at = end;
                     len
                 }
             };
-            let stream = bytes.get(at..at + len)?.to_vec();
-            at += len;
+            // A declared length past the end is a truncation, not an overflow.
+            let end = at.checked_add(len)?;
+            let stream = bytes.get(at..end)?.to_vec();
+            at = end;
             Some(stream)
         };
         let narg = read(None)?;
@@ -397,6 +441,19 @@ fn linear_claim(
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))
 }
 
+/// The scheme grinds none of its GF(2^128) rounds: a profile that credits
+/// forest or ring-switch grinding (one not built by
+/// [`WfbitzOpener::prepare`]) would bind what does not run.
+fn check_ungrinded<S: RelationSpec>(
+    prefix: &PreparedRelationPrefix<S>,
+) -> Result<(), ProtocolError> {
+    let security = prefix.security();
+    if security.forest_round_grinding_bits != 0 || security.ring_switch_grinding_bits != 0 {
+        return Err(ProtocolError::UnsupportedProfile);
+    }
+    Ok(())
+}
+
 /// Proves the relation, the bitified claim discharged through BitZ.
 pub fn prove<T: Transcript + Send, S: RelationSpec>(
     transcript: &mut T,
@@ -406,14 +463,23 @@ pub fn prove<T: Transcript + Send, S: RelationSpec>(
     hint: &FlockCommitHint,
 ) -> Result<WfbitzProof, ProtocolError> {
     let spec = prefix.layout();
+    // The direct discharge only: the claim of a relation with a virtual map
+    // is about the derived grid, not the committed one.
+    if spec.map().is_some() {
+        return Err(ProtocolError::UnsupportedDischarge);
+    }
     spec.check_witness(witness)?;
     if prefix.params() != *opener.layout() {
         return Err(ProtocolError::RelationWitnessLayoutMismatch);
     }
+    check_ungrinded(prefix)?;
     validate_bit_rows(opener.layout(), hint.rows())?;
+    validate_commitment(opener.layout(), &hint.commitment, opener.pcs().prover_config())?;
+    // The statement, a resolved ladder's policy digest and Round 0, as the
+    // runner binds them; then the session and the ladder's identity (the
+    // `fast` ladder's only digest: it has no policy digest).
     let configuration = opener.opener();
     let (binding, ood) = bind_prover_statement(transcript, prefix, &configuration, hint)?;
-    let ood = ood.into_bound_claim();
     transcript.absorb_slice(SESSION);
     transcript.absorb_slice(&opener.digest());
     let proved = prove_piop(transcript, prefix, witness, &binding)?;
@@ -425,6 +491,7 @@ pub fn prove<T: Transcript + Send, S: RelationSpec>(
         let _scope = tracing::info_span!("step5:bitz-claim").entered();
         linear_claim(&params, &proved.opening, &proved.table, prime)?
     };
+    let ood = ood.opening_claim(transcript, hint);
     let tag = fork_tag(transcript);
     let mut state = build_prover(SESSION, &tag);
     state.public_message(&proved.bridge_digest);
@@ -457,13 +524,18 @@ pub fn verify<T: Transcript + Send, S: RelationSpec>(
     commitment: &Commitment,
     proof: &WfbitzProof,
 ) -> Result<(), ProtocolError> {
+    if prefix.layout().map().is_some() {
+        return Err(ProtocolError::UnsupportedDischarge);
+    }
     if prefix.params() != *opener.layout() {
         return Err(ProtocolError::RelationWitnessLayoutMismatch);
     }
+    check_ungrinded(prefix)?;
     let configuration = opener.opener();
+    let binding_config = configuration.binding_config()?;
+    validate_commitment(opener.layout(), commitment, &binding_config)?;
     let (binding, ood) =
         bind_verifier_statement(transcript, prefix, &configuration, commitment, proof.bitz().ood())?;
-    let ood = ood.into_bound_claim();
     transcript.absorb_slice(SESSION);
     transcript.absorb_slice(&opener.digest());
     let verified = verify_piop(transcript, prefix, &binding, proof.prefix())?;
@@ -472,8 +544,11 @@ pub fn verify<T: Transcript + Send, S: RelationSpec>(
     let _step5 = tracing::info_span!("step5:open_verify").entered();
     let params = opener.params(modulus_u128(prime))?;
     let claim = linear_claim(&params, &verified.opening, &verified.table, prime)?;
-    let tag = fork_tag(transcript);
     let opening = proof.bitz();
+    let ood = ood
+        .opening_claim(transcript, opener.packed_vars, opening.ood())
+        .map_err(ProtocolError::Bitz)?;
+    let tag = fork_tag(transcript);
     let bitz_proof = BitzTranscriptProof {
         narg_string: opening.narg.clone(),
         hints: opening.hints.clone(),
@@ -486,7 +561,172 @@ pub fn verify<T: Transcript + Send, S: RelationSpec>(
             opener.pcs(),
             Root(commitment.root),
             state,
-            ood.as_ref().map(|(claim, _)| (claim.point.as_slice(), claim.y)),
+            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+        )
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ verify: {error:?}")))
+}
+
+/// The session tag of the standalone opening's fork.
+const STANDALONE_SESSION: &[u8] = b"bitz/wfbitz-opener/standalone/v1";
+
+impl WfbitzOpener {
+    /// Round 0 at the ladder's own target (`None` for a unique-decoding
+    /// ladder), as the crate's standalone opener runs it.
+    fn standalone_ood(&self) -> Option<crate::ligerito_flock::OodRoundParams> {
+        crate::ligerito_flock::ood_round_params(
+            &self.security,
+            self.packed_vars,
+            self.security.target_security_bits as u32,
+        )
+    }
+}
+
+/// The statement of a standalone claim, bound the way the crate's own
+/// standalone opener (the `bitz` CLI) binds it: the frame (commitment, the
+/// ladder's verifier configuration, the shape, the generator, the prime
+/// width, the Round-0 parameters), then the ladder's digest.
+fn bind_standalone_statement<T: Transcript>(
+    transcript: &mut T,
+    opener: &WfbitzOpener,
+    commitment: &Commitment,
+    q_bits: usize,
+    ood: Option<crate::ligerito_flock::OodRoundParams>,
+) {
+    crate::ligerito_flock::absorb_standalone_mod_q_statement(
+        transcript,
+        commitment,
+        &opener.layout,
+        bitz_generator(),
+        q_bits,
+        ood,
+        opener.pcs.verifier_config(),
+    );
+    transcript.absorb_slice(STANDALONE_SESSION);
+    transcript.absorb_slice(&opener.digest);
+}
+
+/// The claim of a standalone opening once its statement and Round 0 are
+/// bound: the transcript-sampled prime and point
+/// ([`crate::ligerito_flock::sample_standalone_instance`], the CLI's raw
+/// claim) as BitZ's factored claim with value `claimed`.
+fn standalone_claim<T: Transcript>(
+    transcript: &mut T,
+    opener: &WfbitzOpener,
+    q_bits: usize,
+    claimed: u128,
+) -> Result<(BitZParams, LinearClaim), ProtocolError> {
+    let instance =
+        crate::ligerito_flock::sample_standalone_instance(transcript, &opener.layout, q_bits);
+    if claimed >= instance.q {
+        return Err(ProtocolError::LigeritoConfig("BitZ claim: value not reduced".into()));
+    }
+    crate::ligerito_flock::absorb_standalone_mod_q_claim(transcript, instance.q, claimed);
+    let params = opener.params(instance.q)?;
+    let claim = LinearClaim::new(
+        &params,
+        instance.row_weights_q,
+        instance.col_weights_q,
+        claimed,
+    )
+    .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
+    Ok((params, claim))
+}
+
+/// The honest value of the standalone claim on the committed bits of
+/// `hint`: the statement, Round 0 and the prime and point draws replayed as
+/// [`prove_standalone`] runs them, then the bits folded against the drawn
+/// weights. Callers compute it once, outside any timer (the claim is the
+/// statement's; the CLI does the same).
+pub fn standalone_evaluation(
+    opener: &WfbitzOpener,
+    hint: &FlockCommitHint,
+) -> Result<u128, ProtocolError> {
+    validate_bit_rows(&opener.layout, hint.rows())?;
+    let q_bits = crate::ligerito_flock::standalone_q_bits(&opener.layout);
+    let ood = opener.standalone_ood();
+    let mut transcript = crate::transcript::Blake3Transcript::new();
+    bind_standalone_statement(&mut transcript, opener, &hint.commitment, q_bits, ood);
+    let _ = crate::ligerito_flock::bind_prover_ood(&mut transcript, hint, ood);
+    let instance =
+        crate::ligerito_flock::sample_standalone_instance(&mut transcript, &opener.layout, q_bits);
+    let params = opener.params(instance.q)?;
+    let unresolved = LinearClaim::new(&params, instance.row_weights_q, instance.col_weights_q, 0)
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
+    let folds =
+        crate::wfbitz::fold::fold_columns(&opener.shape, hint.rows(), unresolved.row_exponents());
+    Ok(crate::wfbitz::fold::reconstruct(&unresolved, &folds, instance.q))
+}
+
+/// Proves a standalone claim `⟨eq(·, r₁) ⊗ eq(·, r₂), f⟩ = claimed` on the
+/// committed bits of `hint` — the `bitz` CLI's raw claim (statement frame,
+/// Round 0 for a Johnson ladder, transcript-sampled prime and point, claim
+/// frame) opened by BitZ's scheme on a transcript forked from that state.
+pub fn prove_standalone(
+    opener: &WfbitzOpener,
+    hint: &FlockCommitHint,
+    claimed: u128,
+) -> Result<WfbitzOpeningProof, ProtocolError> {
+    validate_bit_rows(&opener.layout, hint.rows())?;
+    let q_bits = crate::ligerito_flock::standalone_q_bits(&opener.layout);
+    let ood_params = opener.standalone_ood();
+    let mut transcript = crate::transcript::Blake3Transcript::new();
+    bind_standalone_statement(&mut transcript, opener, &hint.commitment, q_bits, ood_params);
+    let ood = crate::ligerito_flock::bind_prover_ood(&mut transcript, hint, ood_params)
+        .opening_claim(&mut transcript, hint);
+    let (params, claim) = standalone_claim(&mut transcript, opener, q_bits, claimed)?;
+    let tag = fork_tag(&mut transcript);
+    let mut state = build_prover(STANDALONE_SESSION, &tag);
+    BitZProver::new(params, WINDOW)
+        .prove(
+            &claim,
+            opener.pcs(),
+            hint,
+            &mut state,
+            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+        )
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ prove: {error:?}")))?;
+    let BitzTranscriptProof { narg_string, hints } = state.finish();
+    Ok(WfbitzOpeningProof {
+        narg: narg_string,
+        hints,
+        ood: ood.map(|claim| claim.round),
+    })
+}
+
+/// Verifies a [`prove_standalone`] proof of `claimed` against `commitment`.
+pub fn verify_standalone(
+    opener: &WfbitzOpener,
+    commitment: &Commitment,
+    claimed: u128,
+    proof: &WfbitzOpeningProof,
+) -> Result<(), ProtocolError> {
+    validate_commitment(&opener.layout, commitment, opener.pcs.prover_config())?;
+    let q_bits = crate::ligerito_flock::standalone_q_bits(&opener.layout);
+    let ood_params = opener.standalone_ood();
+    let mut transcript = crate::transcript::Blake3Transcript::new();
+    bind_standalone_statement(&mut transcript, opener, commitment, q_bits, ood_params);
+    let ood = crate::ligerito_flock::bind_verifier_ood(
+        &mut transcript,
+        opener.packed_vars,
+        ood_params,
+        proof.ood.as_ref(),
+    )
+    .map_err(ProtocolError::Bitz)?
+    .opening_claim(&mut transcript, opener.packed_vars, proof.ood.as_ref())
+    .map_err(ProtocolError::Bitz)?;
+    let (params, claim) = standalone_claim(&mut transcript, opener, q_bits, claimed)?;
+    let tag = fork_tag(&mut transcript);
+    let bitz_proof = BitzTranscriptProof {
+        narg_string: proof.narg.clone(),
+        hints: proof.hints.clone(),
+    };
+    BitZVerifier::new(params, WINDOW)
+        .verify(
+            &claim,
+            opener.pcs(),
+            Root(commitment.root),
+            build_verifier(STANDALONE_SESSION, &tag, &bitz_proof),
+            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
         )
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ verify: {error:?}")))
 }
@@ -552,7 +792,7 @@ mod tests {
             assert_eq!(proof.bitz().ood.is_some(), prefix.security().ood.is_some());
             let bytes = proof.bitz().to_bytes();
             assert_eq!(WfbitzOpeningProof::from_bytes(&bytes).as_ref(), Some(proof.bitz()));
-            let (bits, term) = opener.opening_bits();
+            let (bits, term) = opener.opening_bits(prefix.security().ood);
             assert!(bits >= 100.0, "{ladder:?}: {bits} bits ({term})");
             if proof.bitz().ood.is_some() {
                 // A wrong out-of-domain value is caught by the batched opening.
@@ -569,6 +809,61 @@ mod tests {
             let last = tampered.bitz().hints.len() - 1;
             tampered.bitz_mut().hints[last] ^= 1;
             assert!(verify(&mut Blake3Transcript::new(), &prefix, &opener, &hint.commitment, &tampered).is_err());
+        }
+    }
+
+    /// The standalone claim (the CLI's raw claim through BitZ's scheme):
+    /// Round 0 runs for a Johnson ladder and is absent for a unique-decoding
+    /// one; the honest value verifies, and a different value, a changed
+    /// Round-0 value, a stray Round-0 record and a flipped byte do not.
+    #[test]
+    fn standalone_claim_binds_its_value_and_round_0() {
+        let shape = Shape::reference(22).unwrap();
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let rows: Vec<Vec<u64>> = (0..shape.columns())
+            .map(|_| (0..shape.rows() / 64).map(|_| next()).collect())
+            .collect();
+        for ladder in ["custom:1:4", "udr:1:4"] {
+            let opener =
+                WfbitzOpener::new(shape.layout(), WfbitzLigerito::parse(ladder, 100).unwrap(), 100)
+                    .unwrap();
+            let hint = opener.commit(rows.clone()).unwrap();
+            let claimed = standalone_evaluation(&opener, &hint).unwrap();
+            let proof = prove_standalone(&opener, &hint, claimed).unwrap();
+            assert_eq!(proof.ood.is_some(), opener.ood_bits().is_some(), "{ladder}");
+            verify_standalone(&opener, &hint.commitment, claimed, &proof).unwrap();
+            let bytes = proof.to_bytes();
+            assert_eq!(WfbitzOpeningProof::from_bytes(&bytes).as_ref(), Some(&proof));
+            assert!(
+                verify_standalone(&opener, &hint.commitment, claimed ^ 1, &proof).is_err(),
+                "{ladder}: a different value"
+            );
+            let mut tampered = proof.clone();
+            match tampered.ood.as_mut() {
+                Some(round) => round.y = round.y + field::Gf128::ONE,
+                None => {
+                    tampered.ood = Some(OodRound {
+                        y: field::Gf128::ONE,
+                        nonce: None,
+                    })
+                }
+            }
+            assert!(
+                verify_standalone(&opener, &hint.commitment, claimed, &tampered).is_err(),
+                "{ladder}: Round 0"
+            );
+            let mut tampered = proof.clone();
+            tampered.narg[9] ^= 1;
+            assert!(
+                verify_standalone(&opener, &hint.commitment, claimed, &tampered).is_err(),
+                "{ladder}: a flipped byte"
+            );
         }
     }
 
@@ -590,6 +885,257 @@ mod tests {
         let proof = prove(&mut Blake3Transcript::new(), &prefix, &fast, &witness, &hint).unwrap();
         verify(&mut Blake3Transcript::new(), &prefix, &fast, &hint.commitment, &proof).unwrap();
         assert!(verify(&mut Blake3Transcript::new(), &udr_prefix, &udr, &hint.commitment, &proof).is_err());
+    }
+
+    /// Under a resolved ladder the statement phase is the crate's own
+    /// runner's ([`PreparedRelation::with_ligerito`]): the configuration
+    /// the statement binds is the one the scheme runs, the commitment is
+    /// the runner's, and the statement, the policy digest and Round 0 are
+    /// absorbed in the runner's order, so the Round-0 record of a proof is
+    /// the forest proof's.
+    #[test]
+    fn statement_phase_matches_the_runner() {
+        use crate::piop::spartan::{mul::MulWord, protocol as runner};
+
+        fn check<T: MulWord>(input: impl FnMut(usize) -> (T, T))
+        where
+            MulLayout<T>: RelationSpec<Witness = MulWitness<T>>,
+        {
+            let layout = MulLayout::<T>::new(1 << 15).unwrap().wfbitz_split(0).unwrap();
+            let witness = MulWitness::from_fn_with_layout(layout, input).unwrap();
+            let selection = LigeritoSelection::JOHNSON;
+            let forest =
+                PreparedRelation::new_with_profile_and_ligerito::<Lambda100>(layout, selection)
+                    .unwrap();
+            let (prefix, opener) = WfbitzOpener::prepare::<Lambda100, _>(
+                layout,
+                WfbitzLigerito::Selected(selection),
+                100,
+            )
+            .unwrap();
+            let configuration = opener.opener();
+            let resolved = configuration.resolved().expect("a resolved ladder");
+            assert_eq!(resolved.digest(), forest.ligerito_configuration().digest());
+            assert_eq!(resolved.digest(), opener.digest());
+            // What the statement binds and the commitment is checked against
+            // is what BitZ commits and opens under.
+            let bound = configuration.binding_config().unwrap();
+            assert_eq!(format!("{bound:?}"), format!("{:?}", opener.pcs().prover_config()));
+            assert_eq!(
+                format!("{:?}", configuration.verifier().unwrap()),
+                format!("{:?}", opener.pcs().verifier_config())
+            );
+            assert_eq!(prefix.security().ood, forest.security().ood);
+            assert!(prefix.security().ood.is_some());
+
+            let rows = witness.bitz_bit_rows();
+            let forest_hint = runner::commit(&forest, rows.clone()).unwrap();
+            let hint = opener.commit(rows).unwrap();
+            assert_eq!(hint.commitment.root, forest_hint.commitment.root);
+            let forest_proof =
+                runner::prove(&mut Blake3Transcript::new(), &forest, &witness, &forest_hint)
+                    .unwrap();
+            let proof =
+                prove(&mut Blake3Transcript::new(), &prefix, &opener, &witness, &hint).unwrap();
+            verify(&mut Blake3Transcript::new(), &prefix, &opener, &hint.commitment, &proof)
+                .unwrap();
+            assert!(proof.bitz().ood().is_some());
+            assert_eq!(proof.bitz().ood(), forest_proof.bitz().ood());
+        }
+
+        check::<u32>(|i| {
+            let i = i as u32;
+            (i.wrapping_mul(0x9e37_79b9) ^ 0x5bd1_e995, i.wrapping_mul(0x85eb_ca6b) ^ 0xc2b2_ae35)
+        });
+        check::<u64>(|i| {
+            let i = i as u64;
+            (i.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ 0x243f_6a88_85a3_08d3, !i.rotate_left(17))
+        });
+    }
+
+    /// The commitment is checked against the opener's configuration up
+    /// front on both sides, as the crate's own runner does: a commitment
+    /// that declares another rate, profile or size is refused as such, not
+    /// later by a transcript mismatch.
+    #[test]
+    fn commitment_configuration_is_checked_up_front() {
+        let multiplications = 1 << 15;
+        let witness = u32_witness(multiplications);
+        let layout = MulLayout::<u32>::new(multiplications).unwrap();
+        // Rate 1/8, the ladder of the paper's u32 rows.
+        let ladder = WfbitzLigerito::parse("custom:3:4", 100).unwrap();
+        let (prefix, opener) = WfbitzOpener::prepare::<Lambda100, _>(layout, ladder, 100).unwrap();
+        let mut hint = opener.commit(witness.bitz_bit_rows()).unwrap();
+        let proof = prove(&mut Blake3Transcript::new(), &prefix, &opener, &witness, &hint).unwrap();
+        verify(&mut Blake3Transcript::new(), &prefix, &opener, &hint.commitment, &proof).unwrap();
+        let changes: [fn(&mut flock_core::pcs::commit::PcsParams); 3] = [
+            |params| params.log_inv_rate += 1,
+            |params| params.profile = LigeritoProfile::Slim,
+            |params| params.m += 1,
+        ];
+        for change in changes {
+            let mut foreign = hint.commitment.clone();
+            change(&mut foreign.params);
+            assert!(matches!(
+                verify(&mut Blake3Transcript::new(), &prefix, &opener, &foreign, &proof),
+                Err(ProtocolError::CommitmentConfigMismatch)
+            ));
+        }
+        hint.commitment.params.log_inv_rate += 1;
+        assert!(matches!(
+            prove(&mut Blake3Transcript::new(), &prefix, &opener, &witness, &hint),
+            Err(ProtocolError::CommitmentConfigMismatch)
+        ));
+    }
+
+    /// A relation with a virtual map is refused by the direct discharge
+    /// before any transcript work (its claim is about the derived grid, not
+    /// the committed bits), as the crate's own runner dispatches it.
+    #[test]
+    fn a_relation_with_a_map_is_not_discharged_directly() {
+        let multiplications = 1 << 15;
+        let witness = u32_witness(multiplications);
+        let layout = MulLayout::<u32>::new(multiplications).unwrap();
+        // The same products packed three bits per cell: a virtual map over
+        // the same committed bit rows.
+        let packed = MulLayout::<u32>::new_with_word_bits(multiplications, 3).unwrap();
+        assert!(RelationSpec::map(&packed).is_some());
+        assert_eq!(RelationSpec::committed_layout(&packed), RelationSpec::committed_layout(&layout));
+        let packed_witness =
+            MulWitness::<u32>::from_fn_with_word_bits(multiplications, 3, |i| (i as u32, !(i as u32)))
+                .unwrap();
+        let (prefix, opener) = WfbitzOpener::prepare::<Lambda100, _>(layout, WfbitzLigerito::Fast, 100).unwrap();
+        let (packed_prefix, packed_opener) =
+            WfbitzOpener::prepare::<Lambda100, _>(packed, WfbitzLigerito::Fast, 100).unwrap();
+        let hint = opener.commit(witness.bitz_bit_rows()).unwrap();
+        let proof = prove(&mut Blake3Transcript::new(), &prefix, &opener, &witness, &hint).unwrap();
+        let packed_hint = packed_opener.commit(packed_witness.bitz_bit_rows()).unwrap();
+        let mut transcript = Blake3Transcript::new();
+        let fresh = transcript.state_digest();
+        assert!(matches!(
+            prove(&mut transcript, &packed_prefix, &packed_opener, &packed_witness, &packed_hint),
+            Err(ProtocolError::UnsupportedDischarge)
+        ));
+        assert!(matches!(
+            verify(&mut transcript, &packed_prefix, &packed_opener, &hint.commitment, &proof),
+            Err(ProtocolError::UnsupportedDischarge)
+        ));
+        assert_eq!(transcript.state_digest(), fresh);
+    }
+
+    /// A prefix that credits forest or ring-switch grinding (λ = 128 built
+    /// without [`WfbitzOpener::prepare`]) is refused by the direct discharge
+    /// before any transcript work, as the reduced discharge refuses it.
+    #[test]
+    fn a_prefix_crediting_opener_grinding_is_not_discharged() {
+        let multiplications = 1 << 15;
+        let witness = u32_witness(multiplications);
+        let layout = MulLayout::<u32>::new(multiplications).unwrap();
+        let (prefix, opener) = WfbitzOpener::prepare::<Lambda100, _>(layout, WfbitzLigerito::Fast, 100).unwrap();
+        let hint = opener.commit(witness.bitz_bit_rows()).unwrap();
+        let proof = prove(&mut Blake3Transcript::new(), &prefix, &opener, &witness, &hint).unwrap();
+        let credited = PreparedRelationPrefix::new::<crate::piop::spartan::Lambda128>(layout).unwrap();
+        let security = credited.security();
+        assert!(security.forest_round_grinding_bits != 0 || security.ring_switch_grinding_bits != 0);
+        let ladder = WfbitzLigerito::Selected(LigeritoSelection::ValidatedUdr);
+        let udr = WfbitzOpener::new(RelationSpec::committed_layout(&layout), ladder, 128).unwrap();
+        let mut transcript = Blake3Transcript::new();
+        let fresh = transcript.state_digest();
+        assert!(matches!(
+            prove(&mut transcript, &credited, &udr, &witness, &hint),
+            Err(ProtocolError::UnsupportedProfile)
+        ));
+        assert!(matches!(
+            verify(&mut transcript, &credited, &udr, &hint.commitment, &proof),
+            Err(ProtocolError::UnsupportedProfile)
+        ));
+        assert_eq!(transcript.state_digest(), fresh);
+    }
+
+    /// A stated length past the end of the input is a truncation, not an
+    /// overflow. (Under overflow checks, as in a debug build, the unchecked
+    /// `at + len` panicked; in release it wrapped to an empty range, so only
+    /// a debug run tells the two apart.)
+    #[test]
+    fn opening_codec_rejects_an_oversized_length() {
+        for len in [u64::MAX, u64::MAX - 7, 1 << 40] {
+            let mut bytes = len.to_le_bytes().to_vec();
+            bytes.extend_from_slice(&[0; 16]);
+            assert_eq!(WfbitzOpeningProof::from_bytes(&bytes), None, "{len}");
+            let mut bytes = 0u64.to_le_bytes().to_vec();
+            bytes.extend_from_slice(&len.to_le_bytes());
+            assert_eq!(WfbitzOpeningProof::from_bytes(&bytes), None, "{len}");
+        }
+    }
+
+    /// Round 0 is reported with the grinding the proof runs (the profile's
+    /// λ, as `prepare` adopts it), not at the ladder's own target.
+    #[test]
+    fn round_0_is_reported_as_it_runs() {
+        let layout = MulLayout::<u32>::new(1 << 15).unwrap();
+        // A Johnson ladder resolved above the profile's λ = 100.
+        let ladder = WfbitzLigerito::parse("custom:1:4", 110).unwrap();
+        let (prefix, opener) = WfbitzOpener::prepare::<Lambda100, _>(layout, ladder, 110).unwrap();
+        let bits = opener.ood_bits().unwrap();
+        let executed = prefix.security().ood.unwrap();
+        assert_eq!(executed.grinding_bits, (100.0 - bits).max(0.0).ceil() as u32);
+        let booked = prefix
+            .security()
+            .accounting
+            .terms
+            .iter()
+            .find(|term| term.name == "step0:ood-draw")
+            .unwrap();
+        assert_eq!(opener.round_0_bits(Some(executed)), Some(booked.bits));
+        assert_eq!(opener.round_0_bits(None), None);
+        // The ladder's own target would grind more than runs.
+        let at_target =
+            crate::ligerito_flock::ood_round_params(opener.security(), opener.packed_vars, 110).unwrap();
+        assert!(at_target.grinding_bits > executed.grinding_bits, "{bits}");
+        let (reported, term) = opener.opening_bits(Some(executed));
+        assert!(reported <= booked.bits, "{reported} ({term})");
+        assert!(reported < bits + f64::from(at_target.grinding_bits), "{reported} ({term})");
+        // A Johnson ladder without its Round 0 is credited nothing.
+        assert_eq!(opener.opening_bits(None).0, 0.0);
+    }
+
+    /// The scheme grinds none of its GF(2^128) rounds, so `prepare` books
+    /// the GKR and ring-switch terms bare and the statement binds zero
+    /// difficulties: at λ = 100 (nothing to grind) the accounting is the
+    /// plain profile's term by term; λ = 128, which the bare GKR round
+    /// cannot reach, is refused.
+    #[test]
+    fn prepare_books_no_opener_grinding() {
+        let layout = MulLayout::<u32>::new(1 << 15).unwrap();
+        let terms = |params: &crate::piop::spartan::profile::IopSecurityParams| {
+            params
+                .accounting
+                .terms
+                .iter()
+                .map(|term| (term.name, term.bits, term.grinding_bits, term.floor))
+                .collect::<Vec<_>>()
+        };
+        for ladder in [WfbitzLigerito::Fast, WfbitzLigerito::Selected(LigeritoSelection::MATCHED_UDR)] {
+            let (prefix, opener) = WfbitzOpener::prepare::<Lambda100, _>(layout, ladder, 100).unwrap();
+            let mut plain = instantiate_profile::<Lambda100, _>(&layout).unwrap();
+            plain.adopt_ood_round(opener.ood_bits()).unwrap();
+            let security = prefix.security();
+            assert_eq!(terms(security), terms(&plain), "{ladder:?}");
+            assert_eq!(security.forest_round_grinding_bits, plain.forest_round_grinding_bits);
+            assert_eq!(security.ring_switch_grinding_bits, plain.ring_switch_grinding_bits);
+            assert_eq!(security.forest_round_grinding_bits, 0);
+            assert_eq!(security.ring_switch_grinding_bits, 0);
+        }
+        // A unique-decoding ladder (no Round 0 to grind): the refusal is the
+        // GKR round's.
+        let ladder = WfbitzLigerito::Selected(LigeritoSelection::ValidatedUdr);
+        assert!(matches!(
+            WfbitzOpener::prepare::<crate::piop::spartan::Lambda128, _>(layout, ladder, 128),
+            Err(ProtocolError::Profile(crate::piop::spartan::profile::ProfileError::TargetUnreachable {
+                term: "step5_2:gkr-round",
+                ..
+            }))
+        ));
     }
 }
 
@@ -615,9 +1161,9 @@ fn reduced_pcs(opener: &Opener, committed: &Shape) -> Result<BitzPcs, ProtocolEr
 
 /// The derived grid `h = M·f` the claim is about, as per-column bit rows of
 /// the opening layout: the relation's own derived rows when it materialises
-/// them, the committed rows under an identity map, and otherwise the map
-/// applied to the committed rows (every source cell XORed into the derived
-/// cells it feeds; `O(nnz)`).
+/// them, the committed rows under an identity map between equal grids (the
+/// statement's direct case), and otherwise the map applied to the committed
+/// rows (every source cell XORed into the derived cells it feeds; `O(nnz)`).
 fn derived_bit_rows<S: RelationSpec>(
     spec: &S,
     witness: &S::Witness,
@@ -629,7 +1175,7 @@ fn derived_bit_rows<S: RelationSpec>(
         return derived;
     }
     let map = match spec.map() {
-        Some(map) if !map.is_identity() => map,
+        Some(map) if !crate::ligerito_flock::virtual_id_fast_eligible(map, opening, committed) => map,
         _ => return rows.to_vec(),
     };
     use circuit::linear_map::binary::VirtualMap;
@@ -681,10 +1227,14 @@ pub fn prove_reduced<T: Transcript + Send, S: RelationSpec>(
     let reduction = security
         .reduction
         .ok_or(ProtocolError::UnsupportedProfile)?;
+    // The scheme grinds none of its GF(2^128) rounds: a profile that
+    // credits forest or ring-switch grinding would bind what does not run.
+    if security.forest_round_grinding_bits != 0 || security.ring_switch_grinding_bits != 0 {
+        return Err(ProtocolError::UnsupportedProfile);
+    }
     let domains = spec.domains();
     let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
     let (binding, ood) = bind_prover_statement(transcript, prefix, opener, hint)?;
-    let ood = ood.into_bound_claim();
     let proved = prove_piop(transcript, prefix, witness, &binding)?;
     let prime = &proved.prime;
     let row_weights = bitify::dense_row_weights(&proved.opening, &proved.table, prime)?;
@@ -747,6 +1297,7 @@ pub fn prove_reduced<T: Transcript + Send, S: RelationSpec>(
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
     let pcs = reduced_pcs(opener, &committed)?;
     let derived_rows = derived_bit_rows(spec, witness, &p, &opening_layout, hint.rows());
+    let ood = ood.opening_claim(transcript, hint);
     let tag = fork_tag(transcript);
     let mut state = build_prover(REDUCED_SESSION, &tag);
     state.public_message(&proved.bridge_digest);
@@ -789,6 +1340,9 @@ pub fn verify_reduced<T: Transcript + Send, S: RelationSpec>(
     let reduction = security
         .reduction
         .ok_or(ProtocolError::UnsupportedProfile)?;
+    if security.forest_round_grinding_bits != 0 || security.ring_switch_grinding_bits != 0 {
+        return Err(ProtocolError::UnsupportedProfile);
+    }
     let domains = spec.domains();
     let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
     let lift = proof
@@ -798,7 +1352,6 @@ pub fn verify_reduced<T: Transcript + Send, S: RelationSpec>(
     check_proof_kernel(spec.kernel(), &proof.prefix.spartan)?;
     let (binding, ood) =
         bind_verifier_statement(transcript, prefix, opener, commitment, proof.bitz.ood.as_ref())?;
-    let ood = ood.into_bound_claim();
     let verified = verify_piop(transcript, prefix, &binding, &proof.prefix)?;
     let prime = &verified.prime;
     let row_weights = bitify::dense_row_weights(&verified.opening, &verified.table, prime)?;
@@ -857,8 +1410,11 @@ pub fn verify_reduced<T: Transcript + Send, S: RelationSpec>(
     let statement = crate::wfbitz::VirtualStatement::new(params, committed, map, &claim)
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
     let pcs = reduced_pcs(opener, &committed)?;
-    let tag = fork_tag(transcript);
     let opening = proof.bitz();
+    let ood = ood
+        .opening_claim(transcript, packed_variables(&p)?, opening.ood.as_ref())
+        .map_err(ProtocolError::Bitz)?;
+    let tag = fork_tag(transcript);
     let bitz_proof = BitzTranscriptProof {
         narg_string: opening.narg.clone(),
         hints: opening.hints.clone(),
@@ -871,7 +1427,7 @@ pub fn verify_reduced<T: Transcript + Send, S: RelationSpec>(
             &pcs,
             Root(commitment.root),
             state,
-            ood.as_ref().map(|(claim, _)| (claim.point.as_slice(), claim.y)),
+            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
         )
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ verify: {error:?}")))
 }

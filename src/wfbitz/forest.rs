@@ -885,8 +885,16 @@ impl<'a> Forest<'a> {
         let spare = &mut arena.spare_capacity_mut()[..total];
         // Rows of level `4 + fused` = tasks; level `4 + i` has `sub ≪ (fused − i)`.
         let sub = rows >> fused;
+        // One pointer per level, each carved once off the consecutive
+        // regions of levels 5..4+fused.
+        debug_assert_eq!(self.upper_region(ell + 2).start, 0);
+        let mut rest = &mut spare[..self.upper_region(ell + 1 + fused).end];
         let above: Vec<RowsPtr> = (1..=fused)
-            .map(|i| RowsPtr::new(&mut spare[self.upper_region(ell + 1 + i)], cols))
+            .map(|i| {
+                let (level, tail) = std::mem::take(&mut rest).split_at_mut(self.upper_region(ell + 1 + i).len());
+                rest = tail;
+                RowsPtr::new(level, cols)
+            })
             .collect();
         cfg_into_iter!(0..sub, 1).for_each(|y0| {
             let mut l4 = [[MaybeUninit::<Gf>::uninit(); 64]; 1 << FUSED_UPPER_LEVELS];
@@ -906,18 +914,19 @@ impl<'a> Forest<'a> {
                     for bp in 0..half {
                         let y = y0 + bp * sub;
                         // SAFETY: the level-4 segments were written just
-                        // above (their first `width` slots); rows `y` and
-                        // `y + half·sub` of level `3 + i > 4` were written by
-                        // this task in this group's iteration; row `y` of
-                        // level `4 + i` belongs to it alone.
+                        // above (their first `width` slots); slots `range` of
+                        // rows `y` and `y + half·sub` of level `3 + i > 4`
+                        // were written by this task in this group's
+                        // iteration; row `y` of level `4 + i` belongs to it
+                        // alone.
                         unsafe {
                             let (a, b): (&[Gf], &[Gf]) = if i == 1 {
                                 (init_prefix(&l4[bp], width), init_prefix(&l4[bp + half], width))
                             } else {
                                 let below = &above[i - 2];
-                                (&below.row_init(y)[range.clone()], &below.row_init(y + half * sub)[range.clone()])
+                                (below.row_init(y, range.clone()), below.row_init(y + half * sub, range.clone()))
                             };
-                            let o = &mut above[i - 1].row(y)[range.clone()];
+                            let o = above[i - 1].row(y, range.clone());
                             kernels::product_into(a, b, o);
                         }
                     }
@@ -1609,8 +1618,9 @@ unsafe fn init_prefix(buf: &[MaybeUninit<Gf>; 64], len: usize) -> &[Gf] {
 }
 
 /// Row access into an uninitialised level for tasks that own disjoint
-/// rows: `row(y)` is row `y`'s slots, `row_init(y)` the same row once
-/// written.
+/// rows: `row(y, range)` is row `y`'s slots in the column range `range`,
+/// `row_init(y, range)` the same slots once written, so no value view
+/// covers a slot still unwritten.
 #[derive(Clone, Copy)]
 struct RowsPtr {
     ptr: *mut MaybeUninit<Gf>,
@@ -1633,28 +1643,28 @@ impl RowsPtr {
         }
     }
 
-    /// Row `y`'s slots.
+    /// Row `y`'s slots `range`.
     ///
     /// # Safety
-    /// No other live reference to row `y` may exist while this one does.
+    /// No other live reference to those slots may exist while this one does.
     #[inline]
-    unsafe fn row<'b>(&self, y: usize) -> &'b mut [MaybeUninit<Gf>] {
-        assert!(y < self.rows);
+    unsafe fn row<'b>(&self, y: usize, range: std::ops::Range<usize>) -> &'b mut [MaybeUninit<Gf>] {
+        assert!(y < self.rows && range.start <= range.end && range.end <= self.cols);
         // SAFETY: in bounds by the assertion; exclusivity is the caller's.
-        unsafe { std::slice::from_raw_parts_mut(self.ptr.add(y * self.cols), self.cols) }
+        unsafe { std::slice::from_raw_parts_mut(self.ptr.add(y * self.cols + range.start), range.len()) }
     }
 
-    /// Row `y` as initialised values.
+    /// Row `y`'s slots `range` as initialised values.
     ///
     /// # Safety
-    /// Every slot of row `y` must have been written, and no `&mut` to the
-    /// row may be live.
+    /// Those slots must have been written, and no `&mut` to them may be
+    /// live.
     #[inline]
-    unsafe fn row_init<'b>(&self, y: usize) -> &'b [Gf] {
-        assert!(y < self.rows);
+    unsafe fn row_init<'b>(&self, y: usize, range: std::ops::Range<usize>) -> &'b [Gf] {
+        assert!(y < self.rows && range.start <= range.end && range.end <= self.cols);
         // SAFETY: in bounds by the assertion; `MaybeUninit<Gf>` has `Gf`'s
-        // layout and the row is initialised per the contract.
-        unsafe { std::slice::from_raw_parts(self.ptr.add(y * self.cols).cast::<Gf>(), self.cols) }
+        // layout and the slots are initialised per the contract.
+        unsafe { std::slice::from_raw_parts(self.ptr.add(y * self.cols + range.start).cast::<Gf>(), range.len()) }
     }
 }
 

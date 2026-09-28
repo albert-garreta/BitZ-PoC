@@ -566,7 +566,8 @@ fn rejects_a_valid_sha_trace_joined_to_an_unrelated_valid_signature_trace() {
 /// The worldfnd/BitZ scheme's virtual opening in place of the forest's:
 /// both outer modes prove, round-trip through bytes and verify on the
 /// paper's Johnson ladder (Round 0 on); a forest proof is refused by a
-/// verifier prepared for the other opener.
+/// verifier prepared for the other opener, and neither decodes under the
+/// other's magic.
 #[cfg(feature = "bitz-parity")]
 #[test]
 fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
@@ -592,6 +593,7 @@ fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
                 .unwrap();
         assert!(matches!(proof.opening, Sha256EcdsaOpening::Wfbitz(_)));
         let bytes = proof.to_bytes();
+        assert_eq!(&bytes[..8], b"BITZSW01");
         let proof = Sha256EcdsaProof::from_bytes(&bytes).unwrap();
         assert_eq!(proof.to_bytes(), bytes);
         verify_sha256_ecdsa(
@@ -605,6 +607,21 @@ fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
         assert_eq!(
             prover_transcript.get_challenge::<u128>(),
             verifier_transcript.get_challenge::<u128>()
+        );
+        // As on the forest path, a host nonce the opening never consumes is
+        // refused.
+        let mut padded = proof.clone();
+        padded.flock_nonces.push(0);
+        let padded = Sha256EcdsaProof::from_bytes(&padded.to_bytes()).unwrap();
+        assert!(
+            verify_sha256_ecdsa(
+                &mut Blake3Transcript::new(),
+                &prepared,
+                &statement,
+                &hint.commitment,
+                &padded
+            )
+            .is_err()
         );
         // The same statement prepared for the forest refuses this proof, and a
         // forest proof is refused by the wfbitz-prepared verifier.
@@ -644,5 +661,439 @@ fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
             )
             .is_err()
         );
+        // The magic names the opening: forest proofs keep `BITZSE03`, and
+        // neither opening decodes under the other's magic.
+        let forest_bytes = forest_proof.to_bytes();
+        assert_eq!(&forest_bytes[..8], b"BITZSE03");
+        let mut swapped = bytes.clone();
+        swapped[..8].copy_from_slice(b"BITZSE03");
+        assert!(Sha256EcdsaProof::from_bytes(&swapped).is_err());
+        let mut swapped = forest_bytes;
+        swapped[..8].copy_from_slice(b"BITZSW01");
+        assert!(Sha256EcdsaProof::from_bytes(&swapped).is_err());
+    }
+}
+
+/// The structured wfbitz opening takes the instance counts its block
+/// transposes read, up to 2^7 compressions; from 2^8 on the relation keeps
+/// the dense virtual opening.
+#[cfg(feature = "bitz-parity")]
+#[test]
+fn wfbitz_structured_opening_stops_at_its_transpose_width() {
+    for (log_compressions, structured) in [(7, true), (8, false)] {
+        let prepared = prepare_sha256_ecdsa(log_compressions, 100, OuterMode::Split)
+            .unwrap()
+            .with_opener(Sha256EcdsaOpener::Wfbitz);
+        assert_eq!(
+            prepared.wfbitz.is_some(),
+            structured,
+            "2^{log_compressions} compressions"
+        );
+    }
+}
+
+/// 2^8 compressions through the dense wfbitz opening: proves and verifies
+/// (2^23 derived cells; run with `--ignored`).
+#[cfg(feature = "bitz-parity")]
+#[test]
+#[ignore = "2^8 compressions end to end"]
+fn wfbitz_dense_opening_proves_and_verifies_at_256_compressions() {
+    use crate::transcript::Blake3Transcript;
+    use crate::transcript::traits::Transcript;
+    let (statement, message) = fixture_at(8);
+    let prepared = prepare_sha256_ecdsa(8, 100, OuterMode::Split)
+        .unwrap()
+        .with_ligerito(crate::ligerito_flock::LigeritoSelection::JOHNSON)
+        .unwrap()
+        .with_opener(Sha256EcdsaOpener::Wfbitz);
+    assert!(prepared.wfbitz.is_none());
+    let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
+    let hint = commit_sha256_ecdsa(&prepared, &witness).unwrap();
+    let mut prover_transcript = Blake3Transcript::new();
+    let mut verifier_transcript = Blake3Transcript::new();
+    let proof =
+        prove_sha256_ecdsa(&mut prover_transcript, &prepared, &statement, &witness, &hint, 4)
+            .unwrap();
+    assert!(matches!(proof.opening, Sha256EcdsaOpening::Wfbitz(_)));
+    verify_sha256_ecdsa(
+        &mut verifier_transcript,
+        &prepared,
+        &statement,
+        &hint.commitment,
+        &proof,
+    )
+    .unwrap();
+    assert_eq!(
+        prover_transcript.get_challenge::<u128>(),
+        verifier_transcript.get_challenge::<u128>()
+    );
+}
+
+/// The little-endian eq tensor of `point` over GF(2^128): entry `i` is
+/// `Π_j (point[j] if bit j of i is set, else 1 + point[j])`.
+#[cfg(feature = "bitz-parity")]
+fn gf_eq(point: &[field::Gf128]) -> Vec<field::Gf128> {
+    let mut eq = vec![field::Gf128::ONE];
+    for &p in point {
+        let high: Vec<_> = eq.iter().map(|&e| e * p).collect();
+        for e in &mut eq {
+            *e *= p + field::Gf128::ONE;
+        }
+        eq.extend(high);
+    }
+    eq
+}
+
+/// The structured wfbitz opening's 15 to 17 tensors sum to the dense
+/// transpose `Mᵀ(u1 ⊗ u2)` on every committed cell of the block layout: each
+/// source's weight at its own cell, zero on every cell that holds no source
+/// (the mirrors of the SHA rows and of the aliased tail rows, the rows past
+/// the tail's end), as the forest's structured weights are pinned against
+/// the generic ones (`chained_compact_tail_weights_and_planes_match_generic`
+/// in `ligerito_flock`). First the eq tensor of a random point against the
+/// dense virtual statement, then random weights that are no tensor against
+/// the map's columns; P-256 at 2^3 in both outer modes, at 2^6 and 2^7 (the
+/// tail inside chunk 1), secp256k1 at 2^3.
+#[cfg(feature = "bitz-parity")]
+#[test]
+fn chained_structured_weights_equal_the_dense_transpose() {
+    use crate::piop::spartan::protocol::bitz_generator;
+    use crate::wfbitz::{
+        BitZParams, ChainedStatement, LinearClaim, OpeningQuery, Shape, VirtualStatement,
+        chained::LOG_ROWS, params::LinearClaimGf,
+    };
+    use field::Gf128 as Gf;
+    let mut state = 0x1234_5678_9abc_def1u64;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let mut random = move || Gf::new(next(), next());
+    let q = (1u128 << 100) - 15;
+    for (circuit, log_n, mode) in [
+        (EcdsaCircuit::P256Paper, 3, OuterMode::Split),
+        (EcdsaCircuit::P256Paper, 3, OuterMode::AllRows),
+        (EcdsaCircuit::P256Paper, 6, OuterMode::Split),
+        (EcdsaCircuit::P256Paper, 7, OuterMode::Split),
+        (EcdsaCircuit::Secp256k1BiniusMatched, 3, OuterMode::Split),
+    ] {
+        let case = format!("{circuit:?} 2^{log_n} {mode:?}");
+        let prepared = prepare_sha256_ecdsa_on(circuit, log_n, 100, mode)
+            .unwrap()
+            .with_opener(Sha256EcdsaOpener::Wfbitz);
+        let g = &prepared.wfbitz.as_ref().expect("structured opening").geometry;
+        let shape = g.shape().unwrap();
+        let (rows, blocks) = (shape.rows(), shape.columns());
+        let params = BitZParams::new(shape, q, bitz_generator().into()).unwrap();
+        let zero = LinearClaim::new(&params, vec![0; rows], vec![0; blocks], 0).unwrap();
+        let statement = ChainedStatement::new(
+            params,
+            g.clone(),
+            prepared.map.chained_packed_source().unwrap(),
+            prepared.map.chained_packed_source_tail().unwrap(),
+            prepared.map.digest(),
+            &zero,
+        )
+        .unwrap();
+        // `Σ_k rows_k ⊗ cols_k`, committed cell `block·rows + row`.
+        let structured = |u1: Vec<Gf>, u2: Vec<Gf>| -> Vec<Gf> {
+            let query = OpeningQuery::InnerProduct {
+                claim: LinearClaimGf::from_shape(&shape, u1, u2, Gf::ZERO).unwrap(),
+            };
+            let Ok(OpeningQuery::InnerProductSum { claim }) = statement.transpose_query(query) else {
+                panic!("{case}: the structured transpose is a sum of tensors");
+            };
+            let tensors = claim.terms().len();
+            assert!((15..=17).contains(&tensors), "{case}: {tensors} tensors");
+            let mut weights = vec![Gf::ZERO; rows * blocks];
+            for (row_vector, block_vector) in claim.terms() {
+                for (block, &c) in block_vector.iter().enumerate() {
+                    if !c.is_zero() {
+                        let column = &mut weights[block * rows..(block + 1) * rows];
+                        for (w, &r) in column.iter_mut().zip(row_vector) {
+                            *w += r * c;
+                        }
+                    }
+                }
+            }
+            weights
+        };
+        // Every live source's committed cell, no two on one cell.
+        let live = prepared.live_source_bits();
+        let mut owner = vec![usize::MAX; rows * blocks];
+        let cells: Vec<usize> = (0..live)
+            .map(|s| {
+                let (row, block) = if s == 0 {
+                    g.committed_tail_position(0)
+                } else if s < g.f_offset {
+                    g.committed_sha_position((s - 1) / g.local_cells, (s - 1) % g.local_cells)
+                } else {
+                    g.committed_tail_position(s - g.f_offset + g.aliases)
+                };
+                let cell = block * rows + row;
+                assert_eq!(owner[cell], usize::MAX, "{case}: two sources on cell of source {s}");
+                owner[cell] = s;
+                cell
+            })
+            .collect();
+        let check = |weights: &[Gf], expected: &dyn Fn(usize) -> Gf, pass: &str| {
+            for (s, &cell) in cells.iter().enumerate() {
+                assert_eq!(weights[cell], expected(s), "{case}, {pass}: source {s}");
+            }
+            for (cell, w) in weights.iter().enumerate() {
+                assert!(
+                    owner[cell] != usize::MAX || w.is_zero(),
+                    "{case}, {pass}: cell (row {}, block {}) holds no source but is weighted",
+                    cell % rows,
+                    cell / rows
+                );
+            }
+        };
+
+        // The eq tensor over the native derived index, split as the block
+        // grid splits it, against the dense statement's weights.
+        let k = g.log_instances;
+        let point: Vec<Gf> = (0..g.native_bits).map(|_| random()).collect();
+        let mut high = point[..k].to_vec();
+        high.extend_from_slice(&point[k + LOG_ROWS..]);
+        let t_h = prepared.h_layout.row_vars;
+        let derived = Shape::new(t_h, prepared.h_layout.col_vars).unwrap();
+        let committed = Shape::new(prepared.f_layout.row_vars, prepared.f_layout.col_vars).unwrap();
+        let native_params = BitZParams::new(derived, q, bitz_generator().into()).unwrap();
+        let native_zero =
+            LinearClaim::new(&native_params, vec![0; derived.rows()], vec![0; derived.columns()], 0)
+                .unwrap();
+        let dense = VirtualStatement::new(native_params, committed, &prepared.map, &native_zero).unwrap();
+        let query = OpeningQuery::InnerProduct {
+            claim: LinearClaimGf::from_shape(&derived, gf_eq(&point[..t_h]), gf_eq(&point[t_h..]), Gf::ZERO)
+                .unwrap(),
+        };
+        let Ok(OpeningQuery::InnerProduct { claim }) = dense.transpose_query(query) else {
+            panic!("{case}: the dense transpose is one single-column claim");
+        };
+        let dense = claim.row_weights();
+        assert!(dense[live..].iter().all(|w| w.is_zero()), "{case}: a padding source is weighted");
+        check(&structured(gf_eq(&point[k..k + LOG_ROWS]), gf_eq(&high)), &|s| dense[s], "eq tensor");
+
+        // Weights that are no tensor, against `Σ_{d ∈ column_rows(s)} u1·u2`.
+        let u1: Vec<Gf> = (0..rows).map(|_| random()).collect();
+        let u2: Vec<Gf> = (0..blocks).map(|_| random()).collect();
+        let by_columns = |s: usize| -> Gf {
+            prepared
+                .map
+                .column_rows(s)
+                .into_iter()
+                .flatten()
+                .map(|d| {
+                    let (row, block) = g.derived_position(d);
+                    u1[row] * u2[block]
+                })
+                .sum()
+        };
+        check(&structured(u1.clone(), u2.clone()), &by_columns, "random weights");
+    }
+}
+
+/// A committed cell that holds no source cannot carry a derived bit: with
+/// the hole bit set in the commitment and the bit it mirrors flipped in the
+/// derived grid, the claim (true for the tampered grid, false for `M·f`) is
+/// refused by the prover or by `verify_chained`, for the three kinds of
+/// hole (an aliased tail row, an SHA row above the boundary, a row past the
+/// tail's end). The honest grids prove and verify.
+#[cfg(feature = "bitz-parity")]
+#[test]
+fn chained_hole_cells_cannot_carry_a_derived_bit() {
+    use crate::wfbitz::{
+        BitZParams, BitZProver, BitZVerifier, ChainedStatement, LinearClaim, Pcs, WINDOW,
+        build_prover, build_verifier,
+        fold::{fold_columns, reconstruct},
+    };
+    use flock_core::pcs::ligerito::LigeritoProfile;
+
+    let (statement, message) = fixture();
+    let prepared = prepare_sha256_ecdsa(3, 100, OuterMode::Split)
+        .unwrap()
+        .with_ligerito(crate::ligerito_flock::LigeritoSelection::JOHNSON)
+        .unwrap()
+        .with_opener(Sha256EcdsaOpener::Wfbitz);
+    let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
+    let chained = prepared.wfbitz.as_ref().expect("structured opening");
+    let g = &chained.geometry;
+    let shape = g.shape().unwrap();
+    let honest_f = g.committed_rows(&prepared.f_layout, &witness.f_rows);
+    let honest_h = g.derived_rows(&prepared.h_layout, &witness.h_rows);
+    let bit = |rows: &[Vec<u64>], (row, block): (usize, usize)| rows[block][row / 64] >> (row % 64) & 1;
+    let flip = |rows: &mut [Vec<u64>], (row, block): (usize, usize)| {
+        rows[block][row / 64] ^= 1u64 << (row % 64);
+    };
+
+    let q: u128 = (1u128 << 100) - 15;
+    let params =
+        BitZParams::new(shape, q, crate::piop::spartan::protocol::bitz_generator().into()).unwrap();
+    let pcs = Pcs::with_security(&shape, chained.ligerito.security(), LigeritoProfile::Fast).unwrap();
+    let mut state = 0x9e37_79b9_7f4a_7c15u64;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let mut residue = move || ((u128::from(next()) << 64) | u128::from(next())) % q;
+    let row_weights: Vec<u128> = (0..shape.rows()).map(|_| residue()).collect();
+    let col_weights: Vec<u128> = (0..shape.columns()).map(|_| residue()).collect();
+    let unresolved = LinearClaim::new(&params, row_weights.clone(), col_weights.clone(), 0).unwrap();
+    let target_of = |h: &[Vec<u64>]| reconstruct(&unresolved, &fold_columns(&shape, h, &row_weights), q);
+    // Proves the claim on `h` against the commitment to `f`; `Ok` iff both
+    // roles accept.
+    let open = |f: &[Vec<u64>], h: &[Vec<u64>]| -> bool {
+        let claim =
+            LinearClaim::new(&params, row_weights.clone(), col_weights.clone(), target_of(h)).unwrap();
+        let statement = ChainedStatement::new(
+            params,
+            g.clone(),
+            prepared.map.chained_packed_source().unwrap(),
+            prepared.map.chained_packed_source_tail().unwrap(),
+            prepared.map.digest(),
+            &claim,
+        )
+        .unwrap();
+        let (root, hint) = pcs.commit(&shape, f.to_vec()).unwrap();
+        let mut prover = build_prover(b"chained-holes", b"instance");
+        if BitZProver::new(params, WINDOW)
+            .prove_chained(&statement, &pcs, &hint, h, &mut prover, None)
+            .is_err()
+        {
+            return false;
+        }
+        let proof = prover.finish();
+        BitZVerifier::new(params, WINDOW)
+            .verify_chained(&statement, &pcs, root, build_verifier(b"chained-holes", b"instance", &proof), None)
+            .is_ok()
+    };
+    assert!(open(&honest_f, &honest_h), "the honest grids prove and verify");
+
+    let honest_target = target_of(&honest_h);
+    for (name, hole, mirror) in [
+        ("aliased tail row 1", g.committed_tail_position(1), g.derived_position(g.h_offset + 1)),
+        ("instance 0's local row 2^14", (0, g.sha_blocks), (0, g.instances)),
+        (
+            "past the tail's end",
+            g.committed_tail_position(g.tail_rows + 3),
+            g.derived_position(g.h_offset + g.tail_rows + 3),
+        ),
+    ] {
+        let (mut f, mut h) = (honest_f.clone(), honest_h.clone());
+        assert_eq!(bit(&f, hole), 0, "{name}: the honest layout leaves the hole at zero");
+        flip(&mut f, hole);
+        flip(&mut h, mirror);
+        assert_ne!(target_of(&h), honest_target, "{name}: the claim is false for M·f");
+        assert!(!open(&f, &h), "{name}: a hole cell carried a derived bit");
+    }
+}
+
+/// With the structured wfbitz opening the sources are committed and opened
+/// under the block layout's ladder, one variable wider than the native one
+/// from 2^6 compressions on; the security accounting, Round 0 and the
+/// ladder the statement binds are that ladder's, as on the forest path they
+/// are the committing ladder's.
+#[cfg(feature = "bitz-parity")]
+#[test]
+fn wfbitz_security_uses_the_committed_ladder() {
+    use crate::ligerito_flock::{LigeritoSelection, grinding::GrindingPlan};
+    for circuit in EcdsaCircuit::ALL {
+        for exponent in 4..=7 {
+            for selection in [
+                LigeritoSelection::JOHNSON,
+                LigeritoSelection::parse("custom:3:4", 100).unwrap(),
+            ] {
+                let case = format!("{circuit:?} 2^{exponent} {}", selection.name());
+                let prepared = prepare_sha256_ecdsa_on(circuit, exponent, 100, OuterMode::Split)
+                    .unwrap()
+                    .with_ligerito(selection)
+                    .unwrap()
+                    .with_opener(Sha256EcdsaOpener::Wfbitz);
+                let chained = prepared.wfbitz.as_ref().expect("structured opening");
+                if exponent >= 6 {
+                    assert_eq!(
+                        chained.ligerito.security().m,
+                        prepared.ligerito.security().m + 1,
+                        "{case}"
+                    );
+                }
+                assert_eq!(
+                    prepared.ligerito_configuration().digest(),
+                    chained.ligerito.digest(),
+                    "{case}"
+                );
+                // The other order: `with_ligerito` re-resolves the opener's
+                // block-layout ladder and checks it.
+                let reordered = prepare_sha256_ecdsa_on(circuit, exponent, 100, OuterMode::Split)
+                    .unwrap()
+                    .with_opener(Sha256EcdsaOpener::Wfbitz)
+                    .with_ligerito(selection)
+                    .unwrap();
+                assert_eq!(
+                    reordered.ligerito_configuration().digest(),
+                    chained.ligerito.digest(),
+                    "{case}"
+                );
+                let security = prepared.security().unwrap();
+                assert_eq!(
+                    format!("{:?}", reordered.security().unwrap()),
+                    format!("{security:?}"),
+                    "{case}"
+                );
+                let round0 = security
+                    .blocks
+                    .iter()
+                    .find(|b| b.label == "step0:ood-draw")
+                    .expect("Johnson ladders run Round 0");
+                assert_eq!(
+                    round0.failure_probability_bound,
+                    2f64.powf(-chained.ligerito.ood_bits().unwrap()),
+                    "{case}"
+                );
+                let plan = GrindingPlan::resolve(chained.ligerito.security(), 100).unwrap();
+                let flock: Vec<_> = security
+                    .blocks
+                    .iter()
+                    .filter(|b| b.label.starts_with("flock/"))
+                    .map(|b| (b.label.clone(), b.failure_probability_bound, b.grinding_bits))
+                    .collect();
+                let expected: Vec<_> = plan
+                    .blocks
+                    .iter()
+                    .map(|b| (format!("flock/{}", b.label), b.raw_error, b.bits))
+                    .collect();
+                assert_eq!(flock, expected, "{case}");
+                assert!(security.compute_economic_security_bits() >= 100., "{case}");
+            }
+        }
+    }
+}
+
+/// [`security_profiles_cover_both_targets_for_all_shapes`] for the wfbitz
+/// opener at the 100-bit target, at every size its structured opening takes.
+#[cfg(feature = "bitz-parity")]
+#[test]
+fn wfbitz_security_profiles_cover_the_100_bit_target_for_all_shapes() {
+    for circuit in EcdsaCircuit::ALL {
+        for exponent in 3..=7 {
+            for mode in [OuterMode::Split, OuterMode::AllRows] {
+                let prepared = prepare_sha256_ecdsa_on(circuit, exponent, 100, mode)
+                    .unwrap()
+                    .with_opener(Sha256EcdsaOpener::Wfbitz);
+                assert!(prepared.wfbitz.is_some());
+                let security = prepared.security().unwrap();
+                assert!(security.compute_economic_security_bits() >= 100.);
+                assert!(
+                    security.compute_statistical_security_bits()
+                        < security.compute_economic_security_bits()
+                );
+                assert!(security.blocks.iter().all(|b| b.grinding_bits <= 32));
+            }
+        }
     }
 }

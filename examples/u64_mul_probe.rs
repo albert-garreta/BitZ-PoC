@@ -164,7 +164,7 @@ fn main() {
             let ladder = std::env::var("BITZ_WFBITZ_LADDER").unwrap_or_else(|_| "fast".to_string());
             let ladder = WfbitzLigerito::parse(&ladder, 100).expect("BITZ_WFBITZ_LADDER");
             let (prefix, opener) = WfbitzOpener::prepare::<Lambda100, _>(layout, ladder, 100).unwrap();
-            let (bits, term) = opener.opening_bits();
+            let (bits, term) = opener.opening_bits(prefix.security().ood);
             println!(
                 "wfbitz ladder {} | opening {bits:.1} bits ({term}) | round 0: {:?}",
                 opener.ligerito().name(),

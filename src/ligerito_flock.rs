@@ -844,9 +844,13 @@ fn try_udr_config_impl(
             let (pg, qb) = lv.paper_predicted_bits();
             // udrg only: recover the pg shortfall with per-fold PoW
             // (cheap here — pg is 112–119, so the grind is 9–16 bits).
+            // flock grinds `fold_grinding_bits − j` at the level's fold
+            // round `j` (a taper the Johnson row union pays for); in unique
+            // decoding every one of the level's `kr` rounds carries the full
+            // shortfall, so the last round's `kr − 1` bits go on top.
             if fold_grind {
-                lv.fold_grinding_bits =
-                    (lv.target_security_bits as f64 - pg).ceil().max(0.0) as usize;
+                let need = (lv.target_security_bits as f64 - pg).ceil().max(0.0) as usize;
+                lv.fold_grinding_bits = if need == 0 { 0 } else { need + kr - 1 };
             }
             lv.expected_eps_pg_bits = pg;
             lv.expected_eps_query_bits = qb;
@@ -854,7 +858,98 @@ fn try_udr_config_impl(
         })
         .collect::<Result<_, _>>()?;
     cfg.validate()?;
+    // flock's validator checks each level once; the fold rounds are checked
+    // one by one here (the weakest round of a UDR level is its last).
+    if fold_grind {
+        for (index, lv) in cfg.levels.iter().enumerate() {
+            let weakest = fold_round_bits(lv).into_iter().fold(f64::INFINITY, f64::min);
+            if weakest + 1e-9 < lv.target_security_bits as f64 {
+                return Err(format!(
+                    "UDR level {index}: weakest fold round {weakest:.2} bits < target {}",
+                    lv.target_security_bits
+                ));
+            }
+        }
+    }
     Ok(cfg)
+}
+
+/// The bits of each fold round of a Ligerito level, its fold grinding
+/// included. flock grinds `fold_grinding_bits − j` at the level's fold round
+/// `j` (`k_recursive` rounds). In the Johnson regime the level's proximity-gap
+/// term is sized for round 0 and the row-union factor `2^{ℓ−1−j}` drops by
+/// exactly the bit the taper removes, so every round is credited
+/// `eps_pg + fold_grinding_bits` (the accounting every caller has always
+/// used). In unique decoding the term is the same at every round, so round
+/// `j` keeps only `fold_grinding_bits − j` bits of proof of work.
+pub fn fold_round_bits(level: &ligerito::LigeritoLevelConfig) -> Vec<f64> {
+    let (pg, _) = level.paper_predicted_bits();
+    (0..level.k_recursive)
+        .map(|j| pg + fold_round_grinding(level, j) as f64)
+        .collect()
+}
+
+/// The fold grinding the weakest fold round of `level` gets:
+/// `fold_grinding_bits` in the Johnson regime, `fold_grinding_bits − (k − 1)`
+/// in unique decoding (see [`fold_round_bits`]).
+pub fn weakest_fold_round_grinding(level: &ligerito::LigeritoLevelConfig) -> usize {
+    fold_round_grinding(level, level.k_recursive.saturating_sub(1))
+}
+
+/// The PoW credited to fold round `round` of `level` (see [`fold_round_bits`]).
+fn fold_round_grinding(level: &ligerito::LigeritoLevelConfig, round: usize) -> usize {
+    match level.regime {
+        SoundnessRegime::JohnsonOod => level.fold_grinding_bits,
+        SoundnessRegime::Udr => level.fold_grinding_bits.saturating_sub(round),
+    }
+}
+
+#[cfg(test)]
+mod fold_round_tests {
+    use super::*;
+
+    /// Every fold round of a `udrg` ladder reaches its target — including a
+    /// level's last round, which flock's taper grinds `k − 1` bits less than
+    /// its first (MultiSwap's `udrg:3:4:114` at 2^25 committed bits used to
+    /// leave its level-0 rounds at 114.2 / 113.2 / 112.2 / 112.2 bits).
+    #[test]
+    fn udrg_fold_rounds_reach_the_target() {
+        for (m, r0, k0, target) in [
+            (25, 3, 4, 114),
+            (22, 3, 4, 114),
+            (24, 3, 4, 112),
+            (26, 1, 4, 128),
+            (30, 1, 4, 128),
+        ] {
+            let cfg = custom_udr_grind_config_bits(m, r0, k0, Some(target));
+            for (index, level) in cfg.levels.iter().enumerate() {
+                let rounds = fold_round_bits(level);
+                assert_eq!(rounds.len(), level.k_recursive);
+                for (j, bits) in rounds.iter().enumerate() {
+                    assert!(
+                        *bits + 1e-9 >= target as f64,
+                        "m={m} target={target} level {index} round {j}: {bits:.2} bits"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Johnson ladders keep the accounting every caller has always used:
+    /// each fold round at `eps_pg + fold_grinding_bits`.
+    #[test]
+    fn johnson_fold_rounds_are_unchanged() {
+        for (m, r0) in [(24, 1), (28, 1), (28, 3)] {
+            let cfg = custom_johnson_config(m, r0, 4);
+            for level in &cfg.levels {
+                let (pg, _) = level.paper_predicted_bits();
+                for bits in fold_round_bits(level) {
+                    assert_eq!(bits, pg + level.fold_grinding_bits as f64);
+                }
+                assert_eq!(weakest_fold_round_grinding(level), level.fold_grinding_bits);
+            }
+        }
+    }
 }
 
 /// Commit at the shape the Ligerito config dictates
@@ -1663,6 +1758,79 @@ pub fn absorb_standalone_mod_q_statement(
 pub fn absorb_standalone_mod_q_claim(transcript: &mut impl Transcript, q: u128, claimed_q: u128) {
     let mut frame = StatementFrame::new(transcript, STANDALONE_MOD_Q_CLAIM_DOMAIN);
     frame.u128s(0x30, &[q, claimed_q]);
+}
+
+/// The evaluation prime of a standalone claim is SAMPLED from the
+/// transcript after the commitment, uniformly among the primes of the
+/// widest admissible dyadic interval `[2^(b−1), 2^b)`: the paper's
+/// Strategy-1 field policy (`b ≤ 113`) capped by the one-chunk exponent-
+/// fold width `c_w = 127 − t − W` (so the fold integers never wrap and the
+/// forest runs once) — exactly the width rule of the Spartan security
+/// profile's derived interval. The claim `⟨eq(·, r₁) ⊗ eq(·, r₂), f⟩ = μ`
+/// then uses a transcript-sampled point `(r₁, r₂) ∈ F_q^{t+s}`.
+pub fn standalone_q_bits(p: &IntegerMatrixLayout) -> usize {
+    crate::pcs::mod_q_chunk_width(p).min(113)
+}
+
+/// Miller–Rabin rounds of the transcript prime sampler (the library
+/// default: a composite survives with probability `≈ 2^-128`).
+pub fn standalone_prime_sampler(q_bits: usize) -> crate::ext_proj::ExtProjParams {
+    crate::ext_proj::ExtProjParams {
+        prime_bits: q_bits,
+        ..crate::ext_proj::ExtProjParams::default()
+    }
+}
+
+/// The transcript-sampled instance of a standalone claim: the prime, the
+/// evaluation point, and the `eq` weight tables over `F_q` it induces.
+pub struct StandaloneInstance {
+    pub q: u128,
+    pub row_weights_q: Vec<u128>,
+    pub col_weights_q: Vec<u128>,
+}
+
+/// Round-1-style draw after the statement is bound: `q` from the interval,
+/// then the point coordinates uniformly mod `q`. Both sides run this; the
+/// prover's precomputed instance must match (asserted by the caller).
+pub fn sample_standalone_instance(
+    transcript: &mut impl Transcript,
+    p: &IntegerMatrixLayout,
+    q_bits: usize,
+) -> StandaloneInstance {
+    let _g = tracing::info_span!("mq:sample_instance").entered();
+    let q = crate::ext_proj::sample_proj_prime(transcript, &standalone_prime_sampler(q_bits))
+        .expect("bounded standalone prime search");
+    let arith = field::FpCtx::from_prime_u128(q);
+    let r1: Vec<u128> = (0..p.row_vars)
+        .map(|_| crate::ext_proj::sample_proj_point(transcript, q))
+        .collect();
+    let r2: Vec<u128> = (0..p.col_vars)
+        .map(|_| crate::ext_proj::sample_proj_point(transcript, q))
+        .collect();
+    StandaloneInstance {
+        q,
+        row_weights_q: eq_table_mod_q(&arith, &r1),
+        col_weights_q: eq_table_mod_q(&arith, &r2),
+    }
+}
+
+/// `eq(b, r) mod q` over `b ∈ {0,1}^{r.len()}`; each coordinate is appended
+/// as the new lowest index bit, so `r[k]` ↔ index bit `r.len() − 1 − k`
+/// (both roles build the same table, so only consistency matters).
+pub fn eq_table_mod_q(arith: &field::FpCtx<2>, r: &[u128]) -> Vec<u128> {
+    let q = arith.modulus_u128();
+    let mut table = vec![1u128 % q];
+    for &coord in r {
+        let mut next = Vec::with_capacity(table.len() * 2);
+        for &v in &table {
+            let v1 = arith.mul_u128(v, coord);
+            let v0 = if v >= v1 { v - v1 } else { v + q - v1 };
+            next.push(v0);
+            next.push(v1);
+        }
+        table = next;
+    }
+    table
 }
 
 fn absorb_ext_statement(
@@ -18217,6 +18385,41 @@ mod ood_round_tests {
             Some(OodRoundParams { grinding_bits: 0 })
         );
         assert!(sha_lig_configs(10).is_err());
+    }
+
+    /// The presence rule an opener outside this module applies through
+    /// `opening_claim`: where no round is due, nothing is absorbed and a
+    /// Round-0 record is rejected, whether the state was bound before the
+    /// PIOP or left for the opening.
+    #[cfg(feature = "bitz-parity")]
+    #[test]
+    fn an_opening_with_no_round_due_rejects_a_record() {
+        let round = OodRound {
+            y: Gf::one(),
+            nonce: None,
+        };
+        let mut transcript = Blake3Transcript::new();
+        let fresh = transcript.state_digest();
+        assert!(matches!(
+            VerifierOod::from(None).opening_claim(&mut transcript, 15, None),
+            Ok(None)
+        ));
+        let bound = bind_verifier_ood(&mut transcript, 15, None, None).unwrap();
+        assert!(matches!(
+            bound.opening_claim(&mut transcript, 15, None),
+            Ok(None)
+        ));
+        assert_eq!(transcript.state_digest(), fresh);
+        let states = [
+            VerifierOod::from(None),
+            bind_verifier_ood(&mut transcript, 15, None, None).unwrap(),
+        ];
+        for state in states {
+            assert!(matches!(
+                state.opening_claim(&mut transcript, 15, Some(&round)),
+                Err(FlockRsError::OodRound)
+            ));
+        }
     }
 
     /// `eq(b, r) mod q` over `b ∈ {0,1}^{r.len()}` (index bit `k` ↔ `r[k]`).

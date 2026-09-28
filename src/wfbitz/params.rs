@@ -198,7 +198,8 @@ pub enum ClaimError {
 }
 
 /// Their `LinearClaim<Fq<Q>>`: the caller's `x_core`, weights as canonical
-/// residues below `q` and the value they are claimed to give.
+/// residues below `q` and the value they are claimed to give. Their type
+/// makes the residues canonical; here the constructor checks it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinearClaim {
     row_weights: Vec<u128>,

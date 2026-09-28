@@ -17,6 +17,7 @@
 //! carries its narg string and hint stream.
 
 use super::{Config, F, PreparedSha256Ecdsa, Result, error};
+use crate::ligerito::packed_vars;
 use crate::ligerito_flock::{FlockCommitHint, ProverOod, VerifierOod};
 use crate::piop::spartan::matrix::eq_table;
 use crate::piop::spartan::protocol::{
@@ -132,7 +133,7 @@ pub(super) fn prove_opening<T: Transcript + Send>(
     ood: ProverOod,
 ) -> Result<WfbitzOpeningProof> {
     let _scope = tracing::info_span!("ecdsa:wfbitz_prove").entered();
-    let ood = ood.into_bound_claim();
+    let ood = ood.opening_claim(t, hint);
     let tag = fork_tag(t);
     let state = if let Some(chained) = &prepared.wfbitz {
         let (params, pcs) = chained_setup(prepared, chained, modulus)?;
@@ -207,7 +208,13 @@ pub(super) fn verify_opening<T: Transcript + Send>(
     ood: VerifierOod,
 ) -> Result<()> {
     let _scope = tracing::info_span!("ecdsa:wfbitz_verify").entered();
-    let ood = ood.into_bound_claim();
+    let committed = prepared
+        .wfbitz
+        .as_ref()
+        .map_or(&prepared.f_layout, |chained| &chained.layout);
+    let ood = ood
+        .opening_claim(t, packed_vars(committed), proof.ood.as_ref())
+        .map_err(|e| error(format!("{e:?}")))?;
     let tag = fork_tag(t);
     let bitz_proof = BitzTranscriptProof {
         narg_string: proof.narg.clone(),
@@ -236,7 +243,7 @@ pub(super) fn verify_opening<T: Transcript + Send>(
                 &pcs,
                 Root(commitment.root),
                 state,
-                ood.as_ref().map(|(claim, _)| (claim.point.as_slice(), claim.y)),
+                ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
             )
             .map_err(|e| error(format!("wfbitz verify: {e:?}")))
     } else {
@@ -253,7 +260,7 @@ pub(super) fn verify_opening<T: Transcript + Send>(
                 &pcs,
                 Root(commitment.root),
                 state,
-                ood.as_ref().map(|(claim, _)| (claim.point.as_slice(), claim.y)),
+                ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
             )
             .map_err(|e| error(format!("wfbitz verify: {e:?}")))
     }

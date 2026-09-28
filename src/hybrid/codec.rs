@@ -19,7 +19,12 @@ use bincode::Options;
 
 use flock_core::field::Gf128;
 
-const MAGIC: &[u8; 8] = b"BZSH\x07\0\0\0";
+const MAGIC: &[u8; 8] = b"BZSH\x06\0\0\0";
+/// The same layout with the multiplication side's grand product reduced by
+/// the wfbitz scheme (feature `bitz-parity`); forest proofs keep the
+/// version-6 encoding.
+#[cfg(feature = "bitz-parity")]
+const MAGIC_WFBITZ: &[u8; 8] = b"BZSW\x01\0\0\0";
 const MAX_PROOF_BYTES: usize = 64 << 20;
 
 fn count(r: &mut Reader<'_>, max: usize) -> Result<usize, CodecError> {
@@ -117,7 +122,11 @@ impl HybridProof {
     /// transcript-derived prime depends on them.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut w = Writer::new();
-        w.bytes(MAGIC);
+        w.bytes(match &self.multiplication.gkr {
+            super::mul::MulGkr::Forest(_) => MAGIC,
+            #[cfg(feature = "bitz-parity")]
+            super::mul::MulGkr::Wfbitz { .. } => MAGIC_WFBITZ,
+        });
         w.len(usize::from(self.opening.ood.is_some()));
         if let Some(ood) = &self.opening.ood {
             w.gf(&ood.y);
@@ -149,10 +158,10 @@ impl HybridProof {
             write_q(&mut w, q, &p.field);
         }
         write_rounds(&mut w, &s.inner, &p.field);
-        // The multiplication side's grand-product reduction, tagged by opener.
+        // The multiplication side's grand-product reduction; the magic names
+        // its opener.
         match &p.gkr {
             super::mul::MulGkr::Forest(forest) => {
-                w.len(0);
                 w.len(p.sums.len());
                 for &sum in &p.sums {
                     w.u128(sum);
@@ -173,7 +182,6 @@ impl HybridProof {
             }
             #[cfg(feature = "bitz-parity")]
             super::mul::MulGkr::Wfbitz { narg } => {
-                w.len(1);
                 w.len(narg.len());
                 w.bytes(narg);
             }
@@ -219,7 +227,14 @@ impl PreparedHybrid {
             return Err(CodecError::NonCanonical.into());
         }
         let mut r = Reader::new(bytes);
-        if r.take(8)? != MAGIC {
+        let opener = match r.take(8)? {
+            m if m == MAGIC => super::MulOpener::Forest,
+            #[cfg(feature = "bitz-parity")]
+            m if m == MAGIC_WFBITZ => super::MulOpener::Wfbitz,
+            _ => return Err(CodecError::NonCanonical.into()),
+        };
+        // Only the opener this statement was prepared for decodes.
+        if opener != self.mul_opener {
             return Err(CodecError::NonCanonical.into());
         }
         let has_ood = count(&mut r, 1)? == 1;
@@ -286,8 +301,8 @@ impl PreparedHybrid {
             outer: UnivariateSkipOuterSumcheckProof { skip, tail },
             inner: read_rounds(&mut r, q, &cfg)?,
         };
-        let (sums, gkr) = match count(&mut r, 1)? {
-            0 => {
+        let (sums, gkr) = match opener {
+            super::MulOpener::Forest => {
                 let n = count(&mut r, self.multiplication.params().cols())?;
                 let mut sums = Vec::with_capacity(n);
                 for _ in 0..n {
@@ -311,12 +326,13 @@ impl PreparedHybrid {
                 (sums, super::mul::MulGkr::Forest(MergedForestProof { layers }))
             }
             #[cfg(feature = "bitz-parity")]
-            1 => {
+            super::MulOpener::Wfbitz => {
                 let n = count(&mut r, MAX_PROOF_BYTES)?;
                 let narg = r.take(n)?.to_vec();
                 (Vec::new(), super::mul::MulGkr::Wfbitz { narg })
             }
-            _ => return Err(CodecError::NonCanonical.into()),
+            #[cfg(not(feature = "bitz-parity"))]
+            super::MulOpener::Wfbitz => return Err(CodecError::NonCanonical.into()),
         };
         let n = count(&mut r, 1 << 16)?;
         let mut sha = Vec::with_capacity(n);

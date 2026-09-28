@@ -136,8 +136,10 @@ impl Sha256EcdsaSecurity {
             (prepared.h_layout.row_vars + prepared.h_layout.col_vars + 7) as f64 * 2f64.powi(-128),
             4096,
         )?;
-        let ood = prepared
-            .ligerito
+        // The ladder that commits and opens the sources (the block layout's
+        // under the structured wfbitz opening).
+        let ligerito = prepared.ligerito_configuration();
+        let ood = ligerito
             .ood_bits()
             .map(|bits| {
                 let work = (f64::from(prepared.lambda) - bits).ceil().max(0.) as u32;
@@ -155,8 +157,7 @@ impl Sha256EcdsaSecurity {
                 })
             })
             .transpose()?;
-        let flock =
-            GrindingPlan::resolve(prepared.ligerito.security(), prepared.lambda).map_err(error)?;
+        let flock = GrindingPlan::resolve(ligerito.security(), prepared.lambda).map_err(error)?;
         for b in &flock.blocks {
             blocks.push(ChallengeSecurity {
                 label: format!("flock/{}", b.label),

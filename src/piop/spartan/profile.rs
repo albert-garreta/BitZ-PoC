@@ -227,6 +227,32 @@ impl IopSecurityParams {
         self.ood = Some(OodRoundParams { grinding_bits });
         Ok(())
     }
+
+    /// Accounts for an opener that grinds none of its GF(2^128) rounds (the
+    /// BitZ scheme of `protocol::wfbitz_opener`, whose fold, GKR and ring
+    /// switch draw on its own forked transcript): both difficulties drop to
+    /// zero, so the statement binds what runs, and the two terms keep their
+    /// bare field bounds, the way the fixed-prime accounting books an
+    /// ungrinded forest. The terms stay controllable, so construction fails
+    /// when they cannot reach the target (`λ ≥ 127`), as at instantiation
+    /// (`design_only`, the profile's flag, skips the check there and here).
+    pub fn adopt_ungrinded_opener(&mut self, design_only: bool) -> Result<(), ProfileError> {
+        self.forest_round_grinding_bits = 0;
+        self.ring_switch_grinding_bits = 0;
+        for term in &mut self.accounting.terms {
+            term.bits = match term.name {
+                "step5_2:gkr-round" => 128.0 - 3f64.log2(),
+                "step5_3:ring-switch" => 128.0,
+                _ => continue,
+            };
+            term.grinding_bits = 0;
+            term.floor = false;
+        }
+        if !design_only {
+            check_targets(self.profile_name, self.lambda, &self.accounting)?;
+        }
+        Ok(())
+    }
 }
 
 /// Compile-time IOP security policy. Zero-sized marker types implement
@@ -596,16 +622,7 @@ fn derive_params(
         terms,
     };
     if !design_only {
-        for term in &accounting.terms {
-            if !term.floor && term.bits + 1e-9 < lambda_f {
-                return Err(ProfileError::TargetUnreachable {
-                    profile: profile_name,
-                    term: term.name,
-                    bits: term.bits,
-                    lambda,
-                });
-            }
-        }
+        check_targets(profile_name, lambda, &accounting)?;
     }
 
     Ok(IopSecurityParams {
@@ -624,6 +641,25 @@ fn derive_params(
         ood: None,
         accounting,
     })
+}
+
+/// Every term this crate controls must reach `lambda` (floors excluded).
+fn check_targets(
+    profile_name: &'static str,
+    lambda: u32,
+    accounting: &SoundnessAccounting,
+) -> Result<(), ProfileError> {
+    for term in &accounting.terms {
+        if !term.floor && term.bits + 1e-9 < f64::from(lambda) {
+            return Err(ProfileError::TargetUnreachable {
+                profile: profile_name,
+                term: term.name,
+                bits: term.bits,
+                lambda,
+            });
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -790,6 +826,50 @@ mod tests {
             .find(|term| term.name == "step5_2:gkr-round")
             .unwrap();
         assert!(gkr.bits < 128.0);
+        assert!(params.accounting.controllable_bits() < 128.0);
+    }
+
+    #[test]
+    fn an_ungrinded_opener_keeps_the_bare_field_bounds() {
+        let terms = |params: &IopSecurityParams| {
+            params
+                .accounting
+                .terms
+                .iter()
+                .map(|term| (term.name, term.bits, term.grinding_bits, term.floor))
+                .collect::<Vec<_>>()
+        };
+        // λ = 100 grinds neither round: the adoption changes nothing.
+        let plain = Lambda100::instantiate(&sha_facts(14)).unwrap();
+        let mut adopted = plain.clone();
+        adopted.adopt_ungrinded_opener(false).unwrap();
+        assert_eq!(terms(&adopted), terms(&plain));
+        assert_eq!(adopted.forest_round_grinding_bits, 0);
+        assert_eq!(adopted.ring_switch_grinding_bits, 0);
+        // λ = 128: the bare GKR round (~126.4 bits) stays a controllable
+        // term below the target, so construction fails.
+        let mut params = Lambda128::instantiate(&sha_facts(14)).unwrap();
+        assert!(matches!(
+            params.adopt_ungrinded_opener(false),
+            Err(ProfileError::TargetUnreachable {
+                term: "step5_2:gkr-round",
+                ..
+            })
+        ));
+        // A design-only schedule documents it instead, with the reference
+        // schedule's bookings of the two rounds.
+        let mut params = Lambda128::instantiate(&sha_facts(14)).unwrap();
+        params.adopt_ungrinded_opener(true).unwrap();
+        assert_eq!(params.forest_round_grinding_bits, 0);
+        assert_eq!(params.ring_switch_grinding_bits, 0);
+        let reference = Sha128ReferenceSchedule::instantiate(&sha_facts(14)).unwrap();
+        let rounds = |params: &IopSecurityParams| {
+            terms(params)
+                .into_iter()
+                .filter(|term| term.0 == "step5_2:gkr-round" || term.0 == "step5_3:ring-switch")
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(rounds(&params), rounds(&reference));
         assert!(params.accounting.controllable_bits() < 128.0);
     }
 

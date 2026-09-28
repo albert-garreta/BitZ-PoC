@@ -1318,9 +1318,10 @@ pub(crate) mod neon {
     pub(crate) fn scatter_add(bucket: &mut [Gf], idx: &[u8; 64], eq_t: &[Gf]) {
         assert_eq!(eq_t.len(), 64);
         assert!(bucket.len() >= 256);
-        // SAFETY: `Gf` is `repr(transparent)` over two `u64` limbs, so the
-        // bucket is a valid `2·256`-word array; every byte index lands
-        // inside it, and positions are below 64.
+        // SAFETY: `Gf` is `repr(C, align(16))` with exactly two `u64` limbs
+        // and no padding (as `Gf128::as_words` relies on), so the bucket is
+        // a valid `2·256`-word array; every byte index lands inside it, and
+        // positions are below 64.
         unsafe {
             let base = bucket.as_mut_ptr().cast::<u64>();
             let mut m = 0usize;

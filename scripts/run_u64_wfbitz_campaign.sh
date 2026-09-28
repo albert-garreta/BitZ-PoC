@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# The u64 multiplication rows of the paper's table through the wfbitz opener
-# (branch u64-opt): one launcher campaign per (rate, extension), sizes
-# 2^15..2^21, threads 1 and 10, the paper's protocol (5 timed reps after one
-# warm-up, every proof verified, peak RSS from a separate child), the same
+# An earlier u64 multiplication campaign through the wfbitz opener (branch
+# u64-opt; rate 1/2 on `fast`); the paper's rows now come from
+# scripts/run_wfbitz_paper_campaign.sh (`custom:1:4` / `custom:3:4`). This
+# one runs one launcher campaign per (rate, extension), sizes 2^15..2^21,
+# threads 1 and 10, the paper's protocol (5 timed reps after one warm-up,
+# every proof verified, peak RSS from a separate child), the same
 # `compare` target and flags as scripts/run_mul_matrix_2026_09_20.sh so the
 # rows tabulate next to the existing ones (`scripts/mul_table.py` keys them
 # `bitz-wf@<rate>`).

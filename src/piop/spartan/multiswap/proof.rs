@@ -517,8 +517,6 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
     protocol::prove_reduced(transcript, &prepared.inner, assignment, hint)
 }
 
-/// Verifies the MultiSwap proof, re-deriving both primes from the bound
-/// transcript.
 /// [`prove_multiswap_mod_r1cs`] with the reduced claim discharged through the
 /// worldfnd/BitZ scheme's virtual opening (feature `bitz-parity`): the same
 /// prefix, lift and second prime, then that scheme's fold, GKR and opening
@@ -548,6 +546,8 @@ pub fn verify_multiswap_mod_r1cs_wfbitz<T: Transcript + Send>(
     protocol::wfbitz_opener::verify_reduced(transcript, &prepared.inner, commitment, proof)
 }
 
+/// Verifies the MultiSwap proof, re-deriving both primes from the bound
+/// transcript.
 pub fn verify_multiswap_mod_r1cs<T: Transcript + Send>(
     transcript: &mut T,
     prepared: &PreparedMultiswapRelation,
@@ -709,6 +709,131 @@ mod tests {
             ),
             Err(ProtocolError::InvalidIntegerLift)
         ));
+    }
+
+    /// MultiSwap's schedule runs no Round 0, so a Round-0 record on its
+    /// wfbitz opening is rejected, not ignored (the presence rule of the
+    /// crate's own opening); a foreign opener configuration is rejected up
+    /// front on both sides.
+    #[cfg(feature = "bitz-parity")]
+    #[test]
+    fn wfbitz_multiswap_rejects_a_stray_round_0_record() {
+        use crate::piop::spartan::protocol::{OpeningProof as _, wfbitz_opener::WfbitzOpeningProof};
+        let _env = crate::utils::QUAD_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (prepared, assignment, hint, pc, vc) = mini_setup();
+        assert!(prepared.security().ood.is_none());
+        let proof = prove_multiswap_mod_r1cs_wfbitz(
+            &mut Blake3Transcript::new(),
+            &prepared,
+            &assignment,
+            &hint,
+            &pc,
+        )
+        .unwrap();
+        assert!(proof.bitz().ood.is_none());
+        verify_multiswap_mod_r1cs_wfbitz(
+            &mut Blake3Transcript::new(),
+            &prepared,
+            &hint.commitment,
+            &proof,
+            &vc,
+        )
+        .unwrap();
+        for nonce in [None, Some(0)] {
+            let (prefix, reduction, mut bitz) = proof.clone().into_parts();
+            bitz.ood = Some(crate::ligerito_flock::OodRound {
+                y: field::Gf128::ONE,
+                nonce,
+            });
+            let bitz = WfbitzOpeningProof::from_bytes(&bitz.to_bytes()).unwrap();
+            let stray = Proof::from_parts(prefix, reduction, bitz);
+            assert!(matches!(
+                verify_multiswap_mod_r1cs_wfbitz(
+                    &mut Blake3Transcript::new(),
+                    &prepared,
+                    &hint.commitment,
+                    &stray,
+                    &vc
+                ),
+                Err(ProtocolError::Bitz(FlockRsError::OodRound))
+            ));
+        }
+
+        let foreign =
+            validated_udr_lig_configs_with(packed_vars(prepared.params()), 1, 4, 114).unwrap();
+        assert!(matches!(
+            prove_multiswap_mod_r1cs_wfbitz(
+                &mut Blake3Transcript::new(),
+                &prepared,
+                &assignment,
+                &hint,
+                &foreign.0
+            ),
+            Err(ProtocolError::Bitz(FlockRsError::CommitmentConfig))
+        ));
+        assert!(matches!(
+            verify_multiswap_mod_r1cs_wfbitz(
+                &mut Blake3Transcript::new(),
+                &prepared,
+                &hint.commitment,
+                &proof,
+                &foreign.1
+            ),
+            Err(ProtocolError::Bitz(FlockRsError::CommitmentConfig))
+        ));
+    }
+
+    /// The wfbitz opening grinds none of its GF(2^128) rounds, so a profile
+    /// that credits forest grinding is refused on both sides before any
+    /// transcript work.
+    #[cfg(feature = "bitz-parity")]
+    #[test]
+    fn wfbitz_multiswap_refuses_credited_forest_grinding() {
+        struct ForestGrinding;
+        impl IopSecurityProfile for ForestGrinding {
+            const NAME: &'static str = "limber114-forest-grinding-test";
+            const LAMBDA: u32 = 114;
+            const PRIME_POLICY: crate::piop::spartan::PrimePolicy =
+                crate::piop::spartan::PrimePolicy::TwoFullWidthFingerprint;
+            const LIGERITO_TARGET_BITS: usize = 114;
+            const FOREST_ROUND_GRINDING_BITS: u32 = 1;
+            const RING_SWITCH_GRINDING_BITS: u32 = 0;
+        }
+        let _env = crate::utils::QUAD_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (plain, assignment, hint, pc, vc) = mini_setup();
+        let proof = prove_multiswap_mod_r1cs_wfbitz(
+            &mut Blake3Transcript::new(),
+            &plain,
+            &assignment,
+            &hint,
+            &pc,
+        )
+        .unwrap();
+        let circuit = MultiswapCircuit::build(MultiswapDims::mini()).unwrap();
+        let prepared =
+            PreparedMultiswapRelation::new_with_profile::<ForestGrinding>(&circuit).unwrap();
+        assert_eq!(prepared.security().forest_round_grinding_bits, 1);
+        let mut transcript = Blake3Transcript::new();
+        let fresh = transcript.state_digest();
+        assert!(matches!(
+            prove_multiswap_mod_r1cs_wfbitz(&mut transcript, &prepared, &assignment, &hint, &pc),
+            Err(ProtocolError::UnsupportedProfile)
+        ));
+        assert!(matches!(
+            verify_multiswap_mod_r1cs_wfbitz(
+                &mut transcript,
+                &prepared,
+                &hint.commitment,
+                &proof,
+                &vc
+            ),
+            Err(ProtocolError::UnsupportedProfile)
+        ));
+        assert_eq!(transcript.state_digest(), fresh);
     }
 
     #[test]

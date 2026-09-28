@@ -347,7 +347,7 @@ pub fn run() -> Result<(), AnyError> {
             statement.parameters,
             ligerito,
         )?
-        .with_mul_opener(bitz::hybrid::MulOpener::parse(&mul_opener).expect("opener"));
+        .with_mul_opener(bitz::hybrid::MulOpener::parse(&mul_opener).expect("opener"))?;
         let proof = prepared.proof_from_bytes(&statement, &std::fs::read(path)?)?;
         prepared.verify(&statement, &proof)?;
         println!(
@@ -376,7 +376,7 @@ pub fn run() -> Result<(), AnyError> {
             parameters,
             ligerito,
         )?
-        .with_mul_opener(bitz::hybrid::MulOpener::parse(&mul_opener).expect("opener"));
+        .with_mul_opener(bitz::hybrid::MulOpener::parse(&mul_opener).expect("opener"))?;
         let request = profile
             .clone()
             .unwrap_or_else(|| "custom:1:4".into());
