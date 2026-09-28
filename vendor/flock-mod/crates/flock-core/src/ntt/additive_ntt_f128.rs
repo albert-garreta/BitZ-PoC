@@ -60,6 +60,43 @@ pub static NTT_DEEP_PCORES_ONLY: std::sync::atomic::AtomicBool =
 pub static NTT_DEEP_NOFUSE: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// Scheduling switches of the interleaved NTT, for A/B within one binary.
+/// None of them changes a bit of the output: they regroup or reorder the
+/// same butterflies with the same twiddles.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InterleavedNttSchedule {
+    /// Walk each layer's blocks in order with incremental twiddles
+    /// (`twiddle(l, b+1) = twiddle(l, b) + P_l[ctz(b+1)]`, one XOR per block)
+    /// instead of an F_2-span sum over up to `l` basis elements per block
+    /// (`NTT_TWIDDLE_WALK`, default on). At the deepest layer a twiddle serves only
+    /// `num_ntts` half-width butterflies, so the span sum costs about as much
+    /// as the work it feeds.
+    pub twiddle_walk: bool,
+}
+
+impl InterleavedNttSchedule {
+    /// Every switch off: the schedule before the switches existed.
+    pub const BASELINE: Self = Self {
+        twiddle_walk: false,
+    };
+
+    /// The environment's switches (`0` or `1` each; unset keeps the
+    /// default), read once.
+    pub fn from_env() -> Self {
+        static SCHEDULE: std::sync::OnceLock<InterleavedNttSchedule> = std::sync::OnceLock::new();
+        *SCHEDULE.get_or_init(|| {
+            let flag = |name: &str, default: bool| match std::env::var(name).as_deref() {
+                Ok("0") => false,
+                Ok("1") => true,
+                _ => default,
+            };
+            Self {
+                twiddle_walk: flag("NTT_TWIDDLE_WALK", true),
+            }
+        })
+    }
+}
+
 /// Compute the normalized subspace-polynomial evaluation table.
 ///
 /// Returns `evals` where `evals[i] = [Ŵ_i(β_i), Ŵ_i(β_{i+1}), …, Ŵ_i(β_{ℓ-1})]`.
@@ -112,6 +149,50 @@ fn span_get(basis: &[Gf128], idx: usize) -> Gf128 {
     acc
 }
 
+/// Prefix sums `P[k] = basis[0] + … + basis[k]`: the step between the span
+/// elements at `idx` and `idx + 1` is `P[ctz(idx + 1)]` (going from `idx` to
+/// `idx + 1` flips exactly bits `0..=ctz(idx + 1)`).
+fn span_steps(basis: &[Gf128]) -> Vec<Gf128> {
+    let mut acc = Gf128::ZERO;
+    basis
+        .iter()
+        .map(|&b| {
+            acc += b;
+            acc
+        })
+        .collect()
+}
+
+/// The twiddles of one layer at consecutive blocks `first, first + 1, …`.
+/// Walking, each block costs one XOR ([`span_steps`]); otherwise each is the
+/// span sum [`AdditiveNttF128::twiddle`] computes.
+struct LayerTwiddles<'a> {
+    span: &'a [Gf128],
+    steps: &'a [Gf128],
+    block: usize,
+    current: Gf128,
+    walk: bool,
+}
+
+impl LayerTwiddles<'_> {
+    /// The twiddle of the next block.
+    #[inline]
+    fn take(&mut self) -> Gf128 {
+        if !self.walk {
+            let twiddle = span_get(self.span, self.block);
+            self.block += 1;
+            return twiddle;
+        }
+        let twiddle = self.current;
+        self.block += 1;
+        // Past the layer's last block there is no step (and no next block).
+        if let Some(&step) = self.steps.get(self.block.trailing_zeros() as usize) {
+            self.current += step;
+        }
+        twiddle
+    }
+}
+
 /// Additive NTT over F_{2^128} with the standard polynomial-basis subspace.
 ///
 /// The basis is `{1, x, x², …, x^(ℓ-1)}` in F_{2^128} = F_2[x]/(GHASH-poly).
@@ -121,14 +202,19 @@ fn span_get(basis: &[Gf128], idx: usize) -> Gf128 {
 pub struct AdditiveNttF128 {
     /// `evals[i]` of length `ℓ − i`, the normalized subspace polynomial values.
     evals: Vec<Vec<Gf128>>,
+    /// `steps[l]`: the [`span_steps`] of layer `l`'s twiddle span
+    /// (`evals[ℓ − l − 1][1..]`), for walking its blocks in order.
+    steps: Vec<Vec<Gf128>>,
 }
 
 impl AdditiveNttF128 {
     /// Construct an NTT from an explicit F_2-basis.
     pub fn new(basis: &[Gf128]) -> Self {
-        Self {
-            evals: generate_evals_from_subspace(basis),
-        }
+        let evals = generate_evals_from_subspace(basis);
+        let steps = (0..evals.len())
+            .map(|layer| span_steps(&evals[evals.len() - layer - 1][1..]))
+            .collect();
+        Self { evals, steps }
     }
 
     /// Standard NTT with basis `{1, x, x², …, x^(dim-1)}`. Requires `dim ≤ 64`
@@ -153,6 +239,62 @@ impl AdditiveNttF128 {
     pub fn twiddle(&self, layer: usize, block: usize) -> Gf128 {
         let v = &self.evals[self.log_domain_size() - layer - 1];
         span_get(&v[1..], block)
+    }
+
+    /// The twiddles of `layer` at blocks `first, first + 1, …`, walked
+    /// incrementally when `walk` (see [`InterleavedNttSchedule::twiddle_walk`]).
+    fn layer_twiddles(&self, layer: usize, first: usize, walk: bool) -> LayerTwiddles<'_> {
+        let span = &self.evals[self.log_domain_size() - layer - 1][1..];
+        LayerTwiddles {
+            span,
+            steps: &self.steps[layer],
+            block: first,
+            current: if walk { span_get(span, first) } else { Gf128::ZERO },
+            walk,
+        }
+    }
+
+    /// Split point between the top (full-buffer sweep) and deep
+    /// (cache-resident sub-group) passes of the interleaved parallel NTT.
+    ///
+    /// Target sub-group size = 2 MB total bytes. Each position is
+    /// `num_ntts × 16` bytes, so positions per sub-group =
+    /// 2^21 / (num_ntts · 16). With num_ntts=1: 2^17 positions. With
+    /// num_ntts=32: 2^12 positions. (Without this scaling, sub-groups at
+    /// num_ntts=32 would be 64 MB and overflow L2 cache.)
+    ///
+    /// Parallelism floor. The cache heuristic keeps each sub-NTT ~2 MB, but
+    /// for a mid-size transform whose whole codeword already fits that
+    /// budget it yields `cache_n_top == 0` and the transform runs fully
+    /// serial — e.g. the recursive Ligerito commits (~1 ms of NTT each,
+    /// previously 1.0× across threads). When the transform is big enough to
+    /// amortize rayon overhead, raise `n_top` so the deep-layer split
+    /// produces ~one sub-NTT per worker thread (capped to keep each sub-NTT
+    /// ≥ 2^MIN_SUB_LOG positions). The large initial PCS commit is unaffected:
+    /// its `cache_n_top` already exceeds this floor.
+    ///
+    /// The floor (log_d ≥ 12) is the measured dispatch-vs-compute crossover
+    /// for num_ntts≈8 recursive commits: at log_d=12 parallelizing cuts the
+    /// NTT ~0.22 → ~0.08 ms, but at log_d=10 the rayon dispatch costs more
+    /// than the ~0.04 ms of work, so those stay scalar.
+    #[cfg(any(
+        all(target_arch = "aarch64", target_feature = "aes"),
+        all(target_arch = "x86_64", target_feature = "pclmulqdq"),
+    ))]
+    fn interleaved_n_top(&self, log_d: usize, num_ntts: usize) -> usize {
+        const TARGET_SUBGROUP_LOG_BYTES: usize = 21;
+        let log_bytes_per_position = 4 + log2_pow2(num_ntts);
+        let target_log_positions = TARGET_SUBGROUP_LOG_BYTES.saturating_sub(log_bytes_per_position);
+        let cache_n_top = log_d.saturating_sub(target_log_positions);
+        const PARALLEL_FLOOR_LOG_D: usize = 12;
+        const MIN_SUB_LOG: usize = 8;
+        if log_d >= PARALLEL_FLOOR_LOG_D {
+            let want_subs_log = log2_pow2(rayon::current_num_threads().next_power_of_two());
+            let max_n_top = log_d.saturating_sub(MIN_SUB_LOG);
+            cache_n_top.max(want_subs_log.min(max_n_top))
+        } else {
+            cache_n_top
+        }
     }
 
     /// Forward additive NTT in place. `data.len()` must be `2^log_d` for some
@@ -208,6 +350,23 @@ impl AdditiveNttF128 {
         num_ntts: usize,
         start_layer: usize,
     ) {
+        self.forward_transform_interleaved_from_layer_with(
+            data,
+            num_ntts,
+            start_layer,
+            InterleavedNttSchedule::from_env(),
+        );
+    }
+
+    /// [`Self::forward_transform_interleaved_from_layer`] under an explicit
+    /// [`InterleavedNttSchedule`] (same output for every schedule).
+    pub fn forward_transform_interleaved_from_layer_with(
+        &self,
+        data: &mut [Gf128],
+        num_ntts: usize,
+        start_layer: usize,
+        schedule: InterleavedNttSchedule,
+    ) {
         assert!(num_ntts.is_power_of_two() && num_ntts > 0);
         let n_total = data.len();
         assert_eq!(n_total % num_ntts, 0);
@@ -222,14 +381,24 @@ impl AdditiveNttF128 {
             all(target_arch = "x86_64", target_feature = "pclmulqdq"),
         ))]
         {
-            self.forward_transform_interleaved_parallel_from_layer(data, num_ntts, start_layer);
+            self.forward_transform_interleaved_parallel_from_layer_with(
+                data,
+                num_ntts,
+                start_layer,
+                schedule,
+            );
         }
         #[cfg(not(any(
             all(target_arch = "aarch64", target_feature = "aes"),
             all(target_arch = "x86_64", target_feature = "pclmulqdq"),
         )))]
         {
-            self.forward_transform_interleaved_scalar_from_layer(data, num_ntts, start_layer);
+            self.forward_transform_interleaved_scalar_from_layer_with(
+                data,
+                num_ntts,
+                start_layer,
+                schedule.twiddle_walk,
+            );
         }
     }
 
@@ -239,12 +408,30 @@ impl AdditiveNttF128 {
     }
 
     /// Scalar interleaved forward NTT from `start_layer` (see
-    /// [`Self::forward_transform_interleaved_from_layer`]).
+    /// [`Self::forward_transform_interleaved_from_layer`]). Every twiddle is
+    /// its own span sum, so this stays the reference the tests compare to.
     pub fn forward_transform_interleaved_scalar_from_layer(
         &self,
         data: &mut [Gf128],
         num_ntts: usize,
         start_layer: usize,
+    ) {
+        self.forward_transform_interleaved_scalar_from_layer_with(
+            data,
+            num_ntts,
+            start_layer,
+            false,
+        );
+    }
+
+    /// [`Self::forward_transform_interleaved_scalar_from_layer`], walking each
+    /// layer's twiddles incrementally when `walk`.
+    fn forward_transform_interleaved_scalar_from_layer_with(
+        &self,
+        data: &mut [Gf128],
+        num_ntts: usize,
+        start_layer: usize,
+        walk: bool,
     ) {
         let n_total = data.len();
         let log_d = log2_pow2(n_total / num_ntts);
@@ -254,8 +441,9 @@ impl AdditiveNttF128 {
             let block_size = 1usize << (log_d - layer);
             let block_size_half = block_size >> 1;
             let block_size_bytes = block_size * num_ntts;
+            let mut twiddles = self.layer_twiddles(layer, 0, walk);
             for block in 0..num_blocks {
-                let twiddle = self.twiddle(layer, block);
+                let twiddle = twiddles.take();
                 let block_start = block * block_size_bytes;
                 // Butterfly pairs (top, bot) at positions (row, row + block_size_half)
                 // within the block. Each "position" holds num_ntts lanes side-by-side.
@@ -301,45 +489,40 @@ impl AdditiveNttF128 {
         num_ntts: usize,
         start_layer: usize,
     ) {
+        self.forward_transform_interleaved_parallel_from_layer_with(
+            data,
+            num_ntts,
+            start_layer,
+            InterleavedNttSchedule::from_env(),
+        );
+    }
+
+    /// [`Self::forward_transform_interleaved_parallel_from_layer`] under an
+    /// explicit [`InterleavedNttSchedule`] (same output for every schedule).
+    #[cfg(any(
+        all(target_arch = "aarch64", target_feature = "aes"),
+        all(target_arch = "x86_64", target_feature = "pclmulqdq"),
+    ))]
+    pub fn forward_transform_interleaved_parallel_from_layer_with(
+        &self,
+        data: &mut [Gf128],
+        num_ntts: usize,
+        start_layer: usize,
+        schedule: InterleavedNttSchedule,
+    ) {
         use rayon::prelude::*;
         let n_total = data.len();
         let log_d = log2_pow2(n_total / num_ntts);
+        let walk = schedule.twiddle_walk;
 
-        // Target sub-group size = 2 MB total bytes. Each position is
-        // `num_ntts × 16` bytes, so positions per sub-group =
-        // 2^21 / (num_ntts · 16). With num_ntts=1: 2^17 positions. With
-        // num_ntts=32: 2^12 positions. (Without this scaling, sub-groups at
-        // num_ntts=32 would be 64 MB and overflow L2 cache.)
-        const TARGET_SUBGROUP_LOG_BYTES: usize = 21;
-        let log_bytes_per_position = 4 + log2_pow2(num_ntts);
-        let target_log_positions = TARGET_SUBGROUP_LOG_BYTES.saturating_sub(log_bytes_per_position);
-        let cache_n_top = log_d.saturating_sub(target_log_positions);
-
-        // Parallelism floor. The cache heuristic keeps each sub-NTT ~2 MB, but
-        // for a mid-size transform whose whole codeword already fits that
-        // budget it yields `cache_n_top == 0` and the transform runs fully
-        // serial — e.g. the recursive Ligerito commits (~1 ms of NTT each,
-        // previously 1.0× across threads). When the transform is big enough to
-        // amortize rayon overhead, raise `n_top` so the deep-layer split
-        // produces ~one sub-NTT per worker thread (capped to keep each sub-NTT
-        // ≥ 2^MIN_SUB_LOG positions). The large initial PCS commit is unaffected:
-        // its `cache_n_top` already exceeds this floor.
-        //
-        // The floor (log_d ≥ 12) is the measured dispatch-vs-compute crossover
-        // for num_ntts≈8 recursive commits: at log_d=12 parallelizing cuts the
-        // NTT ~0.22 → ~0.08 ms, but at log_d=10 the rayon dispatch costs more
-        // than the ~0.04 ms of work, so those stay scalar.
-        const PARALLEL_FLOOR_LOG_D: usize = 12;
-        const MIN_SUB_LOG: usize = 8;
-        let n_top = if log_d >= PARALLEL_FLOOR_LOG_D {
-            let want_subs_log = log2_pow2(rayon::current_num_threads().next_power_of_two());
-            let max_n_top = log_d.saturating_sub(MIN_SUB_LOG);
-            cache_n_top.max(want_subs_log.min(max_n_top))
-        } else {
-            cache_n_top
-        };
+        let n_top = self.interleaved_n_top(log_d, num_ntts);
         if n_top == 0 || log_d < 8 {
-            self.forward_transform_interleaved_scalar_from_layer(data, num_ntts, start_layer);
+            self.forward_transform_interleaved_scalar_from_layer_with(
+                data,
+                num_ntts,
+                start_layer,
+                walk,
+            );
             return;
         }
 
@@ -452,20 +635,20 @@ impl AdditiveNttF128 {
                 .for_each(|(sub_idx, sub_data)| {
                     let mut layer = n_top.max(start_layer);
                     while layer < log_d {
-                        let layer_in_sub = layer - n_top;
-                        let num_blocks_in_sub = 1usize << layer_in_sub;
+                        // The sub-group's blocks at this layer are the global
+                        // blocks `first_block..first_block + 2^(layer − n_top)`.
+                        let first_block = sub_idx << (layer - n_top);
                         let block_size = 1usize << (log_d - layer);
                         let block_bytes = block_size * num_ntts;
 
                         if fuse && layer + 2 <= halfwidth_start && block_size >= 4 {
                             let quarter = block_size >> 2;
-                            for block_in_sub in 0..num_blocks_in_sub {
-                                let global_block = sub_idx * num_blocks_in_sub + block_in_sub;
-                                let t_outer = self.twiddle(layer, global_block);
-                                let t_inner_a = self.twiddle(layer + 1, 2 * global_block);
-                                let t_inner_b = self.twiddle(layer + 1, 2 * global_block + 1);
-                                let block_start = block_in_sub * block_bytes;
-                                let block = &mut sub_data[block_start..block_start + block_bytes];
+                            let mut outer = self.layer_twiddles(layer, first_block, walk);
+                            let mut inner = self.layer_twiddles(layer + 1, 2 * first_block, walk);
+                            for block in sub_data.chunks_exact_mut(block_bytes) {
+                                let t_outer = outer.take();
+                                let t_inner_a = inner.take();
+                                let t_inner_b = inner.take();
                                 butterfly_interleaved_fused_2layer_serial(
                                     block, t_outer, t_inner_a, t_inner_b, quarter, num_ntts,
                                 );
@@ -473,14 +656,11 @@ impl AdditiveNttF128 {
                             layer += 2;
                         } else {
                             let block_size_half = block_size >> 1;
-                            for block_in_sub in 0..num_blocks_in_sub {
-                                let global_block = sub_idx * num_blocks_in_sub + block_in_sub;
-                                let twiddle = self.twiddle(layer, global_block);
-                                let block_start = block_in_sub * block_bytes;
-                                let block = &mut sub_data[block_start..block_start + block_bytes];
+                            let mut twiddles = self.layer_twiddles(layer, first_block, walk);
+                            for block in sub_data.chunks_exact_mut(block_bytes) {
                                 butterfly_interleaved_block(
                                     block,
-                                    twiddle,
+                                    twiddles.take(),
                                     block_size_half,
                                     num_ntts,
                                 );
@@ -1247,6 +1427,83 @@ mod tests {
                     v_par, v_scalar,
                     "interleaved parallel mismatch at log_d={log_d}, num_ntts={num_ntts}"
                 );
+            }
+        }
+    }
+
+    /// Every combination of the schedule switches.
+    fn all_schedules() -> Vec<InterleavedNttSchedule> {
+        (0..2u8)
+            .map(|bits| InterleavedNttSchedule {
+                twiddle_walk: bits & 1 != 0,
+            })
+            .collect()
+    }
+
+    /// Walking a layer's blocks gives the same twiddles as the span sums,
+    /// from any first block, across power-of-two boundaries, to the layer's
+    /// last block.
+    #[test]
+    fn twiddle_walk_matches_span_sums() {
+        let ntt = AdditiveNttF128::standard(12);
+        for layer in 0..12 {
+            let blocks = 1usize << layer;
+            for first in [0usize, 1, 3, blocks / 2, blocks.saturating_sub(5), blocks - 1] {
+                let first = first.min(blocks - 1);
+                let mut walk = ntt.layer_twiddles(layer, first, true);
+                let mut span = ntt.layer_twiddles(layer, first, false);
+                for block in first..blocks {
+                    let expected = ntt.twiddle(layer, block);
+                    assert_eq!(walk.take(), expected, "walk layer={layer} block={block}");
+                    assert_eq!(span.take(), expected, "span layer={layer} block={block}");
+                }
+            }
+        }
+    }
+
+    /// Every schedule of the interleaved transform is byte-identical to the
+    /// scalar reference: shapes with fused and single top layers, a fused
+    /// deep pass ending on single layers, sub-groups whose first deep layer
+    /// is already a half-width one, and start layers 0..=2, at 1 and 4
+    /// threads (the thread count moves the top/deep split).
+    #[test]
+    fn schedules_match_scalar() {
+        let mut rng = Rng::new(0x5CED);
+        for threads in [1usize, 4] {
+            let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
+            for (log_d, num_ntts, start_layer) in [
+                (8usize, 2usize, 0usize),
+                (10, 4, 1),
+                (12, 1, 1),
+                (13, 2, 2),
+                (14, 16, 1),
+                (15, 8, 1),
+                (16, 16, 1),
+            ] {
+                let ntt = AdditiveNttF128::standard(log_d);
+                let original = rand_vec(&mut rng, (1 << log_d) * num_ntts);
+                let mut expect = original.clone();
+                ntt.forward_transform_interleaved_scalar_from_layer(
+                    &mut expect,
+                    num_ntts,
+                    start_layer,
+                );
+                for schedule in all_schedules() {
+                    let mut got = original.clone();
+                    pool.install(|| {
+                        ntt.forward_transform_interleaved_from_layer_with(
+                            &mut got,
+                            num_ntts,
+                            start_layer,
+                            schedule,
+                        )
+                    });
+                    assert!(
+                        got == expect,
+                        "{schedule:?} at log_d={log_d} num_ntts={num_ntts} \
+                         start={start_layer} threads={threads}"
+                    );
+                }
             }
         }
     }
