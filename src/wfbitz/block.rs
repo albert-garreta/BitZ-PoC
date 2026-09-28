@@ -339,12 +339,9 @@ impl BitZProver {
         transcript.public_message(statement.frame().as_slice());
         transcript.public_message(statement.claim);
 
+        // The derived grid's packing and the forest's nibble rows come first:
+        // the column folds read the nibble rows too (as the direct opener's).
         super::trace_start();
-        let started = std::time::Instant::now();
-        let fold = self
-            .send_fold(statement.claim, derived_rows, transcript)
-            .map_err(ProveError::Fold)?;
-        super::trace("fold+images", started);
         let started = std::time::Instant::now();
         let layout = IntegerMatrixLayout {
             row_vars: shape.log_rows(),
@@ -352,7 +349,20 @@ impl BitZProver {
             word_bits: 1,
         };
         let packed = crate::ligerito::pack_columns_from_rows(&layout, derived_rows);
-        let query = reduce::gkr_reduce_prove_packed(transcript, &fold, &shape, &packed)
+        let nibble = {
+            let started = std::time::Instant::now();
+            let nibble = super::forest::nibble_rows_for(shape.log_rows(), shape.log_columns(), &packed);
+            if nibble.is_some() {
+                super::trace("  nibble rows", started);
+            }
+            nibble
+        };
+        let fold = self
+            .send_fold_with(statement.claim, derived_rows, nibble.as_ref(), transcript)
+            .map_err(ProveError::Fold)?;
+        super::trace("fold+images", started);
+        let started = std::time::Instant::now();
+        let query = reduce::gkr_reduce_prove_packed_with(transcript, &fold, &shape, &packed, nibble)
             .map_err(ProveError::Reduction)?;
         drop(packed);
         super::trace("gkr", started);

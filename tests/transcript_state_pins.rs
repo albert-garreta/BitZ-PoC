@@ -139,6 +139,24 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "4998c8e08e08ebae9cb65cef049c22c4ea23592d138e39fc80acf019f3db0f47",
     ),
     (
+        "sha256/2p9/wfbitz/private-io/lambda100",
+        "ac0cdac1f04cab1820f59c0bb663bf3e0da8a030a60a0f30789fdcdeda4e2c51",
+        "ac0cdac1f04cab1820f59c0bb663bf3e0da8a030a60a0f30789fdcdeda4e2c51",
+        "c04e21322bafe6443e9f68cf60f717a09a973868d30eaafa528d265532f7b2c3",
+    ),
+    (
+        "sha256/2p9/wfbitz/private-io/lambda100/all-products",
+        "57aa79c50588f2056330bbcf479051311f3f1d6a70d920ea8743d18583806702",
+        "57aa79c50588f2056330bbcf479051311f3f1d6a70d920ea8743d18583806702",
+        "8787f7eebfe50ce916315812d6e8090acf3b0cf77f5272e620ed61c5dc60738d",
+    ),
+    (
+        "sha256/2p9/wfbitz/private-io/lambda100/flock-hybrid",
+        "ea8ebea2305d2dda88650d4efe8ec6596fe9f3d2955aa3cb4ba984782e1ce226",
+        "ea8ebea2305d2dda88650d4efe8ec6596fe9f3d2955aa3cb4ba984782e1ce226",
+        "019bdaf3d3a90b878ba4239750c5fc95261b17d6c04868005b156e3ba72f446e",
+    ),
+    (
         "sha256/2p7/lambda100/flock-hybrid",
         "d6b7c68d884e123f2cc0f14def61dfb8ae8980dd50649228c098961405428845",
         "4810e2b5babecbf964035ec0aff416a82bd95fe2a60443f438cdb604459df1fa",
@@ -597,6 +615,39 @@ fn sha256_2p7_wfbitz_lambda100() {
     let nonces = nonces_le([proof.initial_nonce(), proof.terminal_nonce()]);
     pin(
         &sha_relation_pin("sha256/2p7/wfbitz/lambda100"),
+        &pt,
+        &vt,
+        &[&hint.commitment.root, &opening, &nonces],
+    );
+}
+
+/// The block opener at `2^9` compressions: the smallest SHA grid (`t + s =
+/// 23`) on which the forest reads nibble rows, so the pin covers that path
+/// (the `2^7` pins run below it).
+#[cfg(feature = "bitz-parity")]
+#[test]
+fn sha256_2p9_wfbitz_lambda100() {
+    use bitz::piop::spartan::{
+        commit_sha256_compression_witness_wfbitz,
+        prepare_sha256_compression_batch_wfbitz_with_profile, protocol::OpeningProof,
+        prove_sha256_compressions_wfbitz, verify_sha256_compressions_wfbitz,
+    };
+    let prepared = prepare_sha256_compression_batch_wfbitz_with_profile::<Lambda100>(9)
+        .expect("prepare")
+        .with_private_io();
+    let inputs = sha256_inputs(prepared.instances());
+    let witness = generate_sha256_compression_witnesses(&prepared, &inputs).expect("witness");
+    let hint = commit_sha256_compression_witness_wfbitz(&prepared, &witness).expect("commit");
+    let mut pt = Blake3Transcript::new();
+    let proof = prove_sha256_compressions_wfbitz(&mut pt, &prepared, &[], &witness, &hint)
+        .expect("prove");
+    let mut vt = Blake3Transcript::new();
+    verify_sha256_compressions_wfbitz(&mut vt, &prepared, &[], &hint.commitment, &proof)
+        .expect("verify");
+    let opening = proof.bitz().to_bytes();
+    let nonces = nonces_le([proof.initial_nonce(), proof.terminal_nonce()]);
+    pin(
+        &sha_relation_pin("sha256/2p9/wfbitz/private-io/lambda100"),
         &pt,
         &vt,
         &[&hint.commitment.root, &opening, &nonces],

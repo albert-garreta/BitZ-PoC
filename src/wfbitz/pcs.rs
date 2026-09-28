@@ -449,9 +449,11 @@ impl Pcs {
         let started_lig = std::time::Instant::now();
         let data = hint.flock_prover_data();
         let mut challenger = ProverChallenger::new_ligerito(transcript, packed_target);
+        // Borrowed: the Ligerito sumcheck reads the packed witness through a
+        // `Cow` and folds into its own buffers, so no copy of the message.
         let ligerito = recursive_prover_with_basis(
             &self.prover_config,
-            packed.to_vec(),
+            packed,
             packed_basis,
             packed_target,
             &data.codeword,
