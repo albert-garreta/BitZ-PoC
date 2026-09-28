@@ -147,6 +147,15 @@ fn main() {
     let commit = median(&commit_times);
     println!("commit: median {:.2} ms over {reps}", ms(commit));
 
+    // The 64-column-lane packing the prover reads is built once per
+    // commitment, on first use. Build it here, timed, rather than inside the
+    // untimed warm-up prove: it is per-commitment prover work that neither
+    // the commit nor the prove median contains.
+    let started = Instant::now();
+    let _ = hint.packed_cols();
+    let packed_cols = started.elapsed();
+    println!("packed cols: {:.2} ms (per commitment; in neither commit nor prove)", ms(packed_cols));
+
     // Prove: one warm-up, then `reps` timed and verified.
     let prover = BitZProver::new(params, WINDOW);
     let verifier = BitZVerifier::new(params, WINDOW);
@@ -213,7 +222,7 @@ fn main() {
     let rss = peak_rss_bytes();
     println!("peak rss: {:.2} GB", rss as f64 / 1e9);
     println!(
-        "RESULT schema=bitz-bench/1 n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder} commit_ms={:.3} prove_ms={:.3} grand_ms={:.3} ring_ms={:.3} lig_ms={:.3} verify_ms={:.3} narg_bytes={} hints_bytes={} proof_digest={digest} peak_rss_bytes={rss}",
-        ms(commit), ms(prove), ms(grand), ms(ring), ms(lig), ms(verify), sizes.0, sizes.1
+        "RESULT schema=bitz-bench/1 n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder} commit_ms={:.3} prove_ms={:.3} grand_ms={:.3} ring_ms={:.3} lig_ms={:.3} verify_ms={:.3} narg_bytes={} hints_bytes={} proof_digest={digest} peak_rss_bytes={rss} packed_cols_ms={:.3}",
+        ms(commit), ms(prove), ms(grand), ms(ring), ms(lig), ms(verify), sizes.0, sizes.1, ms(packed_cols)
     );
 }
