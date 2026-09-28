@@ -633,7 +633,30 @@ pub fn merkle_tree(data: &[u8], num_leaves: usize, kind: HashKind) -> Vec<Hash> 
     }
 }
 
+/// Whether tree buffers are recycled through [`crate::scratch`]'s tree pool
+/// (`MERKLE_TREE_POOL`, `0` or `1`, default off), read once: taken by
+/// [`merkle_tree`], given back by [`recycle_tree`] when a commitment's
+/// prover data or a Ligerito level's witness is dropped. Every node is
+/// written before it is read, so the tree is the same either way.
+fn tree_pool_from_env() -> bool {
+    use std::sync::OnceLock;
+    static POOL: OnceLock<bool> = OnceLock::new();
+    *POOL.get_or_init(|| matches!(std::env::var("MERKLE_TREE_POOL").as_deref(), Ok("1")))
+}
+
+/// Hand a finished tree's buffer to the tree pool (when
+/// [`tree_pool_from_env`] is on; otherwise it is freed).
+pub(crate) fn recycle_tree(tree: Vec<Hash>) {
+    if tree_pool_from_env() {
+        crate::scratch::give_hash(tree);
+    }
+}
+
 fn merkle_tree_impl(data: &[u8], num_leaves: usize, kind: HashKind) -> Vec<Hash> {
+    merkle_tree_impl_with(data, num_leaves, kind, tree_pool_from_env())
+}
+
+fn merkle_tree_impl_with(data: &[u8], num_leaves: usize, kind: HashKind, pooled: bool) -> Vec<Hash> {
     assert!(
         num_leaves.is_power_of_two() && num_leaves > 0,
         "num_leaves must be power of 2"
@@ -648,8 +671,13 @@ fn merkle_tree_impl(data: &[u8], num_leaves: usize, kind: HashKind) -> Vec<Hash>
     let total_nodes = 2 * num_leaves - 1;
     // Uninit alloc — every node is written exactly once before being read:
     // leaves at step 1, then each internal level reads the level below (which
-    // was just written) and writes itself.
-    let mut tree: Vec<Hash> = crate::alloc_uninit_vec(total_nodes);
+    // was just written) and writes itself. A pooled buffer holds stale nodes
+    // under the same contract.
+    let mut tree: Vec<Hash> = if pooled {
+        crate::scratch::take_hash(total_nodes)
+    } else {
+        crate::alloc_uninit_vec(total_nodes)
+    };
 
     // 1. Leaves — fully parallel, SIMD-batched across leaves where possible.
     hash_leaves(data, leaf_size, &mut tree[..num_leaves], kind);
@@ -1319,6 +1347,22 @@ mod tests {
                 !verify_merkle_proof(&root, &leaf_hash, 0, &proof, kind),
                 "{kind}"
             );
+        }
+    }
+
+    /// A tree built in a recycled (stale, larger) pool buffer is the same
+    /// tree as a fresh one, for both hashes and several leaf sizes.
+    #[test]
+    fn pooled_tree_matches_fresh_tree() {
+        for kind in KINDS {
+            for (leaf_size, leaves) in [(256usize, 64usize), (128, 32), (64, 8), (32, 16)] {
+                let data = random_data(leaves, leaf_size, 0x7EE + leaf_size as u64);
+                crate::scratch::give_hash(vec![[0xA5u8; 32]; 4 * leaves]);
+                let pooled = merkle_tree_impl_with(&data, leaves, kind, true);
+                let fresh = merkle_tree_sequential(&data, leaves, kind);
+                assert_eq!(pooled, fresh, "{kind} leaf_size={leaf_size}");
+                crate::scratch::give_hash(pooled);
+            }
         }
     }
 
