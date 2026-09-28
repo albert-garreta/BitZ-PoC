@@ -22,6 +22,28 @@ use crate::utils::wide_mul::WideMulAcc;
 /// The longest run one task handles when a round has a single row (the
 /// flat rounds and the `s = 0` layers).
 const MAX_TASK: usize = 1 << 12;
+/// The shortest column chunk [`Weights::task_len`] splits a task down to.
+const MIN_SPLIT: usize = 1 << 9;
+/// How many tasks per thread a split pass aims for.
+const TASKS_PER_THREAD: usize = 4;
+
+/// How many tasks a dense pass should at least have, [`Weights::split`]:
+/// `0` keeps whole rows. `WFBITZ_COL_CHUNK=1` (read once) splits the late
+/// in-tree passes, which have fewer rows than threads (8 down to 1 at
+/// `2^s` columns each), into [`TASKS_PER_THREAD`] tasks per thread. Off by
+/// default: at 10 threads it measured the same as whole rows (`n = 28,
+/// 30`, with and without the double fold).
+pub(crate) fn split_target() -> usize {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if !*ON.get_or_init(|| std::env::var("WFBITZ_COL_CHUNK").as_deref() == Ok("1")) {
+        return 0;
+    }
+    #[cfg(feature = "parallel")]
+    let threads = rayon::current_num_threads();
+    #[cfg(not(feature = "parallel"))]
+    let threads = 1usize;
+    TASKS_PER_THREAD * threads
+}
 
 /// Pattern blocks come transposed ([`super::forest::transpose_blocks`]):
 /// position `m` of a 64-byte block holds column `((m & 7) << 3) | (m >> 3)`
@@ -38,6 +60,9 @@ pub(crate) fn col_of(m: usize) -> usize {
 pub(crate) struct Weights<'a> {
     pub eq_c: &'a [Gf],
     pub eq_y: &'a [Gf],
+    /// The fewest tasks the pass should have ([`split_target`]); `0` keeps
+    /// the whole-row tasks.
+    pub split: usize,
 }
 
 impl Weights<'_> {
@@ -50,13 +75,20 @@ impl Weights<'_> {
     }
 
     /// The task length: whole rows when there are several, runs of at
-    /// most [`MAX_TASK`] entries when there is one.
+    /// most [`MAX_TASK`] entries when there is one — halved (widths are
+    /// powers of two, so a task stays inside one row) while the pass has
+    /// fewer than `split` tasks, down to [`MIN_SPLIT`] columns.
     fn task_len(&self) -> usize {
-        if self.rows() > 1 {
+        let mut len = if self.rows() > 1 {
             self.width()
         } else {
             self.width().min(MAX_TASK).max(1)
+        };
+        let entries = self.width() * self.rows();
+        while len > MIN_SPLIT && len % 2 == 0 && entries / len < self.split {
+            len /= 2;
         }
+        len
     }
 
     /// The row and the column offset of task `i`.
@@ -1485,6 +1517,42 @@ mod tests {
                 assert_eq!(got, want, "n {n} send_one {send_one}");
                 assert_eq!(q_l, want_l);
                 assert_eq!(q_r, want_r);
+            }
+        }
+    }
+
+    /// Splitting a pass's rows into column chunks gives the same sums and
+    /// folds the same entries, on one row and on several, for every left
+    /// half and endpoint.
+    #[test]
+    fn split_tasks_sum_identically() {
+        for (width, rows) in [(2048usize, 1usize), (2048, 2), (1024, 4), (8192, 1), (512, 8), (64, 16)] {
+            let h = width * rows;
+            let eq_c = elements(width, 200);
+            let eq_y = elements(rows, 201);
+            let rho = elements(1, 202)[0];
+            let halves: Vec<Vec<Gf>> = (0..4).map(|i| elements(h, 203 + i)).collect();
+            let quarters: Vec<Vec<Gf>> = (0..8).map(|i| elements(h, 210 + i)).collect();
+            for send_one in [false, true] {
+                for left in [Left::Plain, Left::Weigh, Left::Weighted] {
+                    let run = |split: usize| {
+                        let w = Weights { eq_c: &eq_c, eq_y: &eq_y, split };
+                        let sums = round_sums(&halves[0], &halves[1], &halves[2], &halves[3], w, send_one);
+                        let mut q = quarters.clone();
+                        let [a0, a1, a2, a3, b0, b1, b2, b3] = &mut q[..] else { unreachable!() };
+                        let fused = fused_fold_round(a0, a1, a2, a3, b0, b1, b2, b3, rho, w, send_one, left);
+                        (w.task_len(), sums, fused, q)
+                    };
+                    let want = run(0);
+                    for split in [1usize, 16, 1 << 20] {
+                        let got = run(split);
+                        let label = format!("width {width} rows {rows} split {split} send_one {send_one} {left:?}");
+                        assert_eq!((&got.1, &got.2, &got.3), (&want.1, &want.2, &want.3), "{label}");
+                        if split == 1 << 20 && want.0 > MIN_SPLIT {
+                            assert_eq!(got.0, MIN_SPLIT, "split down {label}");
+                        }
+                    }
+                }
             }
         }
     }

@@ -245,12 +245,13 @@ pub(crate) fn prove_dense_rounds(
         // the value at one. Otherwise send the value at zero as usual.
         let send_one = z == Gf::zero();
         let (eq_flat, eq_y);
+        let split = kernels::split_target();
         let weights = if s > 0 && remaining >= s {
             eq_y = eq_table(&external[s..remaining]);
-            kernels::Weights { eq_c: &eq_c, eq_y: &eq_y }
+            kernels::Weights { eq_c: &eq_c, eq_y: &eq_y, split }
         } else {
             eq_flat = eq_table(&external[..remaining]);
-            kernels::Weights { eq_c: &eq_flat, eq_y: &one }
+            kernels::Weights { eq_c: &eq_flat, eq_y: &one, split }
         };
 
         let (sum_endpoint, sum_inf) = match pending.take() {
