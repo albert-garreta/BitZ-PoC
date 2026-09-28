@@ -144,6 +144,14 @@ pub(crate) fn nibble_rows_for(t: usize, s: usize, packed_cols: &[Vec<u64>]) -> O
         .then(|| NibbleRows::new(t, packed_cols, (1usize << s).div_ceil(64)))
 }
 
+/// Whether the build pass keeps level 4 instead of the level-4 round
+/// rebuilding it (`WFBITZ_KEEP_L4`, `0` or `1`, default off: `2^{t−4+s}` more
+/// entries of peak), read once.
+fn keep_level4_from_env() -> bool {
+    static KEEP: OnceLock<bool> = OnceLock::new();
+    *KEEP.get_or_init(|| matches!(std::env::var("WFBITZ_KEEP_L4").as_deref(), Ok("1")))
+}
+
 /// Whether levels with several bit rounds take them all from one pass
 /// (`WFBITZ_ONE_PASS`, `0` or `1`, default on), read once.
 fn one_pass_from_env() -> bool {
@@ -175,6 +183,8 @@ pub(crate) struct Forest<'a> {
     /// Whether the dense rounds keep the column weights in the left half
     /// ([`Weighing`]); the table-driven levels' JIT fold writes it so.
     weighing: Weighing,
+    /// Whether the build pass keeps level 4 (no rebuild, more peak).
+    keep_level4: bool,
     /// The packed columns regrouped for the table-driven levels, built on
     /// first use when `mode.nibble`.
     nibble_rows: OnceLock<NibbleRows>,
@@ -194,6 +204,7 @@ impl<'a> Forest<'a> {
             mode: PatternMode::from_env(),
             one_pass: one_pass_from_env(),
             weighing: Weighing::from_env(),
+            keep_level4: keep_level4_from_env(),
             nibble_rows: OnceLock::new(),
         }
     }
@@ -209,6 +220,12 @@ impl<'a> Forest<'a> {
     pub(crate) fn with_nibble_rows(mut self, rows: NibbleRows) -> Self {
         assert!(rows.fits(self.t, (1usize << self.s).div_ceil(64)), "nibble rows of another grid");
         self.nibble_rows = OnceLock::from(rows);
+        self
+    }
+
+    /// The same forest keeping level 4 from the build pass or not.
+    pub(crate) fn with_keep_level4(mut self, keep: bool) -> Self {
+        self.keep_level4 = keep;
         self
     }
 
@@ -303,7 +320,11 @@ impl<'a> Forest<'a> {
         // a second buffer instead saves the 6.3 ms rebuild less the 2.6 ms
         // of writes it skips — 1.2 % of the prove with a warm allocator —
         // for `2^{t−4+s}` more entries of peak: 256 MB here, 4 GB at
-        // n = 32.)
+        // n = 32.) With `keep_level4` the build pass writes level 4 too,
+        // after the upper levels, and level 4's rounds read it there.
+        let keep4 = self.keep_level4 && self.jit();
+        let level4_len = 1usize << (t - MATERIALISED_LEVEL - 1 + self.s);
+        let mut level4_at = 0usize;
         let mut arena: Vec<Gf> = Vec::new();
         let prebuilt = self.nibble_rows.get().is_some();
         if self.nibbles().is_some() && !prebuilt {
@@ -317,10 +338,14 @@ impl<'a> Forest<'a> {
             let tables = self.fold_table(MATERIALISED_LEVEL, 0, &[]);
             super::trace("    L3 value tables", started);
             let started = std::time::Instant::now();
-            arena = Vec::with_capacity(1usize << (t - MATERIALISED_LEVEL - 1 + self.s));
+            let upper_len = self.upper_region(t - 1).end;
+            arena = Vec::with_capacity(if keep4 { upper_len + level4_len } else { level4_len });
             let fused = (t - MATERIALISED_LEVEL - 2).min(FUSED_UPPER_LEVELS);
             let fill = cache3.as_ref().map_or(CacheUse::Off, CacheUse::Fill);
-            self.upper_levels_into(&tables, &mut arena, fused, fill);
+            self.upper_levels_into(&tables, &mut arena, fused, fill, keep4);
+            if keep4 {
+                level4_at = upper_len;
+            }
             super::trace(&format!("    levels {}..{} build", MATERIALISED_LEVEL + 2, t - 1), started);
             Some(tables)
         } else {
@@ -348,6 +373,12 @@ impl<'a> Forest<'a> {
                 prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s, self.weighing)
             } else if ell >= MATERIALISED_LEVEL + 2 {
                 let region = &mut arena[self.upper_region(ell)];
+                let mid = region.len() / 2;
+                let (l, r) = region.split_at_mut(mid);
+                prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s, self.weighing)
+            } else if ell == MATERIALISED_LEVEL + 1 && keep4 {
+                // Level 4 as the build pass wrote it.
+                let region = &mut arena[level4_at..level4_at + level4_len];
                 let mid = region.len() / 2;
                 let (l, r) = region.split_at_mut(mid);
                 prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s, self.weighing)
@@ -870,14 +901,16 @@ impl<'a> Forest<'a> {
     /// product it emits reads rows it computed itself — and the levels
     /// above those as products of the level below. Level 4 itself is
     /// rebuilt into the arena when its turn comes
-    /// ([`Forest::product_level_into`]).
-    fn upper_levels_into(&self, tables: &Tables, arena: &mut Vec<Gf>, fused: usize, cache: CacheUse<'_>) {
+    /// ([`Forest::product_level_into`]) — or, with `keep4`, written by this
+    /// pass as well, right after the upper levels.
+    fn upper_levels_into(&self, tables: &Tables, arena: &mut Vec<Gf>, fused: usize, cache: CacheUse<'_>, keep4: bool) {
         let t = self.t;
         let ell = MATERIALISED_LEVEL;
         let cols = 1usize << self.s;
         let groups = cols.div_ceil(64);
         let rows = 1usize << (t - ell - 1);
-        let total = self.upper_region(t - 1).end;
+        let upper = self.upper_region(t - 1).end;
+        let total = if keep4 { upper + rows * cols } else { upper };
         assert!(arena.is_empty() && arena.capacity() >= total);
         assert!(fused >= 1 && fused + ell + 2 <= t, "level {} does not exist", ell + 1 + fused);
         let sel = nibble::jit_selectors(ell);
@@ -888,6 +921,7 @@ impl<'a> Forest<'a> {
         let above: Vec<RowsPtr> = (1..=fused)
             .map(|i| RowsPtr::new(&mut spare[self.upper_region(ell + 1 + i)], cols))
             .collect();
+        let level4 = keep4.then(|| RowsPtr::new(&mut spare[upper..total], cols));
         cfg_into_iter!(0..sub, 1).for_each(|y0| {
             let mut l4 = [[MaybeUninit::<Gf>::uninit(); 64]; 1 << FUSED_UPPER_LEVELS];
             for g in 0..groups {
@@ -900,6 +934,10 @@ impl<'a> Forest<'a> {
                     // This task owns rows `y0 + b·sub`: its cache blocks too.
                     let pats = self.jit_patterns(ell, y, g, nib, cache);
                     kernels::jit_product_group(tab, &pats, &mut row[..width]);
+                    if let Some(level4) = level4 {
+                        // SAFETY: this task owns level 4's row `y`.
+                        unsafe { level4.row(y)[range.clone()].copy_from_slice(&row[..width]) };
+                    }
                 }
                 for i in 1..=fused {
                     let half = 1usize << (fused - i);
@@ -2044,6 +2082,30 @@ mod tests {
                 let (per_round, one_pass) = (prove(false), prove(true));
                 assert_eq!((&one_pass.0, &one_pass.1), (&per_round.0, &per_round.1), "t={t} s={s} nibble={nibble}");
                 assert!(one_pass.2 == per_round.2, "transcript t={t} s={s} nibble={nibble}");
+            }
+        }
+    }
+
+    /// Keeping level 4 from the build pass proves the same: same point, claim
+    /// and transcript bytes, on both index paths and every fused depth.
+    #[test]
+    fn keeping_level4_proves_identically() {
+        use crate::wfbitz::transcript::build_prover;
+        for (t, s) in [(6usize, 0usize), (6, 3), (7, 7), (8, 6), (9, 10), (11, 7)] {
+            let (packed, images) = random_grid(t, s, (t * 3001 + s) as u64);
+            let mut state = 0x4b33_1e40 ^ (t * 43 + s) as u64;
+            let zeta: Vec<Gf> = (0..s).map(|_| random_gf(&mut state)).collect();
+            for nibble in [false, true] {
+                let mode = PatternMode { nibble, cache: false, nibble_from: 0 };
+                let prove = |keep: bool| {
+                    let forest = Forest::new(t, s, &packed, &images).with_patterns(mode).with_keep_level4(keep);
+                    let mut ps = build_prover(b"forest-keep-level4/v1", b"instance");
+                    let (point, claim) = forest.prove(&mut ps, &zeta);
+                    (point, claim, ps.finish().narg_string)
+                };
+                let (rebuilt, kept) = (prove(false), prove(true));
+                assert_eq!((&kept.0, &kept.1), (&rebuilt.0, &rebuilt.1), "t={t} s={s} nibble={nibble}");
+                assert!(kept.2 == rebuilt.2, "transcript t={t} s={s} nibble={nibble}");
             }
         }
     }
