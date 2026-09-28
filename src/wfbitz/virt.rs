@@ -115,10 +115,15 @@ impl<'a, M: VirtualMap> VirtualStatement<'a, M> {
         self.claim
     }
 
-    /// Whether the map is the identity between two identical grids, so the
+    /// Whether the map is the identity covering two identical grids, so the
     /// derived grid is the committed one and no transposition is needed.
+    /// An identity on fewer cells is zero-padded and still needs transposition.
     pub fn is_direct(&self) -> bool {
-        self.map.is_identity() && *self.claim_params.shape() == self.committed
+        let derived = self.claim_params.shape();
+        self.map.is_identity()
+            && *derived == self.committed
+            && self.map.rows() == (1usize << derived.log_bits())
+            && self.map.cols() == (1usize << self.committed.log_bits())
     }
 
     /// The bytes both roles bind after the root: the claim parameters, the
@@ -318,6 +323,79 @@ mod tests {
     use circuit::linear_map::{CscMatrix, binary::PreparedVirtualMap};
 
     const Q: u128 = (1u128 << 100) - 15;
+
+    #[test]
+    fn transpose_query_respects_map_extent_and_layout() {
+        let derived = Shape::new(7, 1).unwrap();
+        let cells = 1usize << derived.log_bits();
+        let alpha: Gf = crate::pcs::smallest_generator().into();
+        let params = BitZParams::new(derived, Q, alpha).unwrap();
+        let claim = LinearClaim::new(
+            &params,
+            vec![0; derived.rows()],
+            vec![0; derived.columns()],
+            0,
+        )
+        .unwrap();
+        let weight = |i: usize| Gf::from_bytes((i as u128 + 1).to_le_bytes());
+        let query = LinearClaimGf::from_shape(
+            &derived,
+            (0..derived.rows()).map(weight).collect(),
+            (derived.rows()..derived.rows() + derived.columns())
+                .map(weight)
+                .collect(),
+            weight(cells),
+        )
+        .unwrap();
+        let weights: Vec<_> = query
+            .column_weights()
+            .iter()
+            .flat_map(|&col| query.row_weights().iter().map(move |&row| row * col))
+            .collect();
+
+        // Include partial identities on either side of a grid-column boundary.
+        for (map_cells, committed, permuted, direct) in [
+            (cells, derived, false, true),
+            (1, derived, false, false),
+            (derived.rows() + 1, derived, false, false),
+            (cells - 1, derived, false, false),
+            (cells, Shape::new(8, 0).unwrap(), false, false),
+            (cells, Shape::new(7, 2).unwrap(), false, false),
+            (cells, derived, true, false),
+        ] {
+            let mut indices: Vec<_> = (0..map_cells).collect();
+            if permuted {
+                indices.rotate_left(1);
+            }
+            let matrix =
+                CscMatrix::try_from_binary_csc(map_cells, (0..=map_cells).collect(), indices)
+                    .unwrap();
+            let map = PreparedVirtualMap::from_implicit(matrix).unwrap();
+            let statement = VirtualStatement::new(params, committed, &map, &claim).unwrap();
+            assert_eq!(statement.is_direct(), direct);
+            let OpeningQuery::InnerProduct { claim: transposed } = statement
+                .transpose_query(OpeningQuery::InnerProduct {
+                    claim: query.clone(),
+                })
+                .unwrap()
+            else {
+                panic!("expected an inner-product query");
+            };
+
+            if direct {
+                assert_eq!(transposed, query);
+            } else {
+                let mut expected = weights[..map_cells].to_vec();
+                if permuted {
+                    expected.rotate_left(1);
+                }
+                expected.resize(1usize << committed.log_bits(), Gf::zero());
+                assert_eq!(transposed.row_weights(), expected);
+                assert_eq!(transposed.column_weights(), &[Gf::one()]);
+                assert_eq!(transposed.target(), query.target());
+            }
+        }
+    }
 
     fn xorshift(state: &mut u64) -> u64 {
         *state ^= *state << 13;
