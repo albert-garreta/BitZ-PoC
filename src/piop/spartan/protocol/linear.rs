@@ -1281,8 +1281,15 @@ impl<C> WfbitzBlockOpener<'_, C> {
             .map_err(|e| bitz("committed shape", &e))?;
         let params = crate::wfbitz::BitZParams::new(derived, prime.modulus_u128(), bitz_generator())
             .map_err(|e| bitz("parameters", &e))?;
+        let row_weight = |row: usize| rows.canonical_weight(row).ok_or(ProtocolError::InvalidGeometry);
+        #[cfg(feature = "parallel")]
         let row_weights = (0..rows.row_count())
-            .map(|row| rows.canonical_weight(row).ok_or(ProtocolError::InvalidGeometry))
+            .into_par_iter()
+            .map(row_weight)
+            .collect::<Result<Vec<_>, _>>()?;
+        #[cfg(not(feature = "parallel"))]
+        let row_weights = (0..rows.row_count())
+            .map(row_weight)
             .collect::<Result<Vec<_>, _>>()?;
         let linear =
             crate::wfbitz::LinearClaim::new(&params, row_weights, claim.cols.clone(), claim.claimed)

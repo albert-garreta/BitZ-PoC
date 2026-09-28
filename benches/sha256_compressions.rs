@@ -114,11 +114,18 @@ fn wfbitz() -> bool {
     WFBITZ.get().copied().unwrap_or(false)
 }
 
+/// `BITZ_SHA_WFBITZ_T=<t>`: open at row split `t` instead of the opener's
+/// own `⌈0.6 n⌉ − 1` (a probe of the split's cost; the transcript follows `t`).
 #[cfg(feature = "bitz-parity")]
 fn prepare_wfbitz<P: IopSecurityProfile>(
     exponent: usize,
 ) -> Result<PreparedSha256CompressionBatch, Sha256ConstraintError> {
-    bitz::piop::spartan::prepare_sha256_compression_batch_wfbitz_with_profile::<P>(exponent)
+    match std::env::var("BITZ_SHA_WFBITZ_T").ok().and_then(|t| t.parse().ok()) {
+        Some(row_vars) => {
+            bitz::piop::spartan::prepare_sha256_compression_batch_wfbitz_at::<P>(exponent, row_vars)
+        }
+        None => bitz::piop::spartan::prepare_sha256_compression_batch_wfbitz_with_profile::<P>(exponent),
+    }
 }
 
 #[cfg(not(feature = "bitz-parity"))]
