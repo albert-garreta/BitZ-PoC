@@ -810,11 +810,21 @@ pub(crate) fn xi_combined_rows(
 /// [`phi_byte_tables`] trick on the ξ axis; ~2× the scatter form at
 /// n = 28 and it reads `packed_cols` instead of re-scanning `rows`).
 /// Exact char-2 re-association — byte-identical.
-#[allow(clippy::arithmetic_side_effects)]
 pub(crate) fn xi_combined_rows_packed(
     p: &IntegerMatrixLayout,
     packed_cols: &[Vec<u64>],
     eq_xi: &[Gf],
+) -> Vec<Gf> {
+    xi_combined_rows_packed_with(p, packed_cols, eq_xi, combine_pairs())
+}
+
+/// [`xi_combined_rows_packed`] with the [`combine_pairs`] choice explicit.
+#[allow(clippy::arithmetic_side_effects)]
+fn xi_combined_rows_packed_with(
+    p: &IntegerMatrixLayout,
+    packed_cols: &[Vec<u64>],
+    eq_xi: &[Gf],
+    pairs: bool,
 ) -> Vec<Gf> {
     let t_w = row_bit_vars(p);
     let len = 1usize << t_w;
@@ -845,27 +855,69 @@ pub(crate) fn xi_combined_rows_packed(
     // Group-OUTER accumulation per output chunk: each group's positions
     // stream sequentially, its 32 KB table stays L1-hot, and the chunk's
     // output slots are L1-resident RMW — no cross-group pointer chases in
-    // the inner loop and no 256-deep serial add chain per output.
+    // the inner loop and no 256-deep serial add chain per output. With
+    // `pairs` ([`combine_pairs`]), two groups share each pass over the
+    // chunk (half the output RMW, 64 KB of tables hot).
     let mut m = vec![Gf::zero(); len];
     cfg_chunks_mut!(m, 1 << 10)
         .enumerate()
         .for_each(|(ci, chunk)| {
-            let base = ci << 10;
-            for (g, tg) in tables.iter().enumerate() {
-                let src = &packed_cols[g][base..base + chunk.len()];
-                for (slot, &x) in chunk.iter_mut().zip(src.iter()) {
+            let (base, n) = (ci << 10, chunk.len());
+            let source = |g: usize| &packed_cols[g][base..base + n];
+            let table = |g: usize| -> &[Gf; 8 << 8] {
+                tables[g].as_slice().try_into().expect("8 byte tables")
+            };
+            let mut g = 0;
+            while pairs && g + 1 < groups {
+                let (t0, t1) = (table(g), table(g + 1));
+                for ((slot, &x0), &x1) in chunk.iter_mut().zip(source(g)).zip(source(g + 1)) {
+                    if x0 | x1 == 0 {
+                        continue;
+                    }
+                    *slot += byte_table_sum(t0, x0) + byte_table_sum(t1, x1);
+                }
+                g += 2;
+            }
+            for g in g..groups {
+                let tg = table(g);
+                for (slot, &x) in chunk.iter_mut().zip(source(g)) {
                     if x == 0 {
                         continue;
                     }
-                    // Entry 0 of every byte table is zero, so each word takes
-                    // its eight lookups without a branch, summed in pairs to
-                    // keep the additions off one dependency chain.
-                    let b = |pos: usize| tg[(pos << 8) | ((x >> (8 * pos)) & 0xFF) as usize];
-                    *slot += ((b(0) + b(1)) + (b(2) + b(3))) + ((b(4) + b(5)) + (b(6) + b(7)));
+                    *slot += byte_table_sum(tg, x);
                 }
             }
         });
     m
+}
+
+/// `Σ_pos tg[pos][byte_pos(x)]` over the eight bytes of `x`. Entry 0 of
+/// every byte table is zero, so each word takes its eight lookups without
+/// a branch, summed in pairs to keep the additions off one dependency
+/// chain; the fixed table length makes every index provably in bounds.
+#[inline(always)]
+#[allow(clippy::arithmetic_side_effects)]
+fn byte_table_sum(tg: &[Gf; 8 << 8], x: u64) -> Gf {
+    let b = |pos: usize| tg[(pos << 8) | ((x >> (8 * pos)) & 0xFF) as usize];
+    ((b(0) + b(1)) + (b(2) + b(3))) + ((b(4) + b(5)) + (b(6) + b(7)))
+}
+
+/// Whether [`xi_combined_rows_packed`] adds two column groups per pass
+/// over an output chunk: `BITZ_COMBINE_PAIRS` `0` or `1`, or unset for
+/// one-thread pools only (two 32 KB tables and the chunk overflow an
+/// efficiency core's 64 KB L1D). The mode is read once.
+fn combine_pairs() -> bool {
+    static MODE: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+    let mode = *MODE.get_or_init(|| match std::env::var("BITZ_COMBINE_PAIRS").as_deref() {
+        Ok("0") => Some(false),
+        Ok("1") => Some(true),
+        _ => None,
+    });
+    #[cfg(feature = "parallel")]
+    let one_thread = rayon::current_num_threads() == 1;
+    #[cfg(not(feature = "parallel"))]
+    let one_thread = true;
+    mode.unwrap_or(one_thread)
 }
 
 /// Column-lane packing `packed_cols[g][i]`: lane k of word g at row-bit i
@@ -1986,11 +2038,12 @@ mod tests {
     }
 
     /// The packed column combination (eight branch-free byte lookups per
-    /// word) equals the per-bit reference on dense, sparse and all-zero
-    /// words, including a partial column group.
+    /// word), one column group per pass or two, equals the per-bit
+    /// reference on dense, sparse and all-zero words, including a partial
+    /// column group, a lone group and several output chunks.
     #[test]
     fn packed_combination_matches_the_bit_walk() {
-        for (t, s) in [(7usize, 3usize), (8, 6), (9, 7), (10, 8)] {
+        for (t, s) in [(7usize, 3usize), (8, 6), (9, 7), (10, 8), (7, 9), (11, 7), (12, 8)] {
             let p = IntegerMatrixLayout { row_vars: t, col_vars: s, word_bits: 1 };
             let (cols, words) = (1usize << s, 1usize << (t - 6));
             let mut state = (t * 131 + s) as u64 | 1;
@@ -2025,11 +2078,14 @@ mod tests {
                 })
                 .collect();
             let eq_xi: Vec<Gf> = (0..cols).map(|c| sample(c as u64 * 7 + 3)).collect();
-            assert_eq!(
-                xi_combined_rows_packed(&p, &packed, &eq_xi),
-                xi_combined_rows(&p, &rows, &eq_xi),
-                "t={t} s={s}"
-            );
+            let expected = xi_combined_rows(&p, &rows, &eq_xi);
+            for pairs in [false, true] {
+                assert_eq!(
+                    xi_combined_rows_packed_with(&p, &packed, &eq_xi, pairs),
+                    expected,
+                    "t={t} s={s} pairs={pairs}"
+                );
+            }
         }
     }
 
