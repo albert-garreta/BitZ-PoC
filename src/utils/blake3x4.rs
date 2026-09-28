@@ -63,23 +63,44 @@ pub(crate) fn leading_zero_bits(bytes: &[u8]) -> u32 {
     acc
 }
 
-/// How the scans run: the kernel for 32-byte prefixes. Every setting
-/// returns the same nonce (the serial scan's smallest hit); they only move
-/// the time.
+/// How the scans run: the kernel for 32-byte prefixes and the pool
+/// search's schedule. Every setting returns the same nonce (the serial
+/// scan's smallest hit); they only move the time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(not(feature = "parallel"), allow(dead_code))]
 pub(crate) struct PowMode {
     /// 32-byte prefixes (the `domain ‖ seed` of every BitZ grind) take the
     /// NEON kernel that computes round 0's seven nonce-independent G's once
     /// per scan and skips the last round's dead G's.
     pub(crate) hoist: bool,
+    /// Grinds of at most this many bits scan their first `2^{bits+3}`
+    /// nonces on the calling thread before waking the pool, and a
+    /// one-thread pool scans every grind on the caller; `0` sends every
+    /// grind to the pool.
+    pub(crate) serial_bits: u32,
+    /// `log2` of the nonces per chunk of the pool search (rounded up to
+    /// whole batches of the eight-word kernel, [`hoisted_batch`]).
+    pub(crate) chunk_log: u32,
 }
 
 impl PowMode {
-    /// `BITZ_POW_HOIST` (`0` or `1`, default on), read once.
+    /// The scans as they ran before [`PowMode`]: the generic kernel, every
+    /// grind through the pool in chunks of 1024 nonces.
+    #[cfg(test)]
+    pub(crate) const PLAIN: Self = Self { hoist: false, serial_bits: 0, chunk_log: 10 };
+
+    /// `BITZ_POW_HOIST` (`0` or `1`, default on), `BITZ_POW_SERIAL_BITS`
+    /// (default 8) and `BITZ_POW_CHUNK_LOG` (default 8, clamped to
+    /// `4..=20`), read once.
     pub(crate) fn from_env() -> Self {
         static MODE: std::sync::OnceLock<PowMode> = std::sync::OnceLock::new();
-        *MODE.get_or_init(|| PowMode {
-            hoist: !matches!(std::env::var("BITZ_POW_HOIST").as_deref(), Ok("0")),
+        *MODE.get_or_init(|| {
+            let number = |name: &str| std::env::var(name).ok().and_then(|v| v.parse::<u32>().ok());
+            PowMode {
+                hoist: !matches!(std::env::var("BITZ_POW_HOIST").as_deref(), Ok("0")),
+                serial_bits: number("BITZ_POW_SERIAL_BITS").unwrap_or(8),
+                chunk_log: number("BITZ_POW_CHUNK_LOG").unwrap_or(8).clamp(4, 20),
+            }
         })
     }
 }
@@ -137,33 +158,91 @@ fn first_pow_nonce_with(
 /// Unlike a wave-synchronised search, no chunk beyond the hit's is scanned
 /// except those already in flight. `None` once the `u64` nonce space is
 /// exhausted (a theoretical bound only).
+///
+/// A small grind does not wake the pool: it expects `2^bits` attempts, a
+/// few microseconds on one core, while a broadcast pays the wake-up and
+/// waits for every worker's in-flight chunk (an efficiency core's is tens
+/// of microseconds). So grinds of at most [`PowMode::serial_bits`] bits
+/// scan their first `2^{bits+3}` nonces on the caller (a miss has
+/// probability `e^{-8}`) and hand only the rest to the pool, and a
+/// one-thread pool scans everything on the caller.
 #[cfg(feature = "parallel")]
 pub(crate) fn smallest_pow_nonce(prefix: &[u8], bits: u32) -> Option<u64> {
+    let mode = PowMode::from_env();
+    let started = pow_trace().then(std::time::Instant::now);
+    let found = smallest_pow_nonce_with(prefix, bits, mode);
+    if let Some(started) = started {
+        eprintln!(
+            "bitz: pow {bits:>2} bits nonce {:>8} {:>9.1?}",
+            found.unwrap_or(u64::MAX),
+            started.elapsed()
+        );
+    }
+    found
+}
+
+/// One line per grind to stderr when `BITZ_POW_TRACE` is set (diagnostic
+/// only), read once.
+#[cfg(feature = "parallel")]
+fn pow_trace() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("BITZ_POW_TRACE").is_some())
+}
+
+/// The nonces per batch of the kernel scanning `prefix` when it is the
+/// eight-word one, else 1 (the generic lanes' 8 divide every chunk). A pool
+/// chunk is rounded up to whole batches, so no batch hashes nonces past
+/// its chunk.
+#[cfg(feature = "parallel")]
+fn hoisted_batch(prefix: &[u8], hoist: bool) -> u64 {
+    #[cfg(target_arch = "aarch64")]
+    if hoist && prefix.len() == 32 {
+        return 4 * neon::GROUPS8 as u64;
+    }
+    let _ = (prefix, hoist);
+    1
+}
+
+/// [`smallest_pow_nonce`] with the scan settings explicit.
+#[cfg(feature = "parallel")]
+fn smallest_pow_nonce_with(prefix: &[u8], bits: u32, mode: PowMode) -> Option<u64> {
     use std::sync::atomic::{AtomicU64, Ordering};
-    const CHUNK_LOG: u64 = 10;
+    let scan = |start: u64, end: u64| first_pow_nonce_with(prefix, start, end, bits, mode.hoist);
+    // The last nonce of the space is excluded by the half-open ranges.
+    let last = || pow_ok(prefix, u64::MAX, bits).then_some(u64::MAX);
+    let serial = mode.serial_bits > 0;
+    if serial && rayon::current_num_threads() == 1 {
+        return scan(0, u64::MAX).or_else(last);
+    }
+    let head = if serial && bits <= mode.serial_bits.min(60) { 1u64 << (bits + 3) } else { 0 };
+    if head > 0
+        && let Some(n) = scan(0, head)
+    {
+        return Some(n);
+    }
+    let chunk_len = (1u64 << mode.chunk_log).next_multiple_of(hoisted_batch(prefix, mode.hoist));
     let next = AtomicU64::new(0);
     let best = AtomicU64::new(u64::MAX);
     rayon::broadcast(|_| {
         loop {
             let chunk = next.fetch_add(1, Ordering::Relaxed);
-            if chunk >= 1 << (64 - CHUNK_LOG) {
+            let Some(start) = chunk
+                .checked_mul(chunk_len)
+                .and_then(|offset| offset.checked_add(head))
+            else {
                 break;
-            }
-            let start = chunk << CHUNK_LOG;
+            };
             if start >= best.load(Ordering::Relaxed) {
                 break;
             }
-            if let Some(n) =
-                first_pow_nonce(prefix, start, start.saturating_add(1 << CHUNK_LOG), bits)
-            {
+            if let Some(n) = scan(start, start.saturating_add(chunk_len)) {
                 best.fetch_min(n, Ordering::Relaxed);
             }
         }
     });
     let found = best.load(Ordering::Relaxed);
-    // The last nonce of the space is excluded by the half-open chunks.
-    if found == u64::MAX && !pow_ok(prefix, u64::MAX, bits) {
-        return None;
+    if found == u64::MAX {
+        return last();
     }
     Some(found)
 }
@@ -719,6 +798,40 @@ mod tests {
         }
     }
 
+    /// The pool search returns the serial scan's smallest nonce under every
+    /// scan setting, on one thread and on ten, for grinds of 2 to 16 bits,
+    /// with both seed widths (the 16-byte one takes the generic kernel).
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn pool_schedules_return_the_serial_minimum() {
+        let modes = [
+            PowMode::PLAIN,
+            PowMode { hoist: true, serial_bits: 0, chunk_log: 10 },
+            PowMode { hoist: true, serial_bits: 8, chunk_log: 8 },
+            PowMode { hoist: false, serial_bits: 12, chunk_log: 4 },
+            PowMode { hoist: true, serial_bits: 3, chunk_log: 5 },
+            PowMode { hoist: true, serial_bits: 16, chunk_log: 20 },
+        ];
+        for threads in [1usize, 10] {
+            let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
+            for s in 0..3u64 {
+                for len in [16usize, 32] {
+                    let seed = prefix(s + 900, len);
+                    for bits in 2u32..=16 {
+                        let serial = (0..u64::MAX).find(|&x| pow_ok(&seed, x, bits));
+                        for mode in modes {
+                            assert_eq!(
+                                pool.install(|| smallest_pow_nonce_with(&seed, bits, mode)),
+                                serial,
+                                "threads {threads} len {len} seed {s} bits {bits} {mode:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Nanoseconds per attempt of each kernel on one thread, over 2^22
     /// nonces of a 32-byte prefix (diagnostic: run it with `--ignored
     /// --nocapture` on an idle machine).
@@ -745,6 +858,65 @@ mod tests {
             time("hoisted/2", &|| neon::first_pow_nonce8::<2>(&prefix, 0, span, 64));
             time("hoisted/3", &|| neon::first_pow_nonce8::<3>(&prefix, 0, span, 64));
             time("hoisted/4", &|| neon::first_pow_nonce8::<4>(&prefix, 0, span, 64));
+        }
+    }
+
+    /// Grinding time per proof under each scan setting (diagnostic: run it
+    /// with `--ignored --nocapture` on an idle machine). `BITZ_POW_SCHEDULE`
+    /// is one proof's grind sizes, comma-separated (default: the raw
+    /// bench's at n = 28), `BITZ_POW_SEEDS` the number of seeds averaged
+    /// over (default 64) and `BITZ_POW_THREADS` the pool sizes (default
+    /// `1,10`).
+    #[cfg(feature = "parallel")]
+    #[test]
+    #[ignore]
+    fn pow_schedule_timings() {
+        use std::time::Instant;
+        let list = |name: &str, default: &str| -> Vec<u32> {
+            std::env::var(name)
+                .unwrap_or_else(|_| default.to_string())
+                .split(',')
+                .map(|x| x.trim().parse().expect("a number"))
+                .collect()
+        };
+        let schedule = list(
+            "BITZ_POW_SCHEDULE",
+            "15,14,13,12,16,12,11,10,16,9,8,7,16,6,5,4,16,4,3,2,16",
+        );
+        let seeds = list("BITZ_POW_SEEDS", "64")[0] as u64;
+        let threads = list("BITZ_POW_THREADS", "1,10");
+        println!("schedule {schedule:?}, {seeds} seeds");
+        let modes = [
+            ("plain", PowMode::PLAIN),
+            ("hoist", PowMode { hoist: true, serial_bits: 0, chunk_log: 10 }),
+            ("hoist c8", PowMode { hoist: true, serial_bits: 0, chunk_log: 8 }),
+            ("hoist s6 c8", PowMode { hoist: true, serial_bits: 6, chunk_log: 8 }),
+            ("hoist s8 c8", PowMode { hoist: true, serial_bits: 8, chunk_log: 8 }),
+            ("hoist s10 c8", PowMode { hoist: true, serial_bits: 10, chunk_log: 8 }),
+            ("hoist s8 c7", PowMode { hoist: true, serial_bits: 8, chunk_log: 7 }),
+            ("hoist s8 c9", PowMode { hoist: true, serial_bits: 8, chunk_log: 9 }),
+        ];
+        for &count in &threads {
+            let pool = rayon::ThreadPoolBuilder::new().num_threads(count as usize).build().unwrap();
+            let mut totals = vec![0f64; modes.len()];
+            for s in 0..seeds {
+                // Every mode grinds the same seeds, interleaved seed by seed.
+                for (total, (_, mode)) in totals.iter_mut().zip(modes) {
+                    let started = Instant::now();
+                    for (i, &bits) in schedule.iter().enumerate() {
+                        let seed = prefix(s * 64 + i as u64, 32);
+                        pool.install(|| smallest_pow_nonce_with(&seed, bits, mode));
+                    }
+                    *total += started.elapsed().as_secs_f64();
+                }
+            }
+            for ((label, _), total) in modes.iter().zip(&totals) {
+                println!(
+                    "threads {count:>2} {label:<14} {:.3} ms per proof ({:.3}x plain)",
+                    total * 1e3 / seeds as f64,
+                    total / totals[0]
+                );
+            }
         }
     }
 }
