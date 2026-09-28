@@ -1,9 +1,10 @@
-//! BitZ transcript parity — `f2z-benchmark`'s clean-room implementation of
+//! BitZ transcript port — `f2z-benchmark`'s clean-room implementation of
 //! F2Z ("BitZ", protocol id `bitz/v1`), driven from this crate's field and
-//! flock engine so the two produce the same narg string, hint stream and
-//! challenge sequence on the same instance.
+//! flock engine. The direct entry points also bind the complete initial claim
+//! before the fold challenge, so their challenges differ from upstream direct
+//! proof dumps that omit that binding.
 //!
-//! The message and challenge order, the framing labels and the wire codecs
+//! Otherwise, the message and challenge order, framing labels and wire codecs
 //! mirror `worldfnd/f2z-benchmark` at `0c75fd8` (branch `bitz-k4` for the
 //! k = 4 Ligerito ladder) step for step; nothing here touches the crate's
 //! own protocol, which stays byte-identical to what it was. Where the two
@@ -134,7 +135,7 @@ impl BitZProver {
         &self.comb
     }
 
-    /// Their `BitZProver::prove`: bind the root and the parameters, fold,
+    /// Bind the root, parameters, and claim, then fold,
     /// reduce through GKR, open.
     ///
     /// `rows` are the committed per-column bit rows (the layout
@@ -161,10 +162,11 @@ impl BitZProver {
         }
         let root = Root(*hint.root());
 
-        // Step 1: bind. The root and the parameters; the claim itself enters
-        // through the caller's own events.
+        // The claim must be bound before the fold challenge: otherwise a
+        // prover can choose its row weights after seeing that challenge.
         transcript.public_message(&root.0);
         transcript.public_message(&self.params);
+        transcript.public_message(claim);
 
         // Steps 3 and 4: integer column folds, then GKR to a factored bit claim.
         // The forest's nibble rows come first: the folds read them too.
@@ -223,6 +225,7 @@ impl BitZVerifier {
     ) -> Result<(), VerifyError> {
         transcript.public_message(&com.0);
         transcript.public_message(&self.params);
+        transcript.public_message(claim);
 
         let started = std::time::Instant::now();
         let fold = self
