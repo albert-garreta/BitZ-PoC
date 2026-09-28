@@ -9,7 +9,7 @@
 use std::array;
 
 use circuit::{
-    sha256::{COMPRESSION_HINT_BITS, COMPRESSION_INPUT_BITS, ROUND_CONSTANTS},
+    sha256::{COMPRESSION_INPUT_BITS, ROUND_CONSTANTS},
     witgen::{PackedWitness, Witgen},
 };
 use thiserror::Error;
@@ -20,7 +20,7 @@ use rayon::prelude::*;
 use {crate::pcs::IntegerMatrixLayout, circuit::linear_map::binary::PackedSourceOrder};
 
 use super::constraints::{
-    PreparedSha256CompressionBatch, SHA256_F_INSTANCE_BITS, SHA256_F_LIVE_BITS,
+    PreparedSha256CompressionBatch, SHA256_F_INSTANCE_BITS, SHA256_F_LIVE_BITS, SHA256_HINT_BITS,
     SHA256_H_BAR_LIVE_BITS, SHA256_H_INSTANCE_BITS,
 };
 
@@ -318,7 +318,7 @@ fn generate_one(
     let input_bits = compression_input_bits(input);
     let mut generator = Witgen::with_inputs_and_capacity(
         &input_bits,
-        COMPRESSION_INPUT_BITS + COMPRESSION_HINT_BITS,
+        COMPRESSION_INPUT_BITS + SHA256_HINT_BITS,
     );
     let output_bits = super::constraints::sha256_relation_circuit(&mut generator, &input_bits);
     let (f, h_bar) = generator.into_witnesses();
@@ -652,6 +652,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "sha-flock-hybrid"))]
     fn flat_sequence_uses_the_native_pcs_row_then_column_order() {
         let prepared = prepare_sha256_compression_batch_for_test(0).unwrap();
         let mut anchored_input = abc_input();

@@ -34,6 +34,10 @@ pub const SHA256_2KB_MESSAGE_BITS: usize = SHA256_2KB_MESSAGE_BYTES * 8;
 /// Boolean witnesses allocated by hints in one compression.
 pub const COMPRESSION_HINT_BITS: usize = 48 * 34 + 64 * 70 + 8 * 33;
 
+/// Boolean witnesses allocated by hints in one [`compress_flock_hybrid`]
+/// compression: [`COMPRESSION_HINT_BITS`] plus the two AND words per round.
+pub const COMPRESSION_HINT_BITS_FLOCK_HYBRID: usize = COMPRESSION_HINT_BITS + 64 * 64;
+
 /// Signed 64-bit Z intermediates are sufficient for every SHA-256 gadget.
 pub const SHA256_Z_LIMBS: usize = 1;
 
@@ -505,6 +509,41 @@ where
     sum
 }
 
+/// A committed word of AND outputs: `x & (y ⊕ z)` for [`AndWord::Choice`]
+/// (so `Ch(x, y, z) = z ⊕ that`), `(x ⊕ y) & (y ⊕ z)` for
+/// [`AndWord::Majority`] (so `Maj(x, y, z) = y ⊕ that`). The relation here
+/// never checks the AND itself: in the Flock hybrid a binary-field proof
+/// does, over the same committed bits.
+#[derive(Clone, Copy)]
+enum AndWord {
+    Choice,
+    Majority,
+}
+
+fn and_word<CS>(
+    circuit: &mut CS,
+    kind: AndWord,
+    x: &Word<CS::Bool, 32>,
+    y: &Word<CS::Bool, 32>,
+    z: &Word<CS::Bool, 32>,
+) -> Word<CS::Bool, 32>
+where
+    CS: Circuit,
+{
+    let (x, y, z) = (x.clone(), y.clone(), z.clone());
+    let bits = circuit.hint::<SHA256_Z_LIMBS, 32, 1, _>(move |context| {
+        let x = evaluate_word(context, &x);
+        let y = evaluate_word(context, &y);
+        let z = evaluate_word(context, &z);
+        let value = match kind {
+            AndWord::Choice => x & (y ^ z),
+            AndWord::Majority => (x ^ y) & (y ^ z),
+        };
+        HintResult::Ok(PackedBits::from_u64(value))
+    });
+    Word::from_repr(bits)
+}
+
 /// Returns a Z expression equal to twice SHA-256's `Maj(x, y, z)`.
 fn majority_twice<CS>(circuit: &mut CS, x: &UInt32<CS>, y: &UInt32<CS>, z: &UInt32<CS>) -> ShaZ<CS>
 where
@@ -529,7 +568,7 @@ pub fn compress<CS>(
 where
     CS: Circuit,
 {
-    compress_impl::<CS, false, false>(circuit, block, state)
+    compress_impl::<CS, false, false, false>(circuit, block, state)
 }
 
 /// [`compress`] with `Ch` as product slots ([`Circuit::product`]) instead of
@@ -543,7 +582,7 @@ pub fn compress_ch_product<CS>(
 where
     CS: Circuit,
 {
-    compress_impl::<CS, true, false>(circuit, block, state)
+    compress_impl::<CS, true, false, false>(circuit, block, state)
 }
 
 /// [`compress_ch_product`] with every nonlinear or XOR summand as product
@@ -560,10 +599,27 @@ pub fn compress_all_products<CS>(
 where
     CS: Circuit,
 {
-    compress_impl::<CS, true, true>(circuit, block, state)
+    compress_impl::<CS, true, true, false>(circuit, block, state)
 }
 
-fn compress_impl<CS, const CH_PRODUCT: bool, const ALL_PRODUCTS: bool>(
+/// [`compress`] for the Flock hybrid: `Ch` and `Maj` come from two committed
+/// AND words per round ([`AndWord`]) as the lifted parities `g ⊕ ch_and` and
+/// `b ⊕ maj_and`, and each round's two additions are plain sums, so the
+/// relation is linear (no product slots) and holds every addition mod `2^32`
+/// of the compression, while the ANDs are left to a binary-field proof over
+/// the same bits.
+pub fn compress_flock_hybrid<CS>(
+    circuit: &mut CS,
+    block: [Word<CS::Bool, 32>; 16],
+    state: [Word<CS::Bool, 32>; 8],
+) -> [UInt32<CS>; 8]
+where
+    CS: Circuit,
+{
+    compress_impl::<CS, false, false, true>(circuit, block, state)
+}
+
+fn compress_impl<CS, const CH_PRODUCT: bool, const ALL_PRODUCTS: bool, const FLOCK_HYBRID: bool>(
     circuit: &mut CS,
     block: [Word<CS::Bool, 32>; 16],
     state: [Word<CS::Bool, 32>; 8],
@@ -629,6 +685,54 @@ where
     let mut shared_parity: Option<UInt32<CS>> = None;
 
     for i in 0..64 {
+        if FLOCK_HYBRID {
+            let big_sigma_1_word = e.word.rotate_right(6).xor3(
+                circuit,
+                &e.word.rotate_right(11),
+                &e.word.rotate_right(25),
+            );
+            let big_sigma_1 = uint_from_word(circuit, big_sigma_1_word);
+            let ch_and = and_word(circuit, AndWord::Choice, &e.word, &f.word, &g.word);
+            let choice_word = g.word.xor(circuit, &ch_and);
+            let choice = uint_from_word(circuit, choice_word);
+            let big_sigma_0_word = a.word.rotate_right(2).xor3(
+                circuit,
+                &a.word.rotate_right(13),
+                &a.word.rotate_right(22),
+            );
+            let big_sigma_0 = uint_from_word(circuit, big_sigma_0_word);
+            let maj_and = and_word(circuit, AndWord::Majority, &a.word, &b.word, &c.word);
+            let majority_word = b.word.xor(circuit, &maj_and);
+            let majority = uint_from_word(circuit, majority_word);
+            let round_constant = uint_constant::<CS>(u64::from(ROUND_CONSTANTS[i]));
+
+            let new_e = sum_32::<35, 6, _>(
+                circuit,
+                [
+                    d,
+                    h.clone(),
+                    big_sigma_1.clone(),
+                    choice.clone(),
+                    round_constant.clone(),
+                    schedule[i].clone(),
+                ],
+                false,
+            );
+            let new_a = sum_32::<35, 7, _>(
+                circuit,
+                [h, big_sigma_1, choice, round_constant, schedule[i].clone(), big_sigma_0, majority],
+                false,
+            );
+            h = g;
+            g = f;
+            f = e;
+            e = new_e;
+            d = c;
+            c = b;
+            b = a;
+            a = new_a;
+            continue;
+        }
         let big_sigma_1 = if ALL_PRODUCTS {
             xor3_rotations_product(circuit, &e, (6, 11, 25), false)
         } else {
@@ -752,6 +856,19 @@ where
 {
     let (block, state) = compression_words(input);
     let output = compress_ch_product(circuit, block, state);
+    array::from_fn(|i| output[i / 32].word.bit(i % 32))
+}
+
+/// [`compression_circuit`] for the Flock hybrid ([`compress_flock_hybrid`]).
+pub fn compression_circuit_flock_hybrid<CS>(
+    circuit: &mut CS,
+    input: &[CS::Bool; COMPRESSION_INPUT_BITS],
+) -> [CS::Bool; 256]
+where
+    CS: Circuit,
+{
+    let (block, state) = compression_words(input);
+    let output = compress_flock_hybrid(circuit, block, state);
     array::from_fn(|i| output[i / 32].word.bit(i % 32))
 }
 
@@ -1193,6 +1310,45 @@ mod tests {
         matrices
             .check_witness(product.witness())
             .expect("the Ch-product relation should accept the honest witness");
+    }
+
+    #[test]
+    fn flock_hybrid_variant_commits_the_and_words_and_keeps_every_addition() {
+        let inputs: [bool; COMPRESSION_INPUT_BITS] =
+            array::from_fn(|bit| bit % 7 == 1 || bit % 13 == 4);
+        let mut plain = Witgen::with_inputs_and_capacity(
+            &inputs,
+            COMPRESSION_INPUT_BITS + COMPRESSION_HINT_BITS,
+        );
+        let plain_output = compression_circuit(&mut plain, &inputs);
+        let mut hybrid = Witgen::with_inputs_and_capacity(
+            &inputs,
+            COMPRESSION_INPUT_BITS + COMPRESSION_HINT_BITS_FLOCK_HYBRID,
+        );
+        let hybrid_output = compression_circuit_flock_hybrid(&mut hybrid, &inputs);
+        assert_eq!(plain_output, hybrid_output);
+        assert_eq!(
+            hybrid.witness().bit_len(),
+            COMPRESSION_INPUT_BITS + COMPRESSION_HINT_BITS_FLOCK_HYBRID
+        );
+
+        let mut generator = ConstraintGenerator::new(COMPRESSION_INPUT_BITS);
+        let symbolic_inputs = generator.inputs();
+        let _ = compression_circuit_flock_hybrid(&mut generator, &symbolic_inputs);
+        let matrices = generator.into_matrices();
+        // Lifted: const, state, block, schedule sums and σ parities, per round
+        // Σ1, Ch, Σ0, Maj and the two 35-bit sums, the output sums; the AND
+        // words are committed but never lifted.
+        assert_eq!(matrices.m.row_count(), 18_409);
+        assert_eq!(matrices.m.column_count(), 11_241);
+        assert_eq!(matrices.c.row_count(), 184);
+        assert_eq!(matrices.a.nnz() + matrices.b.nnz(), 0);
+        assert_eq!(matrices.pa.row_count(), 0);
+        assert_eq!(matrices.k.column_count(), 0);
+        assert_m_w_matches_witgen(&matrices, &hybrid);
+        matrices
+            .check_witness(hybrid.witness())
+            .expect("the hybrid relation should accept the honest witness");
     }
 
     #[test]

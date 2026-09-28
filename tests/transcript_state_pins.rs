@@ -139,6 +139,42 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "4998c8e08e08ebae9cb65cef049c22c4ea23592d138e39fc80acf019f3db0f47",
     ),
     (
+        "sha256/2p7/lambda100/flock-hybrid",
+        "d6b7c68d884e123f2cc0f14def61dfb8ae8980dd50649228c098961405428845",
+        "4810e2b5babecbf964035ec0aff416a82bd95fe2a60443f438cdb604459df1fa",
+        "252cbc769c163b936515d3b1efb7bbf836cc66afc39f4330250000f07ed00a60",
+    ),
+    (
+        "sha256/2p7/lambda128/flock-hybrid",
+        "fa28808c31d1745e48fb5bd95c5ba0a1bf4554d79f0276921cd775864816cc3d",
+        "e047c1348242a8b89ac5dbbe98fe74f5612c8a0c80bbacf461cc60472aa1489d",
+        "5fda499b578b8dd1482efe9b08f232eeae9a59909061cb104ec80c0d0fbec6da",
+    ),
+    (
+        "sha256/2p7/reference/flock-hybrid",
+        "a44bc6eba974899a857503f200cf9d2909eba266c3f423118ab26f12af45e9bd",
+        "eec453f2da5d0abcc8ed6d21caf6dd4b84847ccde175958ee5968858978a9131",
+        "fdfbc34f11e6be3bd57bdc17e6379473569619093c1f3246b57990e47f08001e",
+    ),
+    (
+        "sha256/2p7/wfbitz/lambda100/flock-hybrid",
+        "25c3a517c123d5f45285d4f43a6ed20a93e660a8a46a6402cedcd776672c6c1e",
+        "25c3a517c123d5f45285d4f43a6ed20a93e660a8a46a6402cedcd776672c6c1e",
+        "a3dd8303173c8d824dbd15e4732f816688225a96c99f61e4cd7764bda9742c19",
+    ),
+    (
+        "sha256/2p7/wfbitz/private-io/lambda100/flock-hybrid",
+        "0e98d0a848726385a383b26241e5e94baac14cceb22242d0b75f5bf72394d43f",
+        "0e98d0a848726385a383b26241e5e94baac14cceb22242d0b75f5bf72394d43f",
+        "16f6537e7554110b073771709d11b0297d0dac7555a5a9f5281bd1233fe8942f",
+    ),
+    (
+        "sha256/legacy-rows24/lambda100/flock-hybrid",
+        "e2bc478e4c1a420c758c195302871c5f99eefb50d1d7ac687237dbcef244d208",
+        "48cd91c252f1348370e3870a1986b049f5c41d719c436bef429e41dabb504e46",
+        "cebdb6f34333366edb557da235b7d72b8acd48758c3e32205844653faa4fa64b",
+    ),
+    (
         "sha256/legacy-rows24/lambda100/all-products",
         "cd9bd21e5edc44464eef656b985c1e7fd847d5501fdd789d8c7dcc951e72b00b",
         "0495f6a04c01a33dddc8b3c1b16784e6948909b5f45fed9653e8ef99f52fa324",
@@ -452,6 +488,8 @@ fn sha256_inputs(instances: usize) -> Vec<([u32; 8], [u32; 16])> {
 fn sha_relation_pin(name: &str) -> String {
     if cfg!(feature = "sha-all-products") {
         format!("{name}/all-products")
+    } else if cfg!(feature = "sha-flock-hybrid") {
+        format!("{name}/flock-hybrid")
     } else {
         name.to_owned()
     }
@@ -517,7 +555,13 @@ fn sha256_legacy_inner_sumcheck_rows24_lambda100() {
     let prepared =
         prepare_sha256_compression_batch_for_assignment_rows_with_profile::<Lambda100>(24)
             .expect("prepare");
-    let expected = if cfg!(feature = "sha-all-products") { 2054 } else { 1025 };
+    let expected = if cfg!(feature = "sha-all-products") {
+        2054
+    } else if cfg!(feature = "sha-flock-hybrid") {
+        911
+    } else {
+        1025
+    };
     assert_eq!(prepared.instances(), expected);
     sha256_pin("sha256/legacy-rows24/lambda100", &prepared);
 }

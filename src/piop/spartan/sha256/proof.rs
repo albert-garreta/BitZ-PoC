@@ -509,6 +509,9 @@ impl<M: VirtualMap> LinearRelationSpec for Sha256CompressionSpec<'_, M> {
     }
 
     fn product_slots(&self) -> Option<ProductSlots<'_>> {
+        if super::constraints::SHA256_PRODUCT_SLOTS == 0 {
+            return None;
+        }
         let terms = self.prepared.product_terms();
         Some(match terms.quadratic() {
             Some((left, right)) => ProductSlots::Quadratic(QuadraticSlots { left, right }),
@@ -4083,9 +4086,11 @@ mod tests {
                 let t = prepared.opening_params().row_vars;
                 let q_bits = 128 - prepared.security().projection_max.leading_zeros() as usize;
                 assert!(q_bits <= 127 - t - 1, "t = {t}: q has {q_bits} bits");
-                // Source blocks are `2^13` cells, derived ones `2^local`.
+                // Source blocks are `2^13` cells (`2^14` in the Flock hybrid),
+                // derived ones `2^local`.
                 let block = prepared.wfbitz_block().unwrap();
-                assert_eq!(block.layout.row_vars, t + 13 - SHA256_H_LOCAL_VARS);
+                let source = crate::piop::spartan::sha256::constraints::SHA256_F_BAR_LIVE_BITS.next_power_of_two().ilog2() as usize;
+                assert_eq!(block.layout.row_vars, t + source - SHA256_H_LOCAL_VARS);
                 assert_eq!(block.layout.col_vars, prepared.opening_params().col_vars);
             }
             assert_eq!(
