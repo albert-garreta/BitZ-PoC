@@ -99,6 +99,10 @@ const SHA256_LOCAL_ROW_POINT_DOMAIN: &[u8] = b"bitz/spartan-sha256/local-row-poi
 const SHA256_INSTANCE_POINT_DOMAIN: &[u8] = b"bitz/spartan-sha256/instance-point/v1";
 const SHA256_SHARED_CONSTANT_CELL: usize = 0;
 const SHA256_PROTOCOL_DOMAIN: &[u8] = b"bitz/spartan-sha256-compressions/product-linear/v2";
+/// [`SHA256_PROTOCOL_DOMAIN`] for a batch with nothing public
+/// ([`PreparedSha256CompressionBatch::with_private_io`]).
+const SHA256_PRIVATE_IO_PROTOCOL_DOMAIN: &[u8] =
+    b"bitz/spartan-sha256-compressions/product-linear/private-io/v1";
 const SHA256_ASSIGNMENT_BINDING_DOMAIN: &[u8] = b"bitz/spartan-sha256-assignment/runtime-prime/v2";
 
 /// One runtime-field element in Montgomery form, without cloning the shared
@@ -264,14 +268,14 @@ impl<M: VirtualMap> LinearRelationSpec for Sha256CompressionSpec<'_, M> {
     }
 
     fn public_io_count(&self) -> usize {
-        SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS
+        public_io_bits(self.prepared)
     }
 
     fn validate_statement(
         &self,
         statement: &[Sha256CompressionStatement],
     ) -> Result<(), ProtocolError> {
-        validate_public_statement(self.prepared.instances(), statement)
+        validate_public_statement(statement_len(self.prepared), statement)
     }
 
     fn validate_opener_config(
@@ -322,7 +326,14 @@ impl<M: VirtualMap> LinearRelationSpec for Sha256CompressionSpec<'_, M> {
         let assignment_binding =
             assignment_binding(prepared, commitment, config, &public_statement_binding)?;
         let mut frames = vec![
-            frame(b"protocol", SHA256_PROTOCOL_DOMAIN),
+            frame(
+                b"protocol",
+                if prepared.private_io() {
+                    SHA256_PRIVATE_IO_PROTOCOL_DOMAIN
+                } else {
+                    SHA256_PROTOCOL_DOMAIN
+                },
+            ),
             frame(b"integer-relation", prepared.integer_relation_digest()),
             frame(b"boolean-map", prepared.map().digest()),
         ];
@@ -961,10 +972,10 @@ impl ProductLinearBatching {
         constant_weight: SpartanBitzField,
         field_config: &<SpartanBitzField as crate::piop::spartan::SpartanField>::Config,
     ) -> Result<Self, ProtocolError> {
-        validate_public_statement(prepared.instances(), public_statement)?;
+        validate_public_statement(statement_len(prepared), public_statement)?;
         if instance_point.len() != instance_vars(prepared.instances())?
             || beta.len() != SHA256_H_BAR_LIVE_BITS
-            || slot_weights.len() != SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS
+            || slot_weights.len() != public_io_bits(prepared)
         {
             return Err(ProtocolError::InvalidGeometry);
         }
@@ -2322,6 +2333,16 @@ pub(super) fn validate_shared_constant(rows: &[Vec<u64>]) -> Result<(), Protocol
         return Err(ProtocolError::InvalidSharedConstant);
     }
     Ok(())
+}
+
+/// Statements the batch takes: one per compression, or none with private I/O.
+fn statement_len(prepared: &PreparedSha256CompressionBatch) -> usize {
+    if prepared.private_io() { 0 } else { prepared.instances() }
+}
+
+/// Public bits per compression the batch binds: none with private I/O.
+fn public_io_bits(prepared: &PreparedSha256CompressionBatch) -> usize {
+    if prepared.private_io() { 0 } else { SHA256_PUBLIC_WORDS * SHA256_PUBLIC_WORD_BITS }
 }
 
 fn validate_public_statement(

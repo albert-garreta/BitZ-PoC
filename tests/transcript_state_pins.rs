@@ -94,6 +94,12 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "8ae0faf93d174fb0db2d71613c75ce2231ed0582dd606753686cec4d8f10e91d",
     ),
     (
+        "sha256/2p7/wfbitz/private-io/lambda100",
+        "0bb3629f5bf10d1c9b624f3715919330bebf6f10ffb9bffd6f6dd20caf0f9d43",
+        "0bb3629f5bf10d1c9b624f3715919330bebf6f10ffb9bffd6f6dd20caf0f9d43",
+        "57448e5538805d7ad8ba219f2fc5e1c4916ee60963156713b7d7f52e6de41966",
+    ),
+    (
         "sha256/legacy-rows24/lambda100",
         "9cba7e07e447f3d1f24f3435a4ace0b92e582956a1a1b6deafd3a7c565e27429",
         "df01a8ff3e43efd580294b929553bac8435cedc77ace17495c3b56864800967d",
@@ -125,6 +131,12 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "370341ddcbb8428e63b468f4c63abd731fb5e00bab1d044a472649ca55d56a3b",
         "370341ddcbb8428e63b468f4c63abd731fb5e00bab1d044a472649ca55d56a3b",
         "64ff67787a7f94d5997532eb31bfb60d02fb78dee6590dfed92b389bd7d4c7db",
+    ),
+    (
+        "sha256/2p7/wfbitz/private-io/lambda100/all-products",
+        "830eabbe937f938df2478268772f0578d59795e90a99b1568600ed21265a7b87",
+        "830eabbe937f938df2478268772f0578d59795e90a99b1568600ed21265a7b87",
+        "4998c8e08e08ebae9cb65cef049c22c4ea23592d138e39fc80acf019f3db0f47",
     ),
     (
         "sha256/legacy-rows24/lambda100/all-products",
@@ -541,6 +553,57 @@ fn sha256_2p7_wfbitz_lambda100() {
     let nonces = nonces_le([proof.initial_nonce(), proof.terminal_nonce()]);
     pin(
         &sha_relation_pin("sha256/2p7/wfbitz/lambda100"),
+        &pt,
+        &vt,
+        &[&hint.commitment.root, &opening, &nonces],
+    );
+}
+
+/// The same batch with nothing public (Flock's `sha2_proof` statement): the
+/// statement is empty, and the proof neither takes a statement nor verifies
+/// as the public-I/O proof.
+#[cfg(feature = "bitz-parity")]
+#[test]
+fn sha256_2p7_wfbitz_private_io_lambda100() {
+    use bitz::piop::spartan::{
+        commit_sha256_compression_witness_wfbitz,
+        prepare_sha256_compression_batch_wfbitz_with_profile, protocol::OpeningProof,
+        prove_sha256_compressions_wfbitz, verify_sha256_compressions_wfbitz,
+    };
+    let public =
+        prepare_sha256_compression_batch_wfbitz_with_profile::<Lambda100>(7).expect("prepare");
+    let prepared = public.clone().with_private_io();
+    let inputs = sha256_inputs(prepared.instances());
+    let witness = generate_sha256_compression_witnesses(&prepared, &inputs).expect("witness");
+    let statements: Vec<_> = inputs
+        .iter()
+        .copied()
+        .zip(witness.outputs().iter().copied())
+        .map(|(input, output)| Sha256CompressionStatement::new(input, output))
+        .collect();
+    let hint = commit_sha256_compression_witness_wfbitz(&prepared, &witness).expect("commit");
+    let mut rejected = Blake3Transcript::new();
+    assert!(
+        prove_sha256_compressions_wfbitz(&mut rejected, &prepared, &statements, &witness, &hint)
+            .is_err(),
+        "a private-I/O batch takes no statement"
+    );
+    let mut pt = Blake3Transcript::new();
+    let proof = prove_sha256_compressions_wfbitz(&mut pt, &prepared, &[], &witness, &hint)
+        .expect("prove");
+    let mut vt = Blake3Transcript::new();
+    verify_sha256_compressions_wfbitz(&mut vt, &prepared, &[], &hint.commitment, &proof)
+        .expect("verify");
+    let mut cross = Blake3Transcript::new();
+    assert!(
+        verify_sha256_compressions_wfbitz(&mut cross, &public, &statements, &hint.commitment, &proof)
+            .is_err(),
+        "a private-I/O proof does not verify as a public-I/O proof"
+    );
+    let opening = proof.bitz().to_bytes();
+    let nonces = nonces_le([proof.initial_nonce(), proof.terminal_nonce()]);
+    pin(
+        &sha_relation_pin("sha256/2p7/wfbitz/private-io/lambda100"),
         &pt,
         &vt,
         &[&hint.commitment.root, &opening, &nonces],

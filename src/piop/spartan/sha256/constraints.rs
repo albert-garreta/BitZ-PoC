@@ -258,6 +258,9 @@ pub struct PreparedSha256CompressionBatch {
     /// The worldfnd/BitZ opener's block-layout commitment, when the batch was
     /// prepared for it ([`prepare_sha256_compression_batch_wfbitz_with_profile`]).
     wfbitz: Option<Sha256WfbitzBlock>,
+    /// Every compression's input state, block and output are witness only
+    /// ([`PreparedSha256CompressionBatch::with_private_io`]).
+    private_io: bool,
 }
 
 /// The committed source as the worldfnd/BitZ opener lays it out: instance
@@ -278,6 +281,21 @@ pub(crate) struct Sha256WfbitzBlock {
 }
 
 impl PreparedSha256CompressionBatch {
+    /// The same batch with nothing public: the statement is empty, and each
+    /// compression's input state, block and output are free witness cells, so
+    /// the proof says only that the committed witness holds `N` valid
+    /// compressions. The relation is unchanged; the proof runs under its own
+    /// protocol domain, so it never verifies as a public-I/O proof or back.
+    pub fn with_private_io(mut self) -> Self {
+        self.private_io = true;
+        self
+    }
+
+    /// Whether the batch was prepared with [`Self::with_private_io`].
+    pub fn private_io(&self) -> bool {
+        self.private_io
+    }
+
     /// The worldfnd/BitZ opener's block layout, when prepared for it.
     #[cfg_attr(not(feature = "bitz-parity"), allow(dead_code))]
     pub(crate) fn wfbitz_block(&self) -> Option<&Sha256WfbitzBlock> {
@@ -1128,6 +1146,7 @@ fn prepare_sha256_compression_instances(
         prime_profile,
         opening_layout: layout,
         wfbitz: None,
+        private_io: false,
     })
 }
 

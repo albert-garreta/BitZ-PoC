@@ -116,16 +116,23 @@ fn wfbitz() -> bool {
 
 /// `BITZ_SHA_WFBITZ_T=<t>`: open at row split `t` instead of the opener's
 /// own `⌈0.6 n⌉ − 1` (a probe of the split's cost; the transcript follows `t`).
+/// `BITZ_SHA_PRIVATE_IO=1`: nothing public (states, blocks and outputs are
+/// witness only, the statement is empty), Flock's `sha2_proof` statement.
 #[cfg(feature = "bitz-parity")]
 fn prepare_wfbitz<P: IopSecurityProfile>(
     exponent: usize,
 ) -> Result<PreparedSha256CompressionBatch, Sha256ConstraintError> {
-    match std::env::var("BITZ_SHA_WFBITZ_T").ok().and_then(|t| t.parse().ok()) {
+    let prepared = match std::env::var("BITZ_SHA_WFBITZ_T").ok().and_then(|t| t.parse().ok()) {
         Some(row_vars) => {
             bitz::piop::spartan::prepare_sha256_compression_batch_wfbitz_at::<P>(exponent, row_vars)
         }
         None => bitz::piop::spartan::prepare_sha256_compression_batch_wfbitz_with_profile::<P>(exponent),
-    }
+    }?;
+    Ok(if private_io() { prepared.with_private_io() } else { prepared })
+}
+
+fn private_io() -> bool {
+    matches!(std::env::var("BITZ_SHA_PRIVATE_IO").as_deref(), Ok("1"))
 }
 
 #[cfg(not(feature = "bitz-parity"))]
@@ -1042,11 +1049,15 @@ fn run_once(
     };
     let statements = {
         let _scope = tracing::info_span!("sha256-trace:statement_materialization").entered();
-        let statements = inputs
-            .iter()
-            .zip(witness.outputs())
-            .map(|(&input, &output)| Sha256CompressionStatement::new(input, output))
-            .collect::<Vec<_>>();
+        let statements = if prepared.private_io() {
+            Vec::new()
+        } else {
+            inputs
+                .iter()
+                .zip(witness.outputs())
+                .map(|(&input, &output)| Sha256CompressionStatement::new(input, output))
+                .collect::<Vec<_>>()
+        };
         black_box(&statements);
         statements
     };
@@ -1295,6 +1306,14 @@ fn bench_shape<P: IopSecurityProfile>(
             prepared.product_layout_name().unwrap_or("none"),
         );
     }
+    println!(
+        "  statement: {}",
+        if prepared.private_io() {
+            "private I/O (states, blocks and outputs are witness only; nothing public)"
+        } else {
+            "public input states, blocks and outputs"
+        }
+    );
 
     let warm_inputs = make_inputs(compressions, shape_seed);
     let (warm, warm_intervals) = run_once(&warm_inputs, &prepared, inner_prefix_vars, &pc, &vc);
