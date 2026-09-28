@@ -1,7 +1,8 @@
 //! The dense-round arithmetic of the parity prover: the Gruen round sums,
-//! the fused fold-and-round pass, and the just-in-time variants of the
-//! first two dense rounds that read their entries through the per-position
-//! value tables instead of a materialised layer.
+//! the fused fold-and-round pass, the two-round window pass, and the
+//! just-in-time variants of the first two dense rounds that read their
+//! entries through the per-position value tables instead of a materialised
+//! layer.
 //!
 //! NEON kernels on aarch64 (register-resident 256-bit accumulators, the
 //! pass-fixed fold multiplier preprocessed, two independent chains per
@@ -15,13 +16,18 @@ use std::mem::MaybeUninit;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use crate::cfg_into_iter;
+use super::gkr::Pending;
+use crate::{cfg_chunks, cfg_chunks_mut, cfg_into_iter};
 use field::Gf128 as Gf;
 use crate::utils::wide_mul::WideMulAcc;
 
 /// The longest run one task handles when a round has a single row (the
 /// flat rounds and the `s = 0` layers).
 const MAX_TASK: usize = 1 << 12;
+/// The shortest column chunk [`window_pass`] splits a task down to.
+const MIN_WINDOW_CHUNK: usize = 1 << 6;
+/// The run one task of [`fold_prefix`] folds.
+const FOLD_TASK: usize = 1 << 12;
 /// The shortest column chunk [`Weights::task_len`] splits a task down to.
 const MIN_SPLIT: usize = 1 << 9;
 /// How many tasks per thread a split pass aims for.
@@ -215,6 +221,269 @@ pub(crate) fn fused_fold_round(
         })
         .collect();
     total(partials)
+}
+
+/// The node sums `S(a, b) = Σ w·L(a, b)·R(a, b)` of a two-round window,
+/// `a` the first round's node and `b` the second's, over `{0, 1, ∞}²`
+/// without `(1, 1)` — `∞` the difference of the two corners — in the order
+/// `00, 01, 10, ∞0, ∞1, 0∞, 1∞, ∞∞`. Eight is the minimum that gives both
+/// rounds' messages when neither sends its value at one (the claim fixes
+/// the ninth).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Grid8(pub(crate) [Gf; 8]);
+
+impl Grid8 {
+    fn zero() -> Self {
+        Self([Gf::zero(); 8])
+    }
+
+    fn add(self, other: Self) -> Self {
+        Self(std::array::from_fn(|k| self.0[k] + other.0[k]))
+    }
+
+    fn scale(self, w: Gf) -> Self {
+        Self(self.0.map(|x| x * w))
+    }
+
+    /// The first round's `(Σ_0, Σ_∞)`: its eq weight is the window's times
+    /// `eq(z′, v)` on the second round's bit (`z′` its coordinate), so
+    /// `(1 − z′)·S(·, 0) + z′·S(·, 1)`.
+    pub(crate) fn this_round(&self, z_next: Gf) -> (Gf, Gf) {
+        let [s00, s01, _, si0, si1, ..] = self.0;
+        let a = Gf::one() - z_next;
+        (a * s00 + z_next * s01, a * si0 + z_next * si1)
+    }
+
+    /// The second round's `(Σ_0, Σ_∞)` once the first is bound to `r`:
+    /// `L(r)·R(r) = L0·R0 + r·(L1·R1 − L0·R0 − L∞·R∞) + r²·L∞·R∞` at the
+    /// second node `0` and, the node map being linear, at `∞`.
+    pub(crate) fn next_round(&self, r: Gf) -> (Gf, Gf) {
+        let [s00, _, s10, si0, _, s0i, s1i, sii] = self.0;
+        let r2 = r * r;
+        (
+            s00 + r * (s10 + s00 + si0) + r2 * si0,
+            s0i + r * (s1i + s0i + sii) + r2 * sii,
+        )
+    }
+}
+
+/// Two dense rounds in one pass. Each half holds `4·2^p` blocks of
+/// `rows·width` entries, `p = pending.bits()`, block `(pending bits, u, v)`
+/// with `u` the first round's bit and `v` the second's. The pass folds the
+/// pending challenges into the blocks `(0…0, u, v)` in place — output
+/// `(u, v, x″)` overwrites input `(0…0, u, v, x″)`, which only it reads —
+/// and accumulates the window's [`Grid8`] over the folded corners, weight
+/// `eq_y[y″]·eq_c[c]` at `x″ = (y″, c)`; `left` as in [`fused_fold_round`]
+/// (`Weigh` stores, so it needs a fold). A task is one row's run of `chunk`
+/// columns (halved while the pass has fewer than `w.split` tasks): phase A
+/// folds each of its eight outputs from its four (or two) input streams,
+/// phase B reads the eight folded runs back for the grid — a handful of
+/// streams at a time instead of the 32 a column-at-a-time pass would read
+/// at power-of-two strides.
+pub(crate) fn window_pass(
+    l: &mut [Gf],
+    r: &mut [Gf],
+    pending: Pending,
+    w: Weights<'_>,
+    left: Left,
+    chunk: usize,
+) -> Grid8 {
+    let (width, rows) = (w.width(), w.rows());
+    let x = width * rows;
+    let blocks = 4usize << pending.bits();
+    assert!(l.len() == blocks * x && r.len() == blocks * x, "a window reads 4·2^pending blocks per half");
+    assert!(left != Left::Weigh || pending != Pending::None, "weighing stores, so it needs a fold");
+    assert!(width.is_power_of_two() && chunk.is_power_of_two());
+    let mut run = chunk.min(width);
+    while run > MIN_WINDOW_CHUNK && rows * (width / run) < w.split {
+        run /= 2;
+    }
+    let per_row = width / run;
+    let (lh, rh) = (Blocks::new(l, x), Blocks::new(r, x));
+    let rab = match pending {
+        Pending::Two(ra, rb) => ra * rb,
+        _ => Gf::zero(),
+    };
+    let partials: Vec<Grid8> = cfg_into_iter!(0..rows * per_row, 1)
+        .map(|i| {
+            let (y, c0) = (i / per_row, (i % per_row) * run);
+            let ec = &w.eq_c[c0..c0 + run];
+            // SAFETY: task `i` owns entries `y·width + c0 ..` (`run` of
+            // them) of every block: the tasks partition each block's rows
+            // into runs, and the blocks do not overlap.
+            let grid = unsafe { window_task(lh, rh, y * width + c0, run, pending, rab, left, ec) };
+            grid.scale(w.eq_y[y])
+        })
+        .collect();
+    partials.into_iter().fold(Grid8::zero(), Grid8::add)
+}
+
+/// The blocks of one half of a window pass, for tasks that own disjoint
+/// runs of every block.
+#[derive(Clone, Copy)]
+struct Blocks {
+    ptr: *mut Gf,
+    len: usize,
+    block: usize,
+}
+
+// SAFETY: the pointer is only dereferenced through `Blocks::run`, whose
+// callers keep the runs they touch disjoint across tasks.
+unsafe impl Send for Blocks {}
+unsafe impl Sync for Blocks {}
+
+impl Blocks {
+    fn new(half: &mut [Gf], block: usize) -> Self {
+        Self { ptr: half.as_mut_ptr(), len: half.len(), block }
+    }
+
+    /// Entries `at..at + n` of block `b`.
+    ///
+    /// # Safety
+    /// No other live reference to those entries may exist while this one
+    /// does.
+    #[inline]
+    unsafe fn run<'b>(&self, b: usize, at: usize, n: usize) -> &'b mut [Gf] {
+        let start = b * self.block + at;
+        assert!(start + n <= self.len);
+        // SAFETY: in bounds by the assertion; exclusivity is the caller's.
+        unsafe { std::slice::from_raw_parts_mut(self.ptr.add(start), n) }
+    }
+}
+
+/// One task of [`window_pass`]: entries `at..at + n` of every block, `ec`
+/// their columns' weights, `rab = ρa·ρb` when two folds are pending.
+///
+/// # Safety
+/// No other task may touch those entries while this one runs.
+#[allow(clippy::too_many_arguments)]
+unsafe fn window_task(
+    l: Blocks,
+    r: Blocks,
+    at: usize,
+    n: usize,
+    pending: Pending,
+    rab: Gf,
+    left: Left,
+    ec: &[Gf],
+) -> Grid8 {
+    // SAFETY: every run below is of a distinct block (or the same block
+    // after the previous reference is dead), inside this task's entries.
+    unsafe {
+        for (half, weigh) in [(l, left == Left::Weigh), (r, false)] {
+            let weigh = weigh.then_some(ec);
+            for uv in 0..4 {
+                let out = half.run(uv, at, n);
+                match pending {
+                    Pending::None => {}
+                    Pending::One(rho) => fold1_run(out, half.run(4 + uv, at, n), &rho, weigh),
+                    Pending::Two(ra, rb) => fold2_run(
+                        out,
+                        [&*half.run(4 + uv, at, n), &*half.run(8 + uv, at, n), &*half.run(12 + uv, at, n)],
+                        [ra, rb, rab],
+                        weigh,
+                    ),
+                }
+            }
+        }
+        let lq: [&[Gf]; 4] = std::array::from_fn(|uv| &*l.run(uv, at, n));
+        let rq: [&[Gf]; 4] = std::array::from_fn(|uv| &*r.run(uv, at, n));
+        let mut sums = GridSums::zero();
+        grid_run(lq, rq, (left == Left::Plain).then_some(ec), &mut sums);
+        Grid8(sums.finish())
+    }
+}
+
+/// Folds a table's pending challenges into its prefix in place, in
+/// parallel: with one, `v[i] + ρ·(v[i + half] − v[i])` over the first
+/// half; with two, the four quarters (`ρa` on the higher bit) into the
+/// first. Returns the folded length.
+pub(crate) fn fold_prefix(v: &mut [Gf], pending: Pending) -> usize {
+    match pending {
+        Pending::None => v.len(),
+        Pending::One(rho) => {
+            let half = v.len() / 2;
+            let (lo, hi) = v.split_at_mut(half);
+            cfg_chunks_mut!(lo, FOLD_TASK)
+                .zip(cfg_chunks!(hi, FOLD_TASK))
+                .for_each(|(a, b)| fold1_run(a, b, &rho, None));
+            half
+        }
+        Pending::Two(ra, rb) => {
+            let quarter = v.len() / 4;
+            let rab = ra * rb;
+            let (q0, rest) = v.split_at_mut(quarter);
+            let (q1, rest) = rest.split_at(quarter);
+            let (q2, q3) = rest.split_at(quarter);
+            cfg_chunks_mut!(q0, FOLD_TASK)
+                .zip(cfg_chunks!(q1, FOLD_TASK))
+                .zip(cfg_chunks!(q2, FOLD_TASK))
+                .zip(cfg_chunks!(q3, FOLD_TASK))
+                .for_each(|(((a, b), c), d)| fold2_run(a, [b, c, d], [ra, rb, rab], None));
+            quarter
+        }
+    }
+}
+
+/// `v0[i] + ρ·(v1[i] − v0[i])` into `v0`, times `weigh[i]` when given.
+pub(crate) fn fold1_run(v0: &mut [Gf], v1: &[Gf], rho: &Gf, weigh: Option<&[Gf]>) {
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    use neon as imp;
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    use generic as imp;
+    match weigh {
+        Some(w) => imp::fold1_run::<true>(v0, v1, rho, w),
+        None => imp::fold1_run::<false>(v0, v1, rho, &[]),
+    }
+}
+
+/// The two pending folds at once into `v00`: with `v = [v01, v10, v11]`
+/// (`a` the higher bit, folded with `rho[0] = ρa`; `b` with `rho[1] =
+/// ρb`; `rho[2] = ρa·ρb`), `v00 + ρa·(v10 − v00) + ρb·(v01 − v00) +
+/// ρa·ρb·(v11 − v10 − v01 + v00)` — the two single folds' value, with 13
+/// PMULLs instead of 15 on NEON — times `weigh[i]` when given.
+pub(crate) fn fold2_run(v00: &mut [Gf], v: [&[Gf]; 3], rho: [Gf; 3], weigh: Option<&[Gf]>) {
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    use neon as imp;
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    use generic as imp;
+    match weigh {
+        Some(w) => imp::fold2_run::<true>(v00, v, rho, w),
+        None => imp::fold2_run::<false>(v00, v, rho, &[]),
+    }
+}
+
+/// The running [`Grid8`] of one window task — unreduced accumulators.
+pub(crate) struct GridSums(GridSumsInner);
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+type GridSumsInner = neon::GridSums;
+#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+type GridSumsInner = generic::GridSums;
+
+impl GridSums {
+    pub(crate) fn zero() -> Self {
+        Self(GridSumsInner::zero())
+    }
+
+    /// The eight sums, reduced.
+    pub(crate) fn finish(self) -> [Gf; 8] {
+        self.0.finish()
+    }
+}
+
+/// Accumulates the window grid over the corners `l[2u + v]`, `r[2u + v]`
+/// of each column; `plain` gives the columns' weights when the left half
+/// does not carry them (its corners are multiplied first).
+pub(crate) fn grid_run(l: [&[Gf]; 4], r: [&[Gf]; 4], plain: Option<&[Gf]>, sums: &mut GridSums) {
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    use neon as imp;
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    use generic as imp;
+    match plain {
+        Some(w) => imp::grid_run::<true>(l, r, w, &mut sums.0),
+        None => imp::grid_run::<false>(l, r, &[], &mut sums.0),
+    }
 }
 
 /// The running Gruen sums of one row task — unreduced accumulators.
@@ -770,6 +1039,57 @@ pub(crate) mod generic {
             <Gf as WideMulAcc>::wide_add_assign(&mut acc, &<Gf as WideMulAcc>::mul_wide(&t_e[a], &inner));
         }
         <Gf as WideMulAcc>::from_wide(acc)
+    }
+
+    pub(crate) fn fold1_run<const WEIGH: bool>(v0: &mut [Gf], v1: &[Gf], rho: &Gf, w: &[Gf]) {
+        for i in 0..v0.len() {
+            let f = fold(*rho, v0[i], v1[i]);
+            v0[i] = if WEIGH { w[i] * f } else { f };
+        }
+    }
+
+    /// The reference: the two single folds, the older challenge first.
+    pub(crate) fn fold2_run<const WEIGH: bool>(v00: &mut [Gf], v: [&[Gf]; 3], rho: [Gf; 3], w: &[Gf]) {
+        let [v01, v10, v11] = v;
+        for i in 0..v00.len() {
+            let f = fold(rho[1], fold(rho[0], v00[i], v10[i]), fold(rho[0], v01[i], v11[i]));
+            v00[i] = if WEIGH { w[i] * f } else { f };
+        }
+    }
+
+    pub(crate) struct GridSums {
+        acc: Vec<Wide>,
+    }
+
+    impl GridSums {
+        pub(crate) fn zero() -> Self {
+            Self { acc: vec![<Gf as WideMulAcc>::wide_zero(&Gf::zero()); 8] }
+        }
+
+        pub(crate) fn finish(self) -> [Gf; 8] {
+            let mut acc = self.acc.into_iter();
+            std::array::from_fn(|_| <Gf as WideMulAcc>::from_wide(acc.next().expect("eight sums")))
+        }
+    }
+
+    /// The nodes `00, 01, 10, ∞0, ∞1, 0∞, 1∞, ∞∞` of the corners
+    /// `c[2u + v]`.
+    fn nodes(c: [Gf; 4]) -> [Gf; 8] {
+        let (i0, i1) = (c[2] - c[0], c[3] - c[1]);
+        [c[0], c[1], c[2], i0, i1, c[1] - c[0], c[3] - c[2], i1 - i0]
+    }
+
+    pub(crate) fn grid_run<const PLAIN: bool>(l: [&[Gf]; 4], r: [&[Gf]; 4], w: &[Gf], sums: &mut GridSums) {
+        for c in 0..l[0].len() {
+            let mut lc: [Gf; 4] = std::array::from_fn(|k| l[k][c]);
+            if PLAIN {
+                lc = lc.map(|x| w[c] * x);
+            }
+            let (ln, rn) = (nodes(lc), nodes(std::array::from_fn(|k| r[k][c])));
+            for k in 0..8 {
+                <Gf as WideMulAcc>::wide_add_assign(&mut sums.acc[k], &<Gf as WideMulAcc>::mul_wide(&ln[k], &rn[k]));
+            }
+        }
     }
 }
 
@@ -1444,6 +1764,185 @@ pub(crate) mod neon {
             to_elt(acc)
         }
     }
+
+    pub(crate) fn fold1_run<const WEIGH: bool>(v0: &mut [Gf], v1: &[Gf], rho: &Gf, w: &[Gf]) {
+        let n = v0.len();
+        assert!(v1.len() >= n && (!WEIGH || w.len() >= n));
+        // SAFETY: as `neon::pmull_lo`; every index is below `n`, bounded
+        // by the assertion; each entry is loaded before it is stored.
+        unsafe {
+            let (rl, rh) = prep_fixed(rho);
+            let g = vdupq_n_u64(0x87);
+            let z = vdupq_n_u64(0);
+            macro_rules! entry {
+                ($i:expr) => {{
+                    let i = $i;
+                    let mut f = fold1(rl, rh, g, z, ld(v0.get_unchecked(i)), ld(v1.get_unchecked(i)));
+                    if WEIGH {
+                        f = mul_red(ld(w.get_unchecked(i)), f, g, z);
+                    }
+                    st(v0.get_unchecked_mut(i), f);
+                }};
+            }
+            let mut i = 0usize;
+            while i + 2 <= n {
+                entry!(i);
+                entry!(i + 1);
+                i += 2;
+            }
+            if i < n {
+                entry!(i);
+            }
+        }
+    }
+
+    /// The arity-4 fold with `(ρa, ρb, ρa·ρb)` preprocessed: three
+    /// unreduced products XOR-combined and reduced once (13 PMULLs).
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn fold2(
+        p: &[(uint64x2_t, uint64x2_t); 3],
+        g: uint64x2_t,
+        z: uint64x2_t,
+        v00: uint64x2_t,
+        v01: uint64x2_t,
+        v10: uint64x2_t,
+        v11: uint64x2_t,
+    ) -> uint64x2_t {
+        // SAFETY: as `neon::pmull_lo`.
+        unsafe {
+            let d1 = veorq_u64(v10, v00);
+            let d2 = veorq_u64(v01, v00);
+            let d3 = veorq_u64(d1, veorq_u64(v11, v01));
+            let (mut tl, mut tm) = mul_fixed_wide(d1, p[0].0, p[0].1);
+            let (l2, m2) = mul_fixed_wide(d2, p[1].0, p[1].1);
+            let (l3, m3) = mul_fixed_wide(d3, p[2].0, p[2].1);
+            tl = veorq_u64(tl, veorq_u64(l2, l3));
+            tm = veorq_u64(tm, veorq_u64(m2, m3));
+            veorq_u64(v00, fold_x64(tl, tm, g, z))
+        }
+    }
+
+    pub(crate) fn fold2_run<const WEIGH: bool>(v00: &mut [Gf], v: [&[Gf]; 3], rho: [Gf; 3], w: &[Gf]) {
+        let n = v00.len();
+        let [v01, v10, v11] = v;
+        assert!(v01.len() >= n && v10.len() >= n && v11.len() >= n && (!WEIGH || w.len() >= n));
+        // SAFETY: as `fold1_run`.
+        unsafe {
+            let p = [prep_fixed(&rho[0]), prep_fixed(&rho[1]), prep_fixed(&rho[2])];
+            let g = vdupq_n_u64(0x87);
+            let z = vdupq_n_u64(0);
+            macro_rules! entry {
+                ($i:expr) => {{
+                    let i = $i;
+                    let mut f = fold2(
+                        &p,
+                        g,
+                        z,
+                        ld(v00.get_unchecked(i)),
+                        ld(v01.get_unchecked(i)),
+                        ld(v10.get_unchecked(i)),
+                        ld(v11.get_unchecked(i)),
+                    );
+                    if WEIGH {
+                        f = mul_red(ld(w.get_unchecked(i)), f, g, z);
+                    }
+                    st(v00.get_unchecked_mut(i), f);
+                }};
+            }
+            let mut i = 0usize;
+            while i + 2 <= n {
+                entry!(i);
+                entry!(i + 1);
+                i += 2;
+            }
+            if i < n {
+                entry!(i);
+            }
+        }
+    }
+
+    /// An unreduced carryless product sum in three limbs, `lo + mid·X^64 +
+    /// hi·X^128`: accumulating the middle limb as is saves the two shifts
+    /// and one XOR per product that [`clmul_256`] spends placing it.
+    type Acc3 = (uint64x2_t, uint64x2_t, uint64x2_t);
+
+    /// `acc += a⊗b`: 4 PMULLs, 1 EXT, 4 XORs.
+    #[inline(always)]
+    unsafe fn acc3_add(acc: &mut Acc3, a: uint64x2_t, b: uint64x2_t) {
+        // SAFETY: as `neon::pmull_lo`.
+        unsafe {
+            let sw = vextq_u64(b, b, 1);
+            acc.0 = veorq_u64(acc.0, pmull_lo(a, b));
+            acc.2 = veorq_u64(acc.2, pmull_hi(a, b));
+            acc.1 = veorq_u64(acc.1, veorq_u64(pmull_lo(a, sw), pmull_hi(a, sw)));
+        }
+    }
+
+    /// The window grid's eight sums, three limbs each.
+    pub(crate) struct GridSums {
+        acc: [Acc3; 8],
+    }
+
+    impl GridSums {
+        pub(crate) fn zero() -> Self {
+            // SAFETY: plain NEON constants.
+            unsafe {
+                let z = vdupq_n_u64(0);
+                Self { acc: [(z, z, z); 8] }
+            }
+        }
+
+        pub(crate) fn finish(self) -> [Gf; 8] {
+            // SAFETY: as `neon::pmull_lo`.
+            unsafe {
+                let z = vdupq_n_u64(0);
+                self.acc.map(|(lo, mid, hi)| {
+                    to_elt((veorq_u64(lo, vextq_u64(z, mid, 1)), veorq_u64(hi, vextq_u64(mid, z, 1))))
+                })
+            }
+        }
+    }
+
+    /// The window grid in two sweeps over the run, four nodes each — `00,
+    /// 01, 10, ∞0`, then `∞1, 0∞, 1∞, ∞∞` — so each sweep's twelve
+    /// accumulator registers, its corners and its temporaries fit in the
+    /// register file; the second sweep rereads the run from L1.
+    pub(crate) fn grid_run<const PLAIN: bool>(l: [&[Gf]; 4], r: [&[Gf]; 4], w: &[Gf], sums: &mut GridSums) {
+        let n = l[0].len();
+        assert!(l.iter().chain(&r).all(|q| q.len() == n) && (!PLAIN || w.len() >= n));
+        // SAFETY: as `neon::pmull_lo`; every index is below `n`, bounded
+        // by the assertion.
+        unsafe {
+            let g = vdupq_n_u64(0x87);
+            let z = vdupq_n_u64(0);
+            let left = |k: usize, c: usize| {
+                let v = ld(l[k].get_unchecked(c));
+                if PLAIN { mul_red(ld(w.get_unchecked(c)), v, g, z) } else { v }
+            };
+            let right = |k: usize, c: usize| ld(r[k].get_unchecked(c));
+            let [mut a0, mut a1, mut a2, mut a3, mut a4, mut a5, mut a6, mut a7] = sums.acc;
+            for c in 0..n {
+                let (l00, l01, l10) = (left(0, c), left(1, c), left(2, c));
+                let (r00, r01, r10) = (right(0, c), right(1, c), right(2, c));
+                acc3_add(&mut a0, l00, r00);
+                acc3_add(&mut a1, l01, r01);
+                acc3_add(&mut a2, l10, r10);
+                acc3_add(&mut a3, veorq_u64(l10, l00), veorq_u64(r10, r00));
+            }
+            for c in 0..n {
+                let (l00, l01, l10, l11) = (left(0, c), left(1, c), left(2, c), left(3, c));
+                let (r00, r01, r10, r11) = (right(0, c), right(1, c), right(2, c), right(3, c));
+                let (li1, ri1) = (veorq_u64(l11, l01), veorq_u64(r11, r01));
+                acc3_add(&mut a4, li1, ri1);
+                acc3_add(&mut a5, veorq_u64(l01, l00), veorq_u64(r01, r00));
+                acc3_add(&mut a6, veorq_u64(l11, l10), veorq_u64(r11, r10));
+                let (li0, ri0) = (veorq_u64(l10, l00), veorq_u64(r10, r00));
+                acc3_add(&mut a7, veorq_u64(li0, li1), veorq_u64(ri0, ri1));
+            }
+            sums.acc = [a0, a1, a2, a3, a4, a5, a6, a7];
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1876,6 +2375,168 @@ mod tests {
                     let got = run_jit_fold::<true, true>(scaled8, &pats, &rho, &w, send_one, n, portable);
                     assert_eq!(got, (plain, want), "pre-scaled n {n} send_one {send_one} portable {portable}");
                 }
+            }
+        }
+    }
+
+    /// `v0 + ρ·(v1 − v0)` with the field's operators.
+    fn fold_ref(rho: Gf, v0: Gf, v1: Gf) -> Gf {
+        v0 + rho * (v1 - v0)
+    }
+
+    /// A window's grid gives the rounds the single passes give: round
+    /// `j`'s sums over the table, whose row weights carry `eq(z′, v)` on
+    /// their top bit, then round `j + 1`'s over the table folded with `r_j`
+    /// — with the left half plain or carrying the column weights.
+    #[test]
+    fn window_grid_gives_both_rounds() {
+        let one = Gf::one();
+        for (width, rows) in [(1usize, 1usize), (4, 1), (8, 2), (64, 4), (256, 2), (512, 1)] {
+            let x = width * rows;
+            let (l, r) = (elements(4 * x, 300), elements(4 * x, 301));
+            let (eq_c, eq_y2) = (elements(width, 302), elements(rows, 303));
+            let (z_next, rj) = (elements(1, 304)[0], elements(1, 305)[0]);
+            let eq_y: Vec<Gf> = (0..2 * rows)
+                .map(|y| (if y < rows { one - z_next } else { z_next }) * eq_y2[y % rows])
+                .collect();
+            let single = Weights { eq_c: &eq_c, eq_y: &eq_y, split: 0 };
+            let first = round_sums(&l[..2 * x], &l[2 * x..], &r[..2 * x], &r[2 * x..], single, false);
+            let fold = |t: &[Gf]| -> Vec<Gf> { (0..2 * x).map(|i| fold_ref(rj, t[i], t[i + 2 * x])).collect() };
+            let (fl, fr) = (fold(&l), fold(&r));
+            let w = Weights { eq_c: &eq_c, eq_y: &eq_y2, split: 0 };
+            let second = round_sums(&fl[..x], &fl[x..], &fr[..x], &fr[x..], w, false);
+            let weighted: Vec<Gf> = l.iter().enumerate().map(|(i, &v)| eq_c[i % width] * v).collect();
+            for (left, lt) in [(Left::Plain, &l), (Left::Weighted, &weighted)] {
+                for chunk in [1usize, 2, 64, 256] {
+                    let grid = window_pass(&mut lt.clone(), &mut r.clone(), Pending::None, w, left, chunk);
+                    let label = format!("width {width} rows {rows} {left:?} chunk {chunk}");
+                    assert_eq!(grid.this_round(z_next), first, "round j {label}");
+                    assert_eq!(grid.next_round(rj), second, "round j + 1 {label}");
+                }
+            }
+        }
+    }
+
+    /// A window pass folds its pending challenges into the prefix and sums
+    /// the grid exactly as the single folds and the node sums over the
+    /// folded table do: one or two challenges, a plain, weighing or
+    /// weighted left half, tasks of every width.
+    #[test]
+    fn window_pass_matches_the_folds() {
+        for (width, rows) in [(1usize, 1usize), (2, 2), (8, 1), (64, 4), (128, 2), (1024, 1)] {
+            let x = width * rows;
+            let (eq_c, eq_y) = (elements(width, 310), elements(rows, 311));
+            let rho = elements(3, 312);
+            for bits in [1usize, 2] {
+                let pending = if bits == 1 { Pending::One(rho[0]) } else { Pending::Two(rho[0], rho[1]) };
+                let (l, r) = (elements((4 << bits) * x, 313), elements((4 << bits) * x, 314));
+                // The single folds, the older challenge on the higher bit.
+                let fold = |t: &[Gf]| -> Vec<Gf> {
+                    let once: Vec<Gf> = (0..t.len() / 2).map(|i| fold_ref(rho[0], t[i], t[i + t.len() / 2])).collect();
+                    if bits == 1 {
+                        return once;
+                    }
+                    (0..once.len() / 2).map(|i| fold_ref(rho[1], once[i], once[i + once.len() / 2])).collect()
+                };
+                let (fl, fr) = (fold(&l), fold(&r));
+                let mut want = [Gf::zero(); 8];
+                for y in 0..rows {
+                    for c in 0..width {
+                        let at = |t: &[Gf], uv: usize| t[uv * x + y * width + c];
+                        let node = |t: &[Gf]| {
+                            let v = [at(t, 0), at(t, 1), at(t, 2), at(t, 3)];
+                            let (i0, i1) = (v[2] - v[0], v[3] - v[1]);
+                            [v[0], v[1], v[2], i0, i1, v[1] - v[0], v[3] - v[2], i1 - i0]
+                        };
+                        let (ln, rn) = (node(&fl), node(&fr));
+                        for k in 0..8 {
+                            want[k] = want[k] + eq_y[y] * eq_c[c] * ln[k] * rn[k];
+                        }
+                    }
+                }
+                let weigh = |t: &[Gf]| -> Vec<Gf> { t.iter().enumerate().map(|(i, &v)| eq_c[i % width] * v).collect() };
+                let (weighted, want_weighted) = (weigh(&l), weigh(&fl));
+                for (left, lt, want_l) in [
+                    (Left::Plain, &l, &fl),
+                    (Left::Weigh, &l, &want_weighted),
+                    (Left::Weighted, &weighted, &want_weighted),
+                ] {
+                    for chunk in [1usize, 4, 64, 256] {
+                        for split in [0usize, 1 << 20] {
+                            let (mut gl, mut gr) = (lt.clone(), r.clone());
+                            let w = Weights { eq_c: &eq_c, eq_y: &eq_y, split };
+                            let grid = window_pass(&mut gl, &mut gr, pending, w, left, chunk);
+                            let label = format!("width {width} rows {rows} bits {bits} {left:?} chunk {chunk} split {split}");
+                            assert_eq!(grid.0, want, "grid {label}");
+                            assert_eq!(&gl[..4 * x], &want_l[..], "left {label}");
+                            assert_eq!(&gr[..4 * x], &fr[..], "right {label}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The folds a window's exits apply match the single folds, one or two
+    /// at a time.
+    #[test]
+    fn fold_prefix_matches_the_single_folds() {
+        for n in [4usize, 8, 64, 4 << 12, 4 << 13] {
+            let v = elements(n, 320);
+            let rho = elements(2, 321);
+            let halve = |t: &[Gf], r: Gf| -> Vec<Gf> { (0..t.len() / 2).map(|i| fold_ref(r, t[i], t[i + t.len() / 2])).collect() };
+            let once = halve(&v, rho[0]);
+            let twice = halve(&once, rho[1]);
+            let mut got = v.clone();
+            assert_eq!(fold_prefix(&mut got, Pending::One(rho[0])), n / 2);
+            assert_eq!(&got[..n / 2], &once[..], "one n {n}");
+            let mut got = v.clone();
+            assert_eq!(fold_prefix(&mut got, Pending::Two(rho[0], rho[1])), n / 4);
+            assert_eq!(&got[..n / 4], &twice[..], "two n {n}");
+            let mut got = v.clone();
+            assert_eq!(fold_prefix(&mut got, Pending::None), n);
+            assert_eq!(got, v);
+        }
+    }
+
+    /// The window kernels match the portable ones: the folds with and
+    /// without weighing, the grid with a plain or a weighted left half.
+    #[test]
+    fn window_kernels_match_the_reference() {
+        for n in [0usize, 1, 2, 3, 7, 64, 65] {
+            let v: Vec<Vec<Gf>> = (0..4).map(|i| elements(n, 330 + i)).collect();
+            let w = elements(n, 334);
+            let rho = elements(2, 335);
+            let rho3 = [rho[0], rho[1], rho[0] * rho[1]];
+            for weigh in [None, Some(&w[..])] {
+                let (mut got, mut want) = (v[0].clone(), v[0].clone());
+                fold1_run(&mut got, &v[1], &rho[0], weigh);
+                match weigh {
+                    Some(w) => generic::fold1_run::<true>(&mut want, &v[1], &rho[0], w),
+                    None => generic::fold1_run::<false>(&mut want, &v[1], &rho[0], &[]),
+                }
+                assert_eq!(got, want, "fold1 n {n} weigh {}", weigh.is_some());
+                let (mut got, mut want) = (v[0].clone(), v[0].clone());
+                fold2_run(&mut got, [&v[1], &v[2], &v[3]], rho3, weigh);
+                match weigh {
+                    Some(w) => generic::fold2_run::<true>(&mut want, [&v[1], &v[2], &v[3]], rho3, w),
+                    None => generic::fold2_run::<false>(&mut want, [&v[1], &v[2], &v[3]], rho3, &[]),
+                }
+                assert_eq!(got, want, "fold2 n {n} weigh {}", weigh.is_some());
+            }
+            let r: Vec<Vec<Gf>> = (0..4).map(|i| elements(n, 340 + i)).collect();
+            let lq: [&[Gf]; 4] = std::array::from_fn(|k| &v[k][..]);
+            let rq: [&[Gf]; 4] = std::array::from_fn(|k| &r[k][..]);
+            for plain in [false, true] {
+                let mut got = GridSums::zero();
+                grid_run(lq, rq, plain.then_some(&w[..]), &mut got);
+                let mut want = generic::GridSums::zero();
+                if plain {
+                    generic::grid_run::<true>(lq, rq, &w, &mut want);
+                } else {
+                    generic::grid_run::<false>(lq, rq, &[], &mut want);
+                }
+                assert_eq!(got.finish(), want.finish(), "grid n {n} plain {plain}");
             }
         }
     }
