@@ -3,6 +3,7 @@
 //! Ligerito opening, with flock's challenger events framed their way.
 
 use core::mem::size_of;
+use std::borrow::Cow;
 
 use bincode::Options;
 use flock_core::challenger::Challenger;
@@ -312,6 +313,31 @@ impl Pcs {
         transcript: &mut ProverState,
         ood: Option<(&[Gf], Gf)>,
     ) -> Result<(), ProveError> {
+        self.prove_lin_rows_with(
+            hint,
+            rows,
+            packed_cols,
+            query,
+            statement_binding,
+            transcript,
+            ood,
+            OpeningPath::from_env(),
+        )
+    }
+
+    /// [`Pcs::prove_lin_rows`] along an explicit [`OpeningPath`].
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn prove_lin_rows_with(
+        &self,
+        hint: &FlockCommitHint,
+        rows: &[Vec<u64>],
+        packed_cols: &[Vec<u64>],
+        query: &OpeningQuery,
+        statement_binding: StatementBinding,
+        transcript: &mut ProverState,
+        ood: Option<(&[Gf], Gf)>,
+        path: OpeningPath,
+    ) -> Result<(), ProveError> {
         if hint.packed_message().len() != self.packed_len {
             return Err(ProveError::PackedWitnessLengthMismatch);
         }
@@ -323,7 +349,7 @@ impl Pcs {
                 if statement_binding == StatementBinding::Bind {
                     bind_mle_statement(self, &root, point, *target, transcript);
                 }
-                self.prove_mle(hint, &ring_switch, *target, transcript, ood)
+                self.prove_mle(hint, &ring_switch, *target, transcript, ood, path)
             }
             OpeningQuery::InnerProduct { claim } => {
                 validate_inner_product_claim(self, claim)?;
@@ -338,7 +364,7 @@ impl Pcs {
                 super::trace("  sumcheck", started);
                 let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
                 bind_mle_statement(self, &root, &reduced.point, reduced.target, transcript);
-                self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood)
+                self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood, path)
             }
             OpeningQuery::InnerProductSum { claim } => {
                 validate_sum_claim(self, claim)?;
@@ -351,7 +377,7 @@ impl Pcs {
                 super::trace("  sumcheck (sum)", started);
                 let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
                 bind_mle_statement(self, &root, &reduced.point, reduced.target, transcript);
-                self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood)
+                self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood, path)
             }
         }
     }
@@ -407,6 +433,7 @@ impl Pcs {
         target: Gf,
         transcript: &mut ProverState,
         ood: Option<(&[Gf], Gf)>,
+        path: OpeningPath,
     ) -> Result<(), ProveError> {
         let started_rs = std::time::Instant::now();
         let packed = hint.packed_message();
@@ -459,9 +486,14 @@ impl Pcs {
         let started_lig = std::time::Instant::now();
         let data = hint.flock_prover_data();
         let mut challenger = ProverChallenger::new_ligerito(transcript, packed_target);
+        let witness: Cow<'_, [FlockF128]> = if path.borrow {
+            Cow::Borrowed(packed)
+        } else {
+            Cow::Owned(packed.to_vec())
+        };
         let ligerito = recursive_prover_with_basis(
             &self.prover_config,
-            packed.to_vec(),
+            witness,
             packed_basis,
             packed_target,
             &data.codeword,
@@ -565,6 +597,37 @@ impl Pcs {
 /// `point` carries into [`Pcs::prove_lin`]'s `ood`.
 pub fn packed_evaluation(hint: &FlockCommitHint, point: &[Gf]) -> Gf {
     crate::ligerito_flock::ood_eval(hint.packed_message(), point)
+}
+
+/// How [`Pcs::prove_lin`] runs the ring switch and hands the opening to
+/// Ligerito. Every path proves the same bytes (`opening_paths_prove_
+/// identically` pins them against each other); they differ only in
+/// passes, memory traffic and allocations.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct OpeningPath {
+    /// Ligerito reads the committed packed message in place (its prover
+    /// takes a `Cow`) instead of a fresh copy: no serial 32/128 MB memcpy
+    /// and first touch per proof at `n = 28/30`, and no copy handed on to
+    /// flock's scratch pool after the first fold (`WFBITZ_RS_BORROW`,
+    /// default on).
+    pub(crate) borrow: bool,
+}
+
+impl OpeningPath {
+    /// The environment's path, read once.
+    pub(crate) fn from_env() -> Self {
+        static PATH: std::sync::OnceLock<OpeningPath> = std::sync::OnceLock::new();
+        *PATH.get_or_init(|| {
+            let flag = |name: &str, default: bool| match std::env::var(name).as_deref() {
+                Ok("0") => false,
+                Ok("1") => true,
+                _ => default,
+            };
+            OpeningPath {
+                borrow: flag("WFBITZ_RS_BORROW", true),
+            }
+        })
+    }
 }
 
 /// Their 40-byte frame: `m`, `log_inv_rate`, `log_batch_size`, the profile
@@ -1288,4 +1351,166 @@ fn leading_zero_bits(bytes: &[u8]) -> u32 {
         }
     }
     total
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wfbitz::params::{LinearClaimGf, MIN_LOG_BITS, Shape};
+    use crate::wfbitz::{build_prover, build_verifier};
+
+    fn xorshift(state: &mut u64) -> u64 {
+        *state ^= *state << 13;
+        *state ^= *state >> 7;
+        *state ^= *state << 17;
+        *state
+    }
+
+    fn random_gf(state: &mut u64) -> Gf {
+        Gf::new(xorshift(state), xorshift(state))
+    }
+
+    /// A ladder for grids below the embedded ones' floor: `initial_k`
+    /// lane folds at rate 1/2, then folds of two with the rate halving per
+    /// level down to at most three variables, 16 queries a level, no
+    /// grinding. Small, not secure: it only has to run every code path.
+    fn small_pcs(shape: &Shape) -> Pcs {
+        let log_n = shape.log_bits() - LOG_PACKING;
+        let initial_k = if log_n >= 10 { 4 } else { 2 };
+        let mut remaining = log_n - initial_k;
+        let mut rates = vec![1usize];
+        let mut queries = vec![16usize.min(1 << (remaining + 1))];
+        let (mut ks, mut cols) = (Vec::new(), Vec::new());
+        while remaining > 3 {
+            remaining -= 2;
+            ks.push(2);
+            cols.push(remaining);
+            rates.push(rates.len() + 1);
+            queries.push(16usize.min(1 << (remaining + rates.len())));
+        }
+        let levels = rates.len();
+        let prover = ProverConfig {
+            log_inv_rates: rates.clone(),
+            recursive_steps: ks.len(),
+            initial_log_msg_cols: log_n - initial_k,
+            initial_log_num_interleaved: initial_k,
+            initial_k,
+            recursive_log_msg_cols: cols.clone(),
+            recursive_ks: ks.clone(),
+            queries: queries.clone(),
+            grinding_bits: vec![0; levels],
+            fold_grinding_bits: vec![0; levels],
+            ood_samples: vec![0; levels],
+            merkle_hash: HashKind::Blake3,
+        };
+        let verifier = VerifierConfig {
+            log_inv_rates: rates,
+            recursive_steps: ks.len(),
+            initial_log_msg_cols: log_n - initial_k,
+            initial_log_num_interleaved: initial_k,
+            initial_k,
+            recursive_log_msg_cols: cols,
+            recursive_ks: ks,
+            queries,
+            grinding_bits: vec![0; levels],
+            fold_grinding_bits: vec![0; levels],
+            ood_samples: vec![0; levels],
+            merkle_hash: HashKind::Blake3,
+        };
+        Pcs::from_configs(shape, prover, verifier).expect("small ladder")
+    }
+
+    /// The embedded ladder where there is one, the small one below it.
+    fn pcs_for(shape: &Shape) -> Pcs {
+        if shape.log_bits() >= MIN_LOG_BITS {
+            Pcs::new(shape, HashKind::Blake3).expect("embedded ladder")
+        } else {
+            small_pcs(shape)
+        }
+    }
+
+    /// The original opening: a copy for Ligerito.
+    const REFERENCE: OpeningPath = OpeningPath { borrow: false };
+
+    /// Every path the knobs select.
+    fn paths() -> Vec<OpeningPath> {
+        vec![OpeningPath { borrow: true }]
+    }
+
+    /// Every opening path proves the reference's bytes, which verify: an
+    /// inner-product claim (the sumcheck, then the ring switch) and a bare
+    /// MLE claim, each with and without a Round-0 claim, on grids below
+    /// and at the embedded ladders' floor, with rows too few for the
+    /// column statistics (`t = 9`) and enough (`t ≥ 11`).
+    #[test]
+    fn opening_paths_prove_identically() {
+        for (t, s) in [(9usize, 4usize), (11, 3), (12, 6), (14, 8), (16, 6)] {
+            let shape = Shape::new(t, s).unwrap();
+            let pcs = pcs_for(&shape);
+            let mut state = 0x0be7_1a57 ^ (t * 97 + s) as u64;
+            let words = shape.rows() / 64;
+            let rows: Vec<Vec<u64>> = (0..shape.columns())
+                .map(|_| (0..words).map(|_| xorshift(&mut state)).collect())
+                .collect();
+            let (root, hint) = pcs.commit(&shape, rows).unwrap();
+
+            // Σ_{b,c} w1[b]·w2[c]·bit(c, b).
+            let w1: Vec<Gf> = (0..shape.rows()).map(|_| random_gf(&mut state)).collect();
+            let w2: Vec<Gf> = (0..shape.columns()).map(|_| random_gf(&mut state)).collect();
+            let mut target = Gf::zero();
+            for (column, weight) in hint.rows().iter().zip(&w2) {
+                let mut sum = Gf::zero();
+                for (index, &word) in column.iter().enumerate() {
+                    let mut bits = word;
+                    while bits != 0 {
+                        sum += w1[index * 64 + bits.trailing_zeros() as usize];
+                        bits &= bits - 1;
+                    }
+                }
+                target += *weight * sum;
+            }
+            let inner_product = OpeningQuery::InnerProduct {
+                claim: LinearClaimGf::from_shape(&shape, w1, w2, target).unwrap(),
+            };
+            // The witness MLE at a random point, through the ring switch's
+            // own claims: `Σ_u eq(point[..7], u)·ŝ_v[u]`.
+            let point: Vec<Gf> = (0..shape.log_bits()).map(|_| random_gf(&mut state)).collect();
+            let (prefix, suffix) = build_eq_split(&point, LOG_PACKING);
+            let value = claim_check(&prefix, &fold_1b_rows_naive(hint.packed_message(), &suffix));
+            let mle = OpeningQuery::Mle { point, target: value };
+            let ood_point: Vec<Gf> = (0..shape.log_bits() - LOG_PACKING)
+                .map(|_| random_gf(&mut state))
+                .collect();
+            let ood_value = packed_evaluation(&hint, &ood_point);
+
+            for query in [&inner_product, &mle] {
+                for ood in [None, Some((ood_point.as_slice(), ood_value))] {
+                    let prove = |path: OpeningPath| {
+                        let mut transcript = build_prover(b"wfbitz-opening-paths/v1", b"instance");
+                        pcs.prove_lin_rows_with(
+                            &hint,
+                            hint.rows(),
+                            hint.packed_cols(),
+                            query,
+                            StatementBinding::Bind,
+                            &mut transcript,
+                            ood,
+                            path,
+                        )
+                        .unwrap();
+                        transcript.finish()
+                    };
+                    let reference = prove(REFERENCE);
+                    let mut verifier = build_verifier(b"wfbitz-opening-paths/v1", b"instance", &reference);
+                    pcs.verify_lin(&root, query, StatementBinding::Bind, &mut verifier, ood)
+                        .unwrap();
+                    for path in paths() {
+                        let proof = prove(path);
+                        let same = proof.narg_string == reference.narg_string && proof.hints == reference.hints;
+                        assert!(same, "t={t} s={s} ood={} {path:?}", ood.is_some());
+                    }
+                }
+            }
+        }
+    }
 }
