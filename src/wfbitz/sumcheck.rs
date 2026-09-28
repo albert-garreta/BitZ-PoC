@@ -25,8 +25,8 @@ use std::sync::OnceLock;
 
 const PARALLEL_MIN_PAIRS: usize = 1 << 12;
 
-/// Transcript-preserving shortcuts of [`prove_sum`]. Each has an
-/// environment switch (`0` or `1`), read once; tests set them directly.
+/// Transcript-preserving shortcuts of [`prove`] and [`prove_sum`]. Each has
+/// an environment switch (`0` or `1`), read once; tests set them directly.
 /// Every one regroups the same exact field sums, so the messages do not
 /// change.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,6 +40,10 @@ pub(crate) struct SumcheckMode {
     /// spread over the thread pool, instead of a parallel call per term for
     /// the combination and three per term and round.
     pub(crate) batch_terms: bool,
+    /// `WFBITZ_ONE_COLUMN` (default on): a single-column claim reads the
+    /// row-folded witness off its bound column-combined table instead of
+    /// folding the committed rows again.
+    pub(crate) one_column: bool,
 }
 
 impl SumcheckMode {
@@ -48,6 +52,7 @@ impl SumcheckMode {
     pub(crate) const PLAIN: Self = Self {
         skip_groups: false,
         batch_terms: false,
+        one_column: false,
     };
 
     pub(crate) fn from_env() -> Self {
@@ -57,8 +62,24 @@ impl SumcheckMode {
             SumcheckMode {
                 skip_groups: flag("WFBITZ_GROUP_SKIP"),
                 batch_terms: flag("WFBITZ_TERM_BATCH"),
+                one_column: flag("WFBITZ_ONE_COLUMN"),
             }
         })
+    }
+}
+
+/// The witness after its row coordinates are bound, read off a bound
+/// single-column table: the row rounds fold `M̃ = w2[0]·bit(0, ·)`
+/// linearly, so `bound = w2[0]·bit~(r_b)` exactly and `bit~(r_b)` is
+/// `bound / w2[0]` — the value [`fold_rows_point`] sums up again. `None`
+/// when the column weight is zero (the table carries no information).
+fn one_column_value(column_weight: Gf, bound: Gf) -> Option<Gf> {
+    if column_weight == Gf::one() {
+        Some(bound)
+    } else if column_weight == Gf::zero() {
+        None
+    } else {
+        Some(bound * column_weight.inverse_or_zero())
     }
 }
 
@@ -189,6 +210,17 @@ pub(crate) fn prove(
     packed_cols: &[Vec<u64>],
     transcript: &mut ProverState,
 ) -> Result<MleClaim, ProveError> {
+    prove_with(claim, rows_bits, packed_cols, transcript, SumcheckMode::from_env())
+}
+
+/// [`prove`] under an explicit [`SumcheckMode`].
+pub(crate) fn prove_with(
+    claim: &LinearClaimGf,
+    rows_bits: &[Vec<u64>],
+    packed_cols: &[Vec<u64>],
+    transcript: &mut ProverState,
+    mode: SumcheckMode,
+) -> Result<MleClaim, ProveError> {
     let w1 = claim.row_weights();
     let w2 = claim.column_weights();
     if rows_bits.len() != w2.len() || rows_bits.iter().any(|row| row.len() * 64 != w1.len()) {
@@ -230,7 +262,15 @@ pub(crate) fn prove(
 
     // Columns: the row-folded table against `w1(r_b)·column_weights`.
     let started = std::time::Instant::now();
-    let mut folded = fold_rows_point(rows_bits, &point);
+    let read = if mode.one_column && w2.len() == 1 {
+        one_column_value(w2[0], combined[0])
+    } else {
+        None
+    };
+    let mut folded = match read {
+        Some(value) => vec![value],
+        None => fold_rows_point(rows_bits, &point),
+    };
     super::trace("    sc fold rows", started);
     let row_scalar = rows[0];
     let mut columns: Vec<Gf> = w2.iter().map(|&w| row_scalar * w).collect();
@@ -390,7 +430,19 @@ pub(crate) fn prove_sum_with(
     super::trace("    sc row rounds (sum)", started);
 
     let started = std::time::Instant::now();
-    let mut folded = fold_rows_point(rows_bits, &point);
+    // One column: every term's bound table is `w2_k[0]·bit~(r_b)`.
+    let read = if mode.one_column && n_cols == 1 {
+        terms
+            .iter()
+            .zip(&combined)
+            .find_map(|((_, w2), table)| one_column_value(w2[0], table[0]))
+    } else {
+        None
+    };
+    let mut folded = match read {
+        Some(value) => vec![value],
+        None => fold_rows_point(rows_bits, &point),
+    };
     super::trace("    sc fold rows", started);
     let mut columns = merged_columns(terms, &rows);
     while folded.len() > 1 {
@@ -684,10 +736,11 @@ mod sum_tests {
 
     /// Every [`SumcheckMode`], applied alone or together.
     fn modes() -> Vec<SumcheckMode> {
-        (0..4u8)
+        (0..8u8)
             .map(|bits| SumcheckMode {
                 skip_groups: bits & 1 != 0,
                 batch_terms: bits & 2 != 0,
+                one_column: bits & 4 != 0,
             })
             .collect()
     }
@@ -727,7 +780,8 @@ mod sum_tests {
                 chained_like_terms(&mut state, &shape)
             } else {
                 let mut terms = terms(&mut state, &shape, 4);
-                // A term with no column weight at all.
+                // A term with a zero column weight: the one-column read
+                // must pass over it.
                 terms[0].1.iter_mut().for_each(|w| *w = Gf::zero());
                 terms
             };
@@ -748,6 +802,31 @@ mod sum_tests {
                     assert_eq!((&shortcut.0, &shortcut.1), (&plain.0, &plain.1), "t={t} s={s} {mode:?}");
                     assert!(shortcut.2 == plain.2, "transcript t={t} s={s} {mode:?}");
                 }
+            }
+        }
+    }
+
+    /// A single-column claim reads its row-folded witness off the bound
+    /// table, for a unit, a random and a zero column weight.
+    #[test]
+    fn one_column_claims_prove_identically() {
+        for t in [7usize, 10, 13] {
+            let shape = Shape::new(t, 0).unwrap();
+            let mut state = 0xbb67_ae85_84ca_a73bu64 ^ t as u64;
+            let rows_bits = grid(&mut state, &shape);
+            for weight in [Gf::one(), random_gf(&mut state), Gf::zero()] {
+                let rows: Vec<Gf> = (0..shape.rows()).map(|_| random_gf(&mut state)).collect();
+                let target = dense_target(&rows_bits, &[(rows.clone(), vec![weight])]);
+                let claim = LinearClaimGf::from_shape(&shape, rows, vec![weight], target).unwrap();
+                let run = |mode: SumcheckMode| {
+                    let mut prover = build_prover(b"one-column/v1", b"instance");
+                    let reduced = prove_with(&claim, &rows_bits, &[], &mut prover, mode).unwrap();
+                    (reduced.point, reduced.target, prover.finish().narg_string)
+                };
+                let plain = run(SumcheckMode::PLAIN);
+                let read = run(SumcheckMode { one_column: true, ..SumcheckMode::PLAIN });
+                assert_eq!((&read.0, &read.1), (&plain.0, &plain.1), "t={t} weight={weight:?}");
+                assert!(read.2 == plain.2, "transcript t={t} weight={weight:?}");
             }
         }
     }
