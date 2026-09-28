@@ -868,6 +868,106 @@ pub(crate) fn xi_combined_rows_packed(
     m
 }
 
+/// The byte-position subset-sum tables [`xi_combined_rows_packed`] builds
+/// for the 64-column group `g` of `eq_xi`.
+fn xi_group_tables(eq_xi: &[Gf], cols: usize, g: usize) -> Vec<Gf> {
+    let mut t = vec![Gf::zero(); 8 << 8];
+    for pos in 0..8usize {
+        let base_col = (g << 6) | (pos << 3);
+        let tb = &mut t[pos << 8..(pos + 1) << 8];
+        for b in 0..8usize {
+            let c = base_col + b;
+            if c >= cols {
+                break;
+            }
+            let w = eq_xi[c];
+            let lim = 1usize << b;
+            for m in 0..lim {
+                tb[m | lim] = tb[m] + w;
+            }
+        }
+    }
+    t
+}
+
+/// [`xi_combined_rows_packed`] for several weight vectors in one parallel
+/// region over (vector, 1024-output chunk). With `skip_zero_groups` each
+/// vector runs over its 64-column groups with a nonzero weight only: a
+/// group whose 64 weights are all zero adds zero to every output, so
+/// skipping its tables and its pass is exact. Otherwise over every group,
+/// as [`xi_combined_rows_packed`]; the same field sums either way.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn xi_combined_rows_packed_many(
+    p: &IntegerMatrixLayout,
+    packed_cols: &[Vec<u64>],
+    weights: &[&[Gf]],
+    skip_zero_groups: bool,
+) -> Vec<Vec<Gf>> {
+    let t_w = row_bit_vars(p);
+    let len = 1usize << t_w;
+    let cols = p.cols();
+    let groups = cols.div_ceil(64);
+    debug_assert!(packed_cols.len() >= groups && packed_cols[0].len() == len);
+    let zero = Gf::zero();
+    let plans: Vec<(Vec<usize>, Vec<Vec<Gf>>)> = cfg_into_iter!(0..weights.len())
+        .map(|k| {
+            let eq_xi = weights[k];
+            let live: Vec<usize> = (0..groups)
+                .filter(|&g| {
+                    !skip_zero_groups
+                        || eq_xi[g << 6..((g + 1) << 6).min(cols)].iter().any(|w| *w != zero)
+                })
+                .collect();
+            let tables = live.iter().map(|&g| xi_group_tables(eq_xi, cols, g)).collect();
+            (live, tables)
+        })
+        .collect();
+    let mut out: Vec<Vec<Gf>> = weights.iter().map(|_| vec![Gf::zero(); len]).collect();
+    let tasks: Vec<(usize, usize, &mut [Gf])> = out
+        .iter_mut()
+        .enumerate()
+        .flat_map(|(k, m)| {
+            m.chunks_mut(1 << 10)
+                .enumerate()
+                .map(move |(ci, chunk)| (k, ci, chunk))
+        })
+        .filter(|(k, _, _)| !plans[*k].0.is_empty())
+        .collect();
+    cfg_into_iter!(tasks).for_each(|(k, ci, chunk)| {
+        let base = ci << 10;
+        let (live, tables) = &plans[k];
+        for (&g, tg) in live.iter().zip(tables) {
+            let src = &packed_cols[g][base..base + chunk.len()];
+            for (slot, &x) in chunk.iter_mut().zip(src.iter()) {
+                if x == 0 {
+                    continue;
+                }
+                let b = |pos: usize| tg[(pos << 8) | ((x >> (8 * pos)) & 0xFF) as usize];
+                *slot += ((b(0) + b(1)) + (b(2) + b(3))) + ((b(4) + b(5)) + (b(6) + b(7)));
+            }
+        }
+    });
+    out
+}
+
+/// [`xi_combined_rows_packed`] over the 64-column groups with a nonzero
+/// weight only ([`xi_combined_rows_packed_many`] for one vector); with every
+/// group live it is [`xi_combined_rows_packed`] itself.
+pub(crate) fn xi_combined_rows_packed_live(
+    p: &IntegerMatrixLayout,
+    packed_cols: &[Vec<u64>],
+    eq_xi: &[Gf],
+) -> Vec<Gf> {
+    let cols = p.cols();
+    let zero = Gf::zero();
+    if eq_xi[..cols].chunks(64).all(|group| group.iter().any(|w| *w != zero)) {
+        return xi_combined_rows_packed(p, packed_cols, eq_xi);
+    }
+    xi_combined_rows_packed_many(p, packed_cols, &[eq_xi], true)
+        .pop()
+        .expect("one weight vector")
+}
+
 /// Column-lane packing `packed_cols[g][i]`: lane k of word g at row-bit i
 /// holds `M[64g+k][i]` — the layout the branch-native bit-affine lazy
 /// forest consumes. Built directly from the data tensor.
