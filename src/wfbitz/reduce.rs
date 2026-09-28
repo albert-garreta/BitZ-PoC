@@ -9,6 +9,7 @@ use super::gkr::gpgkr_verify;
 use super::params::{ClaimError, LinearClaimGf, Shape};
 use super::pcs::OpeningQuery;
 use super::transcript::{ProverState, VerifierState};
+use super::LeafProtocol;
 use crate::ligerito_flock::FlockCommitHint;
 use field::Gf128 as Gf;
 use crate::poly::utils::build_eq_x_r_vec;
@@ -106,14 +107,13 @@ pub(crate) fn gkr_reduce_prove_with(
     shape: &Shape,
     hint: &FlockCommitHint,
     nibble: Option<NibbleRows>,
+    protocol: LeafProtocol,
 ) -> Result<OpeningQuery, ClaimError> {
-    let Some(nibble) = nibble else {
-        return gkr_reduce_prove(transcript, fold, shape, hint);
-    };
-    let forest = Forest::new(shape.log_rows(), shape.log_columns(), hint.packed_cols(), &fold.row_images)
-        .with_nibble_rows(nibble);
-    let (point, claim) = forest.prove(transcript, &fold.zeta);
-    query_from_terminal(fold, shape, point, claim)
+    let mut forest = Forest::new(shape.log_rows(), shape.log_columns(), hint.packed_cols(), &fold.row_images);
+    if let Some(nibble) = nibble {
+        forest = forest.with_nibble_rows(nibble);
+    }
+    query_from_forest(transcript, fold, shape, forest, protocol)
 }
 
 /// [`gkr_reduce_prove`] over any grid's 64-lane packed columns
@@ -125,14 +125,61 @@ pub(crate) fn gkr_reduce_prove_packed(
     shape: &Shape,
     packed_cols: &[Vec<u64>],
 ) -> Result<OpeningQuery, ClaimError> {
+    gkr_reduce_prove_packed_with(transcript, fold, shape, packed_cols, LeafProtocol::Sequential)
+}
+
+pub(crate) fn gkr_reduce_prove_packed_with(
+    transcript: &mut ProverState,
+    fold: &Fold,
+    shape: &Shape,
+    packed_cols: &[Vec<u64>],
+    protocol: LeafProtocol,
+) -> Result<OpeningQuery, ClaimError> {
     let forest = Forest::new(
         shape.log_rows(),
         shape.log_columns(),
         packed_cols,
         &fold.row_images,
     );
-    let (point, claim) = forest.prove(transcript, &fold.zeta);
-    query_from_terminal(fold, shape, point, claim)
+    query_from_forest(transcript, fold, shape, forest, protocol)
+}
+
+fn query_from_forest(
+    transcript: &mut ProverState,
+    fold: &Fold,
+    shape: &Shape,
+    forest: Forest<'_>,
+    protocol: LeafProtocol,
+) -> Result<OpeningQuery, ClaimError> {
+    match protocol {
+        LeafProtocol::Sequential => {
+            let (point, claim) = forest.prove(transcript, &fold.zeta);
+            query_from_terminal(fold, shape, point, claim)
+        }
+        LeafProtocol::Skip4 => {
+            let (binding, claim) = forest.prove_skipping(transcript, &fold.zeta);
+            query_from_skipped(fold, shape, binding, claim)
+        }
+        LeafProtocol::Skip3 => {
+            let (binding, claim) = forest.prove_skipping_with(transcript, &fold.zeta, 3);
+            query_from_skipped(fold, shape, binding, claim)
+        }
+    }
+}
+
+fn query_from_skipped(
+    fold: &Fold,
+    shape: &Shape,
+    binding: super::leaf_skip::LeafBinding,
+    claim: Gf,
+) -> Result<OpeningQuery, ClaimError> {
+    let row_weights = binding.row_weights(&fold.row_images, shape.log_columns())
+        .ok_or(ClaimError::RowWeightCountMismatch)?;
+    let column_point = &binding.suffix_point[..shape.log_columns()];
+    // The one-column case has no column coordinates.
+    let columns = super::gkr::eq_table(column_point);
+    let claim = LinearClaimGf::from_shape(shape, row_weights, columns, claim - Gf::one())?;
+    Ok(OpeningQuery::InnerProduct { claim })
 }
 
 pub(crate) fn gkr_reduce_verify(
@@ -140,7 +187,31 @@ pub(crate) fn gkr_reduce_verify(
     fold: &Fold,
     shape: &Shape,
 ) -> Result<OpeningQuery, ReduceError> {
-    let (point, claim) = gpgkr_verify(transcript, fold.e0, &fold.zeta, shape.log_rows() as u32)
-        .ok_or(ReduceError::GKR)?;
-    query_from_terminal(fold, shape, point, claim).map_err(ReduceError::Claim)
+    gkr_reduce_verify_with(transcript, fold, shape, LeafProtocol::Sequential)
+}
+
+pub(crate) fn gkr_reduce_verify_with(
+    transcript: &mut VerifierState<'_>,
+    fold: &Fold,
+    shape: &Shape,
+    protocol: LeafProtocol,
+) -> Result<OpeningQuery, ReduceError> {
+    match protocol {
+        LeafProtocol::Sequential => {
+            let (point, claim) = gpgkr_verify(transcript, fold.e0, &fold.zeta, shape.log_rows() as u32)
+                .ok_or(ReduceError::GKR)?;
+            query_from_terminal(fold, shape, point, claim).map_err(ReduceError::Claim)
+        }
+        LeafProtocol::Skip3 | LeafProtocol::Skip4 => {
+            let (mut point, claim) = gpgkr_verify(transcript, fold.e0, &fold.zeta, shape.log_rows() as u32 - 1)
+                .ok_or(ReduceError::GKR)?;
+            point.reverse();
+            let (binding, claim) = if protocol == LeafProtocol::Skip3 {
+                super::leaf_skip::verify_layer3(transcript, claim, point.into())
+            } else {
+                super::leaf_skip::verify_layer(transcript, claim, point.into())
+            }.ok_or(ReduceError::GKR)?;
+            query_from_skipped(fold, shape, binding, claim).map_err(ReduceError::Claim)
+        }
+    }
 }

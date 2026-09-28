@@ -1,6 +1,6 @@
 //! The paper's raw-performance row for the BitZ parity prover at one size.
 //!
-//! `bitz_bench <n> [--reps R] [--seed S] [--ladder L]` builds a random instance at the
+//! `bitz_bench <n> [--reps R] [--seed S] [--ladder L] [--leaf-protocol sequential|skip3|skip4]` builds a random instance at the
 //! scheme's split (`Shape::reference`: `t = ⌈3n/5⌉ − 1`, `s = n − t`,
 //! `q = 2^100 − 15`, generator `X`, the dump examples' transcript labels),
 //! commits it `R` times (median), proves it once to warm up and then `R`
@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use bitz::wfbitz::fold::{fold_columns, reconstruct};
 use bitz::wfbitz::{
-    BitZParams, BitZProver, BitZVerifier, LinearClaim, Pcs, Shape, WINDOW, build_prover,
+    BitZParams, BitZProver, BitZVerifier, LeafProtocol, LinearClaim, Pcs, Shape, WINDOW, build_prover,
     build_verifier, record_phases, take_phases,
 };
 use field::Gf128 as Gf;
@@ -74,6 +74,8 @@ fn main() {
     // Round 0 either way (the raw harness has no outer transcript to bind
     // it on; the opener path does run it).
     let mut ladder = String::from("fast");
+    let mut leaf_protocol = LeafProtocol::Sequential;
+    let mut leaf_label = "sequential";
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -83,6 +85,20 @@ fn main() {
             }
             "--ladder" => {
                 ladder = args[i + 1].clone();
+                i += 2;
+            }
+            "--leaf-protocol" => {
+                leaf_label = match args[i + 1].as_str() {
+                    "sequential" => "sequential",
+                    "skip3" => "skip3",
+                    "skip4" => "skip4",
+                    _ => panic!("--leaf-protocol expects sequential, skip3 or skip4"),
+                };
+                leaf_protocol = match leaf_label {
+                    "skip3" => LeafProtocol::Skip3,
+                    "skip4" => LeafProtocol::Skip4,
+                    _ => LeafProtocol::Sequential,
+                };
                 i += 2;
             }
             "--seed" => {
@@ -95,7 +111,7 @@ fn main() {
             }
         }
     }
-    let n = n.expect("usage: bitz_bench <n> [--reps R] [--seed S] [--ladder fast|custom:r:k]");
+    let n = n.expect("usage: bitz_bench <n> [--reps R] [--seed S] [--ladder fast|custom:r:k] [--leaf-protocol sequential|skip3|skip4]");
     let shape = Shape::reference(n).expect("shape");
     let (t, s) = (shape.log_rows(), shape.log_columns());
     let params = BitZParams::new(shape, Q, Gf::from_polynomial_words([2, 0])).expect("params");
@@ -103,7 +119,7 @@ fn main() {
     let threads = rayon::current_num_threads();
     #[cfg(not(feature = "parallel"))]
     let threads = 1;
-    println!("bitz_bench n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder}");
+    println!("bitz_bench n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder} leaf_protocol={leaf_label}");
 
     // The instance.
     let mut state = seed ^ 0x9E37_79B9_7F4A_7C15;
@@ -148,8 +164,8 @@ fn main() {
     println!("commit: median {:.2} ms over {reps}", ms(commit));
 
     // Prove: one warm-up, then `reps` timed and verified.
-    let prover = BitZProver::new(params, WINDOW);
-    let verifier = BitZVerifier::new(params, WINDOW);
+    let prover = BitZProver::new(params, WINDOW).with_leaf_protocol(leaf_protocol);
+    let verifier = BitZVerifier::new(params, WINDOW).with_leaf_protocol(leaf_protocol);
     let mut prove_times = Vec::with_capacity(reps);
     let mut verify_times = Vec::with_capacity(reps);
     let mut phase_times: Vec<(String, Vec<Duration>)> = Vec::new();
@@ -203,7 +219,7 @@ fn main() {
     let rss = peak_rss_bytes();
     println!("peak rss: {:.2} GB", rss as f64 / 1e9);
     println!(
-        "RESULT schema=bitz-bench/1 n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder} commit_ms={:.3} prove_ms={:.3} grand_ms={:.3} ring_ms={:.3} lig_ms={:.3} verify_ms={:.3} narg_bytes={} hints_bytes={} peak_rss_bytes={rss}",
+        "RESULT schema=bitz-bench/1 n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder} leaf_protocol={leaf_label} commit_ms={:.3} prove_ms={:.3} grand_ms={:.3} ring_ms={:.3} lig_ms={:.3} verify_ms={:.3} narg_bytes={} hints_bytes={} peak_rss_bytes={rss}",
         ms(commit), ms(prove), ms(grand), ms(ring), ms(lig), ms(verify), sizes.0, sizes.1
     );
 }

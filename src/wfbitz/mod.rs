@@ -36,6 +36,7 @@ pub mod fold;
 pub mod forest;
 pub mod gkr;
 pub(crate) mod kernels;
+mod leaf_skip;
 pub mod params;
 pub mod pcs;
 pub mod reduce;
@@ -73,17 +74,32 @@ impl FixedBasePow {
 /// either way; the window only trades table size against multiplies.
 pub const WINDOW: usize = 8;
 
+/// The bottom GKR layer's round protocol. Both parties must select the
+/// same variant; each skip binds its own domain tag before its first challenge.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LeafProtocol {
+    /// The original, transcript-compatible bit rounds.
+    #[default]
+    Sequential,
+    /// Pack the first three row variables into one degree-14 round.
+    Skip3,
+    /// Pack the first four row variables into one degree-30 round.
+    Skip4,
+}
+
 /// The prover's derived setup: the parameters and the comb over their
 /// generator.
 pub struct BitZProver {
     params: BitZParams,
     comb: FixedBasePow,
+    leaf_protocol: LeafProtocol,
 }
 
 /// The verifier's derived setup, the same two things.
 pub struct BitZVerifier {
     params: BitZParams,
     comb: FixedBasePow,
+    leaf_protocol: LeafProtocol,
 }
 
 /// A proof the prover cannot produce.
@@ -123,7 +139,14 @@ pub enum VerifyError {
 impl BitZProver {
     pub fn new(params: BitZParams, window: usize) -> Self {
         let comb = FixedBasePow::new(params.generator(), 128, window);
-        Self { params, comb }
+        Self { params, comb, leaf_protocol: LeafProtocol::default() }
+    }
+
+    /// Selects the leaf protocol for direct, virtual and chained proofs.
+    /// The verifier must select the same protocol.
+    pub fn with_leaf_protocol(mut self, protocol: LeafProtocol) -> Self {
+        self.leaf_protocol = protocol;
+        self
     }
 
     pub fn params(&self) -> &BitZParams {
@@ -183,7 +206,7 @@ impl BitZProver {
             .map_err(ProveError::Fold)?;
         trace("fold+images", started);
         let started = std::time::Instant::now();
-        let query = reduce::gkr_reduce_prove_with(transcript, &fold, &shape, hint, nibble)
+        let query = reduce::gkr_reduce_prove_with(transcript, &fold, &shape, hint, nibble, self.leaf_protocol)
             .map_err(ProveError::Reduction)?;
         trace("gkr", started);
 
@@ -200,7 +223,14 @@ impl BitZProver {
 impl BitZVerifier {
     pub fn new(params: BitZParams, window: usize) -> Self {
         let comb = FixedBasePow::new(params.generator(), 128, window);
-        Self { params, comb }
+        Self { params, comb, leaf_protocol: LeafProtocol::default() }
+    }
+
+    /// Selects the leaf protocol expected by this verifier. This is fixed
+    /// verifier configuration, never inferred from the environment or proof.
+    pub fn with_leaf_protocol(mut self, protocol: LeafProtocol) -> Self {
+        self.leaf_protocol = protocol;
+        self
     }
 
     pub fn params(&self) -> &BitZParams {
@@ -230,7 +260,7 @@ impl BitZVerifier {
             .map_err(VerifyError::Fold)?;
         trace("v: fold", started);
         let started = std::time::Instant::now();
-        let query = reduce::gkr_reduce_verify(&mut transcript, &fold, self.params.shape())
+        let query = reduce::gkr_reduce_verify_with(&mut transcript, &fold, self.params.shape(), self.leaf_protocol)
             .map_err(VerifyError::Reduction)?;
         trace("v: gkr", started);
 
@@ -320,4 +350,3 @@ pub(crate) fn eq_factor(r: Gf, z: Gf) -> Gf {
     let one = Gf::one();
     r * z + (one - r) * (one - z)
 }
-

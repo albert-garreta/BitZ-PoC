@@ -277,6 +277,117 @@ pub(crate) fn jit_bucket_finish(tab_e: [&[Gf]; 2], send_one: bool, bk: &SumBucke
     }
 }
 
+/// Entries in the sum-of-lookups representation of a sixteen-bit pattern.
+#[inline(always)]
+pub(crate) const fn split_table_len<const NIBBLE: bool>() -> usize {
+    if NIBBLE { 64 } else { 512 }
+}
+
+#[inline(always)]
+const fn split_components<const NIBBLE: bool>() -> usize {
+    if NIBBLE { 4 } else { 2 }
+}
+
+#[inline(always)]
+fn split_index<const NIBBLE: bool>(pattern: &[[u8; 64]; 2], component: usize, m: usize) -> usize {
+    if NIBBLE {
+        component * 16 + ((pattern[component / 2][m] >> (4 * (component % 2))) & 15) as usize
+    } else {
+        component * 256 + pattern[component][m] as usize
+    }
+}
+
+/// Three groups of unreduced component buckets: endpoint, E-lo infinity,
+/// and E-hi infinity. Byte layout uses six 256-entry buckets; nibble
+/// layout uses twelve 16-entry buckets.
+pub(crate) struct SplitSumBuckets(SplitSumBucketsInner);
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+type SplitSumBucketsInner = neon::SplitSumBuckets;
+#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+type SplitSumBucketsInner = generic::SplitSumBuckets;
+
+impl SplitSumBuckets {
+    #[cfg(test)]
+    pub(crate) fn new() -> Self {
+        Self::for_layout(false)
+    }
+
+    pub(crate) fn for_layout(nibble: bool) -> Self {
+        Self(SplitSumBucketsInner::for_layout(nibble))
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.0.clear();
+    }
+}
+
+/// The split-byte counterpart of [`jit_bucket_group`]. Each corner's
+/// pattern is `[even, odd]` and its value is `tab[even] + tab[256 + odd]`.
+/// The two O lookups are combined before multiplication, then each wide
+/// product is scattered into both corresponding E-byte buckets.
+#[cfg(test)]
+pub(crate) fn split_bucket_group(
+    tab_o: [&[Gf]; 2],
+    pat: &[[[u8; 64]; 2]; 4],
+    eq_t: &[Gf],
+    send_one: bool,
+    bk: &mut SplitSumBuckets,
+) {
+    split_bucket_group_layout::<false>(tab_o, pat, eq_t, send_one, bk);
+}
+
+pub(crate) fn split_bucket_group_layout<const NIBBLE: bool>(
+    tab_o: [&[Gf]; 2],
+    pat: &[[[u8; 64]; 2]; 4],
+    eq_t: &[Gf],
+    send_one: bool,
+    bk: &mut SplitSumBuckets,
+) {
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    neon::split_bucket_group_layout::<NIBBLE>(tab_o, pat, eq_t, send_one, &mut bk.0);
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    generic::split_bucket_group_layout::<NIBBLE>(tab_o, pat, eq_t, send_one, &mut bk.0);
+}
+
+/// Contract the six split-byte buckets with their E tables, reducing each
+/// bucket once and accumulating the products unreduced.
+#[cfg(test)]
+pub(crate) fn split_bucket_finish(tab_e: [&[Gf]; 2], send_one: bool, bk: &SplitSumBuckets) -> (Gf, Gf) {
+    split_bucket_finish_layout::<false>(tab_e, send_one, bk)
+}
+
+pub(crate) fn split_bucket_finish_layout<const NIBBLE: bool>(tab_e: [&[Gf]; 2], send_one: bool, bk: &SplitSumBuckets) -> (Gf, Gf) {
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        neon::split_bucket_finish_layout::<NIBBLE>(tab_e, send_one, &bk.0)
+    }
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    {
+        generic::split_bucket_finish_layout::<NIBBLE>(tab_e, send_one, &bk.0)
+    }
+}
+
+/// [`jit_fold_group`] with two byte or four nibble lookups per corner. Lookup, pending
+/// fold, optional column weighting, output stores, and next-round sums
+/// are fused without writing intermediate field-element blocks.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn split_fold_group_layout<const NIBBLE: bool, const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
+    tab: [&[Gf]; 8],
+    pat: &[[[u8; 64]; 2]; 8],
+    rho: &Gf,
+    eq_t: &[Gf],
+    send_one: bool,
+    out_l: [&mut [MaybeUninit<Gf>]; 2],
+    out_r: [&mut [MaybeUninit<Gf>]; 2],
+    sums: &mut Sums,
+) {
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    neon::split_fold_group_layout::<NIBBLE, PRE_SCALED, WEIGH_LEFT>(tab, pat, rho, eq_t, send_one, out_l, out_r, &mut sums.0);
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    generic::split_fold_group_layout::<NIBBLE, PRE_SCALED, WEIGH_LEFT>(tab, pat, rho, eq_t, send_one, out_l, out_r, &mut sums.0);
+}
+
 /// One group of the second just-in-time dense round: corner
 /// `i = p·4 + b1·2 + b2` (`p` the half, `b1` the bit folded with `rho`,
 /// `b2` this round's bit); writes the folded values
@@ -375,7 +486,7 @@ pub(crate) fn contract(t_e: &[Gf], t_o: &[Gf], bucket: &[Gf]) -> Gf {
 }
 
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-fn round_sums_task(
+pub(crate) fn round_sums_task(
     lo_l: &[Gf],
     hi_l: &[Gf],
     lo_r: &[Gf],
@@ -387,7 +498,7 @@ fn round_sums_task(
 }
 
 #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-fn round_sums_task(
+pub(crate) fn round_sums_task(
     lo_l: &[Gf],
     hi_l: &[Gf],
     lo_r: &[Gf],
@@ -657,6 +768,140 @@ pub(crate) mod generic {
             let mut fl1 = combine(v(0b001), v(0b011));
             let fr0 = combine(v(0b100), v(0b110));
             let fr1 = combine(v(0b101), v(0b111));
+            if WEIGH_LEFT {
+                fl0 = eq_t[m] * fl0;
+                fl1 = eq_t[m] * fl1;
+            }
+            out_l0[c].write(fl0);
+            out_l1[c].write(fl1);
+            out_r0[c].write(fr0);
+            out_r1[c].write(fr1);
+            if WEIGH_LEFT {
+                sums.slot_weighted(fl0, fl1, fr0, fr1, send_one);
+            } else {
+                sums.slot(eq_t[m], fl0, fl1, fr0, fr1, send_one);
+            }
+        }
+    }
+
+    pub(crate) struct SplitSumBuckets {
+        data: Vec<Wide>,
+    }
+
+    impl SplitSumBuckets {
+        #[cfg(test)]
+        pub(crate) fn new() -> Self {
+            Self::for_layout(false)
+        }
+
+        pub(crate) fn for_layout(nibble: bool) -> Self {
+            let len = if nibble { 64 } else { 512 };
+            Self { data: vec![<Gf as WideMulAcc>::wide_zero(&Gf::zero()); 3 * len] }
+        }
+
+        pub(crate) fn clear(&mut self) {
+            self.data.fill(<Gf as WideMulAcc>::wide_zero(&Gf::zero()));
+        }
+    }
+
+    #[inline(always)]
+    fn split_value<const NIBBLE: bool>(table: &[Gf], pattern: &[[u8; 64]; 2], m: usize) -> Gf {
+        (0..super::split_components::<NIBBLE>()).fold(Gf::zero(), |sum, component| {
+            sum + table[super::split_index::<NIBBLE>(pattern, component, m)]
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn split_bucket_group(
+        tab_o: [&[Gf]; 2],
+        pat: &[[[u8; 64]; 2]; 4],
+        eq_t: &[Gf],
+        send_one: bool,
+        bk: &mut SplitSumBuckets,
+    ) {
+        split_bucket_group_layout::<false>(tab_o, pat, eq_t, send_one, bk);
+    }
+
+    pub(crate) fn split_bucket_group_layout<const NIBBLE: bool>(
+        tab_o: [&[Gf]; 2],
+        pat: &[[[u8; 64]; 2]; 4],
+        eq_t: &[Gf],
+        send_one: bool,
+        bk: &mut SplitSumBuckets,
+    ) {
+        assert_eq!(eq_t.len(), 64);
+        let len = super::split_table_len::<NIBBLE>();
+        assert!(tab_o.iter().all(|t| t.len() >= len));
+        assert_eq!(bk.data.len(), 3 * len);
+        let end_corner = usize::from(send_one);
+        for m in 0..64 {
+            let o_lo = split_value::<NIBBLE>(tab_o[0], &pat[2], m);
+            let o_hi = split_value::<NIBBLE>(tab_o[1], &pat[3], m);
+            let o_end = if send_one { o_hi } else { o_lo };
+            let end = <Gf as WideMulAcc>::mul_wide(&eq_t[m], &o_end);
+            let inf = <Gf as WideMulAcc>::mul_wide(&eq_t[m], &(o_hi - o_lo));
+            for component in 0..super::split_components::<NIBBLE>() {
+                let index = |corner| super::split_index::<NIBBLE>(&pat[corner], component, m);
+                <Gf as WideMulAcc>::wide_add_assign(&mut bk.data[index(end_corner)], &end);
+                <Gf as WideMulAcc>::wide_add_assign(&mut bk.data[len + index(0)], &inf);
+                <Gf as WideMulAcc>::wide_add_assign(&mut bk.data[2 * len + index(1)], &inf);
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn split_bucket_finish(tab_e: [&[Gf]; 2], send_one: bool, bk: &SplitSumBuckets) -> (Gf, Gf) {
+        split_bucket_finish_layout::<false>(tab_e, send_one, bk)
+    }
+
+    pub(crate) fn split_bucket_finish_layout<const NIBBLE: bool>(tab_e: [&[Gf]; 2], send_one: bool, bk: &SplitSumBuckets) -> (Gf, Gf) {
+        let len = super::split_table_len::<NIBBLE>();
+        assert!(tab_e.iter().all(|t| t.len() >= len));
+        assert_eq!(bk.data.len(), 3 * len);
+        let mut end = <Gf as WideMulAcc>::wide_zero(&Gf::zero());
+        let mut inf = end.clone();
+        for i in 0..len {
+            let e = <Gf as WideMulAcc>::from_wide(bk.data[i].clone());
+            let lo = <Gf as WideMulAcc>::from_wide(bk.data[len + i].clone());
+            let hi = <Gf as WideMulAcc>::from_wide(bk.data[2 * len + i].clone());
+            <Gf as WideMulAcc>::wide_add_assign(
+                &mut end, &<Gf as WideMulAcc>::mul_wide(&tab_e[usize::from(send_one)][i], &e),
+            );
+            <Gf as WideMulAcc>::wide_add_assign(&mut inf, &<Gf as WideMulAcc>::mul_wide(&tab_e[0][i], &lo));
+            <Gf as WideMulAcc>::wide_add_assign(&mut inf, &<Gf as WideMulAcc>::mul_wide(&tab_e[1][i], &hi));
+        }
+        (<Gf as WideMulAcc>::from_wide(end), <Gf as WideMulAcc>::from_wide(inf))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+
+    pub(crate) fn split_fold_group_layout<const NIBBLE: bool, const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
+        tab: [&[Gf]; 8],
+        pat: &[[[u8; 64]; 2]; 8],
+        rho: &Gf,
+        eq_t: &[Gf],
+        send_one: bool,
+        out_l: [&mut [MaybeUninit<Gf>]; 2],
+        out_r: [&mut [MaybeUninit<Gf>]; 2],
+        sums: &mut Sums,
+    ) {
+        assert_eq!(eq_t.len(), 64);
+        assert!(tab.iter().all(|t| t.len() >= super::split_table_len::<NIBBLE>()));
+        let [out_l0, out_l1] = out_l;
+        let [out_r0, out_r1] = out_r;
+        let width = out_l0.len();
+        assert!(width <= 64 && out_l1.len() == width && out_r0.len() == width && out_r1.len() == width);
+        let combine = |v0, v1| if PRE_SCALED { v0 + v1 } else { fold(*rho, v0, v1) };
+        for m in 0..64 {
+            let c = super::col_of(m);
+            if c >= width {
+                continue;
+            }
+            let v = |i: usize| split_value::<NIBBLE>(tab[i], &pat[i], m);
+            let mut fl0 = combine(v(0), v(2));
+            let mut fl1 = combine(v(1), v(3));
+            let fr0 = combine(v(4), v(6));
+            let fr1 = combine(v(5), v(7));
             if WEIGH_LEFT {
                 fl0 = eq_t[m] * fl0;
                 fl1 = eq_t[m] * fl1;
@@ -1118,7 +1363,8 @@ pub(crate) mod neon {
     /// `bucket[idx] ^= (lo, hi)` on the flat word array.
     #[inline(always)]
     unsafe fn bucket_xor(base: *mut u64, idx: usize, lo: uint64x2_t, hi: uint64x2_t) {
-        // SAFETY: the caller keeps `idx` below the table's 256 entries.
+        // SAFETY: the caller keeps `idx` within the allocated group of
+        // four-word wide accumulators addressed by `base`.
         unsafe {
             let p = base.add(4 * idx);
             vst1q_u64(p, veorq_u64(vld1q_u64(p), lo));
@@ -1224,6 +1470,169 @@ pub(crate) mod neon {
                         let mut fl1 = combine(v(0b001), v(0b011));
                         let fr0 = combine(v(0b100), v(0b110));
                         let fr1 = combine(v(0b101), v(0b111));
+                        let wm = ld(eq_t.get_unchecked(m));
+                        if WEIGH_LEFT {
+                            fl0 = mul_red(wm, fl0, g, z);
+                            fl1 = mul_red(wm, fl1, g, z);
+                        }
+                        st_uninit(out_l0.get_unchecked_mut(c), fl0);
+                        st_uninit(out_l1.get_unchecked_mut(c), fl1);
+                        st_uninit(out_r0.get_unchecked_mut(c), fr0);
+                        st_uninit(out_r1.get_unchecked_mut(c), fr1);
+                        if WEIGH_LEFT {
+                            slot_weighted(fl0, fl1, fr0, fr1, send_one, $end, $inf);
+                        } else {
+                            slot(wm, fl0, fl1, fr0, fr1, send_one, g, z, $end, $inf);
+                        }
+                    }
+                }};
+            }
+            let mut m = 0usize;
+            while m < 64 {
+                column!(m, &mut sums.end, &mut sums.inf);
+                column!(m + 1, &mut eb, &mut ib);
+                m += 2;
+            }
+            acc_add(&mut sums.end, eb);
+            acc_add(&mut sums.inf, ib);
+        }
+    }
+
+    /// Two endpoint and four infinity tables of wide `(lo, hi)` products.
+    pub(crate) struct SplitSumBuckets {
+        data: Vec<[u64; 4]>,
+    }
+
+    impl SplitSumBuckets {
+
+        pub(crate) fn for_layout(nibble: bool) -> Self {
+            let len = if nibble { 64 } else { 512 };
+            Self { data: vec![[0u64; 4]; 3 * len] }
+        }
+
+        pub(crate) fn clear(&mut self) {
+            self.data.fill([0u64; 4]);
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn split_value<const NIBBLE: bool>(table: &[Gf], pattern: &[[u8; 64]; 2], m: usize) -> uint64x2_t {
+        // SAFETY: caller checks the layout's table length and m < 64;
+        // each byte/nibble index stays within its component.
+        unsafe {
+            let mut value = vdupq_n_u64(0);
+            for component in 0..super::split_components::<NIBBLE>() {
+                value = veorq_u64(value, ld(table.get_unchecked(super::split_index::<NIBBLE>(pattern, component, m))));
+            }
+            value
+        }
+    }
+
+
+    pub(crate) fn split_bucket_group_layout<const NIBBLE: bool>(
+        tab_o: [&[Gf]; 2],
+        pat: &[[[u8; 64]; 2]; 4],
+        eq_t: &[Gf],
+        send_one: bool,
+        bk: &mut SplitSumBuckets,
+    ) {
+        assert_eq!(eq_t.len(), 64);
+        let len = super::split_table_len::<NIBBLE>();
+        assert!(tab_o.iter().all(|t| t.len() >= len));
+        assert_eq!(bk.data.len(), 3 * len);
+        // SAFETY: as `neon::pmull_lo`; component indices stay below len,
+        // each base addresses a disjoint len-entry group of wide values,
+        // and pattern and weight positions stay below 64.
+        unsafe {
+            let base = bk.data.as_mut_ptr().cast::<u64>();
+            let lo_base = base.add(4 * len);
+            let hi_base = base.add(8 * len);
+            let endpoint = usize::from(send_one);
+            for m in 0..64 {
+                let o_lo = split_value::<NIBBLE>(tab_o[0], &pat[2], m);
+                let o_hi = split_value::<NIBBLE>(tab_o[1], &pat[3], m);
+                let o_end = if send_one { o_hi } else { o_lo };
+                let w = ld(eq_t.get_unchecked(m));
+                let (pl, ph) = clmul_256(w, o_end);
+                let (dl, dh) = clmul_256(w, veorq_u64(o_hi, o_lo));
+                for component in 0..super::split_components::<NIBBLE>() {
+                    let index = |corner| super::split_index::<NIBBLE>(&pat[corner], component, m);
+                    bucket_xor(base, index(endpoint), pl, ph);
+                    bucket_xor(lo_base, index(0), dl, dh);
+                    bucket_xor(hi_base, index(1), dl, dh);
+                }
+            }
+        }
+    }
+
+
+    pub(crate) fn split_bucket_finish_layout<const NIBBLE: bool>(tab_e: [&[Gf]; 2], send_one: bool, bk: &SplitSumBuckets) -> (Gf, Gf) {
+        let len = super::split_table_len::<NIBBLE>();
+        assert!(tab_e.iter().all(|t| t.len() >= len));
+        assert_eq!(bk.data.len(), 3 * len);
+        // SAFETY: as `neon::pmull_lo`; every table and bucket slice below
+        // has the layout length (64 or 512, both even) and the two interleaved lanes stay within it.
+        unsafe {
+            let contract = |t: &[Gf], table: &[[u64; 4]]| -> Acc {
+                let (mut a, mut b) = (acc_zero(), acc_zero());
+                let mut i = 0usize;
+                while i < len {
+                    let e0 = table.get_unchecked(i);
+                    let v0 = reduce_256(vld1q_u64(e0.as_ptr()), vld1q_u64(e0.as_ptr().add(2)));
+                    acc_add(&mut a, clmul_256(ld(t.get_unchecked(i)), v0));
+                    let e1 = table.get_unchecked(i + 1);
+                    let v1 = reduce_256(vld1q_u64(e1.as_ptr()), vld1q_u64(e1.as_ptr().add(2)));
+                    acc_add(&mut b, clmul_256(ld(t.get_unchecked(i + 1)), v1));
+                    i += 2;
+                }
+                acc_add(&mut a, b);
+                a
+            };
+            let endpoint = contract(tab_e[usize::from(send_one)], &bk.data[..len]);
+            let mut infinity = contract(tab_e[0], &bk.data[len..2 * len]);
+            acc_add(&mut infinity, contract(tab_e[1], &bk.data[2 * len..3 * len]));
+            (to_elt(endpoint), to_elt(infinity))
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+
+    pub(crate) fn split_fold_group_layout<const NIBBLE: bool, const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
+        tab: [&[Gf]; 8],
+        pat: &[[[u8; 64]; 2]; 8],
+        rho: &Gf,
+        eq_t: &[Gf],
+        send_one: bool,
+        out_l: [&mut [MaybeUninit<Gf>]; 2],
+        out_r: [&mut [MaybeUninit<Gf>]; 2],
+        sums: &mut Sums,
+    ) {
+        assert_eq!(eq_t.len(), 64);
+        assert!(tab.iter().all(|t| t.len() >= super::split_table_len::<NIBBLE>()));
+        let [out_l0, out_l1] = out_l;
+        let [out_r0, out_r1] = out_r;
+        let width = out_l0.len();
+        assert!(width <= 64 && out_l1.len() == width && out_r0.len() == width && out_r1.len() == width);
+        // SAFETY: as `neon::pmull_lo`; every table has the layout length, every
+        // byte/nibble stays within its component, and column stores are width-checked.
+        unsafe {
+            let g = vdupq_n_u64(0x87);
+            let z = vdupq_n_u64(0);
+            let (rl, rh) = if PRE_SCALED { (z, z) } else { prep_fixed(rho) };
+            let combine = |v0, v1| {
+                if PRE_SCALED { veorq_u64(v0, v1) } else { fold1(rl, rh, g, z, v0, v1) }
+            };
+            let (mut eb, mut ib) = (acc_zero(), acc_zero());
+            macro_rules! column {
+                ($m:expr, $end:expr, $inf:expr) => {{
+                    let m = $m;
+                    let c = super::col_of(m);
+                    if c < width {
+                        let v = |i: usize| split_value::<NIBBLE>(tab[i], &pat[i], m);
+                        let mut fl0 = combine(v(0), v(2));
+                        let mut fl1 = combine(v(1), v(3));
+                        let fr0 = combine(v(4), v(6));
+                        let fr1 = combine(v(5), v(7));
                         let wm = ld(eq_t.get_unchecked(m));
                         if WEIGH_LEFT {
                             fl0 = mul_red(wm, fl0, g, z);
@@ -1807,6 +2216,227 @@ mod tests {
                     assert_eq!(got, (plain, want.clone()), "n {n} send_one {send_one} portable {portable}");
                     let got = run_jit_fold::<true, true>(scaled8, &pats, &rho, &w, send_one, n, portable);
                     assert_eq!(got, (plain, want), "pre-scaled n {n} send_one {send_one} portable {portable}");
+                }
+            }
+        }
+    }
+
+    fn split_tables<const N: usize>(case: usize) -> [Vec<Gf>; N] {
+        std::array::from_fn(|i| match case {
+            1 => vec![Gf::zero(); 512],
+            // The two byte tables represent the constant one together.
+            2 => (0..512).map(|j| if j < 256 { Gf::one() } else { Gf::zero() }).collect(),
+            _ => elements(512, 501 + i as u64),
+        })
+    }
+
+    fn split_patterns<const N: usize>(case: usize, seed: u64) -> [[[u8; 64]; 2]; N] {
+        let mut state = seed | 1;
+        std::array::from_fn(|_| std::array::from_fn(|_| std::array::from_fn(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            match case { 3 => 0, 4 => 255, _ => (state >> 19) as u8 }
+        })))
+    }
+
+    #[test]
+    fn split_byte_buckets_match_direct_field_sums() {
+        let mut fast = SplitSumBuckets::new();
+        let mut portable = generic::SplitSumBuckets::new();
+        for case in 0..5 {
+            let tables = split_tables::<4>(case);
+            for width in [0usize, 1, 7, 32, 63, 64] {
+                for send_one in [false, true] {
+                    fast.clear();
+                    portable.clear();
+                    let mut expected = (Gf::zero(), Gf::zero());
+                    for group in 0..3 {
+                        let pats = split_patterns::<4>(case, 601 + group);
+                        let mut weights = elements(64, 621 + group);
+                        for (m, weight) in weights.iter_mut().enumerate() {
+                            if col_of(m) >= width {
+                                *weight = Gf::zero();
+                            }
+                        }
+                        for m in 0..64 {
+                            let value = |i: usize| tables[i][pats[i][0][m] as usize]
+                                + tables[i][256 + pats[i][1][m] as usize];
+                            let [e0, e1, o0, o1] = std::array::from_fn(value);
+                            expected.0 += weights[m] * if send_one { e1 * o1 } else { e0 * o0 };
+                            expected.1 += weights[m] * (e1 - e0) * (o1 - o0);
+                        }
+                        let tab_o = [&tables[2][..], &tables[3][..]];
+                        split_bucket_group(tab_o, &pats, &weights, send_one, &mut fast);
+                        generic::split_bucket_group(tab_o, &pats, &weights, send_one, &mut portable);
+                        let tab_e = [&tables[0][..], &tables[1][..]];
+                        assert_eq!(split_bucket_finish(tab_e, send_one, &fast), expected,
+                            "SIMD case={case} width={width} endpoint={send_one} group={group}");
+                        assert_eq!(generic::split_bucket_finish(tab_e, send_one, &portable), expected,
+                            "portable case={case} width={width} endpoint={send_one} group={group}");
+                    }
+                    fast.clear();
+                    portable.clear();
+                    let tab_e = [&tables[0][..], &tables[1][..]];
+                    assert_eq!(split_bucket_finish(tab_e, send_one, &fast), (Gf::zero(), Gf::zero()));
+                    assert_eq!(generic::split_bucket_finish(tab_e, send_one, &portable), (Gf::zero(), Gf::zero()));
+                }
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_split_fold<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
+        original: &[Vec<Gf>; 8],
+        pats: &[[[u8; 64]; 2]; 8],
+        weights: &[Gf],
+        rho: Gf,
+        width: usize,
+        send_one: bool,
+        portable: bool,
+    ) {
+        check_split_fold_layout::<false, PRE_SCALED, WEIGH_LEFT>(original, pats, weights, rho, width, send_one, portable)
+    }
+
+    fn check_split_fold_layout<const NIBBLE: bool, const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
+        original: &[Vec<Gf>; 8],
+        pats: &[[[u8; 64]; 2]; 8],
+        weights: &[Gf],
+        rho: Gf,
+        width: usize,
+        send_one: bool,
+        portable: bool,
+    ) {
+        let scaled: [Vec<Gf>; 8] = std::array::from_fn(|i| {
+            let scale = if PRE_SCALED {
+                if i & 2 == 0 { Gf::one() - rho } else { rho }
+            } else { Gf::one() };
+            original[i].iter().map(|&v| v * scale).collect()
+        });
+        let tab: [&[Gf]; 8] = std::array::from_fn(|i| scaled[i].as_slice());
+        // Guard slots around each output detect accidental writes past a
+        // partial column group; every slot is initialized before reading.
+        let guard = elements(1, 701)[0];
+        let mut out = vec![vec![MaybeUninit::new(guard); width + 2]; 4];
+        let got = {
+            let (left, right) = out.split_at_mut(2);
+            let (l0, l1) = left.split_at_mut(1);
+            let (r0, r1) = right.split_at_mut(1);
+            let out_l = [&mut l0[0][1..width + 1], &mut l1[0][1..width + 1]];
+            let out_r = [&mut r0[0][1..width + 1], &mut r1[0][1..width + 1]];
+            if portable {
+                let mut sums = generic::Sums::zero();
+                generic::split_fold_group_layout::<NIBBLE, PRE_SCALED, WEIGH_LEFT>(
+                    tab, pats, &rho, weights, send_one, out_l, out_r, &mut sums,
+                );
+                sums.finish()
+            } else {
+                let mut sums = Sums::zero();
+                split_fold_group_layout::<NIBBLE, PRE_SCALED, WEIGH_LEFT>(
+                    tab, pats, &rho, weights, send_one, out_l, out_r, &mut sums,
+                );
+                sums.finish()
+            }
+        };
+        let mut expected_out = vec![vec![guard; width + 2]; 4];
+        let mut expected = (Gf::zero(), Gf::zero());
+        for m in 0..64 {
+            let c = col_of(m);
+            if c >= width {
+                continue;
+            }
+            let value = |i: usize| {
+                if NIBBLE {
+                    let (a,b) = (pats[i][0][m] as usize, pats[i][1][m] as usize);
+                    original[i][a & 15] + original[i][16 + (a >> 4)]
+                        + original[i][32 + (b & 15)] + original[i][48 + (b >> 4)]
+                } else {
+                    original[i][pats[i][0][m] as usize] + original[i][256 + pats[i][1][m] as usize]
+                }
+            };
+            // Direct field equations use the original, unscaled tables.
+            let fold = |a: usize, b: usize| value(a) + rho * (value(b) - value(a));
+            let (e0, e1, o0, o1) = (fold(0, 2), fold(1, 3), fold(4, 6), fold(5, 7));
+            expected.0 += weights[m] * if send_one { e1 * o1 } else { e0 * o0 };
+            expected.1 += weights[m] * (e1 - e0) * (o1 - o0);
+            expected_out[0][1 + c] = if WEIGH_LEFT { weights[m] * e0 } else { e0 };
+            expected_out[1][1 + c] = if WEIGH_LEFT { weights[m] * e1 } else { e1 };
+            expected_out[2][1 + c] = o0;
+            expected_out[3][1 + c] = o1;
+        }
+        assert_eq!(got, expected,
+            "sums width={width} pre_scaled={PRE_SCALED} weighted={WEIGH_LEFT} endpoint={send_one} portable={portable}");
+        assert_eq!(init(&out), expected_out,
+            "stores width={width} pre_scaled={PRE_SCALED} weighted={WEIGH_LEFT} endpoint={send_one} portable={portable}");
+    }
+
+    #[test]
+    fn split_byte_fused_fold_matches_direct_field_equations() {
+        let mut weights = elements(64, 721);
+        // Zero/one weights exercise the carried-weight path as well.
+        weights[0] = Gf::zero();
+        weights[1] = Gf::one();
+        for case in 0..5 {
+            let tables = split_tables::<8>(case);
+            let pats = split_patterns::<8>(case, 741);
+            for rho in [Gf::zero(), Gf::one(), elements(1, 761)[0]] {
+                for width in [0usize, 1, 2, 5, 31, 63, 64] {
+                    for send_one in [false, true] {
+                        for portable in [false, true] {
+                            check_split_fold::<false, false>(&tables, &pats, &weights, rho, width, send_one, portable);
+                            check_split_fold::<true, false>(&tables, &pats, &weights, rho, width, send_one, portable);
+                            check_split_fold::<false, true>(&tables, &pats, &weights, rho, width, send_one, portable);
+                            check_split_fold::<true, true>(&tables, &pats, &weights, rho, width, send_one, portable);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn nibble_buckets_and_fused_fold_match_direct_field_equations() {
+        let mut fast = SplitSumBuckets::for_layout(true);
+        let mut portable = generic::SplitSumBuckets::for_layout(true);
+        for case in 0..5 {
+            let tables: [Vec<Gf>; 8] = std::array::from_fn(|i| match case {
+                1 => vec![Gf::zero(); 64],
+                2 => (0..64).map(|j| if j < 16 { Gf::one() } else { Gf::zero() }).collect(),
+                _ => elements(64, 811 + i as u64),
+            });
+            let pats = split_patterns::<8>(case, 831);
+            let pat4 = std::array::from_fn(|i| pats[i]);
+            for width in [0usize, 1, 7, 31, 63, 64] {
+                let mut weights = elements(64, 851);
+                for (m,w) in weights.iter_mut().enumerate() {
+                    if col_of(m) >= width { *w = Gf::zero(); }
+                }
+                for send_one in [false,true] {
+                    fast.clear(); portable.clear();
+                    let mut expected = (Gf::zero(),Gf::zero());
+                    for m in 0..64 {
+                        let value = |i: usize| {
+                            let (a,b) = (pat4[i][0][m] as usize, pat4[i][1][m] as usize);
+                            tables[i][a&15]+tables[i][16+(a>>4)]+tables[i][32+(b&15)]+tables[i][48+(b>>4)]
+                        };
+                        let (e0,e1,o0,o1) = (value(0),value(1),value(2),value(3));
+                        expected.0 += weights[m] * if send_one {e1*o1} else {e0*o0};
+                        expected.1 += weights[m] * (e1-e0) * (o1-o0);
+                    }
+                    split_bucket_group_layout::<true>([&tables[2],&tables[3]], &pat4, &weights, send_one, &mut fast);
+                    generic::split_bucket_group_layout::<true>([&tables[2],&tables[3]], &pat4, &weights, send_one, &mut portable);
+                    assert_eq!(split_bucket_finish_layout::<true>([&tables[0],&tables[1]],send_one,&fast),expected);
+                    assert_eq!(generic::split_bucket_finish_layout::<true>([&tables[0],&tables[1]],send_one,&portable),expected);
+                    // Keep padded weights nonzero for fold tests: the width guard must exclude them.
+                    let fold_weights = elements(64, 871);
+                    for rho in [Gf::zero(),Gf::one(),fold_weights[0]] {
+                        for generic in [false,true] {
+                            check_split_fold_layout::<true,false,false>(&tables,&pats,&fold_weights,rho,width,send_one,generic);
+                            check_split_fold_layout::<true,true,false>(&tables,&pats,&fold_weights,rho,width,send_one,generic);
+                            check_split_fold_layout::<true,false,true>(&tables,&pats,&fold_weights,rho,width,send_one,generic);
+                            check_split_fold_layout::<true,true,true>(&tables,&pats,&fold_weights,rho,width,send_one,generic);
+                        }
+                    }
                 }
             }
         }

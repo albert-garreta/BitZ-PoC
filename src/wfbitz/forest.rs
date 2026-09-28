@@ -50,6 +50,36 @@ use field::Gf128 as Gf;
 use crate::{cfg_chunks_mut, cfg_into_iter};
 
 mod nibble;
+mod leaf_skip;
+mod leaf_skip3;
+mod leaf_cross;
+
+use leaf_skip::LeafTableLayout;
+
+/// Prover-only arithmetic choices; all variants emit identical Skip4 bytes.
+#[derive(Clone, Copy)]
+struct LeafTuning {
+    fast_cross: bool,
+    layout: LeafTableLayout,
+    fused_tables: bool,
+    reuse_tables: bool,
+}
+
+impl LeafTuning {
+    fn from_env() -> Self {
+        static TUNING: OnceLock<LeafTuning> = OnceLock::new();
+        *TUNING.get_or_init(|| Self {
+            fast_cross: !matches!(std::env::var("WFBITZ_LEAF_CROSS").as_deref(), Ok("reference")),
+            layout: if matches!(std::env::var("WFBITZ_LEAF_TABLES").as_deref(), Ok("nibble")) {
+                LeafTableLayout::Nibble
+            } else {
+                LeafTableLayout::Byte
+            },
+            fused_tables: !matches!(std::env::var("WFBITZ_LEAF_TABLE_FUSION").as_deref(), Ok("0")),
+            reuse_tables: !matches!(std::env::var("WFBITZ_LEAF_TABLE_REUSE").as_deref(), Ok("0")),
+        })
+    }
+}
 
 /// Levels below this run `MATERIALISED_LEVEL − ℓ` rounds off the bits;
 /// this level's own rounds read its tables; the levels above are
@@ -289,6 +319,24 @@ impl<'a> Forest<'a> {
     /// Their `gpgkr_prove` over this tree: from the claim at `zeta` on the
     /// roots down to the leaf point and the claimed leaf value.
     pub(crate) fn prove(&self, ps: &mut ProverState, zeta: &[Gf]) -> (Vec<Gf>, Gf) {
+        let (point, claim, _) = self.prove_inner(ps, zeta, 0);
+        (point, claim)
+    }
+
+    /// The same upper layers, with four row variables of level zero packed
+    /// into one univariate round. The exit carries non-multilinear weights.
+    pub(crate) fn prove_skipping(&self, ps: &mut ProverState, zeta: &[Gf]) -> (super::leaf_skip::LeafBinding, Gf) {
+        self.prove_skipping_with(ps, zeta, 4)
+    }
+
+    pub(crate) fn prove_skipping_with(&self, ps: &mut ProverState, zeta: &[Gf], skip_vars: usize) -> (super::leaf_skip::LeafBinding, Gf) {
+        assert!(self.t >= 6, "the skipped leaf kernel needs a remaining row variable");
+        assert!(matches!(skip_vars, 3 | 4));
+        let (suffix_point, claim, weights) = self.prove_inner(ps, zeta, skip_vars);
+        (super::leaf_skip::LeafBinding { suffix_point, prefix_weights: weights.expect("skip requested") }, claim)
+    }
+
+    fn prove_inner(&self, ps: &mut ProverState, zeta: &[Gf], skip_vars: usize) -> (Vec<Gf>, Gf, Option<Vec<Gf>>) {
         let t = self.t;
         let started = std::time::Instant::now();
         // The materialised path for tiny `t`: level 3 in full, the levels
@@ -342,6 +390,18 @@ impl<'a> Forest<'a> {
         let mut spare_tables: Vec<Gf> = Vec::new();
         for ell in (0..t).rev() {
             let started = std::time::Instant::now();
+            if ell == 0 && skip_vars != 0 {
+                let (point, claim, weights) = if skip_vars == 3 {
+                    self.prove_skipped_leaf3(ps, point, &mut arena, &mut spare_tables)
+                } else {
+                    let (point, claim, weights) = self.prove_skipped_leaf_with(
+                        ps, point, &mut arena, std::mem::take(&mut spare_tables), LeafTuning::from_env(),
+                    );
+                    (point, claim, weights.to_vec())
+                };
+                super::trace("  level 0", started);
+                return (point, claim, Some(weights));
+            }
             (point, claim) = if let Some(mut wnext) = levels[ell].take() {
                 let mid = wnext.len() / 2;
                 let (l, r) = wnext.split_at_mut(mid);
@@ -377,7 +437,71 @@ impl<'a> Forest<'a> {
         }
         let mut point = Vec::from(point);
         point.reverse();
-        (point, claim)
+        (point, claim, None)
+    }
+
+    #[cfg(test)]
+    fn prove_skipped_leaf(&self, ps: &mut ProverState, point: Point, arena: &mut Vec<Gf>) -> (Vec<Gf>, Gf, [Gf; 16]) {
+        self.prove_skipped_leaf_with(ps, point, arena, Vec::new(), LeafTuning::from_env())
+    }
+
+    fn prove_skipped_leaf_with(&self, ps: &mut ProverState, point: Point, arena: &mut Vec<Gf>, reuse: Vec<Gf>, tuning: LeafTuning) -> (Vec<Gf>, Gf, [Gf; 16]) {
+        let external: Vec<Gf> = point.iter().rev().copied().collect();
+        let started = std::time::Instant::now();
+        let cross = if tuning.fast_cross { self.leaf_skip_cross_fast(&external) } else { self.leaf_skip_cross(&external) };
+        super::trace("    L0 skip cross sums", started);
+        let started = std::time::Instant::now();
+        let weights = super::leaf_skip::prove_prefix(ps, &cross);
+        super::trace("    L0 skip polynomial", started);
+        let z = point[4];
+        let reuse = if tuning.reuse_tables { reuse } else { drop(reuse); Vec::new() };
+        let started = std::time::Instant::now();
+        let (tables, (endpoint, infinity)) = if tuning.fused_tables {
+            let result = self.leaf_skip_tables_and_first_round(&weights, &external, z == Gf::zero(), reuse, tuning.layout);
+            super::trace("    L0 skip tables+next round", started);
+            result
+        } else {
+            let tables = self.leaf_skip_tables_in(&weights, reuse, tuning.layout);
+            super::trace("    L0 skip tables", started);
+            let started = std::time::Instant::now();
+            let sums = tables.first_round_sums(self, &external, z == Gf::zero());
+            super::trace("    L0 skip next round", started);
+            (tables, sums)
+        };
+        ps.prover_message(&[endpoint, infinity]);
+        let r: Gf = ps.verifier_message();
+        let started = std::time::Instant::now();
+        let factor = eq_factor(r, z);
+        let (first, pending, factor, next_point, weighing) = if self.t >= 7 {
+            // Bind round 5 and prepare round 6 in the same lookup pass.
+            // The dense engine then folds r6 while computing round 7.
+            let carry = self.weighing != Weighing::Off && weighable(&external, self.s);
+            let z = point[5];
+            let (endpoint, infinity) = if carry {
+                tables.bind_first_round_and_sums_into::<true>(self, r, &external, z == Gf::zero(), arena)
+            } else {
+                tables.bind_first_round_and_sums_into::<false>(self, r, &external, z == Gf::zero(), arena)
+            };
+            ps.prover_message(&[factor * endpoint, factor * infinity]);
+            let r2: Gf = ps.verifier_message();
+            super::trace("    L0 skip fused fold", started);
+            (6, Some(r2), factor * eq_factor(r2, z), VecDeque::from([r, r2]),
+             if carry { Weighing::Carried } else { self.weighing })
+        } else {
+            // Tiny forests have no second row variable to fuse. Their
+            // next round, if any, already acts on columns.
+            tables.bind_first_round_into(self, r, arena);
+            super::trace("    L0 skip bind", started);
+            (5, None, factor, VecDeque::from([r]), self.weighing)
+        };
+        let started = std::time::Instant::now();
+        let half = arena.len() / 2;
+        let (l, o) = arena.split_at_mut(half);
+        let (point, claim) = prove_dense_rounds(ps, point, l, o, first, pending, factor, next_point, self.s, weighing);
+        super::trace("    L0 skip dense tail", started);
+        let mut point = Vec::from(point);
+        point.reverse();
+        (point, claim, weights)
     }
 
     /// Where level `ell ≥ 5` lives in the arena while the upper levels are
@@ -601,21 +725,43 @@ impl<'a> Forest<'a> {
         cache: Option<&PatternCache>,
         filled: bool,
     ) -> (Point, Gf) {
-        let t = self.t;
-        let s = self.s;
         let k = MATERIALISED_LEVEL - ell;
         let external: Vec<Gf> = point.iter().rev().copied().collect();
-        let (challenges, mut factor, mut next_point) = self.bit_rounds(ps, ell, k, &point, &external);
-        let low_bits = t - ell - 1 - k;
-        debug_assert!(low_bits >= 2);
+        let (challenges, factor, next_point) = self.bit_rounds(ps, ell, k, &point, &external);
 
         let started = std::time::Instant::now();
-        let mut tables = match tables {
+        let tables = match tables {
             Some(tables) if k == 0 => tables,
             _ => self.fold_table_in(ell, k, &challenges, std::mem::take(spare_tables)),
         };
-        let eq_c = eq_table(&external[..s]);
         super::trace(&format!("    L{ell} tables"), started);
+
+        self.continue_jit_level(ps, ell, k, point, tables, factor, next_point, spare_tables, arena, cache, filled)
+    }
+
+    /// Shared table-to-dense continuation for ordinary bit rounds and a
+    /// three-variable univariate prefix. Only the prepared tables and
+    /// initial equality scale differ between those prefixes.
+    #[allow(clippy::too_many_arguments)]
+    fn continue_jit_level(
+        &self,
+        ps: &mut ProverState,
+        ell: usize,
+        k: usize,
+        point: Point,
+        mut tables: Tables,
+        mut factor: Gf,
+        mut next_point: VecDeque<Gf>,
+        spare_tables: &mut Vec<Gf>,
+        arena: &mut Vec<Gf>,
+        cache: Option<&PatternCache>,
+        filled: bool,
+    ) -> (Point, Gf) {
+        let s = self.s;
+        let low_bits = self.t - ell - 1 - k;
+        debug_assert!(low_bits >= 2);
+        let external: Vec<Gf> = point.iter().rev().copied().collect();
+        let eq_c = eq_table(&external[..s]);
 
         // Round k + 1 off the tables.
         let started = std::time::Instant::now();
@@ -1837,6 +1983,188 @@ mod tests {
             .collect();
         let images = (0..1usize << t).map(|_| Gf::new(next(), next())).collect();
         (packed, images)
+    }
+
+    /// The pre-fusion Skip4 schedule, retained as a transcript oracle.
+    fn unfused_skipped_leaf(forest: &Forest<'_>, ps: &mut ProverState, point: Point) -> (Vec<Gf>, Gf, [Gf; 16]) {
+        let external: Vec<Gf> = point.iter().rev().copied().collect();
+        let cross = forest.leaf_skip_cross(&external);
+        let weights = super::super::leaf_skip::prove_prefix(ps, &cross);
+        let tables = forest.leaf_skip_tables(&weights);
+        let z = point[4];
+        let (endpoint, infinity) = tables.first_round_sums(forest, &external, z == Gf::zero());
+        ps.prover_message(&[endpoint, infinity]);
+        let r: Gf = ps.verifier_message();
+        let mut arena = Vec::new();
+        tables.bind_first_round_into(forest, r, &mut arena);
+        let half = arena.len() / 2;
+        let (l, o) = arena.split_at_mut(half);
+        let (point, claim) = prove_dense_rounds(ps, point, l, o, 5, None, eq_factor(r, z), VecDeque::from([r]), forest.s, Weighing::Off);
+        let mut point = Vec::from(point);
+        point.reverse();
+        (point, claim, weights)
+    }
+
+    #[test]
+    fn skipped_leaf_fusion_preserves_transcript_and_opening() {
+        use crate::wfbitz::{leaf_skip, transcript::{build_prover, build_verifier}};
+        for (t, s) in [(6usize, 0usize), (6, 3), (7, 0), (7, 3), (8, 7), (7, 11)] {
+            let (packed, images) = random_grid(t, s, (t * 1009 + s) as u64);
+            let half_rows = 1usize << (t - 1);
+            let mut state = 0x676b725f736b6970;
+            for constant in [None, Some(Gf::zero()), Some(Gf::one())] {
+                let external: Vec<Gf> = (0..t - 1 + s)
+                    .map(|_| constant.unwrap_or_else(|| random_gf(&mut state))).collect();
+                let point: Point = external.iter().rev().copied().collect();
+                let eq_c = eq_table(&external[..s]);
+                let eq_y = eq_table(&external[s..]);
+                let mut initial = Gf::zero();
+                for (y, &wy) in eq_y.iter().enumerate() {
+                    for (c, &wc) in eq_c.iter().enumerate() {
+                        let leaf = |row: usize| {
+                            if packed[c / 64][row] >> (c % 64) & 1 == 0 { Gf::one() } else { images[row] }
+                        };
+                        initial += wy * wc * leaf(y) * leaf(y + half_rows);
+                    }
+                }
+                let mut expected = None;
+                for nibble in [false, true] {
+                    for weighing in [Weighing::Off, Weighing::On] {
+                        let forest = Forest::new(t, s, &packed, &images)
+                            .with_patterns(PatternMode { nibble, cache: false, nibble_from: 0 })
+                            .with_weighing(weighing);
+                        let mut ps = build_prover(b"skip-fusion-test", b"instance");
+                        let actual = forest.prove_skipped_leaf(&mut ps, point.clone(), &mut Vec::new());
+                        let proof = ps.finish();
+                        let reference = expected.get_or_insert_with(|| {
+                            let mut ps = build_prover(b"skip-fusion-test", b"instance");
+                            let result = unfused_skipped_leaf(&forest, &mut ps, point.clone());
+                            (result, ps.finish())
+                        });
+                        assert_eq!(actual, reference.0, "leaf result t={t} s={s} nibble={nibble} weighing={weighing:?}");
+                        assert_eq!(proof, reference.1, "leaf transcript t={t} s={s} nibble={nibble} weighing={weighing:?}");
+                        let mut vs = build_verifier(b"skip-fusion-test", b"instance", &proof);
+                        let (binding, claim) = leaf_skip::verify_layer(&mut vs, initial, point.clone()).expect("leaf verifies");
+                        vs.check_eof().unwrap();
+                        assert_eq!((&binding.suffix_point, claim), (&actual.0, actual.1));
+                        assert_eq!(binding.prefix_weights.as_slice(), &actual.2);
+                        let rows = binding.row_weights(&images, s).unwrap();
+                        let columns = eq_table(&binding.suffix_point[..s]);
+                        let mut opening = Gf::zero();
+                        for (row, &wr) in rows.iter().enumerate() {
+                            for (c, &wc) in columns.iter().enumerate() {
+                                if packed[c / 64][row] >> (c % 64) & 1 != 0 { opening += wr * wc; }
+                            }
+                        }
+                        assert_eq!(opening, claim - Gf::one(), "original bit opening");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn skipped_leaf_tuning_preserves_transcript() {
+        use crate::wfbitz::transcript::build_prover;
+        for (t, s) in [(7usize, 3usize), (8, 7), (7, 11)] {
+            let (packed, images) = random_grid(t, s, (t * 271 + s) as u64);
+            let mut state = 0x736b697074756e65;
+            let point: Point = (0..t - 1 + s).map(|_| random_gf(&mut state)).collect();
+            let forest = Forest::new(t, s, &packed, &images)
+                .with_patterns(PatternMode { nibble: true, cache: false, nibble_from: 0 });
+            let mut ps = build_prover(b"skip-tuning-test", b"instance");
+            let reference = unfused_skipped_leaf(&forest, &mut ps, point.clone());
+            let proof = ps.finish();
+            for layout in [LeafTableLayout::Byte, LeafTableLayout::Nibble] {
+                for fast_cross in [false, true] {
+                    for fused_tables in [false, true] {
+                        for reuse_tables in [false, true] {
+                            let tuning = LeafTuning { fast_cross, layout, fused_tables, reuse_tables };
+                            let mut ps = build_prover(b"skip-tuning-test", b"instance");
+                            let reuse = vec![Gf::one(); 1 << (t + 5)];
+                            let result = forest.prove_skipped_leaf_with(&mut ps, point.clone(), &mut Vec::new(), reuse, tuning);
+                            assert_eq!(result, reference, "tuning result t={t} s={s}");
+                            assert_eq!(ps.finish(), proof, "tuning transcript t={t} s={s}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn skipped_forest_verifies_and_opens_original_bits() {
+        use crate::wfbitz::{gkr::gpgkr_verify, leaf_skip, transcript::{build_prover, build_verifier}};
+        for (t, s) in [(6usize, 0usize), (6, 3), (7, 6), (8, 7)] {
+            let (random, images) = random_grid(t, s, (t * 101 + s) as u64);
+            let columns = 1usize << s;
+            for skip_vars in [3, 4] {
+            for constant in [None, Some(false), Some(true)] {
+                let mut packed = random.clone();
+                if let Some(bit) = constant {
+                    for (g, group) in packed.iter_mut().enumerate() {
+                        let live = (columns - g * 64).min(64);
+                        let mask = if live == 64 { u64::MAX } else { (1u64 << live) - 1 };
+                        group.fill(if bit { mask } else { 0 });
+                    }
+                }
+                let mut state = 0x7123abcd;
+                let zeta: Vec<Gf> = (0..s).map(|_| random_gf(&mut state)).collect();
+                let root_weights = eq_table(&zeta);
+                let initial: Gf = (0..columns).fold(Gf::zero(), |acc, c| {
+                    let product = images.iter().enumerate().fold(Gf::one(), |value, (row, &image)| {
+                        if (packed[c / 64][row] >> (c % 64)) & 1 != 0 { value * image } else { value }
+                    });
+                    acc + root_weights[c] * product
+                });
+                let replay = |proof: &crate::wfbitz::Proof| {
+                    let mut vs = build_verifier(b"skip-forest-test", b"instance", proof);
+                    let (mut point, claim) = gpgkr_verify(&mut vs, initial, &zeta, t as u32 - 1)?;
+                    point.reverse();
+                    let output = if skip_vars == 3 {
+                        leaf_skip::verify_layer3(&mut vs, claim, point.into())
+                    } else {
+                        leaf_skip::verify_layer(&mut vs, claim, point.into())
+                    }?;
+                    vs.check_eof().ok()?;
+                    Some(output)
+                };
+                let mut previous = None;
+                for nibble in [false, true] {
+                    let mode = PatternMode { nibble, cache: false, nibble_from: 0 };
+                    let forest = Forest::new(t, s, &packed, &images).with_patterns(mode);
+                    let mut ps = build_prover(b"skip-forest-test", b"instance");
+                    let (binding, claim) = forest.prove_skipping_with(&mut ps, &zeta, skip_vars);
+                    let proof = ps.finish();
+                    let (verified, verified_claim) = replay(&proof).expect("skip forest verifies");
+                    assert_eq!(verified.prefix_weights, binding.prefix_weights);
+                    assert_eq!(verified.suffix_point, binding.suffix_point);
+                    assert_eq!(verified_claim, claim);
+                    let rows = binding.row_weights(&images, s).expect("valid binding");
+                    let cols = eq_table(&binding.suffix_point[..s]);
+                    let mut target = Gf::zero();
+                    for (c, &column_weight) in cols.iter().enumerate() {
+                        for (row, &row_weight) in rows.iter().enumerate() {
+                            if (packed[c / 64][row] >> (c % 64)) & 1 != 0 {
+                                target += row_weight * column_weight;
+                            }
+                        }
+                    }
+                    assert_eq!(target, claim - Gf::one(), "terminal opens original bits t={t} s={s}");
+                    let mut legacy = build_verifier(b"skip-forest-test", b"instance", &proof);
+                    assert!(gpgkr_verify(&mut legacy, initial, &zeta, t as u32).is_none(), "wrong protocol rejected");
+                    let mut corrupt = proof.clone();
+                    let skip_offset = 32 * ((t - 1) * s + t * (t - 1) / 2);
+                    corrupt.narg_string[skip_offset] ^= 1;
+                    assert!(replay(&corrupt).is_none());
+                    if let Some(old) = previous {
+                        assert_eq!(old, proof.narg_string, "gather and nibble agree");
+                    }
+                    previous = Some(proof.narg_string);
+                }
+            }
+            }
+        }
     }
 
     /// Every index the nibble rows produce — each level's JIT patterns and

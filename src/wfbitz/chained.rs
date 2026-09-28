@@ -751,7 +751,7 @@ impl BitZProver {
             word_bits: 1,
         };
         let packed = crate::ligerito::pack_columns_from_rows(&layout, derived_rows);
-        let query = reduce::gkr_reduce_prove_packed(transcript, &fold, &shape, &packed)
+        let query = reduce::gkr_reduce_prove_packed_with(transcript, &fold, &shape, &packed, self.leaf_protocol)
             .map_err(ProveError::Reduction)?;
         drop(packed);
         super::trace("gkr", started);
@@ -792,7 +792,7 @@ impl BitZVerifier {
             .map_err(VerifyError::Fold)?;
         super::trace("v: fold", started);
         let started = std::time::Instant::now();
-        let query = reduce::gkr_reduce_verify(&mut transcript, &fold, &shape)
+        let query = reduce::gkr_reduce_verify_with(&mut transcript, &fold, &shape, self.leaf_protocol)
             .map_err(VerifyError::Reduction)?;
         super::trace("v: gkr", started);
         let started = std::time::Instant::now();
