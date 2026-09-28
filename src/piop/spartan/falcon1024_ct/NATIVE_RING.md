@@ -122,3 +122,11 @@ The v3 measurement reports predate the current grinding allocation. They do
 not measure this cleanup. No runtime validation was performed for this change.
 See [KERNEL_THROUGHPUT.md](KERNEL_THROUGHPUT.md) for the previous kernel
 measurements.
+
+### SIMD and factored-table follow-up (same v3 protocol)
+
+The next pass adds four-lane binary sumchecks and Karatsuba products, streams
+final binder coefficients, specializes nonce hashing, and factors the cached
+Keccak tensor weights. It preserves the same constraints, witness bits and
+security schedule. Current matched measurements and exact-proof validation
+are in [SIMD_THROUGHPUT.md](SIMD_THROUGHPUT.md).

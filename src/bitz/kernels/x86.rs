@@ -8,11 +8,28 @@ use std::mem::MaybeUninit;
 use super::{Gf, col_of, generic};
 use field::gf128::kernels::x86_64::{WideGhashX4, f128x4_loadu, f128x4_set, ghash_mul_x4};
 
-// Irregular bucket writes remain scalar. They already defer reduction and
-// retain the exact same representation as the generic reference.
-pub(super) use generic::{
-    SumBuckets, jit_bucket_finish, jit_bucket_group, scatter_add, scatter_add4,
-};
+pub(super) use generic::{SumBuckets, jit_bucket_finish, jit_bucket_group, scatter_add};
+
+/// Share each loaded weight across the four independent bucket streams.
+/// Positions within a bucket remain sequential: equal byte indices must
+/// accumulate both weights, rather than overwrite a gathered stale value.
+pub(super) fn scatter_add4(buckets: [&mut [Gf]; 4], idx: &[[u8; 64]; 4], eq_t: &[Gf]) {
+    assert_eq!(eq_t.len(), 64);
+    assert!(buckets.iter().all(|b| b.len() >= 256));
+    // SAFETY: Gf is repr(C) over two u64s, with size/alignment 16. Every
+    // u8 index selects a complete initialized element. The four mutable
+    // slices are disjoint; each update is stored before the next position.
+    unsafe {
+        let base = buckets.map(|b| b.as_mut_ptr());
+        for m in 0..64 {
+            let weight = _mm_loadu_si128(eq_t.as_ptr().add(m).cast());
+            for j in 0..4 {
+                let p = base[j].add(idx[j][m] as usize).cast::<__m128i>();
+                _mm_storeu_si128(p, _mm_xor_si128(_mm_loadu_si128(p), weight));
+            }
+        }
+    }
+}
 
 pub(super) struct Sums {
     end: WideGhashX4,
@@ -359,6 +376,26 @@ pub(super) fn scale_in_place(values: &mut [Gf], scalar: &Gf) {
     generic::scale_in_place(&mut values[end..], scalar);
 }
 
+/// Multiply each entry by the weight at its complementary index.
+pub(super) fn multiply_reversed_in_place(values: &mut [Gf], weights: &[Gf]) {
+    assert_eq!(values.len(), weights.len());
+    let n = values.len();
+    let end = n / 4 * 4;
+    // SAFETY: each vector reads/stores four complete entries. Reversing
+    // 128-bit lanes preserves the two-word representation of each field
+    // element; weights and the mutable output are disjoint slices.
+    unsafe {
+        for i in (0..end).step_by(4) {
+            let w = load(weights, n - i - 4);
+            let reversed = _mm512_shuffle_i64x2::<0x1B>(w, w);
+            store(values, i, ghash_mul_x4(load(values, i), reversed));
+        }
+    }
+    for i in end..n {
+        values[i] *= weights[n - 1 - i];
+    }
+}
+
 pub(super) fn jit_product_group(tab: [&[Gf]; 2], pat: &[[u8; 64]; 2], out: &mut [MaybeUninit<Gf>]) {
     assert!(out.len() <= 64);
     let end = out.len() / 4 * 4;
@@ -424,4 +461,81 @@ pub(super) fn contract(t_e: &[Gf], t_o: &[Gf], bucket: &[Gf]) -> Gf {
         .fold(Gf::zero(), |sum, (row, &weight)| {
             sum + weight * dot(t_o, &bucket[row * n..(row + 1) * n])
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn element(i: usize) -> Gf {
+        Gf::new(
+            (i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+            (i as u64)
+                .wrapping_mul(0xD6E8_FEB8_6659_FD93)
+                .rotate_left(19),
+        )
+    }
+
+    #[test]
+    fn reversed_multiplication_matches_scalar_at_every_tail_length() {
+        for n in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 31, 32, 33, 63, 64, 65] {
+            let original: Vec<Gf> = (0..n).map(element).collect();
+            let weights: Vec<Gf> = (0..n).map(|i| element(2 * i + 7)).collect();
+            let mut got = original.clone();
+            multiply_reversed_in_place(&mut got, &weights);
+            let want: Vec<_> = original
+                .iter()
+                .zip(weights.iter().rev())
+                .map(|(&a, &b)| a * b)
+                .collect();
+            assert_eq!(got, want, "n {n}");
+        }
+    }
+
+    #[test]
+    fn scatter_four_matches_scalar_with_collisions_padding_and_guards() {
+        for live in [0, 1, 31, 32, 33, 63, 64] {
+            let eq: [Gf; 64] =
+                std::array::from_fn(|i| if i < live { element(i + 1) } else { Gf::zero() });
+            for mode in 0..4 {
+                let idx: [[u8; 64]; 4] = std::array::from_fn(|j| {
+                    std::array::from_fn(|m| match mode {
+                        0 => 0,
+                        1 => 255,
+                        2 => ((m + j) % 2 * 255) as u8,
+                        _ => ((m * 17 + j * 31) & 255) as u8,
+                    })
+                });
+                let mut got: [Vec<Gf>; 4] =
+                    std::array::from_fn(|j| (0..258).map(|i| element(300 * j + i + 1)).collect());
+                let mut want = got.clone();
+                let [a, b, c, d] = &mut got;
+                scatter_add4(
+                    [
+                        &mut a[1..257],
+                        &mut b[1..257],
+                        &mut c[1..257],
+                        &mut d[1..257],
+                    ],
+                    &idx,
+                    &eq,
+                );
+                for (bucket, pattern) in want.iter_mut().zip(&idx) {
+                    generic::scatter_add(&mut bucket[1..257], pattern, &eq);
+                }
+                assert_eq!(got, want, "live {live} mode {mode}");
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn scatter_four_rejects_short_bucket_before_using_byte_indices() {
+        let mut buckets = [[Gf::zero(); 255]; 4];
+        scatter_add4(
+            buckets.each_mut().map(|b| &mut b[..]),
+            &[[255; 64]; 4],
+            &[Gf::zero(); 64],
+        );
+    }
 }

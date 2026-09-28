@@ -53,22 +53,16 @@ pub(crate) fn weighable(external: &[Gf], s: usize) -> bool {
             .all(|&z| z != Gf::zero() && z != Gf::one())
 }
 
-/// `1/x` for every entry (none zero): one inversion and `3(n − 1)`
-/// multiplies.
-fn batch_inverse(xs: &[Gf]) -> Vec<Gf> {
-    let mut prefix = Vec::with_capacity(xs.len());
-    let mut acc = Gf::one();
-    for &x in xs {
-        prefix.push(acc);
-        acc = acc * x;
-    }
-    let mut inv = acc.inverse_or_zero();
-    let mut out = vec![Gf::zero(); xs.len()];
-    for i in (0..xs.len()).rev() {
-        out[i] = inv * prefix[i];
-        inv = inv * xs[i];
-    }
-    out
+/// Cost gate for starting to carry column weights. Each subsequent tree
+/// round saves two multiplies per slot; removing the weights costs one
+/// multiply per column and a scalar inverse. Reserve 256 scalar operations
+/// for the inverse and bookkeeping (the inverse uses 127 squares and ten
+/// multiplies). This is a performance heuristic, independent of soundness.
+pub(crate) fn carrying_worthwhile(s: usize, subsequent_tree_rounds: usize) -> bool {
+    let columns = 1usize.checked_shl(s as u32).unwrap_or(usize::MAX);
+    let rows = 1usize.checked_shl(subsequent_tree_rounds as u32).unwrap_or(usize::MAX);
+    let saved = columns.saturating_mul(rows - 1).saturating_mul(2);
+    s > 0 && subsequent_tree_rounds > 0 && saved > columns.saturating_add(256)
 }
 
 /// The GKR prover's message interface. A composition may use its own
@@ -282,10 +276,8 @@ pub(crate) fn prove_dense_rounds(
     let one = [Gf::one()];
     let may_weigh = weighing != Weighing::Off && weighable(&external, s);
     let mut weighted = weighing == Weighing::Carried;
-    assert!(
-        !weighted || may_weigh,
-        "a weighted left half on a layer that cannot carry weights"
-    );
+    let mut left_normalization = None;
+    assert!(!weighted || may_weigh, "a weighted left half on a layer that cannot carry weights");
 
     for (round, z) in point.into_iter().enumerate().skip(first) {
         let remaining = total - 1 - round;
@@ -302,9 +294,16 @@ pub(crate) fn prove_dense_rounds(
                 mle_r = &mut mle_r[..2 * h];
             }
             assert_eq!(mle_l.len(), eq_c.len());
-            for (value, inverse) in mle_l.iter_mut().zip(batch_inverse(&eq_c)) {
-                *value = *value * inverse;
-            }
+            // Complementary equality weights have a common product:
+            // eq_c[i] * eq_c[n-1-i] = product_j z_j(1-z_j) = c.
+            // Multiplying by the reversed table leaves c times the plain
+            // left half. Keep 1/c in the message factor, then normalize
+            // only the terminal left value. This replaces the serial batch
+            // inversion with one independent multiply per column.
+            let inverse = (eq_c[0] * eq_c[eq_c.len() - 1]).inverse_or_zero();
+            kernels::multiply_reversed_in_place(mle_l, &eq_c);
+            factor = factor * inverse;
+            left_normalization = Some(inverse);
             weighted = false;
         }
 
@@ -337,7 +336,7 @@ pub(crate) fn prove_dense_rounds(
                 let (q2_r, q3_r) = q23_r.split_at(h);
                 let left = if weighted {
                     kernels::Left::Weighted
-                } else if in_tree && may_weigh {
+                } else if in_tree && may_weigh && carrying_worthwhile(s, remaining - s) {
                     weighted = true;
                     kernels::Left::Weigh
                 } else {
@@ -371,6 +370,9 @@ pub(crate) fn prove_dense_rounds(
     if let Some(rho) = pending {
         mle_l[0] = mle_l[0] + rho * (mle_l[1] - mle_l[0]);
         mle_r[0] = mle_r[0] + rho * (mle_r[1] - mle_r[0]);
+    }
+    if let Some(inverse) = left_normalization {
+        mle_l[0] = mle_l[0] * inverse;
     }
     ps.write_pair([mle_l[0], mle_r[0]]);
     let r = ps.close_challenge();
@@ -454,22 +456,43 @@ mod tests {
         Gf::from_polynomial_words([next(), next()])
     }
 
+    #[test]
+    fn complementary_equality_weights_remove_column_weights() {
+        let mut state = 0xCA77_1ED0;
+        for s in 1..=10 {
+            let coordinates: Vec<_> = (0..s).map(|_| field(&mut state)).collect();
+            let weights = eq_table(&coordinates);
+            let constant = coordinates.iter().fold(Gf::one(), |a, &z| a * z * (Gf::one() - z));
+            let inverse = constant.inverse_or_zero();
+            assert_eq!(constant * inverse, Gf::one());
+            let plain: Vec<_> = (0..weights.len()).map(|_| field(&mut state)).collect();
+            let mut carried: Vec<_> = plain.iter().zip(&weights).map(|(&x, &w)| x * w).collect();
+            kernels::multiply_reversed_in_place(&mut carried, &weights);
+            for (i, (&actual, &expected)) in carried.iter().zip(&plain).enumerate() {
+                assert_eq!(weights[i] * weights[weights.len() - 1 - i], constant);
+                assert_eq!(actual * inverse, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn carrying_gate_requires_amortized_savings() {
+        assert!(!carrying_worthwhile(14, 0));
+        assert!(carrying_worthwhile(14, 1));
+        assert!(!carrying_worthwhile(8, 1));
+        assert!(carrying_worthwhile(9, 1));
+        assert!(!carrying_worthwhile(1, 1));
+        assert!(carrying_worthwhile(1, 7));
+        assert!(!carrying_worthwhile(0, 12));
+    }
+
     /// The dense rounds send the same bytes and reach the same point and
     /// claim whether the column weights ride in the left half or in every
     /// slot: from a plain start, from a half that arrives weighted with a
     /// fold pending, and when a column coordinate is 0 or 1 (no weighing).
     #[test]
     fn dense_rounds_weigh_identically() {
-        for (tree, s) in [
-            (1usize, 3usize),
-            (2, 1),
-            (3, 4),
-            (4, 6),
-            (5, 2),
-            (6, 7),
-            (3, 0),
-            (0, 4),
-        ] {
+        for (tree, s) in [(1usize, 3usize), (2, 1), (3, 4), (4, 6), (5, 2), (6, 7), (3, 0), (0, 4), (2, 8), (3, 9)] {
             let total = tree + s;
             for special in [None, Some(Gf::zero()), Some(Gf::one())] {
                 let mut state = 0x9E37_79B9 ^ (tree * 97 + s) as u64;
@@ -478,25 +501,15 @@ mod tests {
                     external[s / 2] = value;
                 }
                 let point: Point = external.iter().rev().copied().collect();
-                let run =
-                    |l: &[Gf], r: &[Gf], first: usize, pending: Option<Gf>, weighing: Weighing| {
-                        let (mut l, mut r) = (l.to_vec(), r.to_vec());
-                        let mut ps = build_kernel_prover(b"dense-weigh/v1", b"instance");
-                        let next_point: VecDeque<Gf> = point.iter().take(first).copied().collect();
-                        let (p, claim) = prove_dense_rounds(
-                            &mut ps,
-                            point.clone(),
-                            &mut l,
-                            &mut r,
-                            first,
-                            pending,
-                            Gf::one(),
-                            next_point,
-                            s,
-                            weighing,
-                        );
-                        (p, claim, ps.finish().narg_string)
-                    };
+                let incoming_factor = field(&mut state);
+                let run = |l: &[Gf], r: &[Gf], first: usize, pending: Option<Gf>, weighing: Weighing| {
+                    let (mut l, mut r) = (l.to_vec(), r.to_vec());
+                    let mut ps = build_kernel_prover(b"dense-weigh/v1", b"instance");
+                    let next_point: VecDeque<Gf> = point.iter().take(first).copied().collect();
+                    let (p, claim) =
+                        prove_dense_rounds(&mut ps, point.clone(), &mut l, &mut r, first, pending, incoming_factor, next_point, s, weighing);
+                    (p, claim, ps.finish().narg_string)
+                };
                 let label = format!("tree={tree} s={s} special={special:?}");
                 let l: Vec<Gf> = (0..1usize << total).map(|_| field(&mut state)).collect();
                 let r: Vec<Gf> = (0..1usize << total).map(|_| field(&mut state)).collect();
@@ -508,26 +521,20 @@ mod tests {
                 if tree == 0 {
                     continue;
                 }
-                // One round in, its challenge pending: `2^total` entries per
-                // half, the low `s` index bits the column.
-                let rho = field(&mut state);
-                let want = run(&l, &r, 1, Some(rho), Weighing::Off);
-                assert!(
-                    run(&l, &r, 1, Some(rho), Weighing::On) == want,
-                    "pending start {label}"
-                );
-                if weighable(&external, s) {
-                    let eq_c = eq_table(&external[..s]);
-                    let mask = (1usize << s) - 1;
-                    let weighted: Vec<Gf> = l
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &x)| eq_c[i & mask] * x)
-                        .collect();
-                    assert!(
-                        run(&weighted, &r, 1, Some(rho), Weighing::Carried) == want,
-                        "carried {label}"
-                    );
+                // Exercise every entry depth, including a carried half
+                // arriving immediately before the first column round.
+                for first in 1..=tree {
+                    let len = 1usize << (total - first + 1);
+                    let (l, r) = (&l[..len], &r[..len]);
+                    let rho = field(&mut state);
+                    let want = run(l, r, first, Some(rho), Weighing::Off);
+                    assert!(run(l, r, first, Some(rho), Weighing::On) == want, "pending start {first} {label}");
+                    if weighable(&external, s) {
+                        let eq_c = eq_table(&external[..s]);
+                        let mask = (1usize << s) - 1;
+                        let weighted: Vec<Gf> = l.iter().enumerate().map(|(i, &x)| eq_c[i & mask] * x).collect();
+                        assert!(run(&weighted, r, first, Some(rho), Weighing::Carried) == want, "carried {first} {label}");
+                    }
                 }
             }
         }

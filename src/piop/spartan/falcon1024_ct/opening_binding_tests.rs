@@ -670,30 +670,35 @@ fn native_binding_preserves_inner_sumcheck_transcript() {
     )
     .unwrap();
     let streamed = StreamingMle::new(&binding);
-    let actual = prove_inner_sumcheck(
-        &field,
-        &mut transcript,
-        claim,
-        PackedInput::new(
-            &streamed,
-            &words,
-            source_rounds(&layout),
-            layout.source_bits(),
-            4,
-        ),
-        (),
-        &mut crate::sumcheck::UngrindedRoundBoundary,
-    )
-    .unwrap();
-    assert_eq!(actual, expected);
-    assert_eq!(
-        transcript.get_challenge::<u128>(),
-        reference_transcript.get_challenge::<u128>()
-    );
-    assert_eq!(
-        binding.evaluate(&actual.point).unwrap(),
-        actual.terminal_evaluations[0]
-    );
+    let reference_challenge = reference_transcript.get_challenge::<u128>();
+    // K=3 uses direct word-to-byte buckets; K=4 retains block expansion.
+    for prefix in [3, 4] {
+        let mut actual_transcript = transcript.clone();
+        let actual = prove_inner_sumcheck(
+            &field,
+            &mut actual_transcript,
+            claim,
+            PackedInput::new(
+                &streamed,
+                &words,
+                source_rounds(&layout),
+                layout.source_bits(),
+                prefix,
+            ),
+            (),
+            &mut crate::sumcheck::UngrindedRoundBoundary,
+        )
+        .unwrap();
+        assert_eq!(actual, expected);
+        assert_eq!(
+            actual_transcript.get_challenge::<u128>(),
+            reference_challenge
+        );
+        assert_eq!(
+            binding.evaluate(&actual.point).unwrap(),
+            actual.terminal_evaluations[0]
+        );
+    }
 }
 
 #[test]

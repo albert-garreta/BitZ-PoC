@@ -42,6 +42,24 @@ pub(crate) trait StreamingCoefficientSource: Sync {
         None
     }
 
+    /// Optional final coefficient sums grouped by their aligned witness byte.
+    /// Bucket `b` contains, lane by lane, the sum of every eight-coefficient
+    /// block whose witness byte is `b`. Read bytes only through `read_byte`,
+    /// which checks the partition and masks its partial final block. Its second
+    /// argument is the highest occupied coefficient lane plus one (1..=8),
+    /// allowing it to reject coefficients in domain padding. Emit each
+    /// bucket at most once, in increasing order; omitted buckets are zero.
+    /// Bucket zero may be omitted since its witness extension is identically
+    /// zero. Return `None` without invoking either callback when unsupported.
+    fn for_each_partition_byte_bucket(
+        &self,
+        _partition: usize,
+        _read_byte: &mut impl FnMut(usize, usize) -> Result<u8, SumcheckError>,
+        _emit: &mut impl FnMut(u8, &[Field; 8]) -> Result<(), SumcheckError>,
+    ) -> Option<Result<(), SumcheckError>> {
+        None
+    }
+
     /// Optional additive replay after binding the low variables with the given
     /// equality weights. Indices are in the original domain divided by the
     /// weights' length; padding and omitted entries remain zero.
@@ -507,6 +525,48 @@ impl<S: StreamingCoefficientSource + ?Sized> StreamingMle<'_, S> {
         // of one block for every eight source positions. Small partitions keep
         // the direct path to avoid initializing the 32 KiB bucket table.
         if K == 3 && self.source.partition_len() >= 1 << 12 {
+            let start = partition * self.source.partition_len();
+            let end = (start + self.source.partition_len()).min(live_len);
+            let mut next_bucket = 0usize;
+            if let Some(result) = self.source.for_each_partition_byte_bucket(
+                partition,
+                &mut |base, occupied_lanes| {
+                    if base % 8 != 0
+                        || !(start..end).contains(&base)
+                        || occupied_lanes == 0
+                        || occupied_lanes > 8
+                        || occupied_lanes > end - base
+                    {
+                        return Err(SumcheckError::InvalidProductDimensions);
+                    }
+                    let active = 8.min(end - base);
+                    let word = bits.bits_at(base, active)?;
+                    if word & !low_bits_mask(active) != 0 {
+                        return Err(SumcheckError::InvalidProductDimensions);
+                    }
+                    Ok(word as u8)
+                },
+                &mut |word, values| {
+                    if usize::from(word) < next_bucket {
+                        return Err(SumcheckError::InvalidProductDimensions);
+                    }
+                    next_bucket = usize::from(word) + 1;
+                    validate_field_values(values, cfg)?;
+                    if word != 0 {
+                        accumulate_three_variable_block(
+                            &mut state,
+                            values,
+                            usize::from(word),
+                            cfg,
+                            zero,
+                        );
+                    }
+                    Ok(())
+                },
+            ) {
+                result?;
+                return finish_partition::<K>(state, cfg, zero);
+            }
             let mut buckets = vec![*zero; 256 * 8];
             let mut occupied = [false; 256];
             if let Some(result) = self.visit_blocks_checked::<K>(partition, cfg, |base, values| {
@@ -1784,6 +1844,80 @@ mod tests {
                     Blake3Transcript::new().get_challenge::<u128>()
                 );
             }
+        }
+    }
+
+    #[test]
+    fn byte_buckets_reject_invalid_reads_order_and_residues_before_transcript_changes() {
+        struct InvalidBuckets<'a> {
+            cfg: &'a FieldConfig,
+            fault: usize,
+        }
+        impl StreamingCoefficientSource for InvalidBuckets<'_> {
+            fn num_vars(&self) -> usize {
+                13
+            }
+            fn live_len(&self) -> usize {
+                4099
+            }
+            fn partition_len(&self) -> usize {
+                4096
+            }
+            fn for_each_coefficient(
+                &self,
+                _: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+            ) -> Result<(), SumcheckError> {
+                unreachable!()
+            }
+            fn for_each_partition_byte_bucket(
+                &self,
+                partition: usize,
+                read_byte: &mut impl FnMut(usize, usize) -> Result<u8, SumcheckError>,
+                emit: &mut impl FnMut(u8, &[Field; 8]) -> Result<(), SumcheckError>,
+            ) -> Option<Result<(), SumcheckError>> {
+                let mut values = [self.cfg.zero(); 8];
+                let base = partition * self.partition_len();
+                Some(match self.fault {
+                    0 => {
+                        // Noncanonical bucket, including the omitted-zero pattern.
+                        values[0] = crate::piop::spartan::noncanonical_test_value(self.cfg);
+                        emit(0, &values)
+                    }
+                    1 => emit(2, &values).and_then(|_| emit(2, &values)),
+                    2 => emit(2, &values).and_then(|_| emit(1, &values)),
+                    3 => read_byte(base + 1, 1).map(|_| ()),
+                    4 => read_byte(base + 4096, 1).map(|_| ()),
+                    5 => read_byte(usize::MAX, 1).map(|_| ()),
+                    6 => read_byte(base, 0).map(|_| ()),
+                    7 => read_byte(base, 9).map(|_| ()),
+                    8 if partition == 1 => read_byte(base, 4).map(|_| ()),
+                    8 => Ok(()),
+                    9 if partition == 1 => read_byte(base - 8, 8).map(|_| ()),
+                    9 => Ok(()),
+                    _ => unreachable!(),
+                })
+            }
+        }
+        let cfg = spartan_bitz_field_config();
+        for fault in 0..10 {
+            let source = InvalidBuckets { cfg: &cfg, fault };
+            let mut transcript = Blake3Transcript::new();
+            assert!(
+                prove_inner_sumcheck(
+                    &cfg,
+                    &mut transcript,
+                    cfg.zero(),
+                    PackedInput::new(&StreamingMle::new(&source), &vec![0u64; 65], 13, 4099, 3),
+                    (),
+                    &mut UngrindedRoundBoundary,
+                )
+                .is_err(),
+                "fault={fault}"
+            );
+            assert_eq!(
+                transcript.get_challenge::<u128>(),
+                Blake3Transcript::new().get_challenge::<u128>()
+            );
         }
     }
 

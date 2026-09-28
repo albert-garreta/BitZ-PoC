@@ -1,5 +1,9 @@
 # Falcon prover kernel optimizations, 2026-09-27
 
+This records the earlier kernel pass. The subsequent SIMD, arithmetic replay,
+nonce-hashing and factored-tensor work is in
+[SIMD_THROUGHPUT.md](SIMD_THROUGHPUT.md).
+
 All four follow-up optimizations are implemented without changing the v3
 protocol. The matched seed-42 run improves from **1.195 to 1.047 ms/signature**,
 or **837 to 955 signatures/second**, including witness generation and

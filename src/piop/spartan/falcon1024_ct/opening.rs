@@ -565,6 +565,30 @@ impl StreamingCoefficientSource for BindingForm<'_> {
                 )
         })())
     }
+
+    fn for_each_partition_byte_bucket(
+        &self,
+        partition: usize,
+        read_byte: &mut impl FnMut(usize, usize) -> Result<u8, crate::sumcheck::SumcheckError>,
+        emit: &mut impl FnMut(u8, &[F; 8]) -> Result<(), crate::sumcheck::SumcheckError>,
+    ) -> Option<Result<(), crate::sumcheck::SumcheckError>> {
+        Some((|| {
+            if partition >= self.layout.capacity() {
+                return Err(crate::sumcheck::SumcheckError::InvalidProductDimensions);
+            }
+            if partition >= self.layout.batch() {
+                return Ok(());
+            }
+            self.compact_instance(partition)
+                .map_err(|_| crate::sumcheck::SumcheckError::InvalidProductDimensions)?
+                .emit_byte_buckets(
+                    partition * self.layout.signature_stride(),
+                    self.field,
+                    read_byte,
+                    emit,
+                )
+        })())
+    }
 }
 
 impl BindingForm<'_> {

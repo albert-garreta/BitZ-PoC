@@ -20,6 +20,53 @@ pub(super) struct CompiledCoefficients {
     words: std::sync::Arc<[Word]>,
     coefficients: Vec<F>,
     folded: std::sync::Arc<std::sync::OnceLock<FoldedWords>>,
+    byte_runs: std::sync::Arc<std::sync::OnceLock<ByteRuns>>,
+}
+
+/// Each run occupies one physical byte and has coefficients a, 2a, 4a, ... .
+/// Encoded signed words split at both byte boundaries and their sign bit.
+struct ByteRun {
+    base: usize,
+    lane: u8,
+    len: u8,
+    shift: u8,
+    negative: bool,
+}
+
+struct ByteRuns {
+    starts: Vec<usize>,
+    runs: Vec<ByteRun>,
+}
+
+impl ByteRuns {
+    fn new(words: &[Word]) -> Self {
+        let mut starts = Vec::with_capacity(words.len() + 1);
+        let mut runs = Vec::new();
+        for &word in words {
+            starts.push(runs.len());
+            let mut bit = 0;
+            while bit < usize::from(word.width) {
+                let (index, negative) = word.bit_position(bit);
+                let mut len = 1;
+                while bit + len < usize::from(word.width)
+                    && index % 8 + len < 8
+                    && word.bit_position(bit + len) == (index + len, negative)
+                {
+                    len += 1;
+                }
+                runs.push(ByteRun {
+                    base: index & !7,
+                    lane: (index % 8) as u8,
+                    len: len as u8,
+                    shift: bit as u8,
+                    negative,
+                });
+                bit += len;
+            }
+        }
+        starts.push(runs.len());
+        Self { starts, runs }
+    }
 }
 
 /// Binding low variables is linear in each word's coefficient. The physical
@@ -85,6 +132,7 @@ pub(super) struct CompiledTemplate {
     common: Vec<(usize, F)>,
     dynamic_slots: Vec<usize>,
     folded: std::sync::Arc<std::sync::OnceLock<FoldedWords>>,
+    byte_runs: std::sync::Arc<std::sync::OnceLock<ByteRuns>>,
 }
 
 trait WordAccumulator {
@@ -162,6 +210,7 @@ impl<'a> WordSink<'a> {
             words: words.into(),
             coefficients,
             folded: Default::default(),
+            byte_runs: Default::default(),
         }
     }
 }
@@ -201,6 +250,7 @@ impl CompiledTemplate {
             common,
             dynamic_slots,
             folded: Default::default(),
+            byte_runs: Default::default(),
         }
     }
 
@@ -239,6 +289,7 @@ impl WordSink<'_, IndexedWords<'_>> {
             words: std::sync::Arc::clone(&self.accumulator.template.words),
             coefficients: self.accumulator.coefficients,
             folded: std::sync::Arc::clone(&self.accumulator.template.folded),
+            byte_runs: std::sync::Arc::clone(&self.accumulator.template.byte_runs),
         }
     }
 }
@@ -273,6 +324,82 @@ impl<A: WordAccumulator> CoefficientSink for WordSink<'_, A> {
 }
 
 impl CompiledCoefficients {
+    /// Group word contributions directly by witness byte, without expanding
+    /// every coefficient bit. A geometric run starting at lane i contributes
+    /// +a at i and -2^len*a at its exclusive end to a difference array. The
+    /// recurrence value[j] = 2*value[j-1] + difference[j] reconstructs it.
+    /// Linearity makes this exact for overlapping words and signed corrections.
+    pub(super) fn emit_byte_buckets(
+        &self,
+        base: usize,
+        field: &Cfg,
+        read_byte: &mut impl FnMut(usize, usize) -> Result<u8, crate::sumcheck::SumcheckError>,
+        emit: &mut impl FnMut(u8, &[F; 8]) -> Result<(), crate::sumcheck::SumcheckError>,
+    ) -> Result<(), crate::sumcheck::SumcheckError> {
+        use crate::sumcheck::SumcheckError;
+        use field::{CtOrd, Reduce};
+        if base % 8 != 0 {
+            return Err(SumcheckError::InvalidProductDimensions);
+        }
+        let compiled = self.byte_runs.get_or_init(|| ByteRuns::new(&self.words));
+        // Each accumulator receives fewer than 2^64 field-by-u64 products;
+        // native coefficient widths are at most 27 bits. The extra accumulator
+        // limb therefore preserves exact sums for every supported batch.
+        let mut differences = vec![field::FpLinearAcc::<2, 1>::zero(); 256 * 8];
+        let mut occupied = [false; 256];
+        for (word, &scale) in self.coefficients.iter().enumerate() {
+            if !scale
+                .as_montgomery_integer()
+                .ct_lt(field.modulus())
+                .declassify()
+            {
+                return Err(SumcheckError::NonCanonicalFieldElement);
+            }
+            if scale == field.zero() {
+                continue;
+            }
+            let negative = field.neg(&scale);
+            for run in &compiled.runs[compiled.starts[word]..compiled.starts[word + 1]] {
+                let pattern =
+                    usize::from(read_byte(base + run.base, usize::from(run.lane + run.len))?);
+                if pattern == 0 {
+                    continue;
+                }
+                occupied[pattern] = true;
+                let values = &mut differences[8 * pattern..][..8];
+                let lane = usize::from(run.lane);
+                let len = usize::from(run.len);
+                let (positive, negative) = if run.negative {
+                    (&negative, &scale)
+                } else {
+                    (&scale, &negative)
+                };
+                field.mul_acc(&mut values[lane], positive, &(1u64 << run.shift));
+                if lane + len < 8 {
+                    field.mul_acc(
+                        &mut values[lane + len],
+                        negative,
+                        &(1u64 << (usize::from(run.shift) + len)),
+                    );
+                }
+            }
+        }
+        for (pattern, used) in occupied.into_iter().enumerate() {
+            if used {
+                let mut values = [field.zero(); 8];
+                let mut previous = field.zero();
+                for (value, &difference) in values.iter_mut().zip(&differences[8 * pattern..][..8])
+                {
+                    let difference = field.reduce(difference);
+                    previous = field.add(&field.add(&previous, &previous), &difference);
+                    *value = previous;
+                }
+                emit(pattern as u8, &values)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Emit each folded coefficient's final sum once in increasing index order.
     pub(super) fn emit_folded(
         &self,
@@ -911,6 +1038,122 @@ fn emit_linear_template(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn byte_run_geometry_matches_unsigned_and_signed_word_bits() {
+        for base in 0..8 {
+            let words = (1..=27)
+                .map(|width| Word {
+                    base,
+                    width,
+                    kind: WordKind::Unsigned,
+                })
+                .chain((0..8).map(|offset| Word {
+                    base,
+                    width: 12,
+                    kind: WordKind::Encoded { offset },
+                }))
+                .collect::<Vec<_>>();
+            let compiled = ByteRuns::new(&words);
+            for (i, &word) in words.iter().enumerate() {
+                let mut expected = [0i64; 64];
+                let mut actual = [0i64; 64];
+                for bit in 0..usize::from(word.width) {
+                    let (index, negative) = word.bit_position(bit);
+                    expected[index] += if negative { -(1 << bit) } else { 1 << bit };
+                }
+                for run in &compiled.runs[compiled.starts[i]..compiled.starts[i + 1]] {
+                    assert_eq!(run.base % 8, 0);
+                    assert!(run.len > 0 && run.lane + run.len <= 8);
+                    for j in 0..usize::from(run.len) {
+                        let value = 1 << (usize::from(run.shift) + j);
+                        actual[run.base + usize::from(run.lane) + j] +=
+                            if run.negative { -value } else { value };
+                    }
+                }
+                assert_eq!(actual, expected, "{word:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn direct_byte_buckets_match_dense_overlaps_all_patterns_and_runtime_primes() {
+        for field in [
+            crate::piop::spartan::bitz::spartan_bitz_field_config(),
+            field::FpCtx::from_prime_u128((1u128 << 127) - 1),
+            field::FpCtx::from_prime_u128(7),
+        ] {
+            for base in [0, 256] {
+                let mut sink = WordSink::new(base / 256, base, &field);
+                overlapping_words(&mut sink, base, &field);
+                let compact = sink.finish();
+                let mut dense = Dense {
+                    values: vec![field.zero(); 512],
+                    field: &field,
+                };
+                overlapping_words(&mut dense, base, &field);
+                for pattern in 0u8..=255 {
+                    let byte = |index: usize| {
+                        pattern
+                            .wrapping_add((index / 8) as u8)
+                            .rotate_left((index % 3) as u32)
+                    };
+                    let mut expected = vec![[field.zero(); 8]; 256];
+                    for index in (base..base + 256).step_by(8) {
+                        for (sum, coefficient) in expected[usize::from(byte(index))]
+                            .iter_mut()
+                            .zip(&dense.values[index..index + 8])
+                        {
+                            *sum = field.add(sum, coefficient);
+                        }
+                    }
+                    // The zero witness byte contributes nothing to the prefix.
+                    expected[0].fill(field.zero());
+                    let mut actual = vec![[field.zero(); 8]; 256];
+                    let mut next = 0usize;
+                    compact
+                        .emit_byte_buckets(
+                            base,
+                            &field,
+                            &mut |index, occupied_lanes| {
+                                assert!(occupied_lanes > 0 && occupied_lanes <= 8);
+                                assert_eq!(index % 8, 0);
+                                assert!((base..base + 256).contains(&index));
+                                Ok(byte(index))
+                            },
+                            &mut |pattern, values| {
+                                assert!(usize::from(pattern) >= next);
+                                next = usize::from(pattern) + 1;
+                                actual[usize::from(pattern)] = *values;
+                                Ok(())
+                            },
+                        )
+                        .unwrap();
+                    assert_eq!(actual, expected, "base={base}, pattern={pattern}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn direct_byte_buckets_reject_noncanonical_words_and_unaligned_base() {
+        let field = crate::piop::spartan::bitz::spartan_bitz_field_config();
+        let mut sink = WordSink::new(0, 0, &field);
+        sink.add_word(0, 14, field.one(), &field);
+        let mut compact = sink.finish();
+        assert!(
+            compact
+                .emit_byte_buckets(1, &field, &mut |_, _| Ok(0), &mut |_, _| Ok(()))
+                .is_err()
+        );
+        compact.coefficients[0] = crate::piop::spartan::noncanonical_test_value(&field);
+        // Malformed coefficients are rejected even for an all-zero witness.
+        assert!(
+            compact
+                .emit_byte_buckets(0, &field, &mut |_, _| Ok(0), &mut |_, _| Ok(()))
+                .is_err()
+        );
+    }
 
     fn overlapping_words(sink: &mut impl CoefficientSink, base: usize, field: &Cfg) {
         overlapping_words_scaled(sink, base, unsigned(37, field), field);

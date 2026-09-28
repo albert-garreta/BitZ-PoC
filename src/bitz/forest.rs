@@ -40,7 +40,7 @@ use rayon::prelude::*;
 pub(crate) use self::nibble::NibbleRows;
 use self::nibble::{BitSelectors, Selector};
 use super::eq_factor;
-use super::gkr::{GkrProverTranscript, Point, Weighing, eq_table, prove_dense_rounds, prove_layer_tensor, weighable};
+use super::gkr::{GkrProverTranscript, Point, Weighing, carrying_worthwhile, eq_table, prove_dense_rounds, prove_layer_tensor, weighable};
 use super::kernels;
 use crate::{cfg_chunks_mut, cfg_into_iter};
 use field::Gf128 as Gf;
@@ -649,7 +649,9 @@ impl<'a> Forest<'a> {
         }
         // Carrying the column weights, the fold stores `eq_c·E'` (its
         // slots' own two multiplies, moved) and the dense rounds skip them.
-        let carry = self.weighing != Weighing::Off && weighable(&external, s);
+        let carry = self.weighing != Weighing::Off
+            && weighable(&external, s)
+            && carrying_worthwhile(s, low_bits - 2);
         let fold = |arena: &mut Vec<Gf>| match (pre_scaled, carry) {
             (true, true) => self.jit_fold_round_with::<true, true>(
                 &tables, ell, k, r1, &eq_c, &eq_y, send_one, arena,

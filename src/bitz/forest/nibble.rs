@@ -26,6 +26,9 @@ use rayon::prelude::*;
 use super::transposed_patterns;
 use crate::cfg_chunks_mut;
 
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+mod x86;
+
 /// The sixteen bits of each `(y, column)`: entry `(y, g, m)` (at
 /// `(y·groups + g)·64 + m`) has, as bit `w`, the bit of column
 /// `64g + col_of(m)` at row `y + w·2^H`.
@@ -159,7 +162,10 @@ impl NibbleRows {
 /// `out[m] = lo[m] | hi[m] << 8`.
 #[inline(always)]
 fn interleave_bytes(lo: &[u8; 64], hi: &[u8; 64], out: &mut [MaybeUninit<u16>]) {
-    debug_assert_eq!(out.len(), 64);
+    assert_eq!(out.len(), 64);
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    x86::interleave_bytes(lo, hi, out);
+    #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
     for m in 0..64 {
         out[m].write(u16::from(lo[m]) | (u16::from(hi[m]) << 8));
     }
@@ -191,7 +197,10 @@ impl Selector {
 
     /// The selection of one entry (the portable path and the reference).
     #[cfg_attr(
-        all(target_arch = "aarch64", target_feature = "neon"),
+        any(
+            all(target_arch = "aarch64", target_feature = "neon"),
+            all(target_arch = "x86_64", target_feature = "avx2")
+        ),
         allow(dead_code)
     )]
     #[inline(always)]
@@ -213,7 +222,12 @@ pub(crate) fn select<const K: usize>(
 ) {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     neon::select(block, sel, out);
-    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    x86::select(block, sel, out);
+    #[cfg(not(any(
+        all(target_arch = "aarch64", target_feature = "neon"),
+        all(target_arch = "x86_64", target_feature = "avx2")
+    )))]
     for (s, o) in sel.iter().zip(out.iter_mut()) {
         for m in 0..64 {
             o[m] = s.apply(block[m]);
@@ -225,15 +239,22 @@ pub(crate) fn select<const K: usize>(
 /// round, whose tuple byte holds two adjacent rows).
 #[inline(always)]
 pub(crate) fn select_pair(a: &[u16; 64], b: &[u16; 64], sa: &Selector, sb: &Selector) -> [u8; 64] {
-    let mut x = [[0u8; 64]; 1];
-    let mut y = [[0u8; 64]; 1];
-    select(a, core::array::from_ref(sa), &mut x);
-    select(b, core::array::from_ref(sb), &mut y);
-    let mut out = [0u8; 64];
-    for m in 0..64 {
-        out[m] = x[0][m] | y[0][m];
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    {
+        x86::select_pair(a, b, sa, sb)
     }
-    out
+    #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
+    {
+        let mut x = [[0u8; 64]; 1];
+        let mut y = [[0u8; 64]; 1];
+        select(a, core::array::from_ref(sa), &mut x);
+        select(b, core::array::from_ref(sb), &mut y);
+        let mut out = [0u8; 64];
+        for m in 0..64 {
+            out[m] = x[0][m] | y[0][m];
+        }
+        out
+    }
 }
 
 /// Level `ell`'s pattern of corner `p` (`ell + kk = 3`): bit
@@ -353,6 +374,53 @@ mod neon {
                     vst1q_u8(out[i].as_mut_ptr().add(16 * c), v);
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selections_cover_every_sixteen_bit_entry() {
+        // Include both byte projections, reversed bits, and a selection
+        // crossing nibble/byte boundaries. Every input bit pattern is
+        // checked, including all vector packing boundaries in each block.
+        let selectors = [
+            Selector::new((0..8).map(|k| (k, k))),
+            Selector::new((0..8).map(|k| (k, k + 8))),
+            Selector::new((0..8).map(|k| (k, 15 - k))),
+            Selector::new((0..8).map(|k| (k, (3 * k + 5) % 16))),
+        ];
+        for start in (0..=u16::MAX as usize).step_by(64) {
+            let a = std::array::from_fn(|i| (start + i) as u16);
+            let b = a.map(|x| x.reverse_bits() ^ 0xA55A);
+            let mut got = [[0u8; 64]; 4];
+            select(&a, &selectors, &mut got);
+            for (row, selector) in got.iter().zip(&selectors) {
+                assert_eq!(*row, a.map(|x| selector.apply(x)), "start {start}");
+            }
+            let paired = select_pair(&a, &b, &selectors[2], &selectors[3]);
+            let want = std::array::from_fn(|i| selectors[2].apply(a[i]) | selectors[3].apply(b[i]));
+            assert_eq!(paired, want, "paired start {start}");
+        }
+    }
+
+    #[test]
+    fn interleave_preserves_all_bytes_and_output_boundaries() {
+        for start in (0..=u16::MAX as usize).step_by(64) {
+            let words: [u16; 64] = std::array::from_fn(|i| (start + i) as u16);
+            let lo = words.map(|x| x as u8);
+            let hi = words.map(|x| (x >> 8) as u8);
+            let mut out = [MaybeUninit::new(0xA55Au16); 66];
+            interleave_bytes(&lo, &hi, &mut out[1..65]);
+            // SAFETY: all slots were initialized before the call, which
+            // must only replace the middle 64 entries.
+            let out = out.map(|x| unsafe { x.assume_init() });
+            assert_eq!(out[0], 0xA55A);
+            assert_eq!(out[65], 0xA55A);
+            assert_eq!(&out[1..65], &words);
         }
     }
 }

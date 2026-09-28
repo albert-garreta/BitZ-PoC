@@ -139,5 +139,10 @@ current explicit budget. They are historical measurements, not results of this
 cleanup; no runtime tests or benchmarks were executed for this change.
 
 Current v3 kernel performance and validation are in
-[KERNEL_THROUGHPUT.md](KERNEL_THROUGHPUT.md); the preceding v3 protocol changes
-are measured in [THROUGHPUT.md](THROUGHPUT.md).
+[SIMD_THROUGHPUT.md](SIMD_THROUGHPUT.md). Earlier kernel work is measured in
+[KERNEL_THROUGHPUT.md](KERNEL_THROUGHPUT.md), and the preceding v3 protocol
+changes are measured in [THROUGHPUT.md](THROUGHPUT.md).
+The broader [seed validation](SEED_VALIDATION.md) records slower cases as well:
+nine of twelve additional seed medians exceeded 1,000 signatures/second.
+The [nonce investigation](GRINDING_VARIANCE.md) explains the repeatable slow case
+and identifies an analytical PCS grinding-budget reallocation to investigate.

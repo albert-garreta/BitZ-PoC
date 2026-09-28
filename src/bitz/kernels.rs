@@ -64,6 +64,32 @@ use x86 as backend;
 /// flat rounds and the `s = 0` layers).
 const MAX_TASK: usize = 1 << 12;
 
+/// Pointwise multiplication by a reversed table. Equality weights use
+/// this to remove carried column weights without a serial batch inverse.
+pub(crate) fn multiply_reversed_in_place(values: &mut [Gf], weights: &[Gf]) {
+    assert_eq!(values.len(), weights.len());
+    #[cfg(all(
+        target_arch = "x86_64",
+        target_feature = "pclmulqdq",
+        target_feature = "sse4.1",
+        target_feature = "avx512f",
+        target_feature = "avx512bw",
+        target_feature = "vpclmulqdq"
+    ))]
+    x86::multiply_reversed_in_place(values, weights);
+    #[cfg(not(all(
+        target_arch = "x86_64",
+        target_feature = "pclmulqdq",
+        target_feature = "sse4.1",
+        target_feature = "avx512f",
+        target_feature = "avx512bw",
+        target_feature = "vpclmulqdq"
+    )))]
+    for (value, &weight) in values.iter_mut().zip(weights.iter().rev()) {
+        *value = *value * weight;
+    }
+}
+
 /// Pattern blocks come transposed ([`super::forest::transpose_blocks`]):
 /// position `m` of a 64-byte block holds column `((m & 7) << 3) | (m >> 3)`
 /// of its group. Weights are handed over in the same order (`eq_t`), zero
