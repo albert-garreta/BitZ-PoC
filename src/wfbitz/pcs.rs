@@ -24,6 +24,7 @@ use flock_core::zerocheck::PaddingSpec;
 use flock_core::zerocheck::univariate_skip::build_eq;
 use spongefish::Encoding;
 
+use super::colstats::ZStats;
 use super::params::{LinearClaimGf, SumClaimGf, Root, Shape};
 use super::sumcheck;
 use super::transcript::{ProverState, PublicTranscript, VerifierState};
@@ -351,7 +352,7 @@ impl Pcs {
                 if statement_binding == StatementBinding::Bind {
                     bind_mle_statement(self, &root, point, *target, transcript);
                 }
-                self.prove_mle(hint, &ring_switch, *target, transcript, ood, path)
+                self.prove_mle(hint, &ring_switch, *target, transcript, ood, path, None)
             }
             OpeningQuery::InnerProduct { claim } => {
                 validate_inner_product_claim(self, claim)?;
@@ -362,11 +363,19 @@ impl Pcs {
                 }
                 transcript.public_message(SUMCHECK_LABEL);
                 let started = std::time::Instant::now();
-                let reduced = sumcheck::prove(claim, rows, packed_cols, transcript)?;
+                // The column statistics give the ring switch's claims only on
+                // the committed rows themselves (the packed message is theirs).
+                let column_stats = core::ptr::eq(rows, hint.rows())
+                    && path.zstats.applies(
+                        claim.row_weights().len().ilog2() as usize,
+                        claim.column_weights().len().ilog2() as usize,
+                    );
+                let reduced = sumcheck::prove_with(claim, rows, packed_cols, transcript, column_stats)?;
                 super::trace("  sumcheck", started);
                 let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
                 bind_mle_statement(self, &root, &reduced.point, reduced.target, transcript);
-                self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood, path)
+                let claims = reduced.ring_switch_claims;
+                self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood, path, claims)
             }
             OpeningQuery::InnerProductSum { claim } => {
                 validate_sum_claim(self, claim)?;
@@ -379,7 +388,7 @@ impl Pcs {
                 super::trace("  sumcheck (sum)", started);
                 let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
                 bind_mle_statement(self, &root, &reduced.point, reduced.target, transcript);
-                self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood, path)
+                self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood, path, None)
             }
         }
     }
@@ -427,7 +436,9 @@ impl Pcs {
     }
 
     /// Their `prove_mle`: the 128 ring-switch claims, seven batching
-    /// challenges, the dense packed basis, then Ligerito.
+    /// challenges, the dense packed basis, then Ligerito. `claims`: the
+    /// ring-switch claims when the sumcheck already has them.
+    #[allow(clippy::too_many_arguments)]
     fn prove_mle(
         &self,
         hint: &FlockCommitHint,
@@ -436,6 +447,7 @@ impl Pcs {
         transcript: &mut ProverState,
         ood: Option<(&[Gf], Gf)>,
         path: OpeningPath,
+        claims: Option<Vec<Gf>>,
     ) -> Result<(), ProveError> {
         let started_rs = std::time::Instant::now();
         let packed = hint.packed_message();
@@ -452,14 +464,20 @@ impl Pcs {
         if suffix.len() != packed.len() {
             return Err(ProveError::PackedWitnessLengthMismatch);
         }
-        let started = std::time::Instant::now();
-        let claims = match &suffix {
-            SuffixEq::Dense(tensor) => fold_1b_rows_naive(packed, tensor),
-            SuffixEq::Split { lo, hi } => {
-                fold_1b_rows_split(packed, lo, hi, &PaddingSpec::dense(self.params.m))
+        let claims = match claims {
+            Some(claims) => claims,
+            None => {
+                let started = std::time::Instant::now();
+                let claims = match &suffix {
+                    SuffixEq::Dense(tensor) => fold_1b_rows_naive(packed, tensor),
+                    SuffixEq::Split { lo, hi } => {
+                        fold_1b_rows_split(packed, lo, hi, &PaddingSpec::dense(self.params.m))
+                    }
+                };
+                super::trace("    rs fold 1b", started);
+                claims
             }
         };
-        super::trace("    rs fold 1b", started);
         let claims: [FlockF128; CLAIM_COUNT] = claims
             .try_into()
             .map_err(|_: Vec<FlockF128>| ProveError::Internal)?;
@@ -637,6 +655,12 @@ pub(crate) struct OpeningPath {
     /// per proof for the tensor or the basis (`WFBITZ_RS_SPLIT`, default
     /// on; needs `m ≥ 11`).
     pub(crate) split: bool,
+    /// The inner-product sumcheck computes its row-folded table from the
+    /// column statistics ([`super::colstats`]), which also give the 128
+    /// claims: one pass over the bits instead of the row fold plus the
+    /// ring switch's fold (`WFBITZ_ZSTATS`: `0` off, `1` wherever it fits,
+    /// default where it pays).
+    pub(crate) zstats: ZStats,
 }
 
 impl OpeningPath {
@@ -652,6 +676,7 @@ impl OpeningPath {
             OpeningPath {
                 borrow: flag("WFBITZ_RS_BORROW", true),
                 split: flag("WFBITZ_RS_SPLIT", true),
+                zstats: ZStats::from_env(),
             }
         })
     }
@@ -1477,15 +1502,23 @@ mod tests {
         }
     }
 
-    /// The original opening: the suffix tensor, a copy for Ligerito.
-    const REFERENCE: OpeningPath = OpeningPath { borrow: false, split: false };
+    /// The original opening: the row fold, the suffix tensor, a copy for
+    /// Ligerito.
+    const REFERENCE: OpeningPath = OpeningPath {
+        borrow: false,
+        split: false,
+        zstats: ZStats::Off,
+    };
 
-    /// Every path the knobs select.
+    /// Every path the knobs select (the statistics forced wherever they
+    /// fit, so the small grids take them too).
     fn paths() -> Vec<OpeningPath> {
         vec![
             OpeningPath { borrow: true, ..REFERENCE },
             OpeningPath { split: true, ..REFERENCE },
-            OpeningPath { borrow: true, split: true },
+            OpeningPath { zstats: ZStats::Force, ..REFERENCE },
+            OpeningPath { borrow: true, split: true, zstats: ZStats::Force },
+            OpeningPath { borrow: true, split: true, zstats: ZStats::Auto },
         ]
     }
 

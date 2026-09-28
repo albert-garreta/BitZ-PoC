@@ -32,6 +32,7 @@
 
 pub mod chained;
 pub mod codec;
+pub(crate) mod colstats;
 pub mod fold;
 pub mod forest;
 pub mod gkr;

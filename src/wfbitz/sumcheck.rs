@@ -8,6 +8,7 @@
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
+use super::colstats::ColumnStats;
 use super::params::{LinearClaimGf, SumClaimGf};
 use super::pcs::{ProveError, VerifyError};
 use super::transcript::{ProverState, VerifierState};
@@ -27,6 +28,10 @@ pub(crate) struct MleClaim {
     pub(crate) point: Vec<Gf>,
     /// The witness MLE evaluation at `point`.
     pub(crate) target: Gf,
+    /// The ring switch's 128 claims at `point` on the committed packed
+    /// message, read off the column statistics when [`prove_with`] was
+    /// asked for them; `None` otherwise.
+    pub(crate) ring_switch_claims: Option<Vec<Gf>>,
 }
 
 /// `Σ_b eq(b, point)·bit(c, b)` for every column `c`: the witness after its
@@ -36,7 +41,7 @@ pub(crate) struct MleClaim {
 /// in word w} eq_lo[j]`: the inner sums come out of one 32 KB byte table
 /// over `eq_lo` (eight lookups per word), the outer one is a multiply per
 /// word. Exact: the same field products regrouped.
-fn fold_rows_point(rows: &[Vec<u64>], point: &[Gf]) -> Vec<Gf> {
+pub(crate) fn fold_rows_point(rows: &[Vec<u64>], point: &[Gf]) -> Vec<Gf> {
     const LOW: usize = 6;
     if point.len() < LOW {
         let eq = if point.is_empty() {
@@ -148,6 +153,21 @@ pub(crate) fn prove(
     packed_cols: &[Vec<u64>],
     transcript: &mut ProverState,
 ) -> Result<MleClaim, ProveError> {
+    prove_with(claim, rows_bits, packed_cols, transcript, false)
+}
+
+/// [`prove`], and with `column_stats` (the caller's rows are the committed
+/// ones, `t ≥ 11`: [`ColumnStats::fits`]) the row-folded table comes from
+/// the column statistics, which then also give the ring switch's claims
+/// ([`MleClaim::ring_switch_claims`]): one pass over the bits for both.
+/// The same messages either way.
+pub(crate) fn prove_with(
+    claim: &LinearClaimGf,
+    rows_bits: &[Vec<u64>],
+    packed_cols: &[Vec<u64>],
+    transcript: &mut ProverState,
+    column_stats: bool,
+) -> Result<MleClaim, ProveError> {
     let w1 = claim.row_weights();
     let w2 = claim.column_weights();
     if rows_bits.len() != w2.len() || rows_bits.iter().any(|row| row.len() * 64 != w1.len()) {
@@ -189,7 +209,12 @@ pub(crate) fn prove(
 
     // Columns: the row-folded table against `w1(r_b)·column_weights`.
     let started = std::time::Instant::now();
-    let mut folded = fold_rows_point(rows_bits, &point);
+    let (mut folded, stats) = if column_stats && ColumnStats::fits(layout.row_vars) {
+        let (stats, folded) = ColumnStats::new(rows_bits, &point);
+        (folded, Some(stats))
+    } else {
+        (fold_rows_point(rows_bits, &point), None)
+    };
     super::trace("    sc fold rows", started);
     let row_scalar = rows[0];
     let mut columns: Vec<Gf> = w2.iter().map(|&w| row_scalar * w).collect();
@@ -211,9 +236,16 @@ pub(crate) fn prove(
         return Err(ProveError::InvalidClaim);
     }
     transcript.prover_message(&evaluation);
+    let ring_switch_claims = stats.map(|stats| {
+        let started = std::time::Instant::now();
+        let claims = stats.ring_switch_claims(&point[layout.row_vars..]);
+        super::trace("    sc rs claims", started);
+        claims
+    });
     Ok(MleClaim {
         point,
         target: evaluation,
+        ring_switch_claims,
     })
 }
 
@@ -251,6 +283,7 @@ pub(crate) fn verify(
     Ok(MleClaim {
         point,
         target: evaluation,
+        ring_switch_claims: None,
     })
 }
 
@@ -340,6 +373,7 @@ pub(crate) fn prove_sum(
     Ok(MleClaim {
         point,
         target: evaluation,
+        ring_switch_claims: None,
     })
 }
 
@@ -397,6 +431,7 @@ pub(crate) fn verify_sum(
     Ok(MleClaim {
         point,
         target: evaluation,
+        ring_switch_claims: None,
     })
 }
 
