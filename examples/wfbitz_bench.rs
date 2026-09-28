@@ -154,6 +154,8 @@ fn main() {
     let mut verify_times = Vec::with_capacity(reps);
     let mut phase_times: Vec<(String, Vec<Duration>)> = Vec::new();
     let mut sizes = (0usize, 0usize);
+    // A digest of every proof, so A/B runs can check the bytes are identical.
+    let mut digests: Vec<[u8; 32]> = Vec::new();
     for rep in 0..=reps {
         record_phases(true);
         let started = Instant::now();
@@ -179,7 +181,15 @@ fn main() {
             .expect("verify");
         verify_times.push(started.elapsed());
         sizes = (proof.narg_string.len(), proof.hints.len());
+        let mut h = blake3::Hasher::new();
+        h.update(&(proof.narg_string.len() as u64).to_le_bytes());
+        h.update(&proof.narg_string);
+        h.update(&proof.hints);
+        digests.push(*h.finalize().as_bytes());
     }
+    // The inputs are seeded, so every rep proves the same statement.
+    assert!(digests.windows(2).all(|w| w[0] == w[1]), "proof bytes differ between reps");
+    let digest: String = digests[0][..8].iter().map(|b| format!("{b:02x}")).collect();
     let prove = median(&prove_times);
     let verify = median(&verify_times);
     let phase = |label: &str| -> Duration {
@@ -203,7 +213,7 @@ fn main() {
     let rss = peak_rss_bytes();
     println!("peak rss: {:.2} GB", rss as f64 / 1e9);
     println!(
-        "RESULT schema=bitz-bench/1 n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder} commit_ms={:.3} prove_ms={:.3} grand_ms={:.3} ring_ms={:.3} lig_ms={:.3} verify_ms={:.3} narg_bytes={} hints_bytes={} peak_rss_bytes={rss}",
+        "RESULT schema=bitz-bench/1 n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder} commit_ms={:.3} prove_ms={:.3} grand_ms={:.3} ring_ms={:.3} lig_ms={:.3} verify_ms={:.3} narg_bytes={} hints_bytes={} proof_digest={digest} peak_rss_bytes={rss}",
         ms(commit), ms(prove), ms(grand), ms(ring), ms(lig), ms(verify), sizes.0, sizes.1
     );
 }
