@@ -72,12 +72,19 @@ pub struct InterleavedNttSchedule {
     /// `num_ntts` half-width butterflies, so the span sum costs about as much
     /// as the work it feeds.
     pub twiddle_walk: bool,
+    /// Run the half-width deepest layers of the deep pass depth-first: each
+    /// block of the first of them (a few KB) runs through all of them while
+    /// it is L1-resident, instead of one sweep of the ~2 MB sub-group per
+    /// layer (`NTT_DEEP_TAIL_DF`, default off: it measured neutral at
+    /// n = 28 and 30, 1 and 10 threads).
+    pub depth_first_tail: bool,
 }
 
 impl InterleavedNttSchedule {
     /// Every switch off: the schedule before the switches existed.
     pub const BASELINE: Self = Self {
         twiddle_walk: false,
+        depth_first_tail: false,
     };
 
     /// The environment's switches (`0` or `1` each; unset keeps the
@@ -92,6 +99,7 @@ impl InterleavedNttSchedule {
             };
             Self {
                 twiddle_walk: flag("NTT_TWIDDLE_WALK", true),
+                depth_first_tail: flag("NTT_DEEP_TAIL_DF", false),
             }
         })
     }
@@ -624,7 +632,9 @@ impl AdditiveNttF128 {
         // not DRAM-bound, so in-cache traffic and instruction count are what
         // matter). The three deepest layers stay single-layer: their twiddles
         // are all half-width (see `mul_polynomial_u64`) and the fast path in
-        // `butterfly_interleaved_block` beats fusion's general muls.
+        // `butterfly_interleaved_block` beats fusion's general muls. Under
+        // `depth_first_tail` those three run depth-first instead of as three
+        // sweeps of the sub-group.
         // `NTT_DEEP_NOFUSE` restores per-layer sweeps (A/B).
         let fuse = !NTT_DEEP_NOFUSE.load(std::sync::atomic::Ordering::Relaxed)
             && std::env::var("NTT_DEEP_NOFUSE").is_err();
@@ -641,6 +651,20 @@ impl AdditiveNttF128 {
                         let block_size = 1usize << (log_d - layer);
                         let block_bytes = block_size * num_ntts;
 
+                        if schedule.depth_first_tail
+                            && layer >= halfwidth_start
+                            && layer + 1 < log_d
+                        {
+                            self.deep_tail_depth_first(
+                                sub_data,
+                                num_ntts,
+                                layer,
+                                log_d,
+                                first_block,
+                                walk,
+                            );
+                            break;
+                        }
                         if fuse && layer + 2 <= halfwidth_start && block_size >= 4 {
                             let quarter = block_size >> 2;
                             let mut outer = self.layer_twiddles(layer, first_block, walk);
@@ -693,6 +717,49 @@ impl AdditiveNttF128 {
             crate::all_core_pool().install(|| deep(data));
         } else {
             deep(data);
+        }
+    }
+
+    /// Layers `layer..log_d` of one deep sub-group, depth-first: each
+    /// layer-`layer` block (`2^(log_d − layer)` positions, a few KB) runs
+    /// through every remaining layer while it is L1-resident, instead of
+    /// one sweep of the whole sub-group per layer. Same butterflies and
+    /// twiddles; a block's butterflies at layer `l + 1` read only its own
+    /// layer-`l` outputs. `first_block` is the sub-group's first global block
+    /// at `layer`.
+    #[cfg(any(
+        all(target_arch = "aarch64", target_feature = "aes"),
+        all(target_arch = "x86_64", target_feature = "pclmulqdq"),
+    ))]
+    fn deep_tail_depth_first(
+        &self,
+        sub_data: &mut [Gf128],
+        num_ntts: usize,
+        layer: usize,
+        log_d: usize,
+        first_block: usize,
+        walk: bool,
+    ) {
+        let depth = log_d - layer;
+        let block_bytes = (1usize << depth) * num_ntts;
+        // Layer `layer + j`'s blocks inside layer-`layer` block `b` are
+        // `2^j·b .. 2^j·(b + 1)`, so each layer's walk stays in order.
+        let mut twiddles: Vec<LayerTwiddles<'_>> = (0..depth)
+            .map(|j| self.layer_twiddles(layer + j, first_block << j, walk))
+            .collect();
+        for block in sub_data.chunks_exact_mut(block_bytes) {
+            for (j, layer_twiddles) in twiddles.iter_mut().enumerate() {
+                let sub_block_bytes = block_bytes >> j;
+                let block_size_half = 1usize << (depth - j - 1);
+                for sub_block in block.chunks_exact_mut(sub_block_bytes) {
+                    butterfly_interleaved_block(
+                        sub_block,
+                        layer_twiddles.take(),
+                        block_size_half,
+                        num_ntts,
+                    );
+                }
+            }
         }
     }
 
@@ -1433,9 +1500,10 @@ mod tests {
 
     /// Every combination of the schedule switches.
     fn all_schedules() -> Vec<InterleavedNttSchedule> {
-        (0..2u8)
+        (0..4u8)
             .map(|bits| InterleavedNttSchedule {
                 twiddle_walk: bits & 1 != 0,
+                depth_first_tail: bits & 2 != 0,
             })
             .collect()
     }
@@ -1463,9 +1531,9 @@ mod tests {
 
     /// Every schedule of the interleaved transform is byte-identical to the
     /// scalar reference: shapes with fused and single top layers, a fused
-    /// deep pass ending on single layers, sub-groups whose first deep layer
-    /// is already a half-width one, and start layers 0..=2, at 1 and 4
-    /// threads (the thread count moves the top/deep split).
+    /// deep pass ending on a single layer before the tail, sub-groups whose
+    /// first deep layer is already in the tail, and start layers 0..=2, at
+    /// 1 and 4 threads (the thread count moves the top/deep split).
     #[test]
     fn schedules_match_scalar() {
         let mut rng = Rng::new(0x5CED);
