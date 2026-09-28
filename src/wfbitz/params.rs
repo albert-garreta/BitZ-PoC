@@ -105,6 +105,8 @@ impl Shape {
 /// A parameter set one of the pre-claim gates rejects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParamsError {
+    /// `q` is not odd and in `3..2^126`, or fails the probable-prime check.
+    InvalidModulus,
     /// `(k_1 + 1)(Q - 1)` reaches `ord(g)`.
     FoldBoundExceeded,
     /// The generator's order is not the full group.
@@ -121,10 +123,16 @@ pub struct BitZParams {
 }
 
 impl BitZParams {
-    /// Runs the gates that need only the parameters. `q` must be an odd
-    /// prime below `2^126` (their `Fq<Q>` asserts that at compile time; the
-    /// harness supplies the same constant).
+    /// Runs the parameter gates, including the field crate's probable-prime
+    /// check. `q` must be an odd prime below `2^126`.
     pub fn new(shape: Shape, q: u128, generator: Gf) -> Result<Self, ParamsError> {
+        if q < 3
+            || q & 1 == 0
+            || q >= (1u128 << 126)
+            || !field::is_probable_prime_public(&field::Uint::from(q))
+        {
+            return Err(ParamsError::InvalidModulus);
+        }
         let Some(gap) = (q - 1).checked_mul(shape.rows() as u128 + 1) else {
             return Err(ParamsError::FoldBoundExceeded);
         };
@@ -181,6 +189,12 @@ pub struct Root(pub [u8; 32]);
 pub enum ClaimError {
     RowWeightCountMismatch,
     ColumnWeightCountMismatch,
+    /// A row weight is not a canonical residue below the active modulus.
+    RowWeightOutOfRange,
+    /// A column weight is not a canonical residue below the active modulus.
+    ColumnWeightOutOfRange,
+    /// The target is not a canonical residue below the active modulus.
+    TargetOutOfRange,
 }
 
 /// Their `LinearClaim<Fq<Q>>`: the caller's `x_core`, weights as canonical
@@ -199,18 +213,36 @@ impl LinearClaim {
         column_weights: Vec<u128>,
         target: u128,
     ) -> Result<Self, ClaimError> {
-        let shape = params.shape();
-        if row_weights.len() != shape.rows() {
-            return Err(ClaimError::RowWeightCountMismatch);
-        }
-        if column_weights.len() != shape.columns() {
-            return Err(ClaimError::ColumnWeightCountMismatch);
-        }
-        Ok(Self {
+        let claim = Self {
             row_weights,
             column_weights,
             target,
-        })
+        };
+        claim.validate(params)?;
+        Ok(claim)
+    }
+
+    /// Checks the claim against the parameters used for this proof, which
+    /// may differ from the parameters supplied to the constructor.
+    pub(crate) fn validate(&self, params: &BitZParams) -> Result<(), ClaimError> {
+        let shape = params.shape();
+        if self.row_weights.len() != shape.rows() {
+            return Err(ClaimError::RowWeightCountMismatch);
+        }
+        if self.column_weights.len() != shape.columns() {
+            return Err(ClaimError::ColumnWeightCountMismatch);
+        }
+        let q = params.q();
+        if self.row_weights.iter().any(|&weight| weight >= q) {
+            return Err(ClaimError::RowWeightOutOfRange);
+        }
+        if self.column_weights.iter().any(|&weight| weight >= q) {
+            return Err(ClaimError::ColumnWeightOutOfRange);
+        }
+        if self.target >= q {
+            return Err(ClaimError::TargetOutOfRange);
+        }
+        Ok(())
     }
 
     /// The canonical representatives the fold exponentiates (the residues
@@ -368,5 +400,94 @@ impl Encoding<[u8]> for LinearClaimGf {
         }
         bytes.extend_from_slice(&gf_to_bytes(self.target));
         bytes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn params() -> BitZParams {
+        BitZParams::new(
+            Shape::new(7, 1).unwrap(),
+            17,
+            crate::pcs::smallest_generator().into(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn modulus_validation_rejects_invalid_inputs() {
+        let shape = Shape::new(7, 1).unwrap();
+        let generator = crate::pcs::smallest_generator().into();
+        for q in [0, 1, 2, 4, 9, 561, 59 * 61, 1u128 << 126, u128::MAX] {
+            assert_eq!(
+                BitZParams::new(shape, q, generator),
+                Err(ParamsError::InvalidModulus),
+                "q = {q}"
+            );
+        }
+        for q in [3, 17, 31, (1u128 << 100) - 15] {
+            assert!(BitZParams::new(shape, q, generator).is_ok(), "q = {q}");
+        }
+    }
+
+    #[test]
+    fn parameter_validation_preserves_fold_and_generator_gates() {
+        assert_eq!(
+            BitZParams::new(
+                Shape::new(35, 0).unwrap(),
+                (1u128 << 100) - 15,
+                crate::pcs::smallest_generator().into(),
+            ),
+            Err(ParamsError::FoldBoundExceeded)
+        );
+        assert_eq!(
+            BitZParams::new(Shape::new(7, 1).unwrap(), 17, Gf::one()),
+            Err(ParamsError::GeneratorOrderNotFull)
+        );
+    }
+
+    #[test]
+    fn linear_claim_rejects_noncanonical_residues() {
+        let params = params();
+        let shape = params.shape();
+        for invalid in [params.q(), params.q() + 1, u128::MAX] {
+            let mut rows = vec![0; shape.rows()];
+            *rows.last_mut().unwrap() = invalid;
+            assert_eq!(
+                LinearClaim::new(&params, rows, vec![0; shape.columns()], 0),
+                Err(ClaimError::RowWeightOutOfRange)
+            );
+
+            let mut columns = vec![0; shape.columns()];
+            *columns.last_mut().unwrap() = invalid;
+            assert_eq!(
+                LinearClaim::new(&params, vec![0; shape.rows()], columns, 0),
+                Err(ClaimError::ColumnWeightOutOfRange)
+            );
+            assert_eq!(
+                LinearClaim::new(
+                    &params,
+                    vec![0; shape.rows()],
+                    vec![0; shape.columns()],
+                    invalid,
+                ),
+                Err(ClaimError::TargetOutOfRange)
+            );
+        }
+    }
+
+    #[test]
+    fn linear_claim_accepts_canonical_boundaries() {
+        let params = params();
+        for value in [0, params.q() - 1] {
+            let rows = vec![value; params.shape().rows()];
+            let columns = vec![value; params.shape().columns()];
+            let claim = LinearClaim::new(&params, rows.clone(), columns.clone(), value).unwrap();
+            assert_eq!(claim.row_weights(), rows);
+            assert_eq!(claim.column_weights(), columns);
+            assert_eq!(claim.target(), value);
+        }
     }
 }

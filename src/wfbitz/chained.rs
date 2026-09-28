@@ -67,7 +67,7 @@ pub enum ChainedError {
     Tail,
     /// The native derived index width is too small for the grids.
     Width,
-    /// The claim's weights do not match the derived grid.
+    /// The claim does not match the derived grid or has noncanonical residues.
     Claim,
     /// The reduced query is not the factored claim the GKR produces.
     UnsupportedQuery,
@@ -535,9 +535,9 @@ impl<'a> ChainedStatement<'a> {
         if *claim_params.shape() != shape {
             return Err(ChainedError::ParameterMismatch);
         }
-        if claim.row_weights().len() != shape.rows() || claim.column_weights().len() != shape.columns() {
-            return Err(ChainedError::Claim);
-        }
+        claim
+            .validate(&claim_params)
+            .map_err(|_| ChainedError::Claim)?;
         Ok(Self {
             claim_params,
             geometry,

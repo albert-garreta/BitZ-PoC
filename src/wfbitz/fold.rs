@@ -8,7 +8,7 @@ use rayon::prelude::*;
 use crate::cfg_into_iter;
 
 use super::forest::NibbleRows;
-use super::params::{LinearClaim, Shape};
+use super::params::{ClaimError, LinearClaim, Shape};
 use super::transcript::{ProverState, VerifierState};
 use super::{BitZProver, BitZVerifier};
 use crate::ligerito::mle_eval;
@@ -18,12 +18,16 @@ use field::Gf128 as Gf;
 /// A fold the prover cannot produce.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SendError {
+    /// The claim is invalid under the prover's active parameters.
+    Claim(ClaimError),
     ShapeMismatch,
 }
 
 /// A fold the verifier rejects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReceiveError {
+    /// The claim is invalid under the verifier's active parameters.
+    Claim(ClaimError),
     /// A record is missing or does not decode.
     MalformedProof,
     /// A fold is above `k_1 (q - 1)`, where its image stops determining it.
@@ -237,6 +241,7 @@ impl BitZProver {
         nibble: Option<&NibbleRows>,
         transcript: &mut ProverState,
     ) -> Result<Fold, SendError> {
+        claim.validate(self.params()).map_err(SendError::Claim)?;
         let shape = self.params().shape();
         if rows.len() != shape.columns() {
             return Err(SendError::ShapeMismatch);
@@ -268,6 +273,7 @@ impl BitZVerifier {
         claim: &LinearClaim,
         transcript: &mut VerifierState<'_>,
     ) -> Result<Fold, ReceiveError> {
+        claim.validate(self.params()).map_err(ReceiveError::Claim)?;
         let shape = self.params().shape();
         let folds = (0..shape.columns())
             .map(|_| {
@@ -294,7 +300,87 @@ impl BitZVerifier {
 mod tests {
     use num_bigint::BigUint;
 
-    use super::weighted_sum_mod;
+    use super::{ClaimError, LinearClaim, ReceiveError, SendError, Shape, weighted_sum_mod};
+    use crate::wfbitz::{
+        BitZParams, BitZProver, BitZVerifier, Proof, WINDOW, build_prover, build_verifier,
+    };
+
+    #[test]
+    fn fold_checks_active_claim_parameters_before_transcript_io() {
+        let shape = Shape::new(7, 1).unwrap();
+        let generator = crate::pcs::smallest_generator().into();
+        let active = BitZParams::new(shape, 17, generator).unwrap();
+        let prover = BitZProver::new(active, WINDOW);
+        let verifier = BitZVerifier::new(active, WINDOW);
+        let rows = vec![vec![0; shape.rows() / 64]; shape.columns()];
+        for (claim_shape, row, column, target, error) in [
+            (shape, 17, 0, 0, ClaimError::RowWeightOutOfRange),
+            (shape, 0, 17, 0, ClaimError::ColumnWeightOutOfRange),
+            (shape, 0, 0, 17, ClaimError::TargetOutOfRange),
+            (
+                Shape::new(8, 1).unwrap(),
+                0,
+                0,
+                0,
+                ClaimError::RowWeightCountMismatch,
+            ),
+            (
+                Shape::new(7, 2).unwrap(),
+                0,
+                0,
+                0,
+                ClaimError::ColumnWeightCountMismatch,
+            ),
+        ] {
+            // Valid under the constructor's parameters, invalid under the
+            // parameters of the prover and verifier that receive the claim.
+            let source = BitZParams::new(claim_shape, 31, generator).unwrap();
+            let claim = LinearClaim::new(
+                &source,
+                vec![row; claim_shape.rows()],
+                vec![column; claim_shape.columns()],
+                target,
+            )
+            .unwrap();
+            let mut pt = build_prover("fold-validation", "active-params");
+            assert_eq!(
+                prover.send_fold(&claim, &rows, &mut pt),
+                Err(SendError::Claim(error))
+            );
+            let proof = pt.finish();
+            assert_eq!(proof, Proof::default());
+            let mut vt = build_verifier("fold-validation", "active-params", &proof);
+            assert_eq!(
+                verifier.receive_fold(&claim, &mut vt),
+                Err(ReceiveError::Claim(error))
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_fold_roundtrips_under_active_parameters() {
+        let shape = Shape::new(7, 1).unwrap();
+        let generator = crate::pcs::smallest_generator().into();
+        let source = BitZParams::new(shape, 31, generator).unwrap();
+        let active = BitZParams::new(shape, 17, generator).unwrap();
+        let mut rows = vec![vec![0; shape.rows() / 64]; shape.columns()];
+        rows[0][0] = 1;
+        let mut weights = vec![0; shape.rows()];
+        weights[0] = 16;
+        let claim = LinearClaim::new(&source, weights, vec![1, 16], 16).unwrap();
+        let mut pt = build_prover("fold-validation", "canonical");
+        let sent = BitZProver::new(active, WINDOW)
+            .send_fold(&claim, &rows, &mut pt)
+            .unwrap();
+        let proof = pt.finish();
+        let mut vt = build_verifier("fold-validation", "canonical", &proof);
+        let received = BitZVerifier::new(active, WINDOW)
+            .receive_fold(&claim, &mut vt)
+            .unwrap();
+        assert_eq!(sent.folds, vec![16, 0]);
+        assert_eq!(sent, received);
+        vt.check_eof().unwrap();
+    }
 
     fn reference(weights: &[u128], folds: &[u128], q: u128) -> u128 {
         let modulus = BigUint::from(q);

@@ -48,7 +48,7 @@ pub enum VirtualError {
     ClaimShapeTooSmall,
     /// The map has more source cells than the committed grid.
     CommittedShapeTooSmall,
-    /// The claim's weights do not match the claim grid.
+    /// The claim does not match the grid or has noncanonical residues.
     Claim(ClaimError),
     /// The single-column committed shape is not a valid shape.
     Shape(ShapeError),
@@ -85,12 +85,7 @@ impl<'a, M: VirtualMap> VirtualStatement<'a, M> {
         if map.cols() > 1usize << committed.log_bits() {
             return Err(VirtualError::CommittedShapeTooSmall);
         }
-        if claim.row_weights().len() != claim_params.shape().rows() {
-            return Err(VirtualError::Claim(ClaimError::RowWeightCountMismatch));
-        }
-        if claim.column_weights().len() != claim_params.shape().columns() {
-            return Err(VirtualError::Claim(ClaimError::ColumnWeightCountMismatch));
-        }
+        claim.validate(&claim_params).map_err(VirtualError::Claim)?;
         Ok(Self {
             claim_params,
             committed,
@@ -323,6 +318,20 @@ mod tests {
     use circuit::linear_map::{CscMatrix, binary::PreparedVirtualMap};
 
     const Q: u128 = (1u128 << 100) - 15;
+
+    #[test]
+    fn virtual_statement_rechecks_claim_modulus() {
+        let shape = Shape::new(7, 1).unwrap();
+        let generator = crate::pcs::smallest_generator().into();
+        let source = BitZParams::new(shape, 31, generator).unwrap();
+        let active = BitZParams::new(shape, 17, generator).unwrap();
+        let claim = LinearClaim::new(&source, vec![17; shape.rows()], vec![1; 2], 0).unwrap();
+        let map = map(1usize << shape.log_bits(), 1usize << shape.log_bits());
+        assert!(matches!(
+            VirtualStatement::new(active, shape, &map, &claim),
+            Err(VirtualError::Claim(ClaimError::RowWeightOutOfRange))
+        ));
+    }
 
     #[test]
     fn transpose_query_respects_map_extent_and_layout() {
