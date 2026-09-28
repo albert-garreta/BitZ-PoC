@@ -390,6 +390,18 @@ pub fn historical_sha_lig_configs(
     custom_johnson_config(m, 1, 4).to_prover_verifier_configs()
 }
 
+/// Round-0 parameters matching [`historical_sha_lig_configs`]: its Johnson
+/// ladder (from `m = 22` on) runs Round 0, its ad-hoc configs below need none.
+pub fn historical_sha_lig_ood_params(m_p: usize) -> Option<OodRoundParams> {
+    let m = m_p + LOG_PACKING;
+    if m < 22 {
+        return None;
+    }
+    let config = custom_johnson_config(m, 1, 4);
+    let target = u32::try_from(config.target_security_bits).ok()?;
+    ood_round_params(&config, m_p, target)
+}
+
 /// Production fixed-modulus default; unsupported shapes are errors.
 pub fn sha_lig_configs(m_p: usize) -> Result<(LigProverConfig, LigVerifierConfig), String> {
     let resolved = LigeritoSelection::JOHNSON.resolve(m_p, 100)?;
@@ -1333,7 +1345,6 @@ const RS_OPEN_STATEMENT_DOMAIN: &[u8] = b"bitz/ligerito-flock/rs-open/v1";
 const RS_EVAL_STATEMENT_DOMAIN: &[u8] = b"bitz/ligerito-flock/rs-eval/v1";
 #[allow(dead_code)]
 const RS_EVAL_BATCH_STATEMENT_DOMAIN: &[u8] = b"bitz/ligerito-flock/rs-eval-batch/v1";
-#[allow(dead_code)]
 const MOD_Q_STATEMENT_DOMAIN: &[u8] = b"bitz/ligerito-flock/mod-q/v1";
 const U32_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] = b"bitz/spartan-bitz/u32-mod-q-opening/v2";
 const U64_MOD_Q_WEIGHT_CHUNKS_STATEMENT_DOMAIN: &[u8] = b"bitz/spartan-bitz/u64-mod-q-opening/v1";
@@ -1679,7 +1690,13 @@ fn absorb_rs_eval_batch_statement(
     frame.gf128(0x31, alpha);
 }
 
-#[allow(dead_code)]
+/// Bind the statement of the public mod-q opening
+/// ([`prove_mle_eval_mod_q_ligerito`], [`verify_mle_eval_mod_q_ligerito`]
+/// and their variants) before its first challenge: the commitment, the
+/// ladder, the tensor shape, every row weight, the prime width and the
+/// generator. The column weights and the claimed value need no frame: they
+/// enter only the final read-off, which recombines folds the protocol has
+/// already tied to the committed bits under these row weights.
 fn absorb_mod_q_statement(
     transcript: &mut impl Transcript,
     commitment: &Commitment,
@@ -1697,6 +1714,18 @@ fn absorb_mod_q_statement(
     frame.usize(0x31, q_bits);
     frame.gf128(0x32, alpha);
     BoundModQStatement::new()
+}
+
+/// Whether a ladder is beyond unique decoding (the Johnson regime), whose
+/// first level's list only the outer Round 0 binds: such ladders sample out
+/// of domain at every level but the first (the crate's solvers and flock's
+/// embedded profiles alike), unique-decoding ones at none.
+fn needs_round0(config: &impl LigeritoStatementConfig) -> bool {
+    config
+        .ood_samples()
+        .iter()
+        .skip(1)
+        .any(|&samples| samples > 0)
 }
 
 /// Bind a compact statement digest instead of a dense row-weight table while
@@ -1790,8 +1819,8 @@ pub struct StandaloneInstance {
 }
 
 /// Round-1-style draw after the statement is bound: `q` from the interval,
-/// then the point coordinates uniformly mod `q`. Both sides run this; the
-/// prover's precomputed instance must match (asserted by the caller).
+/// then the point coordinates uniformly mod `q`. Both sides run this
+/// ([`StandaloneModQOpening`] inside every prove and verify).
 pub fn sample_standalone_instance(
     transcript: &mut impl Transcript,
     p: &IntegerMatrixLayout,
@@ -1831,6 +1860,141 @@ pub fn eq_table_mod_q(arith: &field::FpCtx<2>, r: &[u128]) -> Vec<u128> {
         table = next;
     }
     table
+}
+
+/// The standalone opening the `bitz` CLI and `benches/pcs.rs` measure: the
+/// claim `⟨eq(·, r₁) ⊗ eq(·, r₂), f⟩ = μ` over a transcript-sampled prime and
+/// point, with every public input bound before the challenges that depend
+/// on it — the statement frame ([`absorb_standalone_mod_q_statement`]), the
+/// ladder's policy, Round 0 when the ladder needs it, the prime and point
+/// draws ([`sample_standalone_instance`]) and the claim frame
+/// ([`absorb_standalone_mod_q_claim`]) — then the opening on that transcript.
+/// Every call starts its own transcript, so nothing is left for a caller to
+/// bind.
+#[derive(Clone, Copy, Debug)]
+pub struct StandaloneModQOpening<'a> {
+    layout: &'a IntegerMatrixLayout,
+    alpha: Gf,
+    q_bits: usize,
+    ood: Option<OodRoundParams>,
+    ligerito: &'a ResolvedLigerito,
+}
+
+impl<'a> StandaloneModQOpening<'a> {
+    /// The opening of `layout` under `ligerito`, with Round-0 parameters
+    /// `ood` (present exactly when the ladder is beyond unique decoding: see
+    /// [`ood_round_params`]) and `q_bits`-bit evaluation primes
+    /// ([`standalone_q_bits`]).
+    pub fn new(
+        layout: &'a IntegerMatrixLayout,
+        alpha: Gf,
+        q_bits: usize,
+        ood: Option<OodRoundParams>,
+        ligerito: &'a ResolvedLigerito,
+    ) -> Result<Self, FlockRsError> {
+        if ood.is_some() != ligerito.ood_bits().is_some() {
+            return Err(FlockRsError::OodRound);
+        }
+        Ok(Self {
+            layout,
+            alpha,
+            q_bits,
+            ood,
+            ligerito,
+        })
+    }
+
+    fn bind_statement(&self, transcript: &mut impl Transcript, commitment: &Commitment) {
+        absorb_standalone_mod_q_statement(
+            transcript,
+            commitment,
+            self.layout,
+            self.alpha,
+            self.q_bits,
+            self.ood,
+            self.ligerito.verifier(),
+        );
+        self.ligerito.bind(transcript);
+    }
+
+    /// The instance the transcript samples for `hint`'s commitment, replayed
+    /// as [`Self::prove`] runs it (outside any timer: the prover learns its
+    /// claim's point from it).
+    pub fn instance(&self, hint: &FlockCommitHint) -> StandaloneInstance {
+        let mut transcript = crate::transcript::Blake3Transcript::new();
+        self.bind_statement(&mut transcript, &hint.commitment);
+        let _ = bind_prover_ood(&mut transcript, hint, self.ood);
+        sample_standalone_instance(&mut transcript, self.layout, self.q_bits)
+    }
+
+    /// Proves the claim with value `claimed_q` on the committed bits of
+    /// `hint`.
+    pub fn prove(&self, hint: &FlockCommitHint, claimed_q: u128) -> IntEvalRsLigModQProof {
+        let mut transcript = crate::transcript::Blake3Transcript::new();
+        self.bind_statement(&mut transcript, &hint.commitment);
+        let ood = bind_prover_ood(&mut transcript, hint, self.ood);
+        let instance = sample_standalone_instance(&mut transcript, self.layout, self.q_bits);
+        absorb_standalone_mod_q_claim(&mut transcript, instance.q, claimed_q);
+        let chunks = prover_mod_q_chunks(hint, self.layout, &instance.row_weights_q, self.q_bits);
+        // The weights are the eq tables of a point drawn after the
+        // statement, so every input of the opening is bound by now.
+        prove_mle_eval_mod_q_ligerito_after_statement(
+            &mut transcript,
+            hint,
+            self.layout,
+            &chunks,
+            self.alpha,
+            self.ligerito.prover(),
+            BoundModQStatement::new(),
+            0,
+            ood,
+        )
+    }
+
+    /// Verifies a [`Self::prove`] proof of `claimed_q` against `commitment`.
+    pub fn verify(
+        &self,
+        commitment: &Commitment,
+        proof: &IntEvalRsLigModQProof,
+        claimed_q: u128,
+    ) -> Result<(), FlockRsError> {
+        let mut transcript = crate::transcript::Blake3Transcript::new();
+        self.bind_statement(&mut transcript, commitment);
+        let ood = bind_verifier_ood(
+            &mut transcript,
+            packed_vars(self.layout),
+            self.ood,
+            proof.ood.as_ref(),
+        )?;
+        let instance = sample_standalone_instance(&mut transcript, self.layout, self.q_bits);
+        absorb_standalone_mod_q_claim(&mut transcript, instance.q, claimed_q);
+        let (chunks, c_w, lch) = runtime_mod_q_chunks(
+            commitment,
+            proof,
+            self.layout,
+            &instance.row_weights_q,
+            &instance.col_weights_q,
+            claimed_q,
+            instance.q,
+            self.q_bits,
+            self.ligerito.verifier(),
+        )?;
+        verify_mod_q_runtime_after_statement(
+            &mut transcript,
+            commitment,
+            proof,
+            self.layout,
+            &chunks,
+            &instance.col_weights_q,
+            claimed_q,
+            instance.q,
+            (c_w, lch),
+            self.alpha,
+            self.ligerito.verifier(),
+            BoundModQStatement::new(),
+            ood,
+        )
+    }
 }
 
 fn absorb_ext_statement(
@@ -3229,9 +3393,10 @@ fn into_direct_mod_q_proof(core: ModQLigCoreProof<Vec<RingSwitchProof>>) -> IntE
 
 /// Prove `MLE[INT(D)](r) = y ∈ 𝔽_q` with the Ligerito opening.
 /// `row_weights_q[b] = eq(b, r₁) mod q ∈ [0, q)`. Reads the committed bits
-/// straight from `hint.rows` — no `u128` data tensor. Round 0 (the
-/// out-of-domain sample) is skipped; see
-/// [`prove_mle_eval_mod_q_ligerito_with_ood`] for the Johnson regime.
+/// straight from `hint.rows` — no `u128` data tensor. Binds its statement
+/// itself (as [`prove_mle_eval_mod_q_ligerito_with_ood`]). Round 0 (the
+/// out-of-domain sample) is skipped, so a Johnson-regime ladder is refused;
+/// see [`prove_mle_eval_mod_q_ligerito_with_ood`].
 #[allow(clippy::arithmetic_side_effects)]
 pub fn prove_mle_eval_mod_q_ligerito(
     transcript: &mut (impl Transcript + Send),
@@ -3256,9 +3421,11 @@ pub fn prove_mle_eval_mod_q_ligerito(
 
 /// [`prove_mle_eval_mod_q_ligerito`] with Round 0 (the out-of-domain
 /// sample) executed when `ood` is `Some` — required whenever `pc` is a
-/// Johnson-regime (beyond unique decoding) Ligerito config; derive `ood`
-/// with [`ood_round_params`]. The caller binds the statement (commitment,
-/// parameters, claim) into `transcript` first.
+/// Johnson-regime (beyond unique decoding) Ligerito config, which is refused
+/// without it; derive `ood` with [`ood_round_params`]. Binds its statement
+/// first (the commitment, the ladder, the shape, the row weights, `q_bits`
+/// and `alpha`), so a caller need not; anything a caller absorbs before is
+/// bound as well.
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(clippy::too_many_arguments)]
 pub fn prove_mle_eval_mod_q_ligerito_with_ood(
@@ -3271,20 +3438,49 @@ pub fn prove_mle_eval_mod_q_ligerito_with_ood(
     ood: impl Into<ProverOod>,
     pc: &LigProverConfig,
 ) -> IntEvalRsLigModQProof {
+    let chunks = prover_mod_q_chunks(hint, p, row_weights_q, q_bits);
+    let ood = ood.into();
+    assert!(
+        ood.runs_round0() || !needs_round0(pc),
+        "a Johnson-regime Ligerito config needs Round 0: pass its OodRoundParams"
+    );
+    let bound_statement = absorb_mod_q_statement(
+        transcript,
+        &hint.commitment,
+        p,
+        row_weights_q,
+        q_bits,
+        alpha,
+        pc,
+    );
+    prove_mle_eval_mod_q_ligerito_after_statement(
+        transcript,
+        hint,
+        p,
+        &chunks,
+        alpha,
+        pc,
+        bound_statement,
+        0,
+        ood,
+    )
+}
+
+/// The checks and weight chunks of a mod-q prover opening, before any
+/// transcript work (invalid inputs panic, as the public prover always has).
+fn prover_mod_q_chunks(
+    hint: &FlockCommitHint,
+    p: &IntegerMatrixLayout,
+    row_weights_q: &[u128],
+    q_bits: usize,
+) -> ModQWeightChunks {
     let geometry = validate_int_eval_geometry(&hint.commitment, p, 0)
         .expect("valid integer-evaluation commitment geometry");
     checked_mod_q_geometry(p, q_bits).expect("valid mod-q geometry");
     assert_eq!(row_weights_q.len(), geometry.rows, "row-weight length");
-    let chunks = {
-        let _g = tracing::info_span!("mq:chunking").entered();
-        ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
-            .expect("q_bits must be in [1, 126] and every row weight must be < 2^q_bits")
-    };
-    // Keep the established standalone transcript: this public entry point
-    // begins directly with the proof core. Statement-owning callers use the
-    // affine after-statement adapter below so they cannot accidentally absorb
-    // a second frame.
-    prove_mle_eval_mod_q_ligerito_raw(transcript, hint, p, &chunks, alpha, pc, 0, ood)
+    let _g = tracing::info_span!("mq:chunking").entered();
+    ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
+        .expect("q_bits must be in [1, 126] and every row weight must be < 2^q_bits")
 }
 
 /// Prove a mod-q MLE evaluation whose row weights are already represented as
@@ -3385,13 +3581,14 @@ where
     ))
 }
 
-/// Transcript-neutral mod-q prover core shared by the standalone API and
-/// callers that already absorbed a surrounding statement.
+/// Transcript-neutral mod-q prover core with no statement of its own (the
+/// tests' handle on the bare opening; every entry point binds one first).
 ///
 /// At a nonzero `forest_grinding_bits`, every challenge drawn between the
 /// first forest message and the r″/η batching draws is preceded by one
 /// [`ForestRoundGrinding`] proof-of-work boundary (the B.6 hooks); the
 /// nonces ride the proof. At difficulty 0 not one transcript byte moves.
+#[cfg(test)]
 #[allow(clippy::arithmetic_side_effects)]
 fn prove_mle_eval_mod_q_ligerito_raw<S>(
     transcript: &mut (impl Transcript + Send),
@@ -3686,7 +3883,9 @@ fn verify_prepared_mod_q_ligerito_with_security(
 }
 
 /// Verify `MLE[INT(D)](r) = claimed ∈ R` (R char ≠ 2, e.g. 𝔽_q).
-/// `col_weights[c] = eq(c, r₂) ∈ R`. Round 0 skipped; see
+/// `col_weights[c] = eq(c, r₂) ∈ R`. Binds its statement itself (as
+/// [`prove_mle_eval_mod_q_ligerito_with_ood`]). Round 0 skipped, so a
+/// Johnson-regime ladder is rejected; see
 /// [`verify_mle_eval_mod_q_ligerito_with_ood`].
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(clippy::too_many_arguments)]
@@ -3723,7 +3922,9 @@ where
 /// Verify a standalone opening under a transcript-sampled (runtime) prime
 /// `q`: every weight and the claim are canonical integers in `[0, q)` and
 /// the read-off is recombined modulo `q` with [`field::FpCtx<2>`].
-/// `ood` must equal the prover's ([`ood_round_params`]).
+/// `ood` must equal the prover's ([`ood_round_params`]); a Johnson-regime
+/// ladder without Round 0 is rejected. Binds its statement first, as
+/// [`prove_mle_eval_mod_q_ligerito_with_ood`] does.
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(clippy::too_many_arguments)]
 pub fn verify_mle_eval_mod_q_ligerito_runtime(
@@ -3740,6 +3941,54 @@ pub fn verify_mle_eval_mod_q_ligerito_runtime(
     ood: impl Into<VerifierOod>,
     vc: &LigVerifierConfig,
 ) -> Result<(), FlockRsError> {
+    let (chunks, c_w, lch) = runtime_mod_q_chunks(
+        commitment,
+        proof,
+        p,
+        row_weights_q,
+        col_weights_q,
+        claimed_q,
+        q,
+        q_bits,
+        vc,
+    )?;
+    let ood = ood.into();
+    if !ood.runs_round0() && needs_round0(vc) {
+        return Err(FlockRsError::OodRound);
+    }
+    let bound_statement =
+        absorb_mod_q_statement(transcript, commitment, p, row_weights_q, q_bits, alpha, vc);
+    verify_mod_q_runtime_after_statement(
+        transcript,
+        commitment,
+        proof,
+        p,
+        &chunks,
+        col_weights_q,
+        claimed_q,
+        q,
+        (c_w, lch),
+        alpha,
+        vc,
+        bound_statement,
+        ood,
+    )
+}
+
+/// The checks and weight chunks of a runtime-prime verifier opening, before
+/// any transcript work.
+#[allow(clippy::too_many_arguments)]
+fn runtime_mod_q_chunks(
+    commitment: &Commitment,
+    proof: &IntEvalRsLigModQProof,
+    p: &IntegerMatrixLayout,
+    row_weights_q: &[u128],
+    col_weights_q: &[u128],
+    claimed_q: u128,
+    q: u128,
+    q_bits: usize,
+    vc: &LigVerifierConfig,
+) -> Result<(ModQWeightChunks, usize, usize), FlockRsError> {
     validate_runtime_q(q, q_bits, row_weights_q)?;
     if claimed_q >= q || col_weights_q.iter().any(|&weight| weight >= q) {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
@@ -3749,20 +3998,40 @@ pub fn verify_mle_eval_mod_q_ligerito_runtime(
     if row_weights_q.len() != geometry.rows || col_weights_q.len() != geometry.cols {
         return Err(FlockRsError::RingSwitch(RsOpenError::Shape));
     }
-    let chunks = {
-        let _g = tracing::info_span!("mv:chunking").entered();
-        ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
-            .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?
-    };
+    let _g = tracing::info_span!("mv:chunking").entered();
+    let chunks = ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
+        .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?;
+    Ok((chunks, c_w, lch))
+}
+
+/// The runtime-prime verifier once its statement is bound: the opening
+/// core, then the read-off recombined modulo `q`.
+#[allow(clippy::too_many_arguments)]
+fn verify_mod_q_runtime_after_statement(
+    transcript: &mut (impl Transcript + Send),
+    commitment: &Commitment,
+    proof: &IntEvalRsLigModQProof,
+    p: &IntegerMatrixLayout,
+    chunks: &ModQWeightChunks,
+    col_weights_q: &[u128],
+    claimed_q: u128,
+    q: u128,
+    (c_w, lch): (usize, usize),
+    alpha: Gf,
+    vc: &LigVerifierConfig,
+    bound_statement: BoundModQStatement,
+    ood: VerifierOod,
+) -> Result<(), FlockRsError> {
     let arithmetic = field::FpCtx::from_prime_u128(q);
-    verify_mod_q_lig_core(
+    verify_mod_q_lig_after_statement(
         transcript,
         commitment,
         proof.into(),
         p,
-        &chunks,
+        chunks,
         alpha,
         vc,
+        bound_statement,
         0,
         ood,
         EqVerifierReduction {
@@ -3782,7 +4051,9 @@ pub fn verify_mle_eval_mod_q_ligerito_runtime(
 }
 
 /// [`verify_mle_eval_mod_q_ligerito`] with Round 0 (the out-of-domain
-/// sample) verified when `ood` is `Some`; `ood` must equal the prover's.
+/// sample) verified when `ood` is `Some`; `ood` must equal the prover's, and
+/// a Johnson-regime ladder without it is rejected. Binds its statement
+/// first, as [`prove_mle_eval_mod_q_ligerito_with_ood`] does.
 #[allow(clippy::arithmetic_side_effects)]
 #[allow(clippy::too_many_arguments)]
 pub fn verify_mle_eval_mod_q_ligerito_with_ood<R>(
@@ -3811,8 +4082,14 @@ where
         ModQWeightChunks::from_dense(p, row_weights_q, q_bits)
             .map_err(|()| FlockRsError::RingSwitch(RsOpenError::Shape))?
     };
+    let ood = ood.into();
+    if !ood.runs_round0() && needs_round0(vc) {
+        return Err(FlockRsError::OodRound);
+    }
+    let bound_statement =
+        absorb_mod_q_statement(transcript, commitment, p, row_weights_q, q_bits, alpha, vc);
     use crate::pcs::recombine_read_off;
-    verify_mod_q_lig_core(
+    verify_mod_q_lig_after_statement(
         transcript,
         commitment,
         proof.into(),
@@ -3820,6 +4097,7 @@ where
         &chunks,
         alpha,
         vc,
+        bound_statement,
         0,
         ood,
         EqVerifierReduction {
@@ -18286,7 +18564,9 @@ mod ood_round_tests {
     //! Round 0 (the out-of-domain sample): the succinct residual against the
     //! dense fold, the prover's evaluation kernel, the theorem-bound
     //! accounting, and end-to-end acceptance / rejection / codec behaviour
-    //! of the direct opening with the round executed.
+    //! of the direct opening with the round executed; the public opening's
+    //! own statement frame, its refusal of a Johnson ladder without the
+    //! round, and the standalone protocol of the `bitz` CLI.
     use super::*;
     use crate::ext_proj::{ExtProjParams, sample_proj_point, sample_proj_prime};
     use crate::ligerito::bind_low;
@@ -18680,6 +18960,322 @@ mod ood_round_tests {
             assert_eq!(decoded.grinding_nonces, proof.grinding_nonces);
             assert_eq!(decoded.ood, proof.ood);
             assert_eq!(decoded.to_bytes(), bytes);
+        }
+    }
+
+    /// Random bit rows in the committed layout (row `c`: bit
+    /// `(b << log₂W) | j` = bit `j` of cell `(b, c)`).
+    fn random_bit_rows(p: &IntegerMatrixLayout, seed: u64) -> Vec<Vec<u64>> {
+        let mut rng = Xorshift(seed);
+        let bits = p.rows() * p.word_bits;
+        (0..p.cols())
+            .map(|_| {
+                let mut row: Vec<u64> = (0..bits.div_ceil(64)).map(|_| rng.next_u64()).collect();
+                if bits % 64 != 0 {
+                    *row.last_mut().expect("words") &= (1u64 << (bits % 64)) - 1;
+                }
+                row
+            })
+            .collect()
+    }
+
+    /// A prime and eq weight tables of `q_bits` bits, drawn off a transcript
+    /// the openings below never see.
+    fn fixed_instance(p: &IntegerMatrixLayout, q_bits: usize) -> StandaloneInstance {
+        let mut transcript = Blake3Transcript::new();
+        transcript.absorb_slice(b"mod-q binding test instance");
+        sample_standalone_instance(&mut transcript, p, q_bits)
+    }
+
+    /// The public opening binds its own statement: every input of the frame
+    /// (one row weight, the prime width, the generator, the commitment)
+    /// moves the transcript, prover and verifier configurations absorb
+    /// alike, and a proof of the bare core on a fresh transcript (no frame)
+    /// is rejected.
+    #[test]
+    fn public_mod_q_opening_binds_its_statement() {
+        let alpha = smallest_generator();
+        let p = IntegerMatrixLayout {
+            row_vars: 10,
+            col_vars: 5,
+            word_bits: 1,
+        };
+        let q_bits = 100;
+        let (pc, vc) = lig_configs(
+            packed_vars(&p),
+            LigConfig::Adhoc {
+                log_batch: 2,
+                log_inv_rate: 2,
+            },
+        )
+        .expect("cfg");
+        let hint = commit_rs_ligerito_rows(&p, random_bit_rows(&p, 0x5eed_0101), &pc);
+        let other = commit_rs_ligerito_rows(&p, random_bit_rows(&p, 0x5eed_0102), &pc);
+        let instance = fixed_instance(&p, q_bits);
+        let (q, rw, cw) = (instance.q, &instance.row_weights_q, &instance.col_weights_q);
+
+        let frame = |commitment: &Commitment, rw: &[u128], q_bits: usize, alpha: Gf| {
+            let mut transcript = Blake3Transcript::new();
+            let _ = absorb_mod_q_statement(&mut transcript, commitment, &p, rw, q_bits, alpha, &vc);
+            transcript.state_digest()
+        };
+        let base = frame(&hint.commitment, rw, q_bits, alpha);
+        let mut last = rw.clone();
+        *last.last_mut().expect("rows") ^= 1;
+        assert_ne!(frame(&hint.commitment, &last, q_bits, alpha), base);
+        assert_ne!(frame(&hint.commitment, rw, q_bits - 1, alpha), base);
+        assert_ne!(frame(&hint.commitment, rw, q_bits, alpha * alpha), base);
+        assert_ne!(frame(&other.commitment, rw, q_bits, alpha), base);
+        let mut transcript = Blake3Transcript::new();
+        let _ = absorb_mod_q_statement(
+            &mut transcript,
+            &hint.commitment,
+            &p,
+            rw,
+            q_bits,
+            alpha,
+            &pc,
+        );
+        assert_eq!(
+            transcript.state_digest(),
+            base,
+            "prover and verifier frames agree"
+        );
+
+        let y = claim_from_rows(&p, hint.rows(), rw, cw, &field::FpCtx::from_prime_u128(q));
+        let verify = |proof: &IntEvalRsLigModQProof| {
+            verify_mle_eval_mod_q_ligerito_runtime(
+                &mut Blake3Transcript::new(),
+                &hint.commitment,
+                proof,
+                &p,
+                rw,
+                cw,
+                alpha,
+                y,
+                q,
+                q_bits,
+                None,
+                &vc,
+            )
+        };
+        let bound = prove_mle_eval_mod_q_ligerito(
+            &mut Blake3Transcript::new(),
+            &hint,
+            &p,
+            rw,
+            q_bits,
+            alpha,
+            &pc,
+        );
+        verify(&bound).expect("the self-bound opening verifies");
+        let chunks = ModQWeightChunks::from_dense(&p, rw, q_bits).expect("chunks");
+        let unbound = prove_mle_eval_mod_q_ligerito_raw(
+            &mut Blake3Transcript::new(),
+            &hint,
+            &p,
+            &chunks,
+            alpha,
+            &pc,
+            0,
+            None,
+        );
+        assert!(
+            verify(&unbound).is_err(),
+            "a proof without the statement frame must be rejected"
+        );
+    }
+
+    /// Only Round 0 binds a Johnson ladder's first-level list, so the public
+    /// opening refuses such a ladder without it: the prover panics, and the
+    /// verifier rejects even the proof the round-less opening would produce
+    /// on exactly its transcript.
+    #[test]
+    fn johnson_ladder_without_round0_is_refused() {
+        let alpha = smallest_generator();
+        let p = IntegerMatrixLayout {
+            row_vars: 12,
+            col_vars: 8,
+            word_bits: 1,
+        };
+        let resolved = LigeritoSelection::JOHNSON
+            .resolve(packed_vars(&p), 100)
+            .expect("m = 20 Johnson ladder");
+        let ood = resolved
+            .round0(100)
+            .expect("Round 0 under the grinding cap");
+        assert!(
+            ood.is_some() && needs_round0(resolved.prover()) && needs_round0(resolved.verifier())
+        );
+        let hint = commit_rs_ligerito_rows(&p, random_bit_rows(&p, 0x5eed_0201), resolved.prover());
+        let q_bits = standalone_q_bits(&p);
+        let instance = fixed_instance(&p, q_bits);
+        let (q, rw, cw) = (instance.q, &instance.row_weights_q, &instance.col_weights_q);
+        let y = claim_from_rows(&p, hint.rows(), rw, cw, &field::FpCtx::from_prime_u128(q));
+        let verify = |proof: &IntEvalRsLigModQProof, params: Option<OodRoundParams>| {
+            verify_mle_eval_mod_q_ligerito_runtime(
+                &mut Blake3Transcript::new(),
+                &hint.commitment,
+                proof,
+                &p,
+                rw,
+                cw,
+                alpha,
+                y,
+                q,
+                q_bits,
+                params,
+                resolved.verifier(),
+            )
+        };
+
+        let proof = prove_mle_eval_mod_q_ligerito_with_ood(
+            &mut Blake3Transcript::new(),
+            &hint,
+            &p,
+            rw,
+            q_bits,
+            alpha,
+            ood,
+            resolved.prover(),
+        );
+        verify(&proof, ood).expect("the ladder verifies with Round 0");
+        assert_eq!(verify(&proof, None).err(), Some(FlockRsError::OodRound));
+
+        let mut transcript = Blake3Transcript::new();
+        let _ = absorb_mod_q_statement(
+            &mut transcript,
+            &hint.commitment,
+            &p,
+            rw,
+            q_bits,
+            alpha,
+            resolved.prover(),
+        );
+        let chunks = ModQWeightChunks::from_dense(&p, rw, q_bits).expect("chunks");
+        let roundless = prove_mle_eval_mod_q_ligerito_raw(
+            &mut transcript,
+            &hint,
+            &p,
+            &chunks,
+            alpha,
+            resolved.prover(),
+            0,
+            None,
+        );
+        assert!(roundless.ood.is_none());
+        assert_eq!(verify(&roundless, None).err(), Some(FlockRsError::OodRound));
+
+        let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            prove_mle_eval_mod_q_ligerito(
+                &mut Blake3Transcript::new(),
+                &hint,
+                &p,
+                rw,
+                q_bits,
+                alpha,
+                resolved.prover(),
+            )
+        }))
+        .err()
+        .expect("the prover refuses a Johnson ladder without Round 0");
+        let message = refused
+            .downcast_ref::<&str>()
+            .map(|message| message.to_string())
+            .or_else(|| refused.downcast_ref::<String>().cloned())
+            .unwrap_or_default();
+        assert!(message.contains("needs Round 0"), "{message}");
+    }
+
+    /// [`StandaloneModQOpening`] is, byte for byte, the transcript the
+    /// `bitz` CLI and `benches/pcs.rs` spelled out before it (statement,
+    /// policy, Round 0, prime and point, claim, then the bare core); it
+    /// verifies its proofs, rejects a wrong claim, and takes Round 0
+    /// exactly when the ladder is beyond unique decoding.
+    #[test]
+    fn standalone_opening_keeps_the_cli_transcript() {
+        let alpha = smallest_generator();
+        let p = IntegerMatrixLayout {
+            row_vars: 12,
+            col_vars: 8,
+            word_bits: 1,
+        };
+        let q_bits = standalone_q_bits(&p);
+        for selection in [LigeritoSelection::JOHNSON, LigeritoSelection::MATCHED_UDR] {
+            let name = selection.name();
+            let resolved = selection
+                .resolve(packed_vars(&p), 100)
+                .expect("m = 20 ladder");
+            let ood = resolved
+                .round0(100)
+                .expect("Round 0 under the grinding cap");
+            assert_eq!(
+                ood.is_some(),
+                selection == LigeritoSelection::JOHNSON,
+                "{name}"
+            );
+            let mismatched = match ood {
+                Some(_) => None,
+                None => Some(OodRoundParams { grinding_bits: 0 }),
+            };
+            assert_eq!(
+                StandaloneModQOpening::new(&p, alpha, q_bits, mismatched, &resolved).err(),
+                Some(FlockRsError::OodRound),
+                "{name}"
+            );
+            let opening = StandaloneModQOpening::new(&p, alpha, q_bits, ood, &resolved)
+                .expect("Round 0 matches");
+            let hint =
+                commit_rs_ligerito_rows(&p, random_bit_rows(&p, 0x5eed_0301), resolved.prover());
+            let instance = opening.instance(&hint);
+            let q = instance.q;
+            let y = claim_from_rows(
+                &p,
+                hint.rows(),
+                &instance.row_weights_q,
+                &instance.col_weights_q,
+                &field::FpCtx::from_prime_u128(q),
+            );
+            let proof = opening.prove(&hint, y);
+
+            let mut transcript = Blake3Transcript::new();
+            absorb_standalone_mod_q_statement(
+                &mut transcript,
+                &hint.commitment,
+                &p,
+                alpha,
+                q_bits,
+                ood,
+                resolved.verifier(),
+            );
+            resolved.bind(&mut transcript);
+            let bound = bind_prover_ood(&mut transcript, &hint, ood);
+            let sampled = sample_standalone_instance(&mut transcript, &p, q_bits);
+            assert_eq!(sampled.q, q, "{name}");
+            absorb_standalone_mod_q_claim(&mut transcript, q, y);
+            let chunks =
+                ModQWeightChunks::from_dense(&p, &sampled.row_weights_q, q_bits).expect("chunks");
+            let manual = prove_mle_eval_mod_q_ligerito_raw(
+                &mut transcript,
+                &hint,
+                &p,
+                &chunks,
+                alpha,
+                resolved.prover(),
+                0,
+                bound,
+            );
+            assert_eq!(proof.to_bytes(), manual.to_bytes(), "{name}");
+
+            opening
+                .verify(&hint.commitment, &proof, y)
+                .unwrap_or_else(|error| panic!("{name}: {error:?}"));
+            assert!(
+                opening
+                    .verify(&hint.commitment, &proof, (y + 1) % q)
+                    .is_err(),
+                "{name}: a wrong claim must be rejected"
+            );
         }
     }
 }

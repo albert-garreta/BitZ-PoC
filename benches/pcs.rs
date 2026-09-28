@@ -54,14 +54,11 @@ use clap::builder::TypedValueParser;
 
 use std::hint::black_box;
 
-use bitz::ext_proj::{ExtProjParams, sample_proj_point, sample_proj_prime};
 use bitz::ligerito::packed_vars;
 use bitz::ligerito_flock::{
-    OodRoundParams, absorb_standalone_mod_q_claim, absorb_standalone_mod_q_statement,
-    commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito_with_ood,
-    verify_mle_eval_mod_q_ligerito_runtime,
+    OodRoundParams, StandaloneModQOpening, commit_rs_ligerito_rows, standalone_q_bits,
 };
-use bitz::pcs::{IntegerMatrixLayout, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
+use bitz::pcs::{IntegerMatrixLayout, mod_q_num_chunks, smallest_generator};
 use flock_core::pcs::ligerito::{ProverConfig as LigPc, VerifierConfig as LigVc};
 
 #[derive(clap::Parser)]
@@ -144,64 +141,6 @@ fn peak_mb() -> f64 {
 }
 fn live_mb() -> f64 {
     common::peak_memory::live_bytes() as f64 / (1024.0 * 1024.0)
-}
-
-/// The evaluation prime is SAMPLED from the transcript after the
-/// commitment, uniformly among the primes of `[2^(b−1), 2^b)` with
-/// `b = min(113, 127 − t − W)` — the paper's Strategy-1 field policy capped
-/// by the one-chunk exponent-fold width (the same rule as the Spartan
-/// security profile's derived interval); the evaluation point follows.
-fn standalone_q_bits(p: &IntegerMatrixLayout) -> usize {
-    mod_q_chunk_width(p).min(113)
-}
-
-/// The transcript-sampled instance: prime, point-induced `eq` tables.
-struct StandaloneInstance {
-    q: u128,
-    row_weights_q: Vec<u128>,
-    col_weights_q: Vec<u128>,
-}
-
-fn sample_standalone_instance(
-    transcript: &mut bitz::transcript::Blake3Transcript,
-    p: &IntegerMatrixLayout,
-    q_bits: usize,
-) -> StandaloneInstance {
-    let _g = tracing::info_span!("mq:sample_instance").entered();
-    let proj = ExtProjParams {
-        prime_bits: q_bits,
-        ..ExtProjParams::default()
-    };
-    let q = sample_proj_prime(transcript, &proj).expect("bounded benchmark prime search");
-    let arith = field::FpCtx::from_prime_u128(q);
-    let r1: Vec<u128> = (0..p.row_vars)
-        .map(|_| sample_proj_point(transcript, q))
-        .collect();
-    let r2: Vec<u128> = (0..p.col_vars)
-        .map(|_| sample_proj_point(transcript, q))
-        .collect();
-    StandaloneInstance {
-        q,
-        row_weights_q: eq_table_mod_q(&arith, &r1),
-        col_weights_q: eq_table_mod_q(&arith, &r2),
-    }
-}
-
-/// `eq(b, r) mod q` over `b ∈ {0,1}^{r.len()}` (index bit `k` ↔ `r[k]`).
-fn eq_table_mod_q(arith: &field::FpCtx<2>, r: &[u128]) -> Vec<u128> {
-    let q = arith.modulus_u128();
-    let mut table = vec![1u128 % q];
-    for &coord in r {
-        let mut next = Vec::with_capacity(table.len() * 2);
-        for &v in &table {
-            let v1 = arith.mul_u128(v, coord);
-            let v0 = if v >= v1 { v - v1 } else { v + q - v1 };
-            next.push(v0);
-            next.push(v1);
-        }
-        table = next;
-    }
-    table
 }
 
 fn median(mut v: Vec<f64>) -> f64 {
@@ -322,13 +261,9 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
     // The instance: the transcript-sampled prime and point (replayed inside
     // every timed prove/verify), then the claimed μ from the SET BITS of the
     // committed rows (O(popcount) mod-q adds).
-    let instance = {
-        let mut st = bitz::transcript::Blake3Transcript::new();
-        absorb_standalone_mod_q_statement(&mut st, &hint.commitment, &p, alpha, q_bits, ood, &vc);
-        resolved.bind(&mut st);
-        let _ = bitz::ligerito_flock::bind_prover_ood(&mut st, &hint, ood);
-        sample_standalone_instance(&mut st, &p, q_bits)
-    };
+    let opening = StandaloneModQOpening::new(&p, alpha, q_bits, ood, &resolved)
+        .expect("Round 0 matches the Ligerito ladder");
+    let instance = opening.instance(&hint);
     let q = instance.q;
     let arith = field::FpCtx::from_prime_u128(q);
     let pow2_q: Vec<u128> = (0..w).map(|j| arith.reduce_u128(1u128 << j)).collect();
@@ -360,51 +295,9 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
             None => "skipped (unique-decoding opener)".to_string(),
         }
     );
-    let prove_once = |hint: &bitz::ligerito_flock::FlockCommitHint| {
-        let mut pt = bitz::transcript::Blake3Transcript::new();
-        absorb_standalone_mod_q_statement(&mut pt, &hint.commitment, &p, alpha, q_bits, ood, &vc);
-        resolved.bind(&mut pt);
-        let bound_ood = bitz::ligerito_flock::bind_prover_ood(&mut pt, hint, ood);
-        let sampled = sample_standalone_instance(&mut pt, &p, q_bits);
-        assert_eq!(
-            sampled.q, q,
-            "the transcript-sampled prime must be reproducible"
-        );
-        absorb_standalone_mod_q_claim(&mut pt, q, y);
-        prove_mle_eval_mod_q_ligerito_with_ood(
-            &mut pt,
-            hint,
-            &p,
-            &sampled.row_weights_q,
-            q_bits,
-            alpha,
-            bound_ood,
-            &pc,
-        )
-    };
+    let prove_once = |hint: &bitz::ligerito_flock::FlockCommitHint| opening.prove(hint, y);
     let verify_once = |proof: &bitz::ligerito_flock::IntEvalRsLigModQProof| {
-        let mut vt = bitz::transcript::Blake3Transcript::new();
-        absorb_standalone_mod_q_statement(&mut vt, &hint.commitment, &p, alpha, q_bits, ood, &vc);
-        resolved.bind(&mut vt);
-        let bound_ood =
-            bitz::ligerito_flock::bind_verifier_ood(&mut vt, m_p, ood, proof.ood.as_ref())
-                .expect("Round 0");
-        let sampled = sample_standalone_instance(&mut vt, &p, q_bits);
-        absorb_standalone_mod_q_claim(&mut vt, sampled.q, y);
-        verify_mle_eval_mod_q_ligerito_runtime(
-            &mut vt,
-            &hint.commitment,
-            proof,
-            &p,
-            &sampled.row_weights_q,
-            &sampled.col_weights_q,
-            alpha,
-            y,
-            sampled.q,
-            q_bits,
-            bound_ood,
-            &vc,
-        )
+        opening.verify(&hint.commitment, proof, y)
     };
 
     // Warm-up prove (excluded from stats).

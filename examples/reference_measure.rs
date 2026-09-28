@@ -10,8 +10,8 @@
 
 use bitz::ligerito::packed_vars;
 use bitz::ligerito_flock::{
-    commit_rs_ligerito_rows, historical_sha_lig_configs, prove_mle_eval_mod_q_ligerito,
-    verify_mle_eval_mod_q_ligerito,
+    commit_rs_ligerito_rows, historical_sha_lig_configs, historical_sha_lig_ood_params,
+    prove_mle_eval_mod_q_ligerito_with_ood, verify_mle_eval_mod_q_ligerito_with_ood,
 };
 use bitz::pcs::{IntegerMatrixLayout, mod_q_num_chunks, smallest_generator};
 
@@ -66,6 +66,7 @@ fn measure(t: usize, s: usize, w: usize, reps: usize) {
     let lch = mod_q_num_chunks(&p, q_bits);
     // The library's audited config boundary (embedded FAST at m ≥ 22).
     let (pc, vc) = historical_sha_lig_configs(m_p).expect("lig cfg");
+    let ood = historical_sha_lig_ood_params(m_p);
 
     // Instance generated straight into the per-column bit rows — the
     // u128 cell tensor never exists (the memory-honest commit path).
@@ -129,7 +130,7 @@ fn measure(t: usize, s: usize, w: usize, reps: usize) {
         let mut pt = bitz::transcript::Blake3Transcript::new();
         let (proof, t0) =
             bitz::observability::measure(tracing::info_span!("reference_measure:proof"), || {
-                prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc)
+                prove_mle_eval_mod_q_ligerito_with_ood(&mut pt, &hint, &p, &rw_q, q_bits, alpha, ood, &pc)
             })
             .expect("measure completed operation");
         prove_ms.push(t0.as_secs_f64() * 1e3);
@@ -140,7 +141,7 @@ fn measure(t: usize, s: usize, w: usize, reps: usize) {
         let mut vt = bitz::transcript::Blake3Transcript::new();
         let t1_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
         let t1 = tracing::info_span!("reference_measure:t1").entered();
-        verify_mle_eval_mod_q_ligerito(
+        verify_mle_eval_mod_q_ligerito_with_ood(
             &mut vt,
             &hint.commitment,
             &proof,
@@ -150,6 +151,7 @@ fn measure(t: usize, s: usize, w: usize, reps: usize) {
             alpha,
             y,
             q_bits,
+            ood,
             &vc,
         )
         .expect("verify");

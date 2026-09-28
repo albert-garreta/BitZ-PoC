@@ -13,8 +13,8 @@
 
 use bitz::ligerito::packed_vars;
 use bitz::ligerito_flock::{
-    commit_rs_ligerito_rows, historical_sha_lig_configs, prove_mle_eval_mod_q_ligerito,
-    verify_mle_eval_mod_q_ligerito,
+    commit_rs_ligerito_rows, historical_sha_lig_configs, historical_sha_lig_ood_params,
+    prove_mle_eval_mod_q_ligerito_with_ood, verify_mle_eval_mod_q_ligerito_with_ood,
 };
 use bitz::pcs::{IntegerMatrixLayout, mod_q_num_chunks, smallest_generator};
 
@@ -63,6 +63,7 @@ fn digest(t: usize, s: usize, w: usize) {
     let m_p = packed_vars(&p);
     let lch = mod_q_num_chunks(&p, q_bits);
     let (pc, vc) = historical_sha_lig_configs(m_p).expect("lig cfg");
+    let ood = historical_sha_lig_ood_params(m_p);
 
     let mask = if w >= 128 { u128::MAX } else { (1u128 << w) - 1 };
     let cell = |b: usize, c: usize| -> u128 {
@@ -119,13 +120,14 @@ fn digest(t: usize, s: usize, w: usize) {
     let root_hex: String = hint.commitment.root.iter().map(|b| format!("{b:02x}")).collect();
 
     let mut pt = bitz::transcript::Blake3Transcript::new();
-    let proof = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
+    let proof =
+        prove_mle_eval_mod_q_ligerito_with_ood(&mut pt, &hint, &p, &rw_q, q_bits, alpha, ood, &pc);
     let ser = proof.to_bytes();
     let dg = blake3::hash(&ser);
 
     let mut vt = bitz::transcript::Blake3Transcript::new();
-    verify_mle_eval_mod_q_ligerito(
-        &mut vt, &hint.commitment, &proof, &p, &rw_q, &cw, alpha, y, q_bits, &vc,
+    verify_mle_eval_mod_q_ligerito_with_ood(
+        &mut vt, &hint.commitment, &proof, &p, &rw_q, &cw, alpha, y, q_bits, ood, &vc,
     )
     .expect("verify");
 

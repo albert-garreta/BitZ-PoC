@@ -1,7 +1,7 @@
 //! Algebra-only randomized COMPLETENESS audit using historical configurations
 //! (including small unaudited shapes) of the BitZ mod-q PCS pipeline
-//! (`commit_rs_ligerito_rows` -> `prove_mle_eval_mod_q_ligerito` ->
-//! `verify_mle_eval_mod_q_ligerito`).
+//! (`commit_rs_ligerito_rows` -> `prove_mle_eval_mod_q_ligerito_with_ood` ->
+//! `verify_mle_eval_mod_q_ligerito_with_ood`).
 //!
 //! An honest prover must be able to prove every valid claim
 //! `MLE[INT(D)](r) = y (mod q)` — the verifier must accept, and the accepted
@@ -28,7 +28,8 @@ use std::time::Instant;
 use bitz::ligerito::packed_vars;
 use bitz::ligerito_flock::{
     IntEvalRsLigModQProof, commit_rs_flock_with, commit_rs_ligerito_rows,
-    historical_sha_lig_configs, prove_mle_eval_mod_q_ligerito, verify_mle_eval_mod_q_ligerito,
+    historical_sha_lig_configs, historical_sha_lig_ood_params,
+    prove_mle_eval_mod_q_ligerito_with_ood, verify_mle_eval_mod_q_ligerito_with_ood,
 };
 use bitz::pcs::{IntegerMatrixLayout, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
 use bitz::transcript::Blake3Transcript;
@@ -500,6 +501,7 @@ fn run_trial<const Q: u128>(cfg: &TrialCfg, rep: &mut Report) {
             return;
         }
     };
+    let ood = historical_sha_lig_ood_params(m_p);
 
     let rows_n = 1usize << cfg.t;
     let cols_n = 1usize << cfg.s;
@@ -514,7 +516,8 @@ fn run_trial<const Q: u128>(cfg: &TrialCfg, rep: &mut Report) {
 
     // Prove.
     let mut pt = Blake3Transcript::new();
-    let proof = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw, q_bits, alpha, &pc);
+    let proof =
+        prove_mle_eval_mod_q_ligerito_with_ood(&mut pt, &hint, &p, &rw, q_bits, alpha, ood, &pc);
     if proof.us.len() != lch {
         rep.fail(cfg, &format!("prover chunk count {} != expected L={lch}", proof.us.len()));
     }
@@ -527,7 +530,7 @@ fn run_trial<const Q: u128>(cfg: &TrialCfg, rep: &mut Report) {
                     claimed: Fq<Q>|
      -> Result<(), String> {
         let mut vt = Blake3Transcript::new();
-        verify_mle_eval_mod_q_ligerito(
+        verify_mle_eval_mod_q_ligerito_with_ood(
             &mut vt,
             &hint.commitment,
             pr,
@@ -537,6 +540,7 @@ fn run_trial<const Q: u128>(cfg: &TrialCfg, rep: &mut Report) {
             alpha,
             claimed,
             q_bits,
+            ood,
             &vc,
         )
         .map_err(|e| format!("{e:?}"))
@@ -759,7 +763,7 @@ fn run_trial<const Q: u128>(cfg: &TrialCfg, rep: &mut Report) {
                     rep.neg_prime.0 += 1;
                     let cw2: Vec<Fq<Q2C>> = cw.iter().map(|&x| Fq::<Q2C>::from(x)).collect();
                     let mut vt = Blake3Transcript::new();
-                    match verify_mle_eval_mod_q_ligerito(
+                    match verify_mle_eval_mod_q_ligerito_with_ood(
                         &mut vt,
                         &hint.commitment,
                         &proof,
@@ -769,6 +773,7 @@ fn run_trial<const Q: u128>(cfg: &TrialCfg, rep: &mut Report) {
                         alpha,
                         Fq::<Q2C>(claimed2),
                         q2_bits,
+                        ood,
                         &vc,
                     ) {
                         Err(_) => rep.neg_prime.1 += 1,
@@ -1264,12 +1269,13 @@ fn domain_boundary_probes() {
     let p = IntegerMatrixLayout { row_vars: 7, col_vars: 8, word_bits: 1 };
     let weights = vec![1u128; p.rows()];
     let (pc, _) = historical_sha_lig_configs(packed_vars(&p)).expect("boundary configuration");
+    let ood = historical_sha_lig_ood_params(packed_vars(&p));
     let hint = commit_rs_ligerito_rows(&p, vec![vec![0; p.rows() / 64]; p.cols()], &pc);
     for q_bits in [126, 127] {
         let result = catch_unwind(AssertUnwindSafe(|| {
-            prove_mle_eval_mod_q_ligerito(
+            prove_mle_eval_mod_q_ligerito_with_ood(
                 &mut Blake3Transcript::new(), &hint, &p, &weights, q_bits,
-                smallest_generator(), &pc,
+                smallest_generator(), ood, &pc,
             )
         }));
         assert_eq!(result.is_ok(), q_bits == 126, "q_bits boundary: {q_bits}");
@@ -1426,18 +1432,21 @@ fn diagnose_byte_flip_findings() {
     let q_bits = bits_of(Q);
     let p = IntegerMatrixLayout { row_vars: cfg.t, col_vars: cfg.s, word_bits: cfg.w };
     let (pc, vc) = historical_sha_lig_configs(packed_vars(&p)).expect("cfg");
+    let ood = historical_sha_lig_ood_params(packed_vars(&p));
     let inst = build_instance::<Q>(&cfg);
     let rows = build_rows(cfg.t, cfg.s, cfg.w, &inst.dgen);
     let hint = commit_rs_ligerito_rows(&p, rows, &pc);
     let alpha = smallest_generator();
     let mut pt = Blake3Transcript::new();
-    let proof = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &inst.rw, q_bits, alpha, &pc);
+    let proof = prove_mle_eval_mod_q_ligerito_with_ood(
+        &mut pt, &hint, &p, &inst.rw, q_bits, alpha, ood, &pc,
+    );
     let bytes = proof.to_bytes();
     let y = Fq::<Q>(inst.y_rep);
     let cw_fq: Vec<Fq<Q>> = inst.cw.iter().map(|&x| Fq::<Q>(x)).collect();
     let mut vt = Blake3Transcript::new();
-    verify_mle_eval_mod_q_ligerito(
-        &mut vt, &hint.commitment, &proof, &p, &inst.rw, &cw_fq, alpha, y, q_bits, &vc,
+    verify_mle_eval_mod_q_ligerito_with_ood(
+        &mut vt, &hint.commitment, &proof, &p, &inst.rw, &cw_fq, alpha, y, q_bits, ood, &vc,
     )
     .expect("honest baseline verifies");
     println!("diagnostic instance: proof = {} bytes", bytes.len());
@@ -1516,9 +1525,9 @@ fn diagnose_byte_flip_findings() {
                     } else {
                         let v = catch_unwind(AssertUnwindSafe(|| {
                             let mut vt = Blake3Transcript::new();
-                            verify_mle_eval_mod_q_ligerito(
+                            verify_mle_eval_mod_q_ligerito_with_ood(
                                 &mut vt, &hint.commitment, &d, &p, &inst.rw, &cw_fq, alpha, y,
-                                q_bits, &vc,
+                                q_bits, ood, &vc,
                             )
                             .is_ok()
                         }));
@@ -1600,8 +1609,8 @@ fn diagnose_byte_flip_findings() {
             Ok(d) => {
                 let same = d.to_bytes() == bytes;
                 let mut vt = Blake3Transcript::new();
-                let v = verify_mle_eval_mod_q_ligerito(
-                    &mut vt, &hint.commitment, &d, &p, &inst.rw, &cw_fq, alpha, y, q_bits, &vc,
+                let v = verify_mle_eval_mod_q_ligerito_with_ood(
+                    &mut vt, &hint.commitment, &d, &p, &inst.rw, &cw_fq, alpha, y, q_bits, ood, &vc,
                 );
                 println!(
                     "AUDIT-FLAGGED flip @offset {off} (region: {region}) xor {x:#04x}: decodes OK, \
@@ -1738,6 +1747,7 @@ fn rhatzero_boolean_point_completeness_gap() {
     let p = IntegerMatrixLayout { row_vars: t, col_vars: s, word_bits: w };
     assert_eq!(mod_q_num_chunks(&p, q_bits), 2, "shape must be multi-chunk (L=2)");
     let (pc, vc) = historical_sha_lig_configs(packed_vars(&p)).expect("cfg");
+    let ood = historical_sha_lig_ood_params(packed_vars(&p));
     let alpha = smallest_generator();
 
     let dgen = DataGen {
@@ -1759,9 +1769,11 @@ fn rhatzero_boolean_point_completeness_gap() {
         let y = reference_eval(rows_n, cols_n, &dgen, &rw, &cw, Q);
         let cw_fq: Vec<Fq<Q>> = cw.iter().map(|&x| Fq::<Q>(x)).collect();
         let mut pt = Blake3Transcript::new();
-        let proof = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw, q_bits, alpha, &pc);
+        let proof = prove_mle_eval_mod_q_ligerito_with_ood(
+            &mut pt, &hint, &p, &rw, q_bits, alpha, ood, &pc,
+        );
         let mut vt = Blake3Transcript::new();
-        verify_mle_eval_mod_q_ligerito(
+        verify_mle_eval_mod_q_ligerito_with_ood(
             &mut vt,
             &hint.commitment,
             &proof,
@@ -1771,6 +1783,7 @@ fn rhatzero_boolean_point_completeness_gap() {
             alpha,
             Fq::<Q>(y),
             q_bits,
+            ood,
             &vc,
         )
         .map_err(|e| format!("{e:?}"))

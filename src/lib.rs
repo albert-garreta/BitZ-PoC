@@ -28,7 +28,13 @@
 //! [`ligerito_flock::IntEvalRsLigModQProof`] and its
 //! [`to_bytes`][ligerito_flock::IntEvalRsLigModQProof::to_bytes] /
 //! [`from_bytes`][ligerito_flock::IntEvalRsLigModQProof::from_bytes] host
-//! codec. See `docs/DESIGN.md` for the protocol and the serialization format.
+//! codec. Both bind their statement (the commitment, the Ligerito ladder, the
+//! shape, the row weights, the prime width and `α`) before the first
+//! challenge and refuse a Johnson-regime ladder without Round 0 (the `_with_ood`
+//! variants run it); [`ligerito_flock::StandaloneModQOpening`] is the whole
+//! standalone protocol the `bitz` CLI measures (transcript-sampled prime and
+//! point, Round 0, the claim). See `docs/DESIGN.md` for the protocol and the
+//! serialization format.
 //!
 //! ## F₂-virtualization
 //!
@@ -83,10 +89,11 @@ pub use ligerito_flock::{
     lig_configs, prove_mle_eval_mod_q_ligerito, verify_mle_eval_mod_q_ligerito,
 };
 // Round 0 of the paper's `c:core_iop` (the out-of-domain sample) and the
-// standalone statement binding the `bitz` CLI / bench use around it.
+// standalone protocol the `bitz` CLI / bench run around it.
 pub use ligerito_flock::{
-    OodRound, OodRoundParams, absorb_standalone_mod_q_claim, absorb_standalone_mod_q_statement,
-    ood_round_bits, ood_round_params, prove_mle_eval_mod_q_ligerito_with_ood, sha_lig_ood_params,
+    OodRound, OodRoundParams, StandaloneModQOpening, absorb_standalone_mod_q_claim,
+    absorb_standalone_mod_q_statement, ood_round_bits, ood_round_params,
+    prove_mle_eval_mod_q_ligerito_with_ood, sha_lig_ood_params,
     verify_mle_eval_mod_q_ligerito_runtime, verify_mle_eval_mod_q_ligerito_with_ood,
 };
 // Extension-field evaluation claims (paper `c:core_iop` Steps 1–3): the

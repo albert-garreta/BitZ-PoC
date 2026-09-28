@@ -38,6 +38,14 @@ impl ProverOod {
             ProverState::Bound(claim) => claim,
         }
     }
+
+    /// Whether the opening carries Round 0 (bound before it or due in it).
+    pub(super) fn runs_round0(&self) -> bool {
+        match &self.0 {
+            ProverState::AtOpening(params) => params.is_some(),
+            ProverState::Bound(claim) => claim.is_some(),
+        }
+    }
 }
 
 #[cfg(feature = "bitz-parity")]
@@ -101,6 +109,14 @@ impl VerifierOod {
             }
             VerifierState::Bound(None) if round.is_none() => Ok(None),
             VerifierState::Bound(None) => Err(FlockRsError::OodRound),
+        }
+    }
+
+    /// Whether the opening carries Round 0 (bound before it or due in it).
+    pub(super) fn runs_round0(&self) -> bool {
+        match &self.0 {
+            VerifierState::AtOpening(params) => params.is_some(),
+            VerifierState::Bound(bound) => bound.is_some(),
         }
     }
 }

@@ -154,9 +154,8 @@ use bitz::ligerito::packed_vars;
 use bitz::ligerito_flock::FlockCommitHint;
 use bitz::ligerito_flock::LigeritoSelection;
 use bitz::ligerito_flock::{
-    OodRoundParams, absorb_standalone_mod_q_claim, absorb_standalone_mod_q_statement,
-    ood_round_params, prove_mle_eval_mod_q_ligerito_with_ood, sample_standalone_instance,
-    standalone_q_bits, verify_mle_eval_mod_q_ligerito_runtime, weakest_fold_round_grinding,
+    OodRoundParams, StandaloneModQOpening, ood_round_params, standalone_q_bits,
+    weakest_fold_round_grinding,
 };
 use bitz::ligerito_flock::{commit_rs_ligerito_rows, mle_eval_mod_q_lig_size_breakdown};
 use bitz::pcs::{IntegerMatrixLayout, mod_q_num_chunks, smallest_generator};
@@ -931,7 +930,7 @@ fn main() {
     let q_bits = standalone_q_bits(&p);
     let m_p = packed_vars(&p);
     let lch = mod_q_num_chunks(&p, q_bits);
-    let ((pc, vc), lig_tag, lig_sec, resolved) = resolve_configs(m_p, &o.profile);
+    let ((pc, _), lig_tag, lig_sec, resolved) = resolve_configs(m_p, &o.profile);
     // Round 0 (the out-of-domain sample) runs exactly when the opener sits
     // beyond unique decoding; its grinding tops the theorem's bound up to
     // the opener's own round-by-round target.
@@ -1011,21 +1010,12 @@ fn main() {
     // transcript-sampled prime and point (every timed run re-derives them,
     // so the derivation IS inside the prover's and verifier's timers), then
     // the claimed μ from the set bits (O(popcount) mod-q adds, excluded).
-    let instance = {
-        let mut st = Blake3Transcript::new();
-        absorb_standalone_mod_q_statement(
-            &mut st,
-            &hint.commitment,
-            &p,
-            alpha_of(),
-            q_bits,
-            ood,
-            &vc,
-        );
-        resolved.bind(&mut st);
-        let _ = bitz::ligerito_flock::bind_prover_ood(&mut st, &hint, ood);
-        sample_standalone_instance(&mut st, &p, q_bits)
-    };
+    let opening = StandaloneModQOpening::new(&p, alpha_of(), q_bits, ood, &resolved)
+        .unwrap_or_else(|error| {
+            eprintln!("Round 0 does not match the Ligerito ladder: {error:?}");
+            exit(2)
+        });
+    let instance = opening.instance(&hint);
     let q = instance.q;
     let arith = field::FpCtx::from_prime_u128(q);
     let rw_q = instance.row_weights_q.clone();
@@ -1051,68 +1041,8 @@ fn main() {
         }
         y = arith.add_u128(y, arith.mul_u128(cw_q[c], acc));
     }
-    let prove_once = |hint: &FlockCommitHint| {
-        let mut pt = Blake3Transcript::new();
-        absorb_standalone_mod_q_statement(
-            &mut pt,
-            &hint.commitment,
-            &p,
-            alpha_of(),
-            q_bits,
-            ood,
-            &vc,
-        );
-        resolved.bind(&mut pt);
-        let bound_ood = bitz::ligerito_flock::bind_prover_ood(&mut pt, &hint, ood);
-        let sampled = sample_standalone_instance(&mut pt, &p, q_bits);
-        assert_eq!(
-            sampled.q, q,
-            "the transcript-sampled prime must be reproducible"
-        );
-        absorb_standalone_mod_q_claim(&mut pt, q, y);
-        prove_mle_eval_mod_q_ligerito_with_ood(
-            &mut pt,
-            hint,
-            &p,
-            &sampled.row_weights_q,
-            q_bits,
-            alpha_of(),
-            bound_ood,
-            &pc,
-        )
-    };
-    let verify_once = |proof: &IntEvalRsLigModQProof| {
-        let mut vt = Blake3Transcript::new();
-        absorb_standalone_mod_q_statement(
-            &mut vt,
-            &hint.commitment,
-            &p,
-            alpha_of(),
-            q_bits,
-            ood,
-            &vc,
-        );
-        resolved.bind(&mut vt);
-        let bound_ood =
-            bitz::ligerito_flock::bind_verifier_ood(&mut vt, m_p, ood, proof.ood.as_ref())
-                .expect("Round 0");
-        let sampled = sample_standalone_instance(&mut vt, &p, q_bits);
-        absorb_standalone_mod_q_claim(&mut vt, sampled.q, y);
-        verify_mle_eval_mod_q_ligerito_runtime(
-            &mut vt,
-            &hint.commitment,
-            proof,
-            &p,
-            &sampled.row_weights_q,
-            &sampled.col_weights_q,
-            alpha_of(),
-            y,
-            sampled.q,
-            q_bits,
-            bound_ood,
-            &vc,
-        )
-    };
+    let prove_once = |hint: &FlockCommitHint| opening.prove(hint, y);
+    let verify_once = |proof: &IntEvalRsLigModQProof| opening.verify(&hint.commitment, proof, y);
     set_heap_tracking(false);
     let mut commit_ms_v = Vec::with_capacity(o.reps);
     for i in 0..o.reps {

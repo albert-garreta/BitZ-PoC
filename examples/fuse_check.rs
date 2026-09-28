@@ -11,7 +11,10 @@
 //! ```
 
 use bitz::ligerito::packed_vars;
-use bitz::ligerito_flock::{commit_rs_ligerito_rows, prove_mle_eval_mod_q_ligerito, historical_sha_lig_configs};
+use bitz::ligerito_flock::{
+    commit_rs_ligerito_rows, historical_sha_lig_configs, historical_sha_lig_ood_params,
+    prove_mle_eval_mod_q_ligerito_with_ood,
+};
 use bitz::pcs::{IntegerMatrixLayout, smallest_generator};
 
 const Q: u128 = (1u128 << 100) - 15;
@@ -30,6 +33,7 @@ fn main() {
         };
         let m_p = packed_vars(&p);
         let (pc, _vc) = historical_sha_lig_configs(m_p).expect("lig cfg");
+        let ood = historical_sha_lig_ood_params(m_p);
         let cell = |b: usize, c: usize| -> u128 {
             (p.cell_index(b, c) as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & 1
         };
@@ -55,7 +59,7 @@ fn main() {
             })
             .collect();
         let mut pt = bitz::transcript::Blake3Transcript::new();
-        let proof = prove_mle_eval_mod_q_ligerito(&mut pt, &hint, &p, &rw_q, q_bits, alpha, &pc);
+        let proof = prove_mle_eval_mod_q_ligerito_with_ood(&mut pt, &hint, &p, &rw_q, q_bits, alpha, ood, &pc);
         all.extend_from_slice(&proof.to_bytes());
     }
     std::fs::write(&out_path, &all).expect("write proof bytes");

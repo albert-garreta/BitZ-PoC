@@ -24,7 +24,11 @@ only through `K`-linear queries.
 (The relation-level protocol — statement binding, prime draw, grinding
 boundaries, Spartan PIOP, bitification and discharge — is one shared runner,
 `src/piop/spartan/protocol/`; see `docs/unified-protocol.md`. This section
-describes the opening it discharges into.)
+describes the opening it discharges into. Used on its own, the opening binds
+its statement — commitment, ladder, shape, row weights, prime width, `α` —
+before its first challenge, and refuses a Johnson-regime ladder without
+Round 0; `StandaloneModQOpening` adds the transcript-sampled prime and point
+and the claim, as the `bitz` CLI runs it.)
 
 `IntegerMatrixLayout { row_vars: t, col_vars: s, word_bits: W }`: data `D` is a `2^t × 2^s` matrix of
 `W`-bit cells (`cell_index(b,c) = (b<<s) | c`); `t` row variables fold with
