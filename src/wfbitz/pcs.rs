@@ -328,7 +328,9 @@ impl Pcs {
             OpeningQuery::InnerProduct { claim } => {
                 validate_inner_product_claim(self, claim)?;
                 if statement_binding == StatementBinding::Bind {
+                    let started = std::time::Instant::now();
                     bind_inner_product_statement(self, &root, claim, transcript);
+                    super::trace("  bind statement", started);
                 }
                 transcript.public_message(SUMCHECK_LABEL);
                 let started = std::time::Instant::now();
@@ -408,11 +410,15 @@ impl Pcs {
     ) -> Result<(), ProveError> {
         let started_rs = std::time::Instant::now();
         let packed = hint.packed_message();
+        let started = std::time::Instant::now();
         let (prefix_tensor, suffix_tensor) = build_eq_split(&ring_switch.point, LOG_PACKING);
+        super::trace("    rs eq", started);
         if suffix_tensor.len() != packed.len() {
             return Err(ProveError::PackedWitnessLengthMismatch);
         }
+        let started = std::time::Instant::now();
         let claims = fold_1b_rows_naive(packed, &suffix_tensor);
+        super::trace("    rs fold 1b", started);
         let claims: [FlockF128; CLAIM_COUNT] = claims
             .try_into()
             .map_err(|_: Vec<FlockF128>| ProveError::Internal)?;
@@ -427,10 +433,12 @@ impl Pcs {
         let batching_point = sample_challenges(transcript);
 
         // reduce_dense
+        let started = std::time::Instant::now();
         let batching_weights = build_eq(&batching_point);
         let mut packed_target = batch_claims(&claims, &batching_weights);
         let mut packed_basis = fold_b128_elems(&suffix_tensor, &batching_weights);
         debug_assert_eq!(packed_basis.len(), suffix_tensor.len());
+        super::trace("    rs basis", started);
 
         // The caller's Round-0 claim joins the batch: `η_ood·eq(·, point)`
         // into the basis, `η_ood·y` into the target.
@@ -438,9 +446,11 @@ impl Pcs {
             if point.len() != ring_switch.suffix_dimension() {
                 return Err(ProveError::Internal);
             }
+            let started = std::time::Instant::now();
             let eta = bind_ood_claim(transcript, point, y);
             add_ood_basis(&mut packed_basis, packed, point, eta, None);
             packed_target = packed_target + eta * y;
+            super::trace("    rs ood", started);
         }
 
         super::trace("  ring switch", started_rs);
@@ -461,6 +471,7 @@ impl Pcs {
         if challenger.failed() {
             return Err(ProveError::Internal);
         }
+        super::trace_elapsed("    lig pow grind", challenger.grinding);
         super::trace("  ligerito", started_lig);
         write_opening_proof(&ligerito, transcript)
     }
@@ -547,6 +558,13 @@ impl Pcs {
         }
         Ok(())
     }
+}
+
+/// `MLE[P](point)` of the committed packed message `P` (`m − 7`
+/// coordinates, low first): the value an out-of-domain (Round-0) claim at
+/// `point` carries into [`Pcs::prove_lin`]'s `ood`.
+pub fn packed_evaluation(hint: &FlockCommitHint, point: &[Gf]) -> Gf {
+    crate::ligerito_flock::ood_eval(hint.packed_message(), point)
 }
 
 /// Their 40-byte frame: `m`, `log_inv_rate`, `log_batch_size`, the profile
@@ -1024,6 +1042,8 @@ pub(crate) struct ProverChallenger<'a> {
     transcript: &'a mut ProverState,
     failed: bool,
     opening_target: Option<OpeningTargetPrefix>,
+    /// The wall time of every proof-of-work grind so far (diagnostic).
+    grinding: std::time::Duration,
 }
 
 impl<'a> ProverChallenger<'a> {
@@ -1035,6 +1055,7 @@ impl<'a> ProverChallenger<'a> {
                 expected_target,
                 label_seen: false,
             }),
+            grinding: std::time::Duration::ZERO,
         }
     }
 
@@ -1133,7 +1154,9 @@ impl Challenger for ProverChallenger<'_> {
         self.transcript.public_message(POW_TAG);
         self.transcript.public_message(&bits);
         let seed = super::codec::gf_to_bytes(self.transcript.verifier_message::<Gf>());
+        let started = std::time::Instant::now();
         let nonce = find_pow(&seed, bits);
+        self.grinding += started.elapsed();
         self.transcript.prover_message(&nonce.to_le_bytes());
         nonce
     }

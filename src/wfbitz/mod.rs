@@ -252,11 +252,7 @@ impl BitZVerifier {
 /// parallelise, so the count says how much of a phase is first touch.
 pub(crate) fn trace(label: &str, started: std::time::Instant) {
     let elapsed = started.elapsed();
-    if let Ok(mut phases) = PHASES.lock() {
-        if let Some(recorded) = phases.as_mut() {
-            recorded.push((label.trim().to_string(), elapsed));
-        }
-    }
+    record_phase(label, elapsed);
     if std::env::var_os("BITZ_TRACE").is_some() {
         let faults = minor_faults();
         let previous = LAST_FAULTS.swap(faults, std::sync::atomic::Ordering::Relaxed);
@@ -265,6 +261,24 @@ pub(crate) fn trace(label: &str, started: std::time::Instant) {
             "bitz: {label:<24} {elapsed:>9.1?}  {:>6.1} MB faulted",
             delta as f64 * 16.0 / 1024.0
         );
+    }
+}
+
+/// [`trace`] for a phase timed in pieces (the sum of many short spans,
+/// such as every proof-of-work grind of an opening): the total is recorded
+/// and printed, and the page-fault count stays with the enclosing span.
+pub(crate) fn trace_elapsed(label: &str, elapsed: std::time::Duration) {
+    record_phase(label, elapsed);
+    if std::env::var_os("BITZ_TRACE").is_some() {
+        eprintln!("bitz: {label:<24} {elapsed:>9.1?}");
+    }
+}
+
+fn record_phase(label: &str, elapsed: std::time::Duration) {
+    if let Ok(mut phases) = PHASES.lock() {
+        if let Some(recorded) = phases.as_mut() {
+            recorded.push((label.trim().to_string(), elapsed));
+        }
     }
 }
 
