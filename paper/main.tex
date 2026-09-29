@@ -2912,7 +2912,7 @@ Hence the elements $A_0^{(2)}[\bb,\cc]$ can be obtained by querying a table $$T_
 %
 $$T_{A_0}^{(2)}[\bb]= (T_{r_1}^{(2)}[0,\bb,0][\xx]\cdot T_{r_1}^{(2)}[0,\bb,1][\xx']\cdot \omega[\bb])_{\xx,\xx'\in \bits^{2}}.$$
 %
-A  table $T_{S_1}^{(2)}$ is computed analogously to $T_{S_1}$. The value $A_2^{(2)}[\bb,\cc]$, however, now depends on the value taken by \emph{eight} witness bits, this being because for $\eps\in \bits$, the value $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ depends on  four bits. Hence computing a table for the values $A_2^{(2)}[\bb,\cc]$ analogous to $T_{A_2}$  would have $2^8=256$-sized vectors as entries. Instead of computing $T_{A_2}^{(2)}$, we compute two tables for the values $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ (one table for each $\eps\in\bits$, with one of the tables also including multiplication by $\omega[\bb]$). Then the value $A_2^{(2)}[\bb,\cc]$ can be obtained by performing a lookup into each table, followed by  a single multiplication.
+The value $A_2^{(2)}[\bb,\cc]$, however, now depends on the value taken by \emph{eight} witness bits, this being because for $\eps\in \bits$, the value $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ depends on  four bits. Hence computing a table for the values $A_2^{(2)}[\bb,\cc]$ analogous to $T_{A_2}$  would have $2^8=256$-sized vectors as entries. Instead of computing $T_{A_2}^{(2)}$, we compute two tables for the values $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ (one table for each $\eps\in\bits$, with one of the tables also including multiplication by $\omega[\bb]$). Then the value $A_2^{(2)}[\bb,\cc]$ can be obtained by performing a lookup into each table, followed by  a single multiplication.
 
 \bigskip
 
@@ -2931,16 +2931,12 @@ Hence, in practice we stop using lookup tables after a few rounds of each sumche
         \hline
         $T_{A_0}^{(1)}$ & $(\KK^{2^{2}})^{2^{r_1-2}}$  &  $0$ / $2^{r_1 +1}$ & $1.0$ & yes \\
         \hline
-        $T_{S_1}^{(1)}$ & $(\KK^{2^{2}})^{2^{r_1-2}}$  &  $0$ / $2^{r_1 +1}$ & $1.0$ & yes \\
-        \hline
         $T_{A_2}^{(1)}$ & $(\KK^{2^{4}})^{2^{r_1-2}}$  &  $2^{r_1+1}$ / $5\cdot 2^{r_1}$ & $4.2$ & yes \\
         \hline
         \hline
         $T_{r_1}^{(2)}$ & $(\KK^{2^2})^{2^{r_1-1}}$ & $2^{r_1+2}$ / $2^{r_1+1}$ & $2.1$ & yes \\
         \hline
         $T_{A_0}^{(2)}$ & $(\KK^{2^{4}})^{2^{r_1-3}}$  &  $0$ / $2^{r_1 +2}$ & $2.1$ & yes \\
-        \hline
-        $T_{S_1}^{(2)}$ & $(\KK^{2^{4}})^{2^{r_1-3}}$  &  $0$ / $2^{r_1 +2}$ & $2.1$ & yes \\
         \hline
         $T_{A_2}^{(2)}$ & $(\KK^{2^{8}})^{2^{r_1-3}}$  &  --- & $33.6$ & no  \\
         \hline
@@ -2950,8 +2946,6 @@ Hence, in practice we stop using lookup tables after a few rounds of each sumche
         $T_{r_1}^{(3)}$ & $(\KK^{2^{4}})^{2^{r_1-2}}$  & $2^{r_1+3}$ / $2^{r_1+2}$ & $4.2$ & yes \\
         \hline
         $T_{A_0}^{(3)}$ & $(\KK^{2^{8}})^{2^{r_1-4}}$  &  --- & $16.8$ & no \\
-        \hline
-        $T_{S_1}^{(3)}$ & $(\KK^{2^{8}})^{2^{r_1-4}}$  &  --- & $16.8$ & no  \\
         \hline
         $T_{A_2}^{(3)}$ & $(\KK^{2^{16}})^{2^{r_1-4}}$  &  --- & $4295$ & no
     \end{tabular}
