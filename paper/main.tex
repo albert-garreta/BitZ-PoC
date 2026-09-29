@@ -3043,9 +3043,16 @@ The prover can compute $t_1(\infty)$ using an analogous procedure.  We record th
 
 
 
-\paragraph{Subsequente sumcheck rounds and GKR layers.} The same idea applies to the next messages. For example, after the first round each value $E^{(2)}_{\eps_1\eps_2}[\bb,\cc]$ is selected by two bits (cf.\ the table $T_{r_1}^{(2)}$ above), and so the buckets of the second message are indexed by $8$ bits instead of $4$. These are combined with the tables of the second message, one index $\bb$ at a time (in particular, the vectors $T_{A_2}^{(2)}[\bb]$, with $2^8$ entries each, are not a problem anymore, cf.\ the previous subsection).
+\paragraph{Subsequent sumcheck rounds and GKR layers.} The same idea applies to the next messages. For example, in the second first round of the ``biggest'' sumcheck (i.e.\ after the round discussed above) the entries in the tables $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$ are  each one a vector of $2^4$ and $2^8$ elements, respectively. These vectors are indexed by elements from $\{0,1\}^4$ and $\{0,1\}^8$. We can now apply the same strategy as above, except that now we have $\xx$ range over $\{0,1\}^8$ instead of $\bits^4$. 
 
-This stops at the third message, where each value is selected by four bits, so that a table for the values $A_2^{(3)}$ would have $2^{16}$ entries per index, and there would be $2^{16}$ buckets per index (more than the $\codedim_2=2^{12}$ columns per index at $\codedim=2^{28}$). Because of this, from the third message on, and in our implementation already from the first one, the prover only uses tables with the values of a single factor, i.e.\ the tables $T_{r_1-j}^{(k)}$ with up to $2^8$ entries per index, and it multiplies the two factors itself (once per bucket, in the rounds that use buckets). In our implementation we use buckets in the first $3-j$ rounds of the sumcheck for $L_{r_1-j}$ ($j\leq 2$), and we compute all these rounds together, using the optimization from \cite[Algorithm 3]{sumcheck_opt_2}.
+
+This optimization is beneficial as long as we can index $\xx$ over $\bits^{t}$ with $2^t< \codedim_2=2^{r_2}$, i.e.\  as long as the corresponding table has entries that are vectors of dimension $2^t<2^{r_2}$. In practice this constraints us to $t\in \{2,4,8\}$.
+
+
+
+
+
+Because of this, from the third message on, and in our implementation already from the first one, the prover only uses tables with the values of a single factor, i.e.\ the tables $T_{r_1-j}^{(k)}$ with up to $2^8$ entries per index, and it multiplies the two factors itself (once per bucket, in the rounds that use buckets). In our implementation we use buckets in the first $3-j$ rounds of the sumcheck for $L_{r_1-j}$ ($j\leq 2$), and we compute all these rounds together, using the optimization from \cite[Algorithm 3]{sumcheck_opt_2}.
 
 \begin{table}[H]
     \centering
