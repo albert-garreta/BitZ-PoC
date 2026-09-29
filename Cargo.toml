@@ -267,15 +267,7 @@ name = "u64_mul_probe"
 required-features = ["span-metrics"]
 
 [[example]]
-name = "taps_ab"
-required-features = ["span-metrics"]
-
-[[example]]
 name = "quad_ab"
-required-features = ["span-metrics"]
-
-[[example]]
-name = "rlc_ab"
 required-features = ["span-metrics"]
 
 [[example]]

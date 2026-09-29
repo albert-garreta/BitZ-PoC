@@ -1,44 +1,13 @@
-//! Step-3 random-prime projection for **extension-field** evaluation claims
-//! (paper `c:core_iop`, Step 3).
+//! Transcript-derived prime and field-element sampling.
 //!
-//! When the evaluation field `K = F_q[X]/(h(X))` is a proper extension
-//! (degree `e ≥ 2`), the linear claim `⟨π_q(bits), v⟩ = μ` cannot ride the
-//! `GF(2^128)` exponent fold directly: the lifted row weights
-//! `π_canon^{-1}(v^{(1)})` are integer *polynomials*, not integers. The
-//! paper's Step 3 collapses the claim to a prime field first:
-//!
-//! 1. the prover sends the exact integer-polynomial folds
-//!    `μ_c = ⟨bits_c, π_canon^{-1}(v^{(1)})⟩ ∈ ℤ[X]` (Step 1; per-coefficient
-//!    chunk folds in this implementation),
-//! 2. the verifier samples a **random prime** `q'` from the set
-//!    `𝒫 = {primes in [2^{bits−1}, 2^{bits})}` and a point `α' ∈ F_{q'}`,
-//! 3. both sides project the row weights,
-//!    `γ = π_{q'}^{-1}(π_{q',α'}(π_canon^{-1}(v^{(1)}))) ∈ [0, q')^{2^t}`,
-//!    and run the ordinary mod-`q'` opening on `γ`; the verifier finally
-//!    checks the certified folds against the Step-1 polynomials at `α'`:
-//!    `⟨bits_c, γ⟩ ≡ μ_c(α') (mod q')`.
-//!
-//! A lie in the sent `μ_c` is a nonzero difference polynomial of degree
-//! `< e` with `~(c_w+t+W)`-bit coefficients; by the generalized
-//! Schwartz–Zippel / prime-divisibility argument (paper `l:reduction_lemma`)
-//! it survives the random `(q', α')` with probability
-//! `≈ B/(log q'·|𝒫|) + (e−1)/q'` — negligible at the default 100-bit primes.
-//!
-//! This module holds the pieces that are *new* relative to the prime-field
-//! path: the transcript prime/point sampling (deterministic and identical on
-//! both sides), fast mod-`q'` scalar arithmetic for a runtime modulus
-//! (Montgomery arithmetic from `field`), and the weight
-//! projection `γ`. The opening itself reuses the existing mod-`q` pipeline
-//! verbatim (see `ligerito_flock::prove_mle_eval_ext_ligerito`).
+//! Sampling order and interval binding are shared by the standalone PCS
+//! and composed protocols.
 
 use crate::poly::univariate::binary_gf128::Gf128 as Gf;
 use crate::transcript::traits::Transcript;
-use crate::utils::cfg_into_iter;
 
 use field::{FpCtx, PrimeSearchPolicy, PublicRandomSource, Uint};
 
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
 
 /// Protocol parameters of the Step-3 projection. Prover and verifier must
 /// agree on these (they are part of the protocol description, like the code
@@ -86,8 +55,7 @@ impl ExtProjParams {
 }
 
 /// One uniform 128-bit integer squeezed from the transcript (the two
-/// little-endian words of a `GF(2^128)` challenge — the same encoding
-/// [`crate::pcs::fq_challenge`] uses).
+/// little-endian words of a `GF(2^128)` challenge).
 fn transcript_u128(transcript: &mut impl Transcript) -> u128 {
     let g: Gf = transcript.get_field_challenge(&());
     let w = g.as_words();
@@ -222,43 +190,6 @@ pub fn sample_proj_point(transcript: &mut impl Transcript, q_proj: u128) -> u128
     transcript_uniform_mod(transcript, q_proj)
 }
 
-/// The projected row weights of Step 3:
-/// `γ_b = π_{q'}^{-1}(π_{q',α'}(π_canon^{-1}(v^{(1)})_b)) = (Σ_d coords[d][b]·α'^d) mod q'`,
-/// from the coordinate-major integer lift `coords[d][b] ∈ [0, q)` of
-/// `v^{(1)} ∈ K^{2^t}` (coordinate `d` in the module basis `1, X, …, X^{e−1}`).
-/// This is the extension-field replacement for the plain canonical lift the
-/// prime-field path feeds to the chunker.
-pub fn projected_row_weights(coords: &[Vec<u128>], q_proj: u128, alpha_proj: u128) -> Vec<u128> {
-    let _g = tracing::info_span!("ext:project").entered();
-    let ext_deg = coords.len();
-    assert!(ext_deg >= 1, "at least one coordinate vector");
-    let rows = coords[0].len();
-    for c in coords {
-        assert_eq!(c.len(), rows, "coordinate vectors must share the row count");
-    }
-    let zq = field::FpCtx::from_prime_u128(q_proj);
-    // α'^d as prepared Montgomery factors (d ≥ 1; the d = 0 term is the
-    // plain coordinate itself) — each row term is then ONE Montgomery
-    // multiplication via the plain×monty trick, no domain conversions.
-    let pow_monty: Vec<field::Fp<2>> = zq
-        .powers_u128(alpha_proj, ext_deg)
-        .into_iter()
-        .skip(1)
-        .map(|p| zq.prepare_multiplier_u128(p))
-        .collect();
-    cfg_into_iter!(0..rows)
-        .map(|b| {
-            let mut acc = zq.reduce_u128(coords[0][b]);
-            for (d, pw) in pow_monty.iter().enumerate() {
-                acc = zq.add_canonical_u128(
-                    acc,
-                    zq.mul_prepared_u128(coords[d.wrapping_add(1)][b], pw),
-                );
-            }
-            acc
-        })
-        .collect()
-}
 
 #[cfg(test)]
 #[allow(clippy::arithmetic_side_effects)]
@@ -393,26 +324,5 @@ mod tests {
         );
     }
 
-    /// γ agrees with a naive per-row Horner evaluation.
-    #[test]
-    fn projected_weights_match_horner() {
-        let q = 0x0000_00E8_D4A5_1027u128; // 10^12 + 39, prime
-        assert!(is_prime_naive(q));
-        let alpha = 0x1234_5678u128 % q;
-        let coords: Vec<Vec<u128>> = (0..3)
-            .map(|d: u128| {
-                (0..16)
-                    .map(|b: u128| (b + 1) * (d + 2) * 0x9E37_79B9 % (1u128 << 40))
-                    .collect()
-            })
-            .collect();
-        let gamma = projected_row_weights(&coords, q, alpha);
-        for b in 0..16 {
-            let mut acc = 0u128;
-            for d in (0..3).rev() {
-                acc = (mulmod_generic(acc, alpha, q) + coords[d][b] % q) % q;
-            }
-            assert_eq!(gamma[b], acc, "row {b}");
-        }
-    }
+
 }

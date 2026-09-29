@@ -78,7 +78,6 @@ pub mod piop;
 pub mod poly;
 pub mod proof_codec;
 
-pub mod taps;
 pub mod transcript;
 pub mod utils;
 pub(crate) mod virt_batch;
@@ -95,45 +94,10 @@ pub use ligerito_flock::{
     prove_mle_eval_mod_q_ligerito_with_ood, sha_lig_ood_params,
     verify_mle_eval_mod_q_ligerito_runtime, verify_mle_eval_mod_q_ligerito_with_ood,
 };
-// Extension-field evaluation claims (paper `c:core_iop` Steps 1–3): the
-// random-prime projection of a degree-≥2 extension-field claim onto the
-// ordinary mod-q' pipeline.
-pub use ext_proj::ExtProjParams;
-pub use ligerito_flock::{
-    IntEvalRsLigExtProof, prove_mle_eval_ext_ligerito, prove_mle_eval_ext_ligerito_with_ood,
-    verify_mle_eval_ext_ligerito, verify_mle_eval_ext_ligerito_with_ood,
-};
-// EXPERIMENTAL — mod-q RLC claim families (docs/rlc-family-note-prompt.md):
-// k claims on F₂-linear forms of j committed columns via ONE γ-RLC forest
-// per chunk + a degree-(j+1) monomial discharge. No proof_codec wiring.
-pub use ligerito_flock::{
-    IntEvalRsLigRlcFamilyProof, RlcFamilyClaim, mle_eval_mod_q_lig_rlc_family_proof_size_bytes,
-    prove_mle_eval_mod_q_ligerito_rlc_family, verify_mle_eval_mod_q_ligerito_rlc_family,
-};
-// EXPERIMENTAL — structured-tap virtual claims (ROT/SHIFT/entry-offset
-// taps; docs/rlc-structured-taps-phase0.md): tapped rows through the
-// batched x-forest with translated-eq committed openings.
-pub use ligerito_flock::{
-    IntEvalRsLigModQTapProof, TapClaim, TapVerifyClaim, mle_eval_mod_q_lig_tap_size_breakdown,
-    prove_mle_eval_mod_q_ligerito_tap_claims, verify_mle_eval_mod_q_ligerito_tap_claims,
-};
-pub use ligerito_flock::{
-    IntEvalRsLigTapFamilyProof, TapFamilyCluster, TapFamilyClusterSide,
-    mle_eval_mod_q_lig_tap_family_size_breakdown, prove_mle_eval_mod_q_ligerito_tap_family,
-    verify_mle_eval_mod_q_ligerito_tap_family,
-};
-// EXPERIMENTAL — the single-tap shared-point collapse: k single-tap
-// claims at one point become ≤ #columns × 2 plain single-column claims
-// (weight transform; no streams, channels, or translated-eq rings).
 pub use circuit::linear_map::binary::{PreparedVirtualMap, PreparedVirtualMapError};
-pub use ligerito_flock::{
-    TapPointClaim, prove_mle_eval_mod_q_ligerito_tap_collapse,
-    verify_mle_eval_mod_q_ligerito_tap_collapse,
-};
 pub use pcs::IntegerMatrixLayout;
 pub use poly::univariate::binary_b127::B127;
 pub use poly::univariate::binary_gf128::Gf128;
 
-pub use taps::{TapOp, extract_virtual_tap_rows};
 
 pub mod sumcheck;
