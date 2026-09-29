@@ -43,7 +43,6 @@ use thiserror::Error;
 
 use {
     crate::{
-        ext_proj::PrimeSamplingError,
         ligerito::{LOG_PACKING, packed_vars},
         ligerito_flock::{
             FlockCommitHint, FlockRsError, LigeritoSelection, OodRound, ProverOod,
@@ -52,6 +51,7 @@ use {
         },
         pcs::IntegerMatrixLayout,
         poly::{mle::DenseMultilinearExtension, univariate::binary_gf128::Gf128},
+        prime_sampling::PrimeSamplingError,
         transcript::traits::Transcript,
     },
     circuit::linear_map::binary::VirtualMap,
@@ -1862,7 +1862,7 @@ pub fn sample_mod_q(
     absorb_spartan_message(transcript, b"prime-domain", domain);
     absorb_spartan_message(transcript, b"prime-min", &min.to_le_bytes());
     absorb_spartan_message(transcript, b"prime-max", &max.to_le_bytes());
-    let field = crate::ext_proj::sample_prime_context(transcript, min, max, 128)?;
+    let field = crate::prime_sampling::sample_prime_context(transcript, min, max, 128)?;
     let q = u128::from(*field.modulus());
     absorb_spartan_message(transcript, b"prime-q", &q.to_le_bytes());
     if field.modulus_bits() < super::SPARTAN_MIN_MODULUS_BITS as usize {
@@ -1880,7 +1880,7 @@ pub fn sample_full_width_prime(
     max: u128,
 ) -> Result<field::FpCtx<2>, ProtocolError> {
     absorb_spartan_message(transcript, b"prime-domain", domain);
-    let field = crate::ext_proj::sample_prime_context(transcript, min, max, 128)?;
+    let field = crate::prime_sampling::sample_prime_context(transcript, min, max, 128)?;
     let q = u128::from(*field.modulus());
     absorb_spartan_message(transcript, b"prime-q", &q.to_le_bytes());
     if field.modulus_bits() < super::SPARTAN_MIN_MODULUS_BITS as usize {

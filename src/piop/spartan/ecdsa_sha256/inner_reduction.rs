@@ -2,8 +2,11 @@
 //! `claimed_sum = Σ_i batched_matrix[i] · witness[i]` over the sampled field.
 //! The prover prepares the matrix MLE; the verifier evaluates it directly.
 
+#[cfg(test)]
 use crate::piop::spartan::SpartanField as _;
 use crate::piop::spartan::raw_monty::RawFieldStorage;
+#[cfg(test)]
+use crate::sumcheck::inner::native::{raw_to_words, words_to_raw};
 use field::RingOps;
 
 #[cfg(test)]
@@ -12,11 +15,7 @@ use super::{
     error,
     relation::{OuterMode, PreparedSha256Ecdsa, SHA_H, Sha256EcdsaStatement},
 };
-use crate::piop::spartan::{
-    matrix::eq_table,
-    raw_monty::{raw_to_words, words_to_raw},
-    sumcheck::OuterSumcheckProof,
-};
+use crate::piop::spartan::{matrix::eq_table, sumcheck::OuterSumcheckProof};
 use circuit::linear_map::circuit::PreparedWengertEvaluator;
 
 use crate::sumcheck::bridge::composite::{
@@ -116,7 +115,13 @@ impl InnerSumcheckClaim {
 }
 
 /// Writes the batched `(1, ρ, ρ²)` matrix weights for one row into `slots`.
-fn matrix_weights(ctx: &field::FpCtx<2>, batch: u128, batch_squared: u128, slots: &mut [u128], weight: u128) {
+fn matrix_weights(
+    ctx: &field::FpCtx<2>,
+    batch: u128,
+    batch_squared: u128,
+    slots: &mut [u128],
+    weight: u128,
+) {
     slots[0] = weight;
     slots[1] = ctx.mul_raw(weight, batch);
     slots[2] = ctx.mul_raw(weight, batch_squared);
@@ -645,7 +650,7 @@ mod tests {
     /// transcript): the modulus class the verifier runs on, next to the wider
     /// Mersenne prime the other oracle tests use.
     pub(super) fn sampled_prime() -> u128 {
-        crate::ext_proj::sample_prime_in_interval(
+        crate::prime_sampling::sample_prime_in_interval(
             &mut crate::transcript::Blake3Transcript::new(),
             1u128 << 112,
             (1u128 << 113) - 1,

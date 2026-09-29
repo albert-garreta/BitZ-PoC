@@ -370,9 +370,6 @@ impl WfbitzOpeningProof {
     }
 }
 
-/// A proof discharged through the BitZ opener.
-pub type WfbitzProof = Proof;
-
 /// The fork's instance tag: 32 bytes squeezed from the outer transcript
 /// after the terminal boundary.
 pub(crate) fn fork_tag<T: Transcript>(transcript: &mut T) -> [u8; 32] {
@@ -421,7 +418,7 @@ pub fn prove<T: Transcript + Send, S: RelationSpec>(
     opener: &WfbitzOpener,
     witness: &S::Witness,
     hint: &FlockCommitHint,
-) -> Result<WfbitzProof, ProtocolError> {
+) -> Result<Proof, ProtocolError> {
     if prefix.params() != *opener.layout() {
         return Err(ProtocolError::RelationWitnessLayoutMismatch);
     }
@@ -445,7 +442,7 @@ pub(super) fn prove_direct<T: Transcript + Send, S: RelationSpec>(
     digest: &[u8; 32],
     witness: &S::Witness,
     hint: &FlockCommitHint,
-) -> Result<WfbitzProof, ProtocolError> {
+) -> Result<Proof, ProtocolError> {
     let spec = prefix.layout();
     // The direct discharge only: the claim of a relation with a virtual map
     // is about the derived grid, not the committed one.
@@ -501,7 +498,7 @@ pub fn verify<T: Transcript + Send, S: RelationSpec>(
     prefix: &PreparedRelationPrefix<S>,
     opener: &WfbitzOpener,
     commitment: &Commitment,
-    proof: &WfbitzProof,
+    proof: &Proof,
 ) -> Result<(), ProtocolError> {
     if prefix.params() != *opener.layout() {
         return Err(ProtocolError::RelationWitnessLayoutMismatch);
@@ -525,11 +522,12 @@ pub(super) fn verify_direct<T: Transcript + Send, S: RelationSpec>(
     pcs: &BitzPcs,
     digest: &[u8; 32],
     commitment: &Commitment,
-    proof: &WfbitzProof,
+    proof: &Proof,
 ) -> Result<(), ProtocolError> {
     if prefix.layout().map().is_some() {
         return Err(ProtocolError::UnsupportedDischarge);
     }
+    check_proof_kernel(prefix.layout().kernel(), &proof.prefix.spartan)?;
     let binding_config = configuration.binding_config()?;
     validate_commitment(&prefix.params(), commitment, &binding_config)?;
     let (binding, ood) = bind_verifier_statement(
@@ -998,7 +996,7 @@ mod tests {
         {
             let layout = MulLayout::<T>::new(1 << 15)
                 .unwrap()
-                .wfbitz_split(0)
+                .with_split_shift(0)
                 .unwrap();
             let witness = MulWitness::from_fn_with_layout(layout, input).unwrap();
             let selection = LigeritoSelection::JOHNSON;
@@ -1135,67 +1133,6 @@ mod tests {
             ),
             Err(ProtocolError::CommitmentConfigMismatch)
         ));
-    }
-
-    /// A relation with a virtual map is refused by the direct discharge
-    /// before any transcript work (its claim is about the derived grid, not
-    /// the committed bits), as the crate's own runner dispatches it.
-    #[test]
-    fn a_relation_with_a_map_is_not_discharged_directly() {
-        let multiplications = 1 << 15;
-        let witness = u32_witness(multiplications);
-        let layout = MulLayout::<u32>::new(multiplications).unwrap();
-        // The same products packed three bits per cell: a virtual map over
-        // the same committed bit rows.
-        let packed = MulLayout::<u32>::new_with_word_bits(multiplications, 3).unwrap();
-        assert!(RelationSpec::map(&packed).is_some());
-        assert_eq!(
-            RelationSpec::committed_layout(&packed),
-            RelationSpec::committed_layout(&layout)
-        );
-        let packed_witness = MulWitness::<u32>::from_fn_with_word_bits(multiplications, 3, |i| {
-            (i as u32, !(i as u32))
-        })
-        .unwrap();
-        let (prefix, opener) =
-            WfbitzOpener::prepare::<Lambda100, _>(layout, WfbitzLigerito::Fast, 100).unwrap();
-        let (packed_prefix, packed_opener) =
-            WfbitzOpener::prepare::<Lambda100, _>(packed, WfbitzLigerito::Fast, 100).unwrap();
-        let hint = opener.commit(witness.bitz_bit_rows()).unwrap();
-        let proof = prove(
-            &mut Blake3Transcript::new(),
-            &prefix,
-            &opener,
-            &witness,
-            &hint,
-        )
-        .unwrap();
-        let packed_hint = packed_opener
-            .commit(packed_witness.bitz_bit_rows())
-            .unwrap();
-        let mut transcript = Blake3Transcript::new();
-        let fresh = transcript.state_digest();
-        assert!(matches!(
-            prove(
-                &mut transcript,
-                &packed_prefix,
-                &packed_opener,
-                &packed_witness,
-                &packed_hint
-            ),
-            Err(ProtocolError::UnsupportedDischarge)
-        ));
-        assert!(matches!(
-            verify(
-                &mut transcript,
-                &packed_prefix,
-                &packed_opener,
-                &hint.commitment,
-                &proof
-            ),
-            Err(ProtocolError::UnsupportedDischarge)
-        ));
-        assert_eq!(transcript.state_digest(), fresh);
     }
 
     /// A prefix that credits forest or ring-switch grinding (λ = 128 built

@@ -29,7 +29,7 @@ pub fn selection(case: &Case) -> LigeritoSelection {
 }
 pub fn packing<T: MulWord>(layout: &MulLayout<T>) -> Value {
     let shape = |p: bitz::pcs::IntegerMatrixLayout| json!({"t":p.row_vars,"s":p.col_vars,"physical_word_bits":p.word_bits});
-    json!({"logical_word_bits":layout.word_bits(),"mode":if layout.uses_direct_opening(){"direct"}else{"virtual"},"committed":shape(layout.committed_layout()),"opening":shape(layout.bitz_params())})
+    json!({"logical_word_bits":1,"mode":"direct","committed":shape(layout.committed_layout()),"opening":shape(layout.bitz_params())})
 }
 pub fn shape_seed(case: &Case) -> u64 {
     if case.workload == Workload::U32Mod32 {
@@ -137,8 +137,7 @@ where
     MulLayout<T>: RelationSpec<Witness = MulWitness<T>>,
 {
     let c = run.job.case.bitz.as_ref().expect("BitZ config");
-    let layout = MulLayout::<T>::new_with_word_bits(inputs.len(), c.w)?;
-    let layout = layout.wfbitz_split(c.split)?;
+    let layout = MulLayout::<T>::new(inputs.len())?.with_split_shift(c.split)?;
     let packing = packing(&layout);
     let modular = run.job.case.workload == Workload::U32Mod32;
     trials(
@@ -212,11 +211,9 @@ where
     let profile128 = config.profile == Some(128);
     use bitz::piop::spartan::protocol::wfbitz_opener::{self, WfbitzLigerito, WfbitzOpener};
     let target = config.profile.expect("profile");
-    let ladder = WfbitzLigerito::parse(
-        config.ligerito.as_deref().expect("proof selection"),
-        target,
-    )
-    .map_err(anyhow::Error::msg)?;
+    let ladder =
+        WfbitzLigerito::parse(config.ligerito.as_deref().expect("proof selection"), target)
+            .map_err(anyhow::Error::msg)?;
     let setup = Instant::now();
     let (prefix, opener) = if profile128 {
         WfbitzOpener::prepare::<Lambda128, _>(layout, ladder, target)?
@@ -228,23 +225,23 @@ where
     let (opening_bits, opening_binding) = opener.opening_bits(security_params.ood);
     let ladder_config = opener.security();
     let security = json!({
-        "profile":if security_params.lambda==128 {Lambda128::NAME}else{Lambda100::NAME},
-        "lambda":security_params.lambda,
-        "achieved_bits":security_params.accounting.achieved_bits().min(opening_bits),
-        "piop_achieved_bits":security_params.accounting.achieved_bits(),
-        "opener":"wfbitz",
-        "ligerito":{
-            "requested_profile":opener.ligerito().name(),
-            "resolved_profile":format!("wfbitz-{}", opener.ligerito().name()),
-            "regime":if ladder_config.levels.first().is_some_and(|l| l.eta.is_some()) {"johnson"} else {"udr"},
-            "target_bits":ladder_config.target_security_bits,
-            "configuration_fingerprint":opener.digest().iter().map(|b| format!("{b:02x}")).collect::<String>(),
-            "outer_ood":prefix.security().ood.is_some(),
-            "ood_grinding_bits":prefix.security().ood.map(|params| params.grinding_bits),
-            "opening_bits":opening_bits,
-            "opening_binding":opening_binding,
-            "configuration":ladder_config,
-        }});
+    "profile":if security_params.lambda==128 {Lambda128::NAME}else{Lambda100::NAME},
+    "lambda":security_params.lambda,
+    "achieved_bits":security_params.accounting.achieved_bits().min(opening_bits),
+    "piop_achieved_bits":security_params.accounting.achieved_bits(),
+    "opener":"wfbitz",
+    "ligerito":{
+        "requested_profile":opener.ligerito().name(),
+        "resolved_profile":format!("wfbitz-{}", opener.ligerito().name()),
+        "regime":if ladder_config.levels.first().is_some_and(|l| l.eta.is_some()) {"johnson"} else {"udr"},
+        "target_bits":ladder_config.target_security_bits,
+        "configuration_fingerprint":opener.digest().iter().map(|b| format!("{b:02x}")).collect::<String>(),
+        "outer_ood":prefix.security().ood.is_some(),
+        "ood_grinding_bits":prefix.security().ood.map(|params| params.grinding_bits),
+        "opening_bits":opening_bits,
+        "opening_binding":opening_binding,
+        "configuration":ladder_config,
+    }});
     let bounds = run.job.case.mode == Mode::Bounds;
     trial_loop(
         run,
@@ -258,7 +255,13 @@ where
         |rows| Ok(opener.commit(rows)?),
         |w, hint, transcript| Ok(wfbitz_opener::prove(transcript, &prefix, &opener, w, hint)?),
         |hint, proof| {
-            wfbitz_opener::verify(&mut Blake3Transcript::new(), &prefix, &opener, &hint.commitment, proof)?;
+            wfbitz_opener::verify(
+                &mut Blake3Transcript::new(),
+                &prefix,
+                &opener,
+                &hint.commitment,
+                proof,
+            )?;
             Ok(())
         },
         |proof| proof.size_bytes(security_params),
@@ -275,7 +278,6 @@ where
             crate::common::proof_fingerprint::nonlinear_fingerprint(proof, root, transcript)
         },
     )
-
 }
 
 /// The timed trials of one prepared relation, the opener abstracted: each
@@ -296,7 +298,11 @@ fn trial_loop<W, P>(
     verify: impl Fn(&bitz::ligerito_flock::FlockCommitHint, &P) -> Result<()>,
     size: impl Fn(&P) -> usize,
     roundtrip: impl Fn(&P) -> Result<()>,
-    fingerprint: impl Fn(&P, &[u8], &Blake3Transcript) -> crate::common::proof_fingerprint::ProofFingerprint,
+    fingerprint: impl Fn(
+        &P,
+        &[u8],
+        &Blake3Transcript,
+    ) -> crate::common::proof_fingerprint::ProofFingerprint,
 ) -> Result<()>
 where
     W: Sync,

@@ -90,7 +90,7 @@ impl BF for Gf128 {
         Gf128::square(*self)
     }
     fn inverse(&self) -> Self {
-        Gf128::inverse(self)
+        self.inverse_or_zero()
     }
 }
 
@@ -109,7 +109,7 @@ impl BF for B127 {
         B127::square(*self)
     }
     fn inverse(&self) -> Self {
-        B127::inverse(self)
+        self.invert_nonzero()
     }
 }
 

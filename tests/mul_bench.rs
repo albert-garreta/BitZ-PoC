@@ -24,8 +24,6 @@ fn comprehensive_bitz_expansion_and_worker_roundtrip() {
         "u32-full,u64,u128",
         "--log-n",
         "15..=20",
-        "--w",
-        "1,3,8",
         "--split=0,1",
         "--threads",
         "1,8",
@@ -38,23 +36,9 @@ fn comprehensive_bitz_expansion_and_worker_roundtrip() {
         "--bench",
     ]);
     let jobs = args.expand(false).unwrap();
-    assert_eq!(jobs.len(), 3 * 6 * 3 * 2 * 2 * 2);
+    assert_eq!(jobs.len(), 3 * 6 * 2 * 2 * 2);
     for job in jobs {
         assert_eq!(job.case.mode, Mode::Proof);
-        if job.case.workload == mul::config::Workload::U32Full
-            && job.case.log_n == 15
-            && job
-                .case
-                .bitz
-                .as_ref()
-                .is_some_and(|f| f.w == 8 && f.profile == Some(128))
-        {
-            assert!(
-                job.skip
-                    .as_ref()
-                    .is_some_and(|s| s.contains("projection-draw"))
-            );
-        }
         let decoded: mul::config::Job =
             serde_json::from_str(&serde_json::to_string(&job).unwrap()).unwrap();
         assert_eq!(decoded.case, job.case);
@@ -71,8 +55,6 @@ fn bitz_axes_do_not_duplicate_competitors() {
         "bitz,binius64",
         "--log-n",
         "15",
-        "--w",
-        "1,3,8",
         "--split=0,1",
         "--bitz-profile",
         "100,128",
@@ -81,7 +63,7 @@ fn bitz_axes_do_not_duplicate_competitors() {
     ])
     .expand(true)
     .unwrap();
-    assert_eq!(jobs.len(), 13);
+    assert_eq!(jobs.len(), 5);
     let competitor = jobs.iter().find(|j| j.case.backend == "binius64").unwrap();
     assert!(competitor.case.bitz.is_none());
 }
@@ -91,8 +73,6 @@ fn witness_omits_unused_security_axes() {
         "witness",
         "--workload",
         "u64",
-        "--w",
-        "1,3",
         "--bitz-profile",
         "100,128",
         "--threads",
@@ -100,7 +80,7 @@ fn witness_omits_unused_security_axes() {
     ])
     .expand(false)
     .unwrap();
-    assert_eq!(jobs.len(), 2);
+    assert_eq!(jobs.len(), 1);
     assert_eq!(jobs[0].case.log_n, 10);
     assert!(
         jobs.iter()
@@ -129,9 +109,12 @@ fn capabilities_reject_or_record_without_hiding_malformed_arguments() {
     // u32-full relation, so the other three backends are recorded as skipped.
     let skipped: Vec<_> = jobs.iter().filter(|j| j.skip.is_some()).collect();
     assert_eq!(skipped.len(), 3);
-    assert!(skipped.iter().all(|j| j.case.backend != "bitz" && j.case.workload == mul::config::Workload::U32Full));
+    assert!(
+        skipped
+            .iter()
+            .all(|j| j.case.backend != "bitz" && j.case.workload == mul::config::Workload::U32Full)
+    );
     for flags in [
-        vec!["--w", "0"],
         vec!["--bitz-profile", "101"],
         vec!["--backends", "typo"],
         vec!["--threads", "0"],
@@ -184,11 +167,6 @@ fn mode_defaults_and_packing_constraints() {
     .unwrap();
     assert_eq!(bounds.len(), 5);
     assert!(bounds.iter().all(|j| j.case.seed == bounds[0].case.seed));
-    assert!(
-        parse(&["proof", "--workload", "u64", "--w", "126", "--threads", "1"])
-            .expand(false)
-            .is_err()
-    );
     let profiles = parse(&[
         "proof",
         "--log-n",
@@ -290,31 +268,12 @@ fn one_bitz_configuration_and_retired_selectors_are_rejected() {
         jobs[0].case.bitz.as_ref().unwrap().opener.as_deref(),
         Some("wfbitz")
     );
-    for (flag, value) in [("--gkr-schedule", "auto"), ("--opener", "forest"), ("--opener", "wfbitz")] {
+    for (flag, value) in [
+        ("--w", "1"),
+        ("--gkr-schedule", "auto"),
+        ("--opener", "forest"),
+        ("--opener", "wfbitz"),
+    ] {
         assert!(Args::try_parse_from(["mul", flag, value]).is_err());
     }
-}
-
-#[test]
-fn unachievable_security_profile_is_a_preflight_skip_only_when_requested() {
-    let flags = [
-        "proof",
-        "--workload",
-        "u32-full",
-        "--log-n",
-        "15",
-        "--threads",
-        "1",
-        "--w",
-        "1,8",
-        "--bitz-profile",
-        "128",
-    ];
-    assert!(parse(&flags).expand(false).is_err());
-    let mut args = parse(&flags);
-    args.skip_unsupported = true;
-    let jobs = args.expand(false).unwrap();
-    assert_eq!(jobs.len(), 2);
-    assert!(jobs[0].skip.is_none());
-    assert!(jobs[1].skip.as_ref().unwrap().contains("projection-draw"));
 }

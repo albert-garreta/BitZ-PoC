@@ -380,24 +380,6 @@ pub(crate) fn sv_fold_mfr<T: PackedBits>(wit: &[T], eq: &[Gf]) -> Vec<Gf> {
     s
 }
 
-/// `Φ_{r″}` — the F₂-linear batching map on the bit representation:
-/// `β_u ↦ eq_r2[u]`, applied to a K element by summing over its set bits.
-#[allow(clippy::arithmetic_side_effects)]
-#[inline(always)]
-pub(crate) fn phi_bit_sum(ev: Gf, eq_r2: &[Gf]) -> Gf {
-    let w = ev.as_words();
-    let mut acc = Gf::zero();
-    for wi in 0..2usize {
-        let mut bits = w[wi];
-        while bits != 0 {
-            let t = bits.trailing_zeros() as usize;
-            acc += eq_r2[(wi << 6) | t];
-            bits &= bits.wrapping_sub(1);
-        }
-    }
-    acc
-}
-
 /// 16 byte-position subset-sum tables of `scale·eq_r2`:
 /// `T[pos·256 + v] = Σ_{bit j of v} scale·eq_r2[pos·8 + j]` (64 KB). A
 /// `Φ_{r″}` image then costs 16 gathers + a XOR tree ([`phi_from_words`])

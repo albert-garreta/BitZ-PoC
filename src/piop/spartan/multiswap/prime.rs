@@ -48,12 +48,13 @@
 use thiserror::Error;
 
 use crate::{
-    ext_proj::{PrimeSamplingError, sample_prime_in_interval},
     piop::spartan::absorb_spartan_message,
+    prime_sampling::{PrimeSamplingError, sample_prime_in_interval},
     transcript::traits::Transcript,
 };
 
-pub(crate) const FINGERPRINT_SAMPLING_DOMAIN: &[u8] = b"bitz/spartan-multiswap/fingerprint-prime/v2";
+pub(crate) const FINGERPRINT_SAMPLING_DOMAIN: &[u8] =
+    b"bitz/spartan-multiswap/fingerprint-prime/v2";
 pub(crate) const REDUCTION_SAMPLING_DOMAIN: &[u8] = b"bitz/spartan-multiswap/reduction-prime/v2";
 
 use crate::piop::spartan::profile::{IopInstanceFacts, IopSecurityParams};
@@ -182,7 +183,7 @@ pub fn sample_multiswap_fingerprint_context(
         &profile.fingerprint_max.to_le_bytes(),
     );
 
-    let field = crate::ext_proj::sample_prime_context(
+    let field = crate::prime_sampling::sample_prime_context(
         transcript,
         profile.fingerprint_min,
         profile.fingerprint_max,

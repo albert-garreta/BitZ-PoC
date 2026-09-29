@@ -9,11 +9,11 @@ use field::{Fp, Uint};
 use thiserror::Error;
 
 use crate::{
-    ext_proj::PrimeSamplingError,
     piop::spartan::{
         SpartanField, absorb_spartan_message,
         profile::{IopInstanceFacts, IopSecurityParams},
     },
+    prime_sampling::PrimeSamplingError,
     transcript::traits::Transcript,
 };
 
@@ -265,7 +265,7 @@ pub(super) fn sample_sha256_mod_q_context(
     );
     absorb_spartan_message(transcript, b"prime-min", &profile.min_prime.to_le_bytes());
     absorb_spartan_message(transcript, b"prime-max", &profile.max_prime.to_le_bytes());
-    let field = crate::ext_proj::sample_prime_context(
+    let field = crate::prime_sampling::sample_prime_context(
         transcript,
         profile.min_prime,
         profile.max_prime,

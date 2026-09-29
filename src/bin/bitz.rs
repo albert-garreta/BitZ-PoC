@@ -10,14 +10,10 @@
 //!     28 17 11 --threads 1 --reps 5 --profile slim
 //! ```
 //!
-//! Usage: `bitz <n> [<t> <s> [<W>]] [options]`
+//! Usage: `bitz <n> [<t> <s>] [options]`
 //!
-//! - `n` — cell-index MLE variables, `n = t + s` (the committed instance
-//!   is `2^n · W` bits). If `t s` are omitted the reference split
-//!   `t ≈ 0.6n` is used (clamped to the packing constraint
-//!   `t + log₂W ≥ 7`). `W` as a fourth positional sets the cell width
-//!   (power of two; equivalent to `--word-bits`, positional wins) — e.g.
-//!   the reference W=32 shape: `bitz 12 4 8 32`.
+//! - `n` — committed bit-index variables, `n = t + s`. Without `t s`,
+//!   use `t = ceil(0.6n)`, clamped to the seven-bit packing width.
 //! - `--threads N` / `-j N` — rayon pool size; `1` = single-threaded.
 //!   Default: all cores (or `RAYON_NUM_THREADS`).
 //! - `--reps R` — timing repetitions (median reported; default 3).
@@ -36,11 +32,10 @@
 //!   the embedded profiles need `m ≥ 22` and keep their template's hash.
 //!   Below that every choice falls back to the ad-hoc test config
 //!   (UNAUDITED — no security claim). The `bitz:` header prints the hash.
-//! - `--word-bits W` — cell width (power of two; default 1).
 //! - `--sweep <lo>-<hi>` (or a list `20,24,28`, or mixed `20-24,28`) — the
 //!   PAPER-TABLE mode: run the single-claim path once per `n`, each in a
 //!   FRESH child process (`std::env::current_exe()` re-invoked with the same
-//!   `--threads/--reps/--profile/--word-bits`; one shape per process is the
+//!   `--threads/--reps/--profile`; one shape per process is the
 //!   bench protocol), stream each child's output, parse its `RESULT` line,
 //!   print a summary, and write the LaTeX table to `--latex <path>` (default
 //!   `outputs/tables/raw-performance-table.tex` in the crate; the file records the
@@ -56,8 +51,7 @@
 //!   transcript-sampled Step-2 prime, the native Spartan PIOP with the K=3
 //!   univariate skip, bitification, and the BitZ opening of the 128 committed
 //!   bits per multiplication) for `2^e` multiplications, `e ≥ 15`, at the
-//!   `--lambda 100|128` profile (default 100 = `Lambda100`; `--word-bits
-//!   1|8` picks the BitZ cell width). `--profile custom:<r>:<k>` (default
+//!   `--lambda 100|128` profile (default 100 = `Lambda100`). `--profile custom:<r>:<k>` (default
 //!   `custom:1:4`, the raw-performance table's opener) selects the Johnson
 //!   Ligerito geometry at the profile's target; `--profile udr` selects the
 //!   relation's own default (flock's validated UDR at rate 1/2 — what
@@ -97,12 +91,12 @@
 //! `--features unchecked` for release-style plain integer ops (the header
 //! reports the active mode and warns otherwise).
 
-use ::bitz::piop::spartan::protocol::wfbitz_opener::{
-    self, WfbitzLigerito, WfbitzOpener, WfbitzOpeningProof,
-};
 use ::bitz::piop::spartan::protocol;
 use ::bitz::piop::spartan::protocol::PreparedRelation;
 use ::bitz::piop::spartan::protocol::Proof;
+use ::bitz::piop::spartan::protocol::wfbitz_opener::{
+    self, WfbitzLigerito, WfbitzOpener, WfbitzOpeningProof,
+};
 use bitz::piop::spartan::mul::{MulLayout, MulWitness};
 
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -116,12 +110,11 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use bitz::ligerito::packed_vars;
 use bitz::ligerito_flock::FlockCommitHint;
 use bitz::ligerito_flock::LigeritoSelection;
-use bitz::ligerito_flock::{
-    OodRoundParams, ood_round_params, standalone_q_bits,
-    weakest_fold_round_grinding,
-};
 use bitz::ligerito_flock::commit_rs_ligerito_rows;
-use bitz::pcs::{IntegerMatrixLayout, mod_q_num_chunks, smallest_generator};
+use bitz::ligerito_flock::{
+    OodRoundParams, ood_round_params, standalone_q_bits, weakest_fold_round_grinding,
+};
+use bitz::pcs::{IntegerMatrixLayout, smallest_generator};
 use bitz::piop::spartan::{IopSecurityProfile, Lambda100, Lambda128};
 use bitz::transcript::Blake3Transcript;
 use flock_core::pcs::ligerito::LigeritoSecurityConfig;
@@ -182,7 +175,6 @@ fn set_heap_tracking(on: bool) {
 fn peak_mb() -> f64 {
     PEAK.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0)
 }
-
 
 fn median(mut v: Vec<f64>) -> f64 {
     v.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -383,14 +375,14 @@ fn print_steps(
 
 fn usage() -> ! {
     eprintln!(
-        "usage: bitz <n> [<t> <s> [<W>]] [--threads N] [--reps R] \
-         [--profile slim|slim3|fast|secure|custom:<r>:<k>[:<bits>]|udr:<r>:<k>[:<bits>] (default custom:1:4)] [--word-bits W] \
-       bitz --sweep <lo>-<hi>|<n,n,…> [--threads N | --sweep-threads 1,10] [--reps R] [--profile P] [--word-bits W] [--cooldown S] [--rep-cooldown S] [--latex <path>]\n\
+        "usage: bitz <n> [<t> <s>] [--threads N] [--reps R] \
+         [--profile slim|slim3|fast|secure|custom:<r>:<k>[:<bits>]|udr:<r>:<k>[:<bits>] (default custom:1:4)] \
+       bitz --sweep <lo>-<hi>|<n,n,…> [--threads N | --sweep-threads 1,10] [--reps R] [--profile P] [--cooldown S] [--rep-cooldown S] [--latex <path>]\n\
          (paper-table mode: one fresh process per n, then the LaTeX table is written —\n\
           default outputs/tables/raw-performance-table.tex in the crate; t/s do not apply)\n\
-       bitz --mul <e> [--threads N] [--reps R] [--lambda 100|128] [--profile custom:<r>:<k>|udr] [--word-bits 1|8]\n\
+       bitz --mul <e> [--threads N] [--reps R] [--lambda 100|128] [--profile custom:<r>:<k>|udr]\n\
          (2^e u32×u32→u64 multiplications through the Spartan PIOP + BitZ opening; e ≥ 15)\n\
-       bitz --mul-sweep <lo>-<hi>|<e,e,…> [--threads N] [--reps R] [--lambda L] [--word-bits W] [--cooldown S] [--latex <path>]\n\
+       bitz --mul-sweep <lo>-<hi>|<e,e,…> [--threads N] [--reps R] [--lambda L] [--cooldown S] [--latex <path>]\n\
          (paper-table mode for --mul; default outputs/tables/u32-mul-table.tex)\n\
          (n = t + s; W = cell width, power of two, default 1;\n\
           run with --release and --features unchecked for quotable numbers;\n\
@@ -406,8 +398,6 @@ struct Opts {
     threads: Option<usize>,
     reps: usize,
     profile: String,
-    word_bits: usize,
-
 
     /// `--sweep`: the shapes to run (each in a fresh child process) and the
     /// spec as typed (reproduced verbatim in the generated table's header).
@@ -444,7 +434,6 @@ fn parse_args() -> Opts {
         threads: None,
         reps: 3,
         profile: std::env::var("BITZ_LIG_PROFILE").unwrap_or_else(|_| "custom:1:4".into()),
-        word_bits: 1,
         sweep: None,
         latex: None,
         mul: None,
@@ -474,12 +463,6 @@ fn parse_args() -> Opts {
             "--profile" => {
                 profile_explicit = true;
                 o.profile = args.next().unwrap_or_else(|| usage());
-            }
-            "--word-bits" | "-w" => {
-                o.word_bits = args
-                    .next()
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or_else(|| usage());
             }
             "--sweep" => {
                 let spec = args.next().unwrap_or_else(|| usage());
@@ -574,16 +557,10 @@ fn parse_args() -> Opts {
                 o.t = Some(*t);
                 o.s = Some(*s);
             }
-            [n, t, s, w] => {
-                o.n = *n;
-                o.t = Some(*t);
-                o.s = Some(*s);
-                o.word_bits = *w; // positional W wins over --word-bits
-            }
             _ => usage(),
         }
     }
-    if o.reps == 0 || !o.word_bits.is_power_of_two() {
+    if o.reps == 0 {
         usage()
     }
     o
@@ -619,10 +596,8 @@ fn parse_sweep_spec(spec: &str) -> Result<Vec<usize>, String> {
 
 /// The reference split `t ≈ 0.6n`, clamped to the packing constraint
 /// (`t + log₂W ≥ 7`) and `s ≥ 1`.
-fn default_split(n: usize, word_bits: usize) -> (usize, usize) {
-    let log_w = word_bits.trailing_zeros() as usize;
-    let t_min = 7usize.saturating_sub(log_w);
-    let t = ((3 * n).div_ceil(5)).max(t_min).min(n - 1);
+fn default_split(n: usize) -> (usize, usize) {
+    let t = ((3 * n).div_ceil(5)).max(7).min(n - 1);
     (t, n - t)
 }
 
@@ -799,9 +774,9 @@ fn main() {
 
     let (t, s) = match (o.t, o.s) {
         (Some(t), Some(s)) => (t, s),
-        _ => default_split(o.n, o.word_bits),
+        _ => default_split(o.n),
     };
-    let w = o.word_bits;
+    let w = 1usize;
     let log_w = w.trailing_zeros() as usize;
     if t + s != o.n {
         eprintln!("t + s = {} ≠ n = {}", t + s, o.n);
@@ -823,7 +798,7 @@ fn main() {
     };
     let q_bits = standalone_q_bits(&p);
     let m_p = packed_vars(&p);
-    let lch = mod_q_num_chunks(&p, q_bits);
+    let lch = 1usize;
     let ((pc, _), lig_tag, lig_sec, resolved) = resolve_configs(m_p, &o.profile);
     // Round 0 (the out-of-domain sample) runs exactly when the opener sits
     // beyond unique decoding; its grinding tops the theorem's bound up to
@@ -904,14 +879,21 @@ fn main() {
     // transcript-sampled prime and point (every timed run re-derives them,
     // so the derivation IS inside the prover's and verifier's timers), then
     // the claimed μ from the set bits (O(popcount) mod-q adds, excluded).
-    let opening = WfbitzOpener::new(p, WfbitzLigerito::Selected(resolved.selection()), resolved.security().target_security_bits as usize)
-        .unwrap_or_else(|error| {
-            eprintln!("Round 0 does not match the Ligerito ladder: {error:?}");
-            exit(2)
-        });
+    let opening = WfbitzOpener::new(
+        p,
+        WfbitzLigerito::Selected(resolved.selection()),
+        resolved.security().target_security_bits as usize,
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("Round 0 does not match the Ligerito ladder: {error:?}");
+        exit(2)
+    });
     let y = wfbitz_opener::standalone_evaluation(&opening, &hint).expect("standalone claim");
-    let prove_once = |hint: &FlockCommitHint| wfbitz_opener::prove_standalone(&opening, hint, y).expect("prove");
-    let verify_once = |proof: &WfbitzOpeningProof| wfbitz_opener::verify_standalone(&opening, &hint.commitment, y, proof);
+    let prove_once =
+        |hint: &FlockCommitHint| wfbitz_opener::prove_standalone(&opening, hint, y).expect("prove");
+    let verify_once = |proof: &WfbitzOpeningProof| {
+        wfbitz_opener::verify_standalone(&opening, &hint.commitment, y, proof)
+    };
     set_heap_tracking(false);
     let mut commit_ms_v = Vec::with_capacity(o.reps);
     for i in 0..o.reps {
@@ -1376,10 +1358,6 @@ fn common_child_args(o: &Opts) -> Vec<String> {
     }
     v.push("--reps".to_string());
     v.push(o.reps.to_string());
-    if o.word_bits != 1 {
-        v.push("--word-bits".to_string());
-        v.push(o.word_bits.to_string());
-    }
     v
 }
 
@@ -1415,7 +1393,7 @@ fn run_sweep(o: &Opts, ns: &[usize], spec: &str) {
                 .join(","))
             .or_else(|| o.threads.map(|t| t.to_string()))
             .unwrap_or_else(|| "default".to_string()),
-        o.word_bits,
+        1usize,
         latex_path.display(),
     );
     // One child per (n, thread count), interleaved by n, under the same
@@ -1512,8 +1490,18 @@ fn probe_provenance() -> Provenance {
         mem_gb,
         date: probe("date", &["-u", "+%Y-%m-%d"]).unwrap_or_else(|| "unknown date".to_string()),
         commit: if Path::new(env!("CARGO_MANIFEST_DIR")).join(".git").exists() {
-            probe("git", &["-C", env!("CARGO_MANIFEST_DIR"), "describe", "--always", "--dirty", "--abbrev=9"])
-                .unwrap_or_else(|| option_env!("BITZ_REVISION").unwrap_or("unknown").to_owned())
+            probe(
+                "git",
+                &[
+                    "-C",
+                    env!("CARGO_MANIFEST_DIR"),
+                    "describe",
+                    "--always",
+                    "--dirty",
+                    "--abbrev=9",
+                ],
+            )
+            .unwrap_or_else(|| option_env!("BITZ_REVISION").unwrap_or("unknown").to_owned())
         } else {
             option_env!("BITZ_REVISION").unwrap_or("unknown").to_owned()
         },
@@ -1541,9 +1529,6 @@ fn reproduce_cmdline(o: &Opts, mode: &str, spec: &str) -> String {
     let _ = write!(cmdline, " --reps {} --profile {}", o.reps, o.profile);
     if mode != "--sweep" && o.lambda != 100 {
         let _ = write!(cmdline, " --lambda {}", o.lambda);
-    }
-    if o.word_bits != 1 {
-        let _ = write!(cmdline, " --word-bits {}", o.word_bits);
     }
     if o.cooldown_s > 0 {
         let _ = write!(cmdline, " --cooldown {}", o.cooldown_s);
@@ -1989,7 +1974,6 @@ fn write_latex_table(path: &Path, rows: &[CliResult], o: &Opts, spec: &str) -> s
     std::fs::write(path, out)
 }
 
-
 /// The deterministic generator α (cached — `smallest_generator` scans).
 fn alpha_of() -> bitz::poly::univariate::binary_gf128::Gf128 {
     use std::sync::OnceLock;
@@ -2272,14 +2256,6 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         eprintln!("--mul needs 15 ≤ e ≤ 40 (the combined proof requires at least 2^15 gate slots)");
         exit(2);
     }
-    let width = match o.word_bits {
-        1 => 1,
-        8 => 8,
-        w => {
-            eprintln!("--word-bits must be 1 or 8 for --mul (got {w})");
-            exit(2);
-        }
-    };
 
     let multiplications = 1usize << e;
     let shape_seed = MUL_ROOT_SEED ^ (e as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
@@ -2299,7 +2275,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     // packing of the assignment for the BitZ commitment is part of Step 1
     // (the Commit column), not of this.
     let gen_witness = || {
-        MulWitness::<u32>::from_inputs_with_word_bits(&inputs, width).unwrap_or_else(|err| {
+        MulWitness::<u32>::from_inputs(&inputs).unwrap_or_else(|err| {
             eprintln!("witness: {err}");
             exit(1)
         })
@@ -2364,7 +2340,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let sec = relation.security();
     let q_bits = (u128::BITS - sec.projection_max.leading_zeros()) as usize;
     let q_lo_log2 = (u128::BITS - 1 - sec.projection_min.leading_zeros()) as usize;
-    let chunks = mod_q_num_chunks(&params, q_bits);
+    let chunks = 1usize;
     let threads_eff: usize = {
         #[cfg(feature = "parallel")]
         {
@@ -2619,7 +2595,7 @@ fn run_mul_sweep(o: &Opts, es: &[usize], spec: &str) {
         o.lambda,
         o.threads
             .map_or_else(|| "default".to_string(), |t| t.to_string()),
-        o.word_bits,
+        1usize,
         latex_path.display(),
     );
     let lines = run_children(&exe, es, "e", o.cooldown_s, |e| {
@@ -2760,7 +2736,7 @@ fn write_mul_latex_table(
         "sha256" => "SHA-256".to_string(),
         other => other.to_string(),
     };
-    let w = first.map_or(o.word_bits, |r| r.w);
+    let w = first.map_or(1usize, |r| r.w);
     let log_w = w.trailing_zeros() as usize;
     let cell_words = 128usize >> log_w; // committed cells per multiplication
 

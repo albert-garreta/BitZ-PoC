@@ -2,10 +2,10 @@
 use super::SumcheckError;
 use crate::piop::spartan::SpartanField;
 use crate::poly::mle::DenseMultilinearExtension;
+use field::RingOps;
 use field::{BatchMulAcc, MergeAccumulator, Reduce};
 #[cfg(test)]
-use field::{CtMask, CtSelect};
-use field::{Fp, RingOps};
+use field::{CtMask, CtSelect, Fp};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 /// Native-linear policy retained for the independent test oracles.
@@ -202,7 +202,7 @@ where
 pub(crate) fn sum_product_accumulators<F, R, const COEFFS: usize>(
     len: usize,
     contribution: impl Fn(&mut [<R as BatchMulAcc<F>>::Accumulator; COEFFS], usize) + Sync,
-    reducer: &R,
+    _reducer: &R,
 ) -> [<R as BatchMulAcc<F>>::Accumulator; COEFFS]
 where
     F: SpartanField,

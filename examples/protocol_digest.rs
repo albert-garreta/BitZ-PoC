@@ -14,7 +14,6 @@ use ::bitz::piop::spartan::protocol;
 use ::bitz::piop::spartan::protocol::PreparedRelation;
 use bitz::piop::spartan::mul::{MulLayout, MulWitness};
 
-use blake3::Hasher;
 use bitz::piop::spartan::multiswap::{
     MultiswapAssignment, MultiswapCircuit, MultiswapDims, PreparedMultiswapRelation,
     commit_multiswap_witness, multiswap_lig_configs, prove_multiswap_mod_r1cs,
@@ -26,6 +25,7 @@ use bitz::piop::spartan::{
     prove_sha256_compressions, verify_sha256_compressions,
 };
 use bitz::transcript::Blake3Transcript;
+use blake3::Hasher;
 
 fn digest_hex(parts: &[&[u8]]) -> String {
     let mut hasher = Hasher::new();
@@ -126,11 +126,16 @@ fn sha256_digest() -> String {
         .chain(proof.initial_nonce().to_le_bytes())
         .chain(proof.terminal_nonce().to_le_bytes())
         .collect();
-    digest_hex(&[&hint.commitment.root, &bitz_bytes, inner.as_bytes(), &nonces])
+    digest_hex(&[
+        &hint.commitment.root,
+        &bitz_bytes,
+        inner.as_bytes(),
+        &nonces,
+    ])
 }
 
 fn u32_mul_digest() -> String {
-    let witness = MulWitness::<u32>::from_fn_with_word_bits(1usize << 15, 1, |i| {
+    let witness = MulWitness::<u32>::from_fn(1usize << 15, |i| {
         let x = (i as u32).wrapping_mul(0x9e37_79b9) | 1;
         let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
         (x, y)

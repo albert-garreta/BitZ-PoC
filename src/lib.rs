@@ -18,7 +18,6 @@
 pub mod binary_pcs;
 #[cfg(feature = "binius64-bench")]
 pub mod binius_ligerito;
-pub mod ext_proj;
 pub mod f2map;
 #[cfg(feature = "hybrid")]
 pub mod hybrid;
@@ -29,6 +28,7 @@ pub mod observability;
 pub mod pcs;
 pub mod piop;
 pub mod poly;
+pub mod prime_sampling;
 pub mod proof_codec;
 pub mod wfbitz;
 

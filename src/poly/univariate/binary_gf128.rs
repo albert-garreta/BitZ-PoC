@@ -33,6 +33,8 @@ use crate::poly::coefficient::{
 use crate::utils::inner_transparent_field::InnerTransparentField;
 use field::Uint;
 #[cfg(test)]
+pub(crate) use field::gf128::kernels::clmul_128x128;
+#[cfg(test)]
 use num_traits::{One, Zero};
 
 use crate::poly::univariate::dense::DensePolynomial;
@@ -158,11 +160,13 @@ impl InnerTransparentField for Gf128 {
 // either way (the trait laws). Overrides `eqf_inverse`: unlike B127
 // (prime group order, no cheap inverse), Gf128 has one and offering it
 // keeps the three-coefficient GKR kernel available here.
-crate::impl_wide_mul_acc!(Gf128, field::Gf128Ops, field::Gf128Product, |elem: &Gf128| {
-    (elem.as_words() != &[0, 0]).then(|| elem.inverse_or_zero())
-});
+crate::impl_wide_mul_acc!(
+    Gf128,
+    field::Gf128Ops,
+    field::Gf128Product,
+    |elem: &Gf128| { (elem.as_words() != &[0, 0]).then(|| elem.inverse_or_zero()) }
+);
 
-pub(crate) use field::gf128::kernels::clmul_128x128;
 #[cfg(test)]
 use field::gf128::kernels::software::clmul_64x64 as clmul_64x64_scalar;
 

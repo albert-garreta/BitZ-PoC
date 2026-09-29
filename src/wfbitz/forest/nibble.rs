@@ -50,26 +50,28 @@ impl NibbleRows {
         let len = (1usize << h) * groups * 64;
         let mut data: Vec<u16> = Vec::with_capacity(len);
         let spare = &mut data.spare_capacity_mut()[..len];
-        cfg_chunks_mut!(spare, block * groups * 64).enumerate().for_each(|(i, rows)| {
-            let y0 = i * block;
-            for g in 0..groups {
-                let col = &packed_cols[g];
-                // lines[w][j]: the word of row y0 + j at nibble position w.
-                let mut lines = [[0u64; 8]; 16];
-                for (w, line) in lines.iter_mut().enumerate() {
-                    let start = y0 | (w << h);
-                    line[..block].copy_from_slice(&col[start..start + block]);
+        cfg_chunks_mut!(spare, block * groups * 64)
+            .enumerate()
+            .for_each(|(i, rows)| {
+                let y0 = i * block;
+                for g in 0..groups {
+                    let col = &packed_cols[g];
+                    // lines[w][j]: the word of row y0 + j at nibble position w.
+                    let mut lines = [[0u64; 8]; 16];
+                    for (w, line) in lines.iter_mut().enumerate() {
+                        let start = y0 | (w << h);
+                        line[..block].copy_from_slice(&col[start..start + block]);
+                    }
+                    for j in 0..block {
+                        let mut lo: [u64; 8] = std::array::from_fn(|w| lines[w][j]);
+                        let mut hi: [u64; 8] = std::array::from_fn(|w| lines[w + 8][j]);
+                        let lo = transposed_patterns(&mut lo);
+                        let hi = transposed_patterns(&mut hi);
+                        let at = (j * groups + g) * 64;
+                        interleave_bytes(&lo, &hi, &mut rows[at..at + 64]);
+                    }
                 }
-                for j in 0..block {
-                    let mut lo: [u64; 8] = std::array::from_fn(|w| lines[w][j]);
-                    let mut hi: [u64; 8] = std::array::from_fn(|w| lines[w + 8][j]);
-                    let lo = transposed_patterns(&mut lo);
-                    let hi = transposed_patterns(&mut hi);
-                    let at = (j * groups + g) * 64;
-                    interleave_bytes(&lo, &hi, &mut rows[at..at + 64]);
-                }
-            }
-        });
+            });
         // SAFETY: every row chunk was written in full above.
         unsafe { data.set_len(len) };
         Self { data, groups }
@@ -106,7 +108,9 @@ impl NibbleRows {
         };
         #[cfg(feature = "parallel")]
         let acc = {
-            let chunk = rows.div_ceil(4 * rayon::current_num_threads().max(1)).max(1);
+            let chunk = rows
+                .div_ceil(4 * rayon::current_num_threads().max(1))
+                .max(1);
             (0..rows.div_ceil(chunk))
                 .into_par_iter()
                 .map(|i| {
@@ -189,7 +193,10 @@ impl Selector {
     }
 
     /// The selection of one entry (the portable path and the reference).
-    #[cfg_attr(all(target_arch = "aarch64", target_feature = "neon"), allow(dead_code))]
+    #[cfg_attr(
+        all(target_arch = "aarch64", target_feature = "neon"),
+        allow(dead_code)
+    )]
     #[inline(always)]
     pub(crate) fn apply(&self, x: u16) -> u8 {
         let x = x as usize;
@@ -202,7 +209,11 @@ impl Selector {
 
 /// `out[i][m] = sel[i]` applied to entry `m` of `block`.
 #[inline(always)]
-pub(crate) fn select<const K: usize>(block: &[u16; 64], sel: &[Selector; K], out: &mut [[u8; 64]; K]) {
+pub(crate) fn select<const K: usize>(
+    block: &[u16; 64],
+    sel: &[Selector; K],
+    out: &mut [[u8; 64]; K],
+) {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     neon::select(block, sel, out);
     #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
@@ -274,8 +285,11 @@ impl BitSelectors {
             Self::Paired(
                 (0..qs)
                     .map(|q| {
-                        let a = Selector::new((0..4).flat_map(|corner| corner_bits(q, corner, corner)));
-                        let b = Selector::new((0..4).flat_map(|corner| corner_bits(q, corner, 4 + corner)));
+                        let a =
+                            Selector::new((0..4).flat_map(|corner| corner_bits(q, corner, corner)));
+                        let b = Selector::new(
+                            (0..4).flat_map(|corner| corner_bits(q, corner, 4 + corner)),
+                        );
                         [a, b]
                     })
                     .collect(),
@@ -283,82 +297,27 @@ impl BitSelectors {
         } else if nb <= 2 {
             Self::Tuple(
                 (0..qs)
-                    .map(|q| Selector::new((0..4).flat_map(|corner| corner_bits(q, corner, corner * nb))))
+                    .map(|q| {
+                        Selector::new((0..4).flat_map(|corner| corner_bits(q, corner, corner * nb)))
+                    })
                     .collect(),
             )
         } else {
             // E_lo, E_hi, O_lo, O_hi = corners 0, 1, 2, 3; each pair byte
             // has its O pattern low and its E pattern high.
-            let pair = |o: usize, e: usize| Selector::new(corner_bits(0, o, 0).chain(corner_bits(0, e, 4)));
+            let pair = |o: usize, e: usize| {
+                Selector::new(corner_bits(0, o, 0).chain(corner_bits(0, e, 4)))
+            };
             Self::Pairs([pair(2, 0), pair(3, 1), pair(3, 0), pair(2, 1)])
         }
-    }
-}
-
-/// A level's pattern blocks kept for the passes that read them again:
-/// block `(p, y, g)` at `((p·2^H + y)·groups + g)·64`. Filled once by
-/// tasks that own disjoint `(p, y)`, then read.
-pub(crate) struct PatternCache {
-    data: Vec<MaybeUninit<u8>>,
-    /// `data`'s buffer, taken once: every write and read goes through it.
-    ptr: *mut MaybeUninit<u8>,
-    h: usize,
-    groups: usize,
-}
-
-// SAFETY: `ptr` points into the buffer `data` owns, which moves with it.
-unsafe impl Send for PatternCache {}
-// SAFETY: blocks are written through `write` by tasks owning disjoint
-// `(p, y)` before any `read` of them (the passes are sequential).
-unsafe impl Sync for PatternCache {}
-
-impl PatternCache {
-    pub(crate) fn new(h: usize, groups: usize) -> Self {
-        let len = (2usize << h) * groups * 64;
-        let mut data = Vec::with_capacity(len);
-        // SAFETY: `MaybeUninit` needs no initialisation.
-        unsafe { data.set_len(len) };
-        let ptr = data.as_mut_ptr();
-        Self { data, ptr, h, groups }
-    }
-
-    #[inline(always)]
-    fn offset(&self, p: usize, y: usize, g: usize) -> usize {
-        (((p << self.h) | y) * self.groups + g) * 64
-    }
-
-    /// Stores block `(p, y, g)`.
-    ///
-    /// # Safety
-    /// No other task may write or read block `(p, y, g)` concurrently.
-    #[inline(always)]
-    pub(crate) unsafe fn write(&self, p: usize, y: usize, g: usize, block: &[u8; 64]) {
-        let at = self.offset(p, y, g);
-        assert!(at + 64 <= self.data.len());
-        // SAFETY: in bounds; exclusive per the contract.
-        unsafe {
-            let dst = self.ptr.add(at).cast::<u8>();
-            std::ptr::copy_nonoverlapping(block.as_ptr(), dst, 64);
-        }
-    }
-
-    /// Block `(p, y, g)`.
-    ///
-    /// # Safety
-    /// The block must have been written, with no write to it in flight.
-    #[inline(always)]
-    pub(crate) unsafe fn read(&self, p: usize, y: usize, g: usize) -> &[u8; 64] {
-        let at = self.offset(p, y, g);
-        assert!(at + 64 <= self.data.len());
-        // SAFETY: in bounds; initialised per the contract.
-        unsafe { &*self.ptr.add(at).cast::<[u8; 64]>() }
     }
 }
 
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 mod neon {
     use core::arch::aarch64::{
-        vandq_u8, vdupq_n_u8, vld1q_u8, vorrq_u8, vqtbl1q_u8, vshrq_n_u8, vst1q_u8, vuzp1q_u8, vuzp2q_u8,
+        vandq_u8, vdupq_n_u8, vld1q_u8, vorrq_u8, vqtbl1q_u8, vshrq_n_u8, vst1q_u8, vuzp1q_u8,
+        vuzp2q_u8,
     };
 
     use super::Selector;
@@ -366,12 +325,17 @@ mod neon {
     /// Sixteen entries at a time: the low and high bytes unzipped, split
     /// into nibbles once, then four `TBL`s and three `ORR`s per selector.
     #[inline(always)]
-    pub(super) fn select<const K: usize>(block: &[u16; 64], sel: &[Selector; K], out: &mut [[u8; 64]; K]) {
+    pub(super) fn select<const K: usize>(
+        block: &[u16; 64],
+        sel: &[Selector; K],
+        out: &mut [[u8; 64]; K],
+    ) {
         // SAFETY: `block` is 128 bytes, each `out[i]` 64; every access
         // below is at an offset `< 128` / `< 64` in 16-byte steps.
         unsafe {
-            let tables: [[core::arch::aarch64::uint8x16_t; 4]; K] =
-                std::array::from_fn(|i| std::array::from_fn(|n| vld1q_u8(sel[i].tables[n].as_ptr())));
+            let tables: [[core::arch::aarch64::uint8x16_t; 4]; K] = std::array::from_fn(|i| {
+                std::array::from_fn(|n| vld1q_u8(sel[i].tables[n].as_ptr()))
+            });
             let mask = vdupq_n_u8(0x0F);
             let src = block.as_ptr().cast::<u8>();
             for c in 0..4 {

@@ -31,7 +31,6 @@
 
 use crate::piop::spartan::protocol::Proof;
 use crate::piop::spartan::protocol::ProtocolError;
-use crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
 
 use crate::piop::spartan::SpartanField as _;
 use circuit::linear_map::CscMatrix;
@@ -912,6 +911,36 @@ mod tests {
             bitz::spartan_bitz_field_config, matrix::ScaledMleEvaluationClaim, protocol::bitify,
         },
     };
+
+    #[test]
+    fn virtual_relation_is_refused_by_direct_opener_before_transcript_work() {
+        use crate::piop::spartan::protocol::wfbitz_opener::{self, WfbitzLigerito, WfbitzOpener};
+        use crate::transcript::Blake3Transcript;
+        let witness = CmAndWitness::from_fn(1 << 15, |i| (i as u32, !(i as u32))).unwrap();
+        let relation =
+            prepare_cm_and_relation(*witness.layout(), &spartan_bitz_field_config()).unwrap();
+        let hint = commit_cm_and_witness(witness.layout(), witness.f_bit_rows()).unwrap();
+        let proof =
+            prove_cm_and_bitz(&mut Blake3Transcript::new(), &relation, &witness, &hint).unwrap();
+        let prefix = relation.prefix();
+        let opener = WfbitzOpener::new(
+            prefix.layout().committed_layout(),
+            WfbitzLigerito::Fast,
+            100,
+        )
+        .unwrap();
+        let mut transcript = Blake3Transcript::new();
+        let fresh = transcript.state_digest();
+        assert!(matches!(
+            wfbitz_opener::prove(&mut transcript, prefix, &opener, &witness, &hint),
+            Err(ProtocolError::UnsupportedDischarge)
+        ));
+        assert!(matches!(
+            wfbitz_opener::verify(&mut transcript, prefix, &opener, &hint.commitment, &proof),
+            Err(ProtocolError::UnsupportedDischarge)
+        ));
+        assert_eq!(transcript.state_digest(), fresh);
+    }
 
     #[test]
     fn layout_and_cells_are_slot_major() {

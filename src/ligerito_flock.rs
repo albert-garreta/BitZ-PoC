@@ -923,7 +923,7 @@ pub fn flock_scratch_clear() {
 /// Errors in shared commitment and OOD validation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FlockRsError {
-    PrimeSampling(crate::ext_proj::PrimeSamplingError),
+    PrimeSampling(crate::prime_sampling::PrimeSamplingError),
     CommitmentConfig,
     OodRound,
 }
@@ -1280,29 +1280,15 @@ pub fn absorb_standalone_mod_q_claim(transcript: &mut impl Transcript, q: u128, 
     frame.u128s(0x30, &[q, claimed_q]);
 }
 
-/// The evaluation prime of a standalone claim is SAMPLED from the
-/// transcript after the commitment, uniformly among the primes of the
-/// widest admissible dyadic interval `[2^(b−1), 2^b)`: the paper's
-/// Strategy-1 field policy (`b ≤ 113`) capped by the one-chunk exponent-
-/// fold width `c_w = 127 − t − W` (so the fold integers never wrap and the
-/// forest runs once) — exactly the width rule of the Spartan security
-/// profile's derived interval. The claim `⟨eq(·, r₁) ⊗ eq(·, r₂), f⟩ = μ`
-/// then uses a transcript-sampled point `(r₁, r₂) ∈ F_q^{t+s}`.
+/// Preserve the published standalone prime interval: bit width
+/// `min(113, 126 - row_vars)`. Sampling and claim coordinates follow the
+/// commitment; Wfbitz validates the resulting exact exponent bound.
 pub fn standalone_q_bits(p: &IntegerMatrixLayout) -> usize {
     // Preserve the published prime-selection rule independently of the opener.
     126usize
         .checked_sub(p.row_vars)
         .expect("supported row width")
         .min(113)
-}
-
-/// Miller–Rabin rounds of the transcript prime sampler (the library
-/// default: a composite survives with probability `≈ 2^-128`).
-pub fn standalone_prime_sampler(q_bits: usize) -> crate::ext_proj::ExtProjParams {
-    crate::ext_proj::ExtProjParams {
-        prime_bits: q_bits,
-        ..crate::ext_proj::ExtProjParams::default()
-    }
 }
 
 /// The transcript-sampled instance of a standalone claim: the prime, the
@@ -1322,14 +1308,14 @@ pub fn sample_standalone_instance(
     q_bits: usize,
 ) -> StandaloneInstance {
     let _g = tracing::info_span!("mq:sample_instance").entered();
-    let q = crate::ext_proj::sample_proj_prime(transcript, &standalone_prime_sampler(q_bits))
+    let q = crate::prime_sampling::sample_prime_with_bits(transcript, q_bits)
         .expect("bounded standalone prime search");
     let arith = field::FpCtx::from_prime_u128(q);
     let r1: Vec<u128> = (0..p.row_vars)
-        .map(|_| crate::ext_proj::sample_proj_point(transcript, q))
+        .map(|_| crate::prime_sampling::sample_residue(transcript, q))
         .collect();
     let r2: Vec<u128> = (0..p.col_vars)
-        .map(|_| crate::ext_proj::sample_proj_point(transcript, q))
+        .map(|_| crate::prime_sampling::sample_residue(transcript, q))
         .collect();
     StandaloneInstance {
         q,

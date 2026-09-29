@@ -263,15 +263,11 @@ name = "cm_probe"
 required-features = ["span-metrics"]
 
 [[example]]
-name = "u64_mul_probe"
-required-features = ["span-metrics"]
-
-[[example]]
 name = "spartan_probe"
 required-features = ["span-metrics", "parallel"]
 
 [[example]]
-name = "wfbitz_parity"
+name = "wfbitz_reference"
 
 [[example]]
 name = "wfbitz_bench"

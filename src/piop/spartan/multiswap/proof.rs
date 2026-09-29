@@ -32,7 +32,6 @@
 
 use crate::piop::spartan::protocol::Proof;
 use crate::piop::spartan::protocol::ProtocolError;
-use crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
 
 use crate::piop::spartan::SpartanField as _;
 use blake3::Hasher;
@@ -564,6 +563,7 @@ fn config_digest(config: &impl LigeritoStatementConfig) -> [u8; 32] {
 mod tests {
     use super::super::circuit::MultiswapDims;
     use super::*;
+    use crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
     use crate::{piop::spartan::profile::Lambda100, transcript::Blake3Transcript};
 
     fn mini_setup() -> (

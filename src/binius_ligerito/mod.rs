@@ -72,11 +72,11 @@ pub(crate) fn f128_to_b128(f: Gf128) -> B128 {
 }
 
 fn b128_to_gf(x: B128) -> Gf {
-    (b128_to_f128(x))
+    b128_to_f128(x)
 }
 
 fn gf_to_b128(g: Gf) -> B128 {
-    f128_to_b128((g))
+    f128_to_b128(g)
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -151,7 +151,7 @@ fn stdout_sink() {
         return;
     }
     let child = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "stdout_sink", "--nocapture"])
+        .args(["--exact", "stdout_sink", "--nocapture", "--quiet"])
         .env("BITZ_OUTPUT_TEST_CHILD", "1")
         .output()
         .unwrap();

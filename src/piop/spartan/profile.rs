@@ -202,35 +202,47 @@ impl IopSecurityParams {
             (!self.design_only).then_some(self.lambda),
             self.forest_round_grinding_bits,
             self.ring_switch_grinding_bits,
-        ).map_err(|error| ProfileError::NativeOpening(error.to_string()))
+        )
+        .map_err(|error| ProfileError::NativeOpening(error.to_string()))
     }
 
     pub(crate) fn adopt_native_opening(
-        &mut self, mut geometry: crate::wfbitz::grinding::Geometry,
+        &mut self,
+        mut geometry: crate::wfbitz::grinding::Geometry,
     ) -> Result<(), ProfileError> {
         use crate::wfbitz::grinding::Schedule;
         geometry.ood = self.ood.is_some();
         let schedule = Schedule::new(self.native_policy()?, geometry)
             .map_err(|error| ProfileError::NativeOpening(error.to_string()))?;
         self.accounting.terms.retain(|term| {
-            term.name != "step5_2:gkr-round" && term.name != "step5_3:ring-switch"
+            term.name != "step5_2:gkr-round"
+                && term.name != "step5_3:ring-switch"
                 && !term.name.starts_with("wfbitz/")
         });
-        self.accounting.terms.extend(schedule.terms().map(|term| SoundnessTerm {
-            name: term.stage.name(),
-            bits: term.raw_bits() + f64::from(term.grinding_bits),
-            grinding_bits: term.grinding_bits,
-            floor: false,
-        }));
+        self.accounting
+            .terms
+            .extend(schedule.terms().map(|term| SoundnessTerm {
+                name: term.stage.name(),
+                bits: term.raw_bits() + f64::from(term.grinding_bits),
+                grinding_bits: term.grinding_bits,
+                floor: false,
+            }));
         self.native_schedule = Some(schedule);
-        if !self.design_only { check_targets(self.profile_name, self.lambda, &self.accounting)?; }
+        if !self.design_only {
+            check_targets(self.profile_name, self.lambda, &self.accounting)?;
+        }
         Ok(())
     }
 
     /// Number of nonces embedded in the native opening's authenticated stream.
     pub fn native_grinding_nonce_count(&self) -> usize {
-        self.native_schedule.map_or(0, |schedule| schedule.terms()
-            .filter(|term| term.grinding_bits != 0).map(|term| term.occurrences).sum())
+        self.native_schedule.map_or(0, |schedule| {
+            schedule
+                .terms()
+                .filter(|term| term.grinding_bits != 0)
+                .map(|term| term.occurrences)
+                .sum()
+        })
     }
 
     /// Accounts for Round 0 of the BitZ opening once the opener is known.
@@ -263,32 +275,6 @@ impl IopSecurityParams {
             floor: false,
         });
         self.ood = Some(OodRoundParams { grinding_bits });
-        Ok(())
-    }
-
-    /// Accounts for an opener that grinds none of its GF(2^128) rounds (the
-    /// BitZ scheme of `protocol::wfbitz_opener`, whose fold, GKR and ring
-    /// switch draw on its own forked transcript): both difficulties drop to
-    /// zero, so the statement binds what runs, and the two terms keep their
-    /// bare field bounds, the way the fixed-prime accounting books an
-    /// ungrinded forest. The terms stay controllable, so construction fails
-    /// when they cannot reach the target (`λ ≥ 127`), as at instantiation
-    /// (`design_only`, the profile's flag, skips the check there and here).
-    pub fn adopt_ungrinded_opener(&mut self, design_only: bool) -> Result<(), ProfileError> {
-        self.forest_round_grinding_bits = 0;
-        self.ring_switch_grinding_bits = 0;
-        for term in &mut self.accounting.terms {
-            term.bits = match term.name {
-                "step5_2:gkr-round" => 128.0 - 3f64.log2(),
-                "step5_3:ring-switch" => 128.0,
-                _ => continue,
-            };
-            term.grinding_bits = 0;
-            term.floor = false;
-        }
-        if !design_only {
-            check_targets(self.profile_name, self.lambda, &self.accounting)?;
-        }
         Ok(())
     }
 }
@@ -868,50 +854,6 @@ mod tests {
             .find(|term| term.name == "step5_2:gkr-round")
             .unwrap();
         assert!(gkr.bits < 128.0);
-        assert!(params.accounting.controllable_bits() < 128.0);
-    }
-
-    #[test]
-    fn an_ungrinded_opener_keeps_the_bare_field_bounds() {
-        let terms = |params: &IopSecurityParams| {
-            params
-                .accounting
-                .terms
-                .iter()
-                .map(|term| (term.name, term.bits, term.grinding_bits, term.floor))
-                .collect::<Vec<_>>()
-        };
-        // λ = 100 grinds neither round: the adoption changes nothing.
-        let plain = Lambda100::instantiate(&sha_facts(14)).unwrap();
-        let mut adopted = plain.clone();
-        adopted.adopt_ungrinded_opener(false).unwrap();
-        assert_eq!(terms(&adopted), terms(&plain));
-        assert_eq!(adopted.forest_round_grinding_bits, 0);
-        assert_eq!(adopted.ring_switch_grinding_bits, 0);
-        // λ = 128: the bare GKR round (~126.4 bits) stays a controllable
-        // term below the target, so construction fails.
-        let mut params = Lambda128::instantiate(&sha_facts(14)).unwrap();
-        assert!(matches!(
-            params.adopt_ungrinded_opener(false),
-            Err(ProfileError::TargetUnreachable {
-                term: "step5_2:gkr-round",
-                ..
-            })
-        ));
-        // A design-only schedule documents it instead, with the reference
-        // schedule's bookings of the two rounds.
-        let mut params = Lambda128::instantiate(&sha_facts(14)).unwrap();
-        params.adopt_ungrinded_opener(true).unwrap();
-        assert_eq!(params.forest_round_grinding_bits, 0);
-        assert_eq!(params.ring_switch_grinding_bits, 0);
-        let reference = Sha128ReferenceSchedule::instantiate(&sha_facts(14)).unwrap();
-        let rounds = |params: &IopSecurityParams| {
-            terms(params)
-                .into_iter()
-                .filter(|term| term.0 == "step5_2:gkr-round" || term.0 == "step5_3:ring-switch")
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(rounds(&params), rounds(&reference));
         assert!(params.accounting.controllable_bits() < 128.0);
     }
 

@@ -49,17 +49,15 @@ use clap::builder::TypedValueParser;
 use std::hint::black_box;
 
 use bitz::ligerito::packed_vars;
-use bitz::ligerito_flock::{
-    OodRoundParams, commit_rs_ligerito_rows, standalone_q_bits,
-};
-use bitz::pcs::{IntegerMatrixLayout, mod_q_num_chunks, smallest_generator};
+use bitz::ligerito_flock::{OodRoundParams, commit_rs_ligerito_rows, standalone_q_bits};
+use bitz::pcs::{IntegerMatrixLayout, smallest_generator};
 use flock_core::pcs::ligerito::{ProverConfig as LigPc, VerifierConfig as LigVc};
 
 #[derive(clap::Parser)]
 struct Env {
     // n=30/32 stay outside the default sweep for runtime, not memory.
     // At n>=26, measure one shape per process for quotable timings.
-    #[arg(long, env = "BITZ_BENCH_SHAPES", default_value = "13:7:1 14:8:1 16:10:1 17:11:1 7:8:32", value_parser = parse_shapes)]
+    #[arg(long, env = "BITZ_BENCH_SHAPES", default_value = "13:7:1 14:8:1 16:10:1 17:11:1", value_parser = parse_shapes)]
     shapes: common::cli::List<(usize, usize, usize)>,
     #[arg(long, env = "BITZ_BENCH_FILL", default_value_t = 1.0,
         value_parser = str::parse::<f64>.try_map(|fill| {
@@ -83,6 +81,9 @@ fn parse_shapes(value: &str) -> Result<Vec<(usize, usize, usize)>, String> {
             let [t, s, w]: [usize; 3] = parts
                 .try_into()
                 .map_err(|_| "expected t:s:W triple".to_owned())?;
+            if w != 1 {
+                return Err("Wfbitz commits bits; shape width must be 1".into());
+            }
             Ok((t, s, w))
         })
         .collect()
@@ -150,7 +151,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
     };
     let q_bits = standalone_q_bits(&p);
     let m_p = packed_vars(&p);
-    let lch = mod_q_num_chunks(&p, q_bits);
+    let lch = 1usize;
     let setup_started_recording =
         bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
     let setup_started = tracing::info_span!("pcs:setup_started").entered();
@@ -254,9 +255,15 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
     // The instance: the transcript-sampled prime and point (replayed inside
     // every timed prove/verify), then the claimed μ from the SET BITS of the
     // committed rows (O(popcount) mod-q adds).
-    use bitz::piop::spartan::protocol::wfbitz_opener::{self, WfbitzLigerito, WfbitzOpener, WfbitzOpeningProof};
-    let opening = WfbitzOpener::new(p, WfbitzLigerito::Selected(resolved.selection()), resolved.security().target_security_bits as usize)
-        .expect("standalone configuration");
+    use bitz::piop::spartan::protocol::wfbitz_opener::{
+        self, WfbitzLigerito, WfbitzOpener, WfbitzOpeningProof,
+    };
+    let opening = WfbitzOpener::new(
+        p,
+        WfbitzLigerito::Selected(resolved.selection()),
+        resolved.security().target_security_bits as usize,
+    )
+    .expect("standalone configuration");
     let y = wfbitz_opener::standalone_evaluation(&opening, &hint).expect("standalone claim");
     println!(
         "  instance: q ∈ [2^{}, 2^{q_bits}) transcript-sampled after the commitment; Round 0 (OOD): {}",
@@ -266,7 +273,9 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
             None => "skipped (unique-decoding opener)".to_string(),
         }
     );
-    let prove_once = |hint: &bitz::ligerito_flock::FlockCommitHint| wfbitz_opener::prove_standalone(&opening, hint, y).expect("prove");
+    let prove_once = |hint: &bitz::ligerito_flock::FlockCommitHint| {
+        wfbitz_opener::prove_standalone(&opening, hint, y).expect("prove")
+    };
     let verify_once = |proof: &WfbitzOpeningProof| {
         wfbitz_opener::verify_standalone(&opening, &hint.commitment, y, proof)
     };
@@ -346,7 +355,8 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
         proof
     };
     let prove_peak = peak_mb();
-    let phases = bitz::observability::totals(&recording.intervals().expect("query PCS phase probe"));
+    let phases =
+        bitz::observability::totals(&recording.intervals().expect("query PCS phase probe"));
 
     let prove_median = median(prove_ms);
     let verify_median = median(verify_ms);
@@ -447,10 +457,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
         },
     };
     println!("  {}", report.result_line());
-
-
 }
-
 
 fn main() {
     common::cli::EnvironmentCli::parse();

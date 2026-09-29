@@ -14,7 +14,6 @@ use crate::piop::spartan::protocol::{PreparedRelationPrefix, RelationSpec};
 
 use super::{BinaryClaim, Error};
 use crate::ligerito::pack_columns_from_rows;
-use crate::piop::spartan::SpartanField as _;
 use crate::piop::spartan::bitz::{SpartanBitzField, U32_MUL_UNIVARIATE_SKIP_VARS};
 use crate::piop::spartan::{
     absorb_spartan_message,
@@ -25,7 +24,7 @@ use crate::piop::spartan::{
     univariate_skip::UnivariateSkipSpartanPiopProof,
 };
 use crate::poly::univariate::binary_gf128::Gf128 as Gf;
-use crate::transcript::{Blake3Transcript, traits::Transcript};
+use crate::transcript::Blake3Transcript;
 
 #[derive(Clone, Debug)]
 pub(crate) struct PrefixProof {

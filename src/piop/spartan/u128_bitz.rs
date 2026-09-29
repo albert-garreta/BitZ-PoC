@@ -64,7 +64,7 @@ pub fn u128_mul_instance_facts(params: &IntegerMatrixLayout, row_vars: usize) ->
 impl RelationSpec for MulLayout<u128> {
     type Coefficient = bool;
     type Witness = MulWitness<u128>;
-    type Map = Self;
+    type Map = circuit::linear_map::binary::PreparedVirtualMap;
 
     fn domains(&self) -> &'static Domains {
         &U128_MUL_DOMAINS
@@ -73,24 +73,6 @@ impl RelationSpec for MulLayout<u128> {
     fn committed_layout(&self) -> IntegerMatrixLayout {
         MulLayout::committed_layout(self)
     }
-    fn opening_layout(&self) -> IntegerMatrixLayout {
-        self.bitz_params()
-    }
-    fn opening_word_bits(&self) -> usize {
-        self.word_bits()
-    }
-    fn map(&self) -> Option<&Self> {
-        (!self.uses_direct_opening()).then_some(self)
-    }
-    fn derived_rows(&self, witness: &Self::Witness) -> Option<Vec<Vec<u64>>> {
-        (!self.uses_direct_opening()).then(|| witness.derived_bit_rows())
-    }
-    fn claim_digest(
-        &self,
-        frame: super::protocol::ClaimFrame<'_>,
-    ) -> Result<[u8; 32], ProtocolError> {
-        self.packed_claim_digest(frame)
-    }
 
     fn gate_vars(&self) -> usize {
         MulLayout::<u128>::gate_vars(self)
@@ -98,10 +80,7 @@ impl RelationSpec for MulLayout<u128> {
 
     fn instance_facts(&self) -> IopInstanceFacts {
         let row_vars = self.multiplications().next_power_of_two().trailing_zeros() as usize;
-        let mut facts = u128_mul_instance_facts(&self.bitz_params(), row_vars);
-        facts.opening_word_bits = self.word_bits() as u32;
-        facts.direct_opening = self.uses_direct_opening();
-        facts
+        u128_mul_instance_facts(&self.bitz_params(), row_vars)
     }
 
     fn matrices(&self) -> Result<MatrixSource<bool>, ProtocolError> {
@@ -134,11 +113,7 @@ impl RelationSpec for MulLayout<u128> {
             ],
         )
         .expect("the u128 block table is complete");
-        if self.uses_direct_opening() {
-            table
-        } else {
-            table.with_word_packing(128, self.word_bits())
-        }
+        table
     }
 
     fn kernel(&self) -> Kernel {
@@ -178,7 +153,7 @@ impl RelationSpec for MulLayout<u128> {
                     p.col_vars,
                     p.word_bits,
                 ])?;
-                self.bind_packing(hasher)
+                Ok(())
             },
         )
     }
@@ -204,7 +179,6 @@ impl RelationSpec for MulLayout<u128> {
         // Mapping version one: little-endian bits, e0/x/y/z block order, and
         // nonzero scale normalized onto the folded row factors.
         hasher.bytes(&[1, 0, 1, 2, 3]);
-        self.bind_packing(hasher)?;
         Ok(())
     }
 
@@ -256,7 +230,7 @@ mod tests {
         let layout = *witness.layout();
         let prepared = PreparedRelation::<MulLayout<u128>>::new(layout).unwrap();
         assert_eq!(prepared.security().lambda, 100);
-        assert_eq!(prepared.params().row_vars, 9 + 15 - 7);
+        assert_eq!(prepared.params().row_vars, 15);
         let hint = protocol::commit(&prepared, witness.bitz_bit_rows()).unwrap();
 
         let mut prover_transcript = Blake3Transcript::new();

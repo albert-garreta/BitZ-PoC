@@ -263,7 +263,7 @@ pub(super) fn prove(
         &pc,
         packed,
         basis,
-        (target),
+        target,
         *statement,
         |positions, lanes, queries| {
             let mut rows = vec![vec![F::ZERO; lanes]; queries.len()];
@@ -304,7 +304,7 @@ pub(super) fn verify(
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     proof: &Proof,
 ) -> Result<(), Error> {
-    let (eq_r2, mut target) = ring_switch_verify(t, &proof.ring, (value), &point[..7])
+    let (eq_r2, mut target) = ring_switch_verify(t, &proof.ring, value, &point[..7])
         .map_err(|_| Error::Invalid("ring switch"))?;
     let eta_ood: Option<Gf> = ood.map(|claim| {
         let eta: Gf = t.get_field_challenge(&());
@@ -338,7 +338,7 @@ pub(super) fn verify(
         &vc,
         &proof.ligerito,
         geometry.packed_log(),
-        (target),
+        target,
         statement,
         |prefix, log_y| {
             let prefix_gf: Vec<_> = prefix.iter().copied().collect();

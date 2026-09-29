@@ -1,11 +1,10 @@
 //! Spartan protocol composition types; inner provers live in `crate::sumcheck::inner`.
 use crate::poly::mle::DenseMultilinearExtension;
-pub(crate) use crate::sumcheck::arithmetic::*;
+pub(crate) use crate::sumcheck::boundary::*;
 #[cfg(test)]
 pub(crate) use crate::sumcheck::inner::reference::*;
 pub use crate::sumcheck::proof::OuterSumcheckProof;
 pub use crate::sumcheck::{SumcheckError, SumcheckProof};
-pub(crate) use crate::sumcheck::{boundary::*, proof::*};
 
 /// Dense Bit-row MLEs for `Az`, `Bz`, and `Cz`.
 #[derive(Clone, Debug, PartialEq, Eq)]

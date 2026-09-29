@@ -1,3 +1,7 @@
+> Historical record from before the Wfbitz-only cleanup. APIs, commands,
+> backend comparisons, and upstream proof-byte promises below are obsolete.
+> See [the current design](../DESIGN.md) and [opening API](../wfbitz-opener.md).
+
 # Continue: BitZ transcript parity prover (branch `bitz-parity`) — session prompt
 
 Paste this into a fresh session in `/Users/albertgarretafontelles/f2z-pcs`.

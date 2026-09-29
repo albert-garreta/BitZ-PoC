@@ -37,7 +37,7 @@ launch() { # label -- rust args
   sleep 20
 }
 wf() { # width rate-tag ladder log-n [suffix]
-  launch "$1-wfbitz-r$2${5:-}" --workload "$1" --backends bitz --opener wfbitz --bitz-profile 100 --ligerito "$3" --log-n "$4"
+  launch "$1-wfbitz-r$2${5:-}" --workload "$1" --backends bitz --bitz-profile 100 --ligerito "$3" --log-n "$4"
 }
 # The native-multiplication tables.
 for w in u32-mod32 u64 u128; do

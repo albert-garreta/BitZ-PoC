@@ -3,7 +3,7 @@
 
 Choose bitz (proof/witness/pcs/piop/outer/bounds) or compare (proof/witness/pcs).
 Put launcher options before -- and forward benchmark options after it:
-  run_multiplication_benchmarks.py bitz -- proof --workload u64 --w 3
+  run_multiplication_benchmarks.py bitz -- proof --workload u64 --split=1
   run_multiplication_benchmarks.py compare -- pcs --workload baby-bear
 """
 from __future__ import annotations

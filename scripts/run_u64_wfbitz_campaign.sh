@@ -38,7 +38,7 @@ launch() { # label -- rust args
     proof --reps "$REPS" --warmups 1 --memory rss --skip-unsupported --threads 1,10 "$@" \
     2>&1 | tail -3
 }
-wf() { launch "u64-wfbitz-r$2${EXT:-}" --workload u64 --backends bitz --opener wfbitz --bitz-profile 100 --ligerito "$3" --log-n "$1"; }
+wf() { launch "u64-wfbitz-r$2${EXT:-}" --workload u64 --backends bitz --bitz-profile 100 --ligerito "$3" --log-n "$1"; }
 
 wf 15,17,19 1 fast
 wf 15,17,19 3 custom:3:4

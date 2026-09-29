@@ -15,11 +15,9 @@ use super::{
 };
 use {
     crate::{
-        ext_proj::sample_prime_in_interval,
         ligerito::packed_vars,
         ligerito_flock::{
-            FlockCommitHint, commit_rs_ligerito_shared_rows,
-            validate_ligerito_commitment,
+            FlockCommitHint, commit_rs_ligerito_shared_rows, validate_ligerito_commitment,
         },
         piop::spartan::{
             SpartanField, absorb_spartan_message,
@@ -30,6 +28,7 @@ use {
             squeeze_field,
             sumcheck::{OuterSumcheckProof, ProverGrindingRoundBoundary, SumcheckProof},
         },
+        prime_sampling::sample_prime_in_interval,
         transcript::traits::Transcript,
     },
     circuit::linear_map::binary::VirtualMap,
@@ -66,7 +65,11 @@ pub fn commit_sha256_ecdsa(
         let rows = witness
             .wfbitz_rows
             .get_or_init(|| {
-                std::sync::Arc::new(chained.geometry.committed_rows(&prepared.f_layout, &witness.f_rows))
+                std::sync::Arc::new(
+                    chained
+                        .geometry
+                        .committed_rows(&prepared.f_layout, &witness.f_rows),
+                )
             })
             .clone();
         return Ok(commit_rs_ligerito_shared_rows(
@@ -92,7 +95,11 @@ fn bind_statement<T: Transcript>(
     if statement.log_compressions as usize != prepared.log_n {
         return Err(error("statement layout mismatch"));
     }
-    absorb_spartan_message(t, b"protocol", b"bitz/sha256-ecdsa/split-inner/early-ood/v2");
+    absorb_spartan_message(
+        t,
+        b"protocol",
+        b"bitz/sha256-ecdsa/split-inner/early-ood/v2",
+    );
     absorb_spartan_message(t, b"relation", &prepared.local.digest);
     absorb_spartan_message(t, b"map", &prepared.map.digest());
     absorb_spartan_message(t, b"statement", &statement.bytes());
@@ -195,10 +202,17 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         Some(chained) => (
             chained.ligerito.prover(),
             hint.matches_rows(witness.wfbitz_rows.get_or_init(|| {
-                std::sync::Arc::new(chained.geometry.committed_rows(&prepared.f_layout, &witness.f_rows))
+                std::sync::Arc::new(
+                    chained
+                        .geometry
+                        .committed_rows(&prepared.f_layout, &witness.f_rows),
+                )
             })),
         ),
-        None => (prepared.ligerito.prover(), hint.matches_rows(&witness.f_rows)),
+        None => (
+            prepared.ligerito.prover(),
+            hint.matches_rows(&witness.f_rows),
+        ),
     };
     if &witness.statement != statement || !hint_matches {
         return Err(error("statement or commitment witness mismatch"));
@@ -300,12 +314,27 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
     );
     let target = u128::from(cfg.to_integer(&inner.final_claim));
     let opening = super::wfbitz::prove_opening(
-        t, prepared, hint, &witness.h_rows, &inner.point,
-        &inner.terminal_evaluations[0], &cfg, target, modulus, ood, &security,
+        t,
+        prepared,
+        hint,
+        &witness.h_rows,
+        &inner.point,
+        &inner.terminal_evaluations[0],
+        &cfg,
+        target,
+        modulus,
+        ood,
+        &security,
     )?;
     Ok(Sha256EcdsaProof {
-        modulus, initial_nonce, batch_nonce, outer: outer.proof, outer_nonces,
-        inner: inner.proof, inner_nonces, opening,
+        modulus,
+        initial_nonce,
+        batch_nonce,
+        outer: outer.proof,
+        outer_nonces,
+        inner: inner.proof,
+        inner_nonces,
+        opening,
     })
 }
 
@@ -398,8 +427,17 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     );
     let target = u128::from(cfg.to_integer(&inner_final_claim));
     super::wfbitz::verify_opening(
-        transcript, prepared, commitment, &proof.opening,
-        &inner_eval_point, &scale, &cfg, target, modulus, ood, &security,
+        transcript,
+        prepared,
+        commitment,
+        &proof.opening,
+        &inner_eval_point,
+        &scale,
+        &cfg,
+        target,
+        modulus,
+        ood,
+        &security,
     )
 }
 

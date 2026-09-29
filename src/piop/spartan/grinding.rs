@@ -524,7 +524,7 @@ mod tests {
         let mut prover = transcript();
         let mut verifier = transcript();
         let mut p = ProverGrindingTranscript::<_, OuterRound>::new(&mut prover, 1);
-        let prime = crate::ext_proj::sample_prime_context(&mut p, 251, 251, 128).unwrap();
+        let prime = crate::prime_sampling::sample_prime_context(&mut p, 251, 251, 128).unwrap();
         let p_next: u64 = p.get_challenge();
         let nonces = p.finish();
         assert_eq!(
@@ -533,7 +533,7 @@ mod tests {
             "only the explicit following challenge is ground"
         );
         let mut v = VerifierGrindingTranscript::<_, OuterRound>::new(&mut verifier, 1, &nonces);
-        let replay = crate::ext_proj::sample_prime_context(&mut v, 251, 251, 128).unwrap();
+        let replay = crate::prime_sampling::sample_prime_context(&mut v, 251, 251, 128).unwrap();
         assert_eq!(prime.modulus(), replay.modulus());
         assert_eq!(p_next, v.get_challenge::<u64>());
         v.finish().unwrap();

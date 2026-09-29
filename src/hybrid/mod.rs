@@ -15,8 +15,8 @@ use crate::piop::spartan::protocol::ProtocolError;
 
 mod channel;
 mod codec;
-mod mul;
 pub mod mod32_binius;
+mod mul;
 mod opening;
 mod security;
 mod sha;
@@ -102,7 +102,6 @@ pub struct PreparedHybrid {
     multiplication: PreparedRelationPrefix<MulLayout<u32>>,
     /// The multiplication grid's split relative to the layout's default
     /// (nonzero for the wfbitz opener); witnesses adopt it when committed.
-    mul_split_shift: i8,
     sha: sha::ShaRelation,
     geometry: opening::Geometry,
     /// Round-0 parameters (`step0:ood-draw` grinding), derived from the
@@ -176,11 +175,7 @@ impl PreparedHybrid {
                 "SHA compression count must be a power of two from 2 to 2^16",
             ));
         }
-        let mut layout = MulLayout::<u32>::new(parameters.multiplications)?;
-        let default_cols = layout.bitz_params().col_vars;
-        layout = layout.wfbitz_split(0)?;
-        let mul_split_shift = i8::try_from(layout.bitz_params().col_vars as i64 - default_cols as i64)
-            .map_err(|_| Error::Invalid("multiplication split shift"))?;
+        let layout = MulLayout::<u32>::new(parameters.multiplications)?;
         let multiplication =
             PreparedRelationPrefix::<MulLayout<u32>>::new::<security::CompositionProfile>(layout)?;
         let sha = sha::ShaRelation::new(parameters.sha_compressions)?;
@@ -231,7 +226,6 @@ impl PreparedHybrid {
         };
         let ood = opening::ood_parameters(&ligerito)?.map(|(_, params)| params);
         Ok(Self {
-            mul_split_shift,
             parameters,
             multiplication,
             sha,
@@ -295,7 +289,6 @@ impl PreparedHybrid {
         multiplication: MulWitness<u32>,
         blocks: &[[u32; 16]],
     ) -> Result<CommittedHybrid, Error> {
-        let multiplication = multiplication.with_split_shift(self.mul_split_shift)?;
         if multiplication.layout() != self.multiplication.layout()
             || blocks.len() != self.parameters.sha_compressions
         {
@@ -452,12 +445,7 @@ impl PreparedHybrid {
         let (mut t, digest) = self.transcript(statement)?;
         let ood =
             opening::verify_ood(&mut t, &self.geometry, self.ood, proof.opening.ood.as_ref())?;
-        let a = mul::verify(
-            &mut t,
-            &self.multiplication,
-            &digest,
-            &proof.multiplication,
-        )?;
+        let a = mul::verify(&mut t, &self.multiplication, &digest, &proof.multiplication)?;
         let public = self.sha.public(statement.final_sha_state);
         let b = self.sha.verify(&mut t, &public, &proof.sha)?;
         let point = sumcheck::verify(&mut t, &self.geometry, [&a, &b], &proof.joint)?;
@@ -626,13 +614,9 @@ mod tests {
         let blocks: Vec<[u32; 16]> = (0..1u32 << 9)
             .map(|i| std::array::from_fn(|j| i.wrapping_mul(0x85ebca6b).wrapping_add(j as u32)))
             .collect();
-        let prepared = PreparedHybrid::new(parameters)
-            .unwrap()
-;
+        let prepared = PreparedHybrid::new(parameters).unwrap();
         let layout = MulLayout::<u32>::new(parameters.multiplications).unwrap();
-        let expected = layout.wfbitz_split(0).unwrap().bitz_params().col_vars as i64
-            - layout.bitz_params().col_vars as i64;
-        assert_eq!(i64::from(prepared.mul_split_shift), expected);
+        assert_eq!(prepared.multiplication.layout(), &layout);
         let committed = prepared.commit(&inputs, &blocks).unwrap();
         let proof = prepared.prove(&committed).unwrap();
         prepared.verify(committed.statement(), &proof).unwrap();
@@ -645,7 +629,11 @@ mod tests {
         for magic in [b"BZSH\x06\0\0\0", b"BZSW\x01\0\0\0"] {
             let mut old_version = bytes.clone();
             old_version[..8].copy_from_slice(magic);
-            assert!(prepared.proof_from_bytes(committed.statement(), &old_version).is_err());
+            assert!(
+                prepared
+                    .proof_from_bytes(committed.statement(), &old_version)
+                    .is_err()
+            );
         }
         // A changed multiplication row is still caught.
         let mut rows: Vec<_> = committed.multiplication_rows().collect();

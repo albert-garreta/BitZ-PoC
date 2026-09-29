@@ -79,8 +79,8 @@ fn check(params: crate::pcs::IntegerMatrixLayout, facts: spartan::IopInstanceFac
 #[test]
 fn multiplication_shapes_preflight_without_witnesses() {
     for exponent in 15..=28 {
-        for width in [1, 8] {
-            let layout = MulLayout::<u32>::new_with_word_bits(1 << exponent, width).unwrap();
+        {
+            let layout = MulLayout::<u32>::new(1 << exponent).unwrap();
             let p = layout.bitz_params();
             check(p, spartan::bitz::u32_mul_instance_facts(&p, exponent));
         }

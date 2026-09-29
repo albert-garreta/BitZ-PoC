@@ -6,7 +6,7 @@
 //! `(gate_high << s) | c` as `128 / W` lanes of `high_gate_count` `W`-bit
 //! cells: bit `j` of the cell at lane `word_slot`, position `gate_high` is
 //! slot `word_slot * W + j` of that gate — the layout of
-//! `BabyBearMulLayout::bitz_cell` and `MulLayout::<u32>::bitz_bit_position`.
+//! `BabyBearMulLayout::bitz_cell` and `MulLayout::<u32>::bitz_cell`.
 //!
 //! Writing the rows one bit at a time scatters `128 · gates`
 //! read-modify-writes across the rows (one cache line per bit). Here a
@@ -251,7 +251,11 @@ mod tests {
                     .collect()
             });
             pack_slot_major_u32::<4, 8, 32>(
-                &mut rows, s, high_gate_count, live, limbs.each_ref().map(Vec::as_slice),
+                &mut rows,
+                s,
+                high_gate_count,
+                live,
+                limbs.each_ref().map(Vec::as_slice),
             );
             assert_eq!(
                 rows,

@@ -1,5 +1,6 @@
 //! Encoded Montgomery storage and native kernels for the Spartan inner prover.
 //! Outer arithmetic and protocol continuation live in `crate::sumcheck::outer`.
+#[cfg(test)]
 use crate::piop::spartan::SpartanField as _;
 #[cfg(test)]
 use crate::piop::spartan::mul::MulLayout;

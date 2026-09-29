@@ -18,15 +18,7 @@ impl From<Option<OodRoundParams>> for ProverOod {
 }
 
 impl ProverOod {
-    pub(super) fn bind(
-        self,
-        transcript: &mut (impl Transcript + Send),
-        hint: &FlockCommitHint,
-    ) -> Self {
-        Self(ProverState::Bound(self.claim(transcript, hint)))
-    }
-
-    pub(super) fn claim(
+    pub(crate) fn opening_claim(
         self,
         transcript: &mut (impl Transcript + Send),
         hint: &FlockCommitHint,
@@ -37,28 +29,6 @@ impl ProverOod {
             }
             ProverState::Bound(claim) => claim,
         }
-    }
-
-    /// Whether the opening carries Round 0 (bound before it or due in it).
-    pub(super) fn runs_round0(&self) -> bool {
-        match &self.0 {
-            ProverState::AtOpening(params) => params.is_some(),
-            ProverState::Bound(claim) => claim.is_some(),
-        }
-    }
-}
-
-impl ProverOod {
-    /// [`Self::claim`] for an opener outside this module, called where the
-    /// crate's own opening consumes the state: the claim bound before the
-    /// PIOP, or Round 0 run here when the parameters left it for the
-    /// opening; `None` when no round is due.
-    pub(crate) fn opening_claim(
-        self,
-        transcript: &mut (impl Transcript + Send),
-        hint: &FlockCommitHint,
-    ) -> Option<OodProverClaim> {
-        self.claim(transcript, hint)
     }
 }
 
@@ -76,19 +46,7 @@ impl From<Option<OodRoundParams>> for VerifierOod {
 }
 
 impl VerifierOod {
-    pub(super) fn bind(
-        self,
-        transcript: &mut (impl Transcript + Send),
-        vars: usize,
-        round: Option<&OodRound>,
-    ) -> Result<Self, FlockRsError> {
-        Ok(Self(VerifierState::Bound(
-            self.claim(transcript, vars, round)?
-                .map(|claim| (claim, *round.expect("verified OOD"))),
-        )))
-    }
-
-    pub(super) fn claim(
+    pub(crate) fn opening_claim(
         self,
         transcript: &mut (impl Transcript + Send),
         packed_vars: usize,
@@ -109,29 +67,6 @@ impl VerifierOod {
             VerifierState::Bound(None) if round.is_none() => Ok(None),
             VerifierState::Bound(None) => Err(FlockRsError::OodRound),
         }
-    }
-
-    /// Whether the opening carries Round 0 (bound before it or due in it).
-    pub(super) fn runs_round0(&self) -> bool {
-        match &self.0 {
-            VerifierState::AtOpening(params) => params.is_some(),
-            VerifierState::Bound(bound) => bound.is_some(),
-        }
-    }
-}
-
-impl VerifierOod {
-    /// [`Self::claim`] for an opener outside this module, with the proof's
-    /// round, called where the crate's own opening consumes the state: the
-    /// same presence rule (a round bound before the PIOP must be the
-    /// proof's; a record where no round is due is rejected, not ignored).
-    pub(crate) fn opening_claim(
-        self,
-        transcript: &mut (impl Transcript + Send),
-        packed_vars: usize,
-        round: Option<&OodRound>,
-    ) -> Result<Option<OodVerifierClaim>, FlockRsError> {
-        self.claim(transcript, packed_vars, round)
     }
 }
 

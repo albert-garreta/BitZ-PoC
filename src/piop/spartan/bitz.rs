@@ -101,7 +101,7 @@ pub(crate) fn u32_mul_instance_facts(p: &IntegerMatrixLayout, row_vars: usize) -
 impl RelationSpec for MulLayout<u32> {
     type Coefficient = bool;
     type Witness = MulWitness<u32>;
-    type Map = Self;
+    type Map = circuit::linear_map::binary::PreparedVirtualMap;
 
     fn domains(&self) -> &'static Domains {
         &U32_MUL_DOMAINS
@@ -110,32 +110,13 @@ impl RelationSpec for MulLayout<u32> {
     fn committed_layout(&self) -> IntegerMatrixLayout {
         MulLayout::committed_layout(self)
     }
-    fn opening_layout(&self) -> IntegerMatrixLayout {
-        self.bitz_params()
-    }
-    fn opening_word_bits(&self) -> usize {
-        self.word_bits()
-    }
-    fn map(&self) -> Option<&Self> {
-        (!self.uses_direct_opening()).then_some(self)
-    }
-    fn derived_rows(&self, witness: &Self::Witness) -> Option<Vec<Vec<u64>>> {
-        (!self.uses_direct_opening()).then(|| witness.derived_bit_rows())
-    }
-    fn claim_digest(&self, frame: protocol::ClaimFrame<'_>) -> Result<[u8; 32], ProtocolError> {
-        self.packed_claim_digest(frame)
-    }
 
     fn gate_vars(&self) -> usize {
         MulLayout::<u32>::gate_vars(self)
     }
 
     fn instance_facts(&self) -> IopInstanceFacts {
-        let mut facts =
-            u32_mul_instance_facts(&self.bitz_params(), MulLayout::<u32>::gate_vars(self));
-        facts.opening_word_bits = self.word_bits() as u32;
-        facts.direct_opening = self.uses_direct_opening();
-        facts
+        u32_mul_instance_facts(&self.bitz_params(), MulLayout::<u32>::gate_vars(self))
     }
 
     fn matrices(&self) -> Result<MatrixSource<bool>, ProtocolError> {
@@ -168,11 +149,7 @@ impl RelationSpec for MulLayout<u32> {
             ],
         )
         .expect("the u32 block table is complete");
-        if self.uses_direct_opening() {
-            table
-        } else {
-            table.with_word_packing(32, self.word_bits())
-        }
+        table
     }
 
     fn kernel(&self) -> Kernel {
@@ -234,7 +211,6 @@ impl RelationSpec for MulLayout<u32> {
             U32_MUL_UNIVARIATE_SKIP_VARS,
             U32_MUL_UNIVARIATE_SKIP_DEGREE as usize,
         ])?;
-        self.bind_packing(&mut hasher)?;
         Ok(hasher.finalize())
     }
 
@@ -258,7 +234,6 @@ impl RelationSpec for MulLayout<u32> {
         // Mapping version 2: little-endian bits, 00/01/10/11 block order, and
         // canonical nonzero-scale normalization onto the folded row functional.
         hasher.bytes(&[2, 0, 0, 1, 2, 3]);
-        self.bind_packing(hasher)?;
         Ok(())
     }
 
@@ -336,7 +311,7 @@ mod tests {
         // case the verifier's closed-form matrix binding handles with its
         // two prefix-sum terms.
         let multiplications = (1usize << 15) + 77;
-        let witness = MulWitness::<u32>::from_fn_with_word_bits(multiplications, 1, |i| {
+        let witness = MulWitness::<u32>::from_fn(multiplications, |i| {
             let x = (i as u32).wrapping_mul(0x9e37_79b9) ^ 0x5bd1_e995;
             let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
             (x, y)
@@ -466,7 +441,7 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         let multiplications = 1usize << 15;
-        let witness = MulWitness::<u32>::from_fn_with_word_bits(multiplications, 1, |i| {
+        let witness = MulWitness::<u32>::from_fn(multiplications, |i| {
             let x = (i as u32).wrapping_mul(0x9e37_79b9) | 1;
             let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
             (x, y)
@@ -595,8 +570,8 @@ mod tests {
         // PIOP draw, and the forest rounds all carry proof-of-work.
         let prepared128 =
             PreparedRelation::<MulLayout<u32>>::new_with_profile::<Lambda128>(layout).unwrap();
-        assert_eq!(prepared128.security().initial_grinding_bits, 22);
-        assert_eq!(prepared128.security().terminal_grinding_bits, 22);
+        assert_eq!(prepared128.security().initial_grinding_bits, 20);
+        assert_eq!(prepared128.security().terminal_grinding_bits, 20);
         assert_eq!(prepared128.security().forest_round_grinding_bits, 2);
         assert_eq!(prepared128.security().ring_switch_grinding_bits, 1);
         assert_ne!(
@@ -620,7 +595,7 @@ mod tests {
         let mut prover_transcript = Blake3Transcript::new();
         let proof128 =
             protocol::prove(&mut prover_transcript, &prepared128, &witness, &hint128).unwrap();
-        assert_eq!(prepared128.security().piop_round_grinding_bits, 22);
+        assert_eq!(prepared128.security().piop_round_grinding_bits, 20);
         assert_eq!(proof128.piop_nonces().len(), 43);
         assert!(prepared128.security().native_grinding_nonce_count() > 0);
         let mut verifier_transcript = Blake3Transcript::new();
@@ -722,12 +697,10 @@ mod tests {
 
     #[test]
     fn bitification_is_the_adjoint_of_integer_reconstruction() {
-        for width in [1, 8] {
-            let witness = MulWitness::<u32>::from_inputs_with_word_bits(
-                &[(0, u32::MAX), (1, 7), (u32::MAX, u32::MAX)],
-                width,
-            )
-            .unwrap();
+        {
+            let witness =
+                MulWitness::<u32>::from_inputs(&[(0, u32::MAX), (1, 7), (u32::MAX, u32::MAX)])
+                    .unwrap();
             let layout = witness.layout();
             let p = layout.bitz_params();
 
@@ -872,13 +845,12 @@ mod tests {
             Err(ProtocolError::UnauditedBitzParameters)
         ));
 
-        for width in [1, 8] {
-            let production =
-                MulLayout::<u32>::new_with_word_bits(1 << MIN_PRODUCTION_GATE_VARS, width).unwrap();
+        {
+            let production = MulLayout::<u32>::new(1 << MIN_PRODUCTION_GATE_VARS).unwrap();
             PreparedRelation::<MulLayout<u32>>::new(production)
                 .expect("the smallest validated profile is available");
 
-            let largest = MulLayout::<u32>::new_with_word_bits(1 << 25, width).unwrap();
+            let largest = MulLayout::<u32>::new(1 << 25).unwrap();
             let packed = packed_variables(&largest.bitz_params()).unwrap();
             for target in [100, 128] {
                 crate::ligerito_flock::LigeritoSelection::ValidatedUdr
@@ -893,30 +865,5 @@ mod tests {
             .resolve(packed, 100)
             .expect("the custom Johnson geometry validates over the benchmark range");
         }
-    }
-
-    #[test]
-    #[ignore = "runs one production-sized W=8 Spartan/BitZ proof"]
-    fn u32_mul_w8_proof_verifies() {
-        let witness =
-            MulWitness::<u32>::from_fn_with_word_bits(1 << MIN_PRODUCTION_GATE_VARS, 8, |index| {
-                let value = (index as u32).wrapping_mul(0x9E37_79B9);
-                (value, value.rotate_left(13) ^ 0xA5A5_5A5A)
-            })
-            .unwrap();
-        let layout = *witness.layout();
-        let prepared = PreparedRelation::<MulLayout<u32>>::new(layout).unwrap();
-        let hint = protocol::commit(&prepared, witness.bitz_bit_rows()).unwrap();
-
-        let mut prover_transcript = Blake3Transcript::new();
-        let proof = protocol::prove(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
-        let mut verifier_transcript = Blake3Transcript::new();
-        protocol::verify(
-            &mut verifier_transcript,
-            &prepared,
-            &hint.commitment,
-            &proof,
-        )
-        .unwrap();
     }
 }

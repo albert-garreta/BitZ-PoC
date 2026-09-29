@@ -75,8 +75,6 @@ pub struct Args {
     pub workload: Option<List<Workload>>,
     #[arg(long, value_parser = integers)]
     pub log_n: Option<List<i64>>,
-    #[arg(long, value_parser = integers)]
-    pub w: Option<List<i64>>,
     #[arg(long, value_parser = integers, allow_hyphen_values = true)]
     pub split: Option<List<i64>>,
     #[arg(long, value_parser = integers)]
@@ -166,17 +164,8 @@ pub struct Job {
     pub skip: Option<String>,
     pub skip_unsupported: bool,
 }
-const PROOF_BACKENDS: &[&str] = &[
-    "bitz",
-    "binius64",
-    "binius64-ligerito",
-    "limber",
-];
-const PCS_BACKENDS: &[&str] = &[
-    "bitz",
-    "binius64-basefold",
-    "bitz-ligerito-binary",
-];
+const PROOF_BACKENDS: &[&str] = &["bitz", "binius64", "binius64-ligerito", "limber"];
+const PCS_BACKENDS: &[&str] = &["bitz", "binius64-basefold", "bitz-ligerito-binary"];
 impl Args {
     pub fn expand(&self, compare: bool) -> Result<Vec<Job>> {
         ensure!(
@@ -295,12 +284,7 @@ impl Args {
             cfg!(feature = "parallel") || threads == [1],
             "serial builds require --threads 1"
         );
-        let ws = self.w.clone().unwrap_or_else(|| vec![1]);
         let splits = self.split.clone().unwrap_or_else(|| vec![0]);
-        ensure!(
-            ws.iter().all(|&w| (1..=126).contains(&w)),
-            "W must be in 1..=126 (further shape bounds apply)"
-        );
         ensure!(
             splits.iter().all(|&s| i8::try_from(s).is_ok()),
             "split must fit i8"
@@ -367,7 +351,7 @@ impl Args {
                             && !matches!(self.mode, Mode::Outer | Mode::Piop)
                         {
                             let mut c = Vec::new();
-                            for &w in &ws {
+                            {
                                 for &split in &splits {
                                     for &profile in &profiles {
                                         for bound in &bounds {
@@ -394,12 +378,19 @@ impl Args {
                                                 let f = Some(BitzConfig {
                                                     opener: (self.mode != Mode::Witness)
                                                         .then(|| "wfbitz".to_string()),
-                                                    w: w as usize,
+                                                    w: 1,
                                                     split: split as i8,
                                                     profile: (self.mode != Mode::Witness)
                                                         .then_some(profile as usize),
                                                     bound: (self.mode != Mode::Witness).then(
-                                                        || if johnson { "johnson" } else { "unique" }.into(),
+                                                        || {
+                                                            if johnson {
+                                                                "johnson"
+                                                            } else {
+                                                                "unique"
+                                                            }
+                                                            .into()
+                                                        },
                                                     ),
                                                     ligerito: (self.mode != Mode::Witness)
                                                         .then(|| name.clone()),
@@ -563,16 +554,16 @@ impl Case {
             .map_err(|e| e.to_string())
         }
         let result = match self.workload {
-            Workload::U32Full | Workload::U32Mod32 => MulLayout::<u32>::new_with_word_bits(n, f.w)
-                .and_then(|l| l.wfbitz_split(f.split))
+            Workload::U32Full | Workload::U32Mod32 => MulLayout::<u32>::new(n)
+                .and_then(|l| l.with_split_shift(f.split))
                 .map_err(|e| e.to_string())
                 .and_then(|l| check(l, self.mode, f, self.threads)),
-            Workload::U64 => MulLayout::<u64>::new_with_word_bits(n, f.w)
-                .and_then(|l| l.wfbitz_split(f.split))
+            Workload::U64 => MulLayout::<u64>::new(n)
+                .and_then(|l| l.with_split_shift(f.split))
                 .map_err(|e| e.to_string())
                 .and_then(|l| check(l, self.mode, f, self.threads)),
-            Workload::U128 => MulLayout::<u128>::new_with_word_bits(n, f.w)
-                .and_then(|l| l.wfbitz_split(f.split))
+            Workload::U128 => MulLayout::<u128>::new(n)
+                .and_then(|l| l.with_split_shift(f.split))
                 .map_err(|e| e.to_string())
                 .and_then(|l| check(l, self.mode, f, self.threads)),
             Workload::BabyBear => bitz::piop::spartan::baby_bear_mul::BabyBearMulLayout::new(n)

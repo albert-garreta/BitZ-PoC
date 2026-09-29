@@ -870,7 +870,11 @@ pub(super) fn validate_opening_bound(
 ) -> Result<(), Sha256ConstraintError> {
     let shape = crate::wfbitz::Shape::new(layout.row_vars, layout.col_vars)
         .map_err(|_| Sha256ConstraintError::InvalidBatchExponent)?;
-    if layout.word_bits != 1 || !shape.supports_modulus_bound(modulus_bound) {
+    // The inclusive interval endpoint can be even. Only odd primes are
+    // sampled, so check the largest admissible odd integer without changing
+    // the interval or its transcript binding.
+    let largest_odd = modulus_bound.saturating_sub(u128::from(modulus_bound & 1 == 0));
+    if layout.word_bits != 1 || !shape.supports_modulus_bound(largest_odd) {
         return Err(Sha256ConstraintError::UnsupportedOpeningBound);
     }
     Ok(())

@@ -8,52 +8,6 @@ use crate::transcript::traits::Transcript;
 
 use field::{FpCtx, PrimeSearchPolicy, PublicRandomSource, Uint};
 
-
-/// Protocol parameters of the Step-3 projection. Prover and verifier must
-/// agree on these (they are part of the protocol description, like the code
-/// or the chunk width).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ExtProjParams {
-    /// Bit-length of the sampled projection primes: `𝒫` is the set of
-    /// primes in `[2^{prime_bits−1}, 2^{prime_bits})`. Also the `q_bits`
-    /// under which the projected claim's chunk count is derived.
-    pub prime_bits: usize,
-    /// Number of transcript-derived Miller–Rabin bases (on top of a fixed
-    /// base-2 pre-filter). A composite candidate survives all of them with
-    /// probability ≤ `4^{-mr_rounds}` per tested composite, so 64 rounds push
-    /// that candidate's acceptance probability to `2^{-128}`.
-    pub mr_rounds: usize,
-}
-
-impl Default for ExtProjParams {
-    fn default() -> Self {
-        Self {
-            prime_bits: 100,
-            mr_rounds: 64,
-        }
-    }
-}
-
-impl ExtProjParams {
-    /// Panic on parameter combinations the arithmetic below does not
-    /// support. `prime_bits ≤ 120` keeps the existing projection
-    /// protocol interval and chunk-shift bounds;
-    /// `≥ 32` keeps the candidate range clear of the tiny primes and the
-    /// Miller–Rabin base range `[2, q'−2]` nonempty.
-    pub fn validate(&self) {
-        assert!(
-            (32..=120).contains(&self.prime_bits),
-            "ExtProjParams::prime_bits must be in [32, 120]; got {}",
-            self.prime_bits
-        );
-        assert!(
-            (1..=256).contains(&self.mr_rounds),
-            "ExtProjParams::mr_rounds must be in [1, 256]; got {}",
-            self.mr_rounds
-        );
-    }
-}
-
 /// One uniform 128-bit integer squeezed from the transcript (the two
 /// little-endian words of a `GF(2^128)` challenge).
 fn transcript_u128(transcript: &mut impl Transcript) -> u128 {
@@ -80,6 +34,8 @@ fn transcript_uniform_mod(transcript: &mut impl Transcript, m: u128) -> u128 {
 /// Errors returned by the bounded transcript prime sampler.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PrimeSamplingError {
+    #[error("prime bit width must be in [32, 120]; got {bits}")]
+    InvalidBitWidth { bits: usize },
     #[error(transparent)]
     Shared(#[from] field::PrimeSearchError),
 
@@ -170,26 +126,25 @@ pub fn sample_prime_in_interval(
     sample_prime_context(transcript, min, max, 128).map(|field| u128::from(*field.modulus()))
 }
 
-/// Sample the projection prime with an error on bounded-search exhaustion.
-/// The configured per-candidate rounds set the minimum security target;
-/// the shared policy additionally accounts for the complete search.
-pub fn sample_proj_prime(
+/// Sample a prime from the selected dyadic interval with a 128-bit
+/// whole-search error bound, preserving the standalone PCS sampling policy.
+pub fn sample_prime_with_bits(
     transcript: &mut impl Transcript,
-    proj: &ExtProjParams,
+    prime_bits: usize,
 ) -> Result<u128, PrimeSamplingError> {
     let _g = tracing::info_span!("ext:sample_prime").entered();
-    proj.validate();
-    let top = 1u128 << (proj.prime_bits - 1);
-    sample_prime_context(transcript, top, top | (top - 1), 2 * proj.mr_rounds as u32)
+    if !(32..=120).contains(&prime_bits) {
+        return Err(PrimeSamplingError::InvalidBitWidth { bits: prime_bits });
+    }
+    let top = 1u128 << (prime_bits - 1);
+    sample_prime_context(transcript, top, top | (top - 1), 128)
         .map(|field| u128::from(*field.modulus()))
 }
 
-/// Sample the Step-3 evaluation point `α' ∈ F_{q'}` from the transcript
-/// (256-bit reduction — see [`transcript_uniform_mod`]).
-pub fn sample_proj_point(transcript: &mut impl Transcript, q_proj: u128) -> u128 {
-    transcript_uniform_mod(transcript, q_proj)
+/// Sample a residue using a 256-bit reduction (see [`transcript_uniform_mod`]).
+pub fn sample_residue(transcript: &mut impl Transcript, modulus: u128) -> u128 {
+    transcript_uniform_mod(transcript, modulus)
 }
-
 
 #[cfg(test)]
 #[allow(clippy::arithmetic_side_effects)]
@@ -240,22 +195,18 @@ mod tests {
     /// declared range, and (at a test-sized 40 bits) is actually prime.
     #[test]
     fn sampled_prime_is_prime_and_deterministic() {
-        let proj = ExtProjParams {
-            prime_bits: 40,
-            mr_rounds: 8,
-        };
         let mut t1 = Blake3Transcript::new();
         t1.absorb_slice(b"ext-proj-test");
-        let q1 = sample_proj_prime(&mut t1, &proj).unwrap();
+        let q1 = sample_prime_with_bits(&mut t1, 40).unwrap();
         let mut t2 = Blake3Transcript::new();
         t2.absorb_slice(b"ext-proj-test");
-        let q2 = sample_proj_prime(&mut t2, &proj).unwrap();
+        let q2 = sample_prime_with_bits(&mut t2, 40).unwrap();
         assert_eq!(q1, q2, "sampling must be deterministic in the transcript");
         assert!(q1 >= (1u128 << 39) && q1 < (1u128 << 40), "prime in range");
         assert!(is_prime_naive(q1), "sampled candidate must be prime");
         // The point lands in [0, q').
-        let a1 = sample_proj_point(&mut t1, q1);
-        let a2 = sample_proj_point(&mut t2, q2);
+        let a1 = sample_residue(&mut t1, q1);
+        let a2 = sample_residue(&mut t2, q2);
         assert_eq!(a1, a2);
         assert!(a1 < q1);
     }
@@ -323,6 +274,4 @@ mod tests {
             Err(PrimeSamplingError::MaximumTooLarge { max: 1u128 << 126 })
         );
     }
-
-
 }

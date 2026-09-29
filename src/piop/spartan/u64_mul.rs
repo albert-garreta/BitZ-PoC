@@ -15,7 +15,6 @@
 
 use crate::piop::spartan::SpartanField as _;
 use crate::piop::spartan::mul::{MulError, MulLayout, MulWitness};
-use circuit::linear_map::CscMatrix;
 use field::RingOps;
 use std::borrow::Cow;
 
@@ -266,6 +265,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use circuit::linear_map::CscMatrix;
 
     use super::*;
     use crate::piop::spartan::spartan_bitz_field_config;
@@ -299,7 +299,7 @@ mod tests {
         assert_eq!(layout.padded_assignment_len(), 8 * 1024);
         assert_eq!(layout.assignment_vars(), 13);
         let p = layout.bitz_params();
-        assert_eq!((p.row_vars, p.col_vars, p.word_bits), (8 + 5, 5, 1));
+        assert_eq!((p.row_vars, p.col_vars, p.word_bits), (14, 4, 1));
         assert_eq!(p.rows() * p.cols(), U64_MUL_BIT_SLOTS * layout.capacity());
         assert_eq!(MulLayout::<u64>::new(1).unwrap().capacity(), MIN_CAPACITY);
         assert_eq!(MulLayout::<u64>::new(0), Err(MulError::EmptyBatch));

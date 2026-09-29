@@ -86,7 +86,6 @@ pub const KNOWN_BITZ_ENV: &[&str] = &[
     "BITZ_MULTISWAP_BATCH_COUNT",
     "BITZ_MULTISWAP_CHECK_ONLY",
     // The MultiSwap bench's opener of the reduced claim (`forest` | `wfbitz`).
-    "BITZ_OPENER",
     "BITZ_BENCH_ORDER",
     "BITZ_BENCH_PASS",
     "BITZ_BENCH_QUIET",
