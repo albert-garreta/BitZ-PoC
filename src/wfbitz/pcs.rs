@@ -150,9 +150,6 @@ impl Pcs {
         if security.m != m {
             return Err(ConfigError::Invalid("security config is for another size"));
         }
-        let bit_len = 1usize
-            .checked_shl(m as u32)
-            .ok_or(ConfigError::Invalid("bit length overflow"))?;
         let merkle_hash = security
             .merkle_hash()
             .map_err(|_| ConfigError::Invalid("merkle hash"))?;
@@ -168,25 +165,10 @@ impl Pcs {
             profile,
             merkle_hash,
         };
-        let log_n = m
-            .checked_sub(LOG_PACKING)
-            .ok_or(ConfigError::Invalid("m below packing width"))?;
         let (prover_config, verifier_config) = security
             .to_prover_verifier_configs()
             .map_err(|_| ConfigError::Invalid("prover config"))?;
-        validate_pcs_verifier_prover(&params, &prover_config, &verifier_config)?;
-        let final_log_n = validate_verifier_config(&verifier_config, log_n, params.log_batch_size)?;
-        let packed_len = 1usize
-            .checked_shl(log_n as u32)
-            .ok_or(ConfigError::Invalid("packed length overflow"))?;
-        Ok(Self {
-            params,
-            prover_config,
-            verifier_config,
-            final_log_n,
-            bit_len,
-            packed_len,
-        })
+        Self::from_parts(params, prover_config, verifier_config)
     }
 
     /// The scheme over explicit flock prover/verifier configurations (a
@@ -201,9 +183,6 @@ impl Pcs {
         verifier_config: VerifierConfig,
     ) -> Result<Self, ConfigError> {
         let m = shape.log_bits();
-        let bit_len = 1usize
-            .checked_shl(m as u32)
-            .ok_or(ConfigError::Invalid("bit length overflow"))?;
         let log_inv_rate = *prover_config
             .log_inv_rates
             .first()
@@ -215,7 +194,18 @@ impl Pcs {
             profile: LigeritoProfile::Fast,
             merkle_hash: prover_config.merkle_hash,
         };
-        let log_n = m
+        Self::from_parts(params, prover_config, verifier_config)
+    }
+
+    fn from_parts(
+        params: PcsParams,
+        prover_config: ProverConfig,
+        verifier_config: VerifierConfig,
+    ) -> Result<Self, ConfigError> {
+        let bit_len = 1usize
+            .checked_shl(params.m as u32)
+            .ok_or(ConfigError::Invalid("bit length overflow"))?;
+        let log_n = params.m
             .checked_sub(LOG_PACKING)
             .ok_or(ConfigError::Invalid("m below packing width"))?;
         validate_pcs_verifier_prover(&params, &prover_config, &verifier_config)?;
