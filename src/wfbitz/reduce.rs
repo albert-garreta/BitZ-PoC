@@ -5,13 +5,12 @@
 
 use super::fold::Fold;
 use super::forest::{Forest, NibbleRows};
-use super::gkr::gpgkr_verify;
+use super::gkr::{eq_table, gpgkr_verify};
 use super::params::{ClaimError, LinearClaimGf, Shape};
 use super::pcs::OpeningQuery;
 use super::transcript::{ProverState, VerifierState};
 use crate::ligerito_flock::FlockCommitHint;
 use field::Gf128 as Gf;
-use crate::poly::utils::build_eq_x_r_vec;
 
 /// A reduction the verifier rejects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,9 +21,7 @@ pub enum ReduceError {
     Claim(ClaimError),
 }
 
-fn eq_table(point: &[Gf]) -> Vec<Gf> {
-    build_eq_x_r_vec(point, &()).expect("non-empty point")
-}
+
 
 /// Splits the terminal point into column and row coordinates (columns occupy
 /// the low index bits) and derives the two weight factors.

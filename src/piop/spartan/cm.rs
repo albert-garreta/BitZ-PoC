@@ -29,7 +29,7 @@
 //! reconstructions, exactly as in the direct `u32_mul` bridge but over
 //! a 3-variable block selector.
 
-use crate::ligerito_flock::IntEvalRsLigVirtProof;
+use crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
 use crate::piop::spartan::protocol::Proof;
 use crate::piop::spartan::protocol::ProtocolError;
 
@@ -859,7 +859,7 @@ pub fn prove_cm_and_bitz_with_config<T: Transcript + Send>(
     witness: &CmAndWitness,
     hint_f: &FlockCommitHint,
     pc: &LigProverConfig,
-) -> Result<Proof<IntEvalRsLigVirtProof>, ProtocolError> {
+) -> Result<Proof<WfbitzOpeningProof>, ProtocolError> {
     let opener = Opener::Custom {
         prover: Some(pc.clone()),
         verifier: None,
@@ -873,7 +873,7 @@ pub fn prove_cm_and_bitz<T: Transcript + Send>(
     relation: &PreparedCmAndRelation,
     witness: &CmAndWitness,
     hint_f: &FlockCommitHint,
-) -> Result<Proof<IntEvalRsLigVirtProof>, ProtocolError> {
+) -> Result<Proof<WfbitzOpeningProof>, ProtocolError> {
     protocol::prove_virtual(transcript, relation.production()?, witness, hint_f)
 }
 
@@ -884,7 +884,7 @@ pub fn verify_cm_and_bitz_with_config<T: Transcript + Send>(
     transcript: &mut T,
     relation: &PreparedCmAndRelation,
     commitment: &Commitment,
-    proof: &Proof<IntEvalRsLigVirtProof>,
+    proof: &Proof<WfbitzOpeningProof>,
     vc: &LigVerifierConfig,
 ) -> Result<(), ProtocolError> {
     let opener = Opener::Custom {
@@ -899,7 +899,7 @@ pub fn verify_cm_and_bitz<T: Transcript + Send>(
     transcript: &mut T,
     relation: &PreparedCmAndRelation,
     commitment: &Commitment,
-    proof: &Proof<IntEvalRsLigVirtProof>,
+    proof: &Proof<WfbitzOpeningProof>,
 ) -> Result<(), ProtocolError> {
     protocol::verify_virtual(transcript, relation.production()?, commitment, proof)
 }

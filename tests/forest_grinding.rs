@@ -4,7 +4,7 @@
 
 use ::bitz::piop::spartan::protocol::linear::LinearProof;
 
-use bitz::ligerito_flock::IntEvalRsLigVirtProof;
+use bitz::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
 use bitz::piop::spartan::{
     Lambda128, PreparedSha256CompressionBatch, Sha128ReferenceSchedule, Sha256CompressionStatement,
     commit_sha256_compression_witness_with_config, generate_sha256_compression_witnesses,
@@ -65,7 +65,7 @@ fn prove_under(
     )
     .expect("verify");
     let bytes = proof.bitz().to_bytes();
-    let nonces = proof.bitz().grinding_nonces.len();
+    let nonces = proof.bitz().grinding_nonces().len();
     (bytes, nonces, proof, hint.commitment, vc, statements)
 }
 
@@ -105,9 +105,9 @@ fn lambda128_grinds_every_opening_round_and_gates_the_nonces() {
     );
 
     // Codec round-trip preserves the section byte-for-byte.
-    let decoded = IntEvalRsLigVirtProof::from_bytes(&bytes).expect("codec");
+    let decoded = WfbitzOpeningProof::from_bytes(&bytes).expect("codec");
     assert_eq!(decoded.to_bytes(), bytes);
-    assert_eq!(decoded.grinding_nonces.len(), nonce_count);
+    assert_eq!(decoded.grinding_nonces().len(), nonce_count);
 
     // A λ=128 proof does not verify under the reference (0-difficulty)
     // preparation: the grinding boundaries are transcript-visible.

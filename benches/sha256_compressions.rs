@@ -106,7 +106,6 @@ struct RepTiming {
     verify_phases: Vec<(String, f64)>,
     spartan_bytes: usize,
     bitz_bytes: usize,
-    forests: usize,
     peak_heap_bytes: Option<usize>,
 }
 
@@ -971,13 +970,6 @@ fn run_once(
         )
         .expect("SHA proof succeeds")
     };
-    let forests = proof.bitz().mfs.len();
-    if prepared.opening_layout() == Sha256OpeningLayout::Default {
-        assert_eq!(
-            forests, 1,
-            "every production-layout SHA proof uses exactly one merged forest"
-        );
-    }
     drop(prover_scope);
     // Capture before verifier allocations and proof serialization. This
     // includes the live input/setup baseline and witness-generation peak.
@@ -1025,7 +1017,6 @@ fn run_once(
         verify_phases,
         spartan_bytes,
         bitz_bytes,
-        forests,
         peak_heap_bytes,
     };
     (timing, intervals)
@@ -1178,8 +1169,8 @@ fn bench_shape<P: IopSecurityProfile>(
             }
         };
         println!(
-            "  opening layout: {kind} | BitZ rows 2^{} × columns 2^{} | forests {} | read-off ≤ 2^{} integers per forest",
-            opening.row_vars, opening.col_vars, warm.forests, opening.col_vars
+            "  opening layout: {kind} | BitZ rows 2^{} × columns 2^{} | Wfbitz opening",
+            opening.row_vars, opening.col_vars
         );
     }
     black_box(warm);

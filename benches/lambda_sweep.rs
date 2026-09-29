@@ -221,7 +221,7 @@ fn sweep_profile<P: IopSecurityProfile>(
             ("compressions".into(), compressions.to_string()),
             (
                 "forest_grinding_nonces".into(),
-                proof.bitz().grinding_nonces.len().to_string(),
+                proof.bitz().grinding_nonces().len().to_string(),
             ),
         ],
         lambda: Some(security.lambda),

@@ -64,7 +64,6 @@ struct RepTiming {
     verify_phases: Vec<(String, f64)>,
     piop_bytes: usize,
     bitz_bytes: usize,
-    forests: usize,
 }
 
 impl RepTiming {
@@ -167,12 +166,6 @@ fn run_once(
     .expect("SHA chain proof succeeds");
     drop(proving);
     drop(e2e);
-    let forests = proof.bitz().mfs.len();
-    assert_eq!(
-        forests, 1,
-        "every chain proof uses exactly one merged forest"
-    );
-
     let mut verifier_transcript = Blake3Transcript::new();
     let verification = tracing::info_span!("chain:verification").entered();
     verify_sha256_chain_with_config(
@@ -205,7 +198,6 @@ fn run_once(
         verify_phases,
         piop_bytes: proof.piop_bytes(),
         bitz_bytes: proof.bitz().to_bytes().len(),
-        forests,
     }
 }
 
@@ -291,8 +283,8 @@ fn bench_shape<P: IopSecurityProfile>(
 
     let warm = run_once(&make_blocks(compressions, shape_seed), &prepared, &pc, &vc);
     println!(
-        "  opening layout: direct product opening on the chained map | BitZ rows 2^{} × columns 2^{} | forests {} | read-off ≤ 2^{} integers per forest",
-        opening.row_vars, opening.col_vars, warm.forests, opening.col_vars
+        "  opening layout: direct product opening on the chained map | BitZ rows 2^{} × columns 2^{} | Wfbitz opening",
+        opening.row_vars, opening.col_vars
     );
     warm.emit_trial("warmup");
     black_box(warm);

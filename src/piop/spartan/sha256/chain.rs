@@ -1600,7 +1600,6 @@ mod tests {
                 &pc,
             )
             .unwrap();
-            assert_eq!(proof.bitz().mfs.len(), 1, "one merged forest");
 
             let mut verifier_transcript = Blake3Transcript::new();
             verify_sha256_chain_with_config(

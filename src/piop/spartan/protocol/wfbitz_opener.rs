@@ -333,10 +333,16 @@ pub struct WfbitzOpeningProof {
 }
 
 impl OpeningProof for WfbitzOpeningProof {
+    fn to_bytes(&self) -> Vec<u8> { self.to_bytes() }
+    fn grinding_nonces(&self) -> &[u64] { self.grinding_nonces() }
+    fn ood(&self) -> Option<&OodRound> { self.ood() }
+}
+
+impl WfbitzOpeningProof {
     /// Both streams, each with a `u64` length, then the Round-0 messages:
     /// a tag byte (0 = no round, 1 = round), `y` (16 bytes) and the
     /// grinding nonce (a presence byte, then 8 bytes).
-    fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(16 + self.narg.len() + self.hints.len() + 26);
         for stream in [&self.narg, &self.hints] {
             bytes.extend_from_slice(&(stream.len() as u64).to_le_bytes());
@@ -359,11 +365,11 @@ impl OpeningProof for WfbitzOpeningProof {
         bytes
     }
 
-    fn grinding_nonces(&self) -> &[u64] {
+    pub fn grinding_nonces(&self) -> &[u64] {
         &[]
     }
 
-    fn ood(&self) -> Option<&OodRound> {
+    pub fn ood(&self) -> Option<&OodRound> {
         self.ood.as_ref()
     }
 }
@@ -444,7 +450,7 @@ fn linear_claim(
 /// The scheme grinds none of its GF(2^128) rounds: a profile that credits
 /// forest or ring-switch grinding (one not built by
 /// [`WfbitzOpener::prepare`]) would bind what does not run.
-fn check_ungrinded<S: RelationSpec>(
+pub(super) fn check_ungrinded<S: RelationSpec>(
     prefix: &PreparedRelationPrefix<S>,
 ) -> Result<(), ProtocolError> {
     let security = prefix.security();
@@ -1427,6 +1433,95 @@ pub fn verify_reduced<T: Transcript + Send, S: RelationSpec>(
             &pcs,
             Root(commitment.root),
             state,
+            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+        )
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ verify: {error:?}")))
+}
+
+/// PCS configuration shared by one-sided explicit contexts and resolved policies.
+pub(crate) fn pcs_from_config(
+    shape: &Shape,
+    config: &dyn crate::ligerito_flock::LigeritoStatementConfig,
+) -> Result<BitzPcs, ProtocolError> {
+    use flock_core::pcs::ligerito::{ProverConfig, VerifierConfig};
+    macro_rules! copy_config {
+        ($ty:ident) => {
+            $ty {
+                recursive_steps: config.recursive_steps(),
+                initial_log_msg_cols: config.initial_log_msg_cols(),
+                initial_log_num_interleaved: config.initial_log_num_interleaved(),
+                initial_k: config.initial_k(),
+                log_inv_rates: config.log_inv_rates().to_vec(),
+                recursive_log_msg_cols: config.recursive_log_msg_cols().to_vec(),
+                recursive_ks: config.recursive_ks().to_vec(),
+                queries: config.queries().to_vec(),
+                grinding_bits: config.grinding_bits().to_vec(),
+                fold_grinding_bits: config.fold_grinding_bits().to_vec(),
+                ood_samples: config.ood_samples().to_vec(),
+                merkle_hash: config.merkle_hash(),
+            }
+        };
+    }
+    BitzPcs::from_configs(shape, copy_config!(ProverConfig), copy_config!(VerifierConfig))
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ pcs: {error:?}")))
+}
+
+pub(crate) fn opening_shape(layout: &IntegerMatrixLayout) -> Result<Shape, ProtocolError> {
+    if layout.word_bits != 1 {
+        return Err(ProtocolError::InvalidBitzParameters);
+    }
+    Shape::new(layout.row_vars, layout.col_vars)
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ shape: {error:?}")))
+}
+
+pub(crate) fn opening_params(
+    layout: &IntegerMatrixLayout,
+    modulus: u128,
+) -> Result<BitZParams, ProtocolError> {
+    BitZParams::new(opening_shape(layout)?, modulus, bitz_generator().into())
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ params: {error:?}")))
+}
+
+// CM and linear SHA bind their relation and terminal claim before this fork.
+const VIRTUAL_SESSION: &[u8] = b"bitz/wfbitz-opener/virtual/v1";
+
+pub(crate) fn prove_virtual_opening<T: Transcript + Send, M: circuit::linear_map::binary::VirtualMap>(
+    transcript: &mut T,
+    statement: &crate::wfbitz::VirtualStatement<'_, M>,
+    pcs: &BitzPcs,
+    hint: &FlockCommitHint,
+    derived_rows: &[Vec<u64>],
+    ood: crate::ligerito_flock::ProverOod,
+) -> Result<WfbitzOpeningProof, ProtocolError> {
+    let ood = ood.opening_claim(transcript, hint);
+    let mut state = build_prover(VIRTUAL_SESSION, &fork_tag(transcript));
+    BitZProver::new(*statement.claim_params(), WINDOW)
+        .prove_virtual(
+            statement, pcs, hint, derived_rows, &mut state,
+            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+        )
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ prove: {error:?}")))?;
+    let BitzTranscriptProof { narg_string, hints } = state.finish();
+    Ok(WfbitzOpeningProof { narg: narg_string, hints, ood: ood.map(|claim| claim.round) })
+}
+
+pub(crate) fn verify_virtual_opening<T: Transcript + Send, M: circuit::linear_map::binary::VirtualMap>(
+    transcript: &mut T,
+    statement: &crate::wfbitz::VirtualStatement<'_, M>,
+    pcs: &BitzPcs,
+    commitment: &Commitment,
+    proof: &WfbitzOpeningProof,
+    ood: crate::ligerito_flock::VerifierOod,
+) -> Result<(), ProtocolError> {
+    let packed_vars = statement.committed_shape().log_bits()
+        .checked_sub(crate::ligerito::LOG_PACKING).ok_or(ProtocolError::InvalidGeometry)?;
+    let ood = ood.opening_claim(transcript, packed_vars, proof.ood.as_ref())
+        .map_err(ProtocolError::Bitz)?;
+    let streams = BitzTranscriptProof { narg_string: proof.narg.clone(), hints: proof.hints.clone() };
+    let state = build_verifier(VIRTUAL_SESSION, &fork_tag(transcript), &streams);
+    BitZVerifier::new(*statement.claim_params(), WINDOW)
+        .verify_virtual(
+            statement, pcs, Root(commitment.root), state,
             ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
         )
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ verify: {error:?}")))

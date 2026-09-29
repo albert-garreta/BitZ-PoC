@@ -26,6 +26,8 @@ pub mod binding;
 pub mod bitify;
 pub mod linear;
 pub mod wfbitz_opener;
+use wfbitz_opener::{WfbitzOpeningProof, opening_params, opening_shape, pcs_from_config};
+use crate::wfbitz::{LinearClaim, VirtualStatement};
 
 use std::{borrow::Cow, sync::OnceLock};
 
@@ -47,10 +49,8 @@ use {
             LigeritoSelection, ModQOpeningKind, OodRound, ProverOod, ResolvedLigerito, VerifierOod,
             bind_prover_ood, bind_verifier_ood, commit_rs_ligerito_rows,
             prove_mle_eval_mod_q_ligerito_virtual_runtime,
-            prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime,
             prove_mle_eval_mod_q_ligerito_with_weight_chunks,
             verify_mle_eval_mod_q_ligerito_virtual_runtime,
-            verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime,
             verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime,
         },
         pcs::IntegerMatrixLayout,
@@ -1044,7 +1044,7 @@ impl OpeningProof for IntEvalRsLigVirtProof {
 #[derive(Clone)]
 pub enum Opening {
     Direct(IntEvalRsLigModQProof),
-    Virtual(IntEvalRsLigVirtProof),
+    Virtual(WfbitzOpeningProof),
 }
 impl Opening {
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -1079,7 +1079,7 @@ impl OpeningProof for Opening {
     fn grinding_nonces(&self) -> &[u64] {
         match self {
             Self::Direct(p) => &p.grinding_nonces,
-            Self::Virtual(p) => &p.grinding_nonces,
+            Self::Virtual(p) => p.grinding_nonces(),
         }
     }
     fn ood(&self) -> Option<&OodRound> {
@@ -1402,28 +1402,7 @@ fn bind_claim_frame<T: Transcript, S: RelationSpec>(
     Ok(())
 }
 
-fn virtual_weight_chunks<S: RelationSpec>(
-    spec: &S,
-    weights: &[u128],
-    q_bits: usize,
-) -> Result<crate::pcs::ModQWeightChunks, ProtocolError> {
-    let p = spec.opening_layout();
-    let width = spec.opening_word_bits();
-    let result = if width < p.word_bits {
-        crate::pcs::ModQWeightChunks::from_dense_padded(
-            &p,
-            weights,
-            q_bits,
-            width,
-            spec.map().ok_or(ProtocolError::UnsupportedDischarge)?,
-        )
-    } else if width == p.word_bits {
-        crate::pcs::ModQWeightChunks::from_dense(&p, weights, q_bits)
-    } else {
-        Err(())
-    };
-    result.map_err(|_| ProtocolError::InvalidBitzParameters)
-}
+
 
 /// Proves the relation, discharging the bitified claim through the
 /// relation's virtual map onto its derived grid at the runtime prime.
@@ -1432,7 +1411,7 @@ pub fn prove_virtual<T: Transcript + Send, S: RelationSpec>(
     prepared: &PreparedRelation<S>,
     witness: &S::Witness,
     hint: &FlockCommitHint,
-) -> Result<Proof<IntEvalRsLigVirtProof>, ProtocolError> {
+) -> Result<Proof<WfbitzOpeningProof>, ProtocolError> {
     prove_virtual_with_opener(
         transcript,
         &prepared.prefix,
@@ -1449,14 +1428,14 @@ pub fn prove_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
     opener: &Opener,
     witness: &S::Witness,
     hint: &FlockCommitHint,
-) -> Result<Proof<IntEvalRsLigVirtProof>, ProtocolError> {
+) -> Result<Proof<WfbitzOpeningProof>, ProtocolError> {
     let spec = &prefix.spec;
     spec.check_witness(witness)?;
     let p = prefix.params();
     let pc = opener.prover()?;
     validate_bit_rows(&p, hint.rows())?;
     validate_commitment(&p, &hint.commitment, pc)?;
-    let security = &prefix.security;
+    wfbitz_opener::check_ungrinded(prefix)?;
     let domains = spec.domains();
     let scopes = &domains.scopes;
     let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
@@ -1487,23 +1466,14 @@ pub fn prove_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
         let _scope = (scopes.bitz_prove)().entered();
         let derived = spec.derived_rows(witness);
         let h_rows = derived.as_deref().unwrap_or(hint.rows());
-        let chunks = virtual_weight_chunks(spec, &row_weights, prime.modulus_bits())?;
-        prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime(
-            transcript,
-            hint,
-            h_rows,
-            &spec.opening_layout(),
-            &p,
-            map,
-            &chunks,
-            prime.modulus_u128(),
-            prime.modulus_bits(),
-            bitz_generator(),
-            spec.opener_grinding_bits(security),
-            ood,
-            pc,
-        )
-        .map_err(ProtocolError::Bitz)?
+        let params = opening_params(&spec.opening_layout(), prime.modulus_u128())?;
+        let committed = opening_shape(&p)?;
+        let claim = LinearClaim::new(&params, row_weights, col_weights, proved.opening.claimed)
+            .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
+        let statement = VirtualStatement::new(params, committed, map, &claim)
+            .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
+        let pcs = pcs_from_config(&committed, pc)?;
+        wfbitz_opener::prove_virtual_opening(transcript, &statement, &pcs, hint, h_rows, ood)?
     };
 
     Ok(Proof {
@@ -1518,7 +1488,7 @@ pub fn verify_virtual<T: Transcript + Send, S: RelationSpec>(
     transcript: &mut T,
     prepared: &PreparedRelation<S>,
     commitment: &Commitment,
-    proof: &Proof<IntEvalRsLigVirtProof>,
+    proof: &Proof<WfbitzOpeningProof>,
 ) -> Result<(), ProtocolError> {
     verify_virtual_with_opener(
         transcript,
@@ -1535,7 +1505,7 @@ pub fn verify_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
     prefix: &PreparedRelationPrefix<S>,
     opener: &Opener,
     commitment: &Commitment,
-    proof: &Proof<IntEvalRsLigVirtProof>,
+    proof: &Proof<WfbitzOpeningProof>,
 ) -> Result<(), ProtocolError> {
     verify_virtual_parts(
         transcript,
@@ -1553,14 +1523,14 @@ fn verify_virtual_parts<T: Transcript + Send, S: RelationSpec>(
     opener: &Opener,
     commitment: &Commitment,
     messages: &SpartanPrefixProof,
-    bitz: &IntEvalRsLigVirtProof,
+    bitz: &WfbitzOpeningProof,
 ) -> Result<(), ProtocolError> {
     let spec = &prefix.spec;
     let p = prefix.params();
     let vc = opener.verifier()?;
     let binding_config = opener.binding_config()?;
     validate_commitment(&p, commitment, &binding_config)?;
-    let security = &prefix.security;
+    wfbitz_opener::check_ungrinded(prefix)?;
     let domains = spec.domains();
     let scopes = &domains.scopes;
     let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
@@ -1590,25 +1560,14 @@ fn verify_virtual_parts<T: Transcript + Send, S: RelationSpec>(
 
     let _step5 = tracing::info_span!("step5:open_verify").entered();
     let _scope = (scopes.bitz_verify)().entered();
-    let chunks = virtual_weight_chunks(spec, &row_weights, prime.modulus_bits())?;
-    verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_runtime(
-        transcript,
-        commitment,
-        bitz,
-        &spec.opening_layout(),
-        &p,
-        map,
-        &chunks,
-        &col_weights,
-        bitz_generator(),
-        verified.opening.claimed,
-        prime.modulus_u128(),
-        prime.modulus_bits(),
-        spec.opener_grinding_bits(security),
-        ood,
-        vc,
-    )
-    .map_err(ProtocolError::Bitz)
+    let params = opening_params(&spec.opening_layout(), prime.modulus_u128())?;
+    let committed = opening_shape(&p)?;
+    let claim = LinearClaim::new(&params, row_weights, col_weights, verified.opening.claimed)
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
+    let statement = VirtualStatement::new(params, committed, map, &claim)
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
+    let pcs = pcs_from_config(&committed, vc)?;
+    wfbitz_opener::verify_virtual_opening(transcript, &statement, &pcs, commitment, bitz, ood)
 }
 
 /// Proves the relation under Strategy 2: after bitification the prover
