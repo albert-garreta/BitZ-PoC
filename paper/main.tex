@@ -842,7 +842,7 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
     This property trickles down to different stages of the GKR protocol. For example, the above property implies that $L_{r_1-1}(\bb',\cc)$ as well can take only an $O(\sqrt{\codedim})$ amount of values (with worse constants now) across all $(\bb',\cc)\in \bits^{r_1-1}\times \bits^{r_2}$. Similarly, the coefficients of the first messages sent by the prover at the last stages of the GKR protocol (which involve the most expensive sumchecks), also benefit from a low entropy property. 
 
 
-            This allows the prover to compute small lookup tables that are kept in cache and reused across all values of $\cc\in [\codedim_2]$. We build different lookup tables, which are used at different stages of the GKR protocol.  For example, in the last sumcheck of GKR (the most expensive one, involving $r_1-1+r_2$ variables) the prover uses tables with at most $2^8$ entries per index to compute its first five messages, and it does the same for the first four, three and two messages of the three sumchecks before it (see \cref{s:gkr_implementation}). This  configuration was found through an optimization process that was run with AI.See \cref{s:gkr_low_entropy} for more details.
+            This allows the prover to compute small lookup tables that are kept in cache and reused across all values of $\cc\in [\codedim_2]$. We build different lookup tables, which are used at different stages of the GKR protocol.  For example, in the last sumcheck of GKR (the most expensive one, involving $r_1-1+r_2$ variables) the prover uses tables with at most $2^8$ entries per index to compute its first five messages, and it does the same for the first four, three and two messages of the three sumchecks before it (see \cref{s:gkr_implementation}). This  configuration was found through an optimization process that was run with AI. See \cref{s:gkr_low_entropy} for more details.
 
  Besides the above, we also use or adapt known techniques from \cite{sumcheck_opt_1,sumcheck_opt_2,gruen} to our context.
 
@@ -2822,11 +2822,11 @@ The prover  computes the table $T_{A_2}\in (\comfield^{16})^{\bits^{r_1-2}}$ giv
     \begin{equation}\label{e:TA2}T_{A_2}[\bb]=\Big( \big(\yy_{1,\bb,0}^{(x_1)}-\yy_{0,\bb,0}^{(x_0)}\big)\cdot \big(\yy_{1,\bb,1}^{(x_1')}-\yy_{0,\bb,1}^{(x_0')}\big)\cdot \omega[\bb] \Big)_{(x_0,x_1,x_0',x_1')\in \bits^4},\end{equation}
     so that $A_2^{(1)}[\bb,\cc]$ is the element  $$A_2^{(1)}[\bb,\cc]=T_{A_2}[\bb][\bfg_{(0,\bb,0),\cc},\bfg_{(1,\bb,0),\cc},\bfg_{(0,\bb,1),\cc},\bfg_{(1,\bb,1),\cc}].$$ Building $T_{A_2}$ takes at most $20$ multiplications and $8$ additions per index $\bb$\footnote{For the multiplications, there are $4$ multiplications to compute the $4$ elements $t_{x_0',x_1',\bb}\defeq \big(\yy_{1,\bb,1}^{(x_1')}-\yy_{0,\bb,1}^{(x_0')}\big)\cdot \omega[\bb]$, and then $16$ more multiplications to compute $\big(\yy_{1,\bb,0}^{(x_1)}-\yy_{0,\bb,0}^{(x_0)}\big)\cdot t_{x_0',x_1',\bb}$.}. I.e.\ at most $5\cdot 2^{r_1}$ multiplications and $2^{r_1+1}$ additions in total.
  Once the tables have been computed, obtaining the constant and the leading coefficients of $h_{1,\cc}(X)$, i.e.\ $\sum_\bb A_0^{(1)}[\bb,\cc]$ and $\sum_\bb A_2^{(1)}[\bb,\cc]$,  costs $2\cdot 2^{r_1-2}$ table reads (one read per table $T_{A_0}, T_{A_2}$ per index $\bb\in \bits^{r_1-2}$) and $2\cdot 2^{r_1-2}$ additions, for each $\cc\in \bits^{r_2}$. In total, (passing over all $\cc\in \bits^{r_2}$) this amounts  to at most  
- $\codedim/2$ table reads and $\codedim/2$ additions for all $\cc$, and no multiplications. Once can then compute the constant and leading coefficients of $h_1(X)$ with $\codedim_2$ multiplications and additions. At this point, the prover has computed the constant and leading terms of  the polynomials $h_{1,j}(X)$. 
+ $\codedim/2$ table reads and $\codedim/2$ additions for all $\cc$, and no multiplications. One can then compute the constant and leading coefficients of $h_1(X)$ with $2\cdot\codedim_2$ multiplications and additions. At this point, the prover has computed the constant and leading terms of  the polynomials $h_{1,\cc}(X)$. 
 
 
 
-Using the ``eq factorization'' technique from \cite{gruen}, write   $\eq(X,\cc;\bm{\alpha}^{(i,2)})=\eq(X;\alpha)\cdot \eq(\cc;\bm{\alpha}')$, where $\bm{\alpha}^{(i,2)}=(\alpha,\bm{\alpha}')$. Then $h_1(X)=\eq(X;\alpha)\cdot t_1(X)$, where $t_1(X)\defeq\sum_{\cc}\eq(\cc;\bm{\alpha}')\cdot h_{1,\cc}(X)$. Instead of sending $h_1(X)$, the prover sends $t_1(X)$. The constant and leading coefficients of $t_1(X)$ can be computed by the prover with $\codedim_2$ multiplications and additions (assuming the values $\eq(\cc,\bm{\alpha}')$ have already been computed). Additionally we have $C^{(r_1-1)} = h_1(0)+h_1(1)=(1-\alpha)\cdot t_1(0)+\alpha\cdot t_1(1)$, and so the verifier can obtain $t_1(1)$ by itself, which in turn allows it to obtain the linear coefficient of $t_1(X)$. 
+Using the ``eq factorization'' technique from \cite{gruen}, write   $\eq(X,\cc;\bm{\alpha}^{(i,2)})=\eq(X;\alpha)\cdot \eq(\cc;\bm{\alpha}')$, where $\bm{\alpha}^{(i,2)}=(\alpha,\bm{\alpha}')$. Then $h_1(X)=\eq(X;\alpha)\cdot t_1(X)$, where $t_1(X)\defeq\sum_{\cc}\eq(\cc;\bm{\alpha}')\cdot h_{1,\cc}(X)$. Instead of sending $h_1(X)$, the prover sends $t_1(X)$. The constant and leading coefficients of $t_1(X)$ can be computed by the prover with $2\cdot\codedim_2$ multiplications and additions, plus $\codedim_2$ multiplications to compute the values $\eq(\cc,\bm{\alpha}')$. Additionally we have $C^{(r_1-1)} = h_1(0)+h_1(1)=(1-\alpha)\cdot t_1(0)+\alpha\cdot t_1(1)$, and so the verifier can obtain $t_1(1)$ by itself, which in turn allows it to obtain the linear coefficient of $t_1(X)$. 
 
 
 
@@ -2857,7 +2857,7 @@ In \cref{t:gkr_step1_costs} we record the total upper bound costs for computing 
          \hline
         Multiplications & $\leq   8\cdot \codedim_1 +  3\cdot \codedim_2 $ &$\Theta(\codedim_1\cdot \codedim_2)$\\
         \hline
-        Additions & $\leq \codedim_1\cdot \codedim_2/2 + 2\cdot\codedim_1 +  2\cdot \codedim_2$  & $\Theta(\codedim_1\cdot \codedim_2)$\\
+        Additions & $\leq \codedim_1\cdot \codedim_2/2 + 3\cdot\codedim_1 +  2\cdot \codedim_2$  & $\Theta(\codedim_1\cdot \codedim_2)$\\
         \hline
         Table reads & $\codedim_1\cdot \codedim_2/2$, into tables of $5\cdot\codedim_1$ field elements & --
     \end{tabular}
@@ -2955,7 +2955,7 @@ Hence, in practice we stop using lookup tables after a few rounds of each sumche
         \hline
         $T_{A_2}^{(3)}$ & $(\KK^{2^{16}})^{2^{r_1-4}}$  &  --- & $4295$ & no
     \end{tabular}
-    \caption{Dimensions, build costs, and sizes of the tables for computing $h_1(X), h_2(X), h_3(X)$ in the last sumcheck of \cref{c:gkr_grand_product}, with $\log|\KK|\approx 128$. We use the example size $\codedim_1=2^{r_1}=2^{16}$, which, following our instantiation ($\codedim_1\approx \codedim^{0.6}$, \cref{s:instantiation}), corresponds to a total witness size $\codedim  \approx 2^{26},2^{27}$.}
+    \caption{Dimensions, build costs, and sizes of the tables for computing $h_1(X), h_2(X), h_3(X)$ in the last sumcheck of \cref{c:gkr_grand_product}, with $\log|\KK|\approx 128$. We use the example size $\codedim_1=2^{r_1}=2^{16}$, which, following our instantiation ($\codedim_1\approx \codedim^{0.6}$, \cref{s:instantiation}), corresponds to a total witness size $\codedim  \approx 2^{27},2^{28}$.}
 \label{tab:gkr_tables}
 \end{table}
 
@@ -3104,7 +3104,7 @@ Our PoC repository can be found in \url{https://github.com/albert-garreta/BitZ-P
 \fi
 
 \begin{lncsmove}{ExpAI}
-\paragraph{Usage of AI.} There are two implementations of Iftwoz, a PoC one (\url{https://github.com/albert-garreta/BitZ-PoC}), and a production-grade one (\urlhttps://github.com/worldfnd/BitZ}). The benchmark results correspond to the PoC implementaion. In its current state, the PoC implementation was obtained from the production-grade one, after adding a few missing steps (grinding, out of domain sampling, machinery around random primes), and then asking an AI to optimize the prover without changing the verifier. We then reviewed and refactored the results. The production-grade version is being implemented via traditional methods, with mild and controlled usage of AI, and is not optimized as of now.
+\paragraph{Usage of AI.} There are two implementations of Iftwoz, a PoC one (\url{https://github.com/albert-garreta/BitZ-PoC}), and a production-grade one (\url{https://github.com/worldfnd/BitZ}). The benchmark results correspond to the PoC implementaion. In its current state, the PoC implementation was obtained from the production-grade one, after adding a few missing steps (grinding, out of domain sampling, machinery around random primes), and then asking an AI to optimize the prover without changing the verifier. We then reviewed and refactored the results. The production-grade version is being implemented via traditional methods, with mild and controlled usage of AI, and is not optimized as of now.
 
 We heavily used Al in early stages of the project, to gauge the practical feasibility of our protocol. The corresponding code was placed in the POC repository, and has been subsequently removed or refactored.
 
