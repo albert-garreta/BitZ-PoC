@@ -2574,7 +2574,7 @@ We index $[\codedim_1],[\codedim_2]$ via elements of the hypercubes $\bits^{r_1}
 Let $L_{r_1}$ be a  \emph{multilinear} polynomial over $\comfield$ on $r_1 + r_2$ variables such that $$L_{r_1}(\bb,\cc)= \gkrpol(\yy_{\bb}, \bfg_{\bb,\cc}) \quad  \text{ for all } (\bb,\cc) \in \bits^{r_1} \times \bits^{r_2}.$$ (Note that $\gkrpol$ may not be multilinear.)  
      For $i=0,\ldots, r_1-1$, let $L_i$ be a multilinear polynomial on $r_2 + i$ variables  such that 
       $$
-  L_{i}(\bb,\cc)  =  L_{i+1}(\bb,0,\cc) \cdot L_{i+1}(\bb,1, \cc)  \quad \text{for all } (\bb,\cc)\in \bits^{i} \times \bits^{r_2}.
+  L_{i}(\bb,\cc)  =  L_{i+1}(0,\bb,\cc) \cdot L_{i+1}(1,\bb, \cc)  \quad \text{for all } (\bb,\cc)\in \bits^{i} \times \bits^{r_2}.
     $$
 \begin{enumerate}[leftmargin=*]
     \item The verifier sends $\bm{\alpha}^{(0)}\in \comfield^{r_2}$. Both prover and verifier compute $C^{(0)}\defeq 
@@ -2584,13 +2584,13 @@ Let $L_{r_1}$ be a  \emph{multilinear} polynomial over $\comfield$ on $r_1 + r_2
         \item \textbf{$i$-th sumcheck.} The prover and verifier run the sumcheck protocol for the following claim: %\john{FYI: The current implementation constructs two sumchecks. One for b variables. A subsequent one for the c variables. It might be good to explore the difference between the two}
     %
     $$
-    C^{(i)} =  \sum_{(\bb,\cc)\in \bits^i \times \bits^{r_2}}  L_{i+1}(\bb,0,\cc) \cdot L_{i+1}(\bb,1,\cc) \cdot \eq(\bb, \cc; \bm{\alpha}^{(i)}). 
+    C^{(i)} =  \sum_{(\bb,\cc)\in \bits^i \times \bits^{r_2}}  L_{i+1}(0,\bb,\cc) \cdot L_{i+1}(1,\bb,\cc) \cdot \eq(\bb, \cc; \bm{\alpha}^{(i)}). 
     $$
     %
     At the end of the sumcheck protocol, the prover and verifier are left with a claim of the form
     %
     \begin{equation}\label{e:gkr_intermediate}
-    L_{i+1}(\rr_\bb^{(i)},0,\rr_{\cc}^{(i)}) = a_{0}^{(i)}, \qquad L_{i+1}(\rr_\bb^{(i)},1,\rr_{\cc}^{(i)}) = a_{1}^{(i)}
+    L_{i+1}(0,\rr_\bb^{(i)},\rr_{\cc}^{(i)}) = a_{0}^{(i)}, \qquad L_{i+1}(1,\rr_\bb^{(i)},\rr_{\cc}^{(i)}) = a_{1}^{(i)}
     \end{equation}
     %
     for some $\rr_\bb^{(i)}\in \comfield^{i}$, $\rr_\cc^{(i)}\in \comfield^{r_2}$ and $a_{0}^{(i)},a_{1}^{(i)}\in \comfield$.
@@ -2601,11 +2601,11 @@ Let $L_{r_1}$ be a  \emph{multilinear} polynomial over $\comfield$ on $r_1 + r_2
         \item The claim \eqref{e:gkr_intermediate} is replaced by
         %
         $$
-        L_{i+1}(\rr_\bb^{(i)},\beta^{(i)},\rr_{\cc}^{(i)}) = C^{(i+1)} \defeq a_0^{(i)} \cdot (1-\beta^{(i)}) + a_1^{(i)} \cdot \beta^{(i)}.
+        L_{i+1}(\beta^{(i)},\rr_\bb^{(i)},\rr_{\cc}^{(i)}) = C^{(i+1)} \defeq a_0^{(i)} \cdot (1-\beta^{(i)}) + a_1^{(i)} \cdot \beta^{(i)}.
         $$
         Let 
         $$
-        \bm{\alpha}^{(i+1)} \defeq (\rr_\bb^{(i)},\beta^{(i)},\rr_{\cc}^{(i)}).
+        \bm{\alpha}^{(i+1)} \defeq (\beta^{(i)},\rr_\bb^{(i)},\rr_{\cc}^{(i)}).
         $$
     \end{enumerate}
     %
@@ -2718,7 +2718,7 @@ In our instantiation, $\yy_{\bb}^{(1)}=g^{\bm{\gamma}_{\bb}}$ and $\yy_\bb^{(0)}
 
 As we will explain later, the prover will also precompute similar tables for the values $L_{r_1-j}(\bb,\cc)$ of the levels close to the leaves (i.e.\ for small $j$),
 \begin{equation}\label{e:size_T_r1_i}T_{r_1-j}\in \left(\comfield^{2^{2^j}}\right)^{\bits^{r_1-j}},\end{equation}
-as well as other tables relevant for the different sumcheck rounds of \cref{c:gkr_grand_product}, constructed from the tables $T_{r_1-j}$ themselves. The superscript $\bits^{r_1-j}$ in \eqref{e:size_T_r1_i} indicates that the table $T_{r_1-j}$ has one entry per element in the hypercube  $\bits^{r_1-j}$, and this entry is a vector of $2^{2^j}$ field elements. Concretely, for $\bb\in \bits^{r_1-j}$, $T_{r_1-j}[\bb]$ consists of all possible products of  $2^j$ consecutive factors of the grand product, namely the factors indexed by $(\bb, \bb')$ with $\bb$ fixed and $\bb'$ ranging over $\bits^{j}$.  Each factor can take two values, depending on whether $\bfg_{\bb,\bb', \cc}$ is $1$ or $0$. Hence $T_{r_1-j}[\bb]$ consists of $2^{2^j}$ elements. Hence the size of $T_{r_1-j}$ in \eqref{e:size_T_r1_i}.
+as well as other tables relevant for the different sumcheck rounds of \cref{c:gkr_grand_product}, constructed from the tables $T_{r_1-j}$ themselves. The superscript $\bits^{r_1-j}$ in \eqref{e:size_T_r1_i} indicates that the table $T_{r_1-j}$ has one entry per element in the hypercube  $\bits^{r_1-j}$, and this entry is a vector of $2^{2^j}$ field elements. Concretely, for $\bb\in \bits^{r_1-j}$, $T_{r_1-j}[\bb]$ consists of all possible products of  $2^j$ consecutive factors of the grand product, namely the factors indexed by $(\bb', \bb)$ with $\bb$ fixed and $\bb'$ ranging over $\bits^{j}$.  Each factor can take two values, depending on whether $\bfg_{(\bb', \bb), \cc}$ is $1$ or $0$. Hence $T_{r_1-j}[\bb]$ consists of $2^{2^j}$ elements. Hence the size of $T_{r_1-j}$ in \eqref{e:size_T_r1_i}.
 
 Because $|T_{r_1-j}|$   grows doubly-exponentially in $j$, these tables are usable in practice only for the bottom few levels of the tree ($j\leq 3$ in our implementation). In higher levels we use standard sumchecks.
 
@@ -2740,7 +2740,7 @@ Importantly, all these tables have size independent of $\codedim_2$.  This (amon
 We start by analyzing Step 2 with $i=r_1-1$. In this step prover and verifier run a sumcheck for the claim
 %
 $$
-C^{(r_1-1)}= \sum_{(\bb,\cc)\in \bits^{r_1-1}\times \bits^{r_2}} L_{r_1}(\bb,0,\cc) \cdot L_{r_1}(\bb,1,\cc) \cdot \eq(\bb,\cc;\bm{\alpha}^{(i)}).
+C^{(r_1-1)}= \sum_{(\bb,\cc)\in \bits^{r_1-1}\times \bits^{r_2}} L_{r_1}(0,\bb,\cc) \cdot L_{r_1}(1,\bb,\cc) \cdot \eq(\bb,\cc;\bm{\alpha}^{(i)}).
 $$
 %
 This is the most expensive sumcheck of \cref{c:gkr_grand_product} for the prover (if done naively), since it is the sumcheck over the largest number of variables throughout \cref{c:gkr_grand_product}. 
@@ -2749,12 +2749,12 @@ For $1\leq j\leq r_1-1$, the $j$-th prover message in this sumcheck is, if $\bm{
 %
 \iflncs\begingroup\scriptsize\fi
 \begin{align*}
-h_j(X)&\defeq \sum_{(\bb,\cc)\in \bits^{r_1-1-j}\times \bits^{r_2}} L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc) \cdot L_{r_1}(\bm{\rho}^{(j)}, X, \bb,1,\cc)\cdot \eq(\bm{\rho}^{(j)}, X, \bb,\cc;\bm{\alpha}^{(i)})\\
+h_j(X)&\defeq \sum_{(\bb,\cc)\in \bits^{r_1-1-j}\times \bits^{r_2}} L_{r_1}(0,\bm{\rho}^{(j)}, X, \bb,\cc) \cdot L_{r_1}(1,\bm{\rho}^{(j)}, X, \bb,\cc)\cdot \eq(\bm{\rho}^{(j)}, X, \bb,\cc;\bm{\alpha}^{(i)})\\
 \iflncs
-&= \sum_{\cc\in \bits^{r_2}}\Big( \underbrace{\sum_{\bb\in \bits^{r_1-1-j}}L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc) \cdot L_{r_1}(\bm{\rho}^{(j)}, X, \bb,1,\cc) \cdot \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)})}_{\defeq h_{j,\cc}(X)}\Big)\\
+&= \sum_{\cc\in \bits^{r_2}}\Big( \underbrace{\sum_{\bb\in \bits^{r_1-1-j}}L_{r_1}(0,\bm{\rho}^{(j)}, X, \bb,\cc) \cdot L_{r_1}(1,\bm{\rho}^{(j)}, X, \bb,\cc) \cdot \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)})}_{\defeq h_{j,\cc}(X)}\Big)\\
 &\qquad \cdot   \eq(X,\cc;\bm{\alpha}^{(i,2)}) \\
 \else
-&= \sum_{\cc\in \bits^{r_2}}\left( \underbrace{\sum_{\bb\in \bits^{r_1-1-j}}L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc) \cdot L_{r_1}(\bm{\rho}^{(j)}, X, \bb,1,\cc) \cdot \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)})}_{\defeq h_{j,\cc}(X)}\right)\cdot   \eq(X,\cc;\bm{\alpha}^{(i,2)}) \\
+&= \sum_{\cc\in \bits^{r_2}}\left( \underbrace{\sum_{\bb\in \bits^{r_1-1-j}}L_{r_1}(0,\bm{\rho}^{(j)}, X, \bb,\cc) \cdot L_{r_1}(1,\bm{\rho}^{(j)}, X, \bb,\cc) \cdot \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)})}_{\defeq h_{j,\cc}(X)}\right)\cdot   \eq(X,\cc;\bm{\alpha}^{(i,2)}) \\
 \fi
 &= \sum_{\cc\in \bits^{r_2}}h_{j,\cc}(X)\cdot   \eq(X,\cc;\bm{\alpha}^{(i,2)}),
 \end{align*}
@@ -2766,20 +2766,20 @@ Observe that
 %
 \iflncs\begingroup\small\fi
 \begin{equation}\label{e:grand_product_Lr1}
-L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc) = \left(L_{r_1}(\bm{\rho}^{(j)}, 1, \bb,0,\cc) -  L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,0,\cc)\right)\cdot X + L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,0,\cc),
+L_{r_1}(0,\bm{\rho}^{(j)}, X, \bb,\cc) = \left(L_{r_1}(0,\bm{\rho}^{(j)}, 1, \bb,\cc) -  L_{r_1}(0,\bm{\rho}^{(j)}, 0, \bb,\cc)\right)\cdot X + L_{r_1}(0,\bm{\rho}^{(j)}, 0, \bb,\cc),
 \end{equation}
 \iflncs\endgroup\fi
-because $L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc)$ is a linear polynomial, and the right-hand side in the above expression is the line passing through the two evaluations of  $L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc)$ at $X=0$ and $X=1$. An analogous expression holds for $L_{r_1}(\bm{\rho}^{(j)}, X, \bb, 1, \cc)$:
+because $L_{r_1}(0,\bm{\rho}^{(j)}, X, \bb,\cc)$ is a linear polynomial, and the right-hand side in the above expression is the line passing through the two evaluations of  $L_{r_1}(0,\bm{\rho}^{(j)}, X, \bb,\cc)$ at $X=0$ and $X=1$. An analogous expression holds for $L_{r_1}(1,\bm{\rho}^{(j)}, X, \bb,\cc)$:
 \iflncs\begingroup\small\fi
 \begin{equation}\label{e:grand_product_Lr2}
-L_{r_1}(\bm{\rho}^{(j)}, X, \bb,1,\cc) = \left(L_{r_1}(\bm{\rho}^{(j)}, 1, \bb,1,\cc) -  L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,1,\cc)\right)\cdot X + L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,1,\cc).
+L_{r_1}(1,\bm{\rho}^{(j)}, X, \bb,\cc) = \left(L_{r_1}(1,\bm{\rho}^{(j)}, 1, \bb,\cc) -  L_{r_1}(1,\bm{\rho}^{(j)}, 0, \bb,\cc)\right)\cdot X + L_{r_1}(1,\bm{\rho}^{(j)}, 0, \bb,\cc).
 \end{equation}
 \iflncs\endgroup\fi
 %
 Renaming
 %
 $$
-E_{\eps_1\eps_2}^{(j)}[\bb,\cc] \defeq L_{r_1}(\bm{\rho}^{(j)}, \eps_1, \bb, \eps_2,\cc) \qquad \eps_1,\eps_2\in \bits, \qquad \omega[\bb]\defeq \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)}),
+E_{\eps_1\eps_2}^{(j)}[\bb,\cc] \defeq L_{r_1}(\eps_2,\bm{\rho}^{(j)}, \eps_1, \bb,\cc) \qquad \eps_1,\eps_2\in \bits, \qquad \omega[\bb]\defeq \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)}),
 $$
 we obtain
 %
@@ -2797,32 +2797,32 @@ A_2^{(j)}[\bb,\cc] &\defeq (E_{10}^{(j)}[\bb,\cc]-E_{00}^{(j)}[\bb,\cc])\cdot (E
 $$
 \iflncs\endgroup\fi
 %
-Now, for $j=1$, we have $\bm{\rho}^{(j)}= \bot$, and hence each value $E_{\eps_1\eps_2}^{(1)}[\bb,\cc]$ can be obtained, whenever needed, by querying $T_{r_1}[\bb]$ and selecting $T_{r_1}[\bb][1]$ or $T_{r_1}[\bb][0]$  depending on whether $\bfg_{\bb,\cc} = 1$ or $0$. A consequence  is that  the coefficients themselves $A_k^{(1)}[\bb,\cc]$ ($k\in \{0,1,2\}$) can be obtained through lookup tables, as follows:
+Now, for $j=1$, we have $\bm{\rho}^{(j)}= \bot$, and hence each value $E_{\eps_1\eps_2}^{(1)}[\bb,\cc]$ can be obtained, whenever needed, by querying $T_{r_1}[\eps_2,\eps_1,\bb]$ and selecting $T_{r_1}[\eps_2,\eps_1,\bb][1]$ or $T_{r_1}[\eps_2,\eps_1,\bb][0]$  depending on whether $\bfg_{(\eps_2,\eps_1,\bb),\cc} = 1$ or $0$. A consequence  is that  the coefficients themselves $A_k^{(1)}[\bb,\cc]$ ($k\in \{0,1,2\}$) can be obtained through lookup tables, as follows:
 %
  we have $$A_0^{(1)}[\bb,\cc] = 
-    T_{r_1}[0,\bb,0][\bfg_{(0,\bb,0),\cc}] \cdot    T_{r_1}[0,\bb, 1][\bfg_{(0,\bb,1),\cc}] \cdot \omega[\bb].
+    T_{r_1}[0,0,\bb][\bfg_{(0,0,\bb),\cc}] \cdot    T_{r_1}[1,0,\bb][\bfg_{(1,0,\bb),\cc}] \cdot \omega[\bb].
 $$
 Hence
 %
 $$
 A_0^{(1)}[\bb,\cc] = \begin{cases}
-    \yy_{0,\bb,0}^{(1)} \cdot  \yy_{0,\bb,1}^{(1)} \cdot \omega[\bb]&\text{if } \bfg_{(0,\bb,0),\cc}=1,\ \bfg_{(0,\bb,1),\cc}=1 \\  
-    \yy_{0,\bb,0}^{(1)} \cdot  \yy_{0,\bb,1}^{(0)}\cdot \omega[\bb]&\text{if } \bfg_{(0,\bb,0),\cc}=1,\ \bfg_{(0,\bb,1),\cc}=0\\
-     \yy_{0,\bb,0}^{(0)} \cdot  \yy_{0,\bb,1}^{(1)}\cdot \omega[\bb]& \text{if } \bfg_{(0,\bb,0),\cc}=0,\ \bfg_{(0,\bb,1),\cc}=1 \\
-    \yy_{0,\bb,0}^{(0)} \cdot  \yy_{0,\bb,1}^{(0)} \cdot  \omega[\bb] &\text{if } \bfg_{(0,\bb,0),\cc}= 0,\  \bfg_{(0,\bb,1),\cc}=0
+    \yy_{0,0,\bb}^{(1)} \cdot  \yy_{1,0,\bb}^{(1)} \cdot \omega[\bb]&\text{if } \bfg_{(0,0,\bb),\cc}=1,\ \bfg_{(1,0,\bb),\cc}=1 \\  
+    \yy_{0,0,\bb}^{(1)} \cdot  \yy_{1,0,\bb}^{(0)}\cdot \omega[\bb]&\text{if } \bfg_{(0,0,\bb),\cc}=1,\ \bfg_{(1,0,\bb),\cc}=0\\
+     \yy_{0,0,\bb}^{(0)} \cdot  \yy_{1,0,\bb}^{(1)}\cdot \omega[\bb]& \text{if } \bfg_{(0,0,\bb),\cc}=0,\ \bfg_{(1,0,\bb),\cc}=1 \\
+    \yy_{0,0,\bb}^{(0)} \cdot  \yy_{1,0,\bb}^{(0)} \cdot  \omega[\bb] &\text{if } \bfg_{(0,0,\bb),\cc}= 0,\  \bfg_{(1,0,\bb),\cc}=0
 \end{cases}
 $$
 %
-Thus the prover can precompute the table $$T_{A_0} \in (\comfield^{4})^{\bits^{r_1-2}}=\comfield^{\codedim_1}$$ given by $$T_{A_0}[\bb]=(\yy_{0,\bb,0}^{(1)} \cdot  \yy_{0,\bb,1}^{(1)} \cdot \omega[\bb],  \ \
-    \yy_{0,\bb,0}^{(1)} \cdot  \yy_{0,\bb,1}^{(0)}\cdot \omega[\bb],   \ \ \yy_{0,\bb,0}^{(0)} \cdot  \yy_{0,\bb,1}^{(1)}\cdot \omega[\bb],   \ \ \yy_{0,\bb,0}^{(0)} \cdot  \yy_{0,\bb,1}^{(0)} \cdot  \omega[\bb])$$
+Thus the prover can precompute the table $$T_{A_0} \in (\comfield^{4})^{\bits^{r_1-2}}=\comfield^{\codedim_1}$$ given by $$T_{A_0}[\bb]=(\yy_{0,0,\bb}^{(1)} \cdot  \yy_{1,0,\bb}^{(1)} \cdot \omega[\bb],  \ \
+    \yy_{0,0,\bb}^{(1)} \cdot  \yy_{1,0,\bb}^{(0)}\cdot \omega[\bb],   \ \ \yy_{0,0,\bb}^{(0)} \cdot  \yy_{1,0,\bb}^{(1)}\cdot \omega[\bb],   \ \ \yy_{0,0,\bb}^{(0)} \cdot  \yy_{1,0,\bb}^{(0)} \cdot  \omega[\bb])$$
 and use it to obtain any value $A_{0}^{(1)}[\bb,\cc]$ for $(\bb,\cc)\in \bits^{r_1-2}\times \bits^{r_2}$ via a single read into $T_{A_0}$. %\begin{equation}\label{e: A0_factor_T0}A_0[\bb,\cc] = T_{A_0}[\bb,\cc] \cdot \eq(\cc;\bm{\alpha}^{(i,2)}).\end{equation} 
 %
 The size of $T_{A_0}$, again, does not depend on $\codedim_2=2^{r_2}$. Building $T_{A_0}$ requires at most $8\cdot 2^{r_1-2} = 2^{r_1+1}$ multiplications and no additions. 
 
-We now explain how to obtain the values $A_2^{(1)}[\bb,\cc]$, again via the construction of a lookup table. (The prover does not need the values $A_1^{(1)}[\bb,\cc]$, as we explain below.) Note that $A_2^{(1)}[\bb,\cc]$ depends on the \emph{four} bits $\bfg_{(\eps_1,\bb,\eps_2),\cc}$, $\eps_1,\eps_2\in \bits$, so our table will need $2^4=16$ entries  per  index $\bb$ (as opposed to $4$ as in $T_{A_0}$).
+We now explain how to obtain the values $A_2^{(1)}[\bb,\cc]$, again via the construction of a lookup table. (The prover does not need the values $A_1^{(1)}[\bb,\cc]$, as we explain below.) Note that $A_2^{(1)}[\bb,\cc]$ depends on the \emph{four} bits $\bfg_{(\eps_2,\eps_1,\bb),\cc}$, $\eps_1,\eps_2\in \bits$, so our table will need $2^4=16$ entries  per  index $\bb$ (as opposed to $4$ as in $T_{A_0}$).
 The prover  computes the table $T_{A_2}\in (\comfield^{16})^{\bits^{r_1-2}}$ given by
-    \begin{equation}\label{e:TA2}T_{A_2}[\bb]=\Big( \big(\yy_{1,\bb,0}^{(x_1)}-\yy_{0,\bb,0}^{(x_0)}\big)\cdot \big(\yy_{1,\bb,1}^{(x_1')}-\yy_{0,\bb,1}^{(x_0')}\big)\cdot \omega[\bb] \Big)_{(x_0,x_1,x_0',x_1')\in \bits^4},\end{equation}
-    so that $A_2^{(1)}[\bb,\cc]$ is the element  $$A_2^{(1)}[\bb,\cc]=T_{A_2}[\bb][\bfg_{(0,\bb,0),\cc},\bfg_{(1,\bb,0),\cc},\bfg_{(0,\bb,1),\cc},\bfg_{(1,\bb,1),\cc}].$$ Building $T_{A_2}$ takes at most $20$ multiplications and $8$ additions per index $\bb$\footnote{For the multiplications, there are $4$ multiplications to compute the $4$ elements $t_{x_0',x_1',\bb}\defeq \big(\yy_{1,\bb,1}^{(x_1')}-\yy_{0,\bb,1}^{(x_0')}\big)\cdot \omega[\bb]$, and then $16$ more multiplications to compute $\big(\yy_{1,\bb,0}^{(x_1)}-\yy_{0,\bb,0}^{(x_0)}\big)\cdot t_{x_0',x_1',\bb}$.}. I.e.\ at most $5\cdot 2^{r_1}$ multiplications and $2^{r_1+1}$ additions in total.
+    \begin{equation}\label{e:TA2}T_{A_2}[\bb]=\Big( \big(\yy_{0,1,\bb}^{(x_1)}-\yy_{0,0,\bb}^{(x_0)}\big)\cdot \big(\yy_{1,1,\bb}^{(x_1')}-\yy_{1,0,\bb}^{(x_0')}\big)\cdot \omega[\bb] \Big)_{(x_0,x_1,x_0',x_1')\in \bits^4},\end{equation}
+    so that $A_2^{(1)}[\bb,\cc]$ is the element  $$A_2^{(1)}[\bb,\cc]=T_{A_2}[\bb][\bfg_{(0,0,\bb),\cc},\bfg_{(0,1,\bb),\cc},\bfg_{(1,0,\bb),\cc},\bfg_{(1,1,\bb),\cc}].$$ Building $T_{A_2}$ takes at most $20$ multiplications and $8$ additions per index $\bb$\footnote{For the multiplications, there are $4$ multiplications to compute the $4$ elements $t_{x_0',x_1',\bb}\defeq \big(\yy_{1,1,\bb}^{(x_1')}-\yy_{1,0,\bb}^{(x_0')}\big)\cdot \omega[\bb]$, and then $16$ more multiplications to compute $\big(\yy_{0,1,\bb}^{(x_1)}-\yy_{0,0,\bb}^{(x_0)}\big)\cdot t_{x_0',x_1',\bb}$.}. I.e.\ at most $5\cdot 2^{r_1}$ multiplications and $2^{r_1+1}$ additions in total.
  Once the tables have been computed, obtaining the constant and the leading coefficients of $h_{1,\cc}(X)$, i.e.\ $\sum_\bb A_0^{(1)}[\bb,\cc]$ and $\sum_\bb A_2^{(1)}[\bb,\cc]$,  costs $2\cdot 2^{r_1-2}$ table reads (one read per table $T_{A_0}, T_{A_2}$ per index $\bb\in \bits^{r_1-2}$) and $2\cdot 2^{r_1-2}$ additions, for each $\cc\in \bits^{r_2}$. In total, (passing over all $\cc\in \bits^{r_2}$) this amounts  to at most  
  $\codedim/2$ table reads and $\codedim/2$ additions for all $\cc$, and no multiplications. At this point, the prover has computed the constant and leading terms of  the polynomials $h_{1,\cc}(X)$. 
 
@@ -2875,15 +2875,15 @@ In \cref{t:gkr_step1_costs} we record the total upper bound costs for computing 
 
 
 
-\paragraph{Subsequent prover messages in the last sumcheck in Step 2 of \cref{c:gkr_grand_product}.} Next we focus on computing $h_2(X)$. Substituting $X$ by the verifier's first sumcheck challenge $\rho_1$ in \cref{e:grand_product_Lr1,e:grand_product_Lr2}, we have, for every $\bb\in \bits^{r_1-1}, \cc\in \bits^{r_2}$, 
+\paragraph{Subsequent prover messages in the last sumcheck in Step 2 of \cref{c:gkr_grand_product}.} Next we focus on computing $h_2(X)$. Substituting $X$ by the verifier's first sumcheck challenge $\rho_1$ in \cref{e:grand_product_Lr1,e:grand_product_Lr2}, we have, for every $\eps\in \bits$, $\bb\in \bits^{r_1-2}$ and $\cc\in \bits^{r_2}$, 
 %
 \begin{align*}
-L_{r_1}(\rho_1,\bb, \cc) &   =\left(L_{r_1}( 1, \bb,\cc) -  L_{r_1}( 0, \bb,\cc)\right)\cdot \rho_1 + L_{r_1}( 0, \bb,\cc)\\ &= \begin{cases}
-\yy_{\bb}^{(11)}\defeq \left(\yy_{1,\bb}^{(1)} - \yy_{0,\bb}^{(1)}\right)\cdot \rho_1 + \yy_{0,\bb}^{(1)} &\text{if } \bfg_{(0,\bb),\cc}=1,\ \bfg_{(1,\bb),\cc}=1 \\  
-\yy_{\bb}^{(10)}\defeq \left(\yy_{1,\bb}^{(0)} - \yy_{0,\bb}^{(1)}\right)\cdot \rho_1 + \yy_{0,\bb}^{(1)}&\text{if } \bfg_{(0,\bb),\cc}=1,\ \bfg_{(1,\bb),\cc}=0\\
-\yy_{\bb}^{(01)}\defeq 
-\left(\yy_{1,\bb}^{(1)} - \yy_{0,\bb}^{(0)}\right)\cdot \rho_1 + \yy_{0,\bb}^{(0)} & \text{if } \bfg_{(0,\bb),\cc}=0,\ \bfg_{(1,\bb),\cc}=1 \\
-    \yy_{\bb}^{(00)}\defeq \left(\yy_{1,\bb}^{(0)} - \yy_{0,\bb}^{(0)}\right)\cdot \rho_1 + \yy_{0,\bb}^{(0)} &\text{if } \bfg_{(0,\bb),\cc}=0,\  \bfg_{(1,\bb),\cc}=0
+L_{r_1}(\eps,\rho_1,\bb, \cc) &   =\left(L_{r_1}(\eps, 1, \bb,\cc) -  L_{r_1}(\eps, 0, \bb,\cc)\right)\cdot \rho_1 + L_{r_1}(\eps, 0, \bb,\cc)\\ &= \begin{cases}
+\yy_{\eps,\bb}^{(11)}\defeq \left(\yy_{\eps,1,\bb}^{(1)} - \yy_{\eps,0,\bb}^{(1)}\right)\cdot \rho_1 + \yy_{\eps,0,\bb}^{(1)} &\text{if } \bfg_{(\eps,0,\bb),\cc}=1,\ \bfg_{(\eps,1,\bb),\cc}=1 \\  
+\yy_{\eps,\bb}^{(10)}\defeq \left(\yy_{\eps,1,\bb}^{(0)} - \yy_{\eps,0,\bb}^{(1)}\right)\cdot \rho_1 + \yy_{\eps,0,\bb}^{(1)}&\text{if } \bfg_{(\eps,0,\bb),\cc}=1,\ \bfg_{(\eps,1,\bb),\cc}=0\\
+\yy_{\eps,\bb}^{(01)}\defeq 
+\left(\yy_{\eps,1,\bb}^{(1)} - \yy_{\eps,0,\bb}^{(0)}\right)\cdot \rho_1 + \yy_{\eps,0,\bb}^{(0)} & \text{if } \bfg_{(\eps,0,\bb),\cc}=0,\ \bfg_{(\eps,1,\bb),\cc}=1 \\
+    \yy_{\eps,\bb}^{(00)}\defeq \left(\yy_{\eps,1,\bb}^{(0)} - \yy_{\eps,0,\bb}^{(0)}\right)\cdot \rho_1 + \yy_{\eps,0,\bb}^{(0)} &\text{if } \bfg_{(\eps,0,\bb),\cc}=0,\  \bfg_{(\eps,1,\bb),\cc}=0
 \end{cases}
 \end{align*}
 %®
@@ -2892,19 +2892,19 @@ it starts with the table
 %
 \iflncs\begingroup\small\fi
 $$
-T_{r_1}^{(2)} \in (\comfield^4)^{\bits^{r_1-1}} \quad \text{such that } T_{r_1}^{(2)}[\bb] = ( \yy_{\bb}^{(11)}, \yy_{\bb}^{(10)},  \yy_{\bb}^{(01)},\yy_{\bb}^{(00)}) \quad \text{for } \bb\in \bits^{r_1-1}
+T_{r_1}^{(2)} \in (\comfield^4)^{\bits^{r_1-1}} \quad \text{such that } T_{r_1}^{(2)}[\eps,\bb] = ( \yy_{\eps,\bb}^{(11)}, \yy_{\eps,\bb}^{(10)},  \yy_{\eps,\bb}^{(01)},\yy_{\eps,\bb}^{(00)}) \quad \text{for } (\eps,\bb)\in \bits\times\bits^{r_1-2}
 $$
 \iflncs\endgroup\fi
-for which we have, indexing the  entries of  $T_{r_1}^{(2)}[\bb]$ with the $4$ values $(1,1),\lncsbreak (1,0),\lncsbreak (0,1),\lncsbreak (0,0)$,
+for which we have, indexing the  entries of  $T_{r_1}^{(2)}[\eps,\bb]$ with the $4$ values $(1,1),\lncsbreak (1,0),\lncsbreak (0,1),\lncsbreak (0,0)$,
 %
 $$
-L_{r_1}(\rho_1, \bb,\cc) = T_{r_1}^{(2)}[\bb][(\bfg_{(0,\bb),\cc},\bfg_{(1,\bb),\cc})].
+L_{r_1}(\eps,\rho_1, \bb,\cc) = T_{r_1}^{(2)}[\eps,\bb][(\bfg_{(\eps,0,\bb),\cc},\bfg_{(\eps,1,\bb),\cc})].
 $$
-This allows the prover, when needed, to obtain $L_{r_1}(\rho_1,\bb,\cc)$ for any $(\bb,\cc)\in \bits^{r_1-1}\times \bits^{r_2}$ with a simple read in $T_{r_1}^{(2)}$.  
+This allows the prover, when needed, to obtain $L_{r_1}(\eps,\rho_1,\bb,\cc)$ for any $\eps\in \bits$ and $(\bb,\cc)\in \bits^{r_1-2}\times \bits^{r_2}$ with a simple read in $T_{r_1}^{(2)}$.  
 
 We now have, for $(\bb,\cc)\in \bits^{r_1-3}\times \bits^{r_2}$, 
- \iflncs\begingroup\footnotesize\fi\begin{align*}A_0^{(2)}[\bb,\cc] &= L_{r_1}(\rho_1,0,\bb,0,\cc)\cdot L_{r_1}(\rho_1,0,\bb,1,\cc)\cdot\omega[\bb]\\ &= 
-    T_{r_1}^{(2)}[0,\bb,0][(\bfg_{(0,0,\bb,0),\cc},\bfg_{(1,0,\bb,0),\cc})] \cdot    T_{r_1}^{(2)}[0,\bb, 1][(\bfg_{(0,0,\bb,1),\cc}, \bfg_{(1,0,\bb,1),\cc})] \cdot \omega[\bb]
+ \iflncs\begingroup\footnotesize\fi\begin{align*}A_0^{(2)}[\bb,\cc] &= L_{r_1}(0,\rho_1,0,\bb,\cc)\cdot L_{r_1}(1,\rho_1,0,\bb,\cc)\cdot\omega[\bb]\\ &= 
+    T_{r_1}^{(2)}[0,0,\bb][(\bfg_{(0,0,0,\bb),\cc},\bfg_{(0,1,0,\bb),\cc})] \cdot    T_{r_1}^{(2)}[1,0,\bb][(\bfg_{(1,0,0,\bb),\cc}, \bfg_{(1,1,0,\bb),\cc})] \cdot \omega[\bb]
 \end{align*}
 \iflncs\endgroup\fi
 %
@@ -2920,7 +2920,7 @@ where $\omega[\bb]=\eq(\rho_1, \bb;\bm{\alpha}^{(i,1)})$ is the weight defined a
 %
 Hence the elements $A_0^{(2)}[\bb,\cc]$ can be obtained by querying a table $$T_{A_0}^{(2)}\in (\KK^{16})^{\bits^{r_1-3}}$$ with
 %
-$$T_{A_0}^{(2)}[\bb]= (T_{r_1}^{(2)}[0,\bb,0][\xx]\cdot T_{r_1}^{(2)}[0,\bb,1][\xx']\cdot \omega[\bb])_{\xx,\xx'\in \bits^{2}}.$$
+$$T_{A_0}^{(2)}[\bb]= (T_{r_1}^{(2)}[0,0,\bb][\xx]\cdot T_{r_1}^{(2)}[1,0,\bb][\xx']\cdot \omega[\bb])_{\xx,\xx'\in \bits^{2}}.$$
 %
 The value $A_2^{(2)}[\bb,\cc]$, however, now depends on the value taken by \emph{eight} witness bits, this being because for $\eps\in \bits$, the value $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ depends on  four bits. Hence computing a table for the values $A_2^{(2)}[\bb,\cc]$ analogous to $T_{A_2}$  would have $2^8=256$-sized vectors as entries. Instead of computing $T_{A_2}^{(2)}$, we compute two tables for the values $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ (one table for each $\eps\in\bits$, with one of the tables also including multiplication by $\omega[\bb]$). Then the value $A_2^{(2)}[\bb,\cc]$ can be obtained by performing a lookup into each table, followed by  a single multiplication.
 
@@ -3024,7 +3024,7 @@ Note that in \cref{s:tables} the prover performs $O(\codedim)$ table reads, and 
 \paragraph{The polynomial $h_1(X)$.} We start by discussing how the prover computes the first message $h_1(X)$ of the ``biggest'' sumcheck of the GKR protocol. Recall that, instead of sending $h_1(X)$ it suffices  that the prover send $t_1(X)$. To do so,  it only needs to compute the constant and the leading coefficients of $t_1(X)$, i.e.\ it only needs the elements \begin{equation}\label{e:naive_coeff_compute}t_1(0)=\sum_{(\bb,\cc)\in \bits^{r_1-2}\times \bits^{r_2}}\eq(\cc;\bm{\alpha}')\cdot A_0^{(1)}[\bb,\cc],\qquad t_1(\infty)\defeq\sum_{(\bb,\cc)\in \bits^{r_1-2}\times \bits^{r_2}}\eq(\cc;\bm{\alpha}')\cdot  A_2^{(1)}[\bb,\cc],\end{equation} where $t_1(\infty)$ is a convention notation for the leading coefficient of $t_1(X)$.  Recall also that, in \cref{s:tables}, the values $A_0^{(1)}[\bb,\cc]$ and $A_2^{(1)}[\bb,\cc]$ are read from the vectors $T_{A_0}[\bb]$ and $T_{A_2}[\bb]$, at the entries selected by (some of) the four bits
 %
 $$
-\xx_{\bb,\cc}\defeq \left(\bfg_{(0,\bb,0),\cc},\bfg_{(1,\bb,0),\cc},\bfg_{(0,\bb,1),\cc},\bfg_{(1,\bb,1),\cc}\right)\in \bits^4.
+\xx_{\bb,\cc}\defeq \left(\bfg_{(0,0,\bb),\cc},\bfg_{(0,1,\bb),\cc},\bfg_{(1,0,\bb),\cc},\bfg_{(1,1,\bb),\cc}\right)\in \bits^4.
 $$
 %
 \noindent For readability, we write these entries as $T_{A_0}[\bb][\xx_{\bb,\cc}]$ and $T_{A_2}[\bb][\xx_{\bb,\cc}]$, even though $T_{A_0}[\bb]$ only depends on the first and third bits of $\xx_{\bb,\cc}$.
@@ -3077,7 +3077,7 @@ $$
 Instead, we use that $(E_{10}-E_{00})\cdot (E_{11}-E_{01})=\sum_{\eps,\eps'\in \bits}(-1)^{\eps+\eps'}\cdot E_{\eps 0}\cdot E_{\eps' 1}$, and we write
 %
 $$
- t_3(\infty)=\sum_{\bb\in \bits^{r_1-4}} \omega[\bb]\cdot \sum_{\eps,\eps'\in \bits}(-1)^{\eps+\eps'} \sum_{\xx\in \bits^{4}}\sum_{\xx'\in \bits^{4}} T_{r_1}^{(3)}[\eps,\bb,0][\xx] \cdot  T_{r_1}^{(3)}[\eps',\bb,1][\xx'] \cdot H^{\eps\eps'}_{\bb}[\xx, \xx'],
+ t_3(\infty)=\sum_{\bb\in \bits^{r_1-4}} \omega[\bb]\cdot \sum_{\eps,\eps'\in \bits}(-1)^{\eps+\eps'} \sum_{\xx\in \bits^{4}}\sum_{\xx'\in \bits^{4}} T_{r_1}^{(3)}[0,\eps,\bb][\xx] \cdot  T_{r_1}^{(3)}[1,\eps',\bb][\xx'] \cdot H^{\eps\eps'}_{\bb}[\xx, \xx'],
 $$
 %
 where 
@@ -3089,7 +3089,7 @@ $
 and
 %
 $$
-\xx^{\eps\eps'}_{\bb,\cc}\defeq \left((\bfg_{(\ww,\eps,\bb,0),\cc})_{\ww\in\bits^2},\ (\bfg_{(\ww,\eps',\bb,1),\cc})_{\ww\in\bits^2}\right)\in \bits^8.
+\xx^{\eps\eps'}_{\bb,\cc}\defeq \left((\bfg_{(0,\ww,\eps,\bb),\cc})_{\ww\in\bits^2},\ (\bfg_{(1,\ww,\eps',\bb),\cc})_{\ww\in\bits^2}\right)\in \bits^8.
 $$
 %
 With this approach we only need tables with entries of dimension $\leq 2^4$, and $\leq 4\cdot 2^8$ buckets per index $\bb$, instead of $2^{16}$. 
@@ -3107,17 +3107,17 @@ In all our techniques discussed so far, for each coefficient of each prover mess
 
 We now explain a method for greatly reducing (by more than an order of magnitude) the number of transpositions needed to compute the strings $\xx_{\bb,\cc}$ throughout the entire GKR protocol. This optimization was found by an AI after we identified that computing all the strings $\xx_{\bb,\cc}$ naively is significantly expensive. 
 
-\paragraph{The naive approach to computing $\xx_{\bb,\cc}$.}  In our implementation, we look at $\bfg\in \bits^{\codedim_1\times \codedim_2}$ as a $2^{r_1}\times 2^{r_2}$ matrix of bits.  We store $\bfg$ using $64$-bit ``horizontal'' words, i.e.\ in our memory layout, we arrange $\bfg$ as a collection of $64$-bit words obtained by splitting each row of $\bfg$ into $64$-bit consecutive words.  On the other hand, each string $\xx_{\bb,\cc}$ consists of at most $8$ bits placed on the $\cc$-th column of $\bfg$, e.g.\ in our example in \cref{s:gkr_buckets} we had $$\xx_{\bb,\cc}\defeq \left(\bfg_{(0,\bb,0),\cc},\bfg_{(1,\bb,0),\cc},\bfg_{(0,\bb,1),\cc},\bfg_{(1,\bb,1),\cc}\right)\in \bits^4.$$ Hence, to construct $\xx_{\bb,\cc}$, one needs to access $\leq 8$ of these words, transpose them (a costly step), and select a row of the resulting transposed data.  
+\paragraph{The naive approach to computing $\xx_{\bb,\cc}$.}  In our implementation, we look at $\bfg\in \bits^{\codedim_1\times \codedim_2}$ as a $2^{r_1}\times 2^{r_2}$ matrix of bits.  We store $\bfg$ using $64$-bit ``horizontal'' words, i.e.\ in our memory layout, we arrange $\bfg$ as a collection of $64$-bit words obtained by splitting each row of $\bfg$ into $64$-bit consecutive words.  On the other hand, each string $\xx_{\bb,\cc}$ consists of at most $8$ bits placed on the $\cc$-th column of $\bfg$, e.g.\ in our example in \cref{s:gkr_buckets} we had $$\xx_{\bb,\cc}\defeq \left(\bfg_{(0,0,\bb),\cc},\bfg_{(0,1,\bb),\cc},\bfg_{(1,0,\bb),\cc},\bfg_{(1,1,\bb),\cc}\right)\in \bits^4.$$ Hence, to construct $\xx_{\bb,\cc}$, one needs to access $\leq 8$ of these words, transpose them (a costly step), and select a row of the resulting transposed data.  
 
 This needs to be done for all indices  $\bb,\cc$, and for all coefficients of prover messages where we seek to use our optimizations. Concretely,  Rounds 1, 2 and 3 of the last sumcheck require computing $6$ coefficients in total. Rounds 1 and 2 of the second last sumcheck require  $4$, and Round 1 of the third last sumcheck requires $2$. This amounts to computing $21$ batches of strings $\xx_{\bb,\cc}$ (one per coefficient, except for the  leading coefficients  which need four batches each, one per pair $(\eps,\eps')$), with $(\bb,\cc)$ running over a set of size between $\codedim/16$ and $\codedim/4$. 
 
 
-\paragraph{Optimization.} Continuing with the example $\xx_{\bb,\cc}$ above, observe that  for  every $(\bb,\cc)\in\bits^{r_1-2}\times \bits^{r_2}$, the string $\xx_{\bb,\cc}$ depends exclusively on the entries of $\bfg$ placed in the column $\cc$ and on rows that differ exclusively in the first and last coordinate.\footnote{In our implementation, they actually differ in the last two coordinates.} Similarly, all other strings  $\xx_{\bb,\cc}$ (and $\xx_{\bb,\cc}^{\eps\eps'}$) required at all optimized rounds   depend only on the bits placed on the $\cc$-th column of $\bfg$ and on rows that differ exclusively on at most a fixed set of $4$ coordinates (with this set being the same for all rounds and coefficients). For readability, let us assume these coordinates are the last $4$ coordinates (this is not consistent with the notation in this section, but is consistent with our implementation).
+\paragraph{Optimization.} Continuing with the example $\xx_{\bb,\cc}$ above, observe that  for  every $(\bb,\cc)\in\bits^{r_1-2}\times \bits^{r_2}$, the string $\xx_{\bb,\cc}$ depends exclusively on the entries of $\bfg$ placed in the column $\cc$ and on rows that differ exclusively in the first two coordinates. Similarly, all other strings  $\xx_{\bb,\cc}$ (and $\xx_{\bb,\cc}^{\eps\eps'}$) required at all optimized rounds   depend only on the bits placed on the $\cc$-th column of $\bfg$ and on rows that differ exclusively in the first $4$ coordinates  (with this set being the same for all rounds and coefficients).
 
 
 
 With the above observation in mind, the optimization has  the prover  precompute  the values 
-$$N[\bb,\cc]\defeq \left(\bfg_{(\bb,\ww),\cc}\right)_{\ww\in \bits^4}\in \bits^{16} \qquad \text{for all } (\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}.$$
+$$N[\bb,\cc]\defeq \left(\bfg_{(\ww,\bb),\cc}\right)_{\ww\in \bits^4}\in \bits^{16} \qquad \text{for all } (\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}.$$
 Now, every time a string $\xx_{\bb,\cc}$ or $\xx_{\bb,\cc}^{\eps\eps'}$ needs to be formed, it suffices to take the word $N[\bb,\cc]$ and select an appropriate subset of bits from  it.  
 
 

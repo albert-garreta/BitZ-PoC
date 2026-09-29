@@ -1,7 +1,7 @@
 
 # BitZ 🫜
 
-PoC implementation of BitZ PCS and BitZ-SNARK, from the paper [insert_link]. 
+PoC implementation of BitZ PCS and BitZ-SNARK, from the paper https://eprint.iacr.org/2026/2141. 
 
 
 ## Reproducing the paper's benchmarks
