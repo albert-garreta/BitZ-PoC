@@ -92,6 +92,60 @@ pub fn give_f128(v: Vec<Gf128>) {
     }
 }
 
+/// Merkle-tree node buffers, pooled apart from the `Gf128` buffers above so
+/// a tree never takes (or evicts) a codeword-sized buffer. A tree is
+/// `2·leaves − 1` 32-byte nodes: 16 MB for the L0 commitment at m = 28 and
+/// 64 MB at m = 30, a few MB for the recursive Ligerito levels. Used by
+/// [`crate::merkle`] when `MERKLE_TREE_POOL=1`.
+static HASH_POOL: Mutex<Vec<Vec<[u8; 32]>>> = Mutex::new(Vec::new());
+
+/// Max tree buffers retained: a commitment's tree plus one prove's
+/// recursive-level trees.
+const MAX_POOLED_TREES: usize = 8;
+
+/// [`take_f128`] for Merkle-tree nodes: a pooled buffer (smallest capacity
+/// `≥ n`) or a fresh uninitialized one. Contents are UNINITIALIZED either
+/// way; the caller writes every node before reading it.
+pub(crate) fn take_hash(n: usize) -> Vec<[u8; 32]> {
+    let mut pool = HASH_POOL.lock().unwrap();
+    let mut best: Option<usize> = None;
+    for (i, v) in pool.iter().enumerate() {
+        if v.capacity() >= n && best.is_none_or(|b| v.capacity() < pool[b].capacity()) {
+            best = Some(i);
+        }
+    }
+    if let Some(i) = best {
+        let mut v = pool.swap_remove(i);
+        drop(pool);
+        v.clear();
+        // SAFETY: capacity ≥ n was checked above; `[u8; 32]` has no drop
+        // glue, and the caller writes every node before reading it (the
+        // `take_f128` contract).
+        unsafe { v.set_len(n) };
+        return v;
+    }
+    drop(pool);
+    crate::alloc_uninit_vec(n)
+}
+
+/// [`give_f128`] for Merkle-tree nodes (evicts the smallest when full).
+pub(crate) fn give_hash(v: Vec<[u8; 32]>) {
+    if v.capacity() == 0 {
+        return;
+    }
+    let mut pool = HASH_POOL.lock().unwrap();
+    pool.push(v);
+    if pool.len() > MAX_POOLED_TREES {
+        let smallest = pool
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, v)| v.capacity())
+            .map(|(i, _)| i)
+            .expect("pool non-empty");
+        pool.swap_remove(smallest);
+    }
+}
+
 /// Pre-warm the pool for proves at witness size `2^m`: allocate and
 /// first-touch the full prove-cycle buffer set once, in parallel, then park
 /// it in the pool. Called from the per-hash Setup constructors, this moves
@@ -136,6 +190,7 @@ pub fn prewarm_prover(m: usize) {
 /// Release every pooled buffer back to the OS.
 pub fn clear() {
     POOL.lock().unwrap().clear();
+    HASH_POOL.lock().unwrap().clear();
 }
 
 #[cfg(test)]

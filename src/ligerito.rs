@@ -810,11 +810,21 @@ pub(crate) fn xi_combined_rows(
 /// [`phi_byte_tables`] trick on the ξ axis; ~2× the scatter form at
 /// n = 28 and it reads `packed_cols` instead of re-scanning `rows`).
 /// Exact char-2 re-association — byte-identical.
-#[allow(clippy::arithmetic_side_effects)]
 pub(crate) fn xi_combined_rows_packed(
     p: &IntegerMatrixLayout,
     packed_cols: &[Vec<u64>],
     eq_xi: &[Gf],
+) -> Vec<Gf> {
+    xi_combined_rows_packed_with(p, packed_cols, eq_xi, combine_pairs())
+}
+
+/// [`xi_combined_rows_packed`] with the [`combine_pairs`] choice explicit.
+#[allow(clippy::arithmetic_side_effects)]
+fn xi_combined_rows_packed_with(
+    p: &IntegerMatrixLayout,
+    packed_cols: &[Vec<u64>],
+    eq_xi: &[Gf],
+    pairs: bool,
 ) -> Vec<Gf> {
     let t_w = row_bit_vars(p);
     let len = 1usize << t_w;
@@ -845,27 +855,169 @@ pub(crate) fn xi_combined_rows_packed(
     // Group-OUTER accumulation per output chunk: each group's positions
     // stream sequentially, its 32 KB table stays L1-hot, and the chunk's
     // output slots are L1-resident RMW — no cross-group pointer chases in
-    // the inner loop and no 256-deep serial add chain per output.
+    // the inner loop and no 256-deep serial add chain per output. With
+    // `pairs` ([`combine_pairs`]), two groups share each pass over the
+    // chunk (half the output RMW, 64 KB of tables hot).
     let mut m = vec![Gf::zero(); len];
     cfg_chunks_mut!(m, 1 << 10)
         .enumerate()
         .for_each(|(ci, chunk)| {
-            let base = ci << 10;
-            for (g, tg) in tables.iter().enumerate() {
-                let src = &packed_cols[g][base..base + chunk.len()];
-                for (slot, &x) in chunk.iter_mut().zip(src.iter()) {
+            let (base, n) = (ci << 10, chunk.len());
+            let source = |g: usize| &packed_cols[g][base..base + n];
+            let table = |g: usize| -> &[Gf; 8 << 8] {
+                tables[g].as_slice().try_into().expect("8 byte tables")
+            };
+            let mut g = 0;
+            while pairs && g + 1 < groups {
+                let (t0, t1) = (table(g), table(g + 1));
+                for ((slot, &x0), &x1) in chunk.iter_mut().zip(source(g)).zip(source(g + 1)) {
+                    if x0 | x1 == 0 {
+                        continue;
+                    }
+                    *slot += byte_table_sum(t0, x0) + byte_table_sum(t1, x1);
+                }
+                g += 2;
+            }
+            for g in g..groups {
+                let tg = table(g);
+                for (slot, &x) in chunk.iter_mut().zip(source(g)) {
                     if x == 0 {
                         continue;
                     }
-                    // Entry 0 of every byte table is zero, so each word takes
-                    // its eight lookups without a branch, summed in pairs to
-                    // keep the additions off one dependency chain.
-                    let b = |pos: usize| tg[(pos << 8) | ((x >> (8 * pos)) & 0xFF) as usize];
-                    *slot += ((b(0) + b(1)) + (b(2) + b(3))) + ((b(4) + b(5)) + (b(6) + b(7)));
+                    *slot += byte_table_sum(tg, x);
                 }
             }
         });
     m
+}
+
+/// The byte-position subset-sum tables [`xi_combined_rows_packed`] builds
+/// for the 64-column group `g` of `eq_xi`.
+fn xi_group_tables(eq_xi: &[Gf], cols: usize, g: usize) -> Vec<Gf> {
+    let mut t = vec![Gf::zero(); 8 << 8];
+    for pos in 0..8usize {
+        let base_col = (g << 6) | (pos << 3);
+        let tb = &mut t[pos << 8..(pos + 1) << 8];
+        for b in 0..8usize {
+            let c = base_col + b;
+            if c >= cols {
+                break;
+            }
+            let w = eq_xi[c];
+            let lim = 1usize << b;
+            for m in 0..lim {
+                tb[m | lim] = tb[m] + w;
+            }
+        }
+    }
+    t
+}
+
+/// [`xi_combined_rows_packed`] for several weight vectors in one parallel
+/// region over (vector, 1024-output chunk). With `skip_zero_groups` each
+/// vector runs over its 64-column groups with a nonzero weight only: a
+/// group whose 64 weights are all zero adds zero to every output, so
+/// skipping its tables and its pass is exact. Otherwise over every group,
+/// as [`xi_combined_rows_packed`]; the same field sums either way.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn xi_combined_rows_packed_many(
+    p: &IntegerMatrixLayout,
+    packed_cols: &[Vec<u64>],
+    weights: &[&[Gf]],
+    skip_zero_groups: bool,
+) -> Vec<Vec<Gf>> {
+    let t_w = row_bit_vars(p);
+    let len = 1usize << t_w;
+    let cols = p.cols();
+    let groups = cols.div_ceil(64);
+    debug_assert!(packed_cols.len() >= groups && packed_cols[0].len() == len);
+    let zero = Gf::zero();
+    let plans: Vec<(Vec<usize>, Vec<Vec<Gf>>)> = cfg_into_iter!(0..weights.len())
+        .map(|k| {
+            let eq_xi = weights[k];
+            let live: Vec<usize> = (0..groups)
+                .filter(|&g| {
+                    !skip_zero_groups
+                        || eq_xi[g << 6..((g + 1) << 6).min(cols)].iter().any(|w| *w != zero)
+                })
+                .collect();
+            let tables = live.iter().map(|&g| xi_group_tables(eq_xi, cols, g)).collect();
+            (live, tables)
+        })
+        .collect();
+    let mut out: Vec<Vec<Gf>> = weights.iter().map(|_| vec![Gf::zero(); len]).collect();
+    let tasks: Vec<(usize, usize, &mut [Gf])> = out
+        .iter_mut()
+        .enumerate()
+        .flat_map(|(k, m)| {
+            m.chunks_mut(1 << 10)
+                .enumerate()
+                .map(move |(ci, chunk)| (k, ci, chunk))
+        })
+        .filter(|(k, _, _)| !plans[*k].0.is_empty())
+        .collect();
+    cfg_into_iter!(tasks).for_each(|(k, ci, chunk)| {
+        let base = ci << 10;
+        let (live, tables) = &plans[k];
+        for (&g, tg) in live.iter().zip(tables) {
+            let src = &packed_cols[g][base..base + chunk.len()];
+            for (slot, &x) in chunk.iter_mut().zip(src.iter()) {
+                if x == 0 {
+                    continue;
+                }
+                let b = |pos: usize| tg[(pos << 8) | ((x >> (8 * pos)) & 0xFF) as usize];
+                *slot += ((b(0) + b(1)) + (b(2) + b(3))) + ((b(4) + b(5)) + (b(6) + b(7)));
+            }
+        }
+    });
+    out
+}
+
+/// [`xi_combined_rows_packed`] over the 64-column groups with a nonzero
+/// weight only ([`xi_combined_rows_packed_many`] for one vector); with every
+/// group live it is [`xi_combined_rows_packed`] itself.
+pub(crate) fn xi_combined_rows_packed_live(
+    p: &IntegerMatrixLayout,
+    packed_cols: &[Vec<u64>],
+    eq_xi: &[Gf],
+) -> Vec<Gf> {
+    let cols = p.cols();
+    let zero = Gf::zero();
+    if eq_xi[..cols].chunks(64).all(|group| group.iter().any(|w| *w != zero)) {
+        return xi_combined_rows_packed(p, packed_cols, eq_xi);
+    }
+    xi_combined_rows_packed_many(p, packed_cols, &[eq_xi], true)
+        .pop()
+        .expect("one weight vector")
+}
+
+/// `Σ_pos tg[pos][byte_pos(x)]` over the eight bytes of `x`. Entry 0 of
+/// every byte table is zero, so each word takes its eight lookups without
+/// a branch, summed in pairs to keep the additions off one dependency
+/// chain; the fixed table length makes every index provably in bounds.
+#[inline(always)]
+#[allow(clippy::arithmetic_side_effects)]
+fn byte_table_sum(tg: &[Gf; 8 << 8], x: u64) -> Gf {
+    let b = |pos: usize| tg[(pos << 8) | ((x >> (8 * pos)) & 0xFF) as usize];
+    ((b(0) + b(1)) + (b(2) + b(3))) + ((b(4) + b(5)) + (b(6) + b(7)))
+}
+
+/// Whether [`xi_combined_rows_packed`] adds two column groups per pass
+/// over an output chunk: `BITZ_COMBINE_PAIRS` `0` or `1`, or unset for
+/// one-thread pools only (two 32 KB tables and the chunk overflow an
+/// efficiency core's 64 KB L1D). The mode is read once.
+fn combine_pairs() -> bool {
+    static MODE: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+    let mode = *MODE.get_or_init(|| match std::env::var("BITZ_COMBINE_PAIRS").as_deref() {
+        Ok("0") => Some(false),
+        Ok("1") => Some(true),
+        _ => None,
+    });
+    #[cfg(feature = "parallel")]
+    let one_thread = rayon::current_num_threads() == 1;
+    #[cfg(not(feature = "parallel"))]
+    let one_thread = true;
+    mode.unwrap_or(one_thread)
 }
 
 /// Column-lane packing `packed_cols[g][i]`: lane k of word g at row-bit i
@@ -1188,8 +1340,189 @@ pub(crate) fn transpose_64x64(a: &mut [u64; 64]) {
 /// (g, wi) of `packed_cols` is the bit-transpose of rows `64g..64g+64` at
 /// word `wi`. One pass over the 8-byte-per-64-bits rows instead of a second
 /// sweep of the u128 data tensor.
-#[allow(clippy::arithmetic_side_effects)]
 pub(crate) fn pack_columns_from_rows(p: &IntegerMatrixLayout, rows: &[Vec<u64>]) -> Vec<Vec<u64>> {
+    if fast_column_packing() {
+        pack_columns_from_rows_fast(p, rows)
+    } else {
+        pack_columns_from_rows_reference(p, rows)
+    }
+}
+
+/// Whether [`pack_columns_from_rows`] runs its fast kernel
+/// (`BITZ_PACK_COLS_FAST`, `0` or `1`, default on), read once.
+fn fast_column_packing() -> bool {
+    static FAST: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FAST.get_or_init(|| !matches!(std::env::var("BITZ_PACK_COLS_FAST").as_deref(), Ok("0")))
+}
+
+/// [`pack_columns_from_rows`] writing each output word once into
+/// uninitialised memory (the reference zero-fills `2^n/8` bytes first, then
+/// overwrites all of them), and on aarch64 transposing two adjacent words'
+/// 64×64 blocks at once, one per NEON lane ([`transpose_64x64_pair`]).
+#[allow(clippy::arithmetic_side_effects)]
+fn pack_columns_from_rows_fast(p: &IntegerMatrixLayout, rows: &[Vec<u64>]) -> Vec<Vec<u64>> {
+    let log_w = p.word_bits.trailing_zeros() as usize;
+    let row_len = p.rows() << log_w;
+    let words = row_len.div_ceil(64);
+    let num_groups = p.cols().div_ceil(64);
+    cfg_into_iter!(0..num_groups)
+        .map(|g| {
+            // Lanes past the last column read a zero row.
+            let zeros = if (g + 1) << 6 > p.cols() {
+                vec![0u64; words]
+            } else {
+                Vec::new()
+            };
+            let lanes: [&[u64]; 64] = core::array::from_fn(|k| {
+                let c = (g << 6) | k;
+                if c < p.cols() {
+                    &rows[c][..words]
+                } else {
+                    &zeros[..]
+                }
+            });
+            let mut out: Vec<u64> = Vec::with_capacity(row_len);
+            let dst = &mut out.spare_capacity_mut()[..row_len];
+            let mut wi = 0usize;
+            #[cfg(target_arch = "aarch64")]
+            while (wi + 2) << 6 <= row_len {
+                transpose_64x64_pair(&lanes, wi, &mut dst[wi << 6..(wi + 2) << 6]);
+                wi += 2;
+            }
+            while wi < words {
+                let mut blk: [u64; 64] = core::array::from_fn(|k| lanes[k][wi]);
+                transpose_64x64(&mut blk);
+                let base = wi << 6;
+                for (slot, &v) in dst[base..row_len.min(base + 64)].iter_mut().zip(&blk) {
+                    slot.write(v);
+                }
+                wi += 1;
+            }
+            // SAFETY: the word blocks `0..words` cover every slot below
+            // `row_len` (the last one clipped to it), and each was written.
+            unsafe { out.set_len(row_len) };
+            out
+        })
+        .collect()
+}
+
+/// Two adjacent [`transpose_64x64`]s at once, one per NEON lane: lane 0
+/// transposes word `wi` of the 64 `lanes`, lane 1 word `wi + 1`; `out[t]`
+/// receives the first's output word `t` and `out[64 + t]` the second's.
+///
+/// The six masked-swap rounds exchange disjoint index bits (round `j`
+/// swaps row bit `log₂ j` with column bit `log₂ j`), so they commute: rounds
+/// 1, 2 and 4 run first on each run of 8 consecutive rows, then 8, 16 and
+/// 32 on each set of rows 8 apart, each set held in 8 registers. Rounds
+/// 4..32 are one shift-and-insert (`sli`/`sri` at lane width `2j`) per row
+/// of a pair; rounds 1 and 2 a shift and a bit select.
+#[cfg(target_arch = "aarch64")]
+#[allow(clippy::arithmetic_side_effects)]
+fn transpose_64x64_pair(lanes: &[&[u64]; 64], wi: usize, out: &mut [std::mem::MaybeUninit<u64>]) {
+    use core::arch::aarch64::*;
+    assert!(out.len() == 128 && lanes.iter().all(|lane| lane.len() >= wi + 2));
+
+    // Round j = 1 or 2 on rows (a, b): a keeps its bits under `mask` and
+    // takes b's shifted up into the rest; b the converse.
+    #[inline(always)]
+    fn select<const J: i32>(r: &mut [uint64x2_t; 8], a: usize, b: usize, mask: uint64x2_t) {
+        // SAFETY: NEON is baseline on aarch64.
+        unsafe {
+            let (x, y) = (r[a], r[b]);
+            r[a] = vbslq_u64(mask, x, vshlq_n_u64::<J>(y));
+            r[b] = vbslq_u64(mask, vshrq_n_u64::<J>(x), y);
+        }
+    }
+    // Rounds j = 4, 8, 16, 32 on rows (a, b), lane width 2j.
+    #[inline(always)]
+    fn insert4(r: &mut [uint64x2_t; 8], a: usize, b: usize) {
+        // SAFETY: NEON is baseline on aarch64.
+        unsafe {
+            let (x, y) = (vreinterpretq_u8_u64(r[a]), vreinterpretq_u8_u64(r[b]));
+            r[a] = vreinterpretq_u64_u8(vsliq_n_u8::<4>(x, y));
+            r[b] = vreinterpretq_u64_u8(vsriq_n_u8::<4>(y, x));
+        }
+    }
+    #[inline(always)]
+    fn insert8(r: &mut [uint64x2_t; 8], a: usize, b: usize) {
+        // SAFETY: NEON is baseline on aarch64.
+        unsafe {
+            let (x, y) = (vreinterpretq_u16_u64(r[a]), vreinterpretq_u16_u64(r[b]));
+            r[a] = vreinterpretq_u64_u16(vsliq_n_u16::<8>(x, y));
+            r[b] = vreinterpretq_u64_u16(vsriq_n_u16::<8>(y, x));
+        }
+    }
+    #[inline(always)]
+    fn insert16(r: &mut [uint64x2_t; 8], a: usize, b: usize) {
+        // SAFETY: NEON is baseline on aarch64.
+        unsafe {
+            let (x, y) = (vreinterpretq_u32_u64(r[a]), vreinterpretq_u32_u64(r[b]));
+            r[a] = vreinterpretq_u64_u32(vsliq_n_u32::<16>(x, y));
+            r[b] = vreinterpretq_u64_u32(vsriq_n_u32::<16>(y, x));
+        }
+    }
+    #[inline(always)]
+    fn insert32(r: &mut [uint64x2_t; 8], a: usize, b: usize) {
+        // SAFETY: NEON is baseline on aarch64.
+        unsafe {
+            let (x, y) = (r[a], r[b]);
+            r[a] = vsliq_n_u64::<32>(x, y);
+            r[b] = vsriq_n_u64::<32>(y, x);
+        }
+    }
+    const STEP1: [(usize, usize); 4] = [(0, 1), (2, 3), (4, 5), (6, 7)];
+    const STEP2: [(usize, usize); 4] = [(0, 2), (1, 3), (4, 6), (5, 7)];
+    const STEP4: [(usize, usize); 4] = [(0, 4), (1, 5), (2, 6), (3, 7)];
+
+    // SAFETY: NEON is baseline on aarch64; every load reads
+    // `lanes[k][wi..wi + 2]` (asserted in bounds), every store writes two
+    // words inside `out` (asserted length 128).
+    unsafe {
+        let m1 = vdupq_n_u64(0x5555_5555_5555_5555);
+        let m2 = vdupq_n_u64(0x3333_3333_3333_3333);
+        let mut v = [vdupq_n_u64(0); 64];
+        for g in 0..8 {
+            let mut r: [uint64x2_t; 8] =
+                core::array::from_fn(|i| vld1q_u64(lanes[8 * g + i].as_ptr().add(wi)));
+            for (a, b) in STEP1 {
+                select::<1>(&mut r, a, b, m1);
+            }
+            for (a, b) in STEP2 {
+                select::<2>(&mut r, a, b, m2);
+            }
+            for (a, b) in STEP4 {
+                insert4(&mut r, a, b);
+            }
+            v[8 * g..8 * g + 8].copy_from_slice(&r);
+        }
+        for row in 0..8 {
+            let mut r: [uint64x2_t; 8] = core::array::from_fn(|i| v[row + 8 * i]);
+            for (a, b) in STEP1 {
+                insert8(&mut r, a, b);
+            }
+            for (a, b) in STEP2 {
+                insert16(&mut r, a, b);
+            }
+            for (a, b) in STEP4 {
+                insert32(&mut r, a, b);
+            }
+            for (i, x) in r.into_iter().enumerate() {
+                v[row + 8 * i] = x;
+            }
+        }
+        let dst = out.as_mut_ptr().cast::<u64>();
+        for t in (0..64).step_by(2) {
+            vst1q_u64(dst.add(t), vzip1q_u64(v[t], v[t + 1]));
+            vst1q_u64(dst.add(64 + t), vzip2q_u64(v[t], v[t + 1]));
+        }
+    }
+}
+
+/// [`pack_columns_from_rows`] as first written: zero-filled output, one
+/// scalar [`transpose_64x64`] per word. The reference the fast kernel is
+/// tested against.
+#[allow(clippy::arithmetic_side_effects)]
+fn pack_columns_from_rows_reference(p: &IntegerMatrixLayout, rows: &[Vec<u64>]) -> Vec<Vec<u64>> {
     let log_w = p.word_bits.trailing_zeros() as usize;
     let row_len = p.rows() << log_w;
     let words = row_len.div_ceil(64);
@@ -1986,11 +2319,12 @@ mod tests {
     }
 
     /// The packed column combination (eight branch-free byte lookups per
-    /// word) equals the per-bit reference on dense, sparse and all-zero
-    /// words, including a partial column group.
+    /// word), one column group per pass or two, equals the per-bit
+    /// reference on dense, sparse and all-zero words, including a partial
+    /// column group, a lone group and several output chunks.
     #[test]
     fn packed_combination_matches_the_bit_walk() {
-        for (t, s) in [(7usize, 3usize), (8, 6), (9, 7), (10, 8)] {
+        for (t, s) in [(7usize, 3usize), (8, 6), (9, 7), (10, 8), (7, 9), (11, 7), (12, 8)] {
             let p = IntegerMatrixLayout { row_vars: t, col_vars: s, word_bits: 1 };
             let (cols, words) = (1usize << s, 1usize << (t - 6));
             let mut state = (t * 131 + s) as u64 | 1;
@@ -2025,11 +2359,14 @@ mod tests {
                 })
                 .collect();
             let eq_xi: Vec<Gf> = (0..cols).map(|c| sample(c as u64 * 7 + 3)).collect();
-            assert_eq!(
-                xi_combined_rows_packed(&p, &packed, &eq_xi),
-                xi_combined_rows(&p, &rows, &eq_xi),
-                "t={t} s={s}"
-            );
+            let expected = xi_combined_rows(&p, &rows, &eq_xi);
+            for pairs in [false, true] {
+                assert_eq!(
+                    xi_combined_rows_packed_with(&p, &packed, &eq_xi, pairs),
+                    expected,
+                    "t={t} s={s} pairs={pairs}"
+                );
+            }
         }
     }
 
@@ -2061,6 +2398,67 @@ mod tests {
             let packed = pack_columns_from_rows(&p, &rows);
             let back = rows_from_packed_cols(&p, &packed);
             assert_eq!(rows, back, "(t={t},s={s},W={w})");
+        }
+    }
+
+    /// The fast column packing (uninitialised output, NEON pair transposes)
+    /// builds exactly the reference packing: partial column groups, a row
+    /// shorter than one word, odd word counts (the scalar tail), and
+    /// several groups.
+    #[test]
+    fn fast_column_packing_matches_reference() {
+        let mut state = 0x7061_636bu64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for (t, s, w) in [
+            (5usize, 2usize, 1usize),
+            (6, 7, 1),
+            (7, 3, 1),
+            (7, 4, 2),
+            (8, 6, 1),
+            (7, 5, 8),
+            (9, 7, 1),
+            (12, 8, 1),
+        ] {
+            let p = IntegerMatrixLayout { row_vars: t, col_vars: s, word_bits: w };
+            let row_len = p.rows() << w.trailing_zeros();
+            let words = row_len.div_ceil(64);
+            let rows: Vec<Vec<u64>> = (0..p.cols())
+                .map(|_| (0..words).map(|_| next()).collect())
+                .collect();
+            let fast = pack_columns_from_rows_fast(&p, &rows);
+            let reference = pack_columns_from_rows_reference(&p, &rows);
+            assert!(fast == reference, "(t={t},s={s},W={w})");
+        }
+    }
+
+    /// One NEON pair transpose equals two scalar [`transpose_64x64`]s.
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn neon_pair_transpose_matches_scalar() {
+        let mut state = 0x7472_616eu64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for wi in [0usize, 1, 5] {
+            let rows: Vec<Vec<u64>> = (0..64).map(|_| (0..wi + 2).map(|_| next()).collect()).collect();
+            let lanes: [&[u64]; 64] = core::array::from_fn(|k| &rows[k][..]);
+            let mut out = [std::mem::MaybeUninit::<u64>::uninit(); 128];
+            transpose_64x64_pair(&lanes, wi, &mut out);
+            // SAFETY: the pair transpose writes all 128 words.
+            let out: Vec<u64> = out.iter().map(|x| unsafe { x.assume_init() }).collect();
+            for half in 0..2 {
+                let mut blk: [u64; 64] = core::array::from_fn(|k| rows[k][wi + half]);
+                transpose_64x64(&mut blk);
+                assert_eq!(&out[64 * half..64 * half + 64], &blk[..], "wi={wi} half={half}");
+            }
         }
     }
 

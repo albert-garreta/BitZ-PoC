@@ -1,6 +1,6 @@
 //! The paper's raw-performance row for the BitZ parity prover at one size.
 //!
-//! `bitz_bench <n> [--reps R] [--seed S] [--ladder L]` builds a random instance at the
+//! `bitz_bench <n> [--reps R] [--seed S] [--ladder L] [--ood]` builds a random instance at the
 //! scheme's split (`Shape::reference`: `t = ⌈3n/5⌉ − 1`, `s = n − t`,
 //! `q = 2^100 − 15`, generator `X`, the dump examples' transcript labels),
 //! commits it `R` times (median), proves it once to warm up and then `R`
@@ -16,6 +16,12 @@
 //! ring-switch message); Ligerito = `ligerito`; Total = commit + prove.
 //! Proof bytes: narg = every transcript message (non-Ligerito), hints =
 //! the serialized Ligerito proof.
+//!
+//! `--ood` (or `WFBITZ_BENCH_OOD=1`, so an env-only A/B driver can set it)
+//! batches a Round-0 claim into the opening, as the SNARK openers on a
+//! Johnson ladder do: a seeded point on the packed message and its value
+//! ([`bitz::wfbitz::pcs::packed_evaluation`], untimed), passed to both the
+//! prover and the verifier.
 use std::time::{Duration, Instant};
 
 use bitz::wfbitz::fold::{fold_columns, reconstruct};
@@ -71,9 +77,10 @@ fn main() {
     // `fast` = flock's embedded ladder as shipped; otherwise one of the
     // crate's validated selections (`custom:1:4` = the paper's rate-1/2
     // Johnson ladder, `custom:3:4` = rate 1/8), resolved at 100 bits. No
-    // Round 0 either way (the raw harness has no outer transcript to bind
-    // it on; the opener path does run it).
+    // Round 0 either way unless `--ood` (the raw harness has no outer
+    // transcript to bind it on; the opener path does run it).
     let mut ladder = String::from("fast");
+    let mut ood = matches!(std::env::var("WFBITZ_BENCH_OOD").as_deref(), Ok("1"));
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -89,13 +96,17 @@ fn main() {
                 seed = args[i + 1].parse().expect("--seed");
                 i += 2;
             }
+            "--ood" => {
+                ood = true;
+                i += 1;
+            }
             x => {
                 n = Some(x.parse().expect("n"));
                 i += 1;
             }
         }
     }
-    let n = n.expect("usage: bitz_bench <n> [--reps R] [--seed S] [--ladder fast|custom:r:k]");
+    let n = n.expect("usage: bitz_bench <n> [--reps R] [--seed S] [--ladder fast|custom:r:k] [--ood]");
     let shape = Shape::reference(n).expect("shape");
     let (t, s) = (shape.log_rows(), shape.log_columns());
     let params = BitZParams::new(shape, Q, Gf::from_polynomial_words([2, 0])).expect("params");
@@ -103,7 +114,7 @@ fn main() {
     let threads = rayon::current_num_threads();
     #[cfg(not(feature = "parallel"))]
     let threads = 1;
-    println!("bitz_bench n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder}");
+    println!("bitz_bench n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder} ood={ood}");
 
     // The instance.
     let mut state = seed ^ 0x9E37_79B9_7F4A_7C15;
@@ -147,6 +158,23 @@ fn main() {
     let commit = median(&commit_times);
     println!("commit: median {:.2} ms over {reps}", ms(commit));
 
+    // The 64-column-lane packing the prover reads is built once per
+    // commitment, on first use. Build it here, timed, rather than inside the
+    // untimed warm-up prove: it is per-commitment prover work that neither
+    // the commit nor the prove median contains.
+    let started = Instant::now();
+    let _ = hint.packed_cols();
+    let packed_cols = started.elapsed();
+    println!("packed cols: {:.2} ms (per commitment; in neither commit nor prove)", ms(packed_cols));
+
+    // The Round-0 claim: a seeded point on the packed message (`n − 7`
+    // coordinates) and its value.
+    let ood_point: Vec<Gf> = (0..if ood { n - 7 } else { 0 })
+        .map(|_| Gf::from_polynomial_words([xorshift(&mut state), xorshift(&mut state)]))
+        .collect();
+    let ood_claim = ood.then(|| bitz::wfbitz::pcs::packed_evaluation(&hint, &ood_point));
+    let ood_arg = || ood_claim.map(|y| (ood_point.as_slice(), y));
+
     // Prove: one warm-up, then `reps` timed and verified.
     let prover = BitZProver::new(params, WINDOW);
     let verifier = BitZVerifier::new(params, WINDOW);
@@ -154,11 +182,13 @@ fn main() {
     let mut verify_times = Vec::with_capacity(reps);
     let mut phase_times: Vec<(String, Vec<Duration>)> = Vec::new();
     let mut sizes = (0usize, 0usize);
+    // A digest of every proof, so A/B runs can check the bytes are identical.
+    let mut digests: Vec<[u8; 32]> = Vec::new();
     for rep in 0..=reps {
         record_phases(true);
         let started = Instant::now();
         let mut transcript = build_prover(SESSION, INSTANCE);
-        prover.prove(&claim, &pcs, &hint, &mut transcript, None).expect("prove");
+        prover.prove(&claim, &pcs, &hint, &mut transcript, ood_arg()).expect("prove");
         let proof = transcript.finish();
         let elapsed = started.elapsed();
         let phases = take_phases();
@@ -175,11 +205,19 @@ fn main() {
         }
         let started = Instant::now();
         verifier
-            .verify(&claim, &pcs, root, build_verifier(SESSION, INSTANCE, &proof), None)
+            .verify(&claim, &pcs, root, build_verifier(SESSION, INSTANCE, &proof), ood_arg())
             .expect("verify");
         verify_times.push(started.elapsed());
         sizes = (proof.narg_string.len(), proof.hints.len());
+        let mut h = blake3::Hasher::new();
+        h.update(&(proof.narg_string.len() as u64).to_le_bytes());
+        h.update(&proof.narg_string);
+        h.update(&proof.hints);
+        digests.push(*h.finalize().as_bytes());
     }
+    // The inputs are seeded, so every rep proves the same statement.
+    assert!(digests.windows(2).all(|w| w[0] == w[1]), "proof bytes differ between reps");
+    let digest: String = digests[0][..8].iter().map(|b| format!("{b:02x}")).collect();
     let prove = median(&prove_times);
     let verify = median(&verify_times);
     let phase = |label: &str| -> Duration {
@@ -203,7 +241,7 @@ fn main() {
     let rss = peak_rss_bytes();
     println!("peak rss: {:.2} GB", rss as f64 / 1e9);
     println!(
-        "RESULT schema=bitz-bench/1 n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder} commit_ms={:.3} prove_ms={:.3} grand_ms={:.3} ring_ms={:.3} lig_ms={:.3} verify_ms={:.3} narg_bytes={} hints_bytes={} peak_rss_bytes={rss}",
-        ms(commit), ms(prove), ms(grand), ms(ring), ms(lig), ms(verify), sizes.0, sizes.1
+        "RESULT schema=bitz-bench/1 n={n} t={t} s={s} threads={threads} reps={reps} seed={seed} ladder={ladder} ood={ood} commit_ms={:.3} prove_ms={:.3} grand_ms={:.3} ring_ms={:.3} lig_ms={:.3} verify_ms={:.3} narg_bytes={} hints_bytes={} proof_digest={digest} peak_rss_bytes={rss} packed_cols_ms={:.3}",
+        ms(commit), ms(prove), ms(grand), ms(ring), ms(lig), ms(verify), sizes.0, sizes.1, ms(packed_cols)
     );
 }

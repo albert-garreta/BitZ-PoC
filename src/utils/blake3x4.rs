@@ -63,16 +63,76 @@ pub(crate) fn leading_zero_bits(bytes: &[u8]) -> u32 {
     acc
 }
 
+/// How the scans run: the kernel for 32-byte prefixes and the pool
+/// search's schedule. Every setting returns the same nonce (the serial
+/// scan's smallest hit); they only move the time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(not(feature = "parallel"), allow(dead_code))]
+pub(crate) struct PowMode {
+    /// 32-byte prefixes (the `domain ‖ seed` of every BitZ grind) take the
+    /// NEON kernel that computes round 0's seven nonce-independent G's once
+    /// per scan and skips the last round's dead G's.
+    pub(crate) hoist: bool,
+    /// Grinds of at most this many bits scan their first `2^{bits+3}`
+    /// nonces on the calling thread before waking the pool, and a
+    /// one-thread pool scans every grind on the caller; `0` sends every
+    /// grind to the pool.
+    pub(crate) serial_bits: u32,
+    /// `log2` of the nonces per chunk of the pool search (rounded up to
+    /// whole batches of the eight-word kernel, [`hoisted_batch`]).
+    pub(crate) chunk_log: u32,
+}
+
+impl PowMode {
+    /// The scans as they ran before [`PowMode`]: the generic kernel, every
+    /// grind through the pool in chunks of 1024 nonces.
+    #[cfg(test)]
+    pub(crate) const PLAIN: Self = Self { hoist: false, serial_bits: 0, chunk_log: 10 };
+
+    /// `BITZ_POW_HOIST` (`0` or `1`, default on), `BITZ_POW_SERIAL_BITS`
+    /// (default 8) and `BITZ_POW_CHUNK_LOG` (default 8, clamped to
+    /// `4..=20`), read once.
+    pub(crate) fn from_env() -> Self {
+        static MODE: std::sync::OnceLock<PowMode> = std::sync::OnceLock::new();
+        *MODE.get_or_init(|| {
+            let number = |name: &str| std::env::var(name).ok().and_then(|v| v.parse::<u32>().ok());
+            PowMode {
+                hoist: !matches!(std::env::var("BITZ_POW_HOIST").as_deref(), Ok("0")),
+                serial_bits: number("BITZ_POW_SERIAL_BITS").unwrap_or(8),
+                chunk_log: number("BITZ_POW_CHUNK_LOG").unwrap_or(8).clamp(4, 20),
+            }
+        })
+    }
+}
+
 /// The smallest nonce in `start..end` whose `blake3(prefix ‖ nonce_le)`
 /// has at least `bits` leading zero bits, scanning in increasing order.
 /// `prefix` is at most [`MAX_PREFIX_LEN`] bytes; the NEON lanes take a
 /// prefix of whole 32-bit words (every BitZ seed), as do the AVX2 lanes; other inputs scan
 /// through the reference hash.
 pub(crate) fn first_pow_nonce(prefix: &[u8], start: u64, end: u64, bits: u32) -> Option<u64> {
+    first_pow_nonce_with(prefix, start, end, bits, PowMode::from_env().hoist)
+}
+
+/// [`first_pow_nonce`] with the kernel choice explicit.
+fn first_pow_nonce_with(
+    prefix: &[u8],
+    start: u64,
+    end: u64,
+    bits: u32,
+    hoist: bool,
+) -> Option<u64> {
     assert!(
         prefix.len() <= MAX_PREFIX_LEN,
         "proof-of-work prefix exceeds one block"
     );
+    #[cfg(target_arch = "aarch64")]
+    if hoist && prefix.len() == 32 {
+        // SAFETY: NEON is a baseline feature of every aarch64 target.
+        return unsafe { neon::first_pow_nonce8::<{ neon::GROUPS8 }>(prefix, start, end, bits) };
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    let _ = hoist;
     #[cfg(target_arch = "aarch64")]
     if prefix.len() % 4 == 0 {
         // SAFETY: NEON is a baseline feature of every aarch64 target.
@@ -98,33 +158,91 @@ pub(crate) fn first_pow_nonce(prefix: &[u8], start: u64, end: u64, bits: u32) ->
 /// Unlike a wave-synchronised search, no chunk beyond the hit's is scanned
 /// except those already in flight. `None` once the `u64` nonce space is
 /// exhausted (a theoretical bound only).
+///
+/// A small grind does not wake the pool: it expects `2^bits` attempts, a
+/// few microseconds on one core, while a broadcast pays the wake-up and
+/// waits for every worker's in-flight chunk (an efficiency core's is tens
+/// of microseconds). So grinds of at most [`PowMode::serial_bits`] bits
+/// scan their first `2^{bits+3}` nonces on the caller (a miss has
+/// probability `e^{-8}`) and hand only the rest to the pool, and a
+/// one-thread pool scans everything on the caller.
 #[cfg(feature = "parallel")]
 pub(crate) fn smallest_pow_nonce(prefix: &[u8], bits: u32) -> Option<u64> {
+    let mode = PowMode::from_env();
+    let started = pow_trace().then(std::time::Instant::now);
+    let found = smallest_pow_nonce_with(prefix, bits, mode);
+    if let Some(started) = started {
+        eprintln!(
+            "bitz: pow {bits:>2} bits nonce {:>8} {:>9.1?}",
+            found.unwrap_or(u64::MAX),
+            started.elapsed()
+        );
+    }
+    found
+}
+
+/// One line per grind to stderr when `BITZ_POW_TRACE` is set (diagnostic
+/// only), read once.
+#[cfg(feature = "parallel")]
+fn pow_trace() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("BITZ_POW_TRACE").is_some())
+}
+
+/// The nonces per batch of the kernel scanning `prefix` when it is the
+/// eight-word one, else 1 (the generic lanes' 8 divide every chunk). A pool
+/// chunk is rounded up to whole batches, so no batch hashes nonces past
+/// its chunk.
+#[cfg(feature = "parallel")]
+fn hoisted_batch(prefix: &[u8], hoist: bool) -> u64 {
+    #[cfg(target_arch = "aarch64")]
+    if hoist && prefix.len() == 32 {
+        return 4 * neon::GROUPS8 as u64;
+    }
+    let _ = (prefix, hoist);
+    1
+}
+
+/// [`smallest_pow_nonce`] with the scan settings explicit.
+#[cfg(feature = "parallel")]
+fn smallest_pow_nonce_with(prefix: &[u8], bits: u32, mode: PowMode) -> Option<u64> {
     use std::sync::atomic::{AtomicU64, Ordering};
-    const CHUNK_LOG: u64 = 10;
+    let scan = |start: u64, end: u64| first_pow_nonce_with(prefix, start, end, bits, mode.hoist);
+    // The last nonce of the space is excluded by the half-open ranges.
+    let last = || pow_ok(prefix, u64::MAX, bits).then_some(u64::MAX);
+    let serial = mode.serial_bits > 0;
+    if serial && rayon::current_num_threads() == 1 {
+        return scan(0, u64::MAX).or_else(last);
+    }
+    let head = if serial && bits <= mode.serial_bits.min(60) { 1u64 << (bits + 3) } else { 0 };
+    if head > 0
+        && let Some(n) = scan(0, head)
+    {
+        return Some(n);
+    }
+    let chunk_len = (1u64 << mode.chunk_log).next_multiple_of(hoisted_batch(prefix, mode.hoist));
     let next = AtomicU64::new(0);
     let best = AtomicU64::new(u64::MAX);
     rayon::broadcast(|_| {
         loop {
             let chunk = next.fetch_add(1, Ordering::Relaxed);
-            if chunk >= 1 << (64 - CHUNK_LOG) {
+            let Some(start) = chunk
+                .checked_mul(chunk_len)
+                .and_then(|offset| offset.checked_add(head))
+            else {
                 break;
-            }
-            let start = chunk << CHUNK_LOG;
+            };
             if start >= best.load(Ordering::Relaxed) {
                 break;
             }
-            if let Some(n) =
-                first_pow_nonce(prefix, start, start.saturating_add(1 << CHUNK_LOG), bits)
-            {
+            if let Some(n) = scan(start, start.saturating_add(chunk_len)) {
                 best.fetch_min(n, Ordering::Relaxed);
             }
         }
     });
     let found = best.load(Ordering::Relaxed);
-    // The last nonce of the space is excluded by the half-open chunks.
-    if found == u64::MAX && !pow_ok(prefix, u64::MAX, bits) {
-        return None;
+    if found == u64::MAX {
+        return last();
     }
     Some(found)
 }
@@ -162,14 +280,14 @@ mod neon {
 
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
-    unsafe fn g(
-        v: &mut [[uint32x4_t; 16]; GROUPS],
+    unsafe fn g<const G: usize>(
+        v: &mut [[uint32x4_t; 16]; G],
         a: usize,
         b: usize,
         c: usize,
         d: usize,
-        x: [uint32x4_t; GROUPS],
-        y: [uint32x4_t; GROUPS],
+        x: [uint32x4_t; G],
+        y: [uint32x4_t; G],
         idx: uint8x16_t,
     ) {
         for (v, (x, y)) in v.iter_mut().zip(x.into_iter().zip(y)) {
@@ -185,14 +303,14 @@ mod neon {
     }
 
     #[inline(always)]
-    unsafe fn round(
-        v: &mut [[uint32x4_t; 16]; GROUPS],
-        m: &[[uint32x4_t; 16]; GROUPS],
+    unsafe fn round<const G: usize>(
+        v: &mut [[uint32x4_t; 16]; G],
+        m: &[[uint32x4_t; 16]; G],
         r: usize,
         idx: uint8x16_t,
     ) {
         let s = &MSG_SCHEDULE[r];
-        let w = |i: usize| -> [uint32x4_t; GROUPS] { core::array::from_fn(|k| m[k][s[i]]) };
+        let w = |i: usize| -> [uint32x4_t; G] { core::array::from_fn(|k| m[k][s[i]]) };
         g(v, 0, 4, 8, 12, w(0), w(1), idx);
         g(v, 1, 5, 9, 13, w(2), w(3), idx);
         g(v, 2, 6, 10, 14, w(4), w(5), idx);
@@ -270,6 +388,184 @@ mod neon {
             base = base.wrapping_add(NONCES_PER_CALL);
         }
         None
+    }
+
+    /// Lane groups of the eight-word kernel ([`first_pow_nonce8`]): 11.4
+    /// ns per attempt on one M5 core at three groups, against 12.2 at two,
+    /// 16.6 at one and 16.0 for the generic kernel at [`GROUPS`] = 2.
+    pub(super) const GROUPS8: usize = 3;
+
+    /// A 32-byte prefix as its eight little-endian words.
+    fn prefix_words8(prefix: &[u8]) -> [u32; 8] {
+        core::array::from_fn(|i| u32::from_le_bytes(prefix[4 * i..4 * i + 4].try_into().unwrap()))
+    }
+
+    /// BLAKE3's G on scalar state words.
+    #[allow(clippy::too_many_arguments)]
+    fn g_scalar(v: &mut [u32; 16], a: usize, b: usize, c: usize, d: usize, x: u32, y: u32) {
+        v[a] = v[a].wrapping_add(v[b]).wrapping_add(x);
+        v[d] = (v[d] ^ v[a]).rotate_right(16);
+        v[c] = v[c].wrapping_add(v[d]);
+        v[b] = (v[b] ^ v[c]).rotate_right(12);
+        v[a] = v[a].wrapping_add(v[b]).wrapping_add(y);
+        v[d] = (v[d] ^ v[a]).rotate_right(8);
+        v[c] = v[c].wrapping_add(v[d]);
+        v[b] = (v[b] ^ v[c]).rotate_right(7);
+    }
+
+    /// The nonce-independent part of `blake3(prefix ‖ nonce_le)` for an
+    /// eight-word prefix, computed once per scan. The nonce is message
+    /// words 8 and 9 and words 10..15 are zero, so of round 0 only the
+    /// diagonal `G(0,5,10,15)` reads it; the other seven G's read prefix
+    /// words, zero words and state words that G does not touch, so they
+    /// commute with it and run here, once, in scalar.
+    struct Prefix8 {
+        /// The state after round 0 without its `G(0,5,10,15)`.
+        v: [uint32x4_t; 16],
+        /// The prefix words.
+        m: [uint32x4_t; 8],
+    }
+
+    impl Prefix8 {
+        unsafe fn new(words: &[u32; 8]) -> Self {
+            let mut v = [0u32; 16];
+            v[..8].copy_from_slice(&IV);
+            v[8..12].copy_from_slice(&IV[..4]);
+            // Eight prefix words and the two nonce words.
+            v[14] = 40;
+            v[15] = FLAGS;
+            for (i, (a, b, c, d)) in [(0, 4, 8, 12), (1, 5, 9, 13), (2, 6, 10, 14), (3, 7, 11, 15)]
+                .into_iter()
+                .enumerate()
+            {
+                g_scalar(&mut v, a, b, c, d, words[2 * i], words[2 * i + 1]);
+            }
+            for (a, b, c, d) in [(1, 6, 11, 12), (2, 7, 8, 13), (3, 4, 9, 14)] {
+                g_scalar(&mut v, a, b, c, d, 0, 0);
+            }
+            // SAFETY: NEON is a baseline feature of every aarch64 target.
+            unsafe {
+                Self {
+                    v: v.map(|w| vdupq_n_u32(w)),
+                    m: words.map(|w| vdupq_n_u32(w)),
+                }
+            }
+        }
+    }
+
+    /// [`first_words`] for an eight-word prefix, off its [`Prefix8`], as
+    /// `G` vectors of four lanes. Round 0 is the one G that reads the
+    /// nonce; the other rounds are unrolled, so the additions of the six
+    /// zero message words fold away; and the last round runs only what
+    /// `state[0] ^ state[8]` reads: `G(1,6,11,12)` and `G(3,4,9,14)` are
+    /// dead, and the tails of the others no output reads are dropped by
+    /// the compiler.
+    #[inline(always)]
+    unsafe fn first_words8<const G: usize>(h: &Prefix8, base: u64) -> [uint32x4_t; G] {
+        // SAFETY: NEON is a baseline feature of every aarch64 target; the
+        // only memory the intrinsics read is the two constant arrays.
+        unsafe {
+            const STEPS: [u32; 4] = [0, 1, 2, 3];
+            let idx = vld1q_u8(ROTR8_BYTES.as_ptr());
+            let zero = vdupq_n_u32(0);
+            let steps = vld1q_u32(STEPS.as_ptr());
+            let (lo0, hi0) = (vdupq_n_u32(base as u32), vdupq_n_u32((base >> 32) as u32));
+            let mut m = [[zero; 16]; G];
+            let mut v = [h.v; G];
+            for (k, m) in m.iter_mut().enumerate() {
+                m[..8].copy_from_slice(&h.m);
+                // Nonce `base + 4k + j`: the low word wraps, the high word
+                // takes the carry (all-ones compare = −1).
+                let lo = vaddq_u32(lo0, vaddq_u32(steps, vdupq_n_u32(4 * k as u32)));
+                m[8] = lo;
+                m[9] = vsubq_u32(hi0, vcltq_u32(lo, lo0));
+            }
+            let w = |i: usize| -> [uint32x4_t; G] { core::array::from_fn(|k| m[k][i]) };
+            g(&mut v, 0, 5, 10, 15, w(8), w(9), idx);
+            round(&mut v, &m, 1, idx);
+            round(&mut v, &m, 2, idx);
+            round(&mut v, &m, 3, idx);
+            round(&mut v, &m, 4, idx);
+            round(&mut v, &m, 5, idx);
+            let s = &MSG_SCHEDULE[6];
+            let w = |i: usize| -> [uint32x4_t; G] { core::array::from_fn(|k| m[k][s[i]]) };
+            g(&mut v, 0, 4, 8, 12, w(0), w(1), idx);
+            g(&mut v, 1, 5, 9, 13, w(2), w(3), idx);
+            g(&mut v, 2, 6, 10, 14, w(4), w(5), idx);
+            g(&mut v, 3, 7, 11, 15, w(6), w(7), idx);
+            g(&mut v, 0, 5, 10, 15, w(8), w(9), idx);
+            g(&mut v, 2, 7, 8, 13, w(12), w(13), idx);
+            core::array::from_fn(|k| veorq_u32(v[k][0], v[k][8]))
+        }
+    }
+
+    /// [`first_pow_nonce`] for a 32-byte prefix through [`first_words8`]
+    /// with `G` lane groups. A batch is tested in vector form first: a lane
+    /// hits when its word, byte-swapped (the hash's first four bytes read
+    /// big-endian), is below `2^{32 − min(bits, 32)}`; only a batch with a
+    /// hit is walked lane by lane, in nonce order, as [`first_pow_nonce`]
+    /// walks every batch.
+    pub(super) unsafe fn first_pow_nonce8<const G: usize>(
+        prefix: &[u8],
+        start: u64,
+        end: u64,
+        bits: u32,
+    ) -> Option<u64> {
+        debug_assert_eq!(prefix.len(), 32);
+        if bits == 0 {
+            return (start < end).then_some(start);
+        }
+        // SAFETY: NEON is a baseline feature of every aarch64 target; the
+        // stores write a local four-lane array.
+        unsafe {
+            let h = Prefix8::new(&prefix_words8(prefix));
+            let limit = vdupq_n_u32(if bits >= 32 { 1 } else { 1 << (32 - bits) });
+            let per_call = 4 * G as u64;
+            let mut base = start;
+            while base < end {
+                let out = first_words8::<G>(&h, base);
+                let mut hits = vdupq_n_u32(0);
+                for &word in &out {
+                    let big_endian = vreinterpretq_u32_u8(vrev32q_u8(vreinterpretq_u8_u32(word)));
+                    hits = vorrq_u32(hits, vcltq_u32(big_endian, limit));
+                }
+                if vmaxvq_u32(hits) != 0 {
+                    for (k, &word) in out.iter().enumerate() {
+                        let mut lanes = [0u32; 4];
+                        vst1q_u32(lanes.as_mut_ptr(), word);
+                        for (j, w) in lanes.into_iter().enumerate() {
+                            let nonce = base.wrapping_add((4 * k + j) as u64);
+                            if nonce >= end {
+                                return None;
+                            }
+                            let leading = w.swap_bytes().leading_zeros();
+                            if leading >= bits.min(32)
+                                && (bits <= 32 || super::pow_ok(prefix, nonce, bits))
+                            {
+                                return Some(nonce);
+                            }
+                        }
+                    }
+                }
+                base = base.checked_add(per_call)?;
+            }
+            None
+        }
+    }
+
+    /// The first output words of [`first_words8`] in nonce order (tests).
+    #[cfg(test)]
+    pub(super) unsafe fn words8<const G: usize>(prefix: &[u8], base: u64) -> Vec<u32> {
+        let mut lanes = vec![0u32; 4 * G];
+        // SAFETY: NEON is a baseline feature of every aarch64 target; lane
+        // group `k` stores to `lanes[4k..4k + 4]`, inside the vector.
+        unsafe {
+            let h = Prefix8::new(&prefix_words8(prefix));
+            for (k, word) in first_words8::<G>(&h, base).into_iter().enumerate() {
+                vst1q_u32(lanes.as_mut_ptr().add(4 * k), word);
+            }
+        }
+        lanes
     }
 }
 
@@ -435,6 +731,192 @@ mod tests {
             // serial scan.
             assert_eq!(first_pow_nonce(&seed, 0, 20_000, 40), None);
             assert_eq!((0..20_000u64).find(|&n| pow_ok(&seed, n, 40)), None);
+        }
+    }
+
+    /// The eight-word kernel's lanes are `blake3::hash`'s first words, bit
+    /// for bit, at every group count, across a 2^32 nonce boundary and at
+    /// the end of the nonce space.
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn hoisted_lanes_match_the_blake3_crate() {
+        fn check<const G: usize>(prefix: &[u8], base: u64) {
+            // SAFETY: NEON is baseline on aarch64 and the prefix is 32 bytes.
+            let lanes = unsafe { neon::words8::<G>(prefix, base) };
+            for (lane, word) in lanes.into_iter().enumerate() {
+                let mut message = prefix.to_vec();
+                message.extend_from_slice(&base.wrapping_add(lane as u64).to_le_bytes());
+                let hash = blake3::hash(&message);
+                let expected = u32::from_le_bytes(hash.as_bytes()[..4].try_into().unwrap());
+                assert_eq!(word, expected, "groups {G} base {base} lane {lane}");
+            }
+        }
+        for s in 0..16u64 {
+            let prefix = prefix(s + 300, 32);
+            for base in [0, 1, 5, 4093, (1 << 32) - 3, (1 << 32) - 1, u64::MAX - 7, u64::MAX - 2] {
+                check::<1>(&prefix, base);
+                check::<2>(&prefix, base);
+                check::<3>(&prefix, base);
+                check::<4>(&prefix, base);
+            }
+        }
+    }
+
+    /// The eight-word kernel's range scans return the serial scan's
+    /// smallest hit, or none, at every group count and threshold, on
+    /// ranges that end inside a batch and at the end of the nonce space.
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn hoisted_scans_match_the_serial_scan() {
+        fn scan<const G: usize>(prefix: &[u8], start: u64, end: u64, bits: u32) -> Option<u64> {
+            // SAFETY: NEON is baseline on aarch64 and the prefix is 32 bytes.
+            unsafe { neon::first_pow_nonce8::<G>(prefix, start, end, bits) }
+        }
+        for s in 0..4u64 {
+            let prefix = prefix(s + 500, 32);
+            for bits in [0u32, 1, 3, 5, 9, 12, 31, 32, 33, 256] {
+                for (start, count) in [
+                    (0u64, 0u64),
+                    (0, 1),
+                    (0, 3),
+                    (7, 4097),
+                    (1 << 20, 5000),
+                    ((1 << 32) - 5, 1000),
+                    (u64::MAX - 17, 17),
+                    (u64::MAX - 9, 9),
+                    (u64::MAX, 0),
+                ] {
+                    let end = start + count;
+                    let expected = (start..end).find(|&n| pow_ok(&prefix, n, bits));
+                    let label = format!("seed {s} bits {bits} start {start} count {count}");
+                    assert_eq!(scan::<1>(&prefix, start, end, bits), expected, "groups 1 {label}");
+                    assert_eq!(scan::<2>(&prefix, start, end, bits), expected, "groups 2 {label}");
+                    assert_eq!(scan::<3>(&prefix, start, end, bits), expected, "groups 3 {label}");
+                    assert_eq!(scan::<4>(&prefix, start, end, bits), expected, "groups 4 {label}");
+                }
+            }
+        }
+    }
+
+    /// The pool search returns the serial scan's smallest nonce under every
+    /// scan setting, on one thread and on ten, for grinds of 2 to 16 bits,
+    /// with both seed widths (the 16-byte one takes the generic kernel).
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn pool_schedules_return_the_serial_minimum() {
+        let modes = [
+            PowMode::PLAIN,
+            PowMode { hoist: true, serial_bits: 0, chunk_log: 10 },
+            PowMode { hoist: true, serial_bits: 8, chunk_log: 8 },
+            PowMode { hoist: false, serial_bits: 12, chunk_log: 4 },
+            PowMode { hoist: true, serial_bits: 3, chunk_log: 5 },
+            PowMode { hoist: true, serial_bits: 16, chunk_log: 20 },
+        ];
+        for threads in [1usize, 10] {
+            let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
+            for s in 0..3u64 {
+                for len in [16usize, 32] {
+                    let seed = prefix(s + 900, len);
+                    for bits in 2u32..=16 {
+                        let serial = (0..u64::MAX).find(|&x| pow_ok(&seed, x, bits));
+                        for mode in modes {
+                            assert_eq!(
+                                pool.install(|| smallest_pow_nonce_with(&seed, bits, mode)),
+                                serial,
+                                "threads {threads} len {len} seed {s} bits {bits} {mode:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Nanoseconds per attempt of each kernel on one thread, over 2^22
+    /// nonces of a 32-byte prefix (diagnostic: run it with `--ignored
+    /// --nocapture` on an idle machine).
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    #[ignore]
+    fn pow_kernel_timings() {
+        use std::time::Instant;
+        let prefix = prefix(7, 32);
+        let span = 1u64 << 22;
+        let time = |label: &str, scan: &dyn Fn() -> Option<u64>| {
+            let _ = scan();
+            let started = Instant::now();
+            for _ in 0..4 {
+                assert_eq!(scan(), None);
+            }
+            let ns = started.elapsed().as_secs_f64() * 1e9 / (4 * span) as f64;
+            println!("kernel {label:<10} {ns:.2} ns/attempt");
+        };
+        // SAFETY: NEON is baseline on aarch64 and the prefix is 32 bytes.
+        unsafe {
+            time("generic", &|| neon::first_pow_nonce(&prefix, 0, span, 64));
+            time("hoisted/1", &|| neon::first_pow_nonce8::<1>(&prefix, 0, span, 64));
+            time("hoisted/2", &|| neon::first_pow_nonce8::<2>(&prefix, 0, span, 64));
+            time("hoisted/3", &|| neon::first_pow_nonce8::<3>(&prefix, 0, span, 64));
+            time("hoisted/4", &|| neon::first_pow_nonce8::<4>(&prefix, 0, span, 64));
+        }
+    }
+
+    /// Grinding time per proof under each scan setting (diagnostic: run it
+    /// with `--ignored --nocapture` on an idle machine). `BITZ_POW_SCHEDULE`
+    /// is one proof's grind sizes, comma-separated (default: the raw
+    /// bench's at n = 28), `BITZ_POW_SEEDS` the number of seeds averaged
+    /// over (default 64) and `BITZ_POW_THREADS` the pool sizes (default
+    /// `1,10`).
+    #[cfg(feature = "parallel")]
+    #[test]
+    #[ignore]
+    fn pow_schedule_timings() {
+        use std::time::Instant;
+        let list = |name: &str, default: &str| -> Vec<u32> {
+            std::env::var(name)
+                .unwrap_or_else(|_| default.to_string())
+                .split(',')
+                .map(|x| x.trim().parse().expect("a number"))
+                .collect()
+        };
+        let schedule = list(
+            "BITZ_POW_SCHEDULE",
+            "15,14,13,12,16,12,11,10,16,9,8,7,16,6,5,4,16,4,3,2,16",
+        );
+        let seeds = list("BITZ_POW_SEEDS", "64")[0] as u64;
+        let threads = list("BITZ_POW_THREADS", "1,10");
+        println!("schedule {schedule:?}, {seeds} seeds");
+        let modes = [
+            ("plain", PowMode::PLAIN),
+            ("hoist", PowMode { hoist: true, serial_bits: 0, chunk_log: 10 }),
+            ("hoist c8", PowMode { hoist: true, serial_bits: 0, chunk_log: 8 }),
+            ("hoist s6 c8", PowMode { hoist: true, serial_bits: 6, chunk_log: 8 }),
+            ("hoist s8 c8", PowMode { hoist: true, serial_bits: 8, chunk_log: 8 }),
+            ("hoist s10 c8", PowMode { hoist: true, serial_bits: 10, chunk_log: 8 }),
+            ("hoist s8 c7", PowMode { hoist: true, serial_bits: 8, chunk_log: 7 }),
+            ("hoist s8 c9", PowMode { hoist: true, serial_bits: 8, chunk_log: 9 }),
+        ];
+        for &count in &threads {
+            let pool = rayon::ThreadPoolBuilder::new().num_threads(count as usize).build().unwrap();
+            let mut totals = vec![0f64; modes.len()];
+            for s in 0..seeds {
+                // Every mode grinds the same seeds, interleaved seed by seed.
+                for (total, (_, mode)) in totals.iter_mut().zip(modes) {
+                    let started = Instant::now();
+                    for (i, &bits) in schedule.iter().enumerate() {
+                        let seed = prefix(s * 64 + i as u64, 32);
+                        pool.install(|| smallest_pow_nonce_with(&seed, bits, mode));
+                    }
+                    *total += started.elapsed().as_secs_f64();
+                }
+            }
+            for ((label, _), total) in modes.iter().zip(&totals) {
+                println!(
+                    "threads {count:>2} {label:<14} {:.3} ms per proof ({:.3}x plain)",
+                    total * 1e3 / seeds as f64,
+                    total / totals[0]
+                );
+            }
         }
     }
 }

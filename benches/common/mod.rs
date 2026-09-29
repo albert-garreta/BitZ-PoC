@@ -123,6 +123,8 @@ pub const KNOWN_BITZ_ENV: &[&str] = &[
     "BITZ_BENCH_LAMBDA",
     "BITZ_MULTISWAP_BATCH_COUNT",
     "BITZ_MULTISWAP_CHECK_ONLY",
+    // MultiSwap relation projection: reduce each distinct coefficient once.
+    "BITZ_MULTISWAP_DEDUP",
     // The MultiSwap bench's opener of the reduced claim (`forest` | `wfbitz`).
     "BITZ_OPENER",
     "BITZ_BENCH_ORDER",
@@ -162,6 +164,8 @@ pub const KNOWN_BITZ_ENV: &[&str] = &[
     "BITZ_MATS_TILE",
     "BITZ_MATS_TILE_B",
     "BITZ_MAT_GRID",
+    // Prepared-statement digest: one buffer, one hash call.
+    "BITZ_MATRIX_DIGEST_BUFFER",
     // Matched MultiSwap/Mod-R1CS campaign trace metadata.
     "BITZ_MULTISWAP_BUILD_PROFILE",
     "BITZ_MULTISWAP_CAMPAIGN_ID",
@@ -215,6 +219,8 @@ pub const KNOWN_BITZ_ENV: &[&str] = &[
     "BITZ_TAPS_DELTA",
     "BITZ_TAPS_GRP",
     "BITZ_TAPS_SEED",
+    // wfbitz phase timings on stderr (diagnostic only).
+    "BITZ_TRACE",
     "BITZ_VIRT_ID_FAST",
     "BITZ_VIRT_PLANES",
 ];

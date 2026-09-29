@@ -249,6 +249,52 @@ impl core::fmt::Debug for FlockCommitHint {
     }
 }
 
+/// Whether the packed message is copied from the rows one column per task
+/// in parallel (`BITZ_PMSG_PAR`, `0` or `1`, default on) instead of by a
+/// serial push loop, read once.
+fn parallel_message_copy() -> bool {
+    static PARALLEL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *PARALLEL.get_or_init(|| !matches!(std::env::var("BITZ_PMSG_PAR").as_deref(), Ok("0")))
+}
+
+/// Append the packed message of per-column bit rows to `p_msg`: column `c`
+/// contributes `hi_count` elements, its row's words in pairs (`lo =
+/// row[2i]`, `hi = row[2i+1]`), so the message is the rows' words
+/// concatenated. `parallel` writes each column's block straight into the
+/// spare capacity, one column per task; otherwise a serial push loop.
+#[allow(clippy::arithmetic_side_effects)]
+fn pack_message_into(p_msg: &mut Vec<Gf128>, rows: &[Vec<u64>], hi_count: usize, parallel: bool) {
+    assert!(
+        rows.iter().all(|row| row.len() >= 2 * hi_count),
+        "a row holds fewer than 2·hi_count words"
+    );
+    if !parallel {
+        for row in rows {
+            for i_hi in 0..hi_count {
+                p_msg.push(Gf128 {
+                    lo: row[2 * i_hi],
+                    hi: row[2 * i_hi + 1],
+                });
+            }
+        }
+        return;
+    }
+    let (start, len) = (p_msg.len(), rows.len() * hi_count);
+    p_msg.reserve(len);
+    let spare = &mut p_msg.spare_capacity_mut()[..len];
+    cfg_chunks_mut!(spare, hi_count)
+        .zip(cfg_iter!(rows))
+        .for_each(|(dst, row)| {
+            for (slot, pair) in dst.iter_mut().zip(row.chunks_exact(2)) {
+                slot.write(Gf128 { lo: pair[0], hi: pair[1] });
+            }
+        });
+    // SAFETY: the `len` slots after `start` were written above: one chunk of
+    // `hi_count` per row, each fully covered by the row's first `2·hi_count`
+    // words (asserted), and `Gf128` is plain data.
+    unsafe { p_msg.set_len(start + len) };
+}
+
 /// Shared commit tail: build the packed `Gf128` message from the per-column
 /// bit rows (low 7 row-bit coordinates in-pack, row-bit-high then column
 /// bits above) and run flock's PCS commit (NEON interleaved NTT + SHA-256
@@ -265,14 +311,12 @@ fn commit_rs_flock_from_rows(
     let t_w = row_bit_vars(p);
     assert!(t_w >= LOG_PACKING, "packing needs t + log2(W) >= 7");
     let hi_count = 1usize << (t_w - LOG_PACKING);
+    let timing = std::env::var_os("FLOCK_COMMIT_TIMING").is_some();
+    let started = std::time::Instant::now();
     let mut p_msg = Vec::with_capacity(hi_count << p.col_vars);
-    for row in rows.iter().take(p.cols()) {
-        for i_hi in 0..hi_count {
-            p_msg.push(Gf128 {
-                lo: row[2 * i_hi],
-                hi: row[2 * i_hi + 1],
-            });
-        }
+    pack_message_into(&mut p_msg, &rows[..p.cols()], hi_count, parallel_message_copy());
+    if timing {
+        eprintln!("[commit-timing] p_msg: {:.2} ms", started.elapsed().as_secs_f64() * 1e3);
     }
 
     let m_p = packed_vars(p);
@@ -1883,14 +1927,7 @@ pub fn commit_rs_ligerito_batch(
     let mut p_msg = Vec::with_capacity(l << m_p);
     for data in datas {
         let rows = repack_leaf_bits(p, data);
-        for row in rows.iter().take(p.cols()) {
-            for i_hi in 0..hi_count {
-                p_msg.push(Gf128 {
-                    lo: row[2 * i_hi],
-                    hi: row[2 * i_hi + 1],
-                });
-            }
-        }
+        pack_message_into(&mut p_msg, &rows[..p.cols()], hi_count, parallel_message_copy());
         rows_all.push(rows);
     }
     let log_l = l.trailing_zeros() as usize;
@@ -2453,7 +2490,7 @@ fn build_eq_scaled(point: &[Gf], scalar: Gf) -> Vec<Gf> {
 /// `MLE[P](point)` for the packed message — block-parallel, deferred
 /// reduction inside each block.
 #[allow(clippy::arithmetic_side_effects)]
-fn ood_eval(p_msg: &[Gf128], point: &[Gf]) -> Gf {
+pub(crate) fn ood_eval(p_msg: &[Gf128], point: &[Gf]) -> Gf {
     use crate::utils::wide_mul::WideMulAcc;
     let vars = packed_message_vars(p_msg);
     assert_eq!(point.len(), vars, "OOD point dimension");
@@ -12914,6 +12951,32 @@ mod tests {
     use super::*;
     use crate::pcs::smallest_generator;
     use crate::transcript::Blake3Transcript;
+
+    /// The parallel packed-message copy writes the same elements as the
+    /// push loop, also when appending after a previous slice (the batched
+    /// commit), so the committed message and root cannot move.
+    #[test]
+    fn parallel_message_copy_matches_push_loop() {
+        let mut state = 0x6d73_6721u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for (cols, hi_count, extra) in [(1usize, 1usize, 0usize), (3, 2, 1), (64, 16, 0), (100, 32, 3)] {
+            let rows: Vec<Vec<u64>> = (0..cols)
+                .map(|_| (0..2 * hi_count + extra).map(|_| next()).collect())
+                .collect();
+            let prefix = vec![Gf128 { lo: next(), hi: next() }; 5];
+            let mut serial = prefix.clone();
+            pack_message_into(&mut serial, &rows, hi_count, false);
+            let mut parallel = prefix.clone();
+            pack_message_into(&mut parallel, &rows, hi_count, true);
+            assert_eq!(serial.len(), prefix.len() + cols * hi_count);
+            assert!(serial == parallel, "cols={cols} hi_count={hi_count}");
+        }
+    }
 
     struct CountingTranscript {
         inner: Blake3Transcript,

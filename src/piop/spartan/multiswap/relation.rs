@@ -175,9 +175,54 @@ pub struct MultiswapIntegerRelation {
     layout: MultiswapLayout,
     live_rows: usize,
     coefficients: UnsignedIntegerTable,
+    /// The coefficients' distinct values, found once at preparation: the
+    /// RSA modulus rows, the unit and power-of-two coefficients repeat
+    /// across the matrices, so [`Self::project`] reduces each value once.
+    distinct: DistinctCoefficients,
     a: Vec<Vec<(usize, usize)>>,
     b: Vec<Vec<(usize, usize)>>,
     c: Vec<Vec<(usize, usize)>>,
+}
+
+/// Which stored coefficients hold the same integer.
+#[derive(Clone, Debug, Default)]
+struct DistinctCoefficients {
+    /// Per stored coefficient, the index of its value in `representatives`.
+    value_of: Vec<u32>,
+    /// One stored coefficient per distinct value, in first-seen order.
+    representatives: Vec<usize>,
+}
+
+impl DistinctCoefficients {
+    /// Groups the stored coefficients by value. Two encodings of the same
+    /// integer differ at most in zero high limbs, which the key drops.
+    fn new(coefficients: &UnsignedIntegerTable) -> Self {
+        let mut index_of = std::collections::HashMap::<&[u64], u32>::new();
+        let mut representatives = Vec::new();
+        let value_of = (0..coefficients.len())
+            .map(|index| {
+                let words = &coefficients[index];
+                let live = words.iter().rposition(|&word| word != 0).map_or(0, |top| top + 1);
+                *index_of.entry(&words[..live]).or_insert_with(|| {
+                    representatives.push(index);
+                    u32::try_from(representatives.len() - 1).expect("fewer than 2^32 coefficients")
+                })
+            })
+            .collect();
+        Self {
+            value_of,
+            representatives,
+        }
+    }
+}
+
+/// Whether [`MultiswapIntegerRelation::project`] reduces each distinct
+/// coefficient value once and writes the compressed columns directly (`BITZ_MULTISWAP_DEDUP`, `0` or `1`, default on) instead
+/// of reducing every stored coefficient into per-column vectors; both give
+/// the same matrices. Read once.
+fn project_distinct_from_env() -> bool {
+    static DISTINCT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *DISTINCT.get_or_init(|| !matches!(std::env::var("BITZ_MULTISWAP_DEDUP").as_deref(), Ok("0")))
 }
 
 impl MultiswapIntegerRelation {
@@ -222,6 +267,7 @@ impl MultiswapIntegerRelation {
         }
 
         let mut relation = Self {
+            distinct: DistinctCoefficients::new(&coefficients),
             coefficients,
             layout,
             live_rows,
@@ -302,37 +348,89 @@ impl MultiswapIntegerRelation {
     where
         F: SpartanField,
     {
+        self.project_with(field_config, project_distinct_from_env())
+    }
+
+    /// [`Self::project`], reducing every distinct coefficient value once
+    /// (`distinct`) or every stored coefficient: the residue is a function
+    /// of the integer alone, so both give the same matrices (zero residues
+    /// dropped alike, rows in the same order).
+    fn project_with<F>(
+        &self,
+        field_config: &F::Config,
+        distinct: bool,
+    ) -> Result<PreparedConstraintMatrices<F, F>, MultiswapLayoutError>
+    where
+        F: SpartanField,
+    {
         let encoding = F::canonical_modulus_encoding(field_config);
         assert!(
             encoding[16..].iter().all(|&byte| byte == 0),
             "MultiSwap field exceeds two limbs"
         );
         let field = FpCtx::from_prime_u128(u128::from_le_bytes(encoding[..16].try_into().unwrap()));
-        let project_matrix = |matrix: &Vec<Vec<(usize, usize)>>| {
-            let columns = matrix
-                .iter()
-                .map(|column| {
-                    column
-                        .iter()
-                        .filter_map(|(row, value)| {
-                            let residue = u128::from(field.to_integer(&public_coefficient(
-                                &field,
-                                &self.coefficients[*value],
-                            )));
-                            if residue == 0 {
-                                None
-                            } else {
-                                Some((*row, F::from_with_cfg(residue, field_config)))
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .collect::<Vec<_>>();
-            CscMatrix::try_from_columns(self.live_rows, columns)
+        let residue = |index: usize| {
+            u128::from(field.to_integer(&public_coefficient(&field, &self.coefficients[index])))
         };
-        let a = project_matrix(&self.a).map_err(SpartanMatrixError::from)?;
-        let b = project_matrix(&self.b).map_err(SpartanMatrixError::from)?;
-        let c = project_matrix(&self.c).map_err(SpartanMatrixError::from)?;
+        let (a, b, c) = if distinct {
+            let _scope = tracing::info_span!("multiswap:project_coefficients").entered();
+            // A few hundred values (367 of 26,426 entries at k = 0): serial.
+            let values: Vec<Option<F>> = self
+                .distinct
+                .representatives
+                .iter()
+                .map(|&index| {
+                    let residue = residue(index);
+                    (residue != 0).then(|| F::from_with_cfg(residue, field_config))
+                })
+                .collect();
+            let value_of = &self.distinct.value_of;
+            debug_assert_eq!(value_of.len(), self.coefficients.len());
+            // Straight into the compressed columns: no per-column vectors.
+            let project_matrix = |matrix: &Vec<Vec<(usize, usize)>>| {
+                let nnz = matrix.iter().map(Vec::len).sum();
+                let mut offsets = Vec::with_capacity(matrix.len() + 1);
+                let mut rows = Vec::with_capacity(nnz);
+                let mut coefficients = Vec::with_capacity(nnz);
+                offsets.push(0);
+                for column in matrix {
+                    for &(row, index) in column {
+                        if let Some(value) = values[value_of[index] as usize] {
+                            rows.push(row);
+                            coefficients.push(value);
+                        }
+                    }
+                    offsets.push(rows.len());
+                }
+                CscMatrix::try_from_csc_parts(self.live_rows, offsets, rows, coefficients)
+            };
+            (project_matrix(&self.a), project_matrix(&self.b), project_matrix(&self.c))
+        } else {
+            let project_matrix = |matrix: &Vec<Vec<(usize, usize)>>| {
+                let columns = matrix
+                    .iter()
+                    .map(|column| {
+                        column
+                            .iter()
+                            .filter_map(|(row, value)| {
+                                let residue = residue(*value);
+                                if residue == 0 {
+                                    None
+                                } else {
+                                    Some((*row, F::from_with_cfg(residue, field_config)))
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>();
+                CscMatrix::try_from_columns(self.live_rows, columns)
+            };
+            (project_matrix(&self.a), project_matrix(&self.b), project_matrix(&self.c))
+        };
+        let a = a.map_err(SpartanMatrixError::from)?;
+        let b = b.map_err(SpartanMatrixError::from)?;
+        let c = c.map_err(SpartanMatrixError::from)?;
+        let _scope = tracing::info_span!("multiswap:prepare_matrices").entered();
         let matrices = ConstraintMatrices::new(a, b, c)?;
         Ok(PreparedConstraintMatrices::new(matrices, field_config)?)
     }
@@ -903,6 +1001,36 @@ mod tests {
             .unwrap();
             assert_eq!(old, new);
             assert_eq!(old_transcript.state_digest(), new_transcript.state_digest());
+        }
+    }
+
+    /// Reducing each distinct coefficient value once gives the matrices and
+    /// digest of reducing every stored coefficient, at any thread count.
+    #[test]
+    fn distinct_coefficient_projection_matches_the_per_entry_one() {
+        for dims in [MultiswapDims::mini(), MultiswapDims::multiswap(0)] {
+            let circuit = MultiswapCircuit::build(dims).unwrap();
+            let relation = MultiswapIntegerRelation::new(&circuit).unwrap();
+            assert!(relation.distinct.representatives.len() < relation.coefficients.len());
+            eprintln!(
+                "{} distinct values among {} stored coefficients",
+                relation.distinct.representatives.len(),
+                relation.coefficients.len()
+            );
+            for modulus in [crate::pcs::FQ_MOD, 260337761016399727832017529560925459939] {
+                let field = Fp::<2>::make_cfg(&Uint::from(modulus)).unwrap();
+                let per_entry = relation.project_with::<Fp<2>>(&field, false).unwrap();
+                let check = |distinct: PreparedConstraintMatrices<Fp<2>, Fp<2>>| {
+                    assert_eq!(distinct.matrices(), per_entry.matrices());
+                    assert_eq!(distinct.digest(), per_entry.digest());
+                };
+                check(relation.project_with::<Fp<2>>(&field, true).unwrap());
+                #[cfg(feature = "parallel")]
+                for threads in [1, 8] {
+                    let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
+                    check(pool.install(|| relation.project_with::<Fp<2>>(&field, true)).unwrap());
+                }
+            }
         }
     }
 
