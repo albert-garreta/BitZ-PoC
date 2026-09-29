@@ -99,6 +99,13 @@ mod sha256x4;
 #[path = "merkle/x86_64.rs"]
 mod sha256x4;
 
+/// Eight-message interleaved NEON BLAKE3 compression (two transposed 4-wide
+/// states in flight), ported from upstream flock f119103. It fills the pipes
+/// the crate's latency-bound 4-wide backend leaves idle; see the module docs.
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[path = "merkle/blake3_neon.rs"]
+mod blake3_neon;
+
 /// Global Merkle hash call/compression counters, enabled with
 /// `--features hash-count` (e.g. by `benches/verifier_hash_count.rs`).
 /// Relaxed atomics — exact totals, no ordering guarantees across threads.
@@ -300,6 +307,77 @@ fn blake3_platform() -> blake3::platform::Platform {
 /// vector; that has not been measured here.
 const BLAKE3_BATCH: usize = 16;
 
+/// Whether full groups of eight BLAKE3 messages take the interleaved
+/// two×4-wide NEON kernel (`MERKLE_BLAKE3_NEON8`, `0` or `1`, default on),
+/// read once. Off, every message goes through the crate's 4-wide
+/// `hash_many`. Byte-identical either way (`blake3_neon8_matches_crate`).
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+fn blake3_neon8_from_env() -> bool {
+    use std::sync::OnceLock;
+    static NEON8: OnceLock<bool> = OnceLock::new();
+    *NEON8.get_or_init(|| !matches!(std::env::var("MERKLE_BLAKE3_NEON8").as_deref(), Ok("0")))
+}
+
+/// Hash `data`, a run of `out.len()` contiguous `N`-byte messages, as
+/// [`blake3_hash_many_crate`] does: full groups of eight through the
+/// interleaved NEON kernel (when [`blake3_neon8_from_env`] allows it), the
+/// tail (< 8 messages) through the crate's `hash_many`.
+#[inline]
+fn blake3_hash_many<const N: usize>(
+    data: &[u8],
+    out: &mut [Hash],
+    flags: u8,
+    flags_start: u8,
+    flags_end: u8,
+) {
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    let neon8 = blake3_neon8_from_env();
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    let neon8 = false;
+    blake3_hash_many_with::<N>(neon8, data, out, flags, flags_start, flags_end);
+}
+
+/// [`blake3_hash_many`] with the NEON-kernel choice explicit, so tests can
+/// hold both paths against each other in one process.
+#[inline]
+fn blake3_hash_many_with<const N: usize>(
+    neon8: bool,
+    data: &[u8],
+    out: &mut [Hash],
+    flags: u8,
+    flags_start: u8,
+    flags_end: u8,
+) {
+    debug_assert_eq!(data.len(), out.len() * N);
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    // The kernel compresses whole 64-byte blocks of one chunk.
+    let (data, out) = if neon8 && N % 64 == 0 && (64..=1024).contains(&N) {
+        let full = (out.len() / 8) * 8;
+        for i in (0..full).step_by(8) {
+            // SAFETY: messages i..i+8 are in-bounds `N`-byte rows of `data`
+            // (asserted above); `out[i..i+8]` is 256 writable bytes; `Hash`
+            // is `[u8; 32]` with no padding.
+            unsafe {
+                blake3_neon::hash8(
+                    data.as_ptr().add(i * N),
+                    N,
+                    N / 64,
+                    flags,
+                    flags_start,
+                    flags_end,
+                    out.as_mut_ptr().add(i) as *mut u8,
+                );
+            }
+        }
+        (&data[full * N..], &mut out[full..])
+    } else {
+        (data, out)
+    };
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    let _ = neon8;
+    blake3_hash_many_crate::<N>(data, out, flags, flags_start, flags_end);
+}
+
 /// Drive `hash_many` over `data`, a run of `out.len()` contiguous `N`-byte
 /// messages, in [`BLAKE3_BATCH`]-wide calls. `flags`/`start`/`end` select the
 /// node type (chunk vs parent).
@@ -307,7 +385,7 @@ const BLAKE3_BATCH: usize = 16;
 /// Allocation-free: the pointer array lives on the stack, so unlike a
 /// `Vec`-per-call formulation this costs nothing per batch.
 #[inline]
-fn blake3_hash_many<const N: usize>(
+fn blake3_hash_many_crate<const N: usize>(
     data: &[u8],
     out: &mut [Hash],
     flags: u8,
@@ -555,7 +633,30 @@ pub fn merkle_tree(data: &[u8], num_leaves: usize, kind: HashKind) -> Vec<Hash> 
     }
 }
 
+/// Whether tree buffers are recycled through [`crate::scratch`]'s tree pool
+/// (`MERKLE_TREE_POOL`, `0` or `1`, default off), read once: taken by
+/// [`merkle_tree`], given back by [`recycle_tree`] when a commitment's
+/// prover data or a Ligerito level's witness is dropped. Every node is
+/// written before it is read, so the tree is the same either way.
+fn tree_pool_from_env() -> bool {
+    use std::sync::OnceLock;
+    static POOL: OnceLock<bool> = OnceLock::new();
+    *POOL.get_or_init(|| matches!(std::env::var("MERKLE_TREE_POOL").as_deref(), Ok("1")))
+}
+
+/// Hand a finished tree's buffer to the tree pool (when
+/// [`tree_pool_from_env`] is on; otherwise it is freed).
+pub(crate) fn recycle_tree(tree: Vec<Hash>) {
+    if tree_pool_from_env() {
+        crate::scratch::give_hash(tree);
+    }
+}
+
 fn merkle_tree_impl(data: &[u8], num_leaves: usize, kind: HashKind) -> Vec<Hash> {
+    merkle_tree_impl_with(data, num_leaves, kind, tree_pool_from_env())
+}
+
+fn merkle_tree_impl_with(data: &[u8], num_leaves: usize, kind: HashKind, pooled: bool) -> Vec<Hash> {
     assert!(
         num_leaves.is_power_of_two() && num_leaves > 0,
         "num_leaves must be power of 2"
@@ -570,8 +671,13 @@ fn merkle_tree_impl(data: &[u8], num_leaves: usize, kind: HashKind) -> Vec<Hash>
     let total_nodes = 2 * num_leaves - 1;
     // Uninit alloc — every node is written exactly once before being read:
     // leaves at step 1, then each internal level reads the level below (which
-    // was just written) and writes itself.
-    let mut tree: Vec<Hash> = crate::alloc_uninit_vec(total_nodes);
+    // was just written) and writes itself. A pooled buffer holds stale nodes
+    // under the same contract.
+    let mut tree: Vec<Hash> = if pooled {
+        crate::scratch::take_hash(total_nodes)
+    } else {
+        crate::alloc_uninit_vec(total_nodes)
+    };
 
     // 1. Leaves — fully parallel, SIMD-batched across leaves where possible.
     hash_leaves(data, leaf_size, &mut tree[..num_leaves], kind);
@@ -951,6 +1057,84 @@ mod tests {
         }
     }
 
+    /// The 8-wide NEON kernel (and its crate-path tail) must be
+    /// byte-identical to the blake3 crate's `hash_many` for every message
+    /// size the batched paths dispatch on, at counts covering full groups,
+    /// tails, and both at once — for leaves, parents, and flag combinations.
+    /// Both settings of the `MERKLE_BLAKE3_NEON8` switch are checked.
+    #[test]
+    fn blake3_neon8_matches_crate() {
+        let mut state = 0x1234_5678_9abc_def0u64;
+        let mut next = || {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            (state >> 32) as u8
+        };
+        fn run<const N: usize>(
+            neon8: bool,
+            data: &[u8],
+            count: usize,
+            f: u8,
+            fs: u8,
+            fe: u8,
+        ) -> Vec<Hash> {
+            let mut out = vec![[0u8; 32]; count];
+            blake3_hash_many_with::<N>(neon8, &data[..count * N], &mut out, f, fs, fe);
+            out
+        }
+        fn reference<const N: usize>(data: &[u8], count: usize, f: u8, fs: u8, fe: u8) -> Vec<Hash> {
+            let mut out = vec![[0u8; 32]; count];
+            for (o, msg) in out.iter_mut().zip(data.chunks(N)) {
+                let input: &[u8; N] = msg.try_into().unwrap();
+                let mut bytes = [0u8; 32];
+                blake3_platform().hash_many(
+                    &[input],
+                    &BLAKE3_IV,
+                    0,
+                    blake3::IncrementCounter::No,
+                    f,
+                    fs,
+                    fe,
+                    &mut bytes,
+                );
+                *o = bytes;
+            }
+            out
+        }
+        macro_rules! check {
+            ($n:literal, $data:expr, $count:expr) => {
+                for (f, fs, fe) in [
+                    (0, BLAKE3_CHUNK_START, BLAKE3_CHUNK_END), // leaves
+                    (BLAKE3_PARENT, 0, 0),                     // parents
+                ] {
+                    let want = reference::<$n>($data, $count, f, fs, fe);
+                    for neon8 in [true, false] {
+                        assert_eq!(
+                            run::<$n>(neon8, $data, $count, f, fs, fe),
+                            want,
+                            "N={} count={} flags=({},{},{}) neon8={}",
+                            $n,
+                            $count,
+                            f,
+                            fs,
+                            fe,
+                            neon8,
+                        );
+                    }
+                }
+            };
+        }
+        let data: Vec<u8> = (0..24 * 1024).map(|_| next()).collect();
+        for count in [1usize, 3, 7, 8, 9, 15, 16, 17, 24] {
+            check!(64, &data, count);
+            check!(128, &data, count);
+            check!(256, &data, count);
+            check!(512, &data, count);
+        }
+        for count in [1usize, 7, 8, 9, 16] {
+            check!(1024, &data, count);
+        }
+    }
+
     /// The cheap `blake3_leaf_size_is_batchable` predicate — which decides
     /// which code path `hash_leaves` takes — must agree exactly with what
     /// `blake3_hash_many_leaves` actually dispatches on. If they drift, leaves
@@ -1163,6 +1347,22 @@ mod tests {
                 !verify_merkle_proof(&root, &leaf_hash, 0, &proof, kind),
                 "{kind}"
             );
+        }
+    }
+
+    /// A tree built in a recycled (stale, larger) pool buffer is the same
+    /// tree as a fresh one, for both hashes and several leaf sizes.
+    #[test]
+    fn pooled_tree_matches_fresh_tree() {
+        for kind in KINDS {
+            for (leaf_size, leaves) in [(256usize, 64usize), (128, 32), (64, 8), (32, 16)] {
+                let data = random_data(leaves, leaf_size, 0x7EE + leaf_size as u64);
+                crate::scratch::give_hash(vec![[0xA5u8; 32]; 4 * leaves]);
+                let pooled = merkle_tree_impl_with(&data, leaves, kind, true);
+                let fresh = merkle_tree_sequential(&data, leaves, kind);
+                assert_eq!(pooled, fresh, "{kind} leaf_size={leaf_size}");
+                crate::scratch::give_hash(pooled);
+            }
         }
     }
 

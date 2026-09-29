@@ -529,6 +529,59 @@ pub fn build_eq_table(point: &[Gf128]) -> Vec<Gf128> {
     out
 }
 
+/// [`build_eq_table`] written into `out`, reusing its allocation, with the
+/// large tables built as a tensor product in parallel. Byte-identical to
+/// `build_eq_table(point)`.
+///
+/// Above `2^12` entries the point splits into a low half `point[..lo]` and a
+/// high half `point[lo..]`, and entry `i` is `eq_lo[i mod 2^lo] ·
+/// eq_hi[i >> lo]`: round `j` of the doubling splits on bit `j` of the index,
+/// and GF(2^128) multiplication is exact, associative and commutative, so
+/// regrouping the product changes no bit. That is one multiplication per
+/// entry instead of the doubling's two, and every `2^lo` block is an
+/// independent rayon task (the first touch of a fresh buffer is parallel
+/// too). Smaller tables take the serial doubling.
+pub fn build_eq_table_into(point: &[Gf128], out: &mut Vec<Gf128>) {
+    use rayon::prelude::*;
+    const PAR_LOG: usize = 12;
+    let d = point.len();
+    out.clear();
+    if d <= PAR_LOG {
+        out.reserve(1usize << d);
+        out.push(Gf128::ONE);
+        for (j, &r_j) in point.iter().enumerate() {
+            let one_plus_r_j = Gf128::ONE + r_j;
+            let len = 1usize << j;
+            out.resize(2 * len, Gf128::ZERO);
+            for i in 0..len {
+                let v = out[i];
+                out[i + len] = v * r_j;
+                out[i] = v * one_plus_r_j;
+            }
+        }
+        return;
+    }
+    let lo = d / 2;
+    let eq_lo = build_eq_table(&point[..lo]);
+    let eq_hi = build_eq_table(&point[lo..]);
+    out.reserve(1usize << d);
+    // SAFETY: capacity ≥ 2^d was reserved above, and `Gf128: Copy` has no
+    // drop glue; every one of the 2^d slots is written below (block `c`
+    // covers `c·2^lo .. (c+1)·2^lo`) before anything reads it — the same
+    // write-before-read contract as `crate::alloc_uninit_vec`.
+    #[allow(clippy::uninit_vec)]
+    unsafe {
+        out.set_len(1usize << d)
+    };
+    out.par_chunks_mut(1usize << lo)
+        .zip(eq_hi.par_iter())
+        .for_each(|(block, &h)| {
+            for (o, &l) in block.iter_mut().zip(&eq_lo) {
+                *o = l * h;
+            }
+        });
+}
+
 /// Fold a sparse boolean matrix's rows against an eq table at the row
 /// coords. Computes the **transposed** matrix-vector product:
 ///
@@ -1871,6 +1924,22 @@ mod tests {
                 }
                 assert_eq!(table[i], expected, "mismatch at d={d}, i={i}");
             }
+        }
+    }
+
+    /// `build_eq_table_into` (serial doubling up to 2^12, parallel tensor
+    /// product above) is byte-identical to `build_eq_table`, including when
+    /// the reused buffer arrives dirty, larger, or smaller than needed.
+    #[test]
+    fn eq_table_into_matches_build_eq_table() {
+        let mut buf: Vec<Gf128> = Vec::new();
+        // Sizes straddle the 2^12 switch; the order makes the buffer shrink
+        // and regrow with stale contents in it.
+        for &d in &[0usize, 1, 5, 12, 13, 17, 3, 14, 18, 12, 16] {
+            let mut rng = Rng::new(0xE0_00 + d as u64);
+            let point = rng.f128_vec(d);
+            build_eq_table_into(&point, &mut buf);
+            assert_eq!(buf, build_eq_table(&point), "d={d}");
         }
     }
 

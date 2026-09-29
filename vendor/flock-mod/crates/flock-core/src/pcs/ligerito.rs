@@ -31,7 +31,7 @@
 
 use crate::challenger::Challenger;
 use crate::field::Gf128;
-use crate::lincheck::build_eq_table;
+use crate::lincheck::{build_eq_table, build_eq_table_into};
 use crate::merkle::{self, Hash, HashKind};
 use crate::ntt::additive_ntt_f128::AdditiveNttF128;
 use serde::{Deserialize, Serialize};
@@ -2183,6 +2183,10 @@ pub fn induce_sumcheck_poly_via_ntt(
 ///
 /// Both paths are byte-identical (see `induce_sumcheck_poly_via_ntt_matches_dense`),
 /// so a mis-dispatch only costs time. Tuned/validated at blake m=30.
+///
+/// With [`induce_cost_gate_from_env`] on (the default) the rule is
+/// [`induce_ntt_is_cheaper`] instead, which also takes the recursive levels'
+/// shapes, and the recursive levels dispatch through here too.
 pub(crate) fn induce_sumcheck_poly_auto(
     log_msg_cols: usize,
     log_inv_rate: usize,
@@ -2193,8 +2197,11 @@ pub(crate) fn induce_sumcheck_poly_auto(
     alpha: &[Gf128],
 ) -> (Vec<Gf128>, Gf128) {
     let log_block = log_msg_cols + log_inv_rate;
-    let use_ntt =
-        log_msg_cols >= 12 && queries.len() > 4 * (1usize << log_inv_rate) * log_block.max(1);
+    let use_ntt = if induce_cost_gate_from_env() {
+        induce_ntt_is_cheaper(log_msg_cols, log_inv_rate, queries.len())
+    } else {
+        log_msg_cols >= 12 && queries.len() > 4 * (1usize << log_inv_rate) * log_block.max(1)
+    };
     if use_ntt {
         induce_sumcheck_poly_via_ntt(
             log_msg_cols,
@@ -2214,6 +2221,46 @@ pub(crate) fn induce_sumcheck_poly_auto(
             alpha,
         )
     }
+}
+
+/// Whether the induce dispatch uses the multiplication-count rule
+/// [`induce_ntt_is_cheaper`], the recursive levels dispatch through
+/// [`induce_sumcheck_poly_auto`] instead of always taking the dense path, and
+/// the sparse NTT runs each few-block layer as one parallel pass
+/// (`LIG_INDUCE_COST_GATE`, `0` or `1`, default on), read once. Off restores
+/// the L0-only `Q > 4·2^rate·log_block` rule and the per-block passes.
+/// Byte-identical either way.
+fn induce_cost_gate_from_env() -> bool {
+    use std::sync::OnceLock;
+    static GATE: OnceLock<bool> = OnceLock::new();
+    *GATE.get_or_init(|| !matches!(std::env::var("LIG_INDUCE_COST_GATE").as_deref(), Ok("0")))
+}
+
+/// Whether the sparse-NTT induce is clearly cheaper than the dense one, by
+/// multiplication count.
+///
+/// The dense path spends one multiplication per basis entry per query,
+/// `Q · 2^log_msg_cols`. The sparse NTT ([`transpose_forward_ntt_sparse`])
+/// spends `k · 2^(k−1)` per active `2^k` window (at most `Q` of them; `k = 8`
+/// once `log_block ≥ 12`) and then `2^(log_block−1)` per remaining layer. The
+/// NTT is taken when the dense count is more than twice its count (margin
+/// for the NTT's per-layer passes and window bookkeeping), and never below
+/// `log_msg_cols = 12`, the old rule's floor.
+///
+/// Whenever the old rule `Q > 4 · 2^rate · log_block` fires this one does
+/// too, so L0 stays on the NTT. It adds the recursive L1 shape
+/// (`log_msg_cols = 14`, rate 1/4, 90 queries at m = 28: 1.47M dense against
+/// 0.35M NTT multiplications), which the old rule rejected (90 ≤ 256).
+fn induce_ntt_is_cheaper(log_msg_cols: usize, log_inv_rate: usize, n_queries: usize) -> bool {
+    if log_msg_cols < 12 {
+        return false;
+    }
+    let log_block = log_msg_cols + log_inv_rate;
+    let k = 8usize;
+    let windows = n_queries.min(1usize << (log_block - k));
+    let ntt = windows * (k << k) / 2 + (log_block - k) * (1usize << log_block) / 2;
+    let dense = n_queries << log_msg_cols;
+    dense > 2 * ntt
 }
 
 /// Sparse-prefix variant of [`transpose_forward_ntt`]: exploits that the input
@@ -2310,6 +2357,31 @@ fn transpose_forward_ntt_sparse(
                         *b_ref = t * sab + b;
                     }
                 });
+        } else if induce_cost_gate_from_env() {
+            // Fewer blocks than threads: ONE parallel pass over the layer's
+            // butterflies, cut into chunks, instead of one rayon call per
+            // block. At the recursive levels' sizes (2^16 entries at L1,
+            // m = 28) the per-block dispatches cost more than their work.
+            // Same butterflies, so the same output.
+            const CHUNK: usize = 1 << 10;
+            let mut tasks: Vec<(Gf128, &mut [Gf128], &mut [Gf128])> =
+                Vec::with_capacity(num_blocks * bsh.div_ceil(CHUNK));
+            for (block, chunk) in data.chunks_mut(block_size).enumerate() {
+                let t = ntt.twiddle(layer, block);
+                let (top, bot) = chunk.split_at_mut(bsh);
+                for (a, b) in top.chunks_mut(CHUNK).zip(bot.chunks_mut(CHUNK)) {
+                    tasks.push((t, a, b));
+                }
+            }
+            tasks.into_par_iter().for_each(|(t, top, bot)| {
+                for (a_ref, b_ref) in top.iter_mut().zip(bot.iter_mut()) {
+                    let a = *a_ref;
+                    let b = *b_ref;
+                    let sab = a + b;
+                    *a_ref = sab;
+                    *b_ref = t * sab + b;
+                }
+            });
         } else {
             for block in 0..num_blocks {
                 let t = ntt.twiddle(layer, block);
@@ -2347,10 +2419,12 @@ pub struct LigeroWitness {
 }
 
 // Recycle the codeword matrix (128 MB for L1 at m=29) through the scratch
-// pool when a level's witness is replaced/dropped.
+// pool when a level's witness is replaced/dropped (and its tree, when the
+// tree pool is on).
 impl Drop for LigeroWitness {
     fn drop(&mut self) {
         crate::scratch::give_f128(std::mem::take(&mut self.mat));
+        crate::merkle::recycle_tree(std::mem::take(&mut self.tree));
     }
 }
 
@@ -3123,6 +3197,12 @@ impl<'a> SumcheckProver<'a> {
     /// Combine the introduced basis into `combined_basis` with separation α.
     /// `combined_basis[j] += α · b_new[j]` (pointwise), `T_r += α · h_new`.
     pub fn glue(&mut self, alpha: Gf128) {
+        drop(self.glue_reclaim(alpha));
+    }
+
+    /// [`Self::glue`], handing the introduced basis buffer back to the caller
+    /// (e.g. to rebuild the next OOD `eq(z, ·)` table in the same allocation).
+    pub fn glue_reclaim(&mut self, alpha: Gf128) -> Vec<Gf128> {
         use rayon::prelude::*;
         let (b_new, h_new) = self
             .pending_glue
@@ -3142,6 +3222,7 @@ impl<'a> SumcheckProver<'a> {
                 .for_each(|(acc, &v)| *acc += alpha * v);
         }
         self.t_r += alpha * h_new;
+        b_new
     }
 
     pub fn f(&self) -> &[Gf128] {
@@ -3510,6 +3591,17 @@ where
     )
 }
 
+/// Whether the recursive levels' OOD `eq(z, ·)` tables are built by
+/// [`build_eq_table_into`] (a parallel tensor product, one multiplication
+/// per entry, one buffer reused across samples and levels) instead of a
+/// fresh serial [`build_eq_table`] per sample (`LIG_OOD_EQ_PAR`, `0` or `1`,
+/// default on), read once. Byte-identical either way.
+fn ood_eq_par_from_env() -> bool {
+    use std::sync::OnceLock;
+    static PAR: OnceLock<bool> = OnceLock::new();
+    *PAR.get_or_init(|| !matches!(std::env::var("LIG_OOD_EQ_PAR").as_deref(), Ok("0")))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn recursive_prover_with_basis_initial_impl<'a, Ch, O>(
     config: &ProverConfig,
@@ -3670,6 +3762,11 @@ where
     }
     challenger.observe_bytes(&wtns_1.root());
 
+    // One `eq(z, ·)` buffer serves every OOD sample of every level (the
+    // levels shrink), when `ood_eq_par` builds the tables in place.
+    let ood_eq_par = ood_eq_par_from_env();
+    let mut eq_z_buf: Vec<Gf128> = Vec::new();
+
     // OOD binding for the L1 commit: each sample evaluates f1's multilinear
     // extension at a random transcript point z ∈ F^{n1}, sends the claimed
     // value, and folds the claim `Σ_x f1(x)·eq(z,x) = y` into the running
@@ -3682,14 +3779,22 @@ where
             // Build eq(z, ·) once and fuse the MLE eval `y = f̂1(z)` into the
             // introduce round message (single pass over f1 + eq_z), instead of
             // a separate `mle_eval_inline` fold.
-            let eq_z = build_eq_table(&z);
+            let eq_z = if ood_eq_par {
+                build_eq_table_into(&z, &mut eq_z_buf);
+                std::mem::take(&mut eq_z_buf)
+            } else {
+                build_eq_table(&z)
+            };
             let (intro, y) = sc_prover.introduce_new_with_eval(eq_z);
             challenger.observe_f128(y);
             ood_values.push(y);
             challenger.observe_f128(intro.u_0);
             challenger.observe_f128(intro.u_2);
             let beta = challenger.sample_f128();
-            sc_prover.glue(beta);
+            let used = sc_prover.glue_reclaim(beta);
+            if ood_eq_par {
+                eq_z_buf = used;
+            }
         }
         if trace {
             t_ood += _t.elapsed();
@@ -3878,14 +3983,22 @@ where
             let _t = std::time::Instant::now();
             for _ in 0..ood_count(i + 2) {
                 let z = challenger.sample_f128_vec(n_next);
-                let eq_z = build_eq_table(&z);
+                let eq_z = if ood_eq_par {
+                    build_eq_table_into(&z, &mut eq_z_buf);
+                    std::mem::take(&mut eq_z_buf)
+                } else {
+                    build_eq_table(&z)
+                };
                 let (intro, y) = sc_prover.introduce_new_with_eval(eq_z);
                 challenger.observe_f128(y);
                 ood_values.push(y);
                 challenger.observe_f128(intro.u_0);
                 challenger.observe_f128(intro.u_2);
                 let beta = challenger.sample_f128();
-                sc_prover.glue(beta);
+                let used = sc_prover.glue_reclaim(beta);
+                if ood_eq_par {
+                    eq_z_buf = used;
+                }
             }
             if trace {
                 t_ood += _t.elapsed();
@@ -3911,14 +4024,32 @@ where
 
         let sks_vks_i = eval_sk_at_vks(n_next);
         let _t = std::time::Instant::now();
-        let (basis_i_induced, enforced_sum_i) = induce_sumcheck_poly(
-            n_next,
-            &sks_vks_i,
-            &opened_rows_i,
-            &level_rs,
-            &queries_i,
-            &alpha_i,
-        );
+        // The opened level's codeword is `2^(n_next + log_inv_rates[i+1])`
+        // positions: its message is the current `2^n_next` basis domain.
+        // Large levels (L1) take the sparse-NTT induce when it is clearly
+        // cheaper (see `induce_ntt_is_cheaper`); both paths are byte-identical.
+        let log_inv_rate_prev = config.log_inv_rates[i + 1];
+        debug_assert_eq!(wtns_prev.block_len, 1usize << (n_next + log_inv_rate_prev));
+        let (basis_i_induced, enforced_sum_i) = if induce_cost_gate_from_env() {
+            induce_sumcheck_poly_auto(
+                n_next,
+                log_inv_rate_prev,
+                &sks_vks_i,
+                &opened_rows_i,
+                &level_rs,
+                &queries_i,
+                &alpha_i,
+            )
+        } else {
+            induce_sumcheck_poly(
+                n_next,
+                &sks_vks_i,
+                &opened_rows_i,
+                &level_rs,
+                &queries_i,
+                &alpha_i,
+            )
+        };
         if trace {
             t_induce += _t.elapsed();
         }
@@ -6567,6 +6698,12 @@ mod tests {
             (8, 3, 3, 71),
             (5, 5, 3, 43),
             (0, 2, 1, 3),
+            // The recursive L1 shape the cost gate sends to the NTT at m = 28
+            // (rate 1/4, k = 3, 90 queries): log_block ≥ 12, so this is the
+            // k = 8 sparse-prefix branch at a rate below 1/2.
+            (14, 2, 3, 90),
+            // L2 at m = 30 (rate 1/8, 60 queries), just under the gate.
+            (13, 3, 3, 60),
         ];
         for (si, &(log_msg, log_inv_rate, log_int, n_queries)) in shapes.iter().enumerate() {
             let block_len = 1usize << (log_msg + log_inv_rate);
@@ -6606,6 +6743,39 @@ mod tests {
             assert_eq!(ntt.1, dense.1, "shape {si}: enforced_sum");
             assert_eq!(ntt.0, dense.0, "shape {si}: basis_poly");
         }
+    }
+
+    /// The multiplication-count gate takes the NTT whenever the old
+    /// `Q > 4·2^rate·log_block` rule did (so L0 never moves back to the
+    /// dense path), and it takes the recursive L1 shapes of the rate-1/2
+    /// Johnson ladder (`custom:1:4`) at m = 28 and m = 30, but not L2.
+    #[test]
+    fn induce_cost_gate_extends_the_old_rule() {
+        for log_msg in 0..=26usize {
+            for log_inv_rate in 0..=6usize {
+                let log_block = log_msg + log_inv_rate;
+                for n_queries in [1usize, 30, 60, 90, 150, 196, 300, 1000, 5000] {
+                    let old = log_msg >= 12
+                        && n_queries > 4 * (1usize << log_inv_rate) * log_block.max(1);
+                    if old {
+                        assert!(
+                            induce_ntt_is_cheaper(log_msg, log_inv_rate, n_queries),
+                            "log_msg={log_msg} rate={log_inv_rate} Q={n_queries}"
+                        );
+                    }
+                }
+            }
+        }
+        // L0 at m = 28 / 30 (log_msg 17 / 19, rate 1/2, ~196 queries).
+        assert!(induce_ntt_is_cheaper(17, 1, 196));
+        assert!(induce_ntt_is_cheaper(19, 1, 196));
+        // L1 (rate 1/4, 90 queries): log_msg 14 at m = 28, 16 at m = 30.
+        assert!(induce_ntt_is_cheaper(14, 2, 90));
+        assert!(induce_ntt_is_cheaper(16, 2, 90));
+        // L2 (rate 1/8, 60 queries) and deeper stay dense.
+        assert!(!induce_ntt_is_cheaper(11, 3, 60));
+        assert!(!induce_ntt_is_cheaper(13, 3, 60));
+        assert!(!induce_ntt_is_cheaper(10, 4, 45));
     }
 
     /// The sparse-prefix transpose must equal the baseline dense transpose on
