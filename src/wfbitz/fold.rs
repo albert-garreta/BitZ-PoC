@@ -255,9 +255,7 @@ impl BitZProver {
         for fold in &folds {
             transcript.prover_message(&fold.to_le_bytes());
         }
-        let zeta = (0..shape.log_columns())
-            .map(|_| transcript.verifier_message::<Gf>())
-            .collect();
+        let zeta = transcript.native_vector(super::grinding::Stage::FoldPoint, shape.log_columns());
         let started = std::time::Instant::now();
         let fold = finish(shape, self.comb(), claim, folds, zeta);
         super::trace("  images", started);
@@ -289,9 +287,8 @@ impl BitZVerifier {
         if reconstruct(claim, &folds, self.params().q()) != claim.target() {
             return Err(ReceiveError::TargetMismatch);
         }
-        let zeta = (0..shape.log_columns())
-            .map(|_| transcript.verifier_message::<Gf>())
-            .collect();
+        let zeta = transcript.native_vector(super::grinding::Stage::FoldPoint, shape.log_columns())
+            .map_err(|_| ReceiveError::MalformedProof)?;
         Ok(finish(shape, self.comb(), claim, folds, zeta))
     }
 }
@@ -302,7 +299,7 @@ mod tests {
 
     use super::{ClaimError, LinearClaim, ReceiveError, SendError, Shape, weighted_sum_mod};
     use crate::wfbitz::{
-        BitZParams, BitZProver, BitZVerifier, Proof, WINDOW, build_prover, build_verifier,
+        BitZParams, BitZProver, BitZVerifier, Proof, WINDOW, build_kernel_prover, build_kernel_verifier,
     };
 
     #[test]
@@ -342,14 +339,14 @@ mod tests {
                 target,
             )
             .unwrap();
-            let mut pt = build_prover("fold-validation", "active-params");
+            let mut pt = build_kernel_prover("fold-validation", "active-params");
             assert_eq!(
                 prover.send_fold(&claim, &rows, &mut pt),
                 Err(SendError::Claim(error))
             );
             let proof = pt.finish();
             assert_eq!(proof, Proof::default());
-            let mut vt = build_verifier("fold-validation", "active-params", &proof);
+            let mut vt = build_kernel_verifier("fold-validation", "active-params", &proof);
             assert_eq!(
                 verifier.receive_fold(&claim, &mut vt),
                 Err(ReceiveError::Claim(error))
@@ -368,12 +365,12 @@ mod tests {
         let mut weights = vec![0; shape.rows()];
         weights[0] = 16;
         let claim = LinearClaim::new(&source, weights, vec![1, 16], 16).unwrap();
-        let mut pt = build_prover("fold-validation", "canonical");
+        let mut pt = build_kernel_prover("fold-validation", "canonical");
         let sent = BitZProver::new(active, WINDOW)
             .send_fold(&claim, &rows, &mut pt)
             .unwrap();
         let proof = pt.finish();
-        let mut vt = build_verifier("fold-validation", "canonical", &proof);
+        let mut vt = build_kernel_verifier("fold-validation", "canonical", &proof);
         let received = BitZVerifier::new(active, WINDOW)
             .receive_fold(&claim, &mut vt)
             .unwrap();

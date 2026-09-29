@@ -2,7 +2,7 @@
 
 use super::{Forest, Gf};
 use crate::wfbitz::gkr::{GrandProductCircuit, gpgkr_prove, gpgkr_verify};
-use crate::wfbitz::transcript::{Proof, build_prover, build_verifier};
+use crate::wfbitz::transcript::{Proof, build_kernel_prover, build_kernel_verifier};
 
 #[derive(Clone, Copy, Debug)]
 enum Bits {
@@ -83,11 +83,11 @@ fn compare_with_dense(t: usize, s: usize, bits: Bits) -> Proof {
 
     let (roots, witnesses) = GrandProductCircuit::new(leaves.clone()).batched_eval(cols);
     let root_claim = evaluate(roots, &zeta);
-    let mut dense_transcript = build_prover(session, instance.as_str());
+    let mut dense_transcript = build_kernel_prover(session, instance.as_str());
     let dense_terminal = gpgkr_prove(&mut dense_transcript, &zeta, witnesses);
     let dense_proof = dense_transcript.finish();
 
-    let mut packed_transcript = build_prover(session, instance.as_str());
+    let mut packed_transcript = build_kernel_prover(session, instance.as_str());
     let terminal = Forest::new(t, s, &packed, &images).prove(&mut packed_transcript, &zeta);
     let proof = packed_transcript.finish();
     assert_eq!(terminal, dense_terminal, "terminal: {instance}");
@@ -111,7 +111,7 @@ fn compare_with_dense(t: usize, s: usize, bits: Bits) -> Proof {
     );
     assert_eq!(proof.hints, dense_proof.hints, "hints: {instance}");
 
-    let mut verifier = build_verifier(session, instance.as_str(), &proof);
+    let mut verifier = build_kernel_verifier(session, instance.as_str(), &proof);
     assert_eq!(
         gpgkr_verify(&mut verifier, root_claim, &zeta, t as u32),
         Some(terminal),
@@ -121,7 +121,7 @@ fn compare_with_dense(t: usize, s: usize, bits: Bits) -> Proof {
 
     let mut tampered = proof.clone();
     tampered.narg_string[0] ^= 1;
-    let mut verifier = build_verifier(session, instance.as_str(), &tampered);
+    let mut verifier = build_kernel_verifier(session, instance.as_str(), &tampered);
     assert!(
         gpgkr_verify(&mut verifier, root_claim, &zeta, t as u32).is_none(),
         "changed round message accepted: {instance}"

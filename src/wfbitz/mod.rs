@@ -36,6 +36,7 @@ pub mod codec;
 pub mod fold;
 pub mod forest;
 pub mod gkr;
+pub(crate) mod grinding;
 pub(crate) mod kernels;
 pub mod params;
 pub mod pcs;
@@ -180,6 +181,12 @@ impl BitZProver {
             }
             nibble
         };
+        let shape = *self.params.shape();
+        let binary = (shape.log_rows(), shape.log_columns());
+        let native = pcs.native_schedule(Some(shape), Some(binary), ood)
+            .map_err(|_| ProveError::Opening(crate::wfbitz::pcs::ProveError::Internal))?;
+        transcript.start_native(native)
+            .map_err(|_| ProveError::Opening(crate::wfbitz::pcs::ProveError::Internal))?;
         let fold = self
             .send_fold_with(claim, rows, nibble.as_ref(), transcript)
             .map_err(ProveError::Fold)?;
@@ -228,6 +235,12 @@ impl BitZVerifier {
         transcript.public_message(claim);
 
         let started = std::time::Instant::now();
+        let shape = *self.params.shape();
+        let binary = (shape.log_rows(), shape.log_columns());
+        let native = pcs.native_schedule(Some(shape), Some(binary), ood)
+            .map_err(|_| VerifyError::Opening(crate::wfbitz::pcs::VerifyError::Internal))?;
+        transcript.start_native(native)
+            .map_err(|_| VerifyError::Opening(crate::wfbitz::pcs::VerifyError::Internal))?;
         let fold = self
             .receive_fold(claim, &mut transcript)
             .map_err(VerifyError::Fold)?;
@@ -324,3 +337,6 @@ pub(crate) fn eq_factor(r: Gf, z: Gf) -> Gf {
     r * z + (one - r) * (one - z)
 }
 
+
+#[cfg(test)]
+pub(crate) use transcript::{build_kernel_prover, build_kernel_verifier};

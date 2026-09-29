@@ -222,6 +222,8 @@ pub(super) fn fixed_98_security_params() -> IopSecurityParams {
     ];
     IopSecurityParams {
         profile_name: "sha-fixed98-lambda100",
+        design_only: false,
+        native_schedule: None,
         lambda: 100,
         projection_min: SHA256_FIXED_98_PRIME,
         projection_max: SHA256_FIXED_98_PRIME,

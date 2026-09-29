@@ -284,7 +284,7 @@ pub(crate) fn prove_dense_rounds(
         };
         ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
 
-        let r: Gf = ps.verifier_message();
+        let r: Gf = ps.native_scalar(super::grinding::Stage::GkrRound);
         next_point.push_back(r);
         pending = Some(r);
         // The folded table (once `r` is applied) has `h` entries per half;
@@ -300,7 +300,7 @@ pub(crate) fn prove_dense_rounds(
         mle_r[0] = mle_r[0] + rho * (mle_r[1] - mle_r[0]);
     }
     ps.prover_message(&[mle_l[0], mle_r[0]]);
-    let r: Gf = ps.verifier_message();
+    let r: Gf = ps.native_scalar(super::grinding::Stage::GkrClose);
     next_point.push_front(r);
     let claim = mle_l[0] + r * (mle_r[0] - mle_l[0]);
     (next_point, claim)
@@ -348,7 +348,7 @@ fn verify_layer(vs: &mut VerifierState<'_>, mut claim: Gf, point: Point) -> Opti
             let eqjsum0 = (one - z) * sum_endpoint;
             (sum_endpoint, (claim - eqjsum0) / z)
         };
-        let r: Gf = vs.verifier_message();
+        let r: Gf = vs.native_scalar(super::grinding::Stage::GkrRound).ok()?;
         next_point.push_back(r);
         let factor = eq_factor(r, z);
         let bracket = (sum1 - sum0) + (r - one) * suminf;
@@ -360,7 +360,7 @@ fn verify_layer(vs: &mut VerifierState<'_>, mut claim: Gf, point: Point) -> Opti
     if prefix * elem_lr[0] * elem_lr[1] != claim {
         return None;
     }
-    let r: Gf = vs.verifier_message();
+    let r: Gf = vs.native_scalar(super::grinding::Stage::GkrClose).ok()?;
     next_point.push_front(r);
     claim = elem_lr[0] + r * (elem_lr[1] - elem_lr[0]);
     Some((next_point, claim))
@@ -369,7 +369,7 @@ fn verify_layer(vs: &mut VerifierState<'_>, mut claim: Gf, point: Point) -> Opti
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wfbitz::transcript::build_prover;
+    use crate::wfbitz::transcript::build_kernel_prover;
 
     fn field(state: &mut u64) -> Gf {
         let mut next = || {
@@ -398,7 +398,7 @@ mod tests {
                 let point: Point = external.iter().rev().copied().collect();
                 let run = |l: &[Gf], r: &[Gf], first: usize, pending: Option<Gf>, weighing: Weighing| {
                     let (mut l, mut r) = (l.to_vec(), r.to_vec());
-                    let mut ps = build_prover(b"dense-weigh/v1", b"instance");
+                    let mut ps = build_kernel_prover(b"dense-weigh/v1", b"instance");
                     let next_point: VecDeque<Gf> = point.iter().take(first).copied().collect();
                     let (p, claim) =
                         prove_dense_rounds(&mut ps, point.clone(), &mut l, &mut r, first, pending, Gf::one(), next_point, s, weighing);

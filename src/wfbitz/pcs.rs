@@ -23,6 +23,7 @@ use spongefish::Encoding;
 
 use super::params::{LinearClaimGf, SumClaimGf, Root, Shape};
 use super::sumcheck;
+use super::grinding::{Geometry, Policy, Schedule, Stage};
 use super::transcript::{ProverState, PublicTranscript, VerifierState};
 use crate::ligerito_flock::{
     FlockCommitHint, add_ood_basis, commit_rs_ligerito_rows, ood_residual_evals,
@@ -110,6 +111,17 @@ pub enum OpeningQuery {
     InnerProductSum { claim: SumClaimGf },
 }
 
+impl OpeningQuery {
+    fn binary_dimensions(&self) -> Option<(usize, usize)> {
+        let (rows, columns) = match self {
+            Self::Mle { .. } => return None,
+            Self::InnerProduct { claim } => (claim.row_weights().len(), claim.column_weights().len()),
+            Self::InnerProductSum { claim } => (claim.rows(), claim.columns()),
+        };
+        Some((rows.max(1).ilog2() as usize, columns.max(1).ilog2() as usize))
+    }
+}
+
 /// Their `Pcs`: flock parameters for one bit length, with the checked
 /// Ligerito configs. The profile is `Fast` on their k = 4 ladder — the
 /// crate's embedded `fast` TOML, the same file their `bitz-k4` branch
@@ -122,9 +134,29 @@ pub struct Pcs {
     final_log_n: usize,
     bit_len: usize,
     packed_len: usize,
+    native_policy: Policy,
 }
 
 impl Pcs {
+    pub(crate) fn native_policy(&self) -> Policy { self.native_policy }
+
+    pub(crate) fn with_native_policy(mut self, policy: Policy) -> Self {
+        self.native_policy = policy;
+        self
+    }
+
+    pub(crate) fn native_schedule(
+        &self, integer: Option<Shape>, binary: Option<(usize, usize)>, ood: Option<(&[Gf], Gf)>,
+    ) -> Result<Schedule, ConfigError> {
+        if ood.is_some_and(|(point, _)| point.len() != self.params.m - LOG_PACKING) {
+            return Err(ConfigError::Invalid("OOD point arity"));
+        }
+        Schedule::new(self.native_policy, Geometry {
+            integer: integer.map(|shape| (shape.log_rows(), shape.log_columns())),
+            binary, ring: true, ood: ood.is_some(),
+        }).map_err(|_| ConfigError::Invalid("native opening schedule"))
+    }
+
     /// Their scheme as shipped: flock's embedded `fast` ladder for the size.
     pub fn new(shape: &Shape, merkle_hash: HashKind) -> Result<Self, ConfigError> {
         let m = shape.log_bits();
@@ -220,6 +252,7 @@ impl Pcs {
             final_log_n,
             bit_len,
             packed_len,
+            native_policy: Policy::UNGRINDED,
         })
     }
 
@@ -307,6 +340,9 @@ impl Pcs {
         }
         validate_prover_data(self, hint)?;
         let root = *hint.root();
+        let native = self.native_schedule(None, query.binary_dimensions(), ood)
+            .map_err(|_| ProveError::InvalidClaim)?;
+        transcript.continue_native(native).map_err(|_| ProveError::InvalidClaim)?;
         match query {
             OpeningQuery::Mle { point, target } => {
                 let ring_switch = RingSwitch::new(point, self.params.m)?;
@@ -353,6 +389,9 @@ impl Pcs {
         transcript: &mut VerifierState<'_>,
         ood: Option<(&[Gf], Gf)>,
     ) -> Result<(), VerifyError> {
+        let native = self.native_schedule(None, query.binary_dimensions(), ood)
+            .map_err(|_| VerifyError::VerificationFailed)?;
+        transcript.continue_native(native).map_err(|_| VerifyError::VerificationFailed)?;
         match query {
             OpeningQuery::Mle { point, target } => {
                 let ring_switch = RingSwitch::new(point, self.params.m)?;
@@ -414,7 +453,8 @@ impl Pcs {
         transcript.public_message(MLE_CLAIMS_LABEL);
         let claims_gf: [Gf; CLAIM_COUNT] = core::array::from_fn(|index| f128_to_gf(claims[index]));
         transcript.prover_message(&claims_gf);
-        let batching_point = sample_challenges(transcript);
+        transcript.public_message(CHALLENGES_LABEL);
+        let batching_point = transcript.native_array::<LOG_PACKING>(Stage::RingBatch);
 
         // reduce_dense
         let batching_weights = build_eq(&batching_point);
@@ -428,7 +468,8 @@ impl Pcs {
             if point.len() != ring_switch.suffix_dimension() {
                 return Err(ProveError::Internal);
             }
-            let eta = bind_ood_claim(transcript, point, y);
+            bind_ood_claim(transcript, point, y);
+            let eta = transcript.native_scalar(Stage::OodBatch);
             add_ood_basis(&mut packed_basis, packed, point, eta, None);
             packed_target = packed_target + eta * y;
         }
@@ -438,6 +479,7 @@ impl Pcs {
         // ReducedProver::prove
         let started_lig = std::time::Instant::now();
         let data = hint.flock_prover_data();
+        transcript.finish_native().map_err(|_| ProveError::Internal)?;
         let mut challenger = ProverChallenger::new_ligerito(transcript, packed_target);
         let ligerito = recursive_prover_with_basis(
             &self.prover_config,
@@ -479,7 +521,9 @@ impl Pcs {
         if claim_check(&prefix_tensor, &claims) != gf_to_f128(target) {
             return Err(VerifyError::VerificationFailed);
         }
-        let batching_point = sample_challenges(transcript);
+        transcript.public_message(CHALLENGES_LABEL);
+        let batching_point = transcript.native_array::<LOG_PACKING>(Stage::RingBatch)
+            .map_err(|_| VerifyError::MalformedProof)?;
 
         // reduce_succinct
         let batching_weights = build_eq(&batching_point);
@@ -490,7 +534,9 @@ impl Pcs {
                 if point.len() != ring_switch.suffix_dimension() {
                     return Err(VerifyError::VerificationFailed);
                 }
-                let eta = bind_ood_claim(transcript, point, y);
+                bind_ood_claim(transcript, point, y);
+                let eta = transcript.native_scalar(Stage::OodBatch)
+                    .map_err(|_| VerifyError::MalformedProof)?;
                 packed_target = packed_target + eta * y;
                 Some((point, eta))
             }
@@ -519,6 +565,7 @@ impl Pcs {
         };
 
         // verify_succinct
+        transcript.finish_native().map_err(|_| VerifyError::VerificationFailed)?;
         let mut challenger = VerifierChallenger::new_ligerito(transcript, packed_target);
         let valid = recursive_verifier_with_basis_succinct(
             &self.verifier_config,
@@ -846,21 +893,16 @@ fn bind_sum_statement(
 
 /// Binds the caller's Round-0 claim (the point, the value) and draws its
 /// batching scalar `η_ood`.
-fn bind_ood_claim(transcript: &mut impl PublicTranscript, point: &[Gf], y: Gf) -> Gf {
+fn bind_ood_claim(transcript: &mut impl PublicTranscript, point: &[Gf], y: Gf) {
     transcript.public_message(OOD_CLAIM_LABEL);
     transcript.public_message(&(point.len() as u64));
     for coordinate in point {
         transcript.public_message(coordinate);
     }
     transcript.public_message(&y);
-    transcript.verifier_message_f128()
 }
 
-/// Samples the seven MLE ring-switch challenges.
-fn sample_challenges(transcript: &mut impl PublicTranscript) -> [FlockF128; LOG_PACKING] {
-    transcript.public_message(CHALLENGES_LABEL);
-    core::array::from_fn(|_| gf_to_f128(transcript.verifier_message_f128()))
-}
+
 
 fn batch_claims(claims: &[FlockF128; CLAIM_COUNT], batching_weights: &[FlockF128]) -> FlockF128 {
     debug_assert_eq!(batching_weights.len(), CLAIM_COUNT);

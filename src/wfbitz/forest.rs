@@ -413,7 +413,7 @@ impl<'a> Forest<'a> {
             let (sum_endpoint, sum_inf) = self.bit_round(ell, j, &challenges, external, send_one);
             super::trace(&format!("    L{ell} bit round {j}"), started);
             ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
-            let r: Gf = ps.verifier_message();
+            let r: Gf = ps.native_scalar(super::grinding::Stage::GkrRound);
             next_point.push_back(r);
             challenges.push(r);
             factor = factor * eq_factor(r, z);
@@ -454,7 +454,7 @@ impl<'a> Forest<'a> {
             let send_one = z[j - 1] == Gf::zero();
             let (sum_endpoint, sum_inf) = cross_round_sums(&cross, k, j, &z, &challenges, send_one);
             ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
-            let r: Gf = ps.verifier_message();
+            let r: Gf = ps.native_scalar(super::grinding::Stage::GkrRound);
             next_point.push_back(r);
             challenges.push(r);
             factor = factor * eq_factor(r, z[j - 1]);
@@ -630,7 +630,7 @@ impl<'a> Forest<'a> {
         let (sum_endpoint, sum_inf) = self.jit_round_sums_with(&tables, ell, k, &eq_c, &eq_y, send_one, round_cache);
         super::trace(&format!("    L{ell} jit round"), started);
         ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
-        let r1: Gf = ps.verifier_message();
+        let r1: Gf = ps.native_scalar(super::grinding::Stage::GkrRound);
         next_point.push_back(r1);
         factor = factor * eq_factor(r1, z);
 
@@ -661,7 +661,7 @@ impl<'a> Forest<'a> {
         let (sum_endpoint, sum_inf) = fold(arena);
         super::trace(&format!("    L{ell} jit fold"), started);
         ps.prover_message(&[factor * sum_endpoint, factor * sum_inf]);
-        let r2: Gf = ps.verifier_message();
+        let r2: Gf = ps.native_scalar(super::grinding::Stage::GkrRound);
         next_point.push_back(r2);
         factor = factor * eq_factor(r2, z);
         // The tables are done with: their buffer serves the next level.
@@ -2038,7 +2038,7 @@ mod tests {
     /// claim and transcript bytes, on both index paths.
     #[test]
     fn one_pass_bit_rounds_prove_identically() {
-        use crate::wfbitz::transcript::build_prover;
+        use crate::wfbitz::transcript::build_kernel_prover;
         for (t, s) in [(4usize, 0usize), (4, 5), (5, 6), (6, 0), (6, 3), (6, 6), (7, 7), (9, 6), (10, 8), (11, 7)] {
             let (packed, images) = random_grid(t, s, (t * 1000 + s) as u64);
             let mut state = 0x5151_5eed ^ (t * 31 + s) as u64;
@@ -2047,7 +2047,7 @@ mod tests {
                 let mode = PatternMode { nibble, cache: false, nibble_from: 0 };
                 let prove = |one_pass: bool| {
                     let forest = Forest::new(t, s, &packed, &images).with_patterns(mode).with_one_pass(one_pass);
-                    let mut ps = build_prover(b"forest-one-pass/v1", b"instance");
+                    let mut ps = build_kernel_prover(b"forest-one-pass/v1", b"instance");
                     let (point, claim) = forest.prove(&mut ps, &zeta);
                     (point, claim, ps.finish().narg_string)
                 };
@@ -2064,7 +2064,7 @@ mod tests {
     /// ones, with and without the one-pass bit rounds.
     #[test]
     fn weighing_proves_identically() {
-        use crate::wfbitz::transcript::build_prover;
+        use crate::wfbitz::transcript::build_kernel_prover;
         for (t, s) in [(4usize, 0usize), (4, 5), (5, 6), (6, 0), (6, 1), (6, 3), (7, 7), (9, 6), (10, 8), (11, 7)] {
             let (packed, images) = random_grid(t, s, (t * 5003 + s) as u64);
             let mut state = 0x7e16_4ed0 ^ (t * 37 + s) as u64;
@@ -2077,7 +2077,7 @@ mod tests {
                             .with_patterns(mode)
                             .with_one_pass(one_pass)
                             .with_weighing(weighing);
-                        let mut ps = build_prover(b"forest-weighing/v1", b"instance");
+                        let mut ps = build_kernel_prover(b"forest-weighing/v1", b"instance");
                         let (point, claim) = forest.prove(&mut ps, &zeta);
                         (point, claim, ps.finish().narg_string)
                     };
@@ -2094,7 +2094,7 @@ mod tests {
     /// transcript bytes.
     #[test]
     fn pattern_modes_prove_identically() {
-        use crate::wfbitz::transcript::build_prover;
+        use crate::wfbitz::transcript::build_kernel_prover;
         for (t, s) in [(4usize, 5usize), (5, 6), (6, 3), (6, 6), (7, 7), (9, 6), (10, 8), (11, 7)] {
             let (packed, images) = random_grid(t, s, (t * 1000 + s) as u64);
             let mut state = 0x5151_5eed ^ (t * 31 + s) as u64;
@@ -2112,7 +2112,7 @@ mod tests {
                     // `nibble_from: 0`: these small grids would gather otherwise.
                     let mode = PatternMode { nibble, cache, nibble_from: 0 };
                     let forest = Forest::new(t, s, &packed, &images).with_patterns(mode);
-                    let mut ps = build_prover(b"forest-patterns/v1", b"instance");
+                    let mut ps = build_kernel_prover(b"forest-patterns/v1", b"instance");
                     let (point, claim) = forest.prove(&mut ps, &zeta);
                     runs.push((nibble, cache, point, claim, ps.finish().narg_string));
                 }

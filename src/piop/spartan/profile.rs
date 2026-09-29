@@ -163,6 +163,8 @@ impl SoundnessAccounting {
 pub struct IopSecurityParams {
     /// The originating profile's name (bound into statements).
     pub profile_name: &'static str,
+    pub(crate) design_only: bool,
+    pub(crate) native_schedule: Option<crate::wfbitz::grinding::Schedule>,
     /// The target λ.
     pub lambda: u32,
     /// Inclusive Step-2 projection/fingerprint prime interval.
@@ -195,6 +197,42 @@ pub struct IopSecurityParams {
 }
 
 impl IopSecurityParams {
+    pub(crate) fn native_policy(&self) -> Result<crate::wfbitz::grinding::Policy, ProfileError> {
+        crate::wfbitz::grinding::Policy::new(
+            (!self.design_only).then_some(self.lambda),
+            self.forest_round_grinding_bits,
+            self.ring_switch_grinding_bits,
+        ).map_err(|error| ProfileError::NativeOpening(error.to_string()))
+    }
+
+    pub(crate) fn adopt_native_opening(
+        &mut self, mut geometry: crate::wfbitz::grinding::Geometry,
+    ) -> Result<(), ProfileError> {
+        use crate::wfbitz::grinding::Schedule;
+        geometry.ood = self.ood.is_some();
+        let schedule = Schedule::new(self.native_policy()?, geometry)
+            .map_err(|error| ProfileError::NativeOpening(error.to_string()))?;
+        self.accounting.terms.retain(|term| {
+            term.name != "step5_2:gkr-round" && term.name != "step5_3:ring-switch"
+                && !term.name.starts_with("wfbitz/")
+        });
+        self.accounting.terms.extend(schedule.terms().map(|term| SoundnessTerm {
+            name: term.stage.name(),
+            bits: term.raw_bits() + f64::from(term.grinding_bits),
+            grinding_bits: term.grinding_bits,
+            floor: false,
+        }));
+        self.native_schedule = Some(schedule);
+        if !self.design_only { check_targets(self.profile_name, self.lambda, &self.accounting)?; }
+        Ok(())
+    }
+
+    /// Number of nonces embedded in the native opening's authenticated stream.
+    pub fn native_grinding_nonce_count(&self) -> usize {
+        self.native_schedule.map_or(0, |schedule| schedule.terms()
+            .filter(|term| term.grinding_bits != 0).map(|term| term.occurrences).sum())
+    }
+
     /// Accounts for Round 0 of the BitZ opening once the opener is known.
     /// `ood_bits` is the theorem's collision bound in bits
     /// ([`crate::ligerito_flock::ood_round_bits`]): `None` (unique
@@ -387,6 +425,8 @@ pub const fn derive_ring_switch_grinding(lambda: u32) -> u32 {
 /// Failures of profile instantiation.
 #[derive(Debug, Error)]
 pub enum ProfileError {
+    #[error("invalid native opening policy: {0}")]
+    NativeOpening(String),
     /// The exponent-fold geometry rejects the shape outright.
     #[error("exponent-fold geometry needs t + W <= 126, got t={t}, W={word_bits}")]
     ShapeTooWide { t: u32, word_bits: u32 },
@@ -627,6 +667,8 @@ fn derive_params(
 
     Ok(IopSecurityParams {
         profile_name,
+        design_only,
+        native_schedule: None,
         lambda,
         projection_min,
         projection_max,

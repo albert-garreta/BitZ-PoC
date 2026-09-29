@@ -832,6 +832,12 @@ impl BitZProver {
 
         super::trace_start();
         let started = std::time::Instant::now();
+        let shape = statement.shape();
+        let binary = (shape.log_rows(), shape.log_columns());
+        let native = pcs.native_schedule(Some(shape), Some(binary), ood)
+            .map_err(|_| ProveError::Opening(crate::wfbitz::pcs::ProveError::Internal))?;
+        transcript.start_native(native)
+            .map_err(|_| ProveError::Opening(crate::wfbitz::pcs::ProveError::Internal))?;
         let fold = self
             .send_fold(statement.claim, derived_rows, transcript)
             .map_err(ProveError::Fold)?;
@@ -879,6 +885,12 @@ impl BitZVerifier {
         transcript.public_message(statement.claim);
 
         let started = std::time::Instant::now();
+        let shape = statement.shape();
+        let binary = (shape.log_rows(), shape.log_columns());
+        let native = pcs.native_schedule(Some(shape), Some(binary), ood)
+            .map_err(|_| VerifyError::Opening(crate::wfbitz::pcs::VerifyError::Internal))?;
+        transcript.start_native(native)
+            .map_err(|_| VerifyError::Opening(crate::wfbitz::pcs::VerifyError::Internal))?;
         let fold = self
             .receive_fold(statement.claim, &mut transcript)
             .map_err(VerifyError::Fold)?;

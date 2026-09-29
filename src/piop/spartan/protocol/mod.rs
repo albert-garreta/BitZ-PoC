@@ -773,6 +773,8 @@ impl<S: RelationSpec> PreparedRelation<S> {
             .resolve(packed_variables(&p)?, prefix.security.ligerito_target_bits)
             .map_err(ProtocolError::LigeritoConfig)?;
         prefix.security.adopt_ood_round(ligerito.ood_bits())?;
+        let geometry = relation_native_geometry(&prefix.spec);
+        prefix.security.adopt_native_opening(geometry)?;
         validate_config_pair(&p, ligerito.prover(), ligerito.verifier())?;
         Ok(Self {
             prefix,
@@ -784,13 +786,15 @@ impl<S: RelationSpec> PreparedRelation<S> {
     /// Completes a prefix with explicit opener configurations (no policy
     /// digest, no Round 0).
     pub fn with_opener_configs(
-        prefix: PreparedRelationPrefix<S>,
+        mut prefix: PreparedRelationPrefix<S>,
         prover: Option<LigProverConfig>,
         verifier: Option<LigVerifierConfig>,
     ) -> Result<Self, ProtocolError> {
         if let (Some(pc), Some(vc)) = (&prover, &verifier) {
             validate_config_pair(&prefix.params(), pc, vc)?;
         }
+        let geometry = relation_native_geometry(&prefix.spec);
+        prefix.security.adopt_native_opening(geometry)?;
         Ok(Self {
             prefix,
             selection: None,
@@ -1435,7 +1439,6 @@ pub fn prove_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
     let pc = opener.prover()?;
     validate_bit_rows(&p, hint.rows())?;
     validate_commitment(&p, &hint.commitment, pc)?;
-    wfbitz_opener::check_ungrinded(prefix)?;
     let domains = spec.domains();
     let scopes = &domains.scopes;
     let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
@@ -1472,7 +1475,7 @@ pub fn prove_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
             .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
         let statement = VirtualStatement::new(params, committed, map, &claim)
             .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
-        let pcs = pcs_from_config(&committed, pc)?;
+        let pcs = pcs_from_config(&committed, pc)?.with_native_policy(prefix.security.native_policy()?);
         wfbitz_opener::prove_virtual_opening(transcript, &statement, &pcs, hint, h_rows, ood)?
     };
 
@@ -1530,7 +1533,6 @@ fn verify_virtual_parts<T: Transcript + Send, S: RelationSpec>(
     let vc = opener.verifier()?;
     let binding_config = opener.binding_config()?;
     validate_commitment(&p, commitment, &binding_config)?;
-    wfbitz_opener::check_ungrinded(prefix)?;
     let domains = spec.domains();
     let scopes = &domains.scopes;
     let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
@@ -1566,7 +1568,7 @@ fn verify_virtual_parts<T: Transcript + Send, S: RelationSpec>(
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
     let statement = VirtualStatement::new(params, committed, map, &claim)
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
-    let pcs = pcs_from_config(&committed, vc)?;
+    let pcs = pcs_from_config(&committed, vc)?.with_native_policy(prefix.security.native_policy()?);
     wfbitz_opener::verify_virtual_opening(transcript, &statement, &pcs, commitment, bitz, ood)
 }
 
@@ -2645,4 +2647,13 @@ impl From<super::sumcheck::SumcheckError> for ProtocolError {
     fn from(value: super::sumcheck::SumcheckError) -> Self {
         Self::Spartan(value.into())
     }
+}
+
+pub(crate) fn relation_native_geometry<S: RelationSpec>(spec: &S) -> crate::wfbitz::grinding::Geometry {
+    let derived = spec.opening_layout();
+    let committed = spec.committed_layout();
+    let direct = spec.map().is_none_or(|map| {
+        map.is_identity() && derived == committed && map.cols() == committed.cells()
+    });
+    crate::wfbitz::grinding::Geometry::opening(&derived, &committed, direct)
 }

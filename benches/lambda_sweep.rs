@@ -220,8 +220,8 @@ fn sweep_profile<P: IopSecurityProfile>(
             ("profile".into(), P::NAME.into()),
             ("compressions".into(), compressions.to_string()),
             (
-                "forest_grinding_nonces".into(),
-                proof.bitz().grinding_nonces().len().to_string(),
+                "native_grinding_nonces".into(),
+                security.native_grinding_nonce_count().to_string(),
             ),
         ],
         lambda: Some(security.lambda),

@@ -198,10 +198,11 @@ impl WfbitzOpener {
         target_bits: usize,
     ) -> Result<(PreparedRelationPrefix<S>, Self), ProtocolError> {
         spec.validate_geometry()?;
-        let opener = Self::new(spec.committed_layout(), ligerito, target_bits)?;
+        let mut opener = Self::new(spec.committed_layout(), ligerito, target_bits)?;
         let mut security = instantiate_profile::<P, S>(&spec)?;
         security.adopt_ood_round(opener.ood_bits())?;
-        security.adopt_ungrinded_opener(P::DESIGN_ONLY)?;
+        security.adopt_native_opening(super::relation_native_geometry(&spec))?;
+        opener.pcs = opener.pcs.with_native_policy(security.native_policy()?);
         let prefix = PreparedRelationPrefix::with_security(spec, security)?;
         Ok((prefix, opener))
     }
@@ -447,14 +448,10 @@ fn linear_claim(
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))
 }
 
-/// The scheme grinds none of its GF(2^128) rounds: a profile that credits
-/// forest or ring-switch grinding (one not built by
-/// [`WfbitzOpener::prepare`]) would bind what does not run.
-pub(super) fn check_ungrinded<S: RelationSpec>(
-    prefix: &PreparedRelationPrefix<S>,
+fn check_native_policy<S: RelationSpec>(
+    prefix: &PreparedRelationPrefix<S>, opener: &WfbitzOpener,
 ) -> Result<(), ProtocolError> {
-    let security = prefix.security();
-    if security.forest_round_grinding_bits != 0 || security.ring_switch_grinding_bits != 0 {
+    if opener.pcs.native_policy() != prefix.security.native_policy()? {
         return Err(ProtocolError::UnsupportedProfile);
     }
     Ok(())
@@ -478,7 +475,7 @@ pub fn prove<T: Transcript + Send, S: RelationSpec>(
     if prefix.params() != *opener.layout() {
         return Err(ProtocolError::RelationWitnessLayoutMismatch);
     }
-    check_ungrinded(prefix)?;
+    check_native_policy(prefix, opener)?;
     validate_bit_rows(opener.layout(), hint.rows())?;
     validate_commitment(opener.layout(), &hint.commitment, opener.pcs().prover_config())?;
     // The statement, a resolved ladder's policy digest and Round 0, as the
@@ -536,7 +533,7 @@ pub fn verify<T: Transcript + Send, S: RelationSpec>(
     if prefix.params() != *opener.layout() {
         return Err(ProtocolError::RelationWitnessLayoutMismatch);
     }
-    check_ungrinded(prefix)?;
+    check_native_policy(prefix, opener)?;
     let configuration = opener.opener();
     let binding_config = configuration.binding_config()?;
     validate_commitment(opener.layout(), commitment, &binding_config)?;
@@ -1105,43 +1102,23 @@ mod tests {
         assert_eq!(opener.opening_bits(None).0, 0.0);
     }
 
-    /// The scheme grinds none of its GF(2^128) rounds, so `prepare` books
-    /// the GKR and ring-switch terms bare and the statement binds zero
-    /// difficulties: at λ = 100 (nothing to grind) the accounting is the
-    /// plain profile's term by term; λ = 128, which the bare GKR round
-    /// cannot reach, is refused.
+        /// Native terms come from the executed schedule; the independent Flock
+    /// field floor remains visible even when controllable terms reach 128 bits.
     #[test]
-    fn prepare_books_no_opener_grinding() {
+    fn prepare_accounts_for_the_executed_native_schedule() {
         let layout = MulLayout::<u32>::new(1 << 15).unwrap();
-        let terms = |params: &crate::piop::spartan::profile::IopSecurityParams| {
-            params
-                .accounting
-                .terms
-                .iter()
-                .map(|term| (term.name, term.bits, term.grinding_bits, term.floor))
-                .collect::<Vec<_>>()
-        };
-        for ladder in [WfbitzLigerito::Fast, WfbitzLigerito::Selected(LigeritoSelection::MATCHED_UDR)] {
-            let (prefix, opener) = WfbitzOpener::prepare::<Lambda100, _>(layout, ladder, 100).unwrap();
-            let mut plain = instantiate_profile::<Lambda100, _>(&layout).unwrap();
-            plain.adopt_ood_round(opener.ood_bits()).unwrap();
-            let security = prefix.security();
-            assert_eq!(terms(security), terms(&plain), "{ladder:?}");
-            assert_eq!(security.forest_round_grinding_bits, plain.forest_round_grinding_bits);
-            assert_eq!(security.ring_switch_grinding_bits, plain.ring_switch_grinding_bits);
-            assert_eq!(security.forest_round_grinding_bits, 0);
-            assert_eq!(security.ring_switch_grinding_bits, 0);
-        }
-        // A unique-decoding ladder (no Round 0 to grind): the refusal is the
-        // GKR round's.
         let ladder = WfbitzLigerito::Selected(LigeritoSelection::ValidatedUdr);
-        assert!(matches!(
-            WfbitzOpener::prepare::<crate::piop::spartan::Lambda128, _>(layout, ladder, 128),
-            Err(ProtocolError::Profile(crate::piop::spartan::profile::ProfileError::TargetUnreachable {
-                term: "step5_2:gkr-round",
-                ..
-            }))
-        ));
+        let (low, _) = WfbitzOpener::prepare::<Lambda100, _>(layout, ladder, 100).unwrap();
+        assert_eq!(low.security().native_grinding_nonce_count(), 0);
+        assert!(low.security().accounting.controllable_bits() >= 100.0);
+        let (high, opener) = WfbitzOpener::prepare::<crate::piop::spartan::Lambda128, _>(layout, ladder, 128).unwrap();
+        assert!(high.security().native_grinding_nonce_count() > 0);
+        assert!(high.security().accounting.controllable_bits() >= 128.0);
+        assert!((high.security().accounting.achieved_bits() - (128.0 - 3f64.log2())).abs() < 1e-9);
+        let witness = u32_witness(1 << 15);
+        let hint = opener.commit(witness.bitz_bit_rows()).unwrap();
+        let proof = prove(&mut Blake3Transcript::new(), &high, &opener, &witness, &hint).unwrap();
+        verify(&mut Blake3Transcript::new(), &high, &opener, &hint.commitment, &proof).unwrap();
     }
 }
 
@@ -1233,11 +1210,6 @@ pub fn prove_reduced<T: Transcript + Send, S: RelationSpec>(
     let reduction = security
         .reduction
         .ok_or(ProtocolError::UnsupportedProfile)?;
-    // The scheme grinds none of its GF(2^128) rounds: a profile that
-    // credits forest or ring-switch grinding would bind what does not run.
-    if security.forest_round_grinding_bits != 0 || security.ring_switch_grinding_bits != 0 {
-        return Err(ProtocolError::UnsupportedProfile);
-    }
     let domains = spec.domains();
     let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
     let (binding, ood) = bind_prover_statement(transcript, prefix, opener, hint)?;
@@ -1301,7 +1273,7 @@ pub fn prove_reduced<T: Transcript + Send, S: RelationSpec>(
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
     let statement = crate::wfbitz::VirtualStatement::new(params, committed, map, &claim)
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
-    let pcs = reduced_pcs(opener, &committed)?;
+    let pcs = reduced_pcs(opener, &committed)?.with_native_policy(security.native_policy()?);
     let derived_rows = derived_bit_rows(spec, witness, &p, &opening_layout, hint.rows());
     let ood = ood.opening_claim(transcript, hint);
     let tag = fork_tag(transcript);
@@ -1346,9 +1318,6 @@ pub fn verify_reduced<T: Transcript + Send, S: RelationSpec>(
     let reduction = security
         .reduction
         .ok_or(ProtocolError::UnsupportedProfile)?;
-    if security.forest_round_grinding_bits != 0 || security.ring_switch_grinding_bits != 0 {
-        return Err(ProtocolError::UnsupportedProfile);
-    }
     let domains = spec.domains();
     let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
     let lift = proof
@@ -1415,7 +1384,7 @@ pub fn verify_reduced<T: Transcript + Send, S: RelationSpec>(
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
     let statement = crate::wfbitz::VirtualStatement::new(params, committed, map, &claim)
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
-    let pcs = reduced_pcs(opener, &committed)?;
+    let pcs = reduced_pcs(opener, &committed)?.with_native_policy(security.native_policy()?);
     let opening = proof.bitz();
     let ood = ood
         .opening_claim(transcript, packed_variables(&p)?, opening.ood.as_ref())

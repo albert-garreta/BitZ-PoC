@@ -116,6 +116,8 @@ pub(crate) fn prove(
         let tag = crate::piop::spartan::protocol::wfbitz_opener::fork_tag(transcript);
         let mut state = crate::wfbitz::build_prover(WFBITZ_SESSION, &tag);
         state.public_message(&proved.bridge_digest);
+        state.start_native(prefix_schedule(params.shape(), prepared.security())?)
+            .map_err(|_| Error::Invalid("native multiplication schedule"))?;
         let prover = crate::wfbitz::BitZProver::new(params, crate::wfbitz::WINDOW);
         let fold = prover
             .send_fold(&claim, rows, &mut state)
@@ -239,6 +241,8 @@ pub(crate) fn verify(
     };
     let mut state = crate::wfbitz::build_verifier(WFBITZ_SESSION, &tag, &bitz_proof);
     state.public_message(&verified.bridge_digest);
+    state.start_native(prefix_schedule(params.shape(), prepared.security())?)
+        .map_err(|_| Error::Invalid("native multiplication schedule"))?;
     let verifier = crate::wfbitz::BitZVerifier::new(params, crate::wfbitz::WINDOW);
     let fold = verifier
         .receive_fold(&claim, &mut state)
@@ -252,4 +256,15 @@ pub(crate) fn verify(
         .map_err(|_| Error::Invalid("wfbitz trailing data"))?;
     bind_wfbitz(transcript, &verified.bridge_digest, narg);
     Ok(binary_claim(low, high_point, value))
+}
+
+fn prefix_schedule(
+    shape: &crate::wfbitz::Shape,
+    security: &crate::piop::spartan::profile::IopSecurityParams,
+) -> Result<crate::wfbitz::grinding::Schedule, Error> {
+    use crate::wfbitz::grinding::{Policy, Geometry, Schedule};
+    let policy = Policy::new(Some(security.lambda), security.forest_round_grinding_bits, security.ring_switch_grinding_bits)
+        .map_err(|_| Error::Invalid("native multiplication policy"))?;
+    Schedule::new(policy, Geometry::prefix(shape.log_rows(), shape.log_columns()))
+        .map_err(|_| Error::Invalid("native multiplication geometry"))
 }

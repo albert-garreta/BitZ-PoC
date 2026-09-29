@@ -393,9 +393,6 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
         return Err(ProtocolError::InvalidGeometry);
     }
     let security = spec.security();
-    if security.forest_round_grinding_bits != 0 || security.ring_switch_grinding_bits != 0 {
-        return Err(ProtocolError::UnsupportedProfile);
-    }
     let domains = spec.domains();
 
     let binding = {
@@ -569,7 +566,7 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
             .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
         let opening = VirtualStatement::new(params, committed, spec.map(), &native_claim)
             .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
-        let pcs = pcs_from_config(&committed, pc)?;
+        let pcs = pcs_from_config(&committed, pc)?.with_native_policy(security.native_policy()?);
         wfbitz_opener::prove_virtual_opening(
             transcript, &opening, &pcs, hint, spec.opened_rows(witness)?, ood,
         )?
@@ -613,9 +610,6 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
         return Err(ProtocolError::InvalidGeometry);
     }
     let security = spec.security();
-    if security.forest_round_grinding_bits != 0 || security.ring_switch_grinding_bits != 0 {
-        return Err(ProtocolError::UnsupportedProfile);
-    }
     let domains = spec.domains();
 
     let binding = {
@@ -751,7 +745,7 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
     let opening = VirtualStatement::new(params, committed, spec.map(), &native_claim)
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
-    let pcs = pcs_from_config(&committed, vc)?;
+    let pcs = pcs_from_config(&committed, vc)?.with_native_policy(security.native_policy()?);
     wfbitz_opener::verify_virtual_opening(transcript, &opening, &pcs, commitment, &proof.bitz, ood)
 }
 

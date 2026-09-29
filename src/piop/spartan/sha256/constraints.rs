@@ -232,6 +232,8 @@ impl PreparedSha256CompressionBatch {
             )
             .map_err(Sha256ConstraintError::LigeritoConfig)?;
         self.security.adopt_ood_round(resolved.ood_bits())?;
+        let geometry = crate::wfbitz::grinding::Geometry::opening(self.opening_params(), &self.f_layout, false);
+        self.security.adopt_native_opening(geometry)?;
         self.ligerito = Some(resolved);
         Ok(self)
     }

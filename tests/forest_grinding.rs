@@ -1,6 +1,6 @@
 //! End-to-end coverage of the B.6 forest/opening grinding hooks: at
-//! `Lambda128` every challenge drawn in the BitZ opening region carries a
-//! two-bit proof-of-work boundary and the nonces ride the proof stream.
+//! `Lambda128` each native challenge block carries the work derived from
+//! its coordinate count; nonces are authenticated inside the proof stream.
 
 use ::bitz::piop::spartan::protocol::linear::LinearProof;
 
@@ -65,7 +65,7 @@ fn prove_under(
     )
     .expect("verify");
     let bytes = proof.bitz().to_bytes();
-    let nonces = proof.bitz().grinding_nonces().len();
+    let nonces = prepared.security().native_grinding_nonce_count();
     (bytes, nonces, proof, hint.commitment, vc, statements)
 }
 
@@ -88,26 +88,25 @@ fn lambda128_grinds_every_opening_round_and_gates_the_nonces() {
 
     let (bytes, nonce_count, proof, commitment, vc, statements) = prove_under(&lambda128);
     assert!(nonce_count > 0, "λ=128 must grind the opening rounds");
-    // The proof grows by the trailing nonce section (8-byte count prefix +
-    // 8 bytes per boundary) — grinding costs bytes, not time. The residual
+    // The proof grows by an authenticated 8-byte nonce per protected block — grinding costs bytes, not time. The residual
     // difference is Ligerito query-path wiggle: the two runs draw different
     // challenges, so Merkle path deduplication differs by a few hundred
     // bytes in either direction.
-    let section = 8 + 8 * nonce_count;
+    let section = 8 * nonce_count;
     let delta = bytes.len() as i64 - reference_bytes.len() as i64;
     assert!(
         (delta - section as i64).unsigned_abs() < 2048,
         "delta {delta} B vs nonce section {section} B ({nonce_count} boundaries)"
     );
     println!(
-        "forest grinding at 2^{EXPONENT}: {nonce_count} grinded boundaries, \
+        "native grinding at 2^{EXPONENT}: {nonce_count} grinded boundaries, \
          nonce section {section} B, total proof delta {delta} B"
     );
 
     // Codec round-trip preserves the section byte-for-byte.
     let decoded = WfbitzOpeningProof::from_bytes(&bytes).expect("codec");
     assert_eq!(decoded.to_bytes(), bytes);
-    assert_eq!(decoded.grinding_nonces().len(), nonce_count);
+    assert_eq!(decoded.narg, proof.bitz().narg);
 
     // A λ=128 proof does not verify under the reference (0-difficulty)
     // preparation: the grinding boundaries are transcript-visible.

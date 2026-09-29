@@ -178,7 +178,7 @@ pub(crate) fn prove(
             return Err(ProveError::InvalidClaim);
         }
         transcript.prover_message(&coefficients);
-        let challenge = transcript.verifier_message::<Gf>();
+        let challenge = transcript.native_scalar(super::grinding::Stage::BinaryRound);
         target = evaluate_round(coefficients, challenge);
         point.push(challenge);
         fold(&mut combined, challenge);
@@ -199,7 +199,7 @@ pub(crate) fn prove(
             return Err(ProveError::InvalidClaim);
         }
         transcript.prover_message(&coefficients);
-        let challenge = transcript.verifier_message::<Gf>();
+        let challenge = transcript.native_scalar(super::grinding::Stage::BinaryRound);
         target = evaluate_round(coefficients, challenge);
         point.push(challenge);
         fold(&mut folded, challenge);
@@ -233,7 +233,8 @@ pub(crate) fn verify(
         if coefficients[1] + coefficients[2] != target {
             return Err(VerifyError::VerificationFailed);
         }
-        let challenge = transcript.verifier_message::<Gf>();
+        let challenge = transcript.native_scalar(super::grinding::Stage::BinaryRound)
+            .map_err(|_| VerifyError::MalformedProof)?;
         target = evaluate_round(coefficients, challenge);
         point.push(challenge);
         if rows.len() > 1 {
@@ -304,7 +305,7 @@ pub(crate) fn prove_sum(
             return Err(ProveError::InvalidClaim);
         }
         transcript.prover_message(&coefficients);
-        let challenge = transcript.verifier_message::<Gf>();
+        let challenge = transcript.native_scalar(super::grinding::Stage::BinaryRound);
         target = evaluate_round(coefficients, challenge);
         point.push(challenge);
         for table in &mut combined {
@@ -326,7 +327,7 @@ pub(crate) fn prove_sum(
             return Err(ProveError::InvalidClaim);
         }
         transcript.prover_message(&coefficients);
-        let challenge = transcript.verifier_message::<Gf>();
+        let challenge = transcript.native_scalar(super::grinding::Stage::BinaryRound);
         target = evaluate_round(coefficients, challenge);
         point.push(challenge);
         fold(&mut folded, challenge);
@@ -374,7 +375,8 @@ pub(crate) fn verify_sum(
         if coefficients[1] + coefficients[2] != target {
             return Err(VerifyError::VerificationFailed);
         }
-        let challenge = transcript.verifier_message::<Gf>();
+        let challenge = transcript.native_scalar(super::grinding::Stage::BinaryRound)
+            .map_err(|_| VerifyError::MalformedProof)?;
         target = evaluate_round(coefficients, challenge);
         point.push(challenge);
         if round < row_rounds {
@@ -466,7 +468,7 @@ fn fold(values: &mut Vec<Gf>, challenge: Gf) {
 mod sum_tests {
     use super::*;
     use crate::wfbitz::params::{LinearClaimGf, Shape, SumClaimGf};
-    use crate::wfbitz::{build_prover, build_verifier};
+    use crate::wfbitz::{build_kernel_prover, build_kernel_verifier};
 
     fn xorshift(state: &mut u64) -> u64 {
         *state ^= *state << 13;
@@ -522,10 +524,10 @@ mod sum_tests {
         let terms = terms(&mut state, &shape, 3);
         let target = dense_target(&rows_bits, &terms);
         let claim = SumClaimGf::from_shape(&shape, terms, target, b"sum-test".to_vec()).unwrap();
-        let mut prover = build_prover(b"sum-test/v1", b"instance");
+        let mut prover = build_kernel_prover(b"sum-test/v1", b"instance");
         let reduced = prove_sum(&claim, &rows_bits, &[], &mut prover).unwrap();
         let proof = prover.finish();
-        let mut verifier = build_verifier(b"sum-test/v1", b"instance", &proof);
+        let mut verifier = build_kernel_verifier(b"sum-test/v1", b"instance", &proof);
         let checked = verify_sum(&claim, &mut verifier).unwrap();
         assert_eq!(reduced.point, checked.point);
         assert_eq!(reduced.target, checked.target);
@@ -546,7 +548,7 @@ mod sum_tests {
         assert_eq!(reduced.target, evaluation);
         // A wrong target is caught by the prover's own consistency check.
         let wrong = SumClaimGf::from_shape(&shape, claim.terms().to_vec(), target + Gf::one(), Vec::new()).unwrap();
-        let mut prover = build_prover(b"sum-test/v1", b"instance");
+        let mut prover = build_kernel_prover(b"sum-test/v1", b"instance");
         assert!(prove_sum(&wrong, &rows_bits, &[], &mut prover).is_err());
     }
 
@@ -560,9 +562,9 @@ mod sum_tests {
         let target = dense_target(&rows_bits, &[(rows.clone(), cols.clone())]);
         let single = LinearClaimGf::from_shape(&shape, rows.clone(), cols.clone(), target).unwrap();
         let sum = SumClaimGf::from_shape(&shape, vec![(rows, cols)], target, Vec::new()).unwrap();
-        let mut a = build_prover(b"sum-test/v1", b"one");
+        let mut a = build_kernel_prover(b"sum-test/v1", b"one");
         let reduced_single = prove(&single, &rows_bits, &[], &mut a).unwrap();
-        let mut b = build_prover(b"sum-test/v1", b"one");
+        let mut b = build_kernel_prover(b"sum-test/v1", b"one");
         let reduced_sum = prove_sum(&sum, &rows_bits, &[], &mut b).unwrap();
         assert_eq!(a.finish().narg_string, b.finish().narg_string);
         assert_eq!(reduced_single.point, reduced_sum.point);
