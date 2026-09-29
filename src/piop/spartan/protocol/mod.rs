@@ -1998,7 +1998,7 @@ pub mod terminal {
     use super::*;
     use crate::pcs::FQ_MOD;
     use crate::bitz::{BitZProver, BitZVerifier, Root, WINDOW, build_prover, build_verifier};
-    const SESSION: &[u8] = b"bitz/terminal-wfbitz/v1";
+    const SESSION: &[u8] = b"bitz/terminal-bitz/v1";
 
     /// How the terminal-opening statement binds the relation and commitment.
     #[derive(Clone, Copy)]

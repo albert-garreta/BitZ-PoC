@@ -37,7 +37,7 @@ use super::{
 };
 
 /// The session tag of the forked BitZ transcript.
-const SESSION: &[u8] = b"bitz/wfbitz-opener/v1";
+const SESSION: &[u8] = b"bitz/bitz-opener/v1";
 
 /// Which Ligerito ladder the BitZ opener commits and opens under.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -567,7 +567,7 @@ pub(super) fn verify_direct<T: Transcript + Send, S: RelationSpec>(
 }
 
 /// The session tag of the standalone opening's fork.
-const STANDALONE_SESSION: &[u8] = b"bitz/wfbitz-opener/standalone/v1";
+const STANDALONE_SESSION: &[u8] = b"bitz/bitz-opener/standalone/v1";
 
 impl BitZOpener {
     /// Round 0 at the ladder's own target (`None` for a unique-decoding
@@ -1261,7 +1261,7 @@ mod tests {
 }
 
 /// The session tag of the reduced (two-prime, virtual) discharge's fork.
-const REDUCED_SESSION: &[u8] = b"bitz/wfbitz-opener/reduced/v1";
+const REDUCED_SESSION: &[u8] = b"bitz/bitz-opener/reduced/v1";
 
 /// The scheme over the relation's opener: a resolved ladder's security
 /// config, or explicit configurations (MultiSwap's UDR ladder).
@@ -1603,7 +1603,7 @@ pub(crate) fn opening_params(
 }
 
 // CM and linear SHA bind their relation and terminal claim before this fork.
-const VIRTUAL_SESSION: &[u8] = b"bitz/wfbitz-opener/virtual/v1";
+const VIRTUAL_SESSION: &[u8] = b"bitz/bitz-opener/virtual/v1";
 
 pub(crate) fn prove_virtual_opening<
     T: Transcript + Send,

@@ -5,9 +5,9 @@
 //!
 //! The implementation originated from `worldfnd/f2z-benchmark` at `0c75fd8`
 //! (`bitz-k4`). It also binds the complete initial claim and enforces the
-//! configured native challenge schedule. Historical transcript labels retain
-//! their `wfbitz` spelling to preserve proof compatibility across the module
-//! rename; the upstream implementation is not a separate backend.
+//! configured native challenge schedule. Transcript domain labels use `bitz`;
+//! proofs generated with the historical labels must be regenerated. The
+//! upstream implementation is not a separate backend.
 //!
 //! Protocol layers:
 //! - [`transcript`]: the spongefish wrapper with the hint channel.

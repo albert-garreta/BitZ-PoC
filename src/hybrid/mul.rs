@@ -37,7 +37,7 @@ pub(crate) struct PrefixProof {
     pub narg: Vec<u8>,
 }
 
-const BITZ_SESSION: &[u8] = b"bitz/hybrid/mul-gkr/wfbitz/v1";
+const BITZ_SESSION: &[u8] = b"bitz/hybrid/mul-gkr/bitz/v1";
 
 impl PrefixProof {
     fn messages(&self) -> SpartanPrefixProof {
@@ -181,7 +181,7 @@ fn binary_claim(
 /// Binds the forked transcript's narg string (the folds and every GKR
 /// message) on the shared transcript before the joint sumcheck draws.
 fn bind_bitz(transcript: &mut Blake3Transcript, bridge_digest: &[u8; 32], narg: &[u8]) {
-    absorb_spartan_message(transcript, b"hybrid/mul-gkr/wfbitz", bridge_digest);
+    absorb_spartan_message(transcript, b"hybrid/mul-gkr/bitz", bridge_digest);
     absorb_spartan_message(transcript, b"narg", blake3::hash(narg).as_bytes());
 }
 

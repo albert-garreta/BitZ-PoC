@@ -35,8 +35,8 @@ use field::RingOps;
 use flock_core::pcs::commit::Commitment;
 use flock_core::pcs::ligerito::LigeritoProfile;
 
-const SESSION: &[u8] = b"bitz/sha256-ecdsa/wfbitz/v1";
-const CHAINED_SESSION: &[u8] = b"bitz/sha256-ecdsa/wfbitz-chained/v1";
+const SESSION: &[u8] = b"bitz/sha256-ecdsa/bitz/v1";
+const CHAINED_SESSION: &[u8] = b"bitz/sha256-ecdsa/bitz-chained/v1";
 
 fn residues(values: Vec<F>, cfg: &Config) -> Vec<u128> {
     values

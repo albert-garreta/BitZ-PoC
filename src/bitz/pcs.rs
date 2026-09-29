@@ -53,7 +53,7 @@ const MLE_CLAIMS_LABEL: &[u8] = b"bitz/pcs/mle-claims/v1";
 const CHALLENGES_LABEL: &[u8] = b"bitz/pcs/ring-switch-challenges/v1";
 /// The composed caller's Round-0 claim, batched into the Ligerito basis
 /// (this crate's addition; absent in their protocol).
-const OOD_CLAIM_LABEL: &[u8] = b"bitz/wfbitz/round0-claim/v1";
+const OOD_CLAIM_LABEL: &[u8] = b"bitz/bitz/round0-claim/v1";
 const PROOF_HINT_LIMIT: usize = 64 * 1024 * 1024;
 
 const VECTOR_SQUEEZE_TAG: &[u8] = b"pcs/flock/sample-vector/v1";

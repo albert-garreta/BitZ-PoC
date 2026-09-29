@@ -215,7 +215,7 @@ impl IopSecurityParams {
         self.accounting.terms.retain(|term| {
             term.name != "step5_2:gkr-round"
                 && term.name != "step5_3:ring-switch"
-                && !term.name.starts_with("wfbitz/")
+                && !term.name.starts_with("bitz/")
         });
         self.accounting
             .terms

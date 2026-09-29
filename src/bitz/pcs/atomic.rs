@@ -15,7 +15,7 @@ macro_rules! atomic_frame {
     () => {
         fn frame(&mut self, digest: &[u8; 32], index: usize, block: &ChallengeBlock) {
             self.transcript
-                .public_message(b"bitz/wfbitz/flock-atomic/v1");
+                .public_message(b"bitz/bitz/flock-atomic/v1");
             self.transcript.public_message(digest);
             self.transcript.public_message(&(index as u64));
             self.transcript.public_message(&(block.label.len() as u64));

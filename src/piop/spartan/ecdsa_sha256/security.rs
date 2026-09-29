@@ -67,7 +67,7 @@ impl Sha256EcdsaSecurity {
         let unchanged = !self.native.has_work() && self.native.coordinate_count() <= 4096;
         let mut envelope = false;
         for block in &self.blocks {
-            if unchanged && block.label.starts_with("wfbitz/") {
+            if unchanged && block.label.starts_with("bitz/") {
                 if !envelope { emit("forest-and-bridge", 0, 4096); envelope = true; }
             } else { emit(&block.label, block.grinding_bits, block.max_occurrences); }
         }

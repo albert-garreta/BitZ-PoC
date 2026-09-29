@@ -79,12 +79,12 @@ pub(crate) enum Stage {
 impl Stage {
     pub(crate) const fn name(self) -> &'static str {
         match self {
-            Self::FoldPoint => "wfbitz/fold-point",
-            Self::GkrRound => "wfbitz/gkr-round",
-            Self::GkrClose => "wfbitz/gkr-close",
-            Self::BinaryRound => "wfbitz/binary-round",
-            Self::RingBatch => "wfbitz/ring-batch",
-            Self::OodBatch => "wfbitz/ood-batch",
+            Self::FoldPoint => "bitz/fold-point",
+            Self::GkrRound => "bitz/gkr-round",
+            Self::GkrClose => "bitz/gkr-close",
+            Self::BinaryRound => "bitz/binary-round",
+            Self::RingBatch => "bitz/ring-batch",
+            Self::OodBatch => "bitz/ood-batch",
         }
     }
 }
