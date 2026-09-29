@@ -124,6 +124,12 @@ Jessica Chen, Lucas Xia, Wilson Nguyen, and Benedikt Bünz.
 \newblock Limber: Low overhead {SNARKs} for integers from any {PCS}.
 \newblock Cryptology {ePrint} Archive, Paper 2026/1635, 2026.
 
+\bibitem[DHA26]{zkgolf}
+Giorgio Dell'Immagine and Mathias Hall-Andersen.
+\newblock zk.golf: Fearless and collaborative optimization of circuits.
+\newblock {ZK/SEC} Quarterly (zkSecurity blog), 2026.
+\newblock \url{https://zk.golf}.
+
 \bibitem[DP23]{binius}
 Benjamin~E. Diamond and Jim Posen.
 \newblock Succinct arguments over towers of binary fields.

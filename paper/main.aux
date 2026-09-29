@@ -5,19 +5,18 @@
 \providecommand\HyField@AuxAddToCoFields[2]{}
 \bibstyle{alpha}
 \providecommand \oddpage@label [2]{}
-\citation{??}
-\citation{??}
-\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{4}{section.1}\protected@file@percent }
-\newlabel{s:intro}{{1}{4}{Introduction}{section.1}{}}
-\newlabel{s:intro@cref}{{[section][1][]1}{[1][4][]4}{}{}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {2}Introduction}{4}{section.2}\protected@file@percent }
+\citation{xJsnark}
+\citation{jea_codes}
+\citation{EFpaper}
+\citation{zinc}
+\citation{binius}
+\citation{snark-vuln-sok}
+\citation{zk-circuit-bugs}
+\citation{Edi23}
+\citation{Zkb}
 \citation{cryptoeprint:2023/824}
 \citation{CircleSTARKs}
 \citation{risczero}
-\citation{plonky2:repo}
-\citation{cryptoeprint:2023/824}
-\citation{CircleSTARKs}
-\citation{risc0:whitepaper}
 \citation{plonky2:repo}
 \citation{zaratan}
 \citation{zinc}
@@ -32,12 +31,6 @@
 \citation{zinc}
 \citation{zincplus}
 \citation{limber}
-\citation{zaratan}
-\citation{zinc}
-\citation{zincplus}
-\citation{qaren}
-\citation{limber}
-\citation{more}
 \citation{stark}
 \citation{cryptoeprint:2022/1542}
 \citation{binius2}
@@ -45,69 +38,78 @@
 \citation{flock}
 \citation{binius}
 \citation{binius2}
-\newlabel{i:arithmetization}{{1}{5}{Introduction}{Item.1}{}}
-\newlabel{i:arithmetization@cref}{{[enumi][1][]1}{[1][4][]5}{}{}{}}
-\newlabel{i:field:performance}{{2}{5}{Introduction}{Item.2}{}}
-\newlabel{i:field:performance@cref}{{[enumi][2][]2}{[1][5][]5}{}{}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Our contributions}{5}{subsection.2.1}\protected@file@percent }
-\citation{zaratan}
-\citation{binius64}
-\citation{zaratan}
-\citation{binius64}
-\citation{limber}
-\citation{limber}
-\citation{binius64}
-\citation{binius64}
-\citation{binius64}
-\citation{limber}
-\citation{binius64}
-\citation{limber}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{3}{section.1}\protected@file@percent }
+\newlabel{s:intro}{{1}{3}{Introduction}{section.1}{}}
+\newlabel{s:intro@cref}{{[section][1][]1}{[1][3][]3}{}{}{}}
+\newlabel{i:arithmetization}{{1}{3}{Introduction}{Item.1}{}}
+\newlabel{i:arithmetization@cref}{{[enumi][1][]1}{[1][3][]3}{}{}{}}
+\newlabel{i:field:performance}{{2}{3}{Introduction}{Item.2}{}}
+\newlabel{i:field:performance@cref}{{[enumi][2][]2}{[1][3][]3}{}{}{}}
 \citation{zaratan}
 \citation{limber}
 \citation{zinc}
 \citation{zincplus}
 \citation{qaren}
 \citation{zincplus}
-\citation{?}
+\citation{beullens2023labrador}
+\citation{Greyhound}
+\citation{SALSAA}
+\citation{Hachi}
 \citation{zaratan}
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.1}Our contributions}{4}{subsection.1.1}\protected@file@percent }
+\newlabel{s:intro_contributions}{{1.1}{4}{Our contributions}{subsection.1.1}{}}
+\newlabel{s:intro_contributions@cref}{{[subsection][1][1]1.1}{[1][3][]4}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{{$\mathbb  {B}\text  {it}\mathbb  {Z}$}-PCS.}{4}{paragraph*.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{{$\mathbb  {B}\text  {it}\mathbb  {Z}$}-SNARK.}{4}{paragraph*.2}\protected@file@percent }
+\citation{zincplus}
+\citation{binius64}
 \citation{limber}
-\citation{zinc}
 \citation{zincplus}
-\citation{qaren}
-\citation{zincplus}
-\citation{?}
+\citation{limber}
+\@writefile{toc}{\contentsline {paragraph}{Evaluation.}{5}{paragraph*.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces  Performance of {$\mathbb  {B}\text  {it}\mathbb  {Z}$}\ on different computations of practical interest that are costly to arithmetize over finite fields. For each such computation, we also benchmark the performance of a selection of prior protocols for each specific computation. All experiments were run on a MacBook Air M5 24\,GB, CPU-only, targeting $100$ bits of security (except for the RSA and Poseidon experiment, which targets $114$ bits). See \cref  {s:experiments}{} for details on these and more experiments. }}{5}{table.caption.4}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{tab:intro_table}{{1}{5}{Performance of \ftwoz \ on different computations of practical interest that are costly to arithmetize over finite fields. For each such computation, we also benchmark the performance of a selection of prior protocols for each specific computation. All experiments were run on a MacBook Air M5 24\,GB, CPU-only, targeting $100$ bits of security (except for the RSA and Poseidon experiment, which targets $114$ bits). See \iflncs \cref {s:experiments,s:further_experiments}\else \cref {s:experiments}\fi {} for details on these and more experiments}{table.caption.4}{}}
+\newlabel{tab:intro_table@cref}{{[table][1][]1}{[1][5][]5}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2}{$\mathbb  {B}\text  {it}\mathbb  {Z}$}\ in a nutshell}{5}{subsection.1.2}\protected@file@percent }
+\newlabel{s:intro_nutshell}{{1.2}{5}{\iflncs Technical overview: \else \fi \ftwoz \ in a nutshell}{subsection.1.2}{}}
+\newlabel{s:intro_nutshell@cref}{{[subsection][2][1]1.2}{[1][5][]5}{}{}{}}
 \citation{whir}
 \citation{binius}
 \citation{binius2}
-\citation{whir}
-\citation{binius}
-\citation{binius2}
+\citation{binius64}
 \citation{binius64}
 \citation{lev}
+\citation{gruen}
+\citation{flock}
+\citation{sumcheck_opt_2}
+\citation{zaratan}
+\citation{zincplus}
+\newlabel{e:intro}{{1}{6}{\iflncs Technical overview: \else \fi \ftwoz \ in a nutshell}{equation.1}{}}
+\newlabel{e:intro@cref}{{[equation][1][]1}{[1][6][]6}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Issues 1 and 2:}{6}{paragraph*.5}\protected@file@percent }
 \citation{binius64}
-\citation{gruen}
+\@writefile{toc}{\contentsline {paragraph}{Issue 3: low entropy grand products.}{7}{paragraph*.6}\protected@file@percent }
+\newlabel{e:intro_2}{{2}{7}{Issue 3: low entropy grand products}{equation.2}{}}
+\newlabel{e:intro_2@cref}{{[equation][2][]2}{[1][7][]7}{}{}{}}
+\citation{whir}
+\citation{binius64}
 \citation{flock}
-\citation{sumcheck_opt_1}
-\citation{sumcheck_opt_2}
-\citation{gruen}
+\citation{binius64}
 \citation{flock}
-\citation{sumcheck_opt_1}
-\citation{sumcheck_opt_2}
+\citation{binius64}
+\citation{flock}
+\@writefile{toc}{\contentsline {paragraph}{Issue 4.}{8}{paragraph*.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {1.2.1}Using {$\mathbb  {B}\text  {it}\mathbb  {Z}$}\ to prove constraints with hybrid arithmetics}{8}{subsubsection.1.2.1}\protected@file@percent }
+\newlabel{s:intro_hybrid_proofs}{{1.2.1}{8}{Using \ftwoz \ to prove constraints with hybrid arithmetics}{subsubsection.1.2.1}{}}
+\newlabel{s:intro_hybrid_proofs@cref}{{[subsubsection][1][1,2]1.2.1}{[1][8][]8}{}{}{}}
+\newlabel{e:intro_comfield_linear}{{3}{8}{Using \ftwoz \ to prove constraints with hybrid arithmetics}{equation.3}{}}
+\newlabel{e:intro_comfield_linear@cref}{{[equation][3][]3}{[1][8][]8}{}{}{}}
+\citation{flock}
 \citation{binius64}
 \citation{binius64}
 \citation{whir}
-\citation{whir}
-\citation{binius64}
-\citation{flock}
-\citation{flock}
-\citation{binius64}
-\citation{binius64}
-\citation{binius64}
-\citation{binius64}
-\citation{binius64}
-\citation{flock}
-\citation{binius64}
-\citation{flock}
+\citation{Ligerito}
 \citation{zaratan}
 \citation{zinc}
 \citation{qaren}
@@ -122,6 +124,14 @@
 \citation{zinc}
 \citation{zincplus}
 \citation{zinc}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Witness bit-size per SHA-256 compression as per three different arithmetizations. The $\mathsf  {CM}$ row indicates the bit-size when arithmetizing SHA-256 via an instance of the $\mathsf  {CM}$ relation (see \eqref  {e:CM_rel}) using the methods from \cref  {e:CM_rel,r:CM_is_NP_complete}. The full arithmetization is available in \url  {https://github.com/reilabs/freigen/blob/324935e/Freigen/Circuit/Examples/Sha256.lean}. The second row displays the witness bit-size in the arithmetization from Binius64 \cite  {binius64}, which is an R1CS constraint over a binary field. Flock's \cite  {flock} arithmetization has 31400 bits per compression. The AI row refers to an optimized arithmetization found by an AI working against a Lean specification in the zkGolf competition \url  {https://zk.golf/}. }}{9}{table.caption.8}\protected@file@percent }
+\newlabel{tab:sha_arithmetization}{{2}{9}{Witness bit-size per SHA-256 compression as per three different arithmetizations. The $\mathsf {CM}$ row indicates the bit-size when arithmetizing SHA-256 via an instance of the $\mathsf {CM}$ relation (see \eqref {e:CM_rel}) using the methods from \cref {e:CM_rel,r:CM_is_NP_complete}\iflncs \else . The full arithmetization is available in \url {https://github.com/reilabs/freigen/blob/324935e/Freigen/Circuit/Examples/Sha256.lean}\fi . The second row displays the witness bit-size in the arithmetization from Binius64 \cite {binius64}, which is an R1CS constraint over a binary field. Flock's \cite {flock} arithmetization has 31400 bits per compression. The AI row refers to an optimized arithmetization found by an AI working against a Lean specification in the zkGolf competition \url {https://zk.golf/}}{table.caption.8}{}}
+\newlabel{tab:sha_arithmetization@cref}{{[table][2][]2}{[1][8][]9}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Polynomial constraints simultaneously in integers and binary fields.}{9}{paragraph*.9}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.3}Related work}{9}{subsection.1.3}\protected@file@percent }
+\newlabel{s:related_work}{{1.3}{9}{Related work}{subsection.1.3}{}}
+\newlabel{s:related_work@cref}{{[subsection][3][1]1.3}{[1][9][]9}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Proof systems over integers and other rings.}{9}{paragraph*.10}\protected@file@percent }
 \citation{qaren}
 \citation{zinc}
 \citation{zinc}
@@ -136,43 +146,590 @@
 \citation{binius}
 \citation{binius2}
 \citation{binius64}
-\citation{binius2}
-\citation{binius64}
-\citation{hashcaster:repo}
-\citation{Blaze}
-\citation{tensorswitch}
-\citation{Bolt}
-\citation{hashcaster:repo}
-\citation{FRIBinius:Galois}
-\citation{stark}
 \citation{flock}
 \citation{binius64}
 \citation{linearSizedIOPs}
 \citation{binaryspartan}
-\citation{binius64}
 \citation{lev}
 \citation{lev}
 \citation{lev}
-\citation{qaren}
-\citation{limber}
-\citation{binius64}
-\citation{lev}
-\citation{gruen}
-\citation{sumcheck_opt_1}
-\citation{sumcheck_opt_2}
+\@writefile{toc}{\contentsline {paragraph}{Proof systems over binary fields.}{10}{paragraph*.11}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Commitments in binary fields with openings in rings $R$ of characteristic different than $2$.}{10}{paragraph*.12}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.4}Acknowledgements}{11}{subsection.1.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Usage and non-usage of AI.}{11}{paragraph*.13}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Technical overview}{11}{section.2}\protected@file@percent }
+\newlabel{s:tech_overview}{{2}{11}{Technical overview}{section.2}{}}
+\newlabel{s:tech_overview@cref}{{[section][2][]2}{[1][11][]11}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Warm-up: The prime field case}{11}{subsection.2.1}\protected@file@percent }
+\newlabel{s:to_simple_bitz}{{2.1}{11}{\iflncs Warm-up: \else \fi Warm-up: The prime field case}{subsection.2.1}{}}
+\newlabel{s:to_simple_bitz@cref}{{[subsection][1][2]2.1}{[1][11][]11}{}{}{}}
+\newlabel{e:new_to_0}{{4}{11}{\iflncs Warm-up: \else \fi Warm-up: The prime field case}{equation.4}{}}
+\newlabel{e:new_to_0@cref}{{[equation][4][]4}{[1][11][]11}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Step 1: Commitment in $\ensuremath  {\mathbb  {F}}_{2^\nu }$.}{12}{paragraph*.14}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Step 2: Bitification of the linear claim.}{12}{paragraph*.15}\protected@file@percent }
+\newlabel{e:intro_eq_2}{{5}{12}{Step 2: Bitification of the linear claim}{equation.5}{}}
+\newlabel{e:intro_eq_2@cref}{{[equation][5][]5}{[1][12][]12}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Step 3 (Optional): Resampling of $\ensuremath  {\mathbb  {F}}_q$.}{12}{paragraph*.16}\protected@file@percent }
+\citation{binius}
+\citation{binius2}
+\citation{flock}
+\citation{binius}
+\citation{binius2}
+\citation{whir}
+\citation{Ligerito}
+\@writefile{toc}{\contentsline {paragraph}{Step 4: Transformation of \eqref  {e:intro_eq_2} into a batch of low-magnitude integer claims.}{13}{paragraph*.17}\protected@file@percent }
+\newlabel{e:intro_eq_3}{{6}{13}{Step 4: Transformation of \eqref {e:intro_eq_2} into a batch of low-magnitude integer claims}{equation.6}{}}
+\newlabel{e:intro_eq_3@cref}{{[equation][6][]6}{[1][13][]13}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Step 5: Exponentiation in $\ensuremath  {\mathbb  {F}}_{2^\nu }$ and grand product in $\ensuremath  {\mathbb  {F}}_{2^\nu }$.}{13}{paragraph*.18}\protected@file@percent }
+\newlabel{e:intro_eq_4}{{7}{13}{Step 5: Exponentiation in $\comfield $ and grand product in $\comfield $}{equation.7}{}}
+\newlabel{e:intro_eq_4@cref}{{[equation][7][]7}{[1][13][]13}{}{}{}}
+\newlabel{e:intro_eq_5}{{8}{13}{Step 5: Exponentiation in $\comfield $ and grand product in $\comfield $}{equation.8}{}}
+\newlabel{e:intro_eq_5@cref}{{[equation][8][]8}{[1][13][]13}{}{}{}}
+\newlabel{e:intro_eq_5_batched}{{9}{13}{Step 5: Exponentiation in $\comfield $ and grand product in $\comfield $}{equation.9}{}}
+\newlabel{e:intro_eq_5_batched@cref}{{[equation][9][]9}{[1][13][]13}{}{}{}}
 \citation{zaratan}
-\citation{zaratan}
+\@writefile{toc}{\contentsline {paragraph}{Step 6: Proving linear claims on $\mathsf  {bits}(\mathbf  {f})$ over $\ensuremath  {\mathbb  {F}}_{2^\nu }$.}{14}{paragraph*.19}\protected@file@percent }
+\newlabel{r:large_prime_field_in_BitZ_PCS}{{2.1}{14}{Description of Step 3}{remark.2.1}{}}
+\newlabel{r:large_prime_field_in_BitZ_PCS@cref}{{[remark][1][2]2.1}{[1][14][]14}{}{}{}}
+\newlabel{e:to_projected_claim}{{10}{14}{Description of Step 3}{equation.10}{}}
+\newlabel{e:to_projected_claim@cref}{{[equation][10][]10}{[1][14][]14}{}{}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {2.1.1}Why the tensor split}{14}{subsubsection.2.1.1}\protected@file@percent }
+\newlabel{s:why_the_tensor_split}{{2.1.1}{14}{Why the tensor split}{subsubsection.2.1.1}{}}
+\newlabel{s:why_the_tensor_split@cref}{{[subsubsection][1][2,1]2.1.1}{[1][14][]14}{}{}{}}
 \citation{zincplus}
 \citation{zaratan}
 \citation{zinc}
 \citation{qaren}
 \citation{limber}
 \citation{zincplus}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Generalization to pairs of arbitrary finitely generated rings}{15}{subsection.2.2}\protected@file@percent }
+\newlabel{s:to_general_rings}{{2.2}{15}{Generalization to pairs of arbitrary finitely generated rings}{subsection.2.2}{}}
+\newlabel{s:to_general_rings@cref}{{[subsection][2][2]2.2}{[1][14][]15}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Finitely generated rings.}{15}{paragraph*.20}\protected@file@percent }
+\newlabel{e:f_g_ring_element}{{11}{15}{Finitely generated rings}{equation.11}{}}
+\newlabel{e:f_g_ring_element@cref}{{[equation][11][]11}{[1][14][]15}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{{$\mathbb  {B}\text  {it}\mathbb  {Z}$}, general construction.}{15}{paragraph*.21}\protected@file@percent }
+\newlabel{e:new_to_0_rings}{{12}{15}{\ftwoz , general construction}{equation.12}{}}
+\newlabel{e:new_to_0_rings@cref}{{[equation][12][]12}{[1][15][]15}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Size bounds.}{15}{paragraph*.22}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Step 1: Commitment in $\ensuremath  {\mathbb  {F}}_{2^\nu }$.}{16}{paragraph*.23}\protected@file@percent }
+\newlabel{e:new_to_linear_bits_to_f}{{13}{16}{Step 1: Commitment in $\comfield $}{equation.13}{}}
+\newlabel{e:new_to_linear_bits_to_f@cref}{{[equation][13][]13}{[1][16][]16}{}{}{}}
+\newlabel{e:closure_bitification}{{14}{16}{Step 1: Commitment in $\comfield $}{equation.14}{}}
+\newlabel{e:closure_bitification@cref}{{[equation][14][]14}{[1][16][]16}{}{}{}}
+\newlabel{r:integrated_range_checks}{{2.3}{16}{Integrated range checks}{remark.2.3}{}}
+\newlabel{r:integrated_range_checks@cref}{{[remark][3][2]2.3}{[1][16][]16}{}{}{}}
 \citation{zincplus}
 \citation{zaratan}
+\@writefile{toc}{\contentsline {paragraph}{Step 2: Bitification of the linear claim.}{17}{paragraph*.24}\protected@file@percent }
+\newlabel{e:intro_eq_2_rings}{{15}{17}{Step 2: Bitification of the linear claim}{equation.15}{}}
+\newlabel{e:intro_eq_2_rings@cref}{{[equation][15][]15}{[1][16][]17}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Step 3 (Optional): Replacing $R$ by a random ``small'' field $\ensuremath  {\mathbb  {F}}_q$.}{17}{paragraph*.25}\protected@file@percent }
+\newlabel{e:new_to_lifted_polring_claim}{{16}{17}{Step 3 (Optional): Replacing $R$ by a random ``small'' field $\FF _q$}{equation.16}{}}
+\newlabel{e:new_to_lifted_polring_claim@cref}{{[equation][16][]16}{[1][17][]17}{}{}{}}
 \citation{thaler13}
-\citation{?}
-\citation{?}
+\newlabel{e:new_to_projected_lifted_polring_claim}{{17}{18}{Step 3 (Optional): Replacing $R$ by a random ``small'' field $\FF _q$}{equation.17}{}}
+\newlabel{e:new_to_projected_lifted_polring_claim@cref}{{[equation][17][]17}{[1][18][]18}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}GKR for low-entropy batched grand products}{18}{subsection.2.3}\protected@file@percent }
+\newlabel{s:to_low_entropy_gkr}{{2.3}{18}{GKR for low-entropy batched grand products}{subsection.2.3}{}}
+\newlabel{s:to_low_entropy_gkr@cref}{{[subsection][3][2]2.3}{[1][18][]18}{}{}{}}
+\newlabel{e:intro_eq_4_repeated}{{18}{18}{GKR for low-entropy batched grand products}{equation.18}{}}
+\newlabel{e:intro_eq_4_repeated@cref}{{[equation][18][]18}{[1][18][]18}{}{}{}}
+\newlabel{e:to_gkr_polys}{{19}{18}{GKR for low-entropy batched grand products}{equation.19}{}}
+\newlabel{e:to_gkr_polys@cref}{{[equation][19][]19}{[1][18][]18}{}{}{}}
+\citation{sumcheck_opt_1}
+\citation{sumcheck_opt_2}
+\citation{gruen}
+\newlabel{e:intro_grand_product_eq_1}{{20}{19}{GKR for low-entropy batched grand products}{equation.20}{}}
+\newlabel{e:intro_grand_product_eq_1@cref}{{[equation][20][]20}{[1][19][]19}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Example.}{19}{paragraph*.26}\protected@file@percent }
 \citation{binius64}
+\citation{logupstar}
+\citation{lev}
+\citation{lev}
+\citation{lev}
+\citation{logupstar}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {2.3.1}Efficiency and comparison to other ``prove-in-the-exponent'' usages}{20}{subsubsection.2.3.1}\protected@file@percent }
+\newlabel{r:comparison_grand_product_binius_lev}{{2.3.1}{20}{Efficiency and comparison to other ``prove-in-the-exponent'' usages}{subsubsection.2.3.1}{}}
+\newlabel{r:comparison_grand_product_binius_lev@cref}{{[subsubsection][1][2,3]2.3.1}{[1][20][]20}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Binius64}{20}{paragraph*.27}\protected@file@percent }
+\citation{lev}
+\citation{lev}
+\citation{lev}
+\@writefile{toc}{\contentsline {paragraph}{The Fields-Witch note \cite  {lev}.}{21}{paragraph*.28}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Virtual $\ensuremath  {\mathbb  {F}}_2$-linear transforms, NP-complete multi-domain linear relations, and hybrid proof systems}{21}{subsection.2.4}\protected@file@percent }
+\newlabel{s:to_f2_virtual}{{2.4}{21}{Virtual $\FF _2$-linear transforms, NP-complete multi-domain linear relations, and hybrid proof systems}{subsection.2.4}{}}
+\newlabel{s:to_f2_virtual@cref}{{[subsection][4][2]2.4}{[1][21][]21}{}{}{}}
+\newlabel{e:intro_eq_5_repeated}{{21}{21}{Virtual $\FF _2$-linear transforms, NP-complete multi-domain linear relations, and hybrid proof systems}{equation.21}{}}
+\newlabel{e:intro_eq_5_repeated@cref}{{[equation][21][]21}{[1][21][]21}{}{}{}}
+\newlabel{e:intro_eq_5_virtual}{{22}{21}{Virtual $\FF _2$-linear transforms, NP-complete multi-domain linear relations, and hybrid proof systems}{equation.22}{}}
+\newlabel{e:intro_eq_5_virtual@cref}{{[equation][22][]22}{[1][21][]21}{}{}{}}
+\newlabel{e:intro_eq_0_virtual}{{23}{21}{Virtual $\FF _2$-linear transforms, NP-complete multi-domain linear relations, and hybrid proof systems}{equation.23}{}}
+\newlabel{e:intro_eq_0_virtual@cref}{{[equation][23][]23}{[1][21][]21}{}{}{}}
 \citation{binius64}
-\citation{
+\citation{flock}
+\newlabel{e:CM_rel}{{24}{22}{Virtual $\FF _2$-linear transforms, NP-complete multi-domain linear relations, and hybrid proof systems}{equation.24}{}}
+\newlabel{e:CM_rel@cref}{{[equation][24][]24}{[1][22][]22}{}{}{}}
+\newlabel{r:CM_is_NP_complete}{{2.4}{22}{The $\RELCM $ relation is NP-complete}{lemma.2.4}{}}
+\newlabel{r:CM_is_NP_complete@cref}{{[lemma][4][2]2.4}{[1][22][]22}{}{}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {2.4.1}{$\mathbb  {B}\text  {it}\mathbb  {Z}$}\ for fully hybrid constraints over $\mathbb  {Z}$ and $\ensuremath  {\mathbb  {F}}_{2^\nu }$}{22}{subsubsection.2.4.1}\protected@file@percent }
+\newlabel{s:hybrid_snark}{{2.4.1}{22}{\ftwoz \ for fully hybrid constraints over $\ZZ $ and $\comfield $}{subsubsection.2.4.1}{}}
+\newlabel{s:hybrid_snark@cref}{{[subsubsection][1][2,4]2.4.1}{[1][22][]22}{}{}{}}
+\citation{binius64}
+\citation{whir}
+\citation{BCFW25}
+\citation{binius2}
+\citation{whir}
+\citation{Ligerito}
+\citation{flock}
+\citation{stark}
+\citation{BCFW25}
+\citation{whir}
+\citation{zook}
+\citation{zook}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Round-by-round knowledge soundness}{23}{subsection.2.5}\protected@file@percent }
+\newlabel{s:to_soundness}{{2.5}{23}{Round-by-round knowledge soundness}{subsection.2.5}{}}
+\newlabel{s:to_soundness@cref}{{[subsection][5][2]2.5}{[1][23][]23}{}{}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {2.5.1}Soundness of \cref  {s:to_simple_bitz}}{23}{subsubsection.2.5.1}\protected@file@percent }
+\newlabel{s:to_soundness_prime}{{2.5.1}{23}{Soundness of \cref {s:to_simple_bitz}}{subsubsection.2.5.1}{}}
+\newlabel{s:to_soundness_prime@cref}{{[subsubsection][1][2,5]2.5.1}{[1][23][]23}{}{}{}}
+\newlabel{r:oracle_udr}{{2.5}{24}{The oracle serving as a commitment. Unique Decoding Radius and Johnson bound}{remark.2.5}{}}
+\newlabel{r:oracle_udr@cref}{{[remark][5][2]2.5}{[1][24][]24}{}{}{}}
+\newlabel{e:to_soundness_1}{{25}{24}{Soundness of \cref {s:to_simple_bitz}}{equation.25}{}}
+\newlabel{e:to_soundness_1@cref}{{[equation][25][]25}{[1][24][]24}{}{}{}}
+\newlabel{e:to_soundness_2}{{26}{24}{Soundness of \cref {s:to_simple_bitz}}{equation.26}{}}
+\newlabel{e:to_soundness_2@cref}{{[equation][26][]26}{[1][24][]24}{}{}{}}
+\newlabel{e:to_kappa_0}{{27}{25}{Soundness of \cref {s:to_simple_bitz}}{equation.27}{}}
+\newlabel{e:to_kappa_0@cref}{{[equation][27][]27}{[1][25][]25}{}{}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {2.5.2}Soundness of \cref  {s:to_general_rings}}{25}{subsubsection.2.5.2}\protected@file@percent }
+\newlabel{s:to_soundness_rings}{{2.5.2}{25}{Soundness of \cref {s:to_general_rings}}{subsubsection.2.5.2}{}}
+\newlabel{s:to_soundness_rings@cref}{{[subsubsection][2][2,5]2.5.2}{[1][25][]25}{}{}{}}
+\newlabel{e:to_soundness_1_rings}{{28}{26}{Soundness of \cref {s:to_general_rings}}{equation.28}{}}
+\newlabel{e:to_soundness_1_rings@cref}{{[equation][28][]28}{[1][25][]26}{}{}{}}
+\newlabel{e:soundness_new_to_projected_lifted_polring_claim}{{29}{26}{Soundness of \cref {s:to_general_rings}}{equation.29}{}}
+\newlabel{e:soundness_new_to_projected_lifted_polring_claim@cref}{{[equation][29][]29}{[1][26][]26}{}{}{}}
+\newlabel{e:to_kappa_0_rings}{{30}{26}{Soundness of \cref {s:to_general_rings}}{equation.30}{}}
+\newlabel{e:to_kappa_0_rings@cref}{{[equation][30][]30}{[1][26][]26}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {3}Preliminaries}{26}{section.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{General notation.}{26}{paragraph*.29}\protected@file@percent }
+\newlabel{e:matrix_transpose_inner_product}{{31}{27}{General notation}{equation.31}{}}
+\newlabel{e:matrix_transpose_inner_product@cref}{{[equation][31][]31}{[1][27][]27}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Algebra}{27}{subsection.3.1}\protected@file@percent }
+\newlabel{s:prelims_algebra}{{3.1}{27}{Algebra}{subsection.3.1}{}}
+\newlabel{s:prelims_algebra@cref}{{[subsection][1][3]3.1}{[1][27][]27}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Concrete fields and rings.}{27}{paragraph*.30}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Rings in general.}{27}{paragraph*.31}\protected@file@percent }
+\newlabel{e:Z_to_ring}{{32}{27}{Rings in general}{equation.32}{}}
+\newlabel{e:Z_to_ring@cref}{{[equation][32][]32}{[1][27][]27}{}{}{}}
+\newlabel{e:integers_subscript_proj}{{33}{27}{Rings in general}{equation.33}{}}
+\newlabel{e:integers_subscript_proj@cref}{{[equation][33][]33}{[1][27][]27}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Finitely generated rings.}{27}{paragraph*.32}\protected@file@percent }
+\citation{BCFW25}
+\citation{BCFW25}
+\citation{zinc}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Linear codes and relations}{28}{subsection.3.2}\protected@file@percent }
+\newlabel{s:prelims_codes}{{3.2}{28}{\iflncs Relations\else Linear codes and relations\fi }{subsection.3.2}{}}
+\newlabel{s:prelims_codes@cref}{{[subsection][2][3]3.2}{[1][28][]28}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Linear codes.}{28}{paragraph*.33}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Relations.}{28}{paragraph*.34}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Polynomial Equation Satisfiability (PESAT) over finite fields.}{28}{paragraph*.35}\protected@file@percent }
+\newlabel{d:pesat}{{3.1}{28}{}{definition.3.1}{}}
+\newlabel{d:pesat@cref}{{[definition][1][3]3.1}{[1][28][]28}{}{}{}}
+\citation{whir}
+\citation{BCFW25}
+\citation{zook}
+\@writefile{toc}{\contentsline {paragraph}{Multilinear extensions.}{29}{paragraph*.36}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Interactive Oracle Reductions (IOR) of proximity}{29}{subsection.3.3}\protected@file@percent }
+\newlabel{s:IORs}{{3.3}{29}{Interactive Oracle Reductions (IOR) of proximity}{subsection.3.3}{}}
+\newlabel{s:IORs@cref}{{[subsection][3][3]3.3}{[1][29][]29}{}{}{}}
+\newlabel{def:ior-completeness}{{3.3}{29}{Completeness}{definition.3.3}{}}
+\newlabel{def:ior-completeness@cref}{{[definition][3][3]3.3}{[1][29][]29}{}{}{}}
+\citation{zook}
+\citation{ethstark}
+\newlabel{def:knowledge-state-function}{{3.5}{30}{Knowledge state function with relaxation}{definition.3.5}{}}
+\newlabel{def:knowledge-state-function@cref}{{[definition][5][3]3.5}{[1][29][]30}{}{}{}}
+\newlabel{def:rbr-knowledge-new}{{3.6}{30}{Round-by-round knowledge soundness}{definition.3.6}{}}
+\newlabel{def:rbr-knowledge-new@cref}{{[definition][6][3]3.6}{[1][30][]30}{}{}{}}
+\newlabel{r:ior_compositoin}{{3.7}{30}{Composition of IORs {\cite [Theorem 4.5]{zook}}}{lemma.3.7}{}}
+\newlabel{r:ior_compositoin@cref}{{[lemma][7][3]3.7}{[1][30][]30}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Grinding.}{30}{paragraph*.37}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Cost of finding a $64$-bit nonce such that $\text  {BLAKE3}(\mathsf  {msg}, \mathsf  {nonce})$ has at least $\alpha $ leading zero bits, with $\mathsf  {msg}$ of $256$ bits. Single and multi-threaded ($10$ threads) on a MacBook Air M5 24\,GB, CPU-only.}}{31}{table.caption.38}\protected@file@percent }
+\newlabel{tab:grinding-cost}{{3}{31}{Cost of finding a $64$-bit nonce such that $\text {BLAKE3}(\mathsf {msg}, \mathsf {nonce})$ has at least $\alpha $ leading zero bits, with $\mathsf {msg}$ of $256$ bits. Single and multi-threaded ($10$ threads) on a MacBook Air M5 24\,GB, CPU-only}{table.caption.38}{}}
+\newlabel{tab:grinding-cost@cref}{{[table][3][]3}{[1][30][]31}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4}{$\mathbb  {B}\text  {it}\mathbb  {Z}$}\ IOP for LinBitsRings}{31}{section.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Summary of notation used throughout the paper. }}{31}{table.caption.39}\protected@file@percent }
+\newlabel{t:symbols}{{4}{31}{Summary of notation used throughout the paper}{table.caption.39}{}}
+\newlabel{t:symbols@cref}{{[table][4][]4}{[1][31][]31}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}The core LinBitsRings relation}{32}{subsection.4.1}\protected@file@percent }
+\newlabel{s:linmodfieldbin}{{4.1}{32}{The core LinBitsRings relation}{subsection.4.1}{}}
+\newlabel{s:linmodfieldbin@cref}{{[subsection][1][4]4.1}{[1][31][]32}{}{}{}}
+\newlabel{d:core_linbitsrings}{{4.1}{32}{}{definition.4.1}{}}
+\newlabel{d:core_linbitsrings@cref}{{[definition][1][4]4.1}{[1][32][]32}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Algebraic setup}{32}{subsection.4.2}\protected@file@percent }
+\newlabel{s:interleaved_setting}{{4.2}{32}{Algebraic setup}{subsection.4.2}{}}
+\newlabel{s:interleaved_setting@cref}{{[subsection][2][4]4.2}{[1][32][]32}{}{}{}}
+\newlabel{e:presentations}{{4.2}{33}{}{example.4.2}{}}
+\newlabel{e:presentations@cref}{{[example][2][4]4.2}{[1][33][]33}{}{}{}}
+\citation{whir}
+\citation{Ligerito}
+\citation{flock}
+\citation{binius2}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}The {{$\mathbb  {B}\text  {it}\mathbb  {Z}$}} IOP for the core LinBitsRings relation}{34}{subsection.4.3}\protected@file@percent }
+\newlabel{s:core_iop}{{4.3}{34}{The {\ftwoz } IOP for the core LinBitsRings relation}{subsection.4.3}{}}
+\newlabel{s:core_iop@cref}{{[subsection][3][4]4.3}{[1][33][]34}{}{}{}}
+\newlabel{e:ring_theta_params}{{34}{34}{The {\ftwoz } IOP for the core LinBitsRings relation}{equation.34}{}}
+\newlabel{e:ring_theta_params@cref}{{[equation][34][]34}{[1][34][]34}{}{}{}}
+\newlabel{e:theta_def}{{35}{35}{The {\ftwoz } IOP for the core LinBitsRings relation}{equation.35}{}}
+\newlabel{e:theta_def@cref}{{[equation][35][]35}{[1][34][]35}{}{}{}}
+\newlabel{l:examples_morphisms}{{4.3}{35}{Example definition of $\cM _q$ and the corresponding $\theta (\cP ,\cM ,\codedim )$}{lemma.4.3}{}}
+\newlabel{l:examples_morphisms@cref}{{[lemma][3][4]4.3}{[1][35][]35}{}{}{}}
+\newlabel{c:core_iop}{{4.4}{35}{IOP for the core {$\LinBitsDual $ relation}}{construction.4.4}{}}
+\newlabel{c:core_iop@cref}{{[construction][4][4]4.4}{[1][35][]35}{}{}{}}
+\newlabel{e:core_bitz_eq_new_0}{{36}{36}{IOP for the core {$\LinBitsDual $ relation}}{equation.36}{}}
+\newlabel{e:core_bitz_eq_new_0@cref}{{[equation][36][]36}{[1][36][]36}{}{}{}}
+\newlabel{r:skip_round_1_integers}{{4.5}{36}{Skipping Round 1 when $R=\ZZ $ and $\lVert \vv \rVert _{\infty }$ is ``small''}{remark.4.5}{}}
+\newlabel{r:skip_round_1_integers@cref}{{[remark][5][4]4.5}{[1][36][]36}{}{}{}}
+\newlabel{e:tensored_equality}{{37}{36}{IOP for the core {$\LinBitsDual $ relation}}{equation.37}{}}
+\newlabel{e:tensored_equality@cref}{{[equation][37][]37}{[1][36][]36}{}{}{}}
+\newlabel{e:tensor_decomposition_reconstruction}{{38}{36}{IOP for the core {$\LinBitsDual $ relation}}{equation.38}{}}
+\newlabel{e:tensor_decomposition_reconstruction@cref}{{[equation][38][]38}{[1][36][]36}{}{}{}}
+\newlabel{e:exponent_tensored_equality}{{39}{36}{IOP for the core {$\LinBitsDual $ relation}}{equation.39}{}}
+\newlabel{e:exponent_tensored_equality@cref}{{[equation][39][]39}{[1][36][]36}{}{}{}}
+\newlabel{e:Q_F2Z_intermediate}{{40}{36}{IOP for the core {$\LinBitsDual $ relation}}{equation.40}{}}
+\newlabel{e:Q_F2Z_intermediate@cref}{{[equation][40][]40}{[1][36][]36}{}{}{}}
+\newlabel{e:iopp_mle_claims}{{41}{37}{IOP for the core {$\LinBitsDual $ relation}}{equation.41}{}}
+\newlabel{e:iopp_mle_claims@cref}{{[equation][41][]41}{[1][37][]37}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Costs ($k\leq 1$).}{37}{paragraph*.40}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Costs of \cref  {c:core_iop} when $k\leq 1$, in addition to those of $\Pi _\mathsf  {red}$ and $\Pi _\mathsf  {iopp}$. By $N\cdot \ensuremath  {\mathbb  {F}}_{2^\nu }$, $N\cdot \ensuremath  {\mathbb  {F}}_q$, $N\cdot R$ we indicate $N$ operations in the respective ring. Rounds 0 and 1 are optional.}}{38}{table.caption.41}\protected@file@percent }
+\newlabel{t:core_iop_complexity}{{5}{38}{Costs of \cref {c:core_iop} when $k\leq 1$, in addition to those of $\Pi _\red $ and $\Pi _\iopp $. By $N\cdot \comfield $, $N\cdot \FF _q$, $N\cdot R$ we indicate $N$ operations in the respective ring. Rounds 0 and 1 are optional}{table.caption.41}{}}
+\newlabel{t:core_iop_complexity@cref}{{[table][5][]5}{[1][37][]38}{}{}{}}
+\newlabel{r:succinct_verifier}{{4.6}{38}{Succinct verifier and proofs}{remark.4.6}{}}
+\newlabel{r:succinct_verifier@cref}{{[remark][6][4]4.6}{[1][38][]38}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Soundness and completeness}{39}{subsection.4.4}\protected@file@percent }
+\newlabel{s:soundness_core_iop}{{4.4}{39}{Soundness and completeness}{subsection.4.4}{}}
+\newlabel{s:soundness_core_iop@cref}{{[subsection][4][4]4.4}{[1][38][]39}{}{}{}}
+\newlabel{t:thm_core_IOPP}{{4.7}{39}{Completeness and round-by-round knowledge soundness of \cref {c:core_iop}}{theorem.4.7}{}}
+\newlabel{t:thm_core_IOPP@cref}{{[theorem][7][4]4.7}{[1][39][]39}{}{}{}}
+\newlabel{l:reduction_lemma}{{4.8}{39}{}{lemma.4.8}{}}
+\newlabel{l:reduction_lemma@cref}{{[lemma][8][4]4.8}{[1][39][]39}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Completeness and soundness of $\Pi _1$.}{40}{paragraph*.42}\protected@file@percent }
+\newlabel{e:core_iop_proof_eq1}{{42}{41}{Completeness and soundness of $\Pi _1$}{equation.42}{}}
+\newlabel{e:core_iop_proof_eq1@cref}{{[equation][42][]42}{[1][40][]41}{}{}{}}
+\newlabel{e:break_soundness_2}{{43}{41}{Completeness and soundness of $\Pi _1$}{equation.43}{}}
+\newlabel{e:break_soundness_2@cref}{{[equation][43][]43}{[1][41][]41}{}{}{}}
+\newlabel{e:mu_j_integer_equalities}{{44}{42}{Completeness and soundness of $\Pi _1$}{equation.44}{}}
+\newlabel{e:mu_j_integer_equalities@cref}{{[equation][44][]44}{[1][42][]42}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{The case where Round 1 is skipped.}{43}{paragraph*.43}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}The general LinBitsRings relation}{43}{subsection.4.5}\protected@file@percent }
+\newlabel{s:general_LinBitsDual}{{4.5}{43}{The general LinBitsRings relation}{subsection.4.5}{}}
+\newlabel{s:general_LinBitsDual@cref}{{[subsection][5][4]4.5}{[1][43][]43}{}{}{}}
+\newlabel{d:bitification}{{4.9}{43}{Bitification of the witness}{definition.4.9}{}}
+\newlabel{d:bitification@cref}{{[definition][9][4]4.9}{[1][43][]43}{}{}{}}
+\newlabel{e:bits_of_f}{{45}{44}{Bitification of the witness}{equation.45}{}}
+\newlabel{e:bits_of_f@cref}{{[equation][45][]45}{[1][44][]44}{}{}{}}
+\newlabel{d:general_linbitsrings}{{4.10}{44}{}{definition.4.10}{}}
+\newlabel{d:general_linbitsrings@cref}{{[definition][10][4]4.10}{[1][44][]44}{}{}{}}
+\newlabel{r: non_uniform_bit_decomposition}{{4.11}{45}{Non-uniform bit-decomposition sizes}{remark.4.11}{}}
+\newlabel{r: non_uniform_bit_decomposition@cref}{{[remark][11][4]4.11}{[1][44][]45}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.6}The {$\mathbb  {B}\text  {it}\mathbb  {Z}$}\ IOP for the general LinBitsRings relation}{45}{subsection.4.6}\protected@file@percent }
+\newlabel{s: general_bitz}{{4.6}{45}{The \ftwoz \ IOP for the general LinBitsRings relation}{subsection.4.6}{}}
+\newlabel{s: general_bitz@cref}{{[subsection][6][4]4.6}{[1][45][]45}{}{}{}}
+\newlabel{l:bitify}{{4.12}{45}{}{lemma.4.12}{}}
+\newlabel{l:bitify@cref}{{[lemma][12][4]4.12}{[1][45][]45}{}{}{}}
+\newlabel{e:u_def}{{46}{45}{}{equation.46}{}}
+\newlabel{e:u_def@cref}{{[equation][46][]46}{[1][45][]45}{}{}{}}
+\newlabel{c:LinModFieldBin}{{4.13}{46}{IOP for $\LinModFieldBin $}{construction.4.13}{}}
+\newlabel{c:LinModFieldBin@cref}{{[construction][13][4]4.13}{[1][45][]46}{}{}{}}
+\newlabel{e:iop_final_linear_claim}{{47}{46}{IOP for $\LinModFieldBin $}{equation.47}{}}
+\newlabel{e:iop_final_linear_claim@cref}{{[equation][47][]47}{[1][46][]46}{}{}{}}
+\newlabel{r:tensor_dec_u}{{4.14}{46}{Tensor decompositions of $\uu $}{remark.4.14}{}}
+\newlabel{r:tensor_dec_u@cref}{{[remark][14][4]4.14}{[1][46][]46}{}{}{}}
+\newlabel{e:canonical_bitification_matrix}{{48}{46}{Tensor decompositions of $\uu $}{equation.48}{}}
+\newlabel{e:canonical_bitification_matrix@cref}{{[equation][48][]48}{[1][46][]46}{}{}{}}
+\citation{zincplus}
+\citation{zaratan}
+\@writefile{toc}{\contentsline {paragraph}{Costs of \cref  {c:LinModFieldBin}.}{47}{paragraph*.44}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Costs of \cref  {c:LinModFieldBin} for the standard bitification matrix and the tensor decomposition of \cref  {r:tensor_dec_u}. By $N\cdot R$ we indicate $N$ operations in $R$.}}{47}{table.caption.45}\protected@file@percent }
+\newlabel{t:LinModFieldBin_complexity}{{6}{47}{Costs of \cref {c:LinModFieldBin} for the standard bitification matrix and the tensor decomposition of \cref {r:tensor_dec_u}. By $N\cdot R$ we indicate $N$ operations in $R$}{table.caption.45}{}}
+\newlabel{t:LinModFieldBin_complexity@cref}{{[table][6][]6}{[1][47][]47}{}{}{}}
+\newlabel{t:thm_LinModFieldBits}{{4.15}{47}{}{theorem.4.15}{}}
+\newlabel{t:thm_LinModFieldBits@cref}{{[theorem][15][4]4.15}{[1][47][]47}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}An end-to-end {$\mathbb  {B}\text  {it}\mathbb  {Z}$}-based SNARK over any finitely generated ring}{47}{section.5}\protected@file@percent }
+\newlabel{s:to_snark}{{5}{47}{An end-to-end \ftwoz -based SNARK over any finitely generated ring}{section.5}{}}
+\newlabel{s:to_snark@cref}{{[section][5][]5}{[1][47][]47}{}{}{}}
+\citation{zaratan}
+\citation{ckks}
+\citation{zaratan}
+\citation{zincplus}
+\citation{limber}
+\newlabel{e:intro_eq_0}{{49}{48}{An end-to-end \ftwoz -based SNARK over any finitely generated ring}{equation.49}{}}
+\newlabel{e:intro_eq_0@cref}{{[equation][49][]49}{[1][48][]48}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Step 1: Commitment.}{48}{paragraph*.46}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Step 2: Projection to a finite field $\ensuremath  {\mathbb  {F}}$.}{48}{paragraph*.47}\protected@file@percent }
+\newlabel{e:intro_eq_05}{{50}{48}{Step 2: Projection to a finite field $\FF $}{equation.50}{}}
+\newlabel{e:intro_eq_05@cref}{{[equation][50][]50}{[1][48][]48}{}{}{}}
+\newlabel{r:to_reducing_ring}{{5.1}{48}{Reducing the size of $S$, if necessary}{remark.5.1}{}}
+\newlabel{r:to_reducing_ring@cref}{{[remark][1][5]5.1}{[1][48][]48}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Step 3: PIOP over $\ensuremath  {\mathbb  {F}}$.}{48}{paragraph*.48}\protected@file@percent }
+\newlabel{e:intro_eq_1}{{51}{48}{Step 3: PIOP over $\FF $}{equation.51}{}}
+\newlabel{e:intro_eq_1@cref}{{[equation][51][]51}{[1][48][]48}{}{}{}}
+\citation{thaler13}
+\@writefile{toc}{\contentsline {paragraph}{Step 4: Opening with the {$\mathbb  {B}\text  {it}\mathbb  {Z}$}\ PCS.}{49}{paragraph*.49}\protected@file@percent }
+\newlabel{r:arb_fg_ring}{{5.2}{49}{Handling of arbitrary finitely generated rings}{remark.5.2}{}}
+\newlabel{r:arb_fg_ring@cref}{{[remark][2][5]5.2}{[1][49][]49}{}{}{}}
+\newlabel{s:to_general_bitz}{{5.2}{49}{Handling of arbitrary finitely generated rings}{remark.5.2}{}}
+\newlabel{s:to_general_bitz@cref}{{[remark][2][5]5.2}{[1][49][]49}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6}A GKR protocol for low entropy batched grand products }{49}{section.6}\protected@file@percent }
+\newlabel{s:gkr_low_entropy}{{6}{49}{A GKR protocol for low entropy batched grand products }{section.6}{}}
+\newlabel{s:gkr_low_entropy@cref}{{[section][6][]6}{[1][49][]49}{}{}{}}
+\newlabel{e:main_grand_product}{{52}{49}{A GKR protocol for low entropy batched grand products }{equation.52}{}}
+\newlabel{e:main_grand_product@cref}{{[equation][52][]52}{[1][49][]49}{}{}{}}
+\newlabel{c:gkr_grand_product}{{6.1}{50}{An IOR $\Pi _\red $ from $\PESAT (\comfield , \gkrpol )$ to $\LIN ( \comfield )$}{construction.6.1}{}}
+\newlabel{c:gkr_grand_product@cref}{{[construction][1][6]6.1}{[1][50][]50}{}{}{}}
+\newlabel{e:gkr_intermediate}{{53}{50}{An IOR $\Pi _\red $ from $\PESAT (\comfield , \gkrpol )$ to $\LIN ( \comfield )$}{equation.53}{}}
+\newlabel{e:gkr_intermediate@cref}{{[equation][53][]53}{[1][50][]50}{}{}{}}
+\citation{binius2}
+\newlabel{e:gkr_leaf_claim}{{54}{51}{An IOR $\Pi _\red $ from $\PESAT (\comfield , \gkrpol )$ to $\LIN ( \comfield )$}{equation.54}{}}
+\newlabel{e:gkr_leaf_claim@cref}{{[equation][54][]54}{[1][51][]51}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Using $\Pi _\mathsf  {red}$ in {$\mathbb  {B}\text  {it}\mathbb  {Z}$}\ and succinctness of the verifier. }{51}{paragraph*.50}\protected@file@percent }
+\citation{gruen}
+\citation{gruen}
+\citation{CCHLRRW19}
+\citation{BCFW25}
+\@writefile{toc}{\contentsline {paragraph}{Costs.}{52}{paragraph*.51}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces  Rounds, proof size and verifier work of \cref  {c:gkr_grand_product} for the polynomial $p(Y,X)=(Y-1)\cdot X +1$ in our deployment of {$\mathbb  {B}\text  {it}\mathbb  {Z}$}. By $N\cdot \mathbb  {K}$ we indicate $N$ operations in $\mathbb  {K}$. The proof size counts $3$ elements per sumcheck round. Using \cite  {gruen} we send $2$ elements per sumcheck round in our implementation.}}{52}{table.caption.52}\protected@file@percent }
+\newlabel{t:gkr_grand_product_complexity}{{7}{52}{Rounds, proof size and verifier work of \cref {c:gkr_grand_product} for the polynomial $\gkrpol (Y,X)=(Y-1)\cdot X +1$ in our deployment of \ftwoz . By $N\cdot \comfield $ we indicate $N$ operations in $\comfield $. The proof size counts $3$ elements per sumcheck round. Using \cite {gruen} we send $2$ elements per sumcheck round in our implementation}{table.caption.52}{}}
+\newlabel{t:gkr_grand_product_complexity@cref}{{[table][7][]7}{[1][52][]52}{}{}{}}
+\newlabel{l:gkr_grand_product}{{6.2}{52}{Soundness and completeness of \cref {c:gkr_grand_product}}{lemma.6.2}{}}
+\newlabel{l:gkr_grand_product@cref}{{[lemma][2][6]6.2}{[1][52][]52}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}A first prover optimization via lookup tables}{53}{subsection.6.1}\protected@file@percent }
+\newlabel{s:tables}{{6.1}{53}{A first prover optimization via lookup tables}{subsection.6.1}{}}
+\newlabel{s:tables@cref}{{[subsection][1][6]6.1}{[1][52][]53}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Setup.}{53}{paragraph*.53}\protected@file@percent }
+\newlabel{e:size_T_r1_i}{{55}{53}{Setup}{equation.55}{}}
+\newlabel{e:size_T_r1_i@cref}{{[equation][55][]55}{[1][53][]53}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{First prover message in the last sumcheck in Step 2 of \cref  {c:gkr_grand_product}.}{54}{paragraph*.54}\protected@file@percent }
+\newlabel{e:grand_product_Lr1}{{56}{54}{First prover message in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}}{equation.56}{}}
+\newlabel{e:grand_product_Lr1@cref}{{[equation][56][]56}{[1][54][]54}{}{}{}}
+\newlabel{e:grand_product_Lr2}{{57}{54}{First prover message in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}}{equation.57}{}}
+\newlabel{e:grand_product_Lr2@cref}{{[equation][57][]57}{[1][54][]54}{}{}{}}
+\citation{gruen}
+\newlabel{e:TA2}{{58}{55}{First prover message in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}}{equation.58}{}}
+\newlabel{e:TA2@cref}{{[equation][58][]58}{[1][55][]55}{}{}{}}
+\citation{gruen}
+\citation{sumcheck_opt_2}
+\citation{sumcheck_opt_1}
+\citation{sumcheck_opt_2}
+\citation{gruen}
+\@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces The cost in field operations of the first sumcheck round of the last sumcheck in our GKR protocol for batched grand products, cf.\ \cref  {c:gkr_grand_product}, where $\ell =\ell _1\cdot \ell _2 = 2^{r_1}\cdot 2^{r_2}$ is the witness size. In our instantiation $\ell _1\approx \ell ^{0.6}= 2^{r_1}$ and $\ell _2\approx \ell ^{0.4}=2^{r_2}$ (\cref  {s:instantiation}). }}{56}{table.caption.55}\protected@file@percent }
+\newlabel{t:gkr_step1_costs}{{8}{56}{The cost in field operations of the first sumcheck round of the last sumcheck in our GKR protocol for batched grand products, cf.\ \cref {c:gkr_grand_product}, where $\codedim =\codedim _1\cdot \codedim _2 = 2^{r_1}\cdot 2^{r_2}$ is the witness size. In our instantiation $\codedim _1\approx \codedim ^{0.6}\iflncs \else = 2^{r_1}\fi $ and $\codedim _2\approx \codedim ^{0.4}\iflncs \else =2^{r_2}\fi $ (\cref {s:instantiation})}{table.caption.55}{}}
+\newlabel{t:gkr_step1_costs@cref}{{[table][8][]8}{[1][56][]56}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Subsequent prover messages in the last sumcheck in Step 2 of \cref  {c:gkr_grand_product}.}{56}{paragraph*.56}\protected@file@percent }
+\citation{pipp}
+\@writefile{toc}{\contentsline {paragraph}{The rest of the sumchecks in Step 2 of \cref  {c:gkr_grand_product}.}{57}{paragraph*.57}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Reducing table reads via bucketing}{58}{subsection.6.2}\protected@file@percent }
+\newlabel{s:gkr_buckets}{{6.2}{58}{Reducing table reads via bucketing}{subsection.6.2}{}}
+\newlabel{s:gkr_buckets@cref}{{[subsection][2][6]6.2}{[1][57][]58}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{The polynomial $h_1(X)$.}{58}{paragraph*.58}\protected@file@percent }
+\newlabel{e:naive_coeff_compute}{{59}{58}{The polynomial $h_1(X)$}{equation.59}{}}
+\newlabel{e:naive_coeff_compute@cref}{{[equation][59][]59}{[1][58][]58}{}{}{}}
+\citation{sumcheck_opt_2}
+\@writefile{lot}{\contentsline {table}{\numberline {9}{\ignorespaces The cost in field operations of the first sumcheck round of the last sumcheck in our GKR protocol for batched grand products, cf.\ \cref  {c:gkr_grand_product}, with the buckets of \cref  {s:gkr_buckets} and the tables $T_{A_0}$, $T_{A_2}$ (compare with \cref  {t:gkr_step1_costs}). Here $\ell =\ell _1\cdot \ell _2 = 2^{r_1}\cdot 2^{r_2}$ is the witness size. The $\ell _1\cdot \ell _2/4$ additions go into $16$ buckets per index $\ensuremath  {\mathbf  {b}}$, and each table entry is read once.}}{59}{table.caption.59}\protected@file@percent }
+\newlabel{t:gkr_buckets_costs}{{9}{59}{The cost in field operations of the first sumcheck round of the last sumcheck in our GKR protocol for batched grand products, cf.\ \cref {c:gkr_grand_product}, with the buckets of \cref {s:gkr_buckets} and the tables $T_{A_0}$, $T_{A_2}$ (compare with \cref {t:gkr_step1_costs}). Here $\codedim =\codedim _1\cdot \codedim _2 = 2^{r_1}\cdot 2^{r_2}$ is the witness size. The $\codedim _1\cdot \codedim _2/4$ additions go into $16$ buckets per index $\bb $, and each table entry is read once}{table.caption.59}{}}
+\newlabel{t:gkr_buckets_costs@cref}{{[table][9][]9}{[1][58][]59}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Subsequent sumcheck rounds and GKR layers.}{59}{paragraph*.60}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Reducing transpositions when forming table indices}{59}{subsection.6.3}\protected@file@percent }
+\newlabel{s:gkr_implementation}{{6.3}{59}{Reducing transpositions when forming table indices}{subsection.6.3}{}}
+\newlabel{s:gkr_implementation@cref}{{[subsection][3][6]6.3}{[1][59][]59}{}{}{}}
+\citation{zincplus}
+\@writefile{toc}{\contentsline {paragraph}{The naive approach to computing $\ensuremath  {\mathbf  {x}}_{\ensuremath  {\mathbf  {b}},\mathbf  {c}}$.}{60}{paragraph*.61}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Optimization.}{60}{paragraph*.62}\protected@file@percent }
+\citation{flock}
+\citation{limber}
+\citation{basefold}
+\@writefile{toc}{\contentsline {section}{\numberline {7}Experiments}{61}{section.7}\protected@file@percent }
+\newlabel{s:experiments}{{7}{61}{Experiments}{section.7}{}}
+\newlabel{s:experiments@cref}{{[section][7][]7}{[1][60][]61}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{The Binius configuration suite.}{61}{paragraph*.63}\protected@file@percent }
+\newlabel{s:binius_suite}{{7}{61}{The Binius configuration suite}{paragraph*.63}{}}
+\newlabel{s:binius_suite@cref}{{[section][7][]7}{[1][61][]61}{}{}{}}
+\citation{flock}
+\citation{longfellow}
+\citation{vega}
+\@writefile{lot}{\contentsline {table}{\numberline {10}{\ignorespaces Costs of proving $N$ multiplications $x\cdot y = z$ for random $32$-, $64$- and $128$-bit nonnegative integers $x$ and $y$ (so that $z$ has twice the bit-size of $x$ and $y$). This is an excerpt of \cref  {tab:f2z-u32-mul,tab:native-mul-u64,tab:native-mul-u128}. $100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air M5, 24\,GB, CPU only.}}{62}{table.caption.64}\protected@file@percent }
+\newlabel{tab:int_highlights}{{10}{62}{Costs of proving $N$ multiplications $x\cdot y = z$ for random $32$-, $64$- and $128$-bit nonnegative integers $x$ and $y$ (so that $z$ has twice the bit-size of $x$ and $y$). This is an excerpt of \cref {tab:f2z-u32-mul,tab:native-mul-u64,tab:native-mul-u128}. $100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air M5, 24\,GB, CPU only}{table.caption.64}{}}
+\newlabel{tab:int_highlights@cref}{{[table][10][]10}{[1][61][]62}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Non-comparisons.}{62}{paragraph*.65}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Repositories.}{62}{paragraph*.66}\protected@file@percent }
+\citation{limber}
+\citation{zincplus}
+\citation{limber}
+\@writefile{toc}{\contentsline {paragraph}{Usage of AI.}{63}{paragraph*.67}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Raw performance of the {$\mathbb  {B}\text  {it}\mathbb  {Z}$}\ PCS for the core LinBitsRings relation}{63}{subsection.7.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {11}{\ignorespaces  Cost of {$\mathbb  {B}\text  {it}\mathbb  {Z}$}\ (\cref  {c:core_iop}) for committing to $\ell = 2^{n}$ bits, $n = 20, \ldots  , 31$, and proving one claim $\langle \mathbf  {v}, \mathbf  {f}\rangle = \mu $ over $\ensuremath  {\mathbb  {F}}_q$. Configured for $100$ bits of round-by-round knowledge soundness. The \emph  {grand product} column comprises Phase 3 of \cref  {c:core_iop}. The \emph  {ring switch} and \emph  {Ligerito} columns comprise Phase 4. The \emph  {Non-Ligerito} proof size is comprised of the $\mu _j$ values in Round 2 of \cref  {c:core_iop}, the GKR and sumcheck messages, and the ring-switch messages. The ring switch step includes an initial sumcheck that transforms inner product claims to MLE evaluation claims. ``Lig.'' stands for Ligerito, ``Mem.'' stands for peak memory, and ``Ring s.'' for ring switch. Measured on a MacBook Air M5, 24\,GB, CPU only.}}{63}{table.caption.68}\protected@file@percent }
+\newlabel{tab:f2z-raw-performance}{{11}{63}{Cost of \ftwoz \ (\cref {c:core_iop}) for committing to $\codedim = 2^{n}$ bits, $n = 20, \ldots , 31$, and proving one claim $\langle \vv , \bff \rangle = \mu $ over $\FF _q$. Configured for $100$ bits of round-by-round knowledge soundness. The \emph {grand product} column comprises Phase 3 of \cref {c:core_iop}. The \emph {ring switch} and \emph {Ligerito} columns comprise Phase 4. The \emph {Non-Ligerito} proof size is comprised of the $\mu _j$ values in Round 2 of \cref {c:core_iop}, the GKR and sumcheck messages, and the ring-switch messages. The ring switch step includes an initial sumcheck that transforms inner product claims to MLE evaluation claims. ``Lig.'' stands for Ligerito, ``Mem.'' stands for peak memory, and ``Ring s.'' for ring switch. Measured on a MacBook Air M5, 24\,GB, CPU only}{table.caption.68}{}}
+\newlabel{tab:f2z-raw-performance@cref}{{[table][11][]11}{[1][63][]63}{}{}{}}
+\citation{multiswap}
+\citation{limber}
+\citation{limber}
+\citation{multiswap}
+\citation{limber}
+\citation{limber}
+\citation{binius64}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}RSA accumulation and Poseidon hashing}{64}{subsection.7.2}\protected@file@percent }
+\newlabel{s:multiswap}{{7.2}{64}{RSA accumulation and Poseidon hashing}{subsection.7.2}{}}
+\newlabel{s:multiswap@cref}{{[subsection][2][7]7.2}{[1][63][]64}{}{}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {12}{\ignorespaces Proving one MultiSwap \cite  {multiswap} computation (four exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation). The first four schemes prove the same R1CS constraint over the integers, taken from \cite  {limber}, and were run on a MacBook Air M5 24\,GB, CPU only. ``Thr'' stands for ``threads''. The first four schemes achieve $114$ bits of round-by-round knowledge soundness. The Zinc$+$ proof compresses to $847$\,KB with \texttt  {zstd}. $^{\dagger }$ Quoted from \cite  {limber} and not measured here. }}{64}{table.caption.69}\protected@file@percent }
+\newlabel{t:multiswap}{{12}{64}{Proving one MultiSwap \cite {multiswap} computation (four exponentiations modulo a $2048$-bit RSA modulus, with $352$-bit exponents, plus a Poseidon-based hash-to-prime evaluation). The first four schemes prove the same R1CS constraint over the integers, taken from \cite {limber}, and were run on a MacBook Air M5 24\,GB, CPU only. ``Thr'' stands for ``threads''. The first four schemes achieve $114$ bits of round-by-round knowledge soundness. The Zinc$+$ proof compresses to $847$\,KB with \texttt {zstd}. $^{\dagger }$ Quoted from \cite {limber} and not measured here}{table.caption.69}{}}
+\newlabel{t:multiswap@cref}{{[table][12][]12}{[1][64][]64}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}SHA-256 hashing followed by ECDSA signature verification}{64}{subsection.7.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {13}{\ignorespaces Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a P-256 ECDSA signature on the resulting digest. Below message sizes we record the corresponding number of SHA-256 compressions (comp.). Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air M5, 24\,GB.}}{65}{table.caption.70}\protected@file@percent }
+\newlabel{tab:sha256-ecdsa-p256}{{13}{65}{Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a P-256 ECDSA signature on the resulting digest. Below message sizes we record the corresponding number of SHA-256 compressions (comp.). Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air M5, 24\,GB}{table.caption.70}{}}
+\newlabel{tab:sha256-ecdsa-p256@cref}{{[table][13][]13}{[1][65][]65}{}{}{}}
+\citation{binius64}
+\@writefile{lot}{\contentsline {table}{\numberline {14}{\ignorespaces Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a secp256k1 ECDSA signature on the resulting digest. Below message sizes we record the corresponding number of SHA-256 compressions (comp.). Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air M5, 24\,GB.}}{66}{table.caption.71}\protected@file@percent }
+\newlabel{tab:sha256-ecdsa-secp256k1}{{14}{66}{Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a secp256k1 ECDSA signature on the resulting digest. Below message sizes we record the corresponding number of SHA-256 compressions (comp.). Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air M5, 24\,GB}{table.caption.71}{}}
+\newlabel{tab:sha256-ecdsa-secp256k1@cref}{{[table][14][]14}{[1][65][]66}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Modular multiplications and bit operations (mod $2^{32}$ multiplication and SHA-256 hashing)}{66}{subsection.7.4}\protected@file@percent }
+\newlabel{s:experiments_sha_modmul}{{7.4}{66}{Modular multiplications and bit operations (mod $2^{32}$ multiplication and SHA-256 hashing)}{subsection.7.4}{}}
+\newlabel{s:experiments_sha_modmul@cref}{{[subsection][4][7]7.4}{[1][66][]66}{}{}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {15}{\ignorespaces Cost of proving $N$ multiplications modulo $2^{32}$ and $M=N/256$ chained SHA-256 compressions. The choice of $N$ and $M$ is done so that both types of workloads (modular multiplication and SHA-256) amount to roughly the same number of witness bits. Configured at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air M5, 24\,GB, CPU only.}}{68}{table.caption.72}\protected@file@percent }
+\newlabel{tab:hybrid-sha256-mul}{{15}{68}{Cost of proving $N$ multiplications modulo $2^{32}$ and $M=N/256$ chained SHA-256 compressions. The choice of $N$ and $M$ is done so that both types of workloads (modular multiplication and SHA-256) amount to roughly the same number of witness bits. Configured at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air M5, 24\,GB, CPU only}{table.caption.72}{}}
+\newlabel{tab:hybrid-sha256-mul@cref}{{[table][15][]15}{[1][67][]68}{}{}{}}
+\citation{zincplus}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.5}Integer multiplication}{69}{subsection.7.5}\protected@file@percent }
+\newlabel{s:integer_exps}{{7.5}{69}{Integer multiplication}{subsection.7.5}{}}
+\newlabel{s:integer_exps@cref}{{[subsection][5][7]7.5}{[1][69][]69}{}{}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {16}{\ignorespaces Cost of proving $N=2^n$ integer multiplications $x \cdot y = z$ for random $32$-bit non-negative integers $x, y$ (with $z$ a $64$-bit integer). Configured at $100$ bits of round-by-round knowledge soundness (cf.\ \cref  {s:instantiation}). Cells with ``--'' are cells whose prover did not fit in the machine's memory. Ran on a MacBook Air M5, 24\,GB. }}{70}{table.caption.73}\protected@file@percent }
+\newlabel{tab:f2z-u32-mul}{{16}{70}{Cost of proving $N=2^n$ integer multiplications $x \cdot y = z$ for random $32$-bit non-negative integers $x, y$ (with $z$ a $64$-bit integer). Configured at $100$ bits of round-by-round knowledge soundness (cf.\ \cref {s:instantiation}). Cells with ``--'' are cells whose prover did not fit in the machine's memory. Ran on a MacBook Air M5, 24\,GB}{table.caption.73}{}}
+\newlabel{tab:f2z-u32-mul@cref}{{[table][16][]16}{[1][69][]70}{}{}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {17}{\ignorespaces Costs of proving $N=2^n$ multiplications $x\cdot y = z$ for random $64$-bit nonnegative integers $x$ and $y$ (with $z$ a $128$-bit integer). 100 bits of round-by-round knowledge soundness. Cells with ``--'' are cells whose prover did not fit in the machine's memory. Ran on a MacBook Air M5, 24\,GB, CPU-only.}}{71}{table.caption.74}\protected@file@percent }
+\newlabel{tab:native-mul-u64}{{17}{71}{Costs of proving $N=2^n$ multiplications $x\cdot y = z$ for random $64$-bit nonnegative integers $x$ and $y$ (with $z$ a $128$-bit integer). 100 bits of round-by-round knowledge soundness. Cells with ``--'' are cells whose prover did not fit in the machine's memory. Ran on a MacBook Air M5, 24\,GB, CPU-only}{table.caption.74}{}}
+\newlabel{tab:native-mul-u64@cref}{{[table][17][]17}{[1][70][]71}{}{}{}}
+\citation{lev}
+\citation{lev}
+\citation{lev}
+\citation{lev}
+\@writefile{lot}{\contentsline {table}{\numberline {18}{\ignorespaces  Costs of proving $N=2^n$ multiplications $x\cdot y = z$ for random $128$-bit nonnegative integers $x$ and $y$ (with $z$ a $256$-bit integer). 100 bits of round-by-round knowledge soundness. Cells with ``--'' are cells whose prover did not fit in the machine's memory. Ran on a MacBook Air M5, 24\,GB, CPU only.}}{72}{table.caption.75}\protected@file@percent }
+\newlabel{tab:native-mul-u128}{{18}{72}{Costs of proving $N=2^n$ multiplications $x\cdot y = z$ for random $128$-bit nonnegative integers $x$ and $y$ (with $z$ a $256$-bit integer). 100 bits of round-by-round knowledge soundness. Cells with ``--'' are cells whose prover did not fit in the machine's memory. Ran on a MacBook Air M5, 24\,GB, CPU only}{table.caption.75}{}}
+\newlabel{tab:native-mul-u128@cref}{{[table][18][]18}{[1][71][]72}{}{}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.6}Comparison with Fields-Witch}{72}{subsection.7.6}\protected@file@percent }
+\newlabel{s:exp_fields_witch}{{7.6}{72}{Comparison with Fields-Witch}{subsection.7.6}{}}
+\newlabel{s:exp_fields_witch@cref}{{[subsection][6][7]7.6}{[1][72][]72}{}{}{}}
+\bibdata{paper/references}
+\bibcite{Zkb}{0xP}
+\bibcite{stir}{ACFY24}
+\bibcite{whir}{ACFY25}
+\bibcite{zincplus}{AGK{$^{+}$}26}
+\@writefile{lot}{\contentsline {table}{\numberline {19}{\ignorespaces Cost of proving an MLE claim for a vector of $2^{m-7}$ field elements from $\ensuremath  {\mathbb  {F}}_{2^{127}-1}$, for $m \in \{ 21, 23,25,27,29\}$. $100$ bits of security with Fields-Witch (Soukhanov's implementation of \cite  {lev}) and with {$\mathbb  {B}\text  {it}\mathbb  {Z}$}. Ran on a MacBook Air M5, 24\,GB.}}{73}{table.caption.76}\protected@file@percent }
+\newlabel{tab:fields-witch}{{19}{73}{Cost of proving an MLE claim for a vector of $2^{m-7}$ field elements from $\FF _{2^{127}-1}$, for $m \in \{ 21, 23,25,27,29\}$. $100$ bits of security with Fields-Witch (Soukhanov's implementation of \cite {lev}) and with \ftwoz . Ran on a MacBook Air M5, 24\,GB}{table.caption.76}{}}
+\newlabel{tab:fields-witch@cref}{{[table][19][]19}{[1][72][]73}{}{}{}}
+\@writefile{toc}{\contentsline {section}{References}{73}{table.caption.76}\protected@file@percent }
+\bibcite{baum2022moz}{BBMHS22}
+\bibcite{BCFW25}{BCFW25}
+\bibcite{sumcheck_opt_2}{BDDT25}
+\bibcite{jea_codes}{BFK{$^{+}$}24}
+\bibcite{DARK}{BFS19}
+\bibcite{risczero}{BG23}
+\bibcite{BlockDARK}{BHR{$^{+}$}21}
+\bibcite{binius64}{Bin26}
+\bibcite{flock}{BRW26}
+\bibcite{beullens2023labrador}{BS23}
+\bibcite{fri}{BSBHR18a}
+\bibcite{stark}{BSBHR18b}
+\bibcite{linearSizedIOPs}{BSCG{$^{+}$}19}
+\bibcite{cryptoeprint:2022/1542}{BSCKL22}
+\bibcite{CCHLRRW19}{CCH{$^{+}$}19}
+\bibcite{snark-vuln-sok}{CET{$^{+}$}24}
+\bibcite{zook}{CFW26}
+\bibcite{zaratan}{CHA24}
+\bibcite{ckks}{CKKS17}
+\bibcite{limber}{CXNB26}
+\bibcite{binius}{DP23}
+\bibcite{binius2}{DP24}
+\bibcite{sumcheck_opt_1}{DT24}
+\bibcite{longfellow}{Fas24}
+\bibcite{whir-repo}{Fen24}
+\bibcite{rinnochio}{GNSV23}
+\bibcite{gruen}{Gru24}
+\bibcite{GS99}{GS99}
+\bibcite{zinc}{GWV{$^{+}$}25}
+\bibcite{cryptoeprint:2023/824}{HLN23}
+\bibcite{CircleSTARKs}{HLP24}
+\bibcite{new_rings_work_one}{HMZ25}
+\bibcite{Edi23}{{Imm}23}
+\bibcite{SALSAA}{KLOT25}
+\bibcite{xJsnark}{KPS18}
+\bibcite{vega}{KS25}
+\bibcite{Ligerito}{NA25}
+\bibcite{Hachi}{NOZ26}
+\bibcite{Greyhound}{NS24}
+\bibcite{EFpaper}{OKMZ24}
+\bibcite{multiswap}{OWWB20}
+\bibcite{plonky2:repo}{{Pol}22}
+\bibcite{binaryspartan}{Set26}
+\bibcite{hashcaster:repo}{Sou24}
+\bibcite{logupstar}{Sou25}
+\bibcite{lev}{Sou26}
+\bibcite{qaren}{SSPP26}
+\bibcite{ethstark}{Sta21}
+\bibcite{soria2022doubly}{SV22}
+\bibcite{thaler13}{Tha13}
+\bibcite{zk-circuit-bugs}{WSC{$^{+}$}24}
+\bibcite{new_rings_work_two}{WZD25}
+\bibcite{basefold}{ZCF23}
+\citation{Ligerito}
+\citation{flock}
+\citation{binius2}
+\citation{flock}
+\@writefile{toc}{\contentsline {section}{\numberline {A}Instantiation and achieving 100 or 128 bits of soundness}{77}{appendix.A}\protected@file@percent }
+\newlabel{s:instantiation}{{A}{77}{Instantiation and achieving 100 or 128 bits of soundness}{appendix.A}{}}
+\newlabel{s:instantiation@cref}{{[section][1][]A}{[1][77][]77}{}{}{}}
+\citation{Ligerito}
+\citation{whir}
+\citation{stir}
+\citation{flock}
+\citation{whir-repo}
+\@writefile{lot}{\contentsline {table}{\numberline {20}{\ignorespaces Parameter choices in our deployment of \cref  {c:core_iop,c:LinModFieldBin}.}}{78}{table.caption.77}\protected@file@percent }
+\newlabel{tab:instantiation_params}{{20}{78}{Parameter choices in our deployment of \cref {c:core_iop,c:LinModFieldBin}}{table.caption.77}{}}
+\newlabel{tab:instantiation_params@cref}{{[table][20][]20}{[1][77][]78}{}{}{}}
+\newlabel{e:codedim_1_proportion}{{60}{78}{Instantiation and achieving 100 or 128 bits of soundness}{equation.60}{}}
+\newlabel{e:codedim_1_proportion@cref}{{[equation][60][]60}{[1][78][]78}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{The errors ${\kappa _{\mathsf  {iopp}}}_i$.}{78}{paragraph*.78}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{The errors ${\kappa _{\mathsf  {red}}}_i$.}{79}{paragraph*.79}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{The error $\kappa _0$.}{79}{paragraph*.80}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa _0$.}{79}{paragraph*.81}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Strategy 2: No or essentially no grinding during the PIOP, and $\kappa _0$ is present and grinding is used during the first projection step (Round 1) of \cref  {c:core_iop}.}{79}{paragraph*.82}\protected@file@percent }
+\newlabel{e:kappa_0_practical_upper_bound}{{61}{80}{Strategy 2: No or essentially no grinding during the PIOP, and $\kappa _0$ is present and grinding is used during the first projection step (Round 1) of \cref {c:core_iop}}{equation.61}{}}
+\newlabel{e:kappa_0_practical_upper_bound@cref}{{[equation][61][]61}{[1][80][]80}{}{}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {21}{\ignorespaces Minima for the upper bound of $\kappa _0$ in \eqref  {e:kappa_0_practical_upper_bound} for different configurations of $\ensuremath  {\mathbb  {F}}$ (of characteristic $q$ and degree $d$ over its prime field), witness sizes $\ell $, and $\tau $ such that $\ell _1=\ell ^\tau $. By choosing primes in the interval $[2^{a^*}, 2^{128-r_1}]$, we have that the first error term $\kappa _0$ is bounded by the quantity in the $\kappa _0\leq $ column. We include the bits left required to achieve $\kappa _0 < 1/2^{128}$ and the cost of grinding such an amount of bits on a MacBook Air M5 24\,GB multi-threaded, using Blake3 as hash function.}}{80}{table.caption.83}\protected@file@percent }
+\newlabel{tab:min-f}{{21}{80}{Minima for the upper bound of $\kappa _0$ in \eqref {e:kappa_0_practical_upper_bound} for different configurations of $\FF $ (of characteristic $q$ and degree $d$ over its prime field), witness sizes $\codedim $, and $\tau $ such that $\codedim _1=\codedim ^\tau $. By choosing primes in the interval $[2^{a^*}, 2^{128-r_1}]$, we have that the first error term $\kappa _0$ is bounded by the quantity in the $\kappa _0\leq $ column. We include the bits left required to achieve $\kappa _0 < 1/2^{128}$ and the cost of grinding such an amount of bits on a MacBook Air M5 24\,GB multi-threaded, using Blake3 as hash function}{table.caption.83}{}}
+\newlabel{tab:min-f@cref}{{[table][21][]21}{[1][80][]80}{}{}{}}
+\newlabel{r:beyond_gridning}{{A.1}{80}{128 bits of security for larger witness sizes $\codedim $, without or with minimal grinding}{remark.A.1}{}}
+\newlabel{r:beyond_gridning@cref}{{[remark][1][1]A.1}{[1][80][]80}{}{}{}}
+\citation{binius64}
+\citation{GS99}
+\citation{stir}
+\citation{zincplus}
+\citation{zinc}
+\citation{zaratan}
+\newlabel{r:johnson_instantiation}{{A.2}{81}{Proximity parameter up to the Johnson bound}{remark.A.2}{}}
+\newlabel{r:johnson_instantiation@cref}{{[remark][2][1]A.2}{[1][81][]81}{}{}{}}
+\newlabel{r:first_projection_security}{{A.3}{81}{Projecting polynomial constraints to a $112$-$113$ bit prime field with $128$ bits of security}{remark.A.3}{}}
+\newlabel{r:first_projection_security@cref}{{[remark][3][1]A.3}{[1][81][]81}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {B}Deferred proofs}{82}{appendix.B}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {B.1}Completeness and soundness of \cref  {c:LinModFieldBin}}{82}{subsection.B.1}\protected@file@percent }
+\newlabel{a:LinModFieldBin}{{B.1}{82}{Completeness and soundness of \cref {c:LinModFieldBin}}{subsection.B.1}{}}
+\newlabel{a:LinModFieldBin@cref}{{[subsection][1][2]B.1}{[1][82][]82}{}{}{}}
+\newlabel{e:appendix_bitify}{{62}{82}{Completeness and soundness of \cref {c:LinModFieldBin}}{equation.62}{}}
+\newlabel{e:appendix_bitify@cref}{{[equation][62][]62}{[1][82][]82}{}{}{}}
+\citation{stir}
+\citation{whir}
+\@writefile{toc}{\contentsline {subsection}{\numberline {B.2}Soundness of Out Of Domain Sampling (OOD) in \cref  {c:core_iop}}{83}{subsection.B.2}\protected@file@percent }
+\newlabel{a:OOD}{{B.2}{83}{Soundness of Out Of Domain Sampling (OOD) in \cref {c:core_iop}}{subsection.B.2}{}}
+\newlabel{a:OOD@cref}{{[subsection][2][2]B.2}{[1][83][]83}{}{}{}}
+\newlabel{t:thm_core_IOPP_OOD}{{B.1}{83}{\Cref {t:thm_core_IOPP} when Round 0 is executed}{theorem.B.1}{}}
+\newlabel{t:thm_core_IOPP_OOD@cref}{{[theorem][1][2]B.1}{[1][83][]83}{}{}{}}
+\newlabel{l:ood_collision}{{B.2}{83}{OOD collision probability}{lemma.B.2}{}}
+\newlabel{l:ood_collision@cref}{{[lemma][2][2]B.2}{[1][83][]83}{}{}{}}
+\gdef \@abspage@last{84}

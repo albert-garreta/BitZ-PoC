@@ -1,0 +1,258 @@
+diff --git a/protocol/benches/e2e.rs b/protocol/benches/e2e.rs
+index ab1206e..b09c1b7 100644
+--- a/protocol/benches/e2e.rs
++++ b/protocol/benches/e2e.rs
+@@ -1002,36 +1002,220 @@ fn bench_big_linear_public_input_steps(group: &mut BenchmarkGroup<WallTime>, num
+ // Criterion entry points
+ //
+ 
+-fn e2e_benches(c: &mut Criterion) {
+-    let mut group = c.benchmark_group("Zinc+ E2E");
++/// SHA-256 + ECDSA campaign harness (added for the BitZ paper's SHA+ECDSA
++/// table). One process per (mode, size, thread count):
++///
++///     MODE=plain|folded4x  SHA_NV=<num_vars>  REPS=<n>  RAYON_NUM_THREADS=<t>
++///
++/// The number of chained compressions is the compile-time
++/// `test-uair/src/sha256.rs::cols::NUM_COMPRESSIONS`; `SHA_NV` must be large
++/// enough to hold `68·N + 4` rows. Emits one `ZINC_TRIAL` line per timed
++/// repetition and one `ZINC_RESULT` JSON line.
++fn e2e_benches(_c: &mut Criterion) {
++    use std::time::Instant;
++
++    fn env_usize(key: &str, default: usize) -> usize {
++        std::env::var(key)
++            .ok()
++            .and_then(|s| s.parse().ok())
++            .unwrap_or(default)
++    }
++    fn median(xs: &[f64]) -> f64 {
++        let mut v = xs.to_vec();
++        v.sort_by(|a, b| a.partial_cmp(b).expect("no NaN timings"));
++        v[v.len() / 2]
++    }
+ 
+-    // bench_no_mult_e2e(&mut group, 8);
+-    // bench_no_mult_e2e(&mut group, 10);
+-    // bench_no_mult_e2e(&mut group, 12);
+-// 
+-    // bench_binary_decomposition_e2e(&mut group, 8);
+-    // bench_binary_decomposition_e2e(&mut group, 10);
+-    // bench_binary_decomposition_e2e(&mut group, 12);
+-// 
+-    // bench_big_linear_e2e(&mut group, 8);
+-    // bench_big_linear_e2e(&mut group, 10);
+-    // bench_big_linear_e2e(&mut group, 12);
+-// 
+-    // bench_big_linear_public_input_e2e(&mut group, 8);
+-    // bench_big_linear_public_input_e2e(&mut group, 10);
+-    // bench_big_linear_public_input_e2e(&mut group, 12);
+-// 
+-    // bench_sha_proxy_e2e(&mut group, 8);
+-    // bench_sha_proxy_e2e(&mut group, 10);
+-    // bench_sha_proxy_e2e(&mut group, 12);
++    type U = ShaEcdsaUair<RealEcdsaInt>;
+ 
+-    // Real UAIRs ported from main-gamma. Trace size for ECDSA needs >= 256
+-    // rows (Shamir loop), so num_vars=9 is the smallest meaningful size.
+-    // bench_real_ecdsa_e2e(&mut group, 9);
+-    bench_real_sha256_e2e(&mut group, 9);
+-    bench_real_sha_ecdsa_e2e(&mut group, 9);
++    let comps = zinc_test_uair::sha256::cols::NUM_COMPRESSIONS;
++    let active_rows = zinc_test_uair::sha256::cols::ACTIVE_ROWS;
++    let min_num_vars = zinc_test_uair::sha256::cols::MIN_NUM_VARS;
++    let num_vars = env_usize("SHA_NV", min_num_vars);
++    let reps = env_usize("REPS", 3);
++    let mode = std::env::var("MODE").unwrap_or_else(|_| "plain".to_string());
++    let threads = if cfg!(feature = "parallel") {
++        env_usize("RAYON_NUM_THREADS", 0)
++    } else {
++        1
++    };
+ 
+-    group.finish();
++    eprintln!(
++        "[sha-ecdsa] {comps} chained compressions ({active_rows} active rows) + 1 ECDSA \
++         Shamir ladder, mode={mode}, num_vars={num_vars} ({} rows), reps={reps}, \
++         threads={threads}, parallel={}, unchecked={}, rate=1/{REP}, openings={}, \
++         security={} bits",
++        1usize << num_vars,
++        cfg!(feature = "parallel"),
++        cfg!(feature = "unchecked"),
++        NUM_COL_OPENINGS_FOR_REP,
++        zinc_protocol::SECURITY_BITS,
++    );
++
++    let mut rng = rng();
++    let t0 = Instant::now();
++    let trace = U::generate_random_trace(num_vars, &mut rng);
++    let witness_ms = t0.elapsed().as_secs_f64() * 1e3;
++
++    let sig = U::signature();
++    let public_trace = trace.public(&sig);
++    let proj_scalar = zinc_protocol::project_scalar_fn;
++
++    let mut prove_ms: Vec<f64> = Vec::with_capacity(reps);
++    let mut verify_ms: Vec<f64> = Vec::with_capacity(reps);
++    let setup_ms: f64;
++    let proof_bytes: usize;
++
++    match mode.as_str() {
++        "plain" => {
++            let t0 = Instant::now();
++            let pp = setup_pp_real_ecdsa(num_vars);
++            setup_ms = t0.elapsed().as_secs_f64() * 1e3;
++
++            type Piop = ZincPlusPiop<RealEcdsaBenchZincTypes, U, F, DEGREE_PLUS_ONE>;
++            let proof: Proof<F> =
++                Piop::prove::<false, PERFORM_CHECKS>(&pp, &trace, num_vars, proj_scalar)
++                    .expect("warm-up prove failed");
++            for _ in 0..reps {
++                let t = Instant::now();
++                let p = Piop::prove::<false, PERFORM_CHECKS>(&pp, &trace, num_vars, proj_scalar)
++                    .expect("prove failed");
++                prove_ms.push(t.elapsed().as_secs_f64() * 1e3);
++                black_box(p);
++            }
++
++            Piop::verify::<_, PERFORM_CHECKS>(
++                &pp,
++                proof.clone(),
++                &public_trace,
++                num_vars,
++                proj_scalar,
++                sha256_real_project_ideal,
++            )
++            .expect("the warm-up proof must verify");
++            for _ in 0..reps {
++                let p = proof.clone();
++                let t = Instant::now();
++                Piop::verify::<_, PERFORM_CHECKS>(
++                    &pp,
++                    p,
++                    &public_trace,
++                    num_vars,
++                    proj_scalar,
++                    sha256_real_project_ideal,
++                )
++                .expect("verify failed");
++                verify_ms.push(t.elapsed().as_secs_f64() * 1e3);
++            }
++
++            proof_bytes = proof.get_num_bytes();
++            eprint_proof_size(&format!("sha-ecdsa/plain/n{comps}/nvars={num_vars}"), &proof);
++        }
++        "folded4x" => {
++            let t0 = Instant::now();
++            let pp = setup_folded_4x_pp_real_ecdsa(num_vars);
++            setup_ms = t0.elapsed().as_secs_f64() * 1e3;
++
++            macro_rules! prove4x {
++                () => {
++                    zinc_protocol::prover::prove_folded_4x::<
++                        BenchFoldedRealEcdsaZincTypes4x,
++                        U,
++                        F,
++                        DEGREE_PLUS_ONE,
++                        HALF_DEGREE_PLUS_ONE,
++                        QUARTER_DEGREE_PLUS_ONE,
++                        EC_FP_INT_LIMBS,
++                        INT_QUARTER_LIMBS_BENCH,
++                        false,
++                        PERFORM_CHECKS,
++                    >(&pp, &trace, num_vars, proj_scalar)
++                };
++            }
++            macro_rules! verify4x {
++                ($proof:expr) => {
++                    zinc_protocol::verifier::verify_folded_4x::<
++                        BenchFoldedRealEcdsaZincTypes4x,
++                        U,
++                        F,
++                        Sha256Ideal<F>,
++                        DEGREE_PLUS_ONE,
++                        HALF_DEGREE_PLUS_ONE,
++                        QUARTER_DEGREE_PLUS_ONE,
++                        EC_FP_INT_LIMBS,
++                        INT_QUARTER_LIMBS_BENCH,
++                        PERFORM_CHECKS,
++                    >(
++                        &pp,
++                        $proof,
++                        &public_trace,
++                        num_vars,
++                        proj_scalar,
++                        sha256_real_project_ideal,
++                    )
++                };
++            }
++
++            let proof: Proof<F> = prove4x!().expect("warm-up folded-4x prove failed");
++            for _ in 0..reps {
++                let t = Instant::now();
++                let p = prove4x!().expect("folded-4x prove failed");
++                prove_ms.push(t.elapsed().as_secs_f64() * 1e3);
++                black_box(p);
++            }
++
++            verify4x!(proof.clone()).expect("the warm-up proof must verify");
++            for _ in 0..reps {
++                let p = proof.clone();
++                let t = Instant::now();
++                verify4x!(p).expect("folded-4x verify failed");
++                verify_ms.push(t.elapsed().as_secs_f64() * 1e3);
++            }
++
++            proof_bytes = proof.get_num_bytes();
++            eprint_proof_size(
++                &format!("sha-ecdsa/folded4x/n{comps}/nvars={num_vars}"),
++                &proof,
++            );
++        }
++        other => panic!("unknown MODE {other:?}; expected plain or folded4x"),
++    }
++
++    for (rep, (prove, verify)) in prove_ms.iter().zip(verify_ms.iter()).enumerate() {
++        println!(
++            r#"ZINC_TRIAL {{"rep":{rep},"prove_ms":{prove:.4},"verify_ms":{verify:.4},"proof_bytes":{proof_bytes}}}"#,
++        );
++    }
++    println!(
++        concat!(
++            r#"ZINC_RESULT {{"schema":"zinc-plus/sha256-ecdsa/v1","mode":"{}","compressions":{},"#,
++            r#""active_rows":{},"num_vars":{},"rows":{},"reps":{},"threads":{},"parallel":{},"#,
++            r#""checks":{},"bin_cols":{},"int_cols":{},"inverse_rate":{},"column_openings":{},"#,
++            r#""security_bits":{},"curve":"secp256k1","projecting_prime":"fixed-secp256k1-p","#,
++            r#""witness_ms":{:.4},"setup_ms":{:.4},"prove_ms":{:.4},"verify_ms":{:.4},"#,
++            r#""proof_bytes":{},"proof_verified":true}}"#,
++        ),
++        mode,
++        comps,
++        active_rows,
++        num_vars,
++        1usize << num_vars,
++        reps,
++        threads,
++        cfg!(feature = "parallel"),
++        PERFORM_CHECKS,
++        zinc_test_uair::sha_ecdsa::cols::NUM_BIN,
++        zinc_test_uair::sha_ecdsa::cols::NUM_INT,
++        REP,
++        NUM_COL_OPENINGS_FOR_REP,
++        zinc_protocol::SECURITY_BITS,
++        witness_ms,
++        setup_ms,
++        median(&prove_ms),
++        median(&verify_ms),
++        proof_bytes,
++    );
++    print_peak_rss(&format!("sha-ecdsa/{mode}/n{comps}/nvars={num_vars}"));
+ }
+ 
+ fn e2e_steps_benches(c: &mut Criterion) {
+@@ -2262,4 +2446,4 @@ criterion_group! {
+     config = Criterion::default().sample_size(500);
+     targets = e2e_folded_4x_benches
+ }
+-criterion_main!(e2e, e2e_steps, e2e_folded, e2e_folded_4x);
++criterion_main!(e2e);

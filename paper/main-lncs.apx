@@ -1,0 +1,53 @@
+\contentsline {section}{\numberline {A}Additional preliminaries}{32}{appendix.A}%
+\contentsline {paragraph}{Integers in a ring.}{33}{section*.25}%
+\contentsline {subsection}{\numberline {A.1}Linear codes}{33}{subsection.A.1}%
+\contentsline {subsection}{\numberline {A.2}Multilinear extensions}{33}{subsection.A.2}%
+\contentsline {subsection}{\numberline {A.3}Interactive Oracle Reductions (IOR) of proximity}{33}{subsection.A.3}%
+\contentsline {paragraph}{Grinding.}{34}{section*.26}%
+\contentsline {section}{\numberline {B}More details about {$\mathbb {B}\text {it}\mathbb {Z}$}}{35}{appendix.B}%
+\contentsline {subsection}{\numberline {B.1}Notation glossary}{35}{subsection.B.1}%
+\contentsline {subsection}{\numberline {B.2}Costs of the {$\mathbb {B}\text {it}\mathbb {Z}$}\ PCS}{36}{subsection.B.2}%
+\contentsline {paragraph}{Costs of \cref {c:core_iop}.}{36}{section*.29}%
+\contentsline {paragraph}{Costs of \cref {c:LinModFieldBin}.}{38}{section*.31}%
+\contentsline {subsection}{\numberline {B.3}Instantiation and achieving 100 or 128 bits of soundness}{38}{subsection.B.3}%
+\contentsline {paragraph}{The errors ${\kappa _{\mathsf {iopp}}}_i$.}{39}{section*.34}%
+\contentsline {paragraph}{The errors ${\kappa _{\mathsf {red}}}_i$.}{40}{section*.35}%
+\contentsline {paragraph}{The error $\kappa _0$.}{40}{section*.36}%
+\contentsline {paragraph}{Strategy 1: the PIOP achieves $128$ bits of security through grinding and we avoid the error term $\kappa _0$.}{40}{section*.37}%
+\contentsline {paragraph}{Strategy 2: No or essentially no grinding during the PIOP, and $\kappa _0$ is present and grinding is used during the first projection step (Round 1) of \cref {c:core_iop}.}{40}{section*.38}%
+\contentsline {section}{\numberline {C}End-to-end SNARKs}{44}{appendix.C}%
+\contentsline {subsection}{\numberline {C.1}An end-to-end {$\mathbb {B}\text {it}\mathbb {Z}$}-based SNARK over any finitely generated ring}{44}{subsection.C.1}%
+\contentsline {paragraph}{Step 1: Commitment.}{44}{section*.40}%
+\contentsline {paragraph}{Step 2: Projection to a finite field $\ensuremath {\mathbb {F}}$.}{44}{section*.41}%
+\contentsline {paragraph}{Step 3: PIOP over $\ensuremath {\mathbb {F}}$.}{45}{section*.42}%
+\contentsline {paragraph}{Step 4: Opening with the {$\mathbb {B}\text {it}\mathbb {Z}$}\ PCS.}{45}{section*.43}%
+\contentsline {subsection}{\numberline {C.2}Virtual $\ensuremath {\mathbb {F}}_2$-linear transforms, NP-complete multi-domain linear relations, and hybrid proof systems}{46}{subsection.C.2}%
+\contentsline {subsection}{\numberline {C.3}{$\mathbb {B}\text {it}\mathbb {Z}$}\ for fully hybrid constraints over $\mathbb {Z}$ and $\ensuremath {\mathbb {F}}_{2^\nu }$}{47}{subsection.C.3}%
+\contentsline {section}{\numberline {D}A GKR protocol for low entropy batched grand products }{48}{appendix.D}%
+\contentsline {paragraph}{Using $\Pi _\mathsf {red}$ in {$\mathbb {B}\text {it}\mathbb {Z}$}\ and succinctness of the verifier. }{51}{section*.45}%
+\contentsline {paragraph}{Costs.}{51}{section*.46}%
+\contentsline {subsection}{\numberline {D.1}Prover optimization via lookup tables}{52}{subsection.D.1}%
+\contentsline {paragraph}{Setup.}{52}{section*.48}%
+\contentsline {paragraph}{First prover message in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}.}{53}{section*.49}%
+\contentsline {paragraph}{Subsequent prover messages in the last sumcheck in Step 2 of \cref {c:gkr_grand_product}.}{56}{section*.50}%
+\contentsline {paragraph}{The rest of the sumchecks in Step 2 of \cref {c:gkr_grand_product}.}{58}{section*.52}%
+\contentsline {section}{\numberline {E}Efficiency and comparison to other ``prove-in-the-exponent'' usages}{59}{appendix.E}%
+\contentsline {paragraph}{Binius64}{59}{section*.53}%
+\contentsline {paragraph}{The Fields-Witch note \cite {lev}.}{59}{section*.54}%
+\contentsline {section}{\numberline {F}Deferred proofs}{60}{appendix.F}%
+\contentsline {subsection}{\numberline {F.1}Proof of \cref {t:thm_core_IOPP}}{60}{subsection.F.1}%
+\contentsline {paragraph}{Completeness and soundness of $\Pi _1$.}{60}{section*.55}%
+\contentsline {paragraph}{The case where Round 1 is skipped.}{63}{section*.56}%
+\contentsline {subsection}{\numberline {F.2}Completeness and soundness of \cref {c:LinModFieldBin}}{63}{subsection.F.2}%
+\contentsline {subsection}{\numberline {F.3}Soundness of Out Of Domain Sampling (OOD) in \cref {c:core_iop}}{65}{subsection.F.3}%
+\contentsline {section}{\numberline {G}Detailed experiments}{66}{appendix.G}%
+\contentsline {paragraph}{Non-comparisons.}{66}{section*.57}%
+\contentsline {subsection}{\numberline {G.1}Raw performance of the {$\mathbb {B}\text {it}\mathbb {Z}$}\ PCS for the core LinBitsRings relation}{66}{subsection.G.1}%
+\contentsline {paragraph}{Repositories.}{67}{section*.59}%
+\contentsline {subsection}{\numberline {G.2}RSA accumulation and Poseidon hashing}{67}{subsection.G.2}%
+\contentsline {subsection}{\numberline {G.3}SHA-256 hashing followed by ECDSA signature verification}{68}{subsection.G.3}%
+\contentsline {subsection}{\numberline {G.4}Modular multiplications and bit operations (mod $2^{32}$ multiplication and SHA-256 hashing)}{70}{subsection.G.4}%
+\contentsline {subsection}{\numberline {G.5}Integer multiplication}{73}{subsection.G.5}%
+\contentsline {subsection}{\numberline {G.6}Comparison with Fields-Witch}{76}{subsection.G.6}%
+\contentsline {section}{\numberline {H}Usage and non-usage of AI}{77}{appendix.H}%
+\contentsline {paragraph}{Usage and non-usage of AI.}{77}{section*.68}%

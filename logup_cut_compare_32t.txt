@@ -1,0 +1,21 @@
+error: no example target named `logup_cut_compare` in default-run packages
+help: available example targets:
+    binius_config_audit
+    binius_probe
+    cm_probe
+    fuse_check
+    gen_lig_configs
+    gkr_std_vs_lowent
+    grind_probe
+    hybrid_probe
+    mul_corpus_export
+    prof_probe
+    proof_digest
+    protocol_digest
+    quad_ab
+    qualification_probe
+    reference_measure
+    rlc_ab
+    spartan_probe
+    taps_ab
+    u64_mul_probe
