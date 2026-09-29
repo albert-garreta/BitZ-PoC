@@ -2716,9 +2716,9 @@ In our instantiation, $\yy_{\bb}^{(1)}=g^{\bm{\gamma}_{\bb}}$ and $\yy_\bb^{(0)}
 
 As we will explain later, the prover will also precompute similar tables for the values $L_{r_1-j}(\bb,\cc)$ of the levels close to the leaves (i.e.\ for small $j$),
 \begin{equation}\label{e:size_T_r1_i}T_{r_1-j}\in \left(\comfield^{2^{2^j}}\right)^{\bits^{r_1-j}},\end{equation}
-as well as other tables relevant for the different sumcheck rounds of \cref{c:gkr_grand_product}, constructed from the tables $T_{r_1-j}$ themselves. The superscript $\bits^{r_1-j}$ in \eqref{e:size_T_r1_i} indicates that the table $T_{r_1-j}$ has one entry per element in the hypercube  $\bits^{r_1-j}$; and this entry is a vector of $2^{2^j}$ field elements. Concretely, for $\bb\in \bits^{r_1-j}$, $T_{r_1-j}[\bb]$ consists of all possible products of  $2^j$ consecutive factors of the grand product, namely the factors indexed by $(\bb, \bb')$ with $\bb$ fixed and $\bb'$ ranging over $\bits^{j}$.  Each factor can take two values, depending on whether $\bfg_{\bb,\bb', \cc}$ is $1$ or $0$. Hence $T_{r_1-j}[\bb]$ consists of $2^{2^j}$ elements. Hence the size of $T_{r_1-j}$ in \eqref{e:size_T_r1_i}.
+as well as other tables relevant for the different sumcheck rounds of \cref{c:gkr_grand_product}, constructed from the tables $T_{r_1-j}$ themselves. The superscript $\bits^{r_1-j}$ in \eqref{e:size_T_r1_i} indicates that the table $T_{r_1-j}$ has one entry per element in the hypercube  $\bits^{r_1-j}$, and this entry is a vector of $2^{2^j}$ field elements. Concretely, for $\bb\in \bits^{r_1-j}$, $T_{r_1-j}[\bb]$ consists of all possible products of  $2^j$ consecutive factors of the grand product, namely the factors indexed by $(\bb, \bb')$ with $\bb$ fixed and $\bb'$ ranging over $\bits^{j}$.  Each factor can take two values, depending on whether $\bfg_{\bb,\bb', \cc}$ is $1$ or $0$. Hence $T_{r_1-j}[\bb]$ consists of $2^{2^j}$ elements. Hence the size of $T_{r_1-j}$ in \eqref{e:size_T_r1_i}.
 
-Because $|T_{r_1-j}|$   grows doubly-exponentially in $j$, these tables are viable only for the bottom few levels of the tree ($j\leq 3$ in our implementation). In higher levels we use standard sumchecks.
+Because $|T_{r_1-j}|$   grows doubly-exponentially in $j$, these tables are usable in practice only for the bottom few levels of the tree ($j\leq 3$ in our implementation). In higher levels we use standard sumchecks.
 
 
 
@@ -2726,9 +2726,9 @@ Because $|T_{r_1-j}|$   grows doubly-exponentially in $j$, these tables are viab
 
 Importantly, all these tables have size independent of $\codedim_2$.  This (among others, cf.\ \cref{s:why_the_tensor_split}) is one of the reasons why we use the tensor decomposition structure, i.e.\ the split given by $\codedim=\codedim_1\cdot \codedim_2$, in \cref{c:core_iop}.
 
-\begin{remark}
+
     All precomputed data in this section depends on the input vector $\yy$ of $\PESAT(\comfield,\gkrpol)$, and possibly on further verifier challenges. Since, in a wider context where \cref{c:gkr_grand_product} is a subprocess of a larger proof system, $\yy$ typically depends on verifier's challenges, these precomputations must be done at \emph{runtime}. 
-\end{remark}
+
 
 
 
@@ -2759,14 +2759,15 @@ h_j(X)&\defeq \sum_{(\bb,\cc)\in \bits^{r_1-1-j}\times \bits^{r_2}} L_{r_1}(\bm{
 \iflncs\endgroup\fi
 where $\bm{\alpha}^{(i)} = (\bm{\alpha}^{(i,1)}, \bm{\alpha}^{(i,2)})\in \KK^{r_1-2}\times \KK^{r_2+1}$.
 %
-We claim that
+%
+Observe that
 %
 \iflncs\begingroup\small\fi
 \begin{equation}\label{e:grand_product_Lr1}
-L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc) = \left(L_{r_1}(\bm{\rho}^{(j)}, 1, \bb,0,\cc) -  L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,0,\cc)\right)\cdot X + L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,0,\cc).
+L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc) = \left(L_{r_1}(\bm{\rho}^{(j)}, 1, \bb,0,\cc) -  L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,0,\cc)\right)\cdot X + L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,0,\cc),
 \end{equation}
 \iflncs\endgroup\fi
-Indeed, $L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc)$ is a linear polynomial, and the right-hand side in the above expression is the line passing through the two evaluations of  $L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc)$ at $X=0$ and $X=1$. An analogous expression holds for $L_{r_1}(\bm{\rho}^{(j)}, X, \bb, 1, \cc)$:
+because $L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc)$ is a linear polynomial, and the right-hand side in the above expression is the line passing through the two evaluations of  $L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc)$ at $X=0$ and $X=1$. An analogous expression holds for $L_{r_1}(\bm{\rho}^{(j)}, X, \bb, 1, \cc)$:
 \iflncs\begingroup\small\fi
 \begin{equation}\label{e:grand_product_Lr2}
 L_{r_1}(\bm{\rho}^{(j)}, X, \bb,1,\cc) = \left(L_{r_1}(\bm{\rho}^{(j)}, 1, \bb,1,\cc) -  L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,1,\cc)\right)\cdot X + L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,1,\cc).
@@ -2816,14 +2817,19 @@ and use it to obtain any value $A_{0}^{(1)}[\bb,\cc]$ for $(\bb,\cc)\in \bits^{r
 %
 The size of $T_{A_0}$, again, does not depend on $\codedim_2=2^{r_2}$. Building $T_{A_0}$ requires at most $8\cdot 2^{r_1-2} = 2^{r_1+1}$ multiplications and no additions. 
 
-We now explain how to obtain the values $A_2^{(1)}[\bb,\cc]$, again via the construction of a lookup table. (The prover does not need the values $A_1^{(1)}[\bb,\cc]$, as we explain below.) Note that $A_2^{(1)}[\bb,\cc]$ depends on the \emph{four} bits $\bfg_{(\eps_1,\bb,\eps_2),\cc}$, $\eps_1,\eps_2\in \bits$, so our table will need $2^4=16$ entries (as opposed to $4$ as in $T_{A_0}$) per  index $\bb$.
+We now explain how to obtain the values $A_2^{(1)}[\bb,\cc]$, again via the construction of a lookup table. (The prover does not need the values $A_1^{(1)}[\bb,\cc]$, as we explain below.) Note that $A_2^{(1)}[\bb,\cc]$ depends on the \emph{four} bits $\bfg_{(\eps_1,\bb,\eps_2),\cc}$, $\eps_1,\eps_2\in \bits$, so our table will need $2^4=16$ entries  per  index $\bb$ (as opposed to $4$ as in $T_{A_0}$).
 The prover  computes the table $T_{A_2}\in (\comfield^{16})^{\bits^{r_1-2}}$ given by
     \begin{equation}\label{e:TA2}T_{A_2}[\bb]=\Big( \big(\yy_{1,\bb,0}^{(x_1)}-\yy_{0,\bb,0}^{(x_0)}\big)\cdot \big(\yy_{1,\bb,1}^{(x_1')}-\yy_{0,\bb,1}^{(x_0')}\big)\cdot \omega[\bb] \Big)_{(x_0,x_1,x_0',x_1')\in \bits^4},\end{equation}
     so that $A_2^{(1)}[\bb,\cc]$ is the element  $$A_2^{(1)}[\bb,\cc]=T_{A_2}[\bb][\bfg_{(0,\bb,0),\cc},\bfg_{(1,\bb,0),\cc},\bfg_{(0,\bb,1),\cc},\bfg_{(1,\bb,1),\cc}].$$ Building $T_{A_2}$ takes at most $20$ multiplications and $8$ additions per index $\bb$\footnote{For the multiplications, there are $4$ multiplications to compute the $4$ elements $t_{x_0',x_1',\bb}\defeq \big(\yy_{1,\bb,1}^{(x_1')}-\yy_{0,\bb,1}^{(x_0')}\big)\cdot \omega[\bb]$, and then $16$ more multiplications to compute $\big(\yy_{1,\bb,0}^{(x_1)}-\yy_{0,\bb,0}^{(x_0)}\big)\cdot t_{x_0',x_1',\bb}$.}. I.e.\ at most $5\cdot 2^{r_1}$ multiplications and $2^{r_1+1}$ additions in total.
- Once the tables have been computed,  obtaining the constant and the leading coefficients of $h_{1,\cc}(X)$, i.e.\ $\sum_\bb A_0^{(1)}[\bb,\cc]$ and $\sum_\bb A_2^{(1)}[\bb,\cc]$,  costs $2\cdot 2^{r_1-2}$ table reads (one read per table $T_{A_0}, T_{A_2}$ per index $\bb\in \bits^{r_1-2}$) and $2\cdot 2^{r_1-2}$ additions, for each $\cc\in \bits^{r_2}$. In total, (passing over all $\cc\in \bits^{r_2}$) this amounts to at most  
- $\codedim/2$ table reads and $\codedim/2$ additions for all $\cc$, and no multiplications (in our instantiation, additions in $\comfield$ are $128$-bit XORs). 
- 
- Finally, the prover computes $h_1(X)$ from the polynomials $h_{1,\cc}(X)$ with at most $5\cdot 2^{r_2}$ additions and $3\cdot 2^{r_2}$ multiplications (plus $2^{r_2}$ multiplications to precompute the values $\eq(\cc;\bm{\alpha}^{(i,2)})$, shared by all rounds of this sumcheck, and $2^{r_1-2}$ multiplications for the weights $\omega[\bb]$).
+ Once the tables have been computed, obtaining the constant and the leading coefficients of $h_{1,\cc}(X)$, i.e.\ $\sum_\bb A_0^{(1)}[\bb,\cc]$ and $\sum_\bb A_2^{(1)}[\bb,\cc]$,  costs $2\cdot 2^{r_1-2}$ table reads (one read per table $T_{A_0}, T_{A_2}$ per index $\bb\in \bits^{r_1-2}$) and $2\cdot 2^{r_1-2}$ additions, for each $\cc\in \bits^{r_2}$. In total, (passing over all $\cc\in \bits^{r_2}$) this amounts  to at most  
+ $\codedim/2$ table reads and $\codedim/2$ additions for all $\cc$, and no multiplications. Once can then compute the constant and leading coefficients of $h_1(X)$ with $\codedim_2$ multiplications and additions. At this point, the prover has computed the constant and leading terms of  the polynomials $h_{1,j}(X)$. 
+
+
+
+Using the ``eq factorization'' technique from \cite{gruen}, write   $\eq(X,\cc;\bm{\alpha}^{(i,2)})=\eq(X;\alpha)\cdot \eq(\cc;\bm{\alpha}')$, where $\bm{\alpha}^{(i,2)}=(\alpha,\bm{\alpha}')$. Then $h_1(X)=\eq(X;\alpha)\cdot t_1(X)$, where $t_1(X)\defeq\sum_{\cc}\eq(\cc;\bm{\alpha}')\cdot h_{1,\cc}(X)$. Instead of sending $h_1(X)$, the prover sends $t_1(X)$. The constant and leading coefficients of $t_1(X)$ can be computed by the prover with $\codedim_2$ multiplications and additions (assuming the values $\eq(\cc,\bm{\alpha}')$ have already been computed). Additionally we have $C^{(r_1-1)} = h_1(0)+h_1(1)=(1-\alpha)\cdot t_1(0)+\alpha\cdot t_1(1)$, and so the verifier can obtain $t_1(1)$ by itself, which in turn allows it to obtain the linear coefficient of $t_1(X)$. 
+
+
+
  
 \bigskip
 
@@ -3098,14 +3104,9 @@ Our PoC repository can be found in \url{https://github.com/albert-garreta/BitZ-P
 \fi
 
 \begin{lncsmove}{ExpAI}
-\paragraph{Usage of AI.} The scheme was initially implemented with AI. After that we thoroughly reviewed the verifier and, following the approach of Flock \cite{flock} and other usages of AI \cite{zkgolf} to optimize against verified specs, we  used AI extensively to optimize the prover while keeping the verifier unchanged. Subsequently we manually reviewed, refactored and further optimized both the prover and verifier. The reported benchmark results correspond to this PoC implementation, which is the one provided \iflncs in the anonymous repository \url{https://github.com/bitzcodes/BitZ.git}.\else \url{https://github.com/albert-garreta/BitZ-PoC}.\fi
+\paragraph{Usage of AI.} There are two implementations of Iftwoz, a PoC one (\url{https://github.com/albert-garreta/BitZ-PoC}), and a production-grade one (\urlhttps://github.com/worldfnd/BitZ}). The benchmark results correspond to the PoC implementaion. In its current state, the PoC implementation was obtained from the production-grade one, after adding a few missing steps (grinding, out of domain sampling, machinery around random primes), and then asking an AI to optimize the prover without changing the verifier. We then reviewed and refactored the results. The production-grade version is being implemented via traditional methods, with mild and controlled usage of AI, and is not optimized as of now.
 
-Additionally, we are currently developing a parallel production-grade  handcrafted implementation,  using more conventional methods. The repository is available at \url{https://github.com/worldfnd/BitZ}. 
-
-As an experiment, we asked an AI to take the \ftwoz-PCS prover of the production-grade implementation and optimize it (keeping the verifier unchanged). The resulting optimized prover reproduced or even significantly improved the performance of the \ftwoz-PCS in the PoC implementation discussed above.  This suggests that the published benchmark numbers still have room for improvement.
-
-%(and) The AI optimized implementation of \ftwoz\ from \cref{c:core_iop} produces the same transcripts as our handcrafted implementation of the same protocol. 
-
+We heavily used Al in early stages of the project, to gauge the practical feasibility of our protocol. The corresponding code was placed in the POC repository, and has been subsequently removed or refactored.
 
 \iflncs\else
 
@@ -3120,7 +3121,7 @@ Additionally, AI was used to prepare the benchmarks in other repositories, which
 
 In \cref{tab:f2z-raw-performance} we measure the performance of \cref{c:core_iop} for proving the Core LinBitsRings relation $\LinBitsDual(\bits, \pi, \FF_q,\cC)$\iflncs\else\fi. Namely, we prove that $\langle \vv, \bff \rangle=\mu$ over $\FF_q$ for a vector of $\codedim$ bits $\bff$, and $\vv\in \FF_q^{\codedim}, \mu\in \FF_q$. We choose  $|\FF_q|  < (2^{128}-1)/\codedim_1$, so that Round 1 of \cref{c:core_iop} does not trigger. The proximity parameter is set at the Johnson bound, so Round 0 (OOD sampling) is executed.  In later experiments, Round 1 also triggers. 
 
- We set $\codedim_1 = 2^{\lceil 0.6\, n\rceil}$ and $\codedim_1 \cdot \codedim_2 = \codedim$ (\cref{s:instantiation}). 
+ We set $\codedim_1 = 2^{\lceil 0.6\, n\rceil -1}$ and $\codedim_1 \cdot \codedim_2 = \codedim$ (\cref{s:instantiation}).
 
 
 
