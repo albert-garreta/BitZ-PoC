@@ -223,7 +223,7 @@ fn verify_bitz(prepared: &Prepared, fixture: &SignedFixture, proof: &[u8]) -> Re
 
 fn base_row(args: &Args, fixture: &SignedFixture, trial: usize, circuit_id: &str) -> serde_json::Value {
     json!({
-        "schema":"bitz/sha256-ecdsa-compare/v1", "method":args.method, "zk":false,
+        "schema":"bitz/sha256-ecdsa-compare/v1", "method":args.method, "zk":false, "timing":"spans",
         "trial":if trial == 0 {"warmup"} else {"sample"}, "sample":trial,
         "log_compressions":args.exponent, "compressions":1usize << args.exponent, "message_bytes":fixture.message.len(),
         "signatures":1, "r":null, "c":null, "security_target":args.target, "log_inv_rate":args.log_inv_rate,
@@ -242,7 +242,7 @@ fn circuit_json(circuit: &Circuit) -> serde_json::Value {
 
 /// The upstream prover: ring switch + BaseFold at `--log-inv-rate`.
 fn run_basefold(args: &Args, fixture: &SignedFixture) -> Result<()> {
-    let recording = observability::Recording::start(Vec::new())?;
+    let recording = observability::Recording::start()?;
     let setup = tracing::info_span!("worker:setup").entered();
     let builder = CircuitBuilder::new();
     let relation = Relation::new(&builder, args.curve, args.exponent)?;
@@ -262,7 +262,7 @@ fn run_basefold(args: &Args, fixture: &SignedFixture) -> Result<()> {
     .to_hex()
     .to_string();
     for trial in 0..=args.reps {
-        let recording = observability::Recording::start(Vec::new())?;
+        let recording = observability::Recording::start()?;
         let e2e = tracing::info_span!("worker:e2e", trial, warmup = trial == 0).entered();
         let witness_start = tracing::info_span!("worker:assignment").entered();
         let mut filler = circuit.new_witness_filler();
@@ -364,7 +364,7 @@ fn run_basefold(args: &Args, fixture: &SignedFixture) -> Result<()> {
 /// PCS, gated at 100 bits round-by-round. Witness packing happens inside the
 /// prover here, so `witness_ms` is the wire assignment alone.
 fn run_bitz_opener(args: &Args, fixture: &SignedFixture) -> Result<()> {
-    let recording = observability::Recording::start(Vec::new())?;
+    let recording = observability::Recording::start()?;
     let setup = tracing::info_span!("worker:setup").entered();
     let builder = CircuitBuilder::new();
     let relation = Relation::new(&builder, args.curve, args.exponent)?;
@@ -387,7 +387,7 @@ fn run_bitz_opener(args: &Args, fixture: &SignedFixture) -> Result<()> {
     .to_hex()
     .to_string();
     for trial in 0..=args.reps {
-        let recording = observability::Recording::start(Vec::new())?;
+        let recording = observability::Recording::start()?;
         let e2e = tracing::info_span!("worker:e2e").entered();
         let witness_start = tracing::info_span!("worker:assignment").entered();
         let mut filler = circuit.new_witness_filler();

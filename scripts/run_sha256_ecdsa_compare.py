@@ -134,7 +134,7 @@ def validate_rows(rows, case, reps, binius_log_inv_rate=None):
     for sample, row in enumerate(rows):
         row = sample_metrics(row)
         timing = row.get("timing", "perfetto")
-        if timing not in ("perfetto", "wall-clock") or timing != case.get("timing", "perfetto"):
+        if timing not in ("spans", "perfetto", "wall-clock") or timing != case.get("timing", "perfetto"):
             return False
         if timing == "wall-clock":
             if case["method"].startswith("binius64"):
@@ -523,8 +523,8 @@ def main():
     parser.add_argument("--memory-gib", type=int, default=48)
     parser.add_argument("--timeout", type=float, default=3600)
     parser.add_argument("--retry-failed", action="store_true")
-    parser.add_argument("--timing", choices=["perfetto", "wall-clock"], default="perfetto",
-                        help="wall-clock uses Rust timers without Perfetto; supported for BitZ and Spartan, with internal phase timings unavailable")
+    parser.add_argument("--timing", choices=["spans", "wall-clock"], default="spans",
+                        help="spans collects internal timings in Rust (default); wall-clock is supported for BitZ and Spartan without internal phase timings")
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--summarize-only", action="store_true", help="Regenerate summary.csv and samples.csv from existing raw records")
     args = parser.parse_args()

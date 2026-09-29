@@ -364,7 +364,7 @@ pub fn run() -> Result<(), AnyError> {
         parameters.sha_compressions,
         binius_utils::rayon::current_num_threads()
     );
-    let setup_recording = Recording::start(Vec::new())?;
+    let setup_recording = Recording::start()?;
     let setup = tracing::info_span!("benchmark:setup").entered();
     if mode == "hybrid" {
 
@@ -406,7 +406,7 @@ pub fn run() -> Result<(), AnyError> {
         csv.write_record(HybridRow::HEADER)?;
         csv.flush()?;
         for iteration in 0..=iterations {
-            let recording = Recording::start(Vec::new())?;
+            let recording = Recording::start()?;
             let start = tracing::info_span!("benchmark:proving").entered();
             let witness_commit = tracing::info_span!("benchmark:witness_commit").entered();
             let witness = tracing::info_span!("benchmark:witness").entered();
@@ -539,7 +539,7 @@ pub fn run() -> Result<(), AnyError> {
         csv.write_record(NativeRow::header(&mode))?;
         csv.flush()?;
         for iteration in 0..=iterations {
-            let recording = Recording::start(Vec::new())?;
+            let recording = Recording::start()?;
             let start = tracing::info_span!("benchmark:proving").entered();
             let witness_scope = tracing::info_span!("benchmark:witness").entered();
             let rows: Vec<_> = inputs

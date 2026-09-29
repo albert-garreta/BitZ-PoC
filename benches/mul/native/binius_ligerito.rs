@@ -75,10 +75,10 @@ impl Context {
     }
 
     pub(super) fn run(&self) -> Timing {
-        let recording = Recording::start(Vec::new()).expect("start Perfetto trial");
+        let recording = Recording::start().expect("start span trial");
         let proof_bytes = self.prove_and_verify();
         timing_from_spans(
-            &recording.intervals().expect("query Perfetto trial"),
+            &recording.intervals().expect("query span trial"),
             proof_bytes,
         )
     }
@@ -186,7 +186,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises the native measurement backend"]
     fn span_metrics_cover_repeated_verified_multiplication_trials() {
         use super::*;
         use tracing_subscriber::prelude::*;
@@ -213,7 +212,7 @@ mod tests {
         tracing::subscriber::with_default(
             tracing_subscriber::registry().with(bitz::observability::layer()),
             || {
-                let recording = Recording::start(Vec::new()).unwrap();
+                let recording = Recording::start().unwrap();
                 let proof = context.prepared.prove(&witness).unwrap().to_bytes();
                 assert_eq!(proof, expected, "instrumentation changed the proof bytes");
                 let phases = BiniusLigeritoPhases::from_spans(&recording.intervals().unwrap());

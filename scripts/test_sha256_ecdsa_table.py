@@ -62,6 +62,17 @@ class TableTests(unittest.TestCase):
             )
             self.assertEqual(table_body(current), table_body(saved))
 
+    def test_span_rows_and_historical_rows_cannot_share_a_table(self):
+        with tempfile.TemporaryDirectory() as path:
+            directory = Path(path)
+            write_case(directory, "bitz-split", "p256", 1, timing="spans")
+            proc, _ = self.run_generator([directory])
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            write_case(directory, "bitz-split", "p256", 3)
+            proc, _ = self.run_generator([directory])
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("mix timing backends", proc.stderr)
+
     def run_generator(self, dirs, extra=()):
         with tempfile.TemporaryDirectory() as out:
             out_path = Path(out) / "table.tex"

@@ -117,9 +117,6 @@ def benchmark_environment(inherited):
         env["BITZ_BENCH_LOCK"] = inherited["BITZ_BENCH_LOCK"]
     if "RUSTFLAGS" not in env and "CARGO_ENCODED_RUSTFLAGS" not in env:
         env["RUSTFLAGS"] = "-C target-cpu=native"
-    local = ROOT / ".tools/perfetto/trace_processor_shell"
-    if "PERFETTO_TRACE_PROCESSOR" not in env and os.access(local, os.X_OK):
-        env["PERFETTO_TRACE_PROCESSOR"] = str(local)
     return env
 
 

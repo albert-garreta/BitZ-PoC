@@ -12,19 +12,20 @@ sibling directories such as `../limber-impl`.
 Cross-system comparisons measure complete native proofs: witness generation,
 commitment, constraint proving, PCS opening, and verification.
 
-Install the native Perfetto trace processor locally, then set its path in each
-shell used for benchmarks. Run these commands from the repository root:
+Numeric timings are collected from Rust `tracing` spans by default. No Perfetto
+installation, setup script, or processor environment variable is required.
+Perfetto is available only as an optional diagnostic export; see
+[span measurements](docs/span-metrics.md).
 
-```bash
-bash scripts/install_trace_processor.sh
-export PERFETTO_TRACE_PROCESSOR="$PWD/.tools/perfetto/trace_processor_shell"
-export RUSTFLAGS="-C target-cpu=native"
+For a small SHA-256 chain + ECDSA run, or a multiplication run, use Cargo directly:
+
+```sh
+cargo bench --locked --bench sha256_ecdsa_compare --features sha256-ecdsa-compare -- \
+  --method bitz-split --curve secp256k1 --r 4 --c 0 --threads 1 --reps 3
+
+cargo bench --locked --bench mul_bitz --features span-metrics,bench-internals -- \
+  proof --workload u64 --log-n 15 --threads 1 --reps 3
 ```
-
-The installer downloads Perfetto **v58.2** for macOS or Linux, verifies its
-SHA-256 checksum, and reuses an existing matching installation. It requires
-`curl` and `sha256sum` or `shasum`. The binary stays in this checkout's ignored
-`.tools/perfetto/` directory; no system installation is needed.
 
 ### The benchmark campaigns
 
@@ -55,15 +56,11 @@ its `--build-info` before trusting its numbers).
 ### Setup
 
 ```bash
-set -euo pipefail
-
 rustup toolchain install 1.98.1
 rustup toolchain install nightly-2026-07-01
 [ -f scripts/materialize_vendors.py ] && python3 scripts/materialize_vendors.py --check
-bash scripts/install_trace_processor.sh
 
 export RUSTFLAGS="-C target-cpu=native"
-export PERFETTO_TRACE_PROCESSOR="$PWD/.tools/perfetto/trace_processor_shell"
 unset BITZ_LIG_PROFILE CARGO_ENCODED_RUSTFLAGS CARGO_TARGET_DIR
 
 mkdir -p bench_results
@@ -95,7 +92,7 @@ gate sha-ecdsa-secp256k1 12 python3 scripts/run_sha256_ecdsa_compare.py \
   --reps 5 \
   --bitz-profiles custom:1:4 custom:3:4 \
   --binius-rates 1 3 \
-  --timing perfetto \
+  --timing spans \
   2>&1 | tee "$RUN_DIR/sha256-ecdsa-secp256k1.log"
 ```
 
@@ -116,7 +113,7 @@ gate sha-ecdsa-p256 12 python3 scripts/run_sha256_ecdsa_compare.py \
   --threads 1 10 \
   --reps 5 \
   --bitz-profiles custom:1:4 custom:3:4 \
-  --timing perfetto \
+  --timing spans \
   2>&1 | tee "$RUN_DIR/sha256-ecdsa-p256.log"
 ```
 

@@ -9,8 +9,7 @@ use bitz::{piop::spartan::ecdsa_sha256::*, transcript::Blake3Transcript};
 
 #[test]
 #[cfg(feature = "span-metrics")]
-#[ignore = "requires PERFETTO_TRACE_PROCESSOR; verifies real Spartan2 phase intervals"]
-fn spartan_phase_timings_come_from_perfetto() {
+fn spartan_phase_timings_come_from_spans() {
     use bitz::observability::{self, Recording};
     use spartan2::sha256_ecdsa::{Prepared, Statement};
     use tracing_subscriber::prelude::*;
@@ -33,7 +32,7 @@ fn spartan_phase_timings_come_from_perfetto() {
                     .generate_witness(&statement, &fixture.message)
                     .unwrap();
                 let committed = prepared.commit(witness).unwrap();
-                let recording = Recording::start(Vec::new()).unwrap();
+                let recording = Recording::start().unwrap();
                 let proof = tracing::info_span!("protocol", trial, warmup = trial == 0)
                     .in_scope(|| prepared.prove(&statement, &committed))
                     .unwrap();

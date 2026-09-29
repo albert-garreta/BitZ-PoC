@@ -72,9 +72,9 @@
 //!
 //! The single-claim path always prints a per-step breakdown of the prover
 //! and the verifier under the `prove:`/`verify:` lines — medians over the
-//! timed reps, combining completed Perfetto intervals with native BitZ
-//! phase timers. Build with `span-metrics` and set `PERFETTO_TRACE_PROCESSOR`
-//! to the native trace processor.
+//! timed reps, combining completed span intervals with native BitZ
+//! phase timers. Build with `span-metrics` to collect and query span intervals
+//! entirely in Rust.
 //!
 //! The prover buckets are integer folds plus GKR, sumcheck plus ring switch,
 //! and Ligerito. A `security:` line reports the
@@ -183,7 +183,7 @@ fn median(mut v: Vec<f64>) -> f64 {
 struct StepTable(Vec<(String, Vec<f64>)>);
 
 impl StepTable {
-    /// Fold one rep's drained completed Perfetto intervals (label, seconds) in.
+    /// Fold one rep's drained completed span intervals (label, seconds) in.
     fn absorb(&mut self, rep: usize, totals: Vec<(String, f64)>) {
         for (label, secs) in totals {
             let idx = match self.0.iter().position(|(l, _)| *l == label) {
@@ -680,7 +680,7 @@ fn resolve_configs(
 }
 
 fn main() {
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     let o = parse_args();
 
     // Paper-table modes: the parent only orchestrates child processes.
@@ -876,7 +876,7 @@ fn main() {
         if rep > 0 && o.rep_cooldown_s > 0 {
             std::thread::sleep(std::time::Duration::from_secs(o.rep_cooldown_s));
         }
-        let recording = bitz::observability::Recording::start(Vec::new()).expect("start CLI trial");
+        let recording = bitz::observability::Recording::start().expect("start CLI trial");
         bitz::bitz::record_phases(true);
         let proving = tracing::info_span!("cli:proving").entered();
         let proof = prove_once(&hint);
@@ -2194,7 +2194,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let mut witness = None;
     for _ in 0..o.reps.max(1) {
         let t0_recording =
-            bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+            bitz::observability::Recording::start().expect("start operation capture");
         let t0 = tracing::info_span!("bitz:t0").entered();
         let w = gen_witness();
         drop(t0);
@@ -2226,8 +2226,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let lig_tag = lig.name();
 
     // One-time public preprocessing (excluded from prove).
-    let t0_recording =
-        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let t0_recording = bitz::observability::Recording::start().expect("start operation capture");
     let t0 = tracing::info_span!("bitz:t0").entered();
     let relation =
         PreparedRelation::<MulLayout<u32>>::new_with_profile_and_ligerito::<P>(layout, lig)
@@ -2312,8 +2311,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let mut vsteps = StepTable::default();
     let mut last: Option<(Proof, usize, usize, String)> = None;
     for rep in 0..o.reps {
-        let recording =
-            bitz::observability::Recording::start(Vec::new()).expect("start CLI mul trial");
+        let recording = bitz::observability::Recording::start().expect("start CLI mul trial");
         bitz::bitz::record_phases(true);
         let (proof, hint) = mul_prove_e2e(&relation, &witness);
         let native_prove = take_native_phases();

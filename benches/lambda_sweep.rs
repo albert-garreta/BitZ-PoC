@@ -63,7 +63,7 @@ fn sweep_profile<P: IopSecurityProfile>(
 ) {
     let compressions = 1usize << exponent;
     let setup_started_recording =
-        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+        bitz::observability::Recording::start().expect("start operation capture");
     let setup_started = tracing::info_span!("lambda_sweep:setup_started").entered();
     let prepared = prepare_sha256_compression_batch_with_profile::<P>(exponent)
         .and_then(|p| p.with_ligerito(common::ligerito_selection(P::LIGERITO_TARGET_BITS)))
@@ -123,7 +123,7 @@ fn sweep_profile<P: IopSecurityProfile>(
     }
 
     let witness_started_recording =
-        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+        bitz::observability::Recording::start().expect("start operation capture");
     let witness_started = tracing::info_span!("lambda_sweep:witness_started").entered();
     let witness = generate_sha256_compression_witnesses(&prepared, inputs).expect("witness");
     let statements: Vec<_> = inputs
@@ -150,7 +150,7 @@ fn sweep_profile<P: IopSecurityProfile>(
     let mut last = None;
     for rep in 0..reps + 1 {
         let recording =
-            bitz::observability::Recording::start(Vec::new()).expect("start security-profile trial");
+            bitz::observability::Recording::start().expect("start security-profile trial");
         let proving = tracing::info_span!("benchmark:proving").entered();
         let commit = tracing::info_span!("benchmark:commit").entered();
         let hint = commit_sha256_compression_witness_with_config(&prepared, &witness, &pc)
@@ -256,7 +256,7 @@ fn main() {
         shapes[0]
     });
     let selected = common::security_profile(PrimePolicy::SingleDerived);
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     let threads = common::init();
     let inputs = make_inputs(1usize << exponent, seed);
 

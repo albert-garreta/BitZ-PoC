@@ -149,7 +149,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
     let m_p = packed_vars(&p);
     let lch = 1usize;
     let setup_started_recording =
-        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+        bitz::observability::Recording::start().expect("start operation capture");
     let setup_started = tracing::info_span!("pcs:setup_started").entered();
     let ((pc, vc), lig_tag, ood, resolved) = bench_lig_configs(m_p, &env.ligerito);
     println!(
@@ -175,7 +175,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
     // (16 B per cell; 17 GB at n=30) never exists, mirroring the
     // upstream packed-transpose commit restructure.
     let witness_started_recording =
-        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+        bitz::observability::Recording::start().expect("start operation capture");
     let witness_started = tracing::info_span!("pcs:witness_started").entered();
     let cell = |b: usize, c: usize| -> u128 {
         (p.cell_index(b, c) as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & 1
@@ -299,7 +299,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
         black_box(&de);
 
         let t3_recording =
-            bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+            bitz::observability::Recording::start().expect("start operation capture");
         let t3 = tracing::info_span!("pcs:t3").entered();
         verify_once(&proof).expect("verify");
         verify_ms.push(
@@ -319,8 +319,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
     }
 
     // Peak + phase split over one prove (heap high-water; the commit hint
-    // is live below it). Phase times come from completed Perfetto intervals;
-    // trace extraction and querying happen after the heap snapshot.
+    // is live below it). Native BitZ phase counters are read after the heap snapshot.
     // Release flock's cross-prove scratch pool first: the reported prove
     // peak is the production single-prove shape (pool cold), not the
     // reps-warmed pool stacked under the forest. The timed medians above
@@ -439,7 +438,7 @@ fn main() {
     common::cli::EnvironmentCli::parse();
     let env: Env = common::cli::environment();
     let reps = common::reps(None, 5);
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     common::enforce_known_env();
     if std::env::var_os("BITZ_BENCH_LAMBDA").is_some() {
         common::warn(

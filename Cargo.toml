@@ -217,6 +217,10 @@ path = "tests/benchmark_reporting.rs"
 required-features = ["bench-internals", "native-mul-compare", "sha256-ecdsa-compare", "hybrid"]
 
 [[test]]
+name = "benchmark_spans"
+required-features = ["span-metrics"]
+
+[[test]]
 name = "benchmark_perfetto"
 required-features = ["bench-perfetto"]
 
@@ -277,10 +281,10 @@ name = "bitz_root_probe"
 
 [features]
 default = ["parallel"]
-# Numeric span metrics require the native trace processor at runtime.
-span-metrics = ["dep:perfetto-sdk", "dep:tracing-perfetto-sdk", "dep:tracing-subscriber", "dep:csv"]
-# Additionally save per-trial diagnostic artifacts through BenchmarkOutput.
-bench-perfetto = ["span-metrics"]
+# Numeric span metrics are collected and queried entirely in Rust.
+span-metrics = ["dep:tracing-subscriber", "dep:csv"]
+# Optional native Perfetto export; never used to calculate numeric metrics.
+bench-perfetto = ["span-metrics", "dep:perfetto-sdk", "dep:tracing-perfetto-sdk"]
 hybrid = ["span-metrics", "binius64-bench", "dep:csv", "dep:clap"]
 parallel = ["dep:rayon"]
 unchecked = []

@@ -548,7 +548,7 @@ impl Context {
     pub fn setup(corpus: &Corpus, params: Params) -> Result<Self, String> {
         security_metadata();
         let program = Arc::new(Program::compile(corpus));
-        let started_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let started_recording = bitz::observability::Recording::start().expect("start operation capture");
         let started = tracing::info_span!("sha256_e2e_compare/integer_limber:started").entered();
         let shape = program.shape::<E>();
         let arity = shape.num_vars().max(shape.num_cons()).ilog2() as usize;
@@ -566,7 +566,7 @@ impl Context {
 
     pub fn run(&self) -> (TrialMetrics, Vec<SemanticSpan>) {
         let recording =
-            common::perfetto::Recording::start(Vec::new()).expect("start Perfetto trial");
+            common::metrics::Recording::start().expect("start span trial");
         let trial = tracing::info_span!(
             "Verified trial",
             component = "benchmark.verified-trial",
@@ -620,7 +620,7 @@ impl Context {
             .expect("integer SHA proof verifies");
         drop(verification);
         drop(trial);
-        let raw = recording.intervals().expect("query Perfetto trial");
+        let raw = recording.intervals().expect("query span trial");
         black_box((&proof, &instance, &witness));
         let spans = semantic_spans(&raw);
         (TrialMetrics::from_spans(&spans, proof_bytes), spans)

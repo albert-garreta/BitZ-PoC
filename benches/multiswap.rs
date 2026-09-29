@@ -416,7 +416,7 @@ impl TraceWriter {
                 "id": format!("mono-process-{}-{run_id}", std::process::id()),
                 "kind": "monotonic",
                 "unit": "ns",
-                "source": "Perfetto SDK",
+                "source": "Rust span metrics",
             },
             "status": "ok",
             "trace_complete": true,
@@ -928,7 +928,7 @@ fn run_once(
     setup_ns: u64,
 ) -> (RepTiming, Proof) {
     let recording =
-        bitz::observability::Recording::start(Vec::new()).expect("start Multiswap trial");
+        bitz::observability::Recording::start().expect("start Multiswap trial");
     let root_scope = tracing::info_span!("multiswap-trace:verified_trial").entered();
 
     let witness_scope = tracing::info_span!("multiswap-trace:witness_generation").entered();
@@ -1026,7 +1026,7 @@ fn main() {
     let selected = common::security_profile(PrimePolicy::TwoFullWidthFingerprint);
     let profile = selected.unwrap_or(common::SecurityProfile::Limber114);
 
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     let threads = common::init();
 
     // Bootstrap the canonical relation outside measured trials. Each trial
@@ -1042,7 +1042,7 @@ fn main() {
 
     // One-time public preprocessing is excluded from every traced boundary.
     let setup_started_recording =
-        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+        bitz::observability::Recording::start().expect("start operation capture");
     let setup_started = tracing::info_span!("multiswap:setup_started").entered();
     let prepared = common::with_profile!(profile, prepare(&circuit));
     let (pc, vc) = prepared.ligerito_configs();

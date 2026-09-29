@@ -140,7 +140,7 @@ fn time_pair_ns_per_op<RG, RB>(
     let mut bs = Vec::with_capacity(reps);
     for _ in 0..reps {
         let t0_recording =
-            bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+            bitz::observability::Recording::start().expect("start operation capture");
         let t0 = tracing::info_span!("field:t0").entered();
         black_box(g_body());
         gs.push(
@@ -159,7 +159,7 @@ fn time_pair_ns_per_op<RG, RB>(
                 / ops as f64,
         );
         let t1_recording =
-            bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+            bitz::observability::Recording::start().expect("start operation capture");
         let t1 = tracing::info_span!("field:t1").entered();
         black_box(b_body());
         bs.push(
@@ -521,7 +521,7 @@ fn main() {
     common::cli::EnvironmentCli::parse();
     let reps = common::reps(None, 5);
     common::enforce_known_env();
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
 
     println!("BitZ field bench — GF(2^128) GHASH vs GF(2^127) b127, median of {reps} reps.");
     println!("(alternating reps per pattern: both fields share each thermal window)");

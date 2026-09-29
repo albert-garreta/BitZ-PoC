@@ -18,7 +18,7 @@ use ::bitz::{
 };
 use serde_json::json;
 const SEED: u64 = 0x5533_3250_4353_0064;
-type SetupCapture = (Recording<Vec<u8>>, tracing::span::EnteredSpan);
+type SetupCapture = (Recording, tracing::span::EnteredSpan);
 
 struct Experiment {
     case: String,
@@ -46,7 +46,7 @@ impl Experiment {
         let corpus_digest = blake3::hash(corpus).to_hex().to_string();
         let trials = if self.memory { 1 } else { 6 };
         for trial in 0..trials {
-            let recording = Recording::start(Vec::new())?;
+            let recording = Recording::start()?;
             let total = tracing::info_span!("bounds:witness_to_proof", trial, warmup = trial == 0)
                 .entered();
             let w = tracing::info_span!("bounds:witness").in_scope(&witness)?;
@@ -141,13 +141,13 @@ fn main() -> Result<()> {
         case: args.case,
         memory: args.memory,
     };
-    ::bitz::observability::install().expect("install Perfetto subscriber");
+    ::bitz::observability::install().expect("install span metrics subscriber");
     if rayon::current_num_threads() != 8 {
         bail!("controlled comparison requires RAYON_NUM_THREADS=8");
     }
     let input = inputs();
     let setup = (
-        Recording::start(Vec::new())?,
+        Recording::start()?,
         tracing::info_span!("bounds:setup").entered(),
     );
     match e.case.as_str() {

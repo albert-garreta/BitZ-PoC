@@ -13,7 +13,8 @@ def label(row):
     case = row["case"]
     config = case.get("bitz", {})
     pieces = [case["mode"], case["workload"], case["backend"], f"2^{case['log_n']}",
-              f"t={case['threads']}", f"seed={case['seed']}"]
+              f"t={case['threads']}", f"seed={case['seed']}",
+              f"timing={row['provenance'].get('timing', 'legacy')}"]
     pieces += [f"{key}={value}" for key, value in config.items() if value is not None]
     pieces += [f"{key}={case[key]}" for key in ("variant", "preset", "log_inv_rate", "binius_ligerito_accounting", "limber_bits") if key in case]
     return " / ".join(pieces)

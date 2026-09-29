@@ -21,7 +21,7 @@ pub mod cli;
 pub mod environment;
 pub mod proof_fingerprint;
 
-/// Serialize native SDK sessions in tests and explicitly supply their subscriber.
+/// Explicitly supply the subscriber for benchmark tests.
 #[cfg(all(test, feature = "span-metrics"))]
 pub fn test_tracing() -> (
     tracing::subscriber::DefaultGuard,
@@ -37,13 +37,13 @@ pub fn test_tracing() -> (
 }
 #[cfg(feature = "bench-peak-memory")]
 pub mod heap_run;
+#[cfg(feature = "span-metrics")]
+pub mod metrics;
 pub mod mul_witness;
 pub mod output;
 pub mod pcs_console;
 #[cfg(feature = "bench-peak-memory")]
 pub mod peak_memory;
-#[cfg(feature = "span-metrics")]
-pub mod perfetto;
 #[cfg(feature = "plonky3-whir-bench")]
 pub mod plonky3;
 #[cfg(feature = "plonky3-sha256-bench")]
@@ -817,8 +817,7 @@ fn optional_median(samples: &[Option<f64>]) -> Option<f64> {
         .map(|values| median(&values))
 }
 
-/// Milliseconds elapsed since `start`.
-/// Milliseconds from a completed, uniquely named Perfetto operation.
+/// Milliseconds from a completed, uniquely named span.
 #[cfg(feature = "span-metrics")]
 pub fn span_ms(intervals: &[bitz::observability::Interval], label: &str) -> f64 {
     bitz::observability::duration(intervals, label)

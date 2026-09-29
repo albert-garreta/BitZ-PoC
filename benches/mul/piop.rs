@@ -88,7 +88,7 @@ pub fn run(run: &mut Run) -> anyhow::Result<()> {
         run.begin_memory();
         let recording = run
             .latency()
-            .then(|| bitz::observability::Recording::start(Vec::new()))
+            .then(|| bitz::observability::Recording::start())
             .transpose()?;
         let mut p = Blake3Transcript::new();
         let mut v = Blake3Transcript::new();
