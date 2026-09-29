@@ -191,32 +191,11 @@ pub(crate) fn prove(
 
     // Columns: the row-folded table against `w1(r_b)·column_weights`.
     let started = std::time::Instant::now();
-    let mut folded = fold_rows_point(rows_bits, &point);
+    let folded = fold_rows_point(rows_bits, &point);
     super::trace("    sc fold rows", started);
     let row_scalar = rows[0];
-    let mut columns: Vec<Gf> = w2.iter().map(|&w| row_scalar * w).collect();
-    while folded.len() > 1 {
-        let coefficients = round_polynomial(&folded, &columns);
-        if coefficients[1] + coefficients[2] != target {
-            return Err(ProveError::InvalidClaim);
-        }
-        transcript.prover_message(&coefficients);
-        let challenge = transcript.native_scalar(super::grinding::Stage::BinaryRound);
-        target = evaluate_round(coefficients, challenge);
-        point.push(challenge);
-        fold(&mut folded, challenge);
-        fold(&mut columns, challenge);
-    }
-
-    let evaluation = folded[0];
-    if target != evaluation * columns[0] {
-        return Err(ProveError::InvalidClaim);
-    }
-    transcript.prover_message(&evaluation);
-    Ok(MleClaim {
-        point,
-        target: evaluation,
-    })
+    let columns = w2.iter().map(|&w| row_scalar * w).collect();
+    prove_columns(folded, columns, target, point, transcript)
 }
 
 pub(crate) fn verify(
@@ -320,30 +299,10 @@ pub(crate) fn prove_sum(
     super::trace("    sc row rounds (sum)", started);
 
     let started = std::time::Instant::now();
-    let mut folded = fold_rows_point(rows_bits, &point);
+    let folded = fold_rows_point(rows_bits, &point);
     super::trace("    sc fold rows", started);
-    let mut columns = merged_columns(terms, &rows);
-    while folded.len() > 1 {
-        let coefficients = round_polynomial(&folded, &columns);
-        if coefficients[1] + coefficients[2] != target {
-            return Err(ProveError::InvalidClaim);
-        }
-        transcript.prover_message(&coefficients);
-        let challenge = transcript.native_scalar(super::grinding::Stage::BinaryRound);
-        target = evaluate_round(coefficients, challenge);
-        point.push(challenge);
-        fold(&mut folded, challenge);
-        fold(&mut columns, challenge);
-    }
-    let evaluation = folded[0];
-    if target != evaluation * columns[0] {
-        return Err(ProveError::InvalidClaim);
-    }
-    transcript.prover_message(&evaluation);
-    Ok(MleClaim {
-        point,
-        target: evaluation,
-    })
+    let columns = merged_columns(terms, &rows);
+    prove_columns(folded, columns, target, point, transcript)
 }
 
 /// `Σ_k w1_k(r_b)·cols_k`: the column weights once every term's row weights
@@ -403,6 +362,38 @@ pub(crate) fn verify_sum(
     if target != evaluation * columns[0] {
         return Err(VerifyError::VerificationFailed);
     }
+    Ok(MleClaim {
+        point,
+        target: evaluation,
+    })
+}
+
+/// Completes the sumcheck after the row coordinates are bound.
+fn prove_columns(
+    mut folded: Vec<Gf>,
+    mut columns: Vec<Gf>,
+    mut target: Gf,
+    mut point: Vec<Gf>,
+    transcript: &mut ProverState,
+) -> Result<MleClaim, ProveError> {
+    while folded.len() > 1 {
+        let coefficients = round_polynomial(&folded, &columns);
+        if coefficients[1] + coefficients[2] != target {
+            return Err(ProveError::InvalidClaim);
+        }
+        transcript.prover_message(&coefficients);
+        let challenge = transcript.native_scalar(super::grinding::Stage::BinaryRound);
+        target = evaluate_round(coefficients, challenge);
+        point.push(challenge);
+        fold(&mut folded, challenge);
+        fold(&mut columns, challenge);
+    }
+
+    let evaluation = folded[0];
+    if target != evaluation * columns[0] {
+        return Err(ProveError::InvalidClaim);
+    }
+    transcript.prover_message(&evaluation);
     Ok(MleClaim {
         point,
         target: evaluation,
@@ -568,20 +559,22 @@ mod sum_tests {
 
     #[test]
     fn one_term_matches_the_single_claim_messages() {
-        let shape = Shape::new(7, 6).unwrap();
-        let mut state = 0x2545_f491_4f6c_dd1du64;
-        let rows_bits = grid(&mut state, &shape);
-        let mut terms = terms(&mut state, &shape, 1);
-        let (rows, cols) = terms.pop().unwrap();
-        let target = dense_target(&rows_bits, &[(rows.clone(), cols.clone())]);
-        let single = LinearClaimGf::from_shape(&shape, rows.clone(), cols.clone(), target).unwrap();
-        let sum = SumClaimGf::from_shape(&shape, vec![(rows, cols)], target, Vec::new()).unwrap();
-        let mut a = build_kernel_prover(b"sum-test/v1", b"one");
-        let reduced_single = prove(&single, &rows_bits, &[], &mut a).unwrap();
-        let mut b = build_kernel_prover(b"sum-test/v1", b"one");
-        let reduced_sum = prove_sum(&sum, &rows_bits, &[], &mut b).unwrap();
-        assert_eq!(a.finish().narg_string, b.finish().narg_string);
-        assert_eq!(reduced_single.point, reduced_sum.point);
-        assert_eq!(reduced_single.target, reduced_sum.target);
+        for (row_vars, col_vars) in [(7, 0), (7, 6), (8, 7)] {
+            let shape = Shape::new(row_vars, col_vars).unwrap();
+            let mut state = 0x2545_f491_4f6c_dd1du64;
+            let rows_bits = grid(&mut state, &shape);
+            let mut terms = terms(&mut state, &shape, 1);
+            let (rows, cols) = terms.pop().unwrap();
+            let target = dense_target(&rows_bits, &[(rows.clone(), cols.clone())]);
+            let single = LinearClaimGf::from_shape(&shape, rows.clone(), cols.clone(), target).unwrap();
+            let sum = SumClaimGf::from_shape(&shape, vec![(rows, cols)], target, Vec::new()).unwrap();
+            let mut a = build_kernel_prover(b"sum-test/v1", b"one");
+            let reduced_single = prove(&single, &rows_bits, &[], &mut a).unwrap();
+            let mut b = build_kernel_prover(b"sum-test/v1", b"one");
+            let reduced_sum = prove_sum(&sum, &rows_bits, &[], &mut b).unwrap();
+            assert_eq!(a.finish().narg_string, b.finish().narg_string);
+            assert_eq!(reduced_single.point, reduced_sum.point);
+            assert_eq!(reduced_single.target, reduced_sum.target);
+        }
     }
 }
