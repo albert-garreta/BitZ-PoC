@@ -13,6 +13,7 @@
 //! target, and the verifier folds that term succinctly. Every primitive is
 //! the audited one of [`crate::ligerito_flock`] (Round 0 of the paper's
 //! core IOP); nothing here re-derives a bound.
+pub(crate) mod grinding;
 mod streamed;
 
 use super::{CompositionProfile, Error, Gf};
@@ -800,7 +801,7 @@ pub(crate) fn prove_with_security<const N: usize>(
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     data: [&ProverData; N],
     point: &[Gf],
-    security: Option<&mut crate::ligerito_flock::grinding::GrindingContext<'_>>,
+    security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<Proof<N>, Error> {
     let ring_scope = tracing::info_span!("op:ring_switch").entered();
     // flock's packed words are bit-compatible with `Gf`: the ring switch
@@ -853,7 +854,7 @@ pub(crate) fn prove_sources_with_security<const N: usize>(
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     data: [&ProverData; N],
     point: &[Gf],
-    security: Option<&mut crate::ligerito_flock::grinding::GrindingContext<'_>>,
+    security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<Proof<N>, Error> {
     let ring_scope = tracing::info_span!("op:ring_switch").entered();
     let marginal = geometry.ring_marginal(sources, &point[7..]);
@@ -917,7 +918,7 @@ fn continue_prove<const N: usize>(
     ood: Option<&OodProverClaim>,
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     data: [&ProverData; N],
-    security: Option<&mut crate::ligerito_flock::grinding::GrindingContext<'_>>,
+    security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<Proof<N>, Error> {
     let _lig_scope = tracing::info_span!("op:ligerito").entered();
     let pc = resolved.prover();
@@ -984,7 +985,7 @@ fn continue_prove<const N: usize>(
         }};
     }
     let proof = if let Some(security) = security {
-        let mut challenger = crate::ligerito_flock::grinding::GrindingChallenger::new(t, security);
+        let mut challenger = grinding::GrindingChallenger::new(t, security, resolved.security())?;
         let proof = run!(&mut challenger);
         if !challenger.finish() {
             return Err(Error::Invalid("shared Ligerito grinding schedule"));
@@ -1029,7 +1030,7 @@ pub(crate) fn verify_with_security<const N: usize>(
     ood: Option<&OodVerifierClaim>,
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     proof: &Proof<N>,
-    security: Option<&mut crate::ligerito_flock::grinding::GrindingContext<'_>>,
+    security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<(), Error> {
     let (eq_r2, mut target) = ring_switch_verify(t, &proof.ring, value, &point[..7])
         .map_err(|_| Error::Invalid("ring switch"))?;
@@ -1137,7 +1138,7 @@ pub(crate) fn verify_with_security<const N: usize>(
         };
     }
     let valid = if let Some(security) = security {
-        let mut challenger = crate::ligerito_flock::grinding::GrindingChallenger::new(t, security);
+        let mut challenger = grinding::GrindingChallenger::new(t, security, resolved.security())?;
         let valid = run!(&mut challenger);
         valid && challenger.finish()
     } else {

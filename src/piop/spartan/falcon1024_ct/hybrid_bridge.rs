@@ -1,23 +1,24 @@
-//! Prime-field source evaluation reduced through the optimized wfbitz forests.
+//! Prime-field source evaluation reduced through the BitZ PCS's product GKR.
 //!
-//! The two bounded limbs share a wfbitz forest with the limb coordinate left
+//! The two bounded limbs share a BitZ product tree with the limb coordinate left
 //! unmultiplied. Its terminal claim is authenticated by the shared binary PCS.
 use super::hybrid_keccak::grinding::{
     ProverBlockGrindingTranscript, VerifierBlockGrindingTranscript,
 };
 use super::{FalconError, FalconSourceWitness};
 use crate::{
-    hybrid::BinaryClaim,
-    ligerito::{fold_values_bits_multi, pack_columns_from_rows},
-    pcs::{IntegerMatrixLayout, chunk_row_weights, mod_q_chunk_width, mod_q_num_chunks},
-    piop::spartan::{SpartanBitzField, SpartanField, grinding::GrindingDomain, matrix::eq_table},
-    poly::{univariate::binary_gf128::Gf128 as Gf, utils::build_eq_x_r_vec},
-    transcript::traits::Transcript,
     bitz::{
-        FixedBasePow, WINDOW,
+        FixedBasePow, Shape, WINDOW,
+        fold::fold_columns,
         forest::Forest,
         gkr::{GkrProverTranscript, GkrVerifierTranscript, gpgkr_verify},
     },
+    hybrid::BinaryClaim,
+    ligerito::pack_columns_from_rows,
+    pcs::IntegerMatrixLayout,
+    piop::spartan::{SpartanBitzField, SpartanField, grinding::GrindingDomain, matrix::eq_table},
+    poly::{univariate::binary_gf128::Gf128 as Gf, utils::build_eq_x_r_vec},
+    transcript::traits::Transcript,
 };
 use field::Uint;
 #[cfg(feature = "parallel")]
@@ -39,9 +40,27 @@ fn message_count(p: &IntegerMatrixLayout) -> usize {
     p.row_vars * (p.row_vars - 1) / 2 + p.row_vars * (p.col_vars + 1) + p.row_vars
 }
 
+/// Each bit-column fold is strictly below 2^126, so its exponent remains
+/// injective in the multiplicative group of GF(2^128).
+fn limb_width(p: &IntegerMatrixLayout) -> usize {
+    126 - p.row_vars
+}
+
+fn weight_limbs(weights: &[u128], width: usize, q_bits: usize) -> Vec<Vec<u128>> {
+    let mask = (1u128 << width) - 1;
+    (0..q_bits.div_ceil(width))
+        .map(|limb| {
+            weights
+                .iter()
+                .map(|&w| (w >> (limb * width)) & mask)
+                .collect()
+        })
+        .collect()
+}
+
 fn binary_claim(p: &IntegerMatrixLayout, images: &[Gf], point: &[Gf], value: Gf) -> BinaryClaim {
     // The lowest geometric row bit is the unmultiplied limb coordinate.
-    // wfbitz returns [column | limb | original row]; Falcon uses [row | column].
+    // BitZ returns [column | limb | original row]; Falcon uses [row | column].
     let (column_point, tail) = point.split_at(p.col_vars);
     let (limb, row_point) = tail.split_first().expect("limb coordinate");
     let low = build_eq_x_r_vec(row_point, &())
@@ -80,7 +99,7 @@ fn absorb_pair(t: &mut impl Transcript, pair: &[Gf; 2]) {
     t.absorb_slice(&bytes);
 }
 
-/// Keep wfbitz's optimized arithmetic and variable order while drawing every
+/// Keep BitZ's optimized arithmetic and variable order while drawing every
 /// challenge through Falcon's domain-separated, per-block grinding schedule.
 struct ForestProver<'a, T> {
     transcript: &'a mut T,
@@ -167,17 +186,16 @@ pub(super) fn prove(
         return Err(err("bridge row weights"));
     }
     let q_bits = 128 - modulus.leading_zeros() as usize;
-    let chunks = chunk_row_weights(
-        row_weights,
-        mod_q_chunk_width(&p),
-        mod_q_num_chunks(&p, q_bits),
-    );
+    let chunks = weight_limbs(row_weights, limb_width(&p), q_bits);
     if chunks.len() != 2 {
         return Err(err("bridge needs two bounded prime limbs"));
     }
     let fold_span = tracing::info_span!("falcon_bridge:integer_folds").entered();
-    let chunk_refs: Vec<_> = chunks.iter().map(Vec::as_slice).collect();
-    let sums = fold_values_bits_multi(&p, source.rows(), &chunk_refs);
+    let shape = Shape::new(p.row_vars, p.col_vars).map_err(|_| err("bridge fold shape"))?;
+    let sums: Vec<_> = chunks
+        .iter()
+        .map(|w| fold_columns(&shape, source.rows(), w))
+        .collect();
     drop(fold_span);
     bind(t, &sums);
     let packing_span = tracing::info_span!("falcon_bridge:column_packing").entered();
@@ -239,12 +257,8 @@ pub(super) fn verify(
     }
     let field = F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
     let q_bits = 128 - modulus.leading_zeros() as usize;
-    let width = mod_q_chunk_width(&p);
-    let chunks = chunk_row_weights(
-        &weights(&point[..p.row_vars], &field),
-        width,
-        mod_q_num_chunks(&p, q_bits),
-    );
+    let width = limb_width(&p);
+    let chunks = weight_limbs(&weights(&point[..p.row_vars], &field), width, q_bits);
     if chunks.len() != 2 || proof.sums.len() != chunks.len() {
         return Err(err("bridge chunk shape"));
     }
@@ -305,26 +319,25 @@ mod tests {
     use crate::transcript::Blake3Transcript;
 
     #[test]
-    fn wfbitz_joint_limb_forest_fits_security_budget() {
+    fn bitz_joint_limb_forest_fits_security_budget() {
         for batch in 1..=1024 {
             let layout = FalconSourceLayout::new(batch).unwrap();
             let p = layout.bitz_params();
             let d = p.row_vars;
             let s = p.col_vars + 1;
-            assert_eq!(p.word_bits, 1);
             assert_eq!(d, 13);
             assert_eq!(s, 5 + layout.capacity().ilog2() as usize);
             // Count the accepted verifier rounds independently of the formula.
             let sumcheck_rounds: usize = (0..d).map(|ell| ell + s).sum();
             assert_eq!(error_numerator(&layout), s + 3 * sumcheck_rounds + d);
             assert!((447..=847).contains(&error_numerator(&layout)));
-            assert_eq!(mod_q_chunk_width(&p), 113);
+            assert_eq!(limb_width(&p), 113);
             for prime_bits in [126, 127] {
-                assert_eq!(mod_q_num_chunks(&p, prime_bits), 2);
+                assert_eq!(usize::div_ceil(prime_bits, limb_width(&p)), 2);
             }
             // Every canonical bit column has exponent < 2^126, strictly
             // below the order 2^128-1 of the fixed multiplicative generator.
-            let max_limb = (1u128 << mod_q_chunk_width(&p)) - 1;
+            let max_limb = (1u128 << limb_width(&p)) - 1;
             assert!(max_limb * (p.rows() as u128) < (1u128 << 126));
         }
         assert!(crate::pcs::is_generator(crate::pcs::smallest_generator()));
@@ -478,7 +491,7 @@ mod tests {
         // Preserve the prime read-off exactly while shifting mass between
         // limbs. Only the authenticated forest can detect this forgery.
         let mut changed = proof.clone();
-        let radix = 1u128 << mod_q_chunk_width(&p);
+        let radix = 1u128 << limb_width(&p);
         let c = changed.sums[0]
             .iter()
             .position(|&sum| sum >= radix)

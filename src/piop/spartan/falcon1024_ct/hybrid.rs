@@ -11,13 +11,14 @@ use super::{
 };
 use crate::{
     hybrid::{
-        BinaryClaim, opening as shared,
+        BinaryClaim,
+        opening::{
+            self as shared,
+            grinding::{GrindingContext, GrindingNonces},
+        },
         sumcheck::{Scratch, eq_table},
     },
-    ligerito_flock::{
-        LigeritoSelection, ResolvedLigerito,
-        grinding::{GrindingContext, GrindingNonces, GrindingPlan},
-    },
+    ligerito_flock::{LigeritoSelection, ResolvedLigerito, grinding_plan::GrindingPlan},
     piop::spartan::grinding::GrindingDomain,
     transcript::{Blake3Transcript, traits::Transcript},
 };
@@ -388,7 +389,7 @@ impl PreparedFalconHybrid {
         ] {
             h.update(&bits.to_le_bytes());
         }
-        // The wfbitz schedule is public and deterministic, but bind it explicitly
+        // The bridge schedule is public and deterministic, but bind it explicitly
         // so proofs cannot be replayed under a different bridge error budget.
         let bridge_numerator = hybrid_bridge::error_numerator(&self.layout);
         h.update(&(bridge_numerator as u64).to_le_bytes());

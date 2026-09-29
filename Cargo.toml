@@ -306,7 +306,7 @@ ecdsa = ["circuit/full"]
 # Falcon-1024 native verification and arithmetic/reference helpers.
 falcon = []
 # Binary Keccak plus the compact Falcon arithmetic branch and shared opening.
-falcon-hybrid = ["falcon", "hybrid", "parallel", "dep:flock-prover", "bitz-parity"]
+falcon-hybrid = ["falcon", "hybrid", "parallel", "dep:flock-prover"]
 sha256-ecdsa-compare = ["span-metrics", "ecdsa", "parallel", "dep:spartan2"]
 # Enables the Plonky3 BabyBear/Goldilocks WHIR stack for the controlled PCS
 # comparison without adding it to normal library or benchmark builds.

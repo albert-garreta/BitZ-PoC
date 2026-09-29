@@ -75,8 +75,12 @@ Authenticated copy checks connect the sources:
 3. Extracted rate bytes equal the 1,311 big-endian words consumed by HashToPoint.
 
 The arithmetic terminal passes through a two-limb integer-to-binary bridge
-using the wfbitz forest. The joint binary sumcheck binds arithmetic, both Keccak
-claims, and these copy checks to the shared ring-switch/Ligerito opening.
+using the current BitZ PCS's [integer folds](../../../bitz/fold.rs) and
+[product GKR](../../../bitz/forest.rs). The fixed binary source layout has
+13 row variables; [the bridge](hybrid_bridge.rs) splits prime-field row weights
+into 113-bit limbs before folding each limb through `bitz::fold::fold_columns`.
+The joint binary sumcheck binds arithmetic, both Keccak claims, and these copy
+checks to the shared ring-switch/Ligerito opening.
 Falcon uses `MATCHED_UDR` with no initial OOD message. Physical padding and all
 three roots remain authenticated. See
 [BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md) for the bridge's index map
@@ -100,6 +104,14 @@ The statement domains are `native-ring/non-zk/v4` and
 `native-ring/statement/v4`. Earlier proofs must be regenerated. Current
 subprotocol domain separators retain their own versions: those labels separate
 live proof phases and do not enable old backends or old-proof parsing.
+The bridge retains `bitz/falcon-hybrid/wfbitz-joint-limbs/v1` as a transcript
+label while its implementation uses `crate::bitz`.
+
+The shared opening resolves its Flock work budgets through
+[`GrindingPlan`](../../../ligerito_flock/grinding_plan.rs). Its
+[host-transcript adapter](../../../hybrid/opening/grinding.rs) checks the
+plan against the selected configuration, validates the challenge-block and
+nonce counts, and keeps the prover and verifier transcripts synchronized.
 
 ## Validation and benchmarking
 

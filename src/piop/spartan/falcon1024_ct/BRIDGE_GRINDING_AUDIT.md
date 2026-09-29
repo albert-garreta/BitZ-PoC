@@ -1,7 +1,8 @@
 # Falcon hybrid bridge grinding audit
 
-The native Falcon prover uses one partially reduced `wfbitz` forest over both
-bounded integer limbs of its prime-field row weights. SHAKE, HashToPoint,
+The native Falcon prover uses one partially reduced product tree from the
+current `crate::bitz` PCS over both bounded integer limbs of its prime-field
+row weights. SHAKE, HashToPoint,
 Falcon arithmetic, every signature's norm bound, the three committed sources,
 and the joint binary sumcheck and shared PCS opening remain enforced.
 
@@ -12,15 +13,16 @@ The statement digest binds the derived bridge numerator and grinding difficulty.
 ## Scope and model
 
 This calculation applies to the adapter in `hybrid_bridge::{prove, verify}`
-and the arity-two `wfbitz` forest/GKR it invokes. It uses the repository's
+and the arity-two BitZ forest/GKR it invokes. It uses the repository's
 existing computational grinding model: a challenge block with raw error `e`
 and difficulty `g` contributes `e * 2^-g` per unit of adversarial work. It does
 not claim that grinding improves unconditional interactive soundness, nor add
 security beyond the separately stated BLAKE3 bound.
 
 Supported live batch sizes are 1 through 1024, padded to their next power of
-two. The arithmetic source has `word_bits=1`, `d=row_vars=13`, and
-`c=col_vars=4+log2(capacity)`. There are exactly two bounded limbs. The forest
+two. The arithmetic source is a binary matrix with `d=row_vars=13` and
+`c=col_vars=4+log2(capacity)`. Its layout has only row and column dimensions;
+each cell is one bit. There are exactly two bounded limbs. The forest
 uses an interleaved row grid of geometric width `t=d+1=14`, but reduces only
 `d=13` product-tree levels. Its root-table width is therefore
 `s=c+1=5+log2(capacity)`, ranging from 5 to 15. The unreduced coordinate is the
@@ -28,7 +30,9 @@ limb index; it is not multiplied away.
 
 ## Integer binding has no probabilistic loss
 
-Prime row weights are lifted canonically and split into width-113 limbs. The
+Prime row weights are lifted canonically and split by the bridge's local
+`weight_limbs` helper. Its `limb_width` is `126-row_vars=113`; each limb is
+folded with `bitz::fold::fold_columns` over the validated binary shape. The
 production prime has 126 bits, so the second limb has at most 13 bits (the
 bridge test also covers a 127-bit modulus). For every limb, an honest binary
 column's integer sum is at most
@@ -66,7 +70,7 @@ j + 2^c * (l + 2*r),
 ```
 
 so its coordinates are `[column | limb | original row]`, with each slice in
-little-endian order. The `wfbitz` product tree pairs halves, eliminating the
+little-endian order. The BitZ product tree pairs halves, eliminating the
 highest remaining row bit first. Reducing exactly 13 levels therefore
 multiplies all 8192 original rows while retaining the low limb bit. The root
 at index `j + 2^c*l` is
@@ -238,18 +242,31 @@ independent cryptographic audit of the global Fiat-Shamir model.
 
 ## Code paths
 
-- `hybrid_bridge.rs`: limb construction, magnitude/read-off checks, root
+- [`hybrid_bridge.rs`](hybrid_bridge.rs): local `limb_width` and `weight_limbs`
+  helpers, magnitude/read-off checks, root
   derivation, interleaved source/images, forest adapter, endpoint contraction,
   shape validation, and grinder completion.
-- `wfbitz/forest.rs`, `wfbitz/gkr.rs`, and `wfbitz/kernels.rs`: column-packed
+- [`src/bitz/fold.rs`](../../../bitz/fold.rs): bounded integer folds for each
+  limb through `fold_columns` and the current PCS's binary `Shape`.
+- [`src/bitz/forest.rs`](../../../bitz/forest.rs),
+  [`src/bitz/gkr.rs`](../../../bitz/gkr.rs), and
+  [`src/bitz/kernels.rs`](../../../bitz/kernels.rs): column-packed
   forest, partial product depth, MSB-first arity-two GKR, table-driven rounds
   and dense kernels.
-- `layout.rs` and `src/pcs.rs`: fixed source dimensions, limb widths, and
-  full-order generator checks.
-- `hybrid_keccak/grinding.rs` and `src/piop/spartan/grinding.rs`: block
+- [`layout.rs`](layout.rs): fixed binary source dimensions and bit-index mapping.
+- [`hybrid_keccak/grinding.rs`](hybrid_keccak/grinding.rs) and
+  [`src/piop/spartan/grinding.rs`](../grinding.rs): block
   boundaries and domain-, difficulty-, and index-bound nonces.
-- `hybrid.rs`: native-ring/v4 statement binding, category accounting, joint
+- [`src/ligerito_flock/grinding_plan.rs`](../../../ligerito_flock/grinding_plan.rs)
+  and [`src/hybrid/opening/grinding.rs`](../../../hybrid/opening/grinding.rs):
+  current Flock work budgets and their shared-opening transcript adapter,
+  with configuration, challenge-block, and nonce-consumption checks.
+- [`hybrid.rs`](hybrid.rs): native-ring/v4 statement binding, category accounting, joint
   binary sumcheck, and shared PCS authentication.
 
 The prefix helpers in `opening.rs` run under the enclosing Falcon statement
 binding and feed this bridge directly.
+
+The root challenge retains the transcript label
+`bitz/falcon-hybrid/wfbitz-joint-limbs/v1`; this protocol label does not refer
+to a separate Rust module or select another PCS implementation.

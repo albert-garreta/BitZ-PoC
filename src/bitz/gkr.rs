@@ -457,6 +457,120 @@ mod tests {
     }
 
     #[test]
+    fn native_gkr_rejects_malformed_round_and_close_nonces() {
+        use crate::bitz::grinding::{Geometry, Policy, Schedule, Stage};
+        use crate::bitz::transcript::{Proof, build_prover, build_verifier};
+
+        const ROWS: usize = 4;
+        const COLUMNS: usize = 2;
+        let schedule = Schedule::new(
+            Policy::new(Some(128), 0, 0).unwrap(),
+            Geometry::prefix(ROWS, COLUMNS),
+        )
+        .unwrap();
+        let mut state = 0x39A7_53D0;
+        let leaves: Vec<_> = (0..1usize << (ROWS + COLUMNS))
+            .map(|_| field(&mut state))
+            .collect();
+        let (roots, witnesses) =
+            GrandProductCircuit::new(leaves.clone()).batched_eval(1 << COLUMNS);
+        let root_bytes: Vec<_> = roots.iter().flat_map(|root| root.to_bytes()).collect();
+        let mut prover = build_prover(b"native-gkr-nonces/v1", b"fixture");
+        prover.public_message(root_bytes.as_slice());
+        prover.start_native(schedule).unwrap();
+        let point = prover.native_vector(Stage::FoldPoint, COLUMNS);
+        let root_claim = roots
+            .iter()
+            .zip(eq_table(&point))
+            .fold(Gf::zero(), |sum, (&root, weight)| sum + root * weight);
+        let terminal = gpgkr_prove(&mut prover, &point, witnesses);
+        let proof = prover.finish();
+        assert_eq!(
+            terminal.1,
+            leaves
+                .iter()
+                .zip(eq_table(&terminal.0))
+                .fold(Gf::zero(), |sum, (&leaf, weight)| sum + leaf * weight)
+        );
+
+        let verify = |candidate: &Proof| {
+            let mut verifier = build_verifier(b"native-gkr-nonces/v1", b"fixture", candidate);
+            verifier.public_message(root_bytes.as_slice());
+            verifier.start_native(schedule).unwrap();
+            assert_eq!(
+                verifier.native_vector(Stage::FoldPoint, COLUMNS).unwrap(),
+                point
+            );
+            let result = gpgkr_verify(&mut verifier, root_claim, &point, ROWS as u32);
+            if result.is_some() {
+                verifier.check_eof().unwrap();
+            }
+            result
+        };
+        assert_eq!(verify(&proof), Some(terminal));
+
+        let mut stages = Vec::new();
+        for layer in 0..ROWS {
+            stages.extend(std::iter::repeat_n(Stage::GkrRound, COLUMNS + layer));
+            stages.push(Stage::GkrClose);
+        }
+        // One fold-point nonce precedes the GKR records. Each record is a
+        // 32-byte field pair followed by its authenticated 8-byte nonce.
+        assert_eq!(proof.narg_string.len(), 8 + stages.len() * 40);
+        for record in [0, stages.len() - 1] {
+            let nonce_start = 8 + record * 40 + 32;
+            for remaining in 0..8 {
+                let mut truncated = proof.clone();
+                truncated.narg_string.truncate(nonce_start + remaining);
+                assert!(
+                    verify(&truncated).is_none(),
+                    "truncated {:?} nonce",
+                    stages[record]
+                );
+            }
+
+            // A changed nonce can still satisfy the small work bound. Find
+            // one rejected at this challenge, independently of later GKR
+            // equations, so both native transcript adapters are exercised.
+            let mut changed = proof.clone();
+            let invalid = (0u64..1024).find(|nonce| {
+                changed.narg_string[nonce_start..nonce_start + 8]
+                    .copy_from_slice(&nonce.to_le_bytes());
+                let mut verifier = build_verifier(b"native-gkr-nonces/v1", b"fixture", &changed);
+                verifier.public_message(root_bytes.as_slice());
+                verifier.start_native(schedule).unwrap();
+                assert_eq!(
+                    verifier.native_vector(Stage::FoldPoint, COLUMNS).unwrap(),
+                    point
+                );
+                for (index, stage) in stages[..=record].iter().enumerate() {
+                    assert!(verifier.read_pair().is_some());
+                    let challenge = match stage {
+                        Stage::GkrRound => verifier.challenge(),
+                        Stage::GkrClose => verifier.close_challenge(),
+                        _ => unreachable!("only GKR records"),
+                    };
+                    if index == record {
+                        return challenge.is_none();
+                    }
+                    assert!(challenge.is_some());
+                }
+                unreachable!("target record is present");
+            });
+            assert!(
+                invalid.is_some(),
+                "a {:?} nonce must fail its work check",
+                stages[record]
+            );
+            assert!(
+                verify(&changed).is_none(),
+                "invalid {:?} nonce",
+                stages[record]
+            );
+        }
+    }
+
+    #[test]
     fn complementary_equality_weights_remove_column_weights() {
         let mut state = 0xCA77_1ED0;
         for s in 1..=10 {

@@ -2074,9 +2074,9 @@ mod tests {
     ))]
     #[test]
     fn native_build_selects_four_lane_accumulators() {
-        assert!(std::any::type_name::<SumsInner>().ends_with("kernels::x86::Sums"));
+        assert!(std::any::type_name::<Sums>().ends_with("kernels::x86::Sums"));
         assert_ne!(
-            std::mem::size_of::<SumsInner>(),
+            std::mem::size_of::<Sums>(),
             std::mem::size_of::<generic::Sums>()
         );
     }

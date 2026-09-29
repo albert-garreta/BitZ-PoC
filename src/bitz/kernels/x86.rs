@@ -8,12 +8,12 @@ use std::mem::MaybeUninit;
 use super::{Gf, col_of, generic};
 use field::gf128::kernels::x86_64::{WideGhashX4, f128x4_loadu, f128x4_set, ghash_mul_x4};
 
-pub(super) use generic::{SumBuckets, jit_bucket_finish, jit_bucket_group, scatter_add};
+pub(crate) use generic::{SumBuckets, jit_bucket_finish, jit_bucket_group, scatter_add};
 
 /// Share each loaded weight across the four independent bucket streams.
 /// Positions within a bucket remain sequential: equal byte indices must
 /// accumulate both weights, rather than overwrite a gathered stale value.
-pub(super) fn scatter_add4(buckets: [&mut [Gf]; 4], idx: &[[u8; 64]; 4], eq_t: &[Gf]) {
+pub(crate) fn scatter_add4(buckets: [&mut [Gf]; 4], idx: &[[u8; 64]; 4], eq_t: &[Gf]) {
     assert_eq!(eq_t.len(), 64);
     assert!(buckets.iter().all(|b| b.len() >= 256));
     // SAFETY: Gf is repr(C) over two u64s, with size/alignment 16. Every
@@ -31,14 +31,14 @@ pub(super) fn scatter_add4(buckets: [&mut [Gf]; 4], idx: &[[u8; 64]; 4], eq_t: &
     }
 }
 
-pub(super) struct Sums {
+pub(crate) struct Sums {
     end: WideGhashX4,
     inf: WideGhashX4,
     tail: [Gf; 2],
 }
 
 impl Sums {
-    pub(super) fn zero() -> Self {
+    pub(crate) fn zero() -> Self {
         // SAFETY: the whole module is compiled only with the complete ISA.
         unsafe {
             Self {
@@ -49,7 +49,7 @@ impl Sums {
         }
     }
 
-    pub(super) fn finish(self) -> (Gf, Gf) {
+    pub(crate) fn finish(self) -> (Gf, Gf) {
         // SAFETY: the module gate includes AVX512F and SSE4.1 for fold().
         unsafe {
             (
@@ -149,7 +149,7 @@ unsafe fn lookup(table: &[Gf], patterns: &[u8; 64], positions: [usize; 4]) -> __
     unsafe { f128x4_set(a, b, c, d) }
 }
 
-pub(super) fn round_sums_task(
+pub(crate) fn round_sums_task(
     lo_l: &[Gf],
     hi_l: &[Gf],
     lo_r: &[Gf],
@@ -184,7 +184,7 @@ pub(super) fn round_sums_task(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn fused_task<const LEFT: u8>(
+pub(crate) fn fused_task<const LEFT: u8>(
     q0_l: &mut [Gf],
     q1_l: &mut [Gf],
     q2_l: &[Gf],
@@ -253,7 +253,7 @@ pub(super) fn fused_task<const LEFT: u8>(
     sums.finish()
 }
 
-pub(super) fn jit_sums_group(
+pub(crate) fn jit_sums_group(
     tab: [&[Gf]; 4],
     pat: &[[u8; 64]; 4],
     eq_t: &[Gf],
@@ -279,7 +279,7 @@ pub(super) fn jit_sums_group(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn jit_fold_group<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
+pub(crate) fn jit_fold_group<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
     tab: [&[Gf]; 8],
     pat: &[[u8; 64]; 8],
     rho: &Gf,
@@ -363,7 +363,7 @@ pub(super) fn jit_fold_group<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
     }
 }
 
-pub(super) fn scale_in_place(values: &mut [Gf], scalar: &Gf) {
+pub(crate) fn scale_in_place(values: &mut [Gf], scalar: &Gf) {
     let end = values.len() / 4 * 4;
     // SAFETY: complete vectors only, followed by the scalar remainder.
     unsafe {
@@ -377,7 +377,7 @@ pub(super) fn scale_in_place(values: &mut [Gf], scalar: &Gf) {
 }
 
 /// Multiply each entry by the weight at its complementary index.
-pub(super) fn multiply_reversed_in_place(values: &mut [Gf], weights: &[Gf]) {
+pub(crate) fn multiply_reversed_in_place(values: &mut [Gf], weights: &[Gf]) {
     assert_eq!(values.len(), weights.len());
     let n = values.len();
     let end = n / 4 * 4;
@@ -396,7 +396,7 @@ pub(super) fn multiply_reversed_in_place(values: &mut [Gf], weights: &[Gf]) {
     }
 }
 
-pub(super) fn jit_product_group(tab: [&[Gf]; 2], pat: &[[u8; 64]; 2], out: &mut [MaybeUninit<Gf>]) {
+pub(crate) fn jit_product_group(tab: [&[Gf]; 2], pat: &[[u8; 64]; 2], out: &mut [MaybeUninit<Gf>]) {
     assert!(out.len() <= 64);
     let end = out.len() / 4 * 4;
     for c in (0..end).step_by(4) {
@@ -419,7 +419,7 @@ pub(super) fn jit_product_group(tab: [&[Gf]; 2], pat: &[[u8; 64]; 2], out: &mut 
     }
 }
 
-pub(super) fn product_into(a: &[Gf], b: &[Gf], out: &mut [MaybeUninit<Gf>]) {
+pub(crate) fn product_into(a: &[Gf], b: &[Gf], out: &mut [MaybeUninit<Gf>]) {
     let n = out.len();
     assert!(a.len() >= n && b.len() >= n);
     let end = n / 4 * 4;
@@ -432,7 +432,7 @@ pub(super) fn product_into(a: &[Gf], b: &[Gf], out: &mut [MaybeUninit<Gf>]) {
     generic::product_into(&a[end..], &b[end..], &mut out[end..]);
 }
 
-pub(super) fn dot(a: &[Gf], b: &[Gf]) -> Gf {
+pub(crate) fn dot(a: &[Gf], b: &[Gf]) -> Gf {
     assert_eq!(a.len(), b.len());
     if a.len() < 4 {
         return generic::dot(a, b);
@@ -449,7 +449,7 @@ pub(super) fn dot(a: &[Gf], b: &[Gf]) -> Gf {
     sum + generic::dot(&a[end..], &b[end..])
 }
 
-pub(super) fn contract(t_e: &[Gf], t_o: &[Gf], bucket: &[Gf]) -> Gf {
+pub(crate) fn contract(t_e: &[Gf], t_o: &[Gf], bucket: &[Gf]) -> Gf {
     let n = t_e.len();
     assert_eq!(t_o.len(), n);
     assert!(bucket.len() >= n * n);

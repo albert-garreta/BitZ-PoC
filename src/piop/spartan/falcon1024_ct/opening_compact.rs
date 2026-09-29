@@ -1079,7 +1079,7 @@ mod tests {
     #[test]
     fn direct_byte_buckets_match_dense_overlaps_all_patterns_and_runtime_primes() {
         for field in [
-            crate::piop::spartan::bitz::spartan_bitz_field_config(),
+            crate::piop::spartan::spartan_bitz_field_config(),
             field::FpCtx::from_prime_u128((1u128 << 127) - 1),
             field::FpCtx::from_prime_u128(7),
         ] {
@@ -1137,7 +1137,7 @@ mod tests {
 
     #[test]
     fn direct_byte_buckets_reject_noncanonical_words_and_unaligned_base() {
-        let field = crate::piop::spartan::bitz::spartan_bitz_field_config();
+        let field = crate::piop::spartan::spartan_bitz_field_config();
         let mut sink = WordSink::new(0, 0, &field);
         sink.add_word(0, 14, field.one(), &field);
         let mut compact = sink.finish();
@@ -1192,7 +1192,7 @@ mod tests {
 
     #[test]
     fn compact_blocks_match_bit_stream_and_dense_signed_word_expansion() {
-        let field = crate::piop::spartan::bitz::spartan_bitz_field_config();
+        let field = crate::piop::spartan::spartan_bitz_field_config();
         for base in [0, 256] {
             let mut sink = WordSink::new(base / 256, base, &field);
             overlapping_words(&mut sink, base, &field);
@@ -1268,7 +1268,7 @@ mod tests {
 
     #[test]
     fn indexed_word_template_matches_dense_expansion_across_instances_and_zero_scales() {
-        let field = crate::piop::spartan::bitz::spartan_bitz_field_config();
+        let field = crate::piop::spartan::spartan_bitz_field_config();
         let mut common = WordSink::new(0, 0, &field);
         overlapping_words(&mut common, 0, &field);
         let mut record = WordSink {
@@ -1354,7 +1354,7 @@ mod tests {
 
     #[test]
     fn compact_empty_blocks_and_invalid_block_dimensions() {
-        let field = crate::piop::spartan::bitz::spartan_bitz_field_config();
+        let field = crate::piop::spartan::spartan_bitz_field_config();
         let compact = WordSink::new(0, 0, &field).finish();
         for width in [1, 2, 4, 8, 16] {
             compact

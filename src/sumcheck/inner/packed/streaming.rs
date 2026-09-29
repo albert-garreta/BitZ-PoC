@@ -789,7 +789,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
-    use crate::piop::spartan::bitz::spartan_bitz_field_config;
+    use crate::piop::spartan::spartan_bitz_field_config;
     use crate::sumcheck::UngrindedRoundBoundary;
     use crate::sumcheck::inner::{prove_batched_inner_sumcheck, prove_inner_sumcheck};
     use crate::transcript::{Blake3Transcript, traits::Transcript};
@@ -1722,7 +1722,7 @@ mod tests {
         }
 
         for bit_width in [100, 125, 126] {
-            let cfg = crate::ext_proj::sample_prime_context(
+            let cfg = crate::prime_sampling::sample_prime_context(
                 &mut Blake3Transcript::new(),
                 1u128 << (bit_width - 1),
                 (1u128 << bit_width) - 1,

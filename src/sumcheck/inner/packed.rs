@@ -2146,7 +2146,7 @@ mod tests {
     #[test]
     fn prepared_witness_byte_sums_match_weighted_bits_and_partial_blocks() {
         for bit_width in [100, 125, 126] {
-            let cfg = crate::ext_proj::sample_prime_context(
+            let cfg = crate::prime_sampling::sample_prime_context(
                 &mut Blake3Transcript::new(),
                 1u128 << (bit_width - 1),
                 (1u128 << bit_width) - 1,

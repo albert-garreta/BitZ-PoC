@@ -435,7 +435,7 @@ fn bind_header(transcript: &mut impl Transcript, layout: &FalconSourceLayout, ta
 }
 
 fn sample_field(transcript: &mut impl Transcript) -> Result<Cfg, FalconError> {
-    crate::ext_proj::sample_prime_context(transcript, PRIME_MIN, PRIME_MAX, 128)
+    crate::prime_sampling::sample_prime_context(transcript, PRIME_MIN, PRIME_MAX, 128)
         .map_err(|error| piop(error.to_string()))
 }
 

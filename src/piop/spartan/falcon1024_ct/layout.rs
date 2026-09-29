@@ -91,7 +91,6 @@ impl FalconSourceLayout {
         IntegerMatrixLayout {
             row_vars: self.row_vars(),
             col_vars: self.col_vars(),
-            word_bits: 1,
         }
     }
 
