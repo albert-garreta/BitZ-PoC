@@ -10,6 +10,7 @@
 //! products are XOR-combined and reduced once per accumulator, and
 //! reduction is `F₂`-linear — so every transcript byte is unchanged.
 
+#[cfg(test)]
 use std::mem::MaybeUninit;
 
 #[cfg(feature = "parallel")]
@@ -185,64 +186,29 @@ pub(crate) fn fused_fold_round(
     total(partials)
 }
 
-/// The running Gruen sums of one row task — unreduced accumulators.
-pub(crate) struct Sums(SumsInner);
-
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-type SumsInner = neon::Sums;
 #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-type SumsInner = generic::Sums;
+use self::generic as backend;
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+use self::neon as backend;
 
-impl Sums {
-    pub(crate) fn zero() -> Self {
-        Self(SumsInner::zero())
-    }
+use backend::{fused_task, round_sums_task};
 
-    /// `(Σ end, Σ inf)`, reduced.
-    pub(crate) fn finish(self) -> (Gf, Gf) {
-        self.0.finish()
-    }
-}
+/// The running Gruen sums of one row task — unreduced accumulators.
+pub(crate) use backend::Sums;
 
 /// One group of the first just-in-time dense round, slot by slot: `tab[i]`
 /// and `pat[i]` (transposed) give the values of corner `i ∈ (E_lo, E_hi,
 /// O_lo, O_hi)` at each position (`tab[i][pat[i][m]]`); accumulates the
 /// Gruen sums with the transposed weights `eq_t` (64 entries). The prover
 /// runs the bucketed form ([`jit_bucket_group`]); this is its reference.
-#[allow(dead_code)]
-pub(crate) fn jit_sums_group(
-    tab: [&[Gf]; 4],
-    pat: &[[u8; 64]; 4],
-    eq_t: &[Gf],
-    send_one: bool,
-    sums: &mut Sums,
-) {
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    neon::jit_sums_group(tab, pat, eq_t, send_one, &mut sums.0);
-    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-    generic::jit_sums_group(tab, pat, eq_t, send_one, &mut sums.0);
-}
+#[cfg(test)]
+pub(crate) use backend::jit_sums_group;
 
 /// The per-task scratch of the bucketed first table round: three
 /// 256-entry tables of unreduced accumulators, keyed by an E pattern —
 /// `end` (the endpoint corner's), `inf_lo` and `inf_hi` (E_lo's and
 /// E_hi's, both fed `eq·ΔO`).
-pub(crate) struct SumBuckets(SumBucketsInner);
-
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-type SumBucketsInner = neon::SumBuckets;
-#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-type SumBucketsInner = generic::SumBuckets;
-
-impl SumBuckets {
-    pub(crate) fn new() -> Self {
-        Self(SumBucketsInner::new())
-    }
-
-    pub(crate) fn clear(&mut self) {
-        self.0.clear();
-    }
-}
+pub(crate) use backend::SumBuckets;
 
 /// One group of the first just-in-time dense round, bucketed: with
 /// `pat[i]` the transposed patterns of the corners `(E_lo, E_hi, O_lo,
@@ -251,31 +217,11 @@ impl SumBuckets {
 /// and `inf_hi[pat_E_hi]`, unreduced — one carryless product per term
 /// instead of two multiplies. [`jit_bucket_finish`] contracts the buckets
 /// with the E tables.
-pub(crate) fn jit_bucket_group(
-    tab_o: [&[Gf]; 2],
-    pat: &[[u8; 64]; 4],
-    eq_t: &[Gf],
-    send_one: bool,
-    bk: &mut SumBuckets,
-) {
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    neon::jit_bucket_group(tab_o, pat, eq_t, send_one, &mut bk.0);
-    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-    generic::jit_bucket_group(tab_o, pat, eq_t, send_one, &mut bk.0);
-}
+pub(crate) use backend::jit_bucket_group;
 
 /// `Σ_a T_E_end[a]·end[a]` and `Σ_a T_E_lo[a]·inf_lo[a] + Σ_a T_E_hi[a]·inf_hi[a]`,
 /// each bucket reduced once — the row's `(Σ end, Σ inf)`.
-pub(crate) fn jit_bucket_finish(tab_e: [&[Gf]; 2], send_one: bool, bk: &SumBuckets) -> (Gf, Gf) {
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    {
-        neon::jit_bucket_finish(tab_e, send_one, &bk.0)
-    }
-    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-    {
-        generic::jit_bucket_finish(tab_e, send_one, &bk.0)
-    }
-}
+pub(crate) use backend::jit_bucket_finish;
 
 /// One group of the second just-in-time dense round: corner
 /// `i = p·4 + b1·2 + b2` (`p` the half, `b1` the bit folded with `rho`,
@@ -286,153 +232,35 @@ pub(crate) fn jit_bucket_finish(tab_e: [&[Gf]; 2], send_one: bool, bk: &SumBucke
 /// already include the `1 + rho` and `rho` weights, so a fold is an addition.
 /// With `WEIGH`, `out_l` gets `eq_t[m]·E'` instead (the slot's two
 /// multiplies, moved; see [`Left::Weigh`]).
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn jit_fold_group<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
-    tab: [&[Gf]; 8],
-    pat: &[[u8; 64]; 8],
-    rho: &Gf,
-    eq_t: &[Gf],
-    send_one: bool,
-    out_l: [&mut [MaybeUninit<Gf>]; 2],
-    out_r: [&mut [MaybeUninit<Gf>]; 2],
-    sums: &mut Sums,
-) {
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    neon::jit_fold_group::<PRE_SCALED, WEIGH_LEFT>(tab, pat, rho, eq_t, send_one, out_l, out_r, &mut sums.0);
-    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-    generic::jit_fold_group::<PRE_SCALED, WEIGH_LEFT>(tab, pat, rho, eq_t, send_one, out_l, out_r, &mut sums.0);
-}
+pub(crate) use backend::jit_fold_group;
 
 /// Multiply every value by the same scalar.
-pub(crate) fn scale_in_place(values: &mut [Gf], scalar: &Gf) {
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    neon::scale_in_place(values, scalar);
-    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-    generic::scale_in_place(values, scalar);
-}
+pub(crate) use backend::scale_in_place;
 
 /// One group of a product level: `out[c] = tab[0][pat[0][m]] · tab[1][pat[1][m]]`
 /// over the `out.len()` columns.
-pub(crate) fn jit_product_group(tab: [&[Gf]; 2], pat: &[[u8; 64]; 2], out: &mut [MaybeUninit<Gf>]) {
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    neon::jit_product_group(tab, pat, out);
-    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-    generic::jit_product_group(tab, pat, out);
-}
+pub(crate) use backend::jit_product_group;
 
 /// `out[i] = a[i] · b[i]` over `out.len()` entries — one row of a product
 /// level from the two rows below it.
-pub(crate) fn product_into(a: &[Gf], b: &[Gf], out: &mut [MaybeUninit<Gf>]) {
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    neon::product_into(a, b, out);
-    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-    generic::product_into(a, b, out);
-}
+pub(crate) use backend::product_into;
 
 /// [`scatter_add`] into four buckets at once (`buckets[j][idx[j][m]] +=
 /// eq_t[m]`): each weight loaded once for its four additions — the pair
 /// buckets of the bit rounds' last pass.
-pub(crate) fn scatter_add4(buckets: [&mut [Gf]; 4], idx: &[[u8; 64]; 4], eq_t: &[Gf]) {
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    neon::scatter_add4(buckets, idx, eq_t);
-    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-    generic::scatter_add4(buckets, idx, eq_t);
-}
+pub(crate) use backend::scatter_add4;
 
 /// `bucket[idx[m]] += eq_t[m]` over a transposed block — the bit rounds'
 /// one addition per term. `bucket` must hold 256 entries so every byte
 /// index is in bounds; `eq_t` has 64 entries.
-pub(crate) fn scatter_add(bucket: &mut [Gf], idx: &[u8; 64], eq_t: &[Gf]) {
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    neon::scatter_add(bucket, idx, eq_t);
-    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-    generic::scatter_add(bucket, idx, eq_t);
-}
+pub(crate) use backend::scatter_add;
 
 /// `Σ_k a[k] · b[k]`, accumulated unreduced and reduced once.
-pub(crate) fn dot(a: &[Gf], b: &[Gf]) -> Gf {
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    {
-        neon::dot(a, b)
-    }
-    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-    {
-        generic::dot(a, b)
-    }
-}
+pub(crate) use backend::dot;
 
 /// `Σ_a t_e[a] · Σ_b t_o[b] · bucket[a·n + b]` over `n = t_e.len()`
 /// entries, the inner sums accumulated unreduced and reduced once each.
-pub(crate) fn contract(t_e: &[Gf], t_o: &[Gf], bucket: &[Gf]) -> Gf {
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    {
-        neon::contract(t_e, t_o, bucket)
-    }
-    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-    {
-        generic::contract(t_e, t_o, bucket)
-    }
-}
-
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-fn round_sums_task(
-    lo_l: &[Gf],
-    hi_l: &[Gf],
-    lo_r: &[Gf],
-    hi_r: &[Gf],
-    w: &[Gf],
-    send_one: bool,
-) -> (Gf, Gf) {
-    neon::round_sums_task(lo_l, hi_l, lo_r, hi_r, w, send_one)
-}
-
-#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-fn round_sums_task(
-    lo_l: &[Gf],
-    hi_l: &[Gf],
-    lo_r: &[Gf],
-    hi_r: &[Gf],
-    w: &[Gf],
-    send_one: bool,
-) -> (Gf, Gf) {
-    generic::round_sums_task(lo_l, hi_l, lo_r, hi_r, w, send_one)
-}
-
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-#[allow(clippy::too_many_arguments)]
-fn fused_task<const LEFT: u8>(
-    q0_l: &mut [Gf],
-    q1_l: &mut [Gf],
-    q2_l: &[Gf],
-    q3_l: &[Gf],
-    q0_r: &mut [Gf],
-    q1_r: &mut [Gf],
-    q2_r: &[Gf],
-    q3_r: &[Gf],
-    rho: &Gf,
-    w: &[Gf],
-    send_one: bool,
-) -> (Gf, Gf) {
-    neon::fused_task::<LEFT>(q0_l, q1_l, q2_l, q3_l, q0_r, q1_r, q2_r, q3_r, rho, w, send_one)
-}
-
-#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-#[allow(clippy::too_many_arguments)]
-fn fused_task<const LEFT: u8>(
-    q0_l: &mut [Gf],
-    q1_l: &mut [Gf],
-    q2_l: &[Gf],
-    q3_l: &[Gf],
-    q0_r: &mut [Gf],
-    q1_r: &mut [Gf],
-    q2_r: &[Gf],
-    q3_r: &[Gf],
-    rho: &Gf,
-    w: &[Gf],
-    send_one: bool,
-) -> (Gf, Gf) {
-    generic::fused_task::<LEFT>(q0_l, q1_l, q2_l, q3_l, q0_r, q1_r, q2_r, q3_r, rho, w, send_one)
-}
+pub(crate) use backend::contract;
 
 /// The portable kernels: the field's own operators and the delayed-
 /// reduction accumulator. Also the reference the NEON kernels are tested
@@ -460,6 +288,7 @@ pub(crate) mod generic {
             }
         }
 
+        /// `(Σ end, Σ inf)`, reduced.
         pub(crate) fn finish(self) -> (Gf, Gf) {
             (
                 <Gf as WideMulAcc>::from_wide(self.end),
@@ -915,6 +744,7 @@ pub(crate) mod neon {
             }
         }
 
+        /// `(Σ end, Σ inf)`, reduced.
         pub(crate) fn finish(self) -> (Gf, Gf) {
             // SAFETY: as `neon::pmull_lo`.
             unsafe { (to_elt(self.end), to_elt(self.inf)) }
