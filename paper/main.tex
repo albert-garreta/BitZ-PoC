@@ -3015,7 +3015,7 @@ In Round 2 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,
 
 \subsection{Reducing table reads via bucketing}\label{s:gkr_buckets}
 
-Note that in \cref{s:tables} the prover performs $O(\codedim)$ table reads, and keeps  full tables in cache for every sumcheck round where  a table is used. We now describe an optimization that reduces the  number of table reads to $O(\sqrt{\codedim})$, and  allows to compute table entries ``on-the-go''.  These optimizations were found by an AI when optimizing our prover and are reminiscent of Pippenger's MSM algorithm \cite{pipp}.
+Note that in \cref{s:tables} the prover performs $O(\codedim)$ table reads, and keeps  full tables in cache for every sumcheck round where  a table is used. We now describe an optimization that reduces the  number of table reads to $O(\codedim_1)$, and  allows to compute table entries ``on-the-go''.  These optimizations were found by an AI when optimizing our prover and are reminiscent of Pippenger's MSM algorithm \cite{pipp}.
 
 %In the first rounds of each sumcheck, the prover can read the tables from the previous subsection much less often, and use fewer operations. We describe this optimization for the first message of the last sumcheck, i.e.\ the message analyzed in \cref{t:gkr_step1_costs}. Our implementation uses it (see also \cref{s:gkr_implementation}).
 
@@ -3042,28 +3042,6 @@ Hence $t_1(\infty)$ can be computed by making $2^{r_1 -2} \cdot 2^{4} = 4 \cdot 
 The prover can compute $t_1(0)$ using an analogous procedure. In this case one can further reduce the cost to $\codedim_1$ reads, using that each entry of $T_{A_0}^{(1)}$ is indexed by $2$ bits, and not $4$.  We record the costs of computing $t_1(0)$ and $t_1(\infty)$ this way in \cref{t:gkr_buckets_costs}.
 
 
-
-\paragraph{Subsequent sumcheck rounds and GKR layers.} The same idea applies to the next messages. For example, in the second first round of the ``biggest'' sumcheck (i.e.\ after the round discussed above) the entries in the tables $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$ are  each one a vector of $2^4$ and $2^8$ elements, respectively. These vectors are indexed by elements from $\bits^4$ and $\{0,1\}^8$. We can now apply the same strategy as above, except that now we have $\xx$ range over $\{0,1\}^8$ instead of $\bits^4$. 
-
-
-This optimization is beneficial as long as we can index $\xx$ over $\bits^{t}$ with $2^t< \codedim_2=2^{r_2}$, i.e.\  as long as the corresponding table has entries that are vectors of dimension $2^t<2^{r_2}$. In practice this constraints us to $t\in \{2,4,8\}$.
-
-
-
-
-
-For coefficients where the corresponding table would have entries of dimension $2^{16}$, we use the following approach. For example, in the third round of the biggest sumcheck, the leading coefficient $t_3(\infty)$ of $t_3(X)$ would require a table with entries of dimension $2^{16}$, and we would compute it as 
-%
-$$
- t_3(\infty)=\sum_{\bb\in \bits^{r_1-4}} \sum_{\xx\in \bits^{16}}  T_{A_2}^{(3)}[\bb][\xx] \cdot H_{\bb}[\xx]. 
-$$
-Instead, we write 
-$$
- t_3(\infty)=\sum_{\bb\in \bits^{r_1-4}} \sum_{\xx\in \bits^{8}}\sum_{\xx'\in \bits^{8}} T_{S_1}^{(3)}[\bb][\xx] \cdot  T_{S_2}^{(3)}[\bb][\xx'] \cdot H_{\bb}[\xx, \xx'], 
-$$
-where $ T_{S_1}^{(3)}[\bb]$ contains all possible values for $(E_{10}^{(3)}[\bb,\cc] - E_{00}^{(3)}[\bb,\cc])\cdot \omega[\bb]$, and similarly for $ T_{S_2}^{(3)}[\bb]$ (without the factor $\omega[\bb]$), and $H_{\bb}[\xx,\xx']= ??$. 
-
-
 \begin{table}[H]
     \centering
     \begin{tabular}{c|c|c}
@@ -3079,7 +3057,39 @@ where $ T_{S_1}^{(3)}[\bb]$ contains all possible values for $(E_{10}^{(3)}[\bb,
     \label{t:gkr_buckets_costs}
 \end{table}
 
-In \cref{tab:gkr_tables} we list all the tables that our implementation uses in the sumchecks for $i=r_1-1,\ldots,r_1-4$, and the rounds in which it uses them. For $i<r_1-4$ the prover runs standard sumchecks, and it obtains the entries of $L_{r_1-4}$ as products of two entries of $T_{r_1-3}$.
+\paragraph{Subsequent sumcheck rounds and GKR layers.} The same idea applies to the next messages. For example, in the second round of the ``biggest'' sumcheck (i.e.\ after the round discussed above) the entries in the tables $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$ are  each one a vector of $2^4$ and $2^8$ elements, respectively. These vectors are indexed by elements from $\bits^4$ and $\{0,1\}^8$. We can now apply the same strategy as above, except that now we have $\xx$ range over $\{0,1\}^8$ instead of $\bits^4$. 
+
+
+This optimization is beneficial as long as we can index $\xx$ over $\bits^{t}$ with $2^t< \codedim_2=2^{r_2}$, i.e.\  as long as the corresponding table has entries that are vectors of dimension $2^t<2^{r_2}$. In practice this constrains us to $t\in \{2,4,8\}$.
+
+
+
+
+
+For coefficients where the corresponding table would have entries of dimension $2^{16}$, we use the following approach. For example, in the third round of the biggest sumcheck, the leading coefficient $t_3(\infty)$ of $t_3(X)$ would require a table with entries of dimension $2^{16}$, and we would compute it as 
+%
+$$
+ t_3(\infty)=\sum_{\bb\in \bits^{r_1-4}} \sum_{\xx\in \bits^{16}}  T_{A_2}^{(3)}[\bb][\xx] \cdot H_{\bb}[\xx]. 
+$$
+% [AI-drafted in the author's register (Claude Opus 5.5), 2026-09-29, at the author's request: completes the author's t_3(\infty) paragraph, with the four products of single factors instead of the tables T_{S_1}, T_{S_2} (whose buckets would need 16-bit keys); please review]
+Instead, we use that $(E_{10}-E_{00})\cdot (E_{11}-E_{01})=\sum_{\eps,\eps'\in \bits}(-1)^{\eps+\eps'}\cdot E_{\eps 0}\cdot E_{\eps' 1}$, and we write
+%
+$$
+ t_3(\infty)=\sum_{\bb\in \bits^{r_1-4}} \omega[\bb]\cdot \sum_{\eps,\eps'\in \bits}(-1)^{\eps+\eps'} \sum_{\xx\in \bits^{4}}\sum_{\xx'\in \bits^{4}} T_{r_1}^{(3)}[\eps,\bb,0][\xx] \cdot  T_{r_1}^{(3)}[\eps',\bb,1][\xx'] \cdot H^{\eps\eps'}_{\bb}[\xx, \xx'],
+$$
+%
+where 
+%
+$
+H^{\eps\eps'}_{\bb}[\xx,\xx']\defeq \sum_{\cc\in \bits^{r_2}:\ \xx^{\eps 0}_{\bb,\cc}=\xx,\ \xx^{\eps' 1}_{\bb,\cc}=\xx'}\eq(\cc;\bm{\alpha}').
+$
+%
+\noindent This way, we only need tables with entries of dimension $2^4$, and $4\cdot 2^8$ buckets per index $\bb$, instead of $2^{16}$. The constant coefficient $t_3(0)$ only needs the buckets $H^{00}_{\bb}$.
+
+
+
+% [AI-drafted (Claude Opus 5.5), 2026-09-29, at the author's request: the second sentence of the next paragraph; please review]
+In \cref{tab:gkr_tables} we list all the tables that our implementation uses in the sumchecks for $i=r_1-1,\ldots,r_1-4$, and the rounds in which it uses them. It only stores tables with the values of a single factor, as $T_{r_1}^{(3)}$ above, and it computes the entries of $T_{A_0}$, $T_{A_2}$, $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$ ``on-the-go'' from them. For $i<r_1-4$ the prover runs standard sumchecks, and it obtains the entries of $L_{r_1-4}$ as products of two entries of $T_{r_1-3}$.
 
 \begin{table}[H]
     \centering
@@ -3108,6 +3118,11 @@ In \cref{tab:gkr_tables} we list all the tables that our implementation uses in 
 
 
 \subsection{Avoiding transposition when forming table indices}\label{s:gkr_implementation}
+
+
+In all our techniques discussed so far, for each coefficient of each prover message where our optimizations are used, the prover has to compute a string of $\leq 8$ bits $\xx_{\bb,\cc}$ for each $\bb,\cc$ ranging in a set of the form $\bits^{r_1 - t} \times \bits^{r_2}$, for some $t$ (depending on the specific coefficient being computed). If done naively, computing these strings is a costly procedure.  We now explain a method for greatly reducing the amount of strings $\xx_{\bb,\cc}$ that need to be computed throughout the entire GKR protocol. 
+
+This optimization was found by an AI upon our request,  we identified that computing $\xx_{\bb,\cc}$ is costly. 
 
 The prover that we measure in \cref{s:experiments} sends the same messages as the algorithm described above, but it organizes its computations somewhat differently. We describe in detail how it forms the indices of its lookup tables, which turned out to matter for its running time, and we only summarize the rest at the end of this section (see our repository for details).
 
