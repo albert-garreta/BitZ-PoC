@@ -43,7 +43,7 @@ use rayon::prelude::*;
 pub(crate) use self::nibble::NibbleRows;
 use self::nibble::{BitSelectors, PatternCache, Selector};
 use super::eq_factor;
-use super::gkr::{Point, Weighing, eq_table, prove_dense_rounds, prove_layer_tensor, weighable};
+use super::gkr::{DoubleFold, Pending, Point, Weighing, eq_table, prove_dense_rounds, prove_layer_tensor, weighable};
 use super::kernels;
 use super::transcript::ProverState;
 use field::Gf128 as Gf;
@@ -185,6 +185,8 @@ pub(crate) struct Forest<'a> {
     weighing: Weighing,
     /// Whether the build pass keeps level 4 (no rebuild, more peak).
     keep_level4: bool,
+    /// When the dense rounds take two rounds per pass ([`DoubleFold`]).
+    double: DoubleFold,
     /// The packed columns regrouped for the table-driven levels, built on
     /// first use when `mode.nibble`.
     nibble_rows: OnceLock<NibbleRows>,
@@ -205,6 +207,7 @@ impl<'a> Forest<'a> {
             one_pass: one_pass_from_env(),
             weighing: Weighing::from_env(),
             keep_level4: keep_level4_from_env(),
+            double: DoubleFold::from_env(),
             nibble_rows: OnceLock::new(),
         }
     }
@@ -226,6 +229,12 @@ impl<'a> Forest<'a> {
     /// The same forest keeping level 4 from the build pass or not.
     pub(crate) fn with_keep_level4(mut self, keep: bool) -> Self {
         self.keep_level4 = keep;
+        self
+    }
+
+    /// The same forest with its dense rounds windowed the way `double` says.
+    pub(crate) fn with_double(mut self, double: DoubleFold) -> Self {
+        self.double = double;
         self
     }
 
@@ -370,18 +379,18 @@ impl<'a> Forest<'a> {
             (point, claim) = if let Some(mut wnext) = levels[ell].take() {
                 let mid = wnext.len() / 2;
                 let (l, r) = wnext.split_at_mut(mid);
-                prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s, self.weighing)
+                prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s, self.weighing, self.double)
             } else if ell >= MATERIALISED_LEVEL + 2 {
                 let region = &mut arena[self.upper_region(ell)];
                 let mid = region.len() / 2;
                 let (l, r) = region.split_at_mut(mid);
-                prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s, self.weighing)
+                prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s, self.weighing, self.double)
             } else if ell == MATERIALISED_LEVEL + 1 && keep4 {
                 // Level 4 as the build pass wrote it.
                 let region = &mut arena[level4_at..level4_at + level4_len];
                 let mid = region.len() / 2;
                 let (l, r) = region.split_at_mut(mid);
-                prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s, self.weighing)
+                prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s, self.weighing, self.double)
             } else if ell == MATERIALISED_LEVEL + 1 {
                 // Level 4 rebuilt in place of the proved upper levels. (Its
                 // first round fused into the rebuild was measured slower:
@@ -394,7 +403,7 @@ impl<'a> Forest<'a> {
                 super::trace("    L4 rebuild", rebuilt);
                 let mid = arena.len() / 2;
                 let (l, r) = arena.split_at_mut(mid);
-                prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s, self.weighing)
+                prove_layer_tensor(ps, point, l, r, 0, Gf::one(), VecDeque::new(), self.s, self.weighing, self.double)
             } else if self.jit() {
                 let tables = if ell == MATERIALISED_LEVEL { tables3.take() } else { None };
                 let level_cache = if ell == MATERIALISED_LEVEL { cache3.take() } else { self.pattern_cache() };
@@ -702,7 +711,7 @@ impl<'a> Forest<'a> {
         let half = arena.len() / 2;
         let (l, r) = arena.split_at_mut(half);
         let weighing = if carry { Weighing::Carried } else { self.weighing };
-        let out = prove_dense_rounds(ps, point, l, r, k + 2, Some(r2), factor, next_point, s, weighing);
+        let out = prove_dense_rounds(ps, point, l, r, k + 2, Pending::One(r2), factor, next_point, s, weighing, self.double);
         super::trace(&format!("    L{ell} dense tail"), started);
         out
     }
@@ -716,7 +725,7 @@ impl<'a> Forest<'a> {
         let mut folded = self.materialise_folded(ell, k, &challenges);
         let half = folded.len() / 2;
         let (l, r) = folded.split_at_mut(half);
-        prove_layer_tensor(ps, point, l, r, k, factor, next_point, self.s, self.weighing)
+        prove_layer_tensor(ps, point, l, r, k, factor, next_point, self.s, self.weighing, self.double)
     }
 
     /// The row of corner `(p, y)` of level `ell` after `kk` folds, pattern
@@ -2137,6 +2146,49 @@ mod tests {
                     let label = format!("t={t} s={s} nibble={nibble} one_pass={one_pass}");
                     assert_eq!((&on.0, &on.1), (&off.0, &off.1), "{label}");
                     assert!(on.2 == off.2, "transcript {label}");
+                }
+            }
+        }
+    }
+
+    /// Two dense rounds per pass prove the same: same point, claim and
+    /// transcript bytes, on the table-driven levels' tails (a fold pending
+    /// at entry, the left half carried weighted), level 4 kept or rebuilt,
+    /// the levels above it and the materialised small-`t` path, weighing
+    /// or not, with windows that stay open or close at the size gate.
+    #[test]
+    fn double_fold_proves_identically() {
+        use crate::wfbitz::transcript::build_prover;
+        use crate::wfbitz::gkr::When;
+        let doubles = [
+            DoubleFold { when: When::Always, stay: true, plain0: false, chunk: 256 },
+            DoubleFold { when: When::Always, stay: true, plain0: true, chunk: 16 },
+            DoubleFold { when: When::Auto { threads: 1, log: 9 }, stay: false, plain0: false, chunk: 64 },
+        ];
+        for (t, s) in [(4usize, 5usize), (5, 6), (6, 3), (7, 7), (8, 6), (9, 10), (10, 8), (11, 7), (12, 5)] {
+            let (packed, images) = random_grid(t, s, (t * 7001 + s) as u64);
+            let mut state = 0x0d0b_1e5f ^ (t * 53 + s) as u64;
+            let zeta: Vec<Gf> = (0..s).map(|_| random_gf(&mut state)).collect();
+            let mode = PatternMode { nibble: true, cache: false, nibble_from: 0 };
+            for keep in [false, true] {
+                for weighing in [Weighing::Off, Weighing::On] {
+                    let prove = |double: DoubleFold| {
+                        let forest = Forest::new(t, s, &packed, &images)
+                            .with_patterns(mode)
+                            .with_keep_level4(keep)
+                            .with_weighing(weighing)
+                            .with_double(double);
+                        let mut ps = build_prover(b"forest-double/v1", b"instance");
+                        let (point, claim) = forest.prove(&mut ps, &zeta);
+                        (point, claim, ps.finish().narg_string)
+                    };
+                    let want = prove(DoubleFold::OFF);
+                    for double in doubles {
+                        let got = prove(double);
+                        let label = format!("t={t} s={s} keep={keep} {weighing:?} {double:?}");
+                        assert_eq!((&got.0, &got.1), (&want.0, &want.1), "{label}");
+                        assert!(got.2 == want.2, "transcript {label}");
+                    }
                 }
             }
         }
