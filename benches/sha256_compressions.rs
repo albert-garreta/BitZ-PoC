@@ -158,6 +158,21 @@ impl BenchProof {
         }
     }
 
+    /// The serialized opening proof and the initial and terminal nonces.
+    fn opening_and_nonces(&self) -> (Vec<u8>, [u64; 2]) {
+        match self {
+            Self::Forest(proof) => (
+                proof.bitz().to_bytes(),
+                [proof.initial_nonce(), proof.terminal_nonce()],
+            ),
+            #[cfg(feature = "bitz-parity")]
+            Self::Wfbitz(proof) => (
+                bitz::piop::spartan::protocol::OpeningProof::to_bytes(proof.bitz()),
+                [proof.initial_nonce(), proof.terminal_nonce()],
+            ),
+        }
+    }
+
     fn open_bytes(&self) -> usize {
         match self {
             Self::Forest(proof) => proof.bitz().to_bytes().len(),
@@ -208,6 +223,10 @@ struct RepTiming {
     bitz_bytes: usize,
     forests: usize,
     peak_heap_bytes: Option<usize>,
+    /// The first 16 hex digits of a BLAKE3 digest over what the transcript
+    /// pins hash: both transcript states, the commitment root, the opening
+    /// bytes and the two nonces.
+    proof_digest: String,
 }
 
 #[derive(Clone, Copy)]
@@ -1161,6 +1180,24 @@ fn run_once(
     black_box(&proof);
 
     let bitz_bytes = proof.open_bytes();
+    // A digest of the proof, so A/B runs can check the proofs are
+    // byte-identical; computed after every timed span.
+    let proof_digest = {
+        let (opening, nonces) = proof.opening_and_nonces();
+        let nonces: Vec<u8> = nonces.iter().flat_map(|n| n.to_le_bytes()).collect();
+        let mut hasher = blake3::Hasher::new();
+        for part in [
+            &prover_transcript.state_digest()[..],
+            &verifier_transcript.state_digest()[..],
+            &hint.commitment.root[..],
+            &opening[..],
+            &nonces[..],
+        ] {
+            hasher.update(&(part.len() as u64).to_le_bytes());
+            hasher.update(part);
+        }
+        hasher.finalize().to_hex()[..16].to_owned()
+    };
     let (inner_rounds, inner_nonces) = proof.inner();
     // The product sumcheck: its round messages (four or five coefficients)
     // and terminal evaluations.
@@ -1181,6 +1218,7 @@ fn run_once(
         bitz_bytes,
         forests,
         peak_heap_bytes,
+        proof_digest,
     };
     (timing, intervals)
 }
@@ -1379,7 +1417,7 @@ fn bench_shape<P: IopSecurityProfile>(
             .peak_heap_bytes
             .map_or_else(|| "na".to_owned(), |bytes| bytes.to_string());
         let sample_line = format!(
-            "SAMPLE shape_mode={} shape_value={exponent} sample={} compressions={compressions} mnum_rows={assignment_cells} product_t={} product_s={} inner_prefix_vars={inner_prefix_vars} witness_ms={:.6} commit_ms={:.6} prove_ms={:.6} verify_ms={:.6} memory_tracking={MEMORY_TRACKING} peak_heap_bytes={sample_peak_bytes} peak_heap_mib={} proof_bytes={} proof_piop_bytes={} proof_open_bytes={} verified=true",
+            "SAMPLE shape_mode={} shape_value={exponent} sample={} compressions={compressions} mnum_rows={assignment_cells} product_t={} product_s={} inner_prefix_vars={inner_prefix_vars} witness_ms={:.6} commit_ms={:.6} prove_ms={:.6} verify_ms={:.6} memory_tracking={MEMORY_TRACKING} peak_heap_bytes={sample_peak_bytes} peak_heap_mib={} proof_bytes={} proof_piop_bytes={} proof_open_bytes={} verified=true proof_digest={}",
             shape.mode(),
             sample + 1,
             prepared
@@ -1396,6 +1434,7 @@ fn bench_shape<P: IopSecurityProfile>(
             timing.spartan_bytes + timing.bitz_bytes,
             timing.spartan_bytes,
             timing.bitz_bytes,
+            timing.proof_digest,
         );
         println!("  {sample_line}");
         if let Some(writer) = result_writer {
