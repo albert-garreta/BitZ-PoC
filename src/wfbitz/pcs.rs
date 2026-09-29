@@ -499,7 +499,7 @@ impl Pcs {
         let batching_weights = build_eq(&batching_point);
         let mut packed_target = batch_claims(&claims, &batching_weights);
         let fused = match &suffix {
-            SuffixEq::Split { lo, hi } if path.fuse != Fuse::Off => Some((lo, hi)),
+            SuffixEq::Split { lo, hi } if path.fuse.active() => Some((lo, hi)),
             _ => None,
         };
         let (packed_basis, first_messages) = if let Some((lo, hi)) = fused {
@@ -715,16 +715,18 @@ pub(crate) struct OpeningPath {
 /// again for its round-0 message), `round0` that message, `1` also the
 /// round-1 lookahead coefficients (Ligerito's round 0 becomes a skip round
 /// and its first pass folds two challenges off the original arrays), and
-/// by default `auto`: the lookahead above one thread only. The Round-0
-/// claim's term is written in the same pass either way.
+/// by default `auto`: the lookahead above one thread, nothing at one. A
+/// fused pass writes the Round-0 claim's term too (no separate pass).
 ///
 /// Per packed element the pass adds the element's read and one unreduced
 /// multiply for the message (two with the lookahead); Ligerito drops a
 /// reduced-multiply pass over `(packed, basis)` (and with the lookahead
 /// its full-size entry fold: ~90 MB of traffic at `n = 28`). One thread is
-/// compute-bound and the lookahead's extra multiplies about cancel the
-/// saved pass, so `auto` keeps it for more threads, where the passes are
-/// bandwidth-bound.
+/// compute-bound: the multiplies about cancel the saved passes (ring
+/// switch plus Ligerito at `n = 28/30`: `round0` −0.1/+0.7 ms, −0.4/−1.2
+/// with a Round-0 claim; the lookahead +0.7..+3.9). At 10 threads the
+/// passes are bandwidth-bound and the lookahead saves 0.1/1.9 ms (0.6/3.3
+/// with a Round-0 claim), hence `auto`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Fuse {
     Off,
@@ -740,6 +742,15 @@ impl Fuse {
             Ok("round0") => Self::Round0,
             Ok("1") => Self::Lookahead,
             _ => Self::Auto,
+        }
+    }
+
+    /// Whether the basis pass computes Ligerito's first messages at all.
+    fn active(self) -> bool {
+        match self {
+            Self::Off => false,
+            Self::Round0 | Self::Lookahead => true,
+            Self::Auto => threads() > 1,
         }
     }
 
@@ -773,16 +784,22 @@ fn ligerito_takes_lookahead(packed_len: usize, initial_k: usize) -> bool {
         && std::env::var_os("LIG_LOOKAHEAD_DISABLE").is_none()
 }
 
+/// Basis slots the fused pass writes and then reads back for Ligerito's
+/// messages while they are still in L1: next to the 64 KB byte tables, a
+/// sub-block of basis and message takes 8 KB.
+const FUSE_SUB_BLOCK: usize = 256;
+
 /// The Ligerito basis `Φ(lo[i]·hi[j])` at `j·|lo| + i` — flock's split
 /// basis (`fold_b128_elems_split`), `Φ` the byte tables of the batching
 /// `weights` — plus `η·eq(·, ζ)` for a Round-0 claim `(ζ, η)`, written block
-/// by block into a buffer from flock's scratch pool. While a block is in
-/// cache, Ligerito's round-0 message `(Σ f₀b₀, Σ (f₀+f₁)(b₀+b₁))` over
-/// `(packed, basis)` accumulates from it, and with `lookahead` flock's
-/// round-1 coefficients (`lookahead_accum_group` over groups of four,
-/// which carries the message too). Every value is an exact field sum over
-/// the final basis, so Ligerito's transcript is the one it computes from
-/// `(packed, basis)` itself.
+/// by block into a buffer from flock's scratch pool. While a sub-block of
+/// [`FUSE_SUB_BLOCK`] slots is in cache, Ligerito's round-0 message
+/// `(Σ f₀b₀, Σ (f₀+f₁)(b₀+b₁))` over `(packed, basis)` accumulates from it,
+/// and with `lookahead` flock's round-1 coefficients
+/// (`lookahead_accum_group` over groups of four, which carries the message
+/// too). Every value is an exact field sum over the final basis, so
+/// Ligerito's transcript is the one it computes from `(packed, basis)`
+/// itself.
 fn fused_basis(
     packed: &[FlockF128],
     lo: &[FlockF128],
@@ -795,22 +812,27 @@ fn fused_basis(
     use rayon::prelude::*;
     let block = lo.len();
     assert!(block.is_multiple_of(4) && packed.len() == block * hi.len());
+    let sub = block.min(FUSE_SUB_BLOCK);
     let mut tables = vec![Gf::zero(); 16 * 256];
     phi_byte_tables_into(&mut tables, |bit| weights[bit]);
+    // A fixed-size table: every byte lookup is in bounds by its type.
+    let tables: &[Gf; 16 * 256] = tables.as_slice().try_into().expect("sixteen byte tables");
     // `η·eq(ζ, j·|lo| + i)` splits like the basis: `η·eq(ζ_hi, j)·eq(ζ_lo, i)`.
     let ood = ood.map(|(point, eta)| {
         let split = block.trailing_zeros() as usize;
         let hi: Vec<Gf> = build_eq(&point[split..]).into_iter().map(|e| eta * e).collect();
         (build_eq(&point[..split]), hi)
     });
-    let fill = |j: usize, out: &mut [Gf]| {
+    // Slots `start..start + out.len()` of block `j`.
+    let fill = |j: usize, start: usize, out: &mut [Gf]| {
+        let end = start + out.len();
         let scale = hi[j];
-        for (slot, &low) in out.iter_mut().zip(lo) {
-            *slot = phi_from_words(*(low * scale).as_words(), &tables);
+        for (slot, &low) in out.iter_mut().zip(&lo[start..end]) {
+            *slot = phi_from_words(*(low * scale).as_words(), tables);
         }
         if let Some((ood_lo, ood_hi)) = &ood {
             let scale = ood_hi[j];
-            for (slot, &low) in out.iter_mut().zip(ood_lo) {
+            for (slot, &low) in out.iter_mut().zip(&ood_lo[start..end]) {
                 *slot += scale * low;
             }
         }
@@ -818,10 +840,13 @@ fn fused_basis(
     let mut basis = flock_core::scratch::take_f128(packed.len());
     if lookahead {
         let block_sums = |(j, out): (usize, &mut [Gf])| {
-            fill(j, out);
+            let message = &packed[j * block..(j + 1) * block];
             let mut acc = [Gf128Product::zero(); 8];
-            for (f, b) in packed[j * block..(j + 1) * block].chunks_exact(4).zip(out.chunks_exact(4)) {
-                lookahead_accum_group(&[f[0], f[1], f[2], f[3]], &[b[0], b[1], b[2], b[3]], &mut acc);
+            for (k, (out, message)) in out.chunks_mut(sub).zip(message.chunks(sub)).enumerate() {
+                fill(j, k * sub, out);
+                for (f, b) in message.chunks_exact(4).zip(out.chunks_exact(4)) {
+                    lookahead_accum_group(&[f[0], f[1], f[2], f[3]], &[b[0], b[1], b[2], b[3]], &mut acc);
+                }
             }
             acc
         };
@@ -847,11 +872,14 @@ fn fused_basis(
         (basis, (message.u_0, message.u_2), Some(coefficients))
     } else {
         let block_sums = |(j, out): (usize, &mut [Gf])| {
-            fill(j, out);
+            let message = &packed[j * block..(j + 1) * block];
             let (mut u0, mut u2) = (Gf128Product::zero(), Gf128Product::zero());
-            for (f, b) in packed[j * block..(j + 1) * block].chunks_exact(2).zip(out.chunks_exact(2)) {
-                u0 ^= f[0].mul_unreduced(b[0]);
-                u2 ^= (f[0] + f[1]).mul_unreduced(b[0] + b[1]);
+            for (k, (out, message)) in out.chunks_mut(sub).zip(message.chunks(sub)).enumerate() {
+                fill(j, k * sub, out);
+                for (f, b) in message.chunks_exact(2).zip(out.chunks_exact(2)) {
+                    u0 ^= f[0].mul_unreduced(b[0]);
+                    u2 ^= (f[0] + f[1]).mul_unreduced(b[0] + b[1]);
+                }
             }
             (u0, u2)
         };
@@ -1740,7 +1768,7 @@ mod tests {
     /// over that final basis give.
     #[test]
     fn fused_basis_matches_the_separate_passes() {
-        for (log_lo, log_hi) in [(4usize, 0usize), (4, 3), (5, 2), (6, 5)] {
+        for (log_lo, log_hi) in [(4usize, 0usize), (4, 3), (5, 2), (6, 5), (10, 2)] {
             let vars = log_lo + log_hi;
             let mut state = 0xf05e_ba5e ^ (log_lo * 31 + log_hi) as u64;
             let suffix: Vec<Gf> = (0..vars).map(|_| random_gf(&mut state)).collect();
