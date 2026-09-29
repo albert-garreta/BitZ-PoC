@@ -49,7 +49,7 @@ use {
     crate::{
         ligerito::{LOG_PACKING, packed_vars},
         ligerito_flock::{FlockCommitHint, LigeritoStatementConfig, ResolvedLigerito},
-        pcs::{IntegerMatrixLayout, mod_q_num_chunks},
+        pcs::IntegerMatrixLayout,
         poly::mle::FactoredMultilinearExtension,
         transcript::traits::Transcript,
     },
@@ -396,7 +396,8 @@ impl PreparedSha256ChainBatch {
             )
             .map_err(Sha256ConstraintError::LigeritoConfig)?;
         self.security.adopt_ood_round(resolved.ood_bits())?;
-        let geometry = crate::wfbitz::grinding::Geometry::opening(&self.h_layout, &self.f_layout, false);
+        let geometry =
+            crate::wfbitz::grinding::Geometry::opening(&self.h_layout, &self.f_layout, false);
         self.security.adopt_native_opening(geometry)?;
         self.ligerito = Some(resolved);
         Ok(self)
@@ -502,14 +503,10 @@ pub fn prepare_sha256_chain_batch_with_profile_and_initial_state<P: IopSecurityP
         crate::ligerito_flock::LigeritoSelection::for_target(P::LIGERITO_TARGET_BITS),
     )?;
     Sha256PrimeProfile::from_security(&prepared.security, prepared.log_instance_capacity)?;
-    let max_q_bits =
-        u128::BITS as usize - prepared.security.projection_max.leading_zeros() as usize;
-    let forest_count = mod_q_num_chunks(&prepared.h_layout, max_q_bits);
-    if forest_count != 1 {
-        return Err(Sha256ConstraintError::UnsupportedOpeningForestCount {
-            actual: forest_count,
-        });
-    }
+    super::constraints::validate_opening_bound(
+        &prepared.h_layout,
+        prepared.security.projection_max,
+    )?;
     let target = prepared.security.ligerito_target_bits;
     if !(64..=128).contains(&target) {
         return Err(Sha256ConstraintError::UnsupportedLigeritoTargetBits { actual: target });

@@ -28,10 +28,7 @@ use flock_core::pcs::{commit::Commitment, ligerito::ProverConfig as LigProverCon
 
 #[cfg(test)]
 use crate::pcs::Q100Element;
-use crate::{
-    ligerito_flock::ModQOpeningKind,
-    pcs::{FQ_MOD, IntegerMatrixLayout},
-};
+use crate::pcs::{FQ_MOD, IntegerMatrixLayout};
 
 use super::{
     profile::{IopInstanceFacts, IopSecurityParams},
@@ -48,8 +45,8 @@ use super::{
 pub use super::protocol::{MIN_PRODUCTION_GATE_VARS, SpartanBitzField};
 
 /// Constructs the fixed `q = 2^100 - 15` runtime field configuration.
-pub fn spartan_bitz_field_config() -> <SpartanBitzField as crate::piop::spartan::SpartanField>::Config
-{
+pub fn spartan_bitz_field_config()
+-> <SpartanBitzField as crate::piop::spartan::SpartanField>::Config {
     SpartanBitzField::make_cfg(&Uint::from(FQ_MOD)).expect("FQ_MOD is a valid odd prime modulus")
 }
 
@@ -76,7 +73,6 @@ static U32_MUL_DOMAINS: Domains = Domains {
     piop_grinding: b"bitz/spartan-u32-mul/grinding/piop/v1",
     terminal_grinding: b"bitz/spartan-u32-mul/grinding/terminal/v1",
     bitified_claim: b"bitz/spartan-bitz/bitified-claim/v3",
-    opening: ModQOpeningKind::U32Mul,
     claim_tag: b"",
     reduction_grinding: b"",
     reduction_prime: b"",
@@ -183,15 +179,6 @@ impl RelationSpec for MulLayout<u32> {
         Kernel::UnivariateSkip {
             skip_vars: U32_MUL_UNIVARIATE_SKIP_VARS,
         }
-    }
-
-    /// The shared bridge transcript covers both the forest/GKR draws and the
-    /// ring-switch draw, so it must satisfy the stronger of their two
-    /// profile requirements.
-    fn opener_grinding_bits(&self, security: &IopSecurityParams) -> u32 {
-        security
-            .forest_round_grinding_bits
-            .max(security.ring_switch_grinding_bits)
     }
 
     fn check_witness(&self, witness: &MulWitness<u32>) -> Result<(), ProtocolError> {
@@ -310,7 +297,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        pcs::{FQ_BITS, ModQWeightChunks, eq_le_table_fq, fq_sub},
+        pcs::{FQ_BITS, eq_le_table_fq, fq_sub},
         piop::spartan::{
             matrix::ScaledMleEvaluationClaim,
             profile::{Lambda100, Lambda128, Limber114, ProfileError},
@@ -423,8 +410,7 @@ mod tests {
             let hint = protocol::commit(&p, witness.bitz_bit_rows()).unwrap();
             let mut pt = Blake3Transcript::new();
             let mut proof = protocol::prove(&mut pt, &p, &witness, &hint).unwrap();
-            *proof.bitz_mut() =
-                WfbitzOpeningProof::from_bytes(&proof.bitz().to_bytes()).unwrap();
+            *proof.bitz_mut() = WfbitzOpeningProof::from_bytes(&proof.bitz().to_bytes()).unwrap();
             let check = |proof: &Proof| {
                 protocol::verify(&mut Blake3Transcript::new(), &p, &hint.commitment, proof)
             };
@@ -444,11 +430,7 @@ mod tests {
                 bad.bitz_mut().ood = None;
                 assert!(check(&bad).is_err());
                 let mut bad = proof.clone();
-                bad.bitz_mut()
-                    .ood
-                    .as_mut()
-                    .unwrap()
-                    .nonce = Some(u64::MAX);
+                bad.bitz_mut().ood.as_mut().unwrap().nonce = Some(u64::MAX);
                 assert!(check(&bad).is_err());
             }
             let mut root = hint.commitment.clone();
@@ -506,10 +488,10 @@ mod tests {
         let p = layout.bitz_params();
         let width = (128 - security.projection_max.leading_zeros()) as usize;
         assert!(width <= 127 - p.row_vars - p.word_bits, "q_bits <= c_w");
-        assert_eq!(
-            crate::pcs::mod_q_num_chunks(&p, width),
-            1,
-            "the runtime interval is one-chunk by construction"
+        assert!(
+            crate::wfbitz::Shape::new(p.row_vars, p.col_vars)
+                .unwrap()
+                .supports_modulus_bound(security.projection_max)
         );
 
         let hint = protocol::commit(&prepared, witness.bitz_bit_rows()).unwrap();
@@ -617,7 +599,6 @@ mod tests {
         assert_eq!(prepared128.security().terminal_grinding_bits, 22);
         assert_eq!(prepared128.security().forest_round_grinding_bits, 2);
         assert_eq!(prepared128.security().ring_switch_grinding_bits, 1);
-        assert_eq!(layout.opener_grinding_bits(prepared128.security()), 2);
         assert_ne!(
             (
                 &prepared.ligerito_configuration().prover().queries,
@@ -682,18 +663,12 @@ mod tests {
     }
 
     struct PreparedClaim {
-        chunks: ModQWeightChunks,
+        rows: Vec<u128>,
         col_weights: Vec<Q100Element>,
     }
 
     fn prepared_row_weight(prepared: &PreparedClaim, row: usize) -> u128 {
-        let mut value = 0_u128;
-        let mut shift = 0_usize;
-        for chunk in prepared.chunks.chunks() {
-            value |= chunk[row] << shift;
-            shift += prepared.chunks.chunk_width();
-        }
-        value
+        prepared.rows[row]
     }
 
     fn bitify_test_claim(
@@ -716,7 +691,7 @@ mod tests {
     ) -> Result<PreparedClaim, ProtocolError> {
         let arith = field::FpCtx::from_prime_u128(FQ_MOD);
         Ok(PreparedClaim {
-            chunks: bitify::prepare_chunks(opening, &layout.block_table(), FQ_BITS, &arith)?,
+            rows: bitify::dense_row_weights(opening, &layout.block_table(), &arith)?,
             col_weights: bitify::column_weights(opening, &arith)?
                 .into_iter()
                 .map(Q100Element::from)

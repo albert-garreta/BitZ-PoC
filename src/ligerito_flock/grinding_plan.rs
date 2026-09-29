@@ -13,23 +13,27 @@ pub(crate) struct ChallengeBlock {
 #[derive(Clone, Debug)]
 pub(crate) struct GrindingPlan {
     pub blocks: Vec<ChallengeBlock>,
-    pub(crate) final_verifier_draws: usize,
     pub(super) source: [u8; 32],
 }
 
 impl GrindingPlan {
     pub(crate) fn matches(&self, config: &ligerito::LigeritoSecurityConfig) -> bool {
-        bincode::serialize(config).is_ok_and(|bytes| self.source == *blake3::hash(&bytes).as_bytes())
+        bincode::serialize(config)
+            .is_ok_and(|bytes| self.source == *blake3::hash(&bytes).as_bytes())
     }
 
     #[cfg(test)]
     pub(crate) fn scripted(blocks: Vec<ChallengeBlock>) -> Self {
-        Self { blocks, final_verifier_draws: 0, source: [0; 32] }
+        Self {
+            blocks,
+            source: [0; 32],
+        }
     }
 
     pub fn resolve(config: &ligerito::LigeritoSecurityConfig, target: u32) -> Result<Self, String> {
         config.validate()?;
-        let source = *blake3::hash(&bincode::serialize(config).map_err(|e| e.to_string())?).as_bytes();
+        let source =
+            *blake3::hash(&bincode::serialize(config).map_err(|e| e.to_string())?).as_bytes();
         let mut blocks: Vec<ChallengeBlock> = Vec::new();
         let gf_error = 2f64.powi(-128);
         for (level, params) in config.levels.iter().enumerate() {
@@ -77,7 +81,9 @@ impl GrindingPlan {
                 if next.ood_samples > 0 {
                     let mut single = next.clone();
                     single.ood_samples = 1;
-                    let ood_bits = single.paper_predicted_ood_bits().ok_or("OOD without a Johnson bound")?;
+                    let ood_bits = single
+                        .paper_predicted_ood_bits()
+                        .ok_or("OOD without a Johnson bound")?;
                     if !ood_bits.is_finite() {
                         return Err("nonfinite Flock OOD bound".into());
                     }
@@ -93,7 +99,9 @@ impl GrindingPlan {
                         } else {
                             let block = blocks.last_mut().ok_or("missing OOD beta block")?;
                             block.raw_error += collision;
-                            block.label.push_str(&format!("+ood/{}/{sample}", level + 1));
+                            block
+                                .label
+                                .push_str(&format!("+ood/{}/{sample}", level + 1));
                         }
                         blocks.push(ChallengeBlock {
                             label: format!("ood-beta/{}/{sample}", level + 1),
@@ -104,8 +112,11 @@ impl GrindingPlan {
                     }
                 }
             }
-            let alpha_vars = params.queries.checked_next_power_of_two()
-                .ok_or("Flock query count overflows")?.ilog2();
+            let alpha_vars = params
+                .queries
+                .checked_next_power_of_two()
+                .ok_or("Flock query count overflows")?
+                .ilog2();
             blocks.push(ChallengeBlock {
                 label: format!("queries/{level}"),
                 native_bits: Some(params.grinding_bits as u32),
@@ -144,18 +155,6 @@ impl GrindingPlan {
                 return Err(format!("{} exceeds the 32-bit grinding cap", block.label));
             }
         }
-        let final_verifier_draws = config
-            .levels
-            .last()
-            .ok_or("empty Flock schedule")?
-            .queries
-            .checked_next_power_of_two().ok_or("Flock query count overflows")?
-            .ilog2() as usize
-            + 1;
-        Ok(Self {
-            blocks,
-            final_verifier_draws,
-            source,
-        })
+        Ok(Self { blocks, source })
     }
 }

@@ -13,7 +13,7 @@
 use crate::piop::spartan::SpartanField as _;
 
 use crate::{
-    pcs::{IntegerMatrixLayout, ModQWeightChunks, mod_q_num_chunks},
+    pcs::IntegerMatrixLayout,
     utils::{cfg_chunks_mut, cfg_iter, cfg_iter_mut},
 };
 
@@ -396,48 +396,6 @@ pub fn dense_row_weights(
         }
         BitifiedRows::Structured(factors) => {
             structured_row_weights(&opening.params, opening.gate_high(), table, factors, arith)
-        }
-    }
-}
-
-/// Compiles only the folded row functional into the mod-q chunk
-/// representation. The prover never reads the clear column weights or the
-/// claimed value, so keeping those verifier-only avoids an entire `2^s`
-/// equality table on the proving path.
-pub(crate) fn prepare_chunks(
-    opening: &BitifiedClaim,
-    table: &BlockTable,
-    q_bits: usize,
-    arith: &field::FpCtx<2>,
-) -> Result<ModQWeightChunks, ProtocolError> {
-    let params = opening.params;
-    if opening.gate_point.len() < params.col_vars {
-        return Err(ProtocolError::InvalidBitzParameters);
-    }
-
-    match &opening.rows {
-        BitifiedRows::ConstantDummy => {
-            let mut chunks = ModQWeightChunks::zeroed(&params, q_bits)
-                .map_err(|_| ProtocolError::InvalidBitzParameters)?;
-            chunks
-                .set_weight_range(0, &[1])
-                .map_err(|_| ProtocolError::InvalidBitzParameters)?;
-            Ok(chunks)
-        }
-        BitifiedRows::Structured(factors) => {
-            let weights =
-                structured_row_weights(&params, opening.gate_high(), table, factors, arith)?;
-            if mod_q_num_chunks(&params, q_bits) == 1 {
-                ModQWeightChunks::from_single_chunk(&params, q_bits, weights)
-                    .map_err(|_| ProtocolError::InvalidBitzParameters)
-            } else {
-                let mut chunks = ModQWeightChunks::zeroed(&params, q_bits)
-                    .map_err(|_| ProtocolError::InvalidBitzParameters)?;
-                chunks
-                    .set_weight_range(0, &weights)
-                    .map_err(|_| ProtocolError::InvalidBitzParameters)?;
-                Ok(chunks)
-            }
         }
     }
 }

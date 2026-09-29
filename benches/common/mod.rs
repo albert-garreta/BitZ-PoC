@@ -21,23 +21,6 @@ pub mod cli;
 pub mod environment;
 pub mod proof_fingerprint;
 
-/// Record actual forest choices for the application benchmarks as well as multiplication.
-pub fn start_gkr_recording() {
-    #[cfg(feature = "bench-internals")]
-    bitz::merged_forest::schedule::start_recording();
-}
-
-pub fn print_gkr_schedules() {
-    #[cfg(feature = "bench-internals")]
-    println!(
-        "GKR_SCHEDULES {}",
-        serde_json::json!({
-            "requested": std::env::var("F2_FOREST_SCHEDULE").unwrap_or_else(|_| "auto".into()),
-            "resolved": bitz::merged_forest::schedule::take_records(),
-        })
-    );
-}
-
 /// Serialize native SDK sessions in tests and explicitly supply their subscriber.
 #[cfg(all(test, feature = "span-metrics"))]
 pub fn test_tracing() -> (
@@ -66,11 +49,11 @@ pub mod plonky3;
 #[cfg(feature = "plonky3-sha256-bench")]
 pub mod whir_tuning;
 
-use clap::ValueEnum;
 use bitz::piop::spartan::{
     IopSecurityProfile, Lambda100, Lambda128, Limber112, Limber114, PrimePolicy,
     Sha128ReferenceSchedule,
 };
+use clap::ValueEnum;
 
 /// Actual local dependency commit recorded when this benchmark was built.
 /// These are git dependencies pinned in Cargo.lock; no build.rs stamps a

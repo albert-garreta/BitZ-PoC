@@ -26,9 +26,9 @@ pub mod binding;
 pub mod bitify;
 pub mod linear;
 pub mod wfbitz_opener;
-pub use wfbitz_opener::{prove_reduced, verify_reduced};
-use wfbitz_opener::{WfbitzOpeningProof, opening_params, opening_shape, pcs_from_config};
 use crate::wfbitz::{LinearClaim, VirtualStatement};
+use wfbitz_opener::{WfbitzOpeningProof, opening_params, opening_shape, pcs_from_config};
+pub use wfbitz_opener::{prove_reduced, verify_reduced};
 
 use std::{borrow::Cow, sync::OnceLock};
 
@@ -46,13 +46,9 @@ use {
         ext_proj::PrimeSamplingError,
         ligerito::{LOG_PACKING, packed_vars},
         ligerito_flock::{
-            FlockCommitHint, FlockRsError, IntEvalRsLigModQProof, IntEvalRsLigVirtProof,
-            LigeritoSelection, ModQOpeningKind, OodRound, ProverOod, ResolvedLigerito, VerifierOod,
-            bind_prover_ood, bind_verifier_ood, commit_rs_ligerito_rows,
-            prove_mle_eval_mod_q_ligerito_virtual_runtime,
-            prove_mle_eval_mod_q_ligerito_with_weight_chunks,
-            verify_mle_eval_mod_q_ligerito_virtual_runtime,
-            verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime,
+            FlockCommitHint, FlockRsError, LigeritoSelection, OodRound, ProverOod,
+            ResolvedLigerito, VerifierOod, bind_prover_ood, bind_verifier_ood,
+            commit_rs_ligerito_rows,
         },
         pcs::IntegerMatrixLayout,
         poly::{mle::DenseMultilinearExtension, univariate::binary_gf128::Gf128},
@@ -173,12 +169,6 @@ pub enum ProtocolError {
     #[error("the proof uses univariate skip K={actual}; expected K={expected}")]
     UnexpectedUnivariateSkipVariables { expected: u8, actual: u8 },
 
-    /// The derived prime interval must keep the row weights to one
-    /// exponent-fold chunk (`q_bits <= c_w`); the profile guarantees this,
-    /// so a violation is an internal error.
-    #[error("the runtime prime produced a multi-chunk row functional")]
-    MultiChunkRuntimeWeights,
-
     /// The relation's PIOP witness representation does not fit its kernel.
     #[error("the relation's PIOP witness representation does not fit its kernel")]
     UnsupportedKernel,
@@ -260,8 +250,6 @@ pub struct Domains {
     /// Domain of the bridge digest bound between Spartan and BitZ (the direct
     /// discharge).
     pub bitified_claim: &'static [u8],
-    /// The direct opener's statement domain.
-    pub opening: ModQOpeningKind,
     /// Tag of the frame binding the bitified claim before a virtual or
     /// reduced discharge.
     pub claim_tag: &'static [u8],
@@ -310,7 +298,9 @@ macro_rules! protocol_scopes {
             bitz_prove: || tracing::info_span!(concat!($prefix, ":bitz_prove")),
             bitz_verify: || tracing::info_span!(concat!($prefix, ":bitz_verify")),
             bitz_prepare_prover: || tracing::info_span!(concat!($prefix, ":bitz_prepare_prover")),
-            bitz_prepare_verifier: || tracing::info_span!(concat!($prefix, ":bitz_prepare_verifier")),
+            bitz_prepare_verifier: || {
+                tracing::info_span!(concat!($prefix, ":bitz_prepare_verifier"))
+            },
         }
     };
 }
@@ -516,7 +506,8 @@ pub trait RelationSpec: Sync {
     fn project_matrices(
         &self,
         config: &FieldConfig,
-    ) -> Result<PreparedConstraintMatrices<SpartanBitzField, Self::Coefficient>, ProtocolError> {
+    ) -> Result<PreparedConstraintMatrices<SpartanBitzField, Self::Coefficient>, ProtocolError>
+    {
         let _ = config;
         Err(ProtocolError::MatrixSourceUnavailable)
     }
@@ -528,11 +519,6 @@ pub trait RelationSpec: Sync {
     fn block_table(&self) -> BlockTable;
 
     fn kernel(&self) -> Kernel;
-
-    /// Uniform difficulty for the opener's wrapped challenges.
-    fn opener_grinding_bits(&self, security: &IopSecurityParams) -> u32 {
-        security.forest_round_grinding_bits
-    }
 
     fn check_witness(&self, witness: &Self::Witness) -> Result<(), ProtocolError>;
 
@@ -719,7 +705,9 @@ impl<S: RelationSpec> PreparedRelationPrefix<S> {
     }
 
     /// The prime-independent skeleton, for relations prepared from one.
-    pub fn skeleton(&self) -> Option<&ConstraintMatricesSkeleton<SpartanBitzField, S::Coefficient>> {
+    pub fn skeleton(
+        &self,
+    ) -> Option<&ConstraintMatricesSkeleton<SpartanBitzField, S::Coefficient>> {
         match &self.matrices {
             MatrixSource::Skeleton { skeleton, .. } => Some(skeleton),
             _ => None,
@@ -852,7 +840,9 @@ impl<S: RelationSpec> PreparedRelation<S> {
     }
 
     /// The prime-independent skeleton, for relations prepared from one.
-    pub fn skeleton(&self) -> Option<&ConstraintMatricesSkeleton<SpartanBitzField, S::Coefficient>> {
+    pub fn skeleton(
+        &self,
+    ) -> Option<&ConstraintMatricesSkeleton<SpartanBitzField, S::Coefficient>> {
         self.prefix.skeleton()
     }
 
@@ -1072,7 +1062,13 @@ impl Proof {
     }
 
     /// Splits the proof into its parts (tests and codecs).
-    pub fn into_parts(self) -> (SpartanPrefixProof, Option<ReductionProof>, WfbitzOpeningProof) {
+    pub fn into_parts(
+        self,
+    ) -> (
+        SpartanPrefixProof,
+        Option<ReductionProof>,
+        WfbitzOpeningProof,
+    ) {
         (self.prefix, self.reduction, self.bitz)
     }
 
@@ -1163,7 +1159,8 @@ pub fn prove_with_opener<T: Transcript + Send, S: RelationSpec>(
     transcript: &mut T,
     prefix: &PreparedRelationPrefix<S>,
     opener: &Opener,
-    witness: &S::Witness, hint: &FlockCommitHint,
+    witness: &S::Witness,
+    hint: &FlockCommitHint,
 ) -> Result<Proof, ProtocolError> {
     if prefix.spec.map().is_some() {
         return prove_virtual_with_opener(transcript, prefix, opener, witness, hint);
@@ -1198,7 +1195,8 @@ pub fn verify_with_opener<T: Transcript + Send, S: RelationSpec>(
     transcript: &mut T,
     prefix: &PreparedRelationPrefix<S>,
     opener: &Opener,
-    commitment: &Commitment, proof: &Proof,
+    commitment: &Commitment,
+    proof: &Proof,
 ) -> Result<(), ProtocolError> {
     if prefix.spec.map().is_some() {
         return verify_virtual_with_opener(transcript, prefix, opener, commitment, proof);
@@ -1221,8 +1219,6 @@ fn bind_claim_frame<T: Transcript, S: RelationSpec>(
     absorb_spartan_message(transcript, spec.domains().claim_tag, &digest);
     Ok(())
 }
-
-
 
 /// Proves the relation, discharging the bitified claim through the
 /// relation's virtual map onto its derived grid at the runtime prime.
@@ -1291,7 +1287,8 @@ pub fn prove_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
             .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
         let statement = VirtualStatement::new(params, committed, map, &claim)
             .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
-        let pcs = pcs_from_config(&committed, pc)?.with_native_policy(prefix.security.native_policy()?);
+        let pcs =
+            pcs_from_config(&committed, pc)?.with_native_policy(prefix.security.native_policy()?);
         wfbitz_opener::prove_virtual_opening(transcript, &statement, &pcs, hint, h_rows, ood)?
     };
 
@@ -1387,10 +1384,6 @@ fn verify_virtual_parts<T: Transcript + Send, S: RelationSpec>(
     let pcs = pcs_from_config(&committed, vc)?.with_native_policy(prefix.security.native_policy()?);
     wfbitz_opener::verify_virtual_opening(transcript, &statement, &pcs, commitment, bitz, ood)
 }
-
-
-
-
 
 /// The prover's output of the protocol prefix: the transcript messages and
 /// the bitified claim the discharge consumes.
@@ -2185,21 +2178,38 @@ pub mod terminal {
         validate_bit_rows(&prepared.params, hint.rows())?;
         let (opening, bridge_digest, table, prime) =
             prepared.bind_claim(transcript, terminal_claim)?;
-        let ood = bind_prover_ood(transcript, hint, prepared.security.ood).opening_claim(transcript, hint);
+        let ood = bind_prover_ood(transcript, hint, prepared.security.ood)
+            .opening_claim(transcript, hint);
         let params = opening_params(&prepared.params, FQ_MOD)?;
-        let claim = LinearClaim::new(&params,
+        let claim = LinearClaim::new(
+            &params,
             bitify::dense_row_weights(&opening, &table, &prime)?,
-            bitify::column_weights(&opening, &prime)?, opening.claimed)
-            .map_err(|e| ProtocolError::LigeritoConfig(format!("terminal claim: {e:?}")))?;
-        let pcs = pcs_from_config(&opening_shape(&prepared.params)?, prepared.ligerito.prover())?
-            .with_native_policy(prepared.security.native_policy()?);
+            bitify::column_weights(&opening, &prime)?,
+            opening.claimed,
+        )
+        .map_err(|e| ProtocolError::LigeritoConfig(format!("terminal claim: {e:?}")))?;
+        let pcs = pcs_from_config(
+            &opening_shape(&prepared.params)?,
+            prepared.ligerito.prover(),
+        )?
+        .with_native_policy(prepared.security.native_policy()?);
         let mut state = build_prover(SESSION, &wfbitz_opener::fork_tag(transcript));
         state.public_message(&bridge_digest);
-        BitZProver::new(params, WINDOW).prove(&claim, &pcs, hint, &mut state,
-            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)))
+        BitZProver::new(params, WINDOW)
+            .prove(
+                &claim,
+                &pcs,
+                hint,
+                &mut state,
+                ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+            )
             .map_err(|e| ProtocolError::LigeritoConfig(format!("terminal opening: {e:?}")))?;
         let proof = state.finish();
-        Ok(WfbitzOpeningProof { narg: proof.narg_string, hints: proof.hints, ood: ood.map(|claim| claim.round) })
+        Ok(WfbitzOpeningProof {
+            narg: proof.narg_string,
+            hints: proof.hints,
+            ood: ood.map(|claim| claim.round),
+        })
     }
 
     /// Verifies the PCS-only terminal opening from public data alone.
@@ -2220,20 +2230,40 @@ pub mod terminal {
             proof.ood.as_ref(),
         )
         .map_err(ProtocolError::Bitz)?;
-        let ood = ood.opening_claim(transcript, packed_variables(&prepared.params)?, proof.ood.as_ref())
+        let ood = ood
+            .opening_claim(
+                transcript,
+                packed_variables(&prepared.params)?,
+                proof.ood.as_ref(),
+            )
             .map_err(ProtocolError::Bitz)?;
         let params = opening_params(&prepared.params, FQ_MOD)?;
-        let claim = LinearClaim::new(&params,
+        let claim = LinearClaim::new(
+            &params,
             bitify::dense_row_weights(&opening, &table, &prime)?,
-            bitify::column_weights(&opening, &prime)?, opening.claimed)
-            .map_err(|e| ProtocolError::LigeritoConfig(format!("terminal claim: {e:?}")))?;
-        let pcs = pcs_from_config(&opening_shape(&prepared.params)?, prepared.ligerito.verifier())?
-            .with_native_policy(prepared.security.native_policy()?);
-        let encoded = crate::wfbitz::Proof { narg_string: proof.narg.clone(), hints: proof.hints.clone() };
+            bitify::column_weights(&opening, &prime)?,
+            opening.claimed,
+        )
+        .map_err(|e| ProtocolError::LigeritoConfig(format!("terminal claim: {e:?}")))?;
+        let pcs = pcs_from_config(
+            &opening_shape(&prepared.params)?,
+            prepared.ligerito.verifier(),
+        )?
+        .with_native_policy(prepared.security.native_policy()?);
+        let encoded = crate::wfbitz::Proof {
+            narg_string: proof.narg.clone(),
+            hints: proof.hints.clone(),
+        };
         let mut state = build_verifier(SESSION, &wfbitz_opener::fork_tag(transcript), &encoded);
         state.public_message(&bridge_digest);
-        BitZVerifier::new(params, WINDOW).verify(&claim, &pcs, Root(commitment.root), state,
-            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)))
+        BitZVerifier::new(params, WINDOW)
+            .verify(
+                &claim,
+                &pcs,
+                Root(commitment.root),
+                state,
+                ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
+            )
             .map_err(|e| ProtocolError::LigeritoConfig(format!("terminal opening: {e:?}")))
     }
 }
@@ -2244,7 +2274,9 @@ impl From<super::sumcheck::SumcheckError> for ProtocolError {
     }
 }
 
-pub(crate) fn relation_native_geometry<S: RelationSpec>(spec: &S) -> crate::wfbitz::grinding::Geometry {
+pub(crate) fn relation_native_geometry<S: RelationSpec>(
+    spec: &S,
+) -> crate::wfbitz::grinding::Geometry {
     let derived = spec.opening_layout();
     let committed = spec.committed_layout();
     let direct = spec.map().is_none_or(|map| {

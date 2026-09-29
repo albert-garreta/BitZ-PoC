@@ -30,9 +30,9 @@
 //! Limber's own implementation accepts, at a total grinding cost of
 //! `2^10` hashes.
 
-use crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
 use crate::piop::spartan::protocol::Proof;
 use crate::piop::spartan::protocol::ProtocolError;
+use crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
 
 use crate::piop::spartan::SpartanField as _;
 use blake3::Hasher;
@@ -48,8 +48,7 @@ use {
         f2map::cell_count,
         ligerito::packed_vars,
         ligerito_flock::{
-            FlockCommitHint, FlockRsError, LigeritoStatementConfig, ModQOpeningKind,
-            validated_udr_lig_configs_with,
+            FlockCommitHint, FlockRsError, LigeritoStatementConfig, validated_udr_lig_configs_with,
         },
         pcs::IntegerMatrixLayout,
         transcript::traits::Transcript,
@@ -95,7 +94,6 @@ static MULTISWAP_DOMAINS: Domains = Domains {
     piop_grinding: b"",
     terminal_grinding: b"",
     bitified_claim: b"",
-    opening: ModQOpeningKind::U32Mul,
     claim_tag: b"multiswap-opening-claim",
     reduction_grinding: b"bitz/spartan-multiswap/grinding/reduction/v2",
     reduction_prime: REDUCTION_SAMPLING_DOMAIN,
@@ -650,18 +648,15 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let (prepared, assignment, hint, pc, vc) = mini_setup();
         let mut pt = Blake3Transcript::new();
-        let proof =
-            prove_multiswap_mod_r1cs(&mut pt, &prepared, &assignment, &hint, &pc).unwrap();
+        let proof = prove_multiswap_mod_r1cs(&mut pt, &prepared, &assignment, &hint, &pc).unwrap();
         assert!(proof.mu_prime().is_some());
         let mut vt = Blake3Transcript::new();
-        verify_multiswap_mod_r1cs(&mut vt, &prepared, &hint.commitment, &proof, &vc)
-            .unwrap();
+        verify_multiswap_mod_r1cs(&mut vt, &prepared, &hint.commitment, &proof, &vc).unwrap();
         assert_eq!(vt.state_digest(), pt.state_digest());
 
         let mut second = Blake3Transcript::new();
         let again =
-            prove_multiswap_mod_r1cs(&mut second, &prepared, &assignment, &hint, &pc)
-                .unwrap();
+            prove_multiswap_mod_r1cs(&mut second, &prepared, &assignment, &hint, &pc).unwrap();
         assert_eq!(again.bitz().to_bytes(), proof.bitz().to_bytes());
 
         let (prefix, reduction, bitz) = proof.clone().into_parts();
@@ -784,9 +779,26 @@ mod tests {
         assert_eq!(prepared.security().forest_round_grinding_bits, 1);
         let mut transcript = Blake3Transcript::new();
         assert!(prepared.security().native_grinding_nonce_count() > 0);
-        let ground = prove_multiswap_mod_r1cs(&mut transcript, &prepared, &assignment, &hint, &pc).unwrap();
-        verify_multiswap_mod_r1cs(&mut Blake3Transcript::new(), &prepared, &hint.commitment, &ground, &vc).unwrap();
-        assert!(verify_multiswap_mod_r1cs(&mut Blake3Transcript::new(), &prepared, &hint.commitment, &proof, &vc).is_err());
+        let ground =
+            prove_multiswap_mod_r1cs(&mut transcript, &prepared, &assignment, &hint, &pc).unwrap();
+        verify_multiswap_mod_r1cs(
+            &mut Blake3Transcript::new(),
+            &prepared,
+            &hint.commitment,
+            &ground,
+            &vc,
+        )
+        .unwrap();
+        assert!(
+            verify_multiswap_mod_r1cs(
+                &mut Blake3Transcript::new(),
+                &prepared,
+                &hint.commitment,
+                &proof,
+                &vc
+            )
+            .is_err()
+        );
     }
 
     #[test]

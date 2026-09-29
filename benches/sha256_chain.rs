@@ -39,7 +39,6 @@ static HEAP_ALLOCATOR: common::peak_memory::PeakAlloc = common::peak_memory::Pea
 use std::hint::black_box;
 
 use {
-    circuit::linear_map::binary::VirtualMap,
     bitz::{
         piop::spartan::{
             IopSecurityProfile, PreparedSha256ChainBatch, PrimePolicy,
@@ -51,6 +50,7 @@ use {
         },
         transcript::Blake3Transcript,
     },
+    circuit::linear_map::binary::VirtualMap,
 };
 
 /// One rep's raw measurements; step extraction happens in `common`.
@@ -185,7 +185,8 @@ fn run_once(
     let prove_ms = common::span_ms(&intervals, "chain:proving");
     let verify_ms = common::span_ms(&intervals, "chain:verification");
     let prove_phases = bitz::observability::phase_totals(&intervals, "chain:proving").unwrap();
-    let verify_phases = bitz::observability::phase_totals(&intervals, "chain:verification").unwrap();
+    let verify_phases =
+        bitz::observability::phase_totals(&intervals, "chain:verification").unwrap();
     black_box(&proof);
 
     RepTiming {
@@ -356,7 +357,6 @@ fn bench_shape<P: IopSecurityProfile>(
 }
 
 fn main() {
-    common::start_gkr_recording();
     #[cfg(feature = "bench-peak-memory")]
     let _heap_report = common::heap_run::Report::start();
 
@@ -386,5 +386,4 @@ fn main() {
         common::with_profile!(profile, bench_shape(exponent, reps, root_seed, threads));
     }
     flock_core::scratch::clear();
-    common::print_gkr_schedules();
 }

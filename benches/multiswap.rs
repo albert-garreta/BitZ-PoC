@@ -37,8 +37,8 @@
 
 #![recursion_limit = "512"]
 
+use ::bitz::piop::spartan::protocol::Proof;
 use ::bitz::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
-use ::bitz::piop::spartan::protocol::{Proof};
 
 pub(crate) mod common;
 #[cfg(feature = "bench-peak-memory")]
@@ -282,9 +282,8 @@ impl TraceWriter {
             .expect("create new MultiSwap trace JSONL without overwriting");
         let campaign_id = std::env::var("BITZ_MULTISWAP_CAMPAIGN_ID")
             .unwrap_or_else(|_| "multiswap-matched-v1".to_owned());
-        let git_rev = std::env::var("BITZ_MULTISWAP_GIT_REV").unwrap_or_else(|_| {
-            common::environment::revision()
-        });
+        let git_rev = std::env::var("BITZ_MULTISWAP_GIT_REV")
+            .unwrap_or_else(|_| common::environment::revision());
         let git_dirty = common::environment::dirty();
         let cpu = std::env::var("BITZ_MULTISWAP_CPU").unwrap_or_else(|_| {
             command_output(
@@ -395,15 +394,6 @@ impl TraceWriter {
         } else {
             "configured multi-worker Rayon pool; no affinity pinning"
         };
-        let schedule_policy = bitz::merged_forest::schedule::SchedulePolicy::from_env()
-            .expect("valid F2_FOREST_SCHEDULE");
-        let forest_schedule = bitz::merged_forest::schedule::resolve_schedule(
-            schedule_policy,
-            prepared.params(),
-            bitz::merged_forest::schedule::ForestPath::Single,
-            self.threads,
-        )
-        .expect("single forest schedule");
         let run = json!({
             "schema": "zkperf.trace/v1",
             "record": "run",
@@ -505,8 +495,6 @@ impl TraceWriter {
                 "bitz_virt_id_fast": env_setting("BITZ_VIRT_ID_FAST", "default:on"),
                 "bitz_rs_fast": env_setting("BITZ_RS_FAST", "default:on"),
                 "bitz_flat_forest": env_setting("BITZ_FLAT_FOREST", "default:shape-dependent"),
-                "f2_forest_schedule_requested": schedule_policy.name(),
-                "f2_forest_schedule": forest_schedule.name(),
                 "arithmetic": "delayed-barrett",
             },
         });
@@ -1047,8 +1035,14 @@ fn run_once(
     drop(prover_scope);
     {
         let _scope = tracing::info_span!("multiswap-trace:verification").entered();
-        verify_multiswap_mod_r1cs(&mut Blake3Transcript::new(), prepared, &hint.commitment, &proof, vc)
-            .expect("verify");
+        verify_multiswap_mod_r1cs(
+            &mut Blake3Transcript::new(),
+            prepared,
+            &hint.commitment,
+            &proof,
+            vc,
+        )
+        .expect("verify");
     }
     drop(root_scope);
     common::proof_fingerprint::nonlinear(&proof, &hint.commitment.root, &prover_transcript);
@@ -1090,7 +1084,6 @@ fn prepare<P: IopSecurityProfile>(circuit: &MultiswapCircuit) -> PreparedMultisw
 }
 
 fn main() {
-    common::start_gkr_recording();
     #[cfg(feature = "bench-peak-memory")]
     let _heap_report = common::heap_run::Report::start();
 
@@ -1268,7 +1261,6 @@ fn main() {
         },
     };
     report.print_human_with_commitment(commitment_bytes);
-    common::print_gkr_schedules();
 }
 
 fn statement_contract(circuit: &MultiswapCircuit) -> Value {

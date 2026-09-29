@@ -100,23 +100,15 @@ pub(crate) fn prove(
 
     let _opening_scope = tracing::info_span!("hybrid:mul_opening").entered();
     let arith = &proved.prime;
-    let chunks = bitify::prepare_chunks(
-        &proved.opening,
-        &proved.table,
-        proved.prime.modulus_bits(),
-        arith,
-    )?;
-    let weights = chunks.chunks();
-    if weights.len() != 1 {
-        return Err(Error::Invalid("multiple BitZ chunks"));
-    }
+    let weights = bitify::dense_row_weights(&proved.opening, &proved.table, arith)?;
     let (narg, claim) = {
         let _scope = tracing::info_span!("mo:wfbitz").entered();
-        let (params, claim) = wfbitz_claim(&p, arith, &weights[0], &proved.opening)?;
+        let (params, claim) = wfbitz_claim(&p, arith, &weights, &proved.opening)?;
         let tag = crate::piop::spartan::protocol::wfbitz_opener::fork_tag(transcript);
         let mut state = crate::wfbitz::build_prover(WFBITZ_SESSION, &tag);
         state.public_message(&proved.bridge_digest);
-        state.start_native(prefix_schedule(params.shape(), prepared.security())?)
+        state
+            .start_native(prefix_schedule(params.shape(), prepared.security())?)
             .map_err(|_| Error::Invalid("native multiplication schedule"))?;
         let prover = crate::wfbitz::BitZProver::new(params, crate::wfbitz::WINDOW);
         let fold = prover
@@ -222,18 +214,9 @@ pub(crate) fn verify(
     }
     let arith = &verified.prime;
 
-    let chunks = bitify::prepare_chunks(
-        &verified.opening,
-        &verified.table,
-        verified.prime.modulus_bits(),
-        arith,
-    )?;
-    let weights = chunks.chunks();
-    if weights.len() != 1 {
-        return Err(Error::Invalid("BitZ sums shape"));
-    }
+    let weights = bitify::dense_row_weights(&verified.opening, &verified.table, arith)?;
     let narg = &proof.narg;
-    let (params, claim) = wfbitz_claim(&p, arith, &weights[0], &verified.opening)?;
+    let (params, claim) = wfbitz_claim(&p, arith, &weights, &verified.opening)?;
     let tag = crate::piop::spartan::protocol::wfbitz_opener::fork_tag(transcript);
     let bitz_proof = crate::wfbitz::Proof {
         narg_string: narg.clone(),
@@ -241,7 +224,8 @@ pub(crate) fn verify(
     };
     let mut state = crate::wfbitz::build_verifier(WFBITZ_SESSION, &tag, &bitz_proof);
     state.public_message(&verified.bridge_digest);
-    state.start_native(prefix_schedule(params.shape(), prepared.security())?)
+    state
+        .start_native(prefix_schedule(params.shape(), prepared.security())?)
         .map_err(|_| Error::Invalid("native multiplication schedule"))?;
     let verifier = crate::wfbitz::BitZVerifier::new(params, crate::wfbitz::WINDOW);
     let fold = verifier
@@ -262,9 +246,16 @@ fn prefix_schedule(
     shape: &crate::wfbitz::Shape,
     security: &crate::piop::spartan::profile::IopSecurityParams,
 ) -> Result<crate::wfbitz::grinding::Schedule, Error> {
-    use crate::wfbitz::grinding::{Policy, Geometry, Schedule};
-    let policy = Policy::new(Some(security.lambda), security.forest_round_grinding_bits, security.ring_switch_grinding_bits)
-        .map_err(|_| Error::Invalid("native multiplication policy"))?;
-    Schedule::new(policy, Geometry::prefix(shape.log_rows(), shape.log_columns()))
-        .map_err(|_| Error::Invalid("native multiplication geometry"))
+    use crate::wfbitz::grinding::{Geometry, Policy, Schedule};
+    let policy = Policy::new(
+        Some(security.lambda),
+        security.forest_round_grinding_bits,
+        security.ring_switch_grinding_bits,
+    )
+    .map_err(|_| Error::Invalid("native multiplication policy"))?;
+    Schedule::new(
+        policy,
+        Geometry::prefix(shape.log_rows(), shape.log_columns()),
+    )
+    .map_err(|_| Error::Invalid("native multiplication geometry"))
 }

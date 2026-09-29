@@ -29,9 +29,9 @@
 //! reconstructions, exactly as in the direct `u32_mul` bridge but over
 //! a 3-variable block selector.
 
-use crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
 use crate::piop::spartan::protocol::Proof;
 use crate::piop::spartan::protocol::ProtocolError;
+use crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
 
 use crate::piop::spartan::SpartanField as _;
 use circuit::linear_map::CscMatrix;
@@ -50,8 +50,7 @@ use {
         f2map::cell_count,
         ligerito::{LOG_PACKING, packed_vars},
         ligerito_flock::{
-            FlockCommitHint, LigeritoSelection, ModQOpeningKind, commit_rs_ligerito_rows,
-            sha_lig_configs,
+            FlockCommitHint, LigeritoSelection, commit_rs_ligerito_rows, sha_lig_configs,
         },
         pcs::IntegerMatrixLayout,
         transcript::traits::Transcript,
@@ -601,7 +600,6 @@ static CM_AND_DOMAINS: Domains = Domains {
     piop_grinding: b"",
     terminal_grinding: b"",
     bitified_claim: b"",
-    opening: ModQOpeningKind::U32Mul,
     claim_tag: CM_OPENING_CLAIM_DOMAIN,
     reduction_grinding: b"",
     reduction_prime: b"",

@@ -5,7 +5,7 @@ use ::bitz::ligerito_flock::{LigeritoSelection, ResolvedLigerito};
 #[cfg(feature = "ecdsa")]
 #[test]
 fn sha_ecdsa_both_regimes_preflight_all_supported_shapes() {
-    use ::bitz::piop::spartan::ecdsa_sha256::{prepare_sha256_ecdsa, OuterMode};
+    use ::bitz::piop::spartan::ecdsa_sha256::{OuterMode, prepare_sha256_ecdsa};
     for exponent in 3..=16 {
         for mode in [OuterMode::Split, OuterMode::AllRows] {
             for selection in [LigeritoSelection::JOHNSON, LigeritoSelection::MATCHED_UDR] {
@@ -14,7 +14,11 @@ fn sha_ecdsa_both_regimes_preflight_all_supported_shapes() {
                     .with_ligerito(selection)
                     .unwrap();
                 assert!(
-                    prepared.security().unwrap().compute_economic_security_bits() >= 100.0
+                    prepared
+                        .security()
+                        .unwrap()
+                        .compute_economic_security_bits()
+                        >= 100.0
                 );
                 assert_eq!(prepared.ligerito_configuration().selection(), selection);
             }
@@ -42,7 +46,9 @@ fn cm_and_both_regimes_roundtrip_and_bind_roots() {
         let proof = prove_cm_and_bitz(&mut Blake3Transcript::new(), &p, &witness, &hint).unwrap();
         verify_cm_and_bitz(&mut Blake3Transcript::new(), &p, &hint.commitment, &proof).unwrap();
         let bytes = proof.bitz().to_bytes();
-        let decoded = ::bitz::ligerito_flock::IntEvalRsLigVirtProof::from_bytes(&bytes).unwrap();
+        let decoded =
+            ::bitz::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof::from_bytes(&bytes)
+                .unwrap();
         assert_eq!(decoded.to_bytes(), bytes);
         let mut root = hint.commitment.clone();
         root.root[0] ^= 1;

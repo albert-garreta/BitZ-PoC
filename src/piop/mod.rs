@@ -1,4 +1,3 @@
-pub mod lookup;
 pub mod spartan;
 pub mod sumcheck;
 

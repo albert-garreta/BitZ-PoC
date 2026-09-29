@@ -72,7 +72,6 @@ use std::{
 
 use serde_json::{Value, json};
 use {
-    circuit::linear_map::binary::VirtualMap,
     bitz::{
         observability::Interval,
         piop::spartan::{
@@ -89,6 +88,7 @@ use {
         },
         transcript::Blake3Transcript,
     },
+    circuit::linear_map::binary::VirtualMap,
 };
 
 #[cfg(feature = "bench-internals")]
@@ -369,7 +369,6 @@ impl TraceWriter {
                 "timeline": "observed half-open intervals",
                 "bitz_rs_fast": env_setting("BITZ_RS_FAST", "default:on"),
                 "bitz_foldv_lut": env_setting("BITZ_FOLDV_LUT", "default:on"),
-                "f2_forest_schedule": env_setting("F2_FOREST_SCHEDULE", "default:l4"),
                 "bitz_flat_forest": env_setting("BITZ_FLAT_FOREST", "default:shape-dependent"),
                 "bitz_t4_factored": env_setting("BITZ_T4_FACTORED", "default:schedule-dependent"),
                 "bitz_jit_r1": env_setting("BITZ_JIT_R1", "default:on"),
@@ -1476,9 +1475,12 @@ mod cli_preset_tests {
             assert!(String::from_utf8_lossy(&output.stderr).contains("disagree"));
         }
         assert_eq!(
-            child("product", &[("BITZ_BENCH_REPS", "3"), ("BITZ_SHA_REPS", "4")])
-                .status
-                .code(),
+            child(
+                "product",
+                &[("BITZ_BENCH_REPS", "3"), ("BITZ_SHA_REPS", "4")]
+            )
+            .status
+            .code(),
             Some(2)
         );
     }
@@ -1517,7 +1519,10 @@ mod cli_preset_tests {
             ),
             (
                 "ordinary",
-                vec![("BITZ_BENCH_SHAPES", "14"), ("BITZ_SHA_MNUMROWS_LOG2S", "24")],
+                vec![
+                    ("BITZ_BENCH_SHAPES", "14"),
+                    ("BITZ_SHA_MNUMROWS_LOG2S", "24"),
+                ],
             ),
         ] {
             assert!(

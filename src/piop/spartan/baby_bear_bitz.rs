@@ -27,7 +27,7 @@ use flock_core::pcs::{commit::Commitment, ligerito::ProverConfig as LigProverCon
 
 use crate::{
     ligerito::LOG_PACKING,
-    ligerito_flock::{FlockCommitHint, LigeritoSelection, ModQOpeningKind},
+    ligerito_flock::{FlockCommitHint, LigeritoSelection},
     pcs::{FQ_MOD, IntegerMatrixLayout},
 };
 
@@ -65,7 +65,6 @@ static BABY_BEAR_DOMAINS: Domains = Domains {
     piop_grinding: b"bitz/spartan-baby-bear-mul/grinding/piop/v1",
     terminal_grinding: b"bitz/spartan-baby-bear-mul/grinding/terminal/v1",
     bitified_claim: b"bitz/spartan-baby-bear-bitz/bitified-claim/v2",
-    opening: ModQOpeningKind::BabyBearMul,
     claim_tag: b"",
     reduction_grinding: b"",
     reduction_prime: b"",
@@ -353,7 +352,10 @@ pub fn commit_baby_bear_mul_witness_with_ligerito(
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
 pub fn prepare_baby_bear_terminal_bitz_opening(
-    matrices: &super::PreparedConstraintMatrices<protocol::SpartanBitzField, BabyBearMulCoefficient>,
+    matrices: &super::PreparedConstraintMatrices<
+        protocol::SpartanBitzField,
+        BabyBearMulCoefficient,
+    >,
     layout: &BabyBearMulLayout,
     commitment: &Commitment,
 ) -> Result<PreparedTerminalOpening<BabyBearMulLayout>, ProtocolError> {
@@ -370,7 +372,10 @@ pub fn prepare_baby_bear_terminal_bitz_opening(
 /// all trial timers. `matrices` must be the relation at `q = 2^100 - 15`.
 #[cfg(feature = "bench-internals")]
 pub fn prepare_baby_bear_terminal_bitz_opening_with_ligerito(
-    matrices: &super::PreparedConstraintMatrices<protocol::SpartanBitzField, BabyBearMulCoefficient>,
+    matrices: &super::PreparedConstraintMatrices<
+        protocol::SpartanBitzField,
+        BabyBearMulCoefficient,
+    >,
     layout: &BabyBearMulLayout,
     commitment: &Commitment,
     selection: LigeritoSelection,
@@ -407,7 +412,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        pcs::{FQ_BITS, ModQWeightChunks, Q100Element, eq_le_table_fq, fq_sub},
+        pcs::{FQ_BITS, Q100Element, eq_le_table_fq, fq_sub},
         piop::spartan::{
             baby_bear_mul::sample_baby_bear_operand_with,
             bitz::{SpartanBitzField, spartan_bitz_field_config},
@@ -526,14 +531,8 @@ mod tests {
         )
     }
 
-    fn row_weight(chunks: &ModQWeightChunks, row: usize) -> u128 {
-        let mut value = 0_u128;
-        let mut shift = 0_usize;
-        for chunk in chunks.chunks() {
-            value |= chunk[row] << shift;
-            shift += chunks.chunk_width();
-        }
-        value
+    fn row_weight(rows: &[u128], row: usize) -> u128 {
+        rows[row]
     }
 
     #[test]
@@ -598,7 +597,7 @@ mod tests {
             &arith,
         )
         .unwrap();
-        let chunks = bitify::prepare_chunks(&opening, &table, FQ_BITS, &arith).unwrap();
+        let chunks = bitify::dense_row_weights(&opening, &table, &arith).unwrap();
         let col_weights = bitify::column_weights(&opening, &arith).unwrap();
 
         let rows = witness.bitz_bit_rows();

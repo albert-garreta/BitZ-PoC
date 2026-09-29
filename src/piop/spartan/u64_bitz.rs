@@ -19,7 +19,7 @@ use crate::piop::spartan::protocol::ProtocolError;
 use field::RingOps;
 use flock_core::pcs::{commit::Commitment, ligerito::ProverConfig as LigProverConfig};
 
-use crate::{ligerito_flock::ModQOpeningKind, pcs::IntegerMatrixLayout};
+use crate::pcs::IntegerMatrixLayout;
 
 use super::{
     profile::{IopInstanceFacts, IopSecurityParams},
@@ -45,7 +45,6 @@ static U64_MUL_DOMAINS: Domains = Domains {
     piop_grinding: b"bitz/spartan-u64-mul/grinding/piop/v1",
     terminal_grinding: b"bitz/spartan-u64-mul/grinding/terminal/v1",
     bitified_claim: b"bitz/spartan-u64-bitz/bitified-claim/v1",
-    opening: ModQOpeningKind::U64Mul,
     claim_tag: b"",
     reduction_grinding: b"",
     reduction_prime: b"",

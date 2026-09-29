@@ -92,6 +92,14 @@ impl Shape {
         1 << self.log_columns
     }
 
+    /// Checks `(q - 1)(2^t + 1) < 2^128 - 1`. The bound may be an
+    /// interval endpoint; primality is checked separately by `BitZParams`.
+    pub fn supports_modulus_bound(&self, q: u128) -> bool {
+        q.checked_sub(1)
+            .and_then(|q_minus_one| q_minus_one.checked_mul(self.rows() as u128 + 1))
+            .is_some_and(|gap| gap < u128::MAX)
+    }
+
     /// This crate's view of the same geometry (`W = 1`).
     pub fn layout(&self) -> crate::pcs::IntegerMatrixLayout {
         crate::pcs::IntegerMatrixLayout {
@@ -133,10 +141,7 @@ impl BitZParams {
         {
             return Err(ParamsError::InvalidModulus);
         }
-        let Some(gap) = (q - 1).checked_mul(shape.rows() as u128 + 1) else {
-            return Err(ParamsError::FoldBoundExceeded);
-        };
-        if gap == u128::MAX {
+        if !shape.supports_modulus_bound(q) {
             return Err(ParamsError::FoldBoundExceeded);
         }
         if !is_generator(generator) {

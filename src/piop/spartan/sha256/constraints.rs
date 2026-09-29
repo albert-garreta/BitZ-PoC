@@ -21,10 +21,7 @@ use field::{CheckedArithmetic, IntegerEmbedding};
 use thiserror::Error;
 
 use {
-    crate::{
-        ligerito::LOG_PACKING,
-        pcs::{IntegerMatrixLayout, mod_q_num_chunks},
-    },
+    crate::{ligerito::LOG_PACKING, pcs::IntegerMatrixLayout},
     circuit::linear_map::binary::{
         PackedRepeatedVirtualMap, PackedSourceOrder, PackedSourceRepeatedVirtualMap,
         PreparedVirtualMap, PreparedVirtualMapError,
@@ -109,10 +106,9 @@ pub enum Sha256ConstraintError {
     #[error("SHA-256 Ligerito target must be in [64, 128] bits, got {actual}")]
     UnsupportedLigeritoTargetBits { actual: usize },
 
-    /// The SHA virtual opening is deliberately configured to use one
-    /// mod-q weight chunk, hence one merged forest.
-    #[error("SHA-256 opening requires exactly one forest, got {actual}")]
-    UnsupportedOpeningForestCount { actual: usize },
+    /// The prime interval must fit the exact native exponent bound.
+    #[error("SHA-256 opening exceeds the Wfbitz exponent bound")]
+    UnsupportedOpeningBound,
 
     /// An explicit layout asked for a row split the assignment domain does
     /// not admit (`LOG_PACKING <= t < vars` for the inner sumcheck,
@@ -232,7 +228,11 @@ impl PreparedSha256CompressionBatch {
             )
             .map_err(Sha256ConstraintError::LigeritoConfig)?;
         self.security.adopt_ood_round(resolved.ood_bits())?;
-        let geometry = crate::wfbitz::grinding::Geometry::opening(self.opening_params(), &self.f_layout, false);
+        let geometry = crate::wfbitz::grinding::Geometry::opening(
+            self.opening_params(),
+            &self.f_layout,
+            false,
+        );
         self.security.adopt_native_opening(geometry)?;
         self.ligerito = Some(resolved);
         Ok(self)
@@ -855,20 +855,23 @@ fn validate_prepared_protocol(
     } else {
         Sha256PrimeProfile::from_security(&prepared.security, prepared.log_instance_capacity)?;
     }
-    let max_q_bits =
-        u128::BITS as usize - prepared.security.projection_max.leading_zeros() as usize;
     let opening_params = prepared.product_p_h.as_ref().unwrap_or(&prepared.h_layout);
-    let forest_count = mod_q_num_chunks(opening_params, max_q_bits);
-    let single_forest_required = prepared.prime_profile.is_fixed()
-        || matches!(prepared.opening_layout, Sha256OpeningLayout::Default);
-    if single_forest_required && forest_count != 1 {
-        return Err(Sha256ConstraintError::UnsupportedOpeningForestCount {
-            actual: forest_count,
-        });
-    }
+    validate_opening_bound(opening_params, prepared.security.projection_max)?;
     let target = prepared.security.ligerito_target_bits;
     if !(64..=128).contains(&target) {
         return Err(Sha256ConstraintError::UnsupportedLigeritoTargetBits { actual: target });
+    }
+    Ok(())
+}
+
+pub(super) fn validate_opening_bound(
+    layout: &IntegerMatrixLayout,
+    modulus_bound: u128,
+) -> Result<(), Sha256ConstraintError> {
+    let shape = crate::wfbitz::Shape::new(layout.row_vars, layout.col_vars)
+        .map_err(|_| Sha256ConstraintError::InvalidBatchExponent)?;
+    if layout.word_bits != 1 || !shape.supports_modulus_bound(modulus_bound) {
+        return Err(Sha256ConstraintError::UnsupportedOpeningBound);
     }
     Ok(())
 }
@@ -1336,16 +1339,14 @@ mod tests {
     }
 
     #[test]
-    fn production_assignment_geometry_uses_one_forest() {
+    fn production_assignment_geometry_fits_native_bound() {
         for exponent in 7..=SHA256_MAX_LOG_COMPRESSIONS {
             let prepared = prepare_sha256_compression_batch(exponent).unwrap();
-            let max_q_bits =
-                u128::BITS as usize - prepared.security().projection_max.leading_zeros() as usize;
-            assert_eq!(
-                mod_q_num_chunks(prepared.assignment_params(), max_q_bits),
-                1,
-                "log-compressions={exponent}"
-            );
+            validate_opening_bound(
+                prepared.assignment_params(),
+                prepared.security().projection_max,
+            )
+            .unwrap();
             if exponent >= 10 {
                 assert_eq!(
                     *prepared.assignment_params(),
@@ -1408,7 +1409,7 @@ mod tests {
 
     #[cfg(feature = "bench-internals")]
     #[test]
-    fn fixed_98_sweep_preserves_geometry_and_single_forest_bound() {
+    fn fixed_98_sweep_preserves_geometry_and_native_bound() {
         for t in 7..=28 {
             let prepared = prepare_sha256_compression_batch_for_product_t_fixed98(14, t).unwrap();
             let params = prepared.product_assignment_params().unwrap();
@@ -1419,7 +1420,7 @@ mod tests {
             assert_eq!(prepared.instances(), 1 << 14);
             assert_eq!(prepared.security().projection_min, SHA256_FIXED_98_PRIME);
             assert!(prepared.prime_profile().is_fixed());
-            assert_eq!(mod_q_num_chunks(params, 98), 1);
+            validate_opening_bound(params, SHA256_FIXED_98_PRIME).unwrap();
             assert_eq!(
                 prepared.product_map().unwrap().order(),
                 if t <= 14 {
