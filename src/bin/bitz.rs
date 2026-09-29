@@ -13,7 +13,8 @@
 //! Usage: `bitz <n> [<t> <s>] [options]`
 //!
 //! - `n` — committed bit-index variables, `n = t + s`. Without `t s`,
-//!   use `t = ceil(0.6n)`, clamped to the seven-bit packing width.
+//!   use `t = ceil(0.6n) - 1` (the scheme's default split, as
+//!   `Shape::reference`), clamped to the seven-bit packing width.
 //! - `--threads N` / `-j N` — rayon pool size; `1` = single-threaded.
 //!   Default: all cores (or `RAYON_NUM_THREADS`).
 //! - `--reps R` — timing repetitions (median reported; default 3).
@@ -41,7 +42,7 @@
 //!   `outputs/tables/raw-performance-table.tex` in the crate; the file records the
 //!   exact command, machine, date, commit, and every RESULT line, so it is
 //!   its own provenance). `t s` positionals do not apply (each `n` uses the
-//!   reference split). `--cooldown <s>` idles between children so the OS
+//!   default split). `--cooldown <s>` idles between children so the OS
 //!   reclaims the previous shape's memory and the fanless chip cools — the
 //!   n ≥ 29 rows (3–7 GB peaks) swing ±30 % on a busy 16 GB box otherwise.
 //!   Example (the paper's raw-performance table):
@@ -541,10 +542,11 @@ fn parse_sweep_spec(spec: &str) -> Result<Vec<usize>, String> {
     Ok(out)
 }
 
-/// The reference split `t ≈ 0.6n`, clamped to the packing constraint
-/// (`t ≥ 7`) and `s ≥ 1`.
+/// The scheme's default split `t = ⌈0.6n⌉ − 1` (`reference_log_rows`, as
+/// `Shape::reference` and the relations use), clamped to the packing
+/// constraint (`t ≥ 7`) and `s ≥ 1`.
 fn default_split(n: usize) -> (usize, usize) {
-    let t = ((3 * n).div_ceil(5)).max(7).min(n - 1);
+    let t = bitz::bitz::params::reference_log_rows(n);
     (t, n - t)
 }
 
@@ -1889,7 +1891,7 @@ fn write_latex_table(path: &Path, rows: &[CliResult], o: &Opts, spec: &str) -> s
     let _ = writeln!(out, "  \\end{{tabular}}");
     let _ = writeln!(
         out,
-        "  \\caption{{Cost of \\ftwoz\\ (\\cref{{c:core_iop}}) for committing to $\\codedim = 2^{{n}}$ bits, $n = {n_lo}, \\ldots, {n_hi}$, and proving one claim $\\langle \\vv, \\bff\\rangle = \\mu$ over $\\FF_q$ for {q_tex}, $\\vv = \\eq(\\cdot, \\rr_1) \\otimes \\eq(\\cdot, \\rr_2)$ with $(\\rr_1, \\rr_2)$ sampled after $q$, and the tensor split $\\codedim_1 = 2^{{\\lceil 0.6\\, n\\rceil}}$, $\\codedim_1 \\cdot \\codedim_2 = \\codedim$ (\\cref{{s:instantiation}}). The commitment is opened with ring switching and Ligerito~\\cite{{ligerito}} {lig_geometry}, {security}; {round0_tex}; every other round (the GKR, the sumcheck reducing to MLE evaluation claims, the ring switch) has error at most $7 \\cdot 2^{{-128}}$. Prover columns: \\emph{{commit}} is the commitment to the $\\codedim$ bits; \\emph{{grand products}} is computing the integers $\\mu_j$ and the batched GKR for the $\\codedim_2$ grand products in the exponent (\\cref{{s:gkr_low_entropy}}); \\emph{{ring switch}} is the sumcheck reducing the GKR output claims to MLE evaluation claims together with the ring-switching step; \\emph{{Ligerito}} is the Ligerito opening; \\emph{{total}} is the commitment plus the end-to-end proving time (each entry is a median, so the parts need not add up exactly). \\emph{{Non-Ligerito}} proof bytes are the $\\mu_j$, the GKR and sumcheck messages, and the ring-switch message; KB $= 1000$ bytes.{split_note} {cpu} ({cores}), {mem_gb}\\,GB, {threads} threads; medians of {reps} runs after one warm-up.}}"
+        "  \\caption{{Cost of \\ftwoz\\ (\\cref{{c:core_iop}}) for committing to $\\codedim = 2^{{n}}$ bits, $n = {n_lo}, \\ldots, {n_hi}$, and proving one claim $\\langle \\vv, \\bff\\rangle = \\mu$ over $\\FF_q$ for {q_tex}, $\\vv = \\eq(\\cdot, \\rr_1) \\otimes \\eq(\\cdot, \\rr_2)$ with $(\\rr_1, \\rr_2)$ sampled after $q$, and the tensor split $\\codedim_1 = 2^{{\\lceil 0.6\\, n\\rceil - 1}}$, $\\codedim_1 \\cdot \\codedim_2 = \\codedim$ (\\cref{{s:instantiation}}). The commitment is opened with ring switching and Ligerito~\\cite{{ligerito}} {lig_geometry}, {security}; {round0_tex}; every other round (the GKR, the sumcheck reducing to MLE evaluation claims, the ring switch) has error at most $7 \\cdot 2^{{-128}}$. Prover columns: \\emph{{commit}} is the commitment to the $\\codedim$ bits; \\emph{{grand products}} is computing the integers $\\mu_j$ and the batched GKR for the $\\codedim_2$ grand products in the exponent (\\cref{{s:gkr_low_entropy}}); \\emph{{ring switch}} is the sumcheck reducing the GKR output claims to MLE evaluation claims together with the ring-switching step; \\emph{{Ligerito}} is the Ligerito opening; \\emph{{total}} is the commitment plus the end-to-end proving time (each entry is a median, so the parts need not add up exactly). \\emph{{Non-Ligerito}} proof bytes are the $\\mu_j$, the GKR and sumcheck messages, and the ring-switch message; KB $= 1000$ bytes.{split_note} {cpu} ({cores}), {mem_gb}\\,GB, {threads} threads; medians of {reps} runs after one warm-up.}}"
     );
     let _ = writeln!(out, "  \\label{{tab:bitz-raw-performance}}");
     let _ = writeln!(out, "\\end{{table}}");
