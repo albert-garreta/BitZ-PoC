@@ -812,7 +812,7 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
 \iflncs\endgroup\fi
         and, for $i=0,\ldots, r_1-1$
       \begin{equation}\label{e:to_gkr_polys}
-  L_{i}(\bb,\cc)  =  L_{i+1}(\bb,0,\cc) \cdot L_{i+1}(\bb,1, \cc)  \quad \text{for all } (\bb,\cc)\in \bits^{i} \times \bits^{r_2}.
+  L_{i}(\bb,\cc)  =  L_{i+1}(0,\bb,\cc) \cdot L_{i+1}(1,\bb, \cc)  \quad \text{for all } (\bb,\cc)\in \bits^{i} \times \bits^{r_2}.
     \end{equation}
     We then use a series of sumchecks to certify \cref{e:to_gkr_polys} for all $i=0,\ldots, r_1-1$, and $L_{0}(\cc) = g^{\mu_{\mathsf{int}(\cc)}}$ for all $\cc\in \bits^{r_2}$.  At the end of the $i$-th sumcheck we are left with two evaluation claims for $L_{r_1-i}$ on different points. These two claims are transformed into a single claim via a ($1$-round) sumcheck.
 
@@ -848,21 +848,21 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
 
 \paragraph{Example.} To give an idea of the type of optimizations we use, we explain how the prover computes its first message in the last sumcheck of the GKR protocol (the most expensive one). Further details are in \cref{s:gkr_low_entropy}. This sumcheck certifies a claim of the form
 \[
-C=\sum_{(\bb,\cc)\in \bits^{r_1-1}\times \bits^{r_2}} L_{r_1}(\bb,0,\cc)\cdot L_{r_1}(\bb,1,\cc)\cdot \eq(\bb,\cc;\bm{\alpha}),
+C=\sum_{(\bb,\cc)\in \bits^{r_1-1}\times \bits^{r_2}} L_{r_1}(0,\bb,\cc)\cdot L_{r_1}(1,\bb,\cc)\cdot \eq(\bb,\cc;\bm{\alpha}),
 \]
 where $\bm{\alpha}\in \comfield^{r_1-1+r_2}$ contains verifier challenges. 
 %
 The first prover message is the degree-$3$ polynomial
 $
-h_1(X)=\sum_{\cc\in \bits^{r_2}} h_{1,\cc}(X)\cdot \eq(X,\cc;\bm{\alpha}_2)$ where  \[h_{1,\cc}(X)\defeq \sum_{\bb\in \bits^{r_1-2}} L_{r_1}(X,\bb,0,\cc)\cdot L_{r_1}(X,\bb,1,\cc)\cdot \eq(\bb;\bm{\alpha}_1),
+h_1(X)=\sum_{\cc\in \bits^{r_2}} h_{1,\cc}(X)\cdot \eq(X,\cc;\bm{\alpha}_2)$ where  \[h_{1,\cc}(X)\defeq \sum_{\bb\in \bits^{r_1-2}} L_{r_1}(0,X,\bb,\cc)\cdot L_{r_1}(1,X,\bb,\cc)\cdot \eq(\bb;\bm{\alpha}_1),
 \]
 for some split of the verifier challenges $\bm{\alpha}=(\bm{\alpha}_1,\bm{\alpha}_2)\in \comfield^{r_1-2} \times \comfield^{r_2+1}$. Now we explain how the prover computes the constant coefficient of $h_{1,\cc}(X)$ (the other coefficients are computed similarly). This coefficient is
 \[
-h_{1,\cc}(0)=\sum_{\bb\in \bits^{r_1-2}} A_0[\bb,\cc], \quad \text{where} \quad A_0[\bb,\cc]\defeq L_{r_1}(0,\bb,0,\cc)\cdot L_{r_1}(0,\bb,1,\cc)\cdot \eq(\bb;\bm{\alpha}_1).
+h_{1,\cc}(0)=\sum_{\bb\in \bits^{r_1-2}} A_0[\bb,\cc], \quad \text{where} \quad A_0[\bb,\cc]\defeq L_{r_1}(0,0,\bb,\cc)\cdot L_{r_1}(1,0,\bb,\cc)\cdot \eq(\bb;\bm{\alpha}_1).
 \]
-Now, write $y_{\bb'}\defeq g^{\pi_q^{-1}(\uu^{(1)}_{\mathsf{int}(\bb')})}$ for $\bb'\in \bits^{r_1}$. Since $\bitstext(\bff)$ is full of bits, each factor $L_{r_1}(0,\bb,\eps,\cc)$ is either $y_{(0,\bb,\eps)}$ (if the bit $\bitstext(\bff)_{\mathsf{int}(0,\bb,\eps),\mathsf{int}(\cc)}$ is $1$) or simply $1$ (if the bit is $0$). This means that, for a fixed $\bb\in \bits^{r_1-2}$, $A_0[\bb,\cc]$ takes only $4$ different values as $\cc$ ranges over $\bits^{r_2}$, one for each combination of the two bits $x=\bitstext(\bff)_{\mathsf{int}(0,\bb,0),\mathsf{int}(\cc)}$ and $x'=\bitstext(\bff)_{\mathsf{int}(0,\bb,1),\mathsf{int}(\cc)}$. Because of this, the prover can precompute a small table $T_{A_0}\in (\comfield^{4})^{2^{r_1-2}}$ with these $4$ values for each $\bb$, namely
+Now, write $y_{\bb'}\defeq g^{\pi_q^{-1}(\uu^{(1)}_{\mathsf{int}(\bb')})}$ for $\bb'\in \bits^{r_1}$. Since $\bitstext(\bff)$ is full of bits, each factor $L_{r_1}(\eps,0,\bb,\cc)$ is either $y_{(\eps,0,\bb)}$ (if the bit $\bitstext(\bff)_{\mathsf{int}(\eps,0,\bb),\mathsf{int}(\cc)}$ is $1$) or simply $1$ (if the bit is $0$). This means that, for a fixed $\bb\in \bits^{r_1-2}$, $A_0[\bb,\cc]$ takes only $4$ different values as $\cc$ ranges over $\bits^{r_2}$, one for each combination of the two bits $x=\bitstext(\bff)_{\mathsf{int}(0,0,\bb),\mathsf{int}(\cc)}$ and $x'=\bitstext(\bff)_{\mathsf{int}(1,0,\bb),\mathsf{int}(\cc)}$. Because of this, the prover can precompute a small table $T_{A_0}\in (\comfield^{4})^{2^{r_1-2}}$ with these $4$ values for each $\bb$, namely
 \[
-T_{A_0}[\bb]\defeq \Big( y_{(0,\bb,0)}^{\,x}\cdot y_{(0,\bb,1)}^{\,x'}\cdot \eq(\bb;\bm{\alpha}_1)\Big)_{(x,x')\in \bits^2} \in \comfield^4 \qquad \text{for } \bb\in \bits^{r_1-2},
+T_{A_0}[\bb]\defeq \Big( y_{(0,0,\bb)}^{\,x}\cdot y_{(1,0,\bb)}^{\,x'}\cdot \eq(\bb;\bm{\alpha}_1)\Big)_{(x,x')\in \bits^2} \in \comfield^4 \qquad \text{for } \bb\in \bits^{r_1-2},
 \]
 so that $A_0[\bb,\cc]$ is simply the entry $T_{A_0}[\bb][x,x']$. Building $T_{A_0}$ takes $\approx \codedim_1 \approx O(\sqrt{\codedim})$ multiplications in $\comfield$, once for all $\cc$. After that, the prover obtains the constant coefficients of all the $h_{1,\cc}(X)$ with $\codedim/4$ table reads and $\codedim/4$ additions in $\comfield$, and no multiplications at all. See \cref{t:gkr_step1_costs} for the cost of the rest of coefficients of $h_1(X)$. The next four prover messages in this sumcheck, and the first messages of the three sumchecks before it, are computed similarly with larger tables (cf.\ \cref{s:gkr_low_entropy}).
 \lncsplace[\lncsfittables\lncsfloattables]{GkrRound1Costs}
