@@ -494,7 +494,6 @@ pub struct PreparedSha256Ecdsa {
     pub(crate) h_layout: IntegerMatrixLayout,
     pub(crate) f_layout: IntegerMatrixLayout,
     pub(crate) ligerito: crate::ligerito_flock::ResolvedLigerito,
-    pub(crate) opener: Sha256EcdsaOpener,
     /// The structured wfbitz opening's block geometry, committed layout and
     /// Ligerito configuration for that layout; `None` when the map has no
     /// chained structure the scheme can use (then the dense virtual opening).
@@ -510,34 +509,6 @@ pub(crate) struct WfbitzChained {
     pub ligerito: crate::ligerito_flock::ResolvedLigerito,
 }
 
-/// Which scheme opens the terminal scaled claim through the commitment:
-/// the crate's chunked exponent-fold forest with its virtual opening (the
-/// paper's), or the worldfnd/BitZ scheme's virtual opening
-/// (`crate::wfbitz::virt`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Sha256EcdsaOpener {
-    #[default]
-    Forest,
-    Wfbitz,
-}
-
-impl Sha256EcdsaOpener {
-    pub fn parse(name: &str) -> Option<Self> {
-        match name {
-            "forest" => Some(Self::Forest),
-            "wfbitz" => Some(Self::Wfbitz),
-            _ => None,
-        }
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Forest => "forest",
-            Self::Wfbitz => "wfbitz",
-        }
-    }
-}
-
 impl PreparedSha256Ecdsa {
     /// The Ligerito ladder that commits and opens the sources, and that the
     /// security accounting, Round 0 and the statement binding use: the
@@ -550,29 +521,7 @@ impl PreparedSha256Ecdsa {
         &self.ligerito
     }
 
-    /// Selects the opener of the terminal claim (default: the forest). With
-    /// the wfbitz opener's structured opening this also selects the
-    /// block-layout ladder ([`Self::ligerito_configuration`]) that the
-    /// security accounting, Round 0 and the statement binding use. Nothing
-    /// is checked here: [`Self::security`] (which prove and verify call)
-    /// and a later [`Self::with_ligerito`] refuse a ladder short of the
-    /// target.
-    pub fn with_opener(mut self, opener: Sha256EcdsaOpener) -> Self {
-        self.opener = opener;
-        {
-            self.wfbitz = match opener {
-                Sha256EcdsaOpener::Wfbitz => match self.chained_geometry() {
-                    Ok(chained) => Some(chained),
-                    Err(e) => {
-                        tracing::warn!("wfbitz: no structured opening for this map ({e}); using the dense one");
-                        None
-                    }
-                },
-                Sha256EcdsaOpener::Forest => None,
-            };
-        }
-        self
-    }
+
 
     /// The structured wfbitz opening's geometry for this map, with the
     /// scheme's Ligerito ladder resolved for the block-layout commitment
@@ -609,9 +558,7 @@ impl PreparedSha256Ecdsa {
         })
     }
 
-    pub fn opener(&self) -> Sha256EcdsaOpener {
-        self.opener
-    }
+
 
     pub fn with_ligerito(
         mut self,
@@ -806,7 +753,7 @@ pub fn prepare_sha256_ecdsa_on(
         digest: *hash.finalize().as_bytes(),
     };
     map.aliases = array::from_fn(|c| map.p_source(c));
-    Ok(PreparedSha256Ecdsa {
+    let mut prepared = PreparedSha256Ecdsa {
         local,
         map,
         log_n: log_compressions,
@@ -817,7 +764,14 @@ pub fn prepare_sha256_ecdsa_on(
         ligerito: crate::ligerito_flock::LigeritoSelection::for_target(lambda as usize)
             .resolve(f_bits - 7, lambda as usize)
             .map_err(error)?,
-        opener: Sha256EcdsaOpener::Forest,
         wfbitz: None,
-    })
+    };
+    prepared.wfbitz = match prepared.chained_geometry() {
+        Ok(chained) => Some(chained),
+        Err(error) => {
+            tracing::debug!("no structured opening for this map ({error}); using dense opening");
+            None
+        }
+    };
+    Ok(prepared)
 }

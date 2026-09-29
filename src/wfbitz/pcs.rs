@@ -2,6 +2,10 @@
 //! statement frames, the inner-product sumcheck, the ring switch and the
 //! Ligerito opening, with flock's challenger events framed their way.
 
+mod atomic;
+use atomic::AtomicChallenger;
+use crate::ligerito_flock::grinding_plan::GrindingPlan;
+use std::sync::Arc;
 use core::mem::size_of;
 
 use bincode::Options;
@@ -135,9 +139,24 @@ pub struct Pcs {
     bit_len: usize,
     packed_len: usize,
     native_policy: Policy,
+    flock_plan: Option<Arc<GrindingPlan>>,
 }
 
 impl Pcs {
+    pub(crate) fn with_security_and_work(
+        shape: &Shape,
+        security: &LigeritoSecurityConfig,
+        profile: LigeritoProfile,
+        plan: Arc<GrindingPlan>,
+    ) -> Result<Self, ConfigError> {
+        if !plan.matches(security) {
+            return Err(ConfigError::Invalid("work plan is for another security configuration"));
+        }
+        let mut pcs = Self::with_security(shape, security, profile)?;
+        pcs.flock_plan = Some(plan);
+        Ok(pcs)
+    }
+
     pub(crate) fn native_policy(&self) -> Policy { self.native_policy }
 
     pub(crate) fn with_native_policy(mut self, policy: Policy) -> Self {
@@ -253,6 +272,7 @@ impl Pcs {
             bit_len,
             packed_len,
             native_policy: Policy::UNGRINDED,
+            flock_plan: None,
         })
     }
 
@@ -480,7 +500,8 @@ impl Pcs {
         let started_lig = std::time::Instant::now();
         let data = hint.flock_prover_data();
         transcript.finish_native().map_err(|_| ProveError::Internal)?;
-        let mut challenger = ProverChallenger::new_ligerito(transcript, packed_target);
+        let raw = ProverChallenger::new_ligerito(transcript, packed_target);
+        let mut challenger = AtomicChallenger::new(raw, self.flock_plan.as_deref());
         let ligerito = recursive_prover_with_basis(
             &self.prover_config,
             packed.to_vec(),
@@ -490,7 +511,7 @@ impl Pcs {
             &data.merkle_tree,
             &mut challenger,
         );
-        if challenger.failed() {
+        if !challenger.finish() {
             return Err(ProveError::Internal);
         }
         super::trace("  ligerito", started_lig);
@@ -566,7 +587,8 @@ impl Pcs {
 
         // verify_succinct
         transcript.finish_native().map_err(|_| VerifyError::VerificationFailed)?;
-        let mut challenger = VerifierChallenger::new_ligerito(transcript, packed_target);
+        let raw = VerifierChallenger::new_ligerito(transcript, packed_target);
+        let mut challenger = AtomicChallenger::new(raw, self.flock_plan.as_deref());
         let valid = recursive_verifier_with_basis_succinct(
             &self.verifier_config,
             &proof,
@@ -576,7 +598,7 @@ impl Pcs {
             evaluate_basis,
             &mut challenger,
         );
-        if challenger.failed() {
+        if !challenger.finish() {
             return Err(VerifyError::MalformedProof);
         }
         if !valid {
@@ -1233,16 +1255,7 @@ impl Challenger for VerifierChallenger<'_, '_> {
     }
 
     fn verify_pow(&mut self, nonce: u64, bits: u32) -> bool {
-        self.transcript.public_message(POW_TAG);
-        self.transcript.public_message(&bits);
-        let seed = super::codec::gf_to_bytes(self.transcript.verifier_message::<Gf>());
-        let encoded = self.read::<[u8; 8]>().map(u64::from_le_bytes);
-        let matches_stream = encoded == Some(nonce);
-        let valid = pow_valid(&seed, nonce, bits);
-        if !matches_stream || !valid {
-            self.failed = true;
-        }
-        matches_stream && valid
+        self.checked_pow(Some(nonce), bits)
     }
 }
 

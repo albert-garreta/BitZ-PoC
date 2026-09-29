@@ -17,12 +17,12 @@ mod tests;
 #[cfg(test)]
 use crate::piop::spartan::SpartanField as _;
 pub use proof::{
-    Sha256EcdsaOpening, Sha256EcdsaProof, commit_sha256_ecdsa, prove_sha256_ecdsa,
+    Sha256EcdsaProof, commit_sha256_ecdsa, prove_sha256_ecdsa,
     verify_sha256_ecdsa,
 };
 pub use circuit::ecdsa::EcdsaCircuit;
 pub use relation::{
-    OuterMode, PreparedSha256Ecdsa, Sha256EcdsaOpener, Sha256EcdsaStatement,
+    OuterMode, PreparedSha256Ecdsa, Sha256EcdsaStatement,
     prepare_sha256_ecdsa, prepare_sha256_ecdsa_on,
 };
 pub use security::{ChallengeSecurity, Sha256EcdsaSecurity};

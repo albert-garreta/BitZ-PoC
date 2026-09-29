@@ -495,7 +495,7 @@ fn strengthened_128_profile_proves_and_rejects_extra_nonce() {
         &proof,
     )
     .unwrap();
-    proof.flock_nonces.push(0);
+    proof.opening.narg.push(0);
     assert!(
         verify_sha256_ecdsa(
             &mut Blake3Transcript::new(),
@@ -563,13 +563,9 @@ fn rejects_a_valid_sha_trace_joined_to_an_unrelated_valid_signature_trace() {
     }
 }
 
-/// The worldfnd/BitZ scheme's virtual opening in place of the forest's:
-/// both outer modes prove, round-trip through bytes and verify on the
-/// paper's Johnson ladder (Round 0 on); a forest proof is refused by a
-/// verifier prepared for the other opener, and neither decodes under the
-/// other's magic.
+/// Both outer modes round-trip with early OOD and reject retired codecs.
 #[test]
-fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
+fn wfbitz_opening_roundtrips_and_rejects_old_versions() {
     use crate::transcript::Blake3Transcript;
     use crate::transcript::traits::Transcript;
     let (statement, message) = fixture();
@@ -577,8 +573,7 @@ fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
         let prepared = prepare_sha256_ecdsa(3, 100, mode)
             .unwrap()
             .with_ligerito(crate::ligerito_flock::LigeritoSelection::JOHNSON)
-            .unwrap()
-            .with_opener(Sha256EcdsaOpener::Wfbitz);
+            .unwrap();
         assert!(
             prepared.wfbitz.is_some(),
             "the chained map should get the structured wfbitz opening"
@@ -590,9 +585,8 @@ fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
         let proof =
             prove_sha256_ecdsa(&mut prover_transcript, &prepared, &statement, &witness, &hint, 4)
                 .unwrap();
-        assert!(matches!(proof.opening, Sha256EcdsaOpening::Wfbitz(_)));
         let bytes = proof.to_bytes();
-        assert_eq!(&bytes[..8], b"BITZSW01");
+        assert_eq!(&bytes[..8], b"BITZSW02");
         let proof = Sha256EcdsaProof::from_bytes(&bytes).unwrap();
         assert_eq!(proof.to_bytes(), bytes);
         verify_sha256_ecdsa(
@@ -607,10 +601,9 @@ fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
             prover_transcript.get_challenge::<u128>(),
             verifier_transcript.get_challenge::<u128>()
         );
-        // As on the forest path, a host nonce the opening never consumes is
-        // refused.
+        // Extra opening bytes are refused.
         let mut padded = proof.clone();
-        padded.flock_nonces.push(0);
+        padded.opening.narg.push(0);
         let padded = Sha256EcdsaProof::from_bytes(&padded.to_bytes()).unwrap();
         assert!(
             verify_sha256_ecdsa(
@@ -622,54 +615,11 @@ fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
             )
             .is_err()
         );
-        // The same statement prepared for the forest refuses this proof, and a
-        // forest proof is refused by the wfbitz-prepared verifier.
-        let forest = prepare_sha256_ecdsa(3, 100, mode)
-            .unwrap()
-            .with_ligerito(crate::ligerito_flock::LigeritoSelection::JOHNSON)
-            .unwrap();
-        assert!(
-            verify_sha256_ecdsa(
-                &mut Blake3Transcript::new(),
-                &forest,
-                &statement,
-                &hint.commitment,
-                &proof
-            )
-            .is_err()
-        );
-        // The openers commit the sources in different layouts, so the forest
-        // proof comes with the forest's own commitment.
-        let forest_hint = commit_sha256_ecdsa(&forest, &witness).unwrap();
-        let forest_proof = prove_sha256_ecdsa(
-            &mut Blake3Transcript::new(),
-            &forest,
-            &statement,
-            &witness,
-            &forest_hint,
-            4,
-        )
-        .unwrap();
-        assert!(
-            verify_sha256_ecdsa(
-                &mut Blake3Transcript::new(),
-                &prepared,
-                &statement,
-                &forest_hint.commitment,
-                &forest_proof
-            )
-            .is_err()
-        );
-        // The magic names the opening: forest proofs keep `BITZSE03`, and
-        // neither opening decodes under the other's magic.
-        let forest_bytes = forest_proof.to_bytes();
-        assert_eq!(&forest_bytes[..8], b"BITZSE03");
-        let mut swapped = bytes.clone();
-        swapped[..8].copy_from_slice(b"BITZSE03");
-        assert!(Sha256EcdsaProof::from_bytes(&swapped).is_err());
-        let mut swapped = forest_bytes;
-        swapped[..8].copy_from_slice(b"BITZSW01");
-        assert!(Sha256EcdsaProof::from_bytes(&swapped).is_err());
+        for magic in [b"BITZSE03", b"BITZSW01"] {
+            let mut old = bytes.clone();
+            old[..8].copy_from_slice(magic);
+            assert!(Sha256EcdsaProof::from_bytes(&old).is_err());
+        }
     }
 }
 
@@ -680,8 +630,7 @@ fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
 fn wfbitz_structured_opening_stops_at_its_transpose_width() {
     for (log_compressions, structured) in [(7, true), (8, false)] {
         let prepared = prepare_sha256_ecdsa(log_compressions, 100, OuterMode::Split)
-            .unwrap()
-            .with_opener(Sha256EcdsaOpener::Wfbitz);
+            .unwrap();
         assert_eq!(
             prepared.wfbitz.is_some(),
             structured,
@@ -701,8 +650,7 @@ fn wfbitz_dense_opening_proves_and_verifies_at_256_compressions() {
     let prepared = prepare_sha256_ecdsa(8, 100, OuterMode::Split)
         .unwrap()
         .with_ligerito(crate::ligerito_flock::LigeritoSelection::JOHNSON)
-        .unwrap()
-        .with_opener(Sha256EcdsaOpener::Wfbitz);
+        .unwrap();
     assert!(prepared.wfbitz.is_none());
     let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
     let hint = commit_sha256_ecdsa(&prepared, &witness).unwrap();
@@ -711,7 +659,6 @@ fn wfbitz_dense_opening_proves_and_verifies_at_256_compressions() {
     let proof =
         prove_sha256_ecdsa(&mut prover_transcript, &prepared, &statement, &witness, &hint, 4)
             .unwrap();
-    assert!(matches!(proof.opening, Sha256EcdsaOpening::Wfbitz(_)));
     verify_sha256_ecdsa(
         &mut verifier_transcript,
         &prepared,
@@ -776,8 +723,7 @@ fn chained_structured_weights_equal_the_dense_transpose() {
     ] {
         let case = format!("{circuit:?} 2^{log_n} {mode:?}");
         let prepared = prepare_sha256_ecdsa_on(circuit, log_n, 100, mode)
-            .unwrap()
-            .with_opener(Sha256EcdsaOpener::Wfbitz);
+            .unwrap();
         let g = &prepared.wfbitz.as_ref().expect("structured opening").geometry;
         let shape = g.shape().unwrap();
         let (rows, blocks) = (shape.rows(), shape.columns());
@@ -910,8 +856,7 @@ fn chained_hole_cells_cannot_carry_a_derived_bit() {
     let prepared = prepare_sha256_ecdsa(3, 100, OuterMode::Split)
         .unwrap()
         .with_ligerito(crate::ligerito_flock::LigeritoSelection::JOHNSON)
-        .unwrap()
-        .with_opener(Sha256EcdsaOpener::Wfbitz);
+        .unwrap();
     let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
     let chained = prepared.wfbitz.as_ref().expect("structured opening");
     let g = &chained.geometry;
@@ -994,7 +939,7 @@ fn chained_hole_cells_cannot_carry_a_derived_bit() {
 /// are the committing ladder's.
 #[test]
 fn wfbitz_security_uses_the_committed_ladder() {
-    use crate::ligerito_flock::{LigeritoSelection, grinding::GrindingPlan};
+    use crate::ligerito_flock::{LigeritoSelection, grinding_plan::GrindingPlan};
     for circuit in EcdsaCircuit::ALL {
         for exponent in 4..=7 {
             for selection in [
@@ -1005,8 +950,7 @@ fn wfbitz_security_uses_the_committed_ladder() {
                 let prepared = prepare_sha256_ecdsa_on(circuit, exponent, 100, OuterMode::Split)
                     .unwrap()
                     .with_ligerito(selection)
-                    .unwrap()
-                    .with_opener(Sha256EcdsaOpener::Wfbitz);
+                    .unwrap();
                 let chained = prepared.wfbitz.as_ref().expect("structured opening");
                 if exponent >= 6 {
                     assert_eq!(
@@ -1020,24 +964,7 @@ fn wfbitz_security_uses_the_committed_ladder() {
                     chained.ligerito.digest(),
                     "{case}"
                 );
-                // The other order: `with_ligerito` re-resolves the opener's
-                // block-layout ladder and checks it.
-                let reordered = prepare_sha256_ecdsa_on(circuit, exponent, 100, OuterMode::Split)
-                    .unwrap()
-                    .with_opener(Sha256EcdsaOpener::Wfbitz)
-                    .with_ligerito(selection)
-                    .unwrap();
-                assert_eq!(
-                    reordered.ligerito_configuration().digest(),
-                    chained.ligerito.digest(),
-                    "{case}"
-                );
                 let security = prepared.security().unwrap();
-                assert_eq!(
-                    format!("{:?}", reordered.security().unwrap()),
-                    format!("{security:?}"),
-                    "{case}"
-                );
                 let round0 = security
                     .blocks
                     .iter()
@@ -1075,8 +1002,7 @@ fn wfbitz_security_profiles_cover_the_100_bit_target_for_all_shapes() {
         for exponent in 3..=7 {
             for mode in [OuterMode::Split, OuterMode::AllRows] {
                 let prepared = prepare_sha256_ecdsa_on(circuit, exponent, 100, mode)
-                    .unwrap()
-                    .with_opener(Sha256EcdsaOpener::Wfbitz);
+                    .unwrap();
                 assert!(prepared.wfbitz.is_some());
                 let security = prepared.security().unwrap();
                 assert!(security.compute_economic_security_bits() >= 100.);

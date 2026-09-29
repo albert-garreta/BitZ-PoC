@@ -1,6 +1,6 @@
 use super::{PreparedSha256Ecdsa, Result, error};
 use crate::{
-    ligerito_flock::{OodRoundParams, grinding::GrindingPlan},
+    ligerito_flock::{OodRoundParams, grinding_plan::GrindingPlan},
     piop::spartan::profile::log2_prime_count_lower_bound,
 };
 
@@ -49,12 +49,11 @@ pub struct Sha256EcdsaSecurity {
     /// Grinding bits before each inner sumcheck round challenge, after absorbing
     /// its round polynomial. Corresponds to `inner-round` in `blocks`.
     pub(crate) inner: u32,
-    /// Grinding bits per forest/bridge challenge in the final polynomial opening.
-    /// Corresponds to `forest-and-bridge` in `blocks`.
-    pub(crate) forest: u32,
+    /// The exact native challenge schedule executed by the terminal opening.
+    pub(crate) native: crate::wfbitz::grinding::Schedule,
     /// Per-block grinding settings for Ligerito's folding, introduction, and query
     /// challenges. Their security entries appear in `blocks` with a `flock/` prefix.
-    pub(crate) flock: GrindingPlan,
+    pub(crate) flock: std::sync::Arc<GrindingPlan>,
     /// Grinding settings for the initial out-of-domain evaluation in Johnson mode.
     /// Its claim is bound just after the commitment and checked at the final opening.
     /// `None` in unique-decoding mode; corresponds to `step0:ood-draw` in `blocks`.
@@ -62,6 +61,18 @@ pub struct Sha256EcdsaSecurity {
 }
 
 impl Sha256EcdsaSecurity {
+    /// The existing zero-work wire envelope is independent of report layout.
+    /// It binds a conservative count while the report lists executed stages.
+    pub(crate) fn wire_blocks(&self, mut emit: impl FnMut(&str, u32, usize)) {
+        let unchanged = !self.native.has_work() && self.native.coordinate_count() <= 4096;
+        let mut envelope = false;
+        for block in &self.blocks {
+            if unchanged && block.label.starts_with("wfbitz/") {
+                if !envelope { emit("forest-and-bridge", 0, 4096); envelope = true; }
+            } else { emit(&block.label, block.grinding_bits, block.max_occurrences); }
+        }
+    }
+
     /// Computes modeled attack work in bits: `min(128, min_i(-log2(e_i) + g_i))`.
     /// Here `e_i = blocks[i].failure_probability_bound` and `g_i = blocks[i].grinding_bits`.
     /// Repetition counts do not enter this per-block economic model.
@@ -128,17 +139,25 @@ impl Sha256EcdsaSecurity {
             2. * q_inv,
             prepared.h_layout.row_vars + prepared.h_layout.col_vars,
         )?;
-        // Each host forest/bridge draw has degree at most the assignment arity
-        // plus seven ring coordinates. 4096 bounds the number of draws for the
-        // supported <=31-variable, single-chunk shapes (deliberately conservative).
-        let forest = add(
-            "forest-and-bridge",
-            (prepared.h_layout.row_vars + prepared.h_layout.col_vars + 7) as f64 * 2f64.powi(-128),
-            4096,
-        )?;
-        // The ladder that commits and opens the sources (the block layout's
-        // under the structured wfbitz opening).
         let ligerito = prepared.ligerito_configuration();
+        let mut geometry = if let Some(chained) = &prepared.wfbitz {
+            let shape = chained.geometry.shape().map_err(|e| error(format!("native geometry: {e:?}")))?;
+            crate::wfbitz::grinding::Geometry {
+                integer: Some((shape.log_rows(), shape.log_columns())),
+                binary: Some((shape.log_rows(), shape.log_columns())), ring: true, ood: false,
+            }
+        } else {
+            crate::wfbitz::grinding::Geometry::opening(&prepared.h_layout, &prepared.f_layout, false)
+        };
+        geometry.ood = ligerito.ood_bits().is_some();
+        let policy = crate::wfbitz::grinding::Policy::new(Some(prepared.lambda), 0, 0).map_err(error)?;
+        let native = crate::wfbitz::grinding::Schedule::new(policy, geometry).map_err(error)?;
+        blocks.extend(native.terms().map(|term| ChallengeSecurity {
+            label: term.stage.name().into(),
+            failure_probability_bound: 2f64.powf(-term.raw_bits()),
+            grinding_bits: term.grinding_bits,
+            max_occurrences: term.occurrences,
+        }));
         let ood = ligerito
             .ood_bits()
             .map(|bits| {
@@ -157,7 +176,7 @@ impl Sha256EcdsaSecurity {
                 })
             })
             .transpose()?;
-        let flock = GrindingPlan::resolve(ligerito.security(), prepared.lambda).map_err(error)?;
+        let flock = std::sync::Arc::new(GrindingPlan::resolve(ligerito.security(), prepared.lambda).map_err(error)?);
         for b in &flock.blocks {
             blocks.push(ChallengeSecurity {
                 label: format!("flock/{}", b.label),
@@ -173,7 +192,7 @@ impl Sha256EcdsaSecurity {
             batch,
             outer,
             inner,
-            forest,
+            native,
             flock,
             ood,
         })

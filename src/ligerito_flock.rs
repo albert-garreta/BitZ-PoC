@@ -39,6 +39,7 @@ mod configuration;
 #[cfg(test)]
 mod coverage;
 pub(crate) mod grinding;
+pub(crate) mod grinding_plan;
 pub use configuration::{LigeritoSelection, ResolvedLigerito};
 mod ood;
 pub use ood::{ProverOod, VerifierOod, bind_prover_ood, bind_verifier_ood};

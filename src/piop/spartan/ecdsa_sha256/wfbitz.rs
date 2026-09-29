@@ -16,7 +16,7 @@
 //! from the outer transcript seeds the scheme's own sponge, and the proof
 //! carries its narg string and hint stream.
 
-use super::{Config, F, PreparedSha256Ecdsa, Result, error};
+use super::{Config, F, PreparedSha256Ecdsa, Result, error, security::Sha256EcdsaSecurity};
 use crate::ligerito::packed_vars;
 use crate::ligerito_flock::{FlockCommitHint, ProverOod, VerifierOod};
 use crate::piop::spartan::matrix::eq_table;
@@ -86,7 +86,7 @@ fn block_weights(
 
 /// The claim grid, the committed grid and the ladder as the dense scheme
 /// sees them.
-fn dense_setup(prepared: &PreparedSha256Ecdsa, modulus: u128) -> Result<(BitZParams, Shape, Pcs)> {
+fn dense_setup(prepared: &PreparedSha256Ecdsa, modulus: u128, security: &Sha256EcdsaSecurity) -> Result<(BitZParams, Shape, Pcs)> {
     if prepared.h_layout.word_bits != 1 || prepared.f_layout.word_bits != 1 {
         return Err(error("the wfbitz opener takes bit grids (word width one)"));
     }
@@ -96,16 +96,16 @@ fn dense_setup(prepared: &PreparedSha256Ecdsa, modulus: u128) -> Result<(BitZPar
         .map_err(|e| error(format!("committed shape: {e:?}")))?;
     let params = BitZParams::new(derived, modulus, bitz_generator().into())
         .map_err(|e| error(format!("wfbitz parameters: {e:?}")))?;
-    let pcs = Pcs::with_security(&committed, prepared.ligerito.security(), LigeritoProfile::Fast)
+    let pcs = Pcs::with_security_and_work(&committed, prepared.ligerito.security(), LigeritoProfile::Fast, security.flock.clone())
         .map_err(|e| error(format!("wfbitz pcs: {e:?}")))?;
-    Ok((params, committed, pcs))
+    Ok((params, committed, pcs.with_native_policy(security.native.policy())))
 }
 
 /// The block grid's parameters and ladder.
 fn chained_setup(
-    prepared: &PreparedSha256Ecdsa,
     chained: &super::relation::WfbitzChained,
     modulus: u128,
+    security: &Sha256EcdsaSecurity,
 ) -> Result<(BitZParams, Pcs)> {
     let shape = chained
         .geometry
@@ -113,10 +113,9 @@ fn chained_setup(
         .map_err(|e| error(format!("block shape: {e:?}")))?;
     let params = BitZParams::new(shape, modulus, bitz_generator().into())
         .map_err(|e| error(format!("wfbitz parameters: {e:?}")))?;
-    let pcs = Pcs::with_security(&shape, chained.ligerito.security(), LigeritoProfile::Fast)
+    let pcs = Pcs::with_security_and_work(&shape, chained.ligerito.security(), LigeritoProfile::Fast, security.flock.clone())
         .map_err(|e| error(format!("wfbitz pcs: {e:?}")))?;
-    let _ = prepared;
-    Ok((params, pcs))
+    Ok((params, pcs.with_native_policy(security.native.policy())))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -131,12 +130,13 @@ pub(super) fn prove_opening<T: Transcript + Send>(
     target: u128,
     modulus: u128,
     ood: ProverOod,
+    security: &Sha256EcdsaSecurity,
 ) -> Result<WfbitzOpeningProof> {
     let _scope = tracing::info_span!("ecdsa:wfbitz_prove").entered();
     let ood = ood.opening_claim(t, hint);
     let tag = fork_tag(t);
     let state = if let Some(chained) = &prepared.wfbitz {
-        let (params, pcs) = chained_setup(prepared, chained, modulus)?;
+        let (params, pcs) = chained_setup(chained, modulus, security)?;
         let (rows, cols) = block_weights(chained.geometry.log_instances, point, scale, cfg)?;
         let claim = LinearClaim::new(&params, rows, cols, target)
             .map_err(|e| error(format!("wfbitz claim: {e:?}")))?;
@@ -167,7 +167,7 @@ pub(super) fn prove_opening<T: Transcript + Send>(
             .map_err(|e| error(format!("wfbitz prove: {e:?}")))?;
         state
     } else {
-        let (params, committed, pcs) = dense_setup(prepared, modulus)?;
+        let (params, committed, pcs) = dense_setup(prepared, modulus, security)?;
         let (rows, cols) = native_weights(prepared, point, scale, cfg)?;
         let claim = LinearClaim::new(&params, rows, cols, target)
             .map_err(|e| error(format!("wfbitz claim: {e:?}")))?;
@@ -206,6 +206,7 @@ pub(super) fn verify_opening<T: Transcript + Send>(
     target: u128,
     modulus: u128,
     ood: VerifierOod,
+    security: &Sha256EcdsaSecurity,
 ) -> Result<()> {
     let _scope = tracing::info_span!("ecdsa:wfbitz_verify").entered();
     let committed = prepared
@@ -221,7 +222,7 @@ pub(super) fn verify_opening<T: Transcript + Send>(
         hints: proof.hints.clone(),
     };
     if let Some(chained) = &prepared.wfbitz {
-        let (params, pcs) = chained_setup(prepared, chained, modulus)?;
+        let (params, pcs) = chained_setup(chained, modulus, security)?;
         let (rows, cols) = block_weights(chained.geometry.log_instances, point, scale, cfg)?;
         let claim = LinearClaim::new(&params, rows, cols, target)
             .map_err(|e| error(format!("wfbitz claim: {e:?}")))?;
@@ -247,7 +248,7 @@ pub(super) fn verify_opening<T: Transcript + Send>(
             )
             .map_err(|e| error(format!("wfbitz verify: {e:?}")))
     } else {
-        let (params, committed, pcs) = dense_setup(prepared, modulus)?;
+        let (params, committed, pcs) = dense_setup(prepared, modulus, security)?;
         let (rows, cols) = native_weights(prepared, point, scale, cfg)?;
         let claim = LinearClaim::new(&params, rows, cols, target)
             .map_err(|e| error(format!("wfbitz claim: {e:?}")))?;

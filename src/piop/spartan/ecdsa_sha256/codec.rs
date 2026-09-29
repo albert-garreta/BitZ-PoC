@@ -1,4 +1,5 @@
-use super::{Result, Sha256EcdsaOpening, Sha256EcdsaProof, error};
+use crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
+use super::{Result, Sha256EcdsaProof, error};
 use crate::piop::spartan::SpartanField as _;
 use crate::{
     piop::spartan::{
@@ -10,27 +11,16 @@ use crate::{
 };
 use field::Uint;
 
-const MAGIC: &[u8] = b"BITZSE03";
-/// The same layout with the terminal claim opened by the wfbitz scheme
-///; forest proofs keep `BITZSE03`.
-const MAGIC_WFBITZ: &[u8] = b"BITZSW01";
-
-fn magic(opener: super::Sha256EcdsaOpener) -> &'static [u8] {
-    match opener {
-        super::Sha256EcdsaOpener::Forest => MAGIC,
-        super::Sha256EcdsaOpener::Wfbitz => MAGIC_WFBITZ,
-    }
-}
+const MAGIC: &[u8] = b"BITZSW02";
 
 impl Sha256EcdsaProof {
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut w = Writer::new();
-        w.bytes(magic(self.opening.opener()));
+        w.bytes(MAGIC);
         let field = field::FpCtx::from_prime_u128(self.modulus);
         w.u128(self.modulus);
         w.bytes(&self.initial_nonce.to_le_bytes());
         w.bytes(&self.batch_nonce.to_le_bytes());
-        write_nonces(&mut w, &self.flock_nonces);
         write_rounds(&mut w, &self.outer.sumcheck, &field);
         for x in [
             &self.outer.az_mle_claim,
@@ -52,13 +42,9 @@ impl Sha256EcdsaProof {
     /// re-derives it from the bound commitment, relation and public statement.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         let mut r = Reader::new(bytes);
-        let opener = match r.take(MAGIC.len()).map_err(error)? {
-            m if m == MAGIC => super::Sha256EcdsaOpener::Forest,
-            m if m == MAGIC_WFBITZ => {
-                super::Sha256EcdsaOpener::Wfbitz
-            }
-            _ => return Err(error("invalid proof version")),
-        };
+        if r.take(MAGIC.len()).map_err(error)? != MAGIC {
+            return Err(error("invalid proof version"));
+        }
         let q = r.u128().map_err(error)?;
         if !((1u128 << 112)..(1u128 << 113)).contains(&q) {
             return Err(error("invalid encoded modulus"));
@@ -67,7 +53,6 @@ impl Sha256EcdsaProof {
         F::validate_config(&cfg).map_err(error)?;
         let initial_nonce = u64::from_le_bytes(r.take(8).map_err(error)?.try_into().unwrap());
         let batch_nonce = u64::from_le_bytes(r.take(8).map_err(error)?.try_into().unwrap());
-        let flock_nonces = read_nonces(&mut r)?;
         let sumcheck = read_rounds(&mut r, q, &cfg)?;
         let az_mle_claim = read_field(&mut r, q, &cfg)?;
         let bz_mle_claim = read_field(&mut r, q, &cfg)?;
@@ -76,7 +61,8 @@ impl Sha256EcdsaProof {
         let inner = read_rounds(&mut r, q, &cfg)?;
         let inner_nonces = read_nonces(&mut r)?;
         let len = r.len().map_err(error)?;
-        let opening = Sha256EcdsaOpening::from_bytes(opener, r.take(len).map_err(error)?)?;
+        let opening = WfbitzOpeningProof::from_bytes(r.take(len).map_err(error)?)
+            .ok_or_else(|| error("malformed Wfbitz opening"))?;
         if r.remaining() != 0 {
             return Err(error("trailing proof bytes"));
         }
@@ -84,7 +70,6 @@ impl Sha256EcdsaProof {
             modulus: q,
             initial_nonce,
             batch_nonce,
-            flock_nonces,
             outer: OuterSumcheckProof {
                 sumcheck,
                 az_mle_claim,

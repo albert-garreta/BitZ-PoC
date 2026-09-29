@@ -141,6 +141,8 @@ pub(crate) struct Schedule {
 }
 
 impl Schedule {
+    pub(crate) fn policy(self) -> Policy { self.policy }
+
     pub(crate) fn new(policy: Policy, geometry: Geometry) -> Result<Self, Error> {
         for (rows, columns) in [geometry.integer, geometry.binary].into_iter().flatten() {
             if rows.checked_add(columns).is_none_or(|sum| sum > MAX_VARIABLES) {

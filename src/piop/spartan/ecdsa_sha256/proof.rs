@@ -18,19 +18,14 @@ use {
         ext_proj::sample_prime_in_interval,
         ligerito::packed_vars,
         ligerito_flock::{
-            FlockCommitHint, IntEvalRsLigVirtProof, commit_rs_ligerito_shared_rows,
-            grinding::{GrindingContext, GrindingNonces},
-            prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus_with_security,
+            FlockCommitHint, commit_rs_ligerito_shared_rows,
             validate_ligerito_commitment,
-            verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off_with_security,
         },
-        pcs::ModQWeightChunks,
         piop::spartan::{
             SpartanField, absorb_spartan_message,
             bitz::SpartanBitzField as F,
             grinding::GrindingDomain,
-            matrix::eq_table,
-            protocol::{check_boundary, bitz_generator, grind_boundary},
+            protocol::{check_boundary, grind_boundary},
             sha256::inner_sumcheck::ColumnMajorPackedBits,
             squeeze_field,
             sumcheck::{OuterSumcheckProof, ProverGrindingRoundBoundary, SumcheckProof},
@@ -51,66 +46,11 @@ pub struct Sha256EcdsaProof {
     pub(crate) modulus: u128,
     pub(crate) initial_nonce: u64,
     pub(crate) batch_nonce: u64,
-    pub(crate) flock_nonces: Vec<u64>,
     pub(crate) outer: OuterSumcheckProof<F>,
     pub(crate) outer_nonces: Vec<u64>,
     pub(crate) inner: SumcheckProof<F, 3>,
     pub(crate) inner_nonces: Vec<u64>,
-    pub(crate) opening: Sha256EcdsaOpening,
-}
-
-/// The opening of the terminal scaled claim, by whichever scheme the
-/// prepared statement selected ([`super::Sha256EcdsaOpener`]).
-#[derive(Clone)]
-pub enum Sha256EcdsaOpening {
-    /// The forest's virtual opening (the paper's).
-    Forest(IntEvalRsLigVirtProof),
-    /// The worldfnd/BitZ scheme's virtual opening: its narg string, hint
-    /// stream and the crate's Round-0 message.
-    Wfbitz(crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof),
-}
-
-impl Sha256EcdsaOpening {
-    pub(crate) fn ood(&self) -> Option<&crate::ligerito_flock::OodRound> {
-        match self {
-            Self::Forest(opening) => opening.ood.as_ref(),
-            Self::Wfbitz(opening) => opening.ood.as_ref(),
-        }
-    }
-
-    /// The opener that produced this opening.
-    pub(crate) fn opener(&self) -> super::Sha256EcdsaOpener {
-        match self {
-            Self::Forest(_) => super::Sha256EcdsaOpener::Forest,
-            Self::Wfbitz(_) => super::Sha256EcdsaOpener::Wfbitz,
-        }
-    }
-
-    /// The variant's own encoding, untagged: the proof's magic names the
-    /// variant.
-    pub fn to_bytes(&self) -> Vec<u8> {
-        match self {
-            Self::Forest(opening) => opening.to_bytes(),
-            Self::Wfbitz(opening) => {
-                use crate::piop::spartan::protocol::OpeningProof;
-                opening.to_bytes()
-            }
-        }
-    }
-
-    /// Decodes the variant the proof's magic named.
-    pub fn from_bytes(opener: super::Sha256EcdsaOpener, bytes: &[u8]) -> Result<Self> {
-        match opener {
-            super::Sha256EcdsaOpener::Forest => {
-                IntEvalRsLigVirtProof::from_bytes(bytes).map(Self::Forest).map_err(error)
-            }
-            super::Sha256EcdsaOpener::Wfbitz => {
-                crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof::from_bytes(bytes)
-                    .map(Self::Wfbitz)
-                    .ok_or_else(|| error("malformed wfbitz opening"))
-            }
-        }
-    }
+    pub(crate) opening: crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof,
 }
 
 pub fn commit_sha256_ecdsa(
@@ -165,15 +105,11 @@ fn bind_statement<T: Transcript>(
         }],
     );
     absorb_spartan_message(t, b"security-target", &prepared.lambda.to_le_bytes());
-    for block in &security.blocks {
-        absorb_spartan_message(t, b"challenge-block", block.label.as_bytes());
-        absorb_spartan_message(t, b"block-work", &block.grinding_bits.to_le_bytes());
-        absorb_spartan_message(
-            t,
-            b"block-count",
-            &(block.max_occurrences as u64).to_le_bytes(),
-        );
-    }
+    security.wire_blocks(|label, bits, count| {
+        absorb_spartan_message(t, b"challenge-block", label.as_bytes());
+        absorb_spartan_message(t, b"block-work", &bits.to_le_bytes());
+        absorb_spartan_message(t, b"block-count", &(count as u64).to_le_bytes());
+    });
     absorb_spartan_message(
         t,
         b"commitment",
@@ -362,78 +298,14 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         &inner.final_claim,
         &cfg,
     );
-    if prepared.opener == super::Sha256EcdsaOpener::Wfbitz {
-        {
-            let target = u128::from(cfg.to_integer(&inner.final_claim));
-            let opening = super::wfbitz::prove_opening(
-                t,
-                prepared,
-                hint,
-                &witness.h_rows,
-                &inner.point,
-                &inner.terminal_evaluations[0],
-                &cfg,
-                target,
-                modulus,
-                ood,
-            )?;
-            return Ok(Sha256EcdsaProof {
-                modulus,
-                initial_nonce,
-                batch_nonce,
-                flock_nonces: Vec::new(),
-                outer: outer.proof,
-                outer_nonces,
-                inner: inner.proof,
-                inner_nonces,
-                opening: Sha256EcdsaOpening::Wfbitz(opening),
-            });
-        }
-    }
-    let rows: Vec<_> = eq_table(&inner.point[..prepared.h_layout.row_vars], &cfg)
-        .map_err(error)?
-        .into_iter()
-        .map(|mut x| {
-            x = cfg.mul(&(x), &(&inner.terminal_evaluations[0]));
-            u128::from(cfg.to_integer(&x))
-        })
-        .collect();
-    let mut flock_nonces = Vec::new();
-    let chunks = ModQWeightChunks::from_single_chunk(&prepared.h_layout, 113, rows)
-        .map_err(|_| error("invalid row weights"))?;
-    let mut grinding = GrindingContext {
-        plan: &security.flock,
-        nonces: GrindingNonces::Prove(&mut flock_nonces),
-    };
-    let opening = {
-        let _scope = tracing::info_span!("ecdsa:bitz_prove").entered();
-        prove_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_modulus_with_security(
-            t,
-            hint,
-            &witness.h_rows,
-            &prepared.h_layout,
-            &prepared.f_layout,
-            &prepared.map,
-            &chunks,
-            modulus,
-            113,
-            bitz_generator(),
-            security.forest,
-            ood,
-            pc,
-            Some(&mut grinding),
-        )
-    };
+    let target = u128::from(cfg.to_integer(&inner.final_claim));
+    let opening = super::wfbitz::prove_opening(
+        t, prepared, hint, &witness.h_rows, &inner.point,
+        &inner.terminal_evaluations[0], &cfg, target, modulus, ood, &security,
+    )?;
     Ok(Sha256EcdsaProof {
-        modulus,
-        initial_nonce,
-        batch_nonce,
-        flock_nonces,
-        outer: outer.proof,
-        outer_nonces,
-        inner: inner.proof,
-        inner_nonces,
-        opening: Sha256EcdsaOpening::Forest(opening),
+        modulus, initial_nonce, batch_nonce, outer: outer.proof, outer_nonces,
+        inner: inner.proof, inner_nonces, opening,
     })
 }
 
@@ -524,91 +396,11 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         &inner_final_claim,
         &cfg,
     );
-    // rows[b] = (scale · eq(b, inner_eval_point[..row_vars])) mod q ∈ [0, q).
-    let rows: Vec<_> = eq_table(&inner_eval_point[..prepared.h_layout.row_vars], &cfg)
-        .map_err(error)?
-        .into_iter()
-        .map(|mut x| {
-            x = cfg.mul(&(x), &(&scale));
-            u128::from(cfg.to_integer(&x))
-        })
-        .collect();
-    // cols[c] = eq(c, inner_eval_point[row_vars..]) mod q ∈ [0, q).
-    // Σ_{b,c} rows[b] · h[b,c] · cols[c] ≡ inner_final_claim (mod q).
-    let cols: Vec<_> = eq_table(&inner_eval_point[prepared.h_layout.row_vars..], &cfg)
-        .map_err(error)?
-        .iter()
-        .map(|x| u128::from(cfg.to_integer(x)))
-        .collect();
-    // R = 2^row_vars, C = 2^col_vars; h: R × C.
-    // w = 127 - row_vars - 1 ≥ 113 ⇒ L = ⌈113 / w⌉ = 1.
-    // chunks: L × R; folds = chunks · h: L × C.
-    // folds[ℓ][c] = Σ_b chunks[ℓ][b] · h[b,c].
-    // chunks[0][b] = rows[b].
-    let opening = match (&proof.opening, prepared.opener) {
-        (Sha256EcdsaOpening::Forest(opening), super::Sha256EcdsaOpener::Forest) => opening,
-        (Sha256EcdsaOpening::Wfbitz(opening), super::Sha256EcdsaOpener::Wfbitz) => {
-            // The wfbitz opening grinds inside its own transcript and consumes
-            // no host nonces; as the forest's grinding context consumes
-            // `flock_nonces` exactly, refuse any.
-            if !proof.flock_nonces.is_empty() {
-                return Err(error("the wfbitz opening takes no host grinding nonces"));
-            }
-            let target = u128::from(cfg.to_integer(&inner_final_claim));
-            return super::wfbitz::verify_opening(
-                transcript,
-                prepared,
-                commitment,
-                opening,
-                &inner_eval_point,
-                &scale,
-                &cfg,
-                target,
-                modulus,
-                ood,
-            );
-        }
-        _ => return Err(error("the proof's opening is not the prepared opener's")),
-    };
-    let chunks = ModQWeightChunks::from_single_chunk(&prepared.h_layout, 113, rows)
-        .map_err(|_| error("invalid row weights"))?;
-    let mut grinding = GrindingContext {
-        plan: &security.flock,
-        nonces: GrindingNonces::Verify {
-            values: &proof.flock_nonces,
-            cursor: 0,
-        },
-    };
-    let arithmetic = field::FpCtx::from_prime_u128(modulus);
-    verify_mle_eval_mod_q_ligerito_virtual_with_weight_chunks_and_read_off_with_security(
-        transcript,
-        commitment,
-        opening,
-        &prepared.h_layout,
-        &prepared.f_layout,
-        &prepared.map,
-        &chunks,
-        modulus,
-        113,
-        bitz_generator(),
-        security.forest,
-        ood,
-        vc,
-        cols.len(),
-        |values, width, count| {
-            // This profile has one 113-bit chunk; the BitZ preflight enforces the
-            // fold magnitudes before this canonical mod-q read-off is accepted.
-            if count != 1 || values.len() < cols.len() || width < 113 {
-                return false;
-            }
-            let sum = cols.iter().zip(values).fold(0, |sum, (&c, &v)| {
-                arithmetic.add_u128(sum, arithmetic.mul_u128(c, arithmetic.reduce_u128(v)))
-            });
-            sum == u128::from(cfg.to_integer(&inner_final_claim))
-        },
-        Some(&mut grinding),
+    let target = u128::from(cfg.to_integer(&inner_final_claim));
+    super::wfbitz::verify_opening(
+        transcript, prepared, commitment, &proof.opening,
+        &inner_eval_point, &scale, &cfg, target, modulus, ood, &security,
     )
-    .map_err(|e| error(format!("{e:?}")))
 }
 
 const INITIAL_GRINDING_DOMAIN: &[u8] = b"bitz/sha256-ecdsa/initial/v1";
