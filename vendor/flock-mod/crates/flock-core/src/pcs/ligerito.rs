@@ -3197,17 +3197,27 @@ fn sample_distinct_queries<Ch: Challenger>(
         count <= block_len,
         "sample_distinct_queries: count ({count}) > block_len ({block_len}) — config is too thin for this query count"
     );
+    try_sample_distinct_queries(challenger, block_len, count)
+        .expect("infallible prover challenge stream")
+}
+
+fn try_sample_distinct_queries<Ch: Challenger>(
+    challenger: &mut Ch,
+    block_len: usize,
+    count: usize,
+) -> Option<Vec<usize>> {
+    if count > block_len { return None; }
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::with_capacity(count);
     while out.len() < count {
-        let v = challenger.sample_f128();
+        let v = challenger.try_sample_f128()?;
         let q = (v.lo as usize) % block_len;
         if seen.insert(q) {
             out.push(q);
         }
     }
     out.sort_unstable();
-    out
+    Some(out)
 }
 
 /// Build a single octopus multi-proof for all `queries` against `tree`.
@@ -4013,6 +4023,11 @@ where
     F: Fn(&[Gf128], usize) -> Vec<Gf128>,
     A: FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
 {
+    macro_rules! challenge {
+        ($draw:expr) => {
+            match $draw { Some(value) => value, None => return false }
+        };
+    }
     let trace = std::env::var("LIG_VERIFY_TRACE").is_ok();
     let mut t_merkle = std::time::Duration::ZERO;
     let mut t_sample_q = std::time::Duration::ZERO;
@@ -4081,7 +4096,7 @@ where
             }
             fold_nonce_idx += 1;
         }
-        let ri = challenger.sample_f128();
+        let ri = challenge!(challenger.try_sample_f128());
         r_lane_fold.push(ri);
         t_r = running_quad.eval(ri);
         if tx_idx >= proof.sumcheck_transcript.len() {
@@ -4104,7 +4119,7 @@ where
     // evaluation from the proof, and glue the claim into the running
     // sumcheck exactly like the prover.
     for _ in 0..ood_count(1) {
-        let z = challenger.sample_f128_vec(log_n - initial_k);
+        let z = challenge!(challenger.try_sample_f128_vec(log_n - initial_k));
         if ood_idx >= proof.ood_values.len() {
             return false;
         }
@@ -4119,7 +4134,7 @@ where
         challenger.observe_f128(intro_msg.u_0);
         challenger.observe_f128(intro_msg.u_2);
         let intro_quad = RoundQuad::from_msg(intro_msg, y);
-        let beta = challenger.sample_f128();
+        let beta = challenge!(challenger.try_sample_f128());
         running_quad = RoundQuad::fold(&running_quad, &intro_quad, beta);
         t_r += beta * y;
         ood_ctxs.push(OodCtx {
@@ -4146,11 +4161,11 @@ where
 
     let num_queries_0 = config.queries[0];
     let _t = std::time::Instant::now();
-    let queries_0 = sample_distinct_queries(challenger, block_len_0, num_queries_0);
+    let queries_0 = challenge!(try_sample_distinct_queries(challenger, block_len_0, num_queries_0));
     if trace {
         t_sample_q += _t.elapsed();
     }
-    let alpha_0 = challenger.sample_f128_vec(ceil_log2(num_queries_0));
+    let alpha_0 = challenge!(challenger.try_sample_f128_vec(ceil_log2(num_queries_0)));
     let _t = std::time::Instant::now();
     if proof.initial_proof.opened_rows.len() != queries_0.len()
         || proof
@@ -4194,7 +4209,7 @@ where
     challenger.observe_f128(intro_msg_0.u_0);
     challenger.observe_f128(intro_msg_0.u_2);
     let intro_quad_0 = RoundQuad::from_msg(intro_msg_0, enforced_sum_0);
-    let beta_0 = challenger.sample_f128();
+    let beta_0 = challenge!(challenger.try_sample_f128());
     running_quad = RoundQuad::fold(&running_quad, &intro_quad_0, beta_0);
     t_r += beta_0 * enforced_sum_0;
 
@@ -4242,7 +4257,7 @@ where
                 }
                 fold_nonce_idx += 1;
             }
-            let ri = challenger.sample_f128();
+            let ri = challenge!(challenger.try_sample_f128());
             ris.push(ri);
             level_rs.push(ri);
             t_r = running_quad.eval(ri);
@@ -4290,12 +4305,12 @@ where
             let num_queries_last = config.queries[i + 1];
             let _t = std::time::Instant::now();
             let queries_last =
-                sample_distinct_queries(challenger, prev_block_len, num_queries_last);
+                challenge!(try_sample_distinct_queries(challenger, prev_block_len, num_queries_last));
             // Basis-induction challenge for the LAST commitment. Sampled here —
             // after `yr` was observed (top of this branch) and the queries are
             // fixed — so a forged `yr` cannot be adapted to it. Mirrors `alpha_i`
             // at every non-final level (see ~line 3377).
-            let alpha_last = challenger.sample_f128_vec(ceil_log2(num_queries_last));
+            let alpha_last = challenge!(challenger.try_sample_f128_vec(ceil_log2(num_queries_last)));
             if trace {
                 t_sample_q += _t.elapsed();
             }
@@ -4334,7 +4349,7 @@ where
                 &queries_last,
                 &alpha_last,
             );
-            let beta_last = challenger.sample_f128();
+            let beta_last = challenge!(challenger.try_sample_f128());
             t_r += beta_last * enforced_sum_last;
             level_ctxs.push(LevelCtx {
                 log_msg_cols: n_current,
@@ -4457,7 +4472,7 @@ where
 
         // OOD binding mirror for the L_{i+2} commit.
         for _ in 0..ood_count(i + 2) {
-            let z = challenger.sample_f128_vec(n_current);
+            let z = challenge!(challenger.try_sample_f128_vec(n_current));
             if ood_idx >= proof.ood_values.len() {
                 return false;
             }
@@ -4472,7 +4487,7 @@ where
             challenger.observe_f128(intro_msg.u_0);
             challenger.observe_f128(intro_msg.u_2);
             let intro_quad = RoundQuad::from_msg(intro_msg, y);
-            let beta = challenger.sample_f128();
+            let beta = challenge!(challenger.try_sample_f128());
             running_quad = RoundQuad::fold(&running_quad, &intro_quad, beta);
             t_r += beta * y;
             ood_ctxs.push(OodCtx {
@@ -4498,11 +4513,11 @@ where
         let prev_num_interleaved = 1usize << prev_log_num_interleaved;
         let num_queries_i = config.queries[i + 1];
         let _t = std::time::Instant::now();
-        let queries_i = sample_distinct_queries(challenger, prev_block_len, num_queries_i);
+        let queries_i = challenge!(try_sample_distinct_queries(challenger, prev_block_len, num_queries_i));
         if trace {
             t_sample_q += _t.elapsed();
         }
-        let alpha_i = challenger.sample_f128_vec(ceil_log2(num_queries_i));
+        let alpha_i = challenge!(challenger.try_sample_f128_vec(ceil_log2(num_queries_i)));
         if recursive_proof_idx >= proof.recursive_proofs.len() {
             return false;
         }
@@ -4539,7 +4554,7 @@ where
         challenger.observe_f128(intro_msg_i.u_0);
         challenger.observe_f128(intro_msg_i.u_2);
         let intro_quad_i = RoundQuad::from_msg(intro_msg_i, enforced_sum_i);
-        let beta_i = challenger.sample_f128();
+        let beta_i = challenge!(challenger.try_sample_f128());
         running_quad = RoundQuad::fold(&running_quad, &intro_quad_i, beta_i);
         t_r += beta_i * enforced_sum_i;
         level_ctxs.push(LevelCtx {

@@ -88,7 +88,8 @@ fn compact_map_matches_generated_witness_and_exact_constraints() {
 
 fn map_matches_witness(circuit: EcdsaCircuit, statement: Sha256EcdsaStatement, message: &[u8]) {
     let exponent = statement.log_compressions;
-    let prepared = prepare_sha256_ecdsa_on(circuit, exponent as usize, 100, OuterMode::Split).unwrap();
+    let prepared =
+        prepare_sha256_ecdsa_on(circuit, exponent as usize, 100, OuterMode::Split).unwrap();
     let witness = generate_sha256_ecdsa_witness(&prepared, &statement, message).unwrap();
     assert_eq!(prepared.local.rows(), circuit.r1cs_rows());
     assert_eq!(prepared.circuit(), circuit);
@@ -352,7 +353,10 @@ fn secp256k1_matched_proves_verifies_and_is_bound_to_its_circuit() {
     let (statement, message) = secp256k1_fixture_at(3);
     let prepared = prepare_sha256_ecdsa_on(circuit, 3, 100, OuterMode::Split).unwrap();
     assert_eq!(prepared.circuit(), circuit);
-    assert_eq!(prepared.nonlinear_rows() + prepared.local.linear.len(), circuit.r1cs_rows());
+    assert_eq!(
+        prepared.nonlinear_rows() + prepared.local.linear.len(),
+        circuit.r1cs_rows()
+    );
     let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
     let hint = commit_sha256_ecdsa(&prepared, &witness).unwrap();
     let proof = prove_sha256_ecdsa(
@@ -429,7 +433,10 @@ fn secp256k1_matched_proves_verifies_and_is_bound_to_its_circuit() {
             &proof,
         )
     }));
-    assert!(!matches!(outcome, Ok(Ok(()))), "the matched circuit accepted a P-256 instance");
+    assert!(
+        !matches!(outcome, Ok(Ok(()))),
+        "the matched circuit accepted a P-256 instance"
+    );
 }
 
 #[test]
@@ -438,7 +445,8 @@ fn security_profiles_cover_both_targets_for_all_shapes() {
         for exponent in 3..=16 {
             for target in [100, 128] {
                 for mode in [OuterMode::Split, OuterMode::AllRows] {
-                    let prepared = prepare_sha256_ecdsa_on(circuit, exponent, target, mode).unwrap();
+                    let prepared =
+                        prepare_sha256_ecdsa_on(circuit, exponent, target, mode).unwrap();
                     let security = prepared.security().unwrap();
                     assert!(security.compute_economic_security_bits() >= f64::from(target));
                     assert!(
@@ -582,9 +590,15 @@ fn wfbitz_opening_roundtrips_and_rejects_old_versions() {
         let hint = commit_sha256_ecdsa(&prepared, &witness).unwrap();
         let mut prover_transcript = Blake3Transcript::new();
         let mut verifier_transcript = Blake3Transcript::new();
-        let proof =
-            prove_sha256_ecdsa(&mut prover_transcript, &prepared, &statement, &witness, &hint, 4)
-                .unwrap();
+        let proof = prove_sha256_ecdsa(
+            &mut prover_transcript,
+            &prepared,
+            &statement,
+            &witness,
+            &hint,
+            4,
+        )
+        .unwrap();
         let bytes = proof.to_bytes();
         assert_eq!(&bytes[..8], b"BITZSW02");
         let proof = Sha256EcdsaProof::from_bytes(&bytes).unwrap();
@@ -629,8 +643,7 @@ fn wfbitz_opening_roundtrips_and_rejects_old_versions() {
 #[test]
 fn wfbitz_structured_opening_stops_at_its_transpose_width() {
     for (log_compressions, structured) in [(7, true), (8, false)] {
-        let prepared = prepare_sha256_ecdsa(log_compressions, 100, OuterMode::Split)
-            .unwrap();
+        let prepared = prepare_sha256_ecdsa(log_compressions, 100, OuterMode::Split).unwrap();
         assert_eq!(
             prepared.wfbitz.is_some(),
             structured,
@@ -656,9 +669,15 @@ fn wfbitz_dense_opening_proves_and_verifies_at_256_compressions() {
     let hint = commit_sha256_ecdsa(&prepared, &witness).unwrap();
     let mut prover_transcript = Blake3Transcript::new();
     let mut verifier_transcript = Blake3Transcript::new();
-    let proof =
-        prove_sha256_ecdsa(&mut prover_transcript, &prepared, &statement, &witness, &hint, 4)
-            .unwrap();
+    let proof = prove_sha256_ecdsa(
+        &mut prover_transcript,
+        &prepared,
+        &statement,
+        &witness,
+        &hint,
+        4,
+    )
+    .unwrap();
     verify_sha256_ecdsa(
         &mut verifier_transcript,
         &prepared,
@@ -671,6 +690,40 @@ fn wfbitz_dense_opening_proves_and_verifies_at_256_compressions() {
         prover_transcript.get_challenge::<u128>(),
         verifier_transcript.get_challenge::<u128>()
     );
+}
+
+#[test]
+fn dense_secp256k1_all_rows_preserves_the_128_profile() {
+    use crate::transcript::Blake3Transcript;
+    let (statement, message) = secp256k1_fixture_at(8);
+    let prepared = prepare_sha256_ecdsa_on(
+        EcdsaCircuit::Secp256k1BiniusMatched,
+        8,
+        128,
+        OuterMode::AllRows,
+    )
+    .unwrap();
+    assert!(prepared.wfbitz.is_none());
+    let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
+    let hint = commit_sha256_ecdsa(&prepared, &witness).unwrap();
+    let proof = prove_sha256_ecdsa(
+        &mut Blake3Transcript::new(),
+        &prepared,
+        &statement,
+        &witness,
+        &hint,
+        4,
+    )
+    .unwrap();
+    let decoded = Sha256EcdsaProof::from_bytes(&proof.to_bytes()).unwrap();
+    verify_sha256_ecdsa(
+        &mut Blake3Transcript::new(),
+        &prepared,
+        &statement,
+        &hint.commitment,
+        &decoded,
+    )
+    .unwrap();
 }
 
 /// The little-endian eq tensor of `point` over GF(2^128): entry `i` is
@@ -722,9 +775,12 @@ fn chained_structured_weights_equal_the_dense_transpose() {
         (EcdsaCircuit::Secp256k1BiniusMatched, 3, OuterMode::Split),
     ] {
         let case = format!("{circuit:?} 2^{log_n} {mode:?}");
-        let prepared = prepare_sha256_ecdsa_on(circuit, log_n, 100, mode)
-            .unwrap();
-        let g = &prepared.wfbitz.as_ref().expect("structured opening").geometry;
+        let prepared = prepare_sha256_ecdsa_on(circuit, log_n, 100, mode).unwrap();
+        let g = &prepared
+            .wfbitz
+            .as_ref()
+            .expect("structured opening")
+            .geometry;
         let shape = g.shape().unwrap();
         let (rows, blocks) = (shape.rows(), shape.columns());
         let params = BitZParams::new(shape, q, bitz_generator().into()).unwrap();
@@ -743,7 +799,8 @@ fn chained_structured_weights_equal_the_dense_transpose() {
             let query = OpeningQuery::InnerProduct {
                 claim: LinearClaimGf::from_shape(&shape, u1, u2, Gf::ZERO).unwrap(),
             };
-            let Ok(OpeningQuery::InnerProductSum { claim }) = statement.transpose_query(query) else {
+            let Ok(OpeningQuery::InnerProductSum { claim }) = statement.transpose_query(query)
+            else {
                 panic!("{case}: the structured transpose is a sum of tensors");
             };
             let tensors = claim.terms().len();
@@ -774,7 +831,11 @@ fn chained_structured_weights_equal_the_dense_transpose() {
                     g.committed_tail_position(s - g.f_offset + g.aliases)
                 };
                 let cell = block * rows + row;
-                assert_eq!(owner[cell], usize::MAX, "{case}: two sources on cell of source {s}");
+                assert_eq!(
+                    owner[cell],
+                    usize::MAX,
+                    "{case}: two sources on cell of source {s}"
+                );
                 owner[cell] = s;
                 cell
             })
@@ -803,20 +864,37 @@ fn chained_structured_weights_equal_the_dense_transpose() {
         let derived = Shape::new(t_h, prepared.h_layout.col_vars).unwrap();
         let committed = Shape::new(prepared.f_layout.row_vars, prepared.f_layout.col_vars).unwrap();
         let native_params = BitZParams::new(derived, q, bitz_generator().into()).unwrap();
-        let native_zero =
-            LinearClaim::new(&native_params, vec![0; derived.rows()], vec![0; derived.columns()], 0)
-                .unwrap();
-        let dense = VirtualStatement::new(native_params, committed, &prepared.map, &native_zero).unwrap();
+        let native_zero = LinearClaim::new(
+            &native_params,
+            vec![0; derived.rows()],
+            vec![0; derived.columns()],
+            0,
+        )
+        .unwrap();
+        let dense =
+            VirtualStatement::new(native_params, committed, &prepared.map, &native_zero).unwrap();
         let query = OpeningQuery::InnerProduct {
-            claim: LinearClaimGf::from_shape(&derived, gf_eq(&point[..t_h]), gf_eq(&point[t_h..]), Gf::ZERO)
-                .unwrap(),
+            claim: LinearClaimGf::from_shape(
+                &derived,
+                gf_eq(&point[..t_h]),
+                gf_eq(&point[t_h..]),
+                Gf::ZERO,
+            )
+            .unwrap(),
         };
         let Ok(OpeningQuery::InnerProduct { claim }) = dense.transpose_query(query) else {
             panic!("{case}: the dense transpose is one single-column claim");
         };
         let dense = claim.row_weights();
-        assert!(dense[live..].iter().all(|w| w.is_zero()), "{case}: a padding source is weighted");
-        check(&structured(gf_eq(&point[k..k + LOG_ROWS]), gf_eq(&high)), &|s| dense[s], "eq tensor");
+        assert!(
+            dense[live..].iter().all(|w| w.is_zero()),
+            "{case}: a padding source is weighted"
+        );
+        check(
+            &structured(gf_eq(&point[k..k + LOG_ROWS]), gf_eq(&high)),
+            &|s| dense[s],
+            "eq tensor",
+        );
 
         // Weights that are no tensor, against `Σ_{d ∈ column_rows(s)} u1·u2`.
         let u1: Vec<Gf> = (0..rows).map(|_| random()).collect();
@@ -833,7 +911,11 @@ fn chained_structured_weights_equal_the_dense_transpose() {
                 })
                 .sum()
         };
-        check(&structured(u1.clone(), u2.clone()), &by_columns, "random weights");
+        check(
+            &structured(u1.clone(), u2.clone()),
+            &by_columns,
+            "random weights",
+        );
     }
 }
 
@@ -863,15 +945,21 @@ fn chained_hole_cells_cannot_carry_a_derived_bit() {
     let shape = g.shape().unwrap();
     let honest_f = g.committed_rows(&prepared.f_layout, &witness.f_rows);
     let honest_h = g.derived_rows(&prepared.h_layout, &witness.h_rows);
-    let bit = |rows: &[Vec<u64>], (row, block): (usize, usize)| rows[block][row / 64] >> (row % 64) & 1;
+    let bit =
+        |rows: &[Vec<u64>], (row, block): (usize, usize)| rows[block][row / 64] >> (row % 64) & 1;
     let flip = |rows: &mut [Vec<u64>], (row, block): (usize, usize)| {
         rows[block][row / 64] ^= 1u64 << (row % 64);
     };
 
     let q: u128 = (1u128 << 100) - 15;
-    let params =
-        BitZParams::new(shape, q, crate::piop::spartan::protocol::bitz_generator().into()).unwrap();
-    let pcs = Pcs::with_security(&shape, chained.ligerito.security(), LigeritoProfile::Fast).unwrap();
+    let params = BitZParams::new(
+        shape,
+        q,
+        crate::piop::spartan::protocol::bitz_generator().into(),
+    )
+    .unwrap();
+    let pcs =
+        Pcs::with_security(&shape, chained.ligerito.security(), LigeritoProfile::Fast).unwrap();
     let mut state = 0x9e37_79b9_7f4a_7c15u64;
     let mut next = move || {
         state ^= state << 13;
@@ -882,13 +970,20 @@ fn chained_hole_cells_cannot_carry_a_derived_bit() {
     let mut residue = move || ((u128::from(next()) << 64) | u128::from(next())) % q;
     let row_weights: Vec<u128> = (0..shape.rows()).map(|_| residue()).collect();
     let col_weights: Vec<u128> = (0..shape.columns()).map(|_| residue()).collect();
-    let unresolved = LinearClaim::new(&params, row_weights.clone(), col_weights.clone(), 0).unwrap();
-    let target_of = |h: &[Vec<u64>]| reconstruct(&unresolved, &fold_columns(&shape, h, &row_weights), q);
+    let unresolved =
+        LinearClaim::new(&params, row_weights.clone(), col_weights.clone(), 0).unwrap();
+    let target_of =
+        |h: &[Vec<u64>]| reconstruct(&unresolved, &fold_columns(&shape, h, &row_weights), q);
     // Proves the claim on `h` against the commitment to `f`; `Ok` iff both
     // roles accept.
     let open = |f: &[Vec<u64>], h: &[Vec<u64>]| -> bool {
-        let claim =
-            LinearClaim::new(&params, row_weights.clone(), col_weights.clone(), target_of(h)).unwrap();
+        let claim = LinearClaim::new(
+            &params,
+            row_weights.clone(),
+            col_weights.clone(),
+            target_of(h),
+        )
+        .unwrap();
         let statement = ChainedStatement::new(
             params,
             g.clone(),
@@ -908,15 +1003,32 @@ fn chained_hole_cells_cannot_carry_a_derived_bit() {
         }
         let proof = prover.finish();
         BitZVerifier::new(params, WINDOW)
-            .verify_chained(&statement, &pcs, root, build_verifier(b"chained-holes", b"instance", &proof), None)
+            .verify_chained(
+                &statement,
+                &pcs,
+                root,
+                build_verifier(b"chained-holes", b"instance", &proof),
+                None,
+            )
             .is_ok()
     };
-    assert!(open(&honest_f, &honest_h), "the honest grids prove and verify");
+    assert!(
+        open(&honest_f, &honest_h),
+        "the honest grids prove and verify"
+    );
 
     let honest_target = target_of(&honest_h);
     for (name, hole, mirror) in [
-        ("aliased tail row 1", g.committed_tail_position(1), g.derived_position(g.h_offset + 1)),
-        ("instance 0's local row 2^14", (0, g.sha_blocks), (0, g.instances)),
+        (
+            "aliased tail row 1",
+            g.committed_tail_position(1),
+            g.derived_position(g.h_offset + 1),
+        ),
+        (
+            "instance 0's local row 2^14",
+            (0, g.sha_blocks),
+            (0, g.instances),
+        ),
         (
             "past the tail's end",
             g.committed_tail_position(g.tail_rows + 3),
@@ -924,10 +1036,18 @@ fn chained_hole_cells_cannot_carry_a_derived_bit() {
         ),
     ] {
         let (mut f, mut h) = (honest_f.clone(), honest_h.clone());
-        assert_eq!(bit(&f, hole), 0, "{name}: the honest layout leaves the hole at zero");
+        assert_eq!(
+            bit(&f, hole),
+            0,
+            "{name}: the honest layout leaves the hole at zero"
+        );
         flip(&mut f, hole);
         flip(&mut h, mirror);
-        assert_ne!(target_of(&h), honest_target, "{name}: the claim is false for M·f");
+        assert_ne!(
+            target_of(&h),
+            honest_target,
+            "{name}: the claim is false for M·f"
+        );
         assert!(!open(&f, &h), "{name}: a hole cell carried a derived bit");
     }
 }
@@ -980,7 +1100,13 @@ fn wfbitz_security_uses_the_committed_ladder() {
                     .blocks
                     .iter()
                     .filter(|b| b.label.starts_with("flock/"))
-                    .map(|b| (b.label.clone(), b.failure_probability_bound, b.grinding_bits))
+                    .map(|b| {
+                        (
+                            b.label.clone(),
+                            b.failure_probability_bound,
+                            b.grinding_bits,
+                        )
+                    })
                     .collect();
                 let expected: Vec<_> = plan
                     .blocks
@@ -1001,8 +1127,7 @@ fn wfbitz_security_profiles_cover_the_100_bit_target_for_all_shapes() {
     for circuit in EcdsaCircuit::ALL {
         for exponent in 3..=7 {
             for mode in [OuterMode::Split, OuterMode::AllRows] {
-                let prepared = prepare_sha256_ecdsa_on(circuit, exponent, 100, mode)
-                    .unwrap();
+                let prepared = prepare_sha256_ecdsa_on(circuit, exponent, 100, mode).unwrap();
                 assert!(prepared.wfbitz.is_some());
                 let security = prepared.security().unwrap();
                 assert!(security.compute_economic_security_bits() >= 100.);
