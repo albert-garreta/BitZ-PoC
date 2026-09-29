@@ -367,17 +367,6 @@ impl TraceWriter {
             "tags": {
                 "root_boundary": "verified trial: prover plus verification; setup and input generation excluded",
                 "timeline": "observed half-open intervals",
-                "bitz_rs_fast": env_setting("BITZ_RS_FAST", "default:on"),
-                "bitz_foldv_lut": env_setting("BITZ_FOLDV_LUT", "default:on"),
-                "bitz_flat_forest": env_setting("BITZ_FLAT_FOREST", "default:shape-dependent"),
-                "bitz_t4_factored": env_setting("BITZ_T4_FACTORED", "default:schedule-dependent"),
-                "bitz_jit_r1": env_setting("BITZ_JIT_R1", "default:on"),
-                "bitz_jit_grid": env_setting("BITZ_JIT_GRID", "default:on"),
-                "bitz_t4_prfm": env_setting("BITZ_T4_PRFM", "default:shape-dependent"),
-                "bitz_lut3": env_setting("BITZ_LUT3", "default:on"),
-                "bitz_lut4": env_setting("BITZ_LUT4", "default:off"),
-                "bitz_col_elide": env_setting("BITZ_COL_ELIDE", "default:on"),
-                "bitz_quad": env_setting("BITZ_QUAD", "default:off"),
             },
         });
         self.output.write(&run).expect("write SHA trace run");
@@ -481,9 +470,7 @@ fn describe_span(interval: &Interval, by_order: &HashMap<u64, &Interval>) -> Spa
     let product_batch_prepare = has_fragment("product_batch_prepare_");
     let inner_sumcheck = has_fragment("spartan_inner_") || under("spartan:inner_sumcheck");
     let spartan = inner_sumcheck || local_relation_collapse || product_batch_prepare;
-    let sumcheck = inner_sumcheck || under("eqf:rounds") || under("mc:presum_run");
-    let in_eq_factored = labels.iter().any(|label| label.starts_with("eqf:"));
-    let fri = !in_eq_factored && bitz_opening && (under("mc:forest") || under("mc:fold_v"));
+    let sumcheck = inner_sumcheck;
 
     let primary_phase = if root {
         "end-to-end"
@@ -535,9 +522,6 @@ fn describe_span(interval: &Interval, by_order: &HashMap<u64, &Interval>) -> Spa
         }
         if sumcheck {
             push_tag(&mut phase_tags, "sumcheck");
-        }
-        if fri {
-            push_tag(&mut phase_tags, "fri");
         }
     }
 
@@ -737,10 +721,6 @@ fn operation_name(label: &str) -> String {
 
 fn span_id(order: u64) -> String {
     format!("span-{order}")
-}
-
-fn env_setting(name: &str, default: &str) -> String {
-    std::env::var(name).unwrap_or_else(|_| default.to_owned())
 }
 
 fn command_output(program: &str, args: &[&str], fallback: &str) -> String {

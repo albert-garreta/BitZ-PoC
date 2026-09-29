@@ -82,10 +82,8 @@ pub struct IopInstanceFacts {
     pub lift_arity_log2: u32,
     /// Row variables `t` of the tensor the BitZ opening runs against.
     pub opening_t: u32,
-    /// Word width `W` of that tensor.
-    pub opening_word_bits: u32,
     /// Whether the opening prime feeds the DIRECT exponent-fold opener
-    /// (then `q_bits <= c_w = 127 - t - W` is enforced). The virtual
+    /// (then `q_bits <= c_w = 126 - t` is enforced). The virtual
     /// opening path caps its fold width from `q_bits` instead.
     pub direct_opening: bool,
     /// Worst union arity of one q-sized challenge draw (the zerocheck τ
@@ -414,8 +412,8 @@ pub enum ProfileError {
     #[error("invalid native opening policy: {0}")]
     NativeOpening(String),
     /// The exponent-fold geometry rejects the shape outright.
-    #[error("exponent-fold geometry needs t + W <= 126, got t={t}, W={word_bits}")]
-    ShapeTooWide { t: u32, word_bits: u32 },
+    #[error("prime-selection geometry needs t <= 125, got t={t}")]
+    ShapeTooWide { t: u32 },
 
     /// No prime interval satisfies every width constraint.
     #[error("no admissible prime interval: width would be {width_bits} bits")]
@@ -490,13 +488,10 @@ fn derive_params(
     facts: &IopInstanceFacts,
 ) -> Result<IopSecurityParams, ProfileError> {
     let lambda_f = f64::from(lambda);
-    if facts.opening_t + facts.opening_word_bits > 126 {
-        return Err(ProfileError::ShapeTooWide {
-            t: facts.opening_t,
-            word_bits: facts.opening_word_bits,
-        });
+    if facts.opening_t > 125 {
+        return Err(ProfileError::ShapeTooWide { t: facts.opening_t });
     }
-    let c_w = 127 - facts.opening_t - facts.opening_word_bits;
+    let c_w = 126 - facts.opening_t;
     let mut terms = Vec::new();
 
     // The width of a derived (non-fingerprint) interval: the Strategy-1
@@ -703,7 +698,7 @@ mod tests {
             defect_log2_bound: 8210,
             lift_arity_log2: 13,
             opening_t: 13,
-            opening_word_bits: 1,
+
             direct_opening: true,
             tau_arity: 15,
             piop_degree: 3,
@@ -718,7 +713,7 @@ mod tests {
             lift_arity_log2: log_compressions,
             // The SHA opening is virtual (fold width capped from q_bits).
             opening_t: log_compressions,
-            opening_word_bits: 1,
+
             direct_opening: false,
             tau_arity: 8 + log_compressions,
             piop_degree: 3,
@@ -879,8 +874,7 @@ mod tests {
     #[test]
     fn oversized_shapes_are_rejected() {
         let mut facts = multiswap_facts();
-        facts.opening_t = 120;
-        facts.opening_word_bits = 8;
+        facts.opening_t = 126;
         assert!(matches!(
             Limber114::instantiate(&facts),
             Err(ProfileError::ShapeTooWide { .. })

@@ -208,7 +208,6 @@ impl RelationSpec for MultiswapSpec {
         let params = self.committed_layout();
         multiswap_instance_facts(
             u32::try_from(params.row_vars).expect("row variables fit u32"),
-            u32::try_from(params.word_bits).expect("word bits fit u32"),
             u32::try_from(self.layout().gate_vars() + 2).expect("assignment variables fit u32"),
         )
     }
@@ -228,7 +227,7 @@ impl RelationSpec for MultiswapSpec {
 
     fn validate_geometry(&self) -> Result<(), ProtocolError> {
         let params = self.committed_layout();
-        if params.word_bits != 1 || cell_count(&params) % IDENTITY_LOCAL_ROWS != 0 {
+        if cell_count(&params) % IDENTITY_LOCAL_ROWS != 0 {
             return Err(ProtocolError::InvalidBitzParameters);
         }
         Ok(())
@@ -306,7 +305,7 @@ impl RelationSpec for MultiswapSpec {
             layout.assignment_len(),
             p.row_vars,
             p.col_vars,
-            p.word_bits,
+            1usize,
             MULTISWAP_VALUE_BITS,
             reduction.grinding_bits as usize,
         ])?;
@@ -492,9 +491,6 @@ pub fn commit_multiswap_witness(
     rows: Vec<Vec<u64>>,
     pc: &LigProverConfig,
 ) -> Result<FlockCommitHint, ProtocolError> {
-    if p.word_bits != 1 {
-        return Err(ProtocolError::InvalidBitzParameters);
-    }
     protocol::validate_bit_rows(p, &rows)?;
     let hint = crate::ligerito_flock::commit_rs_ligerito_rows(p, rows, pc);
     crate::ligerito_flock::validate_ligerito_commitment(&hint.commitment, pc)

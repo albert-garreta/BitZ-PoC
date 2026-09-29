@@ -1122,7 +1122,6 @@ fn product_opening_claim(
     let instance_vars = instance_vars(batching.instances)?;
     if !batching.instances.is_power_of_two()
         || batching.instance_point.len() != instance_vars
-        || h_layout.word_bits != 1
         || h_layout.row_vars + h_layout.col_vars != instance_vars + 15
         || batching.local_coefficients.len() != SHA256_H_BAR_LIVE_BITS
     {
@@ -1726,8 +1725,7 @@ pub(super) fn field_from_raw(
 
 pub(super) fn validate_source_params(f_layout: &IntegerMatrixLayout) -> Result<(), ProtocolError> {
     let host_bits = usize::BITS as usize;
-    if f_layout.word_bits != 1
-        || f_layout.row_vars < LOG_PACKING
+    if f_layout.row_vars < LOG_PACKING
         || f_layout.row_vars.saturating_add(f_layout.col_vars) > 126
         || f_layout.row_vars >= host_bits
         || f_layout.col_vars >= host_bits
@@ -1744,8 +1742,7 @@ fn validate_common_geometry(
     f_layout: &IntegerMatrixLayout,
 ) -> Result<(), ProtocolError> {
     validate_source_params(f_layout)?;
-    if h_layout.word_bits != 1
-        || h_layout.row_vars < LOG_PACKING
+    if h_layout.row_vars < LOG_PACKING
         || h_layout.row_vars.saturating_add(h_layout.col_vars) > 126
         || map.rows() != cell_count(h_layout)
         || map.cols() != cell_count(f_layout)
@@ -1785,8 +1782,7 @@ fn validate_product_geometry(
             map.instances() * local_stride,
         ),
     };
-    if h_layout.word_bits != 1
-        || h_layout.row_vars < t_min
+    if h_layout.row_vars < t_min
         || h_layout.row_vars > t_max
         || h_layout.row_vars.saturating_add(h_layout.col_vars) != instance_vars + 15
         || map.rows() != cell_count(h_layout)
@@ -1943,11 +1939,7 @@ fn assignment_binding(
         (Some(product_map), Some(product_params)) => {
             hash.update(&[1]);
             hash.update(&product_map.digest());
-            for value in [
-                product_params.row_vars,
-                product_params.col_vars,
-                product_params.word_bits,
-            ] {
+            for value in [product_params.row_vars, product_params.col_vars, 1usize] {
                 hash_usize(&mut hash, value)?;
             }
         }
@@ -1965,10 +1957,10 @@ fn assignment_binding(
         prepared.log_instance_capacity(),
         prepared.assignment_params().row_vars,
         prepared.assignment_params().col_vars,
-        prepared.assignment_params().word_bits,
+        1usize,
         prepared.source_params().row_vars,
         prepared.source_params().col_vars,
-        prepared.source_params().word_bits,
+        1usize,
     ] {
         hash_usize(&mut hash, value)?;
     }
@@ -3132,7 +3124,9 @@ mod tests {
 
         let assignment_point = (0..prepared.assignment_params().row_vars
             + prepared.assignment_params().col_vars)
-            .map(|coordinate| SpartanBitzField::from_with_cfg(coordinate as u64 + 37, &field_config))
+            .map(|coordinate| {
+                SpartanBitzField::from_with_cfg(coordinate as u64 + 37, &field_config)
+            })
             .collect::<Vec<_>>();
         let assignment_equality = FactoredEqualityWeights::new(
             &assignment_point,
@@ -3154,7 +3148,9 @@ mod tests {
             .expect("102-instance packed test relation");
         let field_config = Fp::<2>::make_cfg(&Uint::from(FQ_MOD)).expect("fixed test field");
         let instance_point = (0..instance_vars(prepared.instances()).unwrap())
-            .map(|coordinate| SpartanBitzField::from_with_cfg(coordinate as u64 + 41, &field_config))
+            .map(|coordinate| {
+                SpartanBitzField::from_with_cfg(coordinate as u64 + 41, &field_config)
+            })
             .collect::<Vec<_>>();
         let instance_weights = eq_table(&instance_point, &field_config).unwrap();
         let active_sum = instance_weights.iter().take(prepared.instances()).fold(
@@ -3236,7 +3232,9 @@ mod tests {
 
         let assignment_point = (0..prepared.assignment_params().row_vars
             + prepared.assignment_params().col_vars)
-            .map(|coordinate| SpartanBitzField::from_with_cfg(coordinate as u64 + 29, &field_config))
+            .map(|coordinate| {
+                SpartanBitzField::from_with_cfg(coordinate as u64 + 29, &field_config)
+            })
             .collect::<Vec<_>>();
         let dense_equality = eq_table(&assignment_point, &field_config).unwrap();
         let factored = FactoredEqualityWeights::new(

@@ -400,7 +400,7 @@ there.
 ### Raw performance of BitZ PCS on the core LinBitsRings relation
 
 ```sh
-RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
+RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked,span-metrics -- \
     --sweep 20-30 --threads 8 --reps 5 --profile custom:1:4
 ```
 
@@ -423,7 +423,7 @@ see `docs/fields-witch-compare.md` for the measured comparison.
 git clone https://github.com/morgana-proofs/fields-witch ../fields-witch   # measured at 30cca8c
 (cd ../fields-witch && CARGO_TARGET_DIR=target \
     RUSTFLAGS="-C target-cpu=native" cargo build --release --examples)
-RUSTFLAGS="-C target-cpu=native" cargo build --release --features unchecked --bin bitz
+RUSTFLAGS="-C target-cpu=native" cargo build --release --features unchecked,span-metrics --bin bitz
 python3 scripts/run_fields_witch_compare.py \
     --fw-bin ../fields-witch/target/release/examples/protocol_profile \
     --sizes 14,16,18,20,22 --threads 1,8 --reps 5 \

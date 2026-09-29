@@ -265,8 +265,6 @@ fn validate_geometry(
     h_layout: &IntegerMatrixLayout,
 ) -> Result<(), Sha256WitnessError> {
     if instances == 0
-        || f_layout.word_bits != 1
-        || h_layout.word_bits != 1
         || f_layout.cells() != (1 + instances * SHA256_F_INSTANCE_BITS).next_power_of_two()
         || h_layout.cells() != (1 + instances * SHA256_H_INSTANCE_BITS).next_power_of_two()
     {

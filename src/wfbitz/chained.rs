@@ -141,7 +141,11 @@ impl ChainedGeometry {
         // The tensors carry `first` through its constant column only and no
         // constant read of the chain link (which `ChainedPackedSourceMap::new`
         // refuses too): other maps are not eligible for this opening.
-        if parts.prev.matrix().column(0).is_none_or(|column| !column.is_empty())
+        if parts
+            .prev
+            .matrix()
+            .column(0)
+            .is_none_or(|column| !column.is_empty())
             || ChainedPackedSourceMap::nonconstant_column_span(parts.first) != (0, 0)
         {
             return Err(ChainedError::Boundary);
@@ -236,7 +240,11 @@ impl ChainedGeometry {
     /// cells copied word by word, the tail transposed chunk by chunk (see
     /// [`transpose_chunk`]); the reference bit walk is
     /// [`Self::committed_rows_reference`].
-    pub fn committed_rows(&self, native: &IntegerMatrixLayout, f_rows: &[Vec<u64>]) -> Vec<Vec<u64>> {
+    pub fn committed_rows(
+        &self,
+        native: &IntegerMatrixLayout,
+        f_rows: &[Vec<u64>],
+    ) -> Vec<Vec<u64>> {
         let shape = Shape::new(LOG_ROWS, self.native_bits - LOG_ROWS).expect("validated geometry");
         // Only the real cells are read: whatever sits past the last tail cell
         // in the native grid is padding, not a committed source.
@@ -250,8 +258,7 @@ impl ChainedGeometry {
         // Tail chunk `m ≥ 1` (derived blocks `n·m..n·m+n`): source of cell
         // `(i, r)` is `f_offset − aliases + i + n·(m·2^LOG_ROWS + r) − h_offset`.
         let tail_base = |m: usize| -> isize {
-            (self.f_offset + n * (m << LOG_ROWS)) as isize
-                - (self.aliases + self.h_offset) as isize
+            (self.f_offset + n * (m << LOG_ROWS)) as isize - (self.aliases + self.h_offset) as isize
         };
         let boundary = self.local_rows - (1 << LOG_ROWS); // first tail row of chunk 1
         let build_chunk = |m: usize| -> Vec<Vec<u64>> {
@@ -305,7 +312,12 @@ impl ChainedGeometry {
         };
         #[cfg(feature = "parallel")]
         let (sha, tail): (Vec<Vec<u64>>, Vec<Vec<Vec<u64>>>) = rayon::join(
-            || (0..self.sha_blocks).into_par_iter().map(sha_block).collect(),
+            || {
+                (0..self.sha_blocks)
+                    .into_par_iter()
+                    .map(sha_block)
+                    .collect()
+            },
             || (1..chunks).into_par_iter().map(build_chunk).collect(),
         );
         #[cfg(not(feature = "parallel"))]
@@ -325,7 +337,11 @@ impl ChainedGeometry {
     }
 
     /// [`Self::committed_rows`] as one bit walk (the reference).
-    pub fn committed_rows_reference(&self, native: &IntegerMatrixLayout, f_rows: &[Vec<u64>]) -> Vec<Vec<u64>> {
+    pub fn committed_rows_reference(
+        &self,
+        native: &IntegerMatrixLayout,
+        f_rows: &[Vec<u64>],
+    ) -> Vec<Vec<u64>> {
         let shape = Shape::new(LOG_ROWS, self.native_bits - LOG_ROWS).expect("validated geometry");
         let native_cells = native.cells();
         let t_f = native.row_vars;
@@ -401,7 +417,14 @@ impl ChainedGeometry {
         let chunks = shape.columns() >> self.log_instances;
         let build_chunk = |m: usize| -> Vec<Vec<u64>> {
             let mut out = vec![vec![0u64; words]; n];
-            transpose_chunk(h_rows, t_h, native_cells, (n * (m << LOG_ROWS)) as isize, n, &mut out);
+            transpose_chunk(
+                h_rows,
+                t_h,
+                native_cells,
+                (n * (m << LOG_ROWS)) as isize,
+                n,
+                &mut out,
+            );
             out
         };
         #[cfg(feature = "parallel")]
@@ -416,7 +439,11 @@ impl ChainedGeometry {
     }
 
     /// [`Self::derived_rows`] as one bit walk (the reference).
-    pub fn derived_rows_reference(&self, native: &IntegerMatrixLayout, h_rows: &[Vec<u64>]) -> Vec<Vec<u64>> {
+    pub fn derived_rows_reference(
+        &self,
+        native: &IntegerMatrixLayout,
+        h_rows: &[Vec<u64>],
+    ) -> Vec<Vec<u64>> {
         let shape = Shape::new(LOG_ROWS, self.native_bits - LOG_ROWS).expect("validated geometry");
         let native_cells = native.cells();
         let t_h = native.row_vars;
@@ -452,7 +479,14 @@ impl ChainedGeometry {
 /// straddles a column): `out[i]` receives bit `i` of every row. Bits at
 /// negative or out-of-range offsets read as zero. Eight rows at a time: the
 /// `n/8` byte columns of those rows are 8×8 tiles.
-fn transpose_chunk(native: &[Vec<u64>], t_nat: usize, native_cells: usize, base: isize, n: usize, out: &mut [Vec<u64>]) {
+fn transpose_chunk(
+    native: &[Vec<u64>],
+    t_nat: usize,
+    native_cells: usize,
+    base: isize,
+    n: usize,
+    out: &mut [Vec<u64>],
+) {
     debug_assert!(n.is_power_of_two() && (8..=128).contains(&n));
     let mask_nat = (1usize << t_nat) - 1;
     let read = |offset: isize| -> u128 {
@@ -470,7 +504,11 @@ fn transpose_chunk(native: &[Vec<u64>], t_nat: usize, native_cells: usize, base:
         };
         // A word straddling the last real cell keeps only the real bits.
         let live = native_cells - o;
-        if live < n { word & ((1u128 << live) - 1) } else { word }
+        if live < n {
+            word & ((1u128 << live) - 1)
+        } else {
+            word
+        }
     };
     let bytes = n / 8;
     let mut words = [0u128; 8];
@@ -820,7 +858,9 @@ impl BitZProver {
             return Err(ProveError::Chained(ChainedError::ParameterMismatch));
         }
         if derived_rows.len() != shape.columns()
-            || derived_rows.iter().any(|row| row.len() * 64 != shape.rows())
+            || derived_rows
+                .iter()
+                .any(|row| row.len() * 64 != shape.rows())
         {
             return Err(ProveError::Witness);
         }
@@ -834,9 +874,11 @@ impl BitZProver {
         let started = std::time::Instant::now();
         let shape = statement.shape();
         let binary = (shape.log_rows(), shape.log_columns());
-        let native = pcs.native_schedule(Some(shape), Some(binary), ood)
+        let native = pcs
+            .native_schedule(Some(shape), Some(binary), ood)
             .map_err(|_| ProveError::Opening(crate::wfbitz::pcs::ProveError::Internal))?;
-        transcript.start_native(native)
+        transcript
+            .start_native(native)
             .map_err(|_| ProveError::Opening(crate::wfbitz::pcs::ProveError::Internal))?;
         let fold = self
             .send_fold(statement.claim, derived_rows, transcript)
@@ -846,7 +888,6 @@ impl BitZProver {
         let layout = IntegerMatrixLayout {
             row_vars: shape.log_rows(),
             col_vars: shape.log_columns(),
-            word_bits: 1,
         };
         let packed = crate::ligerito::pack_columns_from_rows(&layout, derived_rows);
         let query = reduce::gkr_reduce_prove_packed(transcript, &fold, &shape, &packed)
@@ -854,7 +895,9 @@ impl BitZProver {
         drop(packed);
         super::trace("gkr", started);
         let started = std::time::Instant::now();
-        let query = statement.transpose_query(query).map_err(ProveError::Chained)?;
+        let query = statement
+            .transpose_query(query)
+            .map_err(ProveError::Chained)?;
         super::trace("transpose (structured)", started);
         let started = std::time::Instant::now();
         let result = pcs
@@ -887,9 +930,11 @@ impl BitZVerifier {
         let started = std::time::Instant::now();
         let shape = statement.shape();
         let binary = (shape.log_rows(), shape.log_columns());
-        let native = pcs.native_schedule(Some(shape), Some(binary), ood)
+        let native = pcs
+            .native_schedule(Some(shape), Some(binary), ood)
             .map_err(|_| VerifyError::Opening(crate::wfbitz::pcs::VerifyError::Internal))?;
-        transcript.start_native(native)
+        transcript
+            .start_native(native)
             .map_err(|_| VerifyError::Opening(crate::wfbitz::pcs::VerifyError::Internal))?;
         let fold = self
             .receive_fold(statement.claim, &mut transcript)
@@ -900,7 +945,9 @@ impl BitZVerifier {
             .map_err(VerifyError::Reduction)?;
         super::trace("v: gkr", started);
         let started = std::time::Instant::now();
-        let query = statement.transpose_query(query).map_err(VerifyError::Chained)?;
+        let query = statement
+            .transpose_query(query)
+            .map_err(VerifyError::Chained)?;
         super::trace("v: transpose (structured)", started);
         let started = std::time::Instant::now();
         pcs.verify_lin(&com, &query, StatementBinding::Bind, &mut transcript, ood)
@@ -958,17 +1005,42 @@ mod layout_tests {
         for instances in [8usize, 64, 128] {
             let g = geometry(instances);
             let mut state = 0x0123_4567_89ab_cdefu64 ^ instances as u64;
-            let native_h = IntegerMatrixLayout { row_vars: 11, col_vars: g.native_bits - 11, word_bits: 1 };
-            let f_bits = (g.f_offset + g.tail_rows - g.aliases).next_power_of_two().ilog2() as usize;
-            let native_f = IntegerMatrixLayout { row_vars: 11, col_vars: f_bits - 11, word_bits: 1 };
+            let native_h = IntegerMatrixLayout {
+                row_vars: 11,
+                col_vars: g.native_bits - 11,
+            };
+            let f_bits = (g.f_offset + g.tail_rows - g.aliases)
+                .next_power_of_two()
+                .ilog2() as usize;
+            let native_f = IntegerMatrixLayout {
+                row_vars: 11,
+                col_vars: f_bits - 11,
+            };
             let h_rows = random_rows(&mut state, &native_h);
             let f_rows = random_rows(&mut state, &native_f);
-            assert_eq!(g.derived_rows(&native_h, &h_rows), g.derived_rows_reference(&native_h, &h_rows), "derived, n = {instances}");
-            let (got, want) = (g.committed_rows(&native_f, &f_rows), g.committed_rows_reference(&native_f, &f_rows));
-            assert_eq!(got.len(), want.len(), "committed block count, n = {instances}");
+            assert_eq!(
+                g.derived_rows(&native_h, &h_rows),
+                g.derived_rows_reference(&native_h, &h_rows),
+                "derived, n = {instances}"
+            );
+            let (got, want) = (
+                g.committed_rows(&native_f, &f_rows),
+                g.committed_rows_reference(&native_f, &f_rows),
+            );
+            assert_eq!(
+                got.len(),
+                want.len(),
+                "committed block count, n = {instances}"
+            );
             for (block, (a, b)) in got.iter().zip(&want).enumerate() {
                 for (w, (x, y)) in a.iter().zip(b).enumerate() {
-                    assert_eq!(x, y, "committed n = {instances}: block {block} (sha_blocks {}) word {w} (rows {}..): got {x:#x} want {y:#x}", g.sha_blocks, w * 64);
+                    assert_eq!(
+                        x,
+                        y,
+                        "committed n = {instances}: block {block} (sha_blocks {}) word {w} (rows {}..): got {x:#x} want {y:#x}",
+                        g.sha_blocks,
+                        w * 64
+                    );
                 }
             }
         }
@@ -991,15 +1063,25 @@ mod geometry_tests {
         for &(row, column) in entries {
             table[row].push(column);
         }
-        PreparedVirtualMap::from_implicit(CscMatrix::try_from_binary_rows(columns, table).expect("csr"))
-            .expect("map")
+        PreparedVirtualMap::from_implicit(
+            CscMatrix::try_from_binary_rows(columns, table).expect("csr"),
+        )
+        .expect("map")
     }
 
     /// The four local maps with `rows` rows; `prev` and `first` take the
     /// given entries.
-    fn locals(rows: usize, prev: &[(usize, usize)], first: &[(usize, usize)]) -> [PreparedVirtualMap; 4] {
+    fn locals(
+        rows: usize,
+        prev: &[(usize, usize)],
+        first: &[(usize, usize)],
+    ) -> [PreparedVirtualMap; 4] {
         [
-            map(rows, LOCAL_COLUMNS, &[(0, 0), (1, 1), (2, 2), (rows - 1, 1)]),
+            map(
+                rows,
+                LOCAL_COLUMNS,
+                &[(0, 0), (1, 1), (2, 2), (rows - 1, 1)],
+            ),
             map(rows, LOCAL_COLUMNS, prev),
             map(rows, LOCAL_COLUMNS, first),
             map(rows, LOCAL_COLUMNS, &[(9, 0), (9, 2)]),
@@ -1011,7 +1093,13 @@ mod geometry_tests {
     fn digest(n: usize, len: usize) -> Vec<usize> {
         let first = 1 + (n - 1) * (LOCAL_COLUMNS - 1);
         (0..len)
-            .map(|sigma| if sigma == 0 { 0 } else { first + (sigma - 1) % (LOCAL_COLUMNS - 1) })
+            .map(|sigma| {
+                if sigma == 0 {
+                    0
+                } else {
+                    first + (sigma - 1) % (LOCAL_COLUMNS - 1)
+                }
+            })
             .collect()
     }
 
@@ -1025,7 +1113,13 @@ mod geometry_tests {
     ) -> Result<ChainedGeometry, ChainedError> {
         let identity: Vec<(usize, usize)> = (0..TAIL_ROWS).map(|row| (row, row)).collect();
         let tail_map = map(TAIL_ROWS, TAIL_ROWS, &identity);
-        let parts = ChainedPackedSourceParts { local, prev, first, last, instances: n };
+        let parts = ChainedPackedSourceParts {
+            local,
+            prev,
+            first,
+            last,
+            instances: n,
+        };
         let tail = ChainedSourceTail {
             map: &tail_map,
             row_offset: local.rows() * n,
@@ -1033,7 +1127,8 @@ mod geometry_tests {
             aliases,
         };
         let cells = local.rows() * n + TAIL_ROWS;
-        let native_bits = (n.ilog2() as usize + LOG_ROWS + 1).max(cells.next_power_of_two().ilog2() as usize);
+        let native_bits =
+            (n.ilog2() as usize + LOG_ROWS + 1).max(cells.next_power_of_two().ilog2() as usize);
         ChainedGeometry::new(&parts, &tail, native_bits)
     }
 
@@ -1046,12 +1141,20 @@ mod geometry_tests {
         let aliases = digest(8, 257);
         // The transposes read an instance row as one word of 8..=128 bits.
         for n in [2usize, 4, 256, 512] {
-            assert_eq!(geometry(n, &good, &digest(n, 257)), Err(ChainedError::Instances), "n = {n}");
+            assert_eq!(
+                geometry(n, &good, &digest(n, 257)),
+                Err(ChainedError::Instances),
+                "n = {n}"
+            );
         }
         // The prover's layout starts the tail inside the second sub-block.
         for rows in [(1 << LOG_ROWS) - 1, 2 << LOG_ROWS] {
             let local_rows = locals(rows, &[(5, 1), (5, 2)], &[(7, 0)]);
-            assert_eq!(geometry(8, &local_rows, &aliases), Err(ChainedError::LocalRows), "{rows} rows");
+            assert_eq!(
+                geometry(8, &local_rows, &aliases),
+                Err(ChainedError::LocalRows),
+                "{rows} rows"
+            );
         }
         // The tail cells start off an instance-row word.
         assert_eq!(geometry(8, &good, &digest(8, 258)), Err(ChainedError::Tail));
@@ -1064,13 +1167,23 @@ mod geometry_tests {
         for source in [0, 1, 1 + (LOCAL_COLUMNS - 1) * 8] {
             let mut stray = aliases.clone();
             stray[1] = source;
-            assert_eq!(geometry(8, &good, &stray), Err(ChainedError::Tail), "source {source}");
+            assert_eq!(
+                geometry(8, &good, &stray),
+                Err(ChainedError::Tail),
+                "source {source}"
+            );
         }
         // The chain link reads the constant.
         let prev_constant = locals(LOCAL_ROWS, &[(5, 0), (5, 2)], &[(7, 0)]);
-        assert_eq!(geometry(8, &prev_constant, &aliases), Err(ChainedError::Boundary));
+        assert_eq!(
+            geometry(8, &prev_constant, &aliases),
+            Err(ChainedError::Boundary)
+        );
         // The first instance's boundary map reads a nonconstant cell.
         let first_cell = locals(LOCAL_ROWS, &[(5, 1), (5, 2)], &[(7, 0), (8, 1)]);
-        assert_eq!(geometry(8, &first_cell, &aliases), Err(ChainedError::Boundary));
+        assert_eq!(
+            geometry(8, &first_cell, &aliases),
+            Err(ChainedError::Boundary)
+        );
     }
 }

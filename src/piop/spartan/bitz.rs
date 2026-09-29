@@ -90,7 +90,7 @@ pub(crate) fn u32_mul_instance_facts(p: &IntegerMatrixLayout, row_vars: usize) -
         defect_log2_bound: 80,
         lift_arity_log2: p.row_vars as u32,
         opening_t: p.row_vars as u32,
-        opening_word_bits: p.word_bits as u32,
+
         direct_opening: true,
         tau_arity: row_vars.max(1) as u32,
         piop_degree: U32_MUL_UNIVARIATE_SKIP_DEGREE,
@@ -207,7 +207,7 @@ impl RelationSpec for MulLayout<u32> {
             MulLayout::<u32>::gate_vars(self),
             p.row_vars,
             p.col_vars,
-            p.word_bits,
+            1usize,
             U32_MUL_UNIVARIATE_SKIP_VARS,
             U32_MUL_UNIVARIATE_SKIP_DEGREE as usize,
         ])?;
@@ -223,7 +223,7 @@ impl RelationSpec for MulLayout<u32> {
             MulLayout::<u32>::gate_vars(self),
             p.row_vars,
             p.col_vars,
-            p.word_bits,
+            1usize,
             U32_MUL_X_SLOT_START,
             U32_MUL_X_BITS,
             U32_MUL_Y_SLOT_START,
@@ -462,7 +462,7 @@ mod tests {
         );
         let p = layout.bitz_params();
         let width = (128 - security.projection_max.leading_zeros()) as usize;
-        assert!(width <= 127 - p.row_vars - p.word_bits, "q_bits <= c_w");
+        assert!(width <= 126 - p.row_vars, "q_bits <= c_w");
         assert!(
             crate::wfbitz::Shape::new(p.row_vars, p.col_vars)
                 .unwrap()
@@ -750,14 +750,7 @@ mod tests {
             let mut read_off = Q100Element::from_u128(0);
             for b in 0..p.rows() {
                 for c in 0..p.cols() {
-                    let mut cell = 0_u128;
-                    for j in 0..p.word_bits {
-                        let packed_bit = b * p.word_bits + j;
-                        let bit = (rows[c][packed_bit / u64::BITS as usize]
-                            >> (packed_bit % u64::BITS as usize))
-                            & 1;
-                        cell |= u128::from(bit) << j;
-                    }
+                    let cell = u128::from((rows[c][b / 64] >> (b % 64)) & 1);
                     read_off = read_off
                         + Q100Element::from(cell)
                             * Q100Element::from_u128(prepared_row_weight(&prepared, b))

@@ -6,7 +6,7 @@ use crate::utils::cfg_iter_mut;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-/// A `2^row_vars × 2^col_vars` matrix of `word_bits`-bit integers.
+/// A `2^row_vars × 2^col_vars` matrix of bits.
 ///
 /// Row variables are folded with integer weights; column variables are used
 /// for the final evaluation with arbitrary field weights.
@@ -16,8 +16,6 @@ pub struct IntegerMatrixLayout {
     pub row_vars: usize,
     /// Number of final column variables; there are `2^col_vars` columns.
     pub col_vars: usize,
-    /// Word width `W`: every data cell is an integer in `[0, 2^W)`.
-    pub word_bits: usize,
 }
 
 impl IntegerMatrixLayout {

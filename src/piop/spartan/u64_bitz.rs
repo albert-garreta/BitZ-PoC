@@ -58,7 +58,7 @@ pub fn u64_mul_instance_facts(params: &IntegerMatrixLayout, row_vars: usize) -> 
         defect_log2_bound: 130,
         lift_arity_log2: params.row_vars as u32,
         opening_t: params.row_vars as u32,
-        opening_word_bits: params.word_bits as u32,
+
         direct_opening: true,
         tau_arity: row_vars.max(1) as u32,
         piop_degree: 3,
@@ -160,7 +160,7 @@ impl RelationSpec for MulLayout<u64> {
                     U64_MUL_BIT_SLOTS,
                     p.row_vars,
                     p.col_vars,
-                    p.word_bits,
+                    1usize,
                 ])?;
                 Ok(())
             },
@@ -180,7 +180,7 @@ impl RelationSpec for MulLayout<u64> {
             U64_MUL_PADDED_ASSIGNMENT_BLOCKS,
             p.row_vars,
             p.col_vars,
-            p.word_bits,
+            1usize,
             U64_MUL_X_SLOT_START,
             U64_MUL_Y_SLOT_START,
             U64_MUL_Z_LO_SLOT_START,

@@ -207,7 +207,9 @@ impl BitZProver {
             return Err(ProveError::Virtual(VirtualError::ParameterMismatch));
         }
         if derived_rows.len() != shape.columns()
-            || derived_rows.iter().any(|row| row.len() * 64 != shape.rows())
+            || derived_rows
+                .iter()
+                .any(|row| row.len() * 64 != shape.rows())
         {
             return Err(ProveError::Witness);
         }
@@ -220,10 +222,16 @@ impl BitZProver {
         super::trace_start();
         let started = std::time::Instant::now();
         let shape = *self.params.shape();
-        let binary = if statement.is_direct() { (shape.log_rows(), shape.log_columns()) } else { (statement.committed_shape().log_bits(), 0) };
-        let native = pcs.native_schedule(Some(shape), Some(binary), ood)
+        let binary = if statement.is_direct() {
+            (shape.log_rows(), shape.log_columns())
+        } else {
+            (statement.committed_shape().log_bits(), 0)
+        };
+        let native = pcs
+            .native_schedule(Some(shape), Some(binary), ood)
             .map_err(|_| ProveError::Opening(crate::wfbitz::pcs::ProveError::Internal))?;
-        transcript.start_native(native)
+        transcript
+            .start_native(native)
             .map_err(|_| ProveError::Opening(crate::wfbitz::pcs::ProveError::Internal))?;
         let fold = self
             .send_fold(statement.claim, derived_rows, transcript)
@@ -233,7 +241,6 @@ impl BitZProver {
         let layout = IntegerMatrixLayout {
             row_vars: shape.log_rows(),
             col_vars: shape.log_columns(),
-            word_bits: 1,
         };
         let packed = crate::ligerito::pack_columns_from_rows(&layout, derived_rows);
         let query = reduce::gkr_reduce_prove_packed(transcript, &fold, &shape, &packed)
@@ -242,7 +249,9 @@ impl BitZProver {
         super::trace("gkr", started);
 
         let started = std::time::Instant::now();
-        let query = statement.transpose_query(query).map_err(ProveError::Virtual)?;
+        let query = statement
+            .transpose_query(query)
+            .map_err(ProveError::Virtual)?;
         super::trace("transpose", started);
 
         let started = std::time::Instant::now();
@@ -289,10 +298,16 @@ impl BitZVerifier {
 
         let started = std::time::Instant::now();
         let shape = *self.params.shape();
-        let binary = if statement.is_direct() { (shape.log_rows(), shape.log_columns()) } else { (statement.committed_shape().log_bits(), 0) };
-        let native = pcs.native_schedule(Some(shape), Some(binary), ood)
+        let binary = if statement.is_direct() {
+            (shape.log_rows(), shape.log_columns())
+        } else {
+            (statement.committed_shape().log_bits(), 0)
+        };
+        let native = pcs
+            .native_schedule(Some(shape), Some(binary), ood)
             .map_err(|_| VerifyError::Opening(crate::wfbitz::pcs::VerifyError::Internal))?;
-        transcript.start_native(native)
+        transcript
+            .start_native(native)
             .map_err(|_| VerifyError::Opening(crate::wfbitz::pcs::VerifyError::Internal))?;
         let fold = self
             .receive_fold(statement.claim, &mut transcript)
@@ -303,7 +318,9 @@ impl BitZVerifier {
             .map_err(VerifyError::Reduction)?;
         super::trace("v: gkr", started);
         let started = std::time::Instant::now();
-        let query = statement.transpose_query(query).map_err(VerifyError::Virtual)?;
+        let query = statement
+            .transpose_query(query)
+            .map_err(VerifyError::Virtual)?;
         super::trace("v: transpose", started);
         let started = std::time::Instant::now();
         pcs.verify_lin(&com, &query, StatementBinding::Bind, &mut transcript, ood)

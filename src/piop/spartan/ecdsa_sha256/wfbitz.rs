@@ -39,7 +39,10 @@ const SESSION: &[u8] = b"bitz/sha256-ecdsa/wfbitz/v1";
 const CHAINED_SESSION: &[u8] = b"bitz/sha256-ecdsa/wfbitz-chained/v1";
 
 fn residues(values: Vec<F>, cfg: &Config) -> Vec<u128> {
-    values.iter().map(|x| u128::from(cfg.to_integer(x))).collect()
+    values
+        .iter()
+        .map(|x| u128::from(cfg.to_integer(x)))
+        .collect()
 }
 
 /// The eq tensor over `bits` of the point, scaled by `scale`, as residues.
@@ -86,19 +89,29 @@ fn block_weights(
 
 /// The claim grid, the committed grid and the ladder as the dense scheme
 /// sees them.
-fn dense_setup(prepared: &PreparedSha256Ecdsa, modulus: u128, security: &Sha256EcdsaSecurity) -> Result<(BitZParams, Shape, Pcs)> {
-    if prepared.h_layout.word_bits != 1 || prepared.f_layout.word_bits != 1 {
-        return Err(error("the wfbitz opener takes bit grids (word width one)"));
-    }
+fn dense_setup(
+    prepared: &PreparedSha256Ecdsa,
+    modulus: u128,
+    security: &Sha256EcdsaSecurity,
+) -> Result<(BitZParams, Shape, Pcs)> {
     let derived = Shape::new(prepared.h_layout.row_vars, prepared.h_layout.col_vars)
         .map_err(|e| error(format!("derived shape: {e:?}")))?;
     let committed = Shape::new(prepared.f_layout.row_vars, prepared.f_layout.col_vars)
         .map_err(|e| error(format!("committed shape: {e:?}")))?;
     let params = BitZParams::new(derived, modulus, bitz_generator().into())
         .map_err(|e| error(format!("wfbitz parameters: {e:?}")))?;
-    let pcs = Pcs::with_security_and_work(&committed, prepared.ligerito.security(), LigeritoProfile::Fast, security.flock.clone())
-        .map_err(|e| error(format!("wfbitz pcs: {e:?}")))?;
-    Ok((params, committed, pcs.with_native_policy(security.native.policy())))
+    let pcs = Pcs::with_security_and_work(
+        &committed,
+        prepared.ligerito.security(),
+        LigeritoProfile::Fast,
+        security.flock.clone(),
+    )
+    .map_err(|e| error(format!("wfbitz pcs: {e:?}")))?;
+    Ok((
+        params,
+        committed,
+        pcs.with_native_policy(security.native.policy()),
+    ))
 }
 
 /// The block grid's parameters and ladder.
@@ -113,8 +126,13 @@ fn chained_setup(
         .map_err(|e| error(format!("block shape: {e:?}")))?;
     let params = BitZParams::new(shape, modulus, bitz_generator().into())
         .map_err(|e| error(format!("wfbitz parameters: {e:?}")))?;
-    let pcs = Pcs::with_security_and_work(&shape, chained.ligerito.security(), LigeritoProfile::Fast, security.flock.clone())
-        .map_err(|e| error(format!("wfbitz pcs: {e:?}")))?;
+    let pcs = Pcs::with_security_and_work(
+        &shape,
+        chained.ligerito.security(),
+        LigeritoProfile::Fast,
+        security.flock.clone(),
+    )
+    .map_err(|e| error(format!("wfbitz pcs: {e:?}")))?;
     Ok((params, pcs.with_native_policy(security.native.policy())))
 }
 
@@ -140,8 +158,14 @@ pub(super) fn prove_opening<T: Transcript + Send>(
         let (rows, cols) = block_weights(chained.geometry.log_instances, point, scale, cfg)?;
         let claim = LinearClaim::new(&params, rows, cols, target)
             .map_err(|e| error(format!("wfbitz claim: {e:?}")))?;
-        let parts = prepared.map.chained_packed_source().ok_or_else(|| error("no chain"))?;
-        let tail = prepared.map.chained_packed_source_tail().ok_or_else(|| error("no tail"))?;
+        let parts = prepared
+            .map
+            .chained_packed_source()
+            .ok_or_else(|| error("no chain"))?;
+        let tail = prepared
+            .map
+            .chained_packed_source_tail()
+            .ok_or_else(|| error("no tail"))?;
         let statement = ChainedStatement::new(
             params,
             chained.geometry.clone(),
@@ -226,8 +250,14 @@ pub(super) fn verify_opening<T: Transcript + Send>(
         let (rows, cols) = block_weights(chained.geometry.log_instances, point, scale, cfg)?;
         let claim = LinearClaim::new(&params, rows, cols, target)
             .map_err(|e| error(format!("wfbitz claim: {e:?}")))?;
-        let parts = prepared.map.chained_packed_source().ok_or_else(|| error("no chain"))?;
-        let tail = prepared.map.chained_packed_source_tail().ok_or_else(|| error("no tail"))?;
+        let parts = prepared
+            .map
+            .chained_packed_source()
+            .ok_or_else(|| error("no chain"))?;
+        let tail = prepared
+            .map
+            .chained_packed_source_tail()
+            .ok_or_else(|| error("no tail"))?;
         let statement = ChainedStatement::new(
             params,
             chained.geometry.clone(),

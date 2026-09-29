@@ -96,11 +96,6 @@ impl WfbitzOpener {
         ligerito: WfbitzLigerito,
         target_bits: usize,
     ) -> Result<Self, ProtocolError> {
-        if layout.word_bits != 1 {
-            return Err(ProtocolError::LigeritoConfig(
-                "the BitZ opener commits bits (word width one)".into(),
-            ));
-        }
         let shape = Shape::new(layout.row_vars, layout.col_vars)
             .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ shape: {error:?}")))?;
         let (pcs, security, digest, resolved) = match ligerito {
@@ -1595,9 +1590,6 @@ pub(crate) fn pcs_from_config(
 }
 
 pub(crate) fn opening_shape(layout: &IntegerMatrixLayout) -> Result<Shape, ProtocolError> {
-    if layout.word_bits != 1 {
-        return Err(ProtocolError::InvalidBitzParameters);
-    }
     Shape::new(layout.row_vars, layout.col_vars)
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ shape: {error:?}")))
 }

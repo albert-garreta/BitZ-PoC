@@ -19,8 +19,7 @@ shared virtual-opening adapter. SHA+ECDSA retains its structured opening and
 checked dense fallback. MultiSwap retains its integer lift and second-prime
 reduction. Hybrid shares a binary opening between SHA and multiplication.
 
-`IntegerMatrixLayout` remains a packing helper. Relation constructors produce
-bit cells. Ordinary u32/u64/u128 operand widths remain supported.
+`IntegerMatrixLayout` contains only row and column dimensions; cells are bits. Ordinary u32/u64/u128 operand widths remain supported.
 
 ## Geometry and security
 

@@ -34,6 +34,7 @@ def write_case(directory, method, curve, rate, threads=1, **overrides):
     case = dict(method=method, curve=curve, log_compressions=4, r=None, c=None, security_target=100, threads=threads, seed=0)
     if method.startswith("bitz"):
         case["ligerito_profile"] = f"custom:{rate}:4"
+        case["opener"] = "wfbitz"
     else:
         case["log_inv_rate"] = rate
     rows = [dict(sample(method, curve, rate, **overrides), trial="warmup", sample=0)] + \

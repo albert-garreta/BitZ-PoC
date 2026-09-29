@@ -72,16 +72,12 @@
 //!
 //! The single-claim path always prints a per-step breakdown of the prover
 //! and the verifier under the `prove:`/`verify:` lines — medians over the
-//! timed reps, querying completed Perfetto intervals (row names carry
-//! the same labels as `examples/prof_probe.rs`). Build with `span-metrics`
-//! and set `PERFETTO_TRACE_PROCESSOR` to the native trace processor.
+//! timed reps, combining completed Perfetto intervals with native Wfbitz
+//! phase timers. Build with `span-metrics` and set `PERFETTO_TRACE_PROCESSOR`
+//! to the native trace processor.
 //!
-//! Under the breakdown it prints the PAPER buckets of the prover — grand
-//! products (`mq:chunking mc:pack mc:pow2 mc:forest mc:fold_v`: the integer
-//! folds and the batched GKR), ring switch incl. its sumcheck
-//! (`mc:presum_tbls mc:presum_run mq:rings mq:bcomb`: the sumcheck reducing
-//! the GKR output to MLE claims, the ring-switch message, the φ-basis of the
-//! Ligerito claim) and Ligerito (`mq:lig`) — a `security:` line (the
+//! The prover buckets are integer folds plus GKR, sumcheck plus ring switch,
+//! and Ligerito. A `security:` line reports the
 //! Ligerito config's round-by-round target and achieved bits, flock's
 //! notion: minimum over levels and error terms), and finally ONE
 //! machine-readable line `RESULT schema=bitz-cli/1 key=value …`
@@ -259,74 +255,25 @@ const fn substep(
     }
 }
 
-/// Prover steps of the single-claim mod-q opening, in execution order.
-/// The `mf:*`/`mc:live_cols` rows are nested detail inside `mc:forest`.
+/// Native subphases; nested opening details do not enter totals twice.
 const PROVE_STEP_ROWS: &[StepRow] = &[
-    step("row-weight chunking (mq:chunking)", &["mq:chunking"]),
-    step("column pack (mc:pack)", &["mc:pack"]),
-    step("α-power tables (mc:pow2)", &["mc:pow2"]),
-    step("merged GKR forest (mc:forest)", &["mc:forest"]),
-    substep("live-col scan (mc:live_cols)", &["mc:live_cols"], &[]),
-    substep("level build (mf:build_levels)", &["mf:build_levels"], &[]),
-    substep("leaf-layer gen (mf:bitgen)", &["mf:bitgen"], &[]),
-    substep(
-        "in-tree rounds (mf:phaseA - bitgen)",
-        &["mf:phaseA"],
-        &["mf:bitgen"],
-    ),
-    substep("tree-index rounds (mf:phaseB)", &["mf:phaseB"], &[]),
-    substep(
-        "(forest rest)",
-        &["mc:forest"],
-        &["mc:live_cols", "mf:build_levels", "mf:phaseA", "mf:phaseB"],
-    ),
-    step("integer folds u_c (mc:fold_v)", &["mc:fold_v"]),
-    step("pre-sumcheck tables (mc:presum_tbls)", &["mc:presum_tbls"]),
-    step("pre-sumcheck rounds (mc:presum_run)", &["mc:presum_run"]),
-    step("ring-switch s_v (mq:rings)", &["mq:rings"]),
-    step("φ-basis + target (mq:bcomb)", &["mq:bcomb"]),
-    step("Ligerito open (mq:lig)", &["mq:lig"]),
+    step("integer folds and images", &["fold+images"]),
+    step("native GKR", &["gkr"]),
+    step("inner-product sumcheck", &["sumcheck"]),
+    step("ring switch", &["ring switch"]),
+    step("Ligerito opening", &["ligerito"]),
 ];
-/// The disjoint top-level prover labels; a rep's remainder (transcript
-/// absorbs/challenges, glue) prints as "(unattributed)".
-const PROVE_TOP_LABELS: &[&str] = &[
-    "mq:chunking",
-    "mc:pack",
-    "mc:pow2",
-    "mc:forest",
-    "mc:fold_v",
-    "mc:presum_tbls",
-    "mc:presum_run",
-    "mq:rings",
-    "mq:bcomb",
-    "mq:lig",
-];
-
-/// Verifier steps of the single-claim mod-q opening, in execution order.
+const PROVE_TOP_LABELS: &[&str] = &["fold+images", "gkr", "sumcheck", "ring switch", "ligerito"];
 const VERIFY_STEP_ROWS: &[StepRow] = &[
-    step("row-weight chunking (mv:chunking)", &["mv:chunking"]),
-    step("fold range + read-off (mv:readoff)", &["mv:readoff"]),
-    step("roots α^u_c (mv:roots)", &["mv:roots"]),
-    step("forest layer checks (mv:forest)", &["mv:forest"]),
-    step("pre-sumcheck verify (mv:presum)", &["mv:presum"]),
-    step("R-hat(r*) weight fold (mv:rhat)", &["mv:rhat"]),
-    step("ring-switch + target (mv:rswitch)", &["mv:rswitch"]),
-    step("Ligerito verify (mv:lig)", &["mv:lig"]),
+    step("integer fold checks", &["v: fold"]),
+    step("GKR checks", &["v: gkr"]),
+    step("binary PCS checks", &["v: opening"]),
 ];
-const VERIFY_TOP_LABELS: &[&str] = &[
-    "mv:chunking",
-    "mv:readoff",
-    "mv:roots",
-    "mv:forest",
-    "mv:presum",
-    "mv:rhat",
-    "mv:rswitch",
-    "mv:lig",
-];
+const VERIFY_TOP_LABELS: &[&str] = &["v: fold", "v: gkr", "v: opening"];
 
 /// Print one breakdown block under a `prove:`/`verify:` line: per-step
 /// medians with their share of the block's median total. Rows whose labels
-/// never fired are skipped (e.g. `mc:pack` on packed-hint proves), as are
+/// never fired are skipped, as are
 /// near-zero derived rows.
 fn print_steps(
     steps: &StepTable,
@@ -595,7 +542,7 @@ fn parse_sweep_spec(spec: &str) -> Result<Vec<usize>, String> {
 }
 
 /// The reference split `t ≈ 0.6n`, clamped to the packing constraint
-/// (`t + log₂W ≥ 7`) and `s ≥ 1`.
+/// (`t ≥ 7`) and `s ≥ 1`.
 fn default_split(n: usize) -> (usize, usize) {
     let t = ((3 * n).div_ceil(5)).max(7).min(n - 1);
     (t, n - t)
@@ -777,13 +724,12 @@ fn main() {
         _ => default_split(o.n),
     };
     let w = 1usize;
-    let log_w = w.trailing_zeros() as usize;
     if t + s != o.n {
         eprintln!("t + s = {} ≠ n = {}", t + s, o.n);
         exit(2);
     }
-    if t + log_w < 7 {
-        eprintln!("packing needs t + log₂W ≥ 7 (got t={t}, W={w})");
+    if t < 7 {
+        eprintln!("packing needs t ≥ 7 (got t={t})");
         exit(2);
     }
     if s == 0 {
@@ -794,7 +740,6 @@ fn main() {
     let p = IntegerMatrixLayout {
         row_vars: t,
         col_vars: s,
-        word_bits: w,
     };
     let q_bits = standalone_q_bits(&p);
     let m_p = packed_vars(&p);
@@ -843,27 +788,15 @@ fn main() {
 
     // Deterministic instance straight into per-column bit rows (the
     // memory-honest pattern — the u128 cell tensor never exists).
-    let mask = if w >= 128 {
-        u128::MAX
-    } else {
-        (1u128 << w) - 1
-    };
     let cell = |b: usize, c: usize| -> u128 {
-        (p.cell_index(b, c) as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & mask
+        (p.cell_index(b, c) as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & 1
     };
-    let row_len = p.rows() << log_w;
-    let words = row_len.div_ceil(64);
+    let words = p.rows().div_ceil(64);
     let mut rows: Vec<Vec<u64>> = (0..p.cols())
         .map(|c| {
             let mut wv = vec![0u64; words];
             for b in 0..p.rows() {
-                let v = cell(b, c);
-                for j in 0..w {
-                    if (v >> j) & 1 == 1 {
-                        let i = (b << log_w) | j;
-                        wv[i >> 6] |= 1u64 << (i & 63);
-                    }
-                }
+                wv[b >> 6] |= (cell(b, c) as u64) << (b & 63);
             }
             wv
         })
@@ -944,13 +877,17 @@ fn main() {
             std::thread::sleep(std::time::Duration::from_secs(o.rep_cooldown_s));
         }
         let recording = bitz::observability::Recording::start(Vec::new()).expect("start CLI trial");
+        bitz::wfbitz::record_phases(true);
         let proving = tracing::info_span!("cli:proving").entered();
         let proof = prove_once(&hint);
         drop(proving);
+        let native_prove = take_native_phases();
 
         let verification = tracing::info_span!("cli:verification").entered();
         verify_once(&proof).expect("proof verifies");
         drop(verification);
+        let native_verify = take_native_phases();
+        bitz::wfbitz::record_phases(false);
         let intervals = recording.intervals().expect("query CLI trial");
         prove_ms.push(
             bitz::observability::duration(&intervals, "cli:proving")
@@ -966,11 +903,19 @@ fn main() {
         );
         prove_steps.absorb(
             rep,
-            bitz::observability::phase_totals(&intervals, "cli:proving").unwrap(),
+            bitz::observability::phase_totals(&intervals, "cli:proving")
+                .unwrap()
+                .into_iter()
+                .chain(native_prove)
+                .collect(),
         );
         verify_steps.absorb(
             rep,
-            bitz::observability::phase_totals(&intervals, "cli:verification").unwrap(),
+            bitz::observability::phase_totals(&intervals, "cli:verification")
+                .unwrap()
+                .into_iter()
+                .chain(native_verify)
+                .collect(),
         );
         last_proof = Some(proof);
     }
@@ -1071,33 +1016,10 @@ fn main() {
 // Paper buckets, the RESULT line, and the `--sweep` table mode
 // ---------------------------------------------------------------------
 
-/// Prover bucket "grand products": the row-weight chunking, the column
-/// pack (only on unpacked hints), the α-power leaf tables, the merged GKR
-/// forest, and the integer folds `u_c` — i.e. the paper's integer folds plus
-/// its batched grand-product IOR.
-const PAPER_GP_LABELS: &[&str] = &[
-    "mq:chunking",
-    "mc:pack",
-    "mc:pow2",
-    "mc:forest",
-    "mc:fold_v",
-];
-/// Prover bucket "ring switch (incl. sumcheck)": the sumcheck that turns
-/// the forest's exit claim (an inner product with the weights) into an MLE
-/// evaluation claim, the ring-switch message `s_v`, and the φ-basis/target
-/// of the resulting Ligerito claim.
-/// Round 0 (the OOD evaluation `mc:ood` and its basis term `mq:ood_basis`)
-/// rides this bucket: it is opening-side glue of the same size class.
-const PAPER_RS_LABELS: &[&str] = &[
-    "mc:presum_tbls",
-    "mc:presum_run",
-    "mq:rings",
-    "mq:bcomb",
-    "mc:ood",
-    "mq:ood_basis",
-];
-/// Prover bucket "Ligerito open".
-const PAPER_LIG_LABELS: &[&str] = &["mq:lig"];
+/// Disjoint native prover buckets used by the CLI's published tables.
+const PAPER_GP_LABELS: &[&str] = &["fold+images", "gkr"];
+const PAPER_RS_LABELS: &[&str] = &["sumcheck", "sumcheck (sum)", "ring switch", "mc:ood"];
+const PAPER_LIG_LABELS: &[&str] = &["ligerito"];
 
 /// One single-claim run, as the `RESULT schema=bitz-cli/1` line carries it
 /// (`docs/bench-schema.md`). All `*_ms` are medians over the timed reps;
@@ -1836,7 +1758,7 @@ fn write_latex_table(path: &Path, rows: &[CliResult], o: &Opts, spec: &str) -> s
     );
     let _ = writeln!(
         out,
-        "%   already a transcript-sampled prime of the admissible size. Round 0 costs ride the ring-switch bucket (mc:ood, mq:ood_basis)."
+        "%   already a transcript-sampled prime of the admissible size. Round 0 costs ride the ring-switch bucket (mc:ood)."
     );
     let _ = writeln!(out, "% RESULT lines (schema={RESULT_SCHEMA}):");
     for r in rows {
@@ -1974,13 +1896,6 @@ fn write_latex_table(path: &Path, rows: &[CliResult], o: &Opts, spec: &str) -> s
     std::fs::write(path, out)
 }
 
-/// The deterministic generator α (cached — `smallest_generator` scans).
-fn alpha_of() -> bitz::poly::univariate::binary_gf128::Gf128 {
-    use std::sync::OnceLock;
-    static A: OnceLock<bitz::poly::univariate::binary_gf128::Gf128> = OnceLock::new();
-    *A.get_or_init(smallest_generator)
-}
-
 // ---------------------------------------------------------------------
 // `--mul` / `--mul-sweep`: the u32 × u32 → u64 multiplication SNARK
 // ---------------------------------------------------------------------
@@ -2001,7 +1916,7 @@ const MUL_PROVE_STEP_ROWS: &[StepRow] = &[
     step("BitZ opening (step5:open_prove)", &["step5:open_prove"]),
     substep("grand products", PAPER_GP_LABELS, &[]),
     substep("ring switch (incl. sumcheck)", PAPER_RS_LABELS, &[]),
-    substep("Ligerito open (mq:lig)", PAPER_LIG_LABELS, &[]),
+    substep("Ligerito open", PAPER_LIG_LABELS, &[]),
 ];
 const MUL_PROVE_TOP_LABELS: &[&str] = &[
     "step2:project_prove",
@@ -2025,15 +1940,9 @@ const MUL_VERIFY_STEP_ROWS: &[StepRow] = &[
         &["spartan-bitz:bitz_prepare_verifier"],
         &[],
     ),
-    substep("row-weight chunking (mv:chunking)", &["mv:chunking"], &[]),
-    substep("fold range + read-off (mv:readoff)", &["mv:readoff"], &[]),
-    substep("roots α^u_c (mv:roots)", &["mv:roots"], &[]),
-    substep("forest layer checks (mv:forest)", &["mv:forest"], &[]),
-    substep("pre-sumcheck verify (mv:presum)", &["mv:presum"], &[]),
-    substep("R-hat(r*) weight fold (mv:rhat)", &["mv:rhat"], &[]),
-    substep("Round 0 / OOD (mv:ood)", &["mv:ood"], &[]),
-    substep("ring-switch + target (mv:rswitch)", &["mv:rswitch"], &[]),
-    substep("Ligerito verify (mv:lig)", &["mv:lig"], &[]),
+    substep("integer fold checks", &["v: fold"], &[]),
+    substep("GKR checks", &["v: gkr"], &[]),
+    substep("binary PCS checks", &["v: opening"], &[]),
 ];
 const MUL_VERIFY_TOP_LABELS: &[&str] = &[
     "step2:project_verify",
@@ -2358,7 +2267,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         params.row_vars + params.col_vars,
         params.row_vars,
         params.col_vars,
-        params.word_bits,
+        1usize,
         sec.profile_name,
         sec.lambda,
         if bitz::utils::CHECKED {
@@ -2405,7 +2314,9 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     for rep in 0..o.reps {
         let recording =
             bitz::observability::Recording::start(Vec::new()).expect("start CLI mul trial");
+        bitz::wfbitz::record_phases(true);
         let (proof, hint) = mul_prove_e2e(&relation, &witness);
+        let native_prove = take_native_phases();
 
         let mut vt = Blake3Transcript::new();
         let verification = tracing::info_span!("cli:mul.verification").entered();
@@ -2414,6 +2325,8 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
             exit(1)
         });
         drop(verification);
+        let native_verify = take_native_phases();
+        bitz::wfbitz::record_phases(false);
         let intervals = recording.intervals().expect("query CLI mul trial");
         let prove_ms = bitz::observability::duration(&intervals, "cli:mul.proving")
             .unwrap()
@@ -2431,11 +2344,19 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         );
         psteps.absorb(
             rep,
-            bitz::observability::phase_totals(&intervals, "cli:mul.proving").unwrap(),
+            bitz::observability::phase_totals(&intervals, "cli:mul.proving")
+                .unwrap()
+                .into_iter()
+                .chain(native_prove)
+                .collect(),
         );
         vsteps.absorb(
             rep,
-            bitz::observability::phase_totals(&intervals, "cli:mul.verification").unwrap(),
+            bitz::observability::phase_totals(&intervals, "cli:mul.verification")
+                .unwrap()
+                .into_iter()
+                .chain(native_verify)
+                .collect(),
         );
 
         commit_ms_v.push(commit_ms);
@@ -2539,7 +2460,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         n: params.row_vars + params.col_vars,
         t: params.row_vars,
         s: params.col_vars,
-        w: params.word_bits,
+        w: 1usize,
         chunks,
         profile: sec.profile_name.to_string(),
         lambda: sec.lambda,
@@ -2736,9 +2657,8 @@ fn write_mul_latex_table(
         "sha256" => "SHA-256".to_string(),
         other => other.to_string(),
     };
-    let w = first.map_or(1usize, |r| r.w);
-    let log_w = w.trailing_zeros() as usize;
-    let cell_words = 128usize >> log_w; // committed cells per multiplication
+    let w = 1usize;
+    let cell_words = 128usize; // committed cells per multiplication
 
     let mut out = String::new();
     let _ = writeln!(
@@ -2876,4 +2796,12 @@ fn write_mul_latex_table(
     let _ = writeln!(out, "  \\label{{tab:bitz-u32-mul}}");
     let _ = writeln!(out, "\\end{{table}}");
     std::fs::write(path, out)
+}
+
+/// Drain recorded native durations outside the measured operation.
+fn take_native_phases() -> Vec<(String, f64)> {
+    bitz::wfbitz::take_phases()
+        .into_iter()
+        .map(|(label, time)| (label, time.as_secs_f64()))
+        .collect()
 }

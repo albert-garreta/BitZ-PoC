@@ -521,8 +521,6 @@ impl PreparedSha256Ecdsa {
         &self.ligerito
     }
 
-
-
     /// The structured wfbitz opening's geometry for this map, with the
     /// scheme's Ligerito ladder resolved for the block-layout commitment
     /// (the same size as the derived grid: `2^(h_bits)` cells).
@@ -542,7 +540,6 @@ impl PreparedSha256Ecdsa {
         let layout = IntegerMatrixLayout {
             row_vars: LOG_ROWS,
             col_vars: native_bits - LOG_ROWS,
-            word_bits: 1,
         };
         // The same ladder selection as the native commitment's, resolved for
         // the block layout's size.
@@ -557,8 +554,6 @@ impl PreparedSha256Ecdsa {
             ligerito,
         })
     }
-
-
 
     pub fn with_ligerito(
         mut self,
@@ -681,7 +676,11 @@ pub fn prepare_sha256_ecdsa_on(
         .position(|c| *c == circuit)
         .expect("every circuit has a cache slot");
     let local = LOCALS[slot]
-        .get_or_init(|| build_local(circuit).map(Arc::new).map_err(|e| e.to_string()))
+        .get_or_init(|| {
+            build_local(circuit)
+                .map(Arc::new)
+                .map_err(|e| e.to_string())
+        })
         .as_ref()
         .map_err(error)?
         .clone();
@@ -697,7 +696,6 @@ pub fn prepare_sha256_ecdsa_on(
         IntegerMatrixLayout {
             row_vars: t,
             col_vars: bits - t,
-            word_bits: 1,
         }
     };
     // At the final block cancel its source block inputs and replace them by

@@ -16,7 +16,6 @@ fn measure(t: usize, s: usize) -> Result<(), Box<dyn std::error::Error>> {
     let layout = IntegerMatrixLayout {
         row_vars: t,
         col_vars: s,
-        word_bits: 1,
     };
     let opener = WfbitzOpener::new(
         layout,

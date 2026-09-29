@@ -216,7 +216,7 @@ mod tests {
         assert_eq!(layout.assignment_len(), 4 * 1024);
         assert_eq!(layout.assignment_vars(), 12);
         let p = layout.bitz_params();
-        assert_eq!((p.row_vars, p.col_vars, p.word_bits), (15, 4, 1));
+        assert_eq!((p.row_vars, p.col_vars), (15, 4));
         assert_eq!(p.rows() * p.cols(), U128_MUL_BIT_SLOTS * layout.capacity());
         assert_eq!(U128_MUL_BIT_SLOTS, 1 << U128_MUL_SLOT_VARS);
         assert_eq!(MulLayout::<u128>::new(0), Err(MulError::EmptyBatch));

@@ -270,7 +270,7 @@ pub fn eq_le_table_fq_fast_with(
 /// The dense canonical row weights of a structured opening, in BitZ row
 /// order `(word_slot << h) | gate_high`:
 ///
-/// `w[(word_slot << h) | g] = block_factor(word_slot) · 2^{W · (word_slot − block_word_start)} · eq(gate_high_point, g)`
+/// `w[(word_slot << h) | g] = block_factor(word_slot) · 2^{word_slot − block_word_start} · eq(gate_high_point, g)`
 ///
 /// for every variable block, zero for word slots outside every block. The
 /// per-word scalars are formed first, then every row is one fixed-factor
@@ -282,10 +282,6 @@ fn structured_row_weights(
     factors: &[u128],
     arith: &field::FpCtx<2>,
 ) -> Result<Vec<u128>, ProtocolError> {
-    let word_bits = params.word_bits;
-    if !word_bits.is_power_of_two() {
-        return Err(ProtocolError::InvalidBitzParameters);
-    }
     let high_gate_count = checked_pow2(gate_high.len())?;
     let row_count = checked_pow2(params.row_vars)?;
     if !row_count.is_multiple_of(high_gate_count) {
@@ -293,19 +289,12 @@ fn structured_row_weights(
     }
     let word_slots = row_count / high_gate_count;
 
-    // Per-word scalars: the block factor times 2^{W·(word within the block)}.
-    let pow2_word = arith.prepare_multiplier_u128(1_u128 << word_bits);
+    // Per-word scalars: the block factor times 2^{bit within the block}.
+    let pow2_word = arith.prepare_multiplier_u128(2);
     let mut word_scalars = vec![0_u128; word_slots];
     for ((_, range), block_factor) in table.variable_blocks().zip(factors) {
-        if !range.bit_slot_start.is_multiple_of(word_bits)
-            || !range.bit_count.is_multiple_of(word_bits)
-        {
-            return Err(ProtocolError::InvalidBitzParameters);
-        }
         let mut scalar = arith.reduce_u128(*block_factor);
-        for word in
-            range.bit_slot_start / word_bits..(range.bit_slot_start + range.bit_count) / word_bits
-        {
+        for word in range.bit_slot_start..(range.bit_slot_start + range.bit_count) {
             let Some(slot) = word_scalars.get_mut(word) else {
                 return Err(ProtocolError::InvalidBitzParameters);
             };

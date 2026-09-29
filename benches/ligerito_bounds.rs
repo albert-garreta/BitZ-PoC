@@ -339,7 +339,6 @@ fn pcs(e: &Experiment, setup: SetupCapture) -> Result<()> {
     let p = IntegerMatrixLayout {
         row_vars: 11,
         col_vars: 11,
-        word_bits: 1,
     };
     let resolved = e.selection.resolve(15, 100)?;
     let ood = resolved.round0(100)?;

@@ -13,24 +13,19 @@ use crate::utils::{cfg_chunks_mut, cfg_into_iter};
 use rayon::prelude::*;
 
 /// Per-column bit rows, 64 bits per `u64` word (row-major over the row-bit
-/// index `i = (b<<log₂W)|j`). Local copy — the sibling branches' commit
+/// index `i = b`). Local copy — the sibling branches' commit
 /// paths pack differently; the Ligerito stack owns its row layout.
 #[allow(clippy::arithmetic_side_effects)]
 pub(crate) fn repack_leaf_bits(p: &IntegerMatrixLayout, data: &[u128]) -> Vec<Vec<u64>> {
-    let log_w = p.word_bits.trailing_zeros() as usize;
-    let row_len = p.rows() << log_w;
+    let row_len = p.rows();
     let words = (row_len + 63) >> 6;
     cfg_into_iter!(0..p.cols())
         .map(|c| {
             let mut w = vec![0u64; words];
             for b in 0..p.rows() {
                 let cell = data[p.cell_index(b, c)];
-                for j in 0..p.word_bits {
-                    if (cell >> j) & 1 == 1 {
-                        let i = (b << log_w) | j;
-                        w[i >> 6] |= 1u64 << (i & 63);
-                    }
-                }
+                assert!(cell <= 1, "binary matrix cell");
+                w[b >> 6] |= (cell as u64) << (b & 63);
             }
             w
         })
@@ -213,13 +208,12 @@ pub fn residual_b_evals(prefix: &[Gf], yr_log_n: usize, r_hi: &[Gf], eq_r2: &[Gf
 // Packed commitment
 // ---------------------------------------------------------------------
 
-/// `t + log₂W` — the row-bit index width.
+/// The row-bit index width.
 pub(crate) fn row_bit_vars(p: &IntegerMatrixLayout) -> usize {
-    let log_w = p.word_bits.trailing_zeros() as usize;
-    p.row_vars.wrapping_add(log_w)
+    p.row_vars
 }
 
-/// Number of packed variables `m_p = (t + log₂W − 7) + s`.
+/// Number of packed variables `m_p = (t − 7) + s`.
 pub fn packed_vars(p: &IntegerMatrixLayout) -> usize {
     row_bit_vars(p)
         .wrapping_sub(LOG_PACKING)
@@ -659,8 +653,7 @@ pub(crate) fn transpose_64x64(a: &mut [u64; 64]) {
 /// sweep of the u128 data tensor.
 #[allow(clippy::arithmetic_side_effects)]
 pub(crate) fn pack_columns_from_rows(p: &IntegerMatrixLayout, rows: &[Vec<u64>]) -> Vec<Vec<u64>> {
-    let log_w = p.word_bits.trailing_zeros() as usize;
-    let row_len = p.rows() << log_w;
+    let row_len = p.rows();
     let words = row_len.div_ceil(64);
     let num_groups = p.cols().div_ceil(64);
     cfg_into_iter!(0..num_groups)
@@ -698,8 +691,7 @@ pub(crate) fn rows_from_packed_cols(
     p: &IntegerMatrixLayout,
     packed_cols: &[Vec<u64>],
 ) -> Vec<Vec<u64>> {
-    let log_w = p.word_bits.trailing_zeros() as usize;
-    let row_len = p.rows() << log_w;
+    let row_len = p.rows();
     let words = row_len.div_ceil(64);
     let num_groups = p.cols().div_ceil(64);
     debug_assert_eq!(packed_cols.len(), num_groups);
@@ -743,7 +735,6 @@ mod tests {
             let p = IntegerMatrixLayout {
                 row_vars: t,
                 col_vars: s,
-                word_bits: 1,
             };
             let (cols, words) = (1usize << s, 1usize << (t - 6));
             let mut state = (t * 131 + s) as u64 | 1;
@@ -790,14 +781,12 @@ mod tests {
     /// (incl. non-multiple-of-64 column counts).
     #[test]
     fn packed_cols_row_roundtrip() {
-        for (t, s, w) in [(7usize, 3usize, 1usize), (8, 6, 1), (7, 4, 2)] {
+        for (t, s) in [(7usize, 3usize), (8, 6), (8, 4)] {
             let p = IntegerMatrixLayout {
                 row_vars: t,
                 col_vars: s,
-                word_bits: w,
             };
-            let log_w = w.trailing_zeros() as usize;
-            let row_len = p.rows() << log_w;
+            let row_len = p.rows();
             let words = row_len.div_ceil(64);
             let rows: Vec<Vec<u64>> = (0..p.cols())
                 .map(|c| {
@@ -813,7 +802,7 @@ mod tests {
                 .collect();
             let packed = pack_columns_from_rows(&p, &rows);
             let back = rows_from_packed_cols(&p, &packed);
-            assert_eq!(rows, back, "(t={t},s={s},W={w})");
+            assert_eq!(rows, back, "(t={t},s={s})");
         }
     }
 

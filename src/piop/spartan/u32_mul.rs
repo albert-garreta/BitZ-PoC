@@ -162,13 +162,12 @@ mod tests {
             assert_eq!(layout.multiplications(), multiplications);
             assert_eq!(layout.capacity(), capacity);
             assert_eq!(layout.assignment_len(), 4 * capacity);
-            assert_eq!(layout.bitz_params().word_bits, 1usize);
 
             let p = layout.bitz_params();
 
             let s = layout.col_vars();
             let h = layout.gate_vars() - s;
-            assert_eq!(p.word_bits, 1);
+
             assert_eq!(p.row_vars, h + 7);
             assert_eq!(p.cells(), U32_MUL_BIT_SLOTS * capacity);
             assert_eq!(layout.bitz_cell(U32_MUL_BIT_SLOTS, 0), None);
@@ -193,7 +192,7 @@ mod tests {
         let capacity = witness.layout().capacity();
 
         assert_eq!(capacity, 256);
-        assert_eq!(witness.layout().bitz_params().word_bits, 1);
+
         assert_eq!(witness.assignment()[0], 1);
         assert!(
             witness.assignment()[1..capacity]
@@ -349,7 +348,6 @@ mod tests {
 
         assert_eq!(calls, (0..5).collect::<Vec<_>>());
         assert_eq!(witness.cz(), &[0, 2, 6, 12, 20]);
-        assert_eq!(witness.layout().bitz_params().word_bits, 1);
     }
 
     #[test]
@@ -412,10 +410,7 @@ mod tests {
         let rows = witness.bitz_bit_rows();
 
         assert_eq!(rows.len(), p.cols());
-        assert!(
-            rows.iter()
-                .all(|row| row.len() == p.rows() * p.word_bits / 64)
-        );
+        assert!(rows.iter().all(|row| row.len() == p.rows() / 64));
 
         for gate in 0..layout.capacity() {
             let values = [
@@ -465,7 +460,7 @@ mod tests {
             })
             .unwrap();
             let p = witness.layout().bitz_params();
-            let mut expected = vec![vec![0_u64; p.rows() * p.word_bits / 64]; p.cols()];
+            let mut expected = vec![vec![0_u64; p.rows() / 64]; p.cols()];
             witness.write_bit_rows_bitwise(&mut expected);
             assert_eq!(
                 witness.bitz_bit_rows(),

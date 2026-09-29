@@ -63,7 +63,7 @@ pub(super) const fn sha256_instance_facts(log_instance_capacity: u32) -> IopInst
         defect_log2_bound: 96,
         lift_arity_log2: log_instance_capacity,
         opening_t: log_instance_capacity,
-        opening_word_bits: 1,
+
         direct_opening: false,
         tau_arity: SHA256_TAU_LOCAL_VARS + log_instance_capacity,
         piop_degree: 2,

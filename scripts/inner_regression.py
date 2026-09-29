@@ -221,7 +221,7 @@ def main():
                 keys = set.intersection(*(set(s) for pair in paired for r in pair for s in r['samples']))
                 all_keys = set.union(*(set(s) for pair in paired for r in pair for s in r['samples']))
                 row['incomplete_phase_coverage'] = sorted(k for k in all_keys - keys if k.startswith('phase:'))
-                details = [k for k in keys if k.startswith('phase:') and any((x in k for x in ('inner', 'outer', 'bind', 'piop', 'step', 'mc:presum', 'mc:forest', 'mq:lig')))]
+                details = [k for k in keys if k.startswith('phase:') and any((x in k for x in ('inner', 'outer', 'bind', 'piop', 'step', 'sumcheck', 'gkr', 'ligerito')))]
                 row['phases'] = {k: compare(paired, k) for k in sorted(details) if all((s[k] > 0 for pair in paired for r in pair for s in r['samples']))}
                 row['regressed_phases'] = [k for k, v in row['phases'].items() if v['status'] == 'regression']
         row['proof_size_equal'] = None if args.memory and case['exe'] == 'mul_bitz' else all((a.get('status') == b.get('status') == 'ok' and bool(a.get('proof_bytes')) and (a.get('proof_bytes') == b.get('proof_bytes')) for a, b in paired))

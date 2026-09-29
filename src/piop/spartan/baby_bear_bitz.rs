@@ -81,7 +81,7 @@ pub fn baby_bear_mul_instance_facts(
         defect_log2_bound: 80,
         lift_arity_log2: params.row_vars as u32,
         opening_t: params.row_vars as u32,
-        opening_word_bits: params.word_bits as u32,
+
         direct_opening: true,
         tau_arity: row_vars.max(1) as u32,
         piop_degree: 3,
@@ -91,10 +91,9 @@ pub fn baby_bear_mul_instance_facts(
 
 fn validate_layout_geometry(layout: &BabyBearMulLayout) -> Result<(), ProtocolError> {
     let params = layout.bitz_params();
-    if params.word_bits != 1
-        || params.row_vars < LOG_PACKING
+    if params.row_vars < LOG_PACKING
         || params.col_vars > layout.gate_vars()
-        || params.row_vars.saturating_add(params.word_bits) > 126
+        || params.row_vars > 125
     {
         return Err(ProtocolError::InvalidBitzParameters);
     }
@@ -160,7 +159,7 @@ fn fixed_q_assignment_binding(
         BABY_BEAR_MUL_BIT_SLOTS,
         p.row_vars,
         p.col_vars,
-        p.word_bits,
+        1usize,
     ])?;
     Ok(hasher.finalize())
 }
@@ -260,7 +259,7 @@ impl RelationSpec for BabyBearMulLayout {
                     BABY_BEAR_MUL_BIT_SLOTS,
                     p.row_vars,
                     p.col_vars,
-                    p.word_bits,
+                    1usize,
                 ])?;
                 Ok(())
             },
@@ -280,7 +279,7 @@ impl RelationSpec for BabyBearMulLayout {
             PADDED_ASSIGNMENT_BLOCKS,
             p.row_vars,
             p.col_vars,
-            p.word_bits,
+            1usize,
             BABY_BEAR_MUL_A_SLOT_START,
             BABY_BEAR_MUL_B_SLOT_START,
             BABY_BEAR_MUL_C_SLOT_START,

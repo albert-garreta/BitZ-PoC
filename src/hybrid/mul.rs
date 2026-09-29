@@ -152,9 +152,6 @@ fn wfbitz_claim(
     row_weights: &[u128],
     opening: &bitify::BitifiedClaim,
 ) -> Result<(crate::wfbitz::BitZParams, crate::wfbitz::LinearClaim), Error> {
-    if p.word_bits != 1 {
-        return Err(Error::Invalid("wfbitz takes bit grids"));
-    }
     let shape = crate::wfbitz::Shape::new(p.row_vars, p.col_vars)
         .map_err(|_| Error::Invalid("wfbitz shape"))?;
     let modulus = crate::piop::spartan::protocol::wfbitz_opener::modulus_u128(arith);

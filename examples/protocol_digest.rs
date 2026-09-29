@@ -3,7 +3,7 @@
 //! and prints the BLAKE3 digest of the serialized proof body plus the
 //! commitment root. Run before and after any change that claims to be
 //! transcript-preserving — matching digests mean byte-identical proofs,
-//! commitments, and transcripts. The companion `proof_digest` example pins
+//! commitments, and transcripts. The `transcript_state_pins` integration test pins
 //! the base PCS opener alone.
 //!
 //! ```text

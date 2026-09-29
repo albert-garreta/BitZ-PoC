@@ -82,7 +82,7 @@ elif name == 'hybrid':
         self.assertEqual(names, [
             'scripts/bench_gate.py',
             'scripts/run_sha256_ecdsa_compare.py', 'scripts/run_sha256_chain_compare.py',
-            'scripts/run_multiplication_benchmarks.py', 'scripts/run_matched_multiswap_campaign.py',
+            *(['scripts/run_multiplication_benchmarks.py'] * 3), 'scripts/run_matched_multiswap_campaign.py',
             'scripts/hybrid_table.py'])
         multiplication = next(c['args'] for c in scripts if c['args'][0].endswith('run_multiplication_benchmarks.py'))
         self.assertIn('--no-gate', multiplication)
@@ -106,7 +106,9 @@ elif name == 'hybrid':
         for script in ['run_sha256_ecdsa_compare.py', 'run_sha256_chain_compare.py', 'run_multiplication_benchmarks.py']:
             args = next(c['args'] for c in commands if c['args'][0] == 'scripts/'+script)
             self.assertEqual(args[args.index('--reps')+1], '1')
-            self.assertEqual(args[args.index('--threads')+1:args.index('--threads')+3], ['1','10'])
+            threads = args[args.index('--threads') + 1]
+            actual = threads.split(',') if ',' in threads else args[args.index('--threads')+1:args.index('--threads')+3]
+            self.assertEqual(actual, ['1', '10'])
         hybrid = [c for c in commands if c['name'] == 'hybrid']
         self.assertEqual(len(hybrid), 24)
         self.assertEqual({c['args'][c['args'].index('--shapes')+1] for c in hybrid}, {'15:7','9:9'})

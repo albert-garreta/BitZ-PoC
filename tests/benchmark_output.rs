@@ -147,7 +147,7 @@ fn stdout_sink() {
     if std::env::var_os("BITZ_OUTPUT_TEST_CHILD").is_some() {
         let mut stdout = JsonlWriter::new(std::io::stdout().lock());
         stdout.write(&json!({"stdout_test": true})).unwrap();
-        stdout.finish().unwrap();
+        drop(stdout.finish().unwrap());
         return;
     }
     let child = std::process::Command::new(std::env::current_exe().unwrap())

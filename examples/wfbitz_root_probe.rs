@@ -10,8 +10,14 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let t: usize = args.get(1).and_then(|v| v.parse().ok()).unwrap_or(7);
     let s: usize = args.get(2).and_then(|v| v.parse().ok()).unwrap_or(15);
-    let witness = args.get(3).cloned().unwrap_or_else(|| "witness.bin".to_string());
-    let toml = args.get(4).cloned().expect("path to the Ligerito security TOML");
+    let witness = args
+        .get(3)
+        .cloned()
+        .unwrap_or_else(|| "witness.bin".to_string());
+    let toml = args
+        .get(4)
+        .cloned()
+        .expect("path to the Ligerito security TOML");
 
     let bytes = std::fs::read(&witness).expect("read witness");
     let packed: Vec<(u64, u64)> = bytes
@@ -23,7 +29,10 @@ fn main() {
             )
         })
         .collect();
-    let p = IntegerMatrixLayout { row_vars: t, col_vars: s, word_bits: 1 };
+    let p = IntegerMatrixLayout {
+        row_vars: t,
+        col_vars: s,
+    };
     let hi_count = 1usize << (t - 7);
     assert_eq!(packed.len(), hi_count << s, "witness length vs shape");
     // Their layout: element c·2^{t−7} + i_hi holds bits (i_hi<<7 | v) of column c,
@@ -40,8 +49,9 @@ fn main() {
         })
         .collect();
 
-    let mut sec = LigeritoSecurityConfig::from_toml_str(&std::fs::read_to_string(&toml).expect("read toml"))
-        .expect("parse toml");
+    let mut sec =
+        LigeritoSecurityConfig::from_toml_str(&std::fs::read_to_string(&toml).expect("read toml"))
+            .expect("parse toml");
     sec.hash = "blake3".into();
     let (pc, _vc) = sec.to_prover_verifier_configs().expect("configs");
     let hint = commit_rs_ligerito_rows(&p, rows, &pc);

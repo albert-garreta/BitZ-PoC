@@ -121,7 +121,7 @@ pub(super) fn account_terms(
         add(term.name, count as f64 * 2f64.powf(-term.bits));
     }
     let p = mul.params();
-    let depth = p.row_vars + p.word_bits.trailing_zeros() as usize;
+    let depth = p.row_vars;
     let k_inv = 2f64.powi(-128);
     // Two sumchecks per GKR layer, with degrees at most three, plus the
     // closing child randomization. Overcount all rounds by depth+s+4.

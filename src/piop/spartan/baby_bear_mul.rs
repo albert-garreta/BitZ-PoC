@@ -31,7 +31,7 @@ use crate::{pcs::IntegerMatrixLayout, poly::mle::DenseMultilinearExtension};
 use super::{
     ConstraintMatrices, ModulusIndependentCoefficient, PreparedConstraintMatrices, R1csProductMles,
     SpartanBitzField, SpartanField, SpartanMatrixCoefficient, SpartanMatrixError,
-    build_assignment_mle, build_product_mles, slot_rows::pack_slot_major_rows_w1,
+    build_assignment_mle, build_product_mles, slot_rows::pack_slot_major_rows,
 };
 
 /// The BabyBear prime `2^31 - 2^27 + 1`.
@@ -273,7 +273,6 @@ impl BabyBearMulLayout {
         IntegerMatrixLayout {
             row_vars: 7 + self.gate_vars - s,
             col_vars: s,
-            word_bits: 1,
         }
     }
 
@@ -478,7 +477,7 @@ impl BabyBearMulWitness {
         let b_values = self.b_values();
         let c_values = self.c_values();
         let k_values = self.k_values();
-        pack_slot_major_rows_w1(
+        pack_slot_major_rows(
             rows,
             s,
             high_gate_count,
@@ -626,7 +625,8 @@ fn output_matrix(
 pub fn prepare_baby_bear_mul_relation(
     layout: BabyBearMulLayout,
     field_config: &<SpartanBitzField as crate::piop::spartan::SpartanField>::Config,
-) -> Result<PreparedConstraintMatrices<SpartanBitzField, BabyBearMulCoefficient>, BabyBearMulError> {
+) -> Result<PreparedConstraintMatrices<SpartanBitzField, BabyBearMulCoefficient>, BabyBearMulError>
+{
     let matrices = baby_bear_mul_constraint_matrices(&layout)?;
     Ok(PreparedConstraintMatrices::new(matrices, field_config)?)
 }
@@ -787,7 +787,7 @@ mod tests {
             assert_eq!(layout.assignment_vars(), layout.gate_vars() + 3);
 
             let params = layout.bitz_params();
-            assert_eq!(params.word_bits, 1);
+
             assert_eq!(params.cells(), BABY_BEAR_MUL_BIT_SLOTS * capacity);
             for slot in 0..BABY_BEAR_MUL_BIT_SLOTS {
                 for gate in 0..capacity {

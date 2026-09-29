@@ -105,7 +105,6 @@ impl Shape {
         crate::pcs::IntegerMatrixLayout {
             row_vars: self.log_rows,
             col_vars: self.log_columns,
-            word_bits: 1,
         }
     }
 }

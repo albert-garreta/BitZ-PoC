@@ -1,24 +1,11 @@
 //! Slot-major bit-row packing shared by the compact Spartan witnesses.
 //!
-//! A slot-major witness commits 128 bit slots per gate. With `s` clear
-//! column coordinates and `h` high gate coordinates
-//! (`high_gate_count = 2^h`), BitZ row `c` holds the slots of every gate
-//! `(gate_high << s) | c` as `128 / W` lanes of `high_gate_count` `W`-bit
-//! cells: bit `j` of the cell at lane `word_slot`, position `gate_high` is
-//! slot `word_slot * W + j` of that gate — the layout of
-//! `BabyBearMulLayout::bitz_cell` and `MulLayout::<u32>::bitz_cell`.
-//!
-//! Writing the rows one bit at a time scatters `128 · gates`
-//! read-modify-writes across the rows (one cache line per bit). Here a
-//! block of `64 / W` consecutive `gate_high`s of one column is one bit
-//! (`W = 1`) or byte (`W = 8`) transpose of the gates' packed slot words
-//! whose output words land directly in the row. Tasks own groups of
-//! adjacent columns, so the per-gate value arrays are read one cache line
-//! at a time.
+//! A witness commits bit slots per gate. With `s` column coordinates and
+//! `h` high gate coordinates, bit `(slot << h) | gate_high` in column `c`
+//! holds that slot of gate `(gate_high << s) | c`. The kernels transpose
+//! blocks of 64 gates so complete output words can be written at once.
 
 use crate::ligerito::transpose_64x64;
-#[cfg(test)]
-use crate::piop::spartan::mul::MulLayout;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -35,7 +22,7 @@ const WORD_BITS: usize = u64::BITS as usize;
 /// `high_gate_count` must be a multiple of 64 so each lane spans whole
 /// words.
 #[allow(clippy::arithmetic_side_effects)]
-pub(crate) fn pack_slot_major_rows_w1<F>(
+pub(crate) fn pack_slot_major_rows<F>(
     rows: &mut [Vec<u64>],
     s: usize,
     high_gate_count: usize,
@@ -94,16 +81,16 @@ pub(crate) fn pack_slot_major_rows_w1<F>(
 }
 
 /// Packs four native u32 limbs, fusing the first transpose stage into the
-/// loads. LANES is 32 for bit cells or 4 for byte cells; each output word
-/// contains two LANES-sized groups of gates.
-pub(crate) fn pack_slot_major_u32<const LANES: usize, const W: usize, const COLUMNS: usize>(
+/// loads. Each output word contains two groups of 32 gates.
+pub(crate) fn pack_slot_major_u32(
     rows: &mut [Vec<u64>],
     s: usize,
     high_gate_count: usize,
     live_gates: usize,
     limbs: [&[u32]; 4],
 ) {
-    assert!(LANES * W == 32 && LANES.is_power_of_two());
+    const LANES: usize = 32;
+    const COLUMNS: usize = COLUMNS_PER_TASK;
     assert!(high_gate_count.is_multiple_of(2 * LANES));
     assert!(rows.iter().all(|row| row.len() == 2 * high_gate_count));
     let limbs = limbs.map(|v| &v[..live_gates]);
@@ -128,7 +115,7 @@ pub(crate) fn pack_slot_major_u32<const LANES: usize, const W: usize, const COLU
                 }
                 for (row, column) in group.iter_mut().zip(blocks.iter_mut()) {
                     for (limb, matrix) in column.iter_mut().enumerate() {
-                        transpose_lanes::<LANES, W>(matrix);
+                        transpose_u32(matrix);
                         for (lane, &word) in matrix.iter().enumerate() {
                             row[(limb * LANES + lane) * lane_words + block] = word;
                         }
@@ -138,15 +125,14 @@ pub(crate) fn pack_slot_major_u32<const LANES: usize, const W: usize, const COLU
         });
 }
 
-/// Swap stages shared by the complete byte transpose and the native u32
-/// transposes whose first stage is already fused into their loads.
-fn transpose_lanes<const N: usize, const W: usize>(m: &mut [u64; N]) {
-    let mut j = N / 2;
-    let mut shift = j * W;
+/// The remaining swap stages after the fused native u32 load.
+fn transpose_u32(m: &mut [u64; 32]) {
+    let mut j = 16;
+    let mut shift = j;
     let mut mask = u64::MAX / ((1u64 << shift) + 1);
     while j != 0 {
         let mut k = 0;
-        while k < N {
+        while k < 32 {
             let t = ((m[k] >> shift) ^ m[k | j]) & mask;
             m[k | j] ^= t;
             m[k] ^= t << shift;
@@ -177,12 +163,7 @@ mod tests {
 
     /// One read-modify-write per set slot bit, straight from the layout
     /// definition in the module docs.
-    fn reference_rows(
-        s: usize,
-        high_gate_count: usize,
-        live_gates: usize,
-        word_bits: usize,
-    ) -> Vec<Vec<u64>> {
+    fn reference_rows(s: usize, high_gate_count: usize, live_gates: usize) -> Vec<Vec<u64>> {
         let h = high_gate_count.trailing_zeros() as usize;
         let cols = 1_usize << s;
         let mut rows = vec![vec![0_u64; 2 * high_gate_count]; cols];
@@ -199,8 +180,7 @@ mod tests {
                 if bit == 0 {
                     continue;
                 }
-                let b = ((slot / word_bits) << h) | gate_high;
-                let packed_bit = b * word_bits + slot % word_bits;
+                let packed_bit = (slot << h) | gate_high;
                 rows[column][packed_bit / 64] |= 1 << (packed_bit % 64);
             }
         }
@@ -220,65 +200,13 @@ mod tests {
         ] {
             let high_gate_count = 1_usize << h;
             let mut rows = vec![vec![0_u64; 2 * high_gate_count]; 1 << s];
-            pack_slot_major_rows_w1(&mut rows, s, high_gate_count, live, slot_words);
+            pack_slot_major_rows(&mut rows, s, high_gate_count, live, slot_words);
             assert_eq!(
                 rows,
-                reference_rows(s, high_gate_count, live, 1),
+                reference_rows(s, high_gate_count, live),
                 "s={s} h={h} live={live}"
             );
         }
-    }
-
-    #[test]
-    fn w8_packing_matches_the_bitwise_reference() {
-        for (s, h, live) in [
-            (3, 3, 60),
-            (4, 4, 256),
-            (4, 6, 700),
-            (4, 6, 1),
-            (5, 7, 4096),
-            (8, 8, (1 << 16) - 5),
-        ] {
-            let high_gate_count = 1_usize << h;
-            let mut rows = vec![vec![0_u64; 2 * high_gate_count]; 1 << s];
-            let limbs: [Vec<u32>; 4] = core::array::from_fn(|limb| {
-                (0..live)
-                    .map(|gate| {
-                        let (lo, hi) = slot_words(gate);
-                        let word = if limb < 2 { lo } else { hi };
-                        (word >> (32 * (limb % 2))) as u32
-                    })
-                    .collect()
-            });
-            pack_slot_major_u32::<4, 8, 32>(
-                &mut rows,
-                s,
-                high_gate_count,
-                live,
-                limbs.each_ref().map(Vec::as_slice),
-            );
-            assert_eq!(
-                rows,
-                reference_rows(s, high_gate_count, live, 8),
-                "s={s} h={h} live={live}"
-            );
-        }
-    }
-
-    #[test]
-    fn byte_transpose_matches_the_naive_transpose_and_is_an_involution() {
-        let input: [u64; 8] = core::array::from_fn(|k| mix(k, 0x3333));
-        let mut expected = [0_u64; 8];
-        for (i, out) in expected.iter_mut().enumerate() {
-            for (k, word) in input.iter().enumerate() {
-                *out |= ((word >> (8 * i)) & 0xFF) << (8 * k);
-            }
-        }
-        let mut m = input;
-        transpose_lanes::<8, 8>(&mut m);
-        assert_eq!(m, expected);
-        transpose_lanes::<8, 8>(&mut m);
-        assert_eq!(m, input);
     }
 }
 
@@ -289,10 +217,10 @@ mod tests {
 /// (word `w` holds slots `64w..64w+64`); gates at or beyond `live_gates` are
 /// all-zero and never queried. Every row must hold `N · high_gate_count`
 /// words, and `high_gate_count` must be a multiple of 64 so each lane spans
-/// whole words. Same transpose scheme as [`pack_slot_major_rows_w1`], which
+/// whole words. Same transpose scheme as [`pack_slot_major_rows`], which
 /// stays the 128-slot packer.
 #[allow(clippy::arithmetic_side_effects)]
-pub(crate) fn pack_slot_major_rows_w1_words<const N: usize, F>(
+pub(crate) fn pack_slot_major_word_rows<const N: usize, F>(
     rows: &mut [Vec<u64>],
     s: usize,
     high_gate_count: usize,

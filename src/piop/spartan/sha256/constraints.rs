@@ -709,7 +709,6 @@ fn prepare_sha256_compression_instances(
                 IntegerMatrixLayout {
                     row_vars: t,
                     col_vars: assignment_vars - t,
-                    word_bits: 1,
                 }
             }),
             PackedSourceOrder::LocalMajor,
@@ -729,7 +728,6 @@ fn prepare_sha256_compression_instances(
                 Some(IntegerMatrixLayout {
                     row_vars: row_vars,
                     col_vars: assignment_vars - row_vars,
-                    word_bits: 1,
                 }),
                 PackedSourceOrder::InstanceMajor,
             )
@@ -745,7 +743,6 @@ fn prepare_sha256_compression_instances(
                 IntegerMatrixLayout {
                     row_vars: row_vars,
                     col_vars: assignment_vars - row_vars,
-                    word_bits: 1,
                 },
                 None,
                 PackedSourceOrder::LocalMajor,
@@ -765,7 +762,6 @@ fn prepare_sha256_compression_instances(
         product_p_h = Some(IntegerMatrixLayout {
             row_vars: t,
             col_vars: assignment_vars - t,
-            word_bits: 1,
         });
         if t > log_instance_capacity {
             product_order = PackedSourceOrder::InstanceMajor;
@@ -874,7 +870,7 @@ pub(super) fn validate_opening_bound(
     // sampled, so check the largest admissible odd integer without changing
     // the interval or its transcript binding.
     let largest_odd = modulus_bound.saturating_sub(u128::from(modulus_bound & 1 == 0));
-    if layout.word_bits != 1 || !shape.supports_modulus_bound(largest_odd) {
+    if !shape.supports_modulus_bound(largest_odd) {
         return Err(Sha256ConstraintError::UnsupportedOpeningBound);
     }
     Ok(())
@@ -910,7 +906,6 @@ pub(super) const fn balanced_binary_params(vars: usize) -> IntegerMatrixLayout {
     IntegerMatrixLayout {
         row_vars: t,
         col_vars: vars - t,
-        word_bits: 1,
     }
 }
 
@@ -927,7 +922,6 @@ const fn single_forest_binary_params(vars: usize) -> IntegerMatrixLayout {
         IntegerMatrixLayout {
             row_vars: 13,
             col_vars: vars - 13,
-            word_bits: 1,
         }
     }
 }
@@ -1165,7 +1159,6 @@ mod tests {
             IntegerMatrixLayout {
                 row_vars: 8,
                 col_vars: 8,
-                word_bits: 1
             }
         );
         assert_eq!(
@@ -1173,7 +1166,6 @@ mod tests {
             IntegerMatrixLayout {
                 row_vars: 9,
                 col_vars: 9,
-                word_bits: 1
             }
         );
     }
@@ -1320,7 +1312,6 @@ mod tests {
             IntegerMatrixLayout {
                 row_vars: 11,
                 col_vars: 10,
-                word_bits: 1,
             }
         );
         assert_eq!(
@@ -1357,7 +1348,6 @@ mod tests {
                     IntegerMatrixLayout {
                         row_vars: 13,
                         col_vars: exponent + 2,
-                        word_bits: 1,
                     },
                     "log-compressions={exponent}"
                 );
@@ -1417,10 +1407,7 @@ mod tests {
         for t in 7..=28 {
             let prepared = prepare_sha256_compression_batch_for_product_t_fixed98(14, t).unwrap();
             let params = prepared.product_assignment_params().unwrap();
-            assert_eq!(
-                (params.row_vars, params.col_vars, params.word_bits),
-                (t, 29 - t, 1)
-            );
+            assert_eq!((params.row_vars, params.col_vars), (t, 29 - t));
             assert_eq!(prepared.instances(), 1 << 14);
             assert_eq!(prepared.security().projection_min, SHA256_FIXED_98_PRIME);
             assert!(prepared.prime_profile().is_fixed());

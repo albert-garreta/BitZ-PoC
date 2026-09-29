@@ -486,10 +486,6 @@ pub trait RelationSpec: Sync {
     fn opening_layout(&self) -> IntegerMatrixLayout {
         self.committed_layout()
     }
-    /// Integer magnitude bound; a smaller width requires a padding map.
-    fn opening_word_bits(&self) -> usize {
-        self.opening_layout().word_bits
-    }
 
     /// Number of gate coordinates of the assignment MLE (the assignment has
     /// `gate_vars + selector_vars` variables).
@@ -1900,11 +1896,8 @@ pub fn runtime_field(q: u128) -> Result<field::FpCtx<2>, ProtocolError> {
 
 /// The committed bit rows must have exactly the layout's shape.
 pub fn validate_bit_rows(p: &IntegerMatrixLayout, rows: &[Vec<u64>]) -> Result<(), ProtocolError> {
-    let row_count = checked_pow2(p.row_vars)?;
+    let row_bits = checked_pow2(p.row_vars)?;
     let col_count = checked_pow2(p.col_vars)?;
-    let row_bits = row_count
-        .checked_mul(p.word_bits)
-        .ok_or(ProtocolError::InvalidBitRows)?;
     if row_bits % u64::BITS as usize != 0 || rows.len() != col_count {
         return Err(ProtocolError::InvalidBitRows);
     }
@@ -1971,14 +1964,8 @@ pub fn validate_commitment(
 /// The packed-word variable count of the committed tensor, checked against
 /// the shared packing rule.
 pub fn packed_variables(p: &IntegerMatrixLayout) -> Result<usize, ProtocolError> {
-    if !p.word_bits.is_power_of_two() || p.word_bits > u128::BITS as usize {
-        return Err(ProtocolError::InvalidBitzParameters);
-    }
-    let row_bit_vars = p
+    let expected = p
         .row_vars
-        .checked_add(p.word_bits.trailing_zeros() as usize)
-        .ok_or(ProtocolError::InvalidBitzParameters)?;
-    let expected = row_bit_vars
         .checked_sub(LOG_PACKING)
         .and_then(|folded| folded.checked_add(p.col_vars))
         .ok_or(ProtocolError::InvalidBitzParameters)?;

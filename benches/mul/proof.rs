@@ -28,7 +28,7 @@ pub fn selection(case: &Case) -> LigeritoSelection {
     .expect("validated Ligerito selection")
 }
 pub fn packing<T: MulWord>(layout: &MulLayout<T>) -> Value {
-    let shape = |p: bitz::pcs::IntegerMatrixLayout| json!({"t":p.row_vars,"s":p.col_vars,"physical_word_bits":p.word_bits});
+    let shape = |p: bitz::pcs::IntegerMatrixLayout| json!({"t":p.row_vars,"s":p.col_vars,"physical_word_bits":1usize});
     json!({"logical_word_bits":1,"mode":"direct","committed":shape(layout.committed_layout()),"opening":shape(layout.bitz_params())})
 }
 pub fn shape_seed(case: &Case) -> u64 {

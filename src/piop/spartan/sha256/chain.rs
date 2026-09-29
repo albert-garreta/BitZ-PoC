@@ -539,7 +539,6 @@ fn prepare_chain_instances<P: IopSecurityProfile>(
     let h_layout = IntegerMatrixLayout {
         row_vars: t,
         col_vars: assignment_vars - t,
-        word_bits: 1,
     };
     let map = ChainedPackedSourceMap::new(
         local.local.clone(),
@@ -639,8 +638,6 @@ pub fn generate_sha256_chain_witnesses(
 ) -> Result<Sha256ChainWitnessBatch, Sha256WitnessError> {
     let instances = prepared.instances();
     if blocks.len() != instances
-        || prepared.f_layout.word_bits != 1
-        || prepared.h_layout.word_bits != 1
         || prepared.f_layout.cells()
             != (1 + instances * SHA256_CHAIN_F_INSTANCE_BITS).next_power_of_two()
         || prepared.h_layout.cells() != instances * LOCAL_STRIDE
@@ -1209,7 +1206,6 @@ fn chain_product_opening_claim(
     let instance_vars = instance_vars(batching.instances)?;
     if !batching.instances.is_power_of_two()
         || batching.instance_point.len() != instance_vars
-        || h_layout.word_bits != 1
         || h_layout.row_vars > instance_vars
         || h_layout.row_vars + h_layout.col_vars != instance_vars + LOCAL_BITS
         || batching.local_coefficients.len() != SHA256_CHAIN_H_BAR_LIVE_BITS
@@ -1278,8 +1274,7 @@ fn validate_chain_geometry(prepared: &PreparedSha256ChainBatch) -> Result<(), Pr
     let map = &prepared.map;
     let parts = map.parts();
     let instance_vars = prepared.log_instance_capacity;
-    if h_layout.word_bits != 1
-        || h_layout.row_vars < LOG_PACKING
+    if h_layout.row_vars < LOG_PACKING
         || h_layout.row_vars > instance_vars
         || h_layout.row_vars + h_layout.col_vars != instance_vars + LOCAL_BITS
         || map.rows() != h_layout.cells()
@@ -1407,10 +1402,10 @@ fn chain_assignment_binding(
         prepared.log_instance_capacity,
         prepared.h_layout.row_vars,
         prepared.h_layout.col_vars,
-        prepared.h_layout.word_bits,
+        1usize,
         prepared.f_layout.row_vars,
         prepared.f_layout.col_vars,
-        prepared.f_layout.word_bits,
+        1usize,
     ] {
         hash_usize(&mut hash, value)?;
     }

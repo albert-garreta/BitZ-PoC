@@ -1144,7 +1144,7 @@ impl<'a, T: Transcript> StatementFrame<'a, T> {
     fn int_eval_params(&mut self, p: &IntegerMatrixLayout) {
         self.usize(0x20, p.row_vars);
         self.usize(0x21, p.col_vars);
-        self.usize(0x22, p.word_bits);
+        self.usize(0x22, 1usize);
     }
 
     fn ligerito_config(&mut self, config: &impl LigeritoStatementConfig) {
@@ -1743,9 +1743,8 @@ mod support_tests {
     #[test]
     fn shared_rows_and_lazy_columns_preserve_commitment_storage() {
         let p = IntegerMatrixLayout {
-            row_vars: 4,
+            row_vars: 9,
             col_vars: 6,
-            word_bits: 32,
         };
         let (pc, _) = lig_configs(
             packed_vars(&p),
@@ -1755,7 +1754,7 @@ mod support_tests {
             },
         )
         .unwrap();
-        let data: Vec<_> = (0..p.cells()).map(|i| i as u128).collect();
+        let data: Vec<_> = (0..p.cells()).map(|i| (i & 1) as u128).collect();
         let mut rows = std::sync::Arc::new(repack_leaf_bits(&p, &data));
         let hint = commit_rs_ligerito_shared_rows(&p, rows.clone(), &pc);
         assert!(std::sync::Arc::ptr_eq(&rows, &hint.rows));

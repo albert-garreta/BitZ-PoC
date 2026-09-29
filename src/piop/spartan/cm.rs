@@ -188,7 +188,6 @@ impl CmAndLayout {
         IntegerMatrixLayout {
             row_vars: 7 + self.gate_vars - s,
             col_vars: s,
-            word_bits: 1,
         }
     }
 
@@ -415,7 +414,7 @@ impl RelationSpec for CmAndSpec {
             defect_log2_bound: 80,
             lift_arity_log2: p.row_vars as u32,
             opening_t: p.row_vars as u32,
-            opening_word_bits: p.word_bits as u32,
+
             direct_opening: false,
             tau_arity: (self.layout.gate_vars() + SELECTOR_VARS) as u32,
             piop_degree: 3,
@@ -525,7 +524,7 @@ impl RelationSpec for CmAndSpec {
             self.layout.gate_vars(),
             p.row_vars,
             p.col_vars,
-            p.word_bits,
+            1usize,
         ])?;
         hasher.bytes(&self.map.digest());
         Ok(hasher.finalize())
@@ -773,10 +772,9 @@ fn checked_pow2(exponent: usize) -> Result<usize, ProtocolError> {
 
 fn validate_cm_layout_geometry(layout: &CmAndLayout) -> Result<(), ProtocolError> {
     let p = layout.bitz_params();
-    if p.word_bits != 1
-        || p.row_vars < LOG_PACKING
+    if p.row_vars < LOG_PACKING
         || p.col_vars > layout.gate_vars()
-        || p.row_vars.saturating_add(p.word_bits) > 126
+        || p.row_vars > 125
         || CM_AND_H_SLOTS != 1usize << 7
     {
         return Err(ProtocolError::InvalidBitzParameters);

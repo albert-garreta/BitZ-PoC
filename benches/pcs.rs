@@ -19,10 +19,7 @@
 //!   default 5).
 //! - `BITZ_BENCH_FILL`: witness fill fraction in (0, 1] (default 1.0) — the
 //!   trailing `(1 − fill)` of the columns are left ALL ZERO, i.e. the
-//!   zero padding a witness of `N = fill·2^n` cells carries. With
-//!   `BITZ_COL_ELIDE=1` (the default) the forest skips those trees; set
-//!   `BITZ_COL_ELIDE=0` to measure the same instance un-elided. The
-//!   printed `proof-fnv` is identical either way (byte-identity pin).
+//!   zero padding a witness of `N = fill·2^n` cells carries.
 //! - `BITZ_LIG_PROFILE`: Ligerito profile at `m = m_p + 7 ≥ 22` —
 //!   `custom:1:4` (DEFAULT; validator-gated Johnson geometry at base RS
 //!   rate 1/2, initial_k = 4), `slim` (embedded; fewer queries + 16-bit
@@ -147,7 +144,6 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
     let p = IntegerMatrixLayout {
         row_vars: t,
         col_vars: s,
-        word_bits: w,
     };
     let q_bits = standalone_q_bits(&p);
     let m_p = packed_vars(&p);
@@ -181,17 +177,10 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
     let witness_started_recording =
         bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
     let witness_started = tracing::info_span!("pcs:witness_started").entered();
-    let mask = if w >= 128 {
-        u128::MAX
-    } else {
-        (1u128 << w) - 1
-    };
     let cell = |b: usize, c: usize| -> u128 {
-        (p.cell_index(b, c) as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & mask
+        (p.cell_index(b, c) as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & 1
     };
-    let log_w = w.trailing_zeros() as usize;
-    let row_len = p.rows() << log_w;
-    let words = row_len.div_ceil(64);
+    let words = p.rows().div_ceil(64);
     // Fill fraction: columns `live..2^s` stay ALL ZERO — exactly the
     // padding of a witness with N = fill·2^n cells (the column axis is
     // the high-order index, so a zero-padded witness ends in whole zero
@@ -205,13 +194,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
                 return wv;
             }
             for b in 0..p.rows() {
-                let v = cell(b, c);
-                for j in 0..w {
-                    if (v >> j) & 1 == 1 {
-                        let i = (b << log_w) | j;
-                        wv[i >> 6] |= 1u64 << (i & 63);
-                    }
-                }
+                wv[b >> 6] |= (cell(b, c) as u64) << (b & 63);
             }
             wv
         })
@@ -231,12 +214,11 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
 
     let n = t + s;
     println!(
-        "\n=== n={n} (t={t}, s={s}, W={w}, m_p={m_p}, chunks={lch}, lig={lig_tag}@r1/{}k{}, data={} KiB, live={live}/{} elide={}) ===",
+        "\n=== n={n} (t={t}, s={s}, W={w}, m_p={m_p}, chunks={lch}, lig={lig_tag}@r1/{}k{}, data={} KiB, live={live}/{}) ===",
         1usize << pc.log_inv_rates[0],
         pc.initial_k,
         (p.cells() * w).div_ceil(8) >> 10,
         p.cols(),
-        std::env::var("BITZ_COL_ELIDE").unwrap_or_else(|_| "1".into())
     );
 
     // Commit: timed + its own peak window (the commitment/hint stays live).
@@ -304,8 +286,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
                 .expect("measure completed operation");
         ser_us.push(t1.as_secs_f64() * 1e6);
         bytes = ser.len();
-        // FNV-1a over the serialized proof: the byte-identity pin for
-        // `BITZ_COL_ELIDE=0` vs `=1` at the same shape and fill.
+        // Fingerprint the local versioned proof codec.
         proof_fnv = ser.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &b| {
             (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
         });
@@ -345,8 +326,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
     // reps-warmed pool stacked under the forest. The timed medians above
     // deliberately keep the warm pool — that IS the steady-state timing.
     bitz::ligerito_flock::flock_scratch_clear();
-    let recording =
-        bitz::observability::Recording::start(Vec::new()).expect("start PCS phase probe");
+    bitz::wfbitz::record_phases(true);
     reset_peak();
 
     let split_proof = {
@@ -355,8 +335,11 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
         proof
     };
     let prove_peak = peak_mb();
-    let phases =
-        bitz::observability::totals(&recording.intervals().expect("query PCS phase probe"));
+    let phases: Vec<_> = bitz::wfbitz::take_phases()
+        .into_iter()
+        .map(|(label, time)| (label, time.as_secs_f64()))
+        .collect();
+    bitz::wfbitz::record_phases(false);
 
     let prove_median = median(prove_ms);
     let verify_median = median(verify_ms);
@@ -371,17 +354,10 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
                 .sum::<f64>()
                 * 1e3
         };
-        let forest_ms = phase_ms(&[
-            "mc:pack",
-            "mc:pow2",
-            "mc:forest",
-            "mc:fold_v",
-            "mc:presum_tbls",
-            "mc:presum_run",
-        ]);
-        let open_ms = phase_ms(&["mq:rings", "mq:bcomb", "mq:lig"]);
+        let forest_ms = phase_ms(&["fold+images", "gkr"]);
+        let open_ms = phase_ms(&["sumcheck", "sumcheck (sum)", "ring switch", "ligerito"]);
         println!(
-            "  phases:  forest+presum {forest_ms:8.2} ms | ligerito open {open_ms:7.2} ms   (one profiled prove)"
+            "  phases:  fold+GKR {forest_ms:8.2} ms | ligerito open {open_ms:7.2} ms   (one profiled prove)"
         );
         forest_split = Some((forest_ms, open_ms));
     }

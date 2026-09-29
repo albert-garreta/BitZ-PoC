@@ -492,9 +492,6 @@ impl TraceWriter {
                 "timeline": "observed half-open intervals",
                 "setup_ns": self.setup_ns.to_string(),
                 "expected_constraint_digest_provided": self.expected_constraint_digest.is_some().to_string(),
-                "bitz_virt_id_fast": env_setting("BITZ_VIRT_ID_FAST", "default:on"),
-                "bitz_rs_fast": env_setting("BITZ_RS_FAST", "default:on"),
-                "bitz_flat_forest": env_setting("BITZ_FLAT_FOREST", "default:shape-dependent"),
                 "arithmetic": "delayed-barrett",
             },
         });
@@ -739,17 +736,6 @@ fn span_names(label: &str) -> (String, String) {
         "step4:bitify_prove" => Some(("Bitify terminal opening claim", "Bitify")),
         "step5_0:reduce_prove" => Some(("Exact lift and runtime-prime reduction", "Exact bridge")),
         "step5:open_prove" => Some(("Virtual BitZ PCS opening", "BitZ opening")),
-        "mqv:pack" => Some(("Pack derived rows", "Derived packing")),
-        "mc:forest" => Some(("Merged-forest GKR", "Merged GKR")),
-        "mc:fold_v" => Some(("Fold integer v-message", "Integer fold")),
-        "mc:presum_tbls" => Some(("Construct pre-sumcheck tables", "Pre-SC tables")),
-        "mc:presum_run" => Some(("Run pre-sumcheck rounds", "Pre-sumcheck")),
-        "mqv:wprep" => Some(("Prepare ring-switch weights", "Weight prep")),
-        "mqv:hs" => Some(("Fold h_i plane messages", "h_i fold")),
-        "mqv:aprime" => Some(("Construct a-prime basis", "a-prime")),
-        "mq:rings" => Some(("Construct direct ring-switch messages", "Ring switch")),
-        "mq:bcomb" => Some(("Combine ring-switch bases", "Basis combine")),
-        "mq:lig" => Some(("Recursive Ligerito opening", "Ligerito")),
         _ => None,
     };
     known.map_or_else(
@@ -791,19 +777,6 @@ fn span_math(label: &str) -> Vec<&'static str> {
             "\\mu'\\equiv\\mu\\pmod Q,\\quad q'\\leftarrow\\operatorname{PrimeSample}(\\mathsf{tr})",
         ],
         "step5:open_prove" => vec!["\\widetilde{\\operatorname{bits}(z)}(r)=v"],
-        "mc:presum_tbls" | "mc:presum_run" => vec!["g_j(X)=\\sum_{b\\in\\{0,1\\}}g_{j+1}(X,b)"],
-        "mqv:wprep" => vec![
-            "S_{\\ell,c}=\\eta_\\ell\\sum_{r\\in\\operatorname{col}(c)}\\operatorname{eq}(p_{\\ell,\\mathrm{local}},r)",
-        ],
-        "mqv:hs" => {
-            vec!["W_{i,c}=\\sum_\\ell\\operatorname{eq}(p_{\\ell,\\mathrm{inst}},i)S_{\\ell,c}"]
-        }
-        "mqv:aprime" => vec!["a'=T^*a"],
-        "mq:rings" => vec!["s_v=\\sum_y\\operatorname{eq}(r_{\\mathrm{hi}},y)\\,p_{v,y}"],
-        "mq:bcomb" => {
-            vec!["a'=\\sum_{\\ell}\\eta_\\ell\\Phi_\\rho(\\operatorname{eq}(r_\\ell,\\cdot))"]
-        }
-        "mq:lig" => vec!["\\operatorname{Open}_{\\mathrm{Lig}}(C_z,r,v)"],
         _ => Vec::new(),
     }
 }
@@ -859,10 +832,6 @@ fn command_output(program: &str, args: &[&str], fallback: &str) -> String {
         .unwrap_or_else(|| fallback.to_owned())
 }
 
-fn env_setting(name: &str, default: &str) -> String {
-    std::env::var(name).unwrap_or_else(|_| default.to_owned())
-}
-
 fn hex_bytes(bytes: [u8; 32]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
@@ -895,17 +864,6 @@ impl serde::Serialize for Nanoseconds {
 
 fn insert_ns(values: &mut MeasurementsNs, name: &'static str, value: u64) {
     values.insert(name, Nanoseconds(value));
-}
-
-fn insert_optional_ns(
-    values: &mut MeasurementsNs,
-    intervals: &[Interval],
-    name: &'static str,
-    label: &str,
-) {
-    if let Some(value) = maybe_duration_for(intervals, label) {
-        insert_ns(values, name, value);
-    }
 }
 
 fn measurements(intervals: &[Interval], setup_ns: u64) -> MeasurementsNs {
@@ -952,36 +910,6 @@ fn measurements(intervals: &[Interval], setup_ns: u64) -> MeasurementsNs {
     insert_ns(&mut values, "verification", verification);
     insert_ns(&mut values, "verified_trial", verified_trial);
 
-    for (name, label) in [
-        ("derived_row_packing", "mqv:pack"),
-        ("merged_forest_gkr", "mc:forest"),
-        ("integer_folds", "mc:fold_v"),
-        ("pre_sumcheck_table_construction", "mc:presum_tbls"),
-        ("pre_sumcheck_protocol_rounds", "mc:presum_run"),
-        ("ring_switch_weight_preparation", "mqv:wprep"),
-        ("ring_switch_h_fold", "mqv:hs"),
-        ("ring_switch_a_prime_construction", "mqv:aprime"),
-        ("ring_switch_direct_messages", "mq:rings"),
-        ("ring_switch_basis_combination", "mq:bcomb"),
-        ("recursive_ligerito", "mq:lig"),
-    ] {
-        insert_optional_ns(&mut values, intervals, name, label);
-    }
-    let general_ring_switch = ["mqv:wprep", "mqv:hs", "mqv:aprime"]
-        .iter()
-        .filter_map(|label| maybe_duration_for(intervals, label))
-        .sum::<u64>();
-    let direct_ring_switch = ["mq:rings", "mq:bcomb"]
-        .iter()
-        .filter_map(|label| maybe_duration_for(intervals, label))
-        .sum::<u64>();
-    if general_ring_switch != 0 || direct_ring_switch != 0 {
-        insert_ns(
-            &mut values,
-            "ring_switch_total",
-            general_ring_switch.saturating_add(direct_ring_switch),
-        );
-    }
     values
 }
 
@@ -1172,7 +1100,7 @@ fn main() {
         MULTISWAP_VALUE_BITS,
         p.row_vars,
         p.col_vars,
-        p.word_bits,
+        1usize,
     );
     println!(
         "  security profile: {}",
@@ -1316,7 +1244,7 @@ fn peak_rss_bytes() -> u64 {
 
 #[cfg(test)]
 mod reporting_tests {
-    use super::{MeasurementsNs, insert_ns, insert_optional_ns, measurements};
+    use super::{MeasurementsNs, insert_ns, measurements};
 
     #[test]
     fn sparse_nanoseconds_are_exact_decimal_strings() {
@@ -1326,7 +1254,6 @@ mod reporting_tests {
         );
         let mut values = MeasurementsNs::new();
         insert_ns(&mut values, "setup", 0);
-        insert_optional_ns(&mut values, &[], "missing", "no interval");
         assert_eq!(serde_json::to_string(&values).unwrap(), r#"{"setup":"0"}"#);
     }
 }

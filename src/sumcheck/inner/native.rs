@@ -692,8 +692,7 @@ fn fold_block_native_raw(
 fn sparse_block_value_raw(eq_at_zero: Raw, block: BlockValues<'_>) -> Option<Raw> {
     match block {
         BlockValues::ConstantOne => Some(eq_at_zero),
-        BlockValues::Zero => Some(0),
-        BlockValues::Native([]) | BlockValues::Field([]) => Some(0),
+        BlockValues::Zero | BlockValues::Native([]) | BlockValues::Field([]) => Some(0),
         _ => None,
     }
 }

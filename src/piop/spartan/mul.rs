@@ -135,7 +135,6 @@ impl<T: MulWord> MulLayout<T> {
         IntegerMatrixLayout {
             row_vars: self.gate_vars - self.col_vars + (4 * T::BITS).trailing_zeros() as usize,
             col_vars: self.col_vars,
-            word_bits: 1,
         }
     }
     pub const fn bitz_cell(&self, bit_slot: usize, gate: usize) -> Option<(usize, usize)> {
@@ -277,7 +276,7 @@ impl<T: MulWord> MulWitness<T> {
     pub fn write_bitz_bit_rows(&self, rows: &mut [Vec<u64>]) -> Result<(), MulError> {
         let layout = self.layout;
         let p = layout.bitz_params();
-        let words = (p.rows() * p.word_bits).div_ceil(64);
+        let words = p.rows().div_ceil(64);
         if rows.len() != p.cols() || rows.iter().any(|row| row.len() != words) {
             return Err(MulError::InvalidRowShape);
         }
@@ -286,7 +285,7 @@ impl<T: MulWord> MulWitness<T> {
     }
     fn bit_rows(&self, layout: MulLayout<T>) -> Vec<Vec<u64>> {
         let params = layout.bitz_params();
-        let words = (params.rows() * params.word_bits).div_ceil(64);
+        let words = params.rows().div_ceil(64);
         let mut rows = (0..params.cols())
             .map(|_| vec![0; words])
             .collect::<Vec<_>>();
@@ -361,7 +360,7 @@ impl MulWord for u32 {
     }
     fn pack(w: &MulWitness<Self>, layout: MulLayout<Self>, rows: &mut [Vec<u64>], high: usize) {
         let limbs = w.blocks();
-        super::slot_rows::pack_slot_major_u32::<32, 1, 8>(
+        super::slot_rows::pack_slot_major_u32(
             rows,
             layout.col_vars,
             high,
@@ -387,7 +386,7 @@ impl MulWord for u64 {
     }
     fn pack(w: &MulWitness<Self>, layout: MulLayout<Self>, rows: &mut [Vec<u64>], high: usize) {
         let [x, y, lo, hi] = w.blocks().map(|v| &v[..layout.multiplications]);
-        super::slot_rows::pack_slot_major_rows_w1_words::<4, _>(
+        super::slot_rows::pack_slot_major_word_rows::<4, _>(
             rows,
             layout.col_vars,
             high,
@@ -412,7 +411,7 @@ impl MulWord for u128 {
     }
     fn pack(w: &MulWitness<Self>, layout: MulLayout<Self>, rows: &mut [Vec<u64>], high: usize) {
         let [x, y, lo, hi] = w.blocks().map(|v| &v[..layout.multiplications]);
-        super::slot_rows::pack_slot_major_rows_w1_words::<8, _>(
+        super::slot_rows::pack_slot_major_word_rows::<8, _>(
             rows,
             layout.col_vars,
             high,

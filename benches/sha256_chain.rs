@@ -69,16 +69,11 @@ struct RepTiming {
 impl RepTiming {
     fn emit_trial(&self, trial: &str) {
         if std::env::var("BITZ_BENCH_PHASE_SAMPLES").is_ok_and(|v| v == "1") {
-            let gkr = self
-                .prove_phases
-                .iter()
-                .find(|(n, _)| n == "mc:forest")
-                .map_or(0.0, |(_, v)| 1000.0 * v);
             println!(
                 "PROVER_TRIAL {}",
                 serde_json::json!({"trial":trial,"verified":true,
                 "e2e_ms":self.e2e_ms,"prove_ms":self.prove_ms,"witness_ms":self.witness_ms,
-                "verify_ms":self.verify_ms,"gkr_ms":gkr,"proof_bytes":self.piop_bytes+self.bitz_bytes})
+                "verify_ms":self.verify_ms,"proof_bytes":self.piop_bytes+self.bitz_bytes})
             );
         }
     }

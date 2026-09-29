@@ -15,9 +15,9 @@ use crate::cfg_into_iter;
 use crate::ligerito::{xi_combined_rows, xi_combined_rows_packed};
 
 use crate::pcs::IntegerMatrixLayout;
-use field::Gf128 as Gf;
 use crate::poly::utils::build_eq_x_r_vec;
 use crate::utils::wide_mul::WideMulAcc;
+use field::Gf128 as Gf;
 
 const PARALLEL_MIN_PAIRS: usize = 1 << 12;
 
@@ -69,7 +69,10 @@ fn fold_rows_point(rows: &[Vec<u64>], point: &[Gf]) -> Vec<Gf> {
                 for (pos, tb) in table.iter().enumerate() {
                     inner += tb[((word >> (8 * pos)) & 0xFF) as usize];
                 }
-                <Gf as WideMulAcc>::wide_add_assign(&mut acc, &<Gf as WideMulAcc>::mul_wide(&weight, &inner));
+                <Gf as WideMulAcc>::wide_add_assign(
+                    &mut acc,
+                    &<Gf as WideMulAcc>::mul_wide(&weight, &inner),
+                );
             }
             <Gf as WideMulAcc>::from_wide(acc)
         })
@@ -156,7 +159,6 @@ pub(crate) fn prove(
     let layout = IntegerMatrixLayout {
         row_vars: w1.len().ilog2() as usize,
         col_vars: w2.len().ilog2() as usize,
-        word_bits: 1,
     };
     let mut target = claim.target();
     let mut point = Vec::with_capacity(layout.row_vars + layout.col_vars);
@@ -233,7 +235,8 @@ pub(crate) fn verify(
         if coefficients[1] + coefficients[2] != target {
             return Err(VerifyError::VerificationFailed);
         }
-        let challenge = transcript.native_scalar(super::grinding::Stage::BinaryRound)
+        let challenge = transcript
+            .native_scalar(super::grinding::Stage::BinaryRound)
             .map_err(|_| VerifyError::MalformedProof)?;
         target = evaluate_round(coefficients, challenge);
         point.push(challenge);
@@ -274,7 +277,6 @@ pub(crate) fn prove_sum(
     let layout = IntegerMatrixLayout {
         row_vars: n_rows.ilog2() as usize,
         col_vars: n_cols.ilog2() as usize,
-        word_bits: 1,
     };
     let mut target = claim.target();
     let mut point = Vec::with_capacity(layout.row_vars + layout.col_vars);
@@ -365,7 +367,11 @@ pub(crate) fn verify_sum(
     let row_rounds = claim.rows().ilog2() as usize;
     let col_rounds = claim.columns().ilog2() as usize;
     let mut rows: Vec<Vec<Gf>> = terms.iter().map(|(w1, _)| w1.clone()).collect();
-    let mut columns = if row_rounds == 0 { merged_columns(terms, &rows) } else { Vec::new() };
+    let mut columns = if row_rounds == 0 {
+        merged_columns(terms, &rows)
+    } else {
+        Vec::new()
+    };
     let mut point = Vec::with_capacity(row_rounds + col_rounds);
     let mut target = claim.target();
     for round in 0..row_rounds + col_rounds {
@@ -375,7 +381,8 @@ pub(crate) fn verify_sum(
         if coefficients[1] + coefficients[2] != target {
             return Err(VerifyError::VerificationFailed);
         }
-        let challenge = transcript.native_scalar(super::grinding::Stage::BinaryRound)
+        let challenge = transcript
+            .native_scalar(super::grinding::Stage::BinaryRound)
             .map_err(|_| VerifyError::MalformedProof)?;
         target = evaluate_round(coefficients, challenge);
         point.push(challenge);
@@ -440,10 +447,11 @@ fn round_polynomial(witness: &[Gf], weights: &[Gf]) -> [Gf; 3] {
             ]
         })
         .collect();
-    let [at_zero, at_one, quadratic] = partials.into_iter().fold(
-        [Gf::zero(); 3],
-        |[a, b, c], [x, y, z]| [a + x, b + y, c + z],
-    );
+    let [at_zero, at_one, quadratic] = partials
+        .into_iter()
+        .fold([Gf::zero(); 3], |[a, b, c], [x, y, z]| {
+            [a + x, b + y, c + z]
+        });
     [at_zero, at_zero + at_one + quadratic, quadratic]
 }
 
@@ -547,7 +555,13 @@ mod sum_tests {
         }
         assert_eq!(reduced.target, evaluation);
         // A wrong target is caught by the prover's own consistency check.
-        let wrong = SumClaimGf::from_shape(&shape, claim.terms().to_vec(), target + Gf::one(), Vec::new()).unwrap();
+        let wrong = SumClaimGf::from_shape(
+            &shape,
+            claim.terms().to_vec(),
+            target + Gf::one(),
+            Vec::new(),
+        )
+        .unwrap();
         let mut prover = build_kernel_prover(b"sum-test/v1", b"instance");
         assert!(prove_sum(&wrong, &rows_bits, &[], &mut prover).is_err());
     }

@@ -1,7 +1,7 @@
 # Wfbitz cleanup: commit disposition ledger
 
 Audited range: `6115da167f901bf8fd880042fecdf3703c3281df..57a632e0c10e5ac8a1ad037a7e61c24fc0196fc4` (47 commits, including the merge).
-The dispositions below guided the cleanup. Historical measurements retain their
+The dispositions below record the retained and retired ideas in the cleanup. Historical measurements retain their
 original backend labels. This ledger is not an independent cryptographic audit
 or a performance acceptance report.
 
@@ -52,9 +52,14 @@ its exclusive virtual-batching, dual-basis, extension, tap, RLC and codec code.
 | 39 | `9f74ce2b` | Build eight nibble rows per cache line | Retain optimized packing. |
 | 40 | `b33cfaa7` | Compute column folds from nibble rows | Retain fold/kernel reuse and canonical mathematical result. |
 | 41 | `e2ee26d4` | Scatter four pair buckets in one pass | Retain optimized forest path and transcript equivalence. |
-| 42 | `f710c440` | Packed column combination without per-byte loop | Retain shared `ligerito` packing kernel if used by wfbitz/binary/hybrid; extract from mixed legacy module rather than dropping it. |
+| 42 | `f710c440` | Packed column combination without per-byte loop | Retained shared `ligerito` packing kernels used by Wfbitz/binary/hybrid, extracted from the deleted engine. |
 | 43 | `212fc301` | Direct identity requires full-grid identity | Retain exact grid-size checks; smaller identity maps remain virtual and zero-padded. |
 | 44 | `92d7fa99` | Validate canonical claims against active parameters | Retain validation at execution, not merely construction; changing parameters must not bypass canonical checks. |
 | 45 | `4e080f08` | Merge fix series | Preserve integrated result; no standalone code to port. |
-| 46 | `a45e8ba6` | Public mod-q statement binding and mandatory Johnson Round 0 | Port invariants/tests to canonical wfbitz standalone API before deleting old entrypoints. Retire old function signatures and duplicate helper flows. |
+| 46 | `a45e8ba6` | Public mod-q statement binding and mandatory Johnson Round 0 | Ported invariants/tests to the canonical Wfbitz standalone API; retired old function signatures and duplicate helper flows. |
 | 47 | `57a632e0` | Direct BitZ claim binding before folds | Retain parameter, root and claim binding before first fold challenge and regression coverage in `tests/wfbitz_claim_binding.rs`. |
+
+The final API also removes matrix word-width state and the extension-projection
+parameter shell. Prime sampling retains its previous interval and transcript
+sequence. Forest-only phase tables, environment controls, and obsolete CSV /
+snapshot collectors were removed; native full-proof benchmarks remain.
