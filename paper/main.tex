@@ -493,7 +493,7 @@ We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful an
 
 
 
-\emph{Implementation and optimizations:} We  used AI in our implementation, optimization, and experiments, in the way explained in \cref{s:experiments}. In particular, the use of lookup tables was initially suggested by an AI when working with it on optimizing the  low entropy batched grand products. The optimizations in \cref{s:gkr_buckets,s:indices} where found by an AI.
+\emph{Implementation and optimizations:} We  used AI in our implementation, optimization, and experiments, in the way explained in \cref{s:experiments}. In particular, the use of lookup tables was initially suggested by an AI when working with it on optimizing the  low entropy batched grand products. The optimizations in \cref{s:gkr_buckets,s:gkr_implementation} were found by an AI.
 
 \bigskip
 
@@ -2556,6 +2556,8 @@ $$
 %
 One can additionally add an encoding $f=\Enc_\cC(\bfg)$ as an oracle  in the above relations (matching the context in which we use the IOR), but our IOR does not make any use of it whatsoever, hence we omit it. 
 
+This is the relation $\PESAT$ of \cref{d:pesat} with the $\codedim_2$ constraints $\prod_{i\in[\codedim_1]}\gkrpol(\yy_i,\bfg_{ij})-\bm{\mu}_j=0$, which we denote $\PESAT(\comfield,\gkrpol)$ in short.
+
 In our instantiation, $\yy_i=g^{\bm{\gamma}_i}$ and $\bm{\mu}_j=g^{\mu_j}$, where $\bm{\gamma}_i$ and $\mu_j$ are the integers in \eqref{e:main_grand_product}.
 
 We  describe $\Pi_{\red}$ now. We will describe our implementation-level optimizations afterwards. We assume $\codedim_1,\codedim_2$ are powers of two:
@@ -2839,7 +2841,7 @@ In \cref{t:gkr_step1_costs} we record the total upper bound costs for computing 
 
 
 
- On the other hand, a standard generic approach to compute $h_{1}(X)$ would require $O(\codedim)=O(\codedim_1\cdot \codedim_2)$ multiplications and additions, even if using the few  sumcheck optimizations that apply in our settings (to our knowledge) %\albert{which ones, exactly?}. 
+ On the other hand, a standard generic approach to compute $h_{1}(X)$ would require $O(\codedim)=O(\codedim_1\cdot \codedim_2)$ multiplications and additions, even if using the few  sumcheck optimizations that apply in our settings (to our knowledge). %\albert{which ones, exactly?}. 
  Crucially, we note that our sumcheck features factors of full field bit size $\log|\KK|$, which prevents us from using some known powerful optimizations when the factors are small, e.g.\ the univariate skip \cite{gruen} and some optimizations from \cite{sumcheck_opt_2}. From \cite{sumcheck_opt_1,sumcheck_opt_2} we can use the square-root split of the $\eq$ factor, and we use  precomputed tables in the first sumcheck rounds, applied to summands which are not small, but are selected by witness bits among few values. We also use the  ``eq factoring'' technique from \cite{gruen} to reduce the degree of the polynomials sent by the prover during sumcheck. 
 
  
@@ -2927,7 +2929,7 @@ The value $A_2^{(2)}[\bb,\cc]$, however, now depends on the value taken by \emph
 This can be iterated in further sumcheck rounds, for computing $h_3(X), h_4(X),$ etc. The limitation is that the entries in the tables are vectors whose dimension is squared at each round. More precisely, each further round squares the number of cases per index of every table, but it only halves the number of indices.
 Hence, in practice we stop using lookup tables after a few rounds of each sumcheck and GKR, and after that we execute the sumcheck protocol normally. 
 
-We provide exact details of what tables we use  in \cref{s:gkr_buckets}, once we have introduced some extra optimizations. 
+%We describe how our implementation uses these tables in \cref{s:gkr_buckets,s:gkr_implementation}, once we have introduced some extra optimizations. 
  
 
 
@@ -3035,11 +3037,11 @@ t_1(\infty)=& \sum_{\bb\in \bits^{r_1-2}} \sum_{\xx\in \bits^4} \sum_{\cc\in\bit
 where $H_{\bb}[\xx]\defeq \sum_{\cc\in\bits^{r_2} : \ \xx_{\bb,\cc}=\xx} \eq(\cc;\bm{\alpha}')$. We call the values $H_{\bb}[\xx]$ ``buckets''.
 The values $H_{\bb}[\xx]$ can be precomputed and cost $\codedim/4$ additions in total, and no multiplications. 
 
-Hence $t_1(\infty)$ can be computed by making $2^{r_1 -2} \cdot 2^{4} = 4 \cdot \codedim_1$ reads into the table $T_{A_2}^{(1)}$, and performing the same amount of multiplications and additions. Even more, with this strategy, each entry $T_{A_2}[\bb][\xx]$ of the table $T_{A_2}$ needs to be accessed at most once. Hence the values $T_{A_2}[\bb][\xx]$ can be computed ``on-the-go'' rather than precomputed and kept in cache. In contrast, in \cref{s:tables}, each entry $T_{A_2}[\bb][\xx]$ of $T_{A_2}$ is read once for every  $\cc\in \bits^{r_2}$ with $\xx_{\bb,\cc}=\xx$.
+Hence $t_1(\infty)$ can be computed by making $2^{r_1 -2} \cdot 2^{4} = 4 \cdot \codedim_1$ reads into the table $T_{A_2}$, and performing the same amount of multiplications and additions. Even more, with this strategy, each entry $T_{A_2}[\bb][\xx]$ of the table $T_{A_2}$ needs to be accessed at most once. Hence the values $T_{A_2}[\bb][\xx]$ can be computed ``on-the-go'' rather than precomputed and kept in cache. In contrast, in \cref{s:tables}, each entry $T_{A_2}[\bb][\xx]$ of $T_{A_2}$ is read once for every  $\cc\in \bits^{r_2}$ with $\xx_{\bb,\cc}=\xx$.
 
 
 
-The prover can compute $t_1(0)$ using an analogous procedure. In this case one can further reduce the cost to $\codedim_1$ reads, using that each entry of $T_{A_0}^{(1)}$ is indexed by $2$ bits, and not $4$.  We record the costs of computing $t_1(0)$ and $t_1(\infty)$ this way in \cref{t:gkr_buckets_costs}.
+The prover can compute $t_1(0)$ using an analogous procedure. In this case one can further reduce the cost to $\codedim_1$ reads, using that each entry of $T_{A_0}$ is indexed by $2$ bits, and not $4$.  We record the costs of computing $t_1(0)$ and $t_1(\infty)$ this way in \cref{t:gkr_buckets_costs}.
 
 
 \begin{table}[H]
@@ -3057,7 +3059,7 @@ The prover can compute $t_1(0)$ using an analogous procedure. In this case one c
     \label{t:gkr_buckets_costs}
 \end{table}
 
-\paragraph{Subsequent sumcheck rounds and GKR layers.} The same idea applies to the next messages. For example, in the second round of the ``biggest'' sumcheck (i.e.\ after the round discussed above) the entries in the tables $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$ are  each one a vector of $2^4$ and $2^8$ elements, respectively. These vectors are indexed by elements from $\bits^4$ and $\{0,1\}^8$. We can now apply the same strategy as above, except that now we have $\xx$ range over $\{0,1\}^8$ instead of $\bits^4$. 
+\paragraph{Subsequent sumcheck rounds and GKR layers.} The same idea applies to the next messages. For example, in the second round of the ``biggest'' sumcheck (i.e.\ after the round discussed above) the entries in the tables $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$ are  each one a vector of $2^4$ and $2^8$ elements, respectively. These vectors are indexed by elements from $\bits^4$ and $\bits^8$. We can now apply the same strategy as above, except that now we have $\xx$ range over $\bits^8$ instead of $\bits^4$. 
 
 
 This optimization is beneficial as long as we can index $\xx$ over $\bits^{t}$ with $2^t< \codedim_2=2^{r_2}$, i.e.\  as long as the corresponding table has entries that are vectors of dimension $2^t<2^{r_2}$. In practice this constrains us to $t\in \{2,4,8\}$.
@@ -3066,7 +3068,7 @@ This optimization is beneficial as long as we can index $\xx$ over $\bits^{t}$ w
 
 
 
-For coefficients where the corresponding table would have entries of dimension $2^{16}$, we use the following approach. For example, in the third round of the biggest sumcheck, the leading coefficient $t_3(\infty)$ of $t_3(X)$ would require a table with entries of dimension $2^{16}$, and we would compute it as 
+For coefficients where the corresponding table would have entries of dimension $2^{16}$, we use the following approach. For example, in the third round of the ``biggest'' sumcheck, the leading coefficient $t_3(\infty)$ of $t_3(X)$ would require a table with entries of dimension $2^{16}$, and we would compute it as 
 %
 $$
  t_3(\infty)=\sum_{\bb\in \bits^{r_1-4}} \sum_{\xx\in \bits^{16}}  T_{A_2}^{(3)}[\bb][\xx] \cdot H_{\bb}[\xx]. 
@@ -3102,12 +3104,12 @@ In all our techniques discussed so far, for each coefficient of each prover mess
 
 We now explain a method for greatly reducing (by more than an order of magnitude) the amount of strings $\xx_{\bb,\cc}$ that need to be computed throughout the entire GKR protocol. This optimization was found by an AI after we identified that computing all the strings $\xx_{\bb,\cc}$ naively is significantly expensive. 
 
-\paragraph{The naive approach to computing $\xx_{\bb,\cc}$.}  In our implementation, we look at $\bfg\in \bits^{r_1}\times \bits^{r_2}$ as a $2^{r_1}\times 2^{r_2}$ matrix of bits.  We store $\bfg$ using $64$-bit ``horizontal'' words, i.e.\ in our memory layout, we arrange $\bfg$ as a collection of $64$-bits words obtained by splittingh each each row of $\bfg$ into $64$-bit consecutive words.  On the other hand, each string $\xx_{\bb,\cc}$ consists of at most $8$ bits placed on the $\cc$-th column of $\bfg$, e.g.\ in our example in \cref{s:gkr_buckets} we had $$\xx_{\bb,\cc}\defeq \left(\bfg_{(0,\bb,0),\cc},\bfg_{(1,\bb,0),\cc},\bfg_{(0,\bb,1),\cc},\bfg_{(1,\bb,1),\cc}\right)\in \bits^4.$$ Hence, to construct $\xx_{\bb,\cc}$, one needs to access $\leq 8$ of these words, transpose them (a costly step), and select a row of the resulting transposed data.  
+\paragraph{The naive approach to computing $\xx_{\bb,\cc}$.}  In our implementation, we look at $\bfg\in \bits^{\codedim_1\times \codedim_2}$ as a $2^{r_1}\times 2^{r_2}$ matrix of bits.  We store $\bfg$ using $64$-bit ``horizontal'' words, i.e.\ in our memory layout, we arrange $\bfg$ as a collection of $64$-bit words obtained by splitting each row of $\bfg$ into $64$-bit consecutive words.  On the other hand, each string $\xx_{\bb,\cc}$ consists of at most $8$ bits placed on the $\cc$-th column of $\bfg$, e.g.\ in our example in \cref{s:gkr_buckets} we had $$\xx_{\bb,\cc}\defeq \left(\bfg_{(0,\bb,0),\cc},\bfg_{(1,\bb,0),\cc},\bfg_{(0,\bb,1),\cc},\bfg_{(1,\bb,1),\cc}\right)\in \bits^4.$$ Hence, to construct $\xx_{\bb,\cc}$, one needs to access $\leq 8$ of these words, transpose them (a costly step), and select a row of the resulting transposed data.  
 
 This needs to be done for all indices  $\bb,\cc$, and for all coefficients of prover messages where we seek to use our optimizations. Concretely,  Rounds 1, 2 and 3 of the last GKR require computing $6$ coefficients in total. Rounds 1 and 2 of the second last sumcheck require  $4$, and Round 1 of the third last sumcheck requires $2$. This amounts to computing $21$ batches of strings $\xx_{\bb,\cc}$ with $(\bb,\cc)$ running over a set of size $\approx \codedim$. 
 
 
-\paragraph{Optimization.} Continuing with the example $\xx_{\bb,\cc}$ above, observe that  for  every $\bb,\cc\in\bits^{r_1^{-2}}\times \bits^{r_2}$, the string $\xx_{\bb,\cc}$, depends exclusively on the entries of $\bfg$ placed in the column $\cc$ and on rows that differ exclusively in the first and last coordinate\footnote{In our implementation, they actually differ in the last two coordinates.}  Similarly, all other strings  $\xx_{\bb,\cc}$ (and $\xx_{\bb,\cc}^{\eps_1,\eps_2}$) required at all optimized rounds   depend only on the bits placed on the $\cc$-th column of $\bfg$ and on rows that differ exclusively on at most a fixed set of $4$ coordinates (with this set being the same for all rounds and coefficients). For readibility, let us assume these coordinates are the last $4$ coordinates (this is not consistent with the notation in this section, but is consistent with our implementation).
+\paragraph{Optimization.} Continuing with the example $\xx_{\bb,\cc}$ above, observe that  for  every $(\bb,\cc)\in\bits^{r_1-2}\times \bits^{r_2}$, the string $\xx_{\bb,\cc}$ depends exclusively on the entries of $\bfg$ placed in the column $\cc$ and on rows that differ exclusively in the first and last coordinate.\footnote{In our implementation, they actually differ in the last two coordinates.} Similarly, all other strings  $\xx_{\bb,\cc}$ (and $\xx_{\bb,\cc}^{\eps\eps'}$) required at all optimized rounds   depend only on the bits placed on the $\cc$-th column of $\bfg$ and on rows that differ exclusively on at most a fixed set of $4$ coordinates (with this set being the same for all rounds and coefficients). For readability, let us assume these coordinates are the last $4$ coordinates (this is not consistent with the notation in this section, but is consistent with our implementation).
 
 
 
@@ -3118,7 +3120,7 @@ Now, every time a string $\xx_{\bb,\cc}$ or $\xx_{\bb,\cc}^{\eps\eps'}$ needs to
 
 
 
- Building $N$ has roughly the same costs as computing one single batch of strings $\xx_{\bb,\cc}$ naively. In practice we observe that this optimization speeds up the cost of forming the indices $\xx_{\bb,\cc}$ by $4-6.5$ times, leading to a speedup of the \ftwoz-PCS prover of between $20\%$ to $30\%$ depending on the witness size ($\codedim=2^{28}$ and $\codedim=2^{30}$, respectively).
+ Building $N$ has roughly the same costs as computing one single batch of strings $\xx_{\bb,\cc}$ naively. In practice we observe that this optimization speeds up the cost of forming the indices $\xx_{\bb,\cc}$ by $4$--$6.5$ times, leading to a speedup of the \ftwoz-PCS prover of between $20\%$ and $30\%$ depending on the witness size ($\codedim=2^{28}$ and $\codedim=2^{30}$, respectively).
 
 \renewcommand{\comfield}{\FF_{2^{\comfieldexp}}}
 
