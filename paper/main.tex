@@ -325,7 +325,7 @@ This technique allows us  to instantiate \ftwoz\ with 128 bits of security, usin
          \end{equation}
 There are $|\bitstext(\bff)|$ factors in total, but only $\approx \sqrt{|\bitstext(\bff)|}$ different values these factors can take. We say \eqref{e:intro_2} is a \emph{low entropy batched grand product}. 
 
-To prove \eqref{e:intro_2} we use a batched GKR protocol with the following  optimization, among others: because of the low-entropy phenomenon, we build several small lookup tables of size $O(\sqrt{|\bitstext(\bff)|})$ (for example, of less than 1 MB for $|\uu^{(1)}|=2^{16}$, see \cref{tab:gkr_tables}) which are used during several of the most expensive sumcheck rounds of the GKR protocol. \iflncs \else Concretely, the last sumcheck (the most expensive one) uses  lookup tables to compute the first five messages of the prover,  the second last sumcheck does the same for the first four prover messages, and the third and fourth last sumchecks do the same with the first three and two messages, respectively, (see \cref{s:gkr_implementation}).\fi
+To prove \eqref{e:intro_2} we use a batched GKR protocol with the following  optimization, among others: because of the low-entropy phenomenon, we build several small lookup tables of size $O(\sqrt{|\bitstext(\bff)|})$ (for example, of at most $34$\,MB for $|\uu^{(1)}|=2^{16}$, see \cref{tab:gkr_tables}) which are used during several of the most expensive sumcheck rounds of the GKR protocol. \iflncs \else Concretely, the last sumcheck (the most expensive one) uses  lookup tables to compute the first five messages of the prover,  the second last sumcheck does the same for the first four prover messages, and the third and fourth last sumchecks do the same with the first three and two messages, respectively, (see \cref{s:gkr_implementation}).\fi
 
 \bigskip
 
@@ -2687,8 +2687,8 @@ Beyond the unique decoding radius, the same errors hold for the relations extend
 
 We omit the  proof of \cref{l:gkr_grand_product}, since \cref{c:gkr_grand_product} is a well-known variation of the GKR protocol. Round-by-round soundness of GKR is proved in \cite{CCHLRRW19}, and the knowledge version with relaxation follows as in \cite[proof of Lemma 6.6]{BCFW25}.
 
-\subsection{Prover optimization via lookup tables}%  
-We optimize \cref{c:gkr_grand_product} as follows, when $\bfg$ consists entirely of bits. Alternatively, the techniques discussed here would also apply if the entries of $\bfg$ belong to a small subset of $\KK$.
+\subsection{A first prover optimization via lookup tables}\label{s:tables}% 
+We describe an intial optimization for  \cref{c:gkr_grand_product}. In \cref{s:gkr_buckets} we build upon it further. We assume  $\bfg$ consists entirely of bits. Alternatively, the techniques discussed here would also apply if the entries of $\bfg$ belong to a small subset of $\KK$.
 
 %\john{Typing is a bit inconsistent here for $c$ and $f_{b,c}$. Namely, we say c seems to be a boolean vector but $f_{b,c}$ is not } 
 \paragraph{Setup.} We start with the following observation: for every $(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}$, we have $\bfg_{\bb,\cc}\in \bits$, and so 
@@ -2826,7 +2826,9 @@ The prover  computes the table $T_{A_2}\in (\comfield^{16})^{\bits^{r_1-2}}$ giv
 
 
 
-Using the ``eq factorization'' technique from \cite{gruen}, write   $\eq(X,\cc;\bm{\alpha}^{(i,2)})=\eq(X;\alpha)\cdot \eq(\cc;\bm{\alpha}')$, where $\bm{\alpha}^{(i,2)}=(\alpha,\bm{\alpha}')$. Then $h_1(X)=\eq(X;\alpha)\cdot t_1(X)$, where $t_1(X)\defeq\sum_{\cc}\eq(\cc;\bm{\alpha}')\cdot h_{1,\cc}(X)$. Instead of sending $h_1(X)$, the prover sends $t_1(X)$. The constant and leading coefficients of $t_1(X)$ can be computed by the prover with $2\cdot\codedim_2$ multiplications and additions, plus $\codedim_2$ multiplications to compute the values $\eq(\cc,\bm{\alpha}')$. Additionally we have $C^{(r_1-1)} = h_1(0)+h_1(1)=(1-\alpha)\cdot t_1(0)+\alpha\cdot t_1(1)$, and so the verifier can obtain $t_1(1)$ by itself, which in turn allows it to obtain the linear coefficient of $t_1(X)$. 
+Using the ``eq factorization'' technique from \cite{gruen}, write   $\eq(X,\cc;\bm{\alpha}^{(i,2)})=\eq(X;\alpha)\cdot \eq(\cc;\bm{\alpha}')$, where $\bm{\alpha}^{(i,2)}=(\alpha,\bm{\alpha}')$. Then 
+$$h_1(X)=\eq(X;\alpha)\cdot t_1(X) \quad  \text{where} \quad t_1(X)\defeq\sum_{\cc}\eq(\cc;\bm{\alpha}')\cdot h_{1,\cc}(X).$$ 
+Instead of sending $h_1(X)$, the prover sends $t_1(X)$. The constant and leading coefficients of $t_1(X)$ can be computed by the prover with $2\cdot\codedim_2$ multiplications and additions, plus $\codedim_2$ multiplications to compute the values $\eq(\cc,\bm{\alpha}')$. Additionally we have $C^{(r_1-1)} = h_1(0)+h_1(1)=(1-\alpha)\cdot t_1(0)+\alpha\cdot t_1(1)$, and so the verifier can obtain $t_1(1)$ by itself, which in turn allows it to obtain the linear coefficient of $t_1(X)$. 
 
 
 
@@ -2923,7 +2925,18 @@ The value $A_2^{(2)}[\bb,\cc]$, however, now depends on the value taken by \emph
 \bigskip
 
 This can be iterated in further sumcheck rounds, for computing $h_3(X), h_4(X),$ etc. The limitation is that the entries in the tables are vectors whose dimension is squared at each round. More precisely, each further round squares the number of cases per index of every table, but it only halves the number of indices.
-Hence, in practice we stop using lookup tables after a few rounds of each sumcheck and GKR, and after that we execute the sumcheck protocol normally. Concretely, in our implementation we never compute a table with more than $16$ elements per index. This is done so that the tables can be kept in cache, since we observe that, when this is not the case, table lookups become more and more expensive compared to  multiplications in $\FF_{2^{128}}$.     \cref{tab:gkr_tables} displays the different tables built or not built in our simplest implementation, the arithmetic cost of doing so, and their size at $\codedim_1=2^{r_1}=2^{16}$ (corresponding to a total witness size of $\approx 2^{26},2^{27}$ bits in our implementation). In our final implementation we do not explicitly compute all of the tables, similarly as done with the table $T_{A_2}^{(2)}$ above.
+Hence, in practice we stop using lookup tables after a few rounds of each sumcheck and GKR, and after that we execute the sumcheck protocol normally. 
+
+We provide exact details of what tables we use  in \cref{s:gkr_buckets}, once we have introduced some extra optimizations. 
+ 
+
+
+\begin{comment}
+Concretely, in our simplest implementation we never compute a table with more than $16$ elements per index. 
+
+
+
+This is done so that the tables can be kept in cache, since we observe that, when this is not the case, table lookups become more and more expensive compared to  multiplications in $\FF_{2^{128}}$.     \cref{tab:gkr_tables} displays the different tables built or not built in our simplest implementation, the arithmetic cost of doing so, and their size at $\codedim_1=2^{r_1}=2^{16}$ (corresponding to a total witness size of $\approx 2^{27},2^{28}$ bits in our implementation). The implementation that we measure in \cref{s:experiments} uses tables with up to $2^8$ elements per index, but it reads them in an order that only needs a few of their indices in cache at a time (see \cref{s:gkr_implementation}).
 
 
 \begin{table}[H]
@@ -2958,7 +2971,7 @@ Hence, in practice we stop using lookup tables after a few rounds of each sumche
     \caption{Dimensions, build costs, and sizes of the tables for computing $h_1(X), h_2(X), h_3(X)$ in the last sumcheck of \cref{c:gkr_grand_product}, with $\log|\KK|\approx 128$. We use the example size $\codedim_1=2^{r_1}=2^{16}$, which, following our instantiation ($\codedim_1\approx \codedim^{0.6}$, \cref{s:instantiation}), corresponds to a total witness size $\codedim  \approx 2^{27},2^{28}$.}
 \label{tab:gkr_tables}
 \end{table}
-
+\end{comment}
 
 
 
@@ -2972,8 +2985,9 @@ $$
 described in \cref{e:size_T_r1_i}. Since $T_{r_1-j}$ has, per index, the square of the number of entries of $T_{r_1-j+1}$, all subsequent tables also have, per index, the square of the number of entries of the analogous tables from the $(i+1)$-th sumcheck, and they require correspondingly more operations to compute.
 
 
-In our implementation we want to keep all tables in cache (otherwise we observe that multiplication in $\FF_{2^{128}}$ is cheaper than a table lookup). Because of this, the smaller $i$ is (i.e.\ the further we get from the last sumcheck in the GKR protocol), the fewer sumcheck rounds we use tables in. Concretely, for $i=r_1-2$ ($j=1$) we build and use the table $T_{r_1-1}^{(1)}$, the analogues of $T_{A_0}^{(1)}$ and $T_{S_1}^{(1)}$ (now with $16$ entries per index), and $T_{r_1-1}^{(2)}$. Similarly as done for $A_2^{(2)}$, the analogue of $T_{A_2}^{(1)}$ (which would have $2^8$ entries per index) is replaced by two tables of $16$ entries per index and one multiplication per read. For $i=r_1-3$ $(j=2)$ we only use the table $T_{r_1-2}^{(1)}$.
-
+\begin{comment}
+In our simplest implementation we want to keep all tables in cache (otherwise we observe that multiplication in $\FF_{2^{128}}$ is cheaper than a table lookup). Because of this, the smaller $i$ is (i.e.\ the further we get from the last sumcheck in the GKR protocol), the fewer sumcheck rounds we use tables in. Concretely, for $i=r_1-2$ ($j=1$) we build and use the table $T_{r_1-1}^{(1)}$, the analogue of $T_{A_0}^{(1)}$ (now with $16$ entries per index), and $T_{r_1-1}^{(2)}$. Similarly as done for $A_2^{(2)}$, the analogue of $T_{A_2}^{(1)}$ (which would have $2^8$ entries per index) is replaced by two tables of $16$ entries per index and one multiplication per read. For $i=r_1-3$ $(j=2)$ we only use the table $T_{r_1-2}^{(1)}$.
+\end{comment}
 \begin{comment}
 \begin{remark}[Factored tables]\label{r:factored_tables}
 The tables and operation counts in \cref{t:gkr_step1_costs,tab:gkr_tables} describe the algorithm as presented above. In our implementation, the four $16$-entry tables of the second round of the last sumcheck (namely $T_{A_0}^{(2)}$, $T_{S_1}^{(2)}$ and the two tables for the values $E^{(2)}_{1\eps}-E^{(2)}_{0\eps}$), their analogues in the first round of the sumcheck for $i=r_1-2$, and the table $T_{r_1-2}^{(1)}$ are not built explicitly. Instead, the prover builds smaller $4$-entry tables and recomputes each required value from two of their entries with one multiplication.%: the prover keeps only the $4$-entry tables they are products of, and recomputes the required values from their entries with one multiplication per read. This costs $\Theta(\codedim)$ additional multiplications (between $\codedim/4$ and $\codedim/2$ per sumcheck round concerned), and in exchange it saves the $O(\codedim_1)$ multiplications needed to build the tables and reduces their footprint by a factor between $2$ and $8$. As observed above, this is a net win at the sizes we target ($\codedim\geq 2^{28}$), since the prover is memory-bound and a multiplication in $\KK$ is cheaper than a data-dependent load from a table that does not fit in the L2 cache. The proofs are unaffected. We omit the details for brevity.
@@ -2997,6 +3011,116 @@ The tables and operation counts in \cref{t:gkr_step1_costs,tab:gkr_tables} descr
 In Round 2 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,\mu_{\codedim_2}$ of \eqref{e:tensored_equality} again by means of a lookup table $T$, which is indexed over  $i\in [\codedim_1/4]$ and contains the $16$-length vectors $$T[i]= (\sum_{k\in [4]} \eps_k \cdot \pi_q^{-1}(\vv^{(1)})_{4(i-1) + k})_{\eps_1,\ldots, \eps_4 \in \bits} \in \ZZ^{16}.$$
 \end{remark}
 \end{comment}
+
+
+\subsection{Reducing table reads via bucketing}\label{s:gkr_buckets}
+
+Note that in \cref{s:tables} the prover performs $O(\codedim)$ table reads, and keeps  full tables in cache for every sumcheck round where  a table is used. We now describe an optimization that reduces the  number of table reads to $O(\sqrt{\codedim})$, and  allows to compute table entries ``on-the-go''.  These optimizations were found by an AI when optimizing our prover and are reminiscent of Pippengers MSM algorithm \cite{pippenger}.
+
+%In the first rounds of each sumcheck, the prover can read the tables from the previous subsection much less often, and use fewer operations. We describe this optimization for the first message of the last sumcheck, i.e.\ the message analyzed in \cref{t:gkr_step1_costs}. Our implementation uses it (see also \cref{s:gkr_implementation}).
+
+\paragraph{The polynomial $h_1(X)$.} We start by discussing how the prover computes the first message $h_1(X)$ of the ``biggest'' sumcheck of the GKR protocol. Recall that, instead of sending $h_1(X)$ it suffices  that the prover send $t_1(X)$. To do so,  it only needs to compute the constant and the leading coefficients of $t_1(X)$, i.e.\ it only needs the elements \begin{equation}\label{e:naive_coeff_compute}t_1(0)=\sum_{(\bb,\cc)\in \bits^{r_1-2}\times \bits^{r_2}}\eq(\cc;\bm{\alpha}')\cdot A_0^{(1)}[\bb,\cc],\qquad t_1(\infty)\defeq\sum_{(\bb,\cc)\in \bits^{r_1-2}\times \bits^{r_2}}\eq(\cc;\bm{\alpha}')\cdot  A_2^{(1)}[\bb,\cc],\end{equation} where $t_1(\infty)$ is a convention notation for the leading coefficient of $t_1(X)$.  Recall also that, in \cref{s:tables}, the values $A_0^{(1)}[\bb,\cc]$ and $A_2^{(1)}[\bb,\cc]$ are read from the vectors $T_{A_0}[\bb]$ and $T_{A_2}[\bb]$, at the entries selected by (some of) the four bits
+%
+$$
+\xx_{\bb,\cc}\defeq \left(\bfg_{(0,\bb,0),\cc},\bfg_{(1,\bb,0),\cc},\bfg_{(0,\bb,1),\cc},\bfg_{(1,\bb,1),\cc}\right)\in \bits^4.
+$$
+%
+\noindent For readability, we write these entries as $T_{A_0}[\bb][\xx_{\bb,\cc}]$ and $T_{A_2}[\bb][\xx_{\bb,\cc}]$, even though $T_{A_0}[\bb]$ only depends on the first and third bits of $\xx_{\bb,\cc}$.
+
+Instead of computing $t_1(0)$ and $t_1(\infty)$ by  by going through all indices $(\bb,\cc)$ and computing the terms in  \eqref{e:naive_coeff_compute} for each index, we rewrite \eqref{e:naive_coeff_compute} as follows:
+%
+\begin{align*}
+t_1(0)=& \sum_{\bb\in \bits^{r_1-2}} \sum_{\xx\in \{0,1\}^4} \sum_{\cc\in\bits^{{r_2}} : \ \xx_{\bb,\cc}=\xx} \eq(\cc;\bm{\alpha}')\cdot A_0^{(1)}[\bb,\cc]\\ =&  \sum_{\bb\in \bits^{r_1-2}} \sum_{\xx\in \{0,1\}^4} \sum_{\cc\in\bits^{{r_2}} : \ \xx_{\bb,\cc}=\xx} \eq(\cc;\bm{\alpha}')\cdot T_{A_0}^{(1)}[\bb][\xx]  = \sum_{\bb\in \bits^{r_1-2}} \sum_{\xx\in \{0,1\}^4}  T_{A_0}^{(1)}[\bb][\xx] \cdot H_{\bb}[\xx],
+\end{align*}
+where $H_{\bb}[\xx]\defeq \sum_{\cc\in\bits^{r_2} : \ \xx_{\bb,\cc}=\xx} \eq(\cc;\bm{\alpha}')$. 
+The values $H_{\bb}[\xx]$ can be precomputed and cost $\codedim/4$ additions in total, and no multiplications. 
+
+Hence $t_1(0)$ can be computed by making $2^{r_1 -2} \cdot 2^{4} = 2 \cdot \codedim_1$ reads into the table $T_{A_0}^{(1)}$, and performing the same amount of multiplications and additions. Even more, with this strategy, each entry $T_{A_0}^{(1)}[\bb][\xx]$ of the table $T_{A_0}^{(1)}$ needs to be accessed at most once. Hence the values $T_{A_0}^{(1)}[\bb][\xx]$ can be computed ``on-the-go'' rather than precomputed and kept in cache. In contrast, in \cref{s:tables}, each entry $T_{A_0}^{(1)}[\bb][\xx]$ of $T_{A_0}^{(1)}$ is accessed, for all indices $\{(\bb,\cc)\mid \cc\in \bits^{\codedim_2}, \ \xx_{\bb,\cc}=\xx\}$. 
+
+
+
+The prover can compute $t_1(\infty)$ using an analogous procedure.  We record the costs of computing $t_0(0)$ and $t_1(\infty)$ this way in \cref{t:gkr_buckets_costs}.
+
+
+
+\paragraph{Subsequente sumcheck rounds and GKR layers.} The same idea applies to the next messages. For example, after the first round each value $E^{(2)}_{\eps_1\eps_2}[\bb,\cc]$ is selected by two bits (cf.\ the table $T_{r_1}^{(2)}$ above), and so the buckets of the second message are indexed by $8$ bits instead of $4$. These are combined with the tables of the second message, one index $\bb$ at a time (in particular, the vectors $T_{A_2}^{(2)}[\bb]$, with $2^8$ entries each, are not a problem anymore, cf.\ the previous subsection).
+
+This stops at the third message, where each value is selected by four bits, so that a table for the values $A_2^{(3)}$ would have $2^{16}$ entries per index, and there would be $2^{16}$ buckets per index (more than the $\codedim_2=2^{12}$ columns per index at $\codedim=2^{28}$). Because of this, from the third message on, and in our implementation already from the first one, the prover only uses tables with the values of a single factor, i.e.\ the tables $T_{r_1-j}^{(k)}$ with up to $2^8$ entries per index, and it multiplies the two factors itself (once per bucket, in the rounds that use buckets). In our implementation we use buckets in the first $3-j$ rounds of the sumcheck for $L_{r_1-j}$ ($j\leq 2$), and we compute all these rounds together, using the optimization from \cite[Algorithm 3]{sumcheck_opt_2}.
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c}
+         & Tables and buckets & Standard/generic \\
+         \hline
+        Multiplications & $\leq   13\cdot \codedim_1 +  \codedim_2 $ &$\Theta(\codedim_1\cdot \codedim_2)$\\
+        \hline
+        Additions & $\leq \codedim_1\cdot \codedim_2/4 + 11\cdot\codedim_1 +  \codedim_2$  & $\Theta(\codedim_1\cdot \codedim_2)$\\
+        \hline
+        Table reads & $5\cdot\codedim_1$, into tables of $5\cdot\codedim_1$ field elements & --
+    \end{tabular}
+    \caption{The cost in field operations of the first sumcheck round of the last sumcheck in our GKR protocol for batched grand products, cf.\ \cref{c:gkr_grand_product}, with the buckets of \cref{s:gkr_buckets} and the tables $T_{A_0}$, $T_{A_2}$ (compare with \cref{t:gkr_step1_costs}). Here $\codedim=\codedim_1\cdot \codedim_2 = 2^{r_1}\cdot 2^{r_2}$ is the witness size. The $\codedim_1\cdot\codedim_2/4$ additions go into $16$ buckets per index $\bb$, and each table entry is read once.}
+    \label{t:gkr_buckets_costs}
+\end{table}
+
+In \cref{tab:gkr_tables} we list all the tables that our implementation uses in the sumchecks for $i=r_1-1,\ldots,r_1-4$, and the rounds in which it uses them. For $i<r_1-4$ the prover runs standard sumchecks, and it obtains the entries of $L_{r_1-4}$ as products of two entries of $T_{r_1-3}$.
+
+\begin{table}[H]
+    \centering
+    \small
+    \begin{tabular}{c|c|c|c|c|c}
+        Sumcheck & Rounds & Table & Dimension & Size (MB), $\ell_1=2^{16}$ & Buckets per index \\
+        \hline
+        \hline
+        $i=r_1-1$ & $1$ & $T_{r_1}$ & $(\KK^{2})^{2^{r_1}}$ & $2.1$ & $2^4$ \\
+         & $2$ & $T_{r_1}^{(2)}$ & $(\KK^{2^2})^{2^{r_1-1}}$ & $2.1$ & $2^8$ \\
+         & $3$ & $T_{r_1}^{(3)}$ & $(\KK^{2^4})^{2^{r_1-2}}$ & $4.2$ & $4\cdot 2^8$ \\
+         & $4$, $5$ & $T_{r_1}^{(4)}$ & $(\KK^{2^8})^{2^{r_1-3}}$ & $33.6$ & $3\cdot 2^8$ (round $4$) \\
+        \hline
+        $i=r_1-2$ & $1$ & $T_{r_1-1}$ & $(\KK^{2^2})^{2^{r_1-1}}$ & $2.1$ & $2^8$ \\
+         & $2$ & $T_{r_1-1}^{(2)}$ & $(\KK^{2^4})^{2^{r_1-2}}$ & $4.2$ & $4\cdot 2^8$ \\
+         & $3$, $4$ & $T_{r_1-1}^{(3)}$ & $(\KK^{2^8})^{2^{r_1-3}}$ & $33.6$ & $3\cdot 2^8$ (round $3$) \\
+        \hline
+        $i=r_1-3$ & $1$ & $T_{r_1-2}$ & $(\KK^{2^4})^{2^{r_1-2}}$ & $4.2$ & $4\cdot 2^8$ \\
+         & $2$, $3$ & $T_{r_1-2}^{(2)}$ & $(\KK^{2^8})^{2^{r_1-3}}$ & $33.6$ & $3\cdot 2^8$ (round $2$) \\
+        \hline
+        $i=r_1-4$ & $1$, $2$ & $T_{r_1-3}$ & $(\KK^{2^8})^{2^{r_1-3}}$ & $33.6$ & $3\cdot 2^8$ (round $1$)
+    \end{tabular}
+    \caption{The tables used by our implementation in the $i$-th sumcheck of \cref{c:gkr_grand_product}, for the four values of $i$ closest to the leaves, with $\log|\KK|\approx 128$. Each table contains the values of a single factor. The table $T_{r_1-j}^{(k)}$ is the table $T_{r_1-j}$ of \eqref{e:size_T_r1_i} after absorbing the challenges of the first $k-1$ rounds, as $T_{r_1}^{(2)}$ above. In the rounds with $2^4$ or $2^8$ buckets per index, each summand costs one addition into a bucket, and four with $4\cdot 2^8$ buckets per index. In the first round that reads a table with $2^8$ entries per index, each summand costs two reads from it, two multiplications, and three additions into buckets indexed by the entry of the other factor. In the second one it costs eight reads, and then the prover continues with a standard sumcheck on the folded values. Each table is built with fewer than $2^{r_1+7}$ operations in $\KK$. We use the example size $\codedim_1=2^{r_1}=2^{16}$, which corresponds to a total witness size $\codedim\approx 2^{27},2^{28}$ in our implementation. (With the optimization from \cite[Algorithm 3]{sumcheck_opt_2}, the rounds with buckets of each sumcheck only use its first table.)}
+    \label{tab:gkr_tables}
+\end{table}
+
+
+\subsection{Avoiding transposition when forming table indices}
+
+\subsection{Our implementation}\label{s:gkr_implementation}
+
+The prover that we measure in \cref{s:experiments} sends the same messages as the algorithm described above, but it organizes its computations somewhat differently. We describe in detail how it forms the indices of its lookup tables, which turned out to matter for its running time, and we only summarize the rest at the end of this section (see our repository for details).
+
+\paragraph{Forming indices.} A table read needs an \emph{index}, i.e.\ the tuple of witness bits that selects the entry to read. For example, $A_2^{(1)}[\bb,\cc]$ is the entry of $T_{A_2}[\bb]$ with index $(\bfg_{(0,\bb,0),\cc},\bfg_{(1,\bb,0),\cc},\bfg_{(0,\bb,1),\cc},\bfg_{(1,\bb,1),\cc})$. The cost accounting above (e.g.\ \cref{t:gkr_step1_costs}) counts table reads, but not the work of forming their indices.
+
+This work is not negligible. We store $\bfg$ row by row, with the bits of $64$ columns packed in a $64$-bit word, while an index collects bits of \emph{one} column at \emph{several} rows, which are far apart in memory. Forming the indices of $64$ columns thus takes up to $8$ loads from different cache lines and a transposition of bits, and this is repeated in every round that uses the tables. At $\codedim=2^{28}$ this took about a quarter of the prover time of the GKR protocol, i.e.\ more than the table reads themselves.
+
+\paragraph{Nibble words.} Each sumcheck of our implementation binds the variables of $\bb$ from last to first, i.e.\ starting next to the variable of the product. (Above we bind them from first to last. The order does not affect the protocol or its analysis.) With this order, every index used by our prover consists of bits of one column $\cc$ at rows that differ only in their last $4$ coordinates. Because of this, at the beginning of the protocol we regroup the witness into
+%
+$$
+N[\bb,\cc]\defeq \left(\bfg_{(\bb,\ww),\cc}\right)_{\ww\in \bits^4}\in \bits^{16} \qquad \text{for all } (\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2},
+$$
+%
+\noindent stored as $16$-bit integers, which we call \emph{nibble words}. $N$ has the same size as the witness, and building it costs about as much as forming the indices of one round as described above.
+
+Every index is then a selection of some of the $16$ bits of one nibble word, through a map $\sigma:\bits^{16}\to\bits^{8}$ that only depends on the round. For example, in the rounds of the last sumcheck that read tables with $2^8$ entries per index, $\sigma$ selects the $8$ bits of the rows with $w_4=0$, or those of the rows with $w_4=1$. Since $\sigma$ only moves bits, if we write $x\in\bits^{16}$ as four nibbles $x=(x_0,x_1,x_2,x_3)$, then
+%
+$$
+\sigma(x)=\sigma(x_0,0,0,0)\vee \sigma(0,x_1,0,0)\vee \sigma(0,0,x_2,0)\vee \sigma(0,0,0,x_3),
+$$
+%
+\noindent where $\vee$ is the bitwise OR. Each of these four maps is a table with $16$ entries of one byte, and the vector instruction \texttt{TBL} of our CPU performs $16$ lookups into such a table at once. So the indices of $16$ columns cost $4$ lookups and $3$ ORs. In a sense, we form the indices of our lookup tables with lookup tables.
+
+With $1$ thread, forming an index now costs about $0.06$\,ns (including the construction of $N$), against $0.28$--$0.40$\,ns before, and $0.57$\,ns for a multiplication in $\KK$. The prover of \ftwoz\ takes about $0.8$ times the time it took before at $\codedim=2^{28}$, and $0.7$ times at $\codedim=2^{30}$. We also use the nibble words in Round 2 of \cref{c:core_iop}: the prover obtains the integers $\mu_j$ with two lookups per nibble word, into tables of $2^8$ partial sums of the entries of $\pi_q^{-1}(\vv^{(1)})$.
+
+\paragraph{Other differences.} We use lookup tables in the first $5-j$ rounds of the sumcheck for $L_{r_1-j}$, for $j\leq 3$, with up to $2^8$ entries per index. Since the prover processes the summands one index $\bb$ at a time, for all the columns $\cc$, it only needs a few KB of each table at a time, which stay in cache.
+
+In the first $3-j$ of these rounds, the prover uses the buckets of \cref{s:gkr_buckets}, which also need the index of every summand. The rest of the rounds are standard.
 
 
 \renewcommand{\comfield}{\FF_{2^{\comfieldexp}}}
