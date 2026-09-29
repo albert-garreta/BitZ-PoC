@@ -1,7 +1,7 @@
 //! The terminal scaled claim opened through the worldfnd/BitZ scheme
-//! instead of the forest: structured (`crate::wfbitz::chained`) when the
+//! instead of the forest: structured (`crate::bitz::chained`) when the
 //! relation prepared the block geometry, else the dense virtual opening
-//! (`crate::wfbitz::virt`).
+//! (`crate::bitz::virt`).
 //!
 //! The claim is the one the forest path opens: over the derived grid `h`,
 //! `Σ_d w(d)·h[d] ≡ target (mod q)` with `w(d) = scale·eq(d, point)` an eq
@@ -22,10 +22,10 @@ use crate::ligerito_flock::{FlockCommitHint, ProverOod, VerifierOod};
 use crate::piop::spartan::matrix::eq_table;
 use crate::piop::spartan::protocol::{
     bitz_generator,
-    wfbitz_opener::{WfbitzOpeningProof, fork_tag},
+    bitz_opener::{BitZOpeningProof, fork_tag},
 };
 use crate::transcript::traits::Transcript;
-use crate::wfbitz::{
+use crate::bitz::{
     BitZParams, BitZProver, BitZVerifier, ChainedStatement, LinearClaim, Pcs,
     Proof as BitzTranscriptProof, Root, Shape, VirtualStatement, WINDOW, build_prover,
     build_verifier, chained::LOG_ROWS,
@@ -99,14 +99,14 @@ fn dense_setup(
     let committed = Shape::new(prepared.f_layout.row_vars, prepared.f_layout.col_vars)
         .map_err(|e| error(format!("committed shape: {e:?}")))?;
     let params = BitZParams::new(derived, modulus, bitz_generator().into())
-        .map_err(|e| error(format!("wfbitz parameters: {e:?}")))?;
+        .map_err(|e| error(format!("bitz parameters: {e:?}")))?;
     let pcs = Pcs::with_security_and_work(
         &committed,
         prepared.ligerito.security(),
         LigeritoProfile::Fast,
         security.flock.clone(),
     )
-    .map_err(|e| error(format!("wfbitz pcs: {e:?}")))?;
+    .map_err(|e| error(format!("bitz pcs: {e:?}")))?;
     Ok((
         params,
         committed,
@@ -116,7 +116,7 @@ fn dense_setup(
 
 /// The block grid's parameters and ladder.
 fn chained_setup(
-    chained: &super::relation::WfbitzChained,
+    chained: &super::relation::BitZChained,
     modulus: u128,
     security: &Sha256EcdsaSecurity,
 ) -> Result<(BitZParams, Pcs)> {
@@ -125,14 +125,14 @@ fn chained_setup(
         .shape()
         .map_err(|e| error(format!("block shape: {e:?}")))?;
     let params = BitZParams::new(shape, modulus, bitz_generator().into())
-        .map_err(|e| error(format!("wfbitz parameters: {e:?}")))?;
+        .map_err(|e| error(format!("bitz parameters: {e:?}")))?;
     let pcs = Pcs::with_security_and_work(
         &shape,
         chained.ligerito.security(),
         LigeritoProfile::Fast,
         security.flock.clone(),
     )
-    .map_err(|e| error(format!("wfbitz pcs: {e:?}")))?;
+    .map_err(|e| error(format!("bitz pcs: {e:?}")))?;
     Ok((params, pcs.with_native_policy(security.native.policy())))
 }
 
@@ -149,15 +149,15 @@ pub(super) fn prove_opening<T: Transcript + Send>(
     modulus: u128,
     ood: ProverOod,
     security: &Sha256EcdsaSecurity,
-) -> Result<WfbitzOpeningProof> {
-    let _scope = tracing::info_span!("ecdsa:wfbitz_prove").entered();
+) -> Result<BitZOpeningProof> {
+    let _scope = tracing::info_span!("ecdsa:bitz_prove").entered();
     let ood = ood.opening_claim(t, hint);
     let tag = fork_tag(t);
-    let state = if let Some(chained) = &prepared.wfbitz {
+    let state = if let Some(chained) = &prepared.bitz {
         let (params, pcs) = chained_setup(chained, modulus, security)?;
         let (rows, cols) = block_weights(chained.geometry.log_instances, point, scale, cfg)?;
         let claim = LinearClaim::new(&params, rows, cols, target)
-            .map_err(|e| error(format!("wfbitz claim: {e:?}")))?;
+            .map_err(|e| error(format!("bitz claim: {e:?}")))?;
         let parts = prepared
             .map
             .chained_packed_source()
@@ -174,10 +174,10 @@ pub(super) fn prove_opening<T: Transcript + Send>(
             prepared.map.digest(),
             &claim,
         )
-        .map_err(|e| error(format!("wfbitz statement: {e:?}")))?;
+        .map_err(|e| error(format!("bitz statement: {e:?}")))?;
         let started = std::time::Instant::now();
         let derived = chained.geometry.derived_rows(&prepared.h_layout, h_rows);
-        crate::wfbitz::trace("derived rows (block layout)", started);
+        crate::bitz::trace("derived rows (block layout)", started);
         let mut state = build_prover(CHAINED_SESSION, &tag);
         BitZProver::new(params, WINDOW)
             .prove_chained(
@@ -188,15 +188,15 @@ pub(super) fn prove_opening<T: Transcript + Send>(
                 &mut state,
                 ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
             )
-            .map_err(|e| error(format!("wfbitz prove: {e:?}")))?;
+            .map_err(|e| error(format!("bitz prove: {e:?}")))?;
         state
     } else {
         let (params, committed, pcs) = dense_setup(prepared, modulus, security)?;
         let (rows, cols) = native_weights(prepared, point, scale, cfg)?;
         let claim = LinearClaim::new(&params, rows, cols, target)
-            .map_err(|e| error(format!("wfbitz claim: {e:?}")))?;
+            .map_err(|e| error(format!("bitz claim: {e:?}")))?;
         let statement = VirtualStatement::new(params, committed, &prepared.map, &claim)
-            .map_err(|e| error(format!("wfbitz statement: {e:?}")))?;
+            .map_err(|e| error(format!("bitz statement: {e:?}")))?;
         let mut state = build_prover(SESSION, &tag);
         BitZProver::new(params, WINDOW)
             .prove_virtual(
@@ -207,11 +207,11 @@ pub(super) fn prove_opening<T: Transcript + Send>(
                 &mut state,
                 ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
             )
-            .map_err(|e| error(format!("wfbitz prove: {e:?}")))?;
+            .map_err(|e| error(format!("bitz prove: {e:?}")))?;
         state
     };
     let BitzTranscriptProof { narg_string, hints } = state.finish();
-    Ok(WfbitzOpeningProof {
+    Ok(BitZOpeningProof {
         narg: narg_string,
         hints,
         ood: ood.map(|claim| claim.round),
@@ -223,7 +223,7 @@ pub(super) fn verify_opening<T: Transcript + Send>(
     t: &mut T,
     prepared: &PreparedSha256Ecdsa,
     commitment: &Commitment,
-    proof: &WfbitzOpeningProof,
+    proof: &BitZOpeningProof,
     point: &[F],
     scale: &F,
     cfg: &Config,
@@ -232,9 +232,9 @@ pub(super) fn verify_opening<T: Transcript + Send>(
     ood: VerifierOod,
     security: &Sha256EcdsaSecurity,
 ) -> Result<()> {
-    let _scope = tracing::info_span!("ecdsa:wfbitz_verify").entered();
+    let _scope = tracing::info_span!("ecdsa:bitz_verify").entered();
     let committed = prepared
-        .wfbitz
+        .bitz
         .as_ref()
         .map_or(&prepared.f_layout, |chained| &chained.layout);
     let ood = ood
@@ -245,11 +245,11 @@ pub(super) fn verify_opening<T: Transcript + Send>(
         narg_string: proof.narg.clone(),
         hints: proof.hints.clone(),
     };
-    if let Some(chained) = &prepared.wfbitz {
+    if let Some(chained) = &prepared.bitz {
         let (params, pcs) = chained_setup(chained, modulus, security)?;
         let (rows, cols) = block_weights(chained.geometry.log_instances, point, scale, cfg)?;
         let claim = LinearClaim::new(&params, rows, cols, target)
-            .map_err(|e| error(format!("wfbitz claim: {e:?}")))?;
+            .map_err(|e| error(format!("bitz claim: {e:?}")))?;
         let parts = prepared
             .map
             .chained_packed_source()
@@ -266,7 +266,7 @@ pub(super) fn verify_opening<T: Transcript + Send>(
             prepared.map.digest(),
             &claim,
         )
-        .map_err(|e| error(format!("wfbitz statement: {e:?}")))?;
+        .map_err(|e| error(format!("bitz statement: {e:?}")))?;
         let state = build_verifier(CHAINED_SESSION, &tag, &bitz_proof);
         BitZVerifier::new(params, WINDOW)
             .verify_chained(
@@ -276,14 +276,14 @@ pub(super) fn verify_opening<T: Transcript + Send>(
                 state,
                 ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
             )
-            .map_err(|e| error(format!("wfbitz verify: {e:?}")))
+            .map_err(|e| error(format!("bitz verify: {e:?}")))
     } else {
         let (params, committed, pcs) = dense_setup(prepared, modulus, security)?;
         let (rows, cols) = native_weights(prepared, point, scale, cfg)?;
         let claim = LinearClaim::new(&params, rows, cols, target)
-            .map_err(|e| error(format!("wfbitz claim: {e:?}")))?;
+            .map_err(|e| error(format!("bitz claim: {e:?}")))?;
         let statement = VirtualStatement::new(params, committed, &prepared.map, &claim)
-            .map_err(|e| error(format!("wfbitz statement: {e:?}")))?;
+            .map_err(|e| error(format!("bitz statement: {e:?}")))?;
         let state = build_verifier(SESSION, &tag, &bitz_proof);
         BitZVerifier::new(params, WINDOW)
             .verify_virtual(
@@ -293,6 +293,6 @@ pub(super) fn verify_opening<T: Transcript + Send>(
                 state,
                 ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
             )
-            .map_err(|e| error(format!("wfbitz verify: {e:?}")))
+            .map_err(|e| error(format!("bitz verify: {e:?}")))
     }
 }

@@ -359,7 +359,7 @@ pub fn run() -> Result<(), AnyError> {
         .map(|i| std::array::from_fn(|j| i.wrapping_mul(0x85ebca6b).wrapping_add(j as u32)))
         .collect();
     eprintln!(
-        "mode={mode} mul_opener=wfbitz multiplication_relation=u32_mod_2_32 multiplications={} chained_compressions={} merkle=blake3 non_zk=true threads={}",
+        "mode={mode} mul_opener=bitz multiplication_relation=u32_mod_2_32 multiplications={} chained_compressions={} merkle=blake3 non_zk=true threads={}",
         parameters.multiplications,
         parameters.sha_compressions,
         binius_utils::rayon::current_num_threads()

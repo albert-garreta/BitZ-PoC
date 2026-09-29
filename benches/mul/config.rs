@@ -377,7 +377,7 @@ impl Args {
                                                 };
                                                 let f = Some(BitzConfig {
                                                     opener: (self.mode != Mode::Witness)
-                                                        .then(|| "wfbitz".to_string()),
+                                                        .then(|| "bitz".to_string()),
                                                     w: 1,
                                                     split: split as i8,
                                                     profile: (self.mode != Mode::Witness)
@@ -516,7 +516,7 @@ impl Case {
             "BitZ opening needs log-n >= 15"
         } else if let Some(f) = &self.bitz {
             if f.w != 1 {
-                "Wfbitz commits bits (W=1)"
+                "BitZ commits bits (W=1)"
             } else if (self.mode == Mode::Pcs || self.workload == Workload::BabyBear)
                 && (f.w != 1 || f.split != 0)
             {

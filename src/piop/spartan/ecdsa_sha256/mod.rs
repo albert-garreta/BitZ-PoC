@@ -8,7 +8,7 @@ mod inner_reduction;
 mod proof;
 mod relation;
 mod security;
-mod wfbitz;
+mod bitz;
 mod witness;
 
 #[cfg(test)]
@@ -28,7 +28,7 @@ pub use relation::{
 pub use security::{ChallengeSecurity, Sha256EcdsaSecurity};
 pub use witness::{Sha256EcdsaWitness, generate_sha256_ecdsa_witness};
 
-use crate::piop::spartan::bitz::SpartanBitzField as F;
+use crate::piop::spartan::u32_mul_relation::SpartanBitzField as F;
 
 #[cfg(test)]
 #[cfg(test)]

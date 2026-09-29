@@ -1,10 +1,10 @@
-use crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
+use crate::piop::spartan::protocol::bitz_opener::BitZOpeningProof;
 use super::{Result, Sha256EcdsaProof, error};
 use crate::piop::spartan::SpartanField as _;
 use crate::{
     piop::spartan::{
         SpartanField,
-        bitz::SpartanBitzField as F,
+        u32_mul_relation::SpartanBitzField as F,
         sumcheck::{OuterSumcheckProof, SumcheckProof},
     },
     proof_codec::{Reader, Writer},
@@ -61,8 +61,8 @@ impl Sha256EcdsaProof {
         let inner = read_rounds(&mut r, q, &cfg)?;
         let inner_nonces = read_nonces(&mut r)?;
         let len = r.len().map_err(error)?;
-        let opening = WfbitzOpeningProof::from_bytes(r.take(len).map_err(error)?)
-            .ok_or_else(|| error("malformed Wfbitz opening"))?;
+        let opening = BitZOpeningProof::from_bytes(r.take(len).map_err(error)?)
+            .ok_or_else(|| error("malformed BitZ opening"))?;
         if r.remaining() != 0 {
             return Err(error("trailing proof bytes"));
         }

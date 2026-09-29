@@ -1,11 +1,17 @@
-# Wfbitz opening API
+# BitZ opening API
 
-Wfbitz is always enabled. There is no PCS backend feature, opener enum or
+BitZ is always enabled. There is no PCS backend feature, opener enum or
 backend CLI option. Ligerito ladder selection remains independent.
 
-- `src/wfbitz/`: parameters, direct/virtual proofs, optimized kernels,
+The PCS module is `bitz::bitz` (formerly `bitz::wfbitz`). The u32
+multiplication relation lives in `bitz::piop::spartan::u32_mul_relation`.
+Transcript domains and security-stage labels keep their historical spelling;
+the rename does not change proof bytes. New benchmark records identify the
+opener as `bitz`; result readers also accept `wfbitz` in saved measurements.
+
+- `src/bitz/`: parameters, direct/virtual proofs, optimized kernels,
   transcript, grinding schedule and Ligerito adapter.
-- `src/piop/spartan/protocol/wfbitz_opener.rs`: shared relation/standalone
+- `src/piop/spartan/protocol/bitz_opener.rs`: shared relation/standalone
   adapters, statement binding, concrete proof and bounded codec.
 - `src/ligerito_flock.rs`: commitment hints, configuration and OOD support.
 - `src/ligerito.rs`: packing, ring-switch and residual-evaluation kernels.
@@ -17,8 +23,8 @@ Use `PreparedRelation::new` or an explicit security profile, then shared
 `commit`, `prove` and `verify`. SHA, SHA+ECDSA and hybrid keep their specialized
 relation preparation and share the native opening primitives.
 
-`WfbitzOpener::prepare` supports direct relations with an explicit
-`WfbitzLigerito` choice. `Fast` uses Flock's embedded configuration;
+`BitZOpener::prepare` supports direct relations with an explicit
+`BitZLigerito` choice. `Fast` uses Flock's embedded configuration;
 `Selected(LigeritoSelection)` resolves validated Johnson or unique-decoding
 configurations. `prove_standalone`, `verify_standalone` and
 `standalone_evaluation` implement the standalone claim flow.
@@ -39,14 +45,14 @@ prime rules remain. The standalone `bitz` CLI retains its published
 ## Running
 
 ```sh
-RUSTFLAGS="-C target-cpu=native" cargo run --release --example wfbitz_bench -- \
+RUSTFLAGS="-C target-cpu=native" cargo run --release --example bitz_bench -- \
   23 --reps 5 --seed 1 --ladder custom:1:4
 
 python3 scripts/run_multiplication_benchmarks.py bitz -- \
   proof --workload u64 --ligerito custom:1:4 --bitz-profile 100 \
   --log-n 15,17,19 --threads 1,10 --reps 5 --memory rss
 
-cargo run --release --example wfbitz_reference -- /path/to/dump
+cargo run --release --example bitz_reference -- /path/to/dump
 ```
 
 The reference example compares an upstream dump's commitment, then proves and

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# An earlier u64 multiplication campaign through the wfbitz opener (branch
+# An earlier u64 multiplication campaign through the bitz opener (branch
 # u64-opt; rate 1/2 on `fast`); the paper's rows now come from
-# scripts/run_wfbitz_paper_campaign.sh (`custom:1:4` / `custom:3:4`). This
+# scripts/run_bitz_paper_campaign.sh (`custom:1:4` / `custom:3:4`). This
 # one runs one launcher campaign per (rate, extension), sizes 2^15..2^21,
 # threads 1 and 10, the paper's protocol (5 timed reps after one warm-up,
 # every proof verified, peak RSS from a separate child), the same
@@ -9,8 +9,8 @@
 # rows tabulate next to the existing ones (`scripts/mul_table.py` keys them
 # `bitz-wf@<rate>`).
 #
-#   bash scripts/run_u64_wfbitz_campaign.sh            # rates 1/2 and 1/8, 2^15..2^21
-#   BITZ_SUITE_STAMP=<label> bash scripts/run_u64_wfbitz_campaign.sh
+#   bash scripts/run_u64_bitz_campaign.sh            # rates 1/2 and 1/8, 2^15..2^21
+#   BITZ_SUITE_STAMP=<label> bash scripts/run_u64_bitz_campaign.sh
 #
 # Rate 1/2 = flock's embedded `fast` ladder (BitZ as shipped, plus the
 # crate's Round 0); rate 1/8 = the crate's `custom:3:4` Johnson ladder (with
@@ -38,7 +38,7 @@ launch() { # label -- rust args
     proof --reps "$REPS" --warmups 1 --memory rss --skip-unsupported --threads 1,10 "$@" \
     2>&1 | tail -3
 }
-wf() { launch "u64-wfbitz-r$2${EXT:-}" --workload u64 --backends bitz --bitz-profile 100 --ligerito "$3" --log-n "$1"; }
+wf() { launch "u64-bitz-r$2${EXT:-}" --workload u64 --backends bitz --bitz-profile 100 --ligerito "$3" --log-n "$1"; }
 
 wf 15,17,19 1 fast
 wf 15,17,19 3 custom:3:4

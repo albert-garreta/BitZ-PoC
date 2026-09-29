@@ -475,8 +475,8 @@ fn fold(values: &mut Vec<Gf>, challenge: Gf) {
 #[cfg(test)]
 mod sum_tests {
     use super::*;
-    use crate::wfbitz::params::{LinearClaimGf, Shape, SumClaimGf};
-    use crate::wfbitz::{build_kernel_prover, build_kernel_verifier};
+    use crate::bitz::params::{LinearClaimGf, Shape, SumClaimGf};
+    use crate::bitz::{build_kernel_prover, build_kernel_verifier};
 
     fn xorshift(state: &mut u64) -> u64 {
         *state ^= *state << 13;

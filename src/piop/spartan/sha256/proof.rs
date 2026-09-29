@@ -53,7 +53,7 @@ use {
 
 use super::super::{
     SpartanError, SpartanField,
-    bitz::SpartanBitzField,
+    u32_mul_relation::SpartanBitzField,
     matrix::eq_table,
     profile::IopSecurityParams,
     protocol::{

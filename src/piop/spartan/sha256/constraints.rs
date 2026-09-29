@@ -30,7 +30,7 @@ use {
 
 use super::super::{
     SpartanField, SpartanMatrixError,
-    bitz::SpartanBitzField,
+    u32_mul_relation::SpartanBitzField,
     profile::{IopSecurityParams, IopSecurityProfile, Lambda100, ProfileError},
 };
 use super::prime::{
@@ -107,7 +107,7 @@ pub enum Sha256ConstraintError {
     UnsupportedLigeritoTargetBits { actual: usize },
 
     /// The prime interval must fit the exact native exponent bound.
-    #[error("SHA-256 opening exceeds the Wfbitz exponent bound")]
+    #[error("SHA-256 opening exceeds the BitZ exponent bound")]
     UnsupportedOpeningBound,
 
     /// An explicit layout asked for a row split the assignment domain does
@@ -228,7 +228,7 @@ impl PreparedSha256CompressionBatch {
             )
             .map_err(Sha256ConstraintError::LigeritoConfig)?;
         self.security.adopt_ood_round(resolved.ood_bits())?;
-        let geometry = crate::wfbitz::grinding::Geometry::opening(
+        let geometry = crate::bitz::grinding::Geometry::opening(
             self.opening_params(),
             &self.f_layout,
             false,
@@ -864,7 +864,7 @@ pub(super) fn validate_opening_bound(
     layout: &IntegerMatrixLayout,
     modulus_bound: u128,
 ) -> Result<(), Sha256ConstraintError> {
-    let shape = crate::wfbitz::Shape::new(layout.row_vars, layout.col_vars)
+    let shape = crate::bitz::Shape::new(layout.row_vars, layout.col_vars)
         .map_err(|_| Sha256ConstraintError::InvalidBatchExponent)?;
     // The inclusive interval endpoint can be even. Only odd primes are
     // sampled, so check the largest admissible odd integer without changing

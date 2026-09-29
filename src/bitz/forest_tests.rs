@@ -1,8 +1,8 @@
 //! The packed forest must emit the dense GKR's exact transcript.
 
 use super::{Forest, Gf};
-use crate::wfbitz::gkr::{GrandProductCircuit, gpgkr_prove, gpgkr_verify};
-use crate::wfbitz::transcript::{Proof, build_kernel_prover, build_kernel_verifier};
+use crate::bitz::gkr::{GrandProductCircuit, gpgkr_prove, gpgkr_verify};
+use crate::bitz::transcript::{Proof, build_kernel_prover, build_kernel_verifier};
 
 #[derive(Clone, Copy, Debug)]
 enum Bits {

@@ -559,7 +559,7 @@ fn config_digest(config: &impl LigeritoStatementConfig) -> [u8; 32] {
 mod tests {
     use super::super::circuit::MultiswapDims;
     use super::*;
-    use crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
+    use crate::piop::spartan::protocol::bitz_opener::BitZOpeningProof;
     use crate::{piop::spartan::profile::Lambda100, transcript::Blake3Transcript};
 
     fn mini_setup() -> (
@@ -638,7 +638,7 @@ mod tests {
     /// opening: proves, verifies, is deterministic, and a wrong integer lift
     /// is still rejected before the reduction draw.
     #[test]
-    fn mini_multiswap_roundtrips_through_the_wfbitz_opener() {
+    fn mini_multiswap_roundtrips_through_the_bitz_opener() {
         let _env = crate::utils::QUAD_ENV_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -672,12 +672,12 @@ mod tests {
     }
 
     /// MultiSwap's schedule runs no Round 0, so a Round-0 record on its
-    /// wfbitz opening is rejected, not ignored (the presence rule of the
+    /// bitz opening is rejected, not ignored (the presence rule of the
     /// crate's own opening); a foreign opener configuration is rejected up
     /// front on both sides.
     #[test]
-    fn wfbitz_multiswap_rejects_a_stray_round_0_record() {
-        use crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
+    fn bitz_multiswap_rejects_a_stray_round_0_record() {
+        use crate::piop::spartan::protocol::bitz_opener::BitZOpeningProof;
         let _env = crate::utils::QUAD_ENV_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -706,7 +706,7 @@ mod tests {
                 y: field::Gf128::ONE,
                 nonce,
             });
-            let bitz = WfbitzOpeningProof::from_bytes(&bitz.to_bytes()).unwrap();
+            let bitz = BitZOpeningProof::from_bytes(&bitz.to_bytes()).unwrap();
             let stray = Proof::from_parts(prefix, reduction, bitz);
             assert!(matches!(
                 verify_multiswap_mod_r1cs(
@@ -815,7 +815,7 @@ mod tests {
             let original = proof.clone();
             let (prefix, reduction, opening) = proof.into_parts();
             let bytes = opening.to_bytes();
-            let decoded = WfbitzOpeningProof::from_bytes(&bytes).unwrap();
+            let decoded = BitZOpeningProof::from_bytes(&bytes).unwrap();
             assert_eq!(decoded.to_bytes(), bytes);
             let decoded = Proof::from_parts(prefix, reduction, decoded);
             let mut verifier = Blake3Transcript::new();

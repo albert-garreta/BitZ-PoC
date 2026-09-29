@@ -6,7 +6,7 @@ use crate::{
     ligerito_flock::OodRound,
     piop::spartan::{
         SpartanField,
-        bitz::SpartanBitzField as Q,
+        u32_mul_relation::SpartanBitzField as Q,
         sumcheck::{OuterSumcheckProof, SumcheckProof as QSumcheck},
         univariate_skip::{
             UnivariateSkipOuterSumcheckProof, UnivariateSkipProof, UnivariateSkipSpartanPiopProof,

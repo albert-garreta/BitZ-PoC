@@ -279,7 +279,7 @@ fn bench_shape<P: IopSecurityProfile>(
 
     let warm = run_once(&make_blocks(compressions, shape_seed), &prepared, &pc, &vc);
     println!(
-        "  opening layout: direct product opening on the chained map | BitZ rows 2^{} × columns 2^{} | Wfbitz opening",
+        "  opening layout: direct product opening on the chained map | BitZ rows 2^{} × columns 2^{} | BitZ opening",
         opening.row_vars, opening.col_vars
     );
     warm.emit_trial("warmup");

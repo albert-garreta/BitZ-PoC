@@ -2,7 +2,7 @@
 //!
 //! Ring switching follows Flock (Apache-2.0 OR MIT, Succinct Labs / Bünz /
 //! Wang), based on Diamond–Posen and bcc-research/bolt-rs. Integer openings
-//! live in `crate::wfbitz`; these kernels also serve the joint binary PCS.
+//! live in `crate::bitz`; these kernels also serve the joint binary PCS.
 
 use crate::pcs::IntegerMatrixLayout;
 use crate::poly::univariate::binary_gf128::{Gf128 as Gf, REDUCTION_LOW_GF128};

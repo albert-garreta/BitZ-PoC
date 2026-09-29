@@ -50,7 +50,7 @@ pub struct Sha256EcdsaSecurity {
     /// its round polynomial. Corresponds to `inner-round` in `blocks`.
     pub(crate) inner: u32,
     /// The exact native challenge schedule executed by the terminal opening.
-    pub(crate) native: crate::wfbitz::grinding::Schedule,
+    pub(crate) native: crate::bitz::grinding::Schedule,
     /// Per-block grinding settings for Ligerito's folding, introduction, and query
     /// challenges. Their security entries appear in `blocks` with a `flock/` prefix.
     pub(crate) flock: std::sync::Arc<GrindingPlan>,
@@ -140,18 +140,18 @@ impl Sha256EcdsaSecurity {
             prepared.h_layout.row_vars + prepared.h_layout.col_vars,
         )?;
         let ligerito = prepared.ligerito_configuration();
-        let mut geometry = if let Some(chained) = &prepared.wfbitz {
+        let mut geometry = if let Some(chained) = &prepared.bitz {
             let shape = chained.geometry.shape().map_err(|e| error(format!("native geometry: {e:?}")))?;
-            crate::wfbitz::grinding::Geometry {
+            crate::bitz::grinding::Geometry {
                 integer: Some((shape.log_rows(), shape.log_columns())),
                 binary: Some((shape.log_rows(), shape.log_columns())), ring: true, ood: false,
             }
         } else {
-            crate::wfbitz::grinding::Geometry::opening(&prepared.h_layout, &prepared.f_layout, false)
+            crate::bitz::grinding::Geometry::opening(&prepared.h_layout, &prepared.f_layout, false)
         };
         geometry.ood = ligerito.ood_bits().is_some();
-        let policy = crate::wfbitz::grinding::Policy::new(Some(prepared.lambda), 0, 0).map_err(error)?;
-        let native = crate::wfbitz::grinding::Schedule::new(policy, geometry).map_err(error)?;
+        let policy = crate::bitz::grinding::Policy::new(Some(prepared.lambda), 0, 0).map_err(error)?;
+        let native = crate::bitz::grinding::Schedule::new(policy, geometry).map_err(error)?;
         blocks.extend(native.terms().map(|term| ChallengeSecurity {
             label: term.stage.name().into(),
             failure_probability_bound: 2f64.powf(-term.raw_bits()),

@@ -494,17 +494,17 @@ pub struct PreparedSha256Ecdsa {
     pub(crate) h_layout: IntegerMatrixLayout,
     pub(crate) f_layout: IntegerMatrixLayout,
     pub(crate) ligerito: crate::ligerito_flock::ResolvedLigerito,
-    /// The structured wfbitz opening's block geometry, committed layout and
+    /// The structured bitz opening's block geometry, committed layout and
     /// Ligerito configuration for that layout; `None` when the map has no
     /// chained structure the scheme can use (then the dense virtual opening).
-    pub(crate) wfbitz: Option<WfbitzChained>,
+    pub(crate) bitz: Option<BitZChained>,
 }
 
-/// What the wfbitz opener needs beyond the relation:
-/// the sources committed in the block layout of [`crate::wfbitz::chained`].
+/// What the bitz opener needs beyond the relation:
+/// the sources committed in the block layout of [`crate::bitz::chained`].
 #[derive(Clone, Debug)]
-pub(crate) struct WfbitzChained {
-    pub geometry: crate::wfbitz::chained::ChainedGeometry,
+pub(crate) struct BitZChained {
+    pub geometry: crate::bitz::chained::ChainedGeometry,
     pub layout: IntegerMatrixLayout,
     pub ligerito: crate::ligerito_flock::ResolvedLigerito,
 }
@@ -512,20 +512,20 @@ pub(crate) struct WfbitzChained {
 impl PreparedSha256Ecdsa {
     /// The Ligerito ladder that commits and opens the sources, and that the
     /// security accounting, Round 0 and the statement binding use: the
-    /// structured wfbitz opening's block-layout ladder when one was
+    /// structured bitz opening's block-layout ladder when one was
     /// prepared, else the native `f_layout` one.
     pub fn ligerito_configuration(&self) -> &crate::ligerito_flock::ResolvedLigerito {
-        if let Some(chained) = &self.wfbitz {
+        if let Some(chained) = &self.bitz {
             return &chained.ligerito;
         }
         &self.ligerito
     }
 
-    /// The structured wfbitz opening's geometry for this map, with the
+    /// The structured bitz opening's geometry for this map, with the
     /// scheme's Ligerito ladder resolved for the block-layout commitment
     /// (the same size as the derived grid: `2^(h_bits)` cells).
-    fn chained_geometry(&self) -> Result<WfbitzChained, super::Sha256EcdsaError> {
-        use crate::wfbitz::chained::{ChainedGeometry, LOG_ROWS};
+    fn chained_geometry(&self) -> Result<BitZChained, super::Sha256EcdsaError> {
+        use crate::bitz::chained::{ChainedGeometry, LOG_ROWS};
         let parts = self
             .map
             .chained_packed_source()
@@ -548,7 +548,7 @@ impl PreparedSha256Ecdsa {
             .selection()
             .resolve(native_bits - 7, self.lambda as usize)
             .map_err(error)?;
-        Ok(WfbitzChained {
+        Ok(BitZChained {
             geometry,
             layout,
             ligerito,
@@ -565,9 +565,9 @@ impl PreparedSha256Ecdsa {
                 self.lambda as usize,
             )
             .map_err(error)?;
-        if self.wfbitz.is_some() {
+        if self.bitz.is_some() {
             // Keep the structured opener's ladder on the same selection.
-            self.wfbitz = Some(self.chained_geometry()?);
+            self.bitz = Some(self.chained_geometry()?);
         }
         self.security()?;
         Ok(self)
@@ -762,9 +762,9 @@ pub fn prepare_sha256_ecdsa_on(
         ligerito: crate::ligerito_flock::LigeritoSelection::for_target(lambda as usize)
             .resolve(f_bits - 7, lambda as usize)
             .map_err(error)?,
-        wfbitz: None,
+        bitz: None,
     };
-    prepared.wfbitz = match prepared.chained_geometry() {
+    prepared.bitz = match prepared.chained_geometry() {
         Ok(chained) => Some(chained),
         Err(error) => {
             tracing::debug!("no structured opening for this map ({error}); using dense opening");

@@ -59,7 +59,7 @@ use {
 
 use super::{
     EvaluatedSpartanAssignment, SpartanField,
-    bitz::{MIN_PRODUCTION_GATE_VARS, SpartanBitzField},
+    u32_mul_relation::{MIN_PRODUCTION_GATE_VARS, SpartanBitzField},
     matrix::{
         ConstraintMatrices, PreparedConstraintMatrices, SpartanMatrixError, build_assignment_mle,
         build_product_mles,
@@ -906,13 +906,13 @@ mod tests {
     use crate::{
         pcs::{FQ_MOD, Q100Element, eq_le_table_fq},
         piop::spartan::{
-            bitz::spartan_bitz_field_config, matrix::ScaledMleEvaluationClaim, protocol::bitify,
+            u32_mul_relation::spartan_bitz_field_config, matrix::ScaledMleEvaluationClaim, protocol::bitify,
         },
     };
 
     #[test]
     fn virtual_relation_is_refused_by_direct_opener_before_transcript_work() {
-        use crate::piop::spartan::protocol::wfbitz_opener::{self, WfbitzLigerito, WfbitzOpener};
+        use crate::piop::spartan::protocol::bitz_opener::{self, BitZLigerito, BitZOpener};
         use crate::transcript::Blake3Transcript;
         let witness = CmAndWitness::from_fn(1 << 15, |i| (i as u32, !(i as u32))).unwrap();
         let relation =
@@ -921,20 +921,20 @@ mod tests {
         let proof =
             prove_cm_and_bitz(&mut Blake3Transcript::new(), &relation, &witness, &hint).unwrap();
         let prefix = relation.prefix();
-        let opener = WfbitzOpener::new(
+        let opener = BitZOpener::new(
             prefix.layout().committed_layout(),
-            WfbitzLigerito::Fast,
+            BitZLigerito::Fast,
             100,
         )
         .unwrap();
         let mut transcript = Blake3Transcript::new();
         let fresh = transcript.state_digest();
         assert!(matches!(
-            wfbitz_opener::prove(&mut transcript, prefix, &opener, &witness, &hint),
+            bitz_opener::prove(&mut transcript, prefix, &opener, &witness, &hint),
             Err(ProtocolError::UnsupportedDischarge)
         ));
         assert!(matches!(
-            wfbitz_opener::verify(&mut transcript, prefix, &opener, &hint.commitment, &proof),
+            bitz_opener::verify(&mut transcript, prefix, &opener, &hint.commitment, &proof),
             Err(ProtocolError::UnsupportedDischarge)
         ));
         assert_eq!(transcript.state_digest(), fresh);

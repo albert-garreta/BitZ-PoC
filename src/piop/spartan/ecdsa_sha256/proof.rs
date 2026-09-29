@@ -21,7 +21,7 @@ use {
         },
         piop::spartan::{
             SpartanField, absorb_spartan_message,
-            bitz::SpartanBitzField as F,
+            u32_mul_relation::SpartanBitzField as F,
             grinding::GrindingDomain,
             protocol::{check_boundary, grind_boundary},
             sha256::inner_sumcheck::ColumnMajorPackedBits,
@@ -49,7 +49,7 @@ pub struct Sha256EcdsaProof {
     pub(crate) outer_nonces: Vec<u64>,
     pub(crate) inner: SumcheckProof<F, 3>,
     pub(crate) inner_nonces: Vec<u64>,
-    pub(crate) opening: crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof,
+    pub(crate) opening: crate::piop::spartan::protocol::bitz_opener::BitZOpeningProof,
 }
 
 pub fn commit_sha256_ecdsa(
@@ -60,10 +60,10 @@ pub fn commit_sha256_ecdsa(
     if witness.statement.log_compressions as usize != prepared.log_n {
         return Err(error("witness layout mismatch"));
     }
-    if let Some(chained) = &prepared.wfbitz {
-        // The structured wfbitz opening commits the sources in its block layout.
+    if let Some(chained) = &prepared.bitz {
+        // The structured bitz opening commits the sources in its block layout.
         let rows = witness
-            .wfbitz_rows
+            .bitz_rows
             .get_or_init(|| {
                 std::sync::Arc::new(
                     chained
@@ -198,10 +198,10 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
     hint: &FlockCommitHint,
     prefix_vars: usize,
 ) -> Result<Sha256EcdsaProof> {
-    let (pc, hint_matches) = match &prepared.wfbitz {
+    let (pc, hint_matches) = match &prepared.bitz {
         Some(chained) => (
             chained.ligerito.prover(),
-            hint.matches_rows(witness.wfbitz_rows.get_or_init(|| {
+            hint.matches_rows(witness.bitz_rows.get_or_init(|| {
                 std::sync::Arc::new(
                     chained
                         .geometry
@@ -313,7 +313,7 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         &cfg,
     );
     let target = u128::from(cfg.to_integer(&inner.final_claim));
-    let opening = super::wfbitz::prove_opening(
+    let opening = super::bitz::prove_opening(
         t,
         prepared,
         hint,
@@ -345,7 +345,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     commitment: &Commitment,
     proof: &Sha256EcdsaProof,
 ) -> Result<()> {
-    let (vc, committed_layout) = match &prepared.wfbitz {
+    let (vc, committed_layout) = match &prepared.bitz {
         Some(chained) => (chained.ligerito.verifier(), &chained.layout),
         None => (prepared.ligerito.verifier(), &prepared.f_layout),
     };
@@ -426,7 +426,7 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
         &cfg,
     );
     let target = u128::from(cfg.to_integer(&inner_final_claim));
-    super::wfbitz::verify_opening(
+    super::bitz::verify_opening(
         transcript,
         prepared,
         commitment,

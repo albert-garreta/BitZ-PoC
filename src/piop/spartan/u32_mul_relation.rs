@@ -374,7 +374,7 @@ mod tests {
     #[test]
     fn early_ood_binds_regime_root_and_payload() {
         use crate::ligerito_flock::LigeritoSelection;
-        use crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
+        use crate::piop::spartan::protocol::bitz_opener::BitZOpeningProof;
         let witness = MulWitness::<u32>::from_fn(1 << 15, |i| (i as u32, u32::MAX)).unwrap();
         for selection in [LigeritoSelection::JOHNSON, LigeritoSelection::MATCHED_UDR] {
             let p = PreparedRelation::<MulLayout<u32>>::new_with_profile_and_ligerito::<Lambda100>(
@@ -385,7 +385,7 @@ mod tests {
             let hint = protocol::commit(&p, witness.bitz_bit_rows()).unwrap();
             let mut pt = Blake3Transcript::new();
             let mut proof = protocol::prove(&mut pt, &p, &witness, &hint).unwrap();
-            *proof.bitz_mut() = WfbitzOpeningProof::from_bytes(&proof.bitz().to_bytes()).unwrap();
+            *proof.bitz_mut() = BitZOpeningProof::from_bytes(&proof.bitz().to_bytes()).unwrap();
             let check = |proof: &Proof| {
                 protocol::verify(&mut Blake3Transcript::new(), &p, &hint.commitment, proof)
             };
@@ -464,7 +464,7 @@ mod tests {
         let width = (128 - security.projection_max.leading_zeros()) as usize;
         assert!(width <= 126 - p.row_vars, "q_bits <= c_w");
         assert!(
-            crate::wfbitz::Shape::new(p.row_vars, p.col_vars)
+            crate::bitz::Shape::new(p.row_vars, p.col_vars)
                 .unwrap()
                 .supports_modulus_bound(security.projection_max)
         );

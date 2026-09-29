@@ -1,6 +1,6 @@
 > Historical record from before the Wfbitz-only cleanup. APIs, commands,
 > backend comparisons, and upstream proof-byte promises below are obsolete.
-> See [the current design](../DESIGN.md) and [opening API](../wfbitz-opener.md).
+> See [the current design](../DESIGN.md) and [opening API](../bitz-opener.md).
 
 # BitZ design notes
 

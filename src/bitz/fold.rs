@@ -298,7 +298,7 @@ mod tests {
     use num_bigint::BigUint;
 
     use super::{ClaimError, LinearClaim, ReceiveError, SendError, Shape, weighted_sum_mod};
-    use crate::wfbitz::{
+    use crate::bitz::{
         BitZParams, BitZProver, BitZVerifier, Proof, WINDOW, build_kernel_prover, build_kernel_verifier,
     };
 

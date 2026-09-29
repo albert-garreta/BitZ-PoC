@@ -364,7 +364,7 @@ pub(crate) fn build_kernel_verifier<'a, S: Encoding<[u8]> + ?Sized, I: Encoding<
 #[cfg(test)]
 mod native_tests {
     use super::*;
-    use crate::wfbitz::grinding::{Geometry, Policy};
+    use crate::bitz::grinding::{Geometry, Policy};
 
     #[test]
     fn zero_work_keeps_the_existing_scalar_squeeze_stream() {

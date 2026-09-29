@@ -79,7 +79,7 @@ fn parse_shapes(value: &str) -> Result<Vec<(usize, usize, usize)>, String> {
                 .try_into()
                 .map_err(|_| "expected t:s:W triple".to_owned())?;
             if w != 1 {
-                return Err("Wfbitz commits bits; shape width must be 1".into());
+                return Err("BitZ commits bits; shape width must be 1".into());
             }
             Ok((t, s, w))
         })
@@ -237,16 +237,16 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
     // The instance: the transcript-sampled prime and point (replayed inside
     // every timed prove/verify), then the claimed μ from the SET BITS of the
     // committed rows (O(popcount) mod-q adds).
-    use bitz::piop::spartan::protocol::wfbitz_opener::{
-        self, WfbitzLigerito, WfbitzOpener, WfbitzOpeningProof,
+    use bitz::piop::spartan::protocol::bitz_opener::{
+        self, BitZLigerito, BitZOpener, BitZOpeningProof,
     };
-    let opening = WfbitzOpener::new(
+    let opening = BitZOpener::new(
         p,
-        WfbitzLigerito::Selected(resolved.selection()),
+        BitZLigerito::Selected(resolved.selection()),
         resolved.security().target_security_bits as usize,
     )
     .expect("standalone configuration");
-    let y = wfbitz_opener::standalone_evaluation(&opening, &hint).expect("standalone claim");
+    let y = bitz_opener::standalone_evaluation(&opening, &hint).expect("standalone claim");
     println!(
         "  instance: q ∈ [2^{}, 2^{q_bits}) transcript-sampled after the commitment; Round 0 (OOD): {}",
         q_bits - 1,
@@ -256,10 +256,10 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
         }
     );
     let prove_once = |hint: &bitz::ligerito_flock::FlockCommitHint| {
-        wfbitz_opener::prove_standalone(&opening, hint, y).expect("prove")
+        bitz_opener::prove_standalone(&opening, hint, y).expect("prove")
     };
-    let verify_once = |proof: &WfbitzOpeningProof| {
-        wfbitz_opener::verify_standalone(&opening, &hint.commitment, y, proof)
+    let verify_once = |proof: &BitZOpeningProof| {
+        bitz_opener::verify_standalone(&opening, &hint.commitment, y, proof)
     };
 
     // Warm-up prove (excluded from stats).
@@ -292,7 +292,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
         });
 
         let (de, t2) = bitz::observability::measure(tracing::info_span!("pcs:de"), || {
-            WfbitzOpeningProof::from_bytes(&ser).expect("codec")
+            BitZOpeningProof::from_bytes(&ser).expect("codec")
         })
         .expect("measure completed operation");
         de_us.push(t2.as_secs_f64() * 1e6);
@@ -326,7 +326,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
     // reps-warmed pool stacked under the forest. The timed medians above
     // deliberately keep the warm pool — that IS the steady-state timing.
     bitz::ligerito_flock::flock_scratch_clear();
-    bitz::wfbitz::record_phases(true);
+    bitz::bitz::record_phases(true);
     reset_peak();
 
     let split_proof = {
@@ -335,11 +335,11 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
         proof
     };
     let prove_peak = peak_mb();
-    let phases: Vec<_> = bitz::wfbitz::take_phases()
+    let phases: Vec<_> = bitz::bitz::take_phases()
         .into_iter()
         .map(|(label, time)| (label, time.as_secs_f64()))
         .collect();
-    bitz::wfbitz::record_phases(false);
+    bitz::bitz::record_phases(false);
 
     let prove_median = median(prove_ms);
     let verify_median = median(verify_ms);

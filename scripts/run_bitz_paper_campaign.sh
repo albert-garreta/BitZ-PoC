@@ -1,29 +1,29 @@
 #!/bin/zsh
-# The paper's BitZ benches that have a wfbitz path, run with the worldfnd/BitZ
-# scheme (`crate::wfbitz`, the paper's protocol otherwise): the native
+# The paper's BitZ benches that have a bitz path, run with the worldfnd/BitZ
+# scheme (`crate::bitz`, the paper's protocol otherwise): the native
 # multiplication tables (u32-mod32, u64, u128 at 2^15..2^21, rates 1/2 and
 # 1/8, threads 1 and 10, plus the width/throughput tables' extra sizes), the
-# raw-performance sweep (n = 22..30, 8 threads; wfbitz cannot go below
+# raw-performance sweep (n = 22..30, 8 threads; bitz cannot go below
 # m = 22) and the fields-witch shapes (m = 23, 25, 27, 29, W = 1, both rates,
 # threads 1 and 10). The multiplication rows go through the opener (Round 0
-# included); the raw rows use `examples/wfbitz_bench` on the paper's ladder
+# included); the raw rows use `examples/bitz_bench` on the paper's ladder
 # through the standalone opening (the statement frame, Round 0, a
 # transcript-sampled prime and point: the `bitz` CLI's raw claim).
 # Outputs: PerfRuns/cs-mul-<stamp>-* (mul-bench/v2 campaign dirs, the table
 # generators read them with the scheme key `bitz-wf@<rate>`) and
-# PerfRuns/wfbitz-raw-<stamp>/*.txt (RESULT lines of wfbitz_bench, each with
+# PerfRuns/bitz-raw-<stamp>/*.txt (RESULT lines of bitz_bench, each with
 # its `git_revision=`; provenance.log keeps every campaign start line).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 export RUSTFLAGS="${RUSTFLAGS:--C target-cpu=native}"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
 REPS="${BITZ_SUITE_REPS:-5}"
-STAMP="${BITZ_SUITE_STAMP:-$(date +%Y%m%d)-wfbitz}"
+STAMP="${BITZ_SUITE_STAMP:-$(date +%Y%m%d)-bitz}"
 OUT="PerfRuns/cs-mul-$STAMP"
-RAW="PerfRuns/wfbitz-raw-$STAMP"
-B="$CARGO_TARGET_DIR/release/examples/wfbitz_bench"
+RAW="PerfRuns/bitz-raw-$STAMP"
+B="$CARGO_TARGET_DIR/release/examples/bitz_bench"
 mkdir -p PerfRuns "$RAW"
-[ -x "$B" ] || { echo "missing $B (build: cargo build --release --example wfbitz_bench)"; exit 1; }
+[ -x "$B" ] || { echo "missing $B (build: cargo build --release --example bitz_bench)"; exit 1; }
 idle=$(top -l 2 -n 0 | grep "CPU usage" | tail -1 | sed -E 's/.* ([0-9.]+)% idle.*/\1/')
 echo "campaign start $(date) | cpu idle ${idle}% | tree $(git rev-parse --short HEAD)$(git status --porcelain | grep -q . && echo -dirty)" | tee -a "$RAW/provenance.log"
 launch() { # label -- rust args
@@ -37,7 +37,7 @@ launch() { # label -- rust args
   sleep 20
 }
 wf() { # width rate-tag ladder log-n [suffix]
-  launch "$1-wfbitz-r$2${5:-}" --workload "$1" --backends bitz --bitz-profile 100 --ligerito "$3" --log-n "$4"
+  launch "$1-bitz-r$2${5:-}" --workload "$1" --backends bitz --bitz-profile 100 --ligerito "$3" --log-n "$4"
 }
 # The native-multiplication tables.
 for w in u32-mod32 u64 u128; do

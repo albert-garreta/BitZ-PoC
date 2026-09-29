@@ -12,10 +12,7 @@
 //! columns), so each pass reads its indices off a sequential stream with a
 //! fixed bit selection ([`Selector`]: four 16-entry nibble lookups, 16
 //! columns per `TBL`) instead of gathering strided words and transposing
-//! them again. [`PatternCache`] keeps a level's pattern blocks for the
-//! passes that read the same ones again (the JIT fold after its level's JIT
-//! round; level 3's round and fold and level 4's rebuild after the build
-//! pass).
+//! them again.
 //!
 //! Entries keep the transposed column order of the block transposes
 //! ([`super::kernels::col_of`]), so every selected block is byte-identical
@@ -78,7 +75,7 @@ impl NibbleRows {
     }
 
     /// Every column's integer fold `Σ_b exponents[b]·bit(c, b)` (wrapping,
-    /// the same `u128`s as [`crate::wfbitz::fold::fold_columns`]) off the
+    /// the same `u128`s as [`crate::bitz::fold::fold_columns`]) off the
     /// rows: entry `(y, c)` holds the bits of rows `y + w·2^H`, so for each
     /// `y` two 256-entry tables of subset sums of those rows' exponents
     /// (`w < 8` and `w ≥ 8`) make it two lookups, and every entry is read

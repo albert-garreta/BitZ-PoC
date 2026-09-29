@@ -115,7 +115,7 @@ def cases(curve, spartan_splits, methods, targets, threads, seeds,
             for exponent, target, profile in itertools.product(work, targets, bitz_profiles):
                 yield dict(method=method, curve=curve, log_compressions=exponent, r=None, c=None,
                            security_target=target, threads=workers, seed=seed,
-                           ligerito_profile=profile, opener="wfbitz")
+                           ligerito_profile=profile, opener="bitz")
         else:
             method_targets = [100] if method == "binius64-ligerito" else targets
             for exponent, target, rate in itertools.product(work, method_targets, binius_rates):

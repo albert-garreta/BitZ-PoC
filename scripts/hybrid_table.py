@@ -107,8 +107,8 @@ def validate(base: Path, mode: str, rate: int, threads: int, meta: dict[str, str
     """The recorded knobs must match the row key; unrecorded runs are rejected."""
     if mode not in meta.get("modes", ""):
         raise RunError(f"{base}: run.txt modes {meta.get('modes')!r} do not include {mode!r}")
-    if mode == "hybrid" and meta.get("mul_opener") != "wfbitz":
-        raise RunError(f"{base}: hybrid rows require recorded mul_opener='wfbitz'")
+    if mode == "hybrid" and meta.get("mul_opener") not in ("bitz", "wfbitz"):
+        raise RunError(f"{base}: hybrid rows require recorded mul_opener='bitz'")
     recorded_threads = meta.get("RAYON_NUM_THREADS", "default")
     if recorded_threads != str(threads):
         raise RunError(

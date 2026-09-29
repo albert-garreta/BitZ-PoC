@@ -255,7 +255,7 @@ fn terminal<S: RelationSpec>(
         })?;
         drop(root);
         let bytes = proof.to_bytes();
-        let decoded = ::bitz::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof::from_bytes(&bytes)
+        let decoded = ::bitz::piop::spartan::protocol::bitz_opener::BitZOpeningProof::from_bytes(&bytes)
             .ok_or_else(|| anyhow::anyhow!("invalid opening encoding"))?;
         ensure!(decoded.to_bytes() == bytes, "PCS codec roundtrip");
         Ok(Sizes {
@@ -291,7 +291,7 @@ pub fn run(run: &mut Run) -> Result<()> {
                 let commitment = hint.commitment.clone();
                 drop(hint);
                 flock_core::scratch::clear();
-                let p = ::bitz::piop::spartan::bitz::prepare_u32_terminal_bitz_opening(
+                let p = ::bitz::piop::spartan::u32_mul_relation::prepare_u32_terminal_bitz_opening(
                     &relation,
                     &commitment,
                 )?;

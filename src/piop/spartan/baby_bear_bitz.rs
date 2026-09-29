@@ -381,7 +381,7 @@ pub fn prepare_baby_bear_terminal_bitz_opening_with_ligerito(
 ) -> Result<PreparedTerminalOpening<BabyBearMulLayout>, ProtocolError> {
     use super::SpartanField;
     let expected = protocol::SpartanBitzField::canonical_modulus_encoding(
-        &super::bitz::spartan_bitz_field_config(),
+        &super::u32_mul_relation::spartan_bitz_field_config(),
     );
     if matrices.field_modulus_encoding() != expected {
         return Err(ProtocolError::UnsupportedFieldModulus);
@@ -414,7 +414,7 @@ mod tests {
         pcs::{FQ_BITS, Q100Element, eq_le_table_fq, fq_sub},
         piop::spartan::{
             baby_bear_mul::sample_baby_bear_operand_with,
-            bitz::{SpartanBitzField, spartan_bitz_field_config},
+            u32_mul_relation::{SpartanBitzField, spartan_bitz_field_config},
             matrix::ScaledMleEvaluationClaim,
             profile::Lambda128,
             protocol::bitify,

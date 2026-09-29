@@ -3,7 +3,7 @@
 //! to the same value on the committed witness.
 
 use bitz::pcs::smallest_generator;
-use bitz::wfbitz::{
+use bitz::bitz::{
     BitZParams, BitZProver, BitZVerifier, LinearClaim, Pcs, Shape, WINDOW, build_prover,
     build_verifier,
 };

@@ -1148,7 +1148,7 @@ fn bench_shape<P: IopSecurityProfile>(
             }
         };
         println!(
-            "  opening layout: {kind} | BitZ rows 2^{} × columns 2^{} | Wfbitz opening",
+            "  opening layout: {kind} | BitZ rows 2^{} × columns 2^{} | BitZ opening",
             opening.row_vars, opening.col_vars
         );
     }

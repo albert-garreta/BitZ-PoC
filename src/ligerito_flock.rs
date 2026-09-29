@@ -1,5 +1,5 @@
 //! Shared Flock commitment, configuration, statement, and OOD support.
-//! Integer openings are implemented by `crate::wfbitz`.
+//! Integer openings are implemented by `crate::bitz`.
 
 use crate::ligerito::{LOG_PACKING, packed_vars, repack_leaf_bits, row_bit_vars};
 use crate::pcs::IntegerMatrixLayout;
@@ -1282,7 +1282,7 @@ pub fn absorb_standalone_mod_q_claim(transcript: &mut impl Transcript, q: u128, 
 
 /// Preserve the published standalone prime interval: bit width
 /// `min(113, 126 - row_vars)`. Sampling and claim coordinates follow the
-/// commitment; Wfbitz validates the resulting exact exponent bound.
+/// commitment; BitZ validates the resulting exact exponent bound.
 pub fn standalone_q_bits(p: &IntegerMatrixLayout) -> usize {
     // Preserve the published prime-selection rule independently of the opener.
     126usize

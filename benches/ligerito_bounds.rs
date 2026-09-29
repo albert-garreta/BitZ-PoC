@@ -1,6 +1,6 @@
 //! Controlled decoding-bound experiment within BitZ. No competing backend configuration is read.
-use ::bitz::piop::spartan::protocol::wfbitz_opener::{
-    self, WfbitzLigerito, WfbitzOpener, WfbitzOpeningProof,
+use ::bitz::piop::spartan::protocol::bitz_opener::{
+    self, BitZLigerito, BitZOpener, BitZOpeningProof,
 };
 
 mod common;
@@ -193,7 +193,7 @@ fn main() -> Result<()> {
                 |h, proof| {
                     let b = proof.bitz().to_bytes();
                     let decoded =
-                        WfbitzOpeningProof::from_bytes(&b).ok_or("invalid opening encoding")?;
+                        BitZOpeningProof::from_bytes(&b).ok_or("invalid opening encoding")?;
                     assert_eq!(decoded.to_bytes(), b);
                     Ok(bytes(
                         h.commitment.root.len(),
@@ -237,7 +237,7 @@ fn main() -> Result<()> {
                 |h, proof| {
                     let b = proof.bitz().to_bytes();
                     let decoded =
-                        WfbitzOpeningProof::from_bytes(&b).ok_or("invalid opening encoding")?;
+                        BitZOpeningProof::from_bytes(&b).ok_or("invalid opening encoding")?;
                     assert_eq!(decoded.to_bytes(), b);
                     Ok(bytes(h.commitment.root.len(), &b, proof.piop_bytes()))
                 },
@@ -342,7 +342,7 @@ fn pcs(e: &Experiment, setup: SetupCapture) -> Result<()> {
     };
     let resolved = e.selection.resolve(15, 100)?;
     let ood = resolved.round0(100)?;
-    let opener = WfbitzOpener::new(p, WfbitzLigerito::Selected(e.selection), 100)?;
+    let opener = BitZOpener::new(p, BitZLigerito::Selected(e.selection), 100)?;
     e.run(
         setup,
         &resolved,
@@ -367,13 +367,13 @@ fn pcs(e: &Experiment, setup: SetupCapture) -> Result<()> {
         },
         |w| Ok(commit_rs_ligerito_rows(&p, w.clone(), resolved.prover())),
         |_, h| {
-            let y = wfbitz_opener::standalone_evaluation(&opener, h)?;
-            Ok((wfbitz_opener::prove_standalone(&opener, h, y)?, y))
+            let y = bitz_opener::standalone_evaluation(&opener, h)?;
+            Ok((bitz_opener::prove_standalone(&opener, h, y)?, y))
         },
         |_, h, (proof, y)| {
-            let proof = WfbitzOpeningProof::from_bytes(&proof.to_bytes())
+            let proof = BitZOpeningProof::from_bytes(&proof.to_bytes())
                 .ok_or("invalid opening encoding")?;
-            Ok(wfbitz_opener::verify_standalone(
+            Ok(bitz_opener::verify_standalone(
                 &opener,
                 &h.commitment,
                 *y,

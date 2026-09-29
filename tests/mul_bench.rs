@@ -266,13 +266,13 @@ fn one_bitz_configuration_and_retired_selectors_are_rejected() {
     assert_eq!(jobs.iter().filter(|j| j.proof_fingerprints).count(), 1);
     assert_eq!(
         jobs[0].case.bitz.as_ref().unwrap().opener.as_deref(),
-        Some("wfbitz")
+        Some("bitz")
     );
     for (flag, value) in [
         ("--w", "1"),
         ("--gkr-schedule", "auto"),
         ("--opener", "forest"),
-        ("--opener", "wfbitz"),
+        ("--opener", "bitz"),
     ] {
         assert!(Args::try_parse_from(["mul", flag, value]).is_err());
     }

@@ -385,7 +385,7 @@ fn verify_layer(vs: &mut VerifierState<'_>, mut claim: Gf, point: Point) -> Opti
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wfbitz::transcript::build_kernel_prover;
+    use crate::bitz::transcript::build_kernel_prover;
 
     fn field(state: &mut u64) -> Gf {
         let mut next = || {

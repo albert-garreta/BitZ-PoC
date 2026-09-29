@@ -1,22 +1,15 @@
-//! BitZ transcript port — `f2z-benchmark`'s clean-room implementation of
-//! F2Z ("BitZ", protocol id `bitz/v1`), driven from this crate's field and
-//! flock engine. The direct entry points also bind the complete initial claim
-//! before the fold challenge, so their challenges differ from upstream direct
-//! proof dumps that omit that binding.
+//! BitZ's integer polynomial commitment scheme (protocol id `bitz/v1`).
+//! Integer exponent folds and a batched product GKR reduce each claim to a
+//! binary inner product, followed by ring switching and a Flock Ligerito
+//! opening. Direct, virtual and structured openings share these primitives.
 //!
-//! Otherwise, the message and challenge order, framing labels and wire codecs
-//! mirror `worldfnd/f2z-benchmark` at `0c75fd8` (branch `bitz-k4` for the
-//! k = 4 Ligerito ladder) step for step; nothing here touches the crate's
-//! own protocol, which stays byte-identical to what it was. Where the two
-//! agree on the values — the GF(2^128) representation, the packed-witness
-//! layout, the flock commit and the Ligerito engine — this module reuses
-//! the crate's code; where they differ only in how the value is computed,
-//! it follows their algorithm first (a per-layer grand-product GKR that
-//! binds the in-tree variables MSB-first, a dense degree-2 reduction
-//! sumcheck) so the transcript can be pinned before the fast kernels are
-//! re-derived for their variable order.
+//! The implementation originated from `worldfnd/f2z-benchmark` at `0c75fd8`
+//! (`bitz-k4`). It also binds the complete initial claim and enforces the
+//! configured native challenge schedule. Historical transcript labels retain
+//! their `wfbitz` spelling to preserve proof compatibility across the module
+//! rename; the upstream implementation is not a separate backend.
 //!
-//! Layout, one file per protocol layer of theirs:
+//! Protocol layers:
 //! - [`transcript`]: the spongefish wrapper with the hint channel.
 //! - [`params`]: shape and parameter gates, the linear claim, the frames.
 //! - [`fold`]: step 3, the integer column folds and the batching point.
@@ -24,7 +17,7 @@
 //! - [`reduce`]: the reduction of the GKR exit claim to an inner product.
 //! - [`sumcheck`]: the dense degree-2 sumcheck to one MLE claim.
 //! - [`pcs`]: step 6, statement binding, ring switch and the Ligerito
-//!   opening through a challenger that frames flock's events their way.
+//!   opening through the BitZ transcript adapter.
 #![allow(
     clippy::arithmetic_side_effects,
     clippy::cast_possible_truncation,
@@ -54,7 +47,7 @@ pub use transcript::{Proof, ProverState, VerifierState, build_prover, build_veri
 pub use chained::{ChainedError, ChainedGeometry, ChainedStatement};
 pub use virt::{VirtualError, VirtualStatement};
 
-/// Their comb: a fixed-base exponentiation table over the generator
+/// A fixed-base exponentiation table over the generator
 /// (`field::FixedBasePow` with public, variable-time exponents — every
 /// exponent it sees is a transcript value or a sent fold).
 pub struct FixedBasePow(field::FixedBasePow<field::Gf128Ops, 2>);
@@ -71,11 +64,11 @@ impl FixedBasePow {
     }
 }
 
-/// Their comb window: `FixedBasePow` covers the full 128-bit exponent range
+/// The comb window: `FixedBasePow` covers the full 128-bit exponent range
 /// either way; the window only trades table size against multiplies.
 pub const WINDOW: usize = 8;
 
-/// The prover's derived setup: the parameters and the comb over their
+/// The prover's derived setup: the parameters and the comb over the
 /// generator.
 pub struct BitZProver {
     params: BitZParams,
@@ -144,8 +137,8 @@ impl BitZProver {
     /// commitment they produced under `pcs`. `ood` is an out-of-domain
     /// evaluation claim `MLE[P](point) = y` on the packed message that a
     /// composed caller bound before its own challenges (the crate's Round
-    /// 0); it is batched into the final Ligerito opening. `None` is their
-    /// protocol as shipped.
+    /// 0); it is batched into the final Ligerito opening. `None` omits that
+    /// claim for configurations that do not use Round 0.
     pub fn prove(
         &self,
         claim: &LinearClaim,
@@ -184,9 +177,9 @@ impl BitZProver {
         let shape = *self.params.shape();
         let binary = (shape.log_rows(), shape.log_columns());
         let native = pcs.native_schedule(Some(shape), Some(binary), ood)
-            .map_err(|_| ProveError::Opening(crate::wfbitz::pcs::ProveError::Internal))?;
+            .map_err(|_| ProveError::Opening(crate::bitz::pcs::ProveError::Internal))?;
         transcript.start_native(native)
-            .map_err(|_| ProveError::Opening(crate::wfbitz::pcs::ProveError::Internal))?;
+            .map_err(|_| ProveError::Opening(crate::bitz::pcs::ProveError::Internal))?;
         let fold = self
             .send_fold_with(claim, rows, nibble.as_ref(), transcript)
             .map_err(ProveError::Fold)?;
@@ -220,7 +213,7 @@ impl BitZVerifier {
         &self.comb
     }
 
-    /// Their `BitZVerifier::verify`, consuming the transcript so both streams
+    /// Verify the claim, consuming the transcript so both streams
     /// are checked for exhaustion here. `ood` as in [`BitZProver::prove`].
     pub fn verify(
         &self,
@@ -238,9 +231,9 @@ impl BitZVerifier {
         let shape = *self.params.shape();
         let binary = (shape.log_rows(), shape.log_columns());
         let native = pcs.native_schedule(Some(shape), Some(binary), ood)
-            .map_err(|_| VerifyError::Opening(crate::wfbitz::pcs::VerifyError::Internal))?;
+            .map_err(|_| VerifyError::Opening(crate::bitz::pcs::VerifyError::Internal))?;
         transcript.start_native(native)
-            .map_err(|_| VerifyError::Opening(crate::wfbitz::pcs::VerifyError::Internal))?;
+            .map_err(|_| VerifyError::Opening(crate::bitz::pcs::VerifyError::Internal))?;
         let fold = self
             .receive_fold(claim, &mut transcript)
             .map_err(VerifyError::Fold)?;

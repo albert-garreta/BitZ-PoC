@@ -228,7 +228,7 @@ impl<C: Transport> Challenger for AtomicChallenger<'_, C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wfbitz::{Proof, build_prover, build_verifier};
+    use crate::bitz::{Proof, build_prover, build_verifier};
 
     #[test]
     fn failed_guard_never_forwards_a_protected_draw() {
@@ -277,7 +277,7 @@ mod tests {
     #[test]
     fn real_johnson_opening_replays_additional_ood_work() {
         use crate::ligerito_flock::LigeritoSelection;
-        use crate::wfbitz::{BitZParams, BitZProver, BitZVerifier, LinearClaim, WINDOW};
+        use crate::bitz::{BitZParams, BitZProver, BitZVerifier, LinearClaim, WINDOW};
         let shape = Shape::new(7, 13).unwrap();
         // This is a validated target-100 ladder with stronger local work.
         // Production Johnson target-128 remains unsupported by its OOD bound.

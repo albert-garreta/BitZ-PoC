@@ -137,7 +137,7 @@ fn map_matches_witness(circuit: EcdsaCircuit, statement: Sha256EcdsaStatement, m
 
 #[test]
 fn outer_integer_rows_match_independent_field_products() {
-    use crate::piop::spartan::bitz::SpartanBitzField as F;
+    use crate::piop::spartan::u32_mul_relation::SpartanBitzField as F;
 
     // Any prime above 2^64 exercises the native reduction; the sampled
     // 113-bit primes are covered by the pinned transcript.
@@ -573,7 +573,7 @@ fn rejects_a_valid_sha_trace_joined_to_an_unrelated_valid_signature_trace() {
 
 /// Both outer modes round-trip with early OOD and reject retired codecs.
 #[test]
-fn wfbitz_opening_roundtrips_and_rejects_old_versions() {
+fn bitz_opening_roundtrips_and_rejects_old_versions() {
     use crate::transcript::Blake3Transcript;
     use crate::transcript::traits::Transcript;
     let (statement, message) = fixture();
@@ -583,8 +583,8 @@ fn wfbitz_opening_roundtrips_and_rejects_old_versions() {
             .with_ligerito(crate::ligerito_flock::LigeritoSelection::JOHNSON)
             .unwrap();
         assert!(
-            prepared.wfbitz.is_some(),
-            "the chained map should get the structured wfbitz opening"
+            prepared.bitz.is_some(),
+            "the chained map should get the structured bitz opening"
         );
         let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
         let hint = commit_sha256_ecdsa(&prepared, &witness).unwrap();
@@ -637,26 +637,26 @@ fn wfbitz_opening_roundtrips_and_rejects_old_versions() {
     }
 }
 
-/// The structured wfbitz opening takes the instance counts its block
+/// The structured bitz opening takes the instance counts its block
 /// transposes read, up to 2^7 compressions; from 2^8 on the relation keeps
 /// the dense virtual opening.
 #[test]
-fn wfbitz_structured_opening_stops_at_its_transpose_width() {
+fn bitz_structured_opening_stops_at_its_transpose_width() {
     for (log_compressions, structured) in [(7, true), (8, false)] {
         let prepared = prepare_sha256_ecdsa(log_compressions, 100, OuterMode::Split).unwrap();
         assert_eq!(
-            prepared.wfbitz.is_some(),
+            prepared.bitz.is_some(),
             structured,
             "2^{log_compressions} compressions"
         );
     }
 }
 
-/// 2^8 compressions through the dense wfbitz opening: proves and verifies
+/// 2^8 compressions through the dense bitz opening: proves and verifies
 /// (2^23 derived cells; run with `--ignored`).
 #[test]
 #[ignore = "2^8 compressions end to end"]
-fn wfbitz_dense_opening_proves_and_verifies_at_256_compressions() {
+fn bitz_dense_opening_proves_and_verifies_at_256_compressions() {
     use crate::transcript::Blake3Transcript;
     use crate::transcript::traits::Transcript;
     let (statement, message) = fixture_at(8);
@@ -664,7 +664,7 @@ fn wfbitz_dense_opening_proves_and_verifies_at_256_compressions() {
         .unwrap()
         .with_ligerito(crate::ligerito_flock::LigeritoSelection::JOHNSON)
         .unwrap();
-    assert!(prepared.wfbitz.is_none());
+    assert!(prepared.bitz.is_none());
     let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
     let hint = commit_sha256_ecdsa(&prepared, &witness).unwrap();
     let mut prover_transcript = Blake3Transcript::new();
@@ -703,7 +703,7 @@ fn dense_secp256k1_all_rows_preserves_the_128_profile() {
         OuterMode::AllRows,
     )
     .unwrap();
-    assert!(prepared.wfbitz.is_none());
+    assert!(prepared.bitz.is_none());
     let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
     let hint = commit_sha256_ecdsa(&prepared, &witness).unwrap();
     let proof = prove_sha256_ecdsa(
@@ -740,7 +740,7 @@ fn gf_eq(point: &[field::Gf128]) -> Vec<field::Gf128> {
     eq
 }
 
-/// The structured wfbitz opening's 15 to 17 tensors sum to the dense
+/// The structured bitz opening's 15 to 17 tensors sum to the dense
 /// transpose `Mᵀ(u1 ⊗ u2)` on every committed cell of the block layout: each
 /// source's weight at its own cell, zero on every cell that holds no source
 /// (the mirrors of the SHA rows and of the aliased tail rows, the rows past
@@ -753,7 +753,7 @@ fn gf_eq(point: &[field::Gf128]) -> Vec<field::Gf128> {
 #[test]
 fn chained_structured_weights_equal_the_dense_transpose() {
     use crate::piop::spartan::protocol::bitz_generator;
-    use crate::wfbitz::{
+    use crate::bitz::{
         BitZParams, ChainedStatement, LinearClaim, OpeningQuery, Shape, VirtualStatement,
         chained::LOG_ROWS, params::LinearClaimGf,
     };
@@ -777,7 +777,7 @@ fn chained_structured_weights_equal_the_dense_transpose() {
         let case = format!("{circuit:?} 2^{log_n} {mode:?}");
         let prepared = prepare_sha256_ecdsa_on(circuit, log_n, 100, mode).unwrap();
         let g = &prepared
-            .wfbitz
+            .bitz
             .as_ref()
             .expect("structured opening")
             .geometry;
@@ -927,7 +927,7 @@ fn chained_structured_weights_equal_the_dense_transpose() {
 /// tail's end). The honest grids prove and verify.
 #[test]
 fn chained_hole_cells_cannot_carry_a_derived_bit() {
-    use crate::wfbitz::{
+    use crate::bitz::{
         BitZParams, BitZProver, BitZVerifier, ChainedStatement, LinearClaim, Pcs, WINDOW,
         build_prover, build_verifier,
         fold::{fold_columns, reconstruct},
@@ -940,7 +940,7 @@ fn chained_hole_cells_cannot_carry_a_derived_bit() {
         .with_ligerito(crate::ligerito_flock::LigeritoSelection::JOHNSON)
         .unwrap();
     let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message).unwrap();
-    let chained = prepared.wfbitz.as_ref().expect("structured opening");
+    let chained = prepared.bitz.as_ref().expect("structured opening");
     let g = &chained.geometry;
     let shape = g.shape().unwrap();
     let honest_f = g.committed_rows(&prepared.f_layout, &witness.f_rows);
@@ -1052,13 +1052,13 @@ fn chained_hole_cells_cannot_carry_a_derived_bit() {
     }
 }
 
-/// With the structured wfbitz opening the sources are committed and opened
+/// With the structured bitz opening the sources are committed and opened
 /// under the block layout's ladder, one variable wider than the native one
 /// from 2^6 compressions on; the security accounting, Round 0 and the
 /// ladder the statement binds are that ladder's, as on the forest path they
 /// are the committing ladder's.
 #[test]
-fn wfbitz_security_uses_the_committed_ladder() {
+fn bitz_security_uses_the_committed_ladder() {
     use crate::ligerito_flock::{LigeritoSelection, grinding_plan::GrindingPlan};
     for circuit in EcdsaCircuit::ALL {
         for exponent in 4..=7 {
@@ -1071,7 +1071,7 @@ fn wfbitz_security_uses_the_committed_ladder() {
                     .unwrap()
                     .with_ligerito(selection)
                     .unwrap();
-                let chained = prepared.wfbitz.as_ref().expect("structured opening");
+                let chained = prepared.bitz.as_ref().expect("structured opening");
                 if exponent >= 6 {
                     assert_eq!(
                         chained.ligerito.security().m,
@@ -1120,15 +1120,15 @@ fn wfbitz_security_uses_the_committed_ladder() {
     }
 }
 
-/// [`security_profiles_cover_both_targets_for_all_shapes`] for the wfbitz
+/// [`security_profiles_cover_both_targets_for_all_shapes`] for the bitz
 /// opener at the 100-bit target, at every size its structured opening takes.
 #[test]
-fn wfbitz_security_profiles_cover_the_100_bit_target_for_all_shapes() {
+fn bitz_security_profiles_cover_the_100_bit_target_for_all_shapes() {
     for circuit in EcdsaCircuit::ALL {
         for exponent in 3..=7 {
             for mode in [OuterMode::Split, OuterMode::AllRows] {
                 let prepared = prepare_sha256_ecdsa_on(circuit, exponent, 100, mode).unwrap();
-                assert!(prepared.wfbitz.is_some());
+                assert!(prepared.bitz.is_some());
                 let security = prepared.security().unwrap();
                 assert!(security.compute_economic_security_bits() >= 100.);
                 assert!(

@@ -43,7 +43,7 @@ use blake3::Hasher;
 /// proof parts)`. The two states differ by design: flock's Ligerito prover
 /// and verifier end in different transcript states after the last level, so
 /// both are pinned.
-// Wfbitz-only native layouts and challenge schedules; concrete versioned codecs.
+// BitZ-only native layouts and challenge schedules; concrete versioned codecs.
 const PINS: &[(&str, &str, &str, &str)] = &[
     (
         "baby_bear/2p15/lambda100",

@@ -34,7 +34,7 @@ def write_case(directory, method, curve, rate, threads=1, **overrides):
     case = dict(method=method, curve=curve, log_compressions=4, r=None, c=None, security_target=100, threads=threads, seed=0)
     if method.startswith("bitz"):
         case["ligerito_profile"] = f"custom:{rate}:4"
-        case["opener"] = "wfbitz"
+        case["opener"] = "bitz"
     else:
         case["log_inv_rate"] = rate
     rows = [dict(sample(method, curve, rate, **overrides), trial="warmup", sample=0)] + \
@@ -44,6 +44,24 @@ def write_case(directory, method, curve, rate, threads=1, **overrides):
 
 
 class TableTests(unittest.TestCase):
+    def test_current_and_saved_opener_names_produce_the_same_table(self):
+        with tempfile.TemporaryDirectory() as path:
+            directory = Path(path)
+            write_case(directory, "bitz-split", "p256", 1)
+            proc, current = self.run_generator([directory])
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            record_path = next(directory.glob("*.result.json"))
+            record = json.loads(record_path.read_text())
+            record["case"]["opener"] = "wfbitz"
+            record_path.write_text(json.dumps(record))
+            proc, saved = self.run_generator([directory])
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            # Each invocation records its temporary output path in a comment.
+            table_body = lambda text: "\n".join(
+                line for line in text.splitlines() if not line.startswith("%")
+            )
+            self.assertEqual(table_body(current), table_body(saved))
+
     def run_generator(self, dirs, extra=()):
         with tempfile.TemporaryDirectory() as out:
             out_path = Path(out) / "table.tex"

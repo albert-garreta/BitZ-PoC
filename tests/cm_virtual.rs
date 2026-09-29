@@ -11,7 +11,7 @@
 //! mismatched statement is rejected; the production entry points gate
 //! unaudited configurations.
 
-use ::bitz::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
+use ::bitz::piop::spartan::protocol::bitz_opener::BitZOpeningProof;
 use ::bitz::piop::spartan::protocol::Proof;
 use ::bitz::piop::spartan::protocol::ProtocolError;
 
@@ -156,7 +156,7 @@ fn cm_and_small_explicit_domains_roundtrip_and_reject_false_witnesses() {
 fn cm_and_proof_codec_roundtrips_and_rejects_tampering() {
     let fx = honest_fixture(PRODUCTION_GATES, 0xC0DE_C0DE);
     let bytes = fx.proof.bitz().to_bytes();
-    let decoded = WfbitzOpeningProof::from_bytes(&bytes).expect("canonical decode");
+    let decoded = BitZOpeningProof::from_bytes(&bytes).expect("canonical decode");
     assert_eq!(
         decoded.to_bytes(),
         bytes,
@@ -168,7 +168,7 @@ fn cm_and_proof_codec_roundtrips_and_rejects_tampering() {
 
     // Every truncation must fail to decode.
     for cut in [1usize, bytes.len() / 2, bytes.len() - 1] {
-        assert!(WfbitzOpeningProof::from_bytes(&bytes[..cut]).is_none());
+        assert!(BitZOpeningProof::from_bytes(&bytes[..cut]).is_none());
     }
     // A flipped byte must not yield a DIFFERENT proof that still verifies.
     // Following the house convention (see tests/completeness_random.rs),
@@ -177,7 +177,7 @@ fn cm_and_proof_codec_roundtrips_and_rejects_tampering() {
         let mut tampered = bytes.clone();
         tampered[position] ^= 1;
         let decoded = catch_unwind(AssertUnwindSafe(|| {
-            WfbitzOpeningProof::from_bytes(&tampered)
+            BitZOpeningProof::from_bytes(&tampered)
         }))
         .ok()
         .flatten();

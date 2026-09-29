@@ -209,16 +209,16 @@ where
     }
     let config = run.job.case.bitz.as_ref().expect("config");
     let profile128 = config.profile == Some(128);
-    use bitz::piop::spartan::protocol::wfbitz_opener::{self, WfbitzLigerito, WfbitzOpener};
+    use bitz::piop::spartan::protocol::bitz_opener::{self, BitZLigerito, BitZOpener};
     let target = config.profile.expect("profile");
     let ladder =
-        WfbitzLigerito::parse(config.ligerito.as_deref().expect("proof selection"), target)
+        BitZLigerito::parse(config.ligerito.as_deref().expect("proof selection"), target)
             .map_err(anyhow::Error::msg)?;
     let setup = Instant::now();
     let (prefix, opener) = if profile128 {
-        WfbitzOpener::prepare::<Lambda128, _>(layout, ladder, target)?
+        BitZOpener::prepare::<Lambda128, _>(layout, ladder, target)?
     } else {
-        WfbitzOpener::prepare::<Lambda100, _>(layout, ladder, target)?
+        BitZOpener::prepare::<Lambda100, _>(layout, ladder, target)?
     };
     let setup_ms = setup.elapsed().as_secs_f64() * 1000.;
     let security_params = prefix.security();
@@ -229,10 +229,10 @@ where
     "lambda":security_params.lambda,
     "achieved_bits":security_params.accounting.achieved_bits().min(opening_bits),
     "piop_achieved_bits":security_params.accounting.achieved_bits(),
-    "opener":"wfbitz",
+    "opener":"bitz",
     "ligerito":{
         "requested_profile":opener.ligerito().name(),
-        "resolved_profile":format!("wfbitz-{}", opener.ligerito().name()),
+        "resolved_profile":format!("bitz-{}", opener.ligerito().name()),
         "regime":if ladder_config.levels.first().is_some_and(|l| l.eta.is_some()) {"johnson"} else {"udr"},
         "target_bits":ladder_config.target_security_bits,
         "configuration_fingerprint":opener.digest().iter().map(|b| format!("{b:02x}")).collect::<String>(),
@@ -253,9 +253,9 @@ where
         pack,
         audit,
         |rows| Ok(opener.commit(rows)?),
-        |w, hint, transcript| Ok(wfbitz_opener::prove(transcript, &prefix, &opener, w, hint)?),
+        |w, hint, transcript| Ok(bitz_opener::prove(transcript, &prefix, &opener, w, hint)?),
         |hint, proof| {
-            wfbitz_opener::verify(
+            bitz_opener::verify(
                 &mut Blake3Transcript::new(),
                 &prefix,
                 &opener,
@@ -268,7 +268,7 @@ where
         |proof| {
             if bounds {
                 let bytes = proof.bitz().to_bytes();
-                let decoded = wfbitz_opener::WfbitzOpeningProof::from_bytes(&bytes)
+                let decoded = bitz_opener::BitZOpeningProof::from_bytes(&bytes)
                     .ok_or_else(|| anyhow::anyhow!("invalid opening encoding"))?;
                 anyhow::ensure!(decoded.to_bytes() == bytes, "opening codec roundtrip");
             }

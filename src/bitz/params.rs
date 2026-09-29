@@ -62,7 +62,7 @@ impl Shape {
 
     /// The split this scheme runs at by default: the crate's reference
     /// split `t = ⌈0.6 n⌉` minus one row variable (2026-09-24 decision,
-    /// see `docs/wfbitz-opener.md`), clamped to the packing width.
+    /// see `docs/bitz-opener.md`), clamped to the packing width.
     pub fn reference(log_bits: usize) -> Result<Self, ShapeError> {
         let log_rows = reference_log_rows(log_bits);
         Self::new(log_rows, log_bits.saturating_sub(log_rows))

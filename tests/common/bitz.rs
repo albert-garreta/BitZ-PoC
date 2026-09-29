@@ -1,6 +1,6 @@
 //! Small deterministic algebra fixtures; their ad-hoc ladder makes no security claim.
 #![allow(dead_code)]
-use bitz::wfbitz::{Pcs, Shape};
+use bitz::bitz::{Pcs, Shape};
 
 pub fn next(state: &mut u64) -> u64 {
     *state ^= *state << 13;

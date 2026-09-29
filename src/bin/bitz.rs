@@ -72,7 +72,7 @@
 //!
 //! The single-claim path always prints a per-step breakdown of the prover
 //! and the verifier under the `prove:`/`verify:` lines — medians over the
-//! timed reps, combining completed Perfetto intervals with native Wfbitz
+//! timed reps, combining completed Perfetto intervals with native BitZ
 //! phase timers. Build with `span-metrics` and set `PERFETTO_TRACE_PROCESSOR`
 //! to the native trace processor.
 //!
@@ -90,8 +90,8 @@
 use ::bitz::piop::spartan::protocol;
 use ::bitz::piop::spartan::protocol::PreparedRelation;
 use ::bitz::piop::spartan::protocol::Proof;
-use ::bitz::piop::spartan::protocol::wfbitz_opener::{
-    self, WfbitzLigerito, WfbitzOpener, WfbitzOpeningProof,
+use ::bitz::piop::spartan::protocol::bitz_opener::{
+    self, BitZLigerito, BitZOpener, BitZOpeningProof,
 };
 use bitz::piop::spartan::mul::{MulLayout, MulWitness};
 
@@ -812,20 +812,20 @@ fn main() {
     // transcript-sampled prime and point (every timed run re-derives them,
     // so the derivation IS inside the prover's and verifier's timers), then
     // the claimed μ from the set bits (O(popcount) mod-q adds, excluded).
-    let opening = WfbitzOpener::new(
+    let opening = BitZOpener::new(
         p,
-        WfbitzLigerito::Selected(resolved.selection()),
+        BitZLigerito::Selected(resolved.selection()),
         resolved.security().target_security_bits as usize,
     )
     .unwrap_or_else(|error| {
         eprintln!("Round 0 does not match the Ligerito ladder: {error:?}");
         exit(2)
     });
-    let y = wfbitz_opener::standalone_evaluation(&opening, &hint).expect("standalone claim");
+    let y = bitz_opener::standalone_evaluation(&opening, &hint).expect("standalone claim");
     let prove_once =
-        |hint: &FlockCommitHint| wfbitz_opener::prove_standalone(&opening, hint, y).expect("prove");
-    let verify_once = |proof: &WfbitzOpeningProof| {
-        wfbitz_opener::verify_standalone(&opening, &hint.commitment, y, proof)
+        |hint: &FlockCommitHint| bitz_opener::prove_standalone(&opening, hint, y).expect("prove");
+    let verify_once = |proof: &BitZOpeningProof| {
+        bitz_opener::verify_standalone(&opening, &hint.commitment, y, proof)
     };
     set_heap_tracking(false);
     let mut commit_ms_v = Vec::with_capacity(o.reps);
@@ -877,7 +877,7 @@ fn main() {
             std::thread::sleep(std::time::Duration::from_secs(o.rep_cooldown_s));
         }
         let recording = bitz::observability::Recording::start(Vec::new()).expect("start CLI trial");
-        bitz::wfbitz::record_phases(true);
+        bitz::bitz::record_phases(true);
         let proving = tracing::info_span!("cli:proving").entered();
         let proof = prove_once(&hint);
         drop(proving);
@@ -887,7 +887,7 @@ fn main() {
         verify_once(&proof).expect("proof verifies");
         drop(verification);
         let native_verify = take_native_phases();
-        bitz::wfbitz::record_phases(false);
+        bitz::bitz::record_phases(false);
         let intervals = recording.intervals().expect("query CLI trial");
         prove_ms.push(
             bitz::observability::duration(&intervals, "cli:proving")
@@ -2314,7 +2314,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     for rep in 0..o.reps {
         let recording =
             bitz::observability::Recording::start(Vec::new()).expect("start CLI mul trial");
-        bitz::wfbitz::record_phases(true);
+        bitz::bitz::record_phases(true);
         let (proof, hint) = mul_prove_e2e(&relation, &witness);
         let native_prove = take_native_phases();
 
@@ -2326,7 +2326,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         });
         drop(verification);
         let native_verify = take_native_phases();
-        bitz::wfbitz::record_phases(false);
+        bitz::bitz::record_phases(false);
         let intervals = recording.intervals().expect("query CLI mul trial");
         let prove_ms = bitz::observability::duration(&intervals, "cli:mul.proving")
             .unwrap()
@@ -2800,7 +2800,7 @@ fn write_mul_latex_table(
 
 /// Drain recorded native durations outside the measured operation.
 fn take_native_phases() -> Vec<(String, f64)> {
-    bitz::wfbitz::take_phases()
+    bitz::bitz::take_phases()
         .into_iter()
         .map(|(label, time)| (label, time.as_secs_f64()))
         .collect()

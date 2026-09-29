@@ -11,7 +11,7 @@ use crate::piop::spartan::SpartanField as _;
 use field::{Fp, Uint};
 pub mod baby_bear_bitz;
 pub mod baby_bear_mul;
-pub mod bitz;
+pub mod u32_mul_relation;
 pub mod cm;
 #[cfg(feature = "ecdsa")]
 pub mod ecdsa_sha256;
@@ -53,7 +53,7 @@ pub use baby_bear_mul::{
     project_baby_bear_mul_native_witness, project_baby_bear_mul_witness,
     sample_baby_bear_operand_with,
 };
-pub use bitz::{
+pub use u32_mul_relation::{
     SpartanBitzField, U32_MUL_UNIVARIATE_SKIP_DEGREE, U32_MUL_UNIVARIATE_SKIP_VARS,
     spartan_bitz_field_config,
 };

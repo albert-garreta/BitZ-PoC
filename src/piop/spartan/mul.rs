@@ -114,11 +114,11 @@ impl<T: MulWord> MulLayout<T> {
     pub const fn padded_assignment_len(&self) -> usize {
         1 << self.assignment_vars()
     }
-    /// Measured Wfbitz split, clamped to keep the word-parallel packer
+    /// Measured BitZ split, clamped to keep the word-parallel packer
     /// eligible: at least 64 high gates per row.
     fn default_col_vars(gate_vars: usize) -> usize {
         let n = gate_vars + (4 * T::BITS).ilog2() as usize;
-        let rows = crate::wfbitz::params::reference_log_rows(n);
+        let rows = crate::bitz::params::reference_log_rows(n);
         n.saturating_sub(rows).min(gate_vars.saturating_sub(6))
     }
     /// Move gate coordinates from rows to columns relative to the default split.
@@ -505,7 +505,7 @@ pub(super) fn selector_matrix<T: MulWord, C: Clone>(
 impl<T: MulWord> MulLayout<T> {
     pub(super) fn validate_protocol_geometry(&self) -> Result<(), super::protocol::ProtocolError> {
         let p = self.bitz_params();
-        if p.col_vars > self.gate_vars || crate::wfbitz::Shape::new(p.row_vars, p.col_vars).is_err()
+        if p.col_vars > self.gate_vars || crate::bitz::Shape::new(p.row_vars, p.col_vars).is_err()
         {
             return Err(super::protocol::ProtocolError::InvalidBitzParameters);
         }

@@ -2,8 +2,8 @@
 //!
 //! `bitz_bench <n> [--reps R] [--seed S] [--ladder L]` commits random bits at
 //! the scheme's split (`Shape::reference`: `t = ⌈3n/5⌉ − 1`, `s = n − t`) and
-//! proves the `bitz` CLI's raw claim through the standalone wfbitz opening
-//! ([`wfbitz_opener::prove_standalone`]): the statement frame, Round 0 for a
+//! proves the `bitz` CLI's raw claim through the standalone bitz opening
+//! ([`bitz_opener::prove_standalone`]): the statement frame, Round 0 for a
 //! Johnson ladder, a transcript-sampled prime of `min(113, 127 − t − 1)` bits
 //! and point, the claim `⟨eq(·, r₁) ⊗ eq(·, r₂), f⟩ = y`, then BitZ's scheme
 //! on a forked transcript. It commits `R` times (median), proves once to
@@ -26,11 +26,11 @@
 use std::time::{Duration, Instant};
 
 use bitz::ligerito_flock::standalone_q_bits;
-use bitz::piop::spartan::protocol::wfbitz_opener::{
-    WfbitzLigerito, WfbitzOpener, prove_standalone, standalone_evaluation,
+use bitz::piop::spartan::protocol::bitz_opener::{
+    BitZLigerito, BitZOpener, prove_standalone, standalone_evaluation,
     verify_standalone,
 };
-use bitz::wfbitz::{Shape, record_phases, take_phases};
+use bitz::bitz::{Shape, record_phases, take_phases};
 
 fn xorshift(state: &mut u64) -> u64 {
     *state ^= *state << 13;
@@ -118,9 +118,9 @@ fn main() {
     let shape = Shape::reference(n).expect("shape");
     let (t, s) = (shape.log_rows(), shape.log_columns());
     let layout = shape.layout();
-    let opener = WfbitzOpener::new(
+    let opener = BitZOpener::new(
         layout,
-        WfbitzLigerito::parse(&ladder, 100).expect("--ladder"),
+        BitZLigerito::parse(&ladder, 100).expect("--ladder"),
         100,
     )
     .expect("opener");

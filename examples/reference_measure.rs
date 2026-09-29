@@ -1,9 +1,9 @@
-//! Small full-proof Wfbitz measurements, with commitment and claim preparation
+//! Small full-proof BitZ measurements, with commitment and claim preparation
 //! outside the opening timer. Run with --release --features span-metrics.
 use bitz::{
     pcs::IntegerMatrixLayout,
-    piop::spartan::protocol::wfbitz_opener::{
-        WfbitzLigerito, WfbitzOpener, prove_standalone, standalone_evaluation, verify_standalone,
+    piop::spartan::protocol::bitz_opener::{
+        BitZLigerito, BitZOpener, prove_standalone, standalone_evaluation, verify_standalone,
     },
 };
 
@@ -17,9 +17,9 @@ fn measure(t: usize, s: usize) -> Result<(), Box<dyn std::error::Error>> {
         row_vars: t,
         col_vars: s,
     };
-    let opener = WfbitzOpener::new(
+    let opener = BitZOpener::new(
         layout,
-        WfbitzLigerito::Selected(bitz::ligerito_flock::LigeritoSelection::JOHNSON),
+        BitZLigerito::Selected(bitz::ligerito_flock::LigeritoSelection::JOHNSON),
         100,
     )?;
     let rows = (0..layout.cols())

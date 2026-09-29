@@ -162,7 +162,7 @@ pub struct IopSecurityParams {
     /// The originating profile's name (bound into statements).
     pub profile_name: &'static str,
     pub(crate) design_only: bool,
-    pub(crate) native_schedule: Option<crate::wfbitz::grinding::Schedule>,
+    pub(crate) native_schedule: Option<crate::bitz::grinding::Schedule>,
     /// The target λ.
     pub lambda: u32,
     /// Inclusive Step-2 projection/fingerprint prime interval.
@@ -195,8 +195,8 @@ pub struct IopSecurityParams {
 }
 
 impl IopSecurityParams {
-    pub(crate) fn native_policy(&self) -> Result<crate::wfbitz::grinding::Policy, ProfileError> {
-        crate::wfbitz::grinding::Policy::new(
+    pub(crate) fn native_policy(&self) -> Result<crate::bitz::grinding::Policy, ProfileError> {
+        crate::bitz::grinding::Policy::new(
             (!self.design_only).then_some(self.lambda),
             self.forest_round_grinding_bits,
             self.ring_switch_grinding_bits,
@@ -206,9 +206,9 @@ impl IopSecurityParams {
 
     pub(crate) fn adopt_native_opening(
         &mut self,
-        mut geometry: crate::wfbitz::grinding::Geometry,
+        mut geometry: crate::bitz::grinding::Geometry,
     ) -> Result<(), ProfileError> {
-        use crate::wfbitz::grinding::Schedule;
+        use crate::bitz::grinding::Schedule;
         geometry.ood = self.ood.is_some();
         let schedule = Schedule::new(self.native_policy()?, geometry)
             .map_err(|error| ProfileError::NativeOpening(error.to_string()))?;

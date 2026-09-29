@@ -15,7 +15,7 @@ use rayon::prelude::*;
 
 use field::{CtMask, CtSelect};
 
-use crate::piop::spartan::{SpartanField, bitz::SpartanBitzField, grinding::GrindingDomain};
+use crate::piop::spartan::{SpartanField, u32_mul_relation::SpartanBitzField, grinding::GrindingDomain};
 
 #[cfg(test)]
 use crate::sumcheck::SumcheckProof;
@@ -2026,7 +2026,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use crate::{
-        piop::spartan::bitz::spartan_bitz_field_config,
+        piop::spartan::u32_mul_relation::spartan_bitz_field_config,
         piop::spartan::sumcheck::{
             prove_inner_sumcheck_with_reducer, prove_inner_sumcheck_with_reducer_grinded,
         },

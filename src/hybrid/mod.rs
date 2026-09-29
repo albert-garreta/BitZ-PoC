@@ -101,7 +101,7 @@ pub struct PreparedHybrid {
     parameters: Parameters,
     multiplication: PreparedRelationPrefix<MulLayout<u32>>,
     /// The multiplication grid's split relative to the layout's default
-    /// (nonzero for the wfbitz opener); witnesses adopt it when committed.
+    /// (nonzero for the bitz opener); witnesses adopt it when committed.
     sha: sha::ShaRelation,
     geometry: opening::Geometry,
     /// Round-0 parameters (`step0:ood-draw` grinding), derived from the

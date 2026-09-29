@@ -1,11 +1,11 @@
 //! Compare a `dump_bitz` fixture's commitment and verify a local proof.
 //!
-//! `cargo run --release --example wfbitz_reference -- <dump-dir>` reads
+//! `cargo run --release --example bitz_reference -- <dump-dir>` reads
 //! `meta.txt`, `witness.bin`, and `claim.bin`. The native challenge schedule
 //! is versioned independently of upstream proof bytes.
 use std::{collections::HashMap, path::Path};
 
-use bitz::wfbitz::{
+use bitz::bitz::{
     BitZParams, BitZProver, BitZVerifier, LinearClaim, Pcs, Shape, WINDOW, build_prover,
     build_verifier,
 };
@@ -115,6 +115,6 @@ fn check(dir: &Path) -> Result<(), String> {
 fn main() -> Result<(), String> {
     let path = std::env::args_os()
         .nth(1)
-        .ok_or("usage: wfbitz_reference <dump-dir>")?;
+        .ok_or("usage: bitz_reference <dump-dir>")?;
     check(Path::new(&path))
 }

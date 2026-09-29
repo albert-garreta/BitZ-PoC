@@ -4,7 +4,7 @@
 
 use ::bitz::piop::spartan::protocol::linear::LinearProof;
 
-use bitz::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
+use bitz::piop::spartan::protocol::bitz_opener::BitZOpeningProof;
 use bitz::piop::spartan::{
     Lambda128, PreparedSha256CompressionBatch, Sha128ReferenceSchedule, Sha256CompressionStatement,
     commit_sha256_compression_witness_with_config, generate_sha256_compression_witnesses,
@@ -104,7 +104,7 @@ fn lambda128_grinds_every_opening_round_and_gates_the_nonces() {
     );
 
     // Codec round-trip preserves the section byte-for-byte.
-    let decoded = WfbitzOpeningProof::from_bytes(&bytes).expect("codec");
+    let decoded = BitZOpeningProof::from_bytes(&bytes).expect("codec");
     assert_eq!(decoded.to_bytes(), bytes);
     assert_eq!(decoded.narg, proof.bitz().narg);
 

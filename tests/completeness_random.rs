@@ -1,8 +1,8 @@
-//! Wfbitz completeness against an independent modular MLE reference.
+//! BitZ completeness against an independent modular MLE reference.
 //! Small ad-hoc configurations test algebra, not security parameters.
-#[path = "common/wfbitz.rs"]
+#[path = "common/bitz.rs"]
 mod reference;
-use bitz::wfbitz::{
+use bitz::bitz::{
     BitZParams, BitZProver, BitZVerifier, LinearClaim, Shape, WINDOW, build_prover, build_verifier,
 };
 use reference::*;
@@ -50,7 +50,7 @@ fn randomized_mle_claims_and_transcript_rejection() {
                 let mut state = build_prover("completeness", "seeded");
                 prover.prove(&claim, &pcs, &hint, &mut state, None).unwrap();
                 let proof = state.finish();
-                let verify = |claim: &LinearClaim, proof: &bitz::wfbitz::Proof| {
+                let verify = |claim: &LinearClaim, proof: &bitz::bitz::Proof| {
                     verifier.verify(
                         claim,
                         &pcs,

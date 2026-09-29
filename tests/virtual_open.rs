@@ -1,7 +1,7 @@
-//! Virtual Wfbitz claims checked against an independent application of M over F2.
-#[path = "common/wfbitz.rs"]
+//! Virtual BitZ claims checked against an independent application of M over F2.
+#[path = "common/bitz.rs"]
 mod reference;
-use bitz::wfbitz::{
+use bitz::bitz::{
     BitZParams, BitZProver, BitZVerifier, LinearClaim, Shape, WINDOW, build_prover, build_verifier,
     virt::VirtualStatement,
 };

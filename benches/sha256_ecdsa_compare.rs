@@ -365,7 +365,7 @@ fn result_record<'a, D>(
         schema: "bitz/sha256-ecdsa-compare/v1",
         timing: args.timing,
         method: &args.method,
-        opener: "wfbitz",
+        opener: "bitz",
         curve: &args.curve,
         circuit_profile,
         zk: false,
@@ -501,8 +501,8 @@ fn bitz(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
                 proof_material_bytes: wire.len(),
                 outer_ms: phase("ecdsa:outer_prove"),
                 inner_ms: phase("ecdsa:shared_inner_prove"),
-                // The terminal Wfbitz opening.
-                opening_ms: phase("ecdsa:bitz_prove").or_else(|| phase("ecdsa:wfbitz_prove")),
+                // The terminal BitZ opening.
+                opening_ms: phase("ecdsa:bitz_prove"),
                 folding_ms: None,
                 details: BitzDetails {
                     proof_digest,

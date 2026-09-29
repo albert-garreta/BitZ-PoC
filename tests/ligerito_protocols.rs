@@ -47,7 +47,7 @@ fn cm_and_both_regimes_roundtrip_and_bind_roots() {
         verify_cm_and_bitz(&mut Blake3Transcript::new(), &p, &hint.commitment, &proof).unwrap();
         let bytes = proof.bitz().to_bytes();
         let decoded =
-            ::bitz::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof::from_bytes(&bytes)
+            ::bitz::piop::spartan::protocol::bitz_opener::BitZOpeningProof::from_bytes(&bytes)
                 .unwrap();
         assert_eq!(decoded.to_bytes(), bytes);
         let mut root = hint.commitment.clone();

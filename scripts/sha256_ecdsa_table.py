@@ -64,8 +64,8 @@ def scheme_id(case: dict, sample: dict) -> str:
     if method.startswith("bitz"):
         lig = security.get("ligerito") or {}
         levels = (lig.get("configuration") or lig).get("levels") or [{}]
-        if case.get("opener") != "wfbitz":
-            raise ValueError("BitZ rows require explicit Wfbitz provenance")
+        if case.get("opener") not in ("bitz", "wfbitz"):
+            raise ValueError("BitZ rows require explicit BitZ provenance")
         return f"{method}@{int(levels[0].get('log_inv_rate', 1))}"
     if method.startswith("binius64"):
         rate = case.get("log_inv_rate", security.get("log_inv_rate", 1))

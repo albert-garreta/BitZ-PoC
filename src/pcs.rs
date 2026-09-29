@@ -1,5 +1,5 @@
 //! Shared binary-matrix layout, generator validation, and reference-prime arithmetic.
-//! The integer PCS and its exact exponent bound are implemented in `crate::wfbitz`.
+//! The integer PCS and its exact exponent bound are implemented in `crate::bitz`.
 
 use crate::poly::univariate::binary_gf128::Gf128 as Gf;
 use crate::utils::cfg_iter_mut;

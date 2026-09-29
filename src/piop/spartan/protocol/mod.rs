@@ -25,10 +25,10 @@ use field::{RingOps, Uint};
 pub mod binding;
 pub mod bitify;
 pub mod linear;
-pub mod wfbitz_opener;
-use crate::wfbitz::{LinearClaim, VirtualStatement};
-use wfbitz_opener::{WfbitzOpeningProof, opening_params, opening_shape, pcs_from_config};
-pub use wfbitz_opener::{prove_reduced, verify_reduced};
+pub mod bitz_opener;
+use crate::bitz::{LinearClaim, VirtualStatement};
+use bitz_opener::{BitZOpeningProof, opening_params, opening_shape, pcs_from_config};
+pub use bitz_opener::{prove_reduced, verify_reduced};
 
 use std::{borrow::Cow, sync::OnceLock};
 
@@ -998,7 +998,7 @@ pub struct ReductionProof {
 pub struct Proof {
     prefix: SpartanPrefixProof,
     reduction: Option<ReductionProof>,
-    bitz: WfbitzOpeningProof,
+    bitz: BitZOpeningProof,
 }
 
 impl Proof {
@@ -1008,7 +1008,7 @@ impl Proof {
     }
 
     /// The BitZ opening proof.
-    pub const fn bitz(&self) -> &WfbitzOpeningProof {
+    pub const fn bitz(&self) -> &BitZOpeningProof {
         &self.bitz
     }
 
@@ -1063,7 +1063,7 @@ impl Proof {
     ) -> (
         SpartanPrefixProof,
         Option<ReductionProof>,
-        WfbitzOpeningProof,
+        BitZOpeningProof,
     ) {
         (self.prefix, self.reduction, self.bitz)
     }
@@ -1072,7 +1072,7 @@ impl Proof {
     pub const fn from_parts(
         prefix: SpartanPrefixProof,
         reduction: Option<ReductionProof>,
-        bitz: WfbitzOpeningProof,
+        bitz: BitZOpeningProof,
     ) -> Self {
         Self {
             prefix,
@@ -1099,7 +1099,7 @@ impl Proof {
     }
 
     /// Mutable access to the opening proof (tests).
-    pub fn bitz_mut(&mut self) -> &mut WfbitzOpeningProof {
+    pub fn bitz_mut(&mut self) -> &mut BitZOpeningProof {
         &mut self.bitz
     }
 
@@ -1150,7 +1150,7 @@ pub fn prove<T: Transcript + Send, S: RelationSpec>(
     )
 }
 
-/// Runs the relation's direct or virtual Wfbitz opening.
+/// Runs the relation's direct or virtual BitZ opening.
 pub fn prove_with_opener<T: Transcript + Send, S: RelationSpec>(
     transcript: &mut T,
     prefix: &PreparedRelationPrefix<S>,
@@ -1166,7 +1166,7 @@ pub fn prove_with_opener<T: Transcript + Send, S: RelationSpec>(
         .with_native_policy(prefix.security.native_policy()?);
     // Explicit configurations are bound by the enclosing statement.
     let digest = opener.resolved().map_or([0; 32], ResolvedLigerito::digest);
-    wfbitz_opener::prove_direct(transcript, prefix, opener, &pcs, &digest, witness, hint)
+    bitz_opener::prove_direct(transcript, prefix, opener, &pcs, &digest, witness, hint)
 }
 
 /// Verifies the relation-selected discharge, re-deriving the prime from the
@@ -1186,7 +1186,7 @@ pub fn verify<T: Transcript + Send, S: RelationSpec>(
     )
 }
 
-/// Runs the relation's direct or virtual Wfbitz opening.
+/// Runs the relation's direct or virtual BitZ opening.
 pub fn verify_with_opener<T: Transcript + Send, S: RelationSpec>(
     transcript: &mut T,
     prefix: &PreparedRelationPrefix<S>,
@@ -1202,7 +1202,7 @@ pub fn verify_with_opener<T: Transcript + Send, S: RelationSpec>(
         .with_native_policy(prefix.security.native_policy()?);
     // Explicit configurations are bound by the enclosing statement.
     let digest = opener.resolved().map_or([0; 32], ResolvedLigerito::digest);
-    wfbitz_opener::verify_direct(transcript, prefix, opener, &pcs, &digest, commitment, proof)
+    bitz_opener::verify_direct(transcript, prefix, opener, &pcs, &digest, commitment, proof)
 }
 
 /// Binds the bitified claim frame of a virtual or reduced discharge.
@@ -1285,7 +1285,7 @@ pub fn prove_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
             .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
         let pcs =
             pcs_from_config(&committed, pc)?.with_native_policy(prefix.security.native_policy()?);
-        wfbitz_opener::prove_virtual_opening(transcript, &statement, &pcs, hint, h_rows, ood)?
+        bitz_opener::prove_virtual_opening(transcript, &statement, &pcs, hint, h_rows, ood)?
     };
 
     Ok(Proof {
@@ -1335,7 +1335,7 @@ fn verify_virtual_parts<T: Transcript + Send, S: RelationSpec>(
     opener: &Opener,
     commitment: &Commitment,
     messages: &SpartanPrefixProof,
-    bitz: &WfbitzOpeningProof,
+    bitz: &BitZOpeningProof,
 ) -> Result<(), ProtocolError> {
     let spec = &prefix.spec;
     let p = prefix.params();
@@ -1378,7 +1378,7 @@ fn verify_virtual_parts<T: Transcript + Send, S: RelationSpec>(
     let statement = VirtualStatement::new(params, committed, map, &claim)
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
     let pcs = pcs_from_config(&committed, vc)?.with_native_policy(prefix.security.native_policy()?);
-    wfbitz_opener::verify_virtual_opening(transcript, &statement, &pcs, commitment, bitz, ood)
+    bitz_opener::verify_virtual_opening(transcript, &statement, &pcs, commitment, bitz, ood)
 }
 
 /// The prover's output of the protocol prefix: the transcript messages and
@@ -1997,7 +1997,7 @@ pub fn bitz_generator() -> Gf128 {
 pub mod terminal {
     use super::*;
     use crate::pcs::FQ_MOD;
-    use crate::wfbitz::{BitZProver, BitZVerifier, Root, WINDOW, build_prover, build_verifier};
+    use crate::bitz::{BitZProver, BitZVerifier, Root, WINDOW, build_prover, build_verifier};
     const SESSION: &[u8] = b"bitz/terminal-wfbitz/v1";
 
     /// How the terminal-opening statement binds the relation and commitment.
@@ -2160,7 +2160,7 @@ pub mod terminal {
         prepared: &PreparedTerminalOpening<S>,
         hint: &FlockCommitHint,
         terminal_claim: &ScaledMleEvaluationClaim<SpartanBitzField>,
-    ) -> Result<WfbitzOpeningProof, ProtocolError> {
+    ) -> Result<BitZOpeningProof, ProtocolError> {
         prepared.validate_commitment(&hint.commitment)?;
         validate_bit_rows(&prepared.params, hint.rows())?;
         let (opening, bridge_digest, table, prime) =
@@ -2180,7 +2180,7 @@ pub mod terminal {
             prepared.ligerito.prover(),
         )?
         .with_native_policy(prepared.security.native_policy()?);
-        let mut state = build_prover(SESSION, &wfbitz_opener::fork_tag(transcript));
+        let mut state = build_prover(SESSION, &bitz_opener::fork_tag(transcript));
         state.public_message(&bridge_digest);
         BitZProver::new(params, WINDOW)
             .prove(
@@ -2192,7 +2192,7 @@ pub mod terminal {
             )
             .map_err(|e| ProtocolError::LigeritoConfig(format!("terminal opening: {e:?}")))?;
         let proof = state.finish();
-        Ok(WfbitzOpeningProof {
+        Ok(BitZOpeningProof {
             narg: proof.narg_string,
             hints: proof.hints,
             ood: ood.map(|claim| claim.round),
@@ -2205,7 +2205,7 @@ pub mod terminal {
         prepared: &PreparedTerminalOpening<S>,
         commitment: &Commitment,
         terminal_claim: &ScaledMleEvaluationClaim<SpartanBitzField>,
-        proof: &WfbitzOpeningProof,
+        proof: &BitZOpeningProof,
     ) -> Result<(), ProtocolError> {
         prepared.validate_commitment(commitment)?;
         let (opening, bridge_digest, table, prime) =
@@ -2237,11 +2237,11 @@ pub mod terminal {
             prepared.ligerito.verifier(),
         )?
         .with_native_policy(prepared.security.native_policy()?);
-        let encoded = crate::wfbitz::Proof {
+        let encoded = crate::bitz::Proof {
             narg_string: proof.narg.clone(),
             hints: proof.hints.clone(),
         };
-        let mut state = build_verifier(SESSION, &wfbitz_opener::fork_tag(transcript), &encoded);
+        let mut state = build_verifier(SESSION, &bitz_opener::fork_tag(transcript), &encoded);
         state.public_message(&bridge_digest);
         BitZVerifier::new(params, WINDOW)
             .verify(
@@ -2263,11 +2263,11 @@ impl From<super::sumcheck::SumcheckError> for ProtocolError {
 
 pub(crate) fn relation_native_geometry<S: RelationSpec>(
     spec: &S,
-) -> crate::wfbitz::grinding::Geometry {
+) -> crate::bitz::grinding::Geometry {
     let derived = spec.opening_layout();
     let committed = spec.committed_layout();
     let direct = spec.map().is_none_or(|map| {
         map.is_identity() && derived == committed && map.cols() == committed.cells()
     });
-    crate::wfbitz::grinding::Geometry::opening(&derived, &committed, direct)
+    crate::bitz::grinding::Geometry::opening(&derived, &committed, direct)
 }

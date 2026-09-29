@@ -60,7 +60,7 @@ use {
 
 use super::super::{
     SpartanError, SpartanField, SpartanMatrixError,
-    bitz::SpartanBitzField,
+    u32_mul_relation::SpartanBitzField,
     matrix::eq_table,
     profile::{IopSecurityParams, IopSecurityProfile, Lambda100},
     protocol::{
@@ -397,7 +397,7 @@ impl PreparedSha256ChainBatch {
             .map_err(Sha256ConstraintError::LigeritoConfig)?;
         self.security.adopt_ood_round(resolved.ood_bits())?;
         let geometry =
-            crate::wfbitz::grinding::Geometry::opening(&self.h_layout, &self.f_layout, false);
+            crate::bitz::grinding::Geometry::opening(&self.h_layout, &self.f_layout, false);
         self.security.adopt_native_opening(geometry)?;
         self.ligerito = Some(resolved);
         Ok(self)

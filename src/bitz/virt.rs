@@ -229,10 +229,10 @@ impl BitZProver {
         };
         let native = pcs
             .native_schedule(Some(shape), Some(binary), ood)
-            .map_err(|_| ProveError::Opening(crate::wfbitz::pcs::ProveError::Internal))?;
+            .map_err(|_| ProveError::Opening(crate::bitz::pcs::ProveError::Internal))?;
         transcript
             .start_native(native)
-            .map_err(|_| ProveError::Opening(crate::wfbitz::pcs::ProveError::Internal))?;
+            .map_err(|_| ProveError::Opening(crate::bitz::pcs::ProveError::Internal))?;
         let fold = self
             .send_fold(statement.claim, derived_rows, transcript)
             .map_err(ProveError::Fold)?;
@@ -305,10 +305,10 @@ impl BitZVerifier {
         };
         let native = pcs
             .native_schedule(Some(shape), Some(binary), ood)
-            .map_err(|_| VerifyError::Opening(crate::wfbitz::pcs::VerifyError::Internal))?;
+            .map_err(|_| VerifyError::Opening(crate::bitz::pcs::VerifyError::Internal))?;
         transcript
             .start_native(native)
-            .map_err(|_| VerifyError::Opening(crate::wfbitz::pcs::VerifyError::Internal))?;
+            .map_err(|_| VerifyError::Opening(crate::bitz::pcs::VerifyError::Internal))?;
         let fold = self
             .receive_fold(statement.claim, &mut transcript)
             .map_err(VerifyError::Fold)?;
@@ -340,7 +340,7 @@ pub fn committed_pcs(committed: &Shape) -> Result<Pcs, super::pcs::ConfigError> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wfbitz::{
+    use crate::bitz::{
         WINDOW, build_prover, build_verifier,
         fold::{fold_columns, reconstruct},
     };

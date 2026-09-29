@@ -18,8 +18,8 @@
 //! 4. (legacy) the inner sumcheck; the opening claim frame;
 //! 5. the virtual opening of the derived grid.
 
-use super::wfbitz_opener::{self, WfbitzOpeningProof, opening_params, opening_shape, pcs_from_config};
-use crate::wfbitz::{LinearClaim, VirtualStatement};
+use super::bitz_opener::{self, BitZOpeningProof, opening_params, opening_shape, pcs_from_config};
+use crate::bitz::{LinearClaim, VirtualStatement};
 use crate::sumcheck::boundary::ProverGrindingRoundBoundary;
 use crate::sumcheck::inner::{
     packed::{PackedInput, Sha256InnerGrinding},
@@ -202,7 +202,7 @@ pub struct LinearProof {
     inner: SumcheckProof<SpartanBitzField, 3>,
     inner_nonces: Vec<u64>,
     terminal_nonce: u64,
-    bitz: WfbitzOpeningProof,
+    bitz: BitZOpeningProof,
 }
 
 impl LinearProof {
@@ -222,7 +222,7 @@ impl LinearProof {
         self.terminal_nonce
     }
 
-    pub const fn bitz(&self) -> &WfbitzOpeningProof {
+    pub const fn bitz(&self) -> &BitZOpeningProof {
         &self.bitz
     }
 
@@ -248,7 +248,7 @@ impl LinearProof {
         &mut self.terminal_nonce
     }
 
-    pub fn bitz_mut(&mut self) -> &mut WfbitzOpeningProof {
+    pub fn bitz_mut(&mut self) -> &mut BitZOpeningProof {
         &mut self.bitz
     }
 }
@@ -567,7 +567,7 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
         let opening = VirtualStatement::new(params, committed, spec.map(), &native_claim)
             .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
         let pcs = pcs_from_config(&committed, pc)?.with_native_policy(security.native_policy()?);
-        wfbitz_opener::prove_virtual_opening(
+        bitz_opener::prove_virtual_opening(
             transcript, &opening, &pcs, hint, spec.opened_rows(witness)?, ood,
         )?
     };
@@ -746,7 +746,7 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
     let opening = VirtualStatement::new(params, committed, spec.map(), &native_claim)
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
     let pcs = pcs_from_config(&committed, vc)?.with_native_policy(security.native_policy()?);
-    wfbitz_opener::verify_virtual_opening(transcript, &opening, &pcs, commitment, &proof.bitz, ood)
+    bitz_opener::verify_virtual_opening(transcript, &opening, &pcs, commitment, &proof.bitz, ood)
 }
 
 fn canonical_rows(layout: &IntegerMatrixLayout, claim: &OpeningClaim<'_>) -> Result<Vec<u128>, ProtocolError> {

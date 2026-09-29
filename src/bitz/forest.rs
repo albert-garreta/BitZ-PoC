@@ -1,4 +1,4 @@
-//! Their batched grand product, computed without materialising the leaves.
+//! The batched grand product, computed without materialising the leaves.
 //!
 //! Level `ℓ` of the tree (level 0 = leaves, `2^{m−ℓ}` entries, in-tree index
 //! high, column low) has entries that are products of `2^ℓ` leaves, each
@@ -213,9 +213,8 @@ impl<'a> Forest<'a> {
     }
 
     /// Corners `(0, y)` and `(1, y)` of level `ell`'s JIT patterns
-    /// (`ell + kk = 3`, `y < 2^{t−4}`) in group `g`: read from `cache`,
-    /// else selected from the nibble rows (`jit_sel` = level `ell`'s
-    /// selectors), else gathered and transposed — and stored when filling.
+    /// (`ell + kk = 3`, `y < 2^{t−4}`) in group `g`: selected from the
+    /// nibble rows with level `ell`'s selectors, or gathered and transposed.
     #[inline(always)]
     fn jit_patterns(
         &self,
@@ -936,7 +935,7 @@ impl<'a> Forest<'a> {
                 for (b, row) in l4.iter_mut().enumerate().take(1 << fused) {
                     let y = y0 + b * sub;
                     let tab = [tables.at(y), tables.at(y | (1 << (t - ell - 1)))];
-                    // This task owns rows `y0 + b·sub`: its cache blocks too.
+                    // This task owns rows `y0 + b·sub`.
                     let pats = self.jit_patterns(ell, y, g, nib);
                     kernels::jit_product_group(tab, &pats, &mut row[..width]);
                 }
@@ -2212,7 +2211,7 @@ mod tests {
     /// claim and transcript bytes, on both index paths.
     #[test]
     fn one_pass_bit_rounds_prove_identically() {
-        use crate::wfbitz::transcript::build_kernel_prover;
+        use crate::bitz::transcript::build_kernel_prover;
         for (t, s) in [
             (4usize, 0usize),
             (4, 5),
@@ -2261,7 +2260,7 @@ mod tests {
     /// ones, with and without the one-pass bit rounds.
     #[test]
     fn weighing_proves_identically() {
-        use crate::wfbitz::transcript::build_kernel_prover;
+        use crate::bitz::transcript::build_kernel_prover;
         for (t, s) in [
             (4usize, 0usize),
             (4, 5),
@@ -2305,7 +2304,7 @@ mod tests {
     /// transcript bytes.
     #[test]
     fn pattern_modes_prove_identically() {
-        use crate::wfbitz::transcript::build_kernel_prover;
+        use crate::bitz::transcript::build_kernel_prover;
         for (t, s) in [
             (4usize, 5usize),
             (5, 6),

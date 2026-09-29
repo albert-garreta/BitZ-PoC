@@ -38,7 +38,7 @@
 #![recursion_limit = "512"]
 
 use ::bitz::piop::spartan::protocol::Proof;
-use ::bitz::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
+use ::bitz::piop::spartan::protocol::bitz_opener::BitZOpeningProof;
 
 pub(crate) mod common;
 #[cfg(feature = "bench-peak-memory")]
@@ -406,7 +406,7 @@ impl TraceWriter {
                 "label": "Limber paper wired MultiSwap/RSA cost-model",
                 "algorithm": "integer Mod-R1CS / Spartan / virtual BitZ",
                 "implementation": "bitz-ligerito",
-                "opener": "wfbitz",
+                "opener": "bitz",
                 "git_rev": self.git_rev,
                 "git_dirty": self.git_dirty,
                 "build_profile": self.build_profile,

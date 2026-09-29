@@ -82,7 +82,7 @@ fn multiplication_shapes_preflight_without_witnesses() {
         {
             let layout = MulLayout::<u32>::new(1 << exponent).unwrap();
             let p = layout.bitz_params();
-            check(p, spartan::bitz::u32_mul_instance_facts(&p, exponent));
+            check(p, spartan::u32_mul_relation::u32_mul_instance_facts(&p, exponent));
         }
         let p = spartan::BabyBearMulLayout::new(1 << exponent)
             .unwrap()

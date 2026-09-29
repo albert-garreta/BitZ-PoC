@@ -37,8 +37,8 @@ from mul_results import aggregate, load
 SCHEMES = [
     ("bitz@1", "\\ftwoz-SNARK, rate $1/2$"),
     ("bitz@3", "\\ftwoz-SNARK, rate $1/8$"),
-    ("bitz-wf@1", "\\ftwoz-SNARK (wfbitz opener), rate $1/2$"),
-    ("bitz-wf@3", "\\ftwoz-SNARK (wfbitz opener), rate $1/8$"),
+    ("bitz-wf@1", "\\ftwoz-SNARK (bitz opener), rate $1/2$"),
+    ("bitz-wf@3", "\\ftwoz-SNARK (bitz opener), rate $1/8$"),
     ("binius64@1", "Binius (UDR), rate $1/2$"),
     ("binius64@3", "Binius (UDR), rate $1/8$"),
     ("binius64-ligerito-rbr@1", "Binius (Johnson), rate $1/2$"),
@@ -46,7 +46,7 @@ SCHEMES = [
     ("limber", "Limber (Brakedown)"),
     ("zinc-plus@2", "Zinc+, rate $1/4$"),
 ]
-NAMES = {"bitz": "\\ftwoz-SNARK", "bitz-wf": "\\ftwoz-SNARK (wfbitz opener)", "binius64": "Binius (UDR)", "binius64-ligerito-rbr": "Binius (Johnson)",
+NAMES = {"bitz": "\\ftwoz-SNARK", "bitz-wf": "\\ftwoz-SNARK (bitz opener)", "binius64": "Binius (UDR)", "binius64-ligerito-rbr": "Binius (Johnson)",
          "limber": "Limber", "zinc-plus": "Zinc+"}
 PLACEHOLDER = "--"
 WORKLOAD_ALIASES = {"u32": "u32-mod32"}
@@ -57,9 +57,9 @@ def scheme_key(case: dict) -> str:
     if backend == "bitz":
         config = case.get("bitz") or {}
         profile = config.get("ligerito") or ""
-        family = "bitz-wf" if config.get("opener") == "wfbitz" else "bitz"
+        family = "bitz-wf" if config.get("opener") in ("bitz", "wfbitz") else "bitz"
         if profile == "fast":
-            # flock's embedded `fast` ladder (the wfbitz opener as shipped): rate 1/2.
+            # flock's embedded `fast` ladder (the bitz opener as shipped): rate 1/2.
             return f"{family}@1"
         parts = profile.split(":")
         if len(parts) < 2 or not parts[1].isdigit():

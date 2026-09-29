@@ -14,7 +14,7 @@ use crate::piop::spartan::protocol::{PreparedRelationPrefix, RelationSpec};
 
 use super::{BinaryClaim, Error};
 use crate::ligerito::pack_columns_from_rows;
-use crate::piop::spartan::bitz::{SpartanBitzField, U32_MUL_UNIVARIATE_SKIP_VARS};
+use crate::piop::spartan::u32_mul_relation::{SpartanBitzField, U32_MUL_UNIVARIATE_SKIP_VARS};
 use crate::piop::spartan::{
     absorb_spartan_message,
     protocol::{
@@ -37,7 +37,7 @@ pub(crate) struct PrefixProof {
     pub narg: Vec<u8>,
 }
 
-const WFBITZ_SESSION: &[u8] = b"bitz/hybrid/mul-gkr/wfbitz/v1";
+const BITZ_SESSION: &[u8] = b"bitz/hybrid/mul-gkr/wfbitz/v1";
 
 impl PrefixProof {
     fn messages(&self) -> SpartanPrefixProof {
@@ -101,24 +101,24 @@ pub(crate) fn prove(
     let arith = &proved.prime;
     let weights = bitify::dense_row_weights(&proved.opening, &proved.table, arith)?;
     let (narg, claim) = {
-        let _scope = tracing::info_span!("mo:wfbitz").entered();
-        let (params, claim) = wfbitz_claim(&p, arith, &weights, &proved.opening)?;
-        let tag = crate::piop::spartan::protocol::wfbitz_opener::fork_tag(transcript);
-        let mut state = crate::wfbitz::build_prover(WFBITZ_SESSION, &tag);
+        let _scope = tracing::info_span!("mo:bitz").entered();
+        let (params, claim) = bitz_claim(&p, arith, &weights, &proved.opening)?;
+        let tag = crate::piop::spartan::protocol::bitz_opener::fork_tag(transcript);
+        let mut state = crate::bitz::build_prover(BITZ_SESSION, &tag);
         state.public_message(&proved.bridge_digest);
         state
             .start_native(prefix_schedule(params.shape(), prepared.security())?)
             .map_err(|_| Error::Invalid("native multiplication schedule"))?;
-        let prover = crate::wfbitz::BitZProver::new(params, crate::wfbitz::WINDOW);
+        let prover = crate::bitz::BitZProver::new(params, crate::bitz::WINDOW);
         let fold = prover
             .send_fold(&claim, rows, &mut state)
-            .map_err(|_| Error::Invalid("wfbitz fold"))?;
+            .map_err(|_| Error::Invalid("bitz fold"))?;
         let packed_cols = pack_columns_from_rows(&p, rows);
         let shape = *params.shape();
         let (low, high_point, value) =
-            crate::wfbitz::reduce::gkr_exit_prove(&mut state, &fold, &shape, &packed_cols);
+            crate::bitz::reduce::gkr_exit_prove(&mut state, &fold, &shape, &packed_cols);
         let narg = state.finish().narg_string;
-        bind_wfbitz(transcript, &proved.bridge_digest, &narg);
+        bind_bitz(transcript, &proved.bridge_digest, &narg);
         (narg, binary_claim(low, high_point, value))
     };
     let SpartanPrefixProof {
@@ -146,21 +146,21 @@ pub(crate) fn prove(
 /// The scheme's parameters and claim for the multiplication grid: the
 /// sampled prime, the crate's generator, the one chunk of row weights,
 /// the bitified claim's column weights and target.
-fn wfbitz_claim(
+fn bitz_claim(
     p: &crate::pcs::IntegerMatrixLayout,
     arith: &field::FpCtx<2>,
     row_weights: &[u128],
     opening: &bitify::BitifiedClaim,
-) -> Result<(crate::wfbitz::BitZParams, crate::wfbitz::LinearClaim), Error> {
-    let shape = crate::wfbitz::Shape::new(p.row_vars, p.col_vars)
-        .map_err(|_| Error::Invalid("wfbitz shape"))?;
-    let modulus = crate::piop::spartan::protocol::wfbitz_opener::modulus_u128(arith);
-    let params = crate::wfbitz::BitZParams::new(shape, modulus, bitz_generator().into())
-        .map_err(|_| Error::Invalid("wfbitz parameters (fold bound)"))?;
+) -> Result<(crate::bitz::BitZParams, crate::bitz::LinearClaim), Error> {
+    let shape = crate::bitz::Shape::new(p.row_vars, p.col_vars)
+        .map_err(|_| Error::Invalid("bitz shape"))?;
+    let modulus = crate::piop::spartan::protocol::bitz_opener::modulus_u128(arith);
+    let params = crate::bitz::BitZParams::new(shape, modulus, bitz_generator().into())
+        .map_err(|_| Error::Invalid("bitz parameters (fold bound)"))?;
     let columns = bitify::column_weights(opening, arith)?;
     let claim =
-        crate::wfbitz::LinearClaim::new(&params, row_weights.to_vec(), columns, opening.claimed)
-            .map_err(|_| Error::Invalid("wfbitz claim"))?;
+        crate::bitz::LinearClaim::new(&params, row_weights.to_vec(), columns, opening.claimed)
+            .map_err(|_| Error::Invalid("bitz claim"))?;
     Ok((params, claim))
 }
 
@@ -180,7 +180,7 @@ fn binary_claim(
 
 /// Binds the forked transcript's narg string (the folds and every GKR
 /// message) on the shared transcript before the joint sumcheck draws.
-fn bind_wfbitz(transcript: &mut Blake3Transcript, bridge_digest: &[u8; 32], narg: &[u8]) {
+fn bind_bitz(transcript: &mut Blake3Transcript, bridge_digest: &[u8; 32], narg: &[u8]) {
     absorb_spartan_message(transcript, b"hybrid/mul-gkr/wfbitz", bridge_digest);
     absorb_spartan_message(transcript, b"narg", blake3::hash(narg).as_bytes());
 }
@@ -212,37 +212,37 @@ pub(crate) fn verify(
 
     let weights = bitify::dense_row_weights(&verified.opening, &verified.table, arith)?;
     let narg = &proof.narg;
-    let (params, claim) = wfbitz_claim(&p, arith, &weights, &verified.opening)?;
-    let tag = crate::piop::spartan::protocol::wfbitz_opener::fork_tag(transcript);
-    let bitz_proof = crate::wfbitz::Proof {
+    let (params, claim) = bitz_claim(&p, arith, &weights, &verified.opening)?;
+    let tag = crate::piop::spartan::protocol::bitz_opener::fork_tag(transcript);
+    let bitz_proof = crate::bitz::Proof {
         narg_string: narg.clone(),
         hints: Vec::new(),
     };
-    let mut state = crate::wfbitz::build_verifier(WFBITZ_SESSION, &tag, &bitz_proof);
+    let mut state = crate::bitz::build_verifier(BITZ_SESSION, &tag, &bitz_proof);
     state.public_message(&verified.bridge_digest);
     state
         .start_native(prefix_schedule(params.shape(), prepared.security())?)
         .map_err(|_| Error::Invalid("native multiplication schedule"))?;
-    let verifier = crate::wfbitz::BitZVerifier::new(params, crate::wfbitz::WINDOW);
+    let verifier = crate::bitz::BitZVerifier::new(params, crate::bitz::WINDOW);
     let fold = verifier
         .receive_fold(&claim, &mut state)
-        .map_err(|_| Error::Invalid("wfbitz fold"))?;
+        .map_err(|_| Error::Invalid("bitz fold"))?;
     let shape = *params.shape();
     let (low, high_point, value) =
-        crate::wfbitz::reduce::gkr_exit_verify(&mut state, &fold, &shape)
-            .map_err(|_| Error::Invalid("wfbitz GKR"))?;
+        crate::bitz::reduce::gkr_exit_verify(&mut state, &fold, &shape)
+            .map_err(|_| Error::Invalid("bitz GKR"))?;
     state
         .check_eof()
-        .map_err(|_| Error::Invalid("wfbitz trailing data"))?;
-    bind_wfbitz(transcript, &verified.bridge_digest, narg);
+        .map_err(|_| Error::Invalid("bitz trailing data"))?;
+    bind_bitz(transcript, &verified.bridge_digest, narg);
     Ok(binary_claim(low, high_point, value))
 }
 
 fn prefix_schedule(
-    shape: &crate::wfbitz::Shape,
+    shape: &crate::bitz::Shape,
     security: &crate::piop::spartan::profile::IopSecurityParams,
-) -> Result<crate::wfbitz::grinding::Schedule, Error> {
-    use crate::wfbitz::grinding::{Geometry, Policy, Schedule};
+) -> Result<crate::bitz::grinding::Schedule, Error> {
+    use crate::bitz::grinding::{Geometry, Policy, Schedule};
     let policy = Policy::new(
         Some(security.lambda),
         security.forest_round_grinding_bits,
