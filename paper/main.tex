@@ -493,7 +493,7 @@ We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful an
 
 
 
-\emph{Implementation and lookup tables:} We  used AI in our implementation, optimization, and experiments, in the way explained in \cref{s:experiments}. In particular, the use of lookup tables was initially suggested by an AI when working with it on optimizing the  low entropy batched grand products.
+\emph{Implementation and optimizations:} We  used AI in our implementation, optimization, and experiments, in the way explained in \cref{s:experiments}. In particular, the use of lookup tables was initially suggested by an AI when working with it on optimizing the  low entropy batched grand products. The optimizations in \cref{s:gkr_buckets,s:indices} where found by an AI.
 
 \bigskip
 
@@ -3081,77 +3081,44 @@ $$
 where 
 %
 $
-H^{\eps\eps'}_{\bb}[\xx,\xx']\defeq \sum_{\cc\in \bits^{r_2}:\ \xx^{\eps 0}_{\bb,\cc}=\xx,\ \xx^{\eps' 1}_{\bb,\cc}=\xx'}\eq(\cc;\bm{\alpha}').
+H^{\eps\eps'}_{\bb}[\xx,\xx']\defeq \sum_{\cc\in \bits^{r_2}:\ \xx^{\eps\eps'}_{\bb,\cc}=(\xx,\xx')}\eq(\cc;\bm{\alpha}'),
 $
 %
-\noindent This way, we only need tables with entries of dimension $2^4$, and $4\cdot 2^8$ buckets per index $\bb$, instead of $2^{16}$. The constant coefficient $t_3(0)$ only needs the buckets $H^{00}_{\bb}$.
-
-
-
-% [AI-drafted (Claude Opus 5.5), 2026-09-29, at the author's request: the second sentence of the next paragraph; please review]
-In \cref{tab:gkr_tables} we list all the tables that our implementation uses in the sumchecks for $i=r_1-1,\ldots,r_1-4$, and the rounds in which it uses them. It only stores tables with the values of a single factor, as $T_{r_1}^{(3)}$ above, and it computes the entries of $T_{A_0}$, $T_{A_2}$, $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$ ``on-the-go'' from them. For $i<r_1-4$ the prover runs standard sumchecks, and it obtains the entries of $L_{r_1-4}$ as products of two entries of $T_{r_1-3}$.
-
-\begin{table}[H]
-    \centering
-    \small
-    \begin{tabular}{c|c|c|c|c|c}
-        Sumcheck & Rounds & Table & Dimension & Size (MB), $\ell_1=2^{16}$ & Buckets per index \\
-        \hline
-        \hline
-        $i=r_1-1$ & $1$ & $T_{r_1}$ & $(\KK^{2})^{2^{r_1}}$ & $2.1$ & $2^4$ \\
-         & $2$ & $T_{r_1}^{(2)}$ & $(\KK^{2^2})^{2^{r_1-1}}$ & $2.1$ & $2^8$ \\
-         & $3$ & $T_{r_1}^{(3)}$ & $(\KK^{2^4})^{2^{r_1-2}}$ & $4.2$ & $4\cdot 2^8$ \\
-         & $4$, $5$ & $T_{r_1}^{(4)}$ & $(\KK^{2^8})^{2^{r_1-3}}$ & $33.6$ & $3\cdot 2^8$ (round $4$) \\
-        \hline
-        $i=r_1-2$ & $1$ & $T_{r_1-1}$ & $(\KK^{2^2})^{2^{r_1-1}}$ & $2.1$ & $2^8$ \\
-         & $2$ & $T_{r_1-1}^{(2)}$ & $(\KK^{2^4})^{2^{r_1-2}}$ & $4.2$ & $4\cdot 2^8$ \\
-         & $3$, $4$ & $T_{r_1-1}^{(3)}$ & $(\KK^{2^8})^{2^{r_1-3}}$ & $33.6$ & $3\cdot 2^8$ (round $3$) \\
-        \hline
-        $i=r_1-3$ & $1$ & $T_{r_1-2}$ & $(\KK^{2^4})^{2^{r_1-2}}$ & $4.2$ & $4\cdot 2^8$ \\
-         & $2$, $3$ & $T_{r_1-2}^{(2)}$ & $(\KK^{2^8})^{2^{r_1-3}}$ & $33.6$ & $3\cdot 2^8$ (round $2$) \\
-        \hline
-        $i=r_1-4$ & $1$, $2$ & $T_{r_1-3}$ & $(\KK^{2^8})^{2^{r_1-3}}$ & $33.6$ & $3\cdot 2^8$ (round $1$)
-    \end{tabular}
-    \caption{The tables used by our implementation in the $i$-th sumcheck of \cref{c:gkr_grand_product}, for the four values of $i$ closest to the leaves, with $\log|\KK|\approx 128$. Each table contains the values of a single factor. The table $T_{r_1-j}^{(k)}$ is the table $T_{r_1-j}$ of \eqref{e:size_T_r1_i} after absorbing the challenges of the first $k-1$ rounds, as $T_{r_1}^{(2)}$ above. In the rounds with $2^4$ or $2^8$ buckets per index, each summand costs one addition into a bucket, and four with $4\cdot 2^8$ buckets per index. In the first round that reads a table with $2^8$ entries per index, each summand costs two reads from it, two multiplications, and three additions into buckets indexed by the entry of the other factor. In the second one it costs eight reads, and then the prover continues with a standard sumcheck on the folded values. Each table is built with fewer than $2^{r_1+7}$ operations in $\KK$. We use the example size $\codedim_1=2^{r_1}=2^{16}$, which corresponds to a total witness size $\codedim\approx 2^{27},2^{28}$ in our implementation. (With the optimization from \cite[Algorithm 3]{sumcheck_opt_2}, the rounds with buckets of each sumcheck only use its first table.)}
-    \label{tab:gkr_tables}
-\end{table}
-
-
-\subsection{Avoiding transposition when forming table indices}\label{s:gkr_implementation}
-
-
-In all our techniques discussed so far, for each coefficient of each prover message where our optimizations are used, the prover has to compute a string of $\leq 8$ bits $\xx_{\bb,\cc}$ for each $\bb,\cc$ ranging in a set of the form $\bits^{r_1 - t} \times \bits^{r_2}$, for some $t$ (depending on the specific coefficient being computed). If done naively, computing these strings is a costly procedure.  We now explain a method for greatly reducing the amount of strings $\xx_{\bb,\cc}$ that need to be computed throughout the entire GKR protocol. 
-
-This optimization was found by an AI upon our request,  we identified that computing $\xx_{\bb,\cc}$ is costly. 
-
-The prover that we measure in \cref{s:experiments} sends the same messages as the algorithm described above, but it organizes its computations somewhat differently. We describe in detail how it forms the indices of its lookup tables, which turned out to matter for its running time, and we only summarize the rest at the end of this section (see our repository for details).
-
-\paragraph{Forming indices.} A table read needs an \emph{index}, i.e.\ the tuple of witness bits that selects the entry to read. For example, $A_2^{(1)}[\bb,\cc]$ is the entry of $T_{A_2}[\bb]$ with index $(\bfg_{(0,\bb,0),\cc},\bfg_{(1,\bb,0),\cc},\bfg_{(0,\bb,1),\cc},\bfg_{(1,\bb,1),\cc})$. The cost accounting above (e.g.\ \cref{t:gkr_step1_costs}) counts table reads, but not the work of forming their indices.
-
-This work is not negligible. We store $\bfg$ row by row, with the bits of $64$ columns packed in a $64$-bit word, while an index collects bits of \emph{one} column at \emph{several} rows, which are far apart in memory. Forming the indices of $64$ columns thus takes up to $8$ loads from different cache lines and a transposition of bits, and this is repeated in every round that uses the tables. At $\codedim=2^{28}$ this took about a quarter of the prover time of the GKR protocol, i.e.\ more than the table reads themselves.
-
-\paragraph{Nibble words.} Each sumcheck of our implementation binds the variables of $\bb$ from last to first, i.e.\ starting next to the variable of the product. (Above we bind them from first to last. The order does not affect the protocol or its analysis.) With this order, every index used by our prover consists of bits of one column $\cc$ at rows that differ only in their last $4$ coordinates. Because of this, at the beginning of the protocol we regroup the witness into
+and
 %
 $$
-N[\bb,\cc]\defeq \left(\bfg_{(\bb,\ww),\cc}\right)_{\ww\in \bits^4}\in \bits^{16} \qquad \text{for all } (\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2},
+\xx^{\eps\eps'}_{\bb,\cc}\defeq \left((\bfg_{(\ww,\eps,\bb,0),\cc})_{\ww\in\bits^2},\ (\bfg_{(\ww,\eps',\bb,1),\cc})_{\ww\in\bits^2}\right)\in \bits^8.
 $$
 %
-\noindent stored as $16$-bit integers, which we call \emph{nibble words}. $N$ has the same size as the witness, and building it costs about as much as forming the indices of one round as described above.
+With this approach we only need tables with entries of dimension $\leq 2^4$, and $\leq 4\cdot 2^8$ buckets per index $\bb$, instead of $2^{16}$. 
 
-Every index is then a selection of some of the $16$ bits of one nibble word, through a map $\sigma:\bits^{16}\to\bits^{8}$ that only depends on the round. For example, in the rounds of the last sumcheck that read tables with $2^8$ entries per index, $\sigma$ selects the $8$ bits of the rows with $w_4=0$, or those of the rows with $w_4=1$. Since $\sigma$ only moves bits, if we write $x\in\bits^{16}$ as four nibbles $x=(x_0,x_1,x_2,x_3)$, then
-%
-$$
-\sigma(x)=\sigma(x_0,0,0,0)\vee \sigma(0,x_1,0,0)\vee \sigma(0,0,x_2,0)\vee \sigma(0,0,0,x_3),
-$$
-%
-\noindent where $\vee$ is the bitwise OR. Each of these four maps is a table with $16$ entries of one byte, and the vector instruction \texttt{TBL} of our CPU performs $16$ lookups into such a table at once. So the indices of $16$ columns cost $4$ lookups and $3$ ORs. In a sense, we form the indices of our lookup tables with lookup tables.
 
-With $1$ thread, forming an index now costs about $0.06$\,ns (including the construction of $N$), against $0.28$--$0.40$\,ns before, and $0.57$\,ns for a multiplication in $\KK$. The prover of \ftwoz\ takes about $0.8$ times the time it took before at $\codedim=2^{28}$, and $0.7$ times at $\codedim=2^{30}$. We also use the nibble words in Round 2 of \cref{c:core_iop}: the prover obtains the integers $\mu_j$ with two lookups per nibble word, into tables of $2^8$ partial sums of the entries of $\pi_q^{-1}(\vv^{(1)})$.
 
-\paragraph{Other differences.} We use lookup tables in the first $5-j$ rounds of the sumcheck for $L_{r_1-j}$, for $j\leq 3$, with up to $2^8$ entries per index. Since the prover processes the summands one index $\bb$ at a time, for all the columns $\cc$, it only needs a few KB of each table at a time, which stay in cache.
+\subsection{Reducing transpositions when forming table indices}\label{s:gkr_implementation}
 
-In the first $3-j$ of these rounds, the prover uses the buckets of \cref{s:gkr_buckets}, which also need the index of every summand. The rest of the rounds are standard.
 
+In all our techniques discussed so far, for each coefficient of each prover message where our optimizations are used, the prover has to compute a string of $\leq 8$ bits $\xx_{\bb,\cc}$  (or $\xx_{\bb,\cc}^{\eps\eps'}$) for each $\bb,\cc$ ranging in a set of the form $\bits^{r_1 - t} \times \bits^{r_2}$, for some $t$ (with $t$ depending on the specific coefficient being computed). If done naively, as we explain below, computing these strings is a costly procedure. Indeed, prior to optimizing it, it amounted to around $25\%$ of the GKR prover time. 
+
+
+We now explain a method for greatly reducing (by more than an order of magnitude) the amount of strings $\xx_{\bb,\cc}$ that need to be computed throughout the entire GKR protocol. This optimization was found by an AI after we identified that computing all the strings $\xx_{\bb,\cc}$ naively is significantly expensive. 
+
+\paragraph{The naive approach to computing $\xx_{\bb,\cc}$.}  In our implementation, we look at $\bfg\in \bits^{r_1}\times \bits^{r_2}$ as a $2^{r_1}\times 2^{r_2}$ matrix of bits.  We store $\bfg$ using $64$-bit ``horizontal'' words, i.e.\ in our memory layout, we arrange $\bfg$ as a collection of $64$-bits words obtained by splittingh each each row of $\bfg$ into $64$-bit consecutive words.  On the other hand, each string $\xx_{\bb,\cc}$ consists of at most $8$ bits placed on the $\cc$-th column of $\bfg$, e.g.\ in our example in \cref{s:gkr_buckets} we had $$\xx_{\bb,\cc}\defeq \left(\bfg_{(0,\bb,0),\cc},\bfg_{(1,\bb,0),\cc},\bfg_{(0,\bb,1),\cc},\bfg_{(1,\bb,1),\cc}\right)\in \bits^4.$$ Hence, to construct $\xx_{\bb,\cc}$, one needs to access $\leq 8$ of these words, transpose them (a costly step), and select a row of the resulting transposed data.  
+
+This needs to be done for all indices  $\bb,\cc$, and for all coefficients of prover messages where we seek to use our optimizations. Concretely,  Rounds 1, 2 and 3 of the last GKR require computing $6$ coefficients in total. Rounds 1 and 2 of the second last sumcheck require  $4$, and Round 1 of the third last sumcheck requires $2$. This amounts to computing $21$ batches of strings $\xx_{\bb,\cc}$ with $(\bb,\cc)$ running over a set of size $\approx \codedim$. 
+
+
+\paragraph{Optimization.} Continuing with the example $\xx_{\bb,\cc}$ above, observe that  for  every $\bb,\cc\in\bits^{r_1^{-2}}\times \bits^{r_2}$, the string $\xx_{\bb,\cc}$, depends exclusively on the entries of $\bfg$ placed in the column $\cc$ and on rows that differ exclusively in the first and last coordinate\footnote{In our implementation, they actually differ in the last two coordinates.}  Similarly, all other strings  $\xx_{\bb,\cc}$ (and $\xx_{\bb,\cc}^{\eps_1,\eps_2}$) required at all optimized rounds   depend only on the bits placed on the $\cc$-th column of $\bfg$ and on rows that differ exclusively on at most a fixed set of $4$ coordinates (with this set being the same for all rounds and coefficients). For readibility, let us assume these coordinates are the last $4$ coordinates (this is not consistent with the notation in this section, but is consistent with our implementation).
+
+
+
+With the above observation in mind, the optimization has  the prover  precompute  the values 
+$$N[\bb,\cc]\defeq \left(\bfg_{(\bb,\ww),\cc}\right)_{\ww\in \bits^4}\in \bits^{16} \qquad \text{for all } (\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}.$$
+Now, every time a string $\xx_{\bb,\cc}$ or $\xx_{\bb,\cc}^{\eps\eps'}$ needs to be formed, it suffices to take the word $N[\bb,\cc]$ and select an appropriate subset of bits from  it.  
+
+
+
+
+ Building $N$ has roughly the same costs as computing one single batch of strings $\xx_{\bb,\cc}$ naively. In practice we observe that this optimization speeds up the cost of forming the indices $\xx_{\bb,\cc}$ by $4-6.5$ times, leading to a speedup of the \ftwoz-PCS prover of between $20\%$ to $30\%$ depending on the witness size ($\codedim=2^{28}$ and $\codedim=2^{30}$, respectively).
 
 \renewcommand{\comfield}{\FF_{2^{\comfieldexp}}}
 
