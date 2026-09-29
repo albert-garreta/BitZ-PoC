@@ -16,7 +16,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum Timing {
-    Perfetto,
+    Spans,
     WallClock,
 }
 
@@ -51,8 +51,8 @@ struct Args {
     binius64_worker: Option<std::path::PathBuf>,
     #[arg(long = "log-inv-rate", alias = "binius-log-inv-rate", default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=3))]
     log_inv_rate: u8,
-    /// Wall-clock reports top-level timings without recording internal spans.
-    #[arg(long, value_enum, default_value = "perfetto")]
+    /// Span timings by default; wall-clock omits internal phase breakdowns.
+    #[arg(long, value_enum, default_value = "spans")]
     timing: Timing,
 }
 
@@ -144,22 +144,23 @@ fn setup<T, E: Into<Box<dyn Error>>>(
         let ms = start.elapsed().as_secs_f64() * 1000.;
         return Ok((value.map_err(Into::into)?, ms));
     }
-    let (value, duration) = bitz::observability::measure(tracing::info_span!("benchmark:setup"), f)?;
+    let (value, duration) =
+        bitz::observability::measure(tracing::info_span!("benchmark:setup"), f)?;
     Ok((value.map_err(Into::into)?, duration.as_secs_f64() * 1000.))
 }
 
-/// Both backends use the same operation boundaries. Only Perfetto captures
+/// Both backends use the same operation boundaries. Span timing captures
 /// nested protocol phases; wall-clock measurements stay in this harness.
 struct TrialTiming {
-    recording: Option<bitz::observability::Recording<Vec<u8>>>,
+    recording: Option<bitz::observability::Recording>,
     wall_ms: RefCell<HashMap<&'static str, f64>>,
 }
 
 impl TrialTiming {
     fn start(timing: Timing) -> Result<Self> {
         Ok(Self {
-            recording: if timing == Timing::Perfetto {
-                Some(bitz::observability::Recording::start(Vec::new())?)
+            recording: if timing == Timing::Spans {
+                Some(bitz::observability::Recording::start()?)
             } else {
                 None
             },
@@ -324,6 +325,8 @@ struct ResultRecord<'a, D> {
     schema: &'static str,
     timing: Timing,
     method: &'a str,
+    /// Concrete opening provenance for benchmark artifacts.
+    opener: &'a str,
     /// The statement's curve and the exact verifier circuit this row ran,
     /// so no two rows are compared without the runner checking both.
     curve: &'a str,
@@ -363,6 +366,7 @@ fn result_record<'a, D>(
         schema: "bitz/sha256-ecdsa-compare/v1",
         timing: args.timing,
         method: &args.method,
+        opener: "bitz",
         curve: &args.curve,
         circuit_profile,
         zk: false,
@@ -498,12 +502,17 @@ fn bitz(args: &Args, fixture: &Fixture, mode: OuterMode) -> Result<()> {
                 proof_material_bytes: wire.len(),
                 outer_ms: phase("ecdsa:outer_prove"),
                 inner_ms: phase("ecdsa:shared_inner_prove"),
+                // The terminal BitZ opening.
                 opening_ms: phase("ecdsa:bitz_prove"),
                 folding_ms: None,
                 details: BitzDetails {
                     proof_digest,
-                    prover_transcript: blake3::Hash::from(prover_transcript.state_digest()).to_hex().to_string(),
-                    verifier_transcript: blake3::Hash::from(verifier_transcript.state_digest()).to_hex().to_string(),
+                    prover_transcript: blake3::Hash::from(prover_transcript.state_digest())
+                        .to_hex()
+                        .to_string(),
+                    verifier_transcript: blake3::Hash::from(verifier_transcript.state_digest())
+                        .to_hex()
+                        .to_string(),
                     ligerito_profile: ligerito_profile.clone(),
                     phases_seconds: phases,
                     verify_phases_seconds: verify_phases,
@@ -553,7 +562,9 @@ fn spartan(args: &Args, fixture: &Fixture) -> Result<()> {
             Ok(())
         })?;
         let timings = recording.finish()?;
-        let phases = timings.intervals.as_ref()
+        let phases = timings
+            .intervals
+            .as_ref()
             .map(|intervals| SpartanPhases::from_intervals(intervals, args.c != 0))
             .transpose()?;
         let witness_ms = timings.ms("benchmark:witness");
@@ -611,8 +622,12 @@ fn main() -> Result<()> {
         return Err("spartan-mc has a P-256 circuit only".into());
     }
     if let Some(path) = &args.export_fixture {
-        return shared_fixture::SignedFixture::generate(args.curve(), args.exponent() as u8, args.seed)?
-            .write(path);
+        return shared_fixture::SignedFixture::generate(
+            args.curve(),
+            args.exponent() as u8,
+            args.seed,
+        )?
+        .write(path);
     }
     if args.method.starts_with("binius64") {
         if args.timing == Timing::WallClock {
@@ -620,7 +635,7 @@ fn main() -> Result<()> {
         }
         return dispatch_binius(&args);
     }
-    if args.timing == Timing::Perfetto {
+    if args.timing == Timing::Spans {
         bitz::observability::install()?;
     }
     rayon::ThreadPoolBuilder::new()
@@ -628,14 +643,12 @@ fn main() -> Result<()> {
         .build_global()?;
 
     let fixture = fixture(&args)?;
-    common::start_gkr_recording();
     let result = match args.method.as_str() {
         "bitz-split" => bitz(&args, &fixture, OuterMode::Split),
         "bitz-all" => bitz(&args, &fixture, OuterMode::AllRows),
         "spartan-mc" => spartan(&args, &fixture),
         _ => unreachable!(),
     };
-    common::print_gkr_schedules();
     result
 }
 
@@ -691,7 +704,7 @@ mod reporting_tests {
             export_fixture: None,
             binius64_worker: None,
             log_inv_rate: 1,
-            timing: Timing::Perfetto,
+            timing: Timing::Spans,
         };
         let fixture = Fixture::generate(shared_fixture::Curve::P256, 3, 0).unwrap();
         let row = || Measurements {
@@ -751,24 +764,73 @@ mod cli_tests {
     use clap::{CommandFactory, Parser, error::ErrorKind};
 
     fn parse(extra: &[&str]) -> Result<Args, clap::Error> {
-        Args::try_parse_from(["ecdsa", "--method", "bitz-split", "--r", "1", "--c", "2"]
-            .into_iter().chain(extra.iter().copied()))
+        Args::try_parse_from(
+            ["ecdsa", "--method", "bitz-split", "--r", "1", "--c", "2"]
+                .into_iter()
+                .chain(extra.iter().copied()),
+        )
     }
 
     #[test]
     fn defaults_script_options_and_last_value_wins() {
         Args::command().debug_assert();
         let defaults = parse(&["--bench"]).unwrap();
-        assert_eq!((defaults.exponent(), defaults.target, defaults.threads, defaults.reps, defaults.seed),
-            (3, 100, 1, 3, 0));
-        let args = parse(&["--method", "spartan-mc", "--r", "14", "--c", "2", "--target", "128",
-            "--threads", "8", "--reps", "5", "--seed", "42", "--fixture", "fixture.json",
-            "--export-fixture", "export.json", "--binius64-worker", "worker"]).unwrap();
-        assert_eq!((args.method.as_str(), args.exponent(), args.target, args.threads, args.reps, args.seed),
-            ("spartan-mc", 16, 128, 8, 5, 42));
-        assert_eq!(args.fixture.as_deref(), Some(std::path::Path::new("fixture.json")));
-        assert_eq!(args.export_fixture.as_deref(), Some(std::path::Path::new("export.json")));
-        assert_eq!(args.binius64_worker.as_deref(), Some(std::path::Path::new("worker")));
+        assert_eq!(
+            (
+                defaults.exponent(),
+                defaults.target,
+                defaults.threads,
+                defaults.reps,
+                defaults.seed
+            ),
+            (3, 100, 1, 3, 0)
+        );
+        let args = parse(&[
+            "--method",
+            "spartan-mc",
+            "--r",
+            "14",
+            "--c",
+            "2",
+            "--target",
+            "128",
+            "--threads",
+            "8",
+            "--reps",
+            "5",
+            "--seed",
+            "42",
+            "--fixture",
+            "fixture.json",
+            "--export-fixture",
+            "export.json",
+            "--binius64-worker",
+            "worker",
+        ])
+        .unwrap();
+        assert_eq!(
+            (
+                args.method.as_str(),
+                args.exponent(),
+                args.target,
+                args.threads,
+                args.reps,
+                args.seed
+            ),
+            ("spartan-mc", 16, 128, 8, 5, 42)
+        );
+        assert_eq!(
+            args.fixture.as_deref(),
+            Some(std::path::Path::new("fixture.json"))
+        );
+        assert_eq!(
+            args.export_fixture.as_deref(),
+            Some(std::path::Path::new("export.json"))
+        );
+        assert_eq!(
+            args.binius64_worker.as_deref(),
+            Some(std::path::Path::new("worker"))
+        );
         for method in ["bitz-all", "binius64"] {
             assert_eq!(parse(&["--method", method]).unwrap().method, method);
         }
@@ -783,15 +845,30 @@ mod cli_tests {
             assert_eq!(parse(&["--target", value]).unwrap().target, 100);
         }
         for extra in [
-            &["--method", "unknown"][..], &["--target", "114"], &["--target", "129"],
-            &["--threads", "0"], &["--reps", "0"], &["--r", "nope"],
-            &["--seed", "-1"], &["--unknown"], &["--fixture"],
+            &["--method", "unknown"][..],
+            &["--target", "114"],
+            &["--target", "129"],
+            &["--threads", "0"],
+            &["--reps", "0"],
+            &["--r", "nope"],
+            &["--seed", "-1"],
+            &["--unknown"],
+            &["--fixture"],
         ] {
             assert!(parse(extra).is_err(), "accepted {extra:?}");
         }
-        for argv in [&["ecdsa"][..], &["ecdsa", "--method", "bitz-split", "--r", "1"]] {
+        for argv in [
+            &["ecdsa"][..],
+            &["ecdsa", "--method", "bitz-split", "--r", "1"],
+        ] {
             assert!(Args::try_parse_from(argv).is_err());
         }
-        assert_eq!(Args::try_parse_from(["ecdsa", "--help"]).err().unwrap().kind(), ErrorKind::DisplayHelp);
+        assert_eq!(
+            Args::try_parse_from(["ecdsa", "--help"])
+                .err()
+                .unwrap()
+                .kind(),
+            ErrorKind::DisplayHelp
+        );
     }
 }

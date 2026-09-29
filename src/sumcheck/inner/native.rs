@@ -1,5 +1,6 @@
 //! Encoded Montgomery storage and native kernels for the Spartan inner prover.
 //! Outer arithmetic and protocol continuation live in `crate::sumcheck::outer`.
+#[cfg(test)]
 use crate::piop::spartan::SpartanField as _;
 #[cfg(test)]
 use crate::piop::spartan::mul::MulLayout;
@@ -691,8 +692,7 @@ fn fold_block_native_raw(
 fn sparse_block_value_raw(eq_at_zero: Raw, block: BlockValues<'_>) -> Option<Raw> {
     match block {
         BlockValues::ConstantOne => Some(eq_at_zero),
-        BlockValues::Zero => Some(0),
-        BlockValues::Native([]) | BlockValues::Field([]) => Some(0),
+        BlockValues::Zero | BlockValues::Native([]) | BlockValues::Field([]) => Some(0),
         _ => None,
     }
 }

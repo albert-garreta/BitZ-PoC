@@ -33,7 +33,7 @@ def read_samples(kind, directory, reps, trial_kind="sample"):
         for record in selected:
             m = record['metrics']
             row = dict(prove_ms=m['online_prover_ms'], verify_ms=m['verify_ms'],
-                       proof_bytes=m['proof_bytes'], gkr_ms=m['prove/mc:forest_ms'])
+                       proof_bytes=m['proof_bytes'])
             if 'witness_to_proof_ms' in m:
                 row['e2e_ms'] = m['witness_to_proof_ms']
             result.append(row)
@@ -44,7 +44,6 @@ def read_samples(kind, directory, reps, trial_kind="sample"):
         return [dict(e2e_ms=int(r['measurements_ns']['application_total'])/1e6,
                      prove_ms=int(r['measurements_ns']['online_prover'])/1e6,
                      verify_ms=int(r['measurements_ns']['verification'])/1e6,
-                     gkr_ms=int(r['measurements_ns']['merged_forest_gkr'])/1e6,
                      proof_bytes=r['artifacts']['proof_bytes']) for r in runs]
     trials = [json.loads(line.split(' ', 1)[1]) for line in lines if line.startswith('PROVER_TRIAL ')]
     selected = [r for r in trials if r['trial'] == trial_kind]
@@ -58,9 +57,9 @@ def mul_command(case, reps, output=None):
     f = case['bitz']
     command = ['proof', '--workload', case['workload'], '--backends', 'bitz',
                '--log-n', str(case['log_n']), '--threads', str(case['threads']),
-               '--seed', str(case['seed']), '--w', str(f['w']), '--split='+str(f['split']),
+               '--seed', str(case['seed']), '--split='+str(f['split']),
                '--bitz-profile', str(f['profile']), '--ligerito', f['ligerito'],
-               '--gkr-schedule', f['gkr_schedule'], '--reps', str(reps), '--warmups', '1',
+               '--reps', str(reps), '--warmups', '1',
                '--proof-fingerprints']
     if output is not None:
         command += ['--out', str(output)]
@@ -69,13 +68,13 @@ def mul_command(case, reps, output=None):
 
 def multiplication_cases(args, binaries, env):
     cases = []
-    for kind, target, workloads, widths in [('mul','mul_compare',','.join(args.workloads),'1'),
-                                            ('u32','mul_bitz','u32-full','1,8')]:
+    for kind, target, workloads in [('mul','mul_compare',','.join(args.workloads)),
+                                     ('u32','mul_bitz','u32-full')]:
         if kind not in args.kinds:
             continue
-        command = ['proof','--workload',workloads,'--backends','bitz','--w',widths,
+        command = ['proof','--workload',workloads,'--backends','bitz',
                    '--log-n',','.join(map(str,args.exponents)), '--threads',','.join(map(str,args.threads)),
-                   '--seed',str(args.seed),'--ligerito','custom:1:4','--gkr-schedule',args.schedule,'--dry-run']
+                   '--seed',str(args.seed),'--ligerito','custom:1:4','--dry-run']
         previews = {}
         for variant in binaries:
             previews[variant] = json.loads(subprocess.check_output([binaries[variant][target]['path'],*command],env=env,text=True))
@@ -106,7 +105,6 @@ def main():
     parser.add_argument('--baseline-env', action='append', default=[])
     parser.add_argument('--candidate-env', action='append', default=[])
     parser.add_argument('--require-cold-and-fingerprints', action='store_true')
-    parser.add_argument('--schedule', choices=['auto', 'l2', 'l4', 'l8'], default='auto')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     manifests = {v: json.loads(getattr(args, v).read_text()) for v in ['baseline', 'candidate']}
@@ -126,12 +124,11 @@ def main():
             sample_sizes = None
             first_size = None
             expected_fingerprints = None
-            schedules = {}
             for block in range(args.blocks):
                 for variant in (list(manifests) if block % 2 == 0 else list(manifests)[::-1]):
                     directory = (args.output/f'{case}-t{threads}-b{block}-{variant}').resolve()
                     directory.mkdir()
-                    env = dict(clean, BITZ_LIG_PROFILE='custom:1:4', F2_FOREST_SCHEDULE=args.schedule,
+                    env = dict(clean, BITZ_LIG_PROFILE='custom:1:4',
                                RAYON_NUM_THREADS=str(threads), HARDWARE_CONCURRENCY=str(threads), BITZ_BENCH_SEED=str(args.seed),
                                BITZ_BENCH_REPS=str(args.reps), BITZ_BENCH_LAMBDA='100', BITZ_BENCH_PASS='latency',
                                BITZ_BENCH_PHASE_SAMPLES='1', BITZ_BENCH_PROOF_FINGERPRINT='1',
@@ -163,24 +160,13 @@ def main():
                         if expected_fingerprints is None:
                             expected_fingerprints = fingerprints
                         assert fingerprints == expected_fingerprints, f'proof/transcript changed: {case}'
-                    if resolved:
-                        actual = campaign.effective['gkr_schedules']
-                    else:
-                        actual = [json.loads(line.split(' ', 1)[1]) for line in
-                                  (directory/'stdout').read_text().splitlines()
-                                  if line.startswith('GKR_SCHEDULES ')]
-                    if variant in schedules and schedules[variant] != actual:
-                        raise ValueError('resolved schedules changed across blocks')
-                    schedules[variant] = actual
                     samples = read_samples(kind, directory, args.reps)
                     sizes = [sample['proof_bytes'] for sample in samples]
                     if sample_sizes is None:
                         sample_sizes = sizes
                     assert sizes == sample_sizes, f'proof size changed: {case}'
-                    for sample in samples:
-                        assert sample['gkr_ms'] > 0, 'missing GKR measurement'
                     write_json(directory/'samples.json',samples)
-                    medians = {m:sample_statistics([r[m] for r in samples])['median'] for m in ['prove_ms','gkr_ms','verify_ms', *(['e2e_ms'] if 'e2e_ms' in samples[0] else [])]}
+                    medians = {m:sample_statistics([r[m] for r in samples])['median'] for m in ['prove_ms','verify_ms', *(['e2e_ms'] if 'e2e_ms' in samples[0] else [])]}
                     first = read_samples(kind, directory, args.reps, 'warmup')
                     if args.require_cold_and_fingerprints:
                         assert first, f'missing first-proof metrics: {directory}'
@@ -188,10 +174,10 @@ def main():
                         if first_size is None:
                             first_size = first[0]['proof_bytes']
                         assert first[0]['proof_bytes'] == first_size, f'first proof size changed: {case}'
-                        medians.update({'cold_' + m: first[0][m] for m in ['prove_ms','gkr_ms','verify_ms', *(['e2e_ms'] if 'e2e_ms' in first[0] else [])]})
+                        medians.update({'cold_' + m: first[0][m] for m in ['prove_ms','verify_ms', *(['e2e_ms'] if 'e2e_ms' in first[0] else [])]})
                     blocks[variant].append(medians)
                     print(directory.name, {m:round(v,3) for m,v in medians.items()}, flush=True)
-            result = dict(case=case, configuration=resolved, schedules=schedules, total_metric='prove_ms' if kind == 'u32' else 'e2e_ms', threads=threads, seed=args.seed, sample_proof_bytes=sample_sizes,
+            result = dict(case=case, configuration=resolved,  total_metric='prove_ms' if kind == 'u32' else 'e2e_ms', threads=threads, seed=args.seed, sample_proof_bytes=sample_sizes,
                           first_proof_bytes=first_size, fingerprints=expected_fingerprints, metrics={})
             common_metrics = set.intersection(*(set(row) for rows in blocks.values() for row in rows))
             for metric in sorted(common_metrics):

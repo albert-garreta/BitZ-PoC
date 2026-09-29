@@ -37,8 +37,8 @@
 
 #![recursion_limit = "512"]
 
-use ::bitz::ligerito_flock::IntEvalRsLigVirtProof;
 use ::bitz::piop::spartan::protocol::Proof;
+use ::bitz::piop::spartan::protocol::bitz_opener::BitZOpeningProof;
 
 pub(crate) mod common;
 #[cfg(feature = "bench-peak-memory")]
@@ -282,9 +282,8 @@ impl TraceWriter {
             .expect("create new MultiSwap trace JSONL without overwriting");
         let campaign_id = std::env::var("BITZ_MULTISWAP_CAMPAIGN_ID")
             .unwrap_or_else(|_| "multiswap-matched-v1".to_owned());
-        let git_rev = std::env::var("BITZ_MULTISWAP_GIT_REV").unwrap_or_else(|_| {
-            common::environment::revision()
-        });
+        let git_rev = std::env::var("BITZ_MULTISWAP_GIT_REV")
+            .unwrap_or_else(|_| common::environment::revision());
         let git_dirty = common::environment::dirty();
         let cpu = std::env::var("BITZ_MULTISWAP_CPU").unwrap_or_else(|_| {
             command_output(
@@ -395,15 +394,6 @@ impl TraceWriter {
         } else {
             "configured multi-worker Rayon pool; no affinity pinning"
         };
-        let schedule_policy = bitz::merged_forest::schedule::SchedulePolicy::from_env()
-            .expect("valid F2_FOREST_SCHEDULE");
-        let forest_schedule = bitz::merged_forest::schedule::resolve_schedule(
-            schedule_policy,
-            prepared.params(),
-            bitz::merged_forest::schedule::ForestPath::Single,
-            self.threads,
-        )
-        .expect("single forest schedule");
         let run = json!({
             "schema": "zkperf.trace/v1",
             "record": "run",
@@ -416,6 +406,7 @@ impl TraceWriter {
                 "label": "Limber paper wired MultiSwap/RSA cost-model",
                 "algorithm": "integer Mod-R1CS / Spartan / virtual BitZ",
                 "implementation": "bitz-ligerito",
+                "opener": "bitz",
                 "git_rev": self.git_rev,
                 "git_dirty": self.git_dirty,
                 "build_profile": self.build_profile,
@@ -425,7 +416,7 @@ impl TraceWriter {
                 "id": format!("mono-process-{}-{run_id}", std::process::id()),
                 "kind": "monotonic",
                 "unit": "ns",
-                "source": "Perfetto SDK",
+                "source": "Rust span metrics",
             },
             "status": "ok",
             "trace_complete": true,
@@ -501,11 +492,6 @@ impl TraceWriter {
                 "timeline": "observed half-open intervals",
                 "setup_ns": self.setup_ns.to_string(),
                 "expected_constraint_digest_provided": self.expected_constraint_digest.is_some().to_string(),
-                "bitz_virt_id_fast": env_setting("BITZ_VIRT_ID_FAST", "default:on"),
-                "bitz_rs_fast": env_setting("BITZ_RS_FAST", "default:on"),
-                "bitz_flat_forest": env_setting("BITZ_FLAT_FOREST", "default:shape-dependent"),
-                "f2_forest_schedule_requested": schedule_policy.name(),
-                "f2_forest_schedule": forest_schedule.name(),
                 "arithmetic": "delayed-barrett",
             },
         });
@@ -750,17 +736,6 @@ fn span_names(label: &str) -> (String, String) {
         "step4:bitify_prove" => Some(("Bitify terminal opening claim", "Bitify")),
         "step5_0:reduce_prove" => Some(("Exact lift and runtime-prime reduction", "Exact bridge")),
         "step5:open_prove" => Some(("Virtual BitZ PCS opening", "BitZ opening")),
-        "mqv:pack" => Some(("Pack derived rows", "Derived packing")),
-        "mc:forest" => Some(("Merged-forest GKR", "Merged GKR")),
-        "mc:fold_v" => Some(("Fold integer v-message", "Integer fold")),
-        "mc:presum_tbls" => Some(("Construct pre-sumcheck tables", "Pre-SC tables")),
-        "mc:presum_run" => Some(("Run pre-sumcheck rounds", "Pre-sumcheck")),
-        "mqv:wprep" => Some(("Prepare ring-switch weights", "Weight prep")),
-        "mqv:hs" => Some(("Fold h_i plane messages", "h_i fold")),
-        "mqv:aprime" => Some(("Construct a-prime basis", "a-prime")),
-        "mq:rings" => Some(("Construct direct ring-switch messages", "Ring switch")),
-        "mq:bcomb" => Some(("Combine ring-switch bases", "Basis combine")),
-        "mq:lig" => Some(("Recursive Ligerito opening", "Ligerito")),
         _ => None,
     };
     known.map_or_else(
@@ -802,19 +777,6 @@ fn span_math(label: &str) -> Vec<&'static str> {
             "\\mu'\\equiv\\mu\\pmod Q,\\quad q'\\leftarrow\\operatorname{PrimeSample}(\\mathsf{tr})",
         ],
         "step5:open_prove" => vec!["\\widetilde{\\operatorname{bits}(z)}(r)=v"],
-        "mc:presum_tbls" | "mc:presum_run" => vec!["g_j(X)=\\sum_{b\\in\\{0,1\\}}g_{j+1}(X,b)"],
-        "mqv:wprep" => vec![
-            "S_{\\ell,c}=\\eta_\\ell\\sum_{r\\in\\operatorname{col}(c)}\\operatorname{eq}(p_{\\ell,\\mathrm{local}},r)",
-        ],
-        "mqv:hs" => {
-            vec!["W_{i,c}=\\sum_\\ell\\operatorname{eq}(p_{\\ell,\\mathrm{inst}},i)S_{\\ell,c}"]
-        }
-        "mqv:aprime" => vec!["a'=T^*a"],
-        "mq:rings" => vec!["s_v=\\sum_y\\operatorname{eq}(r_{\\mathrm{hi}},y)\\,p_{v,y}"],
-        "mq:bcomb" => {
-            vec!["a'=\\sum_{\\ell}\\eta_\\ell\\Phi_\\rho(\\operatorname{eq}(r_\\ell,\\cdot))"]
-        }
-        "mq:lig" => vec!["\\operatorname{Open}_{\\mathrm{Lig}}(C_z,r,v)"],
         _ => Vec::new(),
     }
 }
@@ -870,10 +832,6 @@ fn command_output(program: &str, args: &[&str], fallback: &str) -> String {
         .unwrap_or_else(|| fallback.to_owned())
 }
 
-fn env_setting(name: &str, default: &str) -> String {
-    std::env::var(name).unwrap_or_else(|_| default.to_owned())
-}
-
 fn hex_bytes(bytes: [u8; 32]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
@@ -906,17 +864,6 @@ impl serde::Serialize for Nanoseconds {
 
 fn insert_ns(values: &mut MeasurementsNs, name: &'static str, value: u64) {
     values.insert(name, Nanoseconds(value));
-}
-
-fn insert_optional_ns(
-    values: &mut MeasurementsNs,
-    intervals: &[Interval],
-    name: &'static str,
-    label: &str,
-) {
-    if let Some(value) = maybe_duration_for(intervals, label) {
-        insert_ns(values, name, value);
-    }
 }
 
 fn measurements(intervals: &[Interval], setup_ns: u64) -> MeasurementsNs {
@@ -963,40 +910,10 @@ fn measurements(intervals: &[Interval], setup_ns: u64) -> MeasurementsNs {
     insert_ns(&mut values, "verification", verification);
     insert_ns(&mut values, "verified_trial", verified_trial);
 
-    for (name, label) in [
-        ("derived_row_packing", "mqv:pack"),
-        ("merged_forest_gkr", "mc:forest"),
-        ("integer_folds", "mc:fold_v"),
-        ("pre_sumcheck_table_construction", "mc:presum_tbls"),
-        ("pre_sumcheck_protocol_rounds", "mc:presum_run"),
-        ("ring_switch_weight_preparation", "mqv:wprep"),
-        ("ring_switch_h_fold", "mqv:hs"),
-        ("ring_switch_a_prime_construction", "mqv:aprime"),
-        ("ring_switch_direct_messages", "mq:rings"),
-        ("ring_switch_basis_combination", "mq:bcomb"),
-        ("recursive_ligerito", "mq:lig"),
-    ] {
-        insert_optional_ns(&mut values, intervals, name, label);
-    }
-    let general_ring_switch = ["mqv:wprep", "mqv:hs", "mqv:aprime"]
-        .iter()
-        .filter_map(|label| maybe_duration_for(intervals, label))
-        .sum::<u64>();
-    let direct_ring_switch = ["mq:rings", "mq:bcomb"]
-        .iter()
-        .filter_map(|label| maybe_duration_for(intervals, label))
-        .sum::<u64>();
-    if general_ring_switch != 0 || direct_ring_switch != 0 {
-        insert_ns(
-            &mut values,
-            "ring_switch_total",
-            general_ring_switch.saturating_add(direct_ring_switch),
-        );
-    }
     values
 }
 
-fn proof_sizes(proof: &Proof<IntEvalRsLigVirtProof>) -> (usize, usize) {
+fn proof_sizes(proof: &Proof) -> (usize, usize) {
     let opening_bytes = proof.bitz().to_bytes().len();
     let piop_bytes = proof.spartan_payload_elements() * 16 + proof.mu_prime_bytes() + 8;
     (piop_bytes, opening_bytes)
@@ -1009,9 +926,9 @@ fn run_once(
     pc: &flock_core::pcs::ligerito::ProverConfig,
     vc: &flock_core::pcs::ligerito::VerifierConfig,
     setup_ns: u64,
-) -> (RepTiming, Proof<IntEvalRsLigVirtProof>) {
+) -> (RepTiming, Proof) {
     let recording =
-        bitz::observability::Recording::start(Vec::new()).expect("start Multiswap trial");
+        bitz::observability::Recording::start().expect("start Multiswap trial");
     let root_scope = tracing::info_span!("multiswap-trace:verified_trial").entered();
 
     let witness_scope = tracing::info_span!("multiswap-trace:witness_generation").entered();
@@ -1044,12 +961,10 @@ fn run_once(
             .expect("prove")
     };
     drop(prover_scope);
-
     {
         let _scope = tracing::info_span!("multiswap-trace:verification").entered();
-        let mut verifier_transcript = Blake3Transcript::new();
         verify_multiswap_mod_r1cs(
-            &mut verifier_transcript,
+            &mut Blake3Transcript::new(),
             prepared,
             &hint.commitment,
             &proof,
@@ -1097,7 +1012,6 @@ fn prepare<P: IopSecurityProfile>(circuit: &MultiswapCircuit) -> PreparedMultisw
 }
 
 fn main() {
-    common::start_gkr_recording();
     #[cfg(feature = "bench-peak-memory")]
     let _heap_report = common::heap_run::Report::start();
 
@@ -1112,7 +1026,7 @@ fn main() {
     let selected = common::security_profile(PrimePolicy::TwoFullWidthFingerprint);
     let profile = selected.unwrap_or(common::SecurityProfile::Limber114);
 
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     let threads = common::init();
 
     // Bootstrap the canonical relation outside measured trials. Each trial
@@ -1128,7 +1042,7 @@ fn main() {
 
     // One-time public preprocessing is excluded from every traced boundary.
     let setup_started_recording =
-        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+        bitz::observability::Recording::start().expect("start operation capture");
     let setup_started = tracing::info_span!("multiswap:setup_started").entered();
     let prepared = common::with_profile!(profile, prepare(&circuit));
     let (pc, vc) = prepared.ligerito_configs();
@@ -1186,7 +1100,7 @@ fn main() {
         MULTISWAP_VALUE_BITS,
         p.row_vars,
         p.col_vars,
-        p.word_bits,
+        1usize,
     );
     println!(
         "  security profile: {}",
@@ -1275,7 +1189,6 @@ fn main() {
         },
     };
     report.print_human_with_commitment(commitment_bytes);
-    common::print_gkr_schedules();
 }
 
 fn statement_contract(circuit: &MultiswapCircuit) -> Value {
@@ -1331,7 +1244,7 @@ fn peak_rss_bytes() -> u64 {
 
 #[cfg(test)]
 mod reporting_tests {
-    use super::{MeasurementsNs, insert_ns, insert_optional_ns, measurements};
+    use super::{MeasurementsNs, insert_ns, measurements};
 
     #[test]
     fn sparse_nanoseconds_are_exact_decimal_strings() {
@@ -1341,7 +1254,6 @@ mod reporting_tests {
         );
         let mut values = MeasurementsNs::new();
         insert_ns(&mut values, "setup", 0);
-        insert_optional_ns(&mut values, &[], "missing", "no interval");
         assert_eq!(serde_json::to_string(&values).unwrap(), r#"{"setup":"0"}"#);
     }
 }

@@ -3,7 +3,7 @@ use super::kernels::{clmul_128x128, reduce_256_to_128};
 use crate::{Gf128, Gf128Ops, Gf128Product, SumcheckKernels};
 #[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
 #[path = "kernels/sumcheck_aarch64.rs"]
-mod neon;
+pub(crate) mod neon;
 #[cfg(all(
     target_arch = "x86_64",
     target_feature = "pclmulqdq",

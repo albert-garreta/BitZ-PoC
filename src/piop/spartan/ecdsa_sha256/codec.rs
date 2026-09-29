@@ -1,17 +1,17 @@
+use crate::piop::spartan::protocol::bitz_opener::BitZOpeningProof;
 use super::{Result, Sha256EcdsaProof, error};
 use crate::piop::spartan::SpartanField as _;
 use crate::{
-    ligerito_flock::IntEvalRsLigVirtProof,
     piop::spartan::{
         SpartanField,
-        bitz::SpartanBitzField as F,
+        u32_mul_relation::SpartanBitzField as F,
         sumcheck::{OuterSumcheckProof, SumcheckProof},
     },
     proof_codec::{Reader, Writer},
 };
 use field::Uint;
 
-const MAGIC: &[u8] = b"BITZSE03";
+const MAGIC: &[u8] = b"BITZSW02";
 
 impl Sha256EcdsaProof {
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -21,7 +21,6 @@ impl Sha256EcdsaProof {
         w.u128(self.modulus);
         w.bytes(&self.initial_nonce.to_le_bytes());
         w.bytes(&self.batch_nonce.to_le_bytes());
-        write_nonces(&mut w, &self.flock_nonces);
         write_rounds(&mut w, &self.outer.sumcheck, &field);
         for x in [
             &self.outer.az_mle_claim,
@@ -54,7 +53,6 @@ impl Sha256EcdsaProof {
         F::validate_config(&cfg).map_err(error)?;
         let initial_nonce = u64::from_le_bytes(r.take(8).map_err(error)?.try_into().unwrap());
         let batch_nonce = u64::from_le_bytes(r.take(8).map_err(error)?.try_into().unwrap());
-        let flock_nonces = read_nonces(&mut r)?;
         let sumcheck = read_rounds(&mut r, q, &cfg)?;
         let az_mle_claim = read_field(&mut r, q, &cfg)?;
         let bz_mle_claim = read_field(&mut r, q, &cfg)?;
@@ -63,8 +61,8 @@ impl Sha256EcdsaProof {
         let inner = read_rounds(&mut r, q, &cfg)?;
         let inner_nonces = read_nonces(&mut r)?;
         let len = r.len().map_err(error)?;
-        let opening =
-            IntEvalRsLigVirtProof::from_bytes(r.take(len).map_err(error)?).map_err(error)?;
+        let opening = BitZOpeningProof::from_bytes(r.take(len).map_err(error)?)
+            .ok_or_else(|| error("malformed BitZ opening"))?;
         if r.remaining() != 0 {
             return Err(error("trailing proof bytes"));
         }
@@ -72,7 +70,6 @@ impl Sha256EcdsaProof {
             modulus: q,
             initial_nonce,
             batch_nonce,
-            flock_nonces,
             outer: OuterSumcheckProof {
                 sumcheck,
                 az_mle_claim,

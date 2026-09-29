@@ -1,12 +1,23 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import mul_table
 
 
 class ExclusionLoading(unittest.TestCase):
+    def test_span_measurements_cannot_mix_with_historical_campaigns(self):
+        def row(timing, exponent):
+            return dict(status="measured", provenance={"timing": timing}, source=timing,
+                        case=dict(mode="proof", workload="u64", backend="limber",
+                                  log_n=exponent, threads=1))
+        rows = [row("perfetto", 15), row("spans", 16)]
+        with patch.object(mul_table, "load", return_value=rows), patch.object(mul_table, "aggregate", side_effect=lambda rows: rows):
+            with self.assertRaisesRegex(ValueError, "cannot mix"):
+                mul_table.load_rows([Path("campaign")], "u64")
+
     def records(self):
         return [
             dict(workload="u64", scheme="binius64@1", log_n=21, threads=10, status="excluded",

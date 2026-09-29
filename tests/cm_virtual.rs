@@ -11,7 +11,7 @@
 //! mismatched statement is rejected; the production entry points gate
 //! unaudited configurations.
 
-use ::bitz::ligerito_flock::IntEvalRsLigVirtProof;
+use ::bitz::piop::spartan::protocol::bitz_opener::BitZOpeningProof;
 use ::bitz::piop::spartan::protocol::Proof;
 use ::bitz::piop::spartan::protocol::ProtocolError;
 
@@ -63,7 +63,7 @@ struct Fixture {
     witness: CmAndWitness,
     hint: bitz::ligerito_flock::FlockCommitHint,
     vc: flock_core::pcs::ligerito::VerifierConfig,
-    proof: Proof<IntEvalRsLigVirtProof>,
+    proof: Proof,
 }
 
 fn honest_fixture(gates: usize, seed: u64) -> Fixture {
@@ -89,7 +89,7 @@ fn honest_fixture(gates: usize, seed: u64) -> Fixture {
     }
 }
 
-fn verify_fixture(fx: &Fixture, proof: &Proof<IntEvalRsLigVirtProof>) -> Result<(), ProtocolError> {
+fn verify_fixture(fx: &Fixture, proof: &Proof) -> Result<(), ProtocolError> {
     let mut vt = Blake3Transcript::new();
     verify_cm_and_bitz_with_config(&mut vt, &fx.relation, &fx.hint.commitment, proof, &fx.vc)
 }
@@ -156,19 +156,19 @@ fn cm_and_small_explicit_domains_roundtrip_and_reject_false_witnesses() {
 fn cm_and_proof_codec_roundtrips_and_rejects_tampering() {
     let fx = honest_fixture(PRODUCTION_GATES, 0xC0DE_C0DE);
     let bytes = fx.proof.bitz().to_bytes();
-    let decoded = IntEvalRsLigVirtProof::from_bytes(&bytes).expect("canonical decode");
+    let decoded = BitZOpeningProof::from_bytes(&bytes).expect("canonical decode");
     assert_eq!(
         decoded.to_bytes(),
         bytes,
         "codec is a bijection on its image"
     );
     let reproof =
-        Proof::<IntEvalRsLigVirtProof>::from_parts(fx.proof.prefix().clone(), None, decoded);
+        Proof::from_parts(fx.proof.prefix().clone(), None, decoded);
     verify_fixture(&fx, &reproof).expect("decoded proof verifies");
 
     // Every truncation must fail to decode.
     for cut in [1usize, bytes.len() / 2, bytes.len() - 1] {
-        assert!(IntEvalRsLigVirtProof::from_bytes(&bytes[..cut]).is_err());
+        assert!(BitZOpeningProof::from_bytes(&bytes[..cut]).is_none());
     }
     // A flipped byte must not yield a DIFFERENT proof that still verifies.
     // Following the house convention (see tests/completeness_random.rs),
@@ -177,12 +177,12 @@ fn cm_and_proof_codec_roundtrips_and_rejects_tampering() {
         let mut tampered = bytes.clone();
         tampered[position] ^= 1;
         let decoded = catch_unwind(AssertUnwindSafe(|| {
-            IntEvalRsLigVirtProof::from_bytes(&tampered)
+            BitZOpeningProof::from_bytes(&tampered)
         }))
         .ok()
-        .and_then(|r| r.ok());
+        .flatten();
         if let Some(decoded) = decoded {
-            let reproof = Proof::<IntEvalRsLigVirtProof>::from_parts(
+            let reproof = Proof::from_parts(
                 fx.proof.prefix().clone(),
                 None,
                 decoded,

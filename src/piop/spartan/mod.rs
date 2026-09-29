@@ -11,10 +11,10 @@ use crate::piop::spartan::SpartanField as _;
 use field::{Fp, Uint};
 pub mod baby_bear_bitz;
 pub mod baby_bear_mul;
+pub mod u32_mul_relation;
 pub mod cm;
 #[cfg(feature = "ecdsa")]
 pub mod ecdsa_sha256;
-pub mod bitz;
 pub mod grinding;
 pub mod matrix;
 pub mod mul;
@@ -53,16 +53,16 @@ pub use baby_bear_mul::{
     project_baby_bear_mul_native_witness, project_baby_bear_mul_witness,
     sample_baby_bear_operand_with,
 };
+pub use u32_mul_relation::{
+    SpartanBitzField, U32_MUL_UNIVARIATE_SKIP_DEGREE, U32_MUL_UNIVARIATE_SKIP_VARS,
+    spartan_bitz_field_config,
+};
 pub use cm::{
     CM_AND_F_LIVE_SLOTS, CM_AND_H_SLOTS, CM_AND_WORD_BITS, CmAndError, CmAndLayout, CmAndSpec,
     CmAndWitness, PreparedCmAndRelation, cm_and_map, commit_cm_and_witness,
     commit_cm_and_witness_with_config, prepare_cm_and_relation, project_cm_and_witness,
     prove_cm_and_bitz, prove_cm_and_bitz_with_config, verify_cm_and_bitz,
     verify_cm_and_bitz_with_config,
-};
-pub use bitz::{
-    SpartanBitzField, U32_MUL_UNIVARIATE_SKIP_DEGREE, U32_MUL_UNIVARIATE_SKIP_VARS,
-    spartan_bitz_field_config,
 };
 
 pub use circuit::linear_map::SparseMatrixError;
@@ -278,7 +278,10 @@ impl<const L: usize> SpartanField for field::Fp<L> {
         field: &Self::Config,
     ) -> Result<Self, field::SamplingError> {
         use field::FieldSampling;
-        field.sample_public(&mut crate::ext_proj::TranscriptRandom(transcript), 256)
+        field.sample_public(
+            &mut crate::prime_sampling::TranscriptRandom(transcript),
+            256,
+        )
     }
     fn new_with_cfg(value: Self::Inner, field: &Self::Config) -> Self {
         field::IntegerEmbedding::from_integer(field, &value)

@@ -150,7 +150,6 @@ impl MultiswapLayout {
         IntegerMatrixLayout {
             row_vars: MULTISWAP_SLOT_VARS + self.h,
             col_vars: self.s,
-            word_bits: 1,
         }
     }
 
@@ -678,7 +677,7 @@ mod tests {
         let (_, relation, _) = mini();
         let layout = *relation.layout();
         let p = layout.bitz_params();
-        assert_eq!(p.word_bits, 1);
+
         assert!(p.row_vars <= 13);
         assert_eq!(
             p.row_vars + p.col_vars,

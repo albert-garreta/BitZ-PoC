@@ -82,10 +82,8 @@ pub struct IopInstanceFacts {
     pub lift_arity_log2: u32,
     /// Row variables `t` of the tensor the BitZ opening runs against.
     pub opening_t: u32,
-    /// Word width `W` of that tensor.
-    pub opening_word_bits: u32,
     /// Whether the opening prime feeds the DIRECT exponent-fold opener
-    /// (then `q_bits <= c_w = 127 - t - W` is enforced). The virtual
+    /// (then `q_bits <= c_w = 126 - t` is enforced). The virtual
     /// opening path caps its fold width from `q_bits` instead.
     pub direct_opening: bool,
     /// Worst union arity of one q-sized challenge draw (the zerocheck τ
@@ -163,6 +161,8 @@ impl SoundnessAccounting {
 pub struct IopSecurityParams {
     /// The originating profile's name (bound into statements).
     pub profile_name: &'static str,
+    pub(crate) design_only: bool,
+    pub(crate) native_schedule: Option<crate::bitz::grinding::Schedule>,
     /// The target λ.
     pub lambda: u32,
     /// Inclusive Step-2 projection/fingerprint prime interval.
@@ -195,6 +195,54 @@ pub struct IopSecurityParams {
 }
 
 impl IopSecurityParams {
+    pub(crate) fn native_policy(&self) -> Result<crate::bitz::grinding::Policy, ProfileError> {
+        crate::bitz::grinding::Policy::new(
+            (!self.design_only).then_some(self.lambda),
+            self.forest_round_grinding_bits,
+            self.ring_switch_grinding_bits,
+        )
+        .map_err(|error| ProfileError::NativeOpening(error.to_string()))
+    }
+
+    pub(crate) fn adopt_native_opening(
+        &mut self,
+        mut geometry: crate::bitz::grinding::Geometry,
+    ) -> Result<(), ProfileError> {
+        use crate::bitz::grinding::Schedule;
+        geometry.ood = self.ood.is_some();
+        let schedule = Schedule::new(self.native_policy()?, geometry)
+            .map_err(|error| ProfileError::NativeOpening(error.to_string()))?;
+        self.accounting.terms.retain(|term| {
+            term.name != "step5_2:gkr-round"
+                && term.name != "step5_3:ring-switch"
+                && !term.name.starts_with("bitz/")
+        });
+        self.accounting
+            .terms
+            .extend(schedule.terms().map(|term| SoundnessTerm {
+                name: term.stage.name(),
+                bits: term.raw_bits() + f64::from(term.grinding_bits),
+                grinding_bits: term.grinding_bits,
+                floor: false,
+            }));
+        self.native_schedule = Some(schedule);
+        if !self.design_only {
+            check_targets(self.profile_name, self.lambda, &self.accounting)?;
+        }
+        Ok(())
+    }
+
+    /// Number of nonces embedded in the native opening's authenticated stream.
+    pub fn native_grinding_nonce_count(&self) -> usize {
+        self.native_schedule.map_or(0, |schedule| {
+            schedule
+                .terms()
+                .filter(|term| term.grinding_bits != 0)
+                .map(|term| term.occurrences)
+                .sum()
+        })
+    }
+
     /// Accounts for Round 0 of the BitZ opening once the opener is known.
     /// `ood_bits` is the theorem's collision bound in bits
     /// ([`crate::ligerito_flock::ood_round_bits`]): `None` (unique
@@ -361,9 +409,11 @@ pub const fn derive_ring_switch_grinding(lambda: u32) -> u32 {
 /// Failures of profile instantiation.
 #[derive(Debug, Error)]
 pub enum ProfileError {
+    #[error("invalid native opening policy: {0}")]
+    NativeOpening(String),
     /// The exponent-fold geometry rejects the shape outright.
-    #[error("exponent-fold geometry needs t + W <= 126, got t={t}, W={word_bits}")]
-    ShapeTooWide { t: u32, word_bits: u32 },
+    #[error("prime-selection geometry needs t <= 125, got t={t}")]
+    ShapeTooWide { t: u32 },
 
     /// No prime interval satisfies every width constraint.
     #[error("no admissible prime interval: width would be {width_bits} bits")]
@@ -438,13 +488,10 @@ fn derive_params(
     facts: &IopInstanceFacts,
 ) -> Result<IopSecurityParams, ProfileError> {
     let lambda_f = f64::from(lambda);
-    if facts.opening_t + facts.opening_word_bits > 126 {
-        return Err(ProfileError::ShapeTooWide {
-            t: facts.opening_t,
-            word_bits: facts.opening_word_bits,
-        });
+    if facts.opening_t > 125 {
+        return Err(ProfileError::ShapeTooWide { t: facts.opening_t });
     }
-    let c_w = 127 - facts.opening_t - facts.opening_word_bits;
+    let c_w = 126 - facts.opening_t;
     let mut terms = Vec::new();
 
     // The width of a derived (non-fingerprint) interval: the Strategy-1
@@ -596,20 +643,13 @@ fn derive_params(
         terms,
     };
     if !design_only {
-        for term in &accounting.terms {
-            if !term.floor && term.bits + 1e-9 < lambda_f {
-                return Err(ProfileError::TargetUnreachable {
-                    profile: profile_name,
-                    term: term.name,
-                    bits: term.bits,
-                    lambda,
-                });
-            }
-        }
+        check_targets(profile_name, lambda, &accounting)?;
     }
 
     Ok(IopSecurityParams {
         profile_name,
+        design_only,
+        native_schedule: None,
         lambda,
         projection_min,
         projection_max,
@@ -626,6 +666,25 @@ fn derive_params(
     })
 }
 
+/// Every term this crate controls must reach `lambda` (floors excluded).
+fn check_targets(
+    profile_name: &'static str,
+    lambda: u32,
+    accounting: &SoundnessAccounting,
+) -> Result<(), ProfileError> {
+    for term in &accounting.terms {
+        if !term.floor && term.bits + 1e-9 < f64::from(lambda) {
+            return Err(ProfileError::TargetUnreachable {
+                profile: profile_name,
+                term: term.name,
+                bits: term.bits,
+                lambda,
+            });
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -639,7 +698,7 @@ mod tests {
             defect_log2_bound: 8210,
             lift_arity_log2: 13,
             opening_t: 13,
-            opening_word_bits: 1,
+
             direct_opening: true,
             tau_arity: 15,
             piop_degree: 3,
@@ -654,7 +713,7 @@ mod tests {
             lift_arity_log2: log_compressions,
             // The SHA opening is virtual (fold width capped from q_bits).
             opening_t: log_compressions,
-            opening_word_bits: 1,
+
             direct_opening: false,
             tau_arity: 8 + log_compressions,
             piop_degree: 3,
@@ -815,8 +874,7 @@ mod tests {
     #[test]
     fn oversized_shapes_are_rejected() {
         let mut facts = multiswap_facts();
-        facts.opening_t = 120;
-        facts.opening_word_bits = 8;
+        facts.opening_t = 126;
         assert!(matches!(
             Limber114::instantiate(&facts),
             Err(ProfileError::ShapeTooWide { .. })

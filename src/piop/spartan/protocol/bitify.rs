@@ -13,7 +13,7 @@
 use crate::piop::spartan::SpartanField as _;
 
 use crate::{
-    pcs::{IntegerMatrixLayout, ModQWeightChunks, mod_q_num_chunks},
+    pcs::IntegerMatrixLayout,
     utils::{cfg_chunks_mut, cfg_iter, cfg_iter_mut},
 };
 
@@ -43,7 +43,6 @@ pub struct SlotRange {
 pub struct BlockTable {
     selector_vars: usize,
     blocks: Vec<Option<SlotRange>>,
-    packing: Option<(usize, usize)>,
 }
 
 impl BlockTable {
@@ -57,14 +56,7 @@ impl BlockTable {
         Ok(Self {
             selector_vars,
             blocks,
-            packing: None,
         })
-    }
-
-    /// Native limbs are split into logical W-bit cells with a padded stride.
-    pub(crate) fn with_word_packing(mut self, limb_bits: usize, value_bits: usize) -> Self {
-        self.packing = Some((limb_bits, value_bits));
-        self
     }
 
     pub fn selector_vars(&self) -> usize {
@@ -132,7 +124,7 @@ pub fn bitify(
     scale_side: ScaleSide,
     arith: &field::FpCtx<2>,
 ) -> Result<BitifiedClaim, ProtocolError> {
-    let q = arith.modulus_u128();
+    let _q = arith.modulus_u128();
     if claim.point().len() != gate_vars.saturating_add(table.selector_vars)
         || params.col_vars > gate_vars
     {
@@ -278,7 +270,7 @@ pub fn eq_le_table_fq_fast_with(
 /// The dense canonical row weights of a structured opening, in BitZ row
 /// order `(word_slot << h) | gate_high`:
 ///
-/// `w[(word_slot << h) | g] = block_factor(word_slot) · 2^{W · (word_slot − block_word_start)} · eq(gate_high_point, g)`
+/// `w[(word_slot << h) | g] = block_factor(word_slot) · 2^{word_slot − block_word_start} · eq(gate_high_point, g)`
 ///
 /// for every variable block, zero for word slots outside every block. The
 /// per-word scalars are formed first, then every row is one fixed-factor
@@ -290,15 +282,6 @@ fn structured_row_weights(
     factors: &[u128],
     arith: &field::FpCtx<2>,
 ) -> Result<Vec<u128>, ProtocolError> {
-    if let Some((limb_bits, value_bits)) = table.packing {
-        return packed_row_weights(
-            params, gate_high, table, factors, arith, limb_bits, value_bits,
-        );
-    }
-    let word_bits = params.word_bits;
-    if !word_bits.is_power_of_two() {
-        return Err(ProtocolError::InvalidBitzParameters);
-    }
     let high_gate_count = checked_pow2(gate_high.len())?;
     let row_count = checked_pow2(params.row_vars)?;
     if !row_count.is_multiple_of(high_gate_count) {
@@ -306,19 +289,12 @@ fn structured_row_weights(
     }
     let word_slots = row_count / high_gate_count;
 
-    // Per-word scalars: the block factor times 2^{W·(word within the block)}.
-    let pow2_word = arith.prepare_multiplier_u128(1_u128 << word_bits);
+    // Per-word scalars: the block factor times 2^{bit within the block}.
+    let pow2_word = arith.prepare_multiplier_u128(2);
     let mut word_scalars = vec![0_u128; word_slots];
     for ((_, range), block_factor) in table.variable_blocks().zip(factors) {
-        if !range.bit_slot_start.is_multiple_of(word_bits)
-            || !range.bit_count.is_multiple_of(word_bits)
-        {
-            return Err(ProtocolError::InvalidBitzParameters);
-        }
         let mut scalar = arith.reduce_u128(*block_factor);
-        for word in
-            range.bit_slot_start / word_bits..(range.bit_slot_start + range.bit_count) / word_bits
-        {
+        for word in range.bit_slot_start..(range.bit_slot_start + range.bit_count) {
             let Some(slot) = word_scalars.get_mut(word) else {
                 return Err(ProtocolError::InvalidBitzParameters);
             };
@@ -340,47 +316,6 @@ fn structured_row_weights(
     Ok(weights)
 }
 
-fn packed_row_weights(
-    params: &IntegerMatrixLayout,
-    gate_high: &[u128],
-    table: &BlockTable,
-    factors: &[u128],
-    arith: &field::FpCtx<2>,
-    limb_bits: usize,
-    value_bits: usize,
-) -> Result<Vec<u128>, ProtocolError> {
-    let high = checked_pow2(gate_high.len())?;
-    let cells = limb_bits.div_ceil(value_bits).next_power_of_two();
-    let mut scalars = vec![0; params.rows() / high];
-    for ((_, range), &factor) in table.variable_blocks().zip(factors) {
-        if range.bit_slot_start % limb_bits != 0 || range.bit_count % limb_bits != 0 {
-            return Err(ProtocolError::InvalidBitzParameters);
-        }
-        let mut power = 1;
-        for bit in 0..range.bit_count {
-            if bit % limb_bits % value_bits == 0 {
-                let limb = (range.bit_slot_start + bit) / limb_bits;
-                let cell = limb * cells + (bit % limb_bits) / value_bits;
-                *scalars
-                    .get_mut(cell)
-                    .ok_or(ProtocolError::InvalidBitzParameters)? = arith.mul_u128(factor, power);
-            }
-            power = arith.add_u128(power, power);
-        }
-    }
-    let eq = eq_le_table_fq_fast_with(gate_high, arith)?;
-    let mut weights = vec![0; params.rows()];
-    cfg_chunks_mut!(weights, high)
-        .zip(cfg_iter!(scalars))
-        .for_each(|(target, &scalar)| {
-            let factor = arith.prepare_multiplier_u128(scalar);
-            for (out, &weight) in target.iter_mut().zip(&eq) {
-                *out = arith.mul_canonical_u128(weight, &factor);
-            }
-        });
-    Ok(weights)
-}
-
 /// The dense canonical row weights of an opening (the dummy row functional
 /// is `e_0`).
 pub fn dense_row_weights(
@@ -396,48 +331,6 @@ pub fn dense_row_weights(
         }
         BitifiedRows::Structured(factors) => {
             structured_row_weights(&opening.params, opening.gate_high(), table, factors, arith)
-        }
-    }
-}
-
-/// Compiles only the folded row functional into the mod-q chunk
-/// representation. The prover never reads the clear column weights or the
-/// claimed value, so keeping those verifier-only avoids an entire `2^s`
-/// equality table on the proving path.
-pub(crate) fn prepare_chunks(
-    opening: &BitifiedClaim,
-    table: &BlockTable,
-    q_bits: usize,
-    arith: &field::FpCtx<2>,
-) -> Result<ModQWeightChunks, ProtocolError> {
-    let params = opening.params;
-    if opening.gate_point.len() < params.col_vars {
-        return Err(ProtocolError::InvalidBitzParameters);
-    }
-
-    match &opening.rows {
-        BitifiedRows::ConstantDummy => {
-            let mut chunks = ModQWeightChunks::zeroed(&params, q_bits)
-                .map_err(|_| ProtocolError::InvalidBitzParameters)?;
-            chunks
-                .set_weight_range(0, &[1])
-                .map_err(|_| ProtocolError::InvalidBitzParameters)?;
-            Ok(chunks)
-        }
-        BitifiedRows::Structured(factors) => {
-            let weights =
-                structured_row_weights(&params, opening.gate_high(), table, factors, arith)?;
-            if mod_q_num_chunks(&params, q_bits) == 1 {
-                ModQWeightChunks::from_single_chunk(&params, q_bits, weights)
-                    .map_err(|_| ProtocolError::InvalidBitzParameters)
-            } else {
-                let mut chunks = ModQWeightChunks::zeroed(&params, q_bits)
-                    .map_err(|_| ProtocolError::InvalidBitzParameters)?;
-                chunks
-                    .set_weight_range(0, &weights)
-                    .map_err(|_| ProtocolError::InvalidBitzParameters)?;
-                Ok(chunks)
-            }
         }
     }
 }

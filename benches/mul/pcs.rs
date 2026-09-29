@@ -180,7 +180,7 @@ fn loop_trials(
         run.begin_memory();
         let recording = run
             .latency()
-            .then(|| ::bitz::observability::Recording::start(Vec::new()))
+            .then(|| ::bitz::observability::Recording::start())
             .transpose()?;
         let sizes = trial(mix_seed(seed ^ tag ^ (i as u64).rotate_left(17)))?;
         run.end_memory();
@@ -254,8 +254,9 @@ fn terminal<S: RelationSpec>(
             protocol::terminal::verify(&mut v, &prepared, &hint.commitment, &claim, &proof)
         })?;
         drop(root);
-        let bytes = ::bitz::ligerito_flock::IntEvalRsLigModQProof::to_bytes(&proof);
-        let decoded = ::bitz::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&bytes)?;
+        let bytes = proof.to_bytes();
+        let decoded = ::bitz::piop::spartan::protocol::bitz_opener::BitZOpeningProof::from_bytes(&bytes)
+            .ok_or_else(|| anyhow::anyhow!("invalid opening encoding"))?;
         ensure!(decoded.to_bytes() == bytes, "PCS codec roundtrip");
         Ok(Sizes {
             commitment: encoding.len(),
@@ -290,7 +291,7 @@ pub fn run(run: &mut Run) -> Result<()> {
                 let commitment = hint.commitment.clone();
                 drop(hint);
                 flock_core::scratch::clear();
-                let p = ::bitz::piop::spartan::bitz::prepare_u32_terminal_bitz_opening(
+                let p = ::bitz::piop::spartan::u32_mul_relation::prepare_u32_terminal_bitz_opening(
                     &relation,
                     &commitment,
                 )?;

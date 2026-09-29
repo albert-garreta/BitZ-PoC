@@ -38,10 +38,9 @@ impl MulWitness<u32> {
     #[cfg(test)]
     fn from_product_fn(
         n: usize,
-        width: usize,
         mut input: impl FnMut(usize) -> (u32, u32, u64),
     ) -> Result<Self, MulError> {
-        Self::from_row_fn(MulLayout::new_with_word_bits(n, width)?, |i| {
+        Self::from_row_fn(MulLayout::new(n)?, |i| {
             let (x, y, p) = input(i);
             super::MulRow {
                 x,
@@ -155,40 +154,32 @@ mod tests {
     }
 
     #[test]
-    fn layout_pads_to_a_power_of_two_and_maps_bits_for_each_word_width() {
+    fn layout_pads_to_a_power_of_two_and_maps_bits() {
         assert_eq!(MulLayout::<u32>::new(0), Err(MulError::EmptyBatch));
 
         for (multiplications, capacity) in [(1, 256), (3, 256), (256, 256), (257, 512)] {
-            assert_eq!(
-                MulLayout::<u32>::new(multiplications).unwrap(),
-                MulLayout::<u32>::new_with_word_bits(multiplications, 1).unwrap()
-            );
+            let layout = MulLayout::<u32>::new(multiplications).unwrap();
+            assert_eq!(layout.multiplications(), multiplications);
+            assert_eq!(layout.capacity(), capacity);
+            assert_eq!(layout.assignment_len(), 4 * capacity);
 
-            for width in [1, 8] {
-                let layout = MulLayout::<u32>::new_with_word_bits(multiplications, width).unwrap();
-                assert_eq!(layout.multiplications(), multiplications);
-                assert_eq!(layout.capacity(), capacity);
-                assert_eq!(layout.assignment_len(), 4 * capacity);
-                assert_eq!(layout.word_bits(), width);
+            let p = layout.bitz_params();
 
-                let p = layout.bitz_params();
-                let word_bits = width;
-                let s = layout.gate_vars() / 2;
-                let h = layout.gate_vars() - s;
-                assert_eq!(p.word_bits, word_bits);
-                assert_eq!(p.row_vars, h + 7 - word_bits.trailing_zeros() as usize);
-                assert_eq!(p.cells() * word_bits, U32_MUL_BIT_SLOTS * capacity);
-                assert_eq!(layout.bitz_bit_position(U32_MUL_BIT_SLOTS, 0), None);
-                assert_eq!(layout.bitz_bit_position(0, capacity), None);
-                for slot in 0..U32_MUL_BIT_SLOTS {
-                    for gate in 0..capacity {
-                        let (b, c, j) = layout.bitz_bit_position(slot, gate).unwrap();
-                        assert_eq!(b, ((slot / word_bits) << h) | (gate >> s));
-                        assert_eq!(c, gate & ((1usize << s) - 1));
-                        assert_eq!(j, slot % word_bits);
-                        assert_eq!(p.cell_index(b, c), (slot / word_bits) * capacity + gate);
-                        assert_eq!(layout.bitz_cell(slot, gate), Some((b, c)));
-                    }
+            let s = layout.col_vars();
+            let h = layout.gate_vars() - s;
+
+            assert_eq!(p.row_vars, h + 7);
+            assert_eq!(p.cells(), U32_MUL_BIT_SLOTS * capacity);
+            assert_eq!(layout.bitz_cell(U32_MUL_BIT_SLOTS, 0), None);
+            assert_eq!(layout.bitz_cell(0, capacity), None);
+            for slot in 0..U32_MUL_BIT_SLOTS {
+                for gate in 0..capacity {
+                    let (b, c) = layout.bitz_cell(slot, gate).unwrap();
+                    assert_eq!(b, (slot << h) | (gate >> s));
+                    assert_eq!(c, gate & ((1usize << s) - 1));
+
+                    assert_eq!(p.cell_index(b, c), slot * capacity + gate);
+                    assert_eq!(layout.bitz_cell(slot, gate), Some((b, c)));
                 }
             }
         }
@@ -201,7 +192,7 @@ mod tests {
         let capacity = witness.layout().capacity();
 
         assert_eq!(capacity, 256);
-        assert_eq!(witness.layout().word_bits(), 1);
+
         assert_eq!(witness.assignment()[0], 1);
         assert!(
             witness.assignment()[1..capacity]
@@ -232,31 +223,29 @@ mod tests {
     #[test]
     fn witness_initialization_covers_padding_and_allocation_boundary() {
         for count in [1, 255, 256, 257, 511, 512, 513, 1 << 19, (1 << 19) + 1] {
-            for width in [1, 8] {
-                let mut calls = 0;
-                let witness = MulWitness::<u32>::from_product_fn(count, width, |index| {
-                    assert_eq!(index, calls);
-                    calls += 1;
-                    // Include supplied products that intentionally do not
-                    // equal x*y: construction must preserve their claims.
-                    let x = (index as u32).wrapping_mul(0x9e37_79b9);
-                    let y = !(index as u32);
-                    (x, y, (index as u64).wrapping_mul(u64::MAX - 16))
-                })
-                .unwrap();
-                assert_eq!(calls, count);
-                let capacity = witness.layout().capacity();
-                for (block, values) in witness.assignment().chunks_exact(capacity).enumerate() {
-                    for (index, &value) in values.iter().enumerate() {
-                        let expected = match (block, index < count) {
-                            (0, _) => u64::from(index == 0),
-                            (1, true) => u64::from((index as u32).wrapping_mul(0x9e37_79b9)),
-                            (2, true) => u64::from(!(index as u32)),
-                            (3, true) => (index as u64).wrapping_mul(u64::MAX - 16),
-                            _ => 0,
-                        };
-                        assert_eq!(value, expected, "count={count} block={block} index={index}");
-                    }
+            let mut calls = 0;
+            let witness = MulWitness::<u32>::from_product_fn(count, |index| {
+                assert_eq!(index, calls);
+                calls += 1;
+                // Include supplied products that intentionally do not
+                // equal x*y: construction must preserve their claims.
+                let x = (index as u32).wrapping_mul(0x9e37_79b9);
+                let y = !(index as u32);
+                (x, y, (index as u64).wrapping_mul(u64::MAX - 16))
+            })
+            .unwrap();
+            assert_eq!(calls, count);
+            let capacity = witness.layout().capacity();
+            for (block, values) in witness.assignment().chunks_exact(capacity).enumerate() {
+                for (index, &value) in values.iter().enumerate() {
+                    let expected = match (block, index < count) {
+                        (0, _) => u64::from(index == 0),
+                        (1, true) => u64::from((index as u32).wrapping_mul(0x9e37_79b9)),
+                        (2, true) => u64::from(!(index as u32)),
+                        (3, true) => (index as u64).wrapping_mul(u64::MAX - 16),
+                        _ => 0,
+                    };
+                    assert_eq!(value, expected, "count={count} block={block} index={index}");
                 }
             }
         }
@@ -332,18 +321,17 @@ mod tests {
                 hi: 0x5555_aaaa,
             },
         ];
-        for width in [1, 8] {
-            let witness = MulWitness::<u32>::from_rows_with_word_bits(&claims, width).unwrap();
-            let layout = witness.layout();
-            let packed_rows = witness.bitz_bit_rows();
-            for (gate, row) in claims.iter().enumerate() {
-                for (limb, value) in [row.x, row.y, row.lo, row.hi].into_iter().enumerate() {
-                    for bit in 0..32 {
-                        let (b, c, j) = layout.bitz_bit_position(limb * 32 + bit, gate).unwrap();
-                        let packed_bit = b * width + j;
-                        let actual = (packed_rows[c][packed_bit / 64] >> (packed_bit % 64)) & 1;
-                        assert_eq!(actual, u64::from((value >> bit) & 1));
-                    }
+
+        let witness = MulWitness::<u32>::from_rows(&claims).unwrap();
+        let layout = witness.layout();
+        let packed_rows = witness.bitz_bit_rows();
+        for (gate, row) in claims.iter().enumerate() {
+            for (limb, value) in [row.x, row.y, row.lo, row.hi].into_iter().enumerate() {
+                for bit in 0..32 {
+                    let (b, c) = layout.bitz_cell(limb * 32 + bit, gate).unwrap();
+                    let packed_bit = b;
+                    let actual = (packed_rows[c][packed_bit / 64] >> (packed_bit % 64)) & 1;
+                    assert_eq!(actual, u64::from((value >> bit) & 1));
                 }
             }
         }
@@ -352,7 +340,7 @@ mod tests {
     #[test]
     fn from_fn_generates_each_input_once_without_an_input_buffer() {
         let mut calls = Vec::new();
-        let witness = MulWitness::<u32>::from_fn_with_word_bits(5, 8, |index| {
+        let witness = MulWitness::<u32>::from_fn(5, |index| {
             calls.push(index);
             (index as u32, (index + 1) as u32)
         })
@@ -360,7 +348,6 @@ mod tests {
 
         assert_eq!(calls, (0..5).collect::<Vec<_>>());
         assert_eq!(witness.cz(), &[0, 2, 6, 12, 20]);
-        assert_eq!(witness.layout().word_bits(), 8);
     }
 
     #[test]
@@ -414,79 +401,72 @@ mod tests {
     }
 
     #[test]
-    fn packed_rows_reconstruct_the_32_32_64_bit_witness_for_each_word_width() {
+    fn packed_rows_reconstruct_the_32_32_64_bit_witness() {
         let inputs = [(0x8000_0001, 3), (u32::MAX, u32::MAX), (17, 19)];
-        for width in [1, 8] {
-            let witness = MulWitness::<u32>::from_inputs_with_word_bits(&inputs, width).unwrap();
-            let layout = witness.layout();
-            let p = layout.bitz_params();
-            let rows = witness.bitz_bit_rows();
 
-            assert_eq!(rows.len(), p.cols());
-            assert!(
-                rows.iter()
-                    .all(|row| row.len() == p.rows() * p.word_bits / 64)
-            );
+        let witness = MulWitness::<u32>::from_inputs(&inputs).unwrap();
+        let layout = witness.layout();
+        let p = layout.bitz_params();
+        let rows = witness.bitz_bit_rows();
 
-            for gate in 0..layout.capacity() {
-                let values = [
-                    (
-                        U32_MUL_X_SLOT_START,
-                        U32_MUL_X_BITS,
-                        u64::from(witness.x_values()[gate]),
-                    ),
-                    (
-                        U32_MUL_Y_SLOT_START,
-                        U32_MUL_Y_BITS,
-                        u64::from(witness.y_values()[gate]),
-                    ),
-                    (
-                        U32_MUL_PRODUCT_SLOT_START,
-                        U32_MUL_PRODUCT_BITS,
-                        witness.product(gate),
-                    ),
-                ];
-                for (slot_offset, bit_width, value) in values {
-                    for bit in 0..bit_width {
-                        let (b, c, j) = layout.bitz_bit_position(slot_offset + bit, gate).unwrap();
-                        let packed_bit = b * p.word_bits + j;
-                        let committed_bit = (rows[c][packed_bit / 64] >> (packed_bit % 64)) & 1;
-                        assert_eq!(committed_bit, (value >> bit) & 1);
-                    }
+        assert_eq!(rows.len(), p.cols());
+        assert!(rows.iter().all(|row| row.len() == p.rows() / 64));
+
+        for gate in 0..layout.capacity() {
+            let values = [
+                (
+                    U32_MUL_X_SLOT_START,
+                    U32_MUL_X_BITS,
+                    u64::from(witness.x_values()[gate]),
+                ),
+                (
+                    U32_MUL_Y_SLOT_START,
+                    U32_MUL_Y_BITS,
+                    u64::from(witness.y_values()[gate]),
+                ),
+                (
+                    U32_MUL_PRODUCT_SLOT_START,
+                    U32_MUL_PRODUCT_BITS,
+                    witness.product(gate),
+                ),
+            ];
+            for (slot_offset, bit_width, value) in values {
+                for bit in 0..bit_width {
+                    let (b, c) = layout.bitz_cell(slot_offset + bit, gate).unwrap();
+                    let packed_bit = b;
+                    let committed_bit = (rows[c][packed_bit / 64] >> (packed_bit % 64)) & 1;
+                    assert_eq!(committed_bit, (value >> bit) & 1);
                 }
             }
         }
     }
 
     #[test]
-    fn transposed_bit_rows_match_the_bitwise_packing_for_each_word_width() {
+    fn transposed_bit_rows_match_the_bitwise_packing() {
         use rand::{RngExt, SeedableRng, rngs::StdRng};
-        // gate_vars 10 (W1 bitwise, W8 transposed), 11 (one W1 word per
-        // lane), 13, and 15/16 (production layouts); live counts off the
+        // Small and production gate domains; live counts off the
         // power of two exercise the zero padding.
-        for width in [1, 8] {
-            for (multiplications, seed) in [
-                (700, 1),
-                (1500, 2),
-                (5000, 3),
-                (1 << 15, 4),
-                ((1 << 15) + 37, 5),
-            ] {
-                let mut rng = StdRng::seed_from_u64(seed);
-                let witness =
-                    MulWitness::<u32>::from_fn_with_word_bits(multiplications, width, |_| {
-                        (rng.random::<u32>(), rng.random::<u32>())
-                    })
-                    .unwrap();
-                let p = witness.layout().bitz_params();
-                let mut expected = vec![vec![0_u64; p.rows() * p.word_bits / 64]; p.cols()];
-                witness.write_bit_rows_bitwise(&mut expected);
-                assert_eq!(
-                    witness.bitz_bit_rows(),
-                    expected,
-                    "width={width:?} multiplications={multiplications}"
-                );
-            }
+
+        for (multiplications, seed) in [
+            (700, 1),
+            (1500, 2),
+            (5000, 3),
+            (1 << 15, 4),
+            ((1 << 15) + 37, 5),
+        ] {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let witness = MulWitness::<u32>::from_fn(multiplications, |_| {
+                (rng.random::<u32>(), rng.random::<u32>())
+            })
+            .unwrap();
+            let p = witness.layout().bitz_params();
+            let mut expected = vec![vec![0_u64; p.rows() / 64]; p.cols()];
+            witness.write_bit_rows_bitwise(&mut expected);
+            assert_eq!(
+                witness.bitz_bit_rows(),
+                expected,
+                "multiplications={multiplications}"
+            );
         }
     }
 

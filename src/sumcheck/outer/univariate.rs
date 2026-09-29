@@ -9,9 +9,8 @@
 
 use crate::{poly::mle::DenseMultilinearExtension, transcript::traits::Transcript};
 use field::RingOps;
-use field::{BatchMulAcc, MergeAccumulator, Reduce};
 #[cfg(test)]
-use field::{Fp, Uint};
+use field::{BatchMulAcc, Fp, MergeAccumulator, Reduce, Uint};
 
 use crate::piop::spartan::{
     SpartanField, absorb_field_elements,

@@ -259,16 +259,15 @@ impl BinaryPcs {
             error_bound: 2f64.powf(-(self.ood_bits + f64::from(self.ood.grinding_bits))),
         }];
         for (index, level) in self.config.levels.iter().enumerate() {
-            let (pg, query) = level.paper_predicted_bits();
-            // One term per fold round of the level: round `j` carries the
-            // row-union factor `2^{ℓ-1-j}` and a grind of `fold_bits - j`
-            // (flock's taper), so every round's error is exactly
-            // `2^-(eps_pg + fold_grinding_bits)`; their sum is the level's
-            // `k_recursive`-fold union.
-            for _ in 0..level.k_recursive {
+            let (_, query) = level.paper_predicted_bits();
+            // One term per fold round of the level, each with its own bits
+            // (`fold_round_bits`: flock grinds `fold_bits - j` at round `j`;
+            // in the Johnson regime the row-union factor `2^{ℓ-1-j}` makes up
+            // the difference, in unique decoding nothing does).
+            for bits in crate::ligerito_flock::fold_round_bits(level) {
                 terms.push(SecurityTerm {
                     name: "Ligerito proximity folds",
-                    error_bound: 2f64.powf(-pg - level.fold_grinding_bits as f64),
+                    error_bound: 2f64.powf(-bits),
                 });
             }
             terms.push(SecurityTerm {

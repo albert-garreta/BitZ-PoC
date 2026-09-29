@@ -27,7 +27,7 @@ use flock_core::pcs::{commit::Commitment, ligerito::ProverConfig as LigProverCon
 
 use crate::{
     ligerito::LOG_PACKING,
-    ligerito_flock::{FlockCommitHint, LigeritoSelection, ModQOpeningKind},
+    ligerito_flock::{FlockCommitHint, LigeritoSelection},
     pcs::{FQ_MOD, IntegerMatrixLayout},
 };
 
@@ -65,7 +65,6 @@ static BABY_BEAR_DOMAINS: Domains = Domains {
     piop_grinding: b"bitz/spartan-baby-bear-mul/grinding/piop/v1",
     terminal_grinding: b"bitz/spartan-baby-bear-mul/grinding/terminal/v1",
     bitified_claim: b"bitz/spartan-baby-bear-bitz/bitified-claim/v2",
-    opening: ModQOpeningKind::BabyBearMul,
     claim_tag: b"",
     reduction_grinding: b"",
     reduction_prime: b"",
@@ -82,7 +81,7 @@ pub fn baby_bear_mul_instance_facts(
         defect_log2_bound: 80,
         lift_arity_log2: params.row_vars as u32,
         opening_t: params.row_vars as u32,
-        opening_word_bits: params.word_bits as u32,
+
         direct_opening: true,
         tau_arity: row_vars.max(1) as u32,
         piop_degree: 3,
@@ -92,10 +91,9 @@ pub fn baby_bear_mul_instance_facts(
 
 fn validate_layout_geometry(layout: &BabyBearMulLayout) -> Result<(), ProtocolError> {
     let params = layout.bitz_params();
-    if params.word_bits != 1
-        || params.row_vars < LOG_PACKING
+    if params.row_vars < LOG_PACKING
         || params.col_vars > layout.gate_vars()
-        || params.row_vars.saturating_add(params.word_bits) > 126
+        || params.row_vars > 125
     {
         return Err(ProtocolError::InvalidBitzParameters);
     }
@@ -161,7 +159,7 @@ fn fixed_q_assignment_binding(
         BABY_BEAR_MUL_BIT_SLOTS,
         p.row_vars,
         p.col_vars,
-        p.word_bits,
+        1usize,
     ])?;
     Ok(hasher.finalize())
 }
@@ -261,7 +259,7 @@ impl RelationSpec for BabyBearMulLayout {
                     BABY_BEAR_MUL_BIT_SLOTS,
                     p.row_vars,
                     p.col_vars,
-                    p.word_bits,
+                    1usize,
                 ])?;
                 Ok(())
             },
@@ -281,7 +279,7 @@ impl RelationSpec for BabyBearMulLayout {
             PADDED_ASSIGNMENT_BLOCKS,
             p.row_vars,
             p.col_vars,
-            p.word_bits,
+            1usize,
             BABY_BEAR_MUL_A_SLOT_START,
             BABY_BEAR_MUL_B_SLOT_START,
             BABY_BEAR_MUL_C_SLOT_START,
@@ -353,7 +351,10 @@ pub fn commit_baby_bear_mul_witness_with_ligerito(
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
 pub fn prepare_baby_bear_terminal_bitz_opening(
-    matrices: &super::PreparedConstraintMatrices<protocol::SpartanBitzField, BabyBearMulCoefficient>,
+    matrices: &super::PreparedConstraintMatrices<
+        protocol::SpartanBitzField,
+        BabyBearMulCoefficient,
+    >,
     layout: &BabyBearMulLayout,
     commitment: &Commitment,
 ) -> Result<PreparedTerminalOpening<BabyBearMulLayout>, ProtocolError> {
@@ -370,14 +371,17 @@ pub fn prepare_baby_bear_terminal_bitz_opening(
 /// all trial timers. `matrices` must be the relation at `q = 2^100 - 15`.
 #[cfg(feature = "bench-internals")]
 pub fn prepare_baby_bear_terminal_bitz_opening_with_ligerito(
-    matrices: &super::PreparedConstraintMatrices<protocol::SpartanBitzField, BabyBearMulCoefficient>,
+    matrices: &super::PreparedConstraintMatrices<
+        protocol::SpartanBitzField,
+        BabyBearMulCoefficient,
+    >,
     layout: &BabyBearMulLayout,
     commitment: &Commitment,
     selection: LigeritoSelection,
 ) -> Result<PreparedTerminalOpening<BabyBearMulLayout>, ProtocolError> {
     use super::SpartanField;
     let expected = protocol::SpartanBitzField::canonical_modulus_encoding(
-        &super::bitz::spartan_bitz_field_config(),
+        &super::u32_mul_relation::spartan_bitz_field_config(),
     );
     if matrices.field_modulus_encoding() != expected {
         return Err(ProtocolError::UnsupportedFieldModulus);
@@ -407,10 +411,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        pcs::{FQ_BITS, ModQWeightChunks, Q100Element, eq_le_table_fq, fq_sub},
+        pcs::{FQ_BITS, Q100Element, eq_le_table_fq, fq_sub},
         piop::spartan::{
             baby_bear_mul::sample_baby_bear_operand_with,
-            bitz::{SpartanBitzField, spartan_bitz_field_config},
+            u32_mul_relation::{SpartanBitzField, spartan_bitz_field_config},
             matrix::ScaledMleEvaluationClaim,
             profile::Lambda128,
             protocol::bitify,
@@ -452,7 +456,7 @@ mod tests {
         let mut prover_transcript = Blake3Transcript::new();
         let proof = protocol::prove(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
         assert!(proof.piop_nonces().is_empty());
-        assert!(proof.opening_grinding_nonces().is_empty());
+        assert_eq!(prepared.security().native_grinding_nonce_count(), 0);
         let mut verifier_transcript = Blake3Transcript::new();
         protocol::verify(
             &mut verifier_transcript,
@@ -486,7 +490,7 @@ mod tests {
         let proof128 =
             protocol::prove(&mut prover_transcript, &prepared128, &witness, &hint128).unwrap();
         assert_eq!(proof128.piop_nonces().len(), 2 * 15 + 1 + 15 + 3);
-        assert!(!proof128.opening_grinding_nonces().is_empty());
+        assert!(prepared128.security().native_grinding_nonce_count() > 0);
         let mut verifier_transcript = Blake3Transcript::new();
         protocol::verify(
             &mut verifier_transcript,
@@ -526,14 +530,8 @@ mod tests {
         )
     }
 
-    fn row_weight(chunks: &ModQWeightChunks, row: usize) -> u128 {
-        let mut value = 0_u128;
-        let mut shift = 0_usize;
-        for chunk in chunks.chunks() {
-            value |= chunk[row] << shift;
-            shift += chunks.chunk_width();
-        }
-        value
+    fn row_weight(rows: &[u128], row: usize) -> u128 {
+        rows[row]
     }
 
     #[test]
@@ -598,7 +596,7 @@ mod tests {
             &arith,
         )
         .unwrap();
-        let chunks = bitify::prepare_chunks(&opening, &table, FQ_BITS, &arith).unwrap();
+        let chunks = bitify::dense_row_weights(&opening, &table, &arith).unwrap();
         let col_weights = bitify::column_weights(&opening, &arith).unwrap();
 
         let rows = witness.bitz_bit_rows();

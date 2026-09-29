@@ -60,7 +60,6 @@ elif name == 'hybrid':
             path = self.bin / name
             path.write_text(f"#!{sys.executable}\n" + driver)
             path.chmod(0o755)
-        (self.root / "scripts/install_trace_processor.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
 
     def run_wrapper(self, *args, **environment):
         return subprocess.run(["bash", str(self.root / "scripts/run_all_benchmarks.sh"),
@@ -82,11 +81,13 @@ elif name == 'hybrid':
         self.assertEqual(names, [
             'scripts/bench_gate.py',
             'scripts/run_sha256_ecdsa_compare.py', 'scripts/run_sha256_chain_compare.py',
-            'scripts/run_multiplication_benchmarks.py', 'scripts/run_matched_multiswap_campaign.py',
+            *(['scripts/run_multiplication_benchmarks.py'] * 3), 'scripts/run_matched_multiswap_campaign.py',
             'scripts/hybrid_table.py'])
         multiplication = next(c['args'] for c in scripts if c['args'][0].endswith('run_multiplication_benchmarks.py'))
         self.assertIn('--no-gate', multiplication)
         self.assertNotIn('--exponents', multiplication)
+        ecdsa = next(c['args'] for c in scripts if c['args'][0].endswith('run_sha256_ecdsa_compare.py'))
+        self.assertEqual(ecdsa[ecdsa.index('--timing')+1], 'spans')
         hybrid = [c for c in commands if c['name'] == 'hybrid']
         self.assertEqual(len(hybrid), 12)
         for c in hybrid:
@@ -106,7 +107,9 @@ elif name == 'hybrid':
         for script in ['run_sha256_ecdsa_compare.py', 'run_sha256_chain_compare.py', 'run_multiplication_benchmarks.py']:
             args = next(c['args'] for c in commands if c['args'][0] == 'scripts/'+script)
             self.assertEqual(args[args.index('--reps')+1], '1')
-            self.assertEqual(args[args.index('--threads')+1:args.index('--threads')+3], ['1','10'])
+            threads = args[args.index('--threads') + 1]
+            actual = threads.split(',') if ',' in threads else args[args.index('--threads')+1:args.index('--threads')+3]
+            self.assertEqual(actual, ['1', '10'])
         hybrid = [c for c in commands if c['name'] == 'hybrid']
         self.assertEqual(len(hybrid), 24)
         self.assertEqual({c['args'][c['args'].index('--shapes')+1] for c in hybrid}, {'15:7','9:9'})
@@ -119,6 +122,8 @@ elif name == 'hybrid':
         result = self.run_wrapper('--smoke', '--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(self.trace.exists())
+        self.assertNotIn('install_trace_processor', result.stdout)
+        self.assertNotIn('PERFETTO_TRACE_PROCESSOR', result.stdout)
         self.assertFalse(self.output.exists())
         self.assertIn('Outer lock:', result.stdout)
         self.assertIn('Dry-run complete; no campaigns were executed.', result.stdout)

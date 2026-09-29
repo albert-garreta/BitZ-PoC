@@ -282,10 +282,8 @@ def _num(value):
             return value
 
 
-def run_bitz(binary, n, threads, reps, min_idle, word_bits=1, profile=None):
+def run_bitz(binary, n, threads, reps, min_idle, profile=None):
     cmd = [binary, str(n), "--threads", str(threads), "--reps", str(reps)]
-    if word_bits != 1:
-        cmd += ["--word-bits", str(word_bits)]
     if profile:
         cmd += ["--profile", profile]
     idle = wait_for_quiet(min_idle)
@@ -299,7 +297,7 @@ def run_bitz(binary, n, threads, reps, min_idle, word_bits=1, profile=None):
                                 capture_output=True, text=True).stdout.strip() or None
     return {
         "scheme": "bitz", "bitz_commit": bitz_commit, "bitz_binary_sha256": file_sha256(binary)[:16],
-        "n": n, "word_bits": word_bits, "n_bits_log2": n + int(math.log2(word_bits)),
+        "n": n, "word_bits": 1, "n_bits_log2": n,
         "threads": threads, "reps": reps, "warmups": 1, "profile": f.get("lig"),
         "t": f.get("t"), "s": f.get("s"), "q_bits": f.get("q_bits"),
         "lig_achieved_bits": f.get("lig_achieved_bits"), "lig_hash": f.get("lig_hash"),
@@ -653,7 +651,6 @@ def main():
     ap.add_argument("--warmups", type=int, default=1)
     ap.add_argument("--min-idle", type=float, default=90.0)
     ap.add_argument("--cooldown", type=float, default=3.0, help="seconds between processes")
-    ap.add_argument("--word-rows", default="", help="extra BitZ rows `n:W,...` (e.g. 20:32,20:64)")
     ap.add_argument("--bitz-profile", default=None, help="override the BitZ opener profile (e.g. udr:1:4)")
     ap.add_argument("--schemes", default="fields-witch,bitz",
                     help="comma-separated: fields-witch (default build), fields-witch-asm (sha2 asm build), bitz")
@@ -697,7 +694,6 @@ def main():
     sizes = [int(x) for x in args.sizes.split(",") if x]
     threads = [int(x) for x in args.threads.split(",") if x]
     schemes = args.schemes.split(",")
-    word_rows = [tuple(int(v) for v in item.split(":")) for item in args.word_rows.split(",") if item]
     cmdline = " ".join(sys.argv)
     print(f"run dir: {out_dir}\nmachine: {machine}\nfields-witch: {args.fw_bin}\nbitz: {args.bitz_bin}", flush=True)
 
@@ -725,9 +721,7 @@ def main():
                 if "fields-witch-asm" in schemes:
                     emit(run_fields_witch(args.fw_asm_bin, k, th, args.reps, args.warmups, args.min_idle,
                                           log_inv_rate=fw_rate, scheme="fields-witch-asm"))
-    for (n, w) in word_rows:
-        for th in threads:
-            emit(run_bitz(args.bitz_bin, n, th, args.reps, args.min_idle, word_bits=w, profile=args.bitz_profile))
+
 
     md = render_markdown(records, machine)
     with open(os.path.join(out_dir, "summary.md"), "w") as fh:

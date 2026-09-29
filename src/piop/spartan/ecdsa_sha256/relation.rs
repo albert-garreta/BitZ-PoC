@@ -494,11 +494,65 @@ pub struct PreparedSha256Ecdsa {
     pub(crate) h_layout: IntegerMatrixLayout,
     pub(crate) f_layout: IntegerMatrixLayout,
     pub(crate) ligerito: crate::ligerito_flock::ResolvedLigerito,
+    /// The structured bitz opening's block geometry, committed layout and
+    /// Ligerito configuration for that layout; `None` when the map has no
+    /// chained structure the scheme can use (then the dense virtual opening).
+    pub(crate) bitz: Option<BitZChained>,
+}
+
+/// What the bitz opener needs beyond the relation:
+/// the sources committed in the block layout of [`crate::bitz::chained`].
+#[derive(Clone, Debug)]
+pub(crate) struct BitZChained {
+    pub geometry: crate::bitz::chained::ChainedGeometry,
+    pub layout: IntegerMatrixLayout,
+    pub ligerito: crate::ligerito_flock::ResolvedLigerito,
 }
 
 impl PreparedSha256Ecdsa {
+    /// The Ligerito ladder that commits and opens the sources, and that the
+    /// security accounting, Round 0 and the statement binding use: the
+    /// structured bitz opening's block-layout ladder when one was
+    /// prepared, else the native `f_layout` one.
     pub fn ligerito_configuration(&self) -> &crate::ligerito_flock::ResolvedLigerito {
+        if let Some(chained) = &self.bitz {
+            return &chained.ligerito;
+        }
         &self.ligerito
+    }
+
+    /// The structured bitz opening's geometry for this map, with the
+    /// scheme's Ligerito ladder resolved for the block-layout commitment
+    /// (the same size as the derived grid: `2^(h_bits)` cells).
+    fn chained_geometry(&self) -> Result<BitZChained, super::Sha256EcdsaError> {
+        use crate::bitz::chained::{ChainedGeometry, LOG_ROWS};
+        let parts = self
+            .map
+            .chained_packed_source()
+            .ok_or_else(|| error("the map exposes no chained structure"))?;
+        let tail = self
+            .map
+            .chained_packed_source_tail()
+            .ok_or_else(|| error("the map exposes no tail"))?;
+        let native_bits = self.h_layout.row_vars + self.h_layout.col_vars;
+        let geometry = ChainedGeometry::new(&parts, &tail, native_bits)
+            .map_err(|e| error(format!("chained geometry: {e:?}")))?;
+        let layout = IntegerMatrixLayout {
+            row_vars: LOG_ROWS,
+            col_vars: native_bits - LOG_ROWS,
+        };
+        // The same ladder selection as the native commitment's, resolved for
+        // the block layout's size.
+        let ligerito = self
+            .ligerito
+            .selection()
+            .resolve(native_bits - 7, self.lambda as usize)
+            .map_err(error)?;
+        Ok(BitZChained {
+            geometry,
+            layout,
+            ligerito,
+        })
     }
 
     pub fn with_ligerito(
@@ -511,6 +565,10 @@ impl PreparedSha256Ecdsa {
                 self.lambda as usize,
             )
             .map_err(error)?;
+        if self.bitz.is_some() {
+            // Keep the structured opener's ladder on the same selection.
+            self.bitz = Some(self.chained_geometry()?);
+        }
         self.security()?;
         Ok(self)
     }
@@ -618,7 +676,11 @@ pub fn prepare_sha256_ecdsa_on(
         .position(|c| *c == circuit)
         .expect("every circuit has a cache slot");
     let local = LOCALS[slot]
-        .get_or_init(|| build_local(circuit).map(Arc::new).map_err(|e| e.to_string()))
+        .get_or_init(|| {
+            build_local(circuit)
+                .map(Arc::new)
+                .map_err(|e| e.to_string())
+        })
         .as_ref()
         .map_err(error)?
         .clone();
@@ -634,7 +696,6 @@ pub fn prepare_sha256_ecdsa_on(
         IntegerMatrixLayout {
             row_vars: t,
             col_vars: bits - t,
-            word_bits: 1,
         }
     };
     // At the final block cancel its source block inputs and replace them by
@@ -690,7 +751,7 @@ pub fn prepare_sha256_ecdsa_on(
         digest: *hash.finalize().as_bytes(),
     };
     map.aliases = array::from_fn(|c| map.p_source(c));
-    Ok(PreparedSha256Ecdsa {
+    let mut prepared = PreparedSha256Ecdsa {
         local,
         map,
         log_n: log_compressions,
@@ -701,5 +762,14 @@ pub fn prepare_sha256_ecdsa_on(
         ligerito: crate::ligerito_flock::LigeritoSelection::for_target(lambda as usize)
             .resolve(f_bits - 7, lambda as usize)
             .map_err(error)?,
-    })
+        bitz: None,
+    };
+    prepared.bitz = match prepared.chained_geometry() {
+        Ok(chained) => Some(chained),
+        Err(error) => {
+            tracing::debug!("no structured opening for this map ({error}); using dense opening");
+            None
+        }
+    };
+    Ok(prepared)
 }

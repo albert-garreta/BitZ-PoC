@@ -68,7 +68,6 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
                 ("BITZ_BENCH_REPS", "invalid"),
                 ("BITZ_SHA_COMPARE_REPS", "invalid"),
                 ("BITZ_HYBRID_BINIUS_LOG_INV_RATE", "invalid"),
-                ("PERFETTO_TRACE_PROCESSOR", "/missing"),
             ],
         );
         assert!(
@@ -152,7 +151,7 @@ fn every_entrypoint_handles_help_and_errors_before_work() {
             &executables[name],
             directory.path(),
             &["--bench"],
-            &[(variable, value), ("PERFETTO_TRACE_PROCESSOR", "/missing")],
+            &[(variable, value)],
         );
         let error = String::from_utf8_lossy(&out.stderr);
         assert_eq!(

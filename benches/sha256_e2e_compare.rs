@@ -309,7 +309,7 @@ struct BitzContext {
 
 impl BitzContext {
     fn setup(exponent: usize, corpus: &Corpus, inner_prefix_vars: usize) -> Self {
-        let started_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let started_recording = bitz::observability::Recording::start().expect("start operation capture");
         let started = tracing::info_span!("sha256_e2e_compare:started").entered();
         let prepared = prepare_sha256_compression_batch(exponent)
             .and_then(|p| p.with_ligerito(common::ligerito_selection(100)))
@@ -328,7 +328,7 @@ impl BitzContext {
     }
 
     fn run(&self) -> (TrialMetrics, Vec<SemanticSpan>) {
-        let recording = common::perfetto::Recording::start(Vec::new()).expect("start BitZ trial");
+        let recording = common::metrics::Recording::start().expect("start BitZ trial");
         let root = tracing::info_span!("sha256-compare:verified_trial").entered();
         let witness_to_proof = tracing::info_span!("sha256-compare:witness_to_proof").entered();
 
@@ -429,7 +429,7 @@ impl BiniusContext {
     fn setup(corpus: &Corpus, log_inv_rate: usize) -> Self {
         let (circuit, wires, circuit_build_ms) = build_binius_sha_circuit(corpus);
 
-        let setup_started_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let setup_started_recording = bitz::observability::Recording::start().expect("start operation capture");
         let setup_started = tracing::info_span!("sha256_e2e_compare:setup_started").entered();
         let verifier = BiniusVerifier::<StdHashSuite>::setup_with_security_bits(
             circuit.constraint_system().clone(),
@@ -479,7 +479,7 @@ impl BiniusContext {
 
     fn run(&self) -> (TrialMetrics, Vec<SemanticSpan>, Vec<u8>, ValueVec) {
         let recording =
-            common::perfetto::Recording::start(Vec::new()).expect("start Perfetto trial");
+            common::metrics::Recording::start().expect("start span trial");
         let trial = tracing::info_span!(
             "Verified trial",
             component = "benchmark.verified-trial",
@@ -528,7 +528,7 @@ impl BiniusContext {
         drop(verification);
         drop(trial);
 
-        let raw = recording.intervals().expect("query Perfetto trial");
+        let raw = recording.intervals().expect("query span trial");
         let spans = binius_semantic_spans(&raw);
         let metrics = TrialMetrics::from_spans(&spans, proof_bytes.len());
         black_box(&proof_bytes);
@@ -541,7 +541,7 @@ impl BiniusContext {
 /// compressions, public blocks and outputs.
 fn build_binius_sha_circuit(corpus: &Corpus) -> (Circuit, BiniusWires, f64) {
     assert!(corpus.cases.len().is_multiple_of(2));
-    let build_started_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let build_started_recording = bitz::observability::Recording::start().expect("start operation capture");
     let build_started = tracing::info_span!("sha256_e2e_compare:build_started").entered();
     let builder = CircuitBuilder::new();
     let pairs = (0..corpus.cases.len() / 2)
@@ -631,7 +631,7 @@ impl BiniusLigeritoContext {
 
     fn run(&self) -> (TrialMetrics, Vec<SemanticSpan>, Vec<u8>) {
         let recording =
-            common::perfetto::Recording::start(Vec::new()).expect("start Perfetto trial");
+            common::metrics::Recording::start().expect("start span trial");
         let trial = tracing::info_span!(
             "Verified trial",
             component = "binius-ligerito.verified-trial",
@@ -675,7 +675,7 @@ impl BiniusLigeritoContext {
         drop(verification);
         drop(trial);
         let spans =
-            binius_ligerito_semantic_spans(&recording.intervals().expect("query Perfetto trial"));
+            binius_ligerito_semantic_spans(&recording.intervals().expect("query span trial"));
         let metrics = TrialMetrics::from_spans(&spans, proof_bytes.len());
         black_box(&proof_bytes);
         (metrics, spans, proof_bytes)
@@ -1419,7 +1419,7 @@ impl TraceWriter {
                 "build_profile": "bench",
             },
             "trial": metadata.trial.json(),
-            "clock": {"id": run_id, "kind": "monotonic", "unit": "ns", "source": "Perfetto SDK"},
+            "clock": {"id": run_id, "kind": "monotonic", "unit": "ns", "source": "Rust span metrics"},
             "status": "ok",
             "trace_complete": true,
             "environment": self.environment,
@@ -1890,7 +1890,7 @@ fn run_native_trial(
         .as_ref()
         .map(|trace| {
             let output = BenchmarkOutput::new(trace.path.parent().unwrap_or(Path::new(".")));
-            common::perfetto::Recording::start(output.buffered(
+            bitz::observability::perfetto::TraceRecording::start(output.buffered(
                 format!(
                     "sha256-{}-{exponent}-{}.pftrace",
                     backend.slug(),
@@ -2717,7 +2717,7 @@ fn init() -> usize {
         assert_eq!(threads, expected_threads,
             "set RAYON_NUM_THREADS={expected_threads} for the controlled comparison");
     }
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     threads
 }
 
@@ -2930,8 +2930,7 @@ fn main() {
 #[cfg(test)]
 mod native_whir_tests {
     #[test]
-    #[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises native measurement backends"]
-    fn native_adapters_report_repeated_perfetto_trials() {
+    fn native_adapters_report_repeated_span_trials() {
         let _trace = super::common::test_tracing();
         use super::*;
         use tracing_subscriber::prelude::*;
@@ -2969,7 +2968,6 @@ mod native_whir_tests {
     }
 
     #[test]
-    #[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises the native measurement backend"]
     fn binius_sha_binds_public_blocks_outputs_and_proof() {
         let _trace = super::common::test_tracing();
         super::binius_tamper_self_test();
@@ -3080,14 +3078,13 @@ mod reporting_tests {
     }
 
     #[test]
-    #[ignore = "requires PERFETTO_TRACE_PROCESSOR; exercises the native measurement backend"]
     fn span_metrics_cover_repeated_verified_sha_trials() {
         let _trace = common::test_tracing();
         use tracing_subscriber::prelude::*;
         // Thirty-two compressions reach the opener's minimum packed log of 13.
         let context = BiniusLigeritoContext::setup(&Corpus::new(32, DEFAULT_ROOT_SEED));
         tracing::subscriber::with_default(
-            tracing_subscriber::registry().with(common::perfetto::layer()),
+            tracing_subscriber::registry().with(common::metrics::layer()),
             || {
                 for _ in 0..6 {
                     let (metrics, spans, _) = context.run();

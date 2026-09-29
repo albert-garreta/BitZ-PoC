@@ -16,6 +16,7 @@ use crate::piop::spartan::protocol::ProtocolError;
 mod channel;
 mod codec;
 pub mod mod32_binius;
+mod mul;
 mod opening;
 mod security;
 mod sha;
@@ -24,7 +25,6 @@ pub(crate) mod sumcheck;
 use crate::poly::univariate::binary_gf128::Gf128 as Gf;
 use crate::{
     ligerito_flock::OodRoundParams,
-    piop::spartan::bitz::hybrid as mul,
     transcript::{Blake3Transcript, traits::Transcript},
 };
 use flock_core::{
@@ -100,6 +100,8 @@ pub(crate) struct BinaryClaim {
 pub struct PreparedHybrid {
     parameters: Parameters,
     multiplication: PreparedRelationPrefix<MulLayout<u32>>,
+    /// The multiplication grid's split relative to the layout's default
+    /// (nonzero for the bitz opener); witnesses adopt it when committed.
     sha: sha::ShaRelation,
     geometry: opening::Geometry,
     /// Round-0 parameters (`step0:ood-draw` grinding), derived from the
@@ -141,6 +143,13 @@ impl PreparedHybrid {
     }
 
     pub fn new_with_ligerito(
+        parameters: Parameters,
+        selection: crate::ligerito_flock::LigeritoSelection,
+    ) -> Result<Self, Error> {
+        Self::build(parameters, selection)
+    }
+
+    fn build(
         parameters: Parameters,
         selection: crate::ligerito_flock::LigeritoSelection,
     ) -> Result<Self, Error> {
@@ -590,6 +599,54 @@ mod tests {
         );
     }
 
+    /// The multiplication side reduced by the worldfnd/BitZ scheme's fold and
+    /// GKR: the composition proves, round-trips through bytes and verifies,
+    /// and old codec versions are rejected.
+    #[test]
+    fn multiplication_fork_roundtrips_and_rejects_old_versions() {
+        let parameters = Parameters {
+            multiplications: 1 << 9,
+            sha_compressions: 1 << 9,
+        };
+        let inputs: Vec<_> = (0..1u32 << 9)
+            .map(|i| (i.wrapping_mul(0x9e3779b9), u32::MAX - i))
+            .collect();
+        let blocks: Vec<[u32; 16]> = (0..1u32 << 9)
+            .map(|i| std::array::from_fn(|j| i.wrapping_mul(0x85ebca6b).wrapping_add(j as u32)))
+            .collect();
+        let prepared = PreparedHybrid::new(parameters).unwrap();
+        let layout = MulLayout::<u32>::new(parameters.multiplications).unwrap();
+        assert_eq!(prepared.multiplication.layout(), &layout);
+        let committed = prepared.commit(&inputs, &blocks).unwrap();
+        let proof = prepared.prove(&committed).unwrap();
+        prepared.verify(committed.statement(), &proof).unwrap();
+        let bytes = proof.to_bytes();
+        assert_eq!(&bytes[..8], b"BZSW\x02\0\0\0");
+        let decoded = prepared
+            .proof_from_bytes(committed.statement(), &bytes)
+            .unwrap();
+        prepared.verify(committed.statement(), &decoded).unwrap();
+        for magic in [b"BZSH\x06\0\0\0", b"BZSW\x01\0\0\0"] {
+            let mut old_version = bytes.clone();
+            old_version[..8].copy_from_slice(magic);
+            assert!(
+                prepared
+                    .proof_from_bytes(committed.statement(), &old_version)
+                    .is_err()
+            );
+        }
+        // A changed multiplication row is still caught.
+        let mut rows: Vec<_> = committed.multiplication_rows().collect();
+        rows[7].lo ^= 1;
+        let invalid = prepared.commit_mod32(&rows, &blocks).unwrap();
+        assert!(
+            prepared.prove(&invalid).is_err()
+                || prepared
+                    .verify(invalid.statement(), &prepared.prove(&invalid).unwrap())
+                    .is_err()
+        );
+    }
+
     #[test]
     fn field_representations_agree() {
         use binius_field::Field;
@@ -895,7 +952,7 @@ mod tests {
         changed.opening.ligerito.fold_grinding_nonces.pop();
         assert!(prepared.verify(committed.statement(), &changed).is_err());
         let mut changed = proof.clone();
-        changed.multiplication.sums[0] = u128::MAX;
+        changed.multiplication.narg[0] ^= 1;
         assert!(prepared.verify(committed.statement(), &changed).is_err());
         for branch in 0..2 {
             let mut changed = proof.clone();

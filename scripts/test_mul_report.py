@@ -35,6 +35,22 @@ class Reports(unittest.TestCase):
         (self.path / "manifest.json").write_text(json.dumps(manifest))
         (self.path / "samples.jsonl").write_text("".join(json.dumps(r) + "\n" for r in records))
 
+    def test_current_and_saved_opener_names_retain_measurements(self):
+        manifest, records = fixture(self.path)
+        config = manifest["cases"][0]["job"]["case"]["bitz"]
+        config["gkr_schedule"] = None
+        measured = []
+        for name in ("bitz", "wfbitz"):
+            config["opener"] = name
+            self.rewrite(manifest, records)
+            row = aggregate(load(self.path))[0]
+            measured.append((row["metrics"], row["memory"]))
+        self.assertEqual(measured[0], measured[1])
+        config["gkr_schedule"] = "auto"
+        self.rewrite(manifest, records)
+        with self.assertRaisesRegex(ValueError, "cannot have a GKR schedule"):
+            load(self.path)
+
     def test_old_format_and_disguised_legacy_configuration_are_rejected(self):
         manifest, records = fixture(self.path)
         manifest["schema"] = "mul-bench/v1"

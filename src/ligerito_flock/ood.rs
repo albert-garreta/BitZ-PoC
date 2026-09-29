@@ -18,15 +18,7 @@ impl From<Option<OodRoundParams>> for ProverOod {
 }
 
 impl ProverOod {
-    pub(super) fn bind(
-        self,
-        transcript: &mut (impl Transcript + Send),
-        hint: &FlockCommitHint,
-    ) -> Self {
-        Self(ProverState::Bound(self.claim(transcript, hint)))
-    }
-
-    pub(super) fn claim(
+    pub(crate) fn opening_claim(
         self,
         transcript: &mut (impl Transcript + Send),
         hint: &FlockCommitHint,
@@ -54,19 +46,7 @@ impl From<Option<OodRoundParams>> for VerifierOod {
 }
 
 impl VerifierOod {
-    pub(super) fn bind(
-        self,
-        transcript: &mut (impl Transcript + Send),
-        vars: usize,
-        round: Option<&OodRound>,
-    ) -> Result<Self, FlockRsError> {
-        Ok(Self(VerifierState::Bound(
-            self.claim(transcript, vars, round)?
-                .map(|claim| (claim, *round.expect("verified OOD"))),
-        )))
-    }
-
-    pub(super) fn claim(
+    pub(crate) fn opening_claim(
         self,
         transcript: &mut (impl Transcript + Send),
         packed_vars: usize,

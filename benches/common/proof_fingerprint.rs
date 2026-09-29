@@ -2,7 +2,7 @@
 //! This is deliberately not a new public wire format.
 use bitz::{
     piop::spartan::{
-        protocol::{OpeningProof, Proof, SpartanProof, linear::LinearProof},
+        protocol::{Proof, SpartanProof, linear::LinearProof},
         sumcheck::{OuterSumcheckProof, SumcheckProof},
     },
     transcript::Blake3Transcript,
@@ -60,7 +60,7 @@ impl Encoder {
 fn enabled() -> bool {
     std::env::var("BITZ_BENCH_PROOF_FINGERPRINT").is_ok_and(|v| v == "1")
 }
-pub fn nonlinear<O: OpeningProof>(proof: &Proof<O>, root: &[u8], transcript: &Blake3Transcript) {
+pub fn nonlinear(proof: &Proof, root: &[u8], transcript: &Blake3Transcript) {
     if enabled() {
         println!(
             "PROOF_FINGERPRINT {}",
@@ -68,8 +68,8 @@ pub fn nonlinear<O: OpeningProof>(proof: &Proof<O>, root: &[u8], transcript: &Bl
         );
     }
 }
-pub fn nonlinear_fingerprint<O: OpeningProof>(
-    proof: &Proof<O>,
+pub fn nonlinear_fingerprint(
+    proof: &Proof,
     root: &[u8],
     transcript: &Blake3Transcript,
 ) -> ProofFingerprint {

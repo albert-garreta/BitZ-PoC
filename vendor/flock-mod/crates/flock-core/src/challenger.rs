@@ -62,6 +62,17 @@ pub trait Challenger: Send {
         (0..n).map(|_| self.sample_f128()).collect()
     }
 
+    /// Verifier sampling for transports that authenticate a work guard before
+    /// a challenge. `None` rejects the replay without drawing the challenge.
+    fn try_sample_f128(&mut self) -> Option<Gf128> {
+        Some(self.sample_f128())
+    }
+
+    /// Preserve the transport's vector framing, including an empty vector.
+    fn try_sample_f128_vec(&mut self, n: usize) -> Option<Vec<Gf128>> {
+        Some(self.sample_f128_vec(n))
+    }
+
     /// Prover-side PoW grinding: snapshot the current transcript state,
     /// search for a `u64` nonce such that `H(state ‖ nonce)` has at
     /// least `bits` leading zero bits, then absorb the nonce into the

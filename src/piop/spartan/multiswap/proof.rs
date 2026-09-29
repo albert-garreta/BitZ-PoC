@@ -30,7 +30,6 @@
 //! Limber's own implementation accepts, at a total grinding cost of
 //! `2^10` hashes.
 
-use crate::ligerito_flock::IntEvalRsLigVirtProof;
 use crate::piop::spartan::protocol::Proof;
 use crate::piop::spartan::protocol::ProtocolError;
 
@@ -48,8 +47,7 @@ use {
         f2map::cell_count,
         ligerito::packed_vars,
         ligerito_flock::{
-            FlockCommitHint, FlockRsError, LigeritoStatementConfig, ModQOpeningKind,
-            validated_udr_lig_configs_with,
+            FlockCommitHint, FlockRsError, LigeritoStatementConfig, validated_udr_lig_configs_with,
         },
         pcs::IntegerMatrixLayout,
         transcript::traits::Transcript,
@@ -95,7 +93,6 @@ static MULTISWAP_DOMAINS: Domains = Domains {
     piop_grinding: b"",
     terminal_grinding: b"",
     bitified_claim: b"",
-    opening: ModQOpeningKind::U32Mul,
     claim_tag: b"multiswap-opening-claim",
     reduction_grinding: b"bitz/spartan-multiswap/grinding/reduction/v2",
     reduction_prime: REDUCTION_SAMPLING_DOMAIN,
@@ -211,7 +208,6 @@ impl RelationSpec for MultiswapSpec {
         let params = self.committed_layout();
         multiswap_instance_facts(
             u32::try_from(params.row_vars).expect("row variables fit u32"),
-            u32::try_from(params.word_bits).expect("word bits fit u32"),
             u32::try_from(self.layout().gate_vars() + 2).expect("assignment variables fit u32"),
         )
     }
@@ -231,7 +227,7 @@ impl RelationSpec for MultiswapSpec {
 
     fn validate_geometry(&self) -> Result<(), ProtocolError> {
         let params = self.committed_layout();
-        if params.word_bits != 1 || cell_count(&params) % IDENTITY_LOCAL_ROWS != 0 {
+        if cell_count(&params) % IDENTITY_LOCAL_ROWS != 0 {
             return Err(ProtocolError::InvalidBitzParameters);
         }
         Ok(())
@@ -309,7 +305,7 @@ impl RelationSpec for MultiswapSpec {
             layout.assignment_len(),
             p.row_vars,
             p.col_vars,
-            p.word_bits,
+            1usize,
             MULTISWAP_VALUE_BITS,
             reduction.grinding_bits as usize,
         ])?;
@@ -495,9 +491,6 @@ pub fn commit_multiswap_witness(
     rows: Vec<Vec<u64>>,
     pc: &LigProverConfig,
 ) -> Result<FlockCommitHint, ProtocolError> {
-    if p.word_bits != 1 {
-        return Err(ProtocolError::InvalidBitzParameters);
-    }
     protocol::validate_bit_rows(p, &rows)?;
     let hint = crate::ligerito_flock::commit_rs_ligerito_rows(p, rows, pc);
     crate::ligerito_flock::validate_ligerito_commitment(&hint.commitment, pc)
@@ -512,7 +505,7 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
     assignment: &MultiswapAssignment,
     hint: &FlockCommitHint,
     pc: &LigProverConfig,
-) -> Result<Proof<IntEvalRsLigVirtProof>, ProtocolError> {
+) -> Result<Proof, ProtocolError> {
     prepared.validate_config(pc)?;
     protocol::prove_reduced(transcript, &prepared.inner, assignment, hint)
 }
@@ -523,7 +516,7 @@ pub fn verify_multiswap_mod_r1cs<T: Transcript + Send>(
     transcript: &mut T,
     prepared: &PreparedMultiswapRelation,
     commitment: &Commitment,
-    proof: &Proof<IntEvalRsLigVirtProof>,
+    proof: &Proof,
     vc: &LigVerifierConfig,
 ) -> Result<(), ProtocolError> {
     prepared.validate_config(vc)?;
@@ -566,6 +559,7 @@ fn config_digest(config: &impl LigeritoStatementConfig) -> [u8; 32] {
 mod tests {
     use super::super::circuit::MultiswapDims;
     use super::*;
+    use crate::piop::spartan::protocol::bitz_opener::BitZOpeningProof;
     use crate::{piop::spartan::profile::Lambda100, transcript::Blake3Transcript};
 
     fn mini_setup() -> (
@@ -613,7 +607,7 @@ mod tests {
         let (prefix, reduction, bitz) = proof.clone().into_parts();
         let mut reduction = reduction.unwrap();
         reduction.mu_prime = reduction.mu_prime.wrapping_add(&field::Uint::ONE);
-        let tampered = Proof::<IntEvalRsLigVirtProof>::from_parts(prefix, Some(reduction), bitz);
+        let tampered = Proof::from_parts(prefix, Some(reduction), bitz);
         assert!(matches!(
             verify_multiswap_mod_r1cs(
                 &mut Blake3Transcript::new(),
@@ -640,6 +634,169 @@ mod tests {
         ));
     }
 
+    /// The reduced claim discharged through the worldfnd/BitZ scheme's virtual
+    /// opening: proves, verifies, is deterministic, and a wrong integer lift
+    /// is still rejected before the reduction draw.
+    #[test]
+    fn mini_multiswap_roundtrips_through_the_bitz_opener() {
+        let _env = crate::utils::QUAD_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (prepared, assignment, hint, pc, vc) = mini_setup();
+        let mut pt = Blake3Transcript::new();
+        let proof = prove_multiswap_mod_r1cs(&mut pt, &prepared, &assignment, &hint, &pc).unwrap();
+        assert!(proof.mu_prime().is_some());
+        let mut vt = Blake3Transcript::new();
+        verify_multiswap_mod_r1cs(&mut vt, &prepared, &hint.commitment, &proof, &vc).unwrap();
+        assert_eq!(vt.state_digest(), pt.state_digest());
+
+        let mut second = Blake3Transcript::new();
+        let again =
+            prove_multiswap_mod_r1cs(&mut second, &prepared, &assignment, &hint, &pc).unwrap();
+        assert_eq!(again.bitz().to_bytes(), proof.bitz().to_bytes());
+
+        let (prefix, reduction, bitz) = proof.clone().into_parts();
+        let mut reduction = reduction.unwrap();
+        reduction.mu_prime = reduction.mu_prime.wrapping_add(&field::Uint::ONE);
+        let tampered = Proof::from_parts(prefix, Some(reduction), bitz);
+        assert!(matches!(
+            verify_multiswap_mod_r1cs(
+                &mut Blake3Transcript::new(),
+                &prepared,
+                &hint.commitment,
+                &tampered,
+                &vc
+            ),
+            Err(ProtocolError::InvalidIntegerLift)
+        ));
+    }
+
+    /// MultiSwap's schedule runs no Round 0, so a Round-0 record on its
+    /// bitz opening is rejected, not ignored (the presence rule of the
+    /// crate's own opening); a foreign opener configuration is rejected up
+    /// front on both sides.
+    #[test]
+    fn bitz_multiswap_rejects_a_stray_round_0_record() {
+        use crate::piop::spartan::protocol::bitz_opener::BitZOpeningProof;
+        let _env = crate::utils::QUAD_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (prepared, assignment, hint, pc, vc) = mini_setup();
+        assert!(prepared.security().ood.is_none());
+        let proof = prove_multiswap_mod_r1cs(
+            &mut Blake3Transcript::new(),
+            &prepared,
+            &assignment,
+            &hint,
+            &pc,
+        )
+        .unwrap();
+        assert!(proof.bitz().ood.is_none());
+        verify_multiswap_mod_r1cs(
+            &mut Blake3Transcript::new(),
+            &prepared,
+            &hint.commitment,
+            &proof,
+            &vc,
+        )
+        .unwrap();
+        for nonce in [None, Some(0)] {
+            let (prefix, reduction, mut bitz) = proof.clone().into_parts();
+            bitz.ood = Some(crate::ligerito_flock::OodRound {
+                y: field::Gf128::ONE,
+                nonce,
+            });
+            let bitz = BitZOpeningProof::from_bytes(&bitz.to_bytes()).unwrap();
+            let stray = Proof::from_parts(prefix, reduction, bitz);
+            assert!(matches!(
+                verify_multiswap_mod_r1cs(
+                    &mut Blake3Transcript::new(),
+                    &prepared,
+                    &hint.commitment,
+                    &stray,
+                    &vc
+                ),
+                Err(ProtocolError::Bitz(FlockRsError::OodRound))
+            ));
+        }
+
+        let foreign =
+            validated_udr_lig_configs_with(packed_vars(prepared.params()), 1, 4, 114).unwrap();
+        assert!(matches!(
+            prove_multiswap_mod_r1cs(
+                &mut Blake3Transcript::new(),
+                &prepared,
+                &assignment,
+                &hint,
+                &foreign.0
+            ),
+            Err(ProtocolError::Bitz(FlockRsError::CommitmentConfig))
+        ));
+        assert!(matches!(
+            verify_multiswap_mod_r1cs(
+                &mut Blake3Transcript::new(),
+                &prepared,
+                &hint.commitment,
+                &proof,
+                &foreign.1
+            ),
+            Err(ProtocolError::Bitz(FlockRsError::CommitmentConfig))
+        ));
+    }
+
+    /// Nonzero native work executes and rejects a proof from the zero-work policy.
+    #[test]
+    fn multiswap_executes_native_grinding() {
+        struct NativeGrinding;
+        impl IopSecurityProfile for NativeGrinding {
+            const NAME: &'static str = "limber114-native-grinding-test";
+            const LAMBDA: u32 = 114;
+            const PRIME_POLICY: crate::piop::spartan::PrimePolicy =
+                crate::piop::spartan::PrimePolicy::TwoFullWidthFingerprint;
+            const LIGERITO_TARGET_BITS: usize = 114;
+            const FOREST_ROUND_GRINDING_BITS: u32 = 1;
+            const RING_SWITCH_GRINDING_BITS: u32 = 0;
+        }
+        let _env = crate::utils::QUAD_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (plain, assignment, hint, pc, vc) = mini_setup();
+        let proof = prove_multiswap_mod_r1cs(
+            &mut Blake3Transcript::new(),
+            &plain,
+            &assignment,
+            &hint,
+            &pc,
+        )
+        .unwrap();
+        let circuit = MultiswapCircuit::build(MultiswapDims::mini()).unwrap();
+        let prepared =
+            PreparedMultiswapRelation::new_with_profile::<NativeGrinding>(&circuit).unwrap();
+        assert_eq!(prepared.security().forest_round_grinding_bits, 1);
+        let mut transcript = Blake3Transcript::new();
+        assert!(prepared.security().native_grinding_nonce_count() > 0);
+        let ground =
+            prove_multiswap_mod_r1cs(&mut transcript, &prepared, &assignment, &hint, &pc).unwrap();
+        verify_multiswap_mod_r1cs(
+            &mut Blake3Transcript::new(),
+            &prepared,
+            &hint.commitment,
+            &ground,
+            &vc,
+        )
+        .unwrap();
+        assert!(
+            verify_multiswap_mod_r1cs(
+                &mut Blake3Transcript::new(),
+                &prepared,
+                &hint.commitment,
+                &proof,
+                &vc
+            )
+            .is_err()
+        );
+    }
+
     #[test]
     fn mini_batches_preserve_verified_codec_roundtrips() {
         let _env = crate::utils::QUAD_ENV_LOCK
@@ -658,7 +815,7 @@ mod tests {
             let original = proof.clone();
             let (prefix, reduction, opening) = proof.into_parts();
             let bytes = opening.to_bytes();
-            let decoded = IntEvalRsLigVirtProof::from_bytes(&bytes).unwrap();
+            let decoded = BitZOpeningProof::from_bytes(&bytes).unwrap();
             assert_eq!(decoded.to_bytes(), bytes);
             let decoded = Proof::from_parts(prefix, reduction, decoded);
             let mut verifier = Blake3Transcript::new();

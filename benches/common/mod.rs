@@ -21,24 +21,7 @@ pub mod cli;
 pub mod environment;
 pub mod proof_fingerprint;
 
-/// Record actual forest choices for the application benchmarks as well as multiplication.
-pub fn start_gkr_recording() {
-    #[cfg(feature = "bench-internals")]
-    bitz::merged_forest::schedule::start_recording();
-}
-
-pub fn print_gkr_schedules() {
-    #[cfg(feature = "bench-internals")]
-    println!(
-        "GKR_SCHEDULES {}",
-        serde_json::json!({
-            "requested": std::env::var("F2_FOREST_SCHEDULE").unwrap_or_else(|_| "auto".into()),
-            "resolved": bitz::merged_forest::schedule::take_records(),
-        })
-    );
-}
-
-/// Serialize native SDK sessions in tests and explicitly supply their subscriber.
+/// Explicitly supply the subscriber for benchmark tests.
 #[cfg(all(test, feature = "span-metrics"))]
 pub fn test_tracing() -> (
     tracing::subscriber::DefaultGuard,
@@ -54,23 +37,23 @@ pub fn test_tracing() -> (
 }
 #[cfg(feature = "bench-peak-memory")]
 pub mod heap_run;
+#[cfg(feature = "span-metrics")]
+pub mod metrics;
 pub mod mul_witness;
 pub mod output;
 pub mod pcs_console;
 #[cfg(feature = "bench-peak-memory")]
 pub mod peak_memory;
-#[cfg(feature = "span-metrics")]
-pub mod perfetto;
 #[cfg(feature = "plonky3-whir-bench")]
 pub mod plonky3;
 #[cfg(feature = "plonky3-sha256-bench")]
 pub mod whir_tuning;
 
-use clap::ValueEnum;
 use bitz::piop::spartan::{
     IopSecurityProfile, Lambda100, Lambda128, Limber112, Limber114, PrimePolicy,
     Sha128ReferenceSchedule,
 };
+use clap::ValueEnum;
 
 /// Actual local dependency commit recorded when this benchmark was built.
 /// These are git dependencies pinned in Cargo.lock; no build.rs stamps a
@@ -96,29 +79,8 @@ pub const KNOWN_BITZ_ENV: &[&str] = &[
     // typo check.
     "BITZ_DIRTY",
     "BITZ_REVISION",
-    // A/B example harness knobs (examples/taps_ab.rs, examples/rlc_ab.rs).
-    "BITZ_AB_B3FAM",
-    "BITZ_AB_B3OPEN",
-    "BITZ_AB_BLAKE3",
-    "BITZ_AB_COLLAPSE",
-    "BITZ_AB_COLS4",
-    "BITZ_AB_COLS4_FAM",
-    "BITZ_AB_FAM_DELTA",
-    "BITZ_AB_J3",
-    "BITZ_AB_MIX6",
-    "BITZ_AB_N",
-    "BITZ_AB_NO_FAMILY",
-    "BITZ_AB_OPEN8",
-    "BITZ_AB_OPEN_DELTA",
-    "BITZ_AB_REPS",
-    "BITZ_AB_ROUNDS",
-    "BITZ_AB_SCHED",
-    "BITZ_AB_SHARED",
-    "BITZ_AB_SINGLES",
-    "BITZ_AB_STMTS",
     // Deprecated aliases (kept working; see `reps`/`shapes`/`seed`).
     // Canonical bench knobs.
-    "BITZ_BENCH_EXT",
     "BITZ_BENCH_FILL",
     "BITZ_BENCH_LAMBDA",
     "BITZ_MULTISWAP_BATCH_COUNT",
@@ -133,33 +95,8 @@ pub const KNOWN_BITZ_ENV: &[&str] = &[
     "BITZ_BENCH_SHAPES",
     "BITZ_CM_EXPONENTS",
     "BITZ_CM_SEED",
-    // Prover-path toggles (transcript-preserving optimization knobs).
-    "BITZ_COL_ELIDE",
-    "BITZ_EQF_DOUBLE",
-    "BITZ_EQF_DOUBLE_MIN",
-    "BITZ_EQF_FUSE",
-    "BITZ_EQF_NOKERNEL",
-    "BITZ_GKR_DIRECT_CLOSE",
-    "BITZ_GKR_RECOVER",
     "BITZ_EQ_TABLE_SAMPLES",
-    "BITZ_FIXED_SCALAR",
-    "BITZ_FLAT_FOREST",
-    "BITZ_FOLDV_LUT",
-    "BITZ_INNER_FIELD_ACCUM",
-    "BITZ_INNER_NATIVE_FOLD",
-    "BITZ_JIT_GRID",
-    "BITZ_JIT_R1",
-    "BITZ_LEAF8",
-    "BITZ_LEAF_A2_FACTORED",
-    "BITZ_LEAF_TILE",
     "BITZ_LIG_PROFILE",
-    "BITZ_LUT3",
-    "BITZ_LUT4",
-    "BITZ_LUT_PRFM",
-    "BITZ_MATS_PRE",
-    "BITZ_MATS_TILE",
-    "BITZ_MATS_TILE_B",
-    "BITZ_MAT_GRID",
     // Matched MultiSwap/Mod-R1CS campaign trace metadata.
     "BITZ_MULTISWAP_BUILD_PROFILE",
     "BITZ_MULTISWAP_CAMPAIGN_ID",
@@ -169,8 +106,6 @@ pub const KNOWN_BITZ_ENV: &[&str] = &[
     // Deprecated alias.
     "BITZ_MULTISWAP_REPS",
     "BITZ_MULTISWAP_TRACE_PATH",
-    "BITZ_PAIR2_FACTORED",
-    "BITZ_PAR_CHUNK",
     "BITZ_BINIUS_LOG_INV_RATE",
     "BITZ_BINIUS_LIGERITO_LOG_INV_RATE",
     "BITZ_PLONKY3_LOG_INV_RATE",
@@ -182,11 +117,6 @@ pub const KNOWN_BITZ_ENV: &[&str] = &[
     "BITZ_WHIR_MAX_POW_BITS",
     "BITZ_WHIR_CONFIG",
     "BITZ_WHIR_TUNING_REPS",
-    "BITZ_QUAD",
-    "BITZ_QUAD_KERNEL",
-    "BITZ_RLC_EAGER",
-    "BITZ_RLC_J34_LAZY",
-    "BITZ_RS_FAST",
     // SHA trace-writer knobs.
     "BITZ_SHA_BUILD_PROFILE",
     "BITZ_SHA_CPU",
@@ -201,13 +131,6 @@ pub const KNOWN_BITZ_ENV: &[&str] = &[
     "BITZ_SHA_RESULT_PATH",
     "BITZ_SHA_SEED",
     "BITZ_SHA_TRACE_PATH",
-    "BITZ_T4_FACTORED",
-    "BITZ_T4_PRFM",
-    "BITZ_TAPS_DELTA",
-    "BITZ_TAPS_GRP",
-    "BITZ_TAPS_SEED",
-    "BITZ_VIRT_ID_FAST",
-    "BITZ_VIRT_PLANES",
 ];
 
 /// Aborts on any exported `BITZ_*` variable the repo does not know.
@@ -523,33 +446,9 @@ const S3_INNER: &[&str] = &[
     "sha256:spartan_inner_prove",
     "sha256:spartan_inner_verify",
 ];
-/// Step 5.2: exponent tables + merged GKR forest + presum discharge.
-const S5_FOREST: &[&str] = &[
-    "mc:pack",
-    "mc:pow2",
-    "mc:forest",
-    "mc:fold_v",
-    "mc:presum_tbls",
-    "mc:presum_run",
-    "mqv:pack",
-];
-/// Step 5.3: ring switch + recursive Ligerito (including the virtual
-/// batching machinery: derived weights, the h_i fold, the a′ build).
-const S5_OPENER: &[&str] = &[
-    "mq:rings",
-    "mq:bcomb",
-    "mq:lig",
-    "mq:rings_main",
-    "mq:bcomb_main",
-    "mqv:wprep",
-    "mqv:planes",
-    "mqv:hs",
-    "mqv:aprime",
-    "mqv:lig",
-    "mqv:vwprep",
-    "mqv:vaprime",
-    "mqv:vlig",
-];
+/// Optional native detail; absent unless native phase recording was enabled.
+const S5_FOREST: &[&str] = &["fold+images", "gkr"];
+const S5_OPENER: &[&str] = &["sumcheck", "sumcheck (sum)", "ring switch", "ligerito"];
 
 fn label_sum_ms(phases: &[(String, f64)], labels: &[&str]) -> Option<f64> {
     let mut sum = 0.0;
@@ -918,8 +817,7 @@ fn optional_median(samples: &[Option<f64>]) -> Option<f64> {
         .map(|values| median(&values))
 }
 
-/// Milliseconds elapsed since `start`.
-/// Milliseconds from a completed, uniquely named Perfetto operation.
+/// Milliseconds from a completed, uniquely named span.
 #[cfg(feature = "span-metrics")]
 pub fn span_ms(intervals: &[bitz::observability::Interval], label: &str) -> f64 {
     bitz::observability::duration(intervals, label)

@@ -225,7 +225,7 @@ fn emit(
         "ligerito_profile":if args.method == "bitz" {Some(args.bitz_profile.as_str())} else {None},
         "log_inv_rate":if args.method == "bitz" {args.bitz_profile.split(':').nth(1).unwrap().parse::<u8>()?} else {args.log_inv_rate},
         "trial":if trial == 0 {"warmup"} else {"sample"}, "sample":trial,
-        "verified":true, "zk":false, "timing":"perfetto", "security":security,
+        "verified":true, "zk":false, "timing":"spans", "security":security,
         "setup_ms":setup_ms, "witness_ms":ms(intervals,"chain-compare:witness")?+packing_ms,
         "commit_ms":commit_ms, "prove_ms":ms(intervals,"chain-compare:prove")?-packing_ms,
         "e2e_prover_ms":ms(intervals,"chain-compare:e2e")?,
@@ -239,7 +239,7 @@ fn emit(
 }
 
 fn run_bitz(args: &Args, fixture: &Fixture) -> Result<()> {
-    let setup_recording = Recording::start(Vec::new())?;
+    let setup_recording = Recording::start()?;
     let setup = tracing::info_span!("chain-compare:setup").entered();
     let prepared = prepare_sha256_chain_batch(args.exponent.into())?
         .with_ligerito(LigeritoSelection::parse(&args.bitz_profile, 100)?)?;
@@ -250,7 +250,7 @@ fn run_bitz(args: &Args, fixture: &Fixture) -> Result<()> {
         "economic_bits":prepared.security().accounting.achieved_bits(),
         "ligerito":prepared.ligerito_configuration()?.report(&args.bitz_profile, prepared.security().ood)});
     for trial in 0..=args.reps {
-        let recording = Recording::start(Vec::new())?;
+        let recording = Recording::start()?;
         let e2e = tracing::info_span!("chain-compare:e2e").entered();
         let witness = tracing::info_span!("chain-compare:witness")
             .in_scope(|| generate_sha256_chain_witnesses(&prepared, &fixture.statement.blocks))?;
@@ -338,7 +338,7 @@ fn run_bitz(args: &Args, fixture: &Fixture) -> Result<()> {
 }
 
 fn run_binius(args: &Args, fixture: &Fixture) -> Result<()> {
-    let setup_recording = Recording::start(Vec::new())?;
+    let setup_recording = Recording::start()?;
     let setup = tracing::info_span!("chain-compare:setup").entered();
     let relation = BiniusChain::new(fixture.statement.blocks.len())?;
     let (backend, security) = if args.method == "binius64" {
@@ -371,7 +371,7 @@ fn run_binius(args: &Args, fixture: &Fixture) -> Result<()> {
     let setup_ms = ms(&setup_recording.intervals()?, "chain-compare:setup")?;
     let public = fixture.public_words();
     for trial in 0..=args.reps {
-        let recording = Recording::start(Vec::new())?;
+        let recording = Recording::start()?;
         let e2e = tracing::info_span!("chain-compare:e2e").entered();
         let witness =
             tracing::info_span!("chain-compare:witness").in_scope(|| relation.populate(fixture))?;

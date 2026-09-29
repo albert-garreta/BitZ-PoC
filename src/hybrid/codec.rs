@@ -4,10 +4,9 @@ use super::{Error, HybridProof, PreparedHybrid, Statement, mul, opening, sumchec
 use crate::{
     ligerito::RingSwitchProof,
     ligerito_flock::OodRound,
-    merged_forest::{MergedForestProof, MergedLayer},
     piop::spartan::{
         SpartanField,
-        bitz::SpartanBitzField as Q,
+        u32_mul_relation::SpartanBitzField as Q,
         sumcheck::{OuterSumcheckProof, SumcheckProof as QSumcheck},
         univariate_skip::{
             UnivariateSkipOuterSumcheckProof, UnivariateSkipProof, UnivariateSkipSpartanPiopProof,
@@ -19,7 +18,7 @@ use bincode::Options;
 
 use flock_core::field::Gf128;
 
-const MAGIC: &[u8; 8] = b"BZSH\x06\0\0\0";
+const MAGIC: &[u8; 8] = b"BZSW\x02\0\0\0";
 const MAX_PROOF_BYTES: usize = 64 << 20;
 
 fn count(r: &mut Reader<'_>, max: usize) -> Result<usize, CodecError> {
@@ -70,39 +69,6 @@ fn read_rounds<const N: usize>(
     Ok(QSumcheck { round_polynomials })
 }
 
-fn write_sc(w: &mut Writer, sc: &crate::piop::sumcheck::SumcheckProof<super::Gf>) {
-    w.gf(&sc.claimed_sum);
-    w.len(sc.messages.len());
-    for message in &sc.messages {
-        w.len(message.0.tail_evaluations.len());
-        for x in &message.0.tail_evaluations {
-            w.gf(x);
-        }
-    }
-}
-fn read_sc(
-    r: &mut Reader<'_>,
-) -> Result<crate::piop::sumcheck::SumcheckProof<super::Gf>, CodecError> {
-    use crate::piop::sumcheck::prover::{NatEvaluatedPolyWithoutConstant, ProverMsg};
-    let claimed_sum = r.gf()?;
-    let n = count(r, 64)?;
-    let mut messages = Vec::with_capacity(n);
-    for _ in 0..n {
-        let k = count(r, 3)?;
-        let mut tail_evaluations = Vec::with_capacity(k);
-        for _ in 0..k {
-            tail_evaluations.push(r.gf()?);
-        }
-        messages.push(ProverMsg(NatEvaluatedPolyWithoutConstant {
-            tail_evaluations,
-        }));
-    }
-    Ok(crate::piop::sumcheck::SumcheckProof {
-        claimed_sum,
-        messages,
-    })
-}
-
 fn write_f(w: &mut Writer, f: Gf128) {
     w.gf(&(f));
 }
@@ -149,23 +115,8 @@ impl HybridProof {
             write_q(&mut w, q, &p.field);
         }
         write_rounds(&mut w, &s.inner, &p.field);
-        w.len(p.sums.len());
-        for &sum in &p.sums {
-            w.u128(sum);
-        }
-        w.len(p.forest.layers.len());
-        for layer in &p.forest.layers {
-            w.len(usize::from(layer.sc_x.is_some()));
-            if let Some(sc) = &layer.sc_x {
-                write_sc(&mut w, sc);
-            }
-            write_sc(&mut w, &layer.sc_c);
-            w.gf(&layer.pair.0);
-            w.gf(&layer.pair.1);
-            // This protocol always uses the binary forest, regardless of
-            // environment variables controlling standalone BitZ schedules.
-            assert!(layer.pair2.is_none());
-        }
+        w.len(p.narg.len());
+        w.bytes(&p.narg);
         w.len(self.sha.len());
         for &word in &self.sha {
             w.u128(word);
@@ -274,26 +225,8 @@ impl PreparedHybrid {
             outer: UnivariateSkipOuterSumcheckProof { skip, tail },
             inner: read_rounds(&mut r, q, &cfg)?,
         };
-        let n = count(&mut r, self.multiplication.params().cols())?;
-        let mut sums = Vec::with_capacity(n);
-        for _ in 0..n {
-            sums.push(r.u128()?);
-        }
-        let n = count(&mut r, 64)?;
-        let mut layers = Vec::with_capacity(n);
-        for _ in 0..n {
-            let sc_x = if count(&mut r, 1)? == 1 {
-                Some(read_sc(&mut r)?)
-            } else {
-                None
-            };
-            layers.push(MergedLayer {
-                sc_x,
-                sc_c: read_sc(&mut r)?,
-                pair: (r.gf()?, r.gf()?),
-                pair2: None,
-            });
-        }
+        let n = count(&mut r, MAX_PROOF_BYTES)?;
+        let narg = r.take(n)?.to_vec();
         let n = count(&mut r, 1 << 16)?;
         let mut sha = Vec::with_capacity(n);
         for _ in 0..n {
@@ -337,8 +270,7 @@ impl PreparedHybrid {
                 terminal_nonce,
                 piop_nonces,
                 spartan,
-                sums,
-                forest: MergedForestProof { layers },
+                narg,
             },
             sha,
             joint,

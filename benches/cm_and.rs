@@ -76,7 +76,7 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
     let witness_ms = started.as_secs_f64() * 1e3;
     let layout = *witness.layout();
 
-    let started_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let started_recording = bitz::observability::Recording::start().expect("start operation capture");
     let started = tracing::info_span!("cm_and:started").entered();
     let relation = prepare_cm_and_relation(layout, &field_config)
         .and_then(|p| p.with_ligerito(common::ligerito_selection(100)))
@@ -132,7 +132,7 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
     let mut last_proof = None;
     for _ in 0..reps {
         let mut pt = Blake3Transcript::new();
-        let recording = bitz::observability::Recording::start(Vec::new()).expect("start CM prover");
+        let recording = bitz::observability::Recording::start().expect("start CM prover");
         let proving = tracing::info_span!("benchmark:proving").entered();
         let proof = prove_cm_and_bitz(&mut pt, &relation, &witness, &hint).expect("prove");
         drop(proving);
@@ -148,7 +148,7 @@ fn bench_exponent(exponent: usize, reps: usize, root_seed: u64) {
         }
 
         let mut vt = Blake3Transcript::new();
-        let recording = bitz::observability::Recording::start(Vec::new()).expect("start CM verifier");
+        let recording = bitz::observability::Recording::start().expect("start CM verifier");
         let verification = tracing::info_span!("benchmark:verification").entered();
         verify_cm_and_bitz(&mut vt, &relation, &hint.commitment, &proof).expect("verify");
         drop(verification);
@@ -261,7 +261,7 @@ fn main() {
     let reps = common::reps(None, 5);
 
 
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     common::enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();
 

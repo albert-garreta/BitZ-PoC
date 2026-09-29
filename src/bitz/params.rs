@@ -1,0 +1,498 @@
+//! Their `common::{shape, params, claim}`: the public instance shape, the
+//! pre-claim gates, the linear claim and the transcript frames.
+
+use spongefish::Encoding;
+
+use super::codec::{FqWire, gf_to_bytes};
+use crate::pcs::is_generator;
+use field::Gf128 as Gf;
+
+/// The seven low bits of a row index select the basis coefficients that one
+/// packed field element carries.
+pub const PACK_BITS: u32 = 7;
+/// The commitment size window the opening parameters are fixed for.
+pub const MIN_LOG_BITS: usize = 22;
+/// The upper end of that window.
+pub const MAX_LOG_BITS: usize = 35;
+
+/// A shape one of the admissibility constraints rejects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShapeError {
+    RowIndexTooNarrow,
+    CommitmentSizeOutOfRange,
+}
+
+/// The row index width of the scheme's default split for `log_bits`
+/// committed bits: one below the crate's reference `⌈0.6 n⌉`, at least the
+/// packing width. Measured (8 threads, 96-bit weights, n = 24..30): one row
+/// variable fewer than the reference buys 2–7 % of prover time for 5–23 %
+/// of proof, two or more buy little more time for much more proof.
+pub fn reference_log_rows(log_bits: usize) -> usize {
+    ((3 * log_bits).div_ceil(5))
+        .saturating_sub(1)
+        .max(PACK_BITS as usize)
+        .min(log_bits.saturating_sub(1))
+}
+
+/// How the committed bits are laid out, as the two index widths `t`, `s`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Shape {
+    log_rows: usize,
+    log_columns: usize,
+}
+
+impl Shape {
+    /// A grid of `2^log_rows` bit rows by `2^log_columns` columns: rows at
+    /// least the packing width, at most `2^MAX_LOG_BITS` cells. The
+    /// embedded-ladder floor (`MIN_LOG_BITS`) is checked where flock's
+    /// ladders are looked up ([`super::Pcs::new`]), not here: a virtual
+    /// claim grid, or a commitment under an explicit ladder, may be smaller.
+    pub fn new(log_rows: usize, log_columns: usize) -> Result<Self, ShapeError> {
+        if log_rows < PACK_BITS as usize {
+            return Err(ShapeError::RowIndexTooNarrow);
+        }
+        if log_rows > MAX_LOG_BITS || log_columns > MAX_LOG_BITS - log_rows {
+            return Err(ShapeError::CommitmentSizeOutOfRange);
+        }
+        Ok(Self {
+            log_rows,
+            log_columns,
+        })
+    }
+
+    /// The split this scheme runs at by default: the crate's reference
+    /// split `t = ⌈0.6 n⌉` minus one row variable (2026-09-24 decision,
+    /// see `docs/bitz-opener.md`), clamped to the packing width.
+    pub fn reference(log_bits: usize) -> Result<Self, ShapeError> {
+        let log_rows = reference_log_rows(log_bits);
+        Self::new(log_rows, log_bits.saturating_sub(log_rows))
+    }
+
+    pub fn log_rows(&self) -> usize {
+        self.log_rows
+    }
+
+    pub fn log_columns(&self) -> usize {
+        self.log_columns
+    }
+
+    pub fn log_bits(&self) -> usize {
+        self.log_rows + self.log_columns
+    }
+
+    pub fn log_packed_len(&self) -> usize {
+        self.log_bits() - PACK_BITS as usize
+    }
+
+    pub fn rows(&self) -> usize {
+        1 << self.log_rows
+    }
+
+    pub fn columns(&self) -> usize {
+        1 << self.log_columns
+    }
+
+    /// Checks `(q - 1)(2^t + 1) < 2^128 - 1`. The bound may be an
+    /// interval endpoint; primality is checked separately by `BitZParams`.
+    pub fn supports_modulus_bound(&self, q: u128) -> bool {
+        q.checked_sub(1)
+            .and_then(|q_minus_one| q_minus_one.checked_mul(self.rows() as u128 + 1))
+            .is_some_and(|gap| gap < u128::MAX)
+    }
+
+    /// This crate's view of the same geometry (`W = 1`).
+    pub fn layout(&self) -> crate::pcs::IntegerMatrixLayout {
+        crate::pcs::IntegerMatrixLayout {
+            row_vars: self.log_rows,
+            col_vars: self.log_columns,
+        }
+    }
+}
+
+/// A parameter set one of the pre-claim gates rejects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParamsError {
+    /// `q` is not odd and in `3..2^126`, or fails the probable-prime check.
+    InvalidModulus,
+    /// `(k_1 + 1)(Q - 1)` reaches `ord(g)`.
+    FoldBoundExceeded,
+    /// The generator's order is not the full group.
+    GeneratorOrderNotFull,
+}
+
+/// The shape, the modulus and the generator. Their `BitZParams<Q>` carries
+/// `Q` in the type; here it is a value, encoded identically.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BitZParams {
+    shape: Shape,
+    q: u128,
+    generator: Gf,
+}
+
+impl BitZParams {
+    /// Runs the parameter gates, including the field crate's probable-prime
+    /// check. `q` must be an odd prime below `2^126`.
+    pub fn new(shape: Shape, q: u128, generator: Gf) -> Result<Self, ParamsError> {
+        if q < 3
+            || q & 1 == 0
+            || q >= (1u128 << 126)
+            || !field::is_probable_prime_public(&field::Uint::from(q))
+        {
+            return Err(ParamsError::InvalidModulus);
+        }
+        if !shape.supports_modulus_bound(q) {
+            return Err(ParamsError::FoldBoundExceeded);
+        }
+        if !is_generator(generator) {
+            return Err(ParamsError::GeneratorOrderNotFull);
+        }
+        Ok(Self {
+            shape,
+            q,
+            generator,
+        })
+    }
+
+    pub fn shape(&self) -> &Shape {
+        &self.shape
+    }
+
+    pub fn q(&self) -> u128 {
+        self.q
+    }
+
+    pub fn generator(&self) -> Gf {
+        self.generator
+    }
+
+    /// The largest fold the verifier may accept, `k_1 (Q - 1)`.
+    pub fn fold_bound(&self) -> u128 {
+        (self.shape.rows() as u128) * (self.q - 1)
+    }
+}
+
+/// Their 48-byte frame: `log_rows`, `log_columns` (u64 LE), `Q` (u128 LE),
+/// the generator (16 bytes).
+impl Encoding<[u8]> for BitZParams {
+    fn encode(&self) -> impl AsRef<[u8]> {
+        let mut frame = [0u8; 48];
+        frame[..8].copy_from_slice(&(self.shape.log_rows() as u64).to_le_bytes());
+        frame[8..16].copy_from_slice(&(self.shape.log_columns() as u64).to_le_bytes());
+        frame[16..32].copy_from_slice(&self.q.to_le_bytes());
+        frame[32..].copy_from_slice(&gf_to_bytes(self.generator));
+        frame
+    }
+}
+
+/// A Merkle root over the committed codeword.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Root(pub [u8; 32]);
+
+/// A claim one of the pre-transcript checks rejects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClaimError {
+    RowWeightCountMismatch,
+    ColumnWeightCountMismatch,
+    /// A row weight is not a canonical residue below the active modulus.
+    RowWeightOutOfRange,
+    /// A column weight is not a canonical residue below the active modulus.
+    ColumnWeightOutOfRange,
+    /// The target is not a canonical residue below the active modulus.
+    TargetOutOfRange,
+}
+
+/// Their `LinearClaim<Fq<Q>>`: the caller's `x_core`, weights as canonical
+/// residues below `q` and the value they are claimed to give. Their type
+/// makes the residues canonical; here the constructor checks it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinearClaim {
+    row_weights: Vec<u128>,
+    column_weights: Vec<u128>,
+    target: u128,
+}
+
+impl LinearClaim {
+    pub fn new(
+        params: &BitZParams,
+        row_weights: Vec<u128>,
+        column_weights: Vec<u128>,
+        target: u128,
+    ) -> Result<Self, ClaimError> {
+        let claim = Self {
+            row_weights,
+            column_weights,
+            target,
+        };
+        claim.validate(params)?;
+        Ok(claim)
+    }
+
+    /// Checks the claim against the parameters used for this proof, which
+    /// may differ from the parameters supplied to the constructor.
+    pub(crate) fn validate(&self, params: &BitZParams) -> Result<(), ClaimError> {
+        let shape = params.shape();
+        if self.row_weights.len() != shape.rows() {
+            return Err(ClaimError::RowWeightCountMismatch);
+        }
+        if self.column_weights.len() != shape.columns() {
+            return Err(ClaimError::ColumnWeightCountMismatch);
+        }
+        let q = params.q();
+        if self.row_weights.iter().any(|&weight| weight >= q) {
+            return Err(ClaimError::RowWeightOutOfRange);
+        }
+        if self.column_weights.iter().any(|&weight| weight >= q) {
+            return Err(ClaimError::ColumnWeightOutOfRange);
+        }
+        if self.target >= q {
+            return Err(ClaimError::TargetOutOfRange);
+        }
+        Ok(())
+    }
+
+    /// The canonical representatives the fold exponentiates (the residues
+    /// themselves, already lifted).
+    pub fn row_exponents(&self) -> &[u128] {
+        &self.row_weights
+    }
+
+    pub fn row_weights(&self) -> &[u128] {
+        &self.row_weights
+    }
+
+    pub fn column_weights(&self) -> &[u128] {
+        &self.column_weights
+    }
+
+    pub fn target(&self) -> u128 {
+        self.target
+    }
+}
+
+/// Each weight vector with a little-endian `u64` length, then the target.
+impl Encoding<[u8]> for LinearClaim {
+    fn encode(&self) -> impl AsRef<[u8]> {
+        let mut bytes = Vec::new();
+        for weights in [&self.row_weights, &self.column_weights] {
+            bytes.extend_from_slice(&(weights.len() as u64).to_le_bytes());
+            for &weight in weights {
+                bytes.extend_from_slice(FqWire(weight).encode().as_ref());
+            }
+        }
+        bytes.extend_from_slice(FqWire(self.target).encode().as_ref());
+        bytes
+    }
+}
+
+/// Their `LinearClaim<F128>`: the factored inner-product claim the opening
+/// scheme discharges. Bit `column * rows + row` has weight
+/// `row_weights[row] * column_weights[column]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinearClaimGf {
+    row_weights: Vec<Gf>,
+    column_weights: Vec<Gf>,
+    target: Gf,
+}
+
+impl LinearClaimGf {
+    pub fn from_shape(
+        shape: &Shape,
+        row_weights: Vec<Gf>,
+        column_weights: Vec<Gf>,
+        target: Gf,
+    ) -> Result<Self, ClaimError> {
+        if row_weights.len() != shape.rows() {
+            return Err(ClaimError::RowWeightCountMismatch);
+        }
+        if column_weights.len() != shape.columns() {
+            return Err(ClaimError::ColumnWeightCountMismatch);
+        }
+        Ok(Self {
+            row_weights,
+            column_weights,
+            target,
+        })
+    }
+
+    pub fn row_weights(&self) -> &[Gf] {
+        &self.row_weights
+    }
+
+    pub fn column_weights(&self) -> &[Gf] {
+        &self.column_weights
+    }
+
+    pub fn target(&self) -> Gf {
+        self.target
+    }
+}
+
+/// A sum of factored claims over one grid, `Σ_k ⟨rows_k ⊗ cols_k, f⟩ =
+/// target`: a virtual opening's transposed weights when the map has enough
+/// structure for them to be a short sum of tensors. `binding` stands in for
+/// the expanded weights when the statement is bound: a digest of what both
+/// roles derive the terms from (the GKR's exit claim and the map's frame).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SumClaimGf {
+    terms: Vec<(Vec<Gf>, Vec<Gf>)>,
+    target: Gf,
+    binding: Vec<u8>,
+}
+
+impl SumClaimGf {
+    pub fn from_shape(
+        shape: &Shape,
+        terms: Vec<(Vec<Gf>, Vec<Gf>)>,
+        target: Gf,
+        binding: Vec<u8>,
+    ) -> Result<Self, ClaimError> {
+        if terms.is_empty() {
+            return Err(ClaimError::RowWeightCountMismatch);
+        }
+        for (row_weights, column_weights) in &terms {
+            if row_weights.len() != shape.rows() {
+                return Err(ClaimError::RowWeightCountMismatch);
+            }
+            if column_weights.len() != shape.columns() {
+                return Err(ClaimError::ColumnWeightCountMismatch);
+            }
+        }
+        Ok(Self {
+            terms,
+            target,
+            binding,
+        })
+    }
+
+    pub fn terms(&self) -> &[(Vec<Gf>, Vec<Gf>)] {
+        &self.terms
+    }
+
+    pub fn target(&self) -> Gf {
+        self.target
+    }
+
+    pub fn rows(&self) -> usize {
+        self.terms[0].0.len()
+    }
+
+    pub fn columns(&self) -> usize {
+        self.terms[0].1.len()
+    }
+}
+
+impl Encoding<[u8]> for SumClaimGf {
+    fn encode(&self) -> impl AsRef<[u8]> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(self.terms.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&(self.rows() as u64).to_le_bytes());
+        bytes.extend_from_slice(&(self.columns() as u64).to_le_bytes());
+        bytes.extend_from_slice(&gf_to_bytes(self.target));
+        bytes.extend_from_slice(&(self.binding.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&self.binding);
+        bytes
+    }
+}
+
+impl Encoding<[u8]> for LinearClaimGf {
+    fn encode(&self) -> impl AsRef<[u8]> {
+        let mut bytes = Vec::new();
+        for weights in [&self.row_weights, &self.column_weights] {
+            bytes.extend_from_slice(&(weights.len() as u64).to_le_bytes());
+            for &weight in weights {
+                bytes.extend_from_slice(&gf_to_bytes(weight));
+            }
+        }
+        bytes.extend_from_slice(&gf_to_bytes(self.target));
+        bytes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn params() -> BitZParams {
+        BitZParams::new(
+            Shape::new(7, 1).unwrap(),
+            17,
+            crate::pcs::smallest_generator().into(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn modulus_validation_rejects_invalid_inputs() {
+        let shape = Shape::new(7, 1).unwrap();
+        let generator = crate::pcs::smallest_generator().into();
+        for q in [0, 1, 2, 4, 9, 561, 59 * 61, 1u128 << 126, u128::MAX] {
+            assert_eq!(
+                BitZParams::new(shape, q, generator),
+                Err(ParamsError::InvalidModulus),
+                "q = {q}"
+            );
+        }
+        for q in [3, 17, 31, (1u128 << 100) - 15] {
+            assert!(BitZParams::new(shape, q, generator).is_ok(), "q = {q}");
+        }
+    }
+
+    #[test]
+    fn parameter_validation_preserves_fold_and_generator_gates() {
+        assert_eq!(
+            BitZParams::new(
+                Shape::new(35, 0).unwrap(),
+                (1u128 << 100) - 15,
+                crate::pcs::smallest_generator().into(),
+            ),
+            Err(ParamsError::FoldBoundExceeded)
+        );
+        assert_eq!(
+            BitZParams::new(Shape::new(7, 1).unwrap(), 17, Gf::one()),
+            Err(ParamsError::GeneratorOrderNotFull)
+        );
+    }
+
+    #[test]
+    fn linear_claim_rejects_noncanonical_residues() {
+        let params = params();
+        let shape = params.shape();
+        for invalid in [params.q(), params.q() + 1, u128::MAX] {
+            let mut rows = vec![0; shape.rows()];
+            *rows.last_mut().unwrap() = invalid;
+            assert_eq!(
+                LinearClaim::new(&params, rows, vec![0; shape.columns()], 0),
+                Err(ClaimError::RowWeightOutOfRange)
+            );
+
+            let mut columns = vec![0; shape.columns()];
+            *columns.last_mut().unwrap() = invalid;
+            assert_eq!(
+                LinearClaim::new(&params, vec![0; shape.rows()], columns, 0),
+                Err(ClaimError::ColumnWeightOutOfRange)
+            );
+            assert_eq!(
+                LinearClaim::new(
+                    &params,
+                    vec![0; shape.rows()],
+                    vec![0; shape.columns()],
+                    invalid,
+                ),
+                Err(ClaimError::TargetOutOfRange)
+            );
+        }
+    }
+
+    #[test]
+    fn linear_claim_accepts_canonical_boundaries() {
+        let params = params();
+        for value in [0, params.q() - 1] {
+            let rows = vec![value; params.shape().rows()];
+            let columns = vec![value; params.shape().columns()];
+            let claim = LinearClaim::new(&params, rows.clone(), columns.clone(), value).unwrap();
+            assert_eq!(claim.row_weights(), rows);
+            assert_eq!(claim.column_weights(), columns);
+            assert_eq!(claim.target(), value);
+        }
+    }
+}

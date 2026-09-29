@@ -72,7 +72,6 @@ use std::{
 
 use serde_json::{Value, json};
 use {
-    circuit::linear_map::binary::VirtualMap,
     bitz::{
         observability::Interval,
         piop::spartan::{
@@ -89,6 +88,7 @@ use {
         },
         transcript::Blake3Transcript,
     },
+    circuit::linear_map::binary::VirtualMap,
 };
 
 #[cfg(feature = "bench-internals")]
@@ -106,7 +106,6 @@ struct RepTiming {
     verify_phases: Vec<(String, f64)>,
     spartan_bytes: usize,
     bitz_bytes: usize,
-    forests: usize,
     peak_heap_bytes: Option<usize>,
 }
 
@@ -311,7 +310,7 @@ impl TraceWriter {
                 "id": clock_id,
                 "kind": "monotonic",
                 "unit": "ns",
-                "source": "Perfetto SDK",
+                "source": "Rust span metrics",
             },
             "status": "ok",
             "trace_complete": true,
@@ -368,18 +367,6 @@ impl TraceWriter {
             "tags": {
                 "root_boundary": "verified trial: prover plus verification; setup and input generation excluded",
                 "timeline": "observed half-open intervals",
-                "bitz_rs_fast": env_setting("BITZ_RS_FAST", "default:on"),
-                "bitz_foldv_lut": env_setting("BITZ_FOLDV_LUT", "default:on"),
-                "f2_forest_schedule": env_setting("F2_FOREST_SCHEDULE", "default:l4"),
-                "bitz_flat_forest": env_setting("BITZ_FLAT_FOREST", "default:shape-dependent"),
-                "bitz_t4_factored": env_setting("BITZ_T4_FACTORED", "default:schedule-dependent"),
-                "bitz_jit_r1": env_setting("BITZ_JIT_R1", "default:on"),
-                "bitz_jit_grid": env_setting("BITZ_JIT_GRID", "default:on"),
-                "bitz_t4_prfm": env_setting("BITZ_T4_PRFM", "default:shape-dependent"),
-                "bitz_lut3": env_setting("BITZ_LUT3", "default:on"),
-                "bitz_lut4": env_setting("BITZ_LUT4", "default:off"),
-                "bitz_col_elide": env_setting("BITZ_COL_ELIDE", "default:on"),
-                "bitz_quad": env_setting("BITZ_QUAD", "default:off"),
             },
         });
         self.output.write(&run).expect("write SHA trace run");
@@ -483,9 +470,7 @@ fn describe_span(interval: &Interval, by_order: &HashMap<u64, &Interval>) -> Spa
     let product_batch_prepare = has_fragment("product_batch_prepare_");
     let inner_sumcheck = has_fragment("spartan_inner_") || under("spartan:inner_sumcheck");
     let spartan = inner_sumcheck || local_relation_collapse || product_batch_prepare;
-    let sumcheck = inner_sumcheck || under("eqf:rounds") || under("mc:presum_run");
-    let in_eq_factored = labels.iter().any(|label| label.starts_with("eqf:"));
-    let fri = !in_eq_factored && bitz_opening && (under("mc:forest") || under("mc:fold_v"));
+    let sumcheck = inner_sumcheck;
 
     let primary_phase = if root {
         "end-to-end"
@@ -537,9 +522,6 @@ fn describe_span(interval: &Interval, by_order: &HashMap<u64, &Interval>) -> Spa
         }
         if sumcheck {
             push_tag(&mut phase_tags, "sumcheck");
-        }
-        if fri {
-            push_tag(&mut phase_tags, "fri");
         }
     }
 
@@ -741,10 +723,6 @@ fn span_id(order: u64) -> String {
     format!("span-{order}")
 }
 
-fn env_setting(name: &str, default: &str) -> String {
-    std::env::var(name).unwrap_or_else(|_| default.to_owned())
-}
-
 fn command_output(program: &str, args: &[&str], fallback: &str) -> String {
     Command::new(program)
         .args(args)
@@ -924,7 +902,7 @@ fn run_once(
     pc: &flock_core::pcs::ligerito::ProverConfig,
     vc: &flock_core::pcs::ligerito::VerifierConfig,
 ) -> (RepTiming, Vec<Interval>) {
-    let recording = bitz::observability::Recording::start(Vec::new()).expect("start SHA trial");
+    let recording = bitz::observability::Recording::start().expect("start SHA trial");
     #[cfg(feature = "bench-peak-memory")]
     common::peak_memory::reset_peak();
     let verified_trial_scope = tracing::info_span!("sha256-trace:verified_trial").entered();
@@ -971,13 +949,6 @@ fn run_once(
         )
         .expect("SHA proof succeeds")
     };
-    let forests = proof.bitz().mfs.len();
-    if prepared.opening_layout() == Sha256OpeningLayout::Default {
-        assert_eq!(
-            forests, 1,
-            "every production-layout SHA proof uses exactly one merged forest"
-        );
-    }
     drop(prover_scope);
     // Capture before verifier allocations and proof serialization. This
     // includes the live input/setup baseline and witness-generation peak.
@@ -1025,7 +996,6 @@ fn run_once(
         verify_phases,
         spartan_bytes,
         bitz_bytes,
-        forests,
         peak_heap_bytes,
     };
     (timing, intervals)
@@ -1052,7 +1022,7 @@ fn bench_shape<P: IopSecurityProfile>(
         };
 
     let setup_started_recording =
-        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+        bitz::observability::Recording::start().expect("start operation capture");
     let setup_started = tracing::info_span!("sha256_compressions:setup_started").entered();
     let prepared = match shape.prepare::<P>(layout) {
         Ok(prepared) => prepared,
@@ -1178,8 +1148,8 @@ fn bench_shape<P: IopSecurityProfile>(
             }
         };
         println!(
-            "  opening layout: {kind} | BitZ rows 2^{} × columns 2^{} | forests {} | read-off ≤ 2^{} integers per forest",
-            opening.row_vars, opening.col_vars, warm.forests, opening.col_vars
+            "  opening layout: {kind} | BitZ rows 2^{} × columns 2^{} | BitZ opening",
+            opening.row_vars, opening.col_vars
         );
     }
     black_box(warm);
@@ -1340,7 +1310,7 @@ pub(crate) fn run(env: Env) {
                 Sha256OpeningLayout::InnerSumcheck { row_vars }
             }
         });
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     let threads = common::init();
     let mut trace_writer = TraceWriter::new(&env, threads);
     let mut result_writer = env.result_path.as_deref().map(|path| {
@@ -1485,9 +1455,12 @@ mod cli_preset_tests {
             assert!(String::from_utf8_lossy(&output.stderr).contains("disagree"));
         }
         assert_eq!(
-            child("product", &[("BITZ_BENCH_REPS", "3"), ("BITZ_SHA_REPS", "4")])
-                .status
-                .code(),
+            child(
+                "product",
+                &[("BITZ_BENCH_REPS", "3"), ("BITZ_SHA_REPS", "4")]
+            )
+            .status
+            .code(),
             Some(2)
         );
     }
@@ -1526,7 +1499,10 @@ mod cli_preset_tests {
             ),
             (
                 "ordinary",
-                vec![("BITZ_BENCH_SHAPES", "14"), ("BITZ_SHA_MNUMROWS_LOG2S", "24")],
+                vec![
+                    ("BITZ_BENCH_SHAPES", "14"),
+                    ("BITZ_SHA_MNUMROWS_LOG2S", "24"),
+                ],
             ),
         ] {
             assert!(

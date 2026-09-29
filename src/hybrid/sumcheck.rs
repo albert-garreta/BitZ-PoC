@@ -72,7 +72,7 @@ fn observe(t: &mut impl Transcript, values: &[F]) {
 }
 
 fn sample(t: &mut impl Transcript) -> F {
-    (t.get_field_challenge::<Gf>(&()))
+    t.get_field_challenge::<Gf>(&())
 }
 
 fn evaluate_round([u0, u2]: [F; 2], sum: F, r: F) -> F {

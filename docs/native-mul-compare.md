@@ -34,8 +34,7 @@ proof or verification failure always stops the campaign.
 
 `RUSTFLAGS`, Cargo profiles, and features remain ordinary build settings. For
 example, prefix a command with `RUSTFLAGS="-C target-cpu=native"`. Latency phase
-capture requires the native Perfetto trace processor on PATH, or its path in
-`PERFETTO_TRACE_PROCESSOR`. The benchmark never downloads one.
+capture uses the in-process Rust span collector; no external timing tools are needed.
 
 ## General launcher
 
@@ -59,8 +58,7 @@ dependencies, then runs through the machine gate with a 12 GiB swap-growth limit
 Use `--no-gate` or `--swap-grow-gb` before `--` to change that policy. Extra Cargo
 features are accepted with repeatable `--features`; instrumented heap binaries
 must use `--memory heap`. Existing build settings are retained; if neither form
-of Rust flags is set, the launcher uses `-C target-cpu=native`. A locally installed
-Perfetto processor is discovered automatically, or set `PERFETTO_TRACE_PROCESSOR`.
+of Rust flags is set, the launcher uses `-C target-cpu=native`. Numeric timing requires no additional setup.
 
 Launcher `--dry-run` before `--` prints planned commands without side effects.
 Forwarded `--help` and benchmark `--dry-run` may build the executable but do not
@@ -73,7 +71,8 @@ Results default to a fresh `PerfRuns/<timestamp>-multiplication` directory.
 `build.log` and `run.log` accompany the Rust `manifest.json`, `samples.jsonl`, and
 worker files; shared tables and figures are generated under `reports/` after a
 complete verified campaign. The format is `mul-bench/v2`, with `bitz` configuration
-fields. Previous formats are rejected; historical artifacts are never rewritten.
+fields. Previous formats are rejected; historical artifacts are never rewritten. New provenance records `timing: "spans"`;
+report identities preserve this distinction and paper tables reject mixed timing backends.
 
 ## Modes and defaults
 

@@ -6,7 +6,7 @@ license = "MIT"
 description = "BitZ: integer-MLE-evaluation PCS over an F2 commitment via a GF(2^128) exponent-fold GKR forest, opened with a flock-backed ring-switch + recursive Ligerito PCS"
 
 [dependencies]
-field = { path = "vendor/field" }
+field = { path = "vendor/field", features = ["spongefish"] }
 clap = { version = "4", features = ["derive", "env", "string"], optional = true }
 anyhow = "1"
 derive_more = { version = "2.1.1", features = ["full"] }
@@ -81,6 +81,9 @@ tracing-perfetto-sdk = { version = "1.0.0", optional = true }
 csv = { version = "1.4", optional = true }
 
 libc = "0.2" # getrusage: peak resident set of CLI sweep children
+# BitZ's Fiat–Shamir sponge and wide integer fold reconstruction.
+spongefish = { version = "0.7.4" }
+crypto-bigint = { version = "=0.7.5", default-features = false }
 
 [dev-dependencies]
 # Independent correctness oracles and excluded benchmark adapters only.
@@ -214,6 +217,10 @@ path = "tests/benchmark_reporting.rs"
 required-features = ["bench-internals", "native-mul-compare", "sha256-ecdsa-compare", "hybrid"]
 
 [[test]]
+name = "benchmark_spans"
+required-features = ["span-metrics"]
+
+[[test]]
 name = "benchmark_perfetto"
 required-features = ["bench-perfetto"]
 
@@ -260,35 +267,24 @@ name = "cm_probe"
 required-features = ["span-metrics"]
 
 [[example]]
-name = "u64_mul_probe"
-required-features = ["span-metrics"]
-
-[[example]]
-name = "taps_ab"
-required-features = ["span-metrics"]
-
-[[example]]
-name = "quad_ab"
-required-features = ["span-metrics"]
-
-[[example]]
-name = "rlc_ab"
-required-features = ["span-metrics"]
-
-[[example]]
 name = "spartan_probe"
 required-features = ["span-metrics", "parallel"]
 
 [[example]]
-name = "prof_probe"
-required-features = ["span-metrics"]
+name = "bitz_reference"
+
+[[example]]
+name = "bitz_bench"
+
+[[example]]
+name = "bitz_root_probe"
 
 [features]
 default = ["parallel"]
-# Numeric span metrics require the native trace processor at runtime.
-span-metrics = ["dep:perfetto-sdk", "dep:tracing-perfetto-sdk", "dep:tracing-subscriber", "dep:csv"]
-# Additionally save per-trial diagnostic artifacts through BenchmarkOutput.
-bench-perfetto = ["span-metrics"]
+# Numeric span metrics are collected and queried entirely in Rust.
+span-metrics = ["dep:tracing-subscriber", "dep:csv"]
+# Optional native Perfetto export; never used to calculate numeric metrics.
+bench-perfetto = ["span-metrics", "dep:perfetto-sdk", "dep:tracing-perfetto-sdk"]
 hybrid = ["span-metrics", "binius64-bench", "dep:csv", "dep:clap"]
 parallel = ["dep:rayon"]
 unchecked = []

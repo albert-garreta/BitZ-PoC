@@ -21,10 +21,7 @@ use field::{CheckedArithmetic, IntegerEmbedding};
 use thiserror::Error;
 
 use {
-    crate::{
-        ligerito::LOG_PACKING,
-        pcs::{IntegerMatrixLayout, mod_q_num_chunks},
-    },
+    crate::{ligerito::LOG_PACKING, pcs::IntegerMatrixLayout},
     circuit::linear_map::binary::{
         PackedRepeatedVirtualMap, PackedSourceOrder, PackedSourceRepeatedVirtualMap,
         PreparedVirtualMap, PreparedVirtualMapError,
@@ -33,7 +30,7 @@ use {
 
 use super::super::{
     SpartanField, SpartanMatrixError,
-    bitz::SpartanBitzField,
+    u32_mul_relation::SpartanBitzField,
     profile::{IopSecurityParams, IopSecurityProfile, Lambda100, ProfileError},
 };
 use super::prime::{
@@ -109,10 +106,9 @@ pub enum Sha256ConstraintError {
     #[error("SHA-256 Ligerito target must be in [64, 128] bits, got {actual}")]
     UnsupportedLigeritoTargetBits { actual: usize },
 
-    /// The SHA virtual opening is deliberately configured to use one
-    /// mod-q weight chunk, hence one merged forest.
-    #[error("SHA-256 opening requires exactly one forest, got {actual}")]
-    UnsupportedOpeningForestCount { actual: usize },
+    /// The prime interval must fit the exact native exponent bound.
+    #[error("SHA-256 opening exceeds the BitZ exponent bound")]
+    UnsupportedOpeningBound,
 
     /// An explicit layout asked for a row split the assignment domain does
     /// not admit (`LOG_PACKING <= t < vars` for the inner sumcheck,
@@ -232,6 +228,12 @@ impl PreparedSha256CompressionBatch {
             )
             .map_err(Sha256ConstraintError::LigeritoConfig)?;
         self.security.adopt_ood_round(resolved.ood_bits())?;
+        let geometry = crate::bitz::grinding::Geometry::opening(
+            self.opening_params(),
+            &self.f_layout,
+            false,
+        );
+        self.security.adopt_native_opening(geometry)?;
         self.ligerito = Some(resolved);
         Ok(self)
     }
@@ -707,7 +709,6 @@ fn prepare_sha256_compression_instances(
                 IntegerMatrixLayout {
                     row_vars: t,
                     col_vars: assignment_vars - t,
-                    word_bits: 1,
                 }
             }),
             PackedSourceOrder::LocalMajor,
@@ -727,7 +728,6 @@ fn prepare_sha256_compression_instances(
                 Some(IntegerMatrixLayout {
                     row_vars: row_vars,
                     col_vars: assignment_vars - row_vars,
-                    word_bits: 1,
                 }),
                 PackedSourceOrder::InstanceMajor,
             )
@@ -743,7 +743,6 @@ fn prepare_sha256_compression_instances(
                 IntegerMatrixLayout {
                     row_vars: row_vars,
                     col_vars: assignment_vars - row_vars,
-                    word_bits: 1,
                 },
                 None,
                 PackedSourceOrder::LocalMajor,
@@ -763,7 +762,6 @@ fn prepare_sha256_compression_instances(
         product_p_h = Some(IntegerMatrixLayout {
             row_vars: t,
             col_vars: assignment_vars - t,
-            word_bits: 1,
         });
         if t > log_instance_capacity {
             product_order = PackedSourceOrder::InstanceMajor;
@@ -853,20 +851,27 @@ fn validate_prepared_protocol(
     } else {
         Sha256PrimeProfile::from_security(&prepared.security, prepared.log_instance_capacity)?;
     }
-    let max_q_bits =
-        u128::BITS as usize - prepared.security.projection_max.leading_zeros() as usize;
     let opening_params = prepared.product_p_h.as_ref().unwrap_or(&prepared.h_layout);
-    let forest_count = mod_q_num_chunks(opening_params, max_q_bits);
-    let single_forest_required = prepared.prime_profile.is_fixed()
-        || matches!(prepared.opening_layout, Sha256OpeningLayout::Default);
-    if single_forest_required && forest_count != 1 {
-        return Err(Sha256ConstraintError::UnsupportedOpeningForestCount {
-            actual: forest_count,
-        });
-    }
+    validate_opening_bound(opening_params, prepared.security.projection_max)?;
     let target = prepared.security.ligerito_target_bits;
     if !(64..=128).contains(&target) {
         return Err(Sha256ConstraintError::UnsupportedLigeritoTargetBits { actual: target });
+    }
+    Ok(())
+}
+
+pub(super) fn validate_opening_bound(
+    layout: &IntegerMatrixLayout,
+    modulus_bound: u128,
+) -> Result<(), Sha256ConstraintError> {
+    let shape = crate::bitz::Shape::new(layout.row_vars, layout.col_vars)
+        .map_err(|_| Sha256ConstraintError::InvalidBatchExponent)?;
+    // The inclusive interval endpoint can be even. Only odd primes are
+    // sampled, so check the largest admissible odd integer without changing
+    // the interval or its transcript binding.
+    let largest_odd = modulus_bound.saturating_sub(u128::from(modulus_bound & 1 == 0));
+    if !shape.supports_modulus_bound(largest_odd) {
+        return Err(Sha256ConstraintError::UnsupportedOpeningBound);
     }
     Ok(())
 }
@@ -901,7 +906,6 @@ pub(super) const fn balanced_binary_params(vars: usize) -> IntegerMatrixLayout {
     IntegerMatrixLayout {
         row_vars: t,
         col_vars: vars - t,
-        word_bits: 1,
     }
 }
 
@@ -918,7 +922,6 @@ const fn single_forest_binary_params(vars: usize) -> IntegerMatrixLayout {
         IntegerMatrixLayout {
             row_vars: 13,
             col_vars: vars - 13,
-            word_bits: 1,
         }
     }
 }
@@ -1156,7 +1159,6 @@ mod tests {
             IntegerMatrixLayout {
                 row_vars: 8,
                 col_vars: 8,
-                word_bits: 1
             }
         );
         assert_eq!(
@@ -1164,7 +1166,6 @@ mod tests {
             IntegerMatrixLayout {
                 row_vars: 9,
                 col_vars: 9,
-                word_bits: 1
             }
         );
     }
@@ -1311,7 +1312,6 @@ mod tests {
             IntegerMatrixLayout {
                 row_vars: 11,
                 col_vars: 10,
-                word_bits: 1,
             }
         );
         assert_eq!(
@@ -1334,23 +1334,20 @@ mod tests {
     }
 
     #[test]
-    fn production_assignment_geometry_uses_one_forest() {
+    fn production_assignment_geometry_fits_native_bound() {
         for exponent in 7..=SHA256_MAX_LOG_COMPRESSIONS {
             let prepared = prepare_sha256_compression_batch(exponent).unwrap();
-            let max_q_bits =
-                u128::BITS as usize - prepared.security().projection_max.leading_zeros() as usize;
-            assert_eq!(
-                mod_q_num_chunks(prepared.assignment_params(), max_q_bits),
-                1,
-                "log-compressions={exponent}"
-            );
+            validate_opening_bound(
+                prepared.assignment_params(),
+                prepared.security().projection_max,
+            )
+            .unwrap();
             if exponent >= 10 {
                 assert_eq!(
                     *prepared.assignment_params(),
                     IntegerMatrixLayout {
                         row_vars: 13,
                         col_vars: exponent + 2,
-                        word_bits: 1,
                     },
                     "log-compressions={exponent}"
                 );
@@ -1406,18 +1403,15 @@ mod tests {
 
     #[cfg(feature = "bench-internals")]
     #[test]
-    fn fixed_98_sweep_preserves_geometry_and_single_forest_bound() {
+    fn fixed_98_sweep_preserves_geometry_and_native_bound() {
         for t in 7..=28 {
             let prepared = prepare_sha256_compression_batch_for_product_t_fixed98(14, t).unwrap();
             let params = prepared.product_assignment_params().unwrap();
-            assert_eq!(
-                (params.row_vars, params.col_vars, params.word_bits),
-                (t, 29 - t, 1)
-            );
+            assert_eq!((params.row_vars, params.col_vars), (t, 29 - t));
             assert_eq!(prepared.instances(), 1 << 14);
             assert_eq!(prepared.security().projection_min, SHA256_FIXED_98_PRIME);
             assert!(prepared.prime_profile().is_fixed());
-            assert_eq!(mod_q_num_chunks(params, 98), 1);
+            validate_opening_bound(params, SHA256_FIXED_98_PRIME).unwrap();
             assert_eq!(
                 prepared.product_map().unwrap().order(),
                 if t <= 14 {

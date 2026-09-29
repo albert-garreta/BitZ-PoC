@@ -22,7 +22,6 @@ use ::bitz::piop::spartan::protocol;
 use ::bitz::piop::spartan::protocol::PreparedRelation;
 use bitz::piop::spartan::mul::{MulLayout, MulWitness};
 
-use blake3::Hasher;
 use bitz::piop::spartan::multiswap::{
     MultiswapAssignment, MultiswapCircuit, MultiswapDims, PreparedMultiswapRelation,
     commit_multiswap_witness, multiswap_lig_configs, prove_multiswap_mod_r1cs,
@@ -38,145 +37,139 @@ use bitz::piop::spartan::{
     verify_sha256_chain, verify_sha256_compressions,
 };
 use bitz::transcript::Blake3Transcript;
+use blake3::Hasher;
 
 /// `(name, prover transcript state, verifier transcript state, serialized
 /// proof parts)`. The two states differ by design: flock's Ligerito prover
 /// and verifier end in different transcript states after the last level, so
 /// both are pinned.
+// BitZ-only native layouts and challenge schedules; concrete versioned codecs.
 const PINS: &[(&str, &str, &str, &str)] = &[
-    // Recorded after the BitZ hashing-domain and proof-codec namespace migration.
-    // Spartan domains use v2; hybrid wire encoding uses version 6.
     (
         "baby_bear/2p15/lambda100",
-        "eb77e02494e687a921603fab5a7b789cec3d27e77ad41462940c66ea76062b83",
-        "2aaac0fd78dc910164af92ea073a5453dd57236ff9a5b77c6411f881745ca44d",
-        "33a97048356b304e28fddde2665022693d7a43fb181530acd1f41253ffe78050",
+        "3d1d0aee99c441685e29a0526691e9960d2203ae350afbafe5aa7ce97265894a",
+        "3d1d0aee99c441685e29a0526691e9960d2203ae350afbafe5aa7ce97265894a",
+        "f555832b0bd46257ca4f8485948e0ec6e321606e7e7136ddf7fb73d6c566019f",
     ),
     (
         "baby_bear/2p15/lambda128",
-        "272df05ae695d3576ac071629608d5904cdd3830e00f65150d32b50d9ed86c50",
-        "1fed2c175959adeb6aee2e96f305f07fe42b6d8b42f752f2177b30cc1229c445",
-        "7230969be62c9e19852fbee2e92554a301f01abfbad12ce1131f8bde8519fd4b",
+        "7ddbda115406c4af36aa1ba8e80c3a26423a89f4ba17edb32f1c62c4c27da801",
+        "7ddbda115406c4af36aa1ba8e80c3a26423a89f4ba17edb32f1c62c4c27da801",
+        "a01e0a915eb271fe03956c330580e184394717821fa940313e1bec0c33778f5b",
     ),
     (
         "cm_and/2p15/lambda100",
-        "8f10a23d4a65c486cf0d2e4b85d9649b8219a307d950009a29580039235d5270",
-        "72878cfd1a95fbea684a3899ed26096157627a30656705bcfb95afdbfc121263",
-        "9fb2f8e26c166806832bca165585c3ab1e723f00499e6a19342c5d4df3df48cb",
-    ),
-    (
-        "multiswap/mini/limber114",
-        "f31653acaa7adc17f289cb7d47eda8201b583183868241a66511097a5b34e364",
-        "7c6bfbc5e95af60d7419425613ee8fd8dfebc1873e38b689eeb39d59b80df4fe",
-        "c4c8e5970bfda242807c072eb9a4aa8d22fb65aeabe184ff242e83889d2f1b1c",
-    ),
-    (
-        "sha256_chain/2p7/lambda100",
-        "0b2b7998f47c02cb70aca8fd7561c8a1ad6e8142f5f6029355cf2760a3732cad",
-        "9b33b7404442b04f65fb830ffd1aa8c4c4b75f5aabb4b0798e64c3355c667663",
-        "ba1819388576efff8efed3bfeb7db37e2e1de4adc9d6dd52ac0d264ee3ba40f2",
-    ),
-    (
-        "sha256_chain/2p7/lambda128",
-        "70578a67e25ae159b741729147dca146b5feaf44fc699609fd8f5117775d1836",
-        "7ba565d08a4787eaf98d83188f5dabac9c1a330b09aaee8e51dba26c21e3f1bb",
-        "774c5232e32bfd4333794940d4c69724bb3eb5b7f3f2af5520ef9d12f68fe24f",
-    ),
-    (
-        "sha256/2p7/lambda100",
-        "ac6d91d9b9d51cb88a5f1cb5b67a49cdb833ff4bfb03a292a4f3aa04e2fecf0b",
-        "c4304ceb0e63926ca5bbe653a11e6b354a53b418fe4f2047325910c04a6c471c",
-        "c94b8d886b48b0911b8071544a666b22e4d70bc828d8745f809b1f5332d0da1a",
-    ),
-    (
-        "sha256/2p7/lambda128",
-        "f533399b44008c8bee8881ff8851606db05b978c1bad2ddc4b78445982d47b58",
-        "d3ab988fb7af81cf7fa36582ce8034b108959ba5cb1b8e9c0096df13f66a631c",
-        "a271b8e240a4074e75b549c50ac1cecf3594b62390c7f6a2c372357b6ac4284b",
-    ),
-    (
-        "sha256/2p7/reference",
-        "ec2ce1b805bf904768c5fd2723aaa6df6bde77011a8d7b01fec5644fee4165e0",
-        "8cf91a240b3a77f228c4c0ce554c5b98ef7cf48bfb0e1c15b9eb0344aadbbb7e",
-        "2b7f570b24c15b66b45fd2bda9d0042a7a6dfaa681f01d36f36fc3a2a1b6cf6a",
-    ),
-    (
-        "sha256/legacy-rows21/lambda100",
-        "5af2461d489e30d47fd8fca2d39f575bc24344beaa3c328caf669c566bde31a5",
-        "ffc13f7fb113859bf5a4770af582a2e8febc822e764ac5c70674025ea49108e4",
-        "e1a03bcdf965fc0cda54763fc13e2143ad68812be0af52228d295de6d5845deb",
-    ),
-    (
-        "u128_mul/2p15/lambda100",
-        "96dff9b7d608b46a384222ae6cf1b3a16dffde7e8b13c0c0807539ce6d176e35",
-        "bb5adbe923e20a2d2c5075c452cf223fd090e6c84565cd6a82c078ee177aeeb2",
-        "4f846f9e12e975c2655d8b33d8749840178987ed1c766b6af9534b0e5ce23b06",
-    ),
-    (
-        "u32_mul/2p15/w1/lambda100",
-        "5046c5c2b0608a6befd13a40e0efcccb91e1915c582da3e9ca5e47a6894eef4e",
-        "c20a35085e3450006528c4cd3fc8dc95246c9923ca5cd505168ab5490e1c9322",
-        "30e9fe6fe902c62f699a913196400d8c56c06531b310f215c870c7488a90c6d5",
-    ),
-    (
-        "u32_mul/2p15/w1/lambda128",
-        "d0285a82cca8f45c3b6634c1a02fdf64e28cb9b5d881c0aaaa46c93b19958716",
-        "462d3ea2e828dea1b266773349e7b9833411ee1eb73b3a3b8497c20199351da6",
-        "d36f6ccbaa9e7b3ab595676d76c24f842164909e5fc240b9631f66c88baf2400",
-    ),
-    (
-        "u32_mul/2p15/w8/lambda100",
-        "7d30f24ec6fe86ad0226f751a56f1bfddc62c4604d1746bf629b3fb1453a2910",
-        "b3685058d4f90ce376ed7111f7fc94463af8f536a28c79bfe9bb0287bc41bd67",
-        "544c084b9fb6cf2a3aa28819a5b1f3cf961649f4e506c525f6efb3142a6c05b0",
-    ),
-    (
-        "u64_mul/2p15/lambda100",
-        "4d2fa9c0cf0ae4d1783f7164a4081c4bb086fc9181e95a942ca67d3fc92f4e64",
-        "7c63d15df4118bfceca698358bf386f485fb35be3462e2e7d6f78f20b839c70d",
-        "7df89f1280105dc71d4c824d40c44b6aa18391e243391c5620f884e1bc5022f7",
-    ),
-    (
-        "u64_mul/2p15/shift+1/lambda100",
-        "9faf268d12f2ad1d5ff77e9bf24109238442e580d5cd4177f432fe220f5d98fa",
-        "2aac021bc68f13ac60e60dba0b9fca2e545d636219c06e764036948257654a3f",
-        "23ca403d4488679848b6f1cd1849a0ed276865f601db99fb52f4fa5da35b84d2",
-    ),
-    (
-        "sha256_ecdsa/2p3/allrows/lambda100",
-        "78b0b01605b58d7a1235dc1216a140a464bd6728edffee603251b5ea32970c5d",
-        "78b0b01605b58d7a1235dc1216a140a464bd6728edffee603251b5ea32970c5d",
-        "b0c209e2c4aa6f7d86915372efeff9d04e551d5783f216bf1e777d9325c57fba",
-    ),
-    (
-        "sha256_ecdsa/2p3/allrows/lambda128",
-        "46d72414ae99fb288b20084759e0ff1cb7e9b881c48d15ac7f611d476a1c5c0c",
-        "46d72414ae99fb288b20084759e0ff1cb7e9b881c48d15ac7f611d476a1c5c0c",
-        "3fc21ed3d18d036466255cdbb8e768ccd419d944312baa2869ae06762ad235d7",
-    ),
-    (
-        "sha256_ecdsa/2p3/split/lambda100",
-        "fcc100b4ce3d3e8ffd5ef75efacc12ec9f68c8465a5e231c9d4c61c495d33d2c",
-        "fcc100b4ce3d3e8ffd5ef75efacc12ec9f68c8465a5e231c9d4c61c495d33d2c",
-        "3c98bbe731afd0fe053fef8a17dab690e7fb00f52fe7f883cb8749635f7dc8f8",
-    ),
-    (
-        "sha256_ecdsa/2p3/split/lambda128",
-        "15c0fb99ac07d68ddd4845f5dd714816400a831471d8c0261d5fad944ea88874",
-        "15c0fb99ac07d68ddd4845f5dd714816400a831471d8c0261d5fad944ea88874",
-        "385d46f3a6fd6ef04cbcf7a464cd84556a3553e58099e8e9268173b2119c4957",
-    ),
-    (
-        "sha256/fixed98-t13/2p14",
-        "b287d3697862faff80a574f1b21a169721328e3c562f0f7acd08260407d6453d",
-        "c2f49c0f733f29366c3a29726ee04b12af341cbeca5fc258697adef5f902a852",
-        "21d419e52943caaa0f8836f11ed21436b00c9a8757a271d45d2058dbaf9792f0",
+        "f3cae00da0325f99ab00734692be841ddd93f7020e247a527893259a3a198f34",
+        "f3cae00da0325f99ab00734692be841ddd93f7020e247a527893259a3a198f34",
+        "ce8d9bf6552f077fafbd9faad8d16848d3e4d084f690939276ea3abe9ee0e5af",
     ),
     (
         "hybrid/2p13x16/johnson",
         "-",
         "-",
-        "0aefced198a8a264bd50025dbef5696fa7a37fae02412de84a57120a317903ba",
+        "cea14db6c452edeef7675cf2331f11231b40702f65d3f4e36b434995d6c59bb9",
+    ),
+    (
+        "multiswap/mini/limber114",
+        "222c1709920b93191d1c8a32ff9090d4a3969e9c3221f610e1dc68250bed2cdf",
+        "222c1709920b93191d1c8a32ff9090d4a3969e9c3221f610e1dc68250bed2cdf",
+        "95c9805ae2279b7ad66a74b6dc2e52ba30fff2818933a4583b9b13fc4bdd2f79",
+    ),
+    (
+        "sha256/2p7/lambda100",
+        "af3344c170275f485fcbd389ee21d16a183e1052e7e5bee8949e7cb31f2edd65",
+        "af3344c170275f485fcbd389ee21d16a183e1052e7e5bee8949e7cb31f2edd65",
+        "c55ee9da0a9f499de08209333f669380f3ddffe0a4880fae19a0130513d158e3",
+    ),
+    (
+        "sha256/2p7/lambda128",
+        "42b844f34615edc18ce7ee8538eb22bfeaadef0b3e0ea171239c7257d6d1c674",
+        "42b844f34615edc18ce7ee8538eb22bfeaadef0b3e0ea171239c7257d6d1c674",
+        "dc4067d0985e602091b8e4ffb599d3d7e49736f2805aac4ed5854c1889c58279",
+    ),
+    (
+        "sha256/2p7/reference",
+        "008fbac72cbdce8c16b29b018ba1046168d830222fa055e8d7cacc6426c354ac",
+        "008fbac72cbdce8c16b29b018ba1046168d830222fa055e8d7cacc6426c354ac",
+        "78bbaf9b5f391c6019cc73bee11d70957c5ec55f5b6a0228d0795a694d7a5658",
+    ),
+    (
+        "sha256_chain/2p7/lambda100",
+        "56d2484895a33caa0e6741b60c22198eba0cd8de1b84cb8f9abe47603de3cc32",
+        "56d2484895a33caa0e6741b60c22198eba0cd8de1b84cb8f9abe47603de3cc32",
+        "b505a2e601d683c8921149d5c4d7423d8673b84d28e384d69a4ca67ee7e9926d",
+    ),
+    (
+        "sha256_chain/2p7/lambda128",
+        "26f9af15b1361b48b5c0ff9c491f587a0653faf461ef34fb9d4ee7d363c874c3",
+        "26f9af15b1361b48b5c0ff9c491f587a0653faf461ef34fb9d4ee7d363c874c3",
+        "969eb42e0f6afd72fc2b61ee697685029d2f9f5739311d7691ec08ece73d8592",
+    ),
+    (
+        "sha256_ecdsa/2p3/allrows/lambda100",
+        "beb0c077ac922ff673bec472749762712b13129b83fca4c2e3b81cd22983af38",
+        "beb0c077ac922ff673bec472749762712b13129b83fca4c2e3b81cd22983af38",
+        "3124213e203b7a23d1c24d9c878c8b6b3d5df1cd97620cba1abf28e7836f1cb3",
+    ),
+    (
+        "sha256_ecdsa/2p3/allrows/lambda128",
+        "e3f7c83d3d45332ea0a74fda1c04b06f4b825fc3a591190e64b9fc0923a821c4",
+        "e3f7c83d3d45332ea0a74fda1c04b06f4b825fc3a591190e64b9fc0923a821c4",
+        "e5ae77e68634e15f38777290204f2f0db1e8606b6e3a10fee9af27cb6462ebe2",
+    ),
+    (
+        "sha256_ecdsa/2p3/split/lambda100",
+        "811ba91713e8757e76ea4e057cf259d24c7ca156b4cd8d1bd6c5a225855dc994",
+        "811ba91713e8757e76ea4e057cf259d24c7ca156b4cd8d1bd6c5a225855dc994",
+        "65dedb1e368653eda27346a0565c06cfaf9d1868e097954ff4383881cabac302",
+    ),
+    (
+        "sha256_ecdsa/2p3/split/lambda128",
+        "e738e798162fec7e4d5f422404c33f117e1b2ec877e06debfbada9e732a099bd",
+        "e738e798162fec7e4d5f422404c33f117e1b2ec877e06debfbada9e732a099bd",
+        "afa4a24fbd2d948192064d6cc07c18fd06e1e880365a360af85324977dacdb79",
+    ),
+    (
+        "sha256/fixed98-t13/2p14",
+        "00705725b4771c66a0a8b2a7e7ddb4ecea7873744f42978ddb2637458e06554f",
+        "00705725b4771c66a0a8b2a7e7ddb4ecea7873744f42978ddb2637458e06554f",
+        "d03541474aa8d6c2b2448861df80d7799f045c0272dd2165a2c1076b79193d46",
+    ),
+    (
+        "sha256/legacy-rows21/lambda100",
+        "9de471457f342e9cb7a49401a0d86a681b2cde8cab003030df0945cef056ac5a",
+        "9de471457f342e9cb7a49401a0d86a681b2cde8cab003030df0945cef056ac5a",
+        "1782c4b68a72a8964e12c2f0399e7360c32e4e3a2e998a9925674c47d8182892",
+    ),
+    (
+        "u128_mul/2p15/lambda100",
+        "8ebfd7dcd457cd467176d6ba75599f5792cdd04a9ea1d308a48a06dd001329a2",
+        "8ebfd7dcd457cd467176d6ba75599f5792cdd04a9ea1d308a48a06dd001329a2",
+        "8e5bd8146365d07e3cd708455cb20ca716ff553b02942c2b2920468183b7b4db",
+    ),
+    (
+        "u32_mul/2p15/w1/lambda100",
+        "e8c37516ac423df44d1b216b47436e91bd46ecddea6a68eb2ea3783b06db52ad",
+        "e8c37516ac423df44d1b216b47436e91bd46ecddea6a68eb2ea3783b06db52ad",
+        "cee1b73dabd12bd9ad7e67b6e18d63b700897289a28df47a218c7800b5ef895b",
+    ),
+    (
+        "u32_mul/2p15/w1/lambda128",
+        "4f3b09248f04c5272f189073ed7615fea9243ec8c68cf7645b06ca5978599d7c",
+        "4f3b09248f04c5272f189073ed7615fea9243ec8c68cf7645b06ca5978599d7c",
+        "ff41236862bbcb4535e3367804164fb02c45a85163e7c296070526fb30b2ff80",
+    ),
+    (
+        "u64_mul/2p15/lambda100",
+        "379cafdd264cba81ede61010f9218ec94dbfb877c5a4c971c88cab9f261b7152",
+        "379cafdd264cba81ede61010f9218ec94dbfb877c5a4c971c88cab9f261b7152",
+        "05bbc11be9838bcea404b02b2860b5c2686d2c465f8aaa5995f5f4c530cc7ac1",
+    ),
+    (
+        "u64_mul/2p15/shift+1/lambda100",
+        "13d5b56720c9c9dccbe1c448551532ad8b0e9430b48ec56160b038c9b7439922",
+        "13d5b56720c9c9dccbe1c448551532ad8b0e9430b48ec56160b038c9b7439922",
+        "6146da9a5290c531c8309809cedbb54ac56e0917b980bac97540eb6f7251fda8",
     ),
 ];
 
@@ -237,8 +230,8 @@ fn nonces_le(nonces: impl IntoIterator<Item = u64>) -> Vec<u8> {
 
 // ---------------------------------------------------------------- u32 mul
 
-fn u32_witness(width: usize) -> MulWitness<u32> {
-    MulWitness::<u32>::from_fn_with_word_bits(1usize << 15, width, |i| {
+fn u32_witness() -> MulWitness<u32> {
+    MulWitness::<u32>::from_fn(1usize << 15, |i| {
         let x = (i as u32).wrapping_mul(0x9e37_79b9) | 1;
         let y = (i as u32).wrapping_mul(0x85eb_ca6b) | 1;
         (x, y)
@@ -246,8 +239,8 @@ fn u32_witness(width: usize) -> MulWitness<u32> {
     .expect("witness")
 }
 
-fn u32_pin<P: IopSecurityProfile>(name: &str, width: usize) {
-    let witness = u32_witness(width);
+fn u32_pin<P: IopSecurityProfile>(name: &str) {
+    let witness = u32_witness();
     let prepared = PreparedRelation::<MulLayout<u32>>::new_with_profile::<P>(*witness.layout())
         .expect("prepare");
     let hint = protocol::commit(&prepared, witness.bitz_bit_rows()).expect("commit");
@@ -263,17 +256,12 @@ fn u32_pin<P: IopSecurityProfile>(name: &str, width: usize) {
 
 #[test]
 fn u32_mul_2p15_w1_lambda100() {
-    u32_pin::<Lambda100>("u32_mul/2p15/w1/lambda100", 1);
-}
-
-#[test]
-fn u32_mul_2p15_w8_lambda100() {
-    u32_pin::<Lambda100>("u32_mul/2p15/w8/lambda100", 8);
+    u32_pin::<Lambda100>("u32_mul/2p15/w1/lambda100");
 }
 
 #[test]
 fn u32_mul_2p15_w1_lambda128() {
-    u32_pin::<Lambda128>("u32_mul/2p15/w1/lambda128", 1);
+    u32_pin::<Lambda128>("u32_mul/2p15/w1/lambda128");
 }
 
 // ---------------------------------------------------------------- u64 mul
@@ -384,8 +372,9 @@ fn multiswap_mini_limber114() {
     let mut vt = Blake3Transcript::new();
     verify_multiswap_mod_r1cs(&mut vt, &prepared, &hint.commitment, &proof, &vc).expect("verify");
     let bitz_bytes = proof.bitz().to_bytes();
-    let mu_prime =
-        bitz::piop::spartan::multiswap::reduce::encode_integer_lift(proof.mu_prime().expect("lift"));
+    let mu_prime = bitz::piop::spartan::multiswap::reduce::encode_integer_lift(
+        proof.mu_prime().expect("lift"),
+    );
     let nonce = proof.reduction_nonce().expect("nonce").to_le_bytes();
     pin(
         "multiswap/mini/limber114",

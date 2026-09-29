@@ -115,106 +115,37 @@ For the vendor normalization change, only compile checks are performed. Use
 and affected tests without running them. Tables default to `outputs/tables/`
 and figures to `outputs/figures/`; no root `paper/` directory is needed.
 
-## Opt-in Perfetto interval capture
+## Optional Perfetto export
 
-Native multiplication records per-trial phase totals in `samples.jsonl`; see
-[the multiplication interface](native-mul-compare.md). For native SHA comparison,
-`bench-perfetto` also saves diagnostic `.pftrace` files beside the normal
-artifacts (or beside a custom trace path). Open them locally in
-<https://ui.perfetto.dev>.
-
-`src/observability.rs` configures `tracing-perfetto-sdk` with an in-process
-Perfetto session. It composes with the existing subscriber; it does not install
-another global subscriber, launch a tracing service, parse JSON logs, or measure
-time itself. The native SDK owns clocks, per-thread intervals and buffering.
-Library builds without `span-metrics` do not compile or initialize Perfetto.
-Native comparison features enable it for numeric metrics; `bench-perfetto` adds
-saved diagnostic files. The optional native SDK
-requires a C++ toolchain; the implementation was checked on macOS ARM64.
-
-The integration is deliberately small:
+Numeric measurements use the Rust collector described in [span measurements](span-metrics.md).
+`span-metrics` enables that collector without the native SDK. `bench-perfetto`
+adds the optional SDK and C++ build requirement; it does not change the numeric source.
+Native SHA comparison can save diagnostic `.pftrace` files beside its usual
+artifacts. Open them locally in <https://ui.perfetto.dev>.
 
 ```rust,ignore
-let recording = Recording::start(output.buffered("trial.pftrace", FileMode::CreateNew)?)?;
+use bitz::observability::perfetto::TraceRecording;
+let export = TraceRecording::start(output.buffered("trial.pftrace", FileMode::CreateNew)?)?;
 let proof = tracing::info_span!("opening_proof", component = "pcs.opening")
     .in_scope(|| open(&prepared, &commitment))?;
-recording.finish()?; // Outside the timed region; propagates write/flush errors.
+export.finish()?; // Outside the measured work; propagates write/flush errors.
 ```
 
-Close every entered span and join worker tasks before `finish`. Fields should be
-present before entry; a later `record` is reflected on subsequent entries, not
-retroactively on the interval already emitted. Use `.in_scope` for synchronous
-work and `.instrument` for futures, never an entered guard across `.await`.
-Intervals describe entered wall time, not CPU time or entire async lifetimes.
-
-Each session has a 64 MiB discard-on-full buffer. Flush success does not prove
-that the trace fits that buffer. Before using a trace for analysis, check for
-incomplete slices and nonzero error/data-loss statistics in the native processor:
+Install the span layer once at the executable boundary. The native SDK initializes
+only when an export starts. Close entered spans and join workers before finishing.
+Dropping an unfinished export does not publish a complete trace. The native
+export buffer is 64 MiB and can lose events when full, so use bounded trials and
+check exported traces for incomplete slices before interpreting them. Numeric
+collector overflow is independently detected and returned as an error.
 
 ```sh
-trace_processor_shell trial.pftrace -Q 'SELECT name, ts, dur FROM slice'
-trace_processor_shell trial.pftrace -Q 'SELECT * FROM slice WHERE dur < 0'
-trace_processor_shell trial.pftrace -Q "SELECT * FROM stats WHERE value != 0 AND severity IN ('error', 'data_loss')"
-```
-
-The first query emits CSV with integer nanoseconds. It can be launched from Rust
-with `std::process::Command` and read with `csv::Reader`; Python is not required.
-Do not sum nested or parallel slice durations to obtain wall time. Group by trial,
-exclude warmups, and union the selected intervals before aggregating across trials.
-
-The diagnostic integration has these remaining limitations:
-
-- BitZ's metrics and the setup/campaign timers remain on their legacy timing
-  paths. Binius64, Binius64-Ligerito, Plonky3 and Limber now query bounded
-  in-memory recordings for their native multiplication/SHA JSON/CSV metrics. Capture
-  changes overhead; do not compare timings across the migration as a speedup.
-- Only existing `tracing` instrumentation is exported. BitZ's `prof::scope` and
-  manual phase timers are not translated into synthetic spans.
-- `benchmark_trial` is an orchestration envelope, not `witness_to_proof_ms`.
-  Multiplication includes verification and metric extraction; SHA also includes
-  its canonical trace reporting. No semantic end-to-end tag is assigned to it.
-- Diagnostic files for tuning/pilot, memory-only subprocess, and preflight runs
-  are not enabled. Native preflight and WHIR candidates query in-memory recordings.
-  The executable test proves a completed inner session can be queried while an
-  outer recording remains open, but spawning the native processor per candidate
-  has overhead. WHIR objectives use these completed trial measurements; its
-  campaign-wide `tuning_ms` timer has not yet been migrated.
-- Dropping a recording without `finish` does not publish a complete trace. An
-  interrupted/panicking run may leave its reserved output file empty; do not
-  include it in analysis.
-
-The initial `tracing-profile` candidate was not selected: version 0.10.11 consumes
-span metadata on first entry, cannot re-enter that span, and owns output files and
-drop-time completion without our required writer/error interface. The selected
-SDK adapter supports repeat/parallel entry and explicit session completion.
-
-```sh
+cargo test --test benchmark_spans --features span-metrics
 cargo test --test benchmark_perfetto --features bench-perfetto
-PERFETTO_TRACE_PROCESSOR=/path/to/native/trace_processor_shell \
-  cargo test --test benchmark_perfetto --features bench-perfetto -- --include-ignored
 ```
 
-The native-processor test is explicitly ignored unless requested because it needs
-the separately installed executable. It covers nesting, same-span re-entry across
-threads, an unentered span, error returns, field updates before re-entry, trial and
-warmup identity, interval union, missing/data-loss checks, and nested tuning
-sessions. The ordinary tests cover protobuf output, repeated sessions, create-new
-collisions, and injected write/flush failures.
-
-Validated with SDK 1.1.1, adapter 1.0.0 and native trace processor 58.2 on macOS
-ARM64. A bounded native-multiplication run used 16 operations, two threads, and
-one warmup plus five samples for each of Binius64 and Plonky3 FRI. All 12 proofs
-verified; all 12 traces loaded with no incomplete slices or error/data-loss
-statistics (1,923 slices per Binius trace; 532 per Plonky3 trace). This was a
-correctness smoke, not an overhead or performance comparison. SHA was compile-
-checked with and without the feature, not runtime-tested. Linux execution and
-Clippy remain unchecked; Clippy is not installed in the pinned 1.98.1 toolchain.
-
-The separate profiler-skill JSONL validator rejects the unchanged native-mul
-`trial: {kind, index}` representation: it expects `warmup_index`/`sample_index`.
-That existing compatibility mismatch was not repaired in this integration; it
-does not affect the native Perfetto checks above. Do not treat the legacy JSONL
-as validated against that stricter schema.
+Both suites run without an external trace processor. The first checks numeric
+collection and queries; the second checks protobuf export, output creation policy,
+and propagated write/flush errors.
 
 ## Binius64-Ligerito phase migration
 
@@ -293,73 +224,32 @@ readiness to verification entry.
 Each scope uses its own measured endpoints, including witness and verification.
 The new annotations can introduce gaps between nested scope endpoints; those
 gaps remain in their enclosing totals, not in the child-operation durations.
-The verified-trial span is the explicit Perfetto end-to-end boundary, inside the
+The verified-trial span is the explicit span end-to-end boundary, inside the
 larger `benchmark_trial` orchestration span.
 
-### Perfetto-backed numeric metrics
+### In-process numeric metrics
 
-The shared `bitz::observability` module owns recording and native queries. All
-Binius64, Binius64-Ligerito, Plonky3 and Limber native multiplication/SHA runners
-use it, without `TraceCapture` or `CaptureLayer`. `trace_capture.rs` now contains
-only reporting projections over native intervals; no timestamps, mutexes,
-subscriber callbacks or collector state remain there. BitZ is still awaiting migration.
+The shared `bitz::observability` module owns the span collector and interval queries.
+BitZ, Binius64, Binius64-Ligerito, Plonky3 and Limber adapters all use it.
+`trace_capture.rs` contains reporting projections only.
 
 ```rust,ignore
-let recording = bitz::observability::Recording::start(Vec::new())?;
+let recording = bitz::observability::Recording::start()?;
 let result = tracing::info_span!("operation", component = "example.operation")
     .in_scope(|| operation())?;
 let intervals = recording.intervals()?;
+let elapsed = bitz::observability::duration(&intervals, "example.operation")?;
 ```
 
-Install the layer once at the executable boundary, composing it with any other
-subscriber layers. Every entered scope must exit before querying. Each interval
-contains its unique slice ID, same-track parent, track ID, name, optional
-component, and exact nanosecond endpoints relative to the recording's first
-slice. Repeated entries remain separate intervals. Existing reporting projections
-still compute overlap-safe unions and preserve numeric/CSV output contracts.
+Every entered scope must exit before querying. Intervals contain unique entry
+IDs, same-thread execution parents, track IDs, names, optional components, and
+integer nanosecond endpoints. Repeated entries remain separate. Reports union
+overlapping intervals of the same label across threads rather than double counting.
+Collection, accuracy limits, and explicit failure behavior are specified in
+[span measurements](span-metrics.md).
 
-Set `PERFETTO_TRACE_PROCESSOR` to the installed native `trace_processor_shell`
-executable, or put it on PATH. No download or Python wrapper is launched. The
-Rust query interface pipes in-memory trace bytes through `/dev/stdin` on macOS
-and Linux; other platforms return an explicit unsupported error. Missing
-executables, query failures, incomplete slices, error/data-loss statistics,
-malformed records and empty captures are errors, never zero timings or a
-fallback to another collector. The native CLI's string quoting is normalized in
-the SQL projection before standard CSV and typed JSON decoding.
-
-Querying takes place after the measured scopes close, including after each
-completed candidate in the nested-session integration test. It adds orchestration
-latency, not operation duration. Native WHIR tuning receives each completed
-trial's objective immediately, while campaign-level timers still await migration.
-`bench-perfetto` can still save an outer diagnostic recording through the shared
-writer. The multiplication memory-only child runs the same proof/verification
-body without installing Perfetto or allocating a recording buffer; no timing
-metrics are needed in that RSS-only pass. This applies to every migrated native
-multiplication adapter, including Plonky3 and Limber.
-
-```sh
-PERFETTO_TRACE_PROCESSOR=/path/to/native/trace_processor_shell \
-  cargo test --test benchmark_perfetto --features bench-perfetto -- --include-ignored --test-threads=1
-PERFETTO_TRACE_PROCESSOR=/path/to/native/trace_processor_shell RAYON_NUM_THREADS=2 \
-  cargo test --features bench-internals,native-mul-compare,native-sha256-compare \
-  --test native_mul_compare --test native_sha256_compare \
-  span_metrics_cover_repeated_verified -- --include-ignored --test-threads=1
-```
-
-The native query suite passes all seven tests on macOS ARM64 with processor
-58.2, including malformed/empty/incomplete captures, exact integers and string
-escaping, same-span parallel/repeated entry, and querying an inner candidate
-while an outer session is open. Both Binius64-Ligerito smoke tests pass without
-the custom layer (one warmup plus five samples each). The full SHA suite passes
-27 tests; multiplication passes 41 of 42, with the same pre-existing security
-configuration failure described above. The memory-only path also verifies with
-`NoSubscriber`. Linux runtime and Windows support remain unchecked; no overhead
-or performance claim follows from these correctness checks.
-
-The subsequent native-adapter migration passes six real trials for each of
-Binius64, Plonky3-FRI, Plonky3-WHIR and Limber multiplication, and for Binius64,
-Plonky3-WHIR and Limber SHA. The SHA fixture uses 128 compressions for WHIR's
-padding floor and two for the other adapters. The corrected smoke passes, as
-do the other 27 SHA tests; multiplication passes 42 of 43 with the unchanged
-configuration assertion above. Native comparison targets also compile with
-`bench-perfetto`. These are debug correctness checks, not performance results.
+Queries run after the measured work and can complete inside an outer recording,
+as needed for tuning candidates. No subprocess is launched. Multiplication's
+memory-only child runs the same proof/verification body without a timing collector.
+New SHA/ECDSA and SHA-chain rows identify `timing: "spans"`; multiplication records
+it in provenance. Historical result files keep their original measurement labels.

@@ -246,6 +246,7 @@ struct Args {
     cargo: cli::CargoArgs,
     #[arg(long, default_value = "hybrid", requires_if("all", "sweep"), value_parser = ["hybrid", "separate", "all-binius", "binius-ligerito", "all"])]
     mode: String,
+
     #[arg(long, env = "BITZ_LIG_PROFILE")]
     profile: Option<String>,
     #[arg(long, value_parser = clap::value_parser!(u32).range(9..=22))]
@@ -358,12 +359,12 @@ pub fn run() -> Result<(), AnyError> {
         .map(|i| std::array::from_fn(|j| i.wrapping_mul(0x85ebca6b).wrapping_add(j as u32)))
         .collect();
     eprintln!(
-        "mode={mode} multiplication_relation=u32_mod_2_32 multiplications={} chained_compressions={} merkle=blake3 non_zk=true threads={}",
+        "mode={mode} mul_opener=bitz multiplication_relation=u32_mod_2_32 multiplications={} chained_compressions={} merkle=blake3 non_zk=true threads={}",
         parameters.multiplications,
         parameters.sha_compressions,
         binius_utils::rayon::current_num_threads()
     );
-    let setup_recording = Recording::start(Vec::new())?;
+    let setup_recording = Recording::start()?;
     let setup = tracing::info_span!("benchmark:setup").entered();
     if mode == "hybrid" {
 
@@ -405,7 +406,7 @@ pub fn run() -> Result<(), AnyError> {
         csv.write_record(HybridRow::HEADER)?;
         csv.flush()?;
         for iteration in 0..=iterations {
-            let recording = Recording::start(Vec::new())?;
+            let recording = Recording::start()?;
             let start = tracing::info_span!("benchmark:proving").entered();
             let witness_commit = tracing::info_span!("benchmark:witness_commit").entered();
             let witness = tracing::info_span!("benchmark:witness").entered();
@@ -538,7 +539,7 @@ pub fn run() -> Result<(), AnyError> {
         csv.write_record(NativeRow::header(&mode))?;
         csv.flush()?;
         for iteration in 0..=iterations {
-            let recording = Recording::start(Vec::new())?;
+            let recording = Recording::start()?;
             let start = tracing::info_span!("benchmark:proving").entered();
             let witness_scope = tracing::info_span!("benchmark:witness").entered();
             let rows: Vec<_> = inputs
@@ -570,7 +571,7 @@ pub fn run() -> Result<(), AnyError> {
                     + proof.bitz().to_bytes().len()
                     + proof.spartan_payload_elements() * 16
                     + (proof.grinding_nonce_count(relation.security())
-                        - proof.opening_grinding_nonces().len())
+                        - relation.security().native_grinding_nonce_count())
                         * 8;
             }
             let verify = tracing::info_span!("benchmark:verification").entered();
@@ -612,7 +613,6 @@ pub fn run() -> Result<(), AnyError> {
     }
     Ok(())
 }
-
 
 #[cfg(test)]
 mod cli_tests {

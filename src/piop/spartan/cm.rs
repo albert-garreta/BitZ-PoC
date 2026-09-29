@@ -29,7 +29,6 @@
 //! reconstructions, exactly as in the direct `u32_mul` bridge but over
 //! a 3-variable block selector.
 
-use crate::ligerito_flock::IntEvalRsLigVirtProof;
 use crate::piop::spartan::protocol::Proof;
 use crate::piop::spartan::protocol::ProtocolError;
 
@@ -50,8 +49,7 @@ use {
         f2map::cell_count,
         ligerito::{LOG_PACKING, packed_vars},
         ligerito_flock::{
-            FlockCommitHint, LigeritoSelection, ModQOpeningKind, commit_rs_ligerito_rows,
-            sha_lig_configs,
+            FlockCommitHint, LigeritoSelection, commit_rs_ligerito_rows, sha_lig_configs,
         },
         pcs::IntegerMatrixLayout,
         transcript::traits::Transcript,
@@ -61,7 +59,7 @@ use {
 
 use super::{
     EvaluatedSpartanAssignment, SpartanField,
-    bitz::{MIN_PRODUCTION_GATE_VARS, SpartanBitzField},
+    u32_mul_relation::{MIN_PRODUCTION_GATE_VARS, SpartanBitzField},
     matrix::{
         ConstraintMatrices, PreparedConstraintMatrices, SpartanMatrixError, build_assignment_mle,
         build_product_mles,
@@ -190,7 +188,6 @@ impl CmAndLayout {
         IntegerMatrixLayout {
             row_vars: 7 + self.gate_vars - s,
             col_vars: s,
-            word_bits: 1,
         }
     }
 
@@ -417,7 +414,7 @@ impl RelationSpec for CmAndSpec {
             defect_log2_bound: 80,
             lift_arity_log2: p.row_vars as u32,
             opening_t: p.row_vars as u32,
-            opening_word_bits: p.word_bits as u32,
+
             direct_opening: false,
             tau_arity: (self.layout.gate_vars() + SELECTOR_VARS) as u32,
             piop_degree: 3,
@@ -527,7 +524,7 @@ impl RelationSpec for CmAndSpec {
             self.layout.gate_vars(),
             p.row_vars,
             p.col_vars,
-            p.word_bits,
+            1usize,
         ])?;
         hasher.bytes(&self.map.digest());
         Ok(hasher.finalize())
@@ -601,7 +598,6 @@ static CM_AND_DOMAINS: Domains = Domains {
     piop_grinding: b"",
     terminal_grinding: b"",
     bitified_claim: b"",
-    opening: ModQOpeningKind::U32Mul,
     claim_tag: CM_OPENING_CLAIM_DOMAIN,
     reduction_grinding: b"",
     reduction_prime: b"",
@@ -776,10 +772,9 @@ fn checked_pow2(exponent: usize) -> Result<usize, ProtocolError> {
 
 fn validate_cm_layout_geometry(layout: &CmAndLayout) -> Result<(), ProtocolError> {
     let p = layout.bitz_params();
-    if p.word_bits != 1
-        || p.row_vars < LOG_PACKING
+    if p.row_vars < LOG_PACKING
         || p.col_vars > layout.gate_vars()
-        || p.row_vars.saturating_add(p.word_bits) > 126
+        || p.row_vars > 125
         || CM_AND_H_SLOTS != 1usize << 7
     {
         return Err(ProtocolError::InvalidBitzParameters);
@@ -859,7 +854,7 @@ pub fn prove_cm_and_bitz_with_config<T: Transcript + Send>(
     witness: &CmAndWitness,
     hint_f: &FlockCommitHint,
     pc: &LigProverConfig,
-) -> Result<Proof<IntEvalRsLigVirtProof>, ProtocolError> {
+) -> Result<Proof, ProtocolError> {
     let opener = Opener::Custom {
         prover: Some(pc.clone()),
         verifier: None,
@@ -873,7 +868,7 @@ pub fn prove_cm_and_bitz<T: Transcript + Send>(
     relation: &PreparedCmAndRelation,
     witness: &CmAndWitness,
     hint_f: &FlockCommitHint,
-) -> Result<Proof<IntEvalRsLigVirtProof>, ProtocolError> {
+) -> Result<Proof, ProtocolError> {
     protocol::prove_virtual(transcript, relation.production()?, witness, hint_f)
 }
 
@@ -884,7 +879,7 @@ pub fn verify_cm_and_bitz_with_config<T: Transcript + Send>(
     transcript: &mut T,
     relation: &PreparedCmAndRelation,
     commitment: &Commitment,
-    proof: &Proof<IntEvalRsLigVirtProof>,
+    proof: &Proof,
     vc: &LigVerifierConfig,
 ) -> Result<(), ProtocolError> {
     let opener = Opener::Custom {
@@ -899,7 +894,7 @@ pub fn verify_cm_and_bitz<T: Transcript + Send>(
     transcript: &mut T,
     relation: &PreparedCmAndRelation,
     commitment: &Commitment,
-    proof: &Proof<IntEvalRsLigVirtProof>,
+    proof: &Proof,
 ) -> Result<(), ProtocolError> {
     protocol::verify_virtual(transcript, relation.production()?, commitment, proof)
 }
@@ -911,9 +906,39 @@ mod tests {
     use crate::{
         pcs::{FQ_MOD, Q100Element, eq_le_table_fq},
         piop::spartan::{
-            bitz::spartan_bitz_field_config, matrix::ScaledMleEvaluationClaim, protocol::bitify,
+            u32_mul_relation::spartan_bitz_field_config, matrix::ScaledMleEvaluationClaim, protocol::bitify,
         },
     };
+
+    #[test]
+    fn virtual_relation_is_refused_by_direct_opener_before_transcript_work() {
+        use crate::piop::spartan::protocol::bitz_opener::{self, BitZLigerito, BitZOpener};
+        use crate::transcript::Blake3Transcript;
+        let witness = CmAndWitness::from_fn(1 << 15, |i| (i as u32, !(i as u32))).unwrap();
+        let relation =
+            prepare_cm_and_relation(*witness.layout(), &spartan_bitz_field_config()).unwrap();
+        let hint = commit_cm_and_witness(witness.layout(), witness.f_bit_rows()).unwrap();
+        let proof =
+            prove_cm_and_bitz(&mut Blake3Transcript::new(), &relation, &witness, &hint).unwrap();
+        let prefix = relation.prefix();
+        let opener = BitZOpener::new(
+            prefix.layout().committed_layout(),
+            BitZLigerito::Fast,
+            100,
+        )
+        .unwrap();
+        let mut transcript = Blake3Transcript::new();
+        let fresh = transcript.state_digest();
+        assert!(matches!(
+            bitz_opener::prove(&mut transcript, prefix, &opener, &witness, &hint),
+            Err(ProtocolError::UnsupportedDischarge)
+        ));
+        assert!(matches!(
+            bitz_opener::verify(&mut transcript, prefix, &opener, &hint.commitment, &proof),
+            Err(ProtocolError::UnsupportedDischarge)
+        ));
+        assert_eq!(transcript.state_digest(), fresh);
+    }
 
     #[test]
     fn layout_and_cells_are_slot_major() {

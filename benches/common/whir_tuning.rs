@@ -445,7 +445,7 @@ pub fn tune_with_reps<C>(
     mut run: impl FnMut(&C) -> f64,
     report: impl Fn(&C) -> Value,
 ) -> Result<(Params, TuningReport), String> {
-    let recording = bitz::observability::Recording::start(Vec::new()).map_err(|e| e.to_string())?;
+    let recording = bitz::observability::Recording::start().map_err(|e| e.to_string())?;
     let campaign = tracing::info_span!("whir:tuning").entered();
     if let Some(params) = explicit {
         let context = setup(params)?;

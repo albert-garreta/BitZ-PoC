@@ -12,19 +12,20 @@ sibling directories such as `../limber-impl`.
 Cross-system comparisons measure complete native proofs: witness generation,
 commitment, constraint proving, PCS opening, and verification.
 
-Install the native Perfetto trace processor locally, then set its path in each
-shell used for benchmarks. Run these commands from the repository root:
+Numeric timings are collected from Rust `tracing` spans by default. No Perfetto
+installation, setup script, or processor environment variable is required.
+Perfetto is available only as an optional diagnostic export; see
+[span measurements](docs/span-metrics.md).
 
-```bash
-bash scripts/install_trace_processor.sh
-export PERFETTO_TRACE_PROCESSOR="$PWD/.tools/perfetto/trace_processor_shell"
-export RUSTFLAGS="-C target-cpu=native"
+For a small SHA-256 chain + ECDSA run, or a multiplication run, use Cargo directly:
+
+```sh
+cargo bench --locked --bench sha256_ecdsa_compare --features sha256-ecdsa-compare -- \
+  --method bitz-split --curve secp256k1 --r 4 --c 0 --threads 1 --reps 3
+
+cargo bench --locked --bench mul_bitz --features span-metrics,bench-internals -- \
+  proof --workload u64 --log-n 15 --threads 1 --reps 3
 ```
-
-The installer downloads Perfetto **v58.2** for macOS or Linux, verifies its
-SHA-256 checksum, and reuses an existing matching installation. It requires
-`curl` and `sha256sum` or `shasum`. The binary stays in this checkout's ignored
-`.tools/perfetto/` directory; no system installation is needed.
 
 ### The benchmark campaigns
 
@@ -55,21 +56,18 @@ its `--build-info` before trusting its numbers).
 ### Setup
 
 ```bash
-set -euo pipefail
-
 rustup toolchain install 1.98.1
 rustup toolchain install nightly-2026-07-01
-bash scripts/install_trace_processor.sh
+[ -f scripts/materialize_vendors.py ] && python3 scripts/materialize_vendors.py --check
 
 export RUSTFLAGS="-C target-cpu=native"
-export PERFETTO_TRACE_PROCESSOR="$PWD/.tools/perfetto/trace_processor_shell"
 unset BITZ_LIG_PROFILE CARGO_ENCODED_RUSTFLAGS CARGO_TARGET_DIR
 
 mkdir -p bench_results
 export RUN_DIR="$(mktemp -d "$PWD/bench_results/all-benchmarks-$(date +%Y%m%d-%H%M%S)-XXXXXX")"
-# scripts/prepare_matched_limber.py fetches the Cargo.toml-pinned Limber
-# commit here on demand; set LIMBER_DIR to reuse an existing checkout.
-LIMBER_DIR="${LIMBER_DIR:-$PWD/.tools/limber}"
+# The artifact workspace vendors Limber; a development checkout points this at
+# the Limber checkout prepared by scripts/prepare_matched_limber.py.
+LIMBER_DIR="${LIMBER_DIR:-$PWD/vendor/limber}"
 gate() { python3 scripts/bench_gate.py run --label "$1" --swap-grow-gb "${2:-12}" -- "${@:3}"; }
 echo "Results: $RUN_DIR"
 ```
@@ -94,7 +92,7 @@ gate sha-ecdsa-secp256k1 12 python3 scripts/run_sha256_ecdsa_compare.py \
   --reps 5 \
   --bitz-profiles custom:1:4 custom:3:4 \
   --binius-rates 1 3 \
-  --timing perfetto \
+  --timing spans \
   2>&1 | tee "$RUN_DIR/sha256-ecdsa-secp256k1.log"
 ```
 
@@ -115,7 +113,7 @@ gate sha-ecdsa-p256 12 python3 scripts/run_sha256_ecdsa_compare.py \
   --threads 1 10 \
   --reps 5 \
   --bitz-profiles custom:1:4 custom:3:4 \
-  --timing perfetto \
+  --timing spans \
   2>&1 | tee "$RUN_DIR/sha256-ecdsa-p256.log"
 ```
 
@@ -399,7 +397,7 @@ there.
 ### Raw performance of BitZ PCS on the core LinBitsRings relation
 
 ```sh
-RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked -- \
+RUSTFLAGS="-C target-cpu=native" cargo run --release --features unchecked,span-metrics -- \
     --sweep 20-30 --threads 8 --reps 5 --profile custom:1:4
 ```
 
@@ -422,11 +420,11 @@ see `docs/fields-witch-compare.md` for the measured comparison.
 git clone https://github.com/morgana-proofs/fields-witch ../fields-witch   # measured at 30cca8c
 (cd ../fields-witch && CARGO_TARGET_DIR=target \
     RUSTFLAGS="-C target-cpu=native" cargo build --release --examples)
-RUSTFLAGS="-C target-cpu=native" cargo build --release --features unchecked --bin bitz
+RUSTFLAGS="-C target-cpu=native" cargo build --release --features unchecked,span-metrics --bin bitz
 python3 scripts/run_fields_witch_compare.py \
     --fw-bin ../fields-witch/target/release/examples/protocol_profile \
     --sizes 14,16,18,20,22 --threads 1,8 --reps 5 \
-    --word-rows 20:32,20:64 --latex paper/fields-witch-table.tex
+    --latex paper/fields-witch-table.tex
 ```
 
 `--fw-bin` / `--bitz-bin` override the binaries (the BitZ default follows
@@ -443,7 +441,7 @@ timings include it.
 
 ```sh
 python3 scripts/run_multiplication_benchmarks.py bitz -- \
-  proof --workload u32-full,u64,u128 --log-n 15..=20 --w 1,3,8 \
+  proof --workload u32-full,u64,u128 --log-n 15..=20 \
   --split=0,1 --threads 1,8 --reps 5 --skip-unsupported --dry-run
 
 python3 scripts/run_multiplication_benchmarks.py compare --output results/compare -- \
@@ -452,6 +450,12 @@ python3 scripts/run_multiplication_benchmarks.py compare --output results/compar
 
 python3 scripts/run_multiplication_benchmarks.py bitz -- \
   witness --workload u32-full,u64,u128,baby-bear --log-n 10 --threads 1
+
+# the worldfnd/BitZ scheme as the opener; `--ligerito fast` is its ladder as
+# shipped; see docs/bitz-opener.md
+python3 scripts/run_multiplication_benchmarks.py bitz -- \
+  proof --workload u64 --ligerito fast --bitz-profile 100 \
+  --log-n 15,17,19,21 --threads 1,10 --reps 5 --memory rss
 ```
 
 The launcher builds one executable, runs under the machine lock and swap guard,

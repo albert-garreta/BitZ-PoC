@@ -18,6 +18,8 @@
 //! 4. (legacy) the inner sumcheck; the opening claim frame;
 //! 5. the virtual opening of the derived grid.
 
+use super::bitz_opener::{self, BitZOpeningProof, opening_params, opening_shape, pcs_from_config};
+use crate::bitz::{LinearClaim, VirtualStatement};
 use crate::sumcheck::boundary::ProverGrindingRoundBoundary;
 use crate::sumcheck::inner::{
     packed::{PackedInput, Sha256InnerGrinding},
@@ -33,12 +35,10 @@ use {
     crate::{
         ligerito::packed_vars,
         ligerito_flock::{
-            FlockCommitHint, IntEvalRsLigVirtProof, LigeritoStatementConfig, ResolvedLigerito,
+            FlockCommitHint, LigeritoStatementConfig, ResolvedLigerito,
             bind_prover_ood, bind_verifier_ood,
-            prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
-            verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime,
         },
-        pcs::{GeneratedModQWeightSource, IntegerMatrixLayout, ModQWeightSource},
+        pcs::IntegerMatrixLayout,
         transcript::traits::Transcript,
     },
     circuit::linear_map::binary::VirtualMap,
@@ -51,7 +51,7 @@ use super::{
         squeeze_field,
         sumcheck::SumcheckProof,
     },
-    BindingHasher, FieldConfig, ProtocolError, SpartanBitzField, check_boundary, bitz_generator,
+    BindingHasher, FieldConfig, ProtocolError, SpartanBitzField, check_boundary,
     grind_boundary,
 };
 use crate::piop::spartan::profile::IopSecurityParams;
@@ -101,16 +101,7 @@ pub(crate) struct OpeningClaim<'a> {
     pub claimed: u128,
 }
 
-/// The claim's rows as the opener's weight source.
-fn weight_source<'a>(
-    layout: &IntegerMatrixLayout,
-    q_bits: usize,
-    claim: &'a OpeningClaim<'a>,
-) -> Result<GeneratedModQWeightSource<&'a (dyn Fn(usize) -> Option<u128> + Sync + 'a)>, ProtocolError>
-{
-    GeneratedModQWeightSource::new(layout, q_bits, &*claim.rows)
-        .map_err(|()| ProtocolError::InvalidGeometry)
-}
+
 
 /// The static description of one linear relation.
 pub(crate) trait LinearRelationSpec: Sync {
@@ -211,7 +202,7 @@ pub struct LinearProof {
     inner: SumcheckProof<SpartanBitzField, 3>,
     inner_nonces: Vec<u64>,
     terminal_nonce: u64,
-    bitz: IntEvalRsLigVirtProof,
+    bitz: BitZOpeningProof,
 }
 
 impl LinearProof {
@@ -231,7 +222,7 @@ impl LinearProof {
         self.terminal_nonce
     }
 
-    pub const fn bitz(&self) -> &IntEvalRsLigVirtProof {
+    pub const fn bitz(&self) -> &BitZOpeningProof {
         &self.bitz
     }
 
@@ -257,7 +248,7 @@ impl LinearProof {
         &mut self.terminal_nonce
     }
 
-    pub fn bitz_mut(&mut self) -> &mut IntEvalRsLigVirtProof {
+    pub fn bitz_mut(&mut self) -> &mut BitZOpeningProof {
         &mut self.bitz
     }
 }
@@ -334,7 +325,7 @@ fn claim_digest(
     assignment: Option<(&[SpartanBitzField], &SpartanBitzField)>,
     challenges: &BatchChallenges,
     claim: &OpeningClaim<'_>,
-    rows: &impl ModQWeightSource,
+    rows: &[u128],
     field_config: &FieldConfig,
 ) -> Result<[u8; 32], ProtocolError> {
     let mut hasher = BindingHasher::new();
@@ -364,11 +355,8 @@ fn claim_digest(
         hasher.element(coordinate, field_config);
     }
     hasher.element(&challenges.public_io_batch, field_config);
-    hasher.usize(rows.row_count())?;
-    for row in 0..rows.row_count() {
-        let weight = rows
-            .canonical_weight(row)
-            .ok_or(ProtocolError::InvalidGeometry)?;
+    hasher.usize(rows.len())?;
+    for &weight in rows {
         hasher.u128_le(weight);
     }
     hasher.usize(claim.cols.len())?;
@@ -549,7 +537,7 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
             Some((inner.point, inner.terminal_evaluations[0])),
         )
     };
-    let rows = weight_source(spec.opened_layout(), prime.modulus_bits(), &claim)?;
+    let rows = canonical_rows(spec.opened_layout(), &claim)?;
     {
         let _step4 = tracing::info_span!("step4:bitify_prove").entered();
         let _scope = tracing::info_span!("sha256:opening_claim_absorb_prover").entered();
@@ -572,22 +560,16 @@ pub(crate) fn prove_linear<T: Transcript + Send, S: LinearRelationSpec>(
     let bitz = {
         let _step5 = tracing::info_span!("step5:open_prove").entered();
         let _scope = tracing::info_span!("sha256:bitz_prove").entered();
-        prove_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime(
-            transcript,
-            hint,
-            spec.opened_rows(witness)?,
-            spec.opened_layout(),
-            f_layout,
-            spec.map(),
-            &rows,
-            prime.modulus_u128(),
-            prime.modulus_bits(),
-            bitz_generator(),
-            security.forest_round_grinding_bits,
-            ood,
-            pc,
-        )
-        .map_err(ProtocolError::Bitz)?
+        let params = opening_params(spec.opened_layout(), prime.modulus_u128())?;
+        let committed = opening_shape(f_layout)?;
+        let native_claim = LinearClaim::new(&params, rows, claim.cols, claim.claimed)
+            .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
+        let opening = VirtualStatement::new(params, committed, spec.map(), &native_claim)
+            .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
+        let pcs = pcs_from_config(&committed, pc)?.with_native_policy(security.native_policy()?);
+        bitz_opener::prove_virtual_opening(
+            transcript, &opening, &pcs, hint, spec.opened_rows(witness)?, ood,
+        )?
     };
 
     Ok(LinearProof {
@@ -735,7 +717,7 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
         };
         (claim, Some((assignment_point, collapsed_evaluation)))
     };
-    let rows = weight_source(opened, prime.modulus_bits(), &claim)?;
+    let rows = canonical_rows(opened, &claim)?;
     {
         let _step4 = tracing::info_span!("step4:bitify_verify").entered();
         let _scope = tracing::info_span!("sha256:opening_claim_absorb_verifier").entered();
@@ -757,22 +739,16 @@ pub(crate) fn verify_linear<T: Transcript + Send, S: LinearRelationSpec>(
 
     let _step5 = tracing::info_span!("step5:open_verify").entered();
     let _scope = tracing::info_span!("sha256:bitz_verify").entered();
-    verify_mle_eval_mod_q_ligerito_virtual_with_weight_source_runtime(
-        transcript,
-        commitment,
-        &proof.bitz,
-        opened,
-        f_layout,
-        spec.map(),
-        &rows,
-        &claim.cols,
-        bitz_generator(),
-        claim.claimed,
-        prime.modulus_u128(),
-        prime.modulus_bits(),
-        security.forest_round_grinding_bits,
-        ood,
-        vc,
-    )
-    .map_err(ProtocolError::Bitz)
+    let params = opening_params(opened, prime.modulus_u128())?;
+    let committed = opening_shape(f_layout)?;
+    let native_claim = LinearClaim::new(&params, rows, claim.cols, claim.claimed)
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ claim: {error:?}")))?;
+    let opening = VirtualStatement::new(params, committed, spec.map(), &native_claim)
+        .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ statement: {error:?}")))?;
+    let pcs = pcs_from_config(&committed, vc)?.with_native_policy(security.native_policy()?);
+    bitz_opener::verify_virtual_opening(transcript, &opening, &pcs, commitment, &proof.bitz, ood)
+}
+
+fn canonical_rows(layout: &IntegerMatrixLayout, claim: &OpeningClaim<'_>) -> Result<Vec<u128>, ProtocolError> {
+    (0..layout.rows()).map(|row| (claim.rows)(row).ok_or(ProtocolError::InvalidGeometry)).collect()
 }

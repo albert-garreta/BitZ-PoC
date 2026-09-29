@@ -1,24 +1,19 @@
 //! Controlled A/B benchmark for the equality-table builders optimized in PR 1.
 //!
 //! This is a plain `harness = false` benchmark. The `legacy_*` functions are
-//! intentionally local copies of the pre-refactor algorithms: suffix tensors
-//! allocate and clone every level and multiply both children, while the `Q100Element`
-//! builder allocates a fresh table and multiplies both halves at every step.
+//! a reference implementation of the `Q100Element` equality-table builder,
+//! allocating a fresh table and multiplying both halves at every step.
 //! Each current builder is checked entry-for-entry before any measurements.
 
 mod common;
 
 use std::hint::black_box;
 
-use bitz::{
-    Gf128,
-    pcs::{FQ_MOD, Q100Element, eq_le_table_fq},
-    piop::sumcheck::eq_factored::suffix_tensor_arena_for_bench,
-};
+use bitz::pcs::{FQ_MOD, Q100Element, eq_le_table_fq};
 
 const WIDTHS: [usize; 3] = [8, 12, 16];
 const DEFAULT_SAMPLES: usize = 21;
-const SUFFIX_GATE_SPEEDUP: f64 = 1.2;
+
 const FQ_GATE_SPEEDUP: f64 = 1.5;
 
 #[derive(Clone, Copy)]
@@ -41,13 +36,6 @@ fn splitmix64(state: &mut u64) -> u64 {
     value ^ (value >> 31)
 }
 
-fn deterministic_gf128_point(width: usize) -> Vec<Gf128> {
-    let mut state = 0x6571_5f73_7566_6669u64 ^ width as u64;
-    (0..width)
-        .map(|_| Gf128::from_polynomial_words([splitmix64(&mut state), splitmix64(&mut state)]))
-        .collect()
-}
-
 fn deterministic_fq_point(width: usize) -> Vec<Q100Element> {
     let mut state = 0x6571_5f66_715f_6c65u64 ^ width as u64;
     (0..width)
@@ -57,67 +45,6 @@ fn deterministic_fq_point(width: usize) -> Vec<Q100Element> {
             Q100Element::from_u128(value % FQ_MOD)
         })
         .collect()
-}
-
-/// The old suffix builder, preserved verbatim in shape for controlled A/B
-/// timing. Returned levels are in round order `[V_1, ..., V_k]`.
-fn legacy_suffix_tensors(q: &[Gf128]) -> Vec<Vec<Gf128>> {
-    let one = Gf128::one();
-    let zero = Gf128::zero();
-    let mut suffix = Vec::with_capacity(q.len());
-    let mut current = vec![one];
-    suffix.push(current.clone());
-    for round in (1..q.len()).rev() {
-        let one_factor = q[round];
-        let zero_factor = one - one_factor;
-        let mut next = vec![zero; current.len() * 2];
-        next.chunks_mut(2)
-            .zip(current.iter())
-            .for_each(|(children, parent)| {
-                children[0] = *parent * zero_factor;
-                children[1] = *parent * one_factor;
-            });
-        suffix.push(next.clone());
-        current = next;
-    }
-    suffix.reverse();
-    suffix
-}
-
-/// Converts round-ordered legacy levels to the arena's physical
-/// `[V_k, ..., V_1]` representation.
-fn flatten_legacy_suffix(levels: &[Vec<Gf128>]) -> (Vec<Gf128>, Vec<usize>) {
-    let total_len = levels.iter().map(Vec::len).sum();
-    let mut values = Vec::with_capacity(total_len);
-    let mut offsets = vec![0usize; levels.len()];
-    for round in (0..levels.len()).rev() {
-        offsets[round] = values.len();
-        values.extend_from_slice(&levels[round]);
-    }
-    (values, offsets)
-}
-
-fn arena_tensor<'a>(values: &'a [Gf128], offsets: &[usize], round: usize) -> &'a [Gf128] {
-    let start = offsets[round];
-    let end = if round == 0 {
-        values.len()
-    } else {
-        offsets[round - 1]
-    };
-    &values[start..end]
-}
-
-fn verify_suffix_builder(point: &[Gf128]) {
-    let legacy_levels = legacy_suffix_tensors(point);
-    let (expected_values, expected_offsets) = flatten_legacy_suffix(&legacy_levels);
-    let (values, offsets) = suffix_tensor_arena_for_bench(point, &());
-
-    assert_eq!(offsets, expected_offsets, "suffix arena offsets differ");
-    assert_eq!(values, expected_values, "flattened suffix arena differs");
-    assert_eq!(legacy_levels.len(), offsets.len());
-    for (round, expected) in legacy_levels.iter().enumerate() {
-        assert_eq!(arena_tensor(&values, &offsets, round), expected);
-    }
 }
 
 /// The old little-endian `Q100Element` table builder: two child multiplications and a
@@ -206,29 +133,6 @@ fn print_result(
     gate_pass
 }
 
-fn benchmark_suffix(samples: usize) -> bool {
-    let mut gate_pass = true;
-    for width in WIDTHS {
-        let point = deterministic_gf128_point(width);
-        verify_suffix_builder(&point);
-        let medians = alternating_medians(
-            samples,
-            || legacy_suffix_tensors(black_box(&point)),
-            || suffix_tensor_arena_for_bench(black_box(&point), &()),
-        );
-        let entries = (1usize << width) - 1;
-        gate_pass &= print_result(
-            "suffix_arena",
-            width,
-            entries,
-            medians,
-            SUFFIX_GATE_SPEEDUP,
-            samples,
-        );
-    }
-    gate_pass
-}
-
 fn benchmark_fq(samples: usize) -> bool {
     let mut gate_pass = true;
     for width in WIDTHS {
@@ -260,7 +164,7 @@ fn main() {
     let samples = common::cli::env::<usize>("BITZ_EQ_TABLE_SAMPLES")
         .unwrap_or(DEFAULT_SAMPLES)
         .max(DEFAULT_SAMPLES);
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     common::enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();
     println!(
@@ -268,13 +172,9 @@ fn main() {
          alternating_samples={samples}"
     );
 
-    let suffix_gate_pass = benchmark_suffix(samples);
     let fq_gate_pass = benchmark_fq(samples);
-    let overall_gate_pass = suffix_gate_pass && fq_gate_pass;
-    println!(
-        "GATE suffix_widths_12_16_pass={suffix_gate_pass} \
-         fq_widths_12_16_pass={fq_gate_pass} overall_pass={overall_gate_pass}"
-    );
+    let overall_gate_pass = fq_gate_pass;
+    println!("GATE fq_widths_12_16_pass={fq_gate_pass} overall_pass={overall_gate_pass}");
     assert!(
         overall_gate_pass,
         "PR 1 equality-table performance gate failed"

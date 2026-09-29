@@ -8,6 +8,7 @@ mod inner_reduction;
 mod proof;
 mod relation;
 mod security;
+mod bitz;
 mod witness;
 
 #[cfg(test)]
@@ -15,16 +16,19 @@ mod tests;
 
 #[cfg(test)]
 use crate::piop::spartan::SpartanField as _;
-pub use proof::{Sha256EcdsaProof, commit_sha256_ecdsa, prove_sha256_ecdsa, verify_sha256_ecdsa};
+pub use proof::{
+    Sha256EcdsaProof, commit_sha256_ecdsa, prove_sha256_ecdsa,
+    verify_sha256_ecdsa,
+};
 pub use circuit::ecdsa::EcdsaCircuit;
 pub use relation::{
-    OuterMode, PreparedSha256Ecdsa, Sha256EcdsaStatement, prepare_sha256_ecdsa,
-    prepare_sha256_ecdsa_on,
+    OuterMode, PreparedSha256Ecdsa, Sha256EcdsaStatement,
+    prepare_sha256_ecdsa, prepare_sha256_ecdsa_on,
 };
 pub use security::{ChallengeSecurity, Sha256EcdsaSecurity};
 pub use witness::{Sha256EcdsaWitness, generate_sha256_ecdsa_witness};
 
-use crate::piop::spartan::bitz::SpartanBitzField as F;
+use crate::piop::spartan::u32_mul_relation::SpartanBitzField as F;
 
 #[cfg(test)]
 #[cfg(test)]

@@ -92,6 +92,8 @@ def sample_metrics(row):
     return row
 
 
+
+
 def cases(curve, spartan_splits, methods, targets, threads, seeds,
           bitz_profiles=DEFAULT_BITZ_PROFILES, binius_rates=DEFAULT_BINIUS_RATES):
     """BitZ depends only on total work; emit it once for each exponent/target.
@@ -113,7 +115,7 @@ def cases(curve, spartan_splits, methods, targets, threads, seeds,
             for exponent, target, profile in itertools.product(work, targets, bitz_profiles):
                 yield dict(method=method, curve=curve, log_compressions=exponent, r=None, c=None,
                            security_target=target, threads=workers, seed=seed,
-                           ligerito_profile=profile)
+                           ligerito_profile=profile, opener="bitz")
         else:
             method_targets = [100] if method == "binius64-ligerito" else targets
             for exponent, target, rate in itertools.product(work, method_targets, binius_rates):
@@ -132,7 +134,7 @@ def validate_rows(rows, case, reps, binius_log_inv_rate=None):
     for sample, row in enumerate(rows):
         row = sample_metrics(row)
         timing = row.get("timing", "perfetto")
-        if timing not in ("perfetto", "wall-clock") or timing != case.get("timing", "perfetto"):
+        if timing not in ("spans", "perfetto", "wall-clock") or timing != case.get("timing", "perfetto"):
             return False
         if timing == "wall-clock":
             if case["method"].startswith("binius64"):
@@ -220,7 +222,7 @@ def summarize(directory):
     fields = ["method", "log_compressions", "r", "c", "security_target", "threads", "seed",
               "status", "samples", "peak_rss_bytes", "fixture_id", "security_model",
               "economic_bits", "statistical_bits_lower_bound", *METRICS,
-              "log_inv_rate", "ligerito_profile", "timing", "curve", "circuit_profile"]
+              "log_inv_rate", "ligerito_profile", "opener", "timing", "curve", "circuit_profile"]
     fixture_ids = {}
     curves, profiles = set(), {}
     sample_fields = [*fields[:8], "source_file", "trial", "sample", "verified", "peak_rss_bytes",
@@ -325,7 +327,8 @@ def print_summary(directory):
 
 
 def build(args, directory):
-    command = ["cargo", "build", "--release", "--locked", "--features", "sha256-ecdsa-compare,unchecked",
+    features = "sha256-ecdsa-compare,unchecked"
+    command = ["cargo", "build", "--release", "--locked", "--features", features,
                "--bench", "sha256_ecdsa_compare", "--message-format=json-render-diagnostics"]
     if args.offline:
         command.append("--offline")
@@ -520,8 +523,8 @@ def main():
     parser.add_argument("--memory-gib", type=int, default=48)
     parser.add_argument("--timeout", type=float, default=3600)
     parser.add_argument("--retry-failed", action="store_true")
-    parser.add_argument("--timing", choices=["perfetto", "wall-clock"], default="perfetto",
-                        help="wall-clock uses Rust timers without Perfetto; supported for BitZ and Spartan, with internal phase timings unavailable")
+    parser.add_argument("--timing", choices=["spans", "wall-clock"], default="spans",
+                        help="spans collects internal timings in Rust (default); wall-clock is supported for BitZ and Spartan without internal phase timings")
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--summarize-only", action="store_true", help="Regenerate summary.csv and samples.csv from existing raw records")
     args = parser.parse_args()

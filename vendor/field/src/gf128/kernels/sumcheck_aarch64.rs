@@ -4,14 +4,14 @@ use crate::gf128::aarch64::{clmul128 as clmul_256, pmull_hi, pmull_lo, reduce_25
 use core::arch::aarch64::{uint64x2_t, vdupq_n_u64, veorq_u64, vextq_u64, vld1q_u64, vst1q_u64};
 
 #[inline(always)]
-unsafe fn fold_x64(t0: uint64x2_t, t1: uint64x2_t, g: uint64x2_t, z: uint64x2_t) -> uint64x2_t {
+pub unsafe fn fold_x64(t0: uint64x2_t, t1: uint64x2_t, g: uint64x2_t, z: uint64x2_t) -> uint64x2_t {
     unsafe { veorq_u64(t0, veorq_u64(vextq_u64::<1>(z, t1), pmull_hi(t1, g))) }
 }
 use crate::Gf128;
 
 /// Load one field element as a vector.
 #[inline(always)]
-pub(crate) unsafe fn ld(x: &Gf128) -> uint64x2_t {
+pub unsafe fn ld(x: &Gf128) -> uint64x2_t {
     // SAFETY: `uint.as_words()` is a valid 16-byte word pair.
     unsafe { vld1q_u64(core::ptr::addr_of!(x.lo)) }
 }
@@ -266,7 +266,7 @@ unsafe fn fold1(rv: uint64x2_t, v0: uint64x2_t, v1: uint64x2_t) -> uint64x2_t {
 /// bits, so `R1` is already reduced. One 64×64 clmul — amortised
 /// over the pass.
 #[inline(always)]
-pub(crate) unsafe fn prep_fixed(rho: &Gf128) -> (uint64x2_t, uint64x2_t) {
+pub unsafe fn prep_fixed(rho: &Gf128) -> (uint64x2_t, uint64x2_t) {
     let w = &[rho.lo, rho.hi];
     let rg = super::super::kernels::clmul_64x64(w[1], 0x87);
     let rl = [w[0], rg[0]];
@@ -278,7 +278,7 @@ pub(crate) unsafe fn prep_fixed(rho: &Gf128) -> (uint64x2_t, uint64x2_t) {
 /// The 191-bit unreduced fixed-scalar product `(t_lo, t_mid)`:
 /// 4 shuffle-free PMULLs, 2 EORs.
 #[inline(always)]
-pub(crate) unsafe fn mul_fixed_wide(
+pub unsafe fn mul_fixed_wide(
     av: uint64x2_t,
     rl: uint64x2_t,
     rh: uint64x2_t,

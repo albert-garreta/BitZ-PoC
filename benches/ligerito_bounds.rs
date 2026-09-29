@@ -1,6 +1,7 @@
 //! Controlled decoding-bound experiment within BitZ. No competing backend configuration is read.
-use ::bitz::ligerito_flock::IntEvalRsLigModQProof;
-use ::bitz::ligerito_flock::IntEvalRsLigVirtProof;
+use ::bitz::piop::spartan::protocol::bitz_opener::{
+    self, BitZLigerito, BitZOpener, BitZOpeningProof,
+};
 
 mod common;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -17,7 +18,7 @@ use ::bitz::{
 };
 use serde_json::json;
 const SEED: u64 = 0x5533_3250_4353_0064;
-type SetupCapture = (Recording<Vec<u8>>, tracing::span::EnteredSpan);
+type SetupCapture = (Recording, tracing::span::EnteredSpan);
 
 struct Experiment {
     case: String,
@@ -45,7 +46,7 @@ impl Experiment {
         let corpus_digest = blake3::hash(corpus).to_hex().to_string();
         let trials = if self.memory { 1 } else { 6 };
         for trial in 0..trials {
-            let recording = Recording::start(Vec::new())?;
+            let recording = Recording::start()?;
             let total = tracing::info_span!("bounds:witness_to_proof", trial, warmup = trial == 0)
                 .entered();
             let w = tracing::info_span!("bounds:witness").in_scope(&witness)?;
@@ -140,13 +141,13 @@ fn main() -> Result<()> {
         case: args.case,
         memory: args.memory,
     };
-    ::bitz::observability::install().expect("install Perfetto subscriber");
+    ::bitz::observability::install().expect("install span metrics subscriber");
     if rayon::current_num_threads() != 8 {
         bail!("controlled comparison requires RAYON_NUM_THREADS=8");
     }
     let input = inputs();
     let setup = (
-        Recording::start(Vec::new())?,
+        Recording::start()?,
         tracing::info_span!("bounds:setup").entered(),
     );
     match e.case.as_str() {
@@ -191,7 +192,8 @@ fn main() -> Result<()> {
                 },
                 |h, proof| {
                     let b = proof.bitz().to_bytes();
-                    let decoded = IntEvalRsLigVirtProof::from_bytes(&b)?;
+                    let decoded =
+                        BitZOpeningProof::from_bytes(&b).ok_or("invalid opening encoding")?;
                     assert_eq!(decoded.to_bytes(), b);
                     Ok(bytes(
                         h.commitment.root.len(),
@@ -234,7 +236,8 @@ fn main() -> Result<()> {
                 },
                 |h, proof| {
                     let b = proof.bitz().to_bytes();
-                    let decoded = IntEvalRsLigVirtProof::from_bytes(&b)?;
+                    let decoded =
+                        BitZOpeningProof::from_bytes(&b).ok_or("invalid opening encoding")?;
                     assert_eq!(decoded.to_bytes(), b);
                     Ok(bytes(h.commitment.root.len(), &b, proof.piop_bytes()))
                 },
@@ -332,48 +335,14 @@ fn ecdsa(e: &Experiment, setup: SetupCapture) -> Result<()> {
     )
 }
 fn pcs(e: &Experiment, setup: SetupCapture) -> Result<()> {
-    use ::bitz::{
-        ext_proj::*,
-        ligerito_flock::*,
-        pcs::{IntegerMatrixLayout, smallest_generator},
-    };
+    use ::bitz::{ligerito_flock::*, pcs::IntegerMatrixLayout};
     let p = IntegerMatrixLayout {
         row_vars: 11,
         col_vars: 11,
-        word_bits: 1,
     };
-    let q_bits = 113;
-    let alpha = smallest_generator();
     let resolved = e.selection.resolve(15, 100)?;
     let ood = resolved.round0(100)?;
-    let sample = |t: &mut Blake3Transcript| {
-        let q = sample_proj_prime(
-            t,
-            &ExtProjParams {
-                prime_bits: q_bits,
-                ..Default::default()
-            },
-        )
-        .expect("bounded benchmark prime search");
-        let a = field::FpCtx::from_prime_u128(q);
-        let eq = |r: Vec<u128>| {
-            let mut table = vec![1];
-            for x in r {
-                let factor = a.prepare_multiplier_u128(x);
-                let mut next = Vec::with_capacity(table.len() * 2);
-                for v in table {
-                    let v1 = a.mul_canonical_u128(v, &factor);
-                    next.push(a.sub_canonical_u128(v, v1));
-                    next.push(v1);
-                }
-                table = next;
-            }
-            table
-        };
-        let rows = eq((0..p.row_vars).map(|_| sample_proj_point(t, q)).collect());
-        let cols = eq((0..p.col_vars).map(|_| sample_proj_point(t, q)).collect());
-        (q, rows, cols)
-    };
+    let opener = BitZOpener::new(p, BitZLigerito::Selected(e.selection), 100)?;
     e.run(
         setup,
         &resolved,
@@ -398,80 +367,18 @@ fn pcs(e: &Experiment, setup: SetupCapture) -> Result<()> {
         },
         |w| Ok(commit_rs_ligerito_rows(&p, w.clone(), resolved.prover())),
         |_, h| {
-            let mut t = Blake3Transcript::new();
-            absorb_standalone_mod_q_statement(
-                &mut t,
-                &h.commitment,
-                &p,
-                alpha,
-                q_bits,
-                ood,
-                resolved.verifier(),
-            );
-            resolved.bind(&mut t);
-            let bound = bind_prover_ood(&mut t, h, ood);
-            let (q, rows, cols) = sample(&mut t);
-            let a = field::FpCtx::from_prime_u128(q);
-            let mut y = 0;
-            for (c, w) in h.rows().iter().enumerate() {
-                let mut acc = 0;
-                for (wi, &word) in w.iter().enumerate() {
-                    let mut bits = word;
-                    while bits != 0 {
-                        let bit = bits.trailing_zeros() as usize;
-                        bits &= bits - 1;
-                        acc = a.add_u128(acc, rows[wi * 64 + bit]);
-                    }
-                }
-                y = a.add_u128(y, a.mul_u128(cols[c], acc));
-            }
-            absorb_standalone_mod_q_claim(&mut t, q, y);
-            Ok((
-                prove_mle_eval_mod_q_ligerito_with_ood(
-                    &mut t,
-                    h,
-                    &p,
-                    &rows,
-                    q_bits,
-                    alpha,
-                    bound,
-                    resolved.prover(),
-                ),
-                y,
-            ))
+            let y = bitz_opener::standalone_evaluation(&opener, h)?;
+            Ok((bitz_opener::prove_standalone(&opener, h, y)?, y))
         },
         |_, h, (proof, y)| {
-            let proof = IntEvalRsLigModQProof::from_bytes(&proof.to_bytes())?;
-            let mut t = Blake3Transcript::new();
-            absorb_standalone_mod_q_statement(
-                &mut t,
+            let proof = BitZOpeningProof::from_bytes(&proof.to_bytes())
+                .ok_or("invalid opening encoding")?;
+            Ok(bitz_opener::verify_standalone(
+                &opener,
                 &h.commitment,
-                &p,
-                alpha,
-                q_bits,
-                ood,
-                resolved.verifier(),
-            );
-            resolved.bind(&mut t);
-            let bound = bind_verifier_ood(&mut t, 15, ood, proof.ood.as_ref())
-                .map_err(|e| format!("{e:?}"))?;
-            let (q, rows, cols) = sample(&mut t);
-            absorb_standalone_mod_q_claim(&mut t, q, *y);
-            Ok(verify_mle_eval_mod_q_ligerito_runtime(
-                &mut t,
-                &h.commitment,
-                &proof,
-                &p,
-                &rows,
-                &cols,
-                alpha,
                 *y,
-                q,
-                q_bits,
-                bound,
-                resolved.verifier(),
-            )
-            .map_err(|e| format!("{e:?}"))?)
+                &proof,
+            )?)
         },
         |h, (proof, _)| Ok(bytes(h.commitment.root.len(), &proof.to_bytes(), 16)),
     )

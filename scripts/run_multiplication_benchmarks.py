@@ -3,7 +3,7 @@
 
 Choose bitz (proof/witness/pcs/piop/outer/bounds) or compare (proof/witness/pcs).
 Put launcher options before -- and forward benchmark options after it:
-  run_multiplication_benchmarks.py bitz -- proof --workload u64 --w 3
+  run_multiplication_benchmarks.py bitz -- proof --workload u64 --split=1
   run_multiplication_benchmarks.py compare -- pcs --workload baby-bear
 """
 from __future__ import annotations
@@ -117,9 +117,6 @@ def benchmark_environment(inherited):
         env["BITZ_BENCH_LOCK"] = inherited["BITZ_BENCH_LOCK"]
     if "RUSTFLAGS" not in env and "CARGO_ENCODED_RUSTFLAGS" not in env:
         env["RUSTFLAGS"] = "-C target-cpu=native"
-    local = ROOT / ".tools/perfetto/trace_processor_shell"
-    if "PERFETTO_TRACE_PROCESSOR" not in env and os.access(local, os.X_OK):
-        env["PERFETTO_TRACE_PROCESSOR"] = str(local)
     return env
 
 

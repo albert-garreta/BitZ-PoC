@@ -13,7 +13,7 @@ backend/rate/thread count; also checks the equal-count hybrid table.
 Smoke still builds and runs real proofs, warmups and memory trials.
 Dry-run: print commands without downloads, builds, locks or output files.
 
-Requires Python 3.11+ and rustup. Rust toolchains and Perfetto are installed
+Requires Python 3.11+ and rustup. Rust toolchains are installed
 if needed. Existing output directories are never reused. CARGO_TARGET_DIR
 is preserved so an existing build cache can be used.
 BITZ_REVISION and BITZ_DIRTY, when set, are accepted by the shared benchmark
@@ -91,7 +91,6 @@ done < <(compgen -e)
 run python3 -c 'import sys; sys.exit("Python 3.11+ is required" if sys.version_info < (3, 11) else 0)'
 run rustup toolchain install 1.98.1
 run rustup toolchain install nightly-2026-07-01
-run bash scripts/install_trace_processor.sh
 
 if [[ "$DRY_RUN" == 1 ]]; then
   RUN_DIR="${OUTPUT:-$ROOT/bench_results/<new-all-benchmarks-directory>}"
@@ -106,7 +105,6 @@ fi
 export RUN_DIR
 printf 'Results: %s\n' "$RUN_DIR"
 export RUSTFLAGS="-C target-cpu=native"
-export PERFETTO_TRACE_PROCESSOR="$ROOT/.tools/perfetto/trace_processor_shell"
 unset BITZ_LIG_PROFILE CARGO_ENCODED_RUSTFLAGS
 
 REPS=5
@@ -137,7 +135,7 @@ logged "$RUN_DIR/sha256-ecdsa-secp256k1.log" python3 scripts/run_sha256_ecdsa_co
   --curve secp256k1 --output "$RUN_DIR/sha256-ecdsa-secp256k1" \
   --methods bitz-split binius64 binius64-ligerito \
   --exponents "${P256_EXPONENTS[@]}" --targets 100 --threads 1 10 --reps "$REPS" \
-  --bitz-profiles custom:1:4 custom:3:4 --binius-rates 1 3 --timing perfetto
+  --bitz-profiles custom:1:4 custom:3:4 --binius-rates 1 3 --timing spans
 
 printf '\n[2/7] SHA-256 chains\n'
 logged "$RUN_DIR/sha256-chain.log" python3 scripts/run_sha256_chain_compare.py \

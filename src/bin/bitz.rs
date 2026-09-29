@@ -10,14 +10,10 @@
 //!     28 17 11 --threads 1 --reps 5 --profile slim
 //! ```
 //!
-//! Usage: `bitz <n> [<t> <s> [<W>]] [options]`
+//! Usage: `bitz <n> [<t> <s>] [options]`
 //!
-//! - `n` — cell-index MLE variables, `n = t + s` (the committed instance
-//!   is `2^n · W` bits). If `t s` are omitted the reference split
-//!   `t ≈ 0.6n` is used (clamped to the packing constraint
-//!   `t + log₂W ≥ 7`). `W` as a fourth positional sets the cell width
-//!   (power of two; equivalent to `--word-bits`, positional wins) — e.g.
-//!   the reference W=32 shape: `bitz 12 4 8 32`.
+//! - `n` — committed bit-index variables, `n = t + s`. Without `t s`,
+//!   use `t = ceil(0.6n)`, clamped to the seven-bit packing width.
 //! - `--threads N` / `-j N` — rayon pool size; `1` = single-threaded.
 //!   Default: all cores (or `RAYON_NUM_THREADS`).
 //! - `--reps R` — timing repetitions (median reported; default 3).
@@ -36,49 +32,10 @@
 //!   the embedded profiles need `m ≥ 22` and keep their template's hash.
 //!   Below that every choice falls back to the ad-hoc test config
 //!   (UNAUDITED — no security claim). The `bitz:` header prints the hash.
-//! - `--word-bits W` — cell width (power of two; default 1).
-//! - `--family j2|j3|j4|j2s|j3s|j4s` — run the EXPERIMENTAL mod-q RLC
-//!   claim FAMILY at this `n` instead of the single-claim opening: `j2` =
-//!   the XOR triple (k = 3 claims on m₁, m₂, m₁⊕m₂ at per-claim row
-//!   points), `j3` = k = 4 (m₁, m₂, m₃, ⊕-all), `j4` = k = 5. The `s`
-//!   presets are the SHARED-POINT maximal families — the full XOR-closure
-//!   of the j columns at ONE point (`j2s` = k = 3, `j3s` = k = 7, `j4s` =
-//!   k = 15) through the collapsed-absorb shared-point API. W is fixed at
-//!   1 and the shape is the measured A/B layout (4 UAIR columns, x-tensor
-//!   split t' ≈ s — the README's 2026-07-26/27 RLC notes); `t s W`
-//!   positionals do not apply. Every rep is verified. Example:
-//!   `bitz 26 --family j4s --reps 5`
-//! - `--taps vx|family|collapse|rotxor|sched` — run the EXPERIMENTAL
-//!   structured-taps paths at this `n` (32-bit words along the ENTRY
-//!   axis of W=1 bit-vectors, g = 5; 2 UAIR columns; ALL claims at ONE
-//!   shared point): `vx` = the j=2 k=6 ROT/SHIFT/word-offset instance
-//!   through the batched tap-claims (extraction + translated-eq
-//!   openings) path; `family` = the same instance through the clustered
-//!   stream family ({b1,b3,b5}/{b2,b4,b6}); `collapse` = the instance's
-//!   13 deduped streams as 13 SINGLE-TAP claims through the
-//!   weight-transform collapse (≤ 4 inner claims); `rotxor` = 8
-//!   uniform-op-of-XOR-set claims (rotations + a word-offset of a₁⊕a₂,
-//!   single-column rotations) through the same collapse (4 inner
-//!   claims); `sched` = schedule-shaped claims `off^t(x)` of ONE
-//!   σ-style mixed combination through the COMPOSED collapse (2 inner
-//!   tap bodies total; `--taps-rounds` sets the count — default 48,
-//!   clipped to the shape's offset envelope; 48 needs n ≥ 22).
-//!   `mix6` = the uniform-op k=6 variant of the original instance —
-//!   2 identity claims on the source columns + 4 claims
-//!   `off^t(ROT^7(a₀⊕a₁))`, t = 0..3, through the 0x44 collapse
-//!   (4 plain inner bodies, no rings); `cols4` = FOUR committed
-//!   columns (log_cols = 2), 4 identity claims plus the XOR-mixed
-//!   pairs `ROT(a₁) ⊕ off¹(a₂)` and `ROT²(a₃) ⊕ off¹(a₄)` through
-//!   the batched tap path (blocked 2+2+2; δ applies).
-//!   `--taps-delta D` (or `BITZ_TAPS_DELTA`) sets `x_fold_extra` for
-//!   the vx|sched modes (δ ≤ 5; the measured knee is δ = 3–4 — sent
-//!   folds shrink 2^δ×, proofs −30..−57 %, verify up to 5× faster).
-//!   Every rep is verified.
-//!   Example: `bitz 24 --taps sched --taps-delta 4 --reps 5`
 //! - `--sweep <lo>-<hi>` (or a list `20,24,28`, or mixed `20-24,28`) — the
 //!   PAPER-TABLE mode: run the single-claim path once per `n`, each in a
 //!   FRESH child process (`std::env::current_exe()` re-invoked with the same
-//!   `--threads/--reps/--profile/--word-bits`; one shape per process is the
+//!   `--threads/--reps/--profile`; one shape per process is the
 //!   bench protocol), stream each child's output, parse its `RESULT` line,
 //!   print a summary, and write the LaTeX table to `--latex <path>` (default
 //!   `outputs/tables/raw-performance-table.tex` in the crate; the file records the
@@ -94,8 +51,7 @@
 //!   transcript-sampled Step-2 prime, the native Spartan PIOP with the K=3
 //!   univariate skip, bitification, and the BitZ opening of the 128 committed
 //!   bits per multiplication) for `2^e` multiplications, `e ≥ 15`, at the
-//!   `--lambda 100|128` profile (default 100 = `Lambda100`; `--word-bits
-//!   1|8` picks the BitZ cell width). `--profile custom:<r>:<k>` (default
+//!   `--lambda 100|128` profile (default 100 = `Lambda100`). `--profile custom:<r>:<k>` (default
 //!   `custom:1:4`, the raw-performance table's opener) selects the Johnson
 //!   Ligerito geometry at the profile's target; `--profile udr` selects the
 //!   relation's own default (flock's validated UDR at rate 1/2 — what
@@ -116,17 +72,12 @@
 //!
 //! The single-claim path always prints a per-step breakdown of the prover
 //! and the verifier under the `prove:`/`verify:` lines — medians over the
-//! timed reps, querying completed Perfetto intervals (row names carry
-//! the same labels as `examples/prof_probe.rs`). Build with `span-metrics`
-//! and set `PERFETTO_TRACE_PROCESSOR` to the native trace processor.
-//! `--family`/`--taps` keep the plain output.
+//! timed reps, combining completed span intervals with native BitZ
+//! phase timers. Build with `span-metrics` to collect and query span intervals
+//! entirely in Rust.
 //!
-//! Under the breakdown it prints the PAPER buckets of the prover — grand
-//! products (`mq:chunking mc:pack mc:pow2 mc:forest mc:fold_v`: the integer
-//! folds and the batched GKR), ring switch incl. its sumcheck
-//! (`mc:presum_tbls mc:presum_run mq:rings mq:bcomb`: the sumcheck reducing
-//! the GKR output to MLE claims, the ring-switch message, the φ-basis of the
-//! Ligerito claim) and Ligerito (`mq:lig`) — a `security:` line (the
+//! The prover buckets are integer folds plus GKR, sumcheck plus ring switch,
+//! and Ligerito. A `security:` line reports the
 //! Ligerito config's round-by-round target and achieved bits, flock's
 //! notion: minimum over levels and error terms), and finally ONE
 //! machine-readable line `RESULT schema=bitz-cli/1 key=value …`
@@ -136,10 +87,12 @@
 //! `--features unchecked` for release-style plain integer ops (the header
 //! reports the active mode and warns otherwise).
 
-use ::bitz::ligerito_flock::IntEvalRsLigModQProof;
 use ::bitz::piop::spartan::protocol;
 use ::bitz::piop::spartan::protocol::PreparedRelation;
 use ::bitz::piop::spartan::protocol::Proof;
+use ::bitz::piop::spartan::protocol::bitz_opener::{
+    self, BitZLigerito, BitZOpener, BitZOpeningProof,
+};
 use bitz::piop::spartan::mul::{MulLayout, MulWitness};
 
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -150,17 +103,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio, exit};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use bitz::ext_proj::{ExtProjParams, sample_proj_point, sample_proj_prime};
 use bitz::ligerito::packed_vars;
 use bitz::ligerito_flock::FlockCommitHint;
 use bitz::ligerito_flock::LigeritoSelection;
+use bitz::ligerito_flock::commit_rs_ligerito_rows;
 use bitz::ligerito_flock::{
-    OodRoundParams, absorb_standalone_mod_q_claim, absorb_standalone_mod_q_statement,
-    ood_round_params, prove_mle_eval_mod_q_ligerito_with_ood,
-    verify_mle_eval_mod_q_ligerito_runtime,
+    OodRoundParams, ood_round_params, standalone_q_bits, weakest_fold_round_grinding,
 };
-use bitz::ligerito_flock::{commit_rs_ligerito_rows, mle_eval_mod_q_lig_size_breakdown};
-use bitz::pcs::{IntegerMatrixLayout, mod_q_chunk_width, mod_q_num_chunks, smallest_generator};
+use bitz::pcs::{IntegerMatrixLayout, smallest_generator};
 use bitz::piop::spartan::{IopSecurityProfile, Lambda100, Lambda128};
 use bitz::transcript::Blake3Transcript;
 use flock_core::pcs::ligerito::LigeritoSecurityConfig;
@@ -222,77 +172,6 @@ fn peak_mb() -> f64 {
     PEAK.load(Ordering::Relaxed) as f64 / (1024.0 * 1024.0)
 }
 
-/// The evaluation prime of the single-claim path is SAMPLED from the
-/// transcript after the commitment, uniformly among the primes of the
-/// widest admissible dyadic interval `[2^(b−1), 2^b)`: the paper's
-/// Strategy-1 field policy (`b ≤ 113`) capped by the one-chunk exponent-
-/// fold width `c_w = 127 − t − W` (so the fold integers never wrap and the
-/// forest runs once) — exactly the width rule of the Spartan security
-/// profile's derived interval. The claim `⟨eq(·, r₁) ⊗ eq(·, r₂), f⟩ = μ`
-/// then uses a transcript-sampled point `(r₁, r₂) ∈ F_q^{t+s}`.
-fn standalone_q_bits(p: &IntegerMatrixLayout) -> usize {
-    mod_q_chunk_width(p).min(113)
-}
-
-/// Miller–Rabin rounds of the transcript prime sampler (the library
-/// default: a composite survives with probability `≈ 2^-128`).
-fn standalone_prime_sampler(q_bits: usize) -> ExtProjParams {
-    ExtProjParams {
-        prime_bits: q_bits,
-        ..ExtProjParams::default()
-    }
-}
-
-/// The transcript-sampled instance of a standalone claim: the prime, the
-/// evaluation point, and the `eq` weight tables over `F_q` it induces.
-struct StandaloneInstance {
-    q: u128,
-    row_weights_q: Vec<u128>,
-    col_weights_q: Vec<u128>,
-}
-
-/// Round-1-style draw after the statement is bound: `q` from the interval,
-/// then the point coordinates uniformly mod `q`. Both sides run this; the
-/// prover's precomputed instance must match (asserted by the caller).
-fn sample_standalone_instance(
-    transcript: &mut Blake3Transcript,
-    p: &IntegerMatrixLayout,
-    q_bits: usize,
-) -> StandaloneInstance {
-    let _g = tracing::info_span!("mq:sample_instance").entered();
-    let q = sample_proj_prime(transcript, &standalone_prime_sampler(q_bits))
-        .expect("bounded standalone prime search");
-    let arith = field::FpCtx::from_prime_u128(q);
-    let r1: Vec<u128> = (0..p.row_vars)
-        .map(|_| sample_proj_point(transcript, q))
-        .collect();
-    let r2: Vec<u128> = (0..p.col_vars)
-        .map(|_| sample_proj_point(transcript, q))
-        .collect();
-    StandaloneInstance {
-        q,
-        row_weights_q: eq_table_mod_q(&arith, &r1),
-        col_weights_q: eq_table_mod_q(&arith, &r2),
-    }
-}
-
-/// `eq(b, r) mod q` over `b ∈ {0,1}^{r.len()}` (index bit `k` ↔ `r[k]`).
-fn eq_table_mod_q(arith: &field::FpCtx<2>, r: &[u128]) -> Vec<u128> {
-    let q = arith.modulus_u128();
-    let mut table = vec![1u128 % q];
-    for &coord in r {
-        let mut next = Vec::with_capacity(table.len() * 2);
-        for &v in &table {
-            let v1 = arith.mul_u128(v, coord);
-            let v0 = if v >= v1 { v - v1 } else { v + q - v1 };
-            next.push(v0);
-            next.push(v1);
-        }
-        table = next;
-    }
-    table
-}
-
 fn median(mut v: Vec<f64>) -> f64 {
     v.sort_by(|a, b| a.partial_cmp(b).unwrap());
     v[v.len() / 2]
@@ -304,7 +183,7 @@ fn median(mut v: Vec<f64>) -> f64 {
 struct StepTable(Vec<(String, Vec<f64>)>);
 
 impl StepTable {
-    /// Fold one rep's drained completed Perfetto intervals (label, seconds) in.
+    /// Fold one rep's drained completed span intervals (label, seconds) in.
     fn absorb(&mut self, rep: usize, totals: Vec<(String, f64)>) {
         for (label, secs) in totals {
             let idx = match self.0.iter().position(|(l, _)| *l == label) {
@@ -376,74 +255,25 @@ const fn substep(
     }
 }
 
-/// Prover steps of the single-claim mod-q opening, in execution order.
-/// The `mf:*`/`mc:live_cols` rows are nested detail inside `mc:forest`.
+/// Native subphases; nested opening details do not enter totals twice.
 const PROVE_STEP_ROWS: &[StepRow] = &[
-    step("row-weight chunking (mq:chunking)", &["mq:chunking"]),
-    step("column pack (mc:pack)", &["mc:pack"]),
-    step("α-power tables (mc:pow2)", &["mc:pow2"]),
-    step("merged GKR forest (mc:forest)", &["mc:forest"]),
-    substep("live-col scan (mc:live_cols)", &["mc:live_cols"], &[]),
-    substep("level build (mf:build_levels)", &["mf:build_levels"], &[]),
-    substep("leaf-layer gen (mf:bitgen)", &["mf:bitgen"], &[]),
-    substep(
-        "in-tree rounds (mf:phaseA - bitgen)",
-        &["mf:phaseA"],
-        &["mf:bitgen"],
-    ),
-    substep("tree-index rounds (mf:phaseB)", &["mf:phaseB"], &[]),
-    substep(
-        "(forest rest)",
-        &["mc:forest"],
-        &["mc:live_cols", "mf:build_levels", "mf:phaseA", "mf:phaseB"],
-    ),
-    step("integer folds u_c (mc:fold_v)", &["mc:fold_v"]),
-    step("pre-sumcheck tables (mc:presum_tbls)", &["mc:presum_tbls"]),
-    step("pre-sumcheck rounds (mc:presum_run)", &["mc:presum_run"]),
-    step("ring-switch s_v (mq:rings)", &["mq:rings"]),
-    step("φ-basis + target (mq:bcomb)", &["mq:bcomb"]),
-    step("Ligerito open (mq:lig)", &["mq:lig"]),
+    step("integer folds and images", &["fold+images"]),
+    step("native GKR", &["gkr"]),
+    step("inner-product sumcheck", &["sumcheck"]),
+    step("ring switch", &["ring switch"]),
+    step("Ligerito opening", &["ligerito"]),
 ];
-/// The disjoint top-level prover labels; a rep's remainder (transcript
-/// absorbs/challenges, glue) prints as "(unattributed)".
-const PROVE_TOP_LABELS: &[&str] = &[
-    "mq:chunking",
-    "mc:pack",
-    "mc:pow2",
-    "mc:forest",
-    "mc:fold_v",
-    "mc:presum_tbls",
-    "mc:presum_run",
-    "mq:rings",
-    "mq:bcomb",
-    "mq:lig",
-];
-
-/// Verifier steps of the single-claim mod-q opening, in execution order.
+const PROVE_TOP_LABELS: &[&str] = &["fold+images", "gkr", "sumcheck", "ring switch", "ligerito"];
 const VERIFY_STEP_ROWS: &[StepRow] = &[
-    step("row-weight chunking (mv:chunking)", &["mv:chunking"]),
-    step("fold range + read-off (mv:readoff)", &["mv:readoff"]),
-    step("roots α^u_c (mv:roots)", &["mv:roots"]),
-    step("forest layer checks (mv:forest)", &["mv:forest"]),
-    step("pre-sumcheck verify (mv:presum)", &["mv:presum"]),
-    step("R-hat(r*) weight fold (mv:rhat)", &["mv:rhat"]),
-    step("ring-switch + target (mv:rswitch)", &["mv:rswitch"]),
-    step("Ligerito verify (mv:lig)", &["mv:lig"]),
+    step("integer fold checks", &["v: fold"]),
+    step("GKR checks", &["v: gkr"]),
+    step("binary PCS checks", &["v: opening"]),
 ];
-const VERIFY_TOP_LABELS: &[&str] = &[
-    "mv:chunking",
-    "mv:readoff",
-    "mv:roots",
-    "mv:forest",
-    "mv:presum",
-    "mv:rhat",
-    "mv:rswitch",
-    "mv:lig",
-];
+const VERIFY_TOP_LABELS: &[&str] = &["v: fold", "v: gkr", "v: opening"];
 
 /// Print one breakdown block under a `prove:`/`verify:` line: per-step
 /// medians with their share of the block's median total. Rows whose labels
-/// never fired are skipped (e.g. `mc:pack` on packed-hint proves), as are
+/// never fired are skipped, as are
 /// near-zero derived rows.
 fn print_steps(
     steps: &StepTable,
@@ -492,33 +322,16 @@ fn print_steps(
 
 fn usage() -> ! {
     eprintln!(
-        "usage: bitz <n> [<t> <s> [<W>]] [--threads N] [--reps R] \
-         [--profile slim|slim3|fast|secure|custom:<r>:<k>[:<bits>]|udr:<r>:<k>[:<bits>] (default custom:1:4)] [--word-bits W] \
-         [--family j2|j3|j4|j2s|j3s|j4s] [--taps vx|family|collapse|rotxor|sched]\n\
-         [--taps-delta D] [--taps-rounds R] [--taps-grp G]\n\
-       bitz --sweep <lo>-<hi>|<n,n,…> [--threads N | --sweep-threads 1,10] [--reps R] [--profile P] [--word-bits W] [--cooldown S] [--rep-cooldown S] [--latex <path>]\n\
+        "usage: bitz <n> [<t> <s>] [--threads N] [--reps R] \
+         [--profile slim|slim3|fast|secure|custom:<r>:<k>[:<bits>]|udr:<r>:<k>[:<bits>] (default custom:1:4)] \
+       bitz --sweep <lo>-<hi>|<n,n,…> [--threads N | --sweep-threads 1,10] [--reps R] [--profile P] [--cooldown S] [--rep-cooldown S] [--latex <path>]\n\
          (paper-table mode: one fresh process per n, then the LaTeX table is written —\n\
           default outputs/tables/raw-performance-table.tex in the crate; t/s do not apply)\n\
-       bitz --mul <e> [--threads N] [--reps R] [--lambda 100|128] [--profile custom:<r>:<k>|udr] [--word-bits 1|8]\n\
+       bitz --mul <e> [--threads N] [--reps R] [--lambda 100|128] [--profile custom:<r>:<k>|udr]\n\
          (2^e u32×u32→u64 multiplications through the Spartan PIOP + BitZ opening; e ≥ 15)\n\
-       bitz --mul-sweep <lo>-<hi>|<e,e,…> [--threads N] [--reps R] [--lambda L] [--word-bits W] [--cooldown S] [--latex <path>]\n\
+       bitz --mul-sweep <lo>-<hi>|<e,e,…> [--threads N] [--reps R] [--lambda L] [--cooldown S] [--latex <path>]\n\
          (paper-table mode for --mul; default outputs/tables/u32-mul-table.tex)\n\
          (n = t + s; W = cell width, power of two, default 1;\n\
-          --family runs the mod-q RLC claim family at the A/B layout — j2 = the\n\
-          XOR triple, j3/j4 the wider families, j2s/j3s/j4s the SHARED-POINT\n\
-          maximal families (full XOR-closure at one point, k = 3/7/15);\n\
-          --taps runs the structured-taps instance (32-bit entry-axis words,\n\
-          one shared point) — vx = batched tap claims, family = the clustered\n\
-          stream family, collapse = 13 single-tap claims via the collapse,\n\
-          rotxor = 8 uniform-op-of-XOR-set claims via the collapse,\n\
-          sched = off^t(σ-combo) claims via the COMPOSED collapse,\n\
-          mix6 = 2 identities + 4 off^t(ROT^7(a₀⊕a₁)) via the collapse,\n\
-          cols4 = FOUR committed columns, 4 identity claims + the pairs\n\
-          ROT(a₁)⊕off¹(a₂) and ROT²(a₃)⊕off¹(a₄) via batched taps;\n\
-          --taps-delta sets x_fold_extra (vx|sched; δ ≤ 5, knee δ = 3–4,\n\
-          shrinks the sent folds 2^δ×), --taps-rounds the sched claim\n\
-          count (default 48, clipped to the shape's offset envelope);\n\
-          t/s/W do not apply there;\n\
           run with --release and --features unchecked for quotable numbers;\n\
           -C target-cpu=native is load-bearing on aarch64)"
     );
@@ -532,12 +345,7 @@ struct Opts {
     threads: Option<usize>,
     reps: usize,
     profile: String,
-    word_bits: usize,
-    family: Option<String>,
-    taps: Option<String>,
-    taps_delta: Option<usize>,
-    taps_rounds: Option<usize>,
-    taps_grp: Option<usize>,
+
     /// `--sweep`: the shapes to run (each in a fresh child process) and the
     /// spec as typed (reproduced verbatim in the generated table's header).
     sweep: Option<(Vec<usize>, String)>,
@@ -573,12 +381,6 @@ fn parse_args() -> Opts {
         threads: None,
         reps: 3,
         profile: std::env::var("BITZ_LIG_PROFILE").unwrap_or_else(|_| "custom:1:4".into()),
-        word_bits: 1,
-        family: None,
-        taps: None,
-        taps_delta: None,
-        taps_rounds: None,
-        taps_grp: None,
         sweep: None,
         latex: None,
         mul: None,
@@ -608,39 +410,6 @@ fn parse_args() -> Opts {
             "--profile" => {
                 profile_explicit = true;
                 o.profile = args.next().unwrap_or_else(|| usage());
-            }
-            "--word-bits" | "-w" => {
-                o.word_bits = args
-                    .next()
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or_else(|| usage());
-            }
-            "--family" => {
-                o.family = Some(args.next().unwrap_or_else(|| usage()));
-            }
-            "--taps" => {
-                o.taps = Some(args.next().unwrap_or_else(|| usage()));
-            }
-            "--taps-delta" => {
-                o.taps_delta = Some(
-                    args.next()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or_else(|| usage()),
-                );
-            }
-            "--taps-rounds" => {
-                o.taps_rounds = Some(
-                    args.next()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or_else(|| usage()),
-                );
-            }
-            "--taps-grp" => {
-                o.taps_grp = Some(
-                    args.next()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or_else(|| usage()),
-                );
             }
             "--sweep" => {
                 let spec = args.next().unwrap_or_else(|| usage());
@@ -735,16 +504,10 @@ fn parse_args() -> Opts {
                 o.t = Some(*t);
                 o.s = Some(*s);
             }
-            [n, t, s, w] => {
-                o.n = *n;
-                o.t = Some(*t);
-                o.s = Some(*s);
-                o.word_bits = *w; // positional W wins over --word-bits
-            }
             _ => usage(),
         }
     }
-    if o.reps == 0 || !o.word_bits.is_power_of_two() {
+    if o.reps == 0 {
         usage()
     }
     o
@@ -779,11 +542,9 @@ fn parse_sweep_spec(spec: &str) -> Result<Vec<usize>, String> {
 }
 
 /// The reference split `t ≈ 0.6n`, clamped to the packing constraint
-/// (`t + log₂W ≥ 7`) and `s ≥ 1`.
-fn default_split(n: usize, word_bits: usize) -> (usize, usize) {
-    let log_w = word_bits.trailing_zeros() as usize;
-    let t_min = 7usize.saturating_sub(log_w);
-    let t = ((3 * n).div_ceil(5)).max(t_min).min(n - 1);
+/// (`t ≥ 7`) and `s ≥ 1`.
+fn default_split(n: usize) -> (usize, usize) {
+    let t = ((3 * n).div_ceil(5)).max(7).min(n - 1);
     (t, n - t)
 }
 
@@ -811,7 +572,9 @@ fn lig_security(cfg: &LigeritoSecurityConfig) -> LigSecurity {
     let mut min = f64::INFINITY;
     for lv in &cfg.levels {
         let q = lv.expected_eps_query_bits + lv.grinding_bits as f64;
-        let pg = lv.expected_eps_pg_bits + lv.fold_grinding_bits as f64;
+        // The weakest fold round: a UDR level's taper leaves its last round
+        // `k − 1` bits short of `fold_grinding_bits`.
+        let pg = lv.expected_eps_pg_bits + weakest_fold_round_grinding(lv) as f64;
         min = min.min(q).min(pg);
         if let Some(ood) = lv.expected_eps_ood_bits {
             min = min.min(ood);
@@ -917,7 +680,7 @@ fn resolve_configs(
 }
 
 fn main() {
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     let o = parse_args();
 
     // Paper-table modes: the parent only orchestrates child processes.
@@ -951,23 +714,6 @@ fn main() {
         eprintln!("note: built without the `parallel` feature — running serially");
     }
 
-    if let Some(fam) = o.family.clone() {
-        if o.t.is_some() || o.s.is_some() || o.word_bits != 1 {
-            eprintln!("--family fixes W = 1 and derives the shape from n; drop t/s/W");
-            exit(2);
-        }
-        run_family(&o, &fam);
-        return;
-    }
-    if let Some(mode) = o.taps.clone() {
-        if o.t.is_some() || o.s.is_some() || o.word_bits != 1 {
-            eprintln!("--taps fixes W = 1 and derives the shape from n; drop t/s/W");
-            exit(2);
-        }
-        run_taps(&o, &mode);
-        return;
-    }
-
     // The single-claim path always reports the per-step prover/verifier
     // breakdown: turn the prof scaffold on before its first scope fires.
     // The timed medians then carry the ~µs/prove scope overhead — orders
@@ -975,16 +721,15 @@ fn main() {
 
     let (t, s) = match (o.t, o.s) {
         (Some(t), Some(s)) => (t, s),
-        _ => default_split(o.n, o.word_bits),
+        _ => default_split(o.n),
     };
-    let w = o.word_bits;
-    let log_w = w.trailing_zeros() as usize;
+    let w = 1usize;
     if t + s != o.n {
         eprintln!("t + s = {} ≠ n = {}", t + s, o.n);
         exit(2);
     }
-    if t + log_w < 7 {
-        eprintln!("packing needs t + log₂W ≥ 7 (got t={t}, W={w})");
+    if t < 7 {
+        eprintln!("packing needs t ≥ 7 (got t={t})");
         exit(2);
     }
     if s == 0 {
@@ -995,12 +740,11 @@ fn main() {
     let p = IntegerMatrixLayout {
         row_vars: t,
         col_vars: s,
-        word_bits: w,
     };
     let q_bits = standalone_q_bits(&p);
     let m_p = packed_vars(&p);
-    let lch = mod_q_num_chunks(&p, q_bits);
-    let ((pc, vc), lig_tag, lig_sec, resolved) = resolve_configs(m_p, &o.profile);
+    let lch = 1usize;
+    let ((pc, _), lig_tag, lig_sec, resolved) = resolve_configs(m_p, &o.profile);
     // Round 0 (the out-of-domain sample) runs exactly when the opener sits
     // beyond unique decoding; its grinding tops the theorem's bound up to
     // the opener's own round-by-round target.
@@ -1044,27 +788,15 @@ fn main() {
 
     // Deterministic instance straight into per-column bit rows (the
     // memory-honest pattern — the u128 cell tensor never exists).
-    let mask = if w >= 128 {
-        u128::MAX
-    } else {
-        (1u128 << w) - 1
-    };
     let cell = |b: usize, c: usize| -> u128 {
-        (p.cell_index(b, c) as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & mask
+        (p.cell_index(b, c) as u128).wrapping_mul(0x9E37_79B9_7F4A_7C15) & 1
     };
-    let row_len = p.rows() << log_w;
-    let words = row_len.div_ceil(64);
+    let words = p.rows().div_ceil(64);
     let mut rows: Vec<Vec<u64>> = (0..p.cols())
         .map(|c| {
             let mut wv = vec![0u64; words];
             for b in 0..p.rows() {
-                let v = cell(b, c);
-                for j in 0..w {
-                    if (v >> j) & 1 == 1 {
-                        let i = (b << log_w) | j;
-                        wv[i >> 6] |= 1u64 << (i & 63);
-                    }
-                }
+                wv[b >> 6] |= (cell(b, c) as u64) << (b & 63);
             }
             wv
         })
@@ -1080,107 +812,20 @@ fn main() {
     // transcript-sampled prime and point (every timed run re-derives them,
     // so the derivation IS inside the prover's and verifier's timers), then
     // the claimed μ from the set bits (O(popcount) mod-q adds, excluded).
-    let instance = {
-        let mut st = Blake3Transcript::new();
-        absorb_standalone_mod_q_statement(
-            &mut st,
-            &hint.commitment,
-            &p,
-            alpha_of(),
-            q_bits,
-            ood,
-            &vc,
-        );
-        resolved.bind(&mut st);
-        let _ = bitz::ligerito_flock::bind_prover_ood(&mut st, &hint, ood);
-        sample_standalone_instance(&mut st, &p, q_bits)
-    };
-    let q = instance.q;
-    let arith = field::FpCtx::from_prime_u128(q);
-    let rw_q = instance.row_weights_q.clone();
-    let cw_q = instance.col_weights_q.clone();
-    let pow2_q: Vec<u128> = (0..w).map(|j| arith.reduce_u128(1u128 << j)).collect();
-    let mut y = 0u128;
-    for (c, row) in rows.iter().enumerate() {
-        let mut acc = 0u128;
-        for (wi, &word) in row.iter().enumerate() {
-            let mut bits = word;
-            while bits != 0 {
-                let bit = bits.trailing_zeros() as usize;
-                bits &= bits - 1;
-                let i = (wi << 6) | bit;
-                let (b, j) = (i >> log_w, i & (w - 1));
-                let term = if j == 0 {
-                    rw_q[b]
-                } else {
-                    arith.mul_u128(rw_q[b], pow2_q[j])
-                };
-                acc = arith.add_u128(acc, term);
-            }
-        }
-        y = arith.add_u128(y, arith.mul_u128(cw_q[c], acc));
-    }
-    let prove_once = |hint: &FlockCommitHint| {
-        let mut pt = Blake3Transcript::new();
-        absorb_standalone_mod_q_statement(
-            &mut pt,
-            &hint.commitment,
-            &p,
-            alpha_of(),
-            q_bits,
-            ood,
-            &vc,
-        );
-        resolved.bind(&mut pt);
-        let bound_ood = bitz::ligerito_flock::bind_prover_ood(&mut pt, &hint, ood);
-        let sampled = sample_standalone_instance(&mut pt, &p, q_bits);
-        assert_eq!(
-            sampled.q, q,
-            "the transcript-sampled prime must be reproducible"
-        );
-        absorb_standalone_mod_q_claim(&mut pt, q, y);
-        prove_mle_eval_mod_q_ligerito_with_ood(
-            &mut pt,
-            hint,
-            &p,
-            &sampled.row_weights_q,
-            q_bits,
-            alpha_of(),
-            bound_ood,
-            &pc,
-        )
-    };
-    let verify_once = |proof: &IntEvalRsLigModQProof| {
-        let mut vt = Blake3Transcript::new();
-        absorb_standalone_mod_q_statement(
-            &mut vt,
-            &hint.commitment,
-            &p,
-            alpha_of(),
-            q_bits,
-            ood,
-            &vc,
-        );
-        resolved.bind(&mut vt);
-        let bound_ood =
-            bitz::ligerito_flock::bind_verifier_ood(&mut vt, m_p, ood, proof.ood.as_ref())
-                .expect("Round 0");
-        let sampled = sample_standalone_instance(&mut vt, &p, q_bits);
-        absorb_standalone_mod_q_claim(&mut vt, sampled.q, y);
-        verify_mle_eval_mod_q_ligerito_runtime(
-            &mut vt,
-            &hint.commitment,
-            proof,
-            &p,
-            &sampled.row_weights_q,
-            &sampled.col_weights_q,
-            alpha_of(),
-            y,
-            sampled.q,
-            q_bits,
-            bound_ood,
-            &vc,
-        )
+    let opening = BitZOpener::new(
+        p,
+        BitZLigerito::Selected(resolved.selection()),
+        resolved.security().target_security_bits as usize,
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("Round 0 does not match the Ligerito ladder: {error:?}");
+        exit(2)
+    });
+    let y = bitz_opener::standalone_evaluation(&opening, &hint).expect("standalone claim");
+    let prove_once =
+        |hint: &FlockCommitHint| bitz_opener::prove_standalone(&opening, hint, y).expect("prove");
+    let verify_once = |proof: &BitZOpeningProof| {
+        bitz_opener::verify_standalone(&opening, &hint.commitment, y, proof)
     };
     set_heap_tracking(false);
     let mut commit_ms_v = Vec::with_capacity(o.reps);
@@ -1231,14 +876,18 @@ fn main() {
         if rep > 0 && o.rep_cooldown_s > 0 {
             std::thread::sleep(std::time::Duration::from_secs(o.rep_cooldown_s));
         }
-        let recording = bitz::observability::Recording::start(Vec::new()).expect("start CLI trial");
+        let recording = bitz::observability::Recording::start().expect("start CLI trial");
+        bitz::bitz::record_phases(true);
         let proving = tracing::info_span!("cli:proving").entered();
         let proof = prove_once(&hint);
         drop(proving);
+        let native_prove = take_native_phases();
 
         let verification = tracing::info_span!("cli:verification").entered();
         verify_once(&proof).expect("proof verifies");
         drop(verification);
+        let native_verify = take_native_phases();
+        bitz::bitz::record_phases(false);
         let intervals = recording.intervals().expect("query CLI trial");
         prove_ms.push(
             bitz::observability::duration(&intervals, "cli:proving")
@@ -1254,11 +903,19 @@ fn main() {
         );
         prove_steps.absorb(
             rep,
-            bitz::observability::phase_totals(&intervals, "cli:proving").unwrap(),
+            bitz::observability::phase_totals(&intervals, "cli:proving")
+                .unwrap()
+                .into_iter()
+                .chain(native_prove)
+                .collect(),
         );
         verify_steps.absorb(
             rep,
-            bitz::observability::phase_totals(&intervals, "cli:verification").unwrap(),
+            bitz::observability::phase_totals(&intervals, "cli:verification")
+                .unwrap()
+                .into_iter()
+                .chain(native_verify)
+                .collect(),
         );
         last_proof = Some(proof);
     }
@@ -1267,8 +924,8 @@ fn main() {
 
     let proof = last_proof.expect("reps ≥ 1");
     let bytes = proof.to_bytes().len();
-    let (zb, lig_b) = mle_eval_mod_q_lig_size_breakdown(&proof);
-    let forest_b = zb.total() - zb.s_v;
+    let lig_b = proof.transcript.hints.len();
+    let zb = proof.to_bytes().len() - lig_b;
     let prove_med = median(prove_ms.clone());
     let verify_med = median(verify_ms.clone());
     println!(
@@ -1312,10 +969,9 @@ fn main() {
         3,
     );
     println!(
-        "proof:   {:9.1} KiB  (forest-side {:.1} | s_v {:.1} | ligerito {:.1})",
+        "proof:   {:9.1} KiB  (native transcript and framing {:.1} | Ligerito hints {:.1})",
         bytes as f64 / 1024.0,
-        forest_b as f64 / 1024.0,
-        zb.s_v as f64 / 1024.0,
+        zb as f64 / 1024.0,
         lig_b as f64 / 1024.0,
     );
     println!("security: {}", lig_sec.describe());
@@ -1360,33 +1016,10 @@ fn main() {
 // Paper buckets, the RESULT line, and the `--sweep` table mode
 // ---------------------------------------------------------------------
 
-/// Prover bucket "grand products": the row-weight chunking, the column
-/// pack (only on unpacked hints), the α-power leaf tables, the merged GKR
-/// forest, and the integer folds `u_c` — i.e. the paper's integer folds plus
-/// its batched grand-product IOR.
-const PAPER_GP_LABELS: &[&str] = &[
-    "mq:chunking",
-    "mc:pack",
-    "mc:pow2",
-    "mc:forest",
-    "mc:fold_v",
-];
-/// Prover bucket "ring switch (incl. sumcheck)": the sumcheck that turns
-/// the forest's exit claim (an inner product with the weights) into an MLE
-/// evaluation claim, the ring-switch message `s_v`, and the φ-basis/target
-/// of the resulting Ligerito claim.
-/// Round 0 (the OOD evaluation `mc:ood` and its basis term `mq:ood_basis`)
-/// rides this bucket: it is opening-side glue of the same size class.
-const PAPER_RS_LABELS: &[&str] = &[
-    "mc:presum_tbls",
-    "mc:presum_run",
-    "mq:rings",
-    "mq:bcomb",
-    "mc:ood",
-    "mq:ood_basis",
-];
-/// Prover bucket "Ligerito open".
-const PAPER_LIG_LABELS: &[&str] = &["mq:lig"];
+/// Disjoint native prover buckets used by the CLI's published tables.
+const PAPER_GP_LABELS: &[&str] = &["fold+images", "gkr"];
+const PAPER_RS_LABELS: &[&str] = &["sumcheck", "sumcheck (sum)", "ring switch", "mc:ood"];
+const PAPER_LIG_LABELS: &[&str] = &["ligerito"];
 
 /// One single-claim run, as the `RESULT schema=bitz-cli/1` line carries it
 /// (`docs/bench-schema.md`). All `*_ms` are medians over the timed reps;
@@ -1647,10 +1280,6 @@ fn common_child_args(o: &Opts) -> Vec<String> {
     }
     v.push("--reps".to_string());
     v.push(o.reps.to_string());
-    if o.word_bits != 1 {
-        v.push("--word-bits".to_string());
-        v.push(o.word_bits.to_string());
-    }
     v
 }
 
@@ -1663,10 +1292,6 @@ fn current_exe() -> PathBuf {
 
 /// `--sweep`: the raw-performance table (one child per `n`).
 fn run_sweep(o: &Opts, ns: &[usize], spec: &str) {
-    if o.family.is_some() || o.taps.is_some() {
-        eprintln!("--sweep runs the single-claim path only; drop --family/--taps");
-        exit(2);
-    }
     let exe = current_exe();
     let latex_path: PathBuf = o.latex.clone().map_or_else(
         || default_latex_path("raw-performance-table.tex"),
@@ -1690,7 +1315,7 @@ fn run_sweep(o: &Opts, ns: &[usize], spec: &str) {
                 .join(","))
             .or_else(|| o.threads.map(|t| t.to_string()))
             .unwrap_or_else(|| "default".to_string()),
-        o.word_bits,
+        1usize,
         latex_path.display(),
     );
     // One child per (n, thread count), interleaved by n, under the same
@@ -1787,8 +1412,18 @@ fn probe_provenance() -> Provenance {
         mem_gb,
         date: probe("date", &["-u", "+%Y-%m-%d"]).unwrap_or_else(|| "unknown date".to_string()),
         commit: if Path::new(env!("CARGO_MANIFEST_DIR")).join(".git").exists() {
-            probe("git", &["-C", env!("CARGO_MANIFEST_DIR"), "describe", "--always", "--dirty", "--abbrev=9"])
-                .unwrap_or_else(|| option_env!("BITZ_REVISION").unwrap_or("unknown").to_owned())
+            probe(
+                "git",
+                &[
+                    "-C",
+                    env!("CARGO_MANIFEST_DIR"),
+                    "describe",
+                    "--always",
+                    "--dirty",
+                    "--abbrev=9",
+                ],
+            )
+            .unwrap_or_else(|| option_env!("BITZ_REVISION").unwrap_or("unknown").to_owned())
         } else {
             option_env!("BITZ_REVISION").unwrap_or("unknown").to_owned()
         },
@@ -1816,9 +1451,6 @@ fn reproduce_cmdline(o: &Opts, mode: &str, spec: &str) -> String {
     let _ = write!(cmdline, " --reps {} --profile {}", o.reps, o.profile);
     if mode != "--sweep" && o.lambda != 100 {
         let _ = write!(cmdline, " --lambda {}", o.lambda);
-    }
-    if o.word_bits != 1 {
-        let _ = write!(cmdline, " --word-bits {}", o.word_bits);
     }
     if o.cooldown_s > 0 {
         let _ = write!(cmdline, " --cooldown {}", o.cooldown_s);
@@ -2126,7 +1758,7 @@ fn write_latex_table(path: &Path, rows: &[CliResult], o: &Opts, spec: &str) -> s
     );
     let _ = writeln!(
         out,
-        "%   already a transcript-sampled prime of the admissible size. Round 0 costs ride the ring-switch bucket (mc:ood, mq:ood_basis)."
+        "%   already a transcript-sampled prime of the admissible size. Round 0 costs ride the ring-switch bucket (mc:ood)."
     );
     let _ = writeln!(out, "% RESULT lines (schema={RESULT_SCHEMA}):");
     for r in rows {
@@ -2264,866 +1896,6 @@ fn write_latex_table(path: &Path, rows: &[CliResult], o: &Opts, spec: &str) -> s
     std::fs::write(path, out)
 }
 
-/// The measured A/B family layout for `n`: 4 UAIR columns
-/// (`log_cols = 2`) of 32-bit words (`bit_vars = 5`), the remaining
-/// variables split `t' ≈ s` (matches `examples/rlc_ab.rs`, so numbers
-/// compare with the README's RLC notes).
-fn family_layout(n: usize) -> bitz::pcs::ShaF2Layout {
-    let log_cols = 2usize;
-    let bit_vars = 5usize;
-    let t_x = (n - log_cols) / 2;
-    let s = n - log_cols - t_x;
-    let tw = t_x - bit_vars;
-    bitz::pcs::ShaF2Layout {
-        p: IntegerMatrixLayout {
-            row_vars: bit_vars + log_cols + tw,
-            col_vars: s,
-            word_bits: 1,
-        },
-        num_cols: 1 << log_cols,
-        log_cols,
-        bit_vars,
-        num_vars: tw + s,
-        tw,
-        x_fold_extra: 0,
-    }
-}
-
-/// The `--family` runner: commit once, then prove/verify the preset's RLC
-/// claim family (every rep verified), reporting medians, proof size and
-/// peak heap.
-fn run_family(o: &Opts, fam: &str) {
-    use bitz::ligerito_flock::{
-        RlcFamilyClaim, RlcSharedClaim, mle_eval_mod_q_lig_rlc_family_proof_size_bytes,
-        prove_mle_eval_mod_q_ligerito_rlc_family,
-        prove_mle_eval_mod_q_ligerito_rlc_family_shared_point,
-        verify_mle_eval_mod_q_ligerito_rlc_family,
-        verify_mle_eval_mod_q_ligerito_rlc_family_shared_point,
-    };
-    use bitz::pcs::{FQ_MOD, Q100Element as PcsFq, extract_virtual_xor_rows, virtual_xor_params};
-
-    // `s`-suffixed presets are the SHARED-POINT maximal families (the full
-    // XOR-closure of the j columns at ONE point, k = 2^j − 1).
-    let (j, k, forms, shared): (usize, usize, Vec<usize>, bool) = match fam {
-        "j2" => (2, 3, vec![0b01, 0b10, 0b11], false),
-        "j3" => (3, 4, vec![0b001, 0b010, 0b100, 0b111], false),
-        "j4" => (4, 5, vec![0b0001, 0b0010, 0b0100, 0b1000, 0b1111], false),
-        "j2s" => (2, 3, (1..1 << 2).collect(), true),
-        "j3s" => (3, 7, (1..1 << 3).collect(), true),
-        "j4s" => (4, 15, (1..1 << 4).collect(), true),
-        other => {
-            eprintln!("unknown family preset: {other} (expected j2|j3|j4|j2s|j3s|j4s)");
-            exit(2);
-        }
-    };
-    if o.n < 15 {
-        eprintln!("--family needs n ≥ 15 (t' = (n−2)/2 ≥ 6 for the x-tensor presum)");
-        exit(2);
-    }
-    let layout = family_layout(o.n);
-    let p = layout.p;
-    let p_x = virtual_xor_params(&layout);
-    let m_p = packed_vars(&p);
-    let ((pc, vc), lig_tag, _lig_sec, _resolved) = resolve_configs(m_p, &o.profile);
-    if _lig_sec.ood.is_some() {
-        eprintln!(
-            "This historical kernel has no early OOD integration; explicitly select a UDR profile. It carries no production security claim."
-        );
-        exit(2);
-    }
-    let family_cols: Vec<usize> = (0..j).collect();
-
-    let threads_eff: usize = {
-        #[cfg(feature = "parallel")]
-        {
-            rayon::current_num_threads()
-        }
-        #[cfg(not(feature = "parallel"))]
-        {
-            1
-        }
-    };
-    println!(
-        "bitz --family {fam}: n={} (t'={}, s={}, j={j}, k={k}) | lig={lig_tag}@r1/{}k{} | \
-         threads={threads_eff} | int guards: {}",
-        o.n,
-        p_x.row_vars,
-        p_x.col_vars,
-        1usize << pc.log_inv_rates[0],
-        pc.initial_k,
-        if bitz::utils::CHECKED {
-            "CHECKED (build with --features unchecked)"
-        } else {
-            "unchecked"
-        },
-    );
-
-    // Deterministic committed bit rows (memory-honest packed-rows path).
-    let words = p.rows().div_ceil(64);
-    let rows: Vec<Vec<u64>> = (0..p.cols())
-        .map(|c| {
-            (0..words)
-                .map(|w| {
-                    ((c as u64) << 32 | w as u64)
-                        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-                        .rotate_left(((c + w) & 63) as u32)
-                })
-                .collect()
-        })
-        .collect();
-    reset_peak();
-    let (hint, t0) = bitz::observability::measure(tracing::info_span!("bitz:hint"), || {
-        commit_rs_ligerito_rows(&p, rows, &pc)
-    })
-    .expect("measure completed operation");
-    let commit_ms = t0.as_secs_f64() * 1e3;
-    println!("commit:  {commit_ms:9.2} ms   peak {:8.2} MB", peak_mb());
-
-    // Statement: per-claim row weights (distinct row points) for the
-    // general presets, ONE row point for the `s` presets; shared column
-    // weights; claimed values from the committed data.
-    let rws: Vec<Vec<u128>> = (0..if shared { 1 } else { k })
-        .map(|i| {
-            (0..p_x.rows())
-                .map(|b| {
-                    (b as u128)
-                        .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
-                        .wrapping_add(11 + i as u128)
-                        % FQ_MOD
-                })
-                .collect()
-        })
-        .collect();
-    let colw: Vec<PcsFq> = (0..p_x.cols())
-        .map(|c| PcsFq::from((c as u128).wrapping_mul(0xABCD_EF01_2345).wrapping_add(3)))
-        .collect();
-    let cs: Vec<u128> = forms
-        .iter()
-        .enumerate()
-        .map(|(i, &f)| {
-            let rw = &rws[if shared { 0 } else { i }];
-            let cols: Vec<usize> = (0..j)
-                .filter(|&fi| (f >> fi) & 1 == 1)
-                .map(|fi| family_cols[fi])
-                .collect();
-            let a_rows = extract_virtual_xor_rows(&layout, hint.rows(), &cols, 0, None);
-            let mut y = PcsFq::from(0u128);
-            for (c, row) in a_rows.iter().enumerate() {
-                let mut acc = PcsFq::from(0u128);
-                for (wi, &word) in row.iter().enumerate() {
-                    let mut bits = word;
-                    while bits != 0 {
-                        let t = bits.trailing_zeros() as usize;
-                        acc = acc + PcsFq::from(rw[(wi << 6) | t]);
-                        bits &= bits.wrapping_sub(1);
-                    }
-                }
-                y = y + colw[c] * acc;
-            }
-            y.canonical_u128()
-        })
-        .collect();
-    let claims: Vec<RlcFamilyClaim<'_>> = (0..k)
-        .map(|i| RlcFamilyClaim {
-            form: forms[i],
-            row_weights_q: &rws[if shared { 0 } else { i }],
-            claimed: cs[i],
-        })
-        .collect();
-    let sh_claims: Vec<RlcSharedClaim> = (0..k)
-        .map(|i| RlcSharedClaim {
-            form: forms[i],
-            claimed: cs[i],
-        })
-        .collect();
-
-    // Warm-up (excluded), then timed reps — every rep verified.
-    let prove_once = |pt: &mut Blake3Transcript| {
-        if shared {
-            prove_mle_eval_mod_q_ligerito_rlc_family_shared_point(
-                pt,
-                &hint,
-                &layout,
-                &family_cols,
-                &rws[0],
-                &sh_claims,
-                alpha_of(),
-                &pc,
-            )
-        } else {
-            prove_mle_eval_mod_q_ligerito_rlc_family(
-                pt,
-                &hint,
-                &layout,
-                &family_cols,
-                &claims,
-                alpha_of(),
-                &pc,
-            )
-        }
-    };
-    {
-        let mut pt = Blake3Transcript::new();
-        let pr = prove_once(&mut pt);
-        black_box(&pr);
-    }
-    let mut prove_ms = Vec::new();
-    let mut verify_ms = Vec::new();
-    let mut last = None;
-    for _ in 0..o.reps {
-        let mut pt = Blake3Transcript::new();
-        let (proof, t1) =
-            bitz::observability::measure(tracing::info_span!("bitz:proof"), || prove_once(&mut pt))
-                .expect("measure completed operation");
-        prove_ms.push(t1.as_secs_f64() * 1e3);
-        let mut vt = Blake3Transcript::new();
-        let t2_recording =
-            bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
-        let t2 = tracing::info_span!("bitz:t2").entered();
-        if shared {
-            verify_mle_eval_mod_q_ligerito_rlc_family_shared_point(
-                &mut vt,
-                &hint.commitment,
-                &proof,
-                &layout,
-                &family_cols,
-                &rws[0],
-                &sh_claims,
-                &colw,
-                alpha_of(),
-                &vc,
-            )
-            .expect("shared-point family proof verifies");
-        } else {
-            verify_mle_eval_mod_q_ligerito_rlc_family(
-                &mut vt,
-                &hint.commitment,
-                &proof,
-                &layout,
-                &family_cols,
-                &claims,
-                &colw,
-                alpha_of(),
-                &vc,
-            )
-            .expect("family proof verifies");
-        }
-        verify_ms.push(
-            {
-                drop(t2);
-                bitz::observability::duration(
-                    &t2_recording
-                        .intervals()
-                        .expect("complete operation capture"),
-                    "bitz:t2",
-                )
-                .expect("query completed operation")
-            }
-            .as_secs_f64()
-                * 1e3,
-        );
-        last = Some(proof);
-    }
-    reset_peak();
-    {
-        let mut pt = Blake3Transcript::new();
-        let pr = prove_once(&mut pt);
-        black_box(&pr);
-    }
-    let prove_peak = peak_mb();
-    let proof = last.expect("reps ≥ 1");
-    let bytes = mle_eval_mod_q_lig_rlc_family_proof_size_bytes(&proof);
-    println!(
-        "prove:   {:9.2} ms   peak {prove_peak:8.2} MB   ({k} claims, median of {}, verified)",
-        median(prove_ms),
-        o.reps
-    );
-    println!("verify:  {:9.2} ms", median(verify_ms));
-    println!(
-        "proof:   {:9.1} KiB  ({:.2} KiB/claim)",
-        bytes as f64 / 1024.0,
-        bytes as f64 / 1024.0 / k as f64,
-    );
-}
-
-/// The structured-taps layout for `n` (matches `examples/taps_ab.rs`, so
-/// numbers compare with the README's structured-taps note): 2 UAIR
-/// bit-columns (`log_cols = 1`, W = 1, `bit_vars = 0`), 32-bit words
-/// along the ENTRY axis (g = 5), x split `t' vs s` as even as `tw ≥ 6`
-/// allows.
-fn taps_layout(n: usize, delta: usize, log_cols: usize) -> bitz::pcs::ShaF2Layout {
-    let tw = ((n - log_cols) / 2).max(6);
-    let s = n - log_cols - tw;
-    bitz::pcs::ShaF2Layout {
-        p: IntegerMatrixLayout {
-            row_vars: log_cols + tw,
-            col_vars: s,
-            word_bits: 1,
-        },
-        num_cols: 1 << log_cols,
-        log_cols,
-        bit_vars: 0,
-        num_vars: tw + s,
-        tw,
-        x_fold_extra: delta,
-    }
-}
-
-/// The `--taps` runner: the j=2 k=6 ROT/SHIFT/word-offset instance (or
-/// its 13 streams as single-tap claims), all claims at ONE shared point,
-/// through the chosen path — every rep verified.
-#[allow(clippy::arithmetic_side_effects)]
-fn run_taps(o: &Opts, mode: &str) {
-    use bitz::ligerito_flock::{
-        RlcFamilyClaim, TapClaim, TapComposedClaim, TapFamilyCluster, TapPointClaim,
-        TapVerifyClaim, mle_eval_mod_q_lig_tap_family_size_breakdown,
-        mle_eval_mod_q_lig_tap_size_breakdown, mle_eval_mod_q_lig_xor_proof_size_bytes,
-        prove_mle_eval_mod_q_ligerito_tap_claims, prove_mle_eval_mod_q_ligerito_tap_collapse,
-        prove_mle_eval_mod_q_ligerito_tap_composed, prove_mle_eval_mod_q_ligerito_tap_family,
-        verify_mle_eval_mod_q_ligerito_tap_claims, verify_mle_eval_mod_q_ligerito_tap_collapse,
-        verify_mle_eval_mod_q_ligerito_tap_composed, verify_mle_eval_mod_q_ligerito_tap_family,
-    };
-    use bitz::pcs::{FQ_BITS, FQ_MOD, Q100Element as PcsFq, virtual_xor_params};
-    use bitz::taps::{TapOp, extract_virtual_tap_rows};
-
-    // Word-group width: --taps-grp, else BITZ_TAPS_GRP, else 32-bit words.
-    let grp: usize = o
-        .taps_grp
-        .or_else(|| {
-            std::env::var("BITZ_TAPS_GRP")
-                .ok()
-                .and_then(|v| v.parse().ok())
-        })
-        .unwrap_or(5);
-    if !(1..=8).contains(&grp) {
-        eprintln!("--taps-grp must be in 1..=8");
-        exit(2);
-    }
-    if !matches!(
-        mode,
-        "vx" | "family" | "collapse" | "rotxor" | "sched" | "mix6" | "cols4"
-    ) {
-        eprintln!(
-            "unknown taps mode: {mode} (expected vx|family|collapse|rotxor|sched|mix6|cols4)"
-        );
-        exit(2);
-    }
-    if o.n < 14 {
-        eprintln!("--taps needs n ≥ 14 (tw ≥ 6 and s ≥ 7 for the 32-bit group field)");
-        exit(2);
-    }
-    // δ: the --taps-delta flag, else the BITZ_TAPS_DELTA env, else 0.
-    let delta = o.taps_delta.or_else(|| {
-        std::env::var("BITZ_TAPS_DELTA")
-            .ok()
-            .and_then(|v| v.parse().ok())
-    });
-    // `cols4` runs 4 committed columns; every other mode the 2-column
-    // instance layout.
-    let layout = taps_layout(o.n, delta.unwrap_or(0), if mode == "cols4" { 2 } else { 1 });
-    if layout.x_fold_extra > 0 && !matches!(mode, "vx" | "sched" | "cols4") {
-        eprintln!(
-            "--taps-delta / BITZ_TAPS_DELTA apply to the vx|sched|cols4 modes only (δ-envelope)"
-        );
-        exit(2);
-    }
-    if layout.x_fold_extra > grp {
-        eprintln!("--taps-delta must be ≤ g = {grp}");
-        exit(2);
-    }
-    if layout.p.col_vars < grp + 2 {
-        eprintln!("--taps needs s ≥ g + 2 (n too small for 2^{grp}-bit words)");
-        exit(2);
-    }
-    let p = layout.p;
-    let p_x = virtual_xor_params(&layout);
-    let m_p = packed_vars(&p);
-    let ((pc, vc), lig_tag, _lig_sec, _resolved) = resolve_configs(m_p, &o.profile);
-    if _lig_sec.ood.is_some() {
-        eprintln!(
-            "This historical kernel has no early OOD integration; explicitly select a UDR profile. It carries no production security claim."
-        );
-        exit(2);
-    }
-
-    // The instance's tap lists (identities, two 3-tap rotation
-    // convolutions, a cross-column mix, the lossy-SHIFT claim) and the
-    // pinned 2-cluster stream split.
-    let rot = |col, amt, off| TapOp {
-        col,
-        grp_log2: grp,
-        bit_amt: amt,
-        bit_dropout: false,
-        off,
-    };
-    let shl = |col, amt, off| TapOp {
-        col,
-        grp_log2: grp,
-        bit_amt: amt,
-        bit_dropout: true,
-        off,
-    };
-    let claim_taps: Vec<Vec<TapOp>> = if mode == "cols4" {
-        // 4 committed columns: identity claims on each, plus the two
-        // XOR-mixed pairs b₁ = ROT¹(a₁) ⊕ off¹(a₂) and
-        // b₂ = ROT²(a₃) ⊕ off¹(a₄) (bare ROT read as ROT¹; columns
-        // 1-indexed in the statement, 0-indexed here).
-        vec![
-            vec![TapOp::ident(0)],
-            vec![TapOp::ident(1)],
-            vec![TapOp::ident(2)],
-            vec![TapOp::ident(3)],
-            vec![rot(0, 1, 0), rot(1, 0, 1)],
-            vec![rot(2, 2, 0), rot(3, 0, 1)],
-        ]
-    } else {
-        vec![
-            vec![TapOp::ident(0)],
-            vec![TapOp::ident(1)],
-            vec![rot(0, 1, 0), rot(0, 2, 1), rot(0, 3, 2)],
-            vec![rot(1, 2, 0), rot(1, 5, 1), rot(1, 7, 2)],
-            vec![rot(0, 1, 0), rot(1, 4, 0), rot(0, 6, 1)],
-            vec![shl(0, 3, 0), shl(1, 5, 1), rot(1, 2, 2)],
-        ]
-    };
-    let streams: Vec<Vec<TapOp>> = vec![
-        vec![
-            TapOp::ident(0),
-            rot(0, 1, 0),
-            rot(0, 2, 1),
-            rot(0, 3, 2),
-            rot(1, 4, 0),
-            rot(0, 6, 1),
-        ],
-        vec![
-            TapOp::ident(1),
-            rot(1, 2, 0),
-            rot(1, 5, 1),
-            rot(1, 7, 2),
-            shl(0, 3, 0),
-            shl(1, 5, 1),
-            rot(1, 2, 2),
-        ],
-    ];
-    let forms: Vec<Vec<usize>> = vec![
-        vec![0b000001, 0b001110, 0b110010],
-        vec![0b0000001, 0b0001110, 0b1110000],
-    ];
-    let members: Vec<Vec<usize>> = vec![vec![0, 2, 4], vec![1, 3, 5]];
-
-    let threads_eff: usize = {
-        #[cfg(feature = "parallel")]
-        {
-            rayon::current_num_threads()
-        }
-        #[cfg(not(feature = "parallel"))]
-        {
-            1
-        }
-    };
-    // The composed-collapse schedule preset's source (σ-style mixed
-    // combination) and round count (48, clipped to the shape's offset
-    // envelope; the FOLDED baseline lists also eat the source's own
-    // word offset).
-    let sched_src: Vec<TapOp> = vec![rot(0, 7, 0), rot(0, 18, 0), shl(0, 3, 0), rot(1, 0, 1)];
-    let sched_max_src_off = sched_src.iter().map(|t| t.off).max().unwrap_or(0);
-    let sched_rounds = o
-        .taps_rounds
-        .unwrap_or(48)
-        .min((1usize << (layout.p.col_vars - grp)) - sched_max_src_off);
-    let k_desc = match mode {
-        "collapse" => "13 single-tap claims".to_string(),
-        "rotxor" => "8 op(xor-set) claims".to_string(),
-        "sched" => format!("{sched_rounds} off^t(σ-combo) claims"),
-        "mix6" => "2 identities + 4 off^t(ROT^7(a0^a1))".to_string(),
-        "cols4" => "4 identities + 2 mixed pairs, 4 cols".to_string(),
-        _ => "k=6 instance".to_string(),
-    };
-    println!(
-        "bitz --taps {mode}: n={} (t'={}, s={}, g={grp}, {k_desc}, one shared point) | \
-         lig={lig_tag}@r1/{}k{} | threads={threads_eff} | int guards: {}",
-        o.n,
-        p_x.row_vars,
-        p_x.col_vars,
-        1usize << pc.log_inv_rates[0],
-        pc.initial_k,
-        if bitz::utils::CHECKED {
-            "CHECKED (build with --features unchecked)"
-        } else {
-            "unchecked"
-        },
-    );
-
-    let words = p.rows().div_ceil(64);
-    let rows: Vec<Vec<u64>> = (0..p.cols())
-        .map(|c| {
-            (0..words)
-                .map(|w| {
-                    ((c as u64) << 32 | w as u64)
-                        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-                        .rotate_left(((c + w) & 63) as u32)
-                })
-                .collect()
-        })
-        .collect();
-    reset_peak();
-    let (hint, t0) = bitz::observability::measure(tracing::info_span!("bitz:hint"), || {
-        commit_rs_ligerito_rows(&p, rows, &pc)
-    })
-    .expect("measure completed operation");
-    let commit_ms = t0.as_secs_f64() * 1e3;
-    println!("commit:  {commit_ms:9.2} ms   peak {:8.2} MB", peak_mb());
-
-    // ONE shared evaluation point for every claim.
-    let rw: Vec<u128> = (0..p_x.rows())
-        .map(|b| {
-            (b as u128)
-                .wrapping_mul(0xDEAD_BEEF_CAFE_F00D_1234_5678_9ABC_DEF1)
-                .wrapping_add(11)
-                % FQ_MOD
-        })
-        .collect();
-    let colw: Vec<PcsFq> = (0..p_x.cols())
-        .map(|c| PcsFq::from((c as u128).wrapping_mul(0xABCD_EF01_2345).wrapping_add(3)))
-        .collect();
-    let eval_taps = |taps: &[TapOp]| -> u128 {
-        let a_rows = extract_virtual_tap_rows(&layout, hint.rows(), taps);
-        let mut y = PcsFq::from(0u128);
-        for (c, row) in a_rows.iter().enumerate() {
-            let mut acc = PcsFq::from(0u128);
-            for (wi, &word) in row.iter().enumerate() {
-                let mut bits = word;
-                while bits != 0 {
-                    let t = bits.trailing_zeros() as usize;
-                    acc = acc + PcsFq::from(rw[(wi << 6) | t]);
-                    bits &= bits.wrapping_sub(1);
-                }
-            }
-            y = y + colw[c] * acc;
-        }
-        y.canonical_u128()
-    };
-
-    // Statement + per-mode prove/verify/size closures.
-    let cs: Vec<u128> = claim_taps.iter().map(|t| eval_taps(t)).collect();
-    let tclaims: Vec<TapClaim<'_>> = claim_taps
-        .iter()
-        .map(|taps| TapClaim {
-            taps,
-            row_weights_q: &rw,
-        })
-        .collect();
-    let tvclaims: Vec<TapVerifyClaim<'_, PcsFq>> = claim_taps
-        .iter()
-        .zip(cs.iter())
-        .map(|(taps, &c)| TapVerifyClaim {
-            taps,
-            row_weights_q: &rw,
-            col_weights: &colw,
-            claimed: PcsFq::from(c),
-        })
-        .collect();
-    let cluster_claims: Vec<Vec<RlcFamilyClaim<'_>>> = (0..2)
-        .map(|ci| {
-            forms[ci]
-                .iter()
-                .zip(members[ci].iter())
-                .map(|(&form, &bi)| RlcFamilyClaim {
-                    form,
-                    row_weights_q: &rw,
-                    claimed: cs[bi],
-                })
-                .collect()
-        })
-        .collect();
-    let clusters: Vec<TapFamilyCluster<'_>> = (0..2)
-        .map(|ci| TapFamilyCluster {
-            streams: &streams[ci],
-            claims: &cluster_claims[ci],
-        })
-        .collect();
-    // Point-claim sets for the collapse-style modes: `collapse` = the 13
-    // deduped streams as singleton XOR sets; `rotxor` = uniform ops
-    // applied OUTSIDE XOR sets (rotations/offsets of a₁⊕a₂ plus a few
-    // single-column ops) — `op(⊕ cols)` claims.
-    let all_streams: Vec<TapOp> = streams.iter().flatten().copied().collect();
-    let uni = |amt: usize, dropout: bool, off: usize| bitz::taps::TapUniOp {
-        grp_log2: grp,
-        bit_amt: amt,
-        bit_dropout: dropout,
-        off,
-    };
-    let (pc_sets, pc_ops): (Vec<Vec<usize>>, Vec<bitz::taps::TapUniOp>) = match mode {
-        "collapse" => (
-            all_streams.iter().map(|t| vec![t.col]).collect(),
-            all_streams.iter().map(|t| t.uni()).collect(),
-        ),
-        // The uniform-op k=6 variant of the original instance: 2
-        // identity claims on the source columns + 4 word-offsets of
-        // ROT^7(a₀⊕a₁) — op OUTSIDE the XOR, 0x44 territory
-        // (4 plain inner bodies, no rings).
-        "mix6" => (
-            vec![
-                vec![0],
-                vec![1],
-                vec![0, 1],
-                vec![0, 1],
-                vec![0, 1],
-                vec![0, 1],
-            ],
-            vec![
-                uni(0, false, 0),
-                uni(0, false, 0),
-                uni(7, false, 0),
-                uni(7, false, 1),
-                uni(7, false, 2),
-                uni(7, false, 3),
-            ],
-        ),
-        "rotxor" => (
-            vec![
-                vec![0, 1],
-                vec![0, 1],
-                vec![0, 1],
-                vec![0, 1],
-                vec![0, 1],
-                vec![0],
-                vec![1],
-                vec![1],
-            ],
-            vec![
-                uni(1, false, 0),
-                uni(5, false, 0),
-                uni(11, false, 0),
-                uni(19, false, 0),
-                uni(2, false, 1),
-                uni(3, false, 0),
-                uni(7, false, 0),
-                uni(9, false, 0),
-            ],
-        ),
-        _ => (Vec::new(), Vec::new()),
-    };
-    let pclaims: Vec<TapPointClaim<'_>> = pc_sets
-        .iter()
-        .zip(pc_ops.iter())
-        .map(|(set, &op)| {
-            let taps: Vec<TapOp> = set.iter().map(|&c| op.with_col(c)).collect();
-            TapPointClaim {
-                cols: set,
-                op,
-                claimed: eval_taps(&taps),
-            }
-        })
-        .collect();
-    // Schedule claims: `off^t` of the fixed source; the claim values run
-    // through the offset-FOLDED lists (the independent extraction route
-    // the composed weight-transform algebra must reproduce).
-    let sched_folded: Vec<Vec<TapOp>> = if mode == "sched" {
-        (0..sched_rounds)
-            .map(|t| {
-                sched_src
-                    .iter()
-                    .map(|tap| {
-                        let mut tap = *tap;
-                        tap.off += t;
-                        tap
-                    })
-                    .collect()
-            })
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let cclaims: Vec<TapComposedClaim<'_>> = sched_folded
-        .iter()
-        .enumerate()
-        .map(|(t, folded)| TapComposedClaim {
-            source: &sched_src,
-            outer: uni(0, false, t),
-            claimed: eval_taps(folded),
-        })
-        .collect();
-
-    enum TapProof {
-        Vx(bitz::ligerito_flock::IntEvalRsLigModQTapProof),
-        Fam(bitz::ligerito_flock::IntEvalRsLigTapFamilyProof),
-        Clp(bitz::ligerito_flock::IntEvalRsLigModQXorProof),
-        Cmp(bitz::ligerito_flock::IntEvalRsLigModQTapProof),
-    }
-    let prove_once = |pt: &mut Blake3Transcript| -> TapProof {
-        match mode {
-            "vx" | "cols4" => TapProof::Vx(prove_mle_eval_mod_q_ligerito_tap_claims(
-                pt,
-                &hint,
-                &layout,
-                FQ_BITS,
-                &tclaims,
-                alpha_of(),
-                &pc,
-            )),
-            "family" => TapProof::Fam(prove_mle_eval_mod_q_ligerito_tap_family(
-                pt,
-                &hint,
-                &layout,
-                &clusters,
-                alpha_of(),
-                &pc,
-            )),
-            "sched" => TapProof::Cmp(prove_mle_eval_mod_q_ligerito_tap_composed(
-                pt,
-                &hint,
-                &layout,
-                &rw,
-                &colw,
-                &cclaims,
-                alpha_of(),
-                &pc,
-            )),
-            _ => TapProof::Clp(prove_mle_eval_mod_q_ligerito_tap_collapse(
-                pt,
-                &hint,
-                &layout,
-                &rw,
-                &colw,
-                &pclaims,
-                alpha_of(),
-                &pc,
-            )),
-        }
-    };
-    let verify_once = |vt: &mut Blake3Transcript, proof: &TapProof| match proof {
-        TapProof::Vx(pr) => verify_mle_eval_mod_q_ligerito_tap_claims(
-            vt,
-            &hint.commitment,
-            pr,
-            &layout,
-            alpha_of(),
-            FQ_BITS,
-            &tvclaims,
-            &vc,
-        )
-        .expect("tap claims verify"),
-        TapProof::Fam(pr) => verify_mle_eval_mod_q_ligerito_tap_family(
-            vt,
-            &hint.commitment,
-            pr,
-            &layout,
-            &clusters,
-            &colw,
-            alpha_of(),
-            &vc,
-        )
-        .expect("stream family verifies"),
-        TapProof::Cmp(pr) => verify_mle_eval_mod_q_ligerito_tap_composed(
-            vt,
-            &hint.commitment,
-            pr,
-            &layout,
-            &rw,
-            &colw,
-            &cclaims,
-            alpha_of(),
-            &vc,
-        )
-        .expect("composed schedule verifies"),
-        TapProof::Clp(pr) => verify_mle_eval_mod_q_ligerito_tap_collapse(
-            vt,
-            &hint.commitment,
-            pr,
-            &layout,
-            &rw,
-            &colw,
-            &pclaims,
-            alpha_of(),
-            &vc,
-        )
-        .expect("collapse verifies"),
-    };
-    let size_of = |proof: &TapProof| -> usize {
-        match proof {
-            TapProof::Vx(pr) | TapProof::Cmp(pr) => {
-                let (b, lig) = mle_eval_mod_q_lig_tap_size_breakdown(pr);
-                b.total() + lig
-            }
-            TapProof::Fam(pr) => {
-                let (b, lig) = mle_eval_mod_q_lig_tap_family_size_breakdown(pr);
-                b.total() + lig
-            }
-            TapProof::Clp(pr) => mle_eval_mod_q_lig_xor_proof_size_bytes(pr),
-        }
-    };
-    let k = match mode {
-        "collapse" | "rotxor" | "mix6" => pclaims.len(),
-        "sched" => cclaims.len(),
-        _ => tclaims.len(),
-    };
-
-    // Warm-up (excluded), then timed reps — every rep verified.
-    {
-        let mut pt = Blake3Transcript::new();
-        let pr = prove_once(&mut pt);
-        black_box(&pr);
-    }
-    let mut prove_ms = Vec::new();
-    let mut verify_ms = Vec::new();
-    let mut last = None;
-    for _ in 0..o.reps {
-        let mut pt = Blake3Transcript::new();
-        let (proof, t1) =
-            bitz::observability::measure(tracing::info_span!("bitz:proof"), || prove_once(&mut pt))
-                .expect("measure completed operation");
-        prove_ms.push(t1.as_secs_f64() * 1e3);
-        let mut vt = Blake3Transcript::new();
-        let t2_recording =
-            bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
-        let t2 = tracing::info_span!("bitz:t2").entered();
-        verify_once(&mut vt, &proof);
-        verify_ms.push(
-            {
-                drop(t2);
-                bitz::observability::duration(
-                    &t2_recording
-                        .intervals()
-                        .expect("complete operation capture"),
-                    "bitz:t2",
-                )
-                .expect("query completed operation")
-            }
-            .as_secs_f64()
-                * 1e3,
-        );
-        last = Some(proof);
-    }
-    reset_peak();
-    {
-        let mut pt = Blake3Transcript::new();
-        let pr = prove_once(&mut pt);
-        black_box(&pr);
-    }
-    let prove_peak = peak_mb();
-    let proof = last.expect("reps ≥ 1");
-    let bytes = size_of(&proof);
-    println!(
-        "prove:   {:9.2} ms   peak {prove_peak:8.2} MB   ({k} claims, median of {}, verified)",
-        median(prove_ms),
-        o.reps
-    );
-    println!("verify:  {:9.2} ms", median(verify_ms));
-    println!(
-        "proof:   {:9.1} KiB  ({:.2} KiB/claim)",
-        bytes as f64 / 1024.0,
-        bytes as f64 / 1024.0 / k as f64,
-    );
-}
-
-/// The deterministic generator α (cached — `smallest_generator` scans).
-fn alpha_of() -> bitz::poly::univariate::binary_gf128::Gf128 {
-    use std::sync::OnceLock;
-    static A: OnceLock<bitz::poly::univariate::binary_gf128::Gf128> = OnceLock::new();
-    *A.get_or_init(smallest_generator)
-}
-
 // ---------------------------------------------------------------------
 // `--mul` / `--mul-sweep`: the u32 × u32 → u64 multiplication SNARK
 // ---------------------------------------------------------------------
@@ -3144,7 +1916,7 @@ const MUL_PROVE_STEP_ROWS: &[StepRow] = &[
     step("BitZ opening (step5:open_prove)", &["step5:open_prove"]),
     substep("grand products", PAPER_GP_LABELS, &[]),
     substep("ring switch (incl. sumcheck)", PAPER_RS_LABELS, &[]),
-    substep("Ligerito open (mq:lig)", PAPER_LIG_LABELS, &[]),
+    substep("Ligerito open", PAPER_LIG_LABELS, &[]),
 ];
 const MUL_PROVE_TOP_LABELS: &[&str] = &[
     "step2:project_prove",
@@ -3168,15 +1940,9 @@ const MUL_VERIFY_STEP_ROWS: &[StepRow] = &[
         &["spartan-bitz:bitz_prepare_verifier"],
         &[],
     ),
-    substep("row-weight chunking (mv:chunking)", &["mv:chunking"], &[]),
-    substep("fold range + read-off (mv:readoff)", &["mv:readoff"], &[]),
-    substep("roots α^u_c (mv:roots)", &["mv:roots"], &[]),
-    substep("forest layer checks (mv:forest)", &["mv:forest"], &[]),
-    substep("pre-sumcheck verify (mv:presum)", &["mv:presum"], &[]),
-    substep("R-hat(r*) weight fold (mv:rhat)", &["mv:rhat"], &[]),
-    substep("Round 0 / OOD (mv:ood)", &["mv:ood"], &[]),
-    substep("ring-switch + target (mv:rswitch)", &["mv:rswitch"], &[]),
-    substep("Ligerito verify (mv:lig)", &["mv:lig"], &[]),
+    substep("integer fold checks", &["v: fold"], &[]),
+    substep("GKR checks", &["v: gkr"], &[]),
+    substep("binary PCS checks", &["v: opening"], &[]),
 ];
 const MUL_VERIFY_TOP_LABELS: &[&str] = &[
     "step2:project_verify",
@@ -3399,14 +2165,6 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         eprintln!("--mul needs 15 ≤ e ≤ 40 (the combined proof requires at least 2^15 gate slots)");
         exit(2);
     }
-    let width = match o.word_bits {
-        1 => 1,
-        8 => 8,
-        w => {
-            eprintln!("--word-bits must be 1 or 8 for --mul (got {w})");
-            exit(2);
-        }
-    };
 
     let multiplications = 1usize << e;
     let shape_seed = MUL_ROOT_SEED ^ (e as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
@@ -3426,7 +2184,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     // packing of the assignment for the BitZ commitment is part of Step 1
     // (the Commit column), not of this.
     let gen_witness = || {
-        MulWitness::<u32>::from_inputs_with_word_bits(&inputs, width).unwrap_or_else(|err| {
+        MulWitness::<u32>::from_inputs(&inputs).unwrap_or_else(|err| {
             eprintln!("witness: {err}");
             exit(1)
         })
@@ -3436,7 +2194,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let mut witness = None;
     for _ in 0..o.reps.max(1) {
         let t0_recording =
-            bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+            bitz::observability::Recording::start().expect("start operation capture");
         let t0 = tracing::info_span!("bitz:t0").entered();
         let w = gen_witness();
         drop(t0);
@@ -3468,8 +2226,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let lig_tag = lig.name();
 
     // One-time public preprocessing (excluded from prove).
-    let t0_recording =
-        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let t0_recording = bitz::observability::Recording::start().expect("start operation capture");
     let t0 = tracing::info_span!("bitz:t0").entered();
     let relation =
         PreparedRelation::<MulLayout<u32>>::new_with_profile_and_ligerito::<P>(layout, lig)
@@ -3491,7 +2248,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let sec = relation.security();
     let q_bits = (u128::BITS - sec.projection_max.leading_zeros()) as usize;
     let q_lo_log2 = (u128::BITS - 1 - sec.projection_min.leading_zeros()) as usize;
-    let chunks = mod_q_num_chunks(&params, q_bits);
+    let chunks = 1usize;
     let threads_eff: usize = {
         #[cfg(feature = "parallel")]
         {
@@ -3509,7 +2266,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         params.row_vars + params.col_vars,
         params.row_vars,
         params.col_vars,
-        params.word_bits,
+        1usize,
         sec.profile_name,
         sec.lambda,
         if bitz::utils::CHECKED {
@@ -3554,9 +2311,10 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let mut vsteps = StepTable::default();
     let mut last: Option<(Proof, usize, usize, String)> = None;
     for rep in 0..o.reps {
-        let recording =
-            bitz::observability::Recording::start(Vec::new()).expect("start CLI mul trial");
+        let recording = bitz::observability::Recording::start().expect("start CLI mul trial");
+        bitz::bitz::record_phases(true);
         let (proof, hint) = mul_prove_e2e(&relation, &witness);
+        let native_prove = take_native_phases();
 
         let mut vt = Blake3Transcript::new();
         let verification = tracing::info_span!("cli:mul.verification").entered();
@@ -3565,6 +2323,8 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
             exit(1)
         });
         drop(verification);
+        let native_verify = take_native_phases();
+        bitz::bitz::record_phases(false);
         let intervals = recording.intervals().expect("query CLI mul trial");
         let prove_ms = bitz::observability::duration(&intervals, "cli:mul.proving")
             .unwrap()
@@ -3582,11 +2342,19 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         );
         psteps.absorb(
             rep,
-            bitz::observability::phase_totals(&intervals, "cli:mul.proving").unwrap(),
+            bitz::observability::phase_totals(&intervals, "cli:mul.proving")
+                .unwrap()
+                .into_iter()
+                .chain(native_prove)
+                .collect(),
         );
         vsteps.absorb(
             rep,
-            bitz::observability::phase_totals(&intervals, "cli:mul.verification").unwrap(),
+            bitz::observability::phase_totals(&intervals, "cli:mul.verification")
+                .unwrap()
+                .into_iter()
+                .chain(native_verify)
+                .collect(),
         );
 
         commit_ms_v.push(commit_ms);
@@ -3605,15 +2373,10 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     // Bytes (the bench's accounting): Spartan payload + boundary nonces, and
     // the serialized BitZ opening split into non-Ligerito | Ligerito.
     let spartan_elements = proof.spartan_payload_elements();
-    let boundary_nonces = proof.grinding_nonce_count(sec) - proof.opening_grinding_nonces().len();
+    let boundary_nonces = proof.grinding_nonce_count(sec) - sec.native_grinding_nonce_count();
     let piop_bytes = spartan_elements * 16 + boundary_nonces * std::mem::size_of::<u64>();
     let open_bytes = proof.bitz().to_bytes().len();
-    let (_zb, open_lig_bytes) = mle_eval_mod_q_lig_size_breakdown(
-        proof
-            .bitz()
-            .direct()
-            .expect("the multiplication CLI selects direct W=1 or W=8"),
-    );
+    let open_lig_bytes = proof.bitz().transcript.hints.len();
     let total_bytes = piop_bytes + open_bytes;
 
     let commit_med = median(commit_ms_v.clone());
@@ -3695,7 +2458,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
         n: params.row_vars + params.col_vars,
         t: params.row_vars,
         s: params.col_vars,
-        w: params.word_bits,
+        w: 1usize,
         chunks,
         profile: sec.profile_name.to_string(),
         lambda: sec.lambda,
@@ -3735,10 +2498,6 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
 
 /// `--mul-sweep`: the multiplication table (one child per `e`).
 fn run_mul_sweep(o: &Opts, es: &[usize], spec: &str) {
-    if o.family.is_some() || o.taps.is_some() {
-        eprintln!("--mul-sweep runs the multiplication SNARK only; drop --family/--taps");
-        exit(2);
-    }
     let exe = current_exe();
     let latex_path: PathBuf = o
         .latex
@@ -3755,7 +2514,7 @@ fn run_mul_sweep(o: &Opts, es: &[usize], spec: &str) {
         o.lambda,
         o.threads
             .map_or_else(|| "default".to_string(), |t| t.to_string()),
-        o.word_bits,
+        1usize,
         latex_path.display(),
     );
     let lines = run_children(&exe, es, "e", o.cooldown_s, |e| {
@@ -3896,9 +2655,8 @@ fn write_mul_latex_table(
         "sha256" => "SHA-256".to_string(),
         other => other.to_string(),
     };
-    let w = first.map_or(o.word_bits, |r| r.w);
-    let log_w = w.trailing_zeros() as usize;
-    let cell_words = 128usize >> log_w; // committed cells per multiplication
+    let w = 1usize;
+    let cell_words = 128usize; // committed cells per multiplication
 
     let mut out = String::new();
     let _ = writeln!(
@@ -4036,4 +2794,12 @@ fn write_mul_latex_table(
     let _ = writeln!(out, "  \\label{{tab:bitz-u32-mul}}");
     let _ = writeln!(out, "\\end{{table}}");
     std::fs::write(path, out)
+}
+
+/// Drain recorded native durations outside the measured operation.
+fn take_native_phases() -> Vec<(String, f64)> {
+    bitz::bitz::take_phases()
+        .into_iter()
+        .map(|(label, time)| (label, time.as_secs_f64()))
+        .collect()
 }

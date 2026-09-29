@@ -9,11 +9,11 @@ use field::{Fp, Uint};
 use thiserror::Error;
 
 use crate::{
-    ext_proj::PrimeSamplingError,
     piop::spartan::{
         SpartanField, absorb_spartan_message,
         profile::{IopInstanceFacts, IopSecurityParams},
     },
+    prime_sampling::PrimeSamplingError,
     transcript::traits::Transcript,
 };
 
@@ -63,7 +63,7 @@ pub(super) const fn sha256_instance_facts(log_instance_capacity: u32) -> IopInst
         defect_log2_bound: 96,
         lift_arity_log2: log_instance_capacity,
         opening_t: log_instance_capacity,
-        opening_word_bits: 1,
+
         direct_opening: false,
         tau_arity: SHA256_TAU_LOCAL_VARS + log_instance_capacity,
         piop_degree: 2,
@@ -222,6 +222,8 @@ pub(super) fn fixed_98_security_params() -> IopSecurityParams {
     ];
     IopSecurityParams {
         profile_name: "sha-fixed98-lambda100",
+        design_only: false,
+        native_schedule: None,
         lambda: 100,
         projection_min: SHA256_FIXED_98_PRIME,
         projection_max: SHA256_FIXED_98_PRIME,
@@ -263,7 +265,7 @@ pub(super) fn sample_sha256_mod_q_context(
     );
     absorb_spartan_message(transcript, b"prime-min", &profile.min_prime.to_le_bytes());
     absorb_spartan_message(transcript, b"prime-max", &profile.max_prime.to_le_bytes());
-    let field = crate::ext_proj::sample_prime_context(
+    let field = crate::prime_sampling::sample_prime_context(
         transcript,
         profile.min_prime,
         profile.max_prime,

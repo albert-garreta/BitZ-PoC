@@ -107,6 +107,8 @@ def validate(base: Path, mode: str, rate: int, threads: int, meta: dict[str, str
     """The recorded knobs must match the row key; unrecorded runs are rejected."""
     if mode not in meta.get("modes", ""):
         raise RunError(f"{base}: run.txt modes {meta.get('modes')!r} do not include {mode!r}")
+    if mode == "hybrid" and meta.get("mul_opener") not in ("bitz", "wfbitz"):
+        raise RunError(f"{base}: hybrid rows require recorded mul_opener='bitz'")
     recorded_threads = meta.get("RAYON_NUM_THREADS", "default")
     if recorded_threads != str(threads):
         raise RunError(
@@ -171,9 +173,10 @@ def medians(base: Path, mode: str, rate: int) -> dict:
     if not summary.exists():
         raise RunError(f"{base}: missing summary.csv")
     by_shape: dict[tuple[int, int], list[dict]] = {}
+    sweep_mode = mode
     with open(summary) as f:
         for row in csv.DictReader(f):
-            if row["mode"] != mode:
+            if row["mode"] != sweep_mode:
                 continue
             validate_identity(row, base, mode, rate)
             by_shape.setdefault((int(row["mul_log"]), int(row["sha_log"])), []).append(row)

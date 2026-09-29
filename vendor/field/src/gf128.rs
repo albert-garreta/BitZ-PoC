@@ -561,3 +561,15 @@ mod tests {
         assert_eq!(Gf128::from(false), Gf128::ZERO);
     }
 }
+
+/// The NEON building blocks of the PMULL kernels, for out-of-crate kernels
+/// that compose them the same way (unreduced 256-bit accumulators, the
+/// fixed-multiplier fold): the carryless product, the `X^64` fold and the
+/// 3-PMULL reduction, the element load, and the pass-fixed multiplier
+/// preparation. `#[doc(hidden)]`: not a stable surface.
+#[cfg(all(target_arch = "aarch64", target_feature = "aes"))]
+#[doc(hidden)]
+pub mod neon {
+    pub use super::aarch64::{clmul128 as clmul_256, pmull_hi, pmull_lo, reduce_256};
+    pub use super::sumcheck::neon::{fold_x64, ld, mul_fixed_wide, prep_fixed};
+}

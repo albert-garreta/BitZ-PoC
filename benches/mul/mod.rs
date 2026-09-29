@@ -133,7 +133,6 @@ fn worker(path: &Path, compare: bool) -> Result<()> {
     if job.memory == Memory::None {
         bitz::observability::install()?;
     }
-    bitz::merged_forest::schedule::start_recording();
     let mut run = Run::new(job);
     if let Err(error) = execute(&mut run, compare) {
         if run.job.skip_unsupported && error.is::<Unsupported>() {
@@ -141,17 +140,6 @@ fn worker(path: &Path, compare: bool) -> Result<()> {
             return write_json(&path.with_extension("result.json"), &run);
         }
         return Err(error);
-    }
-    let schedules = bitz::merged_forest::schedule::take_records();
-    if run
-        .job
-        .case
-        .bitz
-        .as_ref()
-        .is_some_and(|f| f.gkr_schedule.is_some())
-    {
-        ensure!(!schedules.is_empty(), "missing resolved GKR schedules");
-        run.effective["gkr_schedules"] = serde_json::to_value(schedules)?;
     }
     if !run.latency() {
         let bytes = match run.job.memory {
@@ -208,9 +196,6 @@ fn child(job: &Job, dir: &Path) -> Result<Run> {
             command.env_remove(key);
         }
     }
-    if let Some(schedule) = job.case.bitz.as_ref().and_then(|f| f.gkr_schedule) {
-        command.env("F2_FOREST_SCHEDULE", schedule.name());
-    }
     if let Some(bits) = job.case.limber_bits {
         command.env("BDLAMBDA", bits.to_string());
     }
@@ -237,6 +222,7 @@ fn provenance() -> Result<Value> {
     let executable = fs::read(std::env::current_exe()?)?;
     value["executable_blake3"] = json!(blake3::hash(&executable).to_hex().to_string());
     value["compiled_features"] = json!({"parallel":cfg!(feature="parallel"),"span-metrics":cfg!(feature="span-metrics"),"bench-internals":cfg!(feature="bench-internals"),"native-mul-compare":cfg!(feature="native-mul-compare"),"bench-peak-memory":cfg!(feature="bench-peak-memory"),"unchecked":cfg!(feature="unchecked"),"bench-perfetto":cfg!(feature="bench-perfetto")});
+    value["timing"] = json!("spans");
     value["debug_assertions"] = json!(cfg!(debug_assertions));
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files: Vec<String> = if root.join(".git").exists() {
@@ -377,6 +363,19 @@ pub fn main(compare: bool) -> Result<()> {
                 samples.write_all(b"\n")?;
             }
             samples.flush()?;
+            let measured: Vec<_> = run.samples.iter().filter(|s| s.kind == "sample").collect();
+            if let Some(first) = measured.first() {
+                for name in first.metrics.keys().filter(|name| !name.contains('/')) {
+                    let mut values: Vec<_> = measured.iter().map(|s| s.metrics[name]).collect();
+                    values.sort_unstable_by(f64::total_cmp);
+                    let median = (values[(values.len() - 1) / 2] + values[values.len() / 2]) / 2.;
+                    if name.ends_with("bytes") {
+                        eprintln!("  {name} (median): {median:.0}");
+                    } else {
+                        eprintln!("  {name} (median): {median:.3}");
+                    }
+                }
+            }
             manifest["cases"].as_array_mut().expect("case list").push(json!({"job":resolved_job,"status":"measured","effective":run.effective}));
         }
         fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest)?)?;

@@ -64,6 +64,8 @@ def scheme_id(case: dict, sample: dict) -> str:
     if method.startswith("bitz"):
         lig = security.get("ligerito") or {}
         levels = (lig.get("configuration") or lig).get("levels") or [{}]
+        if case.get("opener") not in ("bitz", "wfbitz"):
+            raise ValueError("BitZ rows require explicit BitZ provenance")
         return f"{method}@{int(levels[0].get('log_inv_rate', 1))}"
     if method.startswith("binius64"):
         rate = case.get("log_inv_rate", security.get("log_inv_rate", 1))
@@ -110,6 +112,9 @@ def load_cases(directory: Path) -> dict:
         samples = [r for r in record["rows"] if r.get("trial") == "sample"]
         if not samples or any(r.get("schema") != SCHEMA or r.get("verified") is not True for r in samples):
             raise ValueError(f"{path}: complete case without verified samples")
+        timing = case.get("timing", samples[0].get("timing", "perfetto"))
+        if timing not in ("spans", "perfetto", "wall-clock") or any(r.get("timing", "perfetto") != timing for r in samples):
+            raise ValueError(f"{path}: inconsistent timing backend")
         curve = case.get("curve", samples[0].get("curve", "p256"))
         profile = samples[0].get("circuit_profile")
         expected = EXPECTED_PROFILES.get((curve, family(case["method"])))
@@ -120,7 +125,7 @@ def load_cases(directory: Path) -> dict:
             raise ValueError(f"duplicate case {key} in {directory}")
         med = lambda k: statistics.median(r[k] for r in samples)  # noqa: E731
         result[key] = dict(
-            key=key, run_dir=str(directory), file=path.name, samples=len(samples), curve=curve,
+            key=key, run_dir=str(directory), file=path.name, samples=len(samples), curve=curve, timing=timing,
             circuit_profile=profile, fixture_profile=samples[0].get("fixture_profile"),
             seed=case["seed"], compressions=samples[0]["compressions"], message_bytes=samples[0]["message_bytes"],
             fixture_id=samples[0]["fixture_id"], security=samples[0].get("security", {}),
@@ -167,6 +172,9 @@ def main() -> int:
     args = ap.parse_args()
 
     loaded = [load_cases(run_dir) for run_dir in args.run_dirs]
+    timings = {row["timing"] for cases in loaded for row in cases.values()}
+    if len(timings) > 1:
+        raise SystemExit(f"run directories mix timing backends {sorted(timings)}; select matching campaigns")
     # Check the curves before later directories override earlier cases: a
     # P-256 and a secp256k1 directory are different circuits, never one table.
     curves = sorted({row["curve"] for cases in loaded for row in cases.values()})

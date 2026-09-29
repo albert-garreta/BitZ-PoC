@@ -48,12 +48,13 @@
 use thiserror::Error;
 
 use crate::{
-    ext_proj::{PrimeSamplingError, sample_prime_in_interval},
     piop::spartan::absorb_spartan_message,
+    prime_sampling::{PrimeSamplingError, sample_prime_in_interval},
     transcript::traits::Transcript,
 };
 
-pub(crate) const FINGERPRINT_SAMPLING_DOMAIN: &[u8] = b"bitz/spartan-multiswap/fingerprint-prime/v2";
+pub(crate) const FINGERPRINT_SAMPLING_DOMAIN: &[u8] =
+    b"bitz/spartan-multiswap/fingerprint-prime/v2";
 pub(crate) const REDUCTION_SAMPLING_DOMAIN: &[u8] = b"bitz/spartan-multiswap/reduction-prime/v2";
 
 use crate::piop::spartan::profile::{IopInstanceFacts, IopSecurityParams};
@@ -71,16 +72,11 @@ pub const MULTISWAP_STEP50_MAGNITUDE_LOG2: u32 = 282;
 
 /// The public statement facts the security-profile derivation consumes for
 /// a MultiSwap instance with the given BitZ shape and τ arity.
-pub const fn multiswap_instance_facts(
-    opening_t: u32,
-    opening_word_bits: u32,
-    tau_arity: u32,
-) -> IopInstanceFacts {
+pub const fn multiswap_instance_facts(opening_t: u32, tau_arity: u32) -> IopInstanceFacts {
     IopInstanceFacts {
         defect_log2_bound: MULTISWAP_DEFECT_LOG2_BOUND,
         lift_arity_log2: opening_t,
         opening_t,
-        opening_word_bits,
         direct_opening: true,
         tau_arity,
         piop_degree: 3,
@@ -182,7 +178,7 @@ pub fn sample_multiswap_fingerprint_context(
         &profile.fingerprint_max.to_le_bytes(),
     );
 
-    let field = crate::ext_proj::sample_prime_context(
+    let field = crate::prime_sampling::sample_prime_context(
         transcript,
         profile.fingerprint_min,
         profile.fingerprint_max,
@@ -255,7 +251,7 @@ mod tests {
     /// the profile-wired path absorbs identical transcript bytes.
     #[test]
     fn limber114_derives_the_legacy_profile_verbatim() {
-        let params = Limber114::instantiate(&multiswap_instance_facts(13, 1, 15)).unwrap();
+        let params = Limber114::instantiate(&multiswap_instance_facts(13, 15)).unwrap();
         assert_eq!(
             MultiswapPrimeProfile::from_security(&params).unwrap(),
             MultiswapPrimeProfile::new()
