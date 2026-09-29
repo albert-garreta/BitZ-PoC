@@ -27,7 +27,7 @@ struct Args {
     #[arg(value_parser = common::cli::positive)]
     reps: usize,
     /// The opener of the terminal claim: the forest (the paper's) or the
-    /// worldfnd/BitZ scheme's virtual opening (needs `--features bitz-parity`).
+    /// worldfnd/BitZ scheme's virtual opening.
     #[arg(long, default_value = "forest", value_parser = ["forest", "wfbitz"])]
     opener: String,
 }

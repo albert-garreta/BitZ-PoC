@@ -48,7 +48,6 @@ impl ProverOod {
     }
 }
 
-#[cfg(feature = "bitz-parity")]
 impl ProverOod {
     /// [`Self::claim`] for an opener outside this module, called where the
     /// crate's own opening consumes the state: the claim bound before the
@@ -121,7 +120,6 @@ impl VerifierOod {
     }
 }
 
-#[cfg(feature = "bitz-parity")]
 impl VerifierOod {
     /// [`Self::claim`] for an opener outside this module, with the proof's
     /// round, called where the crate's own opening consumes the state: the

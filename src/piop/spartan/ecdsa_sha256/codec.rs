@@ -12,7 +12,7 @@ use field::Uint;
 
 const MAGIC: &[u8] = b"BITZSE03";
 /// The same layout with the terminal claim opened by the wfbitz scheme
-/// (feature `bitz-parity`); forest proofs keep `BITZSE03`.
+///; forest proofs keep `BITZSE03`.
 const MAGIC_WFBITZ: &[u8] = b"BITZSW01";
 
 fn magic(opener: super::Sha256EcdsaOpener) -> &'static [u8] {
@@ -54,7 +54,7 @@ impl Sha256EcdsaProof {
         let mut r = Reader::new(bytes);
         let opener = match r.take(MAGIC.len()).map_err(error)? {
             m if m == MAGIC => super::Sha256EcdsaOpener::Forest,
-            m if cfg!(feature = "bitz-parity") && m == MAGIC_WFBITZ => {
+            m if m == MAGIC_WFBITZ => {
                 super::Sha256EcdsaOpener::Wfbitz
             }
             _ => return Err(error("invalid proof version")),

@@ -2,8 +2,7 @@
 //! `cargo run --release --features span-metrics --example u64_mul_probe -- 21 [reps]`.
 //!
 //! `BITZ_OPENER=forest` (default) discharges the bitified claim through the
-//! crate's chunked exponent-fold forest; `BITZ_OPENER=wfbitz` (needs
-//! `--features bitz-parity`) through the parity port of worldfnd/BitZ's
+//! crate's chunked exponent-fold forest; `BITZ_OPENER=wfbitz` through worldfnd/BitZ's
 //! scheme (`protocol::wfbitz_opener`), with `BITZ_WFBITZ_LADDER` naming
 //! its Ligerito ladder (`fast` = as shipped, default; `udr:<r>:<k>`,
 //! `custom:<r>:<k>`). Each opener starts from its own default split (the
@@ -157,7 +156,6 @@ fn main() {
                 |p| hint.commitment.root.len() + p.size_bytes(prepared.security()),
             );
         }
-        #[cfg(feature = "bitz-parity")]
         "wfbitz" => {
             use bitz::piop::spartan::Lambda100;
             use bitz::piop::spartan::protocol::wfbitz_opener::{self, WfbitzLigerito, WfbitzOpener};
@@ -200,7 +198,7 @@ fn main() {
             );
         }
         other => {
-            eprintln!("BITZ_OPENER={other}: use forest or wfbitz (the latter needs --features bitz-parity)");
+            eprintln!("BITZ_OPENER={other}: use forest or wfbitz");
             std::process::exit(2);
         }
     }

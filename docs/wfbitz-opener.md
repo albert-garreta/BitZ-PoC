@@ -13,7 +13,7 @@ are selectable; the u64 multiplication SNARK is the first user.
 
 ## Where things are
 
-- `src/wfbitz/` (feature `bitz-parity`): the scheme. `pcs::Pcs::new`
+- `src/wfbitz/`: the scheme. `pcs::Pcs::new`
   (their `fast` ladder as shipped) / `with_security` (any validated flock
   ladder), `BitZProver::prove` / `BitZVerifier::verify` — both take an
   optional out-of-domain claim to batch into the final opening (Round 0,
@@ -241,7 +241,7 @@ and of `examples/wfbitz_bench`. `fast`
 ```sh
 cd ~/f2z-pcs-u64opt   # the worktree of branch u64-opt (own target dir)
 export CARGO_TARGET_DIR=$HOME/f2z-pcs-u64opt/target
-RUSTFLAGS="-C target-cpu=native" cargo build --release --features span-metrics,bitz-parity --example u64_mul_probe
+RUSTFLAGS="-C target-cpu=native" cargo build --release --features span-metrics --example u64_mul_probe
 B=$CARGO_TARGET_DIR/release/examples/u64_mul_probe
 RAYON_NUM_THREADS=10 $B 21 3                      # the forest
 BITZ_OPENER=wfbitz RAYON_NUM_THREADS=10 $B 21 3   # wfbitz at its split
@@ -251,9 +251,9 @@ BITZ_OPENER=wfbitz BITZ_TRACE=1 RAYON_NUM_THREADS=10 $B 21 2   # its phases
 python3 scripts/run_multiplication_benchmarks.py bitz --output PerfRuns/<label> -- \
   proof --workload u64 --opener wfbitz --ligerito custom:1:4 --bitz-profile 100 \
   --log-n 15,17,19,21 --threads 1,10 --reps 5 --warmups 1 --memory rss
-RUSTFLAGS="-C target-cpu=native" cargo test --release --features bitz-parity,parallel --lib wfbitz
+RUSTFLAGS="-C target-cpu=native" cargo test --release --features parallel --lib wfbitz
 # byte parity with their implementation (their examples built in ~/f2z-benchmark)
-RUSTFLAGS="-C target-cpu=native" cargo build --release --features bitz-parity --example wfbitz_parity
+RUSTFLAGS="-C target-cpu=native" cargo build --release --example wfbitz_parity
 $HOME/f2z-benchmark/target/release/examples/dump_bitz 22 40 /tmp/dump22
 $CARGO_TARGET_DIR/release/examples/wfbitz_parity /tmp/dump22
 ```

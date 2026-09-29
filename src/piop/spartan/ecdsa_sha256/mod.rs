@@ -8,7 +8,6 @@ mod inner_reduction;
 mod proof;
 mod relation;
 mod security;
-#[cfg(feature = "bitz-parity")]
 mod wfbitz;
 mod witness;
 

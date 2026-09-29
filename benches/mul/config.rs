@@ -114,7 +114,7 @@ pub struct Args {
         long,
         default_value = "forest",
         value_parser = ["forest", "wfbitz"],
-        help = "BitZ opener: the crate's exponent-fold forest, or the parity port of worldfnd/BitZ's scheme (feature bitz-parity; --ligerito fast = its ladder as shipped)"
+        help = "BitZ opener: the crate's exponent-fold forest, or the parity port of worldfnd/BitZ's scheme (--ligerito fast = its ladder as shipped)"
     )]
     pub opener: String,
     #[arg(long, default_value = "current", value_parser = ["current", "regression"])]
@@ -575,9 +575,7 @@ impl Case {
         {
             "BitZ opening needs log-n >= 15"
         } else if let Some(f) = &self.bitz {
-            if f.opener.as_deref() == Some("wfbitz") && !cfg!(feature = "bitz-parity") {
-                "the wfbitz opener needs a build with --features bitz-parity"
-            } else if f.opener.as_deref() == Some("wfbitz") && f.w != 1 {
+            if f.opener.as_deref() == Some("wfbitz") && f.w != 1 {
                 "the wfbitz opener commits bits (W=1)"
             } else if f.opener.as_deref() == Some("wfbitz") && self.workload == Workload::BabyBear {
                 "the wfbitz opener is wired for the integer workloads"

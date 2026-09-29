@@ -18671,7 +18671,6 @@ mod ood_round_tests {
     /// `opening_claim`: where no round is due, nothing is absorbed and a
     /// Round-0 record is rejected, whether the state was bound before the
     /// PIOP or left for the opening.
-    #[cfg(feature = "bitz-parity")]
     #[test]
     fn an_opening_with_no_round_due_rejects_a_record() {
         let round = OodRound {

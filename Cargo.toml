@@ -6,7 +6,7 @@ license = "MIT"
 description = "BitZ: integer-MLE-evaluation PCS over an F2 commitment via a GF(2^128) exponent-fold GKR forest, opened with a flock-backed ring-switch + recursive Ligerito PCS"
 
 [dependencies]
-field = { path = "vendor/field" }
+field = { path = "vendor/field", features = ["spongefish"] }
 clap = { version = "4", features = ["derive", "env", "string"], optional = true }
 anyhow = "1"
 derive_more = { version = "2.1.1", features = ["full"] }
@@ -81,12 +81,9 @@ tracing-perfetto-sdk = { version = "1.0.0", optional = true }
 csv = { version = "1.4", optional = true }
 
 libc = "0.2" # getrusage: peak resident set of CLI sweep children
-# The parity port of worldfnd/BitZ's PCS (`wfbitz`, feature `bitz-parity`):
-# the Fiat–Shamir sponge their implementation drives, so the port emits its
-# exact narg string and challenge sequence; the wide integer remainder of
-# their fold reconstruction.
-spongefish = { version = "0.7.4", optional = true }
-crypto-bigint = { version = "=0.7.5", default-features = false, optional = true }
+# Wfbitz's Fiat–Shamir sponge and wide integer fold reconstruction.
+spongefish = { version = "0.7.4" }
+crypto-bigint = { version = "=0.7.5", default-features = false }
 
 [dev-dependencies]
 # Independent correctness oracles and excluded benchmark adapters only.
@@ -291,15 +288,12 @@ required-features = ["span-metrics"]
 
 [[example]]
 name = "wfbitz_parity"
-required-features = ["bitz-parity"]
 
 [[example]]
 name = "wfbitz_bench"
-required-features = ["bitz-parity"]
 
 [[example]]
 name = "wfbitz_root_probe"
-required-features = ["bitz-parity"]
 
 [features]
 default = ["parallel"]
@@ -315,10 +309,6 @@ unchecked = []
 bench-peak-memory = []
 # Exposes narrowly scoped policy controls used by controlled benchmark binaries.
 bench-internals = []
-# The parity port of worldfnd/BitZ's polynomial commitment scheme
-# (`crate::wfbitz`) and the opener that discharges the crate's relations
-# through it (`protocol::wfbitz_opener`).
-bitz-parity = ["dep:spongefish", "dep:crypto-bigint", "field/spongefish"]
 # Composed SHA-256/P-256 arithmetization and its split Spartan adapter.
 ecdsa = ["circuit/full"]
 sha256-ecdsa-compare = ["span-metrics", "ecdsa", "parallel", "dep:spartan2"]

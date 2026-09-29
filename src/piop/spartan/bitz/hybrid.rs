@@ -50,11 +50,9 @@ pub(crate) enum MulGkr {
     Forest(MergedForestProof),
     /// The worldfnd/BitZ scheme's fold and per-level GKR on a forked
     /// transcript: its narg string (folds, round messages, closing pairs).
-    #[cfg(feature = "bitz-parity")]
     Wfbitz { narg: Vec<u8> },
 }
 
-#[cfg(feature = "bitz-parity")]
 const WFBITZ_SESSION: &[u8] = b"bitz/hybrid/mul-gkr/wfbitz/v1";
 
 impl PrefixProof {
@@ -168,11 +166,6 @@ pub(crate) fn prove(
             drop(endpoint_scope);
             (sums, MulGkr::Forest(forest), claim)
         }
-        #[cfg(not(feature = "bitz-parity"))]
-        MulOpener::Wfbitz => {
-            return Err(Error::Invalid("the wfbitz opener needs the bitz-parity feature"));
-        }
-        #[cfg(feature = "bitz-parity")]
         MulOpener::Wfbitz => {
             let _scope = tracing::info_span!("mo:wfbitz").entered();
             let (params, claim) = wfbitz_claim(&p, arith, &weights[0], &proved.opening)?;
@@ -218,7 +211,6 @@ pub(crate) fn prove(
 /// The scheme's parameters and claim for the multiplication grid: the
 /// sampled prime, the crate's generator, the one chunk of row weights,
 /// the bitified claim's column weights and target.
-#[cfg(feature = "bitz-parity")]
 fn wfbitz_claim(
     p: &crate::pcs::IntegerMatrixLayout,
     arith: &field::FpCtx<2>,
@@ -241,7 +233,6 @@ fn wfbitz_claim(
 
 /// The scheme's exit as the composition's claim (its field elements are the
 /// vendored field's; the composition's are the crate's).
-#[cfg(feature = "bitz-parity")]
 fn binary_claim(low: Vec<field::Gf128>, high_point: Vec<field::Gf128>, value: field::Gf128) -> BinaryClaim {
     BinaryClaim {
         low: low.into_iter().map(Gf::from).collect(),
@@ -252,7 +243,6 @@ fn binary_claim(low: Vec<field::Gf128>, high_point: Vec<field::Gf128>, value: fi
 
 /// Binds the forked transcript's narg string (the folds and every GKR
 /// message) on the shared transcript before the joint sumcheck draws.
-#[cfg(feature = "bitz-parity")]
 fn bind_wfbitz(transcript: &mut Blake3Transcript, bridge_digest: &[u8; 32], narg: &[u8]) {
     absorb_spartan_message(transcript, b"hybrid/mul-gkr/wfbitz", bridge_digest);
     absorb_spartan_message(transcript, b"narg", blake3::hash(narg).as_bytes());
@@ -297,7 +287,6 @@ pub(crate) fn verify(
     }
     let forest = match (&proof.gkr, opener) {
         (MulGkr::Forest(forest), MulOpener::Forest) => forest,
-        #[cfg(feature = "bitz-parity")]
         (MulGkr::Wfbitz { narg }, MulOpener::Wfbitz) => {
             if !proof.sums.is_empty() {
                 return Err(Error::Invalid("wfbitz proofs carry no clear sums"));

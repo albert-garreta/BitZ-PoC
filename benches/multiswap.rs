@@ -1004,7 +1004,7 @@ fn proof_sizes<O: OpeningProof>(proof: &Proof<O>) -> (usize, usize) {
 }
 
 /// The opener of the reduced claim, `BITZ_OPENER=forest|wfbitz` (the
-/// forest is the paper's; wfbitz needs `--features bitz-parity`).
+/// forest is the paper's).
 fn opener_name() -> String {
     std::env::var("BITZ_OPENER").unwrap_or_else(|_| "forest".into())
 }
@@ -1012,7 +1012,6 @@ fn opener_name() -> String {
 /// One trial's proof, by opener.
 enum MsProof {
     Forest(Proof<IntEvalRsLigVirtProof>),
-    #[cfg(feature = "bitz-parity")]
     Wfbitz(Proof<::bitz::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof>),
 }
 
@@ -1020,7 +1019,6 @@ impl MsProof {
     fn sizes(&self) -> (usize, usize) {
         match self {
             Self::Forest(proof) => proof_sizes(proof),
-            #[cfg(feature = "bitz-parity")]
             Self::Wfbitz(proof) => proof_sizes(proof),
         }
     }
@@ -1087,7 +1085,6 @@ fn run_once(
             common::proof_fingerprint::nonlinear(&proof, &hint.commitment.root, &prover_transcript);
             MsProof::Forest(proof)
         }
-        #[cfg(feature = "bitz-parity")]
         "wfbitz" => {
             use bitz::piop::spartan::multiswap::{
                 prove_multiswap_mod_r1cs_wfbitz, verify_multiswap_mod_r1cs_wfbitz,
@@ -1114,7 +1111,7 @@ fn run_once(
             common::proof_fingerprint::nonlinear(&proof, &hint.commitment.root, &prover_transcript);
             MsProof::Wfbitz(proof)
         }
-        other => panic!("BITZ_OPENER={other}: use forest or wfbitz (the latter needs --features bitz-parity)"),
+        other => panic!("BITZ_OPENER={other}: use forest or wfbitz"),
     };
     // Provenance scans are deliberately outside all reported timing
     // boundaries; they validate the trial but are not protocol work.

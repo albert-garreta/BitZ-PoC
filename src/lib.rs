@@ -60,7 +60,6 @@
 //! per gate with `w = x ⊕ y` as a virtual (derived, uncommitted) block.
 
 pub mod binary_pcs;
-#[cfg(feature = "bitz-parity")]
 pub mod wfbitz;
 #[cfg(feature = "binius64-bench")]
 pub mod binius_ligerito;

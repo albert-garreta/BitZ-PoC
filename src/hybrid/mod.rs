@@ -97,7 +97,7 @@ pub(crate) struct BinaryClaim {
 
 /// Which scheme reduces the multiplication side's grand product to its bit
 /// claim: the crate's merged forest (the paper's) or the worldfnd/BitZ
-/// scheme's fold and per-level GKR (feature `bitz-parity`). The joint bit
+/// scheme's fold and per-level GKR. The joint bit
 /// sumcheck, the ring switch and the shared Ligerito opening are the same
 /// either way.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -668,7 +668,6 @@ mod tests {
     /// The multiplication side reduced by the worldfnd/BitZ scheme's fold and
     /// GKR: the composition proves, round-trips through bytes and verifies,
     /// and each opener refuses the other's proof and its encoding.
-    #[cfg(feature = "bitz-parity")]
     #[test]
     fn wfbitz_multiplication_side_roundtrips_and_is_bound_to_its_opener() {
         let parameters = Parameters {

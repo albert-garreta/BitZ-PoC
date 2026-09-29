@@ -16,7 +16,7 @@
 # crate's Round 0); rate 1/8 = the crate's `custom:3:4` Johnson ladder (with
 # Round 0), the same selection the forest rows use at that rate.
 # Set CARGO_TARGET_DIR to the tree you built; the launcher builds the bench
-# there (with `bitz-parity`, since the experiment names wfbitz). Like the
+# there. Like the
 # matrix script this runs with --no-gate (one idle check up front, below);
 # keep the machine idle for the whole run.
 set -uo pipefail

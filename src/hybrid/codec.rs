@@ -21,9 +21,8 @@ use flock_core::field::Gf128;
 
 const MAGIC: &[u8; 8] = b"BZSH\x06\0\0\0";
 /// The same layout with the multiplication side's grand product reduced by
-/// the wfbitz scheme (feature `bitz-parity`); forest proofs keep the
+/// the wfbitz scheme; forest proofs keep the
 /// version-6 encoding.
-#[cfg(feature = "bitz-parity")]
 const MAGIC_WFBITZ: &[u8; 8] = b"BZSW\x01\0\0\0";
 const MAX_PROOF_BYTES: usize = 64 << 20;
 
@@ -124,7 +123,6 @@ impl HybridProof {
         let mut w = Writer::new();
         w.bytes(match &self.multiplication.gkr {
             super::mul::MulGkr::Forest(_) => MAGIC,
-            #[cfg(feature = "bitz-parity")]
             super::mul::MulGkr::Wfbitz { .. } => MAGIC_WFBITZ,
         });
         w.len(usize::from(self.opening.ood.is_some()));
@@ -180,7 +178,6 @@ impl HybridProof {
                     assert!(layer.pair2.is_none());
                 }
             }
-            #[cfg(feature = "bitz-parity")]
             super::mul::MulGkr::Wfbitz { narg } => {
                 w.len(narg.len());
                 w.bytes(narg);
@@ -229,7 +226,6 @@ impl PreparedHybrid {
         let mut r = Reader::new(bytes);
         let opener = match r.take(8)? {
             m if m == MAGIC => super::MulOpener::Forest,
-            #[cfg(feature = "bitz-parity")]
             m if m == MAGIC_WFBITZ => super::MulOpener::Wfbitz,
             _ => return Err(CodecError::NonCanonical.into()),
         };
@@ -325,14 +321,11 @@ impl PreparedHybrid {
                 }
                 (sums, super::mul::MulGkr::Forest(MergedForestProof { layers }))
             }
-            #[cfg(feature = "bitz-parity")]
             super::MulOpener::Wfbitz => {
                 let n = count(&mut r, MAX_PROOF_BYTES)?;
                 let narg = r.take(n)?.to_vec();
                 (Vec::new(), super::mul::MulGkr::Wfbitz { narg })
             }
-            #[cfg(not(feature = "bitz-parity"))]
-            super::MulOpener::Wfbitz => return Err(CodecError::NonCanonical.into()),
         };
         let n = count(&mut r, 1 << 16)?;
         let mut sha = Vec::with_capacity(n);

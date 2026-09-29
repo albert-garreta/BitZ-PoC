@@ -23,7 +23,7 @@ OUT="PerfRuns/cs-mul-$STAMP"
 RAW="PerfRuns/wfbitz-raw-$STAMP"
 B="$CARGO_TARGET_DIR/release/examples/wfbitz_bench"
 mkdir -p PerfRuns "$RAW"
-[ -x "$B" ] || { echo "missing $B (build: cargo build --release --features bitz-parity --example wfbitz_bench)"; exit 1; }
+[ -x "$B" ] || { echo "missing $B (build: cargo build --release --example wfbitz_bench)"; exit 1; }
 idle=$(top -l 2 -n 0 | grep "CPU usage" | tail -1 | sed -E 's/.* ([0-9.]+)% idle.*/\1/')
 echo "campaign start $(date) | cpu idle ${idle}% | tree $(git rev-parse --short HEAD)$(git status --porcelain | grep -q . && echo -dirty)" | tee -a "$RAW/provenance.log"
 launch() { # label -- rust args

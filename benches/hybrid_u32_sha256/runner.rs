@@ -247,7 +247,7 @@ struct Args {
     #[arg(long, default_value = "hybrid", requires_if("all", "sweep"), value_parser = ["hybrid", "separate", "all-binius", "binius-ligerito", "all"])]
     mode: String,
     /// The hybrid's multiplication-side grand-product scheme: the forest
-    /// (the paper's) or the worldfnd/BitZ scheme (needs `--features bitz-parity`).
+    /// (the paper's) or the worldfnd/BitZ scheme.
     #[arg(long, default_value = "forest", value_parser = ["forest", "wfbitz"])]
     mul_opener: String,
     #[arg(long, env = "BITZ_LIG_PROFILE")]

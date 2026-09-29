@@ -25,7 +25,6 @@ use field::{RingOps, Uint};
 pub mod binding;
 pub mod bitify;
 pub mod linear;
-#[cfg(feature = "bitz-parity")]
 pub mod wfbitz_opener;
 
 use std::{borrow::Cow, sync::OnceLock};

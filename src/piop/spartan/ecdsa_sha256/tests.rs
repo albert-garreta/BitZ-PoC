@@ -568,7 +568,6 @@ fn rejects_a_valid_sha_trace_joined_to_an_unrelated_valid_signature_trace() {
 /// paper's Johnson ladder (Round 0 on); a forest proof is refused by a
 /// verifier prepared for the other opener, and neither decodes under the
 /// other's magic.
-#[cfg(feature = "bitz-parity")]
 #[test]
 fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
     use crate::transcript::Blake3Transcript;
@@ -677,7 +676,6 @@ fn wfbitz_opener_proves_verifies_and_is_bound_to_its_opener() {
 /// The structured wfbitz opening takes the instance counts its block
 /// transposes read, up to 2^7 compressions; from 2^8 on the relation keeps
 /// the dense virtual opening.
-#[cfg(feature = "bitz-parity")]
 #[test]
 fn wfbitz_structured_opening_stops_at_its_transpose_width() {
     for (log_compressions, structured) in [(7, true), (8, false)] {
@@ -694,7 +692,6 @@ fn wfbitz_structured_opening_stops_at_its_transpose_width() {
 
 /// 2^8 compressions through the dense wfbitz opening: proves and verifies
 /// (2^23 derived cells; run with `--ignored`).
-#[cfg(feature = "bitz-parity")]
 #[test]
 #[ignore = "2^8 compressions end to end"]
 fn wfbitz_dense_opening_proves_and_verifies_at_256_compressions() {
@@ -731,7 +728,6 @@ fn wfbitz_dense_opening_proves_and_verifies_at_256_compressions() {
 
 /// The little-endian eq tensor of `point` over GF(2^128): entry `i` is
 /// `Π_j (point[j] if bit j of i is set, else 1 + point[j])`.
-#[cfg(feature = "bitz-parity")]
 fn gf_eq(point: &[field::Gf128]) -> Vec<field::Gf128> {
     let mut eq = vec![field::Gf128::ONE];
     for &p in point {
@@ -754,7 +750,6 @@ fn gf_eq(point: &[field::Gf128]) -> Vec<field::Gf128> {
 /// dense virtual statement, then random weights that are no tensor against
 /// the map's columns; P-256 at 2^3 in both outer modes, at 2^6 and 2^7 (the
 /// tail inside chunk 1), secp256k1 at 2^3.
-#[cfg(feature = "bitz-parity")]
 #[test]
 fn chained_structured_weights_equal_the_dense_transpose() {
     use crate::piop::spartan::protocol::bitz_generator;
@@ -902,7 +897,6 @@ fn chained_structured_weights_equal_the_dense_transpose() {
 /// refused by the prover or by `verify_chained`, for the three kinds of
 /// hole (an aliased tail row, an SHA row above the boundary, a row past the
 /// tail's end). The honest grids prove and verify.
-#[cfg(feature = "bitz-parity")]
 #[test]
 fn chained_hole_cells_cannot_carry_a_derived_bit() {
     use crate::wfbitz::{
@@ -998,7 +992,6 @@ fn chained_hole_cells_cannot_carry_a_derived_bit() {
 /// from 2^6 compressions on; the security accounting, Round 0 and the
 /// ladder the statement binds are that ladder's, as on the forest path they
 /// are the committing ladder's.
-#[cfg(feature = "bitz-parity")]
 #[test]
 fn wfbitz_security_uses_the_committed_ladder() {
     use crate::ligerito_flock::{LigeritoSelection, grinding::GrindingPlan};
@@ -1076,7 +1069,6 @@ fn wfbitz_security_uses_the_committed_ladder() {
 
 /// [`security_profiles_cover_both_targets_for_all_shapes`] for the wfbitz
 /// opener at the 100-bit target, at every size its structured opening takes.
-#[cfg(feature = "bitz-parity")]
 #[test]
 fn wfbitz_security_profiles_cover_the_100_bit_target_for_all_shapes() {
     for circuit in EcdsaCircuit::ALL {

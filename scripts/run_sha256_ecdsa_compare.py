@@ -330,9 +330,6 @@ def print_summary(directory):
 
 def build(args, directory):
     features = "sha256-ecdsa-compare,unchecked"
-    if "wfbitz" in getattr(args, "openers", []):
-        # The worldfnd/BitZ scheme's opener lives behind `bitz-parity`.
-        features += ",bitz-parity"
     command = ["cargo", "build", "--release", "--locked", "--features", features,
                "--bench", "sha256_ecdsa_compare", "--message-format=json-render-diagnostics"]
     if args.offline:
@@ -522,7 +519,7 @@ def main():
                         help="security targets; the binius64-ligerito gate is fixed at 100, so its cases exist only there")
     parser.add_argument("--openers", nargs="+", choices=OPENERS, default=["forest"],
                         help="the BitZ methods' opener of the terminal claim: the forest (the paper's) "
-                             "and/or the worldfnd/BitZ scheme's virtual opening (builds with bitz-parity)")
+                             "and/or the worldfnd/BitZ scheme's virtual opening")
     parser.add_argument("--bitz-profiles", nargs="+", choices=sorted(PROFILE_RATES), default=DEFAULT_BITZ_PROFILES,
                         help="Ligerito profile per BitZ case: custom:1:4 = rate 1/2, custom:3:4 = rate 1/8")
     parser.add_argument("--binius-rates", nargs="+", type=int, choices=[1, 2, 3], default=None,

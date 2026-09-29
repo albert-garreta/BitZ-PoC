@@ -271,7 +271,6 @@ where
                 },
             )
         }
-        #[cfg(feature = "bitz-parity")]
         Some("wfbitz") => {
             use bitz::piop::spartan::protocol::wfbitz_opener::{self, WfbitzLigerito, WfbitzOpener};
             let target = config.profile.expect("profile");

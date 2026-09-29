@@ -498,13 +498,11 @@ pub struct PreparedSha256Ecdsa {
     /// The structured wfbitz opening's block geometry, committed layout and
     /// Ligerito configuration for that layout; `None` when the map has no
     /// chained structure the scheme can use (then the dense virtual opening).
-    #[cfg(feature = "bitz-parity")]
     pub(crate) wfbitz: Option<WfbitzChained>,
 }
 
-/// What the wfbitz opener needs beyond the relation (feature `bitz-parity`):
+/// What the wfbitz opener needs beyond the relation:
 /// the sources committed in the block layout of [`crate::wfbitz::chained`].
-#[cfg(feature = "bitz-parity")]
 #[derive(Clone, Debug)]
 pub(crate) struct WfbitzChained {
     pub geometry: crate::wfbitz::chained::ChainedGeometry,
@@ -515,7 +513,7 @@ pub(crate) struct WfbitzChained {
 /// Which scheme opens the terminal scaled claim through the commitment:
 /// the crate's chunked exponent-fold forest with its virtual opening (the
 /// paper's), or the worldfnd/BitZ scheme's virtual opening
-/// (`crate::wfbitz::virt`, feature `bitz-parity`).
+/// (`crate::wfbitz::virt`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Sha256EcdsaOpener {
     #[default]
@@ -546,7 +544,6 @@ impl PreparedSha256Ecdsa {
     /// structured wfbitz opening's block-layout ladder when one was
     /// prepared, else the native `f_layout` one.
     pub fn ligerito_configuration(&self) -> &crate::ligerito_flock::ResolvedLigerito {
-        #[cfg(feature = "bitz-parity")]
         if let Some(chained) = &self.wfbitz {
             return &chained.ligerito;
         }
@@ -562,7 +559,6 @@ impl PreparedSha256Ecdsa {
     /// target.
     pub fn with_opener(mut self, opener: Sha256EcdsaOpener) -> Self {
         self.opener = opener;
-        #[cfg(feature = "bitz-parity")]
         {
             self.wfbitz = match opener {
                 Sha256EcdsaOpener::Wfbitz => match self.chained_geometry() {
@@ -581,7 +577,6 @@ impl PreparedSha256Ecdsa {
     /// The structured wfbitz opening's geometry for this map, with the
     /// scheme's Ligerito ladder resolved for the block-layout commitment
     /// (the same size as the derived grid: `2^(h_bits)` cells).
-    #[cfg(feature = "bitz-parity")]
     fn chained_geometry(&self) -> Result<WfbitzChained, super::Sha256EcdsaError> {
         use crate::wfbitz::chained::{ChainedGeometry, LOG_ROWS};
         let parts = self
@@ -628,7 +623,6 @@ impl PreparedSha256Ecdsa {
                 self.lambda as usize,
             )
             .map_err(error)?;
-        #[cfg(feature = "bitz-parity")]
         if self.wfbitz.is_some() {
             // Keep the structured opener's ladder on the same selection.
             self.wfbitz = Some(self.chained_geometry()?);
@@ -824,7 +818,6 @@ pub fn prepare_sha256_ecdsa_on(
             .resolve(f_bits - 7, lambda as usize)
             .map_err(error)?,
         opener: Sha256EcdsaOpener::Forest,
-        #[cfg(feature = "bitz-parity")]
         wfbitz: None,
     })
 }

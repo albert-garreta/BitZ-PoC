@@ -1,6 +1,6 @@
 //! Cost probes for the grand product (ignored tests; run one at a time with
 //! `--ignored --nocapture` on a release build, `-C target-cpu=native`,
-//! `--features bitz-parity,parallel`):
+//! `--features parallel`):
 //!
 //! - [`probe_ghash_mul_costs`]: one GHASH multiplication in each form the
 //!   prover uses — reduced (6 PMULL), by a pass-fixed preprocessed scalar

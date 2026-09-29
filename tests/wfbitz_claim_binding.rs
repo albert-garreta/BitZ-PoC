@@ -1,4 +1,3 @@
-#![cfg(feature = "bitz-parity")]
 
 //! The direct BitZ entry point must bind its initial claim before sampling the
 //! fold batching point. Otherwise the prover can choose claim weights after

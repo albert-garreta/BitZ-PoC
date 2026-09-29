@@ -67,7 +67,6 @@ pub enum Sha256EcdsaOpening {
     Forest(IntEvalRsLigVirtProof),
     /// The worldfnd/BitZ scheme's virtual opening: its narg string, hint
     /// stream and the crate's Round-0 message.
-    #[cfg(feature = "bitz-parity")]
     Wfbitz(crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof),
 }
 
@@ -75,7 +74,6 @@ impl Sha256EcdsaOpening {
     pub(crate) fn ood(&self) -> Option<&crate::ligerito_flock::OodRound> {
         match self {
             Self::Forest(opening) => opening.ood.as_ref(),
-            #[cfg(feature = "bitz-parity")]
             Self::Wfbitz(opening) => opening.ood.as_ref(),
         }
     }
@@ -84,7 +82,6 @@ impl Sha256EcdsaOpening {
     pub(crate) fn opener(&self) -> super::Sha256EcdsaOpener {
         match self {
             Self::Forest(_) => super::Sha256EcdsaOpener::Forest,
-            #[cfg(feature = "bitz-parity")]
             Self::Wfbitz(_) => super::Sha256EcdsaOpener::Wfbitz,
         }
     }
@@ -94,7 +91,6 @@ impl Sha256EcdsaOpening {
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
             Self::Forest(opening) => opening.to_bytes(),
-            #[cfg(feature = "bitz-parity")]
             Self::Wfbitz(opening) => {
                 use crate::piop::spartan::protocol::OpeningProof;
                 opening.to_bytes()
@@ -108,14 +104,11 @@ impl Sha256EcdsaOpening {
             super::Sha256EcdsaOpener::Forest => {
                 IntEvalRsLigVirtProof::from_bytes(bytes).map(Self::Forest).map_err(error)
             }
-            #[cfg(feature = "bitz-parity")]
             super::Sha256EcdsaOpener::Wfbitz => {
                 crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof::from_bytes(bytes)
                     .map(Self::Wfbitz)
                     .ok_or_else(|| error("malformed wfbitz opening"))
             }
-            #[cfg(not(feature = "bitz-parity"))]
-            super::Sha256EcdsaOpener::Wfbitz => Err(error("unknown opening variant")),
         }
     }
 }
@@ -128,7 +121,6 @@ pub fn commit_sha256_ecdsa(
     if witness.statement.log_compressions as usize != prepared.log_n {
         return Err(error("witness layout mismatch"));
     }
-    #[cfg(feature = "bitz-parity")]
     if let Some(chained) = &prepared.wfbitz {
         // The structured wfbitz opening commits the sources in its block layout.
         let rows = witness
@@ -263,7 +255,6 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
     hint: &FlockCommitHint,
     prefix_vars: usize,
 ) -> Result<Sha256EcdsaProof> {
-    #[cfg(feature = "bitz-parity")]
     let (pc, hint_matches) = match &prepared.wfbitz {
         Some(chained) => (
             chained.ligerito.prover(),
@@ -273,8 +264,6 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         ),
         None => (prepared.ligerito.prover(), hint.matches_rows(&witness.f_rows)),
     };
-    #[cfg(not(feature = "bitz-parity"))]
-    let (pc, hint_matches) = (prepared.ligerito.prover(), hint.matches_rows(&witness.f_rows));
     if &witness.statement != statement || !hint_matches {
         return Err(error("statement or commitment witness mismatch"));
     }
@@ -374,11 +363,6 @@ pub fn prove_sha256_ecdsa<T: Transcript + Send>(
         &cfg,
     );
     if prepared.opener == super::Sha256EcdsaOpener::Wfbitz {
-        #[cfg(not(feature = "bitz-parity"))]
-        {
-            return Err(error("the wfbitz opener needs the bitz-parity feature"));
-        }
-        #[cfg(feature = "bitz-parity")]
         {
             let target = u128::from(cfg.to_integer(&inner.final_claim));
             let opening = super::wfbitz::prove_opening(
@@ -460,13 +444,10 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     commitment: &Commitment,
     proof: &Sha256EcdsaProof,
 ) -> Result<()> {
-    #[cfg(feature = "bitz-parity")]
     let (vc, committed_layout) = match &prepared.wfbitz {
         Some(chained) => (chained.ligerito.verifier(), &chained.layout),
         None => (prepared.ligerito.verifier(), &prepared.f_layout),
     };
-    #[cfg(not(feature = "bitz-parity"))]
-    let (vc, committed_layout) = (prepared.ligerito.verifier(), &prepared.f_layout);
     validate_ligerito_commitment(commitment, vc).map_err(|e| error(format!("{e:?}")))?;
     let security = prepared.security()?;
     bind_statement(transcript, prepared, statement, commitment, &security)?;
@@ -566,7 +547,6 @@ pub fn verify_sha256_ecdsa<T: Transcript + Send>(
     // chunks[0][b] = rows[b].
     let opening = match (&proof.opening, prepared.opener) {
         (Sha256EcdsaOpening::Forest(opening), super::Sha256EcdsaOpener::Forest) => opening,
-        #[cfg(feature = "bitz-parity")]
         (Sha256EcdsaOpening::Wfbitz(opening), super::Sha256EcdsaOpener::Wfbitz) => {
             // The wfbitz opening grinds inside its own transcript and consumes
             // no host nonces; as the forest's grinding context consumes

@@ -518,10 +518,9 @@ pub fn prove_multiswap_mod_r1cs<T: Transcript + Send>(
 }
 
 /// [`prove_multiswap_mod_r1cs`] with the reduced claim discharged through the
-/// worldfnd/BitZ scheme's virtual opening (feature `bitz-parity`): the same
+/// worldfnd/BitZ scheme's virtual opening: the same
 /// prefix, lift and second prime, then that scheme's fold, GKR and opening
 /// under this relation's UDR ladder.
-#[cfg(feature = "bitz-parity")]
 pub fn prove_multiswap_mod_r1cs_wfbitz<T: Transcript + Send>(
     transcript: &mut T,
     prepared: &PreparedMultiswapRelation,
@@ -534,7 +533,6 @@ pub fn prove_multiswap_mod_r1cs_wfbitz<T: Transcript + Send>(
 }
 
 /// Verifies a [`prove_multiswap_mod_r1cs_wfbitz`] proof.
-#[cfg(feature = "bitz-parity")]
 pub fn verify_multiswap_mod_r1cs_wfbitz<T: Transcript + Send>(
     transcript: &mut T,
     prepared: &PreparedMultiswapRelation,
@@ -672,7 +670,6 @@ mod tests {
     /// The reduced claim discharged through the worldfnd/BitZ scheme's virtual
     /// opening: proves, verifies, is deterministic, and a wrong integer lift
     /// is still rejected before the reduction draw.
-    #[cfg(feature = "bitz-parity")]
     #[test]
     fn mini_multiswap_roundtrips_through_the_wfbitz_opener() {
         use crate::piop::spartan::protocol::OpeningProof as _;
@@ -715,7 +712,6 @@ mod tests {
     /// wfbitz opening is rejected, not ignored (the presence rule of the
     /// crate's own opening); a foreign opener configuration is rejected up
     /// front on both sides.
-    #[cfg(feature = "bitz-parity")]
     #[test]
     fn wfbitz_multiswap_rejects_a_stray_round_0_record() {
         use crate::piop::spartan::protocol::{OpeningProof as _, wfbitz_opener::WfbitzOpeningProof};
@@ -788,7 +784,6 @@ mod tests {
     /// The wfbitz opening grinds none of its GF(2^128) rounds, so a profile
     /// that credits forest grinding is refused on both sides before any
     /// transcript work.
-    #[cfg(feature = "bitz-parity")]
     #[test]
     fn wfbitz_multiswap_refuses_credited_forest_grinding() {
         struct ForestGrinding;

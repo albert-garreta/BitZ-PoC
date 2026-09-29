@@ -28,7 +28,6 @@ pub struct Sha256EcdsaWitness {
     pub(crate) statement: Sha256EcdsaStatement,
     /// The sources in the structured wfbitz opening's block layout, built
     /// once (by the commitment) and shared with the prover's consistency check.
-    #[cfg(feature = "bitz-parity")]
     pub(crate) wfbitz_rows: std::sync::OnceLock<std::sync::Arc<Vec<Vec<u64>>>>,
 }
 
@@ -445,7 +444,6 @@ pub fn generate_sha256_ecdsa_witness(
     Ok(Sha256EcdsaWitness {
         f_rows: f_rows.into(),
         h_rows,
-        #[cfg(feature = "bitz-parity")]
         wfbitz_rows: std::sync::OnceLock::new(),
         products,
         statement: statement.clone(),

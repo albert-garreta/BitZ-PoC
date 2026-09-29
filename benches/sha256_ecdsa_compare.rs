@@ -53,7 +53,7 @@ struct Args {
     log_inv_rate: u8,
     /// Wall-clock reports top-level timings without recording internal spans.
     /// The BitZ methods' opener of the terminal claim: the forest (the
-    /// paper's) or the worldfnd/BitZ scheme (needs `--features bitz-parity`).
+    /// paper's) or the worldfnd/BitZ scheme.
     #[arg(long, default_value = "forest", value_parser = ["forest", "wfbitz"])]
     opener: String,
     #[arg(long, value_enum, default_value = "perfetto")]
