@@ -200,17 +200,43 @@ pub fn commit(z_packed: &[Gf128], params: &PcsParams) -> (Commitment, ProverData
     commit_into(z_packed, params, codeword)
 }
 
+/// Whether the commit encodes straight from the message
+/// (`FLOCK_COMMIT_FROM_MESSAGE`, `0` or `1`, default off), read once: the
+/// NTT's first fused top pass reads its rows from the message instead of
+/// from a replicate-filled codeword (see
+/// [`AdditiveNttF128::forward_transform_interleaved_from_message`]). Off by
+/// default: it measured no faster than the replicate fill plus the in-place
+/// pass (1.4 ms slower at n = 30, 1 thread; within noise at 10 threads).
+fn commit_from_message_from_env() -> bool {
+    static FROM_MESSAGE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FROM_MESSAGE.get_or_init(|| {
+        matches!(std::env::var("FLOCK_COMMIT_FROM_MESSAGE").as_deref(), Ok("1"))
+    })
+}
+
 /// Like [`commit`], but reuses a caller-provided codeword buffer instead of
 /// allocating its own. The buffer must have length `codeword_len`; its
 /// CONTENTS may be arbitrary (uninit/stale) — every slot is written here:
 /// `z_packed` is replicated into all `2^log_inv_rate` sub-blocks (the exact
 /// state after the first `log_inv_rate` NTT layers on `[z, 0, …, 0]`), in
-/// parallel. Buffers from [`prefault_codeword_during`] or the scratch pool
-/// are already resident, so no write faults.
+/// parallel, or read straight into the first fused NTT pass. Buffers from
+/// [`prefault_codeword_during`] or the scratch pool are already resident,
+/// so no write faults.
 pub fn commit_into(
     z_packed: &[Gf128],
     params: &PcsParams,
+    codeword: Vec<Gf128>,
+) -> (Commitment, ProverData) {
+    commit_into_with(z_packed, params, codeword, commit_from_message_from_env())
+}
+
+/// [`commit_into`], encoding straight from the message when `from_message`
+/// (same codeword and root either way).
+fn commit_into_with(
+    z_packed: &[Gf128],
+    params: &PcsParams,
     mut codeword: Vec<Gf128>,
+    from_message: bool,
 ) -> (Commitment, ProverData) {
     params.validate();
     assert_eq!(z_packed.len(), 1usize << params.log_msg_len());
@@ -221,13 +247,49 @@ pub fn commit_into(
         "commit_into: prebuilt codeword buffer has wrong length"
     );
 
-    // RS encoding of [z, 0, …, 0] starts with `log_inv_rate` butterfly layers
-    // whose bottom inputs are all zero — each is a pure copy, so after those
-    // layers the buffer holds 2^log_inv_rate replicas of z. Write that state
-    // directly (replicating z costs the same writes as the zero-fill it
-    // replaces) and start the NTT at layer `log_inv_rate`, skipping those
-    // layers' full-buffer reads and multiplies.
-    replicate_message_fill(&mut codeword, z_packed);
+    let timing = std::env::var_os("FLOCK_COMMIT_TIMING").is_some();
+    let ntt = AdditiveNttF128::standard(params.k_code());
+    if from_message {
+        // The first `log_inv_rate` layers are copies, and the next two run
+        // as one fused pass reading their rows straight from `z_packed`: the
+        // codeword is written once, never filled and re-read.
+        let t_ntt = std::time::Instant::now();
+        ntt.forward_transform_interleaved_from_message(&mut codeword, z_packed, params.num_ntts());
+        if timing {
+            eprintln!(
+                "[commit-timing] fill+ntt: {:.2} ms",
+                t_ntt.elapsed().as_secs_f64() * 1e3
+            );
+        }
+    } else {
+        // RS encoding of [z, 0, …, 0] starts with `log_inv_rate` butterfly
+        // layers whose bottom inputs are all zero — each is a pure copy, so
+        // after those layers the buffer holds 2^log_inv_rate replicas of z.
+        // Write that state directly (replicating z costs the same writes as
+        // the zero-fill it replaces) and start the NTT at layer
+        // `log_inv_rate`, skipping those layers' full-buffer reads and
+        // multiplies.
+        let t_fill = std::time::Instant::now();
+        replicate_message_fill(&mut codeword, z_packed);
+        if timing {
+            eprintln!(
+                "[commit-timing] fill: {:.2} ms",
+                t_fill.elapsed().as_secs_f64() * 1e3
+            );
+        }
+        let t_ntt = std::time::Instant::now();
+        ntt.forward_transform_interleaved_from_layer(
+            &mut codeword,
+            params.num_ntts(),
+            params.log_inv_rate,
+        );
+        if timing {
+            eprintln!(
+                "[commit-timing] ntt: {:.2} ms",
+                t_ntt.elapsed().as_secs_f64() * 1e3
+            );
+        }
+    }
 
     finalize_commit(codeword, params)
 }
@@ -258,27 +320,10 @@ pub(crate) fn replicate_message_fill(codeword: &mut [Gf128], msg: &[Gf128]) {
     }
 }
 
-/// Shared tail of [`commit`] / [`commit_into`]: interleaved forward additive
-/// NTT (RS-encode every lane) then the initial Merkle tree over codeword rows.
-fn finalize_commit(mut codeword: Vec<Gf128>, params: &PcsParams) -> (Commitment, ProverData) {
+/// Shared tail of [`commit`] / [`commit_into`]: the initial Merkle tree over
+/// the RS-encoded codeword's rows.
+fn finalize_commit(codeword: Vec<Gf128>, params: &PcsParams) -> (Commitment, ProverData) {
     let timing = std::env::var_os("FLOCK_COMMIT_TIMING").is_some();
-    let t_ntt = std::time::Instant::now();
-    // ---- Interleaved forward additive NTT: 2^log_batch_size independent
-    // sub-NTTs with shared twiddles. Each sub-NTT operates on its lane of the
-    // SoA buffer. The first `log_inv_rate` layers were pre-applied by the
-    // caller's replicate-fill (commit_into), so start past them.
-    let ntt = AdditiveNttF128::standard(params.k_code());
-    ntt.forward_transform_interleaved_from_layer(
-        &mut codeword,
-        params.num_ntts(),
-        params.log_inv_rate,
-    );
-    if timing {
-        eprintln!(
-            "[commit-timing] ntt: {:.2} ms",
-            t_ntt.elapsed().as_secs_f64() * 1e3
-        );
-    }
     let t_merkle = std::time::Instant::now();
 
     // ---- Merkle commitment: one leaf per codeword position = num_ntts Gf128.
@@ -445,7 +490,9 @@ mod tests {
     fn commit_matches_full_ntt_oracle() {
         use crate::ntt::AdditiveNttF128;
         let mut rng = Rng::new(0xFEED);
-        for (m, log_inv_rate, log_batch_size) in [(10, 1, 1), (12, 1, 2), (12, 2, 1), (14, 2, 3)] {
+        for (m, log_inv_rate, log_batch_size) in
+            [(10, 1, 1), (12, 1, 2), (12, 2, 1), (14, 2, 3), (22, 1, 4), (24, 1, 4), (23, 2, 3)]
+        {
             let params = PcsParams {
                 m,
                 log_inv_rate,
@@ -456,18 +503,11 @@ mod tests {
             let z = rng.bits(1 << m);
             let z_packed = super::super::pack::pack_witness(&z, m);
 
-            let (commitment, pd) = commit(&z_packed, &params);
-
             // Oracle: explicit [z, 0, …, 0] coefficients, full NTT from layer 0.
             let mut oracle = vec![Gf128::ZERO; params.codeword_len_f128()];
             oracle[..z_packed.len()].copy_from_slice(&z_packed);
             let ntt = AdditiveNttF128::standard(params.k_code());
-            ntt.forward_transform_interleaved(&mut oracle, params.num_ntts());
-
-            assert_eq!(
-                pd.codeword, oracle,
-                "codeword mismatch at m={m} r={log_inv_rate}"
-            );
+            ntt.forward_transform_interleaved_scalar(&mut oracle, params.num_ntts());
             let oracle_bytes: &[u8] = unsafe {
                 core::slice::from_raw_parts(oracle.as_ptr() as *const u8, oracle.len() * 16)
             };
@@ -475,10 +515,23 @@ mod tests {
                 *crate::merkle::merkle_tree(oracle_bytes, params.n_leaves(), params.merkle_hash)
                     .last()
                     .unwrap();
-            assert_eq!(
-                commitment.root, oracle_root,
-                "root mismatch at m={m} r={log_inv_rate}"
-            );
+
+            // Both encodings: replicate + from-layer, and straight from the
+            // message; the codeword buffer starts as garbage.
+            for from_message in [false, true] {
+                let garbage: Vec<Gf128> = (0..params.codeword_len_f128())
+                    .map(|i| Gf128::new(rng.next_u64() ^ i as u64, rng.next_u64()))
+                    .collect();
+                let (commitment, pd) = commit_into_with(&z_packed, &params, garbage, from_message);
+                assert!(
+                    pd.codeword == oracle,
+                    "codeword mismatch at m={m} r={log_inv_rate} from_message={from_message}"
+                );
+                assert_eq!(
+                    commitment.root, oracle_root,
+                    "root mismatch at m={m} r={log_inv_rate} from_message={from_message}"
+                );
+            }
         }
     }
 
