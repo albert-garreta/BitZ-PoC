@@ -254,8 +254,9 @@ fn terminal<S: RelationSpec>(
             protocol::terminal::verify(&mut v, &prepared, &hint.commitment, &claim, &proof)
         })?;
         drop(root);
-        let bytes = ::bitz::ligerito_flock::IntEvalRsLigModQProof::to_bytes(&proof);
-        let decoded = ::bitz::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&bytes)?;
+        let bytes = proof.to_bytes();
+        let decoded = ::bitz::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof::from_bytes(&bytes)
+            .ok_or_else(|| anyhow::anyhow!("invalid opening encoding"))?;
         ensure!(decoded.to_bytes() == bytes, "PCS codec roundtrip");
         Ok(Sizes {
             commitment: encoding.len(),

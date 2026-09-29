@@ -72,7 +72,7 @@ use crate::{
 use flock_core::pcs::commit::Commitment;
 
 use super::{
-    ClaimFrame, OpeningProof, Opener, PreparedRelation, PreparedRelationPrefix, Proof,
+    ClaimFrame, Opener, PreparedRelation, PreparedRelationPrefix, Proof,
     ProtocolError, ReductionProof, RelationSpec, bind_claim_frame, bind_prover_statement,
     bind_verifier_statement, bitify, bitz_generator, check_proof_kernel,
     grind_and_absorb_in_domain, instantiate_profile, packed_variables, prove_piop,
@@ -333,12 +333,6 @@ pub struct WfbitzOpeningProof {
     pub ood: Option<OodRound>,
 }
 
-impl OpeningProof for WfbitzOpeningProof {
-    fn to_bytes(&self) -> Vec<u8> { self.to_bytes() }
-    fn grinding_nonces(&self) -> &[u64] { self.grinding_nonces() }
-    fn ood(&self) -> Option<&OodRound> { self.ood() }
-}
-
 impl WfbitzOpeningProof {
     /// Both streams, each with a `u64` length, then the Round-0 messages:
     /// a tag byte (0 = no round, 1 = round), `y` (16 bytes) and the
@@ -364,10 +358,6 @@ impl WfbitzOpeningProof {
             }
         }
         bytes
-    }
-
-    pub fn grinding_nonces(&self) -> &[u64] {
-        &[]
     }
 
     pub fn ood(&self) -> Option<&OodRound> {
@@ -415,7 +405,7 @@ impl WfbitzOpeningProof {
 }
 
 /// A proof discharged through the BitZ opener.
-pub type WfbitzProof = Proof<WfbitzOpeningProof>;
+pub type WfbitzProof = Proof;
 
 /// The fork's instance tag: 32 bytes squeezed from the outer transcript
 /// after the terminal boundary.
@@ -465,6 +455,22 @@ pub fn prove<T: Transcript + Send, S: RelationSpec>(
     witness: &S::Witness,
     hint: &FlockCommitHint,
 ) -> Result<WfbitzProof, ProtocolError> {
+    if prefix.params() != *opener.layout() {
+        return Err(ProtocolError::RelationWitnessLayoutMismatch);
+    }
+    check_native_policy(prefix, opener)?;
+    prove_direct(transcript, prefix, &opener.opener(), opener.pcs(), &opener.digest(), witness, hint)
+}
+
+pub(super) fn prove_direct<T: Transcript + Send, S: RelationSpec>(
+    transcript: &mut T,
+    prefix: &PreparedRelationPrefix<S>,
+    configuration: &Opener,
+    pcs: &BitzPcs,
+    digest: &[u8; 32],
+    witness: &S::Witness,
+    hint: &FlockCommitHint,
+) -> Result<WfbitzProof, ProtocolError> {
     let spec = prefix.layout();
     // The direct discharge only: the claim of a relation with a virtual map
     // is about the derived grid, not the committed one.
@@ -472,24 +478,19 @@ pub fn prove<T: Transcript + Send, S: RelationSpec>(
         return Err(ProtocolError::UnsupportedDischarge);
     }
     spec.check_witness(witness)?;
-    if prefix.params() != *opener.layout() {
-        return Err(ProtocolError::RelationWitnessLayoutMismatch);
-    }
-    check_native_policy(prefix, opener)?;
-    validate_bit_rows(opener.layout(), hint.rows())?;
-    validate_commitment(opener.layout(), &hint.commitment, opener.pcs().prover_config())?;
+    validate_bit_rows(&prefix.params(), hint.rows())?;
+    validate_commitment(&prefix.params(), &hint.commitment, pcs.prover_config())?;
     // The statement, a resolved ladder's policy digest and Round 0, as the
     // runner binds them; then the session and the ladder's identity (the
     // `fast` ladder's only digest: it has no policy digest).
-    let configuration = opener.opener();
-    let (binding, ood) = bind_prover_statement(transcript, prefix, &configuration, hint)?;
+    let (binding, ood) = bind_prover_statement(transcript, prefix, configuration, hint)?;
     transcript.absorb_slice(SESSION);
-    transcript.absorb_slice(&opener.digest());
+    transcript.absorb_slice(digest);
     let proved = prove_piop(transcript, prefix, witness, &binding)?;
     let prime = &proved.prime;
 
     let _step5 = tracing::info_span!("step5:open_prove").entered();
-    let params = opener.params(modulus_u128(prime))?;
+    let params = opening_params(&prefix.params(), modulus_u128(prime))?;
     let claim = {
         let _scope = tracing::info_span!("step5:bitz-claim").entered();
         linear_claim(&params, &proved.opening, &proved.table, prime)?
@@ -501,7 +502,7 @@ pub fn prove<T: Transcript + Send, S: RelationSpec>(
     BitZProver::new(params, WINDOW)
         .prove(
             &claim,
-            opener.pcs(),
+            pcs,
             hint,
             &mut state,
             ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
@@ -527,29 +528,40 @@ pub fn verify<T: Transcript + Send, S: RelationSpec>(
     commitment: &Commitment,
     proof: &WfbitzProof,
 ) -> Result<(), ProtocolError> {
-    if prefix.layout().map().is_some() {
-        return Err(ProtocolError::UnsupportedDischarge);
-    }
     if prefix.params() != *opener.layout() {
         return Err(ProtocolError::RelationWitnessLayoutMismatch);
     }
     check_native_policy(prefix, opener)?;
-    let configuration = opener.opener();
+    verify_direct(transcript, prefix, &opener.opener(), opener.pcs(), &opener.digest(), commitment, proof)
+}
+
+pub(super) fn verify_direct<T: Transcript + Send, S: RelationSpec>(
+    transcript: &mut T,
+    prefix: &PreparedRelationPrefix<S>,
+    configuration: &Opener,
+    pcs: &BitzPcs,
+    digest: &[u8; 32],
+    commitment: &Commitment,
+    proof: &WfbitzProof,
+) -> Result<(), ProtocolError> {
+    if prefix.layout().map().is_some() {
+        return Err(ProtocolError::UnsupportedDischarge);
+    }
     let binding_config = configuration.binding_config()?;
-    validate_commitment(opener.layout(), commitment, &binding_config)?;
+    validate_commitment(&prefix.params(), commitment, &binding_config)?;
     let (binding, ood) =
-        bind_verifier_statement(transcript, prefix, &configuration, commitment, proof.bitz().ood())?;
+        bind_verifier_statement(transcript, prefix, configuration, commitment, proof.bitz().ood())?;
     transcript.absorb_slice(SESSION);
-    transcript.absorb_slice(&opener.digest());
+    transcript.absorb_slice(digest);
     let verified = verify_piop(transcript, prefix, &binding, proof.prefix())?;
     let prime = &verified.prime;
 
     let _step5 = tracing::info_span!("step5:open_verify").entered();
-    let params = opener.params(modulus_u128(prime))?;
+    let params = opening_params(&prefix.params(), modulus_u128(prime))?;
     let claim = linear_claim(&params, &verified.opening, &verified.table, prime)?;
     let opening = proof.bitz();
     let ood = ood
-        .opening_claim(transcript, opener.packed_vars, opening.ood())
+        .opening_claim(transcript, packed_variables(&prefix.params())?, opening.ood())
         .map_err(ProtocolError::Bitz)?;
     let tag = fork_tag(transcript);
     let bitz_proof = BitzTranscriptProof {
@@ -561,7 +573,7 @@ pub fn verify<T: Transcript + Send, S: RelationSpec>(
     BitZVerifier::new(params, WINDOW)
         .verify(
             &claim,
-            opener.pcs(),
+            pcs,
             Root(commitment.root),
             state,
             ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
@@ -1197,7 +1209,7 @@ pub fn prove_reduced<T: Transcript + Send, S: RelationSpec>(
     prepared: &PreparedRelation<S>,
     witness: &S::Witness,
     hint: &FlockCommitHint,
-) -> Result<Proof<WfbitzOpeningProof>, ProtocolError> {
+) -> Result<Proof, ProtocolError> {
     let prefix = &prepared.prefix;
     let opener = &prepared.opener;
     let spec = &prefix.spec;
@@ -1306,7 +1318,7 @@ pub fn verify_reduced<T: Transcript + Send, S: RelationSpec>(
     transcript: &mut T,
     prepared: &PreparedRelation<S>,
     commitment: &Commitment,
-    proof: &Proof<WfbitzOpeningProof>,
+    proof: &Proof,
 ) -> Result<(), ProtocolError> {
     let prefix = &prepared.prefix;
     let opener = &prepared.opener;

@@ -1,7 +1,6 @@
 use anyhow::{Result, ensure};
 type List<T> = Vec<T>;
 use clap::{Parser, ValueEnum};
-use bitz::merged_forest::schedule::SchedulePolicy;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -67,17 +66,6 @@ fn workloads(s: &str) -> Result<Vec<Workload>, String> {
     }
     Ok(values)
 }
-fn schedules(value: &str) -> Result<Vec<SchedulePolicy>, String> {
-    let mut result = Vec::new();
-    for part in value.split(',') {
-        let policy = part.parse()?;
-        if result.contains(&policy) {
-            return Err(format!("duplicate GKR schedule {part}"));
-        }
-        result.push(policy);
-    }
-    Ok(result)
-}
 #[derive(Parser, Debug)]
 #[command(about = "Verified multiplication benchmarks; all experiment settings are flags")]
 pub struct Args {
@@ -110,13 +98,6 @@ pub struct Args {
     pub ligerito: Option<String>,
     #[arg(long, default_value = "johnson")]
     pub bound: String,
-    #[arg(
-        long,
-        default_value = "forest",
-        value_parser = ["forest", "wfbitz"],
-        help = "BitZ opener: the crate's exponent-fold forest, or the parity port of worldfnd/BitZ's scheme (--ligerito fast = its ladder as shipped)"
-    )]
-    pub opener: String,
     #[arg(long, default_value = "current", value_parser = ["current", "regression"])]
     pub preset: String,
     #[arg(long)]
@@ -129,8 +110,6 @@ pub struct Args {
     pub limber_bits: usize,
     #[arg(long, value_enum, default_value = "none")]
     pub memory: Memory,
-    #[arg(long, default_value = "auto", value_parser = schedules)]
-    pub gkr_schedule: Option<List<SchedulePolicy>>,
     #[arg(long)]
     pub proof_fingerprints: bool,
     #[arg(long)]
@@ -146,12 +125,9 @@ pub struct Args {
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BitzConfig {
-    /// `Some("wfbitz")`: the bitified claim discharged through the parity
-    /// port of worldfnd/BitZ's scheme (`protocol::wfbitz_opener`) at that
-    /// opener's own default split; `None`: the crate's forest.
+    /// Records the concrete opening in benchmark artifacts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opener: Option<String>,
-    pub gkr_schedule: Option<SchedulePolicy>,
     pub w: usize,
     pub split: i8,
     pub profile: Option<usize>,
@@ -242,18 +218,13 @@ impl Args {
             .ligerito
             .as_deref()
             .map_or_else(|| vec![None], |s| s.split(',').map(Some).collect());
-        let wfbitz = self.opener == "wfbitz";
         for request in selections.iter().flatten() {
-            if wfbitz && *request == "fast" {
+            if *request == "fast" {
                 continue;
             }
             bitz::ligerito_flock::LigeritoSelection::parse(request, 100)
                 .map_err(anyhow::Error::msg)?;
         }
-        ensure!(
-            !wfbitz || matches!(self.mode, Mode::Proof | Mode::Witness),
-            "the wfbitz opener runs the proof and witness experiments only"
-        );
         let variants: Vec<_> = self
             .variants
             .as_deref()
@@ -402,7 +373,7 @@ impl Args {
                                         for bound in &bounds {
                                             for request in &selections {
                                                 // (name, bound) of the opener's Ligerito ladder.
-                                                let (name, johnson) = if wfbitz && *request == Some("fast") {
+                                                let (name, johnson) = if *request == Some("fast") {
                                                     ("fast".to_string(), true)
                                                 } else {
                                                     let selected = if let Some(request) = request {
@@ -421,9 +392,8 @@ impl Args {
                                                     (name, johnson)
                                                 };
                                                 let f = Some(BitzConfig {
-                                                    opener: (wfbitz && self.mode != Mode::Witness)
+                                                    opener: (self.mode != Mode::Witness)
                                                         .then(|| "wfbitz".to_string()),
-                                                    gkr_schedule: None,
                                                     w: w as usize,
                                                     split: split as i8,
                                                     profile: (self.mode != Mode::Witness)
@@ -446,27 +416,6 @@ impl Args {
                         } else {
                             vec![None]
                         };
-                        let configurations: Vec<_> = configurations
-                            .into_iter()
-                            .flat_map(|f| {
-                                if let Some(f) = &f {
-                                    if self.mode != Mode::Witness && f.opener.is_none() {
-                                        return self
-                                            .gkr_schedule
-                                            .as_deref()
-                                            .unwrap_or(&[SchedulePolicy::Auto])
-                                            .iter()
-                                            .map(|&policy| {
-                                                let mut f = f.clone();
-                                                f.gkr_schedule = Some(policy);
-                                                Some(f)
-                                            })
-                                            .collect::<Vec<_>>();
-                                    }
-                                }
-                                vec![f]
-                            })
-                            .collect();
                         for bitz in configurations {
                             let variants: Vec<_> = if matches!(self.mode, Mode::Outer | Mode::Piop)
                             {
@@ -575,12 +524,8 @@ impl Case {
         {
             "BitZ opening needs log-n >= 15"
         } else if let Some(f) = &self.bitz {
-            if f.opener.as_deref() == Some("wfbitz") && f.w != 1 {
-                "the wfbitz opener commits bits (W=1)"
-            } else if f.opener.as_deref() == Some("wfbitz") && self.workload == Workload::BabyBear {
-                "the wfbitz opener is wired for the integer workloads"
-            } else if f.opener.as_deref() == Some("wfbitz") && f.profile == Some(128) {
-                "the wfbitz opener grinds none of its GF(2^128) rounds (profile <= 126)"
+            if f.w != 1 {
+                "Wfbitz commits bits (W=1)"
             } else if (self.mode == Mode::Pcs || self.workload == Workload::BabyBear)
                 && (f.w != 1 || f.split != 0)
             {
@@ -603,16 +548,11 @@ impl Case {
             spec: S,
             mode: Mode,
             config: &BitzConfig,
-            threads: usize,
+            _threads: usize,
         ) -> Result<(), String> {
             use bitz::piop::spartan::{Lambda100, Lambda128, protocol::instantiate_profile};
             if mode == Mode::Witness {
                 return Ok(());
-            }
-            if let Some(policy) = config.gkr_schedule {
-                use bitz::merged_forest::schedule::{ForestPath, resolve_schedule};
-                resolve_schedule(policy, &spec.opening_layout(), ForestPath::Single, threads)
-                    .map_err(|e| e.to_string())?;
             }
             if config.profile == Some(128) {
                 instantiate_profile::<Lambda128, _>(&spec)
@@ -622,18 +562,17 @@ impl Case {
             .map(|_| ())
             .map_err(|e| e.to_string())
         }
-        let wfbitz = f.opener.as_deref() == Some("wfbitz");
         let result = match self.workload {
             Workload::U32Full | Workload::U32Mod32 => MulLayout::<u32>::new_with_word_bits(n, f.w)
-                .and_then(|l| if wfbitz { l.wfbitz_split(f.split) } else { l.with_split_shift(f.split) })
+                .and_then(|l| l.wfbitz_split(f.split))
                 .map_err(|e| e.to_string())
                 .and_then(|l| check(l, self.mode, f, self.threads)),
             Workload::U64 => MulLayout::<u64>::new_with_word_bits(n, f.w)
-                .and_then(|l| if wfbitz { l.wfbitz_split(f.split) } else { l.with_split_shift(f.split) })
+                .and_then(|l| l.wfbitz_split(f.split))
                 .map_err(|e| e.to_string())
                 .and_then(|l| check(l, self.mode, f, self.threads)),
             Workload::U128 => MulLayout::<u128>::new_with_word_bits(n, f.w)
-                .and_then(|l| if wfbitz { l.wfbitz_split(f.split) } else { l.with_split_shift(f.split) })
+                .and_then(|l| l.wfbitz_split(f.split))
                 .map_err(|e| e.to_string())
                 .and_then(|l| check(l, self.mode, f, self.threads)),
             Workload::BabyBear => bitz::piop::spartan::baby_bear_mul::BabyBearMulLayout::new(n)
@@ -651,7 +590,7 @@ impl Case {
                 Workload::U128 => self.log_n + 2,
                 _ => return None,
             };
-            if wfbitz && f.ligerito.as_deref() == Some("fast") {
+            if f.ligerito.as_deref() == Some("fast") {
                 // flock's embedded `fast` ladder exists for 2^22..2^35 bits.
                 return (!(22..=35).contains(&(packed + 7)))
                     .then(|| "no embedded fast ladder for this size".to_string());

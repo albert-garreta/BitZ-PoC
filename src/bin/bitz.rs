@@ -97,7 +97,9 @@
 //! `--features unchecked` for release-style plain integer ops (the header
 //! reports the active mode and warns otherwise).
 
-use ::bitz::ligerito_flock::IntEvalRsLigModQProof;
+use ::bitz::piop::spartan::protocol::wfbitz_opener::{
+    self, WfbitzLigerito, WfbitzOpener, WfbitzOpeningProof,
+};
 use ::bitz::piop::spartan::protocol;
 use ::bitz::piop::spartan::protocol::PreparedRelation;
 use ::bitz::piop::spartan::protocol::Proof;
@@ -115,10 +117,10 @@ use bitz::ligerito::packed_vars;
 use bitz::ligerito_flock::FlockCommitHint;
 use bitz::ligerito_flock::LigeritoSelection;
 use bitz::ligerito_flock::{
-    OodRoundParams, StandaloneModQOpening, ood_round_params, standalone_q_bits,
+    OodRoundParams, ood_round_params, standalone_q_bits,
     weakest_fold_round_grinding,
 };
-use bitz::ligerito_flock::{commit_rs_ligerito_rows, mle_eval_mod_q_lig_size_breakdown};
+use bitz::ligerito_flock::commit_rs_ligerito_rows;
 use bitz::pcs::{IntegerMatrixLayout, mod_q_num_chunks, smallest_generator};
 use bitz::piop::spartan::{IopSecurityProfile, Lambda100, Lambda128};
 use bitz::transcript::Blake3Transcript;
@@ -902,39 +904,14 @@ fn main() {
     // transcript-sampled prime and point (every timed run re-derives them,
     // so the derivation IS inside the prover's and verifier's timers), then
     // the claimed μ from the set bits (O(popcount) mod-q adds, excluded).
-    let opening = StandaloneModQOpening::new(&p, alpha_of(), q_bits, ood, &resolved)
+    let opening = WfbitzOpener::new(p, WfbitzLigerito::Selected(resolved.selection()), resolved.security().target_security_bits as usize)
         .unwrap_or_else(|error| {
             eprintln!("Round 0 does not match the Ligerito ladder: {error:?}");
             exit(2)
         });
-    let instance = opening.instance(&hint);
-    let q = instance.q;
-    let arith = field::FpCtx::from_prime_u128(q);
-    let rw_q = instance.row_weights_q.clone();
-    let cw_q = instance.col_weights_q.clone();
-    let pow2_q: Vec<u128> = (0..w).map(|j| arith.reduce_u128(1u128 << j)).collect();
-    let mut y = 0u128;
-    for (c, row) in rows.iter().enumerate() {
-        let mut acc = 0u128;
-        for (wi, &word) in row.iter().enumerate() {
-            let mut bits = word;
-            while bits != 0 {
-                let bit = bits.trailing_zeros() as usize;
-                bits &= bits - 1;
-                let i = (wi << 6) | bit;
-                let (b, j) = (i >> log_w, i & (w - 1));
-                let term = if j == 0 {
-                    rw_q[b]
-                } else {
-                    arith.mul_u128(rw_q[b], pow2_q[j])
-                };
-                acc = arith.add_u128(acc, term);
-            }
-        }
-        y = arith.add_u128(y, arith.mul_u128(cw_q[c], acc));
-    }
-    let prove_once = |hint: &FlockCommitHint| opening.prove(hint, y);
-    let verify_once = |proof: &IntEvalRsLigModQProof| opening.verify(&hint.commitment, proof, y);
+    let y = wfbitz_opener::standalone_evaluation(&opening, &hint).expect("standalone claim");
+    let prove_once = |hint: &FlockCommitHint| wfbitz_opener::prove_standalone(&opening, hint, y).expect("prove");
+    let verify_once = |proof: &WfbitzOpeningProof| wfbitz_opener::verify_standalone(&opening, &hint.commitment, y, proof);
     set_heap_tracking(false);
     let mut commit_ms_v = Vec::with_capacity(o.reps);
     for i in 0..o.reps {
@@ -1020,8 +997,8 @@ fn main() {
 
     let proof = last_proof.expect("reps ≥ 1");
     let bytes = proof.to_bytes().len();
-    let (zb, lig_b) = mle_eval_mod_q_lig_size_breakdown(&proof);
-    let forest_b = zb.total() - zb.s_v;
+    let lig_b = proof.hints.len();
+    let zb = proof.to_bytes().len() - lig_b;
     let prove_med = median(prove_ms.clone());
     let verify_med = median(verify_ms.clone());
     println!(
@@ -1065,10 +1042,9 @@ fn main() {
         3,
     );
     println!(
-        "proof:   {:9.1} KiB  (forest-side {:.1} | s_v {:.1} | ligerito {:.1})",
+        "proof:   {:9.1} KiB  (native transcript and framing {:.1} | Ligerito hints {:.1})",
         bytes as f64 / 1024.0,
-        forest_b as f64 / 1024.0,
-        zb.s_v as f64 / 1024.0,
+        zb as f64 / 1024.0,
         lig_b as f64 / 1024.0,
     );
     println!("security: {}", lig_sec.describe());
@@ -2502,15 +2478,10 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     // Bytes (the bench's accounting): Spartan payload + boundary nonces, and
     // the serialized BitZ opening split into non-Ligerito | Ligerito.
     let spartan_elements = proof.spartan_payload_elements();
-    let boundary_nonces = proof.grinding_nonce_count(sec) - proof.opening_grinding_nonces().len();
+    let boundary_nonces = proof.grinding_nonce_count(sec) - sec.native_grinding_nonce_count();
     let piop_bytes = spartan_elements * 16 + boundary_nonces * std::mem::size_of::<u64>();
     let open_bytes = proof.bitz().to_bytes().len();
-    let (_zb, open_lig_bytes) = mle_eval_mod_q_lig_size_breakdown(
-        proof
-            .bitz()
-            .direct()
-            .expect("the multiplication CLI selects direct W=1 or W=8"),
-    );
+    let open_lig_bytes = proof.bitz().hints.len();
     let total_bytes = piop_bytes + open_bytes;
 
     let commit_med = median(commit_ms_v.clone());

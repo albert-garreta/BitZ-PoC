@@ -26,7 +26,6 @@
 use std::time::{Duration, Instant};
 
 use bitz::ligerito_flock::standalone_q_bits;
-use bitz::piop::spartan::protocol::OpeningProof;
 use bitz::piop::spartan::protocol::wfbitz_opener::{
     WfbitzLigerito, WfbitzOpener, prove_standalone, standalone_evaluation,
     verify_standalone,

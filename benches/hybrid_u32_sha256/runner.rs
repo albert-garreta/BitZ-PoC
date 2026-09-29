@@ -571,7 +571,7 @@ pub fn run() -> Result<(), AnyError> {
                     + proof.bitz().to_bytes().len()
                     + proof.spartan_payload_elements() * 16
                     + (proof.grinding_nonce_count(relation.security())
-                        - proof.opening_grinding_nonces().len())
+                        - relation.security().native_grinding_nonce_count())
                         * 8;
             }
             let verify = tracing::info_span!("benchmark:verification").entered();

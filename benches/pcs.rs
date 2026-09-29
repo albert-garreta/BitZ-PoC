@@ -50,7 +50,7 @@ use std::hint::black_box;
 
 use bitz::ligerito::packed_vars;
 use bitz::ligerito_flock::{
-    OodRoundParams, StandaloneModQOpening, commit_rs_ligerito_rows, standalone_q_bits,
+    OodRoundParams, commit_rs_ligerito_rows, standalone_q_bits,
 };
 use bitz::pcs::{IntegerMatrixLayout, mod_q_num_chunks, smallest_generator};
 use flock_core::pcs::ligerito::{ProverConfig as LigPc, VerifierConfig as LigVc};
@@ -254,32 +254,10 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
     // The instance: the transcript-sampled prime and point (replayed inside
     // every timed prove/verify), then the claimed μ from the SET BITS of the
     // committed rows (O(popcount) mod-q adds).
-    let opening = StandaloneModQOpening::new(&p, alpha, q_bits, ood, &resolved)
-        .expect("Round 0 matches the Ligerito ladder");
-    let instance = opening.instance(&hint);
-    let q = instance.q;
-    let arith = field::FpCtx::from_prime_u128(q);
-    let pow2_q: Vec<u128> = (0..w).map(|j| arith.reduce_u128(1u128 << j)).collect();
-    let mut y = 0u128;
-    for (c, row) in hint.rows().iter().enumerate() {
-        let mut acc = 0u128;
-        for (wi, &word) in row.iter().enumerate() {
-            let mut bits = word;
-            while bits != 0 {
-                let bit = bits.trailing_zeros() as usize;
-                bits &= bits - 1;
-                let i = (wi << 6) | bit;
-                let (b, j) = (i >> log_w, i & (w - 1));
-                let term = if j == 0 {
-                    instance.row_weights_q[b]
-                } else {
-                    arith.mul_u128(instance.row_weights_q[b], pow2_q[j])
-                };
-                acc = arith.add_u128(acc, term);
-            }
-        }
-        y = arith.add_u128(y, arith.mul_u128(instance.col_weights_q[c], acc));
-    }
+    use bitz::piop::spartan::protocol::wfbitz_opener::{self, WfbitzLigerito, WfbitzOpener, WfbitzOpeningProof};
+    let opening = WfbitzOpener::new(p, WfbitzLigerito::Selected(resolved.selection()), resolved.security().target_security_bits as usize)
+        .expect("standalone configuration");
+    let y = wfbitz_opener::standalone_evaluation(&opening, &hint).expect("standalone claim");
     println!(
         "  instance: q ∈ [2^{}, 2^{q_bits}) transcript-sampled after the commitment; Round 0 (OOD): {}",
         q_bits - 1,
@@ -288,9 +266,9 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
             None => "skipped (unique-decoding opener)".to_string(),
         }
     );
-    let prove_once = |hint: &bitz::ligerito_flock::FlockCommitHint| opening.prove(hint, y);
-    let verify_once = |proof: &bitz::ligerito_flock::IntEvalRsLigModQProof| {
-        opening.verify(&hint.commitment, proof, y)
+    let prove_once = |hint: &bitz::ligerito_flock::FlockCommitHint| wfbitz_opener::prove_standalone(&opening, hint, y).expect("prove");
+    let verify_once = |proof: &WfbitzOpeningProof| {
+        wfbitz_opener::verify_standalone(&opening, &hint.commitment, y, proof)
     };
 
     // Warm-up prove (excluded from stats).
@@ -324,7 +302,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
         });
 
         let (de, t2) = bitz::observability::measure(tracing::info_span!("pcs:de"), || {
-            bitz::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&ser).expect("codec")
+            WfbitzOpeningProof::from_bytes(&ser).expect("codec")
         })
         .expect("measure completed operation");
         de_us.push(t2.as_secs_f64() * 1e6);
@@ -404,17 +382,12 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
         median(ser_us),
         median(de_us)
     );
-    // Transmitted-payload accounting split (`mle_eval_mod_q_lig_size_breakdown`):
-    // forest side = forest sumchecks/evals + chunk folds + pre-sumchecks;
-    // open side = ring-switch `s_v` + the Ligerito proof.
-    let (zb, lig_b) = bitz::ligerito_flock::mle_eval_mod_q_lig_size_breakdown(&split_proof);
-    let forest_b = zb.total() - zb.s_v;
-    let open_b = zb.s_v + lig_b;
+    // Exact serialized streams, with framing charged to the native transcript.
+    let lig_b = split_proof.hints.len();
+    let zb = split_proof.to_bytes().len() - lig_b;
     println!(
-        "  split:   forest-side {:7.1} KiB | open-side {:7.1} KiB (s_v {:5.1} + lig {:7.1})",
-        forest_b as f64 / 1024.0,
-        open_b as f64 / 1024.0,
-        zb.s_v as f64 / 1024.0,
+        "  split:   native transcript and framing {:7.1} KiB | Ligerito hints {:7.1} KiB",
+        zb as f64 / 1024.0,
         lig_b as f64 / 1024.0,
     );
 

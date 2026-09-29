@@ -411,7 +411,8 @@ mod tests {
 
     #[test]
     fn early_ood_binds_regime_root_and_payload() {
-        use crate::ligerito_flock::{IntEvalRsLigModQProof, LigeritoSelection};
+        use crate::ligerito_flock::LigeritoSelection;
+        use crate::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
         let witness = MulWitness::<u32>::from_fn(1 << 15, |i| (i as u32, u32::MAX)).unwrap();
         for selection in [LigeritoSelection::JOHNSON, LigeritoSelection::MATCHED_UDR] {
             let p = PreparedRelation::<MulLayout<u32>>::new_with_profile_and_ligerito::<Lambda100>(
@@ -422,17 +423,17 @@ mod tests {
             let hint = protocol::commit(&p, witness.bitz_bit_rows()).unwrap();
             let mut pt = Blake3Transcript::new();
             let mut proof = protocol::prove(&mut pt, &p, &witness, &hint).unwrap();
-            *proof.bitz_mut().direct_mut().unwrap() =
-                IntEvalRsLigModQProof::from_bytes(&proof.bitz().to_bytes()).unwrap();
+            *proof.bitz_mut() =
+                WfbitzOpeningProof::from_bytes(&proof.bitz().to_bytes()).unwrap();
             let check = |proof: &Proof| {
                 protocol::verify(&mut Blake3Transcript::new(), &p, &hint.commitment, proof)
             };
             check(&proof).unwrap();
             let mut bad = proof.clone();
-            if let Some(round) = bad.bitz_mut().direct_mut().unwrap().ood.as_mut() {
+            if let Some(round) = bad.bitz_mut().ood.as_mut() {
                 round.y = round.y + crate::poly::univariate::binary_gf128::Gf128::one();
             } else {
-                bad.bitz_mut().direct_mut().unwrap().ood = Some(crate::ligerito_flock::OodRound {
+                bad.bitz_mut().ood = Some(crate::ligerito_flock::OodRound {
                     y: crate::poly::univariate::binary_gf128::Gf128::zero(),
                     nonce: None,
                 });
@@ -440,12 +441,10 @@ mod tests {
             assert!(check(&bad).is_err());
             if proof.bitz().ood().is_some() {
                 let mut bad = proof.clone();
-                bad.bitz_mut().direct_mut().unwrap().ood = None;
+                bad.bitz_mut().ood = None;
                 assert!(check(&bad).is_err());
                 let mut bad = proof.clone();
                 bad.bitz_mut()
-                    .direct_mut()
-                    .unwrap()
                     .ood
                     .as_mut()
                     .unwrap()
@@ -642,7 +641,7 @@ mod tests {
             protocol::prove(&mut prover_transcript, &prepared128, &witness, &hint128).unwrap();
         assert_eq!(prepared128.security().piop_round_grinding_bits, 22);
         assert_eq!(proof128.piop_nonces().len(), 43);
-        assert!(!proof128.opening_grinding_nonces().is_empty());
+        assert!(prepared128.security().native_grinding_nonce_count() > 0);
         let mut verifier_transcript = Blake3Transcript::new();
         protocol::verify(
             &mut verifier_transcript,

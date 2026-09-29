@@ -37,8 +37,8 @@
 
 #![recursion_limit = "512"]
 
-use ::bitz::ligerito_flock::IntEvalRsLigVirtProof;
-use ::bitz::piop::spartan::protocol::{OpeningProof, Proof};
+use ::bitz::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof;
+use ::bitz::piop::spartan::protocol::{Proof};
 
 pub(crate) mod common;
 #[cfg(feature = "bench-peak-memory")]
@@ -416,7 +416,7 @@ impl TraceWriter {
                 "label": "Limber paper wired MultiSwap/RSA cost-model",
                 "algorithm": "integer Mod-R1CS / Spartan / virtual BitZ",
                 "implementation": "bitz-ligerito",
-                "opener": opener_name(),
+                "opener": "wfbitz",
                 "git_rev": self.git_rev,
                 "git_dirty": self.git_dirty,
                 "build_profile": self.build_profile,
@@ -997,31 +997,10 @@ fn measurements(intervals: &[Interval], setup_ns: u64) -> MeasurementsNs {
     values
 }
 
-fn proof_sizes<O: OpeningProof>(proof: &Proof<O>) -> (usize, usize) {
+fn proof_sizes(proof: &Proof) -> (usize, usize) {
     let opening_bytes = proof.bitz().to_bytes().len();
     let piop_bytes = proof.spartan_payload_elements() * 16 + proof.mu_prime_bytes() + 8;
     (piop_bytes, opening_bytes)
-}
-
-/// The opener of the reduced claim, `BITZ_OPENER=forest|wfbitz` (the
-/// forest is the paper's).
-fn opener_name() -> String {
-    std::env::var("BITZ_OPENER").unwrap_or_else(|_| "forest".into())
-}
-
-/// One trial's proof, by opener.
-enum MsProof {
-    Forest(Proof<IntEvalRsLigVirtProof>),
-    Wfbitz(Proof<::bitz::piop::spartan::protocol::wfbitz_opener::WfbitzOpeningProof>),
-}
-
-impl MsProof {
-    fn sizes(&self) -> (usize, usize) {
-        match self {
-            Self::Forest(proof) => proof_sizes(proof),
-            Self::Wfbitz(proof) => proof_sizes(proof),
-        }
-    }
 }
 
 fn run_once(
@@ -1031,7 +1010,7 @@ fn run_once(
     pc: &flock_core::pcs::ligerito::ProverConfig,
     vc: &flock_core::pcs::ligerito::VerifierConfig,
     setup_ns: u64,
-) -> (RepTiming, MsProof) {
+) -> (RepTiming, Proof) {
     let recording =
         bitz::observability::Recording::start(Vec::new()).expect("start Multiswap trial");
     let root_scope = tracing::info_span!("multiswap-trace:verified_trial").entered();
@@ -1060,59 +1039,19 @@ fn run_once(
     drop(commit_scope);
 
     let mut prover_transcript = Blake3Transcript::new();
-    let opener = opener_name();
-    let proof = match opener.as_str() {
-        "forest" => {
-            let proof = {
-                let _scope = tracing::info_span!("multiswap-trace:proof").entered();
-                prove_multiswap_mod_r1cs(&mut prover_transcript, prepared, &assignment, &hint, pc)
-                    .expect("prove")
-            };
-            drop(prover_scope);
-            {
-                let _scope = tracing::info_span!("multiswap-trace:verification").entered();
-                let mut verifier_transcript = Blake3Transcript::new();
-                verify_multiswap_mod_r1cs(
-                    &mut verifier_transcript,
-                    prepared,
-                    &hint.commitment,
-                    &proof,
-                    vc,
-                )
-                .expect("verify");
-            }
-            drop(root_scope);
-            common::proof_fingerprint::nonlinear(&proof, &hint.commitment.root, &prover_transcript);
-            MsProof::Forest(proof)
-        }
-        "wfbitz" => {
-            use bitz::piop::spartan::multiswap::{
-                prove_multiswap_mod_r1cs_wfbitz, verify_multiswap_mod_r1cs_wfbitz,
-            };
-            let proof = {
-                let _scope = tracing::info_span!("multiswap-trace:proof").entered();
-                prove_multiswap_mod_r1cs_wfbitz(&mut prover_transcript, prepared, &assignment, &hint, pc)
-                    .expect("prove")
-            };
-            drop(prover_scope);
-            {
-                let _scope = tracing::info_span!("multiswap-trace:verification").entered();
-                let mut verifier_transcript = Blake3Transcript::new();
-                verify_multiswap_mod_r1cs_wfbitz(
-                    &mut verifier_transcript,
-                    prepared,
-                    &hint.commitment,
-                    &proof,
-                    vc,
-                )
-                .expect("verify");
-            }
-            drop(root_scope);
-            common::proof_fingerprint::nonlinear(&proof, &hint.commitment.root, &prover_transcript);
-            MsProof::Wfbitz(proof)
-        }
-        other => panic!("BITZ_OPENER={other}: use forest or wfbitz"),
+    let proof = {
+        let _scope = tracing::info_span!("multiswap-trace:proof").entered();
+        prove_multiswap_mod_r1cs(&mut prover_transcript, prepared, &assignment, &hint, pc)
+            .expect("prove")
     };
+    drop(prover_scope);
+    {
+        let _scope = tracing::info_span!("multiswap-trace:verification").entered();
+        verify_multiswap_mod_r1cs(&mut Blake3Transcript::new(), prepared, &hint.commitment, &proof, vc)
+            .expect("verify");
+    }
+    drop(root_scope);
+    common::proof_fingerprint::nonlinear(&proof, &hint.commitment.root, &prover_transcript);
     // Provenance scans are deliberately outside all reported timing
     // boundaries; they validate the trial but are not protocol work.
     assert_eq!(prepared.statement_digest(), &circuit.statement_digest());
@@ -1271,7 +1210,7 @@ fn main() {
             timing.witness_stats.assignment_digest_blake3, bootstrap_stats.assignment_digest_blake3,
             "per-trial assignment must match the canonical source fixture"
         );
-        let (piop_bytes, opening_bytes) = proof.sizes();
+        let (piop_bytes, opening_bytes) = proof_sizes(&proof);
         if let Some(writer) = trace_writer.as_mut() {
             writer.write_run(
                 k,
@@ -1294,7 +1233,7 @@ fn main() {
     }
 
     let proof = last_proof.expect("at least one measured repetition");
-    let (piop_bytes, bitz_bytes) = proof.sizes();
+    let (piop_bytes, bitz_bytes) = proof_sizes(&proof);
     println!(
         "  campaign witness generation (median of {reps}): {:.2} ms",
         common::median(&witness_samples)

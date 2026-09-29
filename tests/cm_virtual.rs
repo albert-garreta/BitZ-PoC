@@ -63,7 +63,7 @@ struct Fixture {
     witness: CmAndWitness,
     hint: bitz::ligerito_flock::FlockCommitHint,
     vc: flock_core::pcs::ligerito::VerifierConfig,
-    proof: Proof<WfbitzOpeningProof>,
+    proof: Proof,
 }
 
 fn honest_fixture(gates: usize, seed: u64) -> Fixture {
@@ -89,7 +89,7 @@ fn honest_fixture(gates: usize, seed: u64) -> Fixture {
     }
 }
 
-fn verify_fixture(fx: &Fixture, proof: &Proof<WfbitzOpeningProof>) -> Result<(), ProtocolError> {
+fn verify_fixture(fx: &Fixture, proof: &Proof) -> Result<(), ProtocolError> {
     let mut vt = Blake3Transcript::new();
     verify_cm_and_bitz_with_config(&mut vt, &fx.relation, &fx.hint.commitment, proof, &fx.vc)
 }
@@ -163,7 +163,7 @@ fn cm_and_proof_codec_roundtrips_and_rejects_tampering() {
         "codec is a bijection on its image"
     );
     let reproof =
-        Proof::<WfbitzOpeningProof>::from_parts(fx.proof.prefix().clone(), None, decoded);
+        Proof::from_parts(fx.proof.prefix().clone(), None, decoded);
     verify_fixture(&fx, &reproof).expect("decoded proof verifies");
 
     // Every truncation must fail to decode.
@@ -182,7 +182,7 @@ fn cm_and_proof_codec_roundtrips_and_rejects_tampering() {
         .ok()
         .flatten();
         if let Some(decoded) = decoded {
-            let reproof = Proof::<WfbitzOpeningProof>::from_parts(
+            let reproof = Proof::from_parts(
                 fx.proof.prefix().clone(),
                 None,
                 decoded,

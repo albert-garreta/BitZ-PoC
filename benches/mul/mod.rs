@@ -133,7 +133,6 @@ fn worker(path: &Path, compare: bool) -> Result<()> {
     if job.memory == Memory::None {
         bitz::observability::install()?;
     }
-    bitz::merged_forest::schedule::start_recording();
     let mut run = Run::new(job);
     if let Err(error) = execute(&mut run, compare) {
         if run.job.skip_unsupported && error.is::<Unsupported>() {
@@ -141,17 +140,6 @@ fn worker(path: &Path, compare: bool) -> Result<()> {
             return write_json(&path.with_extension("result.json"), &run);
         }
         return Err(error);
-    }
-    let schedules = bitz::merged_forest::schedule::take_records();
-    if run
-        .job
-        .case
-        .bitz
-        .as_ref()
-        .is_some_and(|f| f.gkr_schedule.is_some())
-    {
-        ensure!(!schedules.is_empty(), "missing resolved GKR schedules");
-        run.effective["gkr_schedules"] = serde_json::to_value(schedules)?;
     }
     if !run.latency() {
         let bytes = match run.job.memory {
@@ -207,9 +195,6 @@ fn child(job: &Job, dir: &Path) -> Result<Run> {
         if s.starts_with("BITZ_") || s.starts_with("F2_") || s.starts_with("BD") {
             command.env_remove(key);
         }
-    }
-    if let Some(schedule) = job.case.bitz.as_ref().and_then(|f| f.gkr_schedule) {
-        command.env("F2_FOREST_SCHEDULE", schedule.name());
     }
     if let Some(bits) = job.case.limber_bits {
         command.env("BDLAMBDA", bits.to_string());

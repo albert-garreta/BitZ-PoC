@@ -269,8 +269,7 @@ fn accounting_is_part_of_only_the_applicable_case() {
 }
 
 #[test]
-fn schedules_expand_only_where_gkr_runs() {
-    use bitz::merged_forest::schedule::SchedulePolicy;
+fn one_bitz_configuration_and_retired_selectors_are_rejected() {
     let jobs = parse(&[
         "proof",
         "--workload",
@@ -281,25 +280,18 @@ fn schedules_expand_only_where_gkr_runs() {
         "1",
         "--backends",
         "bitz,binius64",
-        "--gkr-schedule",
-        "auto,l2,l4,l8",
         "--proof-fingerprints",
     ])
     .expand(true)
     .unwrap();
-    assert_eq!(jobs.len(), 5);
-    assert_eq!(jobs.iter().filter(|j| j.proof_fingerprints).count(), 4);
+    assert_eq!(jobs.len(), 2);
+    assert_eq!(jobs.iter().filter(|j| j.proof_fingerprints).count(), 1);
     assert_eq!(
-        jobs[0].case.bitz.as_ref().unwrap().gkr_schedule,
-        Some(SchedulePolicy::Auto)
+        jobs[0].case.bitz.as_ref().unwrap().opener.as_deref(),
+        Some("wfbitz")
     );
-    let witness = parse(&["witness", "--threads", "1", "--gkr-schedule", "l2,l4,l8"])
-        .expand(false)
-        .unwrap();
-    assert_eq!(witness.len(), 1);
-    assert_eq!(witness[0].case.bitz.as_ref().unwrap().gkr_schedule, None);
-    for value in ["", "l2,l2", "fastest"] {
-        assert!(Args::try_parse_from(["mul", "--gkr-schedule", value]).is_err());
+    for (flag, value) in [("--gkr-schedule", "auto"), ("--opener", "forest"), ("--opener", "wfbitz")] {
+        assert!(Args::try_parse_from(["mul", flag, value]).is_err());
     }
 }
 

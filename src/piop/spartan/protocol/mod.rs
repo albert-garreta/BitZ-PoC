@@ -26,6 +26,7 @@ pub mod binding;
 pub mod bitify;
 pub mod linear;
 pub mod wfbitz_opener;
+pub use wfbitz_opener::{prove_reduced, verify_reduced};
 use wfbitz_opener::{WfbitzOpeningProof, opening_params, opening_shape, pcs_from_config};
 use crate::wfbitz::{LinearClaim, VirtualStatement};
 
@@ -1007,116 +1008,21 @@ pub struct ReductionProof {
 }
 
 /// An opening proof of either discharge kind.
-pub trait OpeningProof: Clone {
-    fn to_bytes(&self) -> Vec<u8>;
-    fn grinding_nonces(&self) -> &[u64];
-    fn ood(&self) -> Option<&OodRound>;
-}
-
-impl OpeningProof for IntEvalRsLigModQProof {
-    fn to_bytes(&self) -> Vec<u8> {
-        IntEvalRsLigModQProof::to_bytes(self)
-    }
-
-    fn grinding_nonces(&self) -> &[u64] {
-        &self.grinding_nonces
-    }
-
-    fn ood(&self) -> Option<&OodRound> {
-        self.ood.as_ref()
-    }
-}
-
-impl OpeningProof for IntEvalRsLigVirtProof {
-    fn to_bytes(&self) -> Vec<u8> {
-        IntEvalRsLigVirtProof::to_bytes(self)
-    }
-
-    fn grinding_nonces(&self) -> &[u64] {
-        &self.grinding_nonces
-    }
-
-    fn ood(&self) -> Option<&OodRound> {
-        self.ood.as_ref()
-    }
-}
-
-/// A proof over a transcript-selected prime: the Spartan reduction, the
-/// optional Step-5.0 lift, the BitZ opening and any profile-selected
-/// grinding nonces.
-/// The prepared relation determines which opening proof is accepted.
 #[derive(Clone)]
-pub enum Opening {
-    Direct(IntEvalRsLigModQProof),
-    Virtual(WfbitzOpeningProof),
-}
-impl Opening {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        match self {
-            Self::Direct(p) => p.to_bytes(),
-            Self::Virtual(p) => p.to_bytes(),
-        }
-    }
-    pub fn ood(&self) -> Option<&OodRound> {
-        match self {
-            Self::Direct(p) => p.ood.as_ref(),
-            Self::Virtual(p) => p.ood.as_ref(),
-        }
-    }
-    pub fn direct(&self) -> Option<&IntEvalRsLigModQProof> {
-        match self {
-            Self::Direct(p) => Some(p),
-            _ => None,
-        }
-    }
-    pub fn direct_mut(&mut self) -> Option<&mut IntEvalRsLigModQProof> {
-        match self {
-            Self::Direct(p) => Some(p),
-            _ => None,
-        }
-    }
-}
-impl OpeningProof for Opening {
-    fn to_bytes(&self) -> Vec<u8> {
-        self.to_bytes()
-    }
-    fn grinding_nonces(&self) -> &[u64] {
-        match self {
-            Self::Direct(p) => &p.grinding_nonces,
-            Self::Virtual(p) => p.grinding_nonces(),
-        }
-    }
-    fn ood(&self) -> Option<&OodRound> {
-        self.ood()
-    }
-}
-
-#[derive(Clone)]
-pub struct Proof<O: OpeningProof = Opening> {
+pub struct Proof {
     prefix: SpartanPrefixProof,
     reduction: Option<ReductionProof>,
-    bitz: O,
+    bitz: WfbitzOpeningProof,
 }
 
-impl<O: OpeningProof> Proof<O> {
-    fn map_opening<P: OpeningProof>(self, map: impl FnOnce(O) -> P) -> Proof<P> {
-        Proof {
-            prefix: self.prefix,
-            reduction: self.reduction,
-            bitz: map(self.bitz),
-        }
-    }
-    pub fn opening_grinding_nonces(&self) -> &[u64] {
-        self.bitz.grinding_nonces()
-    }
-
+impl Proof {
     /// Spartan outer and inner sumcheck proofs.
     pub const fn spartan(&self) -> &SpartanProof {
         &self.prefix.spartan
     }
 
     /// The BitZ opening proof.
-    pub const fn bitz(&self) -> &O {
+    pub const fn bitz(&self) -> &WfbitzOpeningProof {
         &self.bitz
     }
 
@@ -1153,7 +1059,7 @@ impl<O: OpeningProof> Proof<O> {
         usize::from(security.initial_grinding_bits > 0)
             + usize::from(security.terminal_grinding_bits > 0)
             + self.prefix.piop_nonces.len()
-            + self.bitz.grinding_nonces().len()
+            + security.native_grinding_nonce_count()
     }
 
     /// Serialized size in bytes of the proof: the Spartan payload as 16-byte
@@ -1161,12 +1067,12 @@ impl<O: OpeningProof> Proof<O> {
     /// exact codec bytes.
     pub fn size_bytes(&self, security: &IopSecurityParams) -> usize {
         self.spartan_payload_elements() * 16
-            + (self.grinding_nonce_count(security) - self.bitz.grinding_nonces().len()) * 8
+            + (self.grinding_nonce_count(security) - security.native_grinding_nonce_count()) * 8
             + self.bitz.to_bytes().len()
     }
 
     /// Splits the proof into its parts (tests and codecs).
-    pub fn into_parts(self) -> (SpartanPrefixProof, Option<ReductionProof>, O) {
+    pub fn into_parts(self) -> (SpartanPrefixProof, Option<ReductionProof>, WfbitzOpeningProof) {
         (self.prefix, self.reduction, self.bitz)
     }
 
@@ -1174,7 +1080,7 @@ impl<O: OpeningProof> Proof<O> {
     pub const fn from_parts(
         prefix: SpartanPrefixProof,
         reduction: Option<ReductionProof>,
-        bitz: O,
+        bitz: WfbitzOpeningProof,
     ) -> Self {
         Self {
             prefix,
@@ -1201,7 +1107,7 @@ impl<O: OpeningProof> Proof<O> {
     }
 
     /// Mutable access to the opening proof (tests).
-    pub fn bitz_mut(&mut self) -> &mut O {
+    pub fn bitz_mut(&mut self) -> &mut WfbitzOpeningProof {
         &mut self.bitz
     }
 
@@ -1252,64 +1158,22 @@ pub fn prove<T: Transcript + Send, S: RelationSpec>(
     )
 }
 
-/// [`prove`] over a prefix and an explicit opener.
+/// Runs the relation's direct or virtual Wfbitz opening.
 pub fn prove_with_opener<T: Transcript + Send, S: RelationSpec>(
     transcript: &mut T,
     prefix: &PreparedRelationPrefix<S>,
     opener: &Opener,
-    witness: &S::Witness,
-    hint: &FlockCommitHint,
+    witness: &S::Witness, hint: &FlockCommitHint,
 ) -> Result<Proof, ProtocolError> {
     if prefix.spec.map().is_some() {
-        return prove_virtual_with_opener(transcript, prefix, opener, witness, hint)
-            .map(|p| p.map_opening(Opening::Virtual));
+        return prove_virtual_with_opener(transcript, prefix, opener, witness, hint);
     }
-    let spec = &prefix.spec;
-    spec.check_witness(witness)?;
-    let p = prefix.params();
-    let pc = opener.prover()?;
-    validate_bit_rows(&p, hint.rows())?;
-    validate_commitment(&p, &hint.commitment, pc)?;
-    let security = &prefix.security;
-    let domains = spec.domains();
-    let scopes = &domains.scopes;
-
-    let (binding, ood) = bind_prover_statement(transcript, prefix, opener, hint)?;
-    let proved = prove_piop(transcript, prefix, witness, &binding)?;
-    let prime = &proved.prime;
-
-    // Steps 5.1–5.3: the runtime-q BitZ opening (one chunk by construction).
-    let bitz = {
-        let _step5 = tracing::info_span!("step5:open_prove").entered();
-        let _scope = (scopes.bitz_prove)().entered();
-        let chunks = {
-            let _scope = (scopes.bitz_prepare_prover)().entered();
-            bitify::prepare_chunks(&proved.opening, &proved.table, prime.modulus_bits(), &prime)?
-        };
-        if chunks.len() != 1 {
-            return Err(ProtocolError::MultiChunkRuntimeWeights);
-        }
-        prove_mle_eval_mod_q_ligerito_with_weight_chunks(
-            transcript,
-            domains.opening,
-            hint,
-            &p,
-            &chunks,
-            &proved.bridge_digest,
-            prime.modulus_bits(),
-            bitz_generator(),
-            spec.opener_grinding_bits(security),
-            ood,
-            pc,
-        )
-        .map_err(ProtocolError::Bitz)?
-    };
-
-    Ok(Proof {
-        prefix: proved.messages,
-        reduction: None,
-        bitz: Opening::Direct(bitz),
-    })
+    let shape = opening_shape(&prefix.params())?;
+    let pcs = pcs_from_config(&shape, opener.prover()?)?
+        .with_native_policy(prefix.security.native_policy()?);
+    // Explicit configurations are bound by the enclosing statement.
+    let digest = opener.resolved().map_or([0; 32], ResolvedLigerito::digest);
+    wfbitz_opener::prove_direct(transcript, prefix, opener, &pcs, &digest, witness, hint)
 }
 
 /// Verifies the relation-selected discharge, re-deriving the prime from the
@@ -1329,70 +1193,22 @@ pub fn verify<T: Transcript + Send, S: RelationSpec>(
     )
 }
 
-/// [`verify`] over a prefix and an explicit opener.
+/// Runs the relation's direct or virtual Wfbitz opening.
 pub fn verify_with_opener<T: Transcript + Send, S: RelationSpec>(
     transcript: &mut T,
     prefix: &PreparedRelationPrefix<S>,
     opener: &Opener,
-    commitment: &Commitment,
-    proof: &Proof,
+    commitment: &Commitment, proof: &Proof,
 ) -> Result<(), ProtocolError> {
-    let bitz = match (&proof.bitz, prefix.spec.map().is_some()) {
-        (Opening::Direct(p), false) => p,
-        (Opening::Virtual(p), true) => {
-            return verify_virtual_parts(transcript, prefix, opener, commitment, &proof.prefix, p);
-        }
-        _ => return Err(ProtocolError::UnsupportedDischarge),
-    };
-    let spec = &prefix.spec;
-    let p = prefix.params();
-    let vc = opener.verifier()?;
-    let binding_config = opener.binding_config()?;
-    validate_commitment(&p, commitment, &binding_config)?;
-    let security = &prefix.security;
-    let domains = spec.domains();
-    let scopes = &domains.scopes;
-    check_proof_kernel(spec.kernel(), &proof.prefix.spartan)?;
-
-    let (binding, ood) =
-        bind_verifier_statement(transcript, prefix, opener, commitment, bitz.ood.as_ref())?;
-    let verified = verify_piop(transcript, prefix, &binding, &proof.prefix)?;
-    let prime = &verified.prime;
-
-    let _step5 = tracing::info_span!("step5:open_verify").entered();
-    let _scope = (scopes.bitz_verify)().entered();
-    let (chunks, col_weights_q) = {
-        let _scope = (scopes.bitz_prepare_verifier)().entered();
-        let chunks = bitify::prepare_chunks(
-            &verified.opening,
-            &verified.table,
-            prime.modulus_bits(),
-            &prime,
-        )?;
-        let col_weights_q: Vec<u128> = bitify::column_weights(&verified.opening, &prime)?;
-        (chunks, col_weights_q)
-    };
-    if chunks.len() != 1 {
-        return Err(ProtocolError::MultiChunkRuntimeWeights);
+    if prefix.spec.map().is_some() {
+        return verify_virtual_with_opener(transcript, prefix, opener, commitment, proof);
     }
-    verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime(
-        transcript,
-        domains.opening,
-        commitment,
-        bitz,
-        &p,
-        &chunks,
-        &col_weights_q,
-        &verified.bridge_digest,
-        bitz_generator(),
-        verified.opening.claimed,
-        prime.modulus_u128(),
-        prime.modulus_bits(),
-        spec.opener_grinding_bits(security),
-        ood,
-        vc,
-    )
-    .map_err(ProtocolError::Bitz)
+    let shape = opening_shape(&prefix.params())?;
+    let pcs = pcs_from_config(&shape, opener.verifier()?)?
+        .with_native_policy(prefix.security.native_policy()?);
+    // Explicit configurations are bound by the enclosing statement.
+    let digest = opener.resolved().map_or([0; 32], ResolvedLigerito::digest);
+    wfbitz_opener::verify_direct(transcript, prefix, opener, &pcs, &digest, commitment, proof)
 }
 
 /// Binds the bitified claim frame of a virtual or reduced discharge.
@@ -1415,7 +1231,7 @@ pub fn prove_virtual<T: Transcript + Send, S: RelationSpec>(
     prepared: &PreparedRelation<S>,
     witness: &S::Witness,
     hint: &FlockCommitHint,
-) -> Result<Proof<WfbitzOpeningProof>, ProtocolError> {
+) -> Result<Proof, ProtocolError> {
     prove_virtual_with_opener(
         transcript,
         &prepared.prefix,
@@ -1432,7 +1248,7 @@ pub fn prove_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
     opener: &Opener,
     witness: &S::Witness,
     hint: &FlockCommitHint,
-) -> Result<Proof<WfbitzOpeningProof>, ProtocolError> {
+) -> Result<Proof, ProtocolError> {
     let spec = &prefix.spec;
     spec.check_witness(witness)?;
     let p = prefix.params();
@@ -1491,7 +1307,7 @@ pub fn verify_virtual<T: Transcript + Send, S: RelationSpec>(
     transcript: &mut T,
     prepared: &PreparedRelation<S>,
     commitment: &Commitment,
-    proof: &Proof<WfbitzOpeningProof>,
+    proof: &Proof,
 ) -> Result<(), ProtocolError> {
     verify_virtual_with_opener(
         transcript,
@@ -1508,7 +1324,7 @@ pub fn verify_virtual_with_opener<T: Transcript + Send, S: RelationSpec>(
     prefix: &PreparedRelationPrefix<S>,
     opener: &Opener,
     commitment: &Commitment,
-    proof: &Proof<WfbitzOpeningProof>,
+    proof: &Proof,
 ) -> Result<(), ProtocolError> {
     verify_virtual_parts(
         transcript,
@@ -1572,220 +1388,9 @@ fn verify_virtual_parts<T: Transcript + Send, S: RelationSpec>(
     wfbitz_opener::verify_virtual_opening(transcript, &statement, &pcs, commitment, bitz, ood)
 }
 
-/// Proves the relation under Strategy 2: after bitification the prover
-/// sends the exact integer lift `mu'` of the mod-`Q` tensor claim; a
-/// grinded fresh reduction prime `q'` re-projects the claim below the
-/// exponent-fold no-wrap boundary, and the runtime-`q'` virtual opening of
-/// the committed rows (under the relation's identity map) discharges it.
-pub fn prove_reduced<T: Transcript + Send, S: RelationSpec>(
-    transcript: &mut T,
-    prepared: &PreparedRelation<S>,
-    witness: &S::Witness,
-    hint: &FlockCommitHint,
-) -> Result<Proof<IntEvalRsLigVirtProof>, ProtocolError> {
-    let prefix = &prepared.prefix;
-    let opener = &prepared.opener;
-    let spec = &prefix.spec;
-    spec.check_witness(witness)?;
-    let p = prepared.params();
-    let pc = opener.prover()?;
-    validate_bit_rows(&p, hint.rows())?;
-    validate_commitment(&p, &hint.commitment, pc)?;
-    let security = &prefix.security;
-    let reduction = security
-        .reduction
-        .ok_or(ProtocolError::UnsupportedProfile)?;
-    let domains = spec.domains();
-    let scopes = &domains.scopes;
-    let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
 
-    let (binding, ood) = bind_prover_statement(transcript, prefix, opener, hint)?;
-    let proved = prove_piop(transcript, prefix, witness, &binding)?;
-    let prime = &proved.prime;
-    let row_weights = bitify::dense_row_weights(&proved.opening, &proved.table, &prime)?;
-    let col_weights: Vec<u128> = bitify::column_weights(&proved.opening, &prime)?;
 
-    // Step 5.0: exact integer lift, grinded fresh-prime draw, re-projection.
-    let step5_0_scope = tracing::info_span!("step5_0:reduce_prove").entered();
-    let mu_prime = step50_integer_lift(hint.rows(), &row_weights, &col_weights);
-    if !step50_accepts_lift(
-        &mu_prime,
-        proved.opening.claimed,
-        prime.modulus_u128(),
-        p.cells(),
-    ) {
-        return Err(ProtocolError::InvalidIntegerLift);
-    }
-    bind_claim_frame(
-        transcript,
-        spec,
-        ClaimFrame {
-            field: prime,
-            binding: &binding,
-            matrices_digest: &proved.matrices_digest,
-            terminal_claim: &proved.terminal_claim,
-            opening: &proved.opening,
-            row_weights: &row_weights,
-            col_weights: &col_weights,
-            mu_prime: Some(&mu_prime),
-        },
-    )?;
-    let nonce = grind_and_absorb_in_domain(
-        transcript,
-        domains.reduction_grinding,
-        0,
-        reduction.grinding_bits,
-    )?;
-    let reduced = sample_mod_q(
-        transcript,
-        domains.reduction_prime,
-        reduction.min,
-        reduction.max,
-    )?;
-    let (row_weights_reduced, _, _) = step50_reduce(
-        &row_weights,
-        &col_weights,
-        &mu_prime,
-        reduced.modulus_u128(),
-    );
-    drop(step5_0_scope);
 
-    // Steps 5.1–5.3: the BitZ opening at the reduced prime.
-    let bitz = {
-        let _step5 = tracing::info_span!("step5:open_prove").entered();
-        let _scope = (scopes.bitz_prove)().entered();
-        prove_mle_eval_mod_q_ligerito_virtual_runtime(
-            transcript,
-            hint,
-            hint.rows(),
-            &p,
-            &p,
-            map,
-            &row_weights_reduced,
-            reduced.modulus_u128(),
-            reduced.modulus_bits(),
-            bitz_generator(),
-            spec.opener_grinding_bits(security),
-            ood,
-            pc,
-        )
-        .map_err(ProtocolError::Bitz)?
-    };
-
-    Ok(Proof {
-        prefix: proved.messages,
-        reduction: Some(ReductionProof { mu_prime, nonce }),
-        bitz,
-    })
-}
-
-/// Verifies a Strategy-2 proof, re-deriving both primes from the bound
-/// transcript.
-pub fn verify_reduced<T: Transcript + Send, S: RelationSpec>(
-    transcript: &mut T,
-    prepared: &PreparedRelation<S>,
-    commitment: &Commitment,
-    proof: &Proof<IntEvalRsLigVirtProof>,
-) -> Result<(), ProtocolError> {
-    let prefix = &prepared.prefix;
-    let opener = &prepared.opener;
-    let spec = &prefix.spec;
-    let p = prepared.params();
-    let vc = opener.verifier()?;
-    let binding_config = opener.binding_config()?;
-    validate_commitment(&p, commitment, &binding_config)?;
-    let security = &prefix.security;
-    let reduction = security
-        .reduction
-        .ok_or(ProtocolError::UnsupportedProfile)?;
-    let domains = spec.domains();
-    let scopes = &domains.scopes;
-    let map = spec.map().ok_or(ProtocolError::UnsupportedDischarge)?;
-    let lift = proof
-        .reduction
-        .as_ref()
-        .ok_or(ProtocolError::InvalidIntegerLift)?;
-    check_proof_kernel(spec.kernel(), &proof.prefix.spartan)?;
-
-    let (binding, ood) = bind_verifier_statement(
-        transcript,
-        prefix,
-        opener,
-        commitment,
-        proof.bitz.ood.as_ref(),
-    )?;
-    let verified = verify_piop(transcript, prefix, &binding, &proof.prefix)?;
-    let prime = &verified.prime;
-    let row_weights = bitify::dense_row_weights(&verified.opening, &verified.table, &prime)?;
-    let col_weights: Vec<u128> = bitify::column_weights(&verified.opening, &prime)?;
-
-    // Step 5.0: the claimed integer lift must land in the derived mod-Q
-    // class and inside the d * Q^2 magnitude bound.
-    let step5_0_scope = tracing::info_span!("step5_0:reduce_verify").entered();
-    if !step50_accepts_lift(
-        &lift.mu_prime,
-        verified.opening.claimed,
-        prime.modulus_u128(),
-        p.cells(),
-    ) {
-        return Err(ProtocolError::InvalidIntegerLift);
-    }
-    bind_claim_frame(
-        transcript,
-        spec,
-        ClaimFrame {
-            field: prime,
-            binding: &binding,
-            matrices_digest: &verified.matrices_digest,
-            terminal_claim: &verified.terminal_claim,
-            opening: &verified.opening,
-            row_weights: &row_weights,
-            col_weights: &col_weights,
-            mu_prime: Some(&lift.mu_prime),
-        },
-    )?;
-    verify_and_absorb_in_domain(
-        transcript,
-        domains.reduction_grinding,
-        0,
-        reduction.grinding_bits,
-        lift.nonce,
-    )?;
-    let reduced = sample_mod_q(
-        transcript,
-        domains.reduction_prime,
-        reduction.min,
-        reduction.max,
-    )?;
-    let (row_weights_reduced, col_weights_reduced, claimed_reduced) = step50_reduce(
-        &row_weights,
-        &col_weights,
-        &lift.mu_prime,
-        reduced.modulus_u128(),
-    );
-    drop(step5_0_scope);
-
-    let _step5 = tracing::info_span!("step5:open_verify").entered();
-    let _scope = (scopes.bitz_verify)().entered();
-    verify_mle_eval_mod_q_ligerito_virtual_runtime(
-        transcript,
-        commitment,
-        &proof.bitz,
-        &p,
-        &p,
-        map,
-        &row_weights_reduced,
-        &col_weights_reduced,
-        bitz_generator(),
-        claimed_reduced,
-        reduced.modulus_u128(),
-        reduced.modulus_bits(),
-        spec.opener_grinding_bits(security),
-        ood,
-        vc,
-    )
-    .map_err(ProtocolError::Bitz)
-}
 
 /// The prover's output of the protocol prefix: the transcript messages and
 /// the bitified claim the discharge consumes.
@@ -2411,7 +2016,9 @@ pub fn bitz_generator() -> Gf128 {
 #[doc(hidden)]
 pub mod terminal {
     use super::*;
-    use crate::pcs::{FQ_BITS, FQ_MOD};
+    use crate::pcs::FQ_MOD;
+    use crate::wfbitz::{BitZProver, BitZVerifier, Root, WINDOW, build_prover, build_verifier};
+    const SESSION: &[u8] = b"bitz/terminal-wfbitz/v1";
 
     /// How the terminal-opening statement binds the relation and commitment.
     #[derive(Clone, Copy)]
@@ -2573,30 +2180,26 @@ pub mod terminal {
         prepared: &PreparedTerminalOpening<S>,
         hint: &FlockCommitHint,
         terminal_claim: &ScaledMleEvaluationClaim<SpartanBitzField>,
-    ) -> Result<IntEvalRsLigModQProof, ProtocolError> {
+    ) -> Result<WfbitzOpeningProof, ProtocolError> {
         prepared.validate_commitment(&hint.commitment)?;
         validate_bit_rows(&prepared.params, hint.rows())?;
         let (opening, bridge_digest, table, prime) =
             prepared.bind_claim(transcript, terminal_claim)?;
-        let ood = bind_prover_ood(transcript, hint, prepared.security.ood);
-        let chunks = bitify::prepare_chunks(&opening, &table, FQ_BITS, &prime)?;
-        if chunks.len() != 1 {
-            return Err(ProtocolError::MultiChunkRuntimeWeights);
-        }
-        prove_mle_eval_mod_q_ligerito_with_weight_chunks(
-            transcript,
-            prepared.spec.domains().opening,
-            hint,
-            &prepared.params,
-            &chunks,
-            &bridge_digest,
-            FQ_BITS,
-            bitz_generator(),
-            prepared.spec.opener_grinding_bits(&prepared.security),
-            ood,
-            prepared.ligerito.prover(),
-        )
-        .map_err(ProtocolError::Bitz)
+        let ood = bind_prover_ood(transcript, hint, prepared.security.ood).opening_claim(transcript, hint);
+        let params = opening_params(&prepared.params, FQ_MOD)?;
+        let claim = LinearClaim::new(&params,
+            bitify::dense_row_weights(&opening, &table, &prime)?,
+            bitify::column_weights(&opening, &prime)?, opening.claimed)
+            .map_err(|e| ProtocolError::LigeritoConfig(format!("terminal claim: {e:?}")))?;
+        let pcs = pcs_from_config(&opening_shape(&prepared.params)?, prepared.ligerito.prover())?
+            .with_native_policy(prepared.security.native_policy()?);
+        let mut state = build_prover(SESSION, &wfbitz_opener::fork_tag(transcript));
+        state.public_message(&bridge_digest);
+        BitZProver::new(params, WINDOW).prove(&claim, &pcs, hint, &mut state,
+            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)))
+            .map_err(|e| ProtocolError::LigeritoConfig(format!("terminal opening: {e:?}")))?;
+        let proof = state.finish();
+        Ok(WfbitzOpeningProof { narg: proof.narg_string, hints: proof.hints, ood: ood.map(|claim| claim.round) })
     }
 
     /// Verifies the PCS-only terminal opening from public data alone.
@@ -2605,7 +2208,7 @@ pub mod terminal {
         prepared: &PreparedTerminalOpening<S>,
         commitment: &Commitment,
         terminal_claim: &ScaledMleEvaluationClaim<SpartanBitzField>,
-        proof: &IntEvalRsLigModQProof,
+        proof: &WfbitzOpeningProof,
     ) -> Result<(), ProtocolError> {
         prepared.validate_commitment(commitment)?;
         let (opening, bridge_digest, table, prime) =
@@ -2617,29 +2220,21 @@ pub mod terminal {
             proof.ood.as_ref(),
         )
         .map_err(ProtocolError::Bitz)?;
-        let chunks = bitify::prepare_chunks(&opening, &table, FQ_BITS, &prime)?;
-        if chunks.len() != 1 {
-            return Err(ProtocolError::MultiChunkRuntimeWeights);
-        }
-        let col_weights = bitify::column_weights(&opening, &prime)?;
-        verify_mle_eval_mod_q_ligerito_with_weight_chunks_runtime(
-            transcript,
-            prepared.spec.domains().opening,
-            commitment,
-            proof,
-            &prepared.params,
-            &chunks,
-            &col_weights,
-            &bridge_digest,
-            bitz_generator(),
-            opening.claimed,
-            FQ_MOD,
-            FQ_BITS,
-            prepared.spec.opener_grinding_bits(&prepared.security),
-            ood,
-            prepared.ligerito.verifier(),
-        )
-        .map_err(ProtocolError::Bitz)
+        let ood = ood.opening_claim(transcript, packed_variables(&prepared.params)?, proof.ood.as_ref())
+            .map_err(ProtocolError::Bitz)?;
+        let params = opening_params(&prepared.params, FQ_MOD)?;
+        let claim = LinearClaim::new(&params,
+            bitify::dense_row_weights(&opening, &table, &prime)?,
+            bitify::column_weights(&opening, &prime)?, opening.claimed)
+            .map_err(|e| ProtocolError::LigeritoConfig(format!("terminal claim: {e:?}")))?;
+        let pcs = pcs_from_config(&opening_shape(&prepared.params)?, prepared.ligerito.verifier())?
+            .with_native_policy(prepared.security.native_policy()?);
+        let encoded = crate::wfbitz::Proof { narg_string: proof.narg.clone(), hints: proof.hints.clone() };
+        let mut state = build_verifier(SESSION, &wfbitz_opener::fork_tag(transcript), &encoded);
+        state.public_message(&bridge_digest);
+        BitZVerifier::new(params, WINDOW).verify(&claim, &pcs, Root(commitment.root), state,
+            ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)))
+            .map_err(|e| ProtocolError::LigeritoConfig(format!("terminal opening: {e:?}")))
     }
 }
 

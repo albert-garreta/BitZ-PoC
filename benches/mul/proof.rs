@@ -138,11 +138,7 @@ where
 {
     let c = run.job.case.bitz.as_ref().expect("BitZ config");
     let layout = MulLayout::<T>::new_with_word_bits(inputs.len(), c.w)?;
-    let layout = if c.opener.as_deref() == Some("wfbitz") {
-        layout.wfbitz_split(c.split)?
-    } else {
-        layout.with_split_shift(c.split)?
-    };
+    let layout = layout.wfbitz_split(c.split)?;
     let packing = packing(&layout);
     let modular = run.job.case.workload == Workload::U32Mod32;
     trials(
@@ -214,123 +210,72 @@ where
     }
     let config = run.job.case.bitz.as_ref().expect("config");
     let profile128 = config.profile == Some(128);
-    match config.opener.as_deref() {
-        None => {
-            let setup = Instant::now();
-            let prepared = if profile128 {
-                PreparedRelation::new_with_profile_and_ligerito::<Lambda128>(
-                    layout,
-                    selection(&run.job.case),
-                )?
-            } else {
-                PreparedRelation::new_with_profile_and_ligerito::<Lambda100>(
-                    layout,
-                    selection(&run.job.case),
-                )?
-            };
-            let setup_ms = setup.elapsed().as_secs_f64() * 1000.;
-            let lig = prepared.ligerito_configuration();
-            let security = json!({
-                "profile":if prepared.security().lambda==128 {Lambda128::NAME}else{Lambda100::NAME},
-                "lambda":prepared.security().lambda,"achieved_bits":prepared.security().accounting.achieved_bits(),
-                "ligerito":lig.report(&lig.selection().name(),prepared.security().ood)});
-            let bounds = run.job.case.mode == Mode::Bounds;
-            trial_loop(
-                run,
-                compare,
-                setup_ms,
-                security,
-                packing,
-                witness,
-                pack,
-                audit,
-                |rows| Ok(protocol::commit(&prepared, rows)?),
-                |w, hint, transcript| Ok(protocol::prove(transcript, &prepared, w, hint)?),
-                |hint, proof| {
-                    protocol::verify(&mut Blake3Transcript::new(), &prepared, &hint.commitment, proof)?;
-                    Ok(())
-                },
-                |proof| proof.size_bytes(prepared.security()),
-                |proof| {
-                    if bounds {
-                        let encoded = proof.bitz().to_bytes();
-                        let roundtrip = match proof.bitz() {
-                            protocol::Opening::Direct(_) => {
-                                bitz::ligerito_flock::IntEvalRsLigModQProof::from_bytes(&encoded)?.to_bytes()
-                            }
-                            protocol::Opening::Virtual(_) => {
-                                bitz::ligerito_flock::IntEvalRsLigVirtProof::from_bytes(&encoded)?.to_bytes()
-                            }
-                        };
-                        anyhow::ensure!(encoded == roundtrip, "opening codec roundtrip");
-                    }
-                    Ok(())
-                },
-                |proof, root, transcript| {
-                    crate::common::proof_fingerprint::nonlinear_fingerprint(proof, root, transcript)
-                },
-            )
-        }
-        Some("wfbitz") => {
-            use bitz::piop::spartan::protocol::wfbitz_opener::{self, WfbitzLigerito, WfbitzOpener};
-            let target = config.profile.expect("profile");
-            let ladder = WfbitzLigerito::parse(
-                config.ligerito.as_deref().expect("proof selection"),
-                target,
-            )
-            .map_err(anyhow::Error::msg)?;
-            let setup = Instant::now();
-            let (prefix, opener) = if profile128 {
-                WfbitzOpener::prepare::<Lambda128, _>(layout, ladder, target)?
-            } else {
-                WfbitzOpener::prepare::<Lambda100, _>(layout, ladder, target)?
-            };
-            let setup_ms = setup.elapsed().as_secs_f64() * 1000.;
-            let security_params = prefix.security();
-            let (opening_bits, opening_binding) = opener.opening_bits(security_params.ood);
-            let ladder_config = opener.security();
-            let security = json!({
-                "profile":if security_params.lambda==128 {Lambda128::NAME}else{Lambda100::NAME},
-                "lambda":security_params.lambda,
-                "achieved_bits":security_params.accounting.achieved_bits().min(opening_bits),
-                "piop_achieved_bits":security_params.accounting.achieved_bits(),
-                "opener":"wfbitz",
-                "ligerito":{
-                    "requested_profile":opener.ligerito().name(),
-                    "resolved_profile":format!("wfbitz-{}", opener.ligerito().name()),
-                    "regime":if ladder_config.levels.first().is_some_and(|l| l.eta.is_some()) {"johnson"} else {"udr"},
-                    "target_bits":ladder_config.target_security_bits,
-                    "configuration_fingerprint":opener.digest().iter().map(|b| format!("{b:02x}")).collect::<String>(),
-                    "outer_ood":prefix.security().ood.is_some(),
-                    "ood_grinding_bits":prefix.security().ood.map(|params| params.grinding_bits),
-                    "opening_bits":opening_bits,
-                    "opening_binding":opening_binding,
-                    "configuration":ladder_config,
-                }});
-            trial_loop(
-                run,
-                compare,
-                setup_ms,
-                security,
-                packing,
-                witness,
-                pack,
-                audit,
-                |rows| Ok(opener.commit(rows)?),
-                |w, hint, transcript| Ok(wfbitz_opener::prove(transcript, &prefix, &opener, w, hint)?),
-                |hint, proof| {
-                    wfbitz_opener::verify(&mut Blake3Transcript::new(), &prefix, &opener, &hint.commitment, proof)?;
-                    Ok(())
-                },
-                |proof| proof.size_bytes(security_params),
-                |_proof| Ok(()),
-                |proof, root, transcript| {
-                    crate::common::proof_fingerprint::nonlinear_fingerprint(proof, root, transcript)
-                },
-            )
-        }
-        Some(other) => anyhow::bail!("unknown BitZ opener {other} (or a build without its feature)"),
-    }
+    use bitz::piop::spartan::protocol::wfbitz_opener::{self, WfbitzLigerito, WfbitzOpener};
+    let target = config.profile.expect("profile");
+    let ladder = WfbitzLigerito::parse(
+        config.ligerito.as_deref().expect("proof selection"),
+        target,
+    )
+    .map_err(anyhow::Error::msg)?;
+    let setup = Instant::now();
+    let (prefix, opener) = if profile128 {
+        WfbitzOpener::prepare::<Lambda128, _>(layout, ladder, target)?
+    } else {
+        WfbitzOpener::prepare::<Lambda100, _>(layout, ladder, target)?
+    };
+    let setup_ms = setup.elapsed().as_secs_f64() * 1000.;
+    let security_params = prefix.security();
+    let (opening_bits, opening_binding) = opener.opening_bits(security_params.ood);
+    let ladder_config = opener.security();
+    let security = json!({
+        "profile":if security_params.lambda==128 {Lambda128::NAME}else{Lambda100::NAME},
+        "lambda":security_params.lambda,
+        "achieved_bits":security_params.accounting.achieved_bits().min(opening_bits),
+        "piop_achieved_bits":security_params.accounting.achieved_bits(),
+        "opener":"wfbitz",
+        "ligerito":{
+            "requested_profile":opener.ligerito().name(),
+            "resolved_profile":format!("wfbitz-{}", opener.ligerito().name()),
+            "regime":if ladder_config.levels.first().is_some_and(|l| l.eta.is_some()) {"johnson"} else {"udr"},
+            "target_bits":ladder_config.target_security_bits,
+            "configuration_fingerprint":opener.digest().iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            "outer_ood":prefix.security().ood.is_some(),
+            "ood_grinding_bits":prefix.security().ood.map(|params| params.grinding_bits),
+            "opening_bits":opening_bits,
+            "opening_binding":opening_binding,
+            "configuration":ladder_config,
+        }});
+    let bounds = run.job.case.mode == Mode::Bounds;
+    trial_loop(
+        run,
+        compare,
+        setup_ms,
+        security,
+        packing,
+        witness,
+        pack,
+        audit,
+        |rows| Ok(opener.commit(rows)?),
+        |w, hint, transcript| Ok(wfbitz_opener::prove(transcript, &prefix, &opener, w, hint)?),
+        |hint, proof| {
+            wfbitz_opener::verify(&mut Blake3Transcript::new(), &prefix, &opener, &hint.commitment, proof)?;
+            Ok(())
+        },
+        |proof| proof.size_bytes(security_params),
+        |proof| {
+            if bounds {
+                let bytes = proof.bitz().to_bytes();
+                let decoded = wfbitz_opener::WfbitzOpeningProof::from_bytes(&bytes)
+                    .ok_or_else(|| anyhow::anyhow!("invalid opening encoding"))?;
+                anyhow::ensure!(decoded.to_bytes() == bytes, "opening codec roundtrip");
+            }
+            Ok(())
+        },
+        |proof, root, transcript| {
+            crate::common::proof_fingerprint::nonlinear_fingerprint(proof, root, transcript)
+        },
+    )
+
 }
 
 /// The timed trials of one prepared relation, the opener abstracted: each

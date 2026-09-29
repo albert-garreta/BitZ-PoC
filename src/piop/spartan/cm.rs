@@ -859,7 +859,7 @@ pub fn prove_cm_and_bitz_with_config<T: Transcript + Send>(
     witness: &CmAndWitness,
     hint_f: &FlockCommitHint,
     pc: &LigProverConfig,
-) -> Result<Proof<WfbitzOpeningProof>, ProtocolError> {
+) -> Result<Proof, ProtocolError> {
     let opener = Opener::Custom {
         prover: Some(pc.clone()),
         verifier: None,
@@ -873,7 +873,7 @@ pub fn prove_cm_and_bitz<T: Transcript + Send>(
     relation: &PreparedCmAndRelation,
     witness: &CmAndWitness,
     hint_f: &FlockCommitHint,
-) -> Result<Proof<WfbitzOpeningProof>, ProtocolError> {
+) -> Result<Proof, ProtocolError> {
     protocol::prove_virtual(transcript, relation.production()?, witness, hint_f)
 }
 
@@ -884,7 +884,7 @@ pub fn verify_cm_and_bitz_with_config<T: Transcript + Send>(
     transcript: &mut T,
     relation: &PreparedCmAndRelation,
     commitment: &Commitment,
-    proof: &Proof<WfbitzOpeningProof>,
+    proof: &Proof,
     vc: &LigVerifierConfig,
 ) -> Result<(), ProtocolError> {
     let opener = Opener::Custom {
@@ -899,7 +899,7 @@ pub fn verify_cm_and_bitz<T: Transcript + Send>(
     transcript: &mut T,
     relation: &PreparedCmAndRelation,
     commitment: &Commitment,
-    proof: &Proof<WfbitzOpeningProof>,
+    proof: &Proof,
 ) -> Result<(), ProtocolError> {
     protocol::verify_virtual(transcript, relation.production()?, commitment, proof)
 }

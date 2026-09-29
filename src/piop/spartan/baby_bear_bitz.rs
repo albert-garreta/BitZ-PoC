@@ -452,7 +452,7 @@ mod tests {
         let mut prover_transcript = Blake3Transcript::new();
         let proof = protocol::prove(&mut prover_transcript, &prepared, &witness, &hint).unwrap();
         assert!(proof.piop_nonces().is_empty());
-        assert!(proof.opening_grinding_nonces().is_empty());
+        assert_eq!(prepared.security().native_grinding_nonce_count(), 0);
         let mut verifier_transcript = Blake3Transcript::new();
         protocol::verify(
             &mut verifier_transcript,
@@ -486,7 +486,7 @@ mod tests {
         let proof128 =
             protocol::prove(&mut prover_transcript, &prepared128, &witness, &hint128).unwrap();
         assert_eq!(proof128.piop_nonces().len(), 2 * 15 + 1 + 15 + 3);
-        assert!(!proof128.opening_grinding_nonces().is_empty());
+        assert!(prepared128.security().native_grinding_nonce_count() > 0);
         let mut verifier_transcript = Blake3Transcript::new();
         protocol::verify(
             &mut verifier_transcript,
