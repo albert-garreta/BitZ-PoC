@@ -3,6 +3,7 @@
 //! Ligerito opening, with flock's challenger events framed their way.
 
 use core::mem::size_of;
+use std::borrow::Cow;
 
 use bincode::Options;
 use flock_core::challenger::Challenger;
@@ -10,24 +11,30 @@ use field::Gf128 as FlockF128;
 use flock_core::merkle::{Hash, HashKind};
 use flock_core::pcs::commit::PcsParams;
 use flock_core::pcs::ligerito::{
-    LigeritoProfile, LigeritoProof, LigeritoSecurityConfig, ProverConfig, VerifierConfig,
-    embedded_security_config, recursive_prover_with_basis, recursive_verifier_with_basis_succinct,
+    FoldLookahead, LigeritoProfile, LigeritoProof, LigeritoSecurityConfig, ProverConfig,
+    VerifierConfig, embedded_security_config, lookahead_accum_group, lookahead_finish,
+    recursive_prover_with_basis, recursive_prover_with_basis_precomputed_round0,
+    recursive_verifier_with_basis_succinct,
 };
 use flock_core::pcs::pack::{LOG_PACKING, PACKING_WIDTH as CLAIM_COUNT};
 use flock_core::pcs::ring_switch::{
     build_eq_split, claim_check, eval_rs_eq_finish_from_prefix_binary_q, eval_rs_eq_prefix,
-    fold_1b_rows_naive, fold_b128_elems, inner_product, tensor_algebra_transpose,
+    fold_1b_rows_naive, fold_1b_rows_split, fold_b128_elems, fold_b128_elems_split,
+    inner_product, split_n_lo, tensor_algebra_transpose,
 };
+use flock_core::zerocheck::PaddingSpec;
 use flock_core::zerocheck::univariate_skip::build_eq;
 use spongefish::Encoding;
 
+use super::colstats::ZStats;
 use super::params::{LinearClaimGf, SumClaimGf, Root, Shape};
 use super::sumcheck;
 use super::transcript::{ProverState, PublicTranscript, VerifierState};
+use crate::ligerito::{phi_byte_tables_into, phi_from_words};
 use crate::ligerito_flock::{
     FlockCommitHint, add_ood_basis, commit_rs_ligerito_rows, ood_residual_evals,
 };
-use field::Gf128 as Gf;
+use field::{Gf128 as Gf, Gf128Product};
 
 /// flock's field element is this crate's `Gf128`: the conversions are the identity.
 #[inline]
@@ -312,6 +319,31 @@ impl Pcs {
         transcript: &mut ProverState,
         ood: Option<(&[Gf], Gf)>,
     ) -> Result<(), ProveError> {
+        self.prove_lin_rows_with(
+            hint,
+            rows,
+            packed_cols,
+            query,
+            statement_binding,
+            transcript,
+            ood,
+            OpeningPath::from_env(),
+        )
+    }
+
+    /// [`Pcs::prove_lin_rows`] along an explicit [`OpeningPath`].
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn prove_lin_rows_with(
+        &self,
+        hint: &FlockCommitHint,
+        rows: &[Vec<u64>],
+        packed_cols: &[Vec<u64>],
+        query: &OpeningQuery,
+        statement_binding: StatementBinding,
+        transcript: &mut ProverState,
+        ood: Option<(&[Gf], Gf)>,
+        path: OpeningPath,
+    ) -> Result<(), ProveError> {
         if hint.packed_message().len() != self.packed_len {
             return Err(ProveError::PackedWitnessLengthMismatch);
         }
@@ -323,20 +355,30 @@ impl Pcs {
                 if statement_binding == StatementBinding::Bind {
                     bind_mle_statement(self, &root, point, *target, transcript);
                 }
-                self.prove_mle(hint, &ring_switch, *target, transcript, ood)
+                self.prove_mle(hint, &ring_switch, *target, transcript, ood, path, None)
             }
             OpeningQuery::InnerProduct { claim } => {
                 validate_inner_product_claim(self, claim)?;
                 if statement_binding == StatementBinding::Bind {
+                    let started = std::time::Instant::now();
                     bind_inner_product_statement(self, &root, claim, transcript);
+                    super::trace("  bind statement", started);
                 }
                 transcript.public_message(SUMCHECK_LABEL);
                 let started = std::time::Instant::now();
-                let reduced = sumcheck::prove(claim, rows, packed_cols, transcript)?;
+                // The column statistics give the ring switch's claims only on
+                // the committed rows themselves (the packed message is theirs).
+                let column_stats = core::ptr::eq(rows, hint.rows())
+                    && path.zstats.applies(
+                        claim.row_weights().len().ilog2() as usize,
+                        claim.column_weights().len().ilog2() as usize,
+                    );
+                let reduced = sumcheck::prove_with(claim, rows, packed_cols, transcript, column_stats)?;
                 super::trace("  sumcheck", started);
                 let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
                 bind_mle_statement(self, &root, &reduced.point, reduced.target, transcript);
-                self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood)
+                let claims = reduced.ring_switch_claims;
+                self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood, path, claims)
             }
             OpeningQuery::InnerProductSum { claim } => {
                 validate_sum_claim(self, claim)?;
@@ -349,7 +391,7 @@ impl Pcs {
                 super::trace("  sumcheck (sum)", started);
                 let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
                 bind_mle_statement(self, &root, &reduced.point, reduced.target, transcript);
-                self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood)
+                self.prove_mle(hint, &ring_switch, reduced.target, transcript, ood, path, None)
             }
         }
     }
@@ -397,7 +439,9 @@ impl Pcs {
     }
 
     /// Their `prove_mle`: the 128 ring-switch claims, seven batching
-    /// challenges, the dense packed basis, then Ligerito.
+    /// challenges, the dense packed basis, then Ligerito. `claims`: the
+    /// ring-switch claims when the sumcheck already has them.
+    #[allow(clippy::too_many_arguments)]
     fn prove_mle(
         &self,
         hint: &FlockCommitHint,
@@ -405,14 +449,38 @@ impl Pcs {
         target: Gf,
         transcript: &mut ProverState,
         ood: Option<(&[Gf], Gf)>,
+        path: OpeningPath,
+        claims: Option<Vec<Gf>>,
     ) -> Result<(), ProveError> {
         let started_rs = std::time::Instant::now();
         let packed = hint.packed_message();
-        let (prefix_tensor, suffix_tensor) = build_eq_split(&ring_switch.point, LOG_PACKING);
-        if suffix_tensor.len() != packed.len() {
+        let started = std::time::Instant::now();
+        let suffix_point = &ring_switch.point[LOG_PACKING..];
+        let (prefix_tensor, suffix) = if path.split && suffix_point.len() >= SPLIT_MIN_VARS {
+            let (lo, hi) = build_eq_split(suffix_point, split_n_lo(suffix_point.len()));
+            (build_eq(&ring_switch.point[..LOG_PACKING]), SuffixEq::Split { lo, hi })
+        } else {
+            let (prefix, tensor) = build_eq_split(&ring_switch.point, LOG_PACKING);
+            (prefix, SuffixEq::Dense(tensor))
+        };
+        super::trace("    rs eq", started);
+        if suffix.len() != packed.len() {
             return Err(ProveError::PackedWitnessLengthMismatch);
         }
-        let claims = fold_1b_rows_naive(packed, &suffix_tensor);
+        let claims = match claims {
+            Some(claims) => claims,
+            None => {
+                let started = std::time::Instant::now();
+                let claims = match &suffix {
+                    SuffixEq::Dense(tensor) => fold_1b_rows_naive(packed, tensor),
+                    SuffixEq::Split { lo, hi } => {
+                        fold_1b_rows_split(packed, lo, hi, &PaddingSpec::dense(self.params.m))
+                    }
+                };
+                super::trace("    rs fold 1b", started);
+                claims
+            }
+        };
         let claims: [FlockF128; CLAIM_COUNT] = claims
             .try_into()
             .map_err(|_: Vec<FlockF128>| ProveError::Internal)?;
@@ -427,21 +495,56 @@ impl Pcs {
         let batching_point = sample_challenges(transcript);
 
         // reduce_dense
+        let started = std::time::Instant::now();
         let batching_weights = build_eq(&batching_point);
         let mut packed_target = batch_claims(&claims, &batching_weights);
-        let mut packed_basis = fold_b128_elems(&suffix_tensor, &batching_weights);
-        debug_assert_eq!(packed_basis.len(), suffix_tensor.len());
+        let fused = match &suffix {
+            SuffixEq::Split { lo, hi } if path.fuse.active() => Some((lo, hi)),
+            _ => None,
+        };
+        let (packed_basis, first_messages) = if let Some((lo, hi)) = fused {
+            // The Round-0 claim is bound first here, so the one basis pass
+            // can write its term: the pass absorbs nothing, so the
+            // transcript order is the unfused one's below.
+            let ood = match ood {
+                Some((point, y)) => {
+                    if point.len() != ring_switch.suffix_dimension() {
+                        return Err(ProveError::Internal);
+                    }
+                    let eta = bind_ood_claim(transcript, point, y);
+                    packed_target = packed_target + eta * y;
+                    Some((point, eta))
+                }
+                None => None,
+            };
+            let lookahead = path.fuse.lookahead()
+                && ligerito_takes_lookahead(packed.len(), self.prover_config.initial_k);
+            let (basis, round0, lookahead) =
+                fused_basis(packed, lo, hi, &batching_weights, ood, lookahead);
+            super::trace("    rs basis", started);
+            (basis, Some((round0, lookahead)))
+        } else {
+            let mut packed_basis = match &suffix {
+                SuffixEq::Dense(tensor) => fold_b128_elems(tensor, &batching_weights),
+                SuffixEq::Split { lo, hi } => fold_b128_elems_split(lo, hi, &batching_weights),
+            };
+            debug_assert_eq!(packed_basis.len(), suffix.len());
+            super::trace("    rs basis", started);
 
-        // The caller's Round-0 claim joins the batch: `η_ood·eq(·, point)`
-        // into the basis, `η_ood·y` into the target.
-        if let Some((point, y)) = ood {
-            if point.len() != ring_switch.suffix_dimension() {
-                return Err(ProveError::Internal);
+            // The caller's Round-0 claim joins the batch: `η_ood·eq(·, point)`
+            // into the basis, `η_ood·y` into the target.
+            if let Some((point, y)) = ood {
+                if point.len() != ring_switch.suffix_dimension() {
+                    return Err(ProveError::Internal);
+                }
+                let started = std::time::Instant::now();
+                let eta = bind_ood_claim(transcript, point, y);
+                add_ood_basis(&mut packed_basis, packed, point, eta, None);
+                packed_target = packed_target + eta * y;
+                super::trace("    rs ood", started);
             }
-            let eta = bind_ood_claim(transcript, point, y);
-            add_ood_basis(&mut packed_basis, packed, point, eta, None);
-            packed_target = packed_target + eta * y;
-        }
+            (packed_basis, None)
+        };
 
         super::trace("  ring switch", started_rs);
 
@@ -449,18 +552,37 @@ impl Pcs {
         let started_lig = std::time::Instant::now();
         let data = hint.flock_prover_data();
         let mut challenger = ProverChallenger::new_ligerito(transcript, packed_target);
-        let ligerito = recursive_prover_with_basis(
-            &self.prover_config,
-            packed.to_vec(),
-            packed_basis,
-            packed_target,
-            &data.codeword,
-            &data.merkle_tree,
-            &mut challenger,
-        );
+        let witness: Cow<'_, [FlockF128]> = if path.borrow {
+            Cow::Borrowed(packed)
+        } else {
+            Cow::Owned(packed.to_vec())
+        };
+        let ligerito = match first_messages {
+            Some((round0, lookahead)) => recursive_prover_with_basis_precomputed_round0(
+                &self.prover_config,
+                witness,
+                packed_basis,
+                packed_target,
+                &data.codeword,
+                &data.merkle_tree,
+                round0,
+                lookahead,
+                &mut challenger,
+            ),
+            None => recursive_prover_with_basis(
+                &self.prover_config,
+                witness,
+                packed_basis,
+                packed_target,
+                &data.codeword,
+                &data.merkle_tree,
+                &mut challenger,
+            ),
+        };
         if challenger.failed() {
             return Err(ProveError::Internal);
         }
+        super::trace_elapsed("    lig pow grind", challenger.grinding);
         super::trace("  ligerito", started_lig);
         write_opening_proof(&ligerito, transcript)
     }
@@ -546,6 +668,275 @@ impl Pcs {
             return Err(VerifyError::VerificationFailed);
         }
         Ok(())
+    }
+}
+
+/// `MLE[P](point)` of the committed packed message `P` (`m − 7`
+/// coordinates, low first): the value an out-of-domain (Round-0) claim at
+/// `point` carries into [`Pcs::prove_lin`]'s `ood`.
+pub fn packed_evaluation(hint: &FlockCommitHint, point: &[Gf]) -> Gf {
+    crate::ligerito_flock::ood_eval(hint.packed_message(), point)
+}
+
+/// How [`Pcs::prove_lin`] runs the ring switch and hands the opening to
+/// Ligerito. Every path proves the same bytes (`opening_paths_prove_
+/// identically` pins them against each other); they differ only in
+/// passes, memory traffic and allocations.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct OpeningPath {
+    /// Ligerito reads the committed packed message in place (its prover
+    /// takes a `Cow`) instead of a fresh copy: no serial 32/128 MB memcpy
+    /// and first touch per proof at `n = 28/30`, and no copy handed on to
+    /// flock's scratch pool after the first fold (`WFBITZ_RS_BORROW`,
+    /// default on).
+    pub(crate) borrow: bool,
+    /// `eq(·, point[7..])` stays two factors of `2^{⌊(m−7)/2⌋}` and
+    /// `2^{⌈(m−7)/2⌉}` entries (flock's `build_eq_split` at `split_n_lo`)
+    /// instead of the `2^{m−7}`-entry tensor: the claims come from flock's
+    /// split fold (the subset-sum tables built once, no tensor stream) and
+    /// the basis from its split fold, one multiply per entry, into a pooled
+    /// buffer. No tensor build (`2^{m−6}` multiplies), no fresh 32/128 MB
+    /// per proof for the tensor or the basis (`WFBITZ_RS_SPLIT`, default
+    /// on; needs `m ≥ 11`).
+    pub(crate) split: bool,
+    /// The inner-product sumcheck computes its row-folded table from the
+    /// column statistics ([`super::colstats`]), which also give the 128
+    /// claims: one pass over the bits instead of the row fold plus the
+    /// ring switch's fold (`WFBITZ_ZSTATS`: `0` off, `1` wherever it fits,
+    /// default where it pays).
+    pub(crate) zstats: ZStats,
+    /// With the split suffix, the basis pass also accumulates Ligerito's
+    /// first messages ([`Fuse`], `WFBITZ_RS_FUSE`).
+    pub(crate) fuse: Fuse,
+}
+
+/// What the basis pass computes for Ligerito besides the basis, read once
+/// from `WFBITZ_RS_FUSE`: `0` nothing (Ligerito reads `(packed, basis)`
+/// again for its round-0 message), `round0` that message, `1` also the
+/// round-1 lookahead coefficients (Ligerito's round 0 becomes a skip round
+/// and its first pass folds two challenges off the original arrays), and
+/// by default `auto`: the lookahead above one thread, nothing at one. A
+/// fused pass writes the Round-0 claim's term too (no separate pass).
+///
+/// Per packed element the pass adds the element's read and one unreduced
+/// multiply for the message (two with the lookahead); Ligerito drops a
+/// reduced-multiply pass over `(packed, basis)` (and with the lookahead
+/// its full-size entry fold: ~90 MB of traffic at `n = 28`). One thread is
+/// compute-bound: the multiplies about cancel the saved passes (ring
+/// switch plus Ligerito at `n = 28/30`: `round0` −0.1/+0.7 ms, −0.4/−1.2
+/// with a Round-0 claim; the lookahead +0.7..+3.9). At 10 threads the
+/// passes are bandwidth-bound and the lookahead saves 0.1/1.9 ms (0.6/3.3
+/// with a Round-0 claim), hence `auto`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Fuse {
+    Off,
+    Round0,
+    Lookahead,
+    Auto,
+}
+
+impl Fuse {
+    fn from_env() -> Self {
+        match std::env::var("WFBITZ_RS_FUSE").as_deref() {
+            Ok("0") => Self::Off,
+            Ok("round0") => Self::Round0,
+            Ok("1") => Self::Lookahead,
+            _ => Self::Auto,
+        }
+    }
+
+    /// Whether the basis pass computes Ligerito's first messages at all.
+    fn active(self) -> bool {
+        match self {
+            Self::Off => false,
+            Self::Round0 | Self::Lookahead => true,
+            Self::Auto => threads() > 1,
+        }
+    }
+
+    /// Whether the pass accumulates the round-1 lookahead too.
+    fn lookahead(self) -> bool {
+        match self {
+            Self::Off | Self::Round0 => false,
+            Self::Lookahead => true,
+            Self::Auto => threads() > 1,
+        }
+    }
+}
+
+fn threads() -> usize {
+    #[cfg(feature = "parallel")]
+    {
+        rayon::current_num_threads()
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        1
+    }
+}
+
+/// The vendored Ligerito prover's rule for its initial-round lookahead
+/// (`recursive_prover_with_basis_initial_impl`): a round-1 lookahead handed
+/// to it is used exactly then, so the basis pass computes one only then.
+fn ligerito_takes_lookahead(packed_len: usize, initial_k: usize) -> bool {
+    packed_len >= 1 << 14
+        && (packed_len >> initial_k) >= 16
+        && std::env::var_os("LIG_LOOKAHEAD_DISABLE").is_none()
+}
+
+/// Basis slots the fused pass writes and then reads back for Ligerito's
+/// messages while they are still in L1: next to the 64 KB byte tables, a
+/// sub-block of basis and message takes 8 KB.
+const FUSE_SUB_BLOCK: usize = 256;
+
+/// The Ligerito basis `Φ(lo[i]·hi[j])` at `j·|lo| + i` — flock's split
+/// basis (`fold_b128_elems_split`), `Φ` the byte tables of the batching
+/// `weights` — plus `η·eq(·, ζ)` for a Round-0 claim `(ζ, η)`, written block
+/// by block into a buffer from flock's scratch pool. While a sub-block of
+/// [`FUSE_SUB_BLOCK`] slots is in cache, Ligerito's round-0 message
+/// `(Σ f₀b₀, Σ (f₀+f₁)(b₀+b₁))` over `(packed, basis)` accumulates from it,
+/// and with `lookahead` flock's round-1 coefficients
+/// (`lookahead_accum_group` over groups of four, which carries the message
+/// too). Every value is an exact field sum over the final basis, so
+/// Ligerito's transcript is the one it computes from `(packed, basis)`
+/// itself.
+fn fused_basis(
+    packed: &[FlockF128],
+    lo: &[FlockF128],
+    hi: &[FlockF128],
+    weights: &[FlockF128],
+    ood: Option<(&[Gf], Gf)>,
+    lookahead: bool,
+) -> (Vec<FlockF128>, (FlockF128, FlockF128), Option<FoldLookahead>) {
+    #[cfg(feature = "parallel")]
+    use rayon::prelude::*;
+    let block = lo.len();
+    assert!(block.is_multiple_of(4) && packed.len() == block * hi.len());
+    let sub = block.min(FUSE_SUB_BLOCK);
+    let mut tables = vec![Gf::zero(); 16 * 256];
+    phi_byte_tables_into(&mut tables, |bit| weights[bit]);
+    // A fixed-size table: every byte lookup is in bounds by its type.
+    let tables: &[Gf; 16 * 256] = tables.as_slice().try_into().expect("sixteen byte tables");
+    // `η·eq(ζ, j·|lo| + i)` splits like the basis: `η·eq(ζ_hi, j)·eq(ζ_lo, i)`.
+    let ood = ood.map(|(point, eta)| {
+        let split = block.trailing_zeros() as usize;
+        let hi: Vec<Gf> = build_eq(&point[split..]).into_iter().map(|e| eta * e).collect();
+        (build_eq(&point[..split]), hi)
+    });
+    // Slots `start..start + out.len()` of block `j`.
+    let fill = |j: usize, start: usize, out: &mut [Gf]| {
+        let end = start + out.len();
+        let scale = hi[j];
+        for (slot, &low) in out.iter_mut().zip(&lo[start..end]) {
+            *slot = phi_from_words(*(low * scale).as_words(), tables);
+        }
+        if let Some((ood_lo, ood_hi)) = &ood {
+            let scale = ood_hi[j];
+            for (slot, &low) in out.iter_mut().zip(&ood_lo[start..end]) {
+                *slot += scale * low;
+            }
+        }
+    };
+    let mut basis = flock_core::scratch::take_f128(packed.len());
+    if lookahead {
+        let block_sums = |(j, out): (usize, &mut [Gf])| {
+            let message = &packed[j * block..(j + 1) * block];
+            let mut acc = [Gf128Product::zero(); 8];
+            for (k, (out, message)) in out.chunks_mut(sub).zip(message.chunks(sub)).enumerate() {
+                fill(j, k * sub, out);
+                for (f, b) in message.chunks_exact(4).zip(out.chunks_exact(4)) {
+                    lookahead_accum_group(&[f[0], f[1], f[2], f[3]], &[b[0], b[1], b[2], b[3]], &mut acc);
+                }
+            }
+            acc
+        };
+        let xor = |mut a: [Gf128Product; 8], b: [Gf128Product; 8]| {
+            for (x, y) in a.iter_mut().zip(b) {
+                *x ^= y;
+            }
+            a
+        };
+        #[cfg(feature = "parallel")]
+        let acc = basis
+            .par_chunks_mut(block)
+            .enumerate()
+            .map(block_sums)
+            .reduce(|| [Gf128Product::zero(); 8], xor);
+        #[cfg(not(feature = "parallel"))]
+        let acc = basis
+            .chunks_mut(block)
+            .enumerate()
+            .map(block_sums)
+            .fold([Gf128Product::zero(); 8], xor);
+        let (message, coefficients) = lookahead_finish(acc);
+        (basis, (message.u_0, message.u_2), Some(coefficients))
+    } else {
+        let block_sums = |(j, out): (usize, &mut [Gf])| {
+            let message = &packed[j * block..(j + 1) * block];
+            let (mut u0, mut u2) = (Gf128Product::zero(), Gf128Product::zero());
+            for (k, (out, message)) in out.chunks_mut(sub).zip(message.chunks(sub)).enumerate() {
+                fill(j, k * sub, out);
+                for (f, b) in message.chunks_exact(2).zip(out.chunks_exact(2)) {
+                    u0 ^= f[0].mul_unreduced(b[0]);
+                    u2 ^= (f[0] + f[1]).mul_unreduced(b[0] + b[1]);
+                }
+            }
+            (u0, u2)
+        };
+        let xor = |(a0, a2): (Gf128Product, Gf128Product), (b0, b2): (Gf128Product, Gf128Product)| {
+            (a0 ^ b0, a2 ^ b2)
+        };
+        let zero = (Gf128Product::zero(), Gf128Product::zero());
+        #[cfg(feature = "parallel")]
+        let (u0, u2) = basis
+            .par_chunks_mut(block)
+            .enumerate()
+            .map(block_sums)
+            .reduce(|| zero, xor);
+        #[cfg(not(feature = "parallel"))]
+        let (u0, u2) = basis.chunks_mut(block).enumerate().map(block_sums).fold(zero, xor);
+        (basis, (u0.reduce(), u2.reduce()), None)
+    }
+}
+
+impl OpeningPath {
+    /// The environment's path, read once.
+    pub(crate) fn from_env() -> Self {
+        static PATH: std::sync::OnceLock<OpeningPath> = std::sync::OnceLock::new();
+        *PATH.get_or_init(|| {
+            let flag = |name: &str, default: bool| match std::env::var(name).as_deref() {
+                Ok("0") => false,
+                Ok("1") => true,
+                _ => default,
+            };
+            OpeningPath {
+                borrow: flag("WFBITZ_RS_BORROW", true),
+                split: flag("WFBITZ_RS_SPLIT", true),
+                zstats: ZStats::from_env(),
+                fuse: Fuse::from_env(),
+            }
+        })
+    }
+}
+
+/// The fewest suffix variables the split takes: flock's split fold walks
+/// whole 16-element chunks of the low factor (`split_n_lo ≥ 4`).
+const SPLIT_MIN_VARS: usize = 4;
+
+/// `eq(·, point[7..])` over the packed positions: the tensor, or its two
+/// factors, entry `j·|lo| + i` being `lo[i]·hi[j]` (exactly: the field
+/// multiply is exact, so the product has the tensor entry's bits).
+enum SuffixEq {
+    Dense(Vec<FlockF128>),
+    Split { lo: Vec<FlockF128>, hi: Vec<FlockF128> },
+}
+
+impl SuffixEq {
+    fn len(&self) -> usize {
+        match self {
+            Self::Dense(tensor) => tensor.len(),
+            Self::Split { lo, hi } => lo.len() * hi.len(),
+        }
     }
 }
 
@@ -1024,6 +1415,8 @@ pub(crate) struct ProverChallenger<'a> {
     transcript: &'a mut ProverState,
     failed: bool,
     opening_target: Option<OpeningTargetPrefix>,
+    /// The wall time of every proof-of-work grind so far (diagnostic).
+    grinding: std::time::Duration,
 }
 
 impl<'a> ProverChallenger<'a> {
@@ -1035,6 +1428,7 @@ impl<'a> ProverChallenger<'a> {
                 expected_target,
                 label_seen: false,
             }),
+            grinding: std::time::Duration::ZERO,
         }
     }
 
@@ -1133,7 +1527,9 @@ impl Challenger for ProverChallenger<'_> {
         self.transcript.public_message(POW_TAG);
         self.transcript.public_message(&bits);
         let seed = super::codec::gf_to_bytes(self.transcript.verifier_message::<Gf>());
+        let started = std::time::Instant::now();
         let nonce = find_pow(&seed, bits);
+        self.grinding += started.elapsed();
         self.transcript.prover_message(&nonce.to_le_bytes());
         nonce
     }
@@ -1265,4 +1661,229 @@ fn leading_zero_bits(bytes: &[u8]) -> u32 {
         }
     }
     total
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wfbitz::params::{LinearClaimGf, MIN_LOG_BITS, Shape};
+    use crate::wfbitz::{build_prover, build_verifier};
+
+    fn xorshift(state: &mut u64) -> u64 {
+        *state ^= *state << 13;
+        *state ^= *state >> 7;
+        *state ^= *state << 17;
+        *state
+    }
+
+    fn random_gf(state: &mut u64) -> Gf {
+        Gf::new(xorshift(state), xorshift(state))
+    }
+
+    /// A ladder for grids below the embedded ones' floor: `initial_k`
+    /// lane folds at rate 1/2, then folds of two with the rate halving per
+    /// level down to at most three variables, 16 queries a level, no
+    /// grinding. Small, not secure: it only has to run every code path.
+    fn small_pcs(shape: &Shape) -> Pcs {
+        let log_n = shape.log_bits() - LOG_PACKING;
+        let initial_k = if log_n >= 10 { 4 } else { 2 };
+        let mut remaining = log_n - initial_k;
+        let mut rates = vec![1usize];
+        let mut queries = vec![16usize.min(1 << (remaining + 1))];
+        let (mut ks, mut cols) = (Vec::new(), Vec::new());
+        while remaining > 3 {
+            remaining -= 2;
+            ks.push(2);
+            cols.push(remaining);
+            rates.push(rates.len() + 1);
+            queries.push(16usize.min(1 << (remaining + rates.len())));
+        }
+        let levels = rates.len();
+        let prover = ProverConfig {
+            log_inv_rates: rates.clone(),
+            recursive_steps: ks.len(),
+            initial_log_msg_cols: log_n - initial_k,
+            initial_log_num_interleaved: initial_k,
+            initial_k,
+            recursive_log_msg_cols: cols.clone(),
+            recursive_ks: ks.clone(),
+            queries: queries.clone(),
+            grinding_bits: vec![0; levels],
+            fold_grinding_bits: vec![0; levels],
+            ood_samples: vec![0; levels],
+            merkle_hash: HashKind::Blake3,
+        };
+        let verifier = VerifierConfig {
+            log_inv_rates: rates,
+            recursive_steps: ks.len(),
+            initial_log_msg_cols: log_n - initial_k,
+            initial_log_num_interleaved: initial_k,
+            initial_k,
+            recursive_log_msg_cols: cols,
+            recursive_ks: ks,
+            queries,
+            grinding_bits: vec![0; levels],
+            fold_grinding_bits: vec![0; levels],
+            ood_samples: vec![0; levels],
+            merkle_hash: HashKind::Blake3,
+        };
+        Pcs::from_configs(shape, prover, verifier).expect("small ladder")
+    }
+
+    /// The embedded ladder where there is one, the small one below it.
+    fn pcs_for(shape: &Shape) -> Pcs {
+        if shape.log_bits() >= MIN_LOG_BITS {
+            Pcs::new(shape, HashKind::Blake3).expect("embedded ladder")
+        } else {
+            small_pcs(shape)
+        }
+    }
+
+    /// The original opening: the row fold, the suffix tensor, a copy for
+    /// Ligerito.
+    const REFERENCE: OpeningPath = OpeningPath {
+        borrow: false,
+        split: false,
+        zstats: ZStats::Off,
+        fuse: Fuse::Off,
+    };
+
+    /// Every path the knobs select (the statistics forced wherever they
+    /// fit, so the small grids take them too).
+    fn paths() -> Vec<OpeningPath> {
+        vec![
+            OpeningPath { borrow: true, ..REFERENCE },
+            OpeningPath { split: true, ..REFERENCE },
+            OpeningPath { zstats: ZStats::Force, ..REFERENCE },
+            OpeningPath { split: true, fuse: Fuse::Round0, ..REFERENCE },
+            OpeningPath { split: true, fuse: Fuse::Lookahead, ..REFERENCE },
+            OpeningPath { borrow: true, split: true, zstats: ZStats::Force, fuse: Fuse::Off },
+            OpeningPath { borrow: true, split: true, zstats: ZStats::Force, fuse: Fuse::Lookahead },
+            OpeningPath { borrow: true, split: true, zstats: ZStats::Auto, fuse: Fuse::Auto },
+        ]
+    }
+
+    /// The fused pass writes flock's split basis plus the Round-0 term, and
+    /// its round-0 message and round-1 lookahead are what separate passes
+    /// over that final basis give.
+    #[test]
+    fn fused_basis_matches_the_separate_passes() {
+        for (log_lo, log_hi) in [(4usize, 0usize), (4, 3), (5, 2), (6, 5), (10, 2)] {
+            let vars = log_lo + log_hi;
+            let mut state = 0xf05e_ba5e ^ (log_lo * 31 + log_hi) as u64;
+            let suffix: Vec<Gf> = (0..vars).map(|_| random_gf(&mut state)).collect();
+            let (lo, hi) = build_eq_split(&suffix, log_lo);
+            let packed: Vec<Gf> = (0..1usize << vars).map(|_| random_gf(&mut state)).collect();
+            let batching: Vec<Gf> = (0..LOG_PACKING).map(|_| random_gf(&mut state)).collect();
+            let weights = build_eq(&batching);
+            let ood_point: Vec<Gf> = (0..vars).map(|_| random_gf(&mut state)).collect();
+            let eta = random_gf(&mut state);
+            for with_ood in [false, true] {
+                let mut expected = fold_b128_elems_split(&lo, &hi, &weights);
+                if with_ood {
+                    add_ood_basis(&mut expected, &packed, &ood_point, eta, None);
+                }
+                let (mut u0, mut u2) = (Gf::zero(), Gf::zero());
+                for (f, b) in packed.chunks_exact(2).zip(expected.chunks_exact(2)) {
+                    u0 += f[0] * b[0];
+                    u2 += (f[0] + f[1]) * (b[0] + b[1]);
+                }
+                let mut acc = [Gf128Product::zero(); 8];
+                for (f, b) in packed.chunks_exact(4).zip(expected.chunks_exact(4)) {
+                    lookahead_accum_group(&[f[0], f[1], f[2], f[3]], &[b[0], b[1], b[2], b[3]], &mut acc);
+                }
+                let (_, expected_lookahead) = lookahead_finish(acc);
+                for lookahead in [false, true] {
+                    let ood = with_ood.then(|| (ood_point.as_slice(), eta));
+                    let (basis, round0, coefficients) =
+                        fused_basis(&packed, &lo, &hi, &weights, ood, lookahead);
+                    let case = format!("lo={log_lo} hi={log_hi} ood={with_ood} lookahead={lookahead}");
+                    assert!(basis == expected, "{case}");
+                    assert_eq!(round0, (u0, u2), "{case}");
+                    assert_eq!(
+                        coefficients.map(|c| format!("{c:?}")),
+                        lookahead.then(|| format!("{expected_lookahead:?}")),
+                        "{case}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Every opening path proves the reference's bytes, which verify: an
+    /// inner-product claim (the sumcheck, then the ring switch) and a bare
+    /// MLE claim, each with and without a Round-0 claim, on grids below
+    /// and at the embedded ladders' floor, with rows too few for the
+    /// column statistics (`t = 9`) and enough (`t ≥ 11`).
+    #[test]
+    fn opening_paths_prove_identically() {
+        for (t, s) in [(9usize, 4usize), (11, 3), (12, 6), (14, 8), (16, 6)] {
+            let shape = Shape::new(t, s).unwrap();
+            let pcs = pcs_for(&shape);
+            let mut state = 0x0be7_1a57 ^ (t * 97 + s) as u64;
+            let words = shape.rows() / 64;
+            let rows: Vec<Vec<u64>> = (0..shape.columns())
+                .map(|_| (0..words).map(|_| xorshift(&mut state)).collect())
+                .collect();
+            let (root, hint) = pcs.commit(&shape, rows).unwrap();
+
+            // Σ_{b,c} w1[b]·w2[c]·bit(c, b).
+            let w1: Vec<Gf> = (0..shape.rows()).map(|_| random_gf(&mut state)).collect();
+            let w2: Vec<Gf> = (0..shape.columns()).map(|_| random_gf(&mut state)).collect();
+            let mut target = Gf::zero();
+            for (column, weight) in hint.rows().iter().zip(&w2) {
+                let mut sum = Gf::zero();
+                for (index, &word) in column.iter().enumerate() {
+                    let mut bits = word;
+                    while bits != 0 {
+                        sum += w1[index * 64 + bits.trailing_zeros() as usize];
+                        bits &= bits - 1;
+                    }
+                }
+                target += *weight * sum;
+            }
+            let inner_product = OpeningQuery::InnerProduct {
+                claim: LinearClaimGf::from_shape(&shape, w1, w2, target).unwrap(),
+            };
+            // The witness MLE at a random point, through the ring switch's
+            // own claims: `Σ_u eq(point[..7], u)·ŝ_v[u]`.
+            let point: Vec<Gf> = (0..shape.log_bits()).map(|_| random_gf(&mut state)).collect();
+            let (prefix, suffix) = build_eq_split(&point, LOG_PACKING);
+            let value = claim_check(&prefix, &fold_1b_rows_naive(hint.packed_message(), &suffix));
+            let mle = OpeningQuery::Mle { point, target: value };
+            let ood_point: Vec<Gf> = (0..shape.log_bits() - LOG_PACKING)
+                .map(|_| random_gf(&mut state))
+                .collect();
+            let ood_value = packed_evaluation(&hint, &ood_point);
+
+            for query in [&inner_product, &mle] {
+                for ood in [None, Some((ood_point.as_slice(), ood_value))] {
+                    let prove = |path: OpeningPath| {
+                        let mut transcript = build_prover(b"wfbitz-opening-paths/v1", b"instance");
+                        pcs.prove_lin_rows_with(
+                            &hint,
+                            hint.rows(),
+                            hint.packed_cols(),
+                            query,
+                            StatementBinding::Bind,
+                            &mut transcript,
+                            ood,
+                            path,
+                        )
+                        .unwrap();
+                        transcript.finish()
+                    };
+                    let reference = prove(REFERENCE);
+                    let mut verifier = build_verifier(b"wfbitz-opening-paths/v1", b"instance", &reference);
+                    pcs.verify_lin(&root, query, StatementBinding::Bind, &mut verifier, ood)
+                        .unwrap();
+                    for path in paths() {
+                        let proof = prove(path);
+                        let same = proof.narg_string == reference.narg_string && proof.hints == reference.hints;
+                        assert!(same, "t={t} s={s} ood={} {path:?}", ood.is_some());
+                    }
+                }
+            }
+        }
+    }
 }
