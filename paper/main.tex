@@ -2688,7 +2688,7 @@ Beyond the unique decoding radius, the same errors hold for the relations extend
 We omit the  proof of \cref{l:gkr_grand_product}, since \cref{c:gkr_grand_product} is a well-known variation of the GKR protocol. Round-by-round soundness of GKR is proved in \cite{CCHLRRW19}, and the knowledge version with relaxation follows as in \cite[proof of Lemma 6.6]{BCFW25}.
 
 \subsection{A first prover optimization via lookup tables}\label{s:tables}% 
-We describe an intial optimization for  \cref{c:gkr_grand_product}. In \cref{s:gkr_buckets} we build upon it further. We assume  $\bfg$ consists entirely of bits. Alternatively, the techniques discussed here would also apply if the entries of $\bfg$ belong to a small subset of $\KK$.
+We describe an initial optimization for  \cref{c:gkr_grand_product}. In \cref{s:gkr_buckets} we build upon it further. We assume  $\bfg$ consists entirely of bits. Alternatively, the techniques discussed here would also apply if the entries of $\bfg$ belong to a small subset of $\KK$.
 
 %\john{Typing is a bit inconsistent here for $c$ and $f_{b,c}$. Namely, we say c seems to be a boolean vector but $f_{b,c}$ is not } 
 \paragraph{Setup.} We start with the following observation: for every $(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}$, we have $\bfg_{\bb,\cc}\in \bits$, and so 
@@ -3015,7 +3015,7 @@ In Round 2 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,
 
 \subsection{Reducing table reads via bucketing}\label{s:gkr_buckets}
 
-Note that in \cref{s:tables} the prover performs $O(\codedim)$ table reads, and keeps  full tables in cache for every sumcheck round where  a table is used. We now describe an optimization that reduces the  number of table reads to $O(\sqrt{\codedim})$, and  allows to compute table entries ``on-the-go''.  These optimizations were found by an AI when optimizing our prover and are reminiscent of Pippengers MSM algorithm \cite{pippenger}.
+Note that in \cref{s:tables} the prover performs $O(\codedim)$ table reads, and keeps  full tables in cache for every sumcheck round where  a table is used. We now describe an optimization that reduces the  number of table reads to $O(\sqrt{\codedim})$, and  allows to compute table entries ``on-the-go''.  These optimizations were found by an AI when optimizing our prover and are reminiscent of Pippenger's MSM algorithm \cite{pipp}.
 
 %In the first rounds of each sumcheck, the prover can read the tables from the previous subsection much less often, and use fewer operations. We describe this optimization for the first message of the last sumcheck, i.e.\ the message analyzed in \cref{t:gkr_step1_costs}. Our implementation uses it (see also \cref{s:gkr_implementation}).
 
@@ -3027,23 +3027,23 @@ $$
 %
 \noindent For readability, we write these entries as $T_{A_0}[\bb][\xx_{\bb,\cc}]$ and $T_{A_2}[\bb][\xx_{\bb,\cc}]$, even though $T_{A_0}[\bb]$ only depends on the first and third bits of $\xx_{\bb,\cc}$.
 
-Instead of computing $t_1(0)$ and $t_1(\infty)$ by  by going through all indices $(\bb,\cc)$ and computing the terms in  \eqref{e:naive_coeff_compute} for each index, we rewrite \eqref{e:naive_coeff_compute} as follows:
+Instead of computing $t_1(0)$ and $t_1(\infty)$ by going through all indices $(\bb,\cc)$ and computing the terms in  \eqref{e:naive_coeff_compute} for each index, we rewrite \eqref{e:naive_coeff_compute} as follows:
 %
 \begin{align*}
-t_1(0)=& \sum_{\bb\in \bits^{r_1-2}} \sum_{\xx\in \{0,1\}^4} \sum_{\cc\in\bits^{{r_2}} : \ \xx_{\bb,\cc}=\xx} \eq(\cc;\bm{\alpha}')\cdot A_0^{(1)}[\bb,\cc]\\ =&  \sum_{\bb\in \bits^{r_1-2}} \sum_{\xx\in \{0,1\}^4} \sum_{\cc\in\bits^{{r_2}} : \ \xx_{\bb,\cc}=\xx} \eq(\cc;\bm{\alpha}')\cdot T_{A_0}^{(1)}[\bb][\xx]  = \sum_{\bb\in \bits^{r_1-2}} \sum_{\xx\in \{0,1\}^4}  T_{A_0}^{(1)}[\bb][\xx] \cdot H_{\bb}[\xx],
+t_1(\infty)=& \sum_{\bb\in \bits^{r_1-2}} \sum_{\xx\in \bits^4} \sum_{\cc\in\bits^{r_2} : \ \xx_{\bb,\cc}=\xx} \eq(\cc;\bm{\alpha}')\cdot A_2^{(1)}[\bb,\cc]\\ =&  \sum_{\bb\in \bits^{r_1-2}} \sum_{\xx\in \bits^4} \sum_{\cc\in\bits^{r_2} : \ \xx_{\bb,\cc}=\xx} \eq(\cc;\bm{\alpha}')\cdot T_{A_2}[\bb][\xx]  = \sum_{\bb\in \bits^{r_1-2}} \sum_{\xx\in \bits^4}  T_{A_2}[\bb][\xx] \cdot H_{\bb}[\xx],
 \end{align*}
-where $H_{\bb}[\xx]\defeq \sum_{\cc\in\bits^{r_2} : \ \xx_{\bb,\cc}=\xx} \eq(\cc;\bm{\alpha}')$. 
+where $H_{\bb}[\xx]\defeq \sum_{\cc\in\bits^{r_2} : \ \xx_{\bb,\cc}=\xx} \eq(\cc;\bm{\alpha}')$. We call the values $H_{\bb}[\xx]$ ``buckets''.
 The values $H_{\bb}[\xx]$ can be precomputed and cost $\codedim/4$ additions in total, and no multiplications. 
 
-Hence $t_1(0)$ can be computed by making $2^{r_1 -2} \cdot 2^{4} = 2 \cdot \codedim_1$ reads into the table $T_{A_0}^{(1)}$, and performing the same amount of multiplications and additions. Even more, with this strategy, each entry $T_{A_0}^{(1)}[\bb][\xx]$ of the table $T_{A_0}^{(1)}$ needs to be accessed at most once. Hence the values $T_{A_0}^{(1)}[\bb][\xx]$ can be computed ``on-the-go'' rather than precomputed and kept in cache. In contrast, in \cref{s:tables}, each entry $T_{A_0}^{(1)}[\bb][\xx]$ of $T_{A_0}^{(1)}$ is accessed, for all indices $\{(\bb,\cc)\mid \cc\in \bits^{\codedim_2}, \ \xx_{\bb,\cc}=\xx\}$. 
+Hence $t_1(\infty)$ can be computed by making $2^{r_1 -2} \cdot 2^{4} = 4 \cdot \codedim_1$ reads into the table $T_{A_2}^{(1)}$, and performing the same amount of multiplications and additions. Even more, with this strategy, each entry $T_{A_2}[\bb][\xx]$ of the table $T_{A_2}$ needs to be accessed at most once. Hence the values $T_{A_2}[\bb][\xx]$ can be computed ``on-the-go'' rather than precomputed and kept in cache. In contrast, in \cref{s:tables}, each entry $T_{A_2}[\bb][\xx]$ of $T_{A_2}$ is read once for every  $\cc\in \bits^{r_2}$ with $\xx_{\bb,\cc}=\xx$.
 
 
 
-The prover can compute $t_1(\infty)$ using an analogous procedure.  We record the costs of computing $t_0(0)$ and $t_1(\infty)$ this way in \cref{t:gkr_buckets_costs}.
+The prover can compute $t_1(0)$ using an analogous procedure. In this case one can further reduce the cost to $\codedim_1$ reads, using that each entry of $T_{A_0}^{(1)}$ is indexed by $2$ bits, and not $4$.  We record the costs of computing $t_1(0)$ and $t_1(\infty)$ this way in \cref{t:gkr_buckets_costs}.
 
 
 
-\paragraph{Subsequent sumcheck rounds and GKR layers.} The same idea applies to the next messages. For example, in the second first round of the ``biggest'' sumcheck (i.e.\ after the round discussed above) the entries in the tables $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$ are  each one a vector of $2^4$ and $2^8$ elements, respectively. These vectors are indexed by elements from $\{0,1\}^4$ and $\{0,1\}^8$. We can now apply the same strategy as above, except that now we have $\xx$ range over $\{0,1\}^8$ instead of $\bits^4$. 
+\paragraph{Subsequent sumcheck rounds and GKR layers.} The same idea applies to the next messages. For example, in the second first round of the ``biggest'' sumcheck (i.e.\ after the round discussed above) the entries in the tables $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$ are  each one a vector of $2^4$ and $2^8$ elements, respectively. These vectors are indexed by elements from $\bits^4$ and $\{0,1\}^8$. We can now apply the same strategy as above, except that now we have $\xx$ range over $\{0,1\}^8$ instead of $\bits^4$. 
 
 
 This optimization is beneficial as long as we can index $\xx$ over $\bits^{t}$ with $2^t< \codedim_2=2^{r_2}$, i.e.\  as long as the corresponding table has entries that are vectors of dimension $2^t<2^{r_2}$. In practice this constraints us to $t\in \{2,4,8\}$.
@@ -3052,7 +3052,17 @@ This optimization is beneficial as long as we can index $\xx$ over $\bits^{t}$ w
 
 
 
-Because of this, from the third message on, and in our implementation already from the first one, the prover only uses tables with the values of a single factor, i.e.\ the tables $T_{r_1-j}^{(k)}$ with up to $2^8$ entries per index, and it multiplies the two factors itself (once per bucket, in the rounds that use buckets). In our implementation we use buckets in the first $3-j$ rounds of the sumcheck for $L_{r_1-j}$ ($j\leq 2$), and we compute all these rounds together, using the optimization from \cite[Algorithm 3]{sumcheck_opt_2}.
+For coefficients where the corresponding table would have entries of dimension $2^{16}$, we use the following approach. For example, in the third round of the biggest sumcheck, the leading coefficient $t_3(\infty)$ of $t_3(X)$ would require a table with entries of dimension $2^{16}$, and we would compute it as 
+%
+$$
+ t_3(\infty)=\sum_{\bb\in \bits^{r_1-4}} \sum_{\xx\in \bits^{16}}  T_{A_2}^{(3)}[\bb][\xx] \cdot H_{\bb}[\xx]. 
+$$
+Instead, we write 
+$$
+ t_3(\infty)=\sum_{\bb\in \bits^{r_1-4}} \sum_{\xx\in \bits^{8}}\sum_{\xx'\in \bits^{8}} T_{S_1}^{(3)}[\bb][\xx] \cdot  T_{S_2}^{(3)}[\bb][\xx'] \cdot H_{\bb}[\xx, \xx'], 
+$$
+where $ T_{S_1}^{(3)}[\bb]$ contains all possible values for $(E_{10}^{(3)}[\bb,\cc] - E_{00}^{(3)}[\bb,\cc])\cdot \omega[\bb]$, and similarly for $ T_{S_2}^{(3)}[\bb]$ (without the factor $\omega[\bb]$), and $H_{\bb}[\xx,\xx']= ??$. 
+
 
 \begin{table}[H]
     \centering
@@ -3097,9 +3107,7 @@ In \cref{tab:gkr_tables} we list all the tables that our implementation uses in 
 \end{table}
 
 
-\subsection{Avoiding transposition when forming table indices}
-
-\subsection{Our implementation}\label{s:gkr_implementation}
+\subsection{Avoiding transposition when forming table indices}\label{s:gkr_implementation}
 
 The prover that we measure in \cref{s:experiments} sends the same messages as the algorithm described above, but it organizes its computations somewhat differently. We describe in detail how it forms the indices of its lookup tables, which turned out to matter for its running time, and we only summarize the rest at the end of this section (see our repository for details).
 
@@ -3484,8 +3492,8 @@ We measure computations where the witness bits are evenly split between  SHA has
      & & Binius (Johnson), rate $1/2$ & 2011 & 643 & 85.5 & 26.7 & 419 & 11.6 \\
      & & Binius (Johnson), rate $1/8$ & 2429 & 721 & 87.2 & 27.2 & 222 & 12.5 \\
               \addlinespace
-    $2^{21}$ & $2^{13}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{1515} & \textbf{394} & 95.3 & 26.1 & 379 & 11.5 \\
-     & & \ftwoz-SNARK, rate $1/8$ & 2140 & 502 & \textbf{94.5} & \textbf{25.2} & \textbf{240} & \textbf{10.9} \\
+    $2^{21}$ & $2^{13}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{1535} & \textbf{403} & 100 & \textbf{27.7} & 377 & \textbf{9.19} \\
+     & & \ftwoz-SNARK, rate $1/8$ & 2163 & 528 & \textbf{99.9} & 29.2 & \textbf{239} & 9.57 \\
      & & Binius (UDR), rate $1/2$ & -- & -- & -- & -- & -- & -- \\
      & & Binius (UDR), rate $1/8$ & -- & -- & -- & -- & -- & -- \\
      & & Binius (Johnson), rate $1/2$ & -- & -- & -- & -- & -- & -- \\
