@@ -10,7 +10,6 @@ use core::mem::size_of;
 
 use bincode::Options;
 use flock_core::challenger::Challenger;
-use field::Gf128 as FlockF128;
 use flock_core::merkle::{Hash, HashKind};
 use flock_core::pcs::commit::PcsParams;
 use flock_core::pcs::ligerito::{
@@ -33,17 +32,6 @@ use crate::ligerito_flock::{
     FlockCommitHint, add_ood_basis, commit_rs_ligerito_rows, ood_residual_evals,
 };
 use field::Gf128 as Gf;
-
-/// flock's field element is this crate's `Gf128`: the conversions are the identity.
-#[inline]
-fn f128_to_gf(f: FlockF128) -> Gf {
-    f
-}
-
-#[inline]
-fn gf_to_f128(g: Gf) -> FlockF128 {
-    g
-}
 
 const MLE_STATEMENT_LABEL: &[u8] = b"bitz/pcs/mle-opening/v1";
 const INNER_PRODUCT_STATEMENT_LABEL: &[u8] = b"bitz/pcs/bit-inner-product/v2";
@@ -450,29 +438,28 @@ impl Pcs {
     fn prove_mle(
         &self,
         hint: &FlockCommitHint,
-        ring_switch: &RingSwitch,
+        ring_switch: &RingSwitch<'_>,
         target: Gf,
         transcript: &mut ProverState,
         ood: Option<(&[Gf], Gf)>,
     ) -> Result<(), ProveError> {
         let started_rs = std::time::Instant::now();
         let packed = hint.packed_message();
-        let (prefix_tensor, suffix_tensor) = build_eq_split(&ring_switch.point, LOG_PACKING);
+        let (prefix_tensor, suffix_tensor) = build_eq_split(ring_switch.point, LOG_PACKING);
         if suffix_tensor.len() != packed.len() {
             return Err(ProveError::PackedWitnessLengthMismatch);
         }
         let claims = fold_1b_rows_naive(packed, &suffix_tensor);
-        let claims: [FlockF128; CLAIM_COUNT] = claims
+        let claims: [Gf; CLAIM_COUNT] = claims
             .try_into()
-            .map_err(|_: Vec<FlockF128>| ProveError::Internal)?;
-        if claim_check(&prefix_tensor, &claims) != gf_to_f128(target) {
+            .map_err(|_: Vec<Gf>| ProveError::Internal)?;
+        if claim_check(&prefix_tensor, &claims) != target {
             return Err(ProveError::InvalidClaim);
         }
 
         // write_claims
         transcript.public_message(MLE_CLAIMS_LABEL);
-        let claims_gf: [Gf; CLAIM_COUNT] = core::array::from_fn(|index| f128_to_gf(claims[index]));
-        transcript.prover_message(&claims_gf);
+        transcript.prover_message(&claims);
         transcript.public_message(CHALLENGES_LABEL);
         let batching_point = transcript.native_array::<LOG_PACKING>(Stage::RingBatch);
 
@@ -522,7 +509,7 @@ impl Pcs {
     fn verify_mle(
         &self,
         commitment: &Root,
-        ring_switch: &RingSwitch,
+        ring_switch: &RingSwitch<'_>,
         target: Gf,
         transcript: &mut VerifierState<'_>,
         ood: Option<(&[Gf], Gf)>,
@@ -532,14 +519,13 @@ impl Pcs {
 
         // read_claims
         transcript.public_message(MLE_CLAIMS_LABEL);
-        let claims_gf = transcript
+        let claims = transcript
             .prover_message::<[Gf; CLAIM_COUNT]>()
             .map_err(|_| VerifyError::MalformedProof)?;
-        let claims: [FlockF128; CLAIM_COUNT] = claims_gf.map(gf_to_f128);
 
         // target_matches
         let prefix_tensor = build_eq(&ring_switch.point[..LOG_PACKING]);
-        if claim_check(&prefix_tensor, &claims) != gf_to_f128(target) {
+        if claim_check(&prefix_tensor, &claims) != target {
             return Err(VerifyError::VerificationFailed);
         }
         transcript.public_message(CHALLENGES_LABEL);
@@ -563,7 +549,7 @@ impl Pcs {
             }
             None => None,
         };
-        let evaluate_basis = |ris: &[FlockF128], yr_log_n: usize| -> Vec<FlockF128> {
+        let evaluate_basis = |ris: &[Gf], yr_log_n: usize| -> Vec<Gf> {
             if yr_log_n > 32 || ris.len().checked_add(yr_log_n) != Some(suffix_point.len()) {
                 return Vec::new();
             }
@@ -572,7 +558,7 @@ impl Pcs {
             };
             let prefix = eval_rs_eq_prefix(suffix_point, ris);
             let suffix = &suffix_point[ris.len()..];
-            let mut out: Vec<FlockF128> = (0..yr_len)
+            let mut out: Vec<Gf> = (0..yr_len)
                 .map(|y| {
                     eval_rs_eq_finish_from_prefix_binary_q(&prefix, suffix, y as u32, &batching_weights)
                 })
@@ -926,28 +912,26 @@ fn bind_ood_claim(transcript: &mut impl PublicTranscript, point: &[Gf], y: Gf) {
 
 
 
-fn batch_claims(claims: &[FlockF128; CLAIM_COUNT], batching_weights: &[FlockF128]) -> FlockF128 {
+fn batch_claims(claims: &[Gf; CLAIM_COUNT], batching_weights: &[Gf]) -> Gf {
     debug_assert_eq!(batching_weights.len(), CLAIM_COUNT);
     let transposed_claims = tensor_algebra_transpose(claims);
     inner_product(&transposed_claims, batching_weights)
 }
 
-/// A validated MLE point in flock's representation.
-struct RingSwitch {
-    point: Vec<FlockF128>,
+/// A validated MLE point for ring switching.
+struct RingSwitch<'a> {
+    point: &'a [Gf],
 }
 
-impl RingSwitch {
-    fn new(point: &[Gf], variable_count: usize) -> Result<Self, QueryError> {
+impl<'a> RingSwitch<'a> {
+    fn new(point: &'a [Gf], variable_count: usize) -> Result<Self, QueryError> {
         if point.len() != variable_count {
             return Err(QueryError::PointLengthMismatch);
         }
         if variable_count < LOG_PACKING {
             return Err(QueryError::Internal);
         }
-        Ok(Self {
-            point: point.iter().map(|&g| gf_to_f128(g)).collect(),
-        })
+        Ok(Self { point })
     }
 
     fn suffix_dimension(&self) -> usize {
@@ -987,7 +971,7 @@ fn read_opening_proof(transcript: &mut VerifierState<'_>) -> Result<LigeritoProo
         .map_err(|_| VerifyError::MalformedProof)
 }
 
-fn rows_match(rows: &[Vec<FlockF128>], expected_rows: usize, expected_width: usize) -> bool {
+fn rows_match(rows: &[Vec<Gf>], expected_rows: usize, expected_width: usize) -> bool {
     rows.len() == expected_rows && rows.iter().all(|row| row.len() == expected_width)
 }
 
@@ -1070,7 +1054,7 @@ fn validate_ligerito_proof_shape(
 
 #[derive(Clone, Copy)]
 struct OpeningTargetPrefix {
-    expected_target: FlockF128,
+    expected_target: Gf,
     label_seen: bool,
 }
 
@@ -1081,7 +1065,7 @@ pub(crate) struct ProverChallenger<'a> {
 }
 
 impl<'a> ProverChallenger<'a> {
-    pub(crate) fn new_ligerito(transcript: &'a mut ProverState, expected_target: FlockF128) -> Self {
+    pub(crate) fn new_ligerito(transcript: &'a mut ProverState, expected_target: Gf) -> Self {
         Self {
             transcript,
             failed: false,
@@ -1106,7 +1090,7 @@ pub(crate) struct VerifierChallenger<'a, 'proof> {
 impl<'a, 'proof> VerifierChallenger<'a, 'proof> {
     pub(crate) fn new_ligerito(
         transcript: &'a mut VerifierState<'proof>,
-        expected_target: FlockF128,
+        expected_target: Gf,
     ) -> Self {
         Self {
             transcript,
@@ -1149,18 +1133,18 @@ impl Challenger for ProverChallenger<'_> {
         self.transcript.public_message(label);
     }
 
-    fn observe_f128(&mut self, value: FlockF128) {
+    fn observe_f128(&mut self, value: Gf) {
         if let Some(prefix) = self.opening_target.take() {
             if !prefix.label_seen || value != prefix.expected_target {
                 self.failed = true;
             }
-            self.transcript.public_message(&f128_to_gf(value));
+            self.transcript.public_message(&value);
             return;
         }
-        self.transcript.prover_message(&f128_to_gf(value));
+        self.transcript.prover_message(&value);
     }
 
-    fn observe_f128_slice(&mut self, values: &[FlockF128]) {
+    fn observe_f128_slice(&mut self, values: &[Gf]) {
         self.transcript.prover_message(
             &u32::try_from(values.len()).expect("observed field slice exceeds u32"),
         );
@@ -1173,11 +1157,11 @@ impl Challenger for ProverChallenger<'_> {
         self.transcript.prover_message_bytes(bytes);
     }
 
-    fn sample_f128(&mut self) -> FlockF128 {
-        gf_to_f128(self.transcript.verifier_message::<Gf>())
+    fn sample_f128(&mut self) -> Gf {
+        self.transcript.verifier_message::<Gf>()
     }
 
-    fn sample_f128_vec(&mut self, n: usize) -> Vec<FlockF128> {
+    fn sample_f128_vec(&mut self, n: usize) -> Vec<Gf> {
         self.transcript.public_message(VECTOR_SQUEEZE_TAG);
         self.transcript.public_message(&(n as u64));
         (0..n).map(|_| self.sample_f128()).collect()
@@ -1210,20 +1194,20 @@ impl Challenger for VerifierChallenger<'_, '_> {
         self.transcript.public_message(label);
     }
 
-    fn observe_f128(&mut self, value: FlockF128) {
+    fn observe_f128(&mut self, value: Gf) {
         if let Some(prefix) = self.opening_target.take() {
             if !prefix.label_seen || value != prefix.expected_target {
                 self.failed = true;
             }
-            self.transcript.public_message(&f128_to_gf(value));
+            self.transcript.public_message(&value);
             return;
         }
-        if self.read::<Gf>() != Some(f128_to_gf(value)) {
+        if self.read::<Gf>() != Some(value) {
             self.failed = true;
         }
     }
 
-    fn observe_f128_slice(&mut self, values: &[FlockF128]) {
+    fn observe_f128_slice(&mut self, values: &[Gf]) {
         let len = u32::try_from(values.len()).expect("observed field slice exceeds u32");
         if self.read::<u32>() != Some(len) {
             self.failed = true;
@@ -1240,11 +1224,11 @@ impl Challenger for VerifierChallenger<'_, '_> {
         }
     }
 
-    fn sample_f128(&mut self) -> FlockF128 {
-        gf_to_f128(self.transcript.verifier_message::<Gf>())
+    fn sample_f128(&mut self) -> Gf {
+        self.transcript.verifier_message::<Gf>()
     }
 
-    fn sample_f128_vec(&mut self, n: usize) -> Vec<FlockF128> {
+    fn sample_f128_vec(&mut self, n: usize) -> Vec<Gf> {
         self.transcript.public_message(VECTOR_SQUEEZE_TAG);
         self.transcript.public_message(&(n as u64));
         (0..n).map(|_| self.sample_f128()).collect()

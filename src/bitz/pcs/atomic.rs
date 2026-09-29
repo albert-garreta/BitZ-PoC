@@ -179,11 +179,11 @@ impl<C: Transport> Challenger for AtomicChallenger<'_, C> {
         self.observed();
         self.inner.observe_label(label);
     }
-    fn observe_f128(&mut self, value: FlockF128) {
+    fn observe_f128(&mut self, value: Gf) {
         self.observed();
         self.inner.observe_f128(value);
     }
-    fn observe_f128_slice(&mut self, values: &[FlockF128]) {
+    fn observe_f128_slice(&mut self, values: &[Gf]) {
         self.observed();
         self.inner.observe_f128_slice(values);
     }
@@ -191,17 +191,17 @@ impl<C: Transport> Challenger for AtomicChallenger<'_, C> {
         self.observed();
         self.inner.observe_bytes(bytes);
     }
-    fn sample_f128(&mut self) -> FlockF128 {
+    fn sample_f128(&mut self) -> Gf {
         self.try_sample_f128().expect("valid prover work schedule")
     }
-    fn sample_f128_vec(&mut self, n: usize) -> Vec<FlockF128> {
+    fn sample_f128_vec(&mut self, n: usize) -> Vec<Gf> {
         self.try_sample_f128_vec(n)
             .expect("valid prover work schedule")
     }
-    fn try_sample_f128(&mut self) -> Option<FlockF128> {
+    fn try_sample_f128(&mut self) -> Option<Gf> {
         self.before_sample().then(|| self.inner.sample_f128())
     }
-    fn try_sample_f128_vec(&mut self, n: usize) -> Option<Vec<FlockF128>> {
+    fn try_sample_f128_vec(&mut self, n: usize) -> Option<Vec<Gf>> {
         let valid = if n == 0 {
             self.valid()
         } else {
