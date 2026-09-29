@@ -369,7 +369,7 @@ fn bench_shape(t: usize, s: usize, w: usize, reps: usize, env: &Env) {
         median(de_us)
     );
     // Exact serialized streams, with framing charged to the native transcript.
-    let lig_b = split_proof.hints.len();
+    let lig_b = split_proof.transcript.hints.len();
     let zb = split_proof.to_bytes().len() - lig_b;
     println!(
         "  split:   native transcript and framing {:7.1} KiB | Ligerito hints {:7.1} KiB",

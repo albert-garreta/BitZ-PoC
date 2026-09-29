@@ -106,7 +106,7 @@ fn lambda128_grinds_every_opening_round_and_gates_the_nonces() {
     // Codec round-trip preserves the section byte-for-byte.
     let decoded = BitZOpeningProof::from_bytes(&bytes).expect("codec");
     assert_eq!(decoded.to_bytes(), bytes);
-    assert_eq!(decoded.narg, proof.bitz().narg);
+    assert_eq!(decoded.transcript.narg_string, proof.bitz().transcript.narg_string);
 
     // A λ=128 proof does not verify under the reference (0-difficulty)
     // preparation: the grinding boundaries are transcript-visible.

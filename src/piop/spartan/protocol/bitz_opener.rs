@@ -289,8 +289,7 @@ impl BitZOpener {
 /// the crate's Round-0 messages when the ladder runs the round.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BitZOpeningProof {
-    pub narg: Vec<u8>,
-    pub hints: Vec<u8>,
+    pub transcript: BitzTranscriptProof,
     pub ood: Option<OodRound>,
 }
 
@@ -299,8 +298,10 @@ impl BitZOpeningProof {
     /// a tag byte (0 = no round, 1 = round), `y` (16 bytes) and the
     /// grinding nonce (a presence byte, then 8 bytes).
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(16 + self.narg.len() + self.hints.len() + 26);
-        for stream in [&self.narg, &self.hints] {
+        let mut bytes = Vec::with_capacity(
+            16 + self.transcript.narg_string.len() + self.transcript.hints.len() + 26,
+        );
+        for stream in [&self.transcript.narg_string, &self.transcript.hints] {
             bytes.extend_from_slice(&(stream.len() as u64).to_le_bytes());
             bytes.extend_from_slice(stream);
         }
@@ -361,7 +362,13 @@ impl BitZOpeningProof {
             }
             _ => return None,
         };
-        (at == bytes.len()).then_some(Self { narg, hints, ood })
+        (at == bytes.len()).then_some(Self {
+            transcript: BitzTranscriptProof {
+                narg_string: narg,
+                hints,
+            },
+            ood,
+        })
     }
 }
 
@@ -475,13 +482,11 @@ pub(super) fn prove_direct<T: Transcript + Send, S: RelationSpec>(
             ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
         )
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ prove: {error:?}")))?;
-    let BitzTranscriptProof { narg_string, hints } = state.finish();
     Ok(Proof::from_parts(
         proved.messages,
         None,
         BitZOpeningProof {
-            narg: narg_string,
-            hints,
+            transcript: state.finish(),
             ood: ood.map(|claim| claim.round),
         },
     ))
@@ -549,11 +554,7 @@ pub(super) fn verify_direct<T: Transcript + Send, S: RelationSpec>(
         )
         .map_err(ProtocolError::Bitz)?;
     let tag = fork_tag(transcript);
-    let bitz_proof = BitzTranscriptProof {
-        narg_string: opening.narg.clone(),
-        hints: opening.hints.clone(),
-    };
-    let mut state = build_verifier(SESSION, &tag, &bitz_proof);
+    let mut state = build_verifier(SESSION, &tag, &opening.transcript);
     state.public_message(&verified.bridge_digest);
     BitZVerifier::new(params, WINDOW)
         .verify(
@@ -698,10 +699,8 @@ pub fn prove_standalone(
             ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
         )
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ prove: {error:?}")))?;
-    let BitzTranscriptProof { narg_string, hints } = state.finish();
     Ok(BitZOpeningProof {
-        narg: narg_string,
-        hints,
+        transcript: state.finish(),
         ood: ood.map(|claim| claim.round),
     })
 }
@@ -729,16 +728,12 @@ pub fn verify_standalone(
     .map_err(ProtocolError::Bitz)?;
     let (params, claim) = standalone_claim(&mut transcript, opener, q_bits, claimed)?;
     let tag = fork_tag(&mut transcript);
-    let bitz_proof = BitzTranscriptProof {
-        narg_string: proof.narg.clone(),
-        hints: proof.hints.clone(),
-    };
     BitZVerifier::new(params, WINDOW)
         .verify(
             &claim,
             opener.pcs(),
             Root(commitment.root),
-            build_verifier(STANDALONE_SESSION, &tag, &bitz_proof),
+            build_verifier(STANDALONE_SESSION, &tag, &proof.transcript),
             ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
         )
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ verify: {error:?}")))
@@ -843,7 +838,7 @@ mod tests {
             }
 
             let mut tampered = proof.clone();
-            tampered.bitz_mut().narg[7] ^= 1;
+            tampered.bitz_mut().transcript.narg_string[7] ^= 1;
             assert!(
                 verify(
                     &mut Blake3Transcript::new(),
@@ -855,8 +850,8 @@ mod tests {
                 .is_err()
             );
             let mut tampered = proof.clone();
-            let last = tampered.bitz().hints.len() - 1;
-            tampered.bitz_mut().hints[last] ^= 1;
+            let last = tampered.bitz().transcript.hints.len() - 1;
+            tampered.bitz_mut().transcript.hints[last] ^= 1;
             assert!(
                 verify(
                     &mut Blake3Transcript::new(),
@@ -923,7 +918,7 @@ mod tests {
                 "{ladder}: Round 0"
             );
             let mut tampered = proof.clone();
-            tampered.narg[9] ^= 1;
+            tampered.transcript.narg_string[9] ^= 1;
             assert!(
                 verify_standalone(&opener, &hint.commitment, claimed, &tampered).is_err(),
                 "{ladder}: a flipped byte"
@@ -1430,13 +1425,11 @@ pub fn prove_reduced<T: Transcript + Send, S: RelationSpec>(
             ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
         )
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ prove: {error:?}")))?;
-    let BitzTranscriptProof { narg_string, hints } = state.finish();
     Ok(Proof::from_parts(
         proved.messages,
         Some(ReductionProof { mu_prime, nonce }),
         BitZOpeningProof {
-            narg: narg_string,
-            hints,
+            transcript: state.finish(),
             ood: ood.map(|claim| claim.round),
         },
     ))
@@ -1540,11 +1533,7 @@ pub fn verify_reduced<T: Transcript + Send, S: RelationSpec>(
         .opening_claim(transcript, packed_variables(&p)?, opening.ood.as_ref())
         .map_err(ProtocolError::Bitz)?;
     let tag = fork_tag(transcript);
-    let bitz_proof = BitzTranscriptProof {
-        narg_string: opening.narg.clone(),
-        hints: opening.hints.clone(),
-    };
-    let mut state = build_verifier(REDUCED_SESSION, &tag, &bitz_proof);
+    let mut state = build_verifier(REDUCED_SESSION, &tag, &opening.transcript);
     state.public_message(&verified.bridge_digest);
     BitZVerifier::new(params, WINDOW)
         .verify_virtual(
@@ -1628,10 +1617,8 @@ pub(crate) fn prove_virtual_opening<
             ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
         )
         .map_err(|error| ProtocolError::LigeritoConfig(format!("BitZ prove: {error:?}")))?;
-    let BitzTranscriptProof { narg_string, hints } = state.finish();
     Ok(BitZOpeningProof {
-        narg: narg_string,
-        hints,
+        transcript: state.finish(),
         ood: ood.map(|claim| claim.round),
     })
 }
@@ -1655,11 +1642,7 @@ pub(crate) fn verify_virtual_opening<
     let ood = ood
         .opening_claim(transcript, packed_vars, proof.ood.as_ref())
         .map_err(ProtocolError::Bitz)?;
-    let streams = BitzTranscriptProof {
-        narg_string: proof.narg.clone(),
-        hints: proof.hints.clone(),
-    };
-    let state = build_verifier(VIRTUAL_SESSION, &fork_tag(transcript), &streams);
+    let state = build_verifier(VIRTUAL_SESSION, &fork_tag(transcript), &proof.transcript);
     BitZVerifier::new(*statement.claim_params(), WINDOW)
         .verify_virtual(
             statement,

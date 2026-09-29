@@ -924,7 +924,7 @@ fn main() {
 
     let proof = last_proof.expect("reps ≥ 1");
     let bytes = proof.to_bytes().len();
-    let lig_b = proof.hints.len();
+    let lig_b = proof.transcript.hints.len();
     let zb = proof.to_bytes().len() - lig_b;
     let prove_med = median(prove_ms.clone());
     let verify_med = median(verify_ms.clone());
@@ -2378,7 +2378,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let boundary_nonces = proof.grinding_nonce_count(sec) - sec.native_grinding_nonce_count();
     let piop_bytes = spartan_elements * 16 + boundary_nonces * std::mem::size_of::<u64>();
     let open_bytes = proof.bitz().to_bytes().len();
-    let open_lig_bytes = proof.bitz().hints.len();
+    let open_lig_bytes = proof.bitz().transcript.hints.len();
     let total_bytes = piop_bytes + open_bytes;
 
     let commit_med = median(commit_ms_v.clone());

@@ -27,7 +27,7 @@ use crate::piop::spartan::protocol::{
 use crate::transcript::traits::Transcript;
 use crate::bitz::{
     BitZParams, BitZProver, BitZVerifier, ChainedStatement, LinearClaim, Pcs,
-    Proof as BitzTranscriptProof, Root, Shape, VirtualStatement, WINDOW, build_prover,
+    Root, Shape, VirtualStatement, WINDOW, build_prover,
     build_verifier, chained::LOG_ROWS,
 };
 use circuit::linear_map::binary::VirtualMap;
@@ -210,10 +210,8 @@ pub(super) fn prove_opening<T: Transcript + Send>(
             .map_err(|e| error(format!("bitz prove: {e:?}")))?;
         state
     };
-    let BitzTranscriptProof { narg_string, hints } = state.finish();
     Ok(BitZOpeningProof {
-        narg: narg_string,
-        hints,
+        transcript: state.finish(),
         ood: ood.map(|claim| claim.round),
     })
 }
@@ -241,10 +239,6 @@ pub(super) fn verify_opening<T: Transcript + Send>(
         .opening_claim(t, packed_vars(committed), proof.ood.as_ref())
         .map_err(|e| error(format!("{e:?}")))?;
     let tag = fork_tag(t);
-    let bitz_proof = BitzTranscriptProof {
-        narg_string: proof.narg.clone(),
-        hints: proof.hints.clone(),
-    };
     if let Some(chained) = &prepared.bitz {
         let (params, pcs) = chained_setup(chained, modulus, security)?;
         let (rows, cols) = block_weights(chained.geometry.log_instances, point, scale, cfg)?;
@@ -267,7 +261,7 @@ pub(super) fn verify_opening<T: Transcript + Send>(
             &claim,
         )
         .map_err(|e| error(format!("bitz statement: {e:?}")))?;
-        let state = build_verifier(CHAINED_SESSION, &tag, &bitz_proof);
+        let state = build_verifier(CHAINED_SESSION, &tag, &proof.transcript);
         BitZVerifier::new(params, WINDOW)
             .verify_chained(
                 &statement,
@@ -284,7 +278,7 @@ pub(super) fn verify_opening<T: Transcript + Send>(
             .map_err(|e| error(format!("bitz claim: {e:?}")))?;
         let statement = VirtualStatement::new(params, committed, &prepared.map, &claim)
             .map_err(|e| error(format!("bitz statement: {e:?}")))?;
-        let state = build_verifier(SESSION, &tag, &bitz_proof);
+        let state = build_verifier(SESSION, &tag, &proof.transcript);
         BitZVerifier::new(params, WINDOW)
             .verify_virtual(
                 &statement,

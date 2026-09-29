@@ -2191,10 +2191,8 @@ pub mod terminal {
                 ood.as_ref().map(|claim| (claim.point.as_slice(), claim.y)),
             )
             .map_err(|e| ProtocolError::LigeritoConfig(format!("terminal opening: {e:?}")))?;
-        let proof = state.finish();
         Ok(BitZOpeningProof {
-            narg: proof.narg_string,
-            hints: proof.hints,
+            transcript: state.finish(),
             ood: ood.map(|claim| claim.round),
         })
     }
@@ -2237,11 +2235,11 @@ pub mod terminal {
             prepared.ligerito.verifier(),
         )?
         .with_native_policy(prepared.security.native_policy()?);
-        let encoded = crate::bitz::Proof {
-            narg_string: proof.narg.clone(),
-            hints: proof.hints.clone(),
-        };
-        let mut state = build_verifier(SESSION, &bitz_opener::fork_tag(transcript), &encoded);
+        let mut state = build_verifier(
+            SESSION,
+            &bitz_opener::fork_tag(transcript),
+            &proof.transcript,
+        );
         state.public_message(&bridge_digest);
         BitZVerifier::new(params, WINDOW)
             .verify(

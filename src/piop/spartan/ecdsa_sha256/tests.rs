@@ -503,7 +503,7 @@ fn strengthened_128_profile_proves_and_rejects_extra_nonce() {
         &proof,
     )
     .unwrap();
-    proof.opening.narg.push(0);
+    proof.opening.transcript.narg_string.push(0);
     assert!(
         verify_sha256_ecdsa(
             &mut Blake3Transcript::new(),
@@ -617,7 +617,7 @@ fn bitz_opening_roundtrips_and_rejects_old_versions() {
         );
         // Extra opening bytes are refused.
         let mut padded = proof.clone();
-        padded.opening.narg.push(0);
+        padded.opening.transcript.narg_string.push(0);
         let padded = Sha256EcdsaProof::from_bytes(&padded.to_bytes()).unwrap();
         assert!(
             verify_sha256_ecdsa(

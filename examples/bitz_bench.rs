@@ -188,7 +188,12 @@ fn main() {
         verify_times.push(started.elapsed());
         let total = proof.to_bytes().len();
         let ood = proof.ood.map_or(0, |round| 16 + round.nonce.map_or(0, |_| 8));
-        sizes = (proof.narg.len(), proof.hints.len(), ood, total);
+        sizes = (
+            proof.transcript.narg_string.len(),
+            proof.transcript.hints.len(),
+            ood,
+            total,
+        );
     }
     let prove = median(&prove_times);
     let verify = median(&verify_times);
