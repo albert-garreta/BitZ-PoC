@@ -45,7 +45,7 @@ use bitz::transcript::Blake3Transcript;
 /// both are pinned.
 const PINS: &[(&str, &str, &str, &str)] = &[
     // Recorded after the BitZ hashing-domain and proof-codec namespace migration.
-    // Spartan domains use v2; hybrid wire encoding uses version 6.
+    // Spartan domains use v2; the hybrid uses Wfbitz and BZSW version 2.
     // The lambda128 entries and sha256/2p7/reference moved with the UDR
     // fold-grinding margin: flock tapers a level's fold grinding by one bit
     // per round, and the last level-0 fold round of these UDR ladders now
@@ -180,7 +180,7 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "hybrid/2p13x16/johnson",
         "-",
         "-",
-        "0aefced198a8a264bd50025dbef5696fa7a37fae02412de84a57120a317903ba",
+        "cea14db6c452edeef7675cf2331f11231b40702f65d3f4e36b434995d6c59bb9",
     ),
 ];
 

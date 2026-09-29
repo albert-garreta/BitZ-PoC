@@ -4,7 +4,6 @@ use super::{Error, HybridProof, PreparedHybrid, Statement, mul, opening, sumchec
 use crate::{
     ligerito::RingSwitchProof,
     ligerito_flock::OodRound,
-    merged_forest::{MergedForestProof, MergedLayer},
     piop::spartan::{
         SpartanField,
         bitz::SpartanBitzField as Q,
@@ -19,11 +18,7 @@ use bincode::Options;
 
 use flock_core::field::Gf128;
 
-const MAGIC: &[u8; 8] = b"BZSH\x06\0\0\0";
-/// The same layout with the multiplication side's grand product reduced by
-/// the wfbitz scheme; forest proofs keep the
-/// version-6 encoding.
-const MAGIC_WFBITZ: &[u8; 8] = b"BZSW\x01\0\0\0";
+const MAGIC: &[u8; 8] = b"BZSW\x02\0\0\0";
 const MAX_PROOF_BYTES: usize = 64 << 20;
 
 fn count(r: &mut Reader<'_>, max: usize) -> Result<usize, CodecError> {
@@ -74,39 +69,6 @@ fn read_rounds<const N: usize>(
     Ok(QSumcheck { round_polynomials })
 }
 
-fn write_sc(w: &mut Writer, sc: &crate::piop::sumcheck::SumcheckProof<super::Gf>) {
-    w.gf(&sc.claimed_sum);
-    w.len(sc.messages.len());
-    for message in &sc.messages {
-        w.len(message.0.tail_evaluations.len());
-        for x in &message.0.tail_evaluations {
-            w.gf(x);
-        }
-    }
-}
-fn read_sc(
-    r: &mut Reader<'_>,
-) -> Result<crate::piop::sumcheck::SumcheckProof<super::Gf>, CodecError> {
-    use crate::piop::sumcheck::prover::{NatEvaluatedPolyWithoutConstant, ProverMsg};
-    let claimed_sum = r.gf()?;
-    let n = count(r, 64)?;
-    let mut messages = Vec::with_capacity(n);
-    for _ in 0..n {
-        let k = count(r, 3)?;
-        let mut tail_evaluations = Vec::with_capacity(k);
-        for _ in 0..k {
-            tail_evaluations.push(r.gf()?);
-        }
-        messages.push(ProverMsg(NatEvaluatedPolyWithoutConstant {
-            tail_evaluations,
-        }));
-    }
-    Ok(crate::piop::sumcheck::SumcheckProof {
-        claimed_sum,
-        messages,
-    })
-}
-
 fn write_f(w: &mut Writer, f: Gf128) {
     w.gf(&(f));
 }
@@ -121,10 +83,7 @@ impl HybridProof {
     /// transcript-derived prime depends on them.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut w = Writer::new();
-        w.bytes(match &self.multiplication.gkr {
-            super::mul::MulGkr::Forest(_) => MAGIC,
-            super::mul::MulGkr::Wfbitz { .. } => MAGIC_WFBITZ,
-        });
+        w.bytes(MAGIC);
         w.len(usize::from(self.opening.ood.is_some()));
         if let Some(ood) = &self.opening.ood {
             w.gf(&ood.y);
@@ -156,33 +115,8 @@ impl HybridProof {
             write_q(&mut w, q, &p.field);
         }
         write_rounds(&mut w, &s.inner, &p.field);
-        // The multiplication side's grand-product reduction; the magic names
-        // its opener.
-        match &p.gkr {
-            super::mul::MulGkr::Forest(forest) => {
-                w.len(p.sums.len());
-                for &sum in &p.sums {
-                    w.u128(sum);
-                }
-                w.len(forest.layers.len());
-                for layer in &forest.layers {
-                    w.len(usize::from(layer.sc_x.is_some()));
-                    if let Some(sc) = &layer.sc_x {
-                        write_sc(&mut w, sc);
-                    }
-                    write_sc(&mut w, &layer.sc_c);
-                    w.gf(&layer.pair.0);
-                    w.gf(&layer.pair.1);
-                    // This protocol always uses the binary forest, regardless of
-                    // environment variables controlling standalone BitZ schedules.
-                    assert!(layer.pair2.is_none());
-                }
-            }
-            super::mul::MulGkr::Wfbitz { narg } => {
-                w.len(narg.len());
-                w.bytes(narg);
-            }
-        }
+        w.len(p.narg.len());
+        w.bytes(&p.narg);
         w.len(self.sha.len());
         for &word in &self.sha {
             w.u128(word);
@@ -224,13 +158,7 @@ impl PreparedHybrid {
             return Err(CodecError::NonCanonical.into());
         }
         let mut r = Reader::new(bytes);
-        let opener = match r.take(8)? {
-            m if m == MAGIC => super::MulOpener::Forest,
-            m if m == MAGIC_WFBITZ => super::MulOpener::Wfbitz,
-            _ => return Err(CodecError::NonCanonical.into()),
-        };
-        // Only the opener this statement was prepared for decodes.
-        if opener != self.mul_opener {
+        if r.take(8)? != MAGIC {
             return Err(CodecError::NonCanonical.into());
         }
         let has_ood = count(&mut r, 1)? == 1;
@@ -297,36 +225,8 @@ impl PreparedHybrid {
             outer: UnivariateSkipOuterSumcheckProof { skip, tail },
             inner: read_rounds(&mut r, q, &cfg)?,
         };
-        let (sums, gkr) = match opener {
-            super::MulOpener::Forest => {
-                let n = count(&mut r, self.multiplication.params().cols())?;
-                let mut sums = Vec::with_capacity(n);
-                for _ in 0..n {
-                    sums.push(r.u128()?);
-                }
-                let n = count(&mut r, 64)?;
-                let mut layers = Vec::with_capacity(n);
-                for _ in 0..n {
-                    let sc_x = if count(&mut r, 1)? == 1 {
-                        Some(read_sc(&mut r)?)
-                    } else {
-                        None
-                    };
-                    layers.push(MergedLayer {
-                        sc_x,
-                        sc_c: read_sc(&mut r)?,
-                        pair: (r.gf()?, r.gf()?),
-                        pair2: None,
-                    });
-                }
-                (sums, super::mul::MulGkr::Forest(MergedForestProof { layers }))
-            }
-            super::MulOpener::Wfbitz => {
-                let n = count(&mut r, MAX_PROOF_BYTES)?;
-                let narg = r.take(n)?.to_vec();
-                (Vec::new(), super::mul::MulGkr::Wfbitz { narg })
-            }
-        };
+        let n = count(&mut r, MAX_PROOF_BYTES)?;
+        let narg = r.take(n)?.to_vec();
         let n = count(&mut r, 1 << 16)?;
         let mut sha = Vec::with_capacity(n);
         for _ in 0..n {
@@ -370,8 +270,7 @@ impl PreparedHybrid {
                 terminal_nonce,
                 piop_nonces,
                 spartan,
-                sums,
-                gkr,
+                narg,
             },
             sha,
             joint,

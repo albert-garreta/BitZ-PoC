@@ -246,10 +246,7 @@ struct Args {
     cargo: cli::CargoArgs,
     #[arg(long, default_value = "hybrid", requires_if("all", "sweep"), value_parser = ["hybrid", "separate", "all-binius", "binius-ligerito", "all"])]
     mode: String,
-    /// The hybrid's multiplication-side grand-product scheme: the forest
-    /// (the paper's) or the worldfnd/BitZ scheme.
-    #[arg(long, default_value = "forest", value_parser = ["forest", "wfbitz"])]
-    mul_opener: String,
+
     #[arg(long, env = "BITZ_LIG_PROFILE")]
     profile: Option<String>,
     #[arg(long, value_parser = clap::value_parser!(u32).range(9..=22))]
@@ -302,12 +299,12 @@ fn binius_ligerito_accounting() -> Accounting {
 }
 
 pub fn run() -> Result<(), AnyError> {
-    let Args { mode, mul_opener, profile, mul_log, sha_log, iterations, sweep, shapes, results_dir, output, verify: verify_file, .. } = <Args as clap::Parser>::parse();
+    let Args { mode, profile, mul_log, sha_log, iterations, sweep, shapes, results_dir, output, verify: verify_file, .. } = <Args as clap::Parser>::parse();
     if (output.is_some() || verify_file.is_some()) && mode != "hybrid" {
         return Err("--output and --verify require --mode hybrid".into());
     }
     if sweep {
-        return sweep::run(shapes.unwrap_or_else(sweep::equal_witness_shapes), &mode, &mul_opener, iterations, results_dir, profile.as_deref());
+        return sweep::run(shapes.unwrap_or_else(sweep::equal_witness_shapes), &mode, iterations, results_dir, profile.as_deref());
     }
     let mut parameters = Parameters::default();
     if let Some(log) = mul_log { parameters.multiplications = 1 << log; }
@@ -346,8 +343,7 @@ pub fn run() -> Result<(), AnyError> {
         let prepared = PreparedHybrid::new_with_ligerito(
             statement.parameters,
             ligerito,
-        )?
-        .with_mul_opener(bitz::hybrid::MulOpener::parse(&mul_opener).expect("opener"))?;
+        )?;
         let proof = prepared.proof_from_bytes(&statement, &std::fs::read(path)?)?;
         prepared.verify(&statement, &proof)?;
         println!(
@@ -363,7 +359,7 @@ pub fn run() -> Result<(), AnyError> {
         .map(|i| std::array::from_fn(|j| i.wrapping_mul(0x85ebca6b).wrapping_add(j as u32)))
         .collect();
     eprintln!(
-        "mode={mode} mul_opener={mul_opener} multiplication_relation=u32_mod_2_32 multiplications={} chained_compressions={} merkle=blake3 non_zk=true threads={}",
+        "mode={mode} mul_opener=wfbitz multiplication_relation=u32_mod_2_32 multiplications={} chained_compressions={} merkle=blake3 non_zk=true threads={}",
         parameters.multiplications,
         parameters.sha_compressions,
         binius_utils::rayon::current_num_threads()
@@ -375,8 +371,7 @@ pub fn run() -> Result<(), AnyError> {
         let prepared = PreparedHybrid::new_with_ligerito(
             parameters,
             ligerito,
-        )?
-        .with_mul_opener(bitz::hybrid::MulOpener::parse(&mul_opener).expect("opener"))?;
+        )?;
         let request = profile
             .clone()
             .unwrap_or_else(|| "custom:1:4".into());
@@ -618,7 +613,6 @@ pub fn run() -> Result<(), AnyError> {
     }
     Ok(())
 }
-
 
 #[cfg(test)]
 mod cli_tests {
