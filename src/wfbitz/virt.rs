@@ -360,8 +360,21 @@ mod tests {
         PreparedVirtualMap,
         LinearClaim,
     ) {
-        let committed = Shape::new(15, 7).unwrap();
-        let derived = Shape::new(14, 8).unwrap();
+        setup_with(Shape::new(15, 7).unwrap(), Shape::new(14, 8).unwrap())
+    }
+
+    fn setup_with(
+        committed: Shape,
+        derived: Shape,
+    ) -> (
+        Shape,
+        Shape,
+        BitZParams,
+        Vec<Vec<u64>>,
+        Vec<Vec<u64>>,
+        PreparedVirtualMap,
+        LinearClaim,
+    ) {
         let alpha: Gf = crate::pcs::smallest_generator().into();
         let params = BitZParams::new(derived, Q, alpha).unwrap();
         let mut state = 0x1234_5678_9abc_def0u64;
@@ -443,6 +456,40 @@ mod tests {
                 )
                 .is_err()
         );
+    }
+
+    /// Times the non-direct opening at `2^{WFBITZ_VIRT_TIMING_BITS}`
+    /// committed bits (default 24); run once per `WFBITZ_ONE_COLUMN` setting
+    /// with `BITZ_TRACE=1` for its phases (`sc fold rows` is the pass the
+    /// one-column read replaces). Diagnostic only.
+    #[test]
+    #[ignore]
+    fn virtual_opening_timing() {
+        let bits: usize = std::env::var("WFBITZ_VIRT_TIMING_BITS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(24);
+        let committed = Shape::new(bits - 7, 7).unwrap();
+        let derived = Shape::new(bits - 8, 8).unwrap();
+        let (committed, _derived, params, rows_f, rows_h, map, claim) = setup_with(committed, derived);
+        let pcs = committed_pcs(&committed).unwrap();
+        let (_root, hint) = pcs.commit(&committed, rows_f).unwrap();
+        let statement = VirtualStatement::new(params, committed, &map, &claim).unwrap();
+        let prover = BitZProver::new(params, WINDOW);
+        let mut times = Vec::new();
+        for _ in 0..6 {
+            let mut transcript = build_prover("virt-test", "timing");
+            let started = std::time::Instant::now();
+            prover
+                .prove_virtual(&statement, &pcs, &hint, &rows_h, &mut transcript, None)
+                .unwrap();
+            times.push(started.elapsed());
+            let digest = blake3::hash(&transcript.finish().narg_string);
+            eprintln!("virt timing: {:?} narg {}", times.last().unwrap(), digest.to_hex());
+        }
+        times.remove(0);
+        times.sort();
+        eprintln!("virt timing median of {}: {:?}", times.len(), times[times.len() / 2]);
     }
 
     #[test]

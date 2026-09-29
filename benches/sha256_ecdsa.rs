@@ -113,7 +113,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "security_model": "round-by-round-economic", "economic_bits": security.compute_economic_security_bits(), "statistical_bits_lower_bound": security.compute_statistical_security_bits(),
                 "setup_ms": setup_ms, "witness_ms": witness_ms, "commit_ms": commit_ms,
                 "prove_ms": commit_ms+protocol_ms, "protocol_ms": protocol_ms, "verify_ms": verify_ms,
-                "proof_bytes": bytes.len(), "source_bits": prepared.live_source_bits(), "assignment_bits": prepared.live_assignment_bits(),
+                "proof_bytes": bytes.len(), "proof_digest": blake3::hash(&bytes).to_hex().to_string(), "source_bits": prepared.live_source_bits(), "assignment_bits": prepared.live_assignment_bits(),
                 "nonlinear_rows": prepared.nonlinear_rows(), "linear_rows": prepared.linear_rows(), "verified": true,
                 "prove_phases_seconds": prove_phases, "verify_phases_seconds": verify_phases,
             })

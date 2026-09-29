@@ -373,7 +373,14 @@ impl Pcs {
                         claim.row_weights().len().ilog2() as usize,
                         claim.column_weights().len().ilog2() as usize,
                     );
-                let reduced = sumcheck::prove_with(claim, rows, packed_cols, transcript, column_stats)?;
+                let reduced = sumcheck::prove_with(
+                    claim,
+                    rows,
+                    packed_cols,
+                    transcript,
+                    sumcheck::SumcheckMode::from_env(),
+                    column_stats,
+                )?;
                 super::trace("  sumcheck", started);
                 let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
                 bind_mle_statement(self, &root, &reduced.point, reduced.target, transcript);

@@ -120,6 +120,20 @@ where
         field_one_encoding: &'a [u8],
     ) -> Cow<'a, [u8]>;
 
+    /// Appends [`Self::canonical_field_encoding`] to `out` the way the
+    /// prepared-statement digest hashes it: its length as a little-endian
+    /// `u64`, then the bytes.
+    fn append_canonical_field_encoding(
+        &self,
+        field_config: &F::Config,
+        field_one_encoding: &[u8],
+        out: &mut Vec<u8>,
+    ) {
+        let encoding = self.canonical_field_encoding(field_config, field_one_encoding);
+        out.extend_from_slice(&(encoding.len() as u64).to_le_bytes());
+        out.extend_from_slice(&encoding);
+    }
+
     /// Multiplies a field value by this coefficient.
     fn scale(&self, value: &F, field_config: &F::Config) -> F;
 }
@@ -142,6 +156,20 @@ where
         _field_one_encoding: &'a [u8],
     ) -> Cow<'a, [u8]> {
         Cow::Owned(self.canonical_element_encoding(field_config))
+    }
+
+    /// Encodes in place, without the owned encoding's allocation.
+    fn append_canonical_field_encoding(
+        &self,
+        field_config: &F::Config,
+        _field_one_encoding: &[u8],
+        out: &mut Vec<u8>,
+    ) {
+        let width = F::canonical_encoding_width();
+        out.extend_from_slice(&(width as u64).to_le_bytes());
+        let start = out.len();
+        out.resize(start + width, 0);
+        field::CanonicalCodec::encode_into(field_config, self, &mut out[start..]);
     }
 
     fn scale(&self, value: &F, field_config: &F::Config) -> F {
@@ -1477,6 +1505,123 @@ fn contiguous_unit_selector_offset_with<C>(
 }
 
 fn constraint_matrix_digest<F, C>(
+    matrices: &ConstraintMatrices<C>,
+    field_config: &F::Config,
+    field_modulus_encoding: &[u8],
+) -> Result<[u8; 32], SpartanMatrixError>
+where
+    F: SpartanField,
+    C: SpartanMatrixCoefficient<F>,
+{
+    if digest_buffer_from_env() {
+        buffered_constraint_matrix_digest::<F, C>(matrices, field_config, field_modulus_encoding)
+    } else {
+        streamed_constraint_matrix_digest::<F, C>(matrices, field_config, field_modulus_encoding)
+    }
+}
+
+/// Whether the prepared-statement digest writes its byte stream into a
+/// buffer, coefficients encoded in place, and hashes it a few tens of
+/// kilobytes per call (`BITZ_MATRIX_DIGEST_BUFFER`, `0` or `1`, default on)
+/// instead of three hasher updates and an owned encoding per entry; the
+/// bytes, hence the digest, are the same. Read once.
+fn digest_buffer_from_env() -> bool {
+    static BUFFER: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *BUFFER.get_or_init(|| !matches!(std::env::var("BITZ_MATRIX_DIGEST_BUFFER").as_deref(), Ok("0")))
+}
+
+/// The buffered digest hands its buffer to the hasher once it holds this
+/// many bytes: enough for BLAKE3's multi-chunk path, and the buffer stays
+/// this small whatever the statement's size.
+const DIGEST_FLUSH_BYTES: usize = 1 << 15;
+
+/// [`streamed_constraint_matrix_digest`]'s byte stream, flushed every
+/// [`DIGEST_FLUSH_BYTES`].
+fn buffered_constraint_matrix_digest<F, C>(
+    matrices: &ConstraintMatrices<C>,
+    field_config: &F::Config,
+    field_modulus_encoding: &[u8],
+) -> Result<[u8; 32], SpartanMatrixError>
+where
+    F: SpartanField,
+    C: SpartanMatrixCoefficient<F>,
+{
+    flushed_constraint_matrix_digest::<F, C>(
+        matrices,
+        field_config,
+        field_modulus_encoding,
+        DIGEST_FLUSH_BYTES,
+    )
+}
+
+/// [`streamed_constraint_matrix_digest`]'s byte stream, written into one
+/// buffer (coefficients validated and encoded in place, in one pass over
+/// the rows) that goes to the hasher whenever a row takes it past
+/// `flush_bytes`. The first invalid coefficient in row-major order is the
+/// one reported, as by [`validate_matrix_coefficients`].
+fn flushed_constraint_matrix_digest<F, C>(
+    matrices: &ConstraintMatrices<C>,
+    field_config: &F::Config,
+    field_modulus_encoding: &[u8],
+    flush_bytes: usize,
+) -> Result<[u8; 32], SpartanMatrixError>
+where
+    F: SpartanField,
+    C: SpartanMatrixCoefficient<F>,
+{
+    let push_usize = |bytes: &mut Vec<u8>, value: usize| -> Result<(), SpartanMatrixError> {
+        let encoded = u64::try_from(value).map_err(|_| SpartanMatrixError::DomainTooLarge)?;
+        bytes.extend_from_slice(&encoded.to_le_bytes());
+        Ok(())
+    };
+    let mut hash = Hasher::new();
+    let mut bytes = Vec::with_capacity(flush_bytes.min(DIGEST_FLUSH_BYTES) + 4096);
+    bytes.extend_from_slice(CONSTRAINT_MATRIX_DIGEST_DOMAIN);
+    push_usize(&mut bytes, field_modulus_encoding.len())?;
+    bytes.extend_from_slice(field_modulus_encoding);
+    push_usize(&mut bytes, matrices.row_count())?;
+    push_usize(&mut bytes, matrices.column_count())?;
+    let field_one_encoding = F::one_with_cfg(field_config).canonical_element_encoding(field_config);
+
+    for (matrix_name, label, matrix) in [
+        ("A", b'A', matrices.a()),
+        ("B", b'B', matrices.b()),
+        ("C", b'C', matrices.c()),
+    ] {
+        // One row-major view at a time, as the streamed digest.
+        let rows = matrix.borrowed_csr()?;
+        bytes.push(label);
+        for (row_index, row) in rows.rows().enumerate() {
+            push_usize(&mut bytes, row.len())?;
+            for (column, coefficient) in row {
+                coefficient.validate(field_modulus_encoding)?;
+                if coefficient.is_zero() {
+                    return Err(SpartanMatrixError::ExplicitZeroCoefficient {
+                        matrix: matrix_name,
+                        row: row_index,
+                        column,
+                    });
+                }
+                push_usize(&mut bytes, column)?;
+                coefficient.append_canonical_field_encoding(
+                    field_config,
+                    &field_one_encoding,
+                    &mut bytes,
+                );
+            }
+            if bytes.len() >= flush_bytes {
+                hash.update(&bytes);
+                bytes.clear();
+            }
+        }
+    }
+
+    hash.update(&bytes);
+    Ok(*hash.finalize().as_bytes())
+}
+
+/// The prepared-statement digest, hashed entry by entry.
+fn streamed_constraint_matrix_digest<F, C>(
     matrices: &ConstraintMatrices<C>,
     field_config: &F::Config,
     field_modulus_encoding: &[u8],
@@ -3048,6 +3193,86 @@ mod tests {
                 .unwrap(),
             expected_evaluation
         );
+    }
+
+    /// The buffered digest hashes exactly the streamed digest's bytes, for
+    /// field-valued and boolean coefficients, empty rows and an empty
+    /// matrix, whatever the flush size (after every row up to never), and
+    /// reports the streamed digest's error for an explicit zero.
+    #[test]
+    fn buffered_digest_matches_the_streamed_one() {
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let check = |run: &dyn Fn(usize) -> Result<[u8; 32], SpartanMatrixError>,
+                     expected: Result<[u8; 32], SpartanMatrixError>| {
+            for flush in [1, 100, 2000, DIGEST_FLUSH_BYTES, usize::MAX] {
+                assert_eq!(run(flush), expected, "flush {flush}");
+            }
+        };
+        for modulus in [TEST_MODULUS, OTHER_TEST_MODULUS] {
+            let config = Fp::<2>::make_cfg(&Uint::from(modulus)).unwrap();
+            let (rows, columns) = (150, 53);
+            let mut random_rows = |density: u64| -> Vec<Vec<(usize, Fp<2>)>> {
+                let mut out = vec![Vec::new(); rows];
+                for row in &mut out {
+                    for column in 0..columns {
+                        if next() % 100 < density {
+                            row.push((column, field(1 + next() % 1000, &config)));
+                        }
+                    }
+                }
+                out
+            };
+            let (a, b, c) = (random_rows(10), random_rows(30), random_rows(0));
+            let matrices = ConstraintMatrices::new(
+                CscMatrix::<Box<[_]>>::try_from_rows(columns, a.clone()).unwrap(),
+                CscMatrix::<Box<[_]>>::try_from_rows(columns, b.clone()).unwrap(),
+                CscMatrix::<Box<[_]>>::try_from_rows(columns, c).unwrap(),
+            )
+            .unwrap();
+            let encoding = <Fp<2> as crate::piop::spartan::SpartanField>::canonical_modulus_encoding(&config);
+            check(
+                &|flush| {
+                    flushed_constraint_matrix_digest::<Fp<2>, _>(&matrices, &config, &encoding, flush)
+                },
+                streamed_constraint_matrix_digest::<Fp<2>, _>(&matrices, &config, &encoding),
+            );
+            let boolean = |rows: &[Vec<(usize, Fp<2>)>], zero_at: Option<(usize, usize)>| {
+                CscMatrix::<Box<[_]>>::try_from_rows(
+                    columns,
+                    rows.iter()
+                        .enumerate()
+                        .map(|(r, row)| {
+                            row.iter()
+                                .enumerate()
+                                .map(|(k, &(column, _))| (column, zero_at != Some((r, k))))
+                                .collect()
+                        })
+                        .collect(),
+                )
+                .unwrap()
+            };
+            let late = (rows - 3, b[rows - 3].len() / 2);
+            assert!(!b[late.0].is_empty());
+            for zero_at in [None, Some(late)] {
+                let matrices =
+                    ConstraintMatrices::new(boolean(&a, None), boolean(&b, zero_at), boolean(&a, None))
+                        .unwrap();
+                let expected = streamed_constraint_matrix_digest::<Fp<2>, bool>(&matrices, &config, &encoding);
+                assert_eq!(expected.is_err(), zero_at.is_some());
+                check(
+                    &|flush| {
+                        flushed_constraint_matrix_digest::<Fp<2>, bool>(&matrices, &config, &encoding, flush)
+                    },
+                    expected,
+                );
+            }
+        }
     }
 
     #[test]
