@@ -3083,18 +3083,15 @@ t_3(\infty) =& \sum_{(\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}}  \eq(\cc;\bm{
 where $\omega[\bb]$ is the weight defined in \cref{s:tables}, for $j=3$.  Now, for each $\eps,k\in \bits$,
 %
 $$
-L_{r_1}(k, \bm{\rho}^{(3)}, \eps, \bb, \cc) = T_{r_1}^{(3)}[k,\eps,\bb]\big[(\bfg_{(k,\ww,\eps,\bb),\cc})_{\ww\in \bits^2}\big],
+L_{r_1}(k, \bm{\rho}^{(3)}, \eps, \bb, \cc) = T_{r_1}^{(3)}[k,\eps,\bb][\xx_{k,\eps,\bb,\cc}], \qquad \text{where} \quad \xx_{k,\eps,\bb,\cc}\defeq (\bfg_{(k,\ww,\eps,\bb),\cc})_{\ww\in\bits^2}\in \bits^4,
 $$
 %
-where $T_{r_1}^{(3)}$ is the table of \eqref{e:T_r1_rounds} for the third round. Hence, for each $\eps,\eps'\in \bits$, the product $L_{r_1}(0,\bm{\rho}^{(3)},\eps,\bb,\cc)\cdot L_{r_1}(1,\bm{\rho}^{(3)},\eps',\bb,\cc)$ is determined by the $8$ bits
-%
-$$  
-(\xx_{0,\eps,\bb, \cc}, \xx_{1,\eps',\bb,\cc})\quad \text{ where }\quad  \xx_{i_1, i_2, \bb,\cc}\defeq (\bfg_{(i_1,\ww,i_2,\bb),\cc})_{\ww\in\bits^2}\in \bits^4.$$
+and $T_{r_1}^{(3)}$ is the table of \eqref{e:T_r1_rounds} for the third round. Hence, for each $\eps,\eps'\in \bits$, the product $L_{r_1}(0,\bm{\rho}^{(3)},\eps,\bb,\cc)\cdot L_{r_1}(1,\bm{\rho}^{(3)},\eps',\bb,\cc)$ is determined by the $8$ bits $(\xx_{0,\eps,\bb, \cc}, \xx_{1,\eps',\bb,\cc})$.
 %
 Now we rewrite \eqref{e:t_3_infty}  as follows. For brevity we write $\omega[\bb] = \omega_\bb$ and $ \eq(\cc; \bm{\alpha}') = \eq_{\cc}$. 
 %
 \begin{align*}
- &t_3(\infty)= \sum_{(\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}} \omega_\bb\cdot \eq_{\cc}\cdot \sum_{\eps,\eps'\in \bits} (-1)^{\eps+\eps'}\cdot T_{r_1}^{(3)}[0,\eps,\bb][\xx_{0,\eps,\bb,\cc}] \cdot T_{r_1}^{(3)}[1,\eps',\bb][\xx_{1,\eps',\bb,\cc}]\\ 
+ t_3(\infty)&= \sum_{(\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}} \omega_\bb\cdot \eq_{\cc}\cdot \sum_{\eps,\eps'\in \bits} (-1)^{\eps+\eps'}\cdot T_{r_1}^{(3)}[0,\eps,\bb][\xx_{0,\eps,\bb,\cc}] \cdot T_{r_1}^{(3)}[1,\eps',\bb][\xx_{1,\eps',\bb,\cc}]\\ 
  &=\sum_{\bb\in \bits^{r_1-4}} \omega_\bb\cdot \sum_{\eps,\eps'\in \bits}(-1)^{\eps+\eps'} \sum_{\xx,\xx'\in \bits^{4}} \sum_{\substack{\cc\in \bits^{r_2} \ : \ \\ \xx_{0,\eps,\bb,\cc}=\xx\\ \xx_{1,\eps',\bb,\cc}=\xx'} } T_{r_1}^{(3)}[0,\eps,\bb][\xx] \cdot  T_{r_1}^{(3)}[1,\eps',\bb][\xx'] \cdot\eq_\cc\\
  &=\sum_{\bb\in \bits^{r_1-4}} \omega_\bb\cdot \sum_{\eps,\eps'\in \bits}(-1)^{\eps+\eps'} \sum_{\xx,\xx'\in \bits^{4}}  T_{r_1}^{(3)}[0,\eps,\bb][\xx] \cdot  T_{r_1}^{(3)}[1,\eps',\bb][\xx'] \cdot H^{\eps\eps'}_{\bb}[\xx, \xx']
 \end{align*}
