@@ -2946,6 +2946,11 @@ where $\omega[\bb]=\eq(\rho_1, \bb;\bm{\alpha}^{(i,1)})$ is the weight defined a
 Hence the elements $A_0^{(2)}[\bb,\cc]$ can be obtained by querying a table $$T_{A_0}^{(2)}\in (\KK^{16})^{\bits^{r_1-3}}$$ with
 %
 $$T_{A_0}^{(2)}[\bb]= (T_{r_1}^{(2)}[0,0,\bb][\xx]\cdot T_{r_1}^{(2)}[1,0,\bb][\xx']\cdot \omega[\bb])_{\xx,\xx'\in \bits^{2}}.$$
+Similarly, $A_2^{(2)}[\bb,\cc]$ depends on $8$ bits of the column $\cc$, and it can be read from the table $T_{A_2}^{(2)}\in(\KK^{2^8})^{\bits^{r_1-3}}$ given by
+$$
+\begin{aligned}T_{A_2}^{(2)}[\bb]=\Big(&\big(T_{r_1}^{(2)}[0,1,\bb][\xx_1]-T_{r_1}^{(2)}[0,0,\bb][\xx_0]\big)\\ &\cdot\big(T_{r_1}^{(2)}[1,1,\bb][\xx_1']-T_{r_1}^{(2)}[1,0,\bb][\xx_0']\big)\cdot\omega[\bb]\Big)_{\xx_0,\xx_1,\xx_0',\xx_1'\in\bits^2}.\end{aligned}
+$$
+In general, we denote by $T_{A_k}^{(j)}$ the table from which the values $A_k^{(j)}[\bb,\cc]$ are read (so $T_{A_k}^{(1)}= T_{A_k}$).
 %
 \begin{comment}The value $A_2^{(2)}[\bb,\cc]$, however, now depends on the value taken by \emph{eight} witness bits, this being because for $\eps\in \bits$, the value $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ depends on  four bits. Hence computing a table for the values $A_2^{(2)}[\bb,\cc]$ analogous to $T_{A_2}$  would have $2^8=256$-sized vectors as entries. Instead of computing $T_{A_2}^{(2)}$, we compute two tables for the values $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ (one table for each $\eps\in\bits$, with one of the tables also including multiplication by $\omega[\bb]$). Then the value $A_2^{(2)}[\bb,\cc]$ can be obtained by performing a lookup into each table, followed by  a single multiplication.
 \end{comment}
@@ -3138,7 +3143,7 @@ where
 $$
 H^{\eps\eps'}_{\bb}[\xx,\xx']\defeq \sum_{\substack{\cc\in \bits^{r_2} \ : \ \\ \xx_{0,\eps,\bb,\cc}=\xx\\ \xx_{1,\eps',\bb,\cc}=\xx'} }\eq(\cc;\bm{\alpha}').
 $$
-Now, in the same way as explained before, the prover computes all the values $H_{\bb}^{\eps,\eps'}[\xx,\xx']$, and then obtains $t_3(\infty)$ using the expression of $t_3(\infty)$ given above. With this approach we avoid using the table $T_{A_2}^{(3)}$, whose entries have  dimension $2^{16}$. The cost is only $O(\ell_1)$ additional multiplications and table reads. 
+Now the prover computes all the values $H^{\eps\eps'}_{\bb}[\xx,\xx']$, and then obtains $t_3(\infty)$ using the expression of $t_3(\infty)$ given above. With this approach we avoid using the table $T_{A_2}^{(3)}$, whose entries have  dimension $2^{16}$. The cost is only an extra  $O(\codedim_1)$ multiplications and table reads, and that there are four buckets per $(\bb,\xx)$ instead of one. 
 
 
 
