@@ -343,7 +343,7 @@ See \cref{r:comparison_grand_product_binius_lev} for discussion on this and othe
 
 
 
-\paragraph{Issue 4.} The above solution also takes care of Issue 4: the batched GKR protocol outputs MLE evaluation claims on $(g^{\pi_q^{-1}(\uu^{(1)})_i})_{i\in[\codedim]}$ (and $\bitstext(\bff)$, which is dealt with by the PCS over $\comfield$). This is an $O(\sqrt{|\bitstext(\bff)|})$ vector, and the verifier can check this claim by itself cheaply.
+\paragraph{Issue 4.} The above solution also takes care of Issue 4: the batched GKR protocol outputs MLE evaluation claims on $(g^{\pi_q^{-1}(\uu^{(1)})_i})_{i\in[|\uu^{(1)}|]}$ (and $\bitstext(\bff)$, which is dealt with by the PCS over $\comfield$). This is an $O(\sqrt{|\bitstext(\bff)|})$ vector, and the verifier can check this claim by itself cheaply.
 
 
 \subsubsection{Using \ftwoz\ to prove constraints with hybrid arithmetics}\label{s:intro_hybrid_proofs}
@@ -860,7 +860,7 @@ The first prover message is the degree-$3$ polynomial
 $
 h_1(X)= \sum_{\cc\in \bits^{r_2}} h_{1,\cc}(X)\cdot \eq(X,\cc;\bm{\alpha}_2)$, where  \[h_{1,\cc}(X)\defeq \sum_{\bb\in \bits^{r_1-2}} L_{r_1}(0,X,\bb,\cc)\cdot L_{r_1}(1,X,\bb,\cc)\cdot \eq(\bb;\bm{\alpha}_1),
 \]
-for some split of the verifier challenges $\bm{\alpha}=(\bm{\alpha}_1,\bm{\alpha}_2)\in \comfield^{r_1-2} \times \comfield^{r_2+1}$. Following \cite{gruen} we write $\eq(X,\cc;\bm{\alpha}_2) = \eq(\cc;\bm{\alpha}')\cdot \eq(X,\alpha)$ for  $\bm{\alpha}_2=(\alpha,\bm{\alpha}')$. Then $h_1(X)= \eq(X,\alpha) \cdot t_1(X)$ where $t_1(X)= \sum_{\cc\in \bits^{r_2}} \eq(\cc,\bm{\alpha}') \cdot h_{1,\cc}(X)$. It suffices for the prover to provide  the quadratic polynomial $t_1(X)$, instead of the cubic $h_1(X)$. Now we explain how the prover computes the constant  coefficient $t_1(0)$ of $t_{1}(X)$ (the leading coefficient is computed similarly, and the linear coefficient can be derived by the verifier from the equality $C=h_1(0)+h_1(1)$). We have that $t_1(0)$  satisfies
+for some split of the verifier challenges $\bm{\alpha}=(\bm{\alpha}_1,\bm{\alpha}_2)\in \comfield^{r_1-2} \times \comfield^{r_2+1}$. Following \cite{gruen} we write $\eq(X,\cc;\bm{\alpha}_2) = \eq(\cc;\bm{\alpha}')\cdot \eq(X;\alpha)$ for  $\bm{\alpha}_2=(\alpha,\bm{\alpha}')$. Then $h_1(X)= \eq(X;\alpha) \cdot t_1(X)$ where $t_1(X)\defeq \sum_{\cc\in \bits^{r_2}} \eq(\cc;\bm{\alpha}') \cdot h_{1,\cc}(X)$. It suffices for the prover to provide  the quadratic polynomial $t_1(X)$, instead of the cubic $h_1(X)$. Now we explain how the prover computes the constant  coefficient $t_1(0)$ of $t_{1}(X)$ (the leading coefficient is computed similarly, and the linear coefficient can be derived by the verifier from the equality $C=h_1(0)+h_1(1)$). We have that $t_1(0)$  satisfies
 \begin{equation}\label{e:t_1_0_to}
 \begin{aligned}
 t_1(0)&=\sum_{(\bb,\cc)\in \bits^{r_1-2}\times\bits^{r_2}} \eq(\cc;\bm{\alpha}')\cdot A_0[\bb,\cc], \quad \text{where}\\
@@ -871,19 +871,19 @@ Now, write $y_{\bb'}\defeq g^{\pi_q^{-1}(\uu^{(1)}_{\mathsf{int}(\bb')})}$ for $
 \[
 T_{A_0}[\bb]\defeq \Big( y_{(0,0,\bb)}^{\,x}\cdot y_{(1,0,\bb)}^{\,x'}\cdot \eq(\bb;\bm{\alpha}_1)\Big)_{(x,x')\in \bits^2} \in \comfield^4 \qquad \text{for } \bb\in \bits^{r_1-2},
 \]
-so that $A_0[\bb,\cc]$ is simply the entry $T_{A_0}[\bb][x,x']$. Building $T_{A_0}$ takes $\approx \codedim_1 \approx O(\sqrt{\codedim})$ multiplications in $\comfield$. After that, the prover obtains the constant coefficients of all the $h_{1,\cc}(X)$ with $\codedim/4$ table reads and $\codedim/4$ additions in $\comfield$, and no multiplications at all. See \cref{t:gkr_step1_costs} for the cost of the rest of coefficients of $t_1(X)$. 
+so that $A_0[\bb,\cc]$ is simply the entry $T_{A_0}[\bb][x,x']$. Building $T_{A_0}$ takes $\approx \codedim_1 \approx O(\sqrt{\codedim})$ multiplications in $\comfield$. After that, the prover obtains the constant coefficients of all the $h_{1,\cc}(X)$ with $\codedim/4$ table reads and $\codedim/4$ additions in $\comfield$, and no multiplications at all. Then it obtains $t_1(0)$ with $\codedim_2$  multiplications and additions. See \cref{t:gkr_step1_costs} for the cost of the rest of coefficients of $t_1(X)$. 
 
-In \cref{s:gkr_buckets} we go one step further and use ``bucketing'' when computing $t_1(0)$ (and also when computing the leding coefficient of $t_1(X)$). Concretly, we observe that $A_0[\bb,\cc]= T_{A_0}[\bb][x,x']$ where  $x=\bitstext(\bff)_{\mathsf{int}(0,0,\bb),\mathsf{int}(\cc)}$ and $x'=\bitstext(\bff)_{\mathsf{int}(1,0,\bb),\mathsf{int}(\cc)}$. We can now rewrite \eqref{e:t_1_0_to} as 
+In \cref{s:gkr_buckets} we go one step further and use ``bucketing'' when computing $t_1(0)$ (and also when computing the leading coefficient of $t_1(X)$). Concretely, we observe that $A_0[\bb,\cc]= T_{A_0}[\bb][x,x']$ where  $x=\bitstext(\bff)_{\mathsf{int}(0,0,\bb),\mathsf{int}(\cc)}$ and $x'=\bitstext(\bff)_{\mathsf{int}(1,0,\bb),\mathsf{int}(\cc)}$. We can now rewrite \eqref{e:t_1_0_to} as 
 %
 \begin{align*}
-t_1(0)=& \sum_{\bb\in \bits^{r_1-2}} \sum_{(a,b)\in \bits^2} \sum_{\substack{
+t_1(0)=& \sum_{\bb\in \bits^{r_1-2}} \sum_{(x,x')\in \bits^2} \sum_{\substack{
     \cc\in \bits^{r_2}\ :\\ 
-    \bitstext(\bff)_{\mathsf{int}(0,0,\bb),\mathsf{int}(\cc)} = a\\  
-    \bitstext(\bff)_{\mathsf{int}(1,0,\bb),\mathsf{int}(\cc)}=b
+    \bitstext(\bff)_{\mathsf{int}(0,0,\bb),\mathsf{int}(\cc)} = x\\  
+    \bitstext(\bff)_{\mathsf{int}(1,0,\bb),\mathsf{int}(\cc)}=x'
     }
-    } \eq(\cc,\bm{\alpha}') \cdot  T_{A_0}[\bb][a,b]\\ =& \sum_{\substack{\bb\in \bits^{r_1-2}\\(a,b)\in \bits^2}}  T_{A_0}[\bb][a,b]  \cdot H_{a,b}[\bb]
+    } \eq(\cc;\bm{\alpha}') \cdot  T_{A_0}[\bb][x,x']\\ =& \sum_{\substack{\bb\in \bits^{r_1-2}\\(x,x')\in \bits^2}}  T_{A_0}[\bb][x,x']  \cdot H_\bb[x,x']
 \end{align*}
-where $H_{a,b}[\bb]= \sum_{\cc} \eq(\cc,\bm{\alpha}')$ where the sum runs over the same set of column indices $\cc$ as above. The prover can compute all the values $H_{a,b}[\bb]$ with $O(\codedim)$ field additions, and then obtain $t_1(0)$ by performing $O(\sqrt{\codedim})$ multiplications, additions, and reads into the table $T_{A_0}$ (not that, in the previous approach, the prover performed $O(\codedim)$ reads into $T_{A_0}$). Additonally, each entry in $T_{A_0}$ is read exactly once. This means that the entries of $T_{A_0}$ can be computed ``on-the-go'', i.e.\ as they are needed, and so the table $T_{A_0}$ does not need to be precomputed and kept in cache. This is not particularly beneficial for the table $T_{A_0}$ specifically, because $T_{A_0}$ is small, but becomes a significant optimization in other sumcheck rounds where tables become larger and do not fit in cache.  
+where $H_\bb[x,x']\defeq \sum_{\cc} \eq(\cc;\bm{\alpha}')$, where the sum runs over the same set of column indices $\cc$ as above, i.e.\ those with $\bitstext(\bff)_{\mathsf{int}(0,0,\bb),\mathsf{int}(\cc)} = x$ and $\bitstext(\bff)_{\mathsf{int}(1,0,\bb),\mathsf{int}(\cc)}=x'$. The prover can compute all the values $H_\bb[x,x']$ with $O(\codedim)$ field additions, and then obtain $t_1(0)$ by performing $O(\sqrt{\codedim})$ multiplications, additions, and reads into the table $T_{A_0}$ (note that, in the previous approach, the prover performed $O(\codedim)$ reads into $T_{A_0}$). Additionally, each entry in $T_{A_0}$ is read exactly once. This means that the entries of $T_{A_0}$ can be computed ``on-the-go'', i.e.\ as they are needed, and so the table $T_{A_0}$ does not need to be precomputed and kept in cache. This is not particularly beneficial for the table $T_{A_0}$ specifically, because $T_{A_0}$ is small, but becomes a significant optimization in other sumcheck rounds where tables become larger and do not fit in cache.  
 
 
 
@@ -2583,13 +2583,13 @@ $$
 &\langle \uu, \bfg\rangle = \mu  \end{aligned}\right\}.
 $$
 %
-One can additionally add an encoding $f=\Enc_\cC(\bfg)$ as an oracle  in the above relations (matching the context in which we use the IOR), but our IOR does not make any use of it whatsoever, hence we omit it. 
+One can additionally add an encoding $f=\Enc_\cC\circ\pack(\bfg)$ as an oracle  in the above relations (matching the context in which we use the IOR), but our IOR does not make any use of it whatsoever, hence we omit it. 
 
 
 
 In our instantiation, $\yy_i=g^{\bm{\gamma}_i}$ and $\bm{\mu}_j=g^{\mu_j}$, where $\bm{\gamma}_i$ and $\mu_j$ are the integers in \eqref{e:main_grand_product}.
 
-We  describe $\Pi_{\red}$ now, and we explain our optimizations in \cref{s:tables,s:gkr_buckets,s:indices} We assume $\codedim_1,\codedim_2$ are powers of two:
+We  describe $\Pi_{\red}$ now, and we explain our optimizations in \cref{s:tables,s:gkr_buckets,s:indices}. We assume $\codedim_1,\codedim_2$ are powers of two:
 %
 $$
 \codedim_1 = 2^{r_1}, \quad \codedim_2 = 2^{r_2}.
@@ -2647,7 +2647,7 @@ Let $L_{r_1}$ be a  \emph{multilinear} polynomial over $\comfield$ on $r_1 + r_2
     This claim is equivalent to
     %
     \begin{equation}\label{e:gkr_leaf_claim}
-    \sum_{(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}} \gkrpol(\yy_{\bb},\bfg_{\bb,\cc}) \cdot \eq((\bb,\cc), \bm{\alpha}^{(r_1)}) = C^{(r_1)}.
+    \sum_{(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}} \gkrpol(\yy_{\bb},\bfg_{\bb,\cc}) \cdot \eq(\bb,\cc;\bm{\alpha}^{(r_1)}) = C^{(r_1)}.
     \end{equation}
     If $\gkrpol(Y,X)$ is linear in $X$, then \eqref{e:gkr_leaf_claim} is a linear claim on $\bfg$. Namely, it is equivalent to
     %
@@ -2694,7 +2694,7 @@ If $\gkrpol(\yy_\bb, \bfg_{\bb,\cc}) = (\yy_\bb-1)\cdot \bfg_{\bb,\cc} +1$ as in
     \hline
     Step 2, $i$-th  unification & $1$ & $2$ & $O(1)\cdot \comfield$ \\
     \hline
-    Computing $\uu$ & --    & -- & $O(\codedim_1 + \codedim_2)\cdot \comfield$ (only $\uu^{(1)}, \uu^{(2)}$)\\
+    Computing $\uu^{(1)}, \uu^{(2)}$ & --    & -- & $O(\codedim_1 + \codedim_2)\cdot \comfield$\\
     \hline
     \textbf{Total} & $t_\red = 1 + r_1\cdot r_2 + \binom{r_1+1}{2}$ & $3\cdot t_\red - r_1 - 3$ & $O(\codedim_1 + \codedim_2 + \log^2 \codedim)\cdot \comfield$ \\
     \bottomrule
@@ -2710,7 +2710,7 @@ The soundness errors of \cref{c:gkr_grand_product} are as follows.
  Assume $\gkrpol(Y,X)$ is linear in $X$\footnote{We focus on this case since it is the one in our instantiation. A generalization to arbitrary polynomials $\gkrpol(Y,X)$ would  add rounds  and error terms corresponding to the sumcheck protocol mentioned at the end of \cref{c:gkr_grand_product}.}. Then \cref{c:gkr_grand_product} is a perfectly complete
 $(1 + r_1 r_2 + r_1(r_1+1)/2)$-round IOR from $\PESAT(\comfield,\gkrpol)$ to $\LIN(\comfield)$. In it, the verifier makes no oracle queries, and the prover outputs the same witness $\bfg$ that it received as input.
 
-Additionally, \cref{c:gkr_grand_product} extends in a natural way to an IOR from $\PESAT(\comfield,\gkrpol, \cC,\pack)$ to $\LIN(\comfield, \cC,\pack)$ (see \cref{s:prelims_codes} for these relations). For every $\delta$ within the unique decoding radius of $\cC$, this IOR has round-by-round knowledge soundness with relaxation $(\PESAT(\comfield,\gkrpol,\cC,\pack)^\delta,\LIN(\comfield,\cC,\pack)^{\delta})$, with error $r_2/|\comfield|$ in the first round, $3/|\comfield|$ in every sumcheck round, and $1/|\comfield|$ in every unification step.
+Additionally, \cref{c:gkr_grand_product} extends in a natural way to an IOR from $\PESAT(\comfield,\gkrpol, \cC,\pack)$ to $\LIN(\comfield, \cC,\pack)$ (see \cref{s:prelims_codes} for these relations). For every $\delta$ within the unique decoding radius of $\cC$, this IOR has round-by-round knowledge soundness with relaxation $(\PESAT(\comfield,\gkrpol,\cC,\pack)^\delta,\allowbreak\LIN(\comfield,\cC,\pack)^{\delta})$, with error $r_2/|\comfield|$ in the first round, $3/|\comfield|$ in every sumcheck round, and $1/|\comfield|$ in every unification step.
 
 Beyond the unique decoding radius, the same errors hold for the relations extended by an out-of-domain evaluation claim as in \cref{a:OOD}.
 %so given $\yy$ the verifier performs $O(\codedim_1+\codedim_2+r_1 r_2)$ field operations.
@@ -2720,6 +2720,8 @@ We omit the  proof of \cref{l:gkr_grand_product}, since \cref{c:gkr_grand_produc
 
 \subsection{A first prover optimization via lookup tables}\label{s:tables}% 
 We describe an initial optimization for  \cref{c:gkr_grand_product}. In \cref{s:gkr_buckets,s:indices} we build upon it further. We assume  $\bfg$ consists entirely of bits. Alternatively, the techniques discussed here would also apply if the entries of $\bfg$ belong to a small subset of $\KK$.
+
+
 
 %\john{Typing is a bit inconsistent here for $c$ and $f_{b,c}$. Namely, we say c seems to be a boolean vector but $f_{b,c}$ is not } 
 \paragraph{Setup.} We start with the following observation: for every $(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}$, we have $\bfg_{\bb,\cc}\in \bits$, and so 
@@ -2749,7 +2751,7 @@ The prover  also precomputes similar tables for the values $L_{r_1-j}(\bb,\cc)$ 
 \begin{equation}\label{e:size_T_r1_i}T_{r_1-j}\in \left(\comfield^{2^{2^j}}\right)^{\bits^{r_1-j}},\end{equation}
 as well as other tables relevant for the different sumcheck rounds of \cref{c:gkr_grand_product}, constructed from the tables $T_{r_1-j}$ themselves. The superscript $\bits^{r_1-j}$ in \eqref{e:size_T_r1_i} indicates that the table $T_{r_1-j}$ has one entry per element in the hypercube  $\bits^{r_1-j}$, and this entry is a vector of $2^{2^j}$ field elements. Concretely, for $\bb\in \bits^{r_1-j}$, $T_{r_1-j}[\bb]$ consists of all possible products of  $2^j$ factors of the grand product, namely the factors indexed by $(\bb', \bb)$ with $\bb$ fixed and $\bb'$ ranging over $\bits^{j}$.  Each factor can take two values, depending on whether $\bfg_{(\bb', \bb), \cc}$ is $1$ or $0$. Hence $T_{r_1-j}[\bb]$ consists of $2^{2^j}$ elements.
 
-Because $|T_{r_1-j}|$   grows doubly-exponentially in $j$, these tables are usable in practice only for the bottom few levels of the tree ($j\leq 4$ in our implementation). In higher levels we use standard sumchecks.
+Note that $|T_{r_1-j}|$   grows doubly-exponentially in $j$. Because of this, these tables are usable in practice only for the bottom few levels of the tree ($j\leq 3$ in our implementation). In higher levels we use standard sumchecks or we reuse some of the  tables from previous levels.
 
 
 
@@ -2808,7 +2810,7 @@ L_{r_1}(1,\bm{\rho}^{(j)}, X, \bb,\cc) = \left(L_{r_1}(1,\bm{\rho}^{(j)}, 1, \bb
 Writing $\omega[\bb]\defeq \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)})$, we obtain
 %
 $$
-h_{j,\cc}(X) =\sum_{\bb\in \bits^{r_1-1-j}} X^2 \cdot A_2^{(j)}[\bb,\cc] + X\cdot A_1^{(j)}[\bb,\cc] + A_0^{(j)}[\bb,\cc]
+h_{j,\cc}(X) =\sum_{\bb\in \bits^{r_1-1-j}} \big(X^2 \cdot A_2^{(j)}[\bb,\cc] + X\cdot A_1^{(j)}[\bb,\cc] + A_0^{(j)}[\bb,\cc]\big)
 $$
  where,
 \iflncs\begingroup\scriptsize\fi
@@ -2819,10 +2821,10 @@ A_0^{(j)}[\bb,\cc] &\defeq L_{r_1}(0,\bm{\rho}^{(j)},0,\bb,\cc)\cdot L_{r_1}(1,\
 A_2^{(j)}[\bb,\cc] &\defeq \big(L_{r_1}(0,\bm{\rho}^{(j)},1,\bb,\cc)-L_{r_1}(0,\bm{\rho}^{(j)},0,\bb,\cc)\big)\\ &\qquad \cdot \big(L_{r_1}(1,\bm{\rho}^{(j)},1,\bb,\cc)-L_{r_1}(1,\bm{\rho}^{(j)},0,\bb,\cc)\big)\cdot \omega[\bb].
 \end{aligned}
 \end{equation}
-We do not describe $A_1^{(j)}[\bb,\cc]$ because the prover does not need to compute it, as we explain later. 
 \iflncs\endgroup\fi
+We do not describe $A_1^{(j)}[\bb,\cc]$ because the prover does not need to compute it, as we explain later. 
 %
-Now, for $j=1$, we have $\bm{\rho}^{(j)}= \bot$, and hence each value $L_{r_1}(\eps_2,\eps_1,\bb,\cc)$ can be obtained, whenever needed, by querying $T_{r_1}[\eps_2,\eps_1,\bb]$ and selecting $T_{r_1}[\eps_2,\eps_1,\bb][1]$ or $T_{r_1}[\eps_2,\eps_1,\bb][0]$  depending on whether $\bfg_{(\eps_2,\eps_1,\bb),\cc} = 1$ or $0$. A consequence  is that  the coefficients themselves $A_k^{(1)}[\bb,\cc]$ ($k\in \{0,1,2\}$) can be obtained through lookup tables, as follows:
+Now, for $j=1$, we have $\bm{\rho}^{(j)}= \bot$, and hence each value $L_{r_1}(\eps_2,\eps_1,\bb,\cc)$ can be obtained, whenever needed, by querying $T_{r_1}[\eps_2,\eps_1,\bb]$ and selecting $T_{r_1}[\eps_2,\eps_1,\bb][1]$ or $T_{r_1}[\eps_2,\eps_1,\bb][0]$  depending on whether $\bfg_{(\eps_2,\eps_1,\bb),\cc} = 1$ or $0$. A consequence  is that  the coefficients themselves $A_k^{(1)}[\bb,\cc]$ ($k\in \{0,2\}$) can be obtained through lookup tables, as follows:
 %
  we have $$A_0^{(1)}[\bb,\cc] = 
     T_{r_1}[0,0,\bb][\bfg_{(0,0,\bb),\cc}] \cdot    T_{r_1}[1,0,\bb][\bfg_{(1,0,\bb),\cc}] \cdot \omega[\bb].
@@ -2857,7 +2859,7 @@ The prover  computes the table $T_{A_2}\in (\comfield^{16})^{\bits^{r_1-2}}$ giv
 
 Using the ``eq factorization'' technique from \cite{gruen}, write   $\eq(X,\cc;\bm{\alpha}^{(i,2)})=\eq(X;\alpha)\cdot \eq(\cc;\bm{\alpha}')$, where $\bm{\alpha}^{(i,2)}=(\alpha,\bm{\alpha}')$. Then 
 $$h_1(X)=\eq(X;\alpha)\cdot t_1(X) \quad  \text{where} \quad t_1(X)\defeq\sum_{\cc}\eq(\cc;\bm{\alpha}')\cdot h_{1,\cc}(X).$$ 
-Instead of sending $h_1(X)$, the prover sends $t_1(X)$. The constant and leading coefficients of $t_1(X)$ can be computed by the prover with $2\cdot\codedim_2$ multiplications and additions, (plus the $O(\codedim_2)$ cost of computing $\eq(\cc,\bm{\alpha}')$). Additionally we have $C^{(r_1-1)} = h_1(0)+h_1(1)=(1-\alpha)\cdot t_1(0)+\alpha\cdot t_1(1)$, and so the verifier can obtain $t_1(1)$ by itself, which in turn allows it to obtain the linear coefficient of $t_1(X)$. 
+Instead of sending $h_1(X)$, the prover sends $t_1(X)$. The constant and leading coefficients of $t_1(X)$ can be computed by the prover with $2\cdot\codedim_2$ multiplications and additions (plus the $O(\codedim_2)$ cost of computing $\eq(\cc;\bm{\alpha}')$). Additionally we have $C^{(r_1-1)} = h_1(0)+h_1(1)=(1-\alpha)\cdot t_1(0)+\alpha\cdot t_1(1)$, and so the verifier can obtain $t_1(1)$ by itself, which in turn allows it to obtain the linear coefficient of $t_1(X)$. 
 
 
 
@@ -2884,11 +2886,11 @@ In \cref{t:gkr_step1_costs} we record the total upper bound costs for computing 
          \hline
         Multiplications & $\leq   8\cdot \codedim_1 +  3\cdot \codedim_2 $ &$\Theta(\codedim_1\cdot \codedim_2)$\\
         \hline
-        Additions & $\leq \codedim_1\cdot \codedim_2/2 + 3\cdot\codedim_1 +  2\cdot \codedim_2$  & $\Theta(\codedim_1\cdot \codedim_2)$\\
+        Additions & $\leq \codedim_1\cdot \codedim_2/2 + 3\cdot\codedim_1 +  3\cdot \codedim_2$  & $\Theta(\codedim_1\cdot \codedim_2)$\\
         \hline
         Table reads & $\codedim_1\cdot \codedim_2/2$, into tables of $5\cdot\codedim_1$ field elements & --
     \end{tabular}
-    \caption{The cost in field operations of the first sumcheck round of the last sumcheck in our GKR protocol for batched grand products, cf.\ \cref{c:gkr_grand_product}, where $\codedim=\codedim_1\cdot \codedim_2 = 2^{r_1}\cdot 2^{r_2}$ is the witness size. In our instantiation $\codedim_1\approx \codedim^{0.6}\iflncs\else = 2^{r_1}\fi$ and $\codedim_2\approx \codedim^{0.4}\iflncs\else =2^{r_2}\fi$ (\cref{s:instantiation}). %The $\Theta(\codedim)$ additions and table reads are unavoidable --- every bit of the witness must be touched --- but additions in $\comfield$ are $128$-bit XORs; the gain over the generic prover is that only $O(\codedim_1+\codedim_2)$ \emph{multiplications} are performed instead of $\Theta(\codedim)$.
+    \caption{The cost in field operations of the first sumcheck round of the last sumcheck in our GKR protocol for batched grand products, cf.\ \cref{c:gkr_grand_product}, where $\codedim=\codedim_1\cdot \codedim_2 = 2^{r_1}\cdot 2^{r_2}$ is the witness size. In our instantiation $\codedim_1\iflncs\else = 2^{r_1}\fi\approx \codedim^{0.6}$ and $\codedim_2\iflncs\else =2^{r_2}\fi\approx \codedim^{0.4}$ (\cref{s:instantiation}). %The $\Theta(\codedim)$ additions and table reads are unavoidable --- every bit of the witness must be touched --- but additions in $\comfield$ are $128$-bit XORs; the gain over the generic prover is that only $O(\codedim_1+\codedim_2)$ \emph{multiplications} are performed instead of $\Theta(\codedim)$.
     }
 \label{t:gkr_step1_costs}
 \end{table}
@@ -2959,7 +2961,7 @@ L_{r_1}(\eps,\bm{\rho}^{(j)},\bb,\cc)=T_{r_1}^{(j)}[\eps,\bb]\big[(\bfg_{(\eps,\
 \noindent i.e.\ $T_{r_1}^{(j)}[\eps,\bb]$ contains the $2^{2^{j-1}}$ possible values of $L_{r_1}(\eps,\bm{\rho}^{(j)},\bb,\cc)$, one for each value of the $2^{j-1}$ bits $(\bfg_{(\eps,\ww,\bb),\cc})_{\ww\in\bits^{j-1}}$ that it depends on. The prover obtains $T_{r_1}^{(j)}$ from $T_{r_1}^{(j-1)}$ as we obtained $T_{r_1}^{(2)}$ from $T_{r_1}$. Precisely, each entry of $T_{r_1}^{(j)}[\eps,\bb]$ is $(1-\rho_{j-1})\cdot v_0+\rho_{j-1}\cdot v_1$, for an entry $v_0$ of $T_{r_1}^{(j-1)}[\eps,0,\bb]$ and an entry $v_1$ of $T_{r_1}^{(j-1)}[\eps,1,\bb]$. 
 
 The limitation is that the entries in the tables are vectors whose dimension is squared at each round. More precisely, each further round squares the number of cases per index of every table, but it only halves the number of indices.
-Hence, in practice we stop using lookup tables after a few rounds of each sumcheck and GKR, and after that we execute the sumcheck protocol normally.  
+Hence, in practice we use lookup tables only in the first few rounds of each of the last few sumchecks of the GKR protocol, and after that we execute the sumcheck protocol normally.  
 
 %In \cref{s:gkr_buckets} we describe optimizations that allow to not store the tables of the form $T_{A_k}^{(j)}$ in fully in cache, enabling using tables of larger dimension than we otherwise would.
 
