@@ -49,10 +49,13 @@ pub trait VirtualMap: Sync {
     /// Number of implicit-one entries.
     fn nnz(&self) -> usize;
 
-    /// Canonical statement digest.
+    /// Canonical statement digest. It must commit to the dimensions and every
+    /// value returned by `column_rows`; the virtual opening derives its PCS
+    /// claim from this map without separately absorbing the dense weights.
     fn digest(&self) -> [u8; 32];
 
-    /// Whether the complete map is exactly the identity.
+    /// Whether the complete map is exactly the identity. This must agree with
+    /// `column_rows`, because it selects the direct opening path.
     fn is_identity(&self) -> bool;
 
     /// Derived row indices for one source column, in increasing order.

@@ -82,7 +82,7 @@ fn virtual_maps_roundtrip_and_reject_substitution() {
                 None,
             )
             .unwrap();
-        let wrong = LinearClaim::new(&params, rw, cw, (y + 1) % Q).unwrap();
+        let wrong = LinearClaim::new(&params, rw.clone(), cw.clone(), (y + 1) % Q).unwrap();
         let wrong_statement = VirtualStatement::new(params, committed, &map, &wrong).unwrap();
         assert!(
             verifier
@@ -95,6 +95,28 @@ fn virtual_maps_roundtrip_and_reject_substitution() {
                 )
                 .is_err()
         );
+        let mut changed_rows = rw.clone();
+        changed_rows[0] = (changed_rows[0] + 1) % Q;
+        let mut changed_columns = cw.clone();
+        changed_columns[0] = (changed_columns[0] + 1) % Q;
+        for changed in [
+            LinearClaim::new(&params, changed_rows, cw.clone(), y).unwrap(),
+            LinearClaim::new(&params, rw.clone(), changed_columns, y).unwrap(),
+        ] {
+            let changed_statement =
+                VirtualStatement::new(params, committed, &map, &changed).unwrap();
+            assert!(
+                verifier
+                    .verify_virtual(
+                        &changed_statement,
+                        &pcs,
+                        root,
+                        build_verifier("virtual", "seeded", &proof),
+                        None
+                    )
+                    .is_err()
+            );
+        }
         let substitute = PreparedVirtualMap::from_implicit(
             CscMatrix::try_from_binary_csc(
                 cells,
