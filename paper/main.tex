@@ -2925,8 +2925,18 @@ $$T_{A_0}^{(2)}[\bb]= (T_{r_1}^{(2)}[0,0,\bb][\xx]\cdot T_{r_1}^{(2)}[1,0,\bb][\
 
 \bigskip
 
-This can be iterated in further sumcheck rounds, for computing $h_3(X), h_4(X),$ etc. The limitation is that the entries in the tables are vectors whose dimension is squared at each round. More precisely, each further round squares the number of cases per index of every table, but it only halves the number of indices.
-Hence, in practice we stop using lookup tables after a few rounds of each sumcheck and GKR, and after that we execute the sumcheck protocol normally. 
+This can be iterated in further sumcheck rounds, for computing $h_3(X), h_4(X),$ etc. Concretely, in the $j$-th round the prover uses the table $T_{r_1}^{(j)}\in \big(\comfield^{2^{2^{j-1}}}\big)^{\bits^{r_1-j+1}}$ such that
+%
+\begin{equation}\label{e:T_r1_rounds}
+L_{r_1}(\eps,\bm{\rho}^{(j)},\bb,\cc)=T_{r_1}^{(j)}[\eps,\bb]\big[(\bfg_{(\eps,\ww,\bb),\cc})_{\ww\in\bits^{j-1}}\big] \qquad \text{for all } (\eps,\bb,\cc)\in \bits\times\bits^{r_1-j}\times\bits^{r_2},
+\end{equation}
+%
+\noindent i.e.\ $T_{r_1}^{(j)}[\eps,\bb]$ contains the $2^{2^{j-1}}$ possible values of $L_{r_1}(\eps,\bm{\rho}^{(j)},\bb,\cc)$, one for each value of the $2^{j-1}$ bits $(\bfg_{(\eps,\ww,\bb),\cc})_{\ww\in\bits^{j-1}}$ that it depends on. The prover obtains $T_{r_1}^{(j)}$ from $T_{r_1}^{(j-1)}$ as we obtained $T_{r_1}^{(2)}$ from $T_{r_1}$. Precisely, each entry of $T_{r_1}^{(j)}[\eps,\bb]$ is $(1-\rho_{j-1})\cdot v_0+\rho_{j-1}\cdot v_1$, for an entry $v_0$ of $T_{r_1}^{(j-1)}[\eps,0,\bb]$ and an entry $v_1$ of $T_{r_1}^{(j-1)}[\eps,1,\bb]$. 
+
+The limitation is that the entries in the tables are vectors whose dimension is squared at each round. More precisely, each further round squares the number of cases per index of every table, but it only halves the number of indices.
+Hence, in practice we stop using lookup tables after a few rounds of each sumcheck and GKR, and after that we execute the sumcheck protocol normally.  
+
+%In \cref{s:gkr_buckets} we describe optimizations that allow to not store the tables of the form $T_{A_k}^{(j)}$ in fully in cache, enabling using tables of larger dimension than we otherwise would.
 
 %We describe how our implementation uses these tables in \cref{s:gkr_buckets,s:indices}, once we have introduced some extra optimizations. 
  
@@ -3072,12 +3082,12 @@ For coefficients where the corresponding table would have entries of dimension $
 $$
  t_3(\infty)=\sum_{\bb\in \bits^{r_1-4}} \sum_{\xx\in \bits^{16}}  T_{A_2}^{(3)}[\bb][\xx] \cdot H_{\bb}[\xx]. 
 $$
-Instead, we proceed as follows. Using that $ A_{2}^{(3)}[\bb,\cc] = \big(L_{r_1}(0,\bm{\rho}^{(3)},1,\bb,\cc) - L_{r_1}(0,\bm{\rho}^{(3)},0,\bb,\cc)\big)  \cdot \big(L_{r_1}(1,\bm{\rho}^{(3)},1,\bb,\cc) - L_{r_1}(1,\bm{\rho}^{(3)},0,\bb,\cc)\big)$ (see \cref{e:coeffs}), we have
+Instead, we proceed as follows. Using that $ A_{2}^{(3)}[\bb,\cc] = \big(L_{r_1}(0,\bm{\rho}^{(3)},1,\bb,\cc) - L_{r_1}(0,\bm{\rho}^{(3)},0,\bb,\cc)\big)  \cdot \big(L_{r_1}(1,\bm{\rho}^{(3)},1,\bb,\cc) - L_{r_1}(1,\bm{\rho}^{(3)},0,\bb,\cc)\big)\cdot \omega[\bb]$ (see \cref{e:coeffs}), we have
 %
 \begin{equation}\label{e:t_3_infty}
 \begin{aligned}
 t_3(\infty) =& \sum_{(\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}}  \eq(\cc;\bm{\alpha}') \cdot A_{2}^{(3)}[\bb,\cc]\\ 
-=& \sum_{(\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}} \omega[\bb]\cdot \eq(\cc;\bm{\alpha}') \cdot \sum_{\eps,\eps'\in \bits} (-1)^{\eps+\eps'}\cdot  L_{r_1}(0,\bm{\rho}^{(3)},\eps,\bb,\cc) \cdot L_{r_1}(1,\bm{\rho}^{(3)},\eps',\bb,\cc), 
+=& \sum_{(\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}} \omega[\bb]\cdot \eq(\cc;\bm{\alpha}') \cdot \sum_{\eps,\eps'\in \bits} (-1)^{\eps+\eps'}\\ &\qquad \cdot  L_{r_1}(0,\bm{\rho}^{(3)},\eps,\bb,\cc) \cdot L_{r_1}(1,\bm{\rho}^{(3)},\eps',\bb,\cc), 
 \end{aligned}
 \end{equation}
 where $\omega[\bb]$ is the weight defined in \cref{s:tables}, for $j=3$.  Now, for each $\eps,k\in \bits$,
@@ -3103,19 +3113,22 @@ H^{\eps\eps'}_{\bb}[\xx,\xx']\defeq \sum_{\substack{\cc\in \bits^{r_2} \ : \ \\ 
 $$
 
 
-With this approach we only need tables with entries of dimension $\leq 2^4$, and $\leq 4\cdot 2^8$ buckets per index $\bb$, instead of $2^{16}$. 
+With this approach we avoid using the table $T_{A_2}^{(3)}$, whose entries have  dimension $2^{16}$. The cost is only $O(\ell_1)$ additional multiplications amd table reads. 
 
 
-Our implementation uses further optimizations, which we do not discuss in detail. For example, it computes all the rounds of each sumcheck that use buckets together, by adapting \cite[Algorithm 3]{sumcheck_opt_2} to our setting, and it uses tables with $2^8$ entries per index in two more rounds of each of the sumchecks with $i\geq r_1-4$.
+
+\paragraph{Further optimizations}
+In all the rounds where we use buckets, the prover computes the entries of the tables $T_{A_k}^{(j)}$ that it needs (e.g.\ $T_{A_0}$, $T_{A_2}$, $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$) ``on-the-go'', in the sense explained above for $T_{A_2}$ when computing $t_1(\infty)$, i.e.\ each entry is computed right before it is multiplied by its bucket, and it is not used again. Because of this, we never store these tables, nor keep them in cache. The tables $T_{r_1}^(j)$, $T_{r_1-1}^(j)$, $T_{r_1-2}^(j)$ and $T_{r_1-3}^(j)$ are computed in full and kept in cache during the sumchecks that require them.
 
 
+Our implementation uses further optimizations, which we do not discuss in detail. For example, it computes all the rounds of each sumcheck that use buckets together, by adapting \cite[Algorithm 3]{sumcheck_opt_2} to our setting, and it uses tables with $\leq 2^8$ entries per index in two more rounds of each of the last $4$ sumchecks.
 
 
 
 \subsection{Reducing transpositions when forming table indices}\label{s:indices}
 
 
-In all our techniques discussed so far, for each coefficient of each prover message where our optimizations are used, the prover has to compute a string of $\leq 8$ bits $\xx_{\bb,\cc}$  (or $\xx_{i_1,i_2,\bb,\cc}$) for each $\bb,\cc$ ranging in a set of the form $\bits^{r_1 - t} \times \bits^{r_2}$, for some $t$ (with $t$ depending on the specific coefficient being computed). If done naively, as we explain below, computing these strings is a costly procedure. Indeed, prior to optimizing it, it amounted to at least $25\%$ of the GKR prover time at $\codedim=2^{28}$, and more for larger witnesses. 
+In all our techniques discussed so far, for each coefficient of each prover message where our optimizations are used, the prover has to compute a string of $\leq 8$ bits $\xx_{\bb,\cc}$  (or $\xx_{k,\eps,\bb,\cc}$) for each $\bb,\cc$ ranging in a set of the form $\bits^{r_1 - t} \times \bits^{r_2}$, for some $t$ (with $t$ depending on the specific coefficient being computed). If done naively, as we explain below, computing these strings is a costly procedure. Indeed, prior to optimizing it, it amounted to at least $25\%$ of the GKR prover time at $\codedim=2^{28}$, and more for larger witnesses. 
 
 
 We now explain a method for greatly reducing (by more than an order of magnitude) the number of transpositions needed to compute the strings $\xx_{\bb,\cc}$ throughout the entire GKR protocol. This optimization was found by an AI after we identified that computing all the strings $\xx_{\bb,\cc}$ naively is significantly expensive. 
@@ -3125,7 +3138,7 @@ We now explain a method for greatly reducing (by more than an order of magnitude
 This needs to be done for all indices  $\bb,\cc$, and for all coefficients of prover messages where we seek to use our optimizations. Concretely,  Rounds 1, 2 and 3 of the last sumcheck require computing $6$ coefficients in total. Rounds 1 and 2 of the second last sumcheck require  $4$, and Round 1 of the third last sumcheck requires $2$. This amounts to computing $21$ batches of strings $\xx_{\bb,\cc}$ (one per coefficient, except for the  leading coefficients  which need four batches each, one per pair $(\eps,\eps')$), with $(\bb,\cc)$ running over a set of size between $\codedim/16$ and $\codedim/4$. 
 
 
-\paragraph{Optimization.} Continuing with the example $\xx_{\bb,\cc}$ above, observe that  for  every $(\bb,\cc)\in\bits^{r_1-2}\times \bits^{r_2}$, the string $\xx_{\bb,\cc}$ depends exclusively on the entries of $\bfg$ placed in the column $\cc$ and on rows that differ exclusively in the first two coordinates. Similarly, all other strings  $\xx_{\bb,\cc}$ (and $\xx_{i_1,i_2,\bb,\cc}$) required at all optimized rounds   depend only on the bits placed on the $\cc$-th column of $\bfg$ and on rows that differ exclusively in the first $4$ coordinates  (with this set being the same for all rounds and coefficients).
+\paragraph{Optimization.} Continuing with the example $\xx_{\bb,\cc}$ above, observe that  for  every $(\bb,\cc)\in\bits^{r_1-2}\times \bits^{r_2}$, the string $\xx_{\bb,\cc}$ depends exclusively on the entries of $\bfg$ placed in the column $\cc$ and on rows that differ exclusively in the first two coordinates. Similarly, all other strings  $\xx_{\bb,\cc}$ (and $\xx_{k,\eps,\bb,\cc}$) required at all optimized rounds   depend only on the bits placed on the $\cc$-th column of $\bfg$ and on rows that differ exclusively in the first $4$ coordinates  (with this set being the same for all rounds and coefficients).
 
 
 
