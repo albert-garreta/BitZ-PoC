@@ -234,6 +234,9 @@ We emphasize that \ftwoz\ can also be used  to prove more exotic constraints, su
           & Limber~\cite{limber} & 4436 & 1359 & 268 & 221 & 12278 & 3.66 \\
           & Zinc+~\cite{zincplus} & 2833 & 809 & 30.9 & 14.5 & 1791 & 1.23 \\
          \addlinespace
+         $2^{23}$ multiplications & \ftwoz-SNARK, rate $1/2$ & \textbf{2585} & \textbf{678} & 8.44 & 8.26 & 375 & \textbf{3.68} \\
+         of $32$-bit integers & \ftwoz-SNARK, rate $1/8$ & 3611 & 865 & \textbf{8.32} & \textbf{8.09} & \textbf{276} & 4.75 \\
+         \addlinespace
          SHA-256 + ECDSA & \ftwoz-SNARK, rate $1/2$ & 36.0 & \textbf{17.4} & 3.03 & 3.60 & 108 & 0.782 \\
          \quad ($2$\,KB message) & \ftwoz-SNARK, rate $1/8$ & \textbf{33.8} & 17.9 & \textbf{3.01} & 3.54 & \textbf{65} & 0.786 \\
          \quad  ($2^5$ compressions) & Binius64, rate $1/2$ & 76.7 & 37.0 & 5.01 & 3.52 & 331 & \textbf{0.409} \\
@@ -291,9 +294,9 @@ We emphasize that \ftwoz\ can also be used  to prove more exotic constraints, su
 \medskip
 \begin{itemize}[leftmargin=*,nosep]
     \item \textbf{How to lift from general rings?} First, $R$ may not be a prime field, in which case there is no natural lift to integers in Step 3; rather, there is a lift to integer polynomials $\ZZ[X_1, \ldots, X_k]$. 
-    \item \textbf{How to lift large values?} Second, even if $R=\FF_q$ is a prime field,  $q=|\FF|$ may be large and the linear expression $\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle$ may overflow the order of $g\in \comfield^{*}$, which is $2^{\comfieldexp}-1$. In this case, proving  $\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle = \mu'$  ``in the exponent of $g$'' is unsound, because proofs in the exponent are effectively proofs modulo $2^{\comfieldexp}-1$. 
+    \item \textbf{How to lift large values?} Second, even if $R=\FF_q$ is a prime field,  $q$ may be large and the linear expression $\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle$ may overflow the order of $g\in \comfield^{*}$, which is $2^{\comfieldexp}-1$. In this case, proving  $\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle = \mu'$  ``in the exponent of $g$'' is unsound, because proofs in the exponent are effectively proofs modulo $2^{\comfieldexp}-1$. 
     \item \textbf{Expensive grand product.} Third, even if neither of these problems hold, \eqref{e:intro} is, in principle, an expensive constraint to prove: indeed, it is a length $|\bitstext(\bff)|$ grand product of, essentially, arbitrary elements from $\comfield$ (which in our instantiation are of $128$ bits, i.e.\ not small).  Grand products can be expensive, and furthermore the fact that the factors are large prevents us from using known sumcheck optimizations such as univariate skips \cite{gruen} and others from \cite{flock,sumcheck_opt_2}.
-    \item \textbf{Non-succinct verifier.} Fourth, when proving \eqref{e:intro}, typically one ends up with an MLE evaluation claim on the vector $(g^{\pi_q^{-1}(\uu)_i})_{i\in[\codedim]}$ (and another on $\bitstext(\bff)$). If the verifier checks the claim itself, then it pays a linear cost. If otherwise the prover has to prove this claim, then it is essentially back to square one.
+    \item \textbf{Non-succinct verifier.} Fourth, when proving \eqref{e:intro}, typically one ends up with an MLE evaluation claim on the vector $(g^{\pi_q^{-1}(\uu)_i})_{i\in[|\bitstext(\bff)|]}$ (and another on $\bitstext(\bff)$). If the verifier checks the claim itself, then it pays a linear cost. If otherwise the prover has to prove this claim, then it is essentially back to square one.
 \end{itemize}
 
 \bigskip
@@ -319,17 +322,17 @@ We emphasize that \ftwoz\ can also be used  to prove more exotic constraints, su
 This technique allows us  to instantiate \ftwoz\ with 128 bits of security, using $\comfield=\FF_{2^{128}}$, while having essentially no limitation on the size of the ring $R$ we start with, see \cref{s:instantiation}.
 \fi
 
-\paragraph{Issue 3: low entropy grand products.} We split  \eqref{e:intro} into $\approx\sqrt{|\bitstext(\bff)|}$ grand products of the same form as \eqref{e:intro}, so that, even though in total there are $|\bitstext(\bff)|$ factors among all of them, these factors can only take $\sqrt{|\bitstext(\bff)|}$ values. More concretely, we assume $\uu=\uu^{(1)} \otimes \uu^{(2)}$ tensor-decomposes into $\approx \sqrt{|\bitstext(\bff)|}$ sized factors $\uu^{(1)}, \uu^{(2)}$. This is typically the case since $\vv$ is usually an ``eq'' vector, and $\uu=L^{\mathsf{T}}\cdot \vv$ for a highly structured matrix $L$\footnote{For example, in our previous example, $\uu= \vv \otimes (1,2,\ldots, 2^{B-1})$. Then, if $\vv$ is an ``eq'' vector, then $\uu$ admits highly customizable tensor decompositions.}. This allows to split the integer claim $\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle = \mu'$ in $\ZZ$ into $\approx \sqrt{|\bitstext(\bff)|}$ integer claims as follows: the prover computes and sends integers $\mu_j'$, for $j\in |\uu^{(2)}|$m such that $\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle = \mu_j'$ in $\ZZ$, and $\sum_{j} \pi_q(\mu_j') \cdot \uu_j^{(2)} = \mu$, where we index   $\bitstext(\bff)$ with indices $i\in [|\uu^{(1)}|], j\in [|\uu^{(2)}|]$. The verifier checks the latter equality, and then the prover and verifier set up a grand product for each of the new inner product claims, obtaining 
+\paragraph{Issue 3: low entropy grand products.} We split  \eqref{e:intro} into $\approx\sqrt{|\bitstext(\bff)|}$ grand products of the same form as \eqref{e:intro}, so that, even though in total there are $|\bitstext(\bff)|$ factors among all of them, these factors can only take $\sqrt{|\bitstext(\bff)|}$ values. More concretely, we assume $\uu=\uu^{(1)} \otimes \uu^{(2)}$ tensor-decomposes into $\approx \sqrt{|\bitstext(\bff)|}$ sized factors $\uu^{(1)}, \uu^{(2)}$. This is typically the case since $\vv$ is usually an ``eq'' vector, and $\uu=L^{\mathsf{T}}\cdot \vv$ for a highly structured matrix $L$\footnote{For example, in our previous example, $\uu= \vv \otimes (1,2,\ldots, 2^{B-1})$. Then, if $\vv$ is an ``eq'' vector, then $\uu$ admits highly customizable tensor decompositions.}. This allows to split the claim $\langle \psi(\bitstext(\bff)), \uu \rangle = \mu$ over $\FF_q$ into $\approx \sqrt{|\bitstext(\bff)|}$ integer claims as follows: the prover computes and sends integers $\mu_j'$, for $j\in [|\uu^{(2)}|]$, such that $\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle = \mu_j'$ in $\ZZ$, and $\sum_{j} \pi_q(\mu_j') \cdot \uu_j^{(2)} = \mu$, where we index   $\bitstext(\bff)$ with indices $i\in [|\uu^{(1)}|], j\in [|\uu^{(2)}|]$. The verifier checks the latter equality, and then the prover and verifier set up a grand product for each of the new inner product claims, obtaining 
   \begin{equation}\label{e:intro_2}
          g^{\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle} = \prod_{i} \left((g^{\pi_q^{-1}(\uu_i^{(1)})} -1) \cdot \bitstext(\bff)_{ij} + 1\right) = g^{\mu_j'} \qquad \text{for all } j.
          \end{equation}
 There are $|\bitstext(\bff)|$ factors in total, but only $\approx \sqrt{|\bitstext(\bff)|}$ different values these factors can take. We say \eqref{e:intro_2} is a \emph{low entropy batched grand product}. 
 
-To prove \eqref{e:intro_2} we use a batched GKR protocol with the following  optimization, among others: because of the low-entropy phenomenon, we build several small lookup tables of size $O(\sqrt{|\bitstext(\bff)|})$ (for example, of at most $34$\,MB for $|\uu^{(1)}|=2^{16}$, see \cref{tab:gkr_tables}) which are used during several of the most expensive sumcheck rounds of the GKR protocol. \iflncs \else Concretely, the last sumcheck (the most expensive one) uses  lookup tables to compute the first five messages of the prover,  the second last sumcheck does the same for the first four prover messages, and the third and fourth last sumchecks do the same with the first three and two messages, respectively, (see \cref{s:indices}).\fi
+To prove \eqref{e:intro_2} we use a batched GKR protocol with the following  optimization, among others: because of the low-entropy phenomenon, we build several small lookup tables of size $O(\sqrt{|\bitstext(\bff)|})$ (for example, of at most $34$\,MB for $|\uu^{(1)}|=2^{16}$, see \cref{tab:gkr_tables}) which are used during several of the most expensive sumcheck rounds of the GKR protocol. \iflncs \else Concretely, the last sumcheck (the most expensive one) uses  lookup tables to compute the first five messages of the prover,  the second last sumcheck does the same for the first four prover messages, and the third and fourth last sumchecks do the same with the first three and two messages, respectively (see \cref{s:gkr_buckets,s:indices}).\fi
 
 \bigskip
 
-\noindent \emph{\underline{A key point}:} The key is that these square-root sized tables can be used in each of the grand products from \eqref{e:intro_2}, producing a large amortization, and allowing us to build several tables for different sumcheck rounds, while keeping them in cache, where table reads are cheaper than field multiplications. 
+\noindent \emph{\underline{A key point}:} The key is that these square-root sized tables can be used in each of the grand products from \eqref{e:intro_2}, producing a large amortization, and allowing us to build several tables for different sumcheck rounds, while accessing them in a cache-friendly order (only a small part of each table needs to be in cache at any time), where table reads are cheaper than field multiplications. 
 
 The reason this is possible is that  we only seek to prove witness MLE evaluations (or inner products) in the exponent. In this specific setting, we can   decompose  the initial claim into the subclaims $\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle = \mu_j'$. The reason we only need to address this simple setting is that our scheme starts off in a ring $R$, with its \emph{non-linear} constraints arithmetized over $R$. Then the constraints are reduced via a PIOP to a \emph{linear} integer claim on the witness,  which we then prove ``in the exponent''. 
 
@@ -606,6 +609,7 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
         for some $\zz\in \comfield^{\codedim_1}$ and $c_j\in \comfield$. 
 
 
+
         This is by far the most expensive step of \ftwoz. Our grand product PIOP is a simple GKR protocol for batched grand products, for which we design prover optimizations, which do not modify the GKR  transcripts, i.e.\ they only optimize the GKR prover's algorithm, without changing the standard GKR protocol, see \cref{s:to_low_entropy_gkr} below and \cref{s:gkr_low_entropy}. These optimizations exploit the ``low entropy'' of the factors $(g^{\pi_q^{-1}(\uu^{(1)}_i)}-1)\cdot \pi_2(\bitstext(\bff)_{ij}) +1$ across $(i,j)\in [\codedim_1]\times [\codedim_2]$, in the sense that among $\codedim=\codedim_1\cdot \codedim_2$ factors, there are only $\codedim_1+1=O(\sqrt{\codedim})$ possible values taken by these factors.  This, among others, is why it is important to have the vector $\uu$ admit a tensor split into $\approx$square-root sized factors (see \cref{s:why_the_tensor_split} for more reasons). % See \cref{?,s:gkr_low_entropy} for more details.
 \begin{comment}
 \begin{remark}[Other usages of the ``prove-in-the-exponent'' approach]
@@ -613,7 +617,7 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
       \end{remark}  
       \end{comment}
 
- The  $\codedim_2$ claims from \cref{e:intro_eq_5} can optionally be batched into  a single claim \begin{equation} \label{e:intro_eq_5_batched}\langle \zz', \pi_2(\bitstext(\bff)) \rangle = c \ \text{in  } \comfield, \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)),\end{equation} for  $\zz'\in \comfield^{\codedim}, c\in \comfield$ with, for example, $\zz'=(\alpha_1,\ldots, \alpha_{\codedim_2}) \otimes \zz$ for $\alpha_1, \ldots, \alpha_{\codedim_2}$ verifier's randomness, and $c=\sum_{j\in [\codedim_2]} \alpha_j\cdot c_j$. 
+ The  $\codedim_2$ claims from \cref{e:intro_eq_5} can optionally be batched into  a single claim \begin{equation} \label{e:intro_eq_5_batched}\langle \zz', \pi_2(\bitstext(\bff)) \rangle = c \ \text{in  } \comfield, \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)),\end{equation} for  $\zz'\in \comfield^{\codedim}, c\in \comfield$ with, for example, $\zz'=\zz\otimes(\alpha_1,\ldots, \alpha_{\codedim_2})$ for $\alpha_1, \ldots, \alpha_{\codedim_2}$ verifier's randomness, and $c=\sum_{j\in [\codedim_2]} \alpha_j\cdot c_j$. 
         However, in some instantiations this step may not be necessary, especially if using an interleaved code to commit to $\bitstext(\bff)$. 
  \paragraph{Step 6: Proving linear claims on $\bitstext(\bff)$ over $\comfield$.} At this point, since $\bitstext(\bff)$ was committed over $\comfield$ (in packed form), one can prove \eqref{e:intro_eq_5} (or the batched version of it \eqref{e:intro_eq_5_batched}) via known methods such as those in \cite{binius,binius2,flock}. Concretely, we use the so-called ring switch from \cite{binius,binius2} to turn \eqref{e:intro_eq_5} into linear claims about the packed binary field elements $\pack\circ\pi_2(\bitstext(\bff))$ we encoded, and then use WHIR or Ligerito \cite{whir,Ligerito} over $\comfield$ to prove these claims. 
 
@@ -3071,13 +3075,13 @@ The prover can compute $t_1(0)$ using an analogous procedure. In this case one c
 \paragraph{Subsequent sumcheck rounds and GKR layers.} The same idea applies to the next messages. For example, in the second round of the ``biggest'' sumcheck (i.e.\ after the round discussed above) the entries in the tables $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$ are  each one a vector of $2^4$ and $2^8$ elements, respectively. These vectors are indexed by elements from $\bits^4$ and $\bits^8$. We can now apply the same strategy as above, except that now we have $\xx$ range over $\bits^8$ instead of $\bits^4$. 
 
 
-This optimization is beneficial as long as we can index $\xx$ over $\bits^{t}$ with $2^t< \codedim_2=2^{r_2}$, i.e.\  as long as the corresponding table has entries that are vectors of dimension $2^t<2^{r_2}$. In practice this constrains us to $t\in \{2,4,8\}$.
+This optimization is beneficial as long as we can index $\xx$ over $\bits^{t}$ with $2^t< \codedim_2=2^{r_2}$, i.e.\  as long as the corresponding table has entries that are vectors of dimension $2^t<2^{r_2}$. This is because the amount of multiplications, table reads, and additions performed is a multiple of $2^t$. In practice this constrains us to $t\in \{2,4,8\}$.
 
 
 
 
 
-For coefficients where the corresponding table would have entries of dimension $2^{16}$, we use the following approach. For example, in the third round of the last sumcheck (i.e.\ the  ``biggest'' sumcheck), the leading coefficient $t_3(\infty)$ of $t_3(X)$ would require using the table $T_{A_2}^{(3)}$, whose entries have dimension $2^{16}$, and we would compute it as 
+For coefficients where the corresponding table would have entries of dimension $2^{16}$ ($t=16$), we use the following approach. For example, in the third round of the last sumcheck (i.e.\ the  ``biggest'' sumcheck), the leading coefficient $t_3(\infty)$ of $t_3(X)$ would require using the table $T_{A_2}^{(3)}$, whose entries have dimension $2^{16}$, and we would compute it as 
 %
 $$
  t_3(\infty)=\sum_{\bb\in \bits^{r_1-4}} \sum_{\xx\in \bits^{16}}  T_{A_2}^{(3)}[\bb][\xx] \cdot H_{\bb}[\xx]. 
@@ -3087,7 +3091,7 @@ Instead, we proceed as follows. Using that $ A_{2}^{(3)}[\bb,\cc] = \big(L_{r_1}
 \begin{equation}\label{e:t_3_infty}
 \begin{aligned}
 t_3(\infty) =& \sum_{(\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}}  \eq(\cc;\bm{\alpha}') \cdot A_{2}^{(3)}[\bb,\cc]\\ 
-=& \sum_{(\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}} \omega[\bb]\cdot \eq(\cc;\bm{\alpha}') \cdot \sum_{\eps,\eps'\in \bits} (-1)^{\eps+\eps'}\\ &\qquad \cdot  L_{r_1}(0,\bm{\rho}^{(3)},\eps,\bb,\cc) \cdot L_{r_1}(1,\bm{\rho}^{(3)},\eps',\bb,\cc), 
+=& \sum_{(\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}} \omega[\bb]\cdot \eq(\cc;\bm{\alpha}') \cdot \sum_{\eps,\eps'\in \bits} (-1)^{\eps+\eps'} \cdot L_{r_1}(0,\bm{\rho}^{(3)},\eps,\bb,\cc) \cdot L_{r_1}(1,\bm{\rho}^{(3)},\eps',\bb,\cc), 
 \end{aligned}
 \end{equation}
 where $\omega[\bb]$ is the weight defined in \cref{s:tables}, for $j=3$.  Now, for each $\eps,k\in \bits$,
@@ -3115,8 +3119,8 @@ Now, in the same way as explained before, the prover computes all the values $H_
 
 
 
-\paragraph{Further optimizations}
-In all the rounds where we use buckets, the prover computes the entries of the tables $T_{A_k}^{(j)}$ that it needs (e.g.\ $T_{A_0}$, $T_{A_2}$, $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$) ``on-the-go'', in the sense explained above for $T_{A_2}$ when computing $t_1(\infty)$, i.e.\ each entry is computed right before it is multiplied by its bucket, and it is not used again. Because of this, we never store these tables, nor keep them in cache. The tables $T_{r_1}^{(j)}$, $T_{r_1-1}^{(j)}$, $T_{r_1-2}^{(j)}$ and $T_{r_1-3}^{(j)}$ are computed in full and kept in cache during the sumchecks that require them.
+\paragraph{Further optimizations.}
+In all the rounds where we use buckets, the prover computes the entries of the tables $T_{A_k}^{(j)}$ that it needs (e.g.\ $T_{A_0}$, $T_{A_2}$, $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$) ``on-the-go'', in the sense explained above for $T_{A_2}$ when computing $t_1(\infty)$, i.e.\ each entry is computed right before it is multiplied by its bucket, and it is not used again. Because of this, we never store these tables, nor keep them in cache. The tables $T_{r_1}^{(j)}$, $T_{r_1-1}^{(j)}$, $T_{r_1-2}^{(j)}$ and $T_{r_1-3}^{(j)}$ are computed in full during the sumchecks that require them.  Since the prover processes one index $\bb$ at a time, we keep only a small part of each of them  in cache.
 
 
 Our implementation uses further optimizations, which we do not discuss in detail. For example, it computes all the rounds of each sumcheck that use buckets together, by adapting \cite[Algorithm 3]{sumcheck_opt_2} to our setting, and it uses tables with $\leq 2^8$ entries per index in two more rounds of each of the last $4$ sumchecks.
@@ -3126,23 +3130,23 @@ Our implementation uses further optimizations, which we do not discuss in detail
 \subsection{Reducing transpositions when forming table indices}\label{s:indices}
 
 
-In all our techniques discussed so far, for each coefficient of each prover message where our optimizations are used, the prover has to compute a string of $\leq 8$ bits $\xx_{\bb,\cc}$  (or $\xx_{k,\eps,\bb,\cc}$) for each $\bb,\cc$ ranging in a set of the form $\bits^{r_1 - t} \times \bits^{r_2}$, for some $t$ (with $t$ depending on the specific coefficient being computed). If done naively, as we explain below, computing these strings is a costly procedure. Indeed, prior to optimizing it, it amounted to at least $25\%$ of the GKR prover time at $\codedim=2^{28}$, and more for larger witnesses. 
+In all our techniques discussed so far, for each coefficient of each prover message where our optimizations are used, the prover has to compute a string of $\leq 8$ bits $\xx_{\bb,\cc}$  (or $\xx_{k,\eps,\bb,\cc}$) for each $\bb,\cc$ ranging in a set of the form $\bits^{r_1 - t} \times \bits^{r_2}$, for some $t$ (with $t$ depending on the specific coefficient being computed). If done naively, as we explain below, computing these strings is a costly procedure. Indeed, prior to optimizing it, computing these strings amounted to at least $25\%$ of the GKR prover time at $\codedim=2^{28}$, and more for larger witnesses. 
 
 
-We now explain a method for greatly reducing (by more than an order of magnitude) the number of transpositions needed to compute the strings $\xx_{\bb,\cc}$ throughout the entire GKR protocol. This optimization was found by an AI after we identified that computing all the strings $\xx_{\bb,\cc}$ naively is significantly expensive. 
+We now explain a method for greatly reducing (by more than an order of magnitude) the number of transpositions (see below) needed to compute the strings $\xx_{\bb,\cc}$ throughout the entire GKR protocol. This optimization was found by an AI after we identified that computing all the strings $\xx_{\bb,\cc}$ naively is significantly expensive. 
 
 \paragraph{The naive approach to computing $\xx_{\bb,\cc}$.}  In our implementation, we look at $\bfg\in \bits^{\codedim_1\times \codedim_2}$ as a $2^{r_1}\times 2^{r_2}$ matrix of bits.  We store $\bfg$ using $64$-bit ``horizontal'' words, i.e.\ in our memory layout, we arrange $\bfg$ as a collection of $64$-bit words obtained by splitting each row of $\bfg$ into $64$-bit consecutive words.  On the other hand, each string $\xx_{\bb,\cc}$ consists of at most $8$ bits placed on the $\cc$-th column of $\bfg$, e.g.\ in our example in \cref{s:gkr_buckets} we had $$\xx_{\bb,\cc}\defeq \left(\bfg_{(0,0,\bb),\cc},\bfg_{(0,1,\bb),\cc},\bfg_{(1,0,\bb),\cc},\bfg_{(1,1,\bb),\cc}\right)\in \bits^4.$$ Hence, to construct $\xx_{\bb,\cc}$, one needs to access $\leq 8$ of these words, transpose them (a costly step), and select a row of the resulting transposed data.  
 
-This needs to be done for all indices  $\bb,\cc$, and for all coefficients of prover messages where we seek to use our optimizations. Concretely,  Rounds 1, 2 and 3 of the last sumcheck require computing $6$ coefficients in total. Rounds 1 and 2 of the second last sumcheck require  $4$, and Round 1 of the third last sumcheck requires $2$. This amounts to computing $21$ batches of strings $\xx_{\bb,\cc}$ (one per coefficient, except for the  leading coefficients  which need four batches each, one per pair $(\eps,\eps')$), with $(\bb,\cc)$ running over a set of size between $\codedim/16$ and $\codedim/4$. 
+This needs to be done for all indices  $\bb,\cc$, and for all coefficients of prover messages where we seek to use our optimizations. Concretely,  Rounds 1, 2 and 3 of the last sumcheck require computing $6$ coefficients in total. Rounds 1 and 2 of the second last sumcheck require  $4$, and Round 1 of the third last sumcheck requires $2$. This amounts to computing $21$ batches of strings $\xx_{\bb,\cc}$ (one per coefficient, except for the leading coefficients of Round 3 of the last sumcheck, Round 2 of the second last sumcheck and Round 1 of the third last sumcheck, which need four batches each, one per pair $(\eps,\eps')$), with $(\bb,\cc)$ running over a set of size between $\codedim/16$ and $\codedim/4$. 
 
 
-\paragraph{Optimization.} Continuing with the example $\xx_{\bb,\cc}$ above, observe that  for  every $(\bb,\cc)\in\bits^{r_1-2}\times \bits^{r_2}$, the string $\xx_{\bb,\cc}$ depends exclusively on the entries of $\bfg$ placed in the column $\cc$ and on rows that differ exclusively in the first two coordinates. Similarly, all other strings  $\xx_{\bb,\cc}$ (and $\xx_{k,\eps,\bb,\cc}$) required at all optimized rounds   depend only on the bits placed on the $\cc$-th column of $\bfg$ and on rows that differ exclusively in the first $4$ coordinates  (with this set being the same for all rounds and coefficients).
+\paragraph{Optimization.} Continuing with the example $\xx_{\bb,\cc}=(\bfg_{(0,0,\bb),\cc},\bfg_{(0,1,\bb),\cc},\bfg_{(1,0,\bb),\cc},\bfg_{(1,1,\bb),\cc})$ above, observe that  for  every $(\bb,\cc)\in\bits^{r_1-2}\times \bits^{r_2}$, the string $\xx_{\bb,\cc}$ depends exclusively on the entries of $\bfg$ placed in the column $\cc$ and on rows that differ  in the first two coordinates. Similarly, all other strings  $\xx_{\bb,\cc}$ (and $\xx_{k,\eps,\bb,\cc}$) required at all optimized rounds   depend only on the bits placed on the $\cc$-th column of $\bfg$ and on rows that differ exclusively in the first $4$ coordinates.
 
 
 
 With the above observation in mind, the optimization has  the prover  precompute  the values 
 $$N[\bb,\cc]\defeq \left(\bfg_{(\ww,\bb),\cc}\right)_{\ww\in \bits^4}\in \bits^{16} \qquad \text{for all } (\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}.$$
-Now, every time a string $\xx_{\bb,\cc}$ or $\xx_{\bb,\cc}^{\eps\eps'}$ needs to be formed, it suffices to take the word $N[\bb,\cc]$ and select an appropriate subset of bits from  it.  
+Now, every time a string $\xx_{\bb,\cc}$ or $\xx_{k,\eps,\bb,\cc}$ needs to be formed, it suffices to take the word $N[\bb'',\cc]$, where $\bb''\in\bits^{r_1-4}$ consists of the last $r_1-4$ coordinates of $\bb$ (or $(k,\eps,\bb)$, respectively), and select an appropriate subset of bits from it.  
 
 
 
