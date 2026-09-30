@@ -3082,24 +3082,6 @@ Hence $t_1(\infty)$ can be computed by making $2^{r_1 -2} \cdot 2^{4} = 4 \cdot 
 
 
 
-The prover can compute $t_1(0)$ using an analogous procedure. In this case one can further reduce the cost to $\codedim_1$ reads, using that each entry of $T_{A_0}$ is indexed by $2$ bits, and not $4$.  We record the costs of computing $t_1(0)$ and $t_1(\infty)$ this way in \cref{t:gkr_buckets_costs}.
-
-
-\begin{table}[H]
-    \centering
-    \begin{tabular}{c|c|c}
-         & Tables and buckets & Standard/generic \\
-         \hline
-        Multiplications & $\leq   13\cdot \codedim_1 +  \codedim_2 $ &$\Theta(\codedim_1\cdot \codedim_2)$\\
-        \hline
-        Additions & $\leq \codedim_1\cdot \codedim_2/4 + 11\cdot\codedim_1 +  \codedim_2$  & $\Theta(\codedim_1\cdot \codedim_2)$\\
-        \hline
-        Table reads & $5\cdot\codedim_1$, into tables of $5\cdot\codedim_1$ field elements & --
-    \end{tabular}
-    \caption{The cost in field operations of the first sumcheck round of the last sumcheck in our GKR protocol, with the optimizations from \cref{s:gkr_buckets}.}
-    \label{t:gkr_buckets_costs}
-\end{table}
-
 \paragraph{Subsequent sumcheck rounds and GKR layers.} The same idea applies to the next messages. For example, in the second round of the ``biggest'' sumcheck (i.e.\ after the round discussed above) the entries in the tables $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$ are  each one a vector of $2^4$ and $2^8$ elements, respectively. These vectors are indexed by elements from $\bits^4$ and $\bits^8$. We can now apply the same strategy as above, except that now we have $\xx$ range over $\bits^8$ instead of $\bits^4$. 
 
 
@@ -3143,7 +3125,7 @@ where
 $$
 H^{\eps\eps'}_{\bb}[\xx,\xx']\defeq \sum_{\substack{\cc\in \bits^{r_2} \ : \ \\ \xx_{0,\eps,\bb,\cc}=\xx\\ \xx_{1,\eps',\bb,\cc}=\xx'} }\eq(\cc;\bm{\alpha}').
 $$
-Now the prover computes all the values $H^{\eps\eps'}_{\bb}[\xx,\xx']$, and then obtains $t_3(\infty)$ using the expression of $t_3(\infty)$ given above. With this approach we avoid using the table $T_{A_2}^{(3)}$, whose entries have  dimension $2^{16}$. The cost is only an extra  $O(\codedim_1)$ multiplications and table reads, and that there are four buckets per $(\bb,\xx)$ instead of one. 
+Now the prover computes all the values $H^{\eps\eps'}_{\bb}[\xx,\xx']$, and then obtains $t_3(\infty)$ using the expression of $t_3(\infty)$ given above. With this approach we avoid using the table $T_{A_2}^{(3)}$, whose entries have  dimension $2^{16}$. The cost is only an extra  $O(\codedim_1)$ multiplications and table reads, and the costs brought from having four elements $H_{\bb}^{\eps \eps'}[\xx,\xx']$ per $(\bb,\xx,\xx')$, instead of one. 
 
 
 
@@ -3151,7 +3133,7 @@ Now the prover computes all the values $H^{\eps\eps'}_{\bb}[\xx,\xx']$, and then
 In all the rounds where we use buckets, the prover computes the entries of the tables $T_{A_k}^{(j)}$ that it needs (e.g.\ $T_{A_0}$, $T_{A_2}$, $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$) ``on-the-go'', in the sense explained above for $T_{A_2}$ when computing $t_1(\infty)$, i.e.\ each entry is computed right before it is multiplied by its bucket, and it is not used again. Because of this, we never store these tables, nor keep them in cache. The tables $T_{r_1}^{(j)}$, $T_{r_1-1}^{(j)}$, $T_{r_1-2}^{(j)}$ and $T_{r_1-3}^{(j)}$ are computed in full during the sumchecks that require them.  Since the prover processes one index $\bb$ at a time, we keep only a small part of each of them  in cache.
 
 
-Our implementation uses further optimizations, which we do not discuss in detail. For example, it computes all the rounds of each sumcheck that use buckets together, by adapting \cite[Algorithm 3]{sumcheck_opt_2} to our setting, and it uses tables with $\leq 2^8$ entries per index in two more rounds of each of the last $4$ sumchecks.
+Our implementation uses further optimizations, which we do not discuss in detail. For example, it computes all the rounds of each sumcheck that use buckets together, by adapting \cite[Algorithm 3]{sumcheck_opt_2} to our setting. We also use tables it uses tables in two more rounds of each of the last $4$ GKR sumchecks, using methods similar to the one used when computing $t_3(\infty)$.
 
 
 
