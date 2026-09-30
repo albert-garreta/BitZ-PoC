@@ -497,7 +497,7 @@ We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful an
 
 \bigskip
 
-\noindent \emph{Document preparation:} This document was  written with relatively limited assistance of AI. It was  used to:  identify typos and incoherences; make refactorings and stylistic improvements; \iflncs\else and \fi for  cost accounting in \cref{s:gkr_low_entropy,s:core_iop,s:general_LinBitsDual}\iflncs; for preparing the benchmark tables; for reformatting into LNCS format, sometimes summarizing some proof outlines; and for organizing benchmark results into tables\else\fi. The soundness proof of the Out Of Domain (OOD) step (\cref{a:OOD}), as well as \cref{r:johnson_instantiation} about making the OOD sampling error attain the target security, was initially drafted with AI, and edited by us subsequently (such proof is a simple adaptation of well-known arguments to our notation and context).    \iflncs\else The soundness proof   in the technical overview  \cref{s:to_soundness}  was initially drafted with AI and was elaborated upon by us subsequently. \fi
+\noindent \emph{Document preparation:} This document was  written with relatively limited assistance of AI. It was  used to:  identify typos and incoherences; make refactorings and stylistic improvements; \iflncs\else and \fi for  cost accounting in \cref{s:gkr_low_entropy,s:core_iop,s:general_LinBitsDual}\iflncs; for preparing the benchmark tables; for reformatting into LNCS format, sometimes summarizing some proof outlines; and for organizing benchmark results into tables\else\fi. The soundness proof of the Out Of Domain (OOD) step (\cref{a:OOD}), as well as \cref{r:johnson_instantiation} about making the OOD sampling error attain the target security, was initially drafted with AI, and edited by us subsequently (such proof is a simple adaptation of well-known arguments to our notation and context).  \cref{s:gkr_buckets,s:indices}, which explain some of our GKR optimizations, were drafted  with AI and edited by us subsequently. \iflncs\else The soundness proof   in the technical overview  \cref{s:to_soundness}  was initially drafted with AI and was elaborated upon by us subsequently. \fi
 
 
 \iflncs
@@ -2514,6 +2514,10 @@ We briefly outline how to handle the case when $S$ is an arbitrary finitely gene
 
 We now describe our instantiation of the GKR protocol for proving batched grand products, and our prover optimizations when these have ``low entropy''.
 
+\begin{remark}[Implementation and this paper]
+    Our goal in this section is to explain the most important optimizations used in our GKR grand product, and not to provide a detailed account of the exact algorithm our implementation uses (which at this point may undergo further optimization). Our implementation may not match 100\% the optimizations described in this section.
+\end{remark}
+
 
 
 The bulk of the work in \ftwoz \ (\cref{c:core_iop,c:LinModFieldBin}) is to reduce the claim over the binary field $\comfield$
@@ -2690,7 +2694,7 @@ Beyond the unique decoding radius, the same errors hold for the relations extend
 We omit the  proof of \cref{l:gkr_grand_product}, since \cref{c:gkr_grand_product} is a simple variation of the GKR protocol. Round-by-round soundness of GKR is proved in \cite{CCHLRRW19}, and the knowledge version with relaxation follows as in \cite[proof of Lemma 6.6]{BCFW25}.
 
 \subsection{A first prover optimization via lookup tables}\label{s:tables}% 
-We describe an initial optimization for  \cref{c:gkr_grand_product}. In \cref{s:gkr_buckets} we build upon it further. We assume  $\bfg$ consists entirely of bits. Alternatively, the techniques discussed here would also apply if the entries of $\bfg$ belong to a small subset of $\KK$.
+We describe an initial optimization for  \cref{c:gkr_grand_product}. In \cref{s:gkr_buckets,s:indices} we build upon it further. We assume  $\bfg$ consists entirely of bits. Alternatively, the techniques discussed here would also apply if the entries of $\bfg$ belong to a small subset of $\KK$.
 
 %\john{Typing is a bit inconsistent here for $c$ and $f_{b,c}$. Namely, we say c seems to be a boolean vector but $f_{b,c}$ is not } 
 \paragraph{Setup.} We start with the following observation: for every $(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}$, we have $\bfg_{\bb,\cc}\in \bits$, and so 
@@ -2776,28 +2780,24 @@ L_{r_1}(1,\bm{\rho}^{(j)}, X, \bb,\cc) = \left(L_{r_1}(1,\bm{\rho}^{(j)}, 1, \bb
 \end{equation}
 \iflncs\endgroup\fi
 %
-Renaming
-%
-$$
-E_{\eps_1\eps_2}^{(j)}[\bb,\cc] \defeq L_{r_1}(\eps_2,\bm{\rho}^{(j)}, \eps_1, \bb,\cc) \qquad \eps_1,\eps_2\in \bits, \qquad \omega[\bb]\defeq \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)}),
-$$
-we obtain
+Writing $\omega[\bb]\defeq \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)})$, we obtain
 %
 $$
 h_{j,\cc}(X) =\sum_{\bb\in \bits^{r_1-1-j}} X^2 \cdot A_2^{(j)}[\bb,\cc] + X\cdot A_1^{(j)}[\bb,\cc] + A_0^{(j)}[\bb,\cc]
 $$
  where,
 \iflncs\begingroup\scriptsize\fi
-$$
+\begin{equation}\label{e:coeffs}
 \begin{aligned}
-A_0^{(j)}[\bb,\cc] &\defeq E_{00}^{(j)}[\bb,\cc]\cdot E_{01}^{(j)} [\bb,\cc]\cdot \omega[\bb],\\ 
-A_1^{(j)}[\bb,\cc] &\defeq  \left((E_{10}^{(j)}[\bb,\cc]-E_{00}^{(j)}[\bb,\cc])\cdot E_{01}^{(j)}[\bb,\cc] + (E_{11}^{(j)}[\bb,\cc]-E_{01}^{(j)}[\bb,\cc])\cdot E_{00}^{(j)}[\bb,\cc]\right)\cdot \omega[\bb]\\
-A_2^{(j)}[\bb,\cc] &\defeq (E_{10}^{(j)}[\bb,\cc]-E_{00}^{(j)}[\bb,\cc])\cdot (E_{11}^{(j)}[\bb,\cc]-E_{01}^{(j)}[\bb,\cc])\cdot \omega[\bb].
+A_0^{(j)}[\bb,\cc] &\defeq L_{r_1}(0,\bm{\rho}^{(j)},0,\bb,\cc)\cdot L_{r_1}(1,\bm{\rho}^{(j)},0,\bb,\cc)\cdot \omega[\bb],\\
+%A_1^{(j)}[\bb,\cc] &\defeq  \left((E_{10}^{(j)}[\bb,\cc]-E_{00}^{(j)}[\bb,\cc])\cdot E_{01}^{(j)}[\bb,\cc] + (E_{11}^{(j)}[\bb,\cc]-E_{01}^{(j)}[\bb,\cc])\cdot E_{00}^{(j)}[\bb,\cc]\right)\cdot \omega[\bb]\\
+A_2^{(j)}[\bb,\cc] &\defeq \big(L_{r_1}(0,\bm{\rho}^{(j)},1,\bb,\cc)-L_{r_1}(0,\bm{\rho}^{(j)},0,\bb,\cc)\big)\\ &\qquad \cdot \big(L_{r_1}(1,\bm{\rho}^{(j)},1,\bb,\cc)-L_{r_1}(1,\bm{\rho}^{(j)},0,\bb,\cc)\big)\cdot \omega[\bb].
 \end{aligned}
-$$
+\end{equation}
+We do not describe $A_1^{(j)}[\bb,\cc]$ because the prover does not need to compute it, as we explain later. 
 \iflncs\endgroup\fi
 %
-Now, for $j=1$, we have $\bm{\rho}^{(j)}= \bot$, and hence each value $E_{\eps_1\eps_2}^{(1)}[\bb,\cc]$ can be obtained, whenever needed, by querying $T_{r_1}[\eps_2,\eps_1,\bb]$ and selecting $T_{r_1}[\eps_2,\eps_1,\bb][1]$ or $T_{r_1}[\eps_2,\eps_1,\bb][0]$  depending on whether $\bfg_{(\eps_2,\eps_1,\bb),\cc} = 1$ or $0$. A consequence  is that  the coefficients themselves $A_k^{(1)}[\bb,\cc]$ ($k\in \{0,1,2\}$) can be obtained through lookup tables, as follows:
+Now, for $j=1$, we have $\bm{\rho}^{(j)}= \bot$, and hence each value $L_{r_1}(\eps_2,\eps_1,\bb,\cc)$ can be obtained, whenever needed, by querying $T_{r_1}[\eps_2,\eps_1,\bb]$ and selecting $T_{r_1}[\eps_2,\eps_1,\bb][1]$ or $T_{r_1}[\eps_2,\eps_1,\bb][0]$  depending on whether $\bfg_{(\eps_2,\eps_1,\bb),\cc} = 1$ or $0$. A consequence  is that  the coefficients themselves $A_k^{(1)}[\bb,\cc]$ ($k\in \{0,1,2\}$) can be obtained through lookup tables, as follows:
 %
  we have $$A_0^{(1)}[\bb,\cc] = 
     T_{r_1}[0,0,\bb][\bfg_{(0,0,\bb),\cc}] \cdot    T_{r_1}[1,0,\bb][\bfg_{(1,0,\bb),\cc}] \cdot \omega[\bb].
@@ -2822,7 +2822,9 @@ The size of $T_{A_0}$, again, does not depend on $\codedim_2=2^{r_2}$. Building 
 We now explain how to obtain the values $A_2^{(1)}[\bb,\cc]$, again via the construction of a lookup table. (The prover does not need the values $A_1^{(1)}[\bb,\cc]$, as we explain below.) Note that $A_2^{(1)}[\bb,\cc]$ depends on the \emph{four} bits $\bfg_{(\eps_2,\eps_1,\bb),\cc}$, $\eps_1,\eps_2\in \bits$, so our table will need $2^4=16$ entries  per  index $\bb$ (as opposed to $4$ as in $T_{A_0}$).
 The prover  computes the table $T_{A_2}\in (\comfield^{16})^{\bits^{r_1-2}}$ given by
     \begin{equation}\label{e:TA2}T_{A_2}[\bb]=\Big( \big(\yy_{0,1,\bb}^{(x_1)}-\yy_{0,0,\bb}^{(x_0)}\big)\cdot \big(\yy_{1,1,\bb}^{(x_1')}-\yy_{1,0,\bb}^{(x_0')}\big)\cdot \omega[\bb] \Big)_{(x_0,x_1,x_0',x_1')\in \bits^4},\end{equation}
-    so that $A_2^{(1)}[\bb,\cc]$ is the element  $$A_2^{(1)}[\bb,\cc]=T_{A_2}[\bb][\bfg_{(0,0,\bb),\cc},\bfg_{(0,1,\bb),\cc},\bfg_{(1,0,\bb),\cc},\bfg_{(1,1,\bb),\cc}].$$ Building $T_{A_2}$ takes at most $20$ multiplications and $8$ additions per index $\bb$\footnote{For the multiplications, there are $4$ multiplications to compute the $4$ elements $t_{x_0',x_1',\bb}\defeq \big(\yy_{1,1,\bb}^{(x_1')}-\yy_{1,0,\bb}^{(x_0')}\big)\cdot \omega[\bb]$, and then $16$ more multiplications to compute $\big(\yy_{0,1,\bb}^{(x_1)}-\yy_{0,0,\bb}^{(x_0)}\big)\cdot t_{x_0',x_1',\bb}$.}. I.e.\ at most $5\cdot 2^{r_1}$ multiplications and $2^{r_1+1}$ additions in total.
+    so that $A_2^{(1)}[\bb,\cc]$ is the element  $$A_2^{(1)}[\bb,\cc]=T_{A_2}[\bb][\bfg_{(0,0,\bb),\cc},\bfg_{(0,1,\bb),\cc},\bfg_{(1,0,\bb),\cc},\bfg_{(1,1,\bb),\cc}].$$ 
+    %
+    Building $T_{A_2}$ takes at most $20$ multiplications and $8$ additions per index $\bb$\footnote{For the multiplications, there are $4$ multiplications to compute the $4$ elements $t_{x_0',x_1',\bb}\defeq \big(\yy_{1,1,\bb}^{(x_1')}-\yy_{1,0,\bb}^{(x_0')}\big)\cdot \omega[\bb]$, and then $16$ more multiplications to compute $\big(\yy_{0,1,\bb}^{(x_1)}-\yy_{0,0,\bb}^{(x_0)}\big)\cdot t_{x_0',x_1',\bb}$.}. I.e.\ at most $5\cdot 2^{r_1}$ multiplications and $2^{r_1+1}$ additions in total.
  Once the tables have been computed, obtaining the constant and the leading coefficients of $h_{1,\cc}(X)$, i.e.\ $\sum_\bb A_0^{(1)}[\bb,\cc]$ and $\sum_\bb A_2^{(1)}[\bb,\cc]$,  costs $2\cdot 2^{r_1-2}$ table reads (one read per table $T_{A_0}, T_{A_2}$ per index $\bb\in \bits^{r_1-2}$) and $2\cdot 2^{r_1-2}$ additions, for each $\cc\in \bits^{r_2}$. In total, (passing over all $\cc\in \bits^{r_2}$) this amounts  to at most  
  $\codedim/2$ table reads and $\codedim/2$ additions for all $\cc$, and no multiplications. At this point, the prover has computed the constant and leading terms of  the polynomials $h_{1,\cc}(X)$. 
 
@@ -2918,7 +2920,8 @@ Hence the elements $A_0^{(2)}[\bb,\cc]$ can be obtained by querying a table $$T_
 %
 $$T_{A_0}^{(2)}[\bb]= (T_{r_1}^{(2)}[0,0,\bb][\xx]\cdot T_{r_1}^{(2)}[1,0,\bb][\xx']\cdot \omega[\bb])_{\xx,\xx'\in \bits^{2}}.$$
 %
-The value $A_2^{(2)}[\bb,\cc]$, however, now depends on the value taken by \emph{eight} witness bits, this being because for $\eps\in \bits$, the value $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ depends on  four bits. Hence computing a table for the values $A_2^{(2)}[\bb,\cc]$ analogous to $T_{A_2}$  would have $2^8=256$-sized vectors as entries. Instead of computing $T_{A_2}^{(2)}$, we compute two tables for the values $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ (one table for each $\eps\in\bits$, with one of the tables also including multiplication by $\omega[\bb]$). Then the value $A_2^{(2)}[\bb,\cc]$ can be obtained by performing a lookup into each table, followed by  a single multiplication.
+\begin{comment}The value $A_2^{(2)}[\bb,\cc]$, however, now depends on the value taken by \emph{eight} witness bits, this being because for $\eps\in \bits$, the value $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ depends on  four bits. Hence computing a table for the values $A_2^{(2)}[\bb,\cc]$ analogous to $T_{A_2}$  would have $2^8=256$-sized vectors as entries. Instead of computing $T_{A_2}^{(2)}$, we compute two tables for the values $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ (one table for each $\eps\in\bits$, with one of the tables also including multiplication by $\omega[\bb]$). Then the value $A_2^{(2)}[\bb,\cc]$ can be obtained by performing a lookup into each table, followed by  a single multiplication.
+\end{comment}
 
 \bigskip
 
@@ -3011,9 +3014,9 @@ In Round 2 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,
 \end{comment}
 
 
-\subsection{Reducing table reads via bucketing}\label{s:gkr_buckets}
+\subsection{Reducing table reads and avoiding some table precomputations via bucketing}\label{s:gkr_buckets}
 
-Note that in \cref{s:tables} the prover performs $O(\codedim)$ table reads, and keeps  full tables in cache for every sumcheck round where  a table is used. We now describe an optimization that reduces the  number of table reads to $O(\codedim_1)$, and  allows to compute table entries ``on-the-go''.  These optimizations were found by an AI when optimizing our prover and are reminiscent of Pippenger's MSM algorithm \cite{pipp}.
+Note that in \cref{s:tables} the prover performs $O(\codedim)$ table reads, and keeps  full tables in cache for every sumcheck round where  a table is used. We now describe an optimization that reduces the  number of table reads to $O(\codedim_1)$, and  allows to compute some table entries ``on-the-go'' (meaning that we do not need to precompute the full table and store it in cache).  These optimizations were found by an AI when optimizing our prover and are reminiscent of Pippenger's MSM algorithm \cite{pipp}.
 
 %In the first rounds of each sumcheck, the prover can read the tables from the previous subsection much less often, and use fewer operations. We describe this optimization for the first message of the last sumcheck, i.e.\ the message analyzed in \cref{t:gkr_step1_costs}. Our implementation uses it (see also \cref{s:indices}).
 
@@ -3025,7 +3028,7 @@ $$
 %
 \noindent For readability, we write these entries as $T_{A_0}[\bb][\xx_{\bb,\cc}]$ and $T_{A_2}[\bb][\xx_{\bb,\cc}]$, even though $T_{A_0}[\bb]$ only depends on the first and third bits of $\xx_{\bb,\cc}$.
 
-Instead of computing $t_1(0)$ and $t_1(\infty)$ by going through all indices $(\bb,\cc)$ and computing the terms in  \eqref{e:naive_coeff_compute} for each index, we rewrite \eqref{e:naive_coeff_compute} as follows:
+Instead of computing $t_1(0)$ and $t_1(\infty)$ by going through all indices $(\bb,\cc)$ and computing the terms in  \eqref{e:naive_coeff_compute} for each index, we rewrite \eqref{e:naive_coeff_compute} as follows (we focus on $t_1(\infty)$ only, with $t_1(0)$ being analogous):
 %
 \begin{align*}
 t_1(\infty)=& \sum_{\bb\in \bits^{r_1-2}} \sum_{\xx\in \bits^4} \sum_{\cc\in\bits^{r_2} : \ \xx_{\bb,\cc}=\xx} \eq(\cc;\bm{\alpha}')\cdot A_2^{(1)}[\bb,\cc]\\ =&  \sum_{\bb\in \bits^{r_1-2}} \sum_{\xx\in \bits^4} \sum_{\cc\in\bits^{r_2} : \ \xx_{\bb,\cc}=\xx} \eq(\cc;\bm{\alpha}')\cdot T_{A_2}[\bb][\xx]  = \sum_{\bb\in \bits^{r_1-2}} \sum_{\xx\in \bits^4}  T_{A_2}[\bb][\xx] \cdot H_{\bb}[\xx],
@@ -3064,28 +3067,42 @@ This optimization is beneficial as long as we can index $\xx$ over $\bits^{t}$ w
 
 
 
-For coefficients where the corresponding table would have entries of dimension $2^{16}$, we use the following approach. For example, in the third round of the ``biggest'' sumcheck, the leading coefficient $t_3(\infty)$ of $t_3(X)$ would require a table with entries of dimension $2^{16}$, and we would compute it as 
+For coefficients where the corresponding table would have entries of dimension $2^{16}$, we use the following approach. For example, in the third round of the last sumcheck (i.e.\ the  ``biggest'' sumcheck), the leading coefficient $t_3(\infty)$ of $t_3(X)$ would require a table with entries of dimension $2^{16}$, and we would compute it as 
 %
 $$
  t_3(\infty)=\sum_{\bb\in \bits^{r_1-4}} \sum_{\xx\in \bits^{16}}  T_{A_2}^{(3)}[\bb][\xx] \cdot H_{\bb}[\xx]. 
 $$
-% [AI-drafted in the author's register (Claude Opus 5.5), 2026-09-29, at the author's request: completes the author's t_3(\infty) paragraph, with the four products of single factors instead of the tables T_{S_1}, T_{S_2} (whose buckets would need 16-bit keys); please review]
-Instead, we use that $(E_{10}-E_{00})\cdot (E_{11}-E_{01})=\sum_{\eps,\eps'\in \bits}(-1)^{\eps+\eps'}\cdot E_{\eps 0}\cdot E_{\eps' 1}$, and we write
+Instead, we proceed as follows. Using that $ A_{2}^{(3)}[\bb,\cc] = \big(L_{r_1}(0,\bm{\rho}^{(3)},1,\bb,\cc) - L_{r_1}(0,\bm{\rho}^{(3)},0,\bb,\cc)\big)  \cdot \big(L_{r_1}(1,\bm{\rho}^{(3)},1,\bb,\cc) - L_{r_1}(1,\bm{\rho}^{(3)},0,\bb,\cc)\big)$ (see \cref{e:coeffs}), we have
+%
+\begin{equation}\label{e:t_3_infty}
+\begin{aligned}
+t_3(\infty) =& \sum_{(\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}}  \eq(\cc;\bm{\alpha}') \cdot A_{2}^{(3)}[\bb,\cc]\\ 
+=& \sum_{(\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}} \omega[\bb]\cdot \eq(\cc;\bm{\alpha}') \cdot \sum_{\eps,\eps'\in \bits} (-1)^{\eps+\eps'}\cdot  L_{r_1}(0,\bm{\rho}^{(3)},\eps,\bb,\cc) \cdot L_{r_1}(1,\bm{\rho}^{(3)},\eps',\bb,\cc), 
+\end{aligned}
+\end{equation}
+where $\omega[\bb]$ is the weight defined in \cref{s:tables}, for $j=3$.  Now, for each $\eps,k\in \bits$,
 %
 $$
- t_3(\infty)=\sum_{\bb\in \bits^{r_1-4}} \omega[\bb]\cdot \sum_{\eps,\eps'\in \bits}(-1)^{\eps+\eps'} \sum_{\xx\in \bits^{4}}\sum_{\xx'\in \bits^{4}} T_{r_1}^{(3)}[0,\eps,\bb][\xx] \cdot  T_{r_1}^{(3)}[1,\eps',\bb][\xx'] \cdot H^{\eps\eps'}_{\bb}[\xx, \xx'],
+L_{r_1}(k, \bm{\rho}^{(3)}, \eps, \bb, \cc) = T_{r_1}^{(3)}[k,\eps,\bb]\big[(\bfg_{(k,\ww,\eps,\bb),\cc})_{\ww\in \bits^2}\big],
 $$
 %
-where 
+where $T_{r_1}^{(3)}$ is the table of \eqref{e:T_r1_rounds} for the third round. Hence, for each $\eps,\eps'\in \bits$, the product $L_{r_1}(0,\bm{\rho}^{(3)},\eps,\bb,\cc)\cdot L_{r_1}(1,\bm{\rho}^{(3)},\eps',\bb,\cc)$ is determined by the $8$ bits
 %
-$
-H^{\eps\eps'}_{\bb}[\xx,\xx']\defeq \sum_{\cc\in \bits^{r_2}:\ \xx^{\eps\eps'}_{\bb,\cc}=(\xx,\xx')}\eq(\cc;\bm{\alpha}'),
-$
+$$  
+(\xx_{0,\eps,\bb, \cc}, \xx_{1,\eps',\bb,\cc})\quad \text{ where }\quad  \xx_{i_1, i_2, \bb,\cc}\defeq (\bfg_{(i_1,\ww,i_2,\bb),\cc})_{\ww\in\bits^2}\in \bits^4.$$
 %
-and
+Now we rewrite \eqref{e:t_3_infty}  as follows. For brevity we write $\omega[\bb] = \omega_\bb$ and $ \eq(\cc; \bm{\alpha}') = \eq_{\cc}$. 
+%
+\begin{align*}
+ &t_3(\infty)= \sum_{(\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}} \omega_\bb\cdot \eq_{\cc}\cdot \sum_{\eps,\eps'\in \bits} (-1)^{\eps+\eps'}\cdot T_{r_1}^{(3)}[0,\eps,\bb][\xx_{0,\eps,\bb,\cc}] \cdot T_{r_1}^{(3)}[1,\eps',\bb][\xx_{1,\eps',\bb,\cc}]\\ 
+ &=\sum_{\bb\in \bits^{r_1-4}} \omega_\bb\cdot \sum_{\eps,\eps'\in \bits}(-1)^{\eps+\eps'} \sum_{\xx,\xx'\in \bits^{4}} \sum_{\substack{\cc\in \bits^{r_2} \ : \ \\ \xx_{0,\eps,\bb,\cc}=\xx\\ \xx_{1,\eps',\bb,\cc}=\xx'} } T_{r_1}^{(3)}[0,\eps,\bb][\xx] \cdot  T_{r_1}^{(3)}[1,\eps',\bb][\xx'] \cdot\eq_\cc\\
+ &=\sum_{\bb\in \bits^{r_1-4}} \omega_\bb\cdot \sum_{\eps,\eps'\in \bits}(-1)^{\eps+\eps'} \sum_{\xx,\xx'\in \bits^{4}}  T_{r_1}^{(3)}[0,\eps,\bb][\xx] \cdot  T_{r_1}^{(3)}[1,\eps',\bb][\xx'] \cdot H^{\eps\eps'}_{\bb}[\xx, \xx']
+\end{align*}
+%
+where
 %
 $$
-\xx^{\eps\eps'}_{\bb,\cc}\defeq \left((\bfg_{(0,\ww,\eps,\bb),\cc})_{\ww\in\bits^2},\ (\bfg_{(1,\ww,\eps',\bb),\cc})_{\ww\in\bits^2}\right)\in \bits^8.
+H^{\eps\eps'}_{\bb}[\xx,\xx']\defeq \sum_{\substack{\cc\in \bits^{r_2} \ : \ \\ \xx_{0,\eps,\bb,\cc}=\xx\\ \xx_{1,\eps',\bb,\cc}=\xx'} }\eq(\cc;\bm{\alpha}').
 $$
 
 
