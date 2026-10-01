@@ -3127,13 +3127,21 @@ $$
 Now the prover computes all the values $H^{\eps\eps'}_{\bb}[\xx,\xx']$, and then obtains $t_3(\infty)$ using the expression of $t_3(\infty)$ given above. With this approach we avoid using the table $T_{A_2}^{(3)}$, whose entries have  dimension $2^{16}$. %The cost is only an extra  $O(\codedim_1)$ multiplications and table reads, and the costs brought from having four elements $H_{\bb}^{\eps \eps'}[\xx,\xx']$ per $(\bb,\xx,\xx')$, instead of one. 
 
 
+\paragraph{Further rounds and sumcheck layers, and further optimizations.} In the biggest sumcheck, we use the bucketing optimization in Rounds 1, 2 and 3. In Rounds 4 and 5  bucketing becomes too expensive, and then we  use an approach similar to the one in \cref{s:tables}, where we do compute and store tables in full (since their entries are used several times during the rounds). Some of these tables have entries of too large dimension, and are thus replaced by a combination of previous smaller tables. 
 
+For other sumchecks in the GKR protocol, the scenario is analogous for the sumchecks at layers $r_1-1$, $r_1-2$, $r_1-3$, $r_1-4$, with the difference that, at the sumcheck of layer $r_1-i$, we use bucketing in the first $\max\{3-i,0\}$ rounds, and the tabular approach mentioned above for the next $2$ or $1$ round. 
+
+
+
+Our implementation uses further optimizations, which we do not discuss in detail. For example, we adapt \cite[Algorithm 3]{sumcheck_opt_2} to our setting. We also use tables in two more rounds of each of the last $4$ GKR sumchecks.
+\begin{comment}
 \paragraph{Further optimizations.}
-In all the rounds where we use buckets, the prover computes the entries of the tables $T_{A_k}^{(j)}$ that it needs (e.g.\ $T_{A_0}$, $T_{A_2}$, $T_{A_0}^{(1)}$, $T_{A_2}^{(1)}$, $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$) ``on-the-go'', in the sense explained above for $T_{A_2}$ when computing $t_1(\infty)$, i.e.\ each entry is computed right when it is needed and discarded afterward. Because of this, we never store these tables, nor keep them in cache. The tables $T_{r_1}^{(j)}$, $T_{r_1-1}^{(j)}$, $T_{r_1-2}^{(j)}$ and $T_{r_1-3}^{(j)}$ are computed in full during the sumchecks that require them.  Since the prover processes one index $\bb$ at a time, we keep only a small part of each of them  in cache.
+In all the rounds where we use buckets, the prover computes the entries of the tablesthat it needs ``on-the-go'', in the sense explained above for $T_{A_2}$ when computing $t_1(\infty)$, i.e.\ each entry is computed right when it is needed and discarded afterward. Because of this, we never store these tables, nor keep them in cache. The tables $T_{r_1}^{(j)}$, $T_{r_1-1}^{(j)}$, $T_{r_1-2}^{(j)}$ and $T_{r_1-3}^{(j)}$ that have at most $2^8$ entries per index are computed in full.  Since the prover processes one index $\bb$ at a time, we keep only a small part of these tables  in cache at a time.
+
+In contrast, the tables whose entries have dimension $2^8$, i.e.\ $T_{r_1}^{(4)}$, $T_{r_1-1}^{(3)}$, $T_{r_1-2}^{(2)}$ and $T_{r_1-3}$, are computed in full, since they are used in the rounds where we use tables but not buckets. In each such round, each of their entries, say $T_{r_1}^{(4)}[\eps,\bb]$, is read once for every $\cc\in\bits^{r_2}$, and so each of its $2^8$ elements is read $\codedim_2/2^8$ times on average (e.g.\ $16$ times if $\codedim_2=2^{12}$).
 
 
-Our implementation uses further optimizations, which we do not discuss in detail. For example, we adapt \cite[Algorithm 3]{sumcheck_opt_2} to our setting. We also uses tables in two more rounds of each of the last $4$ GKR sumchecks.
-
+\end{comment}
 
 
 \subsection{Reducing transpositions when forming table indices}\label{s:indices}
