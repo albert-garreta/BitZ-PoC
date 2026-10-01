@@ -496,7 +496,7 @@ We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful an
 
 
 
-\emph{Implementation and optimizations:} We  used AI in our implementation, optimization, and experiments, in the way explained in \cref{s:experiments}. In particular, the use of lookup tables was initially suggested by an AI when working with it on optimizing the  low entropy batched grand products. The optimizations in \cref{s:gkr_buckets,s:indices} were found by an AI.
+\emph{Implementation and optimizations:} We  used AI in our implementation, optimization, and experiments, in the way explained in \cref{s:experiments}. In particular, the use of lookup tables (\cref{s:tables}) was initially suggested by an AI when working with it on optimizing the  low entropy batched grand products. The optimizations in \cref{s:gkr_buckets} were found by an AI.
 
 \bigskip
 
@@ -647,6 +647,13 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
 Throughout the above construction, the verifier handles only vectors of size $\codedim_1$ and $\codedim_2$, hence, by setting $\codedim_1$ and $\codedim_2$ approximately of size $\sqrt{\codedim}$, we manage to keep the verifier and proof size succinct. We leave as an open problem making these asymptotically polylogarithmic, instead of square root sized. 
 \end{remark}
 %\paragraph{Costs.} Concrete costs are provided in \cref{?}. In short, the prover operations are comprised of: encoding  the vector $\pack\circ \pi_2(\bitstext(\bff))\in \comfield^{\codedim/\comfieldexp}$, and computing a Merkle tree for the resulting word (Step 1); the operations required in the GKR grand product protocol and its subsequent possible batching steps (which we optimize in \cref{s:gkr_low_entropy}) (half Step 5); the operations used by the ring-switch \cite{binius2} and the PCS, WHIR or Ligerito in our instantiation (Step 6); and the operations from Steps 2 to half of Step 5. The latter involve a linear amount of operations over $\ZZ$ and over $\comfield$.
+
+
+\begin{remark}
+    Modifying \ftwoz-PCS so that the verifier and the proof sizes are logarithmic. 
+
+    
+\end{remark}
 
 \end{lncsmove}
 \begin{lncsmove}{WhyTensor}
@@ -804,7 +811,7 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
 \begin{lncsmove}{GKR}
 \subsection{GKR for low-entropy batched grand products}\label{s:to_low_entropy_gkr}
   In \iflncs Phase 3 of \cref{c:core_iop}\else Step 5 of \ftwoz \ (\cref{s:to_simple_bitz})\fi{} the prover must prove that \iflncs, for all $j\in [\codedim_2]$,\fi
-                    \begin{equation}\label{e:intro_eq_4_repeated}\iflncs\else g^{\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle} =\fi \prod_{i\in [\codedim_1]} \left(\left(g^{\pi_q^{-1}(\uu^{(1)}_i)} -1\right)\cdot \pi_2(\bitstext(\bff))_{ij}  +1\right) =g^{\mu_j} \qquad \text{in  } \comfield \iflncs\else\qquad \text{for all } j\in [\codedim_2].\fi
+                    \begin{equation}\label{e:intro_eq_4_repeated}\iflncs\else g^{\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle} =\fi \prod_{i\in [\codedim_1]} \left(\left(g^{\pi_q^{-1}(\uu^{(1)}_i)} -1\right)\cdot \pi_2(\bitstext(\bff))_{ij}  +1\right) =g^{\mu_j} \quad \text{in  } \comfield \iflncs\else\quad \forall j\in [\codedim_2].\fi
         \end{equation} 
         %
         As we mentioned, this is by far the most expensive step in \ftwoz. We next explain how we prove \eqref{e:intro_eq_4_repeated} in an efficient manner. We make the crucial  assumption that  both $\codedim_1$ and $\codedim_2$ are $O(\sqrt{\codedim})$ (see \cref{s:instantiation} for exact parameter instantiations). This assumption is relatively simple to attain, as we have discussed throughout \cref{s:intro,s:tech_overview}. At a protocol level, we simply prove \eqref{e:intro_eq_4_repeated} with a standard GKR protocol for batched grand products \cite{thaler13}. Assume $\codedim_1=2^{r_1}$ and $\codedim_2=2^{r_2}$ are powers of two. We set up multilinear polynomials $L_{0}, L_1,\ldots, L_{r_1}$ on $r_2 + i$ variables for $i\in \range{0}{r_1}$, respectively, such that 
@@ -814,7 +821,7 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
         L_{r_1}(\bb,\cc) = \left(g^{\pi_q^{-1}(\uu^{(1)}_{\mathsf{int}(\bb)})} -1\right)\cdot \pi_2(\bitstext(\bff))_{\mathsf{int}(\bb),\mathsf{int}(\cc)}  +1  \quad  \text{ for all } (\bb,\cc) \in \bits^{r_1} \times \bits^{r_2},
         $$
 \iflncs\endgroup\fi
-        where $\mathsf{int}(\bb)$ denotes the integer whose bit decomposition is $\bb$; and, for $i=0,\ldots, r_1-1$
+        where $\mathsf{int}(\bb)$ denotes the integer whose bit decomposition is $\bb$, and, for $i=0,\ldots, r_1-1$
       \begin{equation}\label{e:to_gkr_polys}
   L_{i}(\bb,\cc)  =  L_{i+1}(0,\bb,\cc) \cdot L_{i+1}(1,\bb, \cc)  \quad \text{for all } (\bb,\cc)\in \bits^{i} \times \bits^{r_2}.
     \end{equation}
@@ -829,9 +836,7 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
     \begin{equation}\label{e:intro_grand_product_eq_1}
     \mle{g^{\pi_q^{-1}(\uu^{(1)})}}(\rr) = a,\qquad \mle{\pi_2(\bitstext(\bff)_{*j})}(\rr)=a_j \qquad \text{for all } j \in [\codedim_2] \quad \text{over } \comfield,
     \end{equation}
-    for some $\rr\in \comfield^{r_1}$, where $\mle{*}$ denotes MLE, and $g^{\pi_q^{-1}(\uu^{(1)})}$ is the vector with entries $g^{\pi_q^{-1}(\uu^{(1)}_i)}$. 
-    
-    Since $\uu$ is public, the verifier checks the first claim of \eqref{e:intro_grand_product_eq_1} on its own in time $O(\sqrt{\codedim})$, leveraging its tensor decomposition. \iflncs\else \fi
+    for some $\rr\in \comfield^{r_1}$, where $\mle{*}$ denotes MLE, and $g^{\pi_q^{-1}(\uu^{(1)})}$ is the vector with entries $g^{\pi_q^{-1}(\uu^{(1)}_i)}$.   Since $\uu$ is public, the verifier checks the first claim of \eqref{e:intro_grand_product_eq_1} on its own in time $O(\sqrt{\codedim})$, leveraging its tensor decomposition. \iflncs\else \fi
 
 
     
@@ -846,15 +851,15 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
     This property trickles down to different stages of the GKR protocol. For example, the above property implies that $L_{r_1-1}(\bb',\cc)$ as well can take only an $O(\sqrt{\codedim})$ amount of values (with worse constants now) across all $(\bb',\cc)\in \bits^{r_1-1}\times \bits^{r_2}$. Similarly, the coefficients of the first messages sent by the prover at the last stages of the GKR protocol (which involve the most expensive sumchecks), also benefit from a low entropy property. 
 
 
-            This allows the prover to compute small lookup tables that are reused across all values of $\cc\in [\codedim_2]$. We build different lookup tables, which are used at different stages of the GKR protocol.  For example, in the last sumcheck of GKR (the most expensive one, involving $r_1-1+r_2$ variables) the prover uses tables with at most $2^8$ entries per index to compute its first five messages, and it does the same for the first four, three and two messages of the three sumchecks before it (see \cref{s:gkr_buckets,s:indices}).  This  configuration was found through an optimization process that was run with AI. See \cref{s:gkr_low_entropy} for more details. We note that the size of these tables grows doubly exponentially as one moves further into the rounds of sumchecks and the layers of GKR, hence eventually one has to resort to running standard sumcheck rounds.
+            This allows the prover to compute small lookup tables that are reused across all values of $\cc\in [\codedim_2]$. We build different lookup tables, which are used at different stages of the GKR protocol.  For example, in the last sumcheck of GKR (the most expensive one, involving $r_1-1+r_2$ variables) the prover uses tables with at most $2^8$ entries per index to compute its first five messages, and it does the same for the first four, three and two messages of the three sumchecks before it.  See \cref{s:gkr_low_entropy} for more details. We note that the size of these tables grows doubly exponentially as one moves further into the rounds of sumchecks and the layers of GKR, hence eventually one has to resort to running standard sumcheck rounds.
 
  Besides the above, we also use or adapt known techniques from \cite{sumcheck_opt_1,sumcheck_opt_2,gruen} to our context.
 
-\paragraph{Example.} To give an idea of the type of optimizations we use, we explain how the prover computes its first message in the last sumcheck of the GKR protocol (the most expensive one). Further details are in \cref{s:gkr_low_entropy}. This sumcheck certifies a claim of the form
+\paragraph{Example.} To give an idea of the type of optimizations we use, we explain how the prover computes its first message in the last sumcheck of the GKR protocol (i.e.\ the ``biggest'' sumcheck, which is the most expensive one).  This sumcheck certifies a claim of the form
 \[
 C=\sum_{(\bb,\cc)\in \bits^{r_1-1}\times \bits^{r_2}} L_{r_1}(0,\bb,\cc)\cdot L_{r_1}(1,\bb,\cc)\cdot \eq(\bb,\cc;\bm{\alpha}),
 \]
-where $\bm{\alpha}\in \comfield^{r_1-1+r_2}$ contains verifier challenges. 
+where $\bm{\alpha}\in \comfield^{r_1-1+r_2}$ contains verifier challenges and $C\in \comfield$ is some value. 
 %
 The first prover message is the degree-$3$ polynomial
 $
@@ -867,28 +872,28 @@ t_1(0)&=\sum_{(\bb,\cc)\in \bits^{r_1-2}\times\bits^{r_2}} \eq(\cc;\bm{\alpha}')
 A_0[\bb,\cc]&\defeq L_{r_1}(0,0,\bb,\cc)\cdot L_{r_1}(1,0,\bb,\cc)\cdot \eq(\bb;\bm{\alpha}_1).
 \end{aligned}
 \end{equation}
-Now, write $y_{\bb'}\defeq g^{\pi_q^{-1}(\uu^{(1)}_{\mathsf{int}(\bb')})}$ for $\bb'\in \bits^{r_1}$. Since $\bitstext(\bff)$ is full of bits, each factor $L_{r_1}(\eps,0,\bb,\cc)$ is either $y_{(\eps,0,\bb)}$ (if the bit $\bitstext(\bff)_{\mathsf{int}(\eps,0,\bb),\mathsf{int}(\cc)}$ is $1$) or simply $1$ (if the bit is $0$). This means that, for a fixed $\bb\in \bits^{r_1-2}$, $A_0[\bb,\cc]$ takes only $4$ different values as $\cc$ ranges over $\bits^{r_2}$, one for each combination of the two bits $x=\bitstext(\bff)_{\mathsf{int}(0,0,\bb),\mathsf{int}(\cc)}$ and $x'=\bitstext(\bff)_{\mathsf{int}(1,0,\bb),\mathsf{int}(\cc)}$. Because of this, the prover can precompute a small table $T_{A_0}\in (\comfield^{4})^{2^{r_1-2}}$ with these $4$ values for each $\bb$, namely
+Now, write $y_{\bb'}\defeq g^{\pi_q^{-1}(\uu^{(1)}_{\mathsf{int}(\bb')})}$ for $\bb'\in \bits^{r_1}$. Since $\bitstext(\bff)$ is full of bits, each factor $L_{r_1}(\eps,0,\bb,\cc)$ is either $y_{(\eps,0,\bb)}$ (if the bit $\bitstext(\bff)_{\mathsf{int}(\eps,0,\bb),\mathsf{int}(\cc)}$ is $1$) or simply $1$ (if the bit is $0$). This means that, for a fixed $\bb\in \bits^{r_1-2}$, $A_0[\bb,\cc]$ takes only $4$ different values as $\cc$ ranges over $\bits^{r_2}$, one for each combination of the two bits $x_{\bb,\cc}=\bitstext(\bff)_{\mathsf{int}(0,0,\bb),\mathsf{int}(\cc)}$ and $x_{\bb,\cc}'=\bitstext(\bff)_{\mathsf{int}(1,0,\bb),\mathsf{int}(\cc)}$. Because of this, the prover can precompute a small table $T_{A_0}\in (\comfield^{4})^{2^{r_1-2}}$ with these $4$ values for each $\bb$, namely
 \[
 T_{A_0}[\bb]\defeq \Big( y_{(0,0,\bb)}^{\,x}\cdot y_{(1,0,\bb)}^{\,x'}\cdot \eq(\bb;\bm{\alpha}_1)\Big)_{(x,x')\in \bits^2} \in \comfield^4 \qquad \text{for } \bb\in \bits^{r_1-2},
 \]
-so that $A_0[\bb,\cc]$ is simply the entry $T_{A_0}[\bb][x,x']$. Building $T_{A_0}$ takes $\approx \codedim_1 \approx O(\sqrt{\codedim})$ multiplications in $\comfield$. After that, the prover obtains the constant coefficients of all the $h_{1,\cc}(X)$ with $\codedim/4$ table reads and $\codedim/4$ additions in $\comfield$, and no multiplications at all. Then it obtains $t_1(0)$ with $\codedim_2$  multiplications and additions. See \cref{t:gkr_step1_costs} for the cost of the rest of coefficients of $t_1(X)$. 
+so that $A_0[\bb,\cc]$ is simply the entry $T_{A_0}[\bb][x_{\bb,\cc},x_{\bb,\cc}']$. Building $T_{A_0}$ takes $\approx \codedim_1 = 2^{r_1} \approx O(\sqrt{\codedim})$ multiplications in $\comfield$. After that, the prover obtains the constant coefficients of all the $h_{1,\cc}(X)$ with $O(\codedim)$ table reads and  additions in $\comfield$, and no multiplications at all. Then it obtains $t_1(0)$ with $O(\codedim_2)$  more multiplications and additions. 
 
-In \cref{s:gkr_buckets} we go one step further and use ``bucketing'' when computing the constant and leading coefficients of $t_1(X)$. Concretely, recall that $A_0[\bb,\cc]= T_{A_0}[\bb][x,x']$ where  $x=\bitstext(\bff)_{\mathsf{int}(0,0,\bb),\mathsf{int}(\cc)}$ and $x'=\bitstext(\bff)_{\mathsf{int}(1,0,\bb),\mathsf{int}(\cc)}$. We can now, for a fixed index $\bb$, organize the tuples $(\bb,\cc)$ (with varying $\cc$) by the value in $\{0,1\}^2$ that $(x,x')$ takes. Rewriting \eqref{e:t_1_0_to} accordingly, we have 
+In \cref{s:gkr_buckets} we go one step further and use ``bucketing'' when computing the constant and leading coefficients of $t_1(X)$ (and of other prover messages during the GKR protocol). Concretely, recall that $A_0[\bb,\cc]= T_{A_0}[\bb][x_{\bb,\cc},x_{\bb,\cc}']$ where  $x_{\bb,\cc}=\bitstext(\bff)_{\mathsf{int}(0,0,\bb),\mathsf{int}(\cc)}$ and $x_{\bb,\cc}'=\bitstext(\bff)_{\mathsf{int}(1,0,\bb),\mathsf{int}(\cc)}$. We can now, for a fixed index $\bb$, organize the tuples $(\bb,\cc)$ (with varying $\cc$) by the value in $\{0,1\}^2$ that $(x_{\bb,\cc},x_{\bb,\cc}')$ takes. Rewriting \eqref{e:t_1_0_to} accordingly, we have 
 %
 \begin{align*}
 t_1(0)=& \sum_{\bb\in \bits^{r_1-2}} \sum_{(x,x')\in \bits^2} \sum_{\substack{
     \cc\in \bits^{r_2}\ :\\ 
-    \bitstext(\bff)_{\mathsf{int}(0,0,\bb),\mathsf{int}(\cc)} = x\\  
-    \bitstext(\bff)_{\mathsf{int}(1,0,\bb),\mathsf{int}(\cc)}=x'
+    x_{\bb,\cc} = x,x\ 
+    x_{\bb,\cc}'=x'
     }
     } \eq(\cc;\bm{\alpha}') \cdot  T_{A_0}[\bb][x,x']\\ =& \sum_{\substack{\bb\in \bits^{r_1-2}\\(x,x')\in \bits^2}}  T_{A_0}[\bb][x,x']  \cdot H_\bb[x,x']
 \end{align*}
-where $H_\bb[x,x']\defeq \sum_{\cc} \eq(\cc;\bm{\alpha}')$, and where the sum runs over the same set of column indices $\cc$ as in the right hand side of the first equality. The prover can compute all the values $H_\bb[x,x']$ with $O(\codedim)$ field additions and no multiplications, and then obtain $t_1(0)$ by performing $O(\sqrt{\codedim})$ multiplications, additions, and reads into the table $T_{A_0}$ (note that, in the previous approach, the prover performed $O(\codedim)$ reads into $T_{A_0}$). Additionally and importantly, with this method each entry in $T_{A_0}$ is read exactly once. Hence there is no need to store $T_{A_0}$ in cache in full, and instead its values can be computed only when they are needed, and discarded afterward (note that if each value in $T_{A_0}$ was used in several occassions, as in our prior approach, then this would wasteful). 
+where $H_\bb[x,x']\defeq \sum_{\cc} \eq(\cc;\bm{\alpha}')$, and where the sum runs over the same set of column indices $\cc$ as in the right hand side of the first equality. The prover can compute all the values $H_\bb[x,x']$ with $O(\codedim)$ field additions and no multiplications, and then obtain $t_1(0)$ by performing $O(\sqrt{\codedim})$ multiplications, additions, and reads into the table $T_{A_0}$ (note that, in the previous approach, the prover performed $O(\codedim)$ reads into $T_{A_0}$). 
+
+Additionally and importantly, with this method each entry in $T_{A_0}$ is read exactly once. Hence there is no need to store $T_{A_0}$ in cache in full, and instead its values can be computed only when they are needed, and discarded afterward (note that if each value in $T_{A_0}$ was used in several occassions, as in our prior approach, then this would wasteful). This optimization  is not particularly beneficial for the table $T_{A_0}$ specifically, because $T_{A_0}$ is small, but is very useful in other sumcheck rounds where tables become larger and do not fit in cache. Without it, we would not be able to exploit the low entropy of the batched grand product as much as we do now.
 
 
-The next four prover messages in this sumcheck are computed similarly with larger tables, and with further optimizations on top (cf.\ \cref{s:gkr_low_entropy}). Other sumchecks in the GKR undergo a similar approach.
-
-The optimization above is not particularly beneficial for the table $T_{A_0}$ specifically, because $T_{A_0}$ is small, but is very useful in other sumcheck rounds where tables become larger and do not fit in cache. 
+The next four prover messages in this sumcheck are computed similarly with larger tables, and with further optimizations on top (cf.\ \cref{s:gkr_buckets}). Other sumchecks in the GKR undergo a similar approach.
 
 
 
@@ -2746,24 +2751,12 @@ $$
 L_{r_1}(\bb,\cc)=T_{r_1}[\bb][\bfg_{\bb,\cc}] \quad \text{for all } (\bb,\cc)\in \bits^{r_1}\times \bits^{r_2}.
 $$
 %Since $\yy$ is part of the input, this is essentially a no-op 
-In our instantiation, $\yy_{\bb}^{(1)}=g^{\bm{\gamma}_{\bb}}$ and $\yy_\bb^{(0)}=1$ (cf.\ \eqref{e:main_grand_product}). Hence additionally the prover precomputes the elements $g^{\bm{\gamma}_{\bb}}$ at the beginning of the protocol, before computing $T_{r_1}$.
+In our instantiation, $\yy_{\bb}^{(1)}=g^{\bm{\gamma}_{\bb}}$ and $\yy_\bb^{(0)}=1$ (cf.\ \eqref{e:main_grand_product}). Hence additionally the prover precomputes the elements $g^{\bm{\gamma}_{\bb}}$ at the beginning of the protocol, before computing $T_{r_1}$. 
 
+The prover computes analogous tables for some of the other sumchecks executed during the GKR protocol, as explained at the end of the present \cref{s:tables}.  During each such sumcheck, the prover further uses extra tables, as we will explain next. Importantly, all these tables have size independent of $\codedim_2$.  This (among others, cf.\ \cref{s:why_the_tensor_split}) is one of the reasons why we use the tensor decomposition structure, i.e.\ the split given by $\codedim=\codedim_1\cdot \codedim_2$, in \cref{c:core_iop}.
 
+As we will see, the size of the tables grows doubly exponentially on the round number of sumcheck. It also grows doubly exponentially as one moves up the GKR layers (i.e.\ the tables in the sumcheck corresponding to the $i$-th GKR layer have entries that are square the size of the entries in the tables in the $(i+1)$-th GKR  layer). 
 
-The prover  also precomputes similar tables for the values $L_{r_1-j}(\bb,\cc)$ of the levels close to the leaves (i.e.\ for small $j$),
-\begin{equation}\label{e:size_T_r1_i}T_{r_1-j}\in \left(\comfield^{2^{2^j}}\right)^{\bits^{r_1-j}},\end{equation}
-as well as other tables relevant for the different sumcheck rounds of \cref{c:gkr_grand_product}, constructed from the tables $T_{r_1-j}$ themselves. The superscript $\bits^{r_1-j}$ in \eqref{e:size_T_r1_i} indicates that the table $T_{r_1-j}$ has one entry per element in the hypercube  $\bits^{r_1-j}$, and this entry is a vector of $2^{2^j}$ field elements. Concretely, for $\bb\in \bits^{r_1-j}$, $T_{r_1-j}[\bb]$ consists of all possible products of  $2^j$ factors of the grand product, namely the factors indexed by $(\bb', \bb)$ with $\bb$ fixed and $\bb'$ ranging over $\bits^{j}$.  Each factor can take two values, depending on whether $\bfg_{(\bb', \bb), \cc}$ is $1$ or $0$. Hence $T_{r_1-j}[\bb]$ consists of $2^{2^j}$ elements.
-
-Note that $|T_{r_1-j}|$   grows doubly-exponentially in $j$. Because of this, these tables are usable in practice only for the bottom few levels of the tree ($j\leq 3$ in our implementation). In higher levels we use standard sumchecks or we reuse some of the  tables from previous levels.
-
-
-
-%Indeed, a node $i$ levels above the leaves is the product of the $2^i$ leaves below it, so its value is one of $2^{2^i}$ position-indexed constants, selected by $2^i$ entries of $\bfg_{*j}$ and independent of $j\in [\codedim_2]$. 
-
-Importantly, all these tables have size independent of $\codedim_2$.  This (among others, cf.\ \cref{s:why_the_tensor_split}) is one of the reasons why we use the tensor decomposition structure, i.e.\ the split given by $\codedim=\codedim_1\cdot \codedim_2$, in \cref{c:core_iop}.
-
-
-    All precomputed data in this section depends on the input vector $\yy$ of $\PESAT(\comfield,\gkrpol)$, and possibly on further verifier challenges. Since, in a wider context where \cref{c:gkr_grand_product} is a subprocess of a larger proof system, $\yy$ typically depends on verifier's challenges, these precomputations must be done at \emph{runtime}. 
 
 
 
@@ -2849,7 +2842,7 @@ and use it to obtain any value $A_{0}^{(1)}[\bb,\cc]$ for $(\bb,\cc)\in \bits^{r
 %
 The size of $T_{A_0}$, again, does not depend on $\codedim_2=2^{r_2}$. Building $T_{A_0}$ requires at most $8\cdot 2^{r_1-2} = 2^{r_1+1}$ multiplications and no additions. 
 
-We now explain how to obtain the values $A_2^{(1)}[\bb,\cc]$, again via the construction of a lookup table. (The prover does not need the values $A_1^{(1)}[\bb,\cc]$, as we explain below.) Note that $A_2^{(1)}[\bb,\cc]$ depends on the \emph{four} bits $\bfg_{(\eps_2,\eps_1,\bb),\cc}$, $\eps_1,\eps_2\in \bits$, so our table will need $2^4=16$ entries  per  index $\bb$ (as opposed to $4$ as in $T_{A_0}$).
+We now explain how to obtain the values $A_2^{(1)}[\bb,\cc]$, again via the construction of a lookup table. Note that $A_2^{(1)}[\bb,\cc]$ depends on the \emph{four} bits $\bfg_{(\eps_2,\eps_1,\bb),\cc}$, $\eps_1,\eps_2\in \bits$, so our table  needs $2^4=16$ entries  per  index $\bb$ (as opposed to $4$ as in $T_{A_0}$).
 The prover  computes the table $T_{A_2}\in (\comfield^{16})^{\bits^{r_1-2}}$ given by
     \begin{equation}\label{e:TA2}T_{A_2}[\bb]=\Big( \big(\yy_{0,1,\bb}^{(x_1)}-\yy_{0,0,\bb}^{(x_0)}\big)\cdot \big(\yy_{1,1,\bb}^{(x_1')}-\yy_{1,0,\bb}^{(x_0')}\big)\cdot \omega[\bb] \Big)_{(x_0,x_1,x_0',x_1')\in \bits^4},\end{equation}
     so that $A_2^{(1)}[\bb,\cc]$ is the element  $$A_2^{(1)}[\bb,\cc]=T_{A_2}[\bb][\bfg_{(0,0,\bb),\cc},\bfg_{(0,1,\bb),\cc},\bfg_{(1,0,\bb),\cc},\bfg_{(1,1,\bb),\cc}].$$ 
@@ -2862,15 +2855,15 @@ The prover  computes the table $T_{A_2}\in (\comfield^{16})^{\bits^{r_1-2}}$ giv
 
 Using the ``eq factorization'' technique from \cite{gruen}, write   $\eq(X,\cc;\bm{\alpha}^{(i,2)})=\eq(X;\alpha)\cdot \eq(\cc;\bm{\alpha}')$, where $\bm{\alpha}^{(i,2)}=(\alpha,\bm{\alpha}')$. Then 
 $$h_1(X)=\eq(X;\alpha)\cdot t_1(X) \quad  \text{where} \quad t_1(X)\defeq\sum_{\cc}\eq(\cc;\bm{\alpha}')\cdot h_{1,\cc}(X).$$ 
-Instead of sending $h_1(X)$, the prover sends $t_1(X)$. The constant and leading coefficients of $t_1(X)$ can be computed by the prover with $2\cdot\codedim_2$ multiplications and additions (plus the $O(\codedim_2)$ cost of computing $\eq(\cc;\bm{\alpha}')$). Additionally we have $C^{(r_1-1)} = h_1(0)+h_1(1)=(1-\alpha)\cdot t_1(0)+\alpha\cdot t_1(1)$, and so the verifier can obtain $t_1(1)$ by itself, which in turn allows it to obtain the linear coefficient of $t_1(X)$. 
+Instead of sending $h_1(X)$, the prover sends $t_1(X)$. With the constant and leading terms of $h_{1,\cc}(X)$ computed for all $\cc$,  the constant and leading coefficients of $t_1(X)$ can be computed by the prover with $2\cdot\codedim_2$ multiplications and additions (plus the $O(\codedim_2)$ cost of computing $\eq(\cc;\bm{\alpha}')$). Additionally we have $C^{(r_1-1)} = h_1(0)+h_1(1)=(1-\alpha)\cdot t_1(0)+\alpha\cdot t_1(1)$, and so the verifier can obtain $t_1(1)$ by itself, which in turn allows it to obtain the linear coefficient of $t_1(X)$. 
 
 
 
  
 \bigskip
 
-In \cref{t:gkr_step1_costs} we record the total upper bound costs for computing $h_1(X)$.  On the other hand, a standard generic approach to compute $h_{1}(X)$ would require $O(\codedim)=O(\codedim_1\cdot \codedim_2)$ multiplications and additions, even if using the few  sumcheck optimizations that apply in our settings (to our knowledge). %\albert{which ones, exactly?}. 
- Crucially, we note that our sumcheck features factors of full field bit size $\log|\KK|$, which prevents us from using some known powerful optimizations when the factors are small, e.g.\ the univariate skip \cite{gruen} and some optimizations from \cite{sumcheck_opt_2}. From \cite{sumcheck_opt_1,sumcheck_opt_2} we can use the square-root split of the $\eq$ factor, and we use  precomputed tables in the first sumcheck rounds, applied to summands which are not small, but are selected by witness bits among few values. We also use the  ``eq factoring'' technique from \cite{gruen} to reduce the degree of the polynomials sent by the prover during sumcheck. 
+In \cref{t:gkr_step1_costs} we record the total upper bound costs for computing $h_1(X)$.  On the other hand, a standard generic approach to compute $h_{1}(X)$ would require $O(\codedim)=O(\codedim_1\cdot \codedim_2)$ multiplications and additions, even if using the few  sumcheck optimizations that apply in our settings. %\albert{which ones, exactly?}. 
+ Crucially, we note that our sumcheck features factors of full field bit size $\log|\KK|$, which prevents us from using some known powerful optimizations when the factors are small, e.g.\ the univariate skip \cite{gruen} and some optimizations from \cite{sumcheck_opt_2}. %From \cite{sumcheck_opt_1,sumcheck_opt_2} we can use the square-root split of the $\eq$ factor, and we use  precomputed tables in the first sumcheck rounds, applied to summands which are not small, but are selected by witness bits among few values. 
 
  
 
@@ -2893,7 +2886,7 @@ In \cref{t:gkr_step1_costs} we record the total upper bound costs for computing 
         \hline
         Table reads & $\codedim_1\cdot \codedim_2/2$, into tables of $5\cdot\codedim_1$ field elements & --
     \end{tabular}
-    \caption{The cost in field operations of the first sumcheck round of the last sumcheck in our GKR protocol for batched grand products, cf.\ \cref{c:gkr_grand_product}, where $\codedim=\codedim_1\cdot \codedim_2 = 2^{r_1}\cdot 2^{r_2}$ is the witness size. In our instantiation $\codedim_1\iflncs\else = 2^{r_1}\fi\approx \codedim^{0.6}$ and $\codedim_2\iflncs\else =2^{r_2}\fi\approx \codedim^{0.4}$ (\cref{s:instantiation}). %The $\Theta(\codedim)$ additions and table reads are unavoidable --- every bit of the witness must be touched --- but additions in $\comfield$ are $128$-bit XORs; the gain over the generic prover is that only $O(\codedim_1+\codedim_2)$ \emph{multiplications} are performed instead of $\Theta(\codedim)$.
+    \caption{The cost in field operations of the first sumcheck round of the last sumcheck (the most expensive one) in our GKR protocol for batched grand products, cf.\ \cref{c:gkr_grand_product}, where $\codedim=\codedim_1\cdot \codedim_2 = 2^{r_1}\cdot 2^{r_2}$ is the witness size. In our instantiation $\codedim_1\iflncs\else = 2^{r_1}\fi\approx \codedim^{0.6}$ and $\codedim_2\iflncs\else =2^{r_2}\fi\approx \codedim^{0.4}$ (\cref{s:instantiation}), and $\codedim$ is the witness size. %The $\Theta(\codedim)$ additions and table reads are unavoidable --- every bit of the witness must be touched --- but additions in $\comfield$ are $128$-bit XORs; the gain over the generic prover is that only $O(\codedim_1+\codedim_2)$ \emph{multiplications} are performed instead of $\Theta(\codedim)$.
     }
 \label{t:gkr_step1_costs}
 \end{table}
@@ -2966,7 +2959,7 @@ This can be iterated in further sumcheck rounds, for computing $h_3(X), h_4(X),$
 L_{r_1}(\eps,\bm{\rho}^{(j)},\bb,\cc)=T_{r_1}^{(j)}[\eps,\bb]\big[(\bfg_{(\eps,\ww,\bb),\cc})_{\ww\in\bits^{j-1}}\big] \qquad \text{for all } (\eps,\bb,\cc)\in \bits\times\bits^{r_1-j}\times\bits^{r_2},
 \end{equation}
 %
-\noindent i.e.\ $T_{r_1}^{(j)}[\eps,\bb]$ contains the $2^{2^{j-1}}$ possible values of $L_{r_1}(\eps,\bm{\rho}^{(j)},\bb,\cc)$, one for each value of the $2^{j-1}$ bits $(\bfg_{(\eps,\ww,\bb),\cc})_{\ww\in\bits^{j-1}}$ that it depends on. The prover obtains $T_{r_1}^{(j)}$ from $T_{r_1}^{(j-1)}$ as we obtained $T_{r_1}^{(2)}$ from $T_{r_1}$. Precisely, each entry of $T_{r_1}^{(j)}[\eps,\bb]$ is $(1-\rho_{j-1})\cdot v_0+\rho_{j-1}\cdot v_1$, for an entry $v_0$ of $T_{r_1}^{(j-1)}[\eps,0,\bb]$ and an entry $v_1$ of $T_{r_1}^{(j-1)}[\eps,1,\bb]$. 
+\noindent i.e.\ $T_{r_1}^{(j)}[\eps,\bb]$ contains the $2^{2^{j-1}}$ possible values of $L_{r_1}(\eps,\bm{\rho}^{(j)},\bb,\cc)$, one for each value of the $2^{j-1}$ bits $(\bfg_{(\eps,\ww,\bb),\cc})_{\ww\in\bits^{j-1}}$ that it depends on. The prover obtains $T_{r_1}^{(j)}$ from $T_{r_1}^{(j-1)}$ in the same way as we obtained $T_{r_1}^{(2)}$ from $T_{r_1}$. Precisely, each entry of $T_{r_1}^{(j)}[\eps,\bb]$ is $(1-\rho_{j-1})\cdot v_0+\rho_{j-1}\cdot v_1$, for an entry $v_0$ of $T_{r_1}^{(j-1)}[\eps,0,\bb]$ and an entry $v_1$ of $T_{r_1}^{(j-1)}[\eps,1,\bb]$. 
 
 The limitation is that the entries in the tables are vectors whose dimension is squared at each round. More precisely, each further round squares the number of cases per index of every table, but it only halves the number of indices.
 Hence, in practice we use lookup tables only in the first few rounds of each of the last few sumchecks of the GKR protocol, and after that we execute the sumcheck protocol normally.  
@@ -3023,12 +3016,15 @@ This is done so that the tables can be kept in cache, since we observe that, whe
 
 \paragraph{The rest of the sumchecks in Step 2 of \cref{c:gkr_grand_product}.} So far we have discussed the last sumcheck from Step 2 of \cref{c:gkr_grand_product}, corresponding to the lower layer of the binary tree of products of our GKR circuit for the grand products. 
 
-The sumchecks run for $i=r_1-2, r_1-3,\ldots$ can be optimized in the exact same way as we did for the last sumcheck $(i=r_1-1)$. In this case, instead of starting with the table $T_{r_1}^{(1)}$, which at each index contains the two values $(\yy_\bb^{(0)}, \yy_\bb^{(1)})$, one starts, for $j\defeq r_1-1-i$, with the table
+The sumchecks run for $i=r_1-2, r_1-3,\ldots$ can be optimized in the exact same way as we did for the last sumcheck $(i=r_1-1)$. In this case, instead of starting with the table $T_{r_1}^{(1)}$, which at each index contains the two values $(\yy_\bb^{(0)}, \yy_\bb^{(1)})$, one starts, for $j\defeq r_1-1-i$, with a table
 %
 $$
 T_{r_1-j} \in (\KK^{2^{2^{j}}})^{\bits^{r_1-j}}
 $$
-described in \cref{e:size_T_r1_i}. Since $T_{r_1-j}$ has, per index, the square of the number of entries of $T_{r_1-j+1}$, all subsequent tables also have, per index, the square of the number of entries of the analogous tables from the $(i+1)$-th sumcheck, and they require correspondingly more operations to compute.
+%
+where, for each $\bb \in \bits^{r_1-j}$, the entry $T_{r_1-j}[\bb]\in \KK^{2^{2^{j}}}$ is a vector of $2^{2^j}$, containing all possible values for the product of $2^j$ factors (at positions specified by $\bb$)  in the $\codedim_2$ grand products. Precisely,
+$$T_{r_1-j}[\bb]=\left(\left.\prod_{\bb' \in \bits^j}\yy_{(\bb',\bb)}^{\eps_{\bb'}} \ \right| \ \eps_{\bb'}\in \{0,1\} \ \forall \bb'\in \bits^j\right).$$
+ Since $T_{r_1-j}$ has, per index, the square of the number of entries of $T_{r_1-j+1}$, all subsequent tables also have, per index, the square of the number of entries of the analogous tables from the $(i+1)$-th sumcheck, and they require correspondingly more operations to compute, and possibly further optimizations on top, as we describe in \cref{s:gkr_buckets}.
 
 
 \begin{comment}
@@ -3061,7 +3057,7 @@ In Round 2 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,
 
 \subsection{Reducing table reads and avoiding some table precomputations via bucketing}\label{s:gkr_buckets}
 
-Note that in \cref{s:tables} the prover performs $O(\codedim)$ table reads, and keeps  full tables in cache for every sumcheck round where  a table is used. We now describe an optimization that reduces the  number of table reads to $O(\codedim_1)$, and  allows to compute some table entries ``on-the-go'' (meaning that we do not need to precompute the full table and store it in cache).  These optimizations were found by an AI when optimizing our prover and are reminiscent of Pippenger's MSM algorithm \cite{pipp}.
+Note that in \cref{s:tables} the prover performs $O(\codedim)$ table reads, and keeps  full tables in cache for every sumcheck round where  a table is used. We now describe an optimization that reduces the  number of table reads to $O(\codedim_1)$, and  allows to compute some table entries ``on-the-go'', meaning that we do not need to precompute the full table and store it in cache.  These optimizations were found by an AI when optimizing our prover and are reminiscent of Pippenger's MSM algorithm \cite{pipp}.
 
 %In the first rounds of each sumcheck, the prover can read the tables from the previous subsection much less often, and use fewer operations. We describe this optimization for the first message of the last sumcheck, i.e.\ the message analyzed in \cref{t:gkr_step1_costs}. Our implementation uses it (see also \cref{s:indices}).
 
@@ -3081,11 +3077,11 @@ t_1(\infty)=& \sum_{\bb\in \bits^{r_1-2}} \sum_{\xx\in \bits^4} \sum_{\cc\in\bit
 where $H_{\bb}[\xx]\defeq \sum_{\cc\in\bits^{r_2} : \ \xx_{\bb,\cc}=\xx} \eq(\cc;\bm{\alpha}')$. We call the values $H_{\bb}[\xx]$ ``buckets''.
 The values $H_{\bb}[\xx]$ can be precomputed and cost $\codedim/4$ additions in total, and no multiplications. 
 
-Hence $t_1(\infty)$ can be computed by making $2^{r_1 -2} \cdot 2^{4} = 4 \cdot \codedim_1$ reads into the table $T_{A_2}$, and performing the same amount of multiplications and additions. Even more, with this strategy, each entry $T_{A_2}[\bb][\xx]$ of the table $T_{A_2}$ needs to be accessed at most once. Hence the values $T_{A_2}[\bb][\xx]$ can be computed ``on-the-go'' rather than precomputed and kept in cache. In contrast, in \cref{s:tables}, each entry $T_{A_2}[\bb][\xx]$ of $T_{A_2}$ is read once for every  $\cc\in \bits^{r_2}$ with $\xx_{\bb,\cc}=\xx$.
+Hence $t_1(\infty)$ can be computed by making $2^{r_1 -2} \cdot 2^{4} = 4 \cdot \codedim_1$ reads into the table $T_{A_2}$, and performing the same amount of multiplications and additions. Even more, with this strategy, each entry $T_{A_2}[\bb][\xx]$ of the table $T_{A_2}$ needs to be accessed at most once. Hence the values $T_{A_2}[\bb][\xx]$ can be computed ``on-the-go'' when they are needed, and discarded afterward, rather than precomputed and kept in cache. In contrast, in \cref{s:tables}, each entry $T_{A_2}[\bb][\xx]$ of $T_{A_2}$ is read once for every  $\cc\in \bits^{r_2}$ with $\xx_{\bb,\cc}=\xx$. Hence in \cref{s:tables} the values $T_{A_2}[\bb][\xx]$ are used, in general, more than once, and thus   computing and discarding them right away is wasteful. 
 
 
 
-\paragraph{Subsequent sumcheck rounds and GKR layers.} The same idea applies to the next messages. For example, in the second round of the ``biggest'' sumcheck (i.e.\ after the round discussed above) the entries in the tables $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$ are  each one a vector of $2^4$ and $2^8$ elements, respectively. These vectors are indexed by elements from $\bits^4$ and $\bits^8$. We can now apply the same strategy as above, except that now we have $\xx$ range over $\bits^8$ instead of $\bits^4$. 
+\paragraph{Subsequent sumcheck rounds and GKR layers.} The same idea applies to the next messages of sumcheck. For example, in the second round of the ``biggest'' sumcheck (i.e.\ after the round discussed above) the entries in the tables $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$ are  each one a vector of $2^4$ and $2^8$ elements, respectively. These vectors are indexed by elements from $\bits^4$ and $\bits^8$. We can now apply the same strategy as above, except that now we have $\xx$ range over $\bits^8$ instead of $\bits^4$. 
 
 
 This optimization is beneficial as long as we can index $\xx$ over $\bits^{t}$ with $2^t< \codedim_2=2^{r_2}$, i.e.\  as long as the corresponding table has entries that are vectors of dimension $2^t<2^{r_2}$. This is because the amount of multiplications, table reads, and additions performed is a multiple of $2^t$. In practice this constrains us to $t\in \{2,4,8\}$.
@@ -3094,7 +3090,7 @@ This optimization is beneficial as long as we can index $\xx$ over $\bits^{t}$ w
 
 
 
-For coefficients where the corresponding table would have entries of dimension $2^{16}$ ($t=16$), we use the following approach. For example, in the third round of the last sumcheck (i.e.\ the  ``biggest'' sumcheck), the leading coefficient $t_3(\infty)$ of $t_3(X)$ would require using the table $T_{A_2}^{(3)}$, whose entries have dimension $2^{16}$, and we would compute it as 
+For coefficients where the corresponding table would have entries of dimension $2^{16}$ ($t=16$), and thus $\xx$ would be indexed over $\bits^{16}$, we use the following approach, which we illustrate with an example. We focus on  the third round of the last sumcheck (i.e.\ the  ``biggest'' sumcheck). In that round, the prover must compute the constant and the leading coefficient of $t_3(X)$. Computinig the leading coefficient $t_3(\infty)$  of $t_3(X)$ as done above  would require using the table $T_{A_2}^{(3)}$, whose entries have dimension $2^{16}$, and we would compute it as 
 %
 $$
  t_3(\infty)=\sum_{\bb\in \bits^{r_1-4}} \sum_{\xx\in \bits^{16}}  T_{A_2}^{(3)}[\bb][\xx] \cdot H_{\bb}[\xx]. 
@@ -3113,7 +3109,7 @@ $$
 L_{r_1}(k, \bm{\rho}^{(3)}, \eps, \bb, \cc) = T_{r_1}^{(3)}[k,\eps,\bb][\xx_{k,\eps,\bb,\cc}], \qquad \text{where} \quad \xx_{k,\eps,\bb,\cc}\defeq (\bfg_{(k,\ww,\eps,\bb),\cc})_{\ww\in\bits^2}\in \bits^4,
 $$
 %
-and $T_{r_1}^{(3)}$ is the table of \eqref{e:T_r1_rounds} for the third round. Hence, for each $\eps,\eps'\in \bits$, the product $L_{r_1}(0,\bm{\rho}^{(3)},\eps,\bb,\cc)\cdot L_{r_1}(1,\bm{\rho}^{(3)},\eps',\bb,\cc)$ is determined by the $8$ bits $(\xx_{0,\eps,\bb, \cc}, \xx_{1,\eps',\bb,\cc})$.
+and $T_{r_1}^{(3)}$ is as in \eqref{e:T_r1_rounds} taking $j=3$. Hence, for each $\eps,\eps'\in \bits$, the product $L_{r_1}(0,\bm{\rho}^{(3)},\eps,\bb,\cc)\cdot L_{r_1}(1,\bm{\rho}^{(3)},\eps',\bb,\cc)$ is determined by the $8$ bits $(\xx_{0,\eps,\bb, \cc}, \xx_{1,\eps',\bb,\cc})$.
 %
 Now we rewrite \eqref{e:t_3_infty}  as follows. For brevity we write $\omega[\bb] = \omega_\bb$ and $ \eq(\cc; \bm{\alpha}') = \eq_{\cc}$. 
 %
@@ -3128,25 +3124,24 @@ where
 $$
 H^{\eps\eps'}_{\bb}[\xx,\xx']\defeq \sum_{\substack{\cc\in \bits^{r_2} \ : \ \\ \xx_{0,\eps,\bb,\cc}=\xx\\ \xx_{1,\eps',\bb,\cc}=\xx'} }\eq(\cc;\bm{\alpha}').
 $$
-Now the prover computes all the values $H^{\eps\eps'}_{\bb}[\xx,\xx']$, and then obtains $t_3(\infty)$ using the expression of $t_3(\infty)$ given above. With this approach we avoid using the table $T_{A_2}^{(3)}$, whose entries have  dimension $2^{16}$. The cost is only an extra  $O(\codedim_1)$ multiplications and table reads, and the costs brought from having four elements $H_{\bb}^{\eps \eps'}[\xx,\xx']$ per $(\bb,\xx,\xx')$, instead of one. 
+Now the prover computes all the values $H^{\eps\eps'}_{\bb}[\xx,\xx']$, and then obtains $t_3(\infty)$ using the expression of $t_3(\infty)$ given above. With this approach we avoid using the table $T_{A_2}^{(3)}$, whose entries have  dimension $2^{16}$. %The cost is only an extra  $O(\codedim_1)$ multiplications and table reads, and the costs brought from having four elements $H_{\bb}^{\eps \eps'}[\xx,\xx']$ per $(\bb,\xx,\xx')$, instead of one. 
 
 
 
 \paragraph{Further optimizations.}
-In all the rounds where we use buckets, the prover computes the entries of the tables $T_{A_k}^{(j)}$ that it needs (e.g.\ $T_{A_0}$, $T_{A_2}$, $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$) ``on-the-go'', in the sense explained above for $T_{A_2}$ when computing $t_1(\infty)$, i.e.\ each entry is computed right before it is multiplied by its bucket, and it is not used again. Because of this, we never store these tables, nor keep them in cache. The tables $T_{r_1}^{(j)}$, $T_{r_1-1}^{(j)}$, $T_{r_1-2}^{(j)}$ and $T_{r_1-3}^{(j)}$ are computed in full during the sumchecks that require them.  Since the prover processes one index $\bb$ at a time, we keep only a small part of each of them  in cache.
+In all the rounds where we use buckets, the prover computes the entries of the tables $T_{A_k}^{(j)}$ that it needs (e.g.\ $T_{A_0}$, $T_{A_2}$, $T_{A_0}^{(1)}$, $T_{A_2}^{(1)}$, $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$) ``on-the-go'', in the sense explained above for $T_{A_2}$ when computing $t_1(\infty)$, i.e.\ each entry is computed right when it is needed and discarded afterward. Because of this, we never store these tables, nor keep them in cache. The tables $T_{r_1}^{(j)}$, $T_{r_1-1}^{(j)}$, $T_{r_1-2}^{(j)}$ and $T_{r_1-3}^{(j)}$ are computed in full during the sumchecks that require them.  Since the prover processes one index $\bb$ at a time, we keep only a small part of each of them  in cache.
 
 
-Our implementation uses further optimizations, which we do not discuss in detail. For example, it computes all the rounds of each sumcheck that use buckets together, by adapting \cite[Algorithm 3]{sumcheck_opt_2} to our setting. It also uses tables in two more rounds of each of the last $4$ GKR sumchecks.
+Our implementation uses further optimizations, which we do not discuss in detail. For example, we adapt \cite[Algorithm 3]{sumcheck_opt_2} to our setting. We also uses tables in two more rounds of each of the last $4$ GKR sumchecks.
 
 
 
 \subsection{Reducing transpositions when forming table indices}\label{s:indices}
 
 
-In all our techniques discussed so far, for each coefficient of each prover message where our optimizations are used, the prover has to compute a string of $\leq 8$ bits $\xx_{\bb,\cc}$  (or $\xx_{k,\eps,\bb,\cc}$) for each $\bb,\cc$ ranging in a set of the form $\bits^{r_1 - t} \times \bits^{r_2}$, for some $t$ (with $t$ depending on the specific coefficient being computed). If done naively, as we explain below, computing these strings is a costly procedure. Indeed, prior to optimizing it, computing these strings amounted to at least $25\%$ of the GKR prover time at $\codedim=2^{28}$, and more for larger witnesses. 
+In all our techniques discussed so far, for each coefficient of each prover message where our optimizations are used, the prover has to compute a string of $\leq 8$ bits $\xx_{\bb,\cc}$  (or $\xx_{k,\eps,\bb,\cc}$) for each $\bb,\cc$ ranging in a set of the form $\bits^{r_1 - t} \times \bits^{r_2}$, for some $t$ (with $t$ depending on the specific coefficient being computed). If done naively, as we explain below, computing these strings is a costly procedure. Indeed, prior to optimizing it, computing these strings amounted to at least $25\%$ of the GKR prover time at $\codedim=2^{28}$, and more for larger witnesses.  In this section we explain a method for reducing this cost to a negligible fraction.
 
-
-We now explain a method for greatly reducing (by more than an order of magnitude) the number of transpositions (see below) needed to compute the strings $\xx_{\bb,\cc}$ throughout the entire GKR protocol. This optimization was found by an AI after we identified that computing all the strings $\xx_{\bb,\cc}$ naively is significantly expensive. 
+%(by more than an order of magnitude) the number of transpositions (see below) needed to compute the strings $\xx_{\bb,\cc}$ throughout the entire GKR protocol. %This optimization was found by an AI after we identified that computing all the strings $\xx_{\bb,\cc}$ naively is significantly expensive. 
 
 \paragraph{The naive approach to computing $\xx_{\bb,\cc}$.}  In our implementation, we look at $\bfg\in \bits^{\codedim_1\times \codedim_2}$ as a $2^{r_1}\times 2^{r_2}$ matrix of bits.  We store $\bfg$ using $64$-bit ``horizontal'' words, i.e.\ in our memory layout, we arrange $\bfg$ as a collection of $64$-bit words obtained by splitting each row of $\bfg$ into $64$-bit consecutive words.  On the other hand, each string $\xx_{\bb,\cc}$ consists of at most $8$ bits placed on the $\cc$-th column of $\bfg$, e.g.\ in our example in \cref{s:gkr_buckets} we had $$\xx_{\bb,\cc}\defeq \left(\bfg_{(0,0,\bb),\cc},\bfg_{(0,1,\bb),\cc},\bfg_{(1,0,\bb),\cc},\bfg_{(1,1,\bb),\cc}\right)\in \bits^4.$$ Hence, to construct $\xx_{\bb,\cc}$, one needs to access $\leq 8$ of these words, transpose them (a costly step), and select a row of the resulting transposed data.  
 
