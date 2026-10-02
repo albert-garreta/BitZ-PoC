@@ -1,0 +1,129 @@
+% BitZ logarithmic -- LaTeX transcription of a handwritten note (5 notebook pages).
+% Compile from paper/notes/ so that \input{../macros} finds the paper's macros.tex.
+\documentclass[11pt,letterpaper,usenames,dvipsnames]{article}
+
+% The subset of main.tex's preamble that macros.tex needs.
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{aliascnt}
+\usepackage{fullpage}
+\usepackage{bbm,soul}
+\usepackage[usenames,dvipsnames]{xcolor}
+\usepackage{bm}
+\usepackage{braket}
+\usepackage[operators,sets,primitives,asymptotics,lambda,keys,ff]{cryptocode}
+\usepackage{enumitem}
+\usepackage{mleftright}
+\usepackage{xspace}
+\usepackage{algorithm,algorithmic}
+\usepackage{comment}
+\usepackage[T1]{fontenc}
+\usepackage{stmaryrd}
+\usepackage{siunitx}
+\PassOptionsToPackage{hyphens}{url}\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=PineGreen, citecolor=PineGreen, urlcolor=PineGreen}
+\usepackage[capitalize, nameinlink]{cleveref}
+
+\input{../macros}
+
+\title{\ftwoz\ logarithmic}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+% Page 1.
+The goal of this note is to modify \ftwoz-PCS so that the verifier and proof size are logarithmic.
+
+% Handwritten: "The current problem right now", with "problem" struck out and replaced by "obstacle".
+The current obstacle right now is that in Step~4 the prover sends $\codedim_2 = O(\sqrt{\codedim})$ integers $\mu_1, \ldots, \mu_{\codedim_2}$ (we assume we are in the basic setting of Section~2.1 (Warm-up: the prime field case) of the \ftwoz\ paper), and $\verifier$ checks that
+%
+\[
+\sum_{j\in [\codedim_2]} \pi_q(\mu_j)\cdot \uu_j^{(2)} = \mu \qquad \text{in } \FF_q,
+\]
+%
+and moreover the grand product uses the values $g^{\mu_1}, \ldots, g^{\mu_{\codedim_2}}$, which are computed by the verifier.
+
+% Page 2.
+Additionally, at the end of \ftwoz-PCS, the verifier computes an MLE eval of
+%
+\begin{equation}\label{e:star}
+\left(g^{\pi_q^{-1}(\uu_i^{(1)})}\right)_{i\in [\codedim_1]}. \tag{$\star$}
+\end{equation}
+%
+Let's leave \eqref{e:star} for later. I want to propose a solution for the first issue.
+
+The solution has $\prover$ commit to
+%
+\[
+\bitstext(\mu_1, \ldots, \mu_{\codedim_2})
+\]
+%
+with \ftwoz. Then the claim
+% Handwritten: the superscript of u_j reads (\ell_2); typeset as (2), as everywhere else in the note.
+\[
+\sum_{j} \pi_q(\mu_j)\cdot \uu_j^{(2)} = \mu \qquad \text{in } \FF_q
+\]
+%
+is proved with \ftwoz.
+% Struck out in the handwritten note: "(if necessary, we can use a new recursive process for proving this claim)."
+
+The grand products to be proved in standard \ftwoz\ are
+% Page 3.
+%
+\[
+g^{\mu_j} = \prod_{i} \left[\left(g^{\pi_q^{-1}(\uu_i^{(1)})} - 1\right)\cdot \pi_2(\bitstext(\bff)_{ij}) + 1\right].
+\]
+%
+We replace the left-hand side by
+%
+\[
+g^{\mu_j} = \prod_{k} g^{\mu_{jk}\cdot 2^{k-1}} = \prod_{k} \left((g-1)\cdot \mu_{jk} + 1\right)^{2^{k-1}},
+\]
+%
+% Handwritten: something before "1" in "k ranges from 1" is scribbled out.
+where $\mu_{jk}\in \bits$ for all $j,k$, and $k$ ranges from $1$ to $\log(\max_j(\mu_j))$.
+
+We use a batched GKR protocol to prove
+%
+\[
+\prod_{k} \left((g-1)\cdot \mu_{jk} + 1\right)^{2^{k-1}} = \prod_{i} \left[\left(g^{\pi_q^{-1}(\uu_i^{(1)})} - 1\right)\cdot \pi_2(\bitstext(\bff)_{ij}) + 1\right]
+\]
+%
+for all $j$.
+
+% Handwritten: "At the end we have a st[...] MLE claims", with "a st" struck out.
+At the end we have MLE claims for $(\mu_{j*})$ and $(\bitstext(\bff)_{*j})$ and $\left(g^{\pi_q^{-1}(\uu_i^{(1)})}\right)_i$.
+
+% Page 4.
+The prover proves the first two with Ligerito.
+
+Note that, when proving
+%
+\[
+\sum_{j} \pi_q(\mu_j)\cdot \uu_j^{(2)} = \mu \qquad \text{in } \FF_q
+\]
+%
+with the recursive call to \ftwoz, at the end of GKR, $\prover$ and $\verifier$ have a MLE claim for $\bitstext(\mu_1, \ldots, \mu_{\codedim_2})$.
+
+This claim as well as those for $(\mu_{j*})$, $(\bitstext(\bff)_{*j})$, can all be batched together in a single run of Ligerito/WHIR.
+
+It remains to see how to avoid $\verifier$ having to check the MLE claim on
+%
+\[
+\left(g^{\pi_q^{-1}(\uu_i^{(1)})}\right)_i
+\]
+%
+by itself. For now, let's have it check it itself.
+
+% Page 5. Handwritten: the page starts with "We co[uld]", struck out.
+In the recursive call of \ftwoz\ for the claims
+%
+\[
+\sum_{j} \pi_q(\mu_j)\cdot \uu_j^{(2)} = \mu \qquad \text{in } \FF_q,
+\]
+%
+we could use the same strategy, to further save on prover time and proof size. But for now let's have only one recursive call.
+% Struck out in the handwritten note, at the end of page 5: "Also, now we should".
+
+\end{document}
