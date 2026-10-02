@@ -4578,6 +4578,992 @@ where
     unreachable!()
 }
 
+// ===================================================================
+// Two-tree (merged) basis opening
+// ===================================================================
+//
+// A second, separately committed message `B` joins the recursion of the
+// primary message `A`. `B` keeps its own level-0 code (rate, interleaving,
+// queries); after its own `k_B` lane folds its folded message has as many
+// variables as `A`'s running message at some recursion level, and from that
+// level on ONE chain carries both: the merged message is `A ∥ B` (the
+// selector is the top variable, which LSB-first folding binds last, so it
+// stays in the residual), committed as `A`'s next level; the challenge `λ`
+// that batches the two running claims is drawn after that commitment. Both `A`'s
+// previous-level queries and `B`'s level-0 queries are induced against
+// their half of it. The verifier evaluates every basis that was introduced
+// before the merge on its half of the residual.
+
+/// The level-0 parameters of a branch: its code (rate, interleaving), its
+/// query count, query-phase and fold-challenge grinding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BranchLevel0 {
+    pub log_inv_rate: usize,
+    pub initial_k: usize,
+    pub queries: usize,
+    pub grinding_bits: usize,
+    pub fold_grinding_bits: usize,
+}
+
+/// The prover's view of the branch that joins the recursion.
+pub struct MergeBranchProver<'b> {
+    /// `B`'s packed message, `2^{log_n_B}` elements.
+    pub packed_witness: Cow<'b, [Gf128]>,
+    /// `B`'s initial basis (its claims), same length.
+    pub b_initial: Vec<Gf128>,
+    /// `Σ_x B(x)·b_initial(x)`.
+    pub target: Gf128,
+    /// `B`'s level-0 codeword (positions × lanes) and Merkle tree.
+    pub codeword: &'b [Gf128],
+    pub tree: &'b [Hash],
+    pub level0: BranchLevel0,
+    /// The recursion iteration after whose folds `B` joins: its folded
+    /// message then has as many variables as `A`'s, and the iteration's
+    /// commitment is the merged message.
+    pub merge_iter: usize,
+}
+
+impl SumcheckProver<'_> {
+    /// Joins a second sumcheck of the same current length as the upper half:
+    /// `f ← f ∥ f_B`, `basis ← basis ∥ λ·basis_B`, claim `T + λ·T_B`, and
+    /// `B`'s messages appended to the transcript in the order they were sent.
+    fn absorb_branch(&mut self, branch: SumcheckProver<'_>, lambda: Gf128) {
+        assert!(self.pending_fold.is_none() && branch.pending_fold.is_none());
+        assert!(self.pending_glue.is_none() && branch.pending_glue.is_none());
+        assert_eq!(self.f.len(), branch.f.len(), "the branch joins at another size");
+        let mut f = Vec::with_capacity(2 * self.f.len());
+        f.extend_from_slice(&self.f);
+        f.extend_from_slice(&branch.f);
+        let mut basis = Vec::with_capacity(2 * self.combined_basis.len());
+        basis.extend_from_slice(&self.combined_basis);
+        basis.extend(branch.combined_basis.iter().map(|&v| lambda * v));
+        self.replace_folded(f, basis);
+        self.t_r += lambda * branch.t_r;
+        self.transcript.extend_from_slice(&branch.transcript);
+    }
+}
+
+/// `v ∥ 0` (`upper = false`) or `0 ∥ v` (`upper = true`).
+fn embed_half(v: Vec<Gf128>, upper: bool) -> Vec<Gf128> {
+    let mut out = vec![Gf128::ZERO; 2 * v.len()];
+    let offset = if upper { v.len() } else { 0 };
+    out[offset..offset + v.len()].copy_from_slice(&v);
+    out
+}
+
+/// [`recursive_prover_with_basis`] with a second, separately committed
+/// message joining the recursion (see the section comment). Returns the
+/// proof of the merged chain and `B`'s level-0 opening (its rows and Merkle
+/// multi-proof), which the caller ships alongside.
+///
+/// `config` describes the merged chain: levels before the merge are `A`'s,
+/// levels from the merged commitment on carry one more message variable.
+#[allow(clippy::too_many_arguments)]
+pub fn recursive_prover_with_basis_merged<'a, Ch: Challenger>(
+    config: &ProverConfig,
+    packed_witness: impl Into<Cow<'a, [Gf128]>>,
+    b_initial: Vec<Gf128>,
+    target: Gf128,
+    l0_codeword: &[Gf128],
+    l0_tree: &[Hash],
+    branch: MergeBranchProver<'_>,
+    challenger: &mut Ch,
+) -> (LigeritoProof, RecursiveProof) {
+    let packed_witness = packed_witness.into();
+    let log_n = packed_witness.len().trailing_zeros() as usize;
+    let r = config.recursive_steps;
+    let initial_k = config.initial_k;
+    let initial_root = *l0_tree.last().expect("nonempty initial Merkle tree");
+    let branch_root = *branch.tree.last().expect("nonempty branch Merkle tree");
+
+    assert_eq!(packed_witness.len(), 1usize << log_n);
+    assert_eq!(b_initial.len(), 1usize << log_n);
+    assert_eq!(config.recursive_ks.len(), r);
+    assert_eq!(config.log_inv_rates.len(), r + 1);
+    assert!(r >= 1);
+    assert!(branch.merge_iter + 1 < r, "the branch must join before the last level");
+    let branch_lvl = branch.level0;
+    let log_n_b = branch.packed_witness.len().trailing_zeros() as usize;
+    assert_eq!(branch.packed_witness.len(), 1usize << log_n_b);
+    assert_eq!(branch.b_initial.len(), 1usize << log_n_b);
+    assert!(branch_lvl.initial_k >= 1 && branch_lvl.initial_k < log_n_b);
+
+    let log_inv_rate_0 = config.log_inv_rates[0];
+    let log_msg_cols_0 = log_n - initial_k;
+    let block_len_0 = 1usize << (log_msg_cols_0 + log_inv_rate_0);
+    let num_interleaved_0 = 1usize << initial_k;
+
+    challenger.observe_label(b"flock-ligerito-basis-v0");
+    challenger.observe_f128(target);
+    challenger.observe_bytes(&initial_root);
+
+    assert_eq!(
+        config.ood_samples.first().copied().unwrap_or(0),
+        0,
+        "L0 must not take explicit OOD samples"
+    );
+    let mut ood_values: Vec<Gf128> = Vec::new();
+    let mut fold_grinding_nonces: Vec<u64> = Vec::new();
+    let fold_bits =
+        |lvl: usize| -> u32 { config.fold_grinding_bits.get(lvl).copied().unwrap_or(0) as u32 };
+    let ood_count = |lvl: usize| -> usize { config.ood_samples.get(lvl).copied().unwrap_or(0) };
+
+    // A's lane folds, with the same two-rounds-per-pass lookahead as
+    // [`recursive_prover_with_basis`] (bit-identical messages).
+    let (mut sc_prover, start_msg) = SumcheckProver::new(packed_witness, b_initial, target);
+    challenger.observe_f128(start_msg.u_0);
+    challenger.observe_f128(start_msg.u_2);
+    let use_lookahead = {
+        let n = sc_prover.f_len();
+        n >= (1 << 14) && (n >> initial_k) >= 16
+    } && std::env::var("LIG_LOOKAHEAD_DISABLE").is_err();
+    let mut r_lane_fold = Vec::with_capacity(initial_k);
+    let mut lookahead: Option<FoldLookahead> = None;
+    for j in 0..initial_k {
+        let bits = fold_bits(0).saturating_sub(j as u32);
+        if bits > 0 {
+            fold_grinding_nonces.push(challenger.grind_pow(bits));
+        }
+        let rj = challenger.sample_f128();
+        let msg = if !use_lookahead {
+            sc_prover.fold(rj)
+        } else if let Some(la) = lookahead.take() {
+            sc_prover.fold_skip(&la, rj)
+        } else if sc_prover.has_pending_fold() {
+            let (msg, la) = sc_prover.fold2_lookahead(rj);
+            lookahead = Some(la);
+            msg
+        } else {
+            let (msg, la) = sc_prover.fold1_lookahead(rj);
+            lookahead = Some(la);
+            msg
+        };
+        challenger.observe_f128(msg.u_0);
+        challenger.observe_f128(msg.u_2);
+        r_lane_fold.push(rj);
+    }
+    sc_prover.drain_pending_fold();
+
+    // Commit f^1 as wtns_1 (A alone: the branch joins inside the loop).
+    let n1 = log_n - initial_k;
+    let log_num_interleaved_1 = config.recursive_ks[0];
+    assert!(n1 >= log_num_interleaved_1);
+    let log_msg_cols_1 = n1 - log_num_interleaved_1;
+    let log_inv_rate_1 = config.log_inv_rates[1];
+    let ntt_1 = AdditiveNttF128::standard(log_msg_cols_1 + log_inv_rate_1);
+    let wtns_1 = ligero_commit(
+        sc_prover.f(),
+        log_msg_cols_1,
+        log_num_interleaved_1,
+        log_inv_rate_1,
+        &ntt_1,
+        config.merkle_hash,
+    );
+    challenger.observe_bytes(&wtns_1.root());
+    for _ in 0..ood_count(1) {
+        let z = challenger.sample_f128_vec(n1);
+        let eq_z = build_eq_table(&z);
+        let (intro, y) = sc_prover.introduce_new_with_eval(eq_z);
+        challenger.observe_f128(y);
+        ood_values.push(y);
+        challenger.observe_f128(intro.u_0);
+        challenger.observe_f128(intro.u_2);
+        let beta = challenger.sample_f128();
+        sc_prover.glue(beta);
+    }
+
+    let pow_nonce_0 = challenger.grind_pow(config.grinding_bits[0] as u32);
+    let mut grinding_nonces: Vec<u64> = vec![pow_nonce_0];
+    let num_queries_0 = config.queries[0];
+    let queries_0 = sample_distinct_queries(challenger, block_len_0, num_queries_0);
+    let alpha_0 = challenger.sample_f128_vec(ceil_log2(num_queries_0));
+    let initial_proof = RecursiveProof {
+        opened_rows: queries_0
+            .iter()
+            .map(|&q| l0_codeword[q * num_interleaved_0..(q + 1) * num_interleaved_0].to_vec())
+            .collect(),
+        merkle_proof: merkle_multi_proof_for(l0_tree, block_len_0, &queries_0),
+    };
+    let sks_vks_n1 = eval_sk_at_vks(n1);
+    let (basis_0_induced, enforced_sum_0) = induce_sumcheck_poly_auto(
+        n1,
+        log_inv_rate_0,
+        &sks_vks_n1,
+        &initial_proof.opened_rows,
+        &r_lane_fold,
+        &queries_0,
+        &alpha_0,
+    );
+    let intro_msg_0 = sc_prover.introduce_new(basis_0_induced, enforced_sum_0);
+    challenger.observe_f128(intro_msg_0.u_0);
+    challenger.observe_f128(intro_msg_0.u_2);
+    let beta_0 = challenger.sample_f128();
+    sc_prover.glue(beta_0);
+
+    let mut wtns_prev = wtns_1;
+    let mut recursive_roots: Vec<Hash> = vec![wtns_prev.root()];
+    let mut recursive_proofs: Vec<RecursiveProof> = Vec::new();
+    let mut branch_state = Some(branch);
+    let mut branch_proof: Option<RecursiveProof> = None;
+
+    for i in 0..r {
+        let k_i = config.recursive_ks[i];
+        let mut level_rs = Vec::with_capacity(k_i);
+        for j in 0..k_i {
+            let bits = fold_bits(i + 1).saturating_sub(j as u32);
+            if bits > 0 {
+                fold_grinding_nonces.push(challenger.grind_pow(bits));
+            }
+            let ri = challenger.sample_f128();
+            let msg = sc_prover.fold(ri);
+            challenger.observe_f128(msg.u_0);
+            challenger.observe_f128(msg.u_2);
+            level_rs.push(ri);
+        }
+
+        if i == r - 1 {
+            assert!(branch_state.is_none(), "the branch never joined");
+            let (yr, sumcheck_transcript) = sc_prover.finish();
+            for v in &yr {
+                challenger.observe_f128(*v);
+            }
+            let nonce_last = challenger.grind_pow(config.grinding_bits[i + 1] as u32);
+            grinding_nonces.push(nonce_last);
+            let num_queries_last = config.queries[i + 1];
+            let queries_last =
+                sample_distinct_queries(challenger, wtns_prev.block_len, num_queries_last);
+            // The verifier's last two draws (this level's batching vector and
+            // glue challenge): the prover has no use for them, but both sides
+            // then leave the transcript in the same state, so a protocol may
+            // continue after this opening.
+            let _ = challenger.sample_f128_vec(ceil_log2(num_queries_last));
+            let _ = challenger.sample_f128();
+            let opened_rows_last: Vec<Vec<Gf128>> = queries_last
+                .iter()
+                .map(|&q| wtns_prev.row(q).to_vec())
+                .collect();
+            let merkle_proof_last =
+                merkle_multi_proof_for(&wtns_prev.tree, wtns_prev.block_len, &queries_last);
+            let proof = LigeritoProof {
+                initial_root,
+                initial_proof,
+                recursive_roots,
+                recursive_proofs,
+                final_proof: FinalProof {
+                    yr,
+                    opened_rows: opened_rows_last,
+                    merkle_proof: merkle_proof_last,
+                },
+                sumcheck_transcript,
+                grinding_nonces,
+                ood_values,
+                fold_grinding_nonces,
+            };
+            return (proof, branch_proof.expect("the branch was opened"));
+        }
+
+        // The branch joins: its lane folds, then the concatenation.
+        let mut joining: Option<(MergeBranchProver<'_>, Vec<Gf128>, SumcheckProver<'_>)> = None;
+        if branch_state.as_ref().is_some_and(|b| b.merge_iter == i) {
+            let b = branch_state.take().expect("branch");
+            challenger.observe_label(b"flock-ligerito-merge-v0");
+            challenger.observe_f128(b.target);
+            challenger.observe_bytes(&branch_root);
+            let (mut sc_b, start_b) =
+                SumcheckProver::new(b.packed_witness.clone(), b.b_initial.clone(), b.target);
+            challenger.observe_f128(start_b.u_0);
+            challenger.observe_f128(start_b.u_2);
+            let mut r_b = Vec::with_capacity(branch_lvl.initial_k);
+            for j in 0..branch_lvl.initial_k {
+                let bits = (branch_lvl.fold_grinding_bits as u32).saturating_sub(j as u32);
+                if bits > 0 {
+                    fold_grinding_nonces.push(challenger.grind_pow(bits));
+                }
+                let rb = challenger.sample_f128();
+                let msg = sc_b.fold(rb);
+                challenger.observe_f128(msg.u_0);
+                challenger.observe_f128(msg.u_2);
+                r_b.push(rb);
+            }
+            assert_eq!(
+                sc_b.f().len(),
+                sc_prover.f().len(),
+                "the branch's folded message must match the running message"
+            );
+            joining = Some((b, r_b, sc_b));
+        }
+
+        // The next level's message: the running one or, at the join, `A ∥ B`.
+        // The concatenation does not depend on λ, so it is committed first:
+        // λ then batches two claims about one committed message.
+        let merged_message: Option<Vec<Gf128>> = joining
+            .as_ref()
+            .map(|(_, _, sc_b)| [sc_prover.f(), sc_b.f()].concat());
+        let wtns_next = {
+            let message: &[Gf128] = match &merged_message {
+                Some(message) => message,
+                None => sc_prover.f(),
+            };
+            let n_next = message.len().trailing_zeros() as usize;
+            let log_num_interleaved_next = config.recursive_ks[i + 1];
+            assert!(n_next >= log_num_interleaved_next);
+            let log_msg_cols_next = n_next - log_num_interleaved_next;
+            let log_inv_rate_next = config.log_inv_rates[i + 2];
+            let ntt_next = AdditiveNttF128::standard(log_msg_cols_next + log_inv_rate_next);
+            ligero_commit(
+                message,
+                log_msg_cols_next,
+                log_num_interleaved_next,
+                log_inv_rate_next,
+                &ntt_next,
+                config.merkle_hash,
+            )
+        };
+        drop(merged_message);
+        let root_next = wtns_next.root();
+        challenger.observe_bytes(&root_next);
+        recursive_roots.push(root_next);
+        let mut joined: Option<(MergeBranchProver<'_>, Vec<Gf128>)> = None;
+        if let Some((b, r_b, sc_b)) = joining {
+            let lambda = challenger.sample_f128();
+            sc_prover.absorb_branch(sc_b, lambda);
+            joined = Some((b, r_b));
+        }
+        let n_next = sc_prover.f().len().trailing_zeros() as usize;
+        for _ in 0..ood_count(i + 2) {
+            let z = challenger.sample_f128_vec(n_next);
+            let eq_z = build_eq_table(&z);
+            let (intro, y) = sc_prover.introduce_new_with_eval(eq_z);
+            challenger.observe_f128(y);
+            ood_values.push(y);
+            challenger.observe_f128(intro.u_0);
+            challenger.observe_f128(intro.u_2);
+            let beta = challenger.sample_f128();
+            sc_prover.glue(beta);
+        }
+
+        let nonce_i = challenger.grind_pow(config.grinding_bits[i + 1] as u32);
+        grinding_nonces.push(nonce_i);
+        let num_queries_i = config.queries[i + 1];
+        let queries_i = sample_distinct_queries(challenger, wtns_prev.block_len, num_queries_i);
+        let alpha_i = challenger.sample_f128_vec(ceil_log2(num_queries_i));
+        let opened_rows_i: Vec<Vec<Gf128>> = queries_i
+            .iter()
+            .map(|&q| wtns_prev.row(q).to_vec())
+            .collect();
+        let merkle_proof_i =
+            merkle_multi_proof_for(&wtns_prev.tree, wtns_prev.block_len, &queries_i);
+        // A's previous level folds into A's half of the joined message.
+        let n_basis = if joined.is_some() { n_next - 1 } else { n_next };
+        let sks_vks_i = eval_sk_at_vks(n_basis);
+        let (basis_i_induced, enforced_sum_i) = induce_sumcheck_poly(
+            n_basis,
+            &sks_vks_i,
+            &opened_rows_i,
+            &level_rs,
+            &queries_i,
+            &alpha_i,
+        );
+        let basis_i_induced = if joined.is_some() {
+            embed_half(basis_i_induced, false)
+        } else {
+            basis_i_induced
+        };
+        recursive_proofs.push(RecursiveProof {
+            opened_rows: opened_rows_i,
+            merkle_proof: merkle_proof_i,
+        });
+        let intro_msg_i = sc_prover.introduce_new(basis_i_induced, enforced_sum_i);
+        challenger.observe_f128(intro_msg_i.u_0);
+        challenger.observe_f128(intro_msg_i.u_2);
+        let beta_i = challenger.sample_f128();
+        sc_prover.glue(beta_i);
+
+        // B's level-0 queries fold into B's half.
+        if let Some((b, r_b)) = joined {
+            let nonce_b = challenger.grind_pow(branch_lvl.grinding_bits as u32);
+            grinding_nonces.push(nonce_b);
+            let lanes_b = 1usize << branch_lvl.initial_k;
+            let block_len_b = 1usize << (log_n_b - branch_lvl.initial_k + branch_lvl.log_inv_rate);
+            assert_eq!(b.codeword.len(), block_len_b * lanes_b);
+            assert_eq!(b.tree.len(), 2 * block_len_b - 1);
+            let queries_b = sample_distinct_queries(challenger, block_len_b, branch_lvl.queries);
+            let alpha_b = challenger.sample_f128_vec(ceil_log2(branch_lvl.queries));
+            let rows_b: Vec<Vec<Gf128>> = queries_b
+                .iter()
+                .map(|&q| b.codeword[q * lanes_b..(q + 1) * lanes_b].to_vec())
+                .collect();
+            let merkle_b = merkle_multi_proof_for(b.tree, block_len_b, &queries_b);
+            let sks_b = eval_sk_at_vks(n_basis);
+            let (basis_b, enforced_b) = induce_sumcheck_poly_auto(
+                n_basis,
+                branch_lvl.log_inv_rate,
+                &sks_b,
+                &rows_b,
+                &r_b,
+                &queries_b,
+                &alpha_b,
+            );
+            let intro_b = sc_prover.introduce_new(embed_half(basis_b, true), enforced_b);
+            challenger.observe_f128(intro_b.u_0);
+            challenger.observe_f128(intro_b.u_2);
+            let beta_b = challenger.sample_f128();
+            sc_prover.glue(beta_b);
+            branch_proof = Some(RecursiveProof {
+                opened_rows: rows_b,
+                merkle_proof: merkle_b,
+            });
+        }
+
+        wtns_prev = wtns_next;
+    }
+
+    unreachable!()
+}
+
+/// The verifier's view of the branch (see [`MergeBranchProver`]).
+pub struct MergeBranchVerifier<'r, FB> {
+    pub log_n: usize,
+    pub target: Gf128,
+    pub root: &'r Hash,
+    pub level0: BranchLevel0,
+    pub merge_iter: usize,
+    /// `B`'s initial basis at the residual, as `eval_b_residual` is for `A`:
+    /// called once with `B`'s full challenge prefix and the residual size.
+    pub eval_b_residual: FB,
+}
+
+/// Verifier of [`recursive_prover_with_basis_merged`]: the succinct basis
+/// verifier with `B`'s level-0 opening (`branch_proof`) and the half-aware
+/// residual check.
+#[allow(clippy::too_many_arguments)]
+pub fn recursive_verifier_with_basis_merged<Ch, FA, FB>(
+    config: &VerifierConfig,
+    proof: &LigeritoProof,
+    branch_proof: &RecursiveProof,
+    log_n: usize,
+    target: Gf128,
+    expected_initial_root: &Hash,
+    eval_b_residual: FA,
+    branch: MergeBranchVerifier<'_, FB>,
+    challenger: &mut Ch,
+) -> bool
+where
+    Ch: Challenger,
+    FA: Fn(&[Gf128], usize) -> Vec<Gf128>,
+    FB: Fn(&[Gf128], usize) -> Vec<Gf128>,
+{
+    macro_rules! challenge {
+        ($draw:expr) => {
+            match $draw { Some(value) => value, None => return false }
+        };
+    }
+    // Which half of the residual a basis lives on.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Half {
+        Full,
+        Low,
+        High,
+    }
+    struct OodCtx {
+        z: Vec<Gf128>,
+        ris_start: usize,
+        beta: Gf128,
+        half: Half,
+    }
+    struct LevelCtx {
+        log_msg_cols: usize,
+        queries: Vec<usize>,
+        alpha: Vec<Gf128>,
+        ris_start: usize,
+        beta: Gf128,
+        half: Half,
+    }
+
+    let initial_k = config.initial_k;
+    let r = config.recursive_steps;
+    if r < 1 || config.recursive_ks.len() != r || config.log_inv_rates.len() != r + 1 {
+        return false;
+    }
+    if &proof.initial_root != expected_initial_root {
+        return false;
+    }
+    let branch_lvl = branch.level0;
+    if branch.merge_iter + 1 >= r
+        || branch_lvl.initial_k == 0
+        || branch_lvl.initial_k >= branch.log_n
+    {
+        return false;
+    }
+
+    challenger.observe_label(b"flock-ligerito-basis-v0");
+    challenger.observe_f128(target);
+    challenger.observe_bytes(&proof.initial_root);
+
+    let log_inv_rate_0 = config.log_inv_rates[0];
+    let log_msg_cols_0 = log_n - initial_k;
+    let block_len_0 = 1usize << (log_msg_cols_0 + log_inv_rate_0);
+    let num_interleaved_0 = 1usize << initial_k;
+
+    let mut t_r = target;
+    let mut tx_idx = 0usize;
+    macro_rules! next_msg {
+        () => {{
+            if tx_idx >= proof.sumcheck_transcript.len() {
+                return false;
+            }
+            let msg = proof.sumcheck_transcript[tx_idx];
+            tx_idx += 1;
+            challenger.observe_f128(msg.u_0);
+            challenger.observe_f128(msg.u_2);
+            msg
+        }};
+    }
+    let start_msg = next_msg!();
+    let mut running_quad = RoundQuad::from_msg(start_msg, t_r);
+
+    let fold_bits =
+        |lvl: usize| -> u32 { config.fold_grinding_bits.get(lvl).copied().unwrap_or(0) as u32 };
+    let ood_count = |lvl: usize| -> usize { config.ood_samples.get(lvl).copied().unwrap_or(0) };
+    if config.ood_samples.first().copied().unwrap_or(0) != 0 {
+        return false;
+    }
+    let mut fold_nonce_idx = 0usize;
+    macro_rules! fold_pow {
+        ($bits:expr) => {{
+            let bits: u32 = $bits;
+            if bits > 0 {
+                if fold_nonce_idx >= proof.fold_grinding_nonces.len() {
+                    return false;
+                }
+                if !challenger.verify_pow(proof.fold_grinding_nonces[fold_nonce_idx], bits) {
+                    return false;
+                }
+                fold_nonce_idx += 1;
+            }
+        }};
+    }
+    let mut ood_idx = 0usize;
+    let mut ood_ctxs: Vec<OodCtx> = Vec::new();
+
+    let mut r_lane_fold = Vec::with_capacity(initial_k);
+    for j in 0..initial_k {
+        fold_pow!(fold_bits(0).saturating_sub(j as u32));
+        let ri = challenge!(challenger.try_sample_f128());
+        r_lane_fold.push(ri);
+        t_r = running_quad.eval(ri);
+        let msg = next_msg!();
+        running_quad = RoundQuad::from_msg(msg, t_r);
+    }
+
+    if proof.recursive_roots.is_empty() {
+        return false;
+    }
+    let root_1 = proof.recursive_roots[0];
+    challenger.observe_bytes(&root_1);
+    for _ in 0..ood_count(1) {
+        let z = challenge!(challenger.try_sample_f128_vec(log_n - initial_k));
+        if ood_idx >= proof.ood_values.len() {
+            return false;
+        }
+        let y = proof.ood_values[ood_idx];
+        ood_idx += 1;
+        challenger.observe_f128(y);
+        let intro_msg = next_msg!();
+        let intro_quad = RoundQuad::from_msg(intro_msg, y);
+        let beta = challenge!(challenger.try_sample_f128());
+        running_quad = RoundQuad::fold(&running_quad, &intro_quad, beta);
+        t_r += beta * y;
+        ood_ctxs.push(OodCtx {
+            z,
+            ris_start: initial_k,
+            beta,
+            half: Half::Full,
+        });
+    }
+
+    let mut nonce_idx = 0usize;
+    macro_rules! query_pow {
+        ($bits:expr) => {{
+            if nonce_idx >= proof.grinding_nonces.len() {
+                return false;
+            }
+            if !challenger.verify_pow(proof.grinding_nonces[nonce_idx], $bits as u32) {
+                return false;
+            }
+            nonce_idx += 1;
+        }};
+    }
+    query_pow!(config.grinding_bits[0]);
+    let num_queries_0 = config.queries[0];
+    let queries_0 = challenge!(try_sample_distinct_queries(challenger, block_len_0, num_queries_0));
+    let alpha_0 = challenge!(challenger.try_sample_f128_vec(ceil_log2(num_queries_0)));
+    if !verify_level_opens(
+        expected_initial_root,
+        block_len_0,
+        &queries_0,
+        &proof.initial_proof.opened_rows,
+        num_interleaved_0,
+        &proof.initial_proof.merkle_proof,
+        config.merkle_hash,
+    ) {
+        return false;
+    }
+    let n1 = log_n - initial_k;
+    let enforced_sum_0 = induce_sumcheck_enforced_sum(
+        &proof.initial_proof.opened_rows,
+        &r_lane_fold,
+        &queries_0,
+        &alpha_0,
+    );
+    let intro_msg_0 = next_msg!();
+    let intro_quad_0 = RoundQuad::from_msg(intro_msg_0, enforced_sum_0);
+    let beta_0 = challenge!(challenger.try_sample_f128());
+    running_quad = RoundQuad::fold(&running_quad, &intro_quad_0, beta_0);
+    t_r += beta_0 * enforced_sum_0;
+    let mut level_ctxs: Vec<LevelCtx> = vec![LevelCtx {
+        log_msg_cols: n1,
+        queries: queries_0,
+        alpha: alpha_0,
+        ris_start: initial_k,
+        beta: beta_0,
+        half: Half::Full,
+    }];
+    let mut ris: Vec<Gf128> = r_lane_fold;
+
+    let mut prev_root = root_1;
+    let mut prev_log_num_interleaved = config.recursive_ks[0];
+    let mut prev_log_msg_cols = n1 - prev_log_num_interleaved;
+    let mut prev_log_inv_rate = config.log_inv_rates[1];
+    let mut next_root_idx = 1usize;
+    let mut recursive_proof_idx = 0usize;
+    let mut n_current = n1;
+    // Set when the branch joins: (first post-merge challenge index, B's lane
+    // challenges, λ).
+    let mut merged: Option<(usize, Vec<Gf128>, Gf128)> = None;
+
+    for i in 0..r {
+        let k_i = config.recursive_ks[i];
+        if n_current < k_i {
+            return false;
+        }
+        let mut level_rs = Vec::with_capacity(k_i);
+        for j in 0..k_i {
+            fold_pow!(fold_bits(i + 1).saturating_sub(j as u32));
+            let ri = challenge!(challenger.try_sample_f128());
+            ris.push(ri);
+            level_rs.push(ri);
+            t_r = running_quad.eval(ri);
+            let msg = next_msg!();
+            running_quad = RoundQuad::from_msg(msg, t_r);
+        }
+        n_current -= k_i;
+
+        if i == r - 1 {
+            let Some((merge_start, r_b, lambda)) = merged.as_ref() else {
+                return false;
+            };
+            if tx_idx != proof.sumcheck_transcript.len()
+                || ood_idx != proof.ood_values.len()
+                || fold_nonce_idx != proof.fold_grinding_nonces.len()
+            {
+                return false;
+            }
+            let yr = &proof.final_proof.yr;
+            if n_current == 0 || yr.len() != 1 << n_current {
+                return false;
+            }
+            for v in yr {
+                challenger.observe_f128(*v);
+            }
+            query_pow!(config.grinding_bits[i + 1]);
+            if nonce_idx != proof.grinding_nonces.len() {
+                return false;
+            }
+            let prev_block_len = 1usize << (prev_log_msg_cols + prev_log_inv_rate);
+            let prev_num_interleaved = 1usize << prev_log_num_interleaved;
+            let num_queries_last = config.queries[i + 1];
+            let queries_last =
+                challenge!(try_sample_distinct_queries(challenger, prev_block_len, num_queries_last));
+            let alpha_last = challenge!(challenger.try_sample_f128_vec(ceil_log2(num_queries_last)));
+            if !verify_level_opens(
+                &prev_root,
+                prev_block_len,
+                &queries_last,
+                &proof.final_proof.opened_rows,
+                prev_num_interleaved,
+                &proof.final_proof.merkle_proof,
+                config.merkle_hash,
+            ) {
+                return false;
+            }
+            let enforced_sum_last = induce_sumcheck_enforced_sum(
+                &proof.final_proof.opened_rows,
+                &level_rs,
+                &queries_last,
+                &alpha_last,
+            );
+            let beta_last = challenge!(challenger.try_sample_f128());
+            t_r += beta_last * enforced_sum_last;
+            level_ctxs.push(LevelCtx {
+                log_msg_cols: n_current,
+                queries: queries_last,
+                alpha: alpha_last,
+                ris_start: ris.len(),
+                beta: beta_last,
+                half: Half::Full,
+            });
+
+            // Half-aware residual: the residual's top variable is the
+            // selector; bases introduced before the merge live on one half
+            // and see one residual variable fewer.
+            let yr_len = yr.len();
+            let yr_log_n = n_current;
+            let half_log = yr_log_n - 1;
+            let half_len = yr_len / 2;
+            let mut combined = vec![Gf128::ZERO; yr_len];
+            let mut add = |half: Half, scale: Gf128, values: &[Gf128]| -> bool {
+                let (offset, len) = match half {
+                    Half::Full => (0, yr_len),
+                    Half::Low => (0, half_len),
+                    Half::High => (half_len, half_len),
+                };
+                if values.len() != len {
+                    return false;
+                }
+                for (slot, &v) in combined[offset..offset + len].iter_mut().zip(values) {
+                    *slot += scale * v;
+                }
+                true
+            };
+            for ctx in &level_ctxs {
+                let residual_log = if ctx.half == Half::Full { yr_log_n } else { half_log };
+                if ctx.log_msg_cols < residual_log {
+                    return false;
+                }
+                let folded = ctx.log_msg_cols - residual_log;
+                let ris_ctx: Vec<Gf128> = match ctx.half {
+                    Half::High => {
+                        if merge_start + folded > ris.len() {
+                            return false;
+                        }
+                        ris[*merge_start..merge_start + folded].to_vec()
+                    }
+                    _ => {
+                        if ctx.ris_start + folded > ris.len() {
+                            return false;
+                        }
+                        ris[ctx.ris_start..ctx.ris_start + folded].to_vec()
+                    }
+                };
+                let sks_vks = eval_sk_at_vks(ctx.log_msg_cols);
+                let values = induce_sumcheck_evaluate_at_residual(
+                    ctx.log_msg_cols,
+                    &sks_vks,
+                    &ctx.queries,
+                    &ctx.alpha,
+                    &ris_ctx,
+                    residual_log,
+                );
+                if !add(ctx.half, ctx.beta, &values) {
+                    return false;
+                }
+            }
+            for ctx in &ood_ctxs {
+                let residual_log = if ctx.half == Half::Full { yr_log_n } else { half_log };
+                if ctx.z.len() < residual_log
+                    || ctx.ris_start + (ctx.z.len() - residual_log) > ris.len()
+                {
+                    return false;
+                }
+                let folded = ctx.z.len() - residual_log;
+                let mut scalar = ctx.beta;
+                for b in 0..folded {
+                    scalar *= Gf128::ONE + ctx.z[b] + ris[ctx.ris_start + b];
+                }
+                let tail = build_eq_table(&ctx.z[folded..]);
+                if !add(ctx.half, scalar, &tail) {
+                    return false;
+                }
+            }
+            // A's initial basis on the low half, B's (scaled by λ) on the high.
+            if !add(Half::Low, Gf128::ONE, &eval_b_residual(&ris, half_log)) {
+                return false;
+            }
+            let mut ris_b = r_b.clone();
+            ris_b.extend_from_slice(&ris[*merge_start..]);
+            if ris_b.len() + half_log != branch.log_n {
+                return false;
+            }
+            if !add(Half::High, *lambda, &(branch.eval_b_residual)(&ris_b, half_log)) {
+                return false;
+            }
+            let mut inner = Gf128::ZERO;
+            for (y, &v) in yr.iter().enumerate() {
+                inner += v * combined[y];
+            }
+            return inner == t_r;
+        }
+
+        // The branch joins after this iteration's folds.
+        let joins = merged.is_none() && i == branch.merge_iter;
+        let mut joining: Option<(RoundQuad, Gf128, Vec<Gf128>)> = None;
+        if joins {
+            if n_current + branch_lvl.initial_k != branch.log_n {
+                return false;
+            }
+            challenger.observe_label(b"flock-ligerito-merge-v0");
+            challenger.observe_f128(branch.target);
+            challenger.observe_bytes(branch.root);
+            let start_b = next_msg!();
+            let mut quad_b = RoundQuad::from_msg(start_b, branch.target);
+            let mut t_b = branch.target;
+            let mut r_b = Vec::with_capacity(branch_lvl.initial_k);
+            for j in 0..branch_lvl.initial_k {
+                fold_pow!((branch_lvl.fold_grinding_bits as u32).saturating_sub(j as u32));
+                let rb = challenge!(challenger.try_sample_f128());
+                r_b.push(rb);
+                t_b = quad_b.eval(rb);
+                let msg = next_msg!();
+                quad_b = RoundQuad::from_msg(msg, t_b);
+            }
+            joining = Some((quad_b, t_b, r_b));
+        }
+
+        // The next level's root; at the join it commits `A ∥ B` and comes
+        // before λ.
+        if next_root_idx >= proof.recursive_roots.len() {
+            return false;
+        }
+        let root_next = proof.recursive_roots[next_root_idx];
+        next_root_idx += 1;
+        challenger.observe_bytes(&root_next);
+        if let Some((quad_b, t_b, r_b)) = joining {
+            let lambda = challenge!(challenger.try_sample_f128());
+            running_quad = RoundQuad::fold(&running_quad, &quad_b, lambda);
+            t_r += lambda * t_b;
+            // Everything introduced so far is A's: its low half.
+            for ctx in level_ctxs.iter_mut() {
+                ctx.half = Half::Low;
+            }
+            for ctx in ood_ctxs.iter_mut() {
+                ctx.half = Half::Low;
+            }
+            merged = Some((ris.len(), r_b, lambda));
+            n_current += 1;
+        }
+        for _ in 0..ood_count(i + 2) {
+            let z = challenge!(challenger.try_sample_f128_vec(n_current));
+            if ood_idx >= proof.ood_values.len() {
+                return false;
+            }
+            let y = proof.ood_values[ood_idx];
+            ood_idx += 1;
+            challenger.observe_f128(y);
+            let intro_msg = next_msg!();
+            let intro_quad = RoundQuad::from_msg(intro_msg, y);
+            let beta = challenge!(challenger.try_sample_f128());
+            running_quad = RoundQuad::fold(&running_quad, &intro_quad, beta);
+            t_r += beta * y;
+            ood_ctxs.push(OodCtx {
+                z,
+                ris_start: ris.len(),
+                beta,
+                half: Half::Full,
+            });
+        }
+
+        query_pow!(config.grinding_bits[i + 1]);
+        let prev_block_len = 1usize << (prev_log_msg_cols + prev_log_inv_rate);
+        let prev_num_interleaved = 1usize << prev_log_num_interleaved;
+        let num_queries_i = config.queries[i + 1];
+        let queries_i = challenge!(try_sample_distinct_queries(challenger, prev_block_len, num_queries_i));
+        let alpha_i = challenge!(challenger.try_sample_f128_vec(ceil_log2(num_queries_i)));
+        if recursive_proof_idx >= proof.recursive_proofs.len() {
+            return false;
+        }
+        let rp = &proof.recursive_proofs[recursive_proof_idx];
+        recursive_proof_idx += 1;
+        if !verify_level_opens(
+            &prev_root,
+            prev_block_len,
+            &queries_i,
+            &rp.opened_rows,
+            prev_num_interleaved,
+            &rp.merkle_proof,
+            config.merkle_hash,
+        ) {
+            return false;
+        }
+        let enforced_sum_i =
+            induce_sumcheck_enforced_sum(&rp.opened_rows, &level_rs, &queries_i, &alpha_i);
+        let intro_msg_i = next_msg!();
+        let intro_quad_i = RoundQuad::from_msg(intro_msg_i, enforced_sum_i);
+        let beta_i = challenge!(challenger.try_sample_f128());
+        running_quad = RoundQuad::fold(&running_quad, &intro_quad_i, beta_i);
+        t_r += beta_i * enforced_sum_i;
+        level_ctxs.push(LevelCtx {
+            log_msg_cols: if joins { n_current - 1 } else { n_current },
+            queries: queries_i,
+            alpha: alpha_i,
+            ris_start: ris.len(),
+            beta: beta_i,
+            half: if joins { Half::Low } else { Half::Full },
+        });
+
+        if joins {
+            // B's level-0 queries, against its own tree, into its half.
+            query_pow!(branch_lvl.grinding_bits);
+            let lanes_b = 1usize << branch_lvl.initial_k;
+            let block_len_b =
+                1usize << (branch.log_n - branch_lvl.initial_k + branch_lvl.log_inv_rate);
+            let queries_b =
+                challenge!(try_sample_distinct_queries(challenger, block_len_b, branch_lvl.queries));
+            let alpha_b = challenge!(challenger.try_sample_f128_vec(ceil_log2(branch_lvl.queries)));
+            if !verify_level_opens(
+                branch.root,
+                block_len_b,
+                &queries_b,
+                &branch_proof.opened_rows,
+                lanes_b,
+                &branch_proof.merkle_proof,
+                config.merkle_hash,
+            ) {
+                return false;
+            }
+            let Some((_, r_b, _)) = merged.as_ref() else {
+                return false;
+            };
+            let enforced_b =
+                induce_sumcheck_enforced_sum(&branch_proof.opened_rows, r_b, &queries_b, &alpha_b);
+            let intro_b = next_msg!();
+            let intro_quad_b = RoundQuad::from_msg(intro_b, enforced_b);
+            let beta_b = challenge!(challenger.try_sample_f128());
+            running_quad = RoundQuad::fold(&running_quad, &intro_quad_b, beta_b);
+            t_r += beta_b * enforced_b;
+            level_ctxs.push(LevelCtx {
+                log_msg_cols: n_current - 1,
+                queries: queries_b,
+                alpha: alpha_b,
+                ris_start: ris.len(),
+                beta: beta_b,
+                half: Half::High,
+            });
+        }
+
+        prev_root = root_next;
+        let k_next = config.recursive_ks[i + 1];
+        if n_current < k_next {
+            return false;
+        }
+        prev_log_num_interleaved = k_next;
+        prev_log_msg_cols = n_current - k_next;
+        prev_log_inv_rate = config.log_inv_rates[i + 2];
+    }
+
+    unreachable!()
+}
+
 /// Verifier for [`recursive_prover_with_basis`]. Caller supplies the basis
 /// `b_initial` recomputed locally (typically from the combined claims) and
 /// `target`. Also supplies the L0 root (from the upstream `Commitment`).
@@ -8325,5 +9311,146 @@ mod tests {
             HashKind::Sha256,
         );
         assert_eq!(w.root(), w2.root());
+    }
+
+    /// The merged (two-tree) opening round-trips, rejects a tampered branch
+    /// opening, and leaves the prover's and the verifier's challengers in
+    /// the same state (the prover mirrors the verifier's last two draws), so
+    /// a protocol may continue on the transcript after it; also with a
+    /// single last-level query (an empty batching vector).
+    #[test]
+    fn merged_two_tree_opening_roundtrips_and_closes_the_transcript() {
+        use crate::challenger::Challenger;
+        // A: 2^11 elements, lane fold 2, recursive folds [2, 2, 2]: messages
+        // 9, 7, 5 (B joins: 2^7 elements folded by k_B = 2), 6, residual 4.
+        let (log_n_a, initial_k, ks) = (11usize, 2usize, vec![2usize, 2, 2]);
+        let (log_n_b, k_b, merge_iter) = (7usize, 2usize, 1usize);
+        let rates = vec![1usize, 1, 1, 1];
+        let hash = HashKind::Sha256;
+        for last_queries in [8usize, 1] {
+            let mut rng = crate::challenger::RandomChallenger::new(0x3E2E_5ED0 + last_queries as u64);
+            let poly_a: Vec<Gf128> = (0..1usize << log_n_a).map(|_| rng.sample_f128()).collect();
+            let poly_b: Vec<Gf128> = (0..1usize << log_n_b).map(|_| rng.sample_f128()).collect();
+            let z_a: Vec<Gf128> = (0..log_n_a).map(|_| rng.sample_f128()).collect();
+            let z_b: Vec<Gf128> = (0..log_n_b).map(|_| rng.sample_f128()).collect();
+            let (b_a, b_b) = (build_eq_table(&z_a), build_eq_table(&z_b));
+            let dot = |p: &[Gf128], b: &[Gf128]| p.iter().zip(b).fold(Gf128::ZERO, |acc, (&x, &y)| acc + x * y);
+            let (target_a, target_b) = (dot(&poly_a, &b_a), dot(&poly_b, &b_b));
+            let queries = vec![8usize, 8, 8, last_queries];
+            let config = ProverConfig {
+                log_inv_rates: rates.clone(),
+                recursive_steps: ks.len(),
+                initial_log_msg_cols: log_n_a - initial_k,
+                initial_log_num_interleaved: initial_k,
+                initial_k,
+                recursive_log_msg_cols: vec![7, 5, 4],
+                recursive_ks: ks.clone(),
+                queries: queries.clone(),
+                grinding_bits: vec![0; 4],
+                fold_grinding_bits: vec![0; 4],
+                ood_samples: vec![0, 1, 1, 1],
+                merkle_hash: hash,
+            };
+            let verifier_config = VerifierConfig {
+                log_inv_rates: rates.clone(),
+                recursive_steps: ks.len(),
+                initial_log_msg_cols: log_n_a - initial_k,
+                initial_log_num_interleaved: initial_k,
+                initial_k,
+                recursive_log_msg_cols: vec![7, 5, 4],
+                recursive_ks: ks.clone(),
+                queries,
+                grinding_bits: vec![0; 4],
+                fold_grinding_bits: vec![0; 4],
+                ood_samples: vec![0, 1, 1, 1],
+                merkle_hash: hash,
+            };
+            let level0 = BranchLevel0 {
+                log_inv_rate: 2,
+                initial_k: k_b,
+                queries: 8,
+                grinding_bits: 0,
+                fold_grinding_bits: 0,
+            };
+            let ntt_a = AdditiveNttF128::standard(log_n_a - initial_k + rates[0]);
+            let wtns_a = ligero_commit(&poly_a, log_n_a - initial_k, initial_k, rates[0], &ntt_a, hash);
+            let ntt_b = AdditiveNttF128::standard(log_n_b - k_b + level0.log_inv_rate);
+            let wtns_b = ligero_commit(&poly_b, log_n_b - k_b, k_b, level0.log_inv_rate, &ntt_b, hash);
+            let (root_a, root_b) = (wtns_a.root(), wtns_b.root());
+
+            let mut p_ch = crate::challenger::FsChallenger::new(b"merged-test");
+            let (proof, branch_proof) = recursive_prover_with_basis_merged(
+                &config,
+                poly_a.clone(),
+                b_a.clone(),
+                target_a,
+                &wtns_a.mat,
+                &wtns_a.tree,
+                MergeBranchProver {
+                    packed_witness: Cow::Borrowed(&poly_b),
+                    b_initial: b_b.clone(),
+                    target: target_b,
+                    codeword: &wtns_b.mat,
+                    tree: &wtns_b.tree,
+                    level0,
+                    merge_iter,
+                },
+                &mut p_ch,
+            );
+            assert_eq!(branch_proof.opened_rows.len(), level0.queries);
+
+            let residual = |z: &[Gf128]| {
+                let z = z.to_vec();
+                move |ris: &[Gf128], yr_log_n: usize| -> Vec<Gf128> {
+                    assert_eq!(ris.len() + yr_log_n, z.len());
+                    let mut point = ris.to_vec();
+                    point.resize(z.len(), Gf128::ZERO);
+                    (0..1usize << yr_log_n)
+                        .map(|y| {
+                            for j in 0..yr_log_n {
+                                point[ris.len() + j] = if (y >> j) & 1 == 1 { Gf128::ONE } else { Gf128::ZERO };
+                            }
+                            crate::zerocheck::multilinear::eq_eval(&z, &point)
+                        })
+                        .collect()
+                }
+            };
+            let verify = |proof: &LigeritoProof, branch_proof: &RecursiveProof| {
+                let mut v_ch = crate::challenger::FsChallenger::new(b"merged-test");
+                let ok = recursive_verifier_with_basis_merged(
+                    &verifier_config,
+                    proof,
+                    branch_proof,
+                    log_n_a,
+                    target_a,
+                    &root_a,
+                    residual(&z_a),
+                    MergeBranchVerifier {
+                        log_n: log_n_b,
+                        target: target_b,
+                        root: &root_b,
+                        level0,
+                        merge_iter,
+                        eval_b_residual: residual(&z_b),
+                    },
+                    &mut v_ch,
+                );
+                (ok, v_ch)
+            };
+            let (ok, mut v_ch) = verify(&proof, &branch_proof);
+            assert!(ok, "the merged opening must verify (last-level queries {last_queries})");
+            assert_eq!(
+                p_ch.sample_f128(),
+                v_ch.sample_f128(),
+                "prover and verifier must leave the transcript in the same state"
+            );
+
+            let mut bad = branch_proof.clone();
+            bad.opened_rows[3][1] += Gf128::ONE;
+            assert!(!verify(&proof, &bad).0, "a tampered branch opening must be rejected");
+            let mut bad = proof.clone();
+            bad.final_proof.yr[5] += Gf128::ONE;
+            assert!(!verify(&bad, &branch_proof).0, "a tampered residual must be rejected");
+        }
     }
 }

@@ -13,8 +13,10 @@ use flock_core::challenger::Challenger;
 use flock_core::merkle::{Hash, HashKind};
 use flock_core::pcs::commit::PcsParams;
 use flock_core::pcs::ligerito::{
-    LigeritoProfile, LigeritoProof, LigeritoSecurityConfig, ProverConfig, VerifierConfig,
-    embedded_security_config, recursive_prover_with_basis, recursive_verifier_with_basis_succinct,
+    BranchLevel0, LigeritoProfile, LigeritoProof, LigeritoSecurityConfig, MergeBranchProver,
+    MergeBranchVerifier, ProverConfig, RecursiveProof, VerifierConfig, embedded_security_config,
+    recursive_prover_with_basis, recursive_prover_with_basis_merged,
+    recursive_verifier_with_basis_merged, recursive_verifier_with_basis_succinct,
 };
 use flock_core::pcs::pack::{LOG_PACKING, PACKING_WIDTH as CLAIM_COUNT};
 use flock_core::pcs::ring_switch::{
@@ -432,6 +434,388 @@ impl Pcs {
                 self.verify_mle(commitment, &ring_switch, reduced.target, transcript, ood)
             }
         }
+    }
+
+    /// [`Pcs::verify_lin`] for an already-bound factored inner-product
+    /// claim with deferred row weights and `eq(col_point, ·)` column weights
+    /// ([`sumcheck::verify_deferred`]): the prover runs [`Pcs::prove_lin`]
+    /// on the explicit claim with [`StatementBinding::AlreadyBound`].
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn verify_lin_deferred(
+        &self,
+        commitment: &Root,
+        row_vars: usize,
+        col_point: &[Gf],
+        target: Gf,
+        row_weight_at: impl FnOnce(&[Gf]) -> Gf,
+        transcript: &mut VerifierState<'_>,
+        ood: Option<(&[Gf], Gf)>,
+    ) -> Result<(), VerifyError> {
+        if row_vars.checked_add(col_point.len()) != Some(self.params.m) {
+            return Err(VerifyError::WeightLengthMismatch);
+        }
+        let native = self.native_schedule(None, Some((row_vars, col_point.len())), ood)
+            .map_err(|_| VerifyError::VerificationFailed)?;
+        transcript.continue_native(native).map_err(|_| VerifyError::VerificationFailed)?;
+        transcript.public_message(SUMCHECK_LABEL);
+        let reduced = sumcheck::verify_deferred(row_vars, col_point, target, row_weight_at, transcript)?;
+        let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
+        bind_mle_statement(self, &commitment.0, &reduced.point, reduced.target, transcript);
+        self.verify_mle(commitment, &ring_switch, reduced.target, transcript, ood)
+    }
+
+    /// The opening of two commitments in ONE Ligerito run (the logarithmic
+    /// scheme's `f` and fold bits): each claim is reduced to a packed claim
+    /// under its own native schedule (sumcheck, ring switch, Round-0 batch),
+    /// then `self`'s message `A` and `pcs_b`'s message `B` are opened by
+    /// flock's merged recursion, `B` joining `A`'s ladder where their folded
+    /// messages have the same size (`plan`). Both statements must already be
+    /// bound (they are derived from the transcript).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn prove_lin_pair(
+        &self,
+        hint_a: &FlockCommitHint,
+        query_a: &OpeningQuery,
+        ood_a: Option<(&[Gf], Gf)>,
+        pcs_b: &Pcs,
+        hint_b: &FlockCommitHint,
+        query_b: &OpeningQuery,
+        ood_b: Option<(&[Gf], Gf)>,
+        plan: &MergePlan,
+        transcript: &mut ProverState,
+    ) -> Result<PairSizes, ProveError> {
+        // A grinding work plan is derived for one ladder; the merged chain
+        // has none, so a planned opener cannot take this path.
+        if self.flock_plan.is_some() || pcs_b.flock_plan.is_some() {
+            return Err(ProveError::Internal);
+        }
+        if !self.plan_matches(pcs_b, plan) {
+            return Err(ProveError::Internal);
+        }
+        let start = transcript.written();
+        let (basis_a, target_a) = self.reduce_to_packed(hint_a, query_a, transcript, ood_a)?;
+        let after_a = transcript.written();
+        let (basis_b, target_b) = pcs_b.reduce_to_packed(hint_b, query_b, transcript, ood_b)?;
+        let after_b = transcript.written();
+        let started = std::time::Instant::now();
+        let data_a = hint_a.flock_prover_data();
+        let data_b = hint_b.flock_prover_data();
+        let raw = ProverChallenger::new_ligerito(transcript, target_a);
+        let mut challenger = AtomicChallenger::new(raw, None);
+        let (ligerito, branch) = recursive_prover_with_basis_merged(
+            &plan.prover_config,
+            hint_a.packed_message().to_vec(),
+            basis_a,
+            target_a,
+            &data_a.codeword,
+            &data_a.merkle_tree,
+            MergeBranchProver {
+                packed_witness: std::borrow::Cow::Borrowed(hint_b.packed_message()),
+                b_initial: basis_b,
+                target: target_b,
+                codeword: &data_b.codeword,
+                tree: &data_b.merkle_tree,
+                level0: plan.branch,
+                merge_iter: plan.merge_iter,
+            },
+            &mut challenger,
+        );
+        if !challenger.finish() {
+            return Err(ProveError::Internal);
+        }
+        super::trace("  ligerito (merged)", started);
+        write_opening_proof(&ligerito, transcript)?;
+        let after_chain = transcript.written();
+        write_branch_proof(&branch, transcript)?;
+        let end = transcript.written();
+        let between = |from: (usize, usize), to: (usize, usize)| (to.0 - from.0, to.1 - from.1);
+        Ok(PairSizes {
+            reduce_a: between(start, after_a),
+            reduce_b: between(after_a, after_b),
+            chain: between(after_b, after_chain),
+            branch: between(after_chain, end),
+        })
+    }
+
+    /// The verifier of [`Pcs::prove_lin_pair`], `A`'s claim factored with
+    /// deferred row weights and `eq(col_point, ·)` columns (as
+    /// [`Pcs::verify_lin_deferred`]), `B`'s an explicit query.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn verify_lin_pair_deferred(
+        &self,
+        root_a: &Root,
+        row_vars_a: usize,
+        col_point_a: &[Gf],
+        target_a: Gf,
+        row_weight_at: impl FnOnce(&[Gf]) -> Gf,
+        ood_a: Option<(&[Gf], Gf)>,
+        pcs_b: &Pcs,
+        root_b: &Root,
+        query_b: &OpeningQuery,
+        ood_b: Option<(&[Gf], Gf)>,
+        plan: &MergePlan,
+        transcript: &mut VerifierState<'_>,
+    ) -> Result<(), VerifyError> {
+        if self.flock_plan.is_some() || pcs_b.flock_plan.is_some() {
+            return Err(VerifyError::Internal);
+        }
+        if !self.plan_matches(pcs_b, plan) {
+            return Err(VerifyError::Internal);
+        }
+        // A: the deferred inner-product sumcheck, then its ring switch.
+        if row_vars_a.checked_add(col_point_a.len()) != Some(self.params.m) {
+            return Err(VerifyError::WeightLengthMismatch);
+        }
+        let native = self.native_schedule(None, Some((row_vars_a, col_point_a.len())), ood_a)
+            .map_err(|_| VerifyError::VerificationFailed)?;
+        transcript.continue_native(native).map_err(|_| VerifyError::VerificationFailed)?;
+        transcript.public_message(SUMCHECK_LABEL);
+        let reduced_a =
+            sumcheck::verify_deferred(row_vars_a, col_point_a, target_a, row_weight_at, transcript)?;
+        let rs_a = RingSwitch::new(&reduced_a.point, self.params.m)?;
+        bind_mle_statement(self, &root_a.0, &reduced_a.point, reduced_a.target, transcript);
+        let state_a = self.ring_switch_state(&rs_a, reduced_a.target, transcript, ood_a)?;
+        transcript.finish_native().map_err(|_| VerifyError::VerificationFailed)?;
+        transcript.end_native().map_err(|_| VerifyError::VerificationFailed)?;
+        // B: its query's sumcheck, then its ring switch.
+        let reduced_b = match query_b {
+            OpeningQuery::InnerProduct { claim } => {
+                validate_inner_product_claim(pcs_b, claim)?;
+                let native = pcs_b.native_schedule(None, query_b.binary_dimensions(), ood_b)
+                    .map_err(|_| VerifyError::VerificationFailed)?;
+                transcript.continue_native(native).map_err(|_| VerifyError::VerificationFailed)?;
+                transcript.public_message(SUMCHECK_LABEL);
+                sumcheck::verify(claim, transcript)?
+            }
+            OpeningQuery::InnerProductSum { claim } => {
+                validate_sum_claim(pcs_b, claim)?;
+                let native = pcs_b.native_schedule(None, query_b.binary_dimensions(), ood_b)
+                    .map_err(|_| VerifyError::VerificationFailed)?;
+                transcript.continue_native(native).map_err(|_| VerifyError::VerificationFailed)?;
+                transcript.public_message(SUMCHECK_LABEL);
+                sumcheck::verify_sum(claim, transcript)?
+            }
+            OpeningQuery::Mle { .. } => return Err(VerifyError::Internal),
+        };
+        let rs_b = RingSwitch::new(&reduced_b.point, pcs_b.params.m)?;
+        bind_mle_statement(pcs_b, &root_b.0, &reduced_b.point, reduced_b.target, transcript);
+        let state_b = pcs_b.ring_switch_state(&rs_b, reduced_b.target, transcript, ood_b)?;
+        transcript.finish_native().map_err(|_| VerifyError::VerificationFailed)?;
+        transcript.end_native().map_err(|_| VerifyError::VerificationFailed)?;
+
+        // One Ligerito run over both trees.
+        let proof = read_opening_proof(transcript)?;
+        let branch = read_branch_proof(transcript)?;
+        let vc = &plan.verifier_config;
+        let r = vc.recursive_steps;
+        if proof.initial_root != root_a.0
+            || proof.recursive_roots.len() != r
+            || proof.recursive_proofs.len() + 1 != r
+            || proof.final_proof.yr.len() != checked_pow2(plan.final_log_n).ok_or(VerifyError::Internal)?
+        {
+            return Err(VerifyError::VerificationFailed);
+        }
+        let log_n_a = rs_a.suffix_dimension();
+        let log_n_b = rs_b.suffix_dimension();
+        let raw = VerifierChallenger::new_ligerito(transcript, state_a.packed_target);
+        let mut challenger = AtomicChallenger::new(raw, None);
+        let valid = recursive_verifier_with_basis_merged(
+            vc,
+            &proof,
+            &branch,
+            log_n_a,
+            state_a.packed_target,
+            &root_a.0,
+            |ris: &[Gf], yr_log_n: usize| state_a.evaluate(ris, yr_log_n),
+            MergeBranchVerifier {
+                log_n: log_n_b,
+                target: state_b.packed_target,
+                root: &root_b.0,
+                level0: plan.branch,
+                merge_iter: plan.merge_iter,
+                eval_b_residual: |ris: &[Gf], yr_log_n: usize| state_b.evaluate(ris, yr_log_n),
+            },
+            &mut challenger,
+        );
+        if !challenger.finish() {
+            return Err(VerifyError::MalformedProof);
+        }
+        if !valid {
+            return Err(VerifyError::VerificationFailed);
+        }
+        Ok(())
+    }
+
+    /// Whether `plan` runs the level 0 each commitment was made under:
+    /// `self`'s (rate, interleaving, queries, both grindings) for the chain,
+    /// `pcs_b`'s for the branch, one Merkle hash for both trees. The plan's
+    /// later levels are the caller's (bound with its statement).
+    fn plan_matches(&self, pcs_b: &Pcs, plan: &MergePlan) -> bool {
+        let level_0 = |config: &VerifierConfig| {
+            (
+                config.initial_k,
+                config.log_inv_rates.first().copied(),
+                config.queries.first().copied(),
+                config.grinding_bits.first().copied(),
+                config.fold_grinding_bits.first().copied().unwrap_or(0),
+            )
+        };
+        let (a, b, chain) = (&self.verifier_config, &pcs_b.verifier_config, &plan.verifier_config);
+        let branch = (
+            plan.branch.initial_k,
+            Some(plan.branch.log_inv_rate),
+            Some(plan.branch.queries),
+            Some(plan.branch.grinding_bits),
+            plan.branch.fold_grinding_bits,
+        );
+        level_0(chain) == level_0(a)
+            && branch == level_0(b)
+            && chain.merkle_hash == a.merkle_hash
+            && plan.prover_config.merkle_hash == a.merkle_hash
+            && b.merkle_hash == a.merkle_hash
+            && self.prover_config.merkle_hash == pcs_b.prover_config.merkle_hash
+    }
+
+    /// The prover's part of an opening up to Ligerito: the query's sumcheck
+    /// (statement already bound), the ring switch and the Round-0 batch,
+    /// under its own native schedule (closed on return). Returns the packed
+    /// basis and target.
+    fn reduce_to_packed(
+        &self,
+        hint: &FlockCommitHint,
+        query: &OpeningQuery,
+        transcript: &mut ProverState,
+        ood: Option<(&[Gf], Gf)>,
+    ) -> Result<(Vec<Gf>, Gf), ProveError> {
+        if hint.packed_message().len() != self.packed_len {
+            return Err(ProveError::PackedWitnessLengthMismatch);
+        }
+        validate_prover_data(self, hint)?;
+        let root = *hint.root();
+        let native = self.native_schedule(None, query.binary_dimensions(), ood)
+            .map_err(|_| ProveError::InvalidClaim)?;
+        transcript.continue_native(native).map_err(|_| ProveError::InvalidClaim)?;
+        let started = std::time::Instant::now();
+        let reduced = match query {
+            OpeningQuery::InnerProduct { claim } => {
+                validate_inner_product_claim(self, claim)?;
+                transcript.public_message(SUMCHECK_LABEL);
+                sumcheck::prove(claim, hint.rows(), hint.packed_cols(), transcript)?
+            }
+            OpeningQuery::InnerProductSum { claim } => {
+                validate_sum_claim(self, claim)?;
+                transcript.public_message(SUMCHECK_LABEL);
+                sumcheck::prove_sum(claim, hint.rows(), hint.packed_cols(), transcript)?
+            }
+            OpeningQuery::Mle { .. } => return Err(ProveError::Internal),
+        };
+        super::trace("  sumcheck", started);
+        let ring_switch = RingSwitch::new(&reduced.point, self.params.m)?;
+        bind_mle_statement(self, &root, &reduced.point, reduced.target, transcript);
+        let started = std::time::Instant::now();
+        let (basis, target) = self.ring_switch_basis(hint, &ring_switch, reduced.target, transcript, ood)?;
+        super::trace("  ring switch", started);
+        transcript.finish_native().map_err(|_| ProveError::Internal)?;
+        transcript.end_native().map_err(|_| ProveError::Internal)?;
+        Ok((basis, target))
+    }
+
+    /// [`Pcs::prove_mle`] up to Ligerito: the 128 ring-switch claims, the
+    /// seven batching challenges, the packed basis and target, the caller's
+    /// Round-0 claim batched in.
+    fn ring_switch_basis(
+        &self,
+        hint: &FlockCommitHint,
+        ring_switch: &RingSwitch<'_>,
+        target: Gf,
+        transcript: &mut ProverState,
+        ood: Option<(&[Gf], Gf)>,
+    ) -> Result<(Vec<Gf>, Gf), ProveError> {
+        let packed = hint.packed_message();
+        let (prefix_tensor, suffix_tensor) = build_eq_split(ring_switch.point, LOG_PACKING);
+        if suffix_tensor.len() != packed.len() {
+            return Err(ProveError::PackedWitnessLengthMismatch);
+        }
+        let claims = fold_1b_rows_naive(packed, &suffix_tensor);
+        let claims: [Gf; CLAIM_COUNT] = claims
+            .try_into()
+            .map_err(|_: Vec<Gf>| ProveError::Internal)?;
+        if claim_check(&prefix_tensor, &claims) != target {
+            return Err(ProveError::InvalidClaim);
+        }
+        transcript.public_message(MLE_CLAIMS_LABEL);
+        transcript.prover_message(&claims);
+        transcript.public_message(CHALLENGES_LABEL);
+        let batching_point = transcript.native_array::<LOG_PACKING>(Stage::RingBatch);
+        let batching_weights = build_eq(&batching_point);
+        let mut packed_target = batch_claims(&claims, &batching_weights);
+        let mut packed_basis = fold_b128_elems(&suffix_tensor, &batching_weights);
+        if let Some((point, y)) = ood {
+            if point.len() != ring_switch.suffix_dimension() {
+                return Err(ProveError::Internal);
+            }
+            bind_ood_claim(transcript, point, y);
+            let eta = transcript.native_scalar(Stage::OodBatch);
+            add_ood_basis(&mut packed_basis, packed, point, eta, None);
+            packed_target = packed_target + eta * y;
+        }
+        Ok((packed_basis, packed_target))
+    }
+
+    /// [`Pcs::verify_mle`] up to Ligerito: reads and checks the ring-switch
+    /// claims, draws the batching point and the Round-0 batch, and keeps what
+    /// the residual basis evaluation needs.
+    fn ring_switch_state(
+        &self,
+        ring_switch: &RingSwitch<'_>,
+        target: Gf,
+        transcript: &mut VerifierState<'_>,
+        ood: Option<(&[Gf], Gf)>,
+    ) -> Result<RingState, VerifyError> {
+        transcript.public_message(MLE_CLAIMS_LABEL);
+        let claims = transcript
+            .prover_message::<[Gf; CLAIM_COUNT]>()
+            .map_err(|_| VerifyError::MalformedProof)?;
+        let prefix_tensor = build_eq(&ring_switch.point[..LOG_PACKING]);
+        if claim_check(&prefix_tensor, &claims) != target {
+            return Err(VerifyError::VerificationFailed);
+        }
+        transcript.public_message(CHALLENGES_LABEL);
+        let batching_point = transcript.native_array::<LOG_PACKING>(Stage::RingBatch)
+            .map_err(|_| VerifyError::MalformedProof)?;
+        let batching_weights = build_eq(&batching_point);
+        let mut packed_target = batch_claims(&claims, &batching_weights);
+        let suffix_point = ring_switch.point[LOG_PACKING..].to_vec();
+        let ood = match ood {
+            Some((point, y)) => {
+                if point.len() != ring_switch.suffix_dimension() {
+                    return Err(VerifyError::VerificationFailed);
+                }
+                bind_ood_claim(transcript, point, y);
+                let eta = transcript.native_scalar(Stage::OodBatch)
+                    .map_err(|_| VerifyError::MalformedProof)?;
+                packed_target = packed_target + eta * y;
+                Some((point.to_vec(), eta))
+            }
+            None => None,
+        };
+        Ok(RingState { suffix_point, batching_weights, packed_target, ood })
+    }
+
+    /// The draws flock's Ligerito verifier makes after the last level's
+    /// queries (that level's `α` vector and `β`) and its prover never does:
+    /// harmless at the end of a proof, they would desynchronise a protocol
+    /// that keeps using the transcript after an opening, so such a protocol's
+    /// prover replays them here.
+    pub(crate) fn replay_verifier_tail(&self, transcript: &mut ProverState) {
+        let queries = self.verifier_config.queries.last().copied().unwrap_or(0);
+        let n = if queries <= 1 { 0 } else { (queries - 1).ilog2() as usize + 1 };
+        transcript.public_message(VECTOR_SQUEEZE_TAG);
+        transcript.public_message(&(n as u64));
+        for _ in 0..n {
+            let _: Gf = transcript.verifier_message();
+        }
+        let _: Gf = transcript.verifier_message();
     }
 
     /// Their `prove_mle`: the 128 ring-switch claims, seven batching
@@ -943,6 +1327,110 @@ impl<'a> RingSwitch<'a> {
 // ---------------------------------------------------------------------
 // The Ligerito proof as a hint
 // ---------------------------------------------------------------------
+
+/// What a verifier keeps from one opening's ring switch for the residual
+/// basis evaluation (the closure [`Pcs::verify_mle`] builds inline).
+struct RingState {
+    suffix_point: Vec<Gf>,
+    batching_weights: Vec<Gf>,
+    packed_target: Gf,
+    ood: Option<(Vec<Gf>, Gf)>,
+}
+
+impl RingState {
+    /// The packed basis at `ris ++ y` for every residual `y`.
+    fn evaluate(&self, ris: &[Gf], yr_log_n: usize) -> Vec<Gf> {
+        let suffix_point = &self.suffix_point;
+        if yr_log_n > 32 || ris.len().checked_add(yr_log_n) != Some(suffix_point.len()) {
+            return Vec::new();
+        }
+        let Some(yr_len) = 1usize.checked_shl(yr_log_n as u32) else {
+            return Vec::new();
+        };
+        let prefix = eval_rs_eq_prefix(suffix_point, ris);
+        let suffix = &suffix_point[ris.len()..];
+        let mut out: Vec<Gf> = (0..yr_len)
+            .map(|y| {
+                eval_rs_eq_finish_from_prefix_binary_q(&prefix, suffix, y as u32, &self.batching_weights)
+            })
+            .collect();
+        if let Some((point, eta)) = &self.ood {
+            for (slot, term) in out.iter_mut().zip(ood_residual_evals(ris, yr_log_n, point, *eta)) {
+                *slot = *slot + term;
+            }
+        }
+        out
+    }
+}
+
+impl MergePlan {
+    /// A digest of everything the merged run executes: the chain's per-level
+    /// parameters, the branch's level 0, where it joins and the residual.
+    pub fn digest(&self) -> [u8; 32] {
+        let vc = &self.verifier_config;
+        let mut h = blake3::Hasher::new();
+        h.update(b"bitz/merge-plan/v1");
+        let mut put = |label: &[u8], values: &[usize]| {
+            h.update(label);
+            h.update(&(values.len() as u64).to_le_bytes());
+            for &v in values {
+                h.update(&(v as u64).to_le_bytes());
+            }
+        };
+        put(b"rates", &vc.log_inv_rates);
+        put(b"ks", &vc.recursive_ks);
+        put(b"msg-cols", &vc.recursive_log_msg_cols);
+        put(b"queries", &vc.queries);
+        put(b"grinding", &vc.grinding_bits);
+        put(b"fold-grinding", &vc.fold_grinding_bits);
+        put(b"ood", &vc.ood_samples);
+        put(
+            b"shape",
+            &[vc.initial_k, vc.initial_log_msg_cols, vc.recursive_steps, self.merge_iter, self.final_log_n],
+        );
+        let b = &self.branch;
+        put(b"branch", &[b.log_inv_rate, b.initial_k, b.queries, b.grinding_bits, b.fold_grinding_bits]);
+        *h.finalize().as_bytes()
+    }
+}
+
+/// How a second commitment joins the first one's Ligerito run (see
+/// [`Pcs::prove_lin_pair`]): the merged chain's configurations, the
+/// branch's level-0 parameters, the recursion iteration after which it
+/// joins, and the merged chain's residual size.
+#[derive(Clone, Debug)]
+pub struct MergePlan {
+    pub prover_config: ProverConfig,
+    pub verifier_config: VerifierConfig,
+    pub branch: BranchLevel0,
+    pub merge_iter: usize,
+    pub final_log_n: usize,
+}
+
+/// Bytes [`Pcs::prove_lin_pair`] wrote, as (narg, hints): each claim's
+/// reduction, the merged Ligerito run, the second tree's level-0 opening.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PairSizes {
+    pub reduce_a: (usize, usize),
+    pub reduce_b: (usize, usize),
+    pub chain: (usize, usize),
+    pub branch: (usize, usize),
+}
+
+fn write_branch_proof(proof: &RecursiveProof, transcript: &mut ProverState) -> Result<(), ProveError> {
+    let bytes = proof_options().serialize(proof).map_err(|_| ProveError::SerializationFailed)?;
+    transcript.hint_bytes(&bytes);
+    Ok(())
+}
+
+fn read_branch_proof(transcript: &mut VerifierState<'_>) -> Result<RecursiveProof, VerifyError> {
+    let bytes = transcript
+        .hint_bytes(PROOF_HINT_LIMIT)
+        .map_err(|_| VerifyError::MalformedProof)?;
+    proof_options()
+        .deserialize(&bytes)
+        .map_err(|_| VerifyError::MalformedProof)
+}
 
 fn proof_options() -> impl Options {
     bincode::DefaultOptions::new()

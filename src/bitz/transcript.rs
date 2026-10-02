@@ -32,6 +32,11 @@ pub struct ProverState {
     inner: spongefish::ProverState,
     hints: Vec<u8>,
     native: Option<Cursor>,
+    /// Native draws without a prepared schedule are allowed (and never
+    /// ground): a composed protocol's sub-step that no schedule describes
+    /// (the logarithmic scheme's second product tree), under a zero-work
+    /// policy only.
+    unscheduled: bool,
     #[cfg(test)]
     unscheduled_kernel: bool,
 }
@@ -41,6 +46,8 @@ pub struct VerifierState<'a> {
     inner: spongefish::VerifierState<'a>,
     hints: &'a [u8],
     native: Option<Cursor>,
+    /// As [`ProverState`]'s.
+    unscheduled: bool,
     #[cfg(test)]
     unscheduled_kernel: bool,
 }
@@ -65,6 +72,7 @@ where
         inner,
         hints: Vec::new(),
         native: None,
+        unscheduled: false,
         #[cfg(test)]
         unscheduled_kernel: false,
     }
@@ -84,6 +92,7 @@ where
         inner,
         hints: &proof.hints,
         native: None,
+        unscheduled: false,
         #[cfg(test)]
         unscheduled_kernel: false,
     }
@@ -166,6 +175,12 @@ impl ProverState {
             .expect("hint byte string exceeds u32")
             .serialize_into_narg(&mut self.hints);
         self.hints.extend_from_slice(bytes);
+    }
+
+    /// Bytes written so far: the narg string and the hint stream (proof-size
+    /// accounting of a composed protocol's parts).
+    pub fn written(&self) -> (usize, usize) {
+        (self.inner.narg_string().len(), self.hints.len())
     }
 
     pub fn finish(self) -> Proof {
@@ -266,6 +281,22 @@ macro_rules! native_schedule {
         pub(crate) fn finish_native(&self) -> Result<(), grinding::Error> {
             self.native.ok_or(grinding::Error::Incomplete)?.finish()
         }
+
+        /// Closes a completely executed schedule, so a composed protocol
+        /// can start the next sub-protocol's own (`start_native`).
+        pub(crate) fn end_native(&mut self) -> Result<(), grinding::Error> {
+            if let Some(cursor) = self.native.take() {
+                cursor.finish()?;
+            }
+            Ok(())
+        }
+
+        /// Allows (`true`) or forbids native draws outside any schedule;
+        /// they are never ground, so callers use it under a zero-work
+        /// policy only.
+        pub(crate) fn set_unscheduled(&mut self, on: bool) {
+            self.unscheduled = on;
+        }
     };
 }
 
@@ -275,6 +306,7 @@ impl ProverState {
     fn protect(&mut self, stage: Stage, count: usize) {
         if count == 0 { return; }
         let Some(cursor) = self.native.as_mut() else {
+            if self.unscheduled { return; }
             #[cfg(test)]
             if self.unscheduled_kernel { return; }
             panic!("native challenge without a prepared schedule");
@@ -311,6 +343,7 @@ impl VerifierState<'_> {
     fn protect(&mut self, stage: Stage, count: usize) -> VerificationResult<()> {
         if count == 0 { return Ok(()); }
         let Some(cursor) = self.native.as_mut() else {
+            if self.unscheduled { return Ok(()); }
             #[cfg(test)]
             if self.unscheduled_kernel { return Ok(()); }
             return Err(VerificationError);

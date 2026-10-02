@@ -318,6 +318,51 @@ fn merged_columns(terms: &[(Vec<Gf>, Vec<Gf>)], bound_rows: &[Vec<Gf>]) -> Vec<G
     columns
 }
 
+/// [`verify`] for a factored claim whose row weights the verifier only
+/// evaluates at the row challenges (`row_weight_at`, called once after the
+/// last round) and whose column weights are `eq(col_point, ·)`, evaluated in
+/// `O(col_point.len())`: the messages and the final check are [`verify`]'s,
+/// without the `2^t + 2^s` weight tables.
+pub(crate) fn verify_deferred(
+    row_vars: usize,
+    col_point: &[Gf],
+    target: Gf,
+    row_weight_at: impl FnOnce(&[Gf]) -> Gf,
+    transcript: &mut VerifierState<'_>,
+) -> Result<MleClaim, VerifyError> {
+    let rounds = row_vars + col_point.len();
+    let mut point = Vec::with_capacity(rounds);
+    let mut target = target;
+    for _ in 0..rounds {
+        let coefficients = transcript
+            .prover_message::<[Gf; 3]>()
+            .map_err(|_| VerifyError::MalformedProof)?;
+        if coefficients[1] + coefficients[2] != target {
+            return Err(VerifyError::VerificationFailed);
+        }
+        let challenge = transcript
+            .native_scalar(super::grinding::Stage::BinaryRound)
+            .map_err(|_| VerifyError::MalformedProof)?;
+        target = evaluate_round(coefficients, challenge);
+        point.push(challenge);
+    }
+    let evaluation = transcript
+        .prover_message::<Gf>()
+        .map_err(|_| VerifyError::MalformedProof)?;
+    let rows = row_weight_at(&point[..row_vars]);
+    let columns = col_point
+        .iter()
+        .zip(&point[row_vars..])
+        .fold(Gf::one(), |acc, (&z, &r)| acc * super::eq_factor(r, z));
+    if target != evaluation * rows * columns {
+        return Err(VerifyError::VerificationFailed);
+    }
+    Ok(MleClaim {
+        point,
+        target: evaluation,
+    })
+}
+
 pub(crate) fn verify_sum(
     claim: &SumClaimGf,
     transcript: &mut VerifierState<'_>,
