@@ -112,12 +112,14 @@ $\mathbb{B}\text{it}\ZZ$: proofs and commitments in arbitrary rings through bina
 \author[2]{Albert Garreta}
 \author[3]{Marcin Kostrzewa}
 \author[4]{Shreyas Londhe}
+\author[5]{Lev Soukhanov}
 \author[2]{John Wu}
 
 \affil[1]{World Foundation, \texttt{remco@world.org}}
 \affil[2]{Nethermind Research, \texttt{albert@nethermind.io}, \texttt{john.wu@nethermind.io}}
 \affil[3]{Reilabs, \texttt{marcin.kostrzewa@reilabs.io}}
 \affil[4]{Ivy Research, \texttt{shreyas@zk.email}}
+\affil[5]{[[alloc] init], \texttt{0xdeadfae@gmail.com}}
 
 \date{\today}
 \fi
@@ -3127,7 +3129,7 @@ $$
 Now the prover computes all the values $H^{\eps\eps'}_{\bb}[\xx,\xx']$, and then obtains $t_3(\infty)$ using the expression of $t_3(\infty)$ given above. With this approach we avoid using the table $T_{A_2}^{(3)}$, whose entries have  dimension $2^{16}$. %The cost is only an extra  $O(\codedim_1)$ multiplications and table reads, and the costs brought from having four elements $H_{\bb}^{\eps \eps'}[\xx,\xx']$ per $(\bb,\xx,\xx')$, instead of one. 
 
 
-\paragraph{Overview of  optimizations and tables used at each round and sumcheck of GKR.} In the biggest sumcheck, we use the bucketing optimization in Rounds 1, 2 and 3. In Rounds 4 and 5  bucketing becomes too expensive, and then we  use an approach similar to the one in \cref{s:tables}, where we do compute and store tables in full (since their entries are used several times during the rounds). Concretely, in Round 4 we store the table $T_{r_1}^{(4)}$ of \eqref{e:T_r1_rounds}, whose entries have dimension $2^8$. The rest of tables in Rounds 4 and 5 would be too large (they would have entries of dimension $\geq 2^{16}$), and because of it their entries are computed from entries from  $T_{r_1}^{(4)}$ (we omit the details). The rest of  rounds are executed normally, without any of the optimizations discussed in this section.
+\paragraph{Overview of  optimizations and tables used at each round and sumcheck of GKR.} In the biggest sumcheck, we use the bucketing optimization in Rounds 1, 2 and 3. In Rounds 4 and 5  bucketing becomes too expensive, and then we  use an approach similar to the one in \cref{s:tables}, where we do compute and store tables in full (since their entries are used several times during the rounds). Concretely, in Round 4 we store the table $T_{r_1}^{(4)}$ of \eqref{e:T_r1_rounds}, whose entries have dimension $2^8$. The rest of tables in Rounds 4 and 5 would be too large (they would have entries of dimension $\geq 2^{16}$), and because of it their entries are computed from entries from  $T_{r_1}^{(4)}$ (we omit the details). The rest of rounds are proved via standard methods.
 
 
 The scenario is analogous for the second last, third last and fourth last sumchecks. The main difference is that we use bucketing only in the first $2$, $1$ and $0$ rounds, respectively, and we use the tabular approach mentioned above for the next $2$ rounds. The rest of rounds, and all other sumchecks, are proved via standard methods.
