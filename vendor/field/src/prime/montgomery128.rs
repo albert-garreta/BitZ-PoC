@@ -86,7 +86,7 @@ pub(super) fn redc(value: [u64; 4], modulus: [u64; 2], neg_inv: u64) -> [u64; 2]
 }
 
 #[inline(always)]
-fn conditional_subtract(value: [u64; 2], modulus: [u64; 2], overflow: u64) -> [u64; 2] {
+pub(super) fn conditional_subtract(value: [u64; 2], modulus: [u64; 2], overflow: u64) -> [u64; 2] {
     #[cfg(target_arch = "aarch64")]
     {
         let [mut lo, mut hi] = value;
