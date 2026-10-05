@@ -235,6 +235,26 @@ unsafe fn lookup(table: &[Gf], patterns: &[u8; 64], positions: [usize; 4]) -> __
     unsafe { f128x4_set(a, b, c, d) }
 }
 
+/// Load four complete field elements after a single table-shape check.
+#[inline]
+unsafe fn lookup_complete(table: &[Gf], patterns: &[u8; 64], positions: [usize; 4]) -> __m512i {
+    let [a, b, c, d] = positions.map(|i| patterns[i] as usize);
+    // SAFETY: callers check table.len() >= 256 before entering the loop.
+    // Gf is repr(C) over two u64 words in low/high polynomial order, so
+    // each 128-bit load contains one complete field element.
+    unsafe {
+        let a = _mm_loadu_si128(table.as_ptr().add(a).cast());
+        let b = _mm_loadu_si128(table.as_ptr().add(b).cast());
+        let c = _mm_loadu_si128(table.as_ptr().add(c).cast());
+        let d = _mm_loadu_si128(table.as_ptr().add(d).cast());
+        let lanes = _mm512_castsi128_si512(a);
+        let lanes = _mm512_inserti32x4::<1>(lanes, b);
+        let lanes = _mm512_inserti32x4::<2>(lanes, c);
+        // Every previously unspecified upper lane is overwritten.
+        _mm512_inserti32x4::<3>(lanes, d)
+    }
+}
+
 pub(crate) fn round_sums_task(
     lo_l: &[Gf],
     hi_l: &[Gf],
@@ -365,6 +385,7 @@ pub(crate) fn jit_sums_group(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[inline]
 pub(crate) fn jit_fold_group<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
     tab: [&[Gf]; 8],
     pat: &[[u8; 64]; 8],
@@ -375,6 +396,29 @@ pub(crate) fn jit_fold_group<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
     out_r: [&mut [MaybeUninit<Gf>]; 2],
     sums: &mut Sums,
 ) {
+    jit_fold_group_impl::<PRE_SCALED, WEIGH_LEFT, true>(
+        tab, pat, rho, eq_t, send_one, out_l, out_r, sums,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn jit_fold_group_impl<const PRE_SCALED: bool, const WEIGH_LEFT: bool, const DIRECT: bool>(
+    tab: [&[Gf]; 8],
+    pat: &[[u8; 64]; 8],
+    rho: &Gf,
+    eq_t: &[Gf],
+    send_one: bool,
+    out_l: [&mut [MaybeUninit<Gf>]; 2],
+    out_r: [&mut [MaybeUninit<Gf>]; 2],
+    sums: &mut Sums,
+) {
+    // Keep checked lookup semantics for shorter tables, including empty
+    // tables when n=0. The direct path needs no bounds checks per lookup.
+    if DIRECT && tab.iter().any(|table| table.len() < 256) {
+        return jit_fold_group_impl::<PRE_SCALED, WEIGH_LEFT, false>(
+            tab, pat, rho, eq_t, send_one, out_l, out_r, sums,
+        );
+    }
     let [l0, l1] = out_l;
     let [r0, r1] = out_r;
     let n = l0.len();
@@ -385,12 +429,19 @@ pub(crate) fn jit_fold_group<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
     // also maps each column back to its transposed pattern/weight position.
     // This permits contiguous SIMD stores instead of scattered lane extracts.
     // SAFETY: n<=64 bounds the permuted indices, every output holds n slots,
-    // and only complete vectors are stored. Table lookups remain checked.
+    // and only complete vectors are stored. DIRECT requires complete
+    // tables, checked above; otherwise every table lookup is checked.
     unsafe {
         let scalar = broadcast(*rho);
         for c in (0..end).step_by(4) {
             let positions = std::array::from_fn(|j| col_of(c + j));
-            let v: [__m512i; 8] = std::array::from_fn(|j| lookup(tab[j], &pat[j], positions));
+            let v: [__m512i; 8] = std::array::from_fn(|j| {
+                if DIRECT {
+                    lookup_complete(tab[j], &pat[j], positions)
+                } else {
+                    lookup(tab[j], &pat[j], positions)
+                }
+            });
             let combine = |lo, hi| {
                 if PRE_SCALED {
                     _mm512_xor_si512(lo, hi)
@@ -562,136 +613,6 @@ mod tests {
         )
     }
 
-    /// Experimental complete-table lookups. Production keeps the checked
-    /// scalar assembly until the complete fold benchmark justifies a change.
-    #[inline]
-    unsafe fn lookup_complete<const GATHER: bool>(
-        table: &[Gf],
-        patterns: &[u8; 64],
-        positions: [usize; 4],
-    ) -> __m512i {
-        let [a, b, c, d] = positions.map(|i| patterns[i] as usize);
-        // SAFETY: the caller checks table.len() >= 256 before the loop.
-        // Gf is repr(C) with two u64 words, in low/high polynomial order.
-        // All byte indices select complete initialized field elements.
-        unsafe {
-            if GATHER {
-                let [a, b, c, d] = [a, b, c, d].map(|i| (2 * i) as i64);
-                let indices = _mm512_set_epi64(d + 1, d, c + 1, c, b + 1, b, a + 1, a);
-                _mm512_i64gather_epi64::<8>(indices, table.as_ptr().cast::<i64>())
-            } else {
-                let a = _mm_loadu_si128(table.as_ptr().add(a).cast());
-                let b = _mm_loadu_si128(table.as_ptr().add(b).cast());
-                let c = _mm_loadu_si128(table.as_ptr().add(c).cast());
-                let d = _mm_loadu_si128(table.as_ptr().add(d).cast());
-                let lanes = _mm512_castsi128_si512(a);
-                let lanes = _mm512_inserti32x4::<1>(lanes, b);
-                let lanes = _mm512_inserti32x4::<2>(lanes, c);
-                // Every previously unspecified upper lane is overwritten.
-                _mm512_inserti32x4::<3>(lanes, d)
-            }
-        }
-    }
-
-    /// LOOKUP=0 runs the unchanged production kernel; 1 uses 128-bit loads
-    /// and inserts; 2 uses eight 64-bit gathers. Only lookup assembly differs.
-    #[allow(clippy::too_many_arguments)]
-    fn jit_fold_lookup<const PRE_SCALED: bool, const WEIGH_LEFT: bool, const LOOKUP: u8>(
-        tab: [&[Gf]; 8],
-        pat: &[[u8; 64]; 8],
-        rho: &Gf,
-        eq_t: &[Gf],
-        send_one: bool,
-        out_l: [&mut [MaybeUninit<Gf>]; 2],
-        out_r: [&mut [MaybeUninit<Gf>]; 2],
-        sums: &mut Sums,
-    ) {
-        assert!(LOOKUP <= 2);
-        // The checked kernel also accepts short tables whose referenced
-        // indices fit, including empty tables when there are no outputs.
-        if LOOKUP == 0 || tab.iter().any(|table| table.len() < 256) {
-            return jit_fold_group::<PRE_SCALED, WEIGH_LEFT>(
-                tab, pat, rho, eq_t, send_one, out_l, out_r, sums,
-            );
-        }
-        let [l0, l1] = out_l;
-        let [r0, r1] = out_r;
-        let n = l0.len();
-        assert!(n <= 64 && [l1.len(), r0.len(), r1.len()].iter().all(|&len| len >= n));
-        assert_eq!(eq_t.len(), 64);
-        let end = n / 4 * 4;
-        // SAFETY: all complete tables and output shapes are checked before
-        // any vector access. col_of permutes 0..64, and only full vectors
-        // are written. The enclosing module gates every required ISA.
-        unsafe {
-            let scalar = broadcast(*rho);
-            for c in (0..end).step_by(4) {
-                let positions = std::array::from_fn(|j| col_of(c + j));
-                let v: [__m512i; 8] = std::array::from_fn(|j| {
-                    if LOOKUP == 1 {
-                        lookup_complete::<false>(tab[j], &pat[j], positions)
-                    } else {
-                        lookup_complete::<true>(tab[j], &pat[j], positions)
-                    }
-                });
-                let combine = |lo, hi| {
-                    if PRE_SCALED {
-                        _mm512_xor_si512(lo, hi)
-                    } else {
-                        fold(scalar, lo, hi)
-                    }
-                };
-                let mut fl0 = combine(v[0], v[2]);
-                let mut fl1 = combine(v[1], v[3]);
-                let fr0 = combine(v[4], v[6]);
-                let fr1 = combine(v[5], v[7]);
-                let [wa, wb, wc, wd] = positions.map(|m| eq_t[m]);
-                let weight = f128x4_set(wa, wb, wc, wd);
-                if WEIGH_LEFT {
-                    fl0 = ghash_mul_x4(weight, fl0);
-                    fl1 = ghash_mul_x4(weight, fl1);
-                }
-                write(l0, c, fl0);
-                write(l1, c, fl1);
-                write(r0, c, fr0);
-                write(r1, c, fr1);
-                if WEIGH_LEFT {
-                    sums.four_weighted(fl0, fl1, fr0, fr1, send_one);
-                } else {
-                    sums.four(weight, fl0, fl1, fr0, fr1, send_one);
-                }
-            }
-        }
-        for c in end..n {
-            let m = col_of(c);
-            let v = |j: usize| tab[j][pat[j][m] as usize];
-            let combine = |lo, hi| {
-                if PRE_SCALED {
-                    lo + hi
-                } else {
-                    lo + *rho * (lo + hi)
-                }
-            };
-            let mut fl0 = combine(v(0), v(2));
-            let mut fl1 = combine(v(1), v(3));
-            let fr0 = combine(v(4), v(6));
-            let fr1 = combine(v(5), v(7));
-            if WEIGH_LEFT {
-                fl0 *= eq_t[m];
-                fl1 *= eq_t[m];
-            }
-            l0[c].write(fl0);
-            l1[c].write(fl1);
-            r0[c].write(fr0);
-            r1[c].write(fr1);
-            if WEIGH_LEFT {
-                sums.scalar_weighted(fl0, fl1, fr0, fr1, send_one);
-            } else {
-                sums.scalar(eq_t[m], fl0, fl1, fr0, fr1, send_one);
-            }
-        }
-    }
-
     fn fold_patterns(mode: usize, group: usize) -> [[u8; 64]; 8] {
         let mut state = (group as u64 + 1).wrapping_mul(0xD6E8_FEB8_6659_FD93);
         std::array::from_fn(|j| {
@@ -782,32 +703,25 @@ mod tests {
                         );
                         let expected_sum = oracle.finish();
                         let expected = initialized(&expected);
-                        macro_rules! check {
-                            ($lookup:literal) => {{
-                                let mut actual = initial.clone();
-                                let [a, b, c, d] = &mut actual;
-                                let mut sums = Sums::zero();
-                                jit_fold_lookup::<PRE, WEIGH, $lookup>(
-                                    tab,
-                                    &patterns,
-                                    &rho,
-                                    &weights,
-                                    send_one,
-                                    [&mut a[1..n + 1], &mut b[1..n + 1]],
-                                    [&mut c[1..n + 1], &mut d[1..n + 1]],
-                                    &mut sums,
-                                );
-                                assert_eq!(
-                                    sums.finish(), expected_sum,
-                                    "lookup {} pre {PRE} weigh {WEIGH} mode {mode} n {n} endpoint {send_one}",
-                                    $lookup
-                                );
-                                assert_eq!(initialized(&actual), expected);
-                            }};
-                        }
-                        check!(0);
-                        check!(1);
-                        check!(2);
+                        let mut actual = initial.clone();
+                        let [a, b, c, d] = &mut actual;
+                        let mut sums = Sums::zero();
+                        jit_fold_group::<PRE, WEIGH>(
+                            tab,
+                            &patterns,
+                            &rho,
+                            &weights,
+                            send_one,
+                            [&mut a[1..n + 1], &mut b[1..n + 1]],
+                            [&mut c[1..n + 1], &mut d[1..n + 1]],
+                            &mut sums,
+                        );
+                        assert_eq!(
+                            sums.finish(),
+                            expected_sum,
+                            "pre {PRE} weigh {WEIGH} mode {mode} n {n} endpoint {send_one}"
+                        );
+                        assert_eq!(initialized(&actual), expected);
                     }
                 }
             }
@@ -815,7 +729,7 @@ mod tests {
     }
 
     #[test]
-    fn jit_fold_lookup_candidates_match_generic_at_every_tail() {
+    fn jit_fold_matches_generic_at_every_tail_and_table_size() {
         for short_tables in [false, true] {
             check_fold_lookups::<false, false>(short_tables);
             check_fold_lookups::<false, true>(short_tables);
@@ -825,32 +739,25 @@ mod tests {
     }
 
     #[test]
-    fn jit_fold_lookup_candidates_allow_empty_tables_with_empty_outputs() {
-        macro_rules! check {
-            ($lookup:literal) => {{
-                let mut out: [[MaybeUninit<Gf>; 0]; 4] = [[]; 4];
-                let [a, b, c, d] = &mut out;
-                let mut sums = Sums::zero();
-                jit_fold_lookup::<true, true, $lookup>(
-                    [&[]; 8],
-                    &[[255; 64]; 8],
-                    &Gf::one(),
-                    &[Gf::one(); 64],
-                    true,
-                    [a, b],
-                    [c, d],
-                    &mut sums,
-                );
-                assert_eq!(sums.finish(), (Gf::zero(), Gf::zero()));
-            }};
-        }
-        check!(0);
-        check!(1);
-        check!(2);
+    fn jit_fold_allows_empty_tables_with_empty_outputs() {
+        let mut out: [[MaybeUninit<Gf>; 0]; 4] = [[]; 4];
+        let [a, b, c, d] = &mut out;
+        let mut sums = Sums::zero();
+        jit_fold_group::<true, true>(
+            [&[]; 8],
+            &[[255; 64]; 8],
+            &Gf::one(),
+            &[Gf::one(); 64],
+            true,
+            [a, b],
+            [c, d],
+            &mut sums,
+        );
+        assert_eq!(sums.finish(), (Gf::zero(), Gf::zero()));
     }
 
     #[test]
-    fn jit_fold_lookup_candidates_reject_short_shapes_before_writes() {
+    fn jit_fold_rejects_short_shapes_before_writes() {
         use std::panic::{AssertUnwindSafe, catch_unwind};
 
         let full = [Gf::one(); 256];
@@ -858,35 +765,28 @@ mod tests {
         let weights = [Gf::one(); 64];
         // A malformed case is rejected before any output or sum mutation.
         let reject = |tab, eq: &[Gf], lengths: [usize; 4]| {
-            macro_rules! check {
-                ($lookup:literal) => {{
-                    let mut out: [Vec<_>; 4] = std::array::from_fn(|j| {
-                        vec![MaybeUninit::new(element(5001 + j)); lengths[j]]
-                    });
-                    let initial = initialized(&out);
-                    let [a, b, c, d] = &mut out;
-                    let mut sums = Sums::zero();
-                    assert!(
-                        catch_unwind(AssertUnwindSafe(|| {
-                            jit_fold_lookup::<true, true, $lookup>(
-                                tab,
-                                &patterns,
-                                &Gf::one(),
-                                eq,
-                                true,
-                                [a, b],
-                                [c, d],
-                                &mut sums,
-                            );
-                        }))
-                        .is_err()
+            let mut out: [Vec<_>; 4] =
+                std::array::from_fn(|j| vec![MaybeUninit::new(element(5001 + j)); lengths[j]]);
+            let initial = initialized(&out);
+            let [a, b, c, d] = &mut out;
+            let mut sums = Sums::zero();
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| {
+                    jit_fold_group::<true, true>(
+                        tab,
+                        &patterns,
+                        &Gf::one(),
+                        eq,
+                        true,
+                        [a, b],
+                        [c, d],
+                        &mut sums,
                     );
-                    assert_eq!(initialized(&out), initial);
-                    assert_eq!(sums.finish(), (Gf::zero(), Gf::zero()));
-                }};
-            }
-            check!(1);
-            check!(2);
+                }))
+                .is_err()
+            );
+            assert_eq!(initialized(&out), initial);
+            assert_eq!(sums.finish(), (Gf::zero(), Gf::zero()));
         };
         for index in 0..8 {
             for len in [0, 255] {
@@ -910,7 +810,7 @@ mod tests {
 
     #[test]
     #[ignore = "matched x86 JIT fold lookup microbenchmark; run explicitly on the benchmark host"]
-    fn benchmark_jit_fold_lookup_candidates() {
+    fn benchmark_jit_fold_checked_vs_direct() {
         use std::{hint::black_box, time::Instant};
 
         let rho = element(6001);
@@ -931,7 +831,7 @@ mod tests {
                     })
                     .collect();
                 for send_one in [false, true] {
-                    let mut outputs: [[Vec<MaybeUninit<Gf>>; 4]; 3] = std::array::from_fn(|_| {
+                    let mut outputs: [[Vec<MaybeUninit<Gf>>; 4]; 2] = std::array::from_fn(|_| {
                         std::array::from_fn(|_| vec![MaybeUninit::new(Gf::zero()); groups * 64])
                     });
                     let mut row = |method: usize| {
@@ -940,8 +840,8 @@ mod tests {
                         for (g, (patterns, weights)) in inputs.iter().enumerate() {
                             let span = g * 64..(g + 1) * 64;
                             macro_rules! run {
-                                ($lookup:literal) => {
-                                    jit_fold_lookup::<true, true, $lookup>(
+                                ($kernel:path) => {
+                                    $kernel(
                                         black_box(tab),
                                         black_box(patterns),
                                         black_box(&rho),
@@ -953,31 +853,21 @@ mod tests {
                                     )
                                 };
                             }
-                            match method {
-                                0 => run!(0),
-                                1 => run!(1),
-                                2 => run!(2),
-                                _ => unreachable!(),
+                            if method == 0 {
+                                run!(jit_fold_group_impl::<true, true, false>);
+                            } else {
+                                run!(jit_fold_group::<true, true>);
                             }
                         }
                         black_box(&outputs[method]);
                         black_box(sums.finish())
                     };
-                    // Untimed warmup also checks accumulated sums across
-                    // all groups, including repeated indices and weights.
+                    // Untimed warmup checks sums across all groups.
                     let expected = row(0);
                     assert_eq!(row(1), expected);
-                    assert_eq!(row(2), expected);
-                    let mut samples: [Vec<f64>; 3] = std::array::from_fn(|_| Vec::new());
-                    for order in [
-                        [0, 1, 2],
-                        [2, 1, 0],
-                        [1, 2, 0],
-                        [0, 2, 1],
-                        [2, 0, 1],
-                        [1, 0, 2],
-                    ] {
-                        for method in order {
+                    let mut samples: [Vec<f64>; 2] = std::array::from_fn(|_| Vec::new());
+                    for sample in 0..6 {
+                        for method in [sample % 2, 1 - sample % 2] {
                             let start = Instant::now();
                             for _ in 0..iterations {
                                 black_box(row(method));
@@ -991,14 +881,11 @@ mod tests {
                         (ns[2] + ns[3]) / 2.0
                     });
                     assert_eq!(initialized(&outputs[1]), initialized(&outputs[0]));
-                    assert_eq!(initialized(&outputs[2]), initialized(&outputs[0]));
                     eprintln!(
-                        "jit_fold_lookup groups={groups} mode={mode} send_one={send_one} checked_ns={:.1} insert_ns={:.1} gather_ns={:.1} insert_ratio={:.4} gather_ratio={:.4}",
+                        "jit_fold_lookup groups={groups} mode={mode} send_one={send_one} checked_ns={:.1} direct_ns={:.1} ratio={:.4}",
                         median[0],
                         median[1],
-                        median[2],
-                        median[1] / median[0],
-                        median[2] / median[0]
+                        median[1] / median[0]
                     );
                 }
             }

@@ -107,19 +107,7 @@ fn fixture(
 
 fn dense_oracle(row_vars: usize, column_vars: usize, prefix: usize, scale: Field, f: &FieldConfig) {
     let (source, row, column, bits) = fixture(row_vars, column_vars, f);
-    assert_matches_dense(&source, &row, &column, &bits, prefix, scale, f);
-}
-
-fn assert_matches_dense(
-    source: &IntegerSource,
-    row: &[Field],
-    column: &[Field],
-    bits: &[u64],
-    prefix: usize,
-    scale: Field,
-    f: &FieldConfig,
-) {
-    let n = source.num_vars();
+    let n = row_vars + column_vars;
     let coefficients = source
         .values
         .iter()
@@ -144,6 +132,25 @@ fn assert_matches_dense(
         .iter()
         .zip(&h)
         .fold(f.zero(), |sum, (a, b)| f.add(&sum, &f.mul(a, b)));
+    let mut actual_transcript = Blake3Transcript::new();
+    let actual = prove_inner_sumcheck(
+        f,
+        &mut actual_transcript,
+        claim,
+        FactoredOverlayInput::new(
+            &source,
+            &bits,
+            &row,
+            &column,
+            scale,
+            n,
+            source.values.len(),
+            prefix,
+        ),
+        (),
+        &mut UngrindedRoundBoundary,
+    )
+    .unwrap();
     let mut expected_transcript = Blake3Transcript::new();
     let expected = prove_inner_sumcheck(
         f,
@@ -154,40 +161,14 @@ fn assert_matches_dense(
         &mut UngrindedRoundBoundary,
     )
     .unwrap();
-    let expected_challenge = expected_transcript.get_challenge::<u128>();
-    for contraction in [None, Some(false), Some(true)] {
-        let mut input = FactoredOverlayInput::new(
-            source,
-            bits,
-            row,
-            column,
-            scale,
-            n,
-            source.values.len(),
-            prefix,
-        );
-        if let Some(enabled) = contraction {
-            input = input.with_ring_contraction_for_test(enabled);
-        }
-        let mut transcript = Blake3Transcript::new();
-        let actual = prove_inner_sumcheck(
-            f,
-            &mut transcript,
-            claim,
-            input,
-            (),
-            &mut UngrindedRoundBoundary,
-        )
-        .unwrap();
-        assert_eq!(
-            actual,
-            expected,
-            "rows={}, columns={}, prefix={prefix}, contraction={contraction:?}",
-            row.len(),
-            column.len()
-        );
-        assert_eq!(transcript.get_challenge::<u128>(), expected_challenge);
-    }
+    assert_eq!(
+        actual, expected,
+        "rows={row_vars}, columns={column_vars}, prefix={prefix}"
+    );
+    assert_eq!(
+        actual_transcript.get_challenge::<u128>(),
+        expected_transcript.get_challenge::<u128>()
+    );
 }
 
 #[test]
@@ -213,156 +194,6 @@ fn factored_overlay_byte_buckets_and_task_boundaries_match_dense() {
     .unwrap();
     // Activates byte buckets (column >= 4096) and multiple tail tasks per row.
     dense_oracle(2, 12, 3, f.neg(&Field::from_with_cfg(97u64, &f)), &f);
-}
-
-#[test]
-fn factored_overlay_contraction_matches_dense_across_blocks_and_tiles() {
-    let f = crate::prime_sampling::sample_prime_context(
-        &mut Blake3Transcript::new(),
-        1u128 << 125,
-        (1u128 << 126) - 1,
-        128,
-    )
-    .unwrap();
-    // Includes one remaining column round, multiple row blocks (>64 rows),
-    // and multiple 256-suffix contraction tiles. Fixtures include a padded row.
-    for (row_vars, column_vars) in [(0, 4), (1, 4), (2, 5), (3, 4), (7, 5), (3, 12)] {
-        dense_oracle(row_vars, column_vars, 3, f.neg(&f.one()), &f);
-    }
-    for pattern in [0u64, u64::MAX, 0x0011_aa55_00ff_ffff] {
-        let (mut source, mut row, mut column, mut bits) = fixture(3, 5, &f);
-        for (i, z) in source.values.iter_mut().enumerate() {
-            *z = f.neg(&Field::from_with_cfg(i as u64 + 1, &f));
-        }
-        row.fill(f.neg(&f.one()));
-        row[3] = f.zero();
-        column.fill(f.neg(&f.one()));
-        bits.fill(pattern);
-        // A zero ring weight need not imply zero bits or integer coefficients.
-        for scale in [f.zero(), f.one(), f.neg(&f.one())] {
-            assert_matches_dense(&source, &row, &column, &bits, 3, scale, &f);
-        }
-        column.fill(f.zero());
-        assert_matches_dense(&source, &row, &column, &bits, 3, f.one(), &f);
-    }
-}
-
-#[test]
-fn factored_overlay_contraction_state_walk_preserves_column_to_row_transition() {
-    let f = crate::piop::spartan::u32_mul_relation::spartan_bitz_field_config();
-    for (row_vars, column_vars) in [(0, 4), (1, 4), (3, 4), (7, 5), (3, 12)] {
-        let (source, row, column, bits) = fixture(row_vars, column_vars, &f);
-        for schedule in 0..3 {
-            let input = |enabled| {
-                FactoredOverlayInput::new(
-                    &source,
-                    &bits,
-                    &row,
-                    &column,
-                    f.neg(&f.one()),
-                    row_vars + column_vars,
-                    source.values.len(),
-                    3,
-                )
-                .with_ring_contraction_for_test(enabled)
-            };
-            let mut plain = OverlayState::<_, _, 3>::new(input(false), &f).unwrap();
-            let mut contracted = OverlayState::<_, _, 3>::new(input(true), &f).unwrap();
-            for round in 0..row_vars + column_vars {
-                assert_eq!(
-                    plain.coefficients(&f).unwrap(),
-                    contracted.coefficients(&f).unwrap(),
-                    "rows={row_vars}, columns={column_vars}, schedule={schedule}, round={round}"
-                );
-                let r = match schedule {
-                    0 => f.zero(),
-                    1 => f.one(),
-                    _ => [f.zero(), f.one(), f.neg(&Field::from_with_cfg(37u64, &f))][round % 3],
-                };
-                plain.fold(&f, &r).unwrap();
-                contracted.fold(&f, &r).unwrap();
-                assert_eq!(plain.row, contracted.row);
-                assert_eq!(plain.column, contracted.column);
-                if let (Some(a), Some(b)) = (&plain.table, &contracted.table) {
-                    // The optimization changes only the ring round sums;
-                    // integer coefficients and the one shared bit fold agree.
-                    assert_eq!(a.values, b.values);
-                    assert_eq!(a.suffix_count, b.suffix_count);
-                }
-                if round + 1 >= 3 && round + 1 < column_vars {
-                    assert_eq!(
-                        contracted.contracted_bits.as_ref().unwrap().len(),
-                        column.len() >> (round + 1)
-                    );
-                } else {
-                    assert!(contracted.contracted_bits.is_none());
-                }
-            }
-            assert_eq!(
-                plain.terminal(&f).unwrap(),
-                contracted.terminal(&f).unwrap()
-            );
-        }
-    }
-}
-
-#[test]
-fn factored_overlay_weighted_byte_lookup_matches_direct_field_products() {
-    let f = crate::prime_sampling::sample_prime_context(
-        &mut Blake3Transcript::new(),
-        1u128 << 125,
-        (1u128 << 126) - 1,
-        128,
-    )
-    .unwrap();
-    for point in [
-        [f.zero(); 3],
-        [f.one(); 3],
-        [
-            f.neg(&f.one()),
-            Field::from_with_cfg(31u64, &f),
-            f.neg(&Field::from_with_cfg(17u64, &f)),
-        ],
-    ] {
-        let weights = equality_weights_lsb(&point, &f.zero(), &f.one(), &f);
-        for row in [f.zero(), f.one(), f.neg(&f.one())] {
-            let lookup = weighted_byte_sums(&row, &weights, &f);
-            for (pattern, actual) in lookup.iter().enumerate() {
-                let sum = weights
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, _)| pattern >> i & 1 == 1)
-                    .fold(f.zero(), |sum, (_, weight)| f.add(&sum, weight));
-                assert_eq!(*actual, f.mul(&row, &sum));
-            }
-        }
-    }
-}
-
-#[test]
-fn factored_overlay_contraction_rejects_non_byte_source_values() {
-    struct InvalidByte;
-    impl Sha256InnerBitSource for InvalidByte {
-        fn bit_at(&self, _: usize) -> Result<u64, SumcheckError> {
-            Ok(0)
-        }
-        fn bits_at(&self, _: usize, _: usize) -> Result<u64, SumcheckError> {
-            Ok(256)
-        }
-    }
-    let f = crate::piop::spartan::u32_mul_relation::spartan_bitz_field_config();
-    let prefix = PreparedPrefixWeights::new(vec![f.one(); 8], &f);
-    assert!(
-        contract_rows_and_sum_integer(
-            &vec![raw_montgomery(&f.one()); 4],
-            &[f.one(); 2],
-            2,
-            &InvalidByte,
-            &prefix,
-            &f,
-        )
-        .is_err()
-    );
 }
 
 #[test]
@@ -418,14 +249,11 @@ fn factored_overlay_rejects_invalid_shape_and_claim() {
         (row.as_slice(), column.as_slice(), 6, 63, 3),
         (row.as_slice(), column.as_slice(), 6, 64, 5),
     ] {
-        for contraction in [false, true] {
-            assert!(
-                FactoredOverlayInput::new(&source, &bits, rows, cols, f.one(), n, live, prefix)
-                    .with_ring_contraction_for_test(contraction)
-                    .prepare(&f, ())
-                    .is_err()
-            );
-        }
+        assert!(
+            FactoredOverlayInput::new(&source, &bits, rows, cols, f.one(), n, live, prefix)
+                .prepare(&f, ())
+                .is_err()
+        );
     }
     assert!(
         prove_inner_sumcheck(

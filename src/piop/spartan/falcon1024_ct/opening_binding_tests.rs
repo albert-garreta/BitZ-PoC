@@ -1262,45 +1262,14 @@ fn shared_forest_weights_require_candidate_and_output_endpoints_to_match() {
     }
 }
 
-/// Matched contraction timings over the real compiled integer binder.
-/// Preparation stays outside each timer. One warmup per policy is followed by
-/// six AB/BA pairs; every complete inner proof and transcript challenge match.
-/// BITZ_BINDING_BENCH_THREADS selects comma-separated thread counts (default
-/// 1,16 with parallel support). BITZ_BINDING_BENCH_LARGE=1 adds batch 1024;
-/// BITZ_BINDING_BENCH_JOINED=1 checks the old Joined path outside timed samples.
+/// Matched old/new kernel timings over the real compiled integer binder.
+/// Run explicitly in release mode on x86; preparation stays outside each timer.
 #[test]
-#[ignore = "manual release shared-binding contraction benchmark"]
+#[ignore = "x86 matched shared-binding kernel benchmark"]
+#[cfg(target_arch = "x86_64")]
 fn shared_binding_factored_overlay_benchmark() {
     use std::{hint::black_box, time::Instant};
 
-    assert!(
-        !cfg!(debug_assertions),
-        "run kernel timings in release mode"
-    );
-    let mut batches = vec![1, 3, 32];
-    if std::env::var("BITZ_BINDING_BENCH_LARGE").as_deref() == Ok("1") {
-        batches.push(1024);
-    }
-    let joined_reference = std::env::var("BITZ_BINDING_BENCH_JOINED").as_deref() == Ok("1");
-    let thread_counts: Vec<usize> = std::env::var("BITZ_BINDING_BENCH_THREADS")
-        .map(|value| {
-            value
-                .split(',')
-                .map(|count| {
-                    count
-                        .parse()
-                        .expect("positive comma-separated thread counts")
-                })
-                .collect()
-        })
-        .unwrap_or_else(|_| {
-            if cfg!(feature = "parallel") {
-                vec![1, 16]
-            } else {
-                vec![1]
-            }
-        });
-    assert!(!thread_counts.is_empty() && thread_counts.iter().all(|&count| count > 0));
     let field = crate::prime_sampling::sample_prime_context(
         &mut Blake3Transcript::new(),
         1u128 << 125,
@@ -1308,201 +1277,170 @@ fn shared_binding_factored_overlay_benchmark() {
         128,
     )
     .unwrap();
-    for threads in thread_counts {
-        let run = || {
-            for &batch in &batches {
-                let layout = FalconSourceLayout::new_shared_prime(batch).unwrap();
-                let statement = statement_with_key_groups(&vec![0; batch]);
-                let proof = full_terminal_fixture(&layout, &field);
-                let linear_point = point(linear_rounds(&layout), &field);
-                let scale = field.neg(&unsigned(71, &field));
-                let row: Vec<_> = (0..layout.capacity())
-                    .map(|i| {
-                        if i < batch {
-                            unsigned(19 + 31 * i as u128, &field)
-                        } else {
-                            field.zero()
-                        }
-                    })
-                    .collect();
-                let offsets = layout.offsets();
-                let h = layout.public_key_offset().unwrap();
-                let s2 = offsets.encoded_signature + 8 * (1 + super::super::NONCE_BYTES);
-                let column: Vec<_> = (0..layout.signature_stride())
-                    .map(|i| {
-                        let live = (offsets.hash_point..offsets.hash_point + 14 * N).contains(&i)
-                            || (offsets.s1..offsets.s1 + 14 * N).contains(&i)
-                            || (h..h + 14 * N).contains(&i)
-                            || (s2..s2 + 12 * N).contains(&i);
-                        if live {
-                            unsigned(7 + i as u128 * i as u128, &field)
-                        } else {
-                            field.zero()
-                        }
-                    })
-                    .collect();
-                let mut words = vec![0u64; layout.source_bits() / 64];
-                for s in 0..batch {
-                    for local in 0..layout.live_bits() {
-                        let index = s * layout.signature_stride() + local;
-                        let bit = ((index as u64 * 0x9e37_79b9 ^ (index as u64 >> 3)).count_ones()
-                            & 1) as u64;
-                        words[index / 64] |= bit << (index % 64);
+    let run = || {
+        for batch in [1, 3, 32] {
+            let layout = FalconSourceLayout::new_shared_prime(batch).unwrap();
+            let statement = statement_with_key_groups(&vec![0; batch]);
+            let proof = full_terminal_fixture(&layout, &field);
+            let linear_point = point(linear_rounds(&layout), &field);
+            let scale = field.neg(&unsigned(71, &field));
+            let row: Vec<_> = (0..layout.capacity())
+                .map(|i| {
+                    if i < batch {
+                        unsigned(19 + 31 * i as u128, &field)
+                    } else {
+                        field.zero()
                     }
+                })
+                .collect();
+            let offsets = layout.offsets();
+            let h = layout.public_key_offset().unwrap();
+            let s2 = offsets.encoded_signature + 8 * (1 + super::super::NONCE_BYTES);
+            let column: Vec<_> = (0..layout.signature_stride())
+                .map(|i| {
+                    let live = (offsets.hash_point..offsets.hash_point + 14 * N).contains(&i)
+                        || (offsets.s1..offsets.s1 + 14 * N).contains(&i)
+                        || (h..h + 14 * N).contains(&i)
+                        || (s2..s2 + 12 * N).contains(&i);
+                    if live {
+                        unsigned(7 + i as u128 * i as u128, &field)
+                    } else {
+                        field.zero()
+                    }
+                })
+                .collect();
+            let mut words = vec![0u64; layout.source_bits() / 64];
+            for s in 0..batch {
+                for local in 0..layout.live_bits() {
+                    let index = s * layout.signature_stride() + local;
+                    let bit = ((index as u64 * 0x9e37_79b9 ^ (index as u64 >> 3)).count_ones() & 1)
+                        as u64;
+                    words[index / 64] |= bit << (index % 64);
                 }
-                let make_binding = || {
-                    let integer = prepare_binding_form_optional(
-                        &mut Blake3Transcript::new(),
-                        &layout,
-                        &statement,
-                        proof.as_claim_ref(),
-                        &linear_point,
+            }
+            let make_binding = || {
+                let integer = prepare_binding_form_optional(
+                    &mut Blake3Transcript::new(),
+                    &layout,
+                    &statement,
+                    proof.as_claim_ref(),
+                    &linear_point,
+                    &field,
+                    None,
+                )
+                .unwrap();
+                integer.prepared_compact_template().unwrap();
+                JoinedBinding::new(
+                    integer,
+                    Some(super::super::shared_ring::ProjectedClaim {
+                        row: row.clone(),
+                        column: column.clone(),
+                        target: field.zero(),
+                    }),
+                    scale,
+                )
+                .unwrap()
+            };
+            let binding = make_binding();
+            let mut claim = field.zero();
+            binding
+                .for_each_coefficient(&mut |i, value| {
+                    if words[i / 64] >> (i % 64) & 1 != 0 {
+                        claim = field.add(&claim, &value);
+                    }
+                    Ok(())
+                })
+                .unwrap();
+            drop(binding);
+            let prove = |factored: bool| {
+                // A fresh binding avoids giving the old path a warmed folded-
+                // column cache that a single real proof would not have.
+                let binding = make_binding();
+                let mut transcript = Blake3Transcript::new();
+                transcript.absorb_slice(b"bitz/falcon1024-ct/shared-inner/v1");
+                let start = Instant::now();
+                let output = if factored {
+                    let ring = binding.ring.as_ref().unwrap();
+                    prove_inner_sumcheck(
                         &field,
-                        None,
+                        &mut transcript,
+                        claim,
+                        FactoredOverlayInput::new(
+                            &binding.integer,
+                            &words,
+                            &ring.row,
+                            &ring.column,
+                            scale,
+                            source_rounds(&layout),
+                            layout.source_bits(),
+                            3,
+                        ),
+                        (),
+                        &mut crate::sumcheck::UngrindedRoundBoundary,
                     )
-                    .unwrap();
-                    integer.prepared_compact_template().unwrap();
-                    JoinedBinding::new(
-                        integer,
-                        Some(super::super::shared_ring::ProjectedClaim {
-                            row: row.clone(),
-                            column: column.clone(),
-                            target: field.zero(),
-                        }),
-                        scale,
+                    .unwrap()
+                } else {
+                    prove_inner_sumcheck(
+                        &field,
+                        &mut transcript,
+                        claim,
+                        PackedInput::new(
+                            &StreamingMle::new(&binding),
+                            &words,
+                            source_rounds(&layout),
+                            layout.source_bits(),
+                            3,
+                        ),
+                        (),
+                        &mut crate::sumcheck::UngrindedRoundBoundary,
                     )
                     .unwrap()
                 };
-                let binding = make_binding();
-                let mut claim = field.zero();
-                binding
-                    .for_each_coefficient(&mut |i, value| {
-                        if words[i / 64] >> (i % 64) & 1 != 0 {
-                            claim = field.add(&claim, &value);
-                        }
-                        Ok(())
-                    })
-                    .unwrap();
-                drop(binding);
-                let prove = |contraction: Option<bool>| {
-                    // Every policy gets the same freshly prepared binding; a
-                    // previous proof must not warm its folded-column cache.
-                    let binding = make_binding();
-                    let mut transcript = Blake3Transcript::new();
-                    transcript.absorb_slice(b"bitz/falcon1024-ct/shared-inner/v1");
-                    let start = Instant::now();
-                    let output = if let Some(contract_ring) = contraction {
-                        let ring = binding.ring.as_ref().unwrap();
-                        prove_inner_sumcheck(
-                            &field,
-                            &mut transcript,
-                            claim,
-                            FactoredOverlayInput::new(
-                                &binding.integer,
-                                &words,
-                                &ring.row,
-                                &ring.column,
-                                scale,
-                                source_rounds(&layout),
-                                layout.source_bits(),
-                                3,
-                            )
-                            .with_ring_contraction_for_test(contract_ring),
-                            (),
-                            &mut crate::sumcheck::UngrindedRoundBoundary,
-                        )
-                        .unwrap()
+                let elapsed = start.elapsed().as_secs_f64();
+                (
+                    black_box(output),
+                    transcript.get_challenge::<u128>(),
+                    elapsed,
+                )
+            };
+            let (reference, challenge, _) = prove(false);
+            let (actual, actual_challenge, _) = prove(true);
+            assert_eq!(reference, actual);
+            assert_eq!(challenge, actual_challenge);
+            let mut old = Vec::new();
+            let mut new = Vec::new();
+            for repetition in 0..3 {
+                for factored in if repetition % 2 == 0 {
+                    [false, true]
+                } else {
+                    [true, false]
+                } {
+                    let (output, next, elapsed) = prove(factored);
+                    assert_eq!(output, reference);
+                    assert_eq!(next, challenge);
+                    if factored {
+                        new.push(elapsed);
                     } else {
-                        prove_inner_sumcheck(
-                            &field,
-                            &mut transcript,
-                            claim,
-                            PackedInput::new(
-                                &StreamingMle::new(&binding),
-                                &words,
-                                source_rounds(&layout),
-                                layout.source_bits(),
-                                3,
-                            ),
-                            (),
-                            &mut crate::sumcheck::UngrindedRoundBoundary,
-                        )
-                        .unwrap()
-                    };
-                    let elapsed = start.elapsed().as_secs_f64();
-                    (
-                        black_box(output),
-                        transcript.get_challenge::<u128>(),
-                        elapsed,
-                    )
-                };
-                // These untimed proofs warm code, field tables, and workers.
-                let (reference, challenge, _) = prove(Some(false));
-                let (actual, actual_challenge, _) = prove(Some(true));
-                assert_eq!(reference, actual);
-                assert_eq!(challenge, actual_challenge);
-                if joined_reference {
-                    let (joined, joined_challenge, _) = prove(None);
-                    assert_eq!(reference, joined);
-                    assert_eq!(challenge, joined_challenge);
-                }
-                let mut samples: [Vec<f64>; 2] = std::array::from_fn(|_| Vec::with_capacity(6));
-                for repetition in 0..6 {
-                    for contraction in if repetition % 2 == 0 {
-                        [false, true]
-                    } else {
-                        [true, false]
-                    } {
-                        let (output, next, elapsed) = prove(Some(contraction));
-                        assert_eq!(output, reference);
-                        assert_eq!(next, challenge);
-                        samples[usize::from(contraction)].push(elapsed * 1000.0);
+                        old.push(elapsed);
                     }
                 }
-                let median = |values: &[f64]| {
-                    let mut sorted = values.to_vec();
-                    sorted.sort_by(f64::total_cmp);
-                    (sorted[2] + sorted[3]) / 2.0
-                };
-                let paired_ratio = (samples[0]
-                    .iter()
-                    .zip(&samples[1])
-                    .map(|(before, after)| (after / before).ln())
-                    .sum::<f64>()
-                    / 6.0)
-                    .exp();
-                eprintln!(
-                    "{}",
-                    serde_json::json!({
-                        "schema": "bitz/falcon-binding-contraction/v1",
-                        "batch": batch, "capacity": layout.capacity(), "threads": threads,
-                        "baseline": "factored_without_contraction",
-                        "candidate": "factored_with_contraction",
-                        "warmup_per_policy": 1, "measured_pairs": 6,
-                        "order": ["AB", "BA", "AB", "BA", "AB", "BA"],
-                        "baseline_samples_ms": samples[0], "candidate_samples_ms": samples[1],
-                        "baseline_median_ms": median(&samples[0]),
-                        "candidate_median_ms": median(&samples[1]),
-                        "paired_geomean_ratio": paired_ratio,
-                        "full_inner_proof_and_transcript_match": true,
-                        "joined_reference_checked": joined_reference,
-                    })
-                );
             }
-        };
-        #[cfg(feature = "parallel")]
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .build()
-            .unwrap()
-            .install(run);
-        #[cfg(not(feature = "parallel"))]
-        {
-            assert_eq!(
-                threads, 1,
-                "parallel feature is required for multiple threads"
+            old.sort_by(f64::total_cmp);
+            new.sort_by(f64::total_cmp);
+            eprintln!(
+                "shared binding kernel batch={batch} threads=1 old_ms={:.3} factored_ms={:.3} ratio={:.4}",
+                old[1] * 1000.0,
+                new[1] * 1000.0,
+                new[1] / old[1]
             );
-            run();
         }
-    }
+    };
+    #[cfg(feature = "parallel")]
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build()
+        .unwrap()
+        .install(run);
+    #[cfg(not(feature = "parallel"))]
+    run();
 }
