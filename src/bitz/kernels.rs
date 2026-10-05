@@ -1756,7 +1756,7 @@ mod tests {
         use std::{hint::black_box, time::Instant};
 
         let tables: Vec<Vec<Gf>> = (0..4).map(|i| elements(256, 910 + i)).collect();
-        let tab: [&[Gf]; 4] = std::array::from_fn(|i| &tables[i]);
+        let tab: [&[Gf]; 4] = std::array::from_fn(|i| tables[i].as_slice());
         for groups in [1usize, 16, 256] {
             let iterations = 4096 / groups;
             for mode in [0, 3, 4] {
