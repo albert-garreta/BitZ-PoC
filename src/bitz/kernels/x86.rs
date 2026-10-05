@@ -8,7 +8,93 @@ use std::mem::MaybeUninit;
 use super::{Gf, col_of, generic};
 use field::gf128::kernels::x86_64::{WideGhashX4, f128x4_loadu, f128x4_set, ghash_mul_x4};
 
-pub(crate) use generic::{SumBuckets, jit_bucket_finish, jit_bucket_group, scatter_add};
+pub(crate) use generic::scatter_add;
+
+/// Reduced buckets keep the JIT scratch in 12 KiB. Reducing each four-lane
+/// product before its XOR scatter is identical to reducing the scalar
+/// buckets after accumulation: reduction is F₂-linear.
+pub(crate) struct SumBuckets {
+    data: Vec<Gf>,
+}
+
+impl SumBuckets {
+    pub(crate) fn new() -> Self {
+        Self {
+            data: vec![Gf::zero(); 3 * 256],
+        }
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.data.fill(Gf::zero());
+    }
+}
+
+/// XOR four products into their buckets in lane order. Repeated indices
+/// must read the preceding lane's update, including four equal indices.
+#[inline]
+unsafe fn bucket_xor4(bucket: &mut [Gf], indices: &[u8; 64], first: usize, products: __m512i) {
+    // SAFETY: callers supply 256 initialized entries and first <= 60. Each
+    // byte index selects one Gf; unaligned 128-bit loads/stores are valid.
+    // Every read-modify-write completes before the next lane reads its slot.
+    unsafe {
+        macro_rules! lane {
+            ($lane:literal) => {{
+                let p = bucket
+                    .as_mut_ptr()
+                    .add(indices[first + $lane] as usize)
+                    .cast::<__m128i>();
+                let product = _mm512_extracti32x4_epi32::<$lane>(products);
+                _mm_storeu_si128(p, _mm_xor_si128(_mm_loadu_si128(p), product));
+            }};
+        }
+        lane!(0);
+        lane!(1);
+        lane!(2);
+        lane!(3);
+    }
+}
+
+pub(crate) fn jit_bucket_group(
+    tab_o: [&[Gf]; 2],
+    pat: &[[u8; 64]; 4],
+    eq_t: &[Gf],
+    send_one: bool,
+    bk: &mut SumBuckets,
+) {
+    assert_eq!(eq_t.len(), 64);
+    assert!(tab_o.iter().all(|table| table.len() >= 256));
+    let (end, inf) = bk.data.split_at_mut(256);
+    let (inf_lo, inf_hi) = inf.split_at_mut(256);
+    for first in (0..64).step_by(4) {
+        // SAFETY: all weights and pattern positions are in bounds, every
+        // table has 256 entries, and the module gates the full SIMD ISA.
+        unsafe {
+            let positions = [first, first + 1, first + 2, first + 3];
+            let o_lo = lookup(tab_o[0], &pat[2], positions);
+            let o_hi = lookup(tab_o[1], &pat[3], positions);
+            let w = load(eq_t, first);
+            let (a_end, o_end) = if send_one {
+                (&pat[1], o_hi)
+            } else {
+                (&pat[0], o_lo)
+            };
+            let endpoint = ghash_mul_x4(w, o_end);
+            let delta = ghash_mul_x4(w, _mm512_xor_si512(o_lo, o_hi));
+            bucket_xor4(end, a_end, first, endpoint);
+            bucket_xor4(inf_lo, &pat[0], first, delta);
+            bucket_xor4(inf_hi, &pat[1], first, delta);
+        }
+    }
+}
+
+pub(crate) fn jit_bucket_finish(tab_e: [&[Gf]; 2], send_one: bool, bk: &SumBuckets) -> (Gf, Gf) {
+    assert!(tab_e.iter().all(|table| table.len() >= 256));
+    let t_end = if send_one { tab_e[1] } else { tab_e[0] };
+    (
+        dot(&t_end[..256], &bk.data[..256]),
+        dot(&tab_e[0][..256], &bk.data[256..512]) + dot(&tab_e[1][..256], &bk.data[512..768]),
+    )
+}
 
 /// Share each loaded weight across the four independent bucket streams.
 /// Positions within a bucket remain sequential: equal byte indices must
@@ -537,5 +623,79 @@ mod tests {
             &[[255; 64]; 4],
             &[Gf::zero(); 64],
         );
+    }
+
+    #[test]
+    fn jit_bucket_scatter_preserves_colliding_lanes_and_guards() {
+        let products: [Gf; 4] = std::array::from_fn(|i| element(701 + i));
+        for indices in [
+            [0, 0, 0, 0],
+            [255, 255, 255, 255],
+            [0, 255, 0, 255],
+            [0, 1, 2, 3],
+        ] {
+            let mut pattern = [0; 64];
+            pattern[60..].copy_from_slice(&indices);
+            let mut actual: Vec<_> = (0..258).map(element).collect();
+            let mut expected = actual.clone();
+            // Repeating the scatter covers updates into live buckets as
+            // well as cancellation. The prefix and suffix are canaries.
+            for _ in 0..3 {
+                for (&index, &product) in indices.iter().zip(&products) {
+                    expected[1 + index as usize] += product;
+                }
+                // SAFETY: the module ISA is enabled; the slice has exactly
+                // 256 entries and the four pattern positions end at 64.
+                unsafe {
+                    bucket_xor4(
+                        &mut actual[1..257],
+                        &pattern,
+                        60,
+                        f128x4_loadu(products.as_ptr()),
+                    );
+                }
+                assert_eq!(actual, expected, "indices {indices:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn jit_bucket_rejects_short_shapes_before_simd_access() {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+
+        let full = vec![Gf::one(); 256];
+        let short = &full[..255];
+        let patterns = [[255; 64]; 4];
+        let weights = [Gf::one(); 64];
+        for tab_o in [[short, &full[..]], [&full[..], short]] {
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| {
+                    jit_bucket_group(tab_o, &patterns, &weights, false, &mut SumBuckets::new());
+                }))
+                .is_err()
+            );
+        }
+        for n in [0, 63] {
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| {
+                    jit_bucket_group(
+                        [&full, &full],
+                        &patterns,
+                        &weights[..n],
+                        false,
+                        &mut SumBuckets::new(),
+                    );
+                }))
+                .is_err()
+            );
+        }
+        for tab_e in [[short, &full[..]], [&full[..], short]] {
+            assert!(
+                catch_unwind(|| {
+                    jit_bucket_finish(tab_e, true, &SumBuckets::new());
+                })
+                .is_err()
+            );
+        }
     }
 }

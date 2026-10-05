@@ -258,7 +258,6 @@ pub(crate) fn fused_fold_round(
     total(partials)
 }
 
-
 use backend::{fused_task, round_sums_task};
 
 /// The running Gruen sums of one row task — unreduced accumulators.
@@ -273,22 +272,23 @@ pub(crate) use backend::Sums;
 pub(crate) use backend::jit_sums_group;
 
 /// The per-task scratch of the bucketed first table round: three
-/// 256-entry tables of unreduced accumulators, keyed by an E pattern —
+/// 256-entry accumulator tables, keyed by an E pattern —
 /// `end` (the endpoint corner's), `inf_lo` and `inf_hi` (E_lo's and
-/// E_hi's, both fed `eq·ΔO`).
+/// E_hi's, both fed `eq·ΔO`). Backends may reduce before or after the XOR
+/// accumulation; reduction is F₂-linear.
 pub(crate) use backend::SumBuckets;
 
 /// One group of the first just-in-time dense round, bucketed: with
 /// `pat[i]` the transposed patterns of the corners `(E_lo, E_hi, O_lo,
 /// O_hi)` and `tab_o` the two O tables, folds each column's `eq·O_end`
 /// into `end[pat_E_end]` and `eq·(O_hi − O_lo)` into `inf_lo[pat_E_lo]`
-/// and `inf_hi[pat_E_hi]`, unreduced — one carryless product per term
-/// instead of two multiplies. [`jit_bucket_finish`] contracts the buckets
+/// and `inf_hi[pat_E_hi]` — one product per endpoint and difference,
+/// sharing the latter between both buckets. [`jit_bucket_finish`] contracts the buckets
 /// with the E tables.
 pub(crate) use backend::jit_bucket_group;
 
 /// `Σ_a T_E_end[a]·end[a]` and `Σ_a T_E_lo[a]·inf_lo[a] + Σ_a T_E_hi[a]·inf_hi[a]`,
-/// each bucket reduced once — the row's `(Σ end, Σ inf)`.
+/// in the field — the row's `(Σ end, Σ inf)`.
 pub(crate) use backend::jit_bucket_finish;
 
 /// One group of the second just-in-time dense round: corner
@@ -1661,6 +1661,170 @@ mod tests {
             }
             let got = jit_bucket_finish([&tabs[0][..], &tabs[1][..]], send_one, &bk);
             assert_eq!(got, want.finish(), "send_one {send_one}");
+        }
+    }
+
+    fn bucket_patterns(mode: usize, group: usize) -> [[u8; 64]; 4] {
+        let mut state = 0x524f_554e_4442_5543u64 ^ group as u64;
+        std::array::from_fn(|corner| {
+            std::array::from_fn(|m| match mode {
+                0 => 0,
+                1 => 255,
+                2 => ((m + corner) % 2 * 255) as u8,
+                // All four SIMD lanes collide; successive groups revisit
+                // the same bins with different weights and O values.
+                3 => ((m / 4 + corner) % 4 * 85) as u8,
+                _ => {
+                    state ^= state << 13;
+                    state ^= state >> 7;
+                    state ^= state << 17;
+                    (state >> 23) as u8
+                }
+            })
+        })
+    }
+
+    #[test]
+    fn bucketed_round_matches_scalar_with_collisions_and_reuse() {
+        let tables: Vec<Vec<Gf>> = (0..4).map(|i| elements(258, 710 + i)).collect();
+        // Offset slices cover unaligned vector loads without changing the
+        // 256-entry lookup domain. Inputs must remain untouched.
+        let original = tables.clone();
+        let tab: [&[Gf]; 4] = std::array::from_fn(|i| &tables[i][1..257]);
+        let mut selected = SumBuckets::new();
+        let mut generic = generic::SumBuckets::new();
+        for send_one in [false, true] {
+            for mode in 0..5 {
+                for live in [0, 1, 31, 63, 64] {
+                    for reuse in 0..2 {
+                        selected.clear();
+                        generic.clear();
+                        let mut scalar = (Gf::zero(), Gf::zero());
+                        for group in 0..3 {
+                            let patterns = bucket_patterns(mode, group + 3 * reuse);
+                            let mut weights = elements(66, 800 + (group + 3 * reuse) as u64);
+                            weights[1 + live..65].fill(Gf::zero());
+                            let eq = &weights[1..65];
+                            jit_bucket_group(
+                                [tab[2], tab[3]],
+                                &patterns,
+                                eq,
+                                send_one,
+                                &mut selected,
+                            );
+                            generic::jit_bucket_group(
+                                [tab[2], tab[3]],
+                                &patterns,
+                                eq,
+                                send_one,
+                                &mut generic,
+                            );
+                            for (m, &weight) in eq.iter().enumerate() {
+                                let [l0, l1, r0, r1] =
+                                    std::array::from_fn(|i| tab[i][patterns[i][m] as usize]);
+                                let (le, re) = if send_one { (l1, r1) } else { (l0, r0) };
+                                scalar.0 += weight * le * re;
+                                scalar.1 += weight * (l0 + l1) * (r0 + r1);
+                            }
+                            let got = jit_bucket_finish([tab[0], tab[1]], send_one, &selected);
+                            let want =
+                                generic::jit_bucket_finish([tab[0], tab[1]], send_one, &generic);
+                            let context = format!(
+                                "send_one={send_one}, mode={mode}, live={live}, reuse={reuse}, group={group}"
+                            );
+                            assert_eq!(got, want, "generic: {context}");
+                            assert_eq!(got, scalar, "scalar: {context}");
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(tables, original);
+    }
+
+    #[cfg(all(
+        target_arch = "x86_64",
+        target_feature = "pclmulqdq",
+        target_feature = "sse4.1",
+        target_feature = "avx512f",
+        target_feature = "avx512bw",
+        target_feature = "vpclmulqdq"
+    ))]
+    #[test]
+    #[ignore = "matched x86 JIT bucket microbenchmark; run explicitly on the benchmark host"]
+    fn benchmark_jit_buckets_generic_vs_simd() {
+        use std::{hint::black_box, time::Instant};
+
+        let tables: Vec<Vec<Gf>> = (0..4).map(|i| elements(256, 910 + i)).collect();
+        let tab: [&[Gf]; 4] = std::array::from_fn(|i| &tables[i]);
+        for groups in [1usize, 16, 256] {
+            let iterations = 4096 / groups;
+            for mode in [0, 3, 4] {
+                let input: Vec<_> = (0..groups)
+                    .map(|g| (bucket_patterns(mode, g), elements(64, 950 + g as u64)))
+                    .collect();
+                for send_one in [false, true] {
+                    let mut selected = SumBuckets::new();
+                    let mut generic = generic::SumBuckets::new();
+                    let mut selected_row = || {
+                        selected.clear();
+                        for (patterns, eq) in &input {
+                            jit_bucket_group(
+                                [tab[2], tab[3]],
+                                black_box(patterns),
+                                black_box(eq),
+                                send_one,
+                                &mut selected,
+                            );
+                        }
+                        black_box(jit_bucket_finish([tab[0], tab[1]], send_one, &selected))
+                    };
+                    let mut generic_row = || {
+                        generic.clear();
+                        for (patterns, eq) in &input {
+                            generic::jit_bucket_group(
+                                [tab[2], tab[3]],
+                                black_box(patterns),
+                                black_box(eq),
+                                send_one,
+                                &mut generic,
+                            );
+                        }
+                        black_box(generic::jit_bucket_finish(
+                            [tab[0], tab[1]],
+                            send_one,
+                            &generic,
+                        ))
+                    };
+                    assert_eq!(selected_row(), generic_row());
+                    let measure = |row: &mut dyn FnMut() -> (Gf, Gf)| {
+                        let start = Instant::now();
+                        for _ in 0..iterations {
+                            black_box(row());
+                        }
+                        start.elapsed().as_secs_f64() * 1e9 / iterations as f64
+                    };
+                    let (mut scalar_ns, mut simd_ns) = (Vec::new(), Vec::new());
+                    // Alternate order so each implementation runs first.
+                    for sample in 0..5 {
+                        if sample % 2 == 0 {
+                            scalar_ns.push(measure(&mut generic_row));
+                            simd_ns.push(measure(&mut selected_row));
+                        } else {
+                            simd_ns.push(measure(&mut selected_row));
+                            scalar_ns.push(measure(&mut generic_row));
+                        }
+                    }
+                    scalar_ns.sort_by(f64::total_cmp);
+                    simd_ns.sort_by(f64::total_cmp);
+                    eprintln!(
+                        "jit_buckets groups={groups} mode={mode} send_one={send_one} scalar_ns={:.1} simd_ns={:.1} ratio={:.4}",
+                        scalar_ns[2],
+                        simd_ns[2],
+                        simd_ns[2] / scalar_ns[2]
+                    );
+                }
+            }
         }
     }
 

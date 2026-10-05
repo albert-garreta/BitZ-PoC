@@ -210,26 +210,78 @@ AB/BA processes against the preserved native baseline executable. Its default
 covers five seeds, thirty process pairs per cell, and the complete matrix;
 subset runs remain diagnostic and cannot satisfy the full acceptance gate.
 
-At `1d62b520`, will (Ryzen 9 9950X3D, Rust 1.98.1, release,
-`-C target-cpu=native`) passed 108 Falcon tests and verified all 112 proofs in
-the 16-case diagnostic matrix. Every proof digest matched the pre-optimization
-shared-prime revision `344a1656`. Against native baseline `4491309f`, seed-42
-medians after one warmup and five measured proofs were:
+At `764b7b05`, will (Ryzen 9 9950X3D, Rust 1.98.1, release,
+`-C target-cpu=native`) passed 110 Falcon tests and four factored-overlay tests,
+and verified all 112 proofs in the 16-case diagnostic matrix. The compression
+changes the stored proof representation; focused tests check reconstruction,
+rejection of malformed messages, and parity of the expanded transcript.
+Against native baseline `4491309f`, seed-42 medians after one warmup and five
+measured proofs were (prover time includes witness commitment):
 
 | Security / batch / threads | Native prover ms | Shared prover ms | Native verifier ms | Shared verifier ms |
 | --- | ---: | ---: | ---: | ---: |
-| 100 / 1 / 1 | 33.85 | 36.55 | 14.92 | 16.86 |
-| 100 / 1024 / 16 | 790.60 | 808.69 | 71.79 | 62.20 |
-| 128 / 1 / 1 | 170.99 | 187.02 | 15.21 | 17.96 |
-| 128 / 1024 / 16 | 894.12 | 1010.13 | 75.54 | 65.47 |
+| 100 / 1 / 1 | 33.85 | 38.76 | 14.92 | 15.98 |
+| 100 / 1024 / 16 | 790.60 | 802.54 | 71.79 | 61.16 |
+| 128 / 1 / 1 | 170.99 | 189.85 | 15.21 | 16.51 |
+| 128 / 1024 / 16 | 894.12 | 954.20 | 75.54 | 63.14 |
 
-These runs do not establish timing parity. The strict gate also reports peak
-memory increases in several cases and a 1084-byte payload increase for the
-100-bit, batch-one proof (207,104 to 208,188 bytes). Payloads decreased for the
-other tested security/batch combinations. Full raw campaign manifests and
-stage logs are retained under `.tmp/falcon-shared-candidate-1d62b520c22f9f57db3afb52a5b311ea7205a3cd`
-and `.tmp/falcon-shared-profiles-1d62b520c22f` on will and in the implementation
-worktree.
+These runs do not establish timing parity. The strict comparison still reports
+fresh-process peak memory increases in 10 of 16 cases. Both batch-1024,
+16-thread memory measurements decreased, but several small-batch timings
+remain slower than native. Relative to shared-prime revision `1d62b520`, the
+verifier median decreased in all 16 cases; the prover median decreased in
+eight. Single-seed timings do not isolate grinding variance.
+
+In the seed-42 matrix, measured canonical stored payload decreases against
+native in every tested security/batch combination, including the previous
+100-bit, batch-one regression (207,104 native bytes versus 206,636 shared-prime
+bytes). These sizes are for seed 42; query-dependent encodings can vary:
+
+| Signatures | Shared 100-bit bytes | Shared 128-bit bytes |
+| --- | ---: | ---: |
+| 1 | 206,636 | 241,068 |
+| 3 (capacity 4) | 281,836 | 336,260 |
+| 32 | 438,412 | 523,020 |
+| 1024 | 1,867,852 | 2,011,036 |
+
+The subsequent five-seed paired diagnostic at 16 threads completed 40 pairs
+and 480 verified proofs. It found single-signature payload increases of
+2,092 bytes at 100-bit security/seed 45 and 100/420 bytes at 128-bit
+security/seeds 45/46. Single-signature fresh-process RSS increased by
+504–936 KiB. At batch 1024, payload and RSS decreased for every matched seed;
+current payload ranged from 1,867,852–1,871,980 bytes at 100 bits and
+2,010,396–2,017,820 bytes at 128 bits. The precise components responsible for
+these seed-dependent differences have not been measured.
+
+| Security / batch (16 threads) | Paired prover ratio | Paired verifier ratio |
+| --- | ---: | ---: |
+| 100 / 1 | 1.0995 | 1.0755 |
+| 128 / 1 | 1.0724 | 1.0646 |
+| 100 / 1024 | 1.0190 | 0.8717 |
+| 128 / 1024 | 1.0383 | 0.8486 |
+
+Ratios are geometric means of matched process medians, shared/native. This
+diagnostic subset does not satisfy the full timing acceptance requirements;
+the strict payload/RSS gates remain failed. Paired artifacts are under
+`.tmp/falcon-paired-764b7b05559ddf9257242032d9b518e23f1e419f`.
+
+This accounting excludes Falcon transport framing and the public statement.
+At batch 1024, the two-limb bridge's integer sums alone occupy 524,288 bytes
+(`2 * 16384 * 16`); the compaction forest's child evaluations occupy another
+720,896 bytes (`11 * 2048 * 2 * 16`). These are retained proof components,
+not temporary allocations. The final PCS already uses one shared opening.
+
+Isolated one-thread kernel measurements reduced ring endpoint evaluation from
+2.428 to 1.128 ms. The factored binding kernel decreased by 2.2%, 3.2%, and
+6.8% at batches 1, 3, and 32, respectively. These are kernel measurements,
+not end-to-end speedups. Grinding diagnostics retained nonce and transcript
+parity across 450 measurements; neither alternative chunk size consistently
+improved the existing scheduler, so production grinding remains unchanged.
+
+Raw manifests and logs are retained under
+`.tmp/falcon-shared-candidate-764b7b05559ddf9257242032d9b518e23f1e419f` and
+`.tmp/falcon-regression-fixes-764b7b05559ddf9257242032d9b518e23f1e419f` on will
+and in the implementation worktree.
 
 ## Existing measurement reports
 
