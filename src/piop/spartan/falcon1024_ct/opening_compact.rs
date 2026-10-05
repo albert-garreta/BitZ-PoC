@@ -623,7 +623,7 @@ impl BindingForm<'_> {
         for _ in 0..11 {
             scale = field.mul(&scale, &self.eta);
         }
-        for _ in &self.proof.compaction {
+        for _ in self.proof.compaction {
             tree_scales.push(scale);
             scale = field.mul(&scale, &self.eta);
         }
@@ -760,11 +760,20 @@ impl BindingForm<'_> {
     }
 
     pub(super) fn evaluate_compact(&self, point: &[F]) -> Result<F, FalconError> {
-        use field::Reduce;
         let field = self.field;
         let local_vars = self.layout.signature_stride().ilog2() as usize;
         let local = eq_table(&point[..local_vars], field).map_err(|e| piop(e.to_string()))?;
         let instances = eq_table(&point[local_vars..], field).map_err(|e| piop(e.to_string()))?;
+        self.evaluate_compact_weights(&local, &instances)
+    }
+
+    pub(super) fn evaluate_compact_weights(
+        &self,
+        local: &[F],
+        instances: &[F],
+    ) -> Result<F, FalconError> {
+        use field::Reduce;
+        let field = self.field;
         let template = self.prepared_compact_template()?;
         let endpoints: Vec<F> = template
             .words
@@ -941,7 +950,7 @@ impl BindingForm<'_> {
             add_claim_target(&mut target, scale, *claim, field.mul(&scale, &c), field);
             scale = field.mul(&scale, &self.eta);
         }
-        for pair in &proof.compaction {
+        for pair in proof.compaction {
             let point = &pair.output.terminal_point;
             let rank = point[..10]
                 .iter()

@@ -1,43 +1,374 @@
-//! Stored shared-prime integer proof without transcript-derived metadata.
+//! Shared-prime integer messages with derived metadata and linear coefficients omitted.
 //!
-//! Verification reconstructs the ordinary PIOP view for the existing binder.
-//! Reconstructed values are absorbed at their original transcript positions.
+//! The verifier reconstructs each full round before absorption, preserving the
+//! established transcript. Only the checked endpoint claims survive verification.
 
 use super::*;
+use crate::sumcheck::{
+    SumcheckError,
+    boundary::RoundBoundaryPolicy,
+    proof::{evaluate_polynomial, reconstruct_round_coefficients},
+};
+
+#[derive(Clone, Debug)]
+pub(super) struct CompactSumcheck<const COEFFS: usize> {
+    /// Coefficients [c0, c2, ...]; c1 = claim - 2*c0 - c2 - ... .
+    round_polynomials: Vec<[F; COEFFS]>,
+}
+
+impl<const COEFFS: usize> CompactSumcheck<COEFFS> {
+    fn from_full<const FULL: usize>(proof: SumcheckProof<F, FULL>) -> Self {
+        assert_eq!(FULL, COEFFS + 1);
+        Self {
+            round_polynomials: proof
+                .round_polynomials
+                .into_iter()
+                .map(|round| std::array::from_fn(|i| round[if i == 0 { 0 } else { i + 1 }]))
+                .collect(),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum RoundProofRef<'a, const FULL: usize, const COMPACT: usize> {
+    Full(&'a SumcheckProof<F, FULL>),
+    Compact(&'a CompactSumcheck<COMPACT>),
+}
+
+impl<'a, const FULL: usize, const COMPACT: usize> From<&'a SumcheckProof<F, FULL>>
+    for RoundProofRef<'a, FULL, COMPACT>
+{
+    fn from(proof: &'a SumcheckProof<F, FULL>) -> Self {
+        Self::Full(proof)
+    }
+}
+
+/// Native proofs keep using the existing verifier. Compact proofs reconstruct
+/// c1 from the incoming claim and absorb the identical full coefficient array.
+pub(super) fn verify_round_proofs<const FULL: usize, const COMPACT: usize, const K: usize>(
+    proofs: [RoundProofRef<'_, FULL, COMPACT>; K],
+    transcript: &mut impl Transcript,
+    initial_claims: &[F; K],
+    rounds: usize,
+    field: &Cfg,
+    boundary: &mut impl RoundBoundaryPolicy,
+) -> Result<(Vec<F>, [F; K]), SumcheckError> {
+    if proofs
+        .iter()
+        .all(|proof| matches!(proof, RoundProofRef::Full(_)))
+    {
+        let full = proofs.map(|proof| match proof {
+            RoundProofRef::Full(proof) => proof,
+            RoundProofRef::Compact(_) => unreachable!("all proofs are full"),
+        });
+        return SumcheckProof::verify_batch_with_round_boundary(
+            full,
+            transcript,
+            initial_claims,
+            rounds,
+            field,
+            boundary,
+        );
+    }
+    if K == 0 {
+        return Err(SumcheckError::InvalidProductDimensions);
+    }
+    boundary.validate(rounds)?;
+    validate_field_elements(initial_claims, field)?;
+    for proof in proofs {
+        let actual = match proof {
+            RoundProofRef::Full(proof) => {
+                for coefficients in &proof.round_polynomials {
+                    validate_field_elements(coefficients, field)?;
+                }
+                proof.round_polynomials.len()
+            }
+            RoundProofRef::Compact(proof) => {
+                for coefficients in &proof.round_polynomials {
+                    validate_field_elements(coefficients, field)?;
+                }
+                proof.round_polynomials.len()
+            }
+        };
+        if actual != rounds {
+            return Err(SumcheckError::InvalidRoundCount {
+                expected: rounds,
+                actual,
+            });
+        }
+    }
+    let zero = field.zero();
+    let mut claims = *initial_claims;
+    let mut point = Vec::with_capacity(rounds);
+    for round in 0..rounds {
+        let coefficients: [[F; FULL]; K] = std::array::from_fn(|i| match proofs[i] {
+            RoundProofRef::Full(proof) => proof.round_polynomials[round],
+            RoundProofRef::Compact(proof) => reconstruct_round_coefficients(
+                &claims[i],
+                &proof.round_polynomials[round],
+                &zero,
+                field,
+            ),
+        });
+        for (coefficients, claim) in coefficients.iter().zip(&claims) {
+            absorb_field_elements(transcript, coefficients, field);
+            let at_one = coefficients.iter().fold(zero, |sum, c| field.add(&sum, c));
+            if field.add(&coefficients[0], &at_one) != *claim {
+                return Err(SumcheckError::InvalidRoundClaim { round });
+            }
+        }
+        boundary.after_round(transcript, round)?;
+        let challenge = squeeze_field(transcript, field)?;
+        for (coefficients, claim) in coefficients.iter().zip(&mut claims) {
+            *claim = evaluate_polynomial(coefficients, &challenge, &zero, field);
+        }
+        point.push(challenge);
+    }
+    Ok((point, claims))
+}
+
+pub(super) struct NormPayload<'a> {
+    pub instance_nonce: Option<u64>,
+    pub claims: [F; 2],
+    pub sumchecks: [RoundProofRef<'a, 3, 2>; 2],
+    pub terminal: [[F; 2]; 2],
+    pub grinding_nonces: &'a [u64],
+    pub instance_point: Option<&'a [F]>,
+    pub point: Option<&'a [F]>,
+    pub slack: Option<F>,
+}
+impl<'a> From<&'a NormProof> for NormPayload<'a> {
+    fn from(proof: &'a NormProof) -> Self {
+        Self {
+            instance_nonce: proof.instance_nonce,
+            claims: proof.claims,
+            sumchecks: [&proof.sumchecks[0], &proof.sumchecks[1]].map(RoundProofRef::from),
+            terminal: proof.terminal,
+            grinding_nonces: &proof.grinding_nonces,
+            instance_point: Some(&proof.instance_point),
+            point: Some(&proof.point),
+            slack: Some(proof.slack),
+        }
+    }
+}
+pub(super) struct QuadraticPayload<'a> {
+    pub point_nonce: Option<u64>,
+    pub sumcheck: RoundProofRef<'a, 4, 3>,
+    pub terminal: OuterEvaluations<F>,
+    pub grinding_nonces: &'a [u64],
+    pub point: Option<&'a [F]>,
+}
+impl<'a> From<&'a QuadraticRelationProof> for QuadraticPayload<'a> {
+    fn from(proof: &'a QuadraticRelationProof) -> Self {
+        Self {
+            point_nonce: proof.point_nonce,
+            sumcheck: (&proof.sumcheck).into(),
+            terminal: proof.terminal,
+            grinding_nonces: &proof.grinding_nonces,
+            point: Some(&proof.point),
+        }
+    }
+}
+pub(super) struct LeafPayload<'a> {
+    pub instance_nonce: Option<u64>,
+    pub sumcheck: RoundProofRef<'a, 4, 3>,
+    pub terminal: [F; 3],
+    pub grinding_nonces: &'a [u64],
+    pub instance_point: Option<&'a [F]>,
+    pub point: Option<&'a [F]>,
+}
+impl<'a> From<&'a CompactionLeafProof> for LeafPayload<'a> {
+    fn from(proof: &'a CompactionLeafProof) -> Self {
+        Self {
+            instance_nonce: proof.instance_nonce,
+            sumcheck: (&proof.sumcheck).into(),
+            terminal: proof.terminal,
+            grinding_nonces: &proof.grinding_nonces,
+            instance_point: Some(&proof.instance_point),
+            point: Some(&proof.point),
+        }
+    }
+}
+pub(super) struct ForestLayerPayload<'a> {
+    pub sumcheck: Option<RoundProofRef<'a, 4, 3>>,
+    pub evaluations: &'a [[F; 2]],
+    pub grinding_nonces: &'a [u64],
+    pub batching_nonce: Option<u64>,
+    pub line_nonce: Option<u64>,
+}
+impl<'a> From<&'a ProductForestLayerProof> for ForestLayerPayload<'a> {
+    fn from(proof: &'a ProductForestLayerProof) -> Self {
+        Self {
+            sumcheck: proof.sumcheck.as_ref().map(RoundProofRef::from),
+            evaluations: &proof.evaluations,
+            grinding_nonces: &proof.grinding_nonces,
+            batching_nonce: proof.batching_nonce,
+            line_nonce: proof.line_nonce,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in super::super) struct NormClaimRef<'a> {
+    pub instance_point: &'a [F],
+    pub terminal: &'a [[F; 2]; 2],
+    pub slack: F,
+    pub point: &'a [F],
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in super::super) struct QuadraticClaimRef<'a> {
+    pub terminal: OuterEvaluations<F>,
+    pub point: &'a [F],
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in super::super) struct LeafClaimRef<'a> {
+    pub instance_point: &'a [F],
+    pub terminal: &'a [F; 3],
+    pub point: &'a [F],
+}
+/// Borrowed endpoint interface shared by native proofs and checked shared claims.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in super::super) struct FalconPiopClaimRef<'a> {
+    pub modulus: u128,
+    pub norm: NormClaimRef<'a>,
+    pub compact_products: QuadraticClaimRef<'a>,
+    pub compaction_gamma: F,
+    pub compaction_rank_scale: F,
+    pub compaction: &'a [CompactionProof],
+    pub compaction_leaf: LeafClaimRef<'a>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct NormClaims {
+    instance_point: Vec<F>,
+    terminal: [[F; 2]; 2],
+    slack: F,
+    point: Vec<F>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct QuadraticClaims {
+    terminal: OuterEvaluations<F>,
+    point: Vec<F>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct LeafClaims {
+    instance_point: Vec<F>,
+    terminal: [F; 3],
+    point: Vec<F>,
+}
+/// Authenticated endpoints only: no proof messages, forest layers, or nonces.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in super::super) struct FalconPiopClaims {
+    modulus: u128,
+    norm: NormClaims,
+    compact_products: QuadraticClaims,
+    compaction_gamma: F,
+    compaction_rank_scale: F,
+    compaction: Vec<CompactionProof>,
+    compaction_leaf: LeafClaims,
+}
+
+impl FalconPiopProof {
+    pub(in super::super) fn as_claim_ref(&self) -> FalconPiopClaimRef<'_> {
+        FalconPiopClaimRef {
+            modulus: self.modulus,
+            norm: NormClaimRef {
+                instance_point: &self.norm.instance_point,
+                terminal: &self.norm.terminal,
+                slack: self.norm.slack,
+                point: &self.norm.point,
+            },
+            compact_products: QuadraticClaimRef {
+                terminal: self.compact_products.terminal,
+                point: &self.compact_products.point,
+            },
+            compaction_gamma: self.compaction_gamma,
+            compaction_rank_scale: self.compaction_rank_scale,
+            compaction: &self.compaction,
+            compaction_leaf: LeafClaimRef {
+                instance_point: &self.compaction_leaf.instance_point,
+                terminal: &self.compaction_leaf.terminal,
+                point: &self.compaction_leaf.point,
+            },
+        }
+    }
+}
+impl FalconPiopClaims {
+    pub(in super::super) fn as_claim_ref(&self) -> FalconPiopClaimRef<'_> {
+        FalconPiopClaimRef {
+            modulus: self.modulus,
+            norm: NormClaimRef {
+                instance_point: &self.norm.instance_point,
+                terminal: &self.norm.terminal,
+                slack: self.norm.slack,
+                point: &self.norm.point,
+            },
+            compact_products: QuadraticClaimRef {
+                terminal: self.compact_products.terminal,
+                point: &self.compact_products.point,
+            },
+            compaction_gamma: self.compaction_gamma,
+            compaction_rank_scale: self.compaction_rank_scale,
+            compaction: &self.compaction,
+            compaction_leaf: LeafClaimRef {
+                instance_point: &self.compaction_leaf.instance_point,
+                terminal: &self.compaction_leaf.terminal,
+                point: &self.compaction_leaf.point,
+            },
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 struct SharedNormProof {
     instance_nonce: Option<u64>,
     claims: [F; 2],
-    sumchecks: [SumcheckProof<F, 3>; 2],
+    sumchecks: [CompactSumcheck<2>; 2],
     terminal: [[F; 2]; 2],
     grinding_nonces: Vec<u64>,
 }
-
 #[derive(Clone, Debug)]
 struct SharedQuadraticProof {
     point_nonce: Option<u64>,
-    sumcheck: SumcheckProof<F, 4>,
+    sumcheck: CompactSumcheck<3>,
     terminal: OuterEvaluations<F>,
     grinding_nonces: Vec<u64>,
 }
-
 #[derive(Clone, Debug)]
 struct SharedLeafProof {
     instance_nonce: Option<u64>,
-    sumcheck: SumcheckProof<F, 4>,
+    sumcheck: CompactSumcheck<3>,
     terminal: [F; 3],
     grinding_nonces: Vec<u64>,
 }
+#[derive(Clone, Debug)]
+struct SharedForestLayerProof {
+    sumcheck: Option<CompactSumcheck<3>>,
+    evaluations: Vec<[F; 2]>,
+    grinding_nonces: Vec<u64>,
+    batching_nonce: Option<u64>,
+    line_nonce: Option<u64>,
+}
+impl<'a> From<&'a SharedForestLayerProof> for ForestLayerPayload<'a> {
+    fn from(proof: &'a SharedForestLayerProof) -> Self {
+        Self {
+            sumcheck: proof.sumcheck.as_ref().map(RoundProofRef::Compact),
+            evaluations: &proof.evaluations,
+            grinding_nonces: &proof.grinding_nonces,
+            batching_nonce: proof.batching_nonce,
+            line_nonce: proof.line_nonce,
+        }
+    }
+}
 
-/// Only messages and nonces are stored. The field, challenge points, norm slack,
-/// fingerprint challenges, forest roots and forest endpoints are reconstructed.
+/// Stored messages and nonces. The verifier derives all endpoint metadata and
+/// each sumcheck's linear coefficient; none is retained in this proof.
 #[derive(Clone, Debug)]
 pub(in super::super) struct SharedFalconPiopProof {
     norm: SharedNormProof,
     compact_products: SharedQuadraticProof,
     fingerprint_nonce: Option<u64>,
-    compaction_forest: PrimeProductForestProof,
+    compaction_forest: Vec<SharedForestLayerProof>,
     compaction_leaf: SharedLeafProof,
 }
 
@@ -58,21 +389,31 @@ impl FalconPiopProof {
             norm: SharedNormProof {
                 instance_nonce: norm.instance_nonce,
                 claims: norm.claims,
-                sumchecks: norm.sumchecks,
+                sumchecks: norm.sumchecks.map(CompactSumcheck::from_full),
                 terminal: norm.terminal,
                 grinding_nonces: norm.grinding_nonces,
             },
             compact_products: SharedQuadraticProof {
                 point_nonce: compact_products.point_nonce,
-                sumcheck: compact_products.sumcheck,
+                sumcheck: CompactSumcheck::from_full(compact_products.sumcheck),
                 terminal: compact_products.terminal,
                 grinding_nonces: compact_products.grinding_nonces,
             },
             fingerprint_nonce,
-            compaction_forest,
+            compaction_forest: compaction_forest
+                .layers
+                .into_iter()
+                .map(|layer| SharedForestLayerProof {
+                    sumcheck: layer.sumcheck.map(CompactSumcheck::from_full),
+                    evaluations: layer.evaluations,
+                    grinding_nonces: layer.grinding_nonces,
+                    batching_nonce: layer.batching_nonce,
+                    line_nonce: layer.line_nonce,
+                })
+                .collect(),
             compaction_leaf: SharedLeafProof {
                 instance_nonce: compaction_leaf.instance_nonce,
-                sumcheck: compaction_leaf.sumcheck,
+                sumcheck: CompactSumcheck::from_full(compaction_leaf.sumcheck),
                 terminal: compaction_leaf.terminal,
                 grinding_nonces: compaction_leaf.grinding_nonces,
             },
@@ -81,8 +422,7 @@ impl FalconPiopProof {
 }
 
 impl SharedFalconPiopProof {
-    /// Canonical scalar payload, using the same framing exclusions as the
-    /// existing Falcon payload metric. No derived metadata is stored or counted.
+    /// Canonical scalar payload with the same framing exclusions as native.
     pub(in super::super) fn payload_size_bytes(&self) -> usize {
         let Self {
             norm,
@@ -102,7 +442,7 @@ impl SharedFalconPiopProof {
         let norm_bytes = 16 * (claims.len() + terminal.iter().map(|x| x.len()).sum::<usize>())
             + sumchecks
                 .iter()
-                .map(|s| 16 * 3 * s.round_polynomials.len())
+                .map(|s| 16 * 2 * s.round_polynomials.len())
                 .sum::<usize>()
             + nonce(*instance_nonce)
             + 8 * grinding_nonces.len();
@@ -113,14 +453,13 @@ impl SharedFalconPiopProof {
             grinding_nonces,
         } = compact_products;
         let product_bytes = 3 * 16
-            + 4 * 16 * sumcheck.round_polynomials.len()
+            + 3 * 16 * sumcheck.round_polynomials.len()
             + nonce(*point_nonce)
             + 8 * grinding_nonces.len();
         let forest_bytes = compaction_forest
-            .layers
             .iter()
             .map(|layer| {
-                let ProductForestLayerProof {
+                let SharedForestLayerProof {
                     sumcheck,
                     evaluations,
                     grinding_nonces,
@@ -129,7 +468,7 @@ impl SharedFalconPiopProof {
                 } = layer;
                 sumcheck
                     .as_ref()
-                    .map_or(0, |s| 4 * 16 * s.round_polynomials.len())
+                    .map_or(0, |s| 3 * 16 * s.round_polynomials.len())
                     + 2 * 16 * evaluations.len()
                     + 8 * grinding_nonces.len()
                     + nonce(*batching_nonce)
@@ -143,58 +482,74 @@ impl SharedFalconPiopProof {
             grinding_nonces,
         } = compaction_leaf;
         let leaf_bytes = 16 * terminal.len()
-            + 4 * 16 * sumcheck.round_polynomials.len()
+            + 3 * 16 * sumcheck.round_polynomials.len()
             + nonce(*instance_nonce)
             + 8 * grinding_nonces.len();
         norm_bytes + product_bytes + nonce(*fingerprint_nonce) + forest_bytes + leaf_bytes
     }
 }
 
-/// Replays the same shared integer transcript and returns the checked expanded
-/// view needed by the source binder. `field` is the already-sampled ring prime.
+/// Verifies borrowed compact messages in the already-sampled ring field. Forest
+/// evaluations and round arrays are never cloned into the returned endpoints.
 pub(in super::super) fn verify_shared_falcon_piop_in_field(
     transcript: &mut impl Transcript,
     layout: &FalconSourceLayout,
     proof: &SharedFalconPiopProof,
     target_bits: usize,
     field: &Cfg,
-) -> Result<FalconPiopProof, FalconError> {
+) -> Result<FalconPiopClaims, FalconError> {
     if !matches!(target_bits, 100 | 128) {
         return Err(piop("invalid shared PIOP security target"));
     }
     validate_shared_field(layout, field)?;
+    if target_bits == 100 && !proof.compact_products.grinding_nonces.is_empty() {
+        return Err(piop("unexpected shared product grinding nonces"));
+    }
     bind_shared_header(transcript, layout, target_bits, field);
-    let mut norm = NormProof {
-        instance_point: Vec::new(),
-        instance_nonce: proof.norm.instance_nonce,
-        claims: proof.norm.claims,
-        slack: field.zero(),
-        sumchecks: proof.norm.sumchecks.clone(),
+    let (instance_point, point, slack) = verify_norm_payload(
+        transcript,
+        layout,
+        NormPayload {
+            instance_nonce: proof.norm.instance_nonce,
+            claims: proof.norm.claims,
+            sumchecks: [&proof.norm.sumchecks[0], &proof.norm.sumchecks[1]]
+                .map(RoundProofRef::Compact),
+            terminal: proof.norm.terminal,
+            grinding_nonces: &proof.norm.grinding_nonces,
+            instance_point: None,
+            point: None,
+            slack: None,
+        },
+        target_bits,
+        field,
+    )?;
+    let norm = NormClaims {
+        instance_point,
         terminal: proof.norm.terminal,
-        point: Vec::new(),
-        grinding_nonces: proof.norm.grinding_nonces.clone(),
+        slack,
+        point,
     };
-    (norm.instance_point, norm.point, norm.slack) =
-        verify_norm_payload(transcript, layout, &norm, target_bits, field, false)?;
 
     transcript.absorb_slice(b"bitz/falcon1024-ct/compaction-products/v3");
-    let mut compact_products = QuadraticRelationProof {
-        point_nonce: proof.compact_products.point_nonce,
-        sumcheck: proof.compact_products.sumcheck.clone(),
-        terminal: proof.compact_products.terminal,
-        point: Vec::new(),
-        grinding_nonces: proof.compact_products.grinding_nonces.clone(),
-    };
     let security = security_schedule(layout, target_bits)?;
-    compact_products.point = verify_quadratic_payload(
+    let point = verify_quadratic_payload(
         transcript,
         compaction_product_rounds(layout),
-        &compact_products,
+        QuadraticPayload {
+            point_nonce: proof.compact_products.point_nonce,
+            sumcheck: RoundProofRef::Compact(&proof.compact_products.sumcheck),
+            terminal: proof.compact_products.terminal,
+            grinding_nonces: &proof.compact_products.grinding_nonces,
+            point: None,
+        },
         target_bits,
         security,
         field,
-        false,
     )?;
+    let compact_products = QuadraticClaims {
+        terminal: proof.compact_products.terminal,
+        point,
+    };
 
     transcript.absorb_slice(b"bitz/falcon1024-ct/compaction/fingerprint/v1");
     match (target_bits, proof.fingerprint_nonce) {
@@ -211,12 +566,10 @@ pub(in super::super) fn verify_shared_falcon_piop_in_field(
     let compaction_gamma = squeeze(transcript, field)?;
     let compaction_rank_scale = squeeze(transcript, field)?;
 
-    // The root equality already forces roots to these level-zero products.
-    // No verifier randomness intervenes between absorbing roots and the first
-    // layer evaluations, so replay the original duplicated roots at that point.
+    // No challenge intervenes between the formerly stored roots and level zero.
+    // Derive their duplicate absorption from canonical first-layer products.
     let first = proof
         .compaction_forest
-        .layers
         .first()
         .ok_or_else(|| piop("missing shared compaction root layer"))?;
     if first.evaluations.len() != 2 * layout.batch() {
@@ -230,7 +583,7 @@ pub(in super::super) fn verify_shared_falcon_piop_in_field(
         .collect();
     let (point, claims) = verify_product_forest_payload(
         transcript,
-        &proof.compaction_forest,
+        proof.compaction_forest.iter().map(ForestLayerPayload::from),
         &roots,
         target_bits,
         security,
@@ -252,33 +605,33 @@ pub(in super::super) fn verify_shared_falcon_piop_in_field(
             },
         })
         .collect();
-
-    let mut compaction_leaf = CompactionLeafProof {
-        instance_point: Vec::new(),
-        instance_nonce: proof.compaction_leaf.instance_nonce,
-        sumcheck: proof.compaction_leaf.sumcheck.clone(),
-        terminal: proof.compaction_leaf.terminal,
-        point: Vec::new(),
-        grinding_nonces: proof.compaction_leaf.grinding_nonces.clone(),
-    };
-    (compaction_leaf.instance_point, compaction_leaf.point) = verify_compaction_leaf_payload(
+    let (instance_point, point) = verify_compaction_leaf_payload(
         transcript,
         layout,
         &compaction,
-        &compaction_leaf,
+        LeafPayload {
+            instance_nonce: proof.compaction_leaf.instance_nonce,
+            sumcheck: RoundProofRef::Compact(&proof.compaction_leaf.sumcheck),
+            terminal: proof.compaction_leaf.terminal,
+            grinding_nonces: &proof.compaction_leaf.grinding_nonces,
+            instance_point: None,
+            point: None,
+        },
         target_bits,
         field,
-        false,
     )?;
-    Ok(FalconPiopProof {
+    let compaction_leaf = LeafClaims {
+        instance_point,
+        terminal: proof.compaction_leaf.terminal,
+        point,
+    };
+    Ok(FalconPiopClaims {
         modulus: field.modulus_u128(),
         norm,
         compact_products,
-        fingerprint_nonce: proof.fingerprint_nonce,
         compaction_gamma,
         compaction_rank_scale,
         compaction,
-        compaction_forest: proof.compaction_forest.clone(),
         compaction_leaf,
     })
 }
@@ -354,7 +707,7 @@ mod tests {
                 &field,
             )
             .unwrap();
-            assert_eq!(restored, expanded);
+            assert_eq!(restored.as_claim_ref(), expanded.as_claim_ref());
             assert_eq!(prover.absorbed, verifier.absorbed);
             let mut full_verifier = RecordingTranscript::new();
             verify_falcon_piop_in_field(&mut full_verifier, &layout, &expanded, target, &field)
@@ -381,6 +734,40 @@ mod tests {
                     })
                     .sum::<usize>();
             assert_eq!(16 * omitted_fields, 416 * batch + 576 + 80 * m);
+            let omitted_round_coefficients = expanded
+                .norm
+                .sumchecks
+                .iter()
+                .map(|s| s.round_polynomials.len())
+                .sum::<usize>()
+                + expanded.compact_products.sumcheck.round_polynomials.len()
+                + expanded
+                    .compaction_forest
+                    .layers
+                    .iter()
+                    .map(|layer| {
+                        layer
+                            .sumcheck
+                            .as_ref()
+                            .map_or(0, |s| s.round_polynomials.len())
+                    })
+                    .sum::<usize>()
+                + expanded.compaction_leaf.sumcheck.round_polynomials.len();
+            assert_eq!(omitted_round_coefficients, 97 + 4 * m);
+            assert_eq!(compact.norm.sumchecks[0].round_polynomials[0].len(), 2);
+            assert_eq!(
+                compact.compact_products.sumcheck.round_polynomials[0].len(),
+                3
+            );
+            for (original, compact) in expanded.norm.sumchecks.iter().zip(&compact.norm.sumchecks) {
+                for (full, stored) in original
+                    .round_polynomials
+                    .iter()
+                    .zip(&compact.round_polynomials)
+                {
+                    assert_eq!(*stored, [full[0], full[2]]);
+                }
+            }
             assert!(compact.payload_size_bytes() > 0);
         }
     }
@@ -414,16 +801,50 @@ mod tests {
         bad.norm.claims[0] = field.add(&bad.norm.claims[0], &field.one());
         reject(&bad);
         let mut bad = compact.clone();
-        bad.compaction_forest.layers[0].evaluations[0][0] = field.zero();
+        bad.compaction_forest[0].evaluations[0][0] = field.zero();
         reject(&bad);
         let mut bad = compact.clone();
-        bad.compaction_forest.layers[0].evaluations.pop();
+        bad.compaction_forest[0].evaluations.pop();
         reject(&bad);
         let mut bad = compact.clone();
-        bad.compaction_forest.layers.pop();
+        bad.compaction_forest.pop();
         reject(&bad);
         let mut bad = compact.clone();
         bad.compaction_leaf.terminal[0] = field.add(&bad.compaction_leaf.terminal[0], &field.one());
+        reject(&bad);
+        // Missing or extra stored rounds must fail rather than being padded or
+        // ignored during reconstruction. Cover every sumcheck family.
+        let mut bad = compact.clone();
+        bad.norm.sumchecks[0].round_polynomials.pop();
+        reject(&bad);
+        let mut bad = compact.clone();
+        bad.compact_products
+            .sumcheck
+            .round_polynomials
+            .push([field.zero(); 3]);
+        reject(&bad);
+        let mut bad = compact.clone();
+        bad.compaction_forest[4]
+            .sumcheck
+            .as_mut()
+            .unwrap()
+            .round_polynomials
+            .pop();
+        reject(&bad);
+        let mut bad = compact.clone();
+        bad.compaction_leaf.sumcheck.round_polynomials.clear();
+        reject(&bad);
+        let mut bad = compact.clone();
+        bad.norm.sumchecks[0].round_polynomials[0][1] =
+            field.add(&bad.norm.sumchecks[0].round_polynomials[0][1], &field.one());
+        reject(&bad);
+        let mut bad = compact.clone();
+        let wider = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
+        bad.compact_products.sumcheck.round_polynomials[0][0] =
+            unsigned(field.modulus_u128(), &wider);
+        reject(&bad);
+        let mut bad = compact.clone();
+        bad.compact_products.grinding_nonces.push(0);
         reject(&bad);
         // The uncompressed entry point must still reject inconsistent metadata.
         let mut bad = expanded;

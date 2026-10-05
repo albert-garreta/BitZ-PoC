@@ -20,9 +20,7 @@ use crate::{
         SumcheckProof,
         boundary::{ProverGrindingRoundBoundary, VerifierGrindingRoundBoundary},
         inner::{InitialClaims, prove_batched_inner_sumcheck},
-        outer::{
-            OuterClaim, OuterEvaluations, OuterRows, prove_outer_sumcheck, verify_outer_sumcheck,
-        },
+        outer::{OuterClaim, OuterEvaluations, OuterRows, prove_outer_sumcheck},
         proof::{
             recover_full_round_polynomial_and_sample_next_challenge_with_boundary,
             validate_field_elements,
@@ -41,7 +39,10 @@ type Cfg = <F as SpartanField>::Config;
 
 #[path = "piop_shared.rs"]
 mod shared;
-pub(super) use shared::{SharedFalconPiopProof, verify_shared_falcon_piop_in_field};
+pub(super) use shared::{
+    FalconPiopClaimRef, SharedFalconPiopProof, verify_shared_falcon_piop_in_field,
+};
+use shared::{ForestLayerPayload, LeafPayload, NormPayload, QuadraticPayload, verify_round_proofs};
 
 const PRIME_MIN: u128 = 1u128 << 125;
 const PRIME_MAX: u128 = (1u128 << 126) - 1;
@@ -652,16 +653,15 @@ fn verify_norm(
     target_bits: usize,
     field: &Cfg,
 ) -> Result<(), FalconError> {
-    verify_norm_payload(transcript, layout, proof, target_bits, field, true).map(|_| ())
+    verify_norm_payload(transcript, layout, proof.into(), target_bits, field).map(|_| ())
 }
 
 fn verify_norm_payload(
     transcript: &mut impl Transcript,
     layout: &FalconSourceLayout,
-    proof: &NormProof,
+    proof: NormPayload<'_>,
     target_bits: usize,
     field: &Cfg,
-    check_metadata: bool,
 ) -> Result<(Vec<F>, Vec<F>, F), FalconError> {
     transcript.absorb_slice(b"bitz/falcon1024-ct/norm/v3");
     match (
@@ -683,11 +683,16 @@ fn verify_norm_payload(
         layout.capacity().trailing_zeros() as usize,
         field,
     )?;
-    if check_metadata && instance_point != proof.instance_point {
+    if proof
+        .instance_point
+        .is_some_and(|stored| instance_point != stored)
+    {
         return Err(piop("norm instance point mismatch"));
     }
-    validate_field_elements(&[proof.claims[0], proof.claims[1], proof.slack], field)
-        .map_err(|error| piop(error.to_string()))?;
+    validate_field_elements(&proof.claims, field).map_err(|error| piop(error.to_string()))?;
+    if let Some(slack) = proof.slack {
+        validate_field_elements(&[slack], field).map_err(|error| piop(error.to_string()))?;
+    }
     validate_field_elements(&proof.terminal.concat(), field)
         .map_err(|error| piop(error.to_string()))?;
     if target_bits == 100 && !proof.grinding_nonces.is_empty() {
@@ -701,7 +706,7 @@ fn verify_norm_payload(
     let beta = unsigned(BETA_SQUARED as u128, field);
     let expected = field.mul(&instance_sum, &beta);
     let slack = field.sub(&expected, &field.add(&proof.claims[0], &proof.claims[1]));
-    if check_metadata && proof.slack != slack {
+    if proof.slack.is_some_and(|stored| stored != slack) {
         return Err(piop("norm claim does not equal the Falcon bound"));
     }
     absorb_field_elements(
@@ -715,8 +720,8 @@ fn verify_norm_payload(
             security_schedule(layout, target_bits)?.quadratic_round_bits,
             &proof.grinding_nonces,
         );
-        SumcheckProof::verify_batch_with_round_boundary(
-            [&proof.sumchecks[0], &proof.sumchecks[1]],
+        verify_round_proofs(
+            proof.sumchecks,
             transcript,
             &proof.claims,
             rounds,
@@ -725,8 +730,8 @@ fn verify_norm_payload(
         )
     } else {
         let mut boundary = crate::sumcheck::UngrindedRoundBoundary;
-        SumcheckProof::verify_batch_with_round_boundary(
-            [&proof.sumchecks[0], &proof.sumchecks[1]],
+        verify_round_proofs(
+            proof.sumchecks,
             transcript,
             &proof.claims,
             rounds,
@@ -738,7 +743,7 @@ fn verify_norm_payload(
     if point.len() != rounds {
         return Err(piop("norm point length mismatch"));
     }
-    if check_metadata && point != proof.point {
+    if proof.point.is_some_and(|stored| point != stored) {
         return Err(piop("norm terminal point mismatch"));
     }
     for (claim, terminal) in final_claims.iter().zip(proof.terminal.iter()) {
@@ -888,11 +893,10 @@ fn verify_quadratic(
     verify_quadratic_payload(
         transcript,
         rounds,
-        proof,
+        proof.into(),
         target_bits,
         security,
         field,
-        true,
     )
     .map(|_| ())
 }
@@ -900,11 +904,10 @@ fn verify_quadratic(
 fn verify_quadratic_payload(
     transcript: &mut impl Transcript,
     rounds: usize,
-    proof: &QuadraticRelationProof,
+    proof: QuadraticPayload<'_>,
     target_bits: usize,
     security: FalconSecuritySchedule,
     field: &Cfg,
-    check_metadata: bool,
 ) -> Result<Vec<F>, FalconError> {
     match (target_bits, proof.point_nonce) {
         (128, Some(nonce)) => verify_and_absorb(
@@ -919,37 +922,53 @@ fn verify_quadratic_payload(
     }
     let tau = sample_point(transcript, rounds, field)?;
     let zero = field.zero();
-    let output = if target_bits == 128 {
+    validate_field_elements(
+        &[proof.terminal.ax, proof.terminal.bx, proof.terminal.cx],
+        field,
+    )
+    .map_err(|error| piop(error.to_string()))?;
+    let (point, [final_claim]) = if target_bits == 128 {
         let mut boundary = VerifierGrindingRoundBoundary::<CubicGrinding>::new(
             security.cubic_round_bits,
             &proof.grinding_nonces,
         );
-        verify_outer_sumcheck(
-            field,
+        verify_round_proofs(
+            [proof.sumcheck],
             transcript,
-            zero,
-            &tau,
-            &proof.sumcheck,
-            proof.terminal,
+            &[zero],
+            rounds,
+            field,
             &mut boundary,
         )
     } else {
         let mut boundary = crate::sumcheck::UngrindedRoundBoundary;
-        verify_outer_sumcheck(
-            field,
+        verify_round_proofs(
+            [proof.sumcheck],
             transcript,
-            zero,
-            &tau,
-            &proof.sumcheck,
-            proof.terminal,
+            &[zero],
+            rounds,
+            field,
             &mut boundary,
         )
     }
     .map_err(|error| piop(error.to_string()))?;
-    if check_metadata && output.point != proof.point {
+    let equality = eq_eval(&tau, &point, field).map_err(|error| piop(error.to_string()))?;
+    let residual = field.sub(
+        &field.mul(&proof.terminal.ax, &proof.terminal.bx),
+        &proof.terminal.cx,
+    );
+    if final_claim != field.mul(&equality, &residual) {
+        return Err(piop("quadratic terminal identity failed"));
+    }
+    absorb_field_elements(
+        transcript,
+        &[proof.terminal.ax, proof.terminal.bx, proof.terminal.cx],
+        field,
+    );
+    if proof.point.is_some_and(|stored| point != stored) {
         return Err(piop("quadratic terminal point mismatch"));
     }
-    Ok(output.point)
+    Ok(point)
 }
 
 #[cfg(test)]
@@ -1320,8 +1339,14 @@ fn verify_product_forest(
         .flat_map(|pair| [&pair.candidate, &pair.output])
         .map(|tree| tree.root)
         .collect();
-    let (point, claims) =
-        verify_product_forest_payload(transcript, forest, &roots, target_bits, security, field)?;
+    let (point, claims) = verify_product_forest_payload(
+        transcript,
+        forest.layers.iter().map(ForestLayerPayload::from),
+        &roots,
+        target_bits,
+        security,
+        field,
+    )?;
     if compaction
         .iter()
         .flat_map(|pair| [&pair.candidate, &pair.output])
@@ -1333,15 +1358,15 @@ fn verify_product_forest(
     Ok(())
 }
 
-fn verify_product_forest_payload(
+fn verify_product_forest_payload<'a>(
     transcript: &mut impl Transcript,
-    forest: &PrimeProductForestProof,
+    layers: impl ExactSizeIterator<Item = ForestLayerPayload<'a>>,
     roots: &[F],
     target_bits: usize,
     security: FalconSecuritySchedule,
     field: &Cfg,
 ) -> Result<(Vec<F>, Vec<F>), FalconError> {
-    if roots.is_empty() || roots.len() > 2048 || roots.len() % 2 != 0 || forest.layers.len() != 11 {
+    if roots.is_empty() || roots.len() > 2048 || roots.len() % 2 != 0 || layers.len() != 11 {
         return Err(piop("invalid compaction forest shape"));
     }
     validate_field_elements(roots, field).map_err(|error| piop(error.to_string()))?;
@@ -1351,7 +1376,7 @@ fn verify_product_forest_payload(
     bind_forest(transcript, roots, field);
     let mut claims = roots.to_vec();
     let mut point = Vec::new();
-    for (level, layer) in forest.layers.iter().enumerate() {
+    for (level, layer) in layers.enumerate() {
         if layer.evaluations.len() != roots.len() {
             return Err(piop("product forest evaluation count mismatch"));
         }
@@ -1364,7 +1389,7 @@ fn verify_product_forest_payload(
                 || layer.batching_nonce.is_some()
                 || claims
                     .iter()
-                    .zip(&layer.evaluations)
+                    .zip(layer.evaluations)
                     .any(|(claim, [left, right])| *claim != field.mul(left, right))
             {
                 return Err(piop("product forest root layer failed"));
@@ -1373,7 +1398,6 @@ fn verify_product_forest_payload(
         } else {
             let sumcheck = layer
                 .sumcheck
-                .as_ref()
                 .ok_or_else(|| piop("missing product forest sumcheck"))?;
             verify_forest_nonce::<ForestBatchGrinding>(
                 transcript,
@@ -1392,9 +1416,15 @@ fn verify_product_forest_payload(
                 },
                 &layer.grinding_nonces,
             );
-            let (next_point, final_claim) = sumcheck
-                .verify_with_round_boundary(transcript, initial, level, field, &mut boundary)
-                .map_err(|error| piop(error.to_string()))?;
+            let (next_point, [final_claim]) = verify_round_proofs(
+                [sumcheck],
+                transcript,
+                &[initial],
+                level,
+                field,
+                &mut boundary,
+            )
+            .map_err(|error| piop(error.to_string()))?;
             let products: Vec<_> = layer
                 .evaluations
                 .iter()
@@ -1603,10 +1633,9 @@ fn verify_compaction_leaf(
         transcript,
         layout,
         compaction,
-        proof,
+        proof.into(),
         target_bits,
         field,
-        true,
     )
     .map(|_| ())
 }
@@ -1615,10 +1644,9 @@ fn verify_compaction_leaf_payload(
     transcript: &mut impl Transcript,
     layout: &FalconSourceLayout,
     compaction: &[CompactionProof],
-    proof: &CompactionLeafProof,
+    proof: LeafPayload<'_>,
     target_bits: usize,
     field: &Cfg,
-    check_metadata: bool,
 ) -> Result<(Vec<F>, Vec<F>), FalconError> {
     let security = security_schedule(layout, target_bits)?;
     bind_compaction_leaf(transcript, compaction, field);
@@ -1638,7 +1666,10 @@ fn verify_compaction_leaf_payload(
         _ => return Err(piop("invalid leaf-instance grinding nonce")),
     }
     let instance_point = sample_point(transcript, instance_rounds, field)?;
-    if check_metadata && instance_point != proof.instance_point {
+    if proof
+        .instance_point
+        .is_some_and(|stored| instance_point != stored)
+    {
         return Err(piop("compaction leaf instance point mismatch"));
     }
     validate_field_elements(&proof.terminal, field).map_err(|error| piop(error.to_string()))?;
@@ -1652,17 +1683,16 @@ fn verify_compaction_leaf_payload(
         },
         &proof.grinding_nonces,
     );
-    let (point, final_claim) = proof
-        .sumcheck
-        .verify_with_round_boundary(
-            transcript,
-            initial,
-            11 + instance_rounds,
-            field,
-            &mut boundary,
-        )
-        .map_err(|error| piop(error.to_string()))?;
-    if (check_metadata && point != proof.point)
+    let (point, [final_claim]) = verify_round_proofs(
+        [proof.sumcheck],
+        transcript,
+        &[initial],
+        11 + instance_rounds,
+        field,
+        &mut boundary,
+    )
+    .map_err(|error| piop(error.to_string()))?;
+    if proof.point.is_some_and(|stored| point != stored)
         || final_claim
             != field.mul(
                 &field.mul(&proof.terminal[0], &proof.terminal[1]),

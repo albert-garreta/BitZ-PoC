@@ -5,8 +5,8 @@ use crate::sumcheck::SumcheckError;
 
 pub(super) struct JoinedBinding<'a> {
     pub(super) integer: BindingForm<'a>,
-    ring: Option<super::super::shared_ring::ProjectedClaim>,
-    integer_scale: F,
+    pub(super) ring: Option<super::super::shared_ring::ProjectedClaim>,
+    pub(super) integer_scale: F,
     folded_column: OnceLock<(Vec<F>, Vec<F>)>,
 }
 

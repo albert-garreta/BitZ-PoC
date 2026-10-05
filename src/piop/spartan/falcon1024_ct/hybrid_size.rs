@@ -297,4 +297,40 @@ mod tests {
         };
         assert_eq!(bridge_bytes(&proof), 5 * 16 + 7 * 32 + 11 * 8);
     }
+
+    #[test]
+    fn shared_piop_payload_counts_only_stored_coefficients_and_endpoints() {
+        use crate::piop::spartan::falcon1024_ct::{
+            FalconSourceLayout, piop::prove_falcon_piop_in_field, verification_trace,
+        };
+        let layout = FalconSourceLayout::new_shared_prime(1).unwrap();
+        let trace = verification_trace(
+            include_bytes!("fixtures/public_key.bin"),
+            include_bytes!("fixtures/message.bin"),
+            include_bytes!("fixtures/signature_ct.bin"),
+        )
+        .unwrap();
+        let field = crate::prime_sampling::sample_prime_context(
+            &mut crate::transcript::Blake3Transcript::new(),
+            1u128 << 125,
+            (1u128 << 126) - 1,
+            128,
+        )
+        .unwrap();
+        let full = prove_falcon_piop_in_field(
+            &mut crate::transcript::Blake3Transcript::new(),
+            &layout,
+            &[trace],
+            100,
+            &field,
+        )
+        .unwrap();
+        let full_bytes = piop_bytes(&full);
+        let stored = full.into_shared();
+        // 992 bytes of omitted metadata plus 97 omitted linear coefficients.
+        assert_eq!(
+            full_bytes - stored.payload_size_bytes(),
+            992 + 97 * FIELD_BYTES
+        );
+    }
 }

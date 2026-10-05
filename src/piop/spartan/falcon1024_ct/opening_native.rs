@@ -11,7 +11,7 @@ pub(super) struct LeafWeights {
 impl LeafWeights {
     pub(super) fn new(
         layout: &FalconSourceLayout,
-        proof: &FalconPiopProof,
+        proof: FalconPiopClaimRef<'_>,
         field: &Cfg,
     ) -> Result<Self, FalconError> {
         let leaf = &proof.compaction_leaf;
@@ -48,7 +48,7 @@ pub(super) fn add_leaf_claims(
     scale: &mut F,
     eta: F,
     layout: &FalconSourceLayout,
-    proof: &FalconPiopProof,
+    proof: FalconPiopClaimRef<'_>,
     field: &Cfg,
 ) -> Result<(), FalconError> {
     let weights = LeafWeights::new(layout, proof, field)?;
@@ -61,7 +61,7 @@ pub(super) fn add_leaf_claims_prepared(
     scale: &mut F,
     eta: F,
     layout: &FalconSourceLayout,
-    proof: &FalconPiopProof,
+    proof: FalconPiopClaimRef<'_>,
     field: &Cfg,
     weights: &LeafWeights,
 ) -> Result<(), FalconError> {

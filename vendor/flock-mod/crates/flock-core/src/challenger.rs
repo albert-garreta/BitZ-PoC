@@ -881,6 +881,176 @@ mod tests {
         }
     }
 
+    /// Diagnostic search policies only. Production scheduling remains unchanged
+    /// until paired measurements justify a different choice.
+    fn diagnostic_grind(ch: &mut FsChallenger, bits: u32, chunk: u64, parallel: bool) -> u64 {
+        use rayon::prelude::*;
+        let state = ch.state_digest();
+        let kind = ch.hash_kind();
+        let block = if parallel {
+            1 << (bits.min(24) + 1)
+        } else {
+            chunk
+        };
+        let mut start = 0;
+        let nonce = loop {
+            let found = if parallel {
+                (0..block.div_ceil(chunk))
+                    .into_par_iter()
+                    .map(|c| pow_scan(&state, start + c * chunk, chunk, bits, kind))
+                    .find_first(Option::is_some)
+                    .flatten()
+            } else {
+                pow_scan(&state, start, chunk, bits, kind)
+            };
+            if let Some(nonce) = found {
+                break nonce;
+            }
+            start += block;
+        };
+        ch.observe_bytes(&nonce.to_le_bytes());
+        nonce
+    }
+
+    fn diagnostic_challenger(kind: HashKind, seed: u64) -> FsChallenger {
+        let mut ch = FsChallenger::with_hash(b"grind-scheduler-diagnostic-v1", kind);
+        ch.observe_bytes(&seed.to_le_bytes());
+        ch
+    }
+
+    #[test]
+    fn grind_schedulers_preserve_minimum_nonce_and_transcript() {
+        for threads in [1, 2, 4] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .unwrap();
+            pool.install(|| {
+                for kind in KINDS {
+                    for seed in [42, 46] {
+                        for bits in [6, 13] {
+                            let mut reference = diagnostic_challenger(kind, seed);
+                            let digest = reference.state_digest();
+                            let want = diagnostic_grind(&mut reference, bits, 1024, false);
+                            assert!((0..want).all(|nonce| !pow_has_leading_zero_bits(
+                                &digest, nonce, bits, kind
+                            )));
+                            assert!(pow_has_leading_zero_bits(&digest, want, bits, kind));
+                            let state = reference.state_digest();
+                            let mut production = diagnostic_challenger(kind, seed);
+                            assert_eq!(production.grind_pow(bits), want);
+                            assert_eq!(production.state_digest(), state);
+                            for chunk in [128, 1024, 8192] {
+                                let mut candidate = diagnostic_challenger(kind, seed);
+                                assert_eq!(
+                                    diagnostic_grind(&mut candidate, bits, chunk, true),
+                                    want,
+                                    "{kind} seed={seed} bits={bits} threads={threads} chunk={chunk}"
+                                );
+                                assert_eq!(candidate.state_digest(), state);
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    /// Run separately from acceptance proofs, in release mode, with one test
+    /// harness thread and no hash-count atomics. Output has one JSON object per
+    /// policy/input/thread count. The five measured policy orders rotate to
+    /// reduce order bias; all policies search the same public transcript state.
+    /// No scheduler choice is inferred automatically from this diagnostic.
+    #[test]
+    #[ignore = "manual grinding scheduler diagnostic; run release --nocapture --test-threads=1"]
+    fn grind_scheduler_diagnostic() {
+        run_grind_scheduler_diagnostic(&[12, 13, 15, 17], &[1, 16], 5);
+    }
+
+    /// The PCS uses 26-bit grinding: measure it separately, since this can
+    /// take substantially longer than the small fold-grind diagnostic.
+    #[test]
+    #[ignore = "manual 26-bit scheduler diagnostic; run release --nocapture --test-threads=1"]
+    fn grind_scheduler_diagnostic_26() {
+        run_grind_scheduler_diagnostic(&[26], &[16], 3);
+    }
+
+    fn run_grind_scheduler_diagnostic(
+        bit_counts: &[u32],
+        thread_counts: &[usize],
+        iterations: usize,
+    ) {
+        assert!(
+            !cfg!(debug_assertions),
+            "measure scheduler costs in release mode"
+        );
+        assert!(
+            !cfg!(feature = "hash-count"),
+            "hash-count atomics distort scheduler timings"
+        );
+        let policies = ["production", "serial", "chunk128", "chunk1024", "chunk8192"];
+        for &threads in thread_counts {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .unwrap();
+            pool.install(|| {
+                for kind in KINDS {
+                    for &bits in bit_counts {
+                        for seed in 42..=46 {
+                            let mut reference = diagnostic_challenger(kind, seed);
+                            let digest = reference.state_digest();
+                            let nonce = diagnostic_grind(&mut reference, bits, 1024, false);
+                            let expected_state = reference.state_digest();
+                            let mut samples = [const { Vec::new() }; 5];
+                            // One warmup per policy, then measurements,
+                            // rotating the first policy each measured round.
+                            for trial in 0..=iterations {
+                                for offset in 0..policies.len() {
+                                    let policy = (offset + trial) % policies.len();
+                                    let mut ch = diagnostic_challenger(kind, seed);
+                                    let started = std::time::Instant::now();
+                                    let got = match policy {
+                                        0 => ch.grind_pow(bits),
+                                        1 => diagnostic_grind(&mut ch, bits, 1024, false),
+                                        2 => diagnostic_grind(&mut ch, bits, 128, true),
+                                        3 => diagnostic_grind(&mut ch, bits, 1024, true),
+                                        4 => diagnostic_grind(&mut ch, bits, 8192, true),
+                                        _ => unreachable!(),
+                                    };
+                                    let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+                                    assert_eq!(got, nonce, "scheduler changed the smallest nonce");
+                                    assert_eq!(ch.state_digest(), expected_state);
+                                    if trial != 0 {
+                                        samples[policy].push(elapsed);
+                                    }
+                                }
+                            }
+                            for (policy, timings) in policies.into_iter().zip(samples) {
+                                let mut sorted = timings.clone();
+                                sorted.sort_by(f64::total_cmp);
+                                println!(
+                                    "{}",
+                                    serde_json::json!({
+                                        "schema": "bitz/grind-scheduler/v1",
+                                        "hash": kind.to_string(),
+                                        "bits": bits, "seed": seed, "threads": threads,
+                                        "state_digest": digest,
+                                        "policy": policy, "nonce": nonce,
+                                        "minimum_scalar_hashes": nonce + 1,
+                                        "samples_ms": timings, "median_ms": sorted[iterations / 2],
+                                        "warmup": 1, "iterations": iterations,
+                                        "nonce_and_transcript_parity": true,
+                                    })
+                                );
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+
     /// Default Challenger impl (RandomChallenger) is a no-op for PoW.
     #[test]
     fn random_challenger_pow_is_noop() {

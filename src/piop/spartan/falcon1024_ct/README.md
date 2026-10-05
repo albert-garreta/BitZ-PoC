@@ -195,6 +195,21 @@ checks provenance, matched security settings, timing, proof size, and fresh
 process peak memory. A diagnostic matrix alone does not establish parity;
 the timing acceptance gate requires multiple seeds and paired process runs.
 
+The shared-prime implementation now evaluates the verifier's canonical ring
+projection directly at the binding endpoint and shares its equality-weight
+buffers with the integer verifier. The prover keeps the ring tensor separate
+from the unscaled integer query while folding one bit table. Shared integer
+proofs omit each round's linear coefficient, reconstructing it before the
+original transcript absorption; verification retains only endpoint claims.
+These changes preserve the field choices, grinding schedule, and authenticated
+relation. The incremental payload saving is `1552 + 64*m` bytes, where
+`m = log2(padded_batch)`.
+
+[`run_falcon_paired.py`](../../../../scripts/run_falcon_paired.py) runs balanced
+AB/BA processes against the preserved native baseline executable. Its default
+covers five seeds, thirty process pairs per cell, and the complete matrix;
+subset runs remain diagnostic and cannot satisfy the full acceptance gate.
+
 At `1d62b520`, will (Ryzen 9 9950X3D, Rust 1.98.1, release,
 `-C target-cpu=native`) passed 108 Falcon tests and verified all 112 proofs in
 the 16-case diagnostic matrix. Every proof digest matched the pre-optimization

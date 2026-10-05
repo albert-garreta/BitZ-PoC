@@ -64,6 +64,57 @@ pub(super) struct ProjectedClaim {
     pub target: F,
 }
 
+/// Verifier recipe for the same canonical-coordinate projection as `ProjectedClaim`.
+/// Only the small extension-field factors survive until the binding endpoint.
+pub(super) struct VerifierProjectedClaim {
+    row: Vec<Ext>,
+    point: Vec<Ext>,
+    omega: [Ext; 4],
+    alpha: F,
+    pub target: F,
+}
+
+impl VerifierProjectedClaim {
+    #[tracing::instrument(skip_all, name = "falcon_shared_ring:project_endpoint")]
+    pub(super) fn evaluate(
+        &self,
+        layout: &FalconSourceLayout,
+        local: &[F],
+        instances: &[F],
+        field: &Cfg,
+    ) -> Result<F, FalconError> {
+        if local.len() != layout.signature_stride() || instances.len() != self.row.len() {
+            return Err(error("projected ring endpoint dimensions"));
+        }
+        // Sum the canonical integer coordinates first, then evaluate at alpha.
+        // This does NOT project an extension-field sum: reduction modulo q must
+        // happen separately for every public bit coefficient before accumulation.
+        let mut column = [FpLinearAcc::<2, 1>::default(); EXTENSION_DEGREE];
+        visit_bit_query(layout, &self.point, &self.omega, |slot, value| {
+            for (sum, coordinate) in column.iter_mut().zip(value.0) {
+                sum.accumulate(&local[slot], &Uint::from_words([u64::from(coordinate)]));
+            }
+        })?;
+        let mut row = [FpLinearAcc::<2, 1>::default(); EXTENSION_DEGREE];
+        for (value, weight) in self.row.iter().zip(instances) {
+            for (sum, coordinate) in row.iter_mut().zip(value.0) {
+                sum.accumulate(weight, &Uint::from_words([u64::from(coordinate)]));
+            }
+        }
+        // At most 54*N terms per column coordinate: 126+14+16 < 192
+        // bits, so the three-limb linear accumulator cannot overflow.
+        let evaluate = |coordinates: [FpLinearAcc<2, 1>; EXTENSION_DEGREE]| {
+            coordinates
+                .into_iter()
+                .rev()
+                .fold(field.zero(), |sum, coordinate| {
+                    field.add(&field.mul(&sum, &self.alpha), &field.reduce(coordinate))
+                })
+        };
+        Ok(field.mul(&evaluate(row), &evaluate(column)))
+    }
+}
+
 pub(super) const fn projection_grinding_bits(target_bits: usize) -> u32 {
     if target_bits == 128 { 14 } else { 2 }
 }
@@ -168,7 +219,7 @@ pub(super) fn verify(
     statement: &FalconPublicStatement,
     proof: &Proof,
     target_bits: usize,
-) -> Result<(Cfg, ProjectedClaim), FalconError> {
+) -> Result<(Cfg, VerifierProjectedClaim), FalconError> {
     validate_context(layout, statement, target_bits)?;
     let rounds = layout.capacity().ilog2() as usize;
     if proof.certificate.len() != N - 1
@@ -206,7 +257,7 @@ pub(super) fn verify(
     check_inner_terminal(inner_claim, beta, &u, proof.inner_evaluation)?;
     let mut row = equality_weights(&t);
     row[layout.batch()..].fill(Ext::ZERO);
-    let (column, offset) = bit_query(layout, &row, &u, &omega)?;
+    let offset = decoder_offset(&row, &omega);
     check_lift(layout, &proof.lift, proof.inner_evaluation.sub(offset))?;
     absorb_lift(transcript, &proof.lift);
     let field = sample_shared_field(transcript, layout)?;
@@ -224,7 +275,13 @@ pub(super) fn verify(
     let alpha = squeeze_field(transcript, &field).map_err(|e| error(e.to_string()))?;
     Ok((
         field.clone(),
-        project(&row, &column, &proof.lift, alpha, &field),
+        VerifierProjectedClaim {
+            row,
+            point: u,
+            omega,
+            alpha,
+            target: project_lift(&proof.lift, alpha, &field),
+        },
     ))
 }
 
@@ -563,33 +620,48 @@ fn bit_query(
     point: &[Ext],
     omega: &[Ext; 4],
 ) -> Result<(Vec<Ext>, Ext), FalconError> {
+    let mut column = vec![Ext::ZERO; layout.signature_stride()];
+    visit_bit_query(layout, point, omega, |slot, value| column[slot] = value)?;
+    Ok((column, decoder_offset(row, omega)))
+}
+
+fn decoder_offset(row: &[Ext], omega: &[Ext; 4]) -> Ext {
+    let row_sum = row.iter().fold(Ext::ZERO, |sum, &v| sum.add(v));
+    // Position equality weights sum to one. Only S1 has an affine offset.
+    scale(row_sum.mul(omega[3]), -6144)
+}
+
+fn visit_bit_query(
+    layout: &FalconSourceLayout,
+    point: &[Ext],
+    omega: &[Ext; 4],
+    mut visit: impl FnMut(usize, Ext),
+) -> Result<(), FalconError> {
     let offsets = layout.offsets();
     let key = layout
         .public_key_offset()
         .ok_or_else(|| error("missing shared public-key source"))?;
-    let positions = equality_weights(point);
-    let mut column = vec![Ext::ZERO; layout.signature_stride()];
-    for (j, weight) in positions.into_iter().enumerate() {
+    for (j, weight) in equality_weights(point).into_iter().enumerate() {
         let c = weight.mul(omega[0]);
         let h = weight.mul(omega[1]);
         let s2 = weight.mul(omega[2]);
         let s1 = weight.mul(omega[3]);
         for bit in 0..14 {
-            column[offsets.hash_point + 14 * j + bit] = scale(c, 1 << bit);
-            column[key + 14 * j + bit] = scale(h, 1 << bit);
-            column[offsets.s1 + 14 * j + bit] = scale(s1, if bit == 13 { 4097 } else { 1 << bit });
+            visit(offsets.hash_point + 14 * j + bit, scale(c, 1 << bit));
+            visit(key + 14 * j + bit, scale(h, 1 << bit));
+            visit(
+                offsets.s1 + 14 * j + bit,
+                scale(s1, if bit == 13 { 4097 } else { 1 << bit }),
+            );
         }
         for bit in 0..12 {
             let stream = 12 * j + 11 - bit;
             let slot =
                 offsets.encoded_signature + 8 * (1 + NONCE_BYTES + stream / 8) + 7 - stream % 8;
-            column[slot] = scale(s2, if bit == 11 { -2048 } else { 1 << bit });
+            visit(slot, scale(s2, if bit == 11 { -2048 } else { 1 << bit }));
         }
     }
-    let row_sum = row.iter().fold(Ext::ZERO, |sum, &v| sum.add(v));
-    // Position equality weights sum to one. Only S1 has an affine offset.
-    let offset = scale(row_sum.mul(omega[3]), -6144);
-    Ok((column, offset))
+    Ok(())
 }
 
 /// Group eight canonical coordinate vectors by their witness byte before
@@ -750,7 +822,15 @@ fn project(
     #[cfg(not(feature = "parallel"))]
     let column = column.iter().map(evaluate).collect();
     let row = row.iter().map(evaluate).collect();
-    let target = lift.iter().rev().fold(field.zero(), |sum, &value| {
+    ProjectedClaim {
+        row,
+        column,
+        target: project_lift(lift, alpha, field),
+    }
+}
+
+fn project_lift(lift: &[i128; LIFT_COEFFICIENTS], alpha: F, field: &Cfg) -> F {
+    lift.iter().rev().fold(field.zero(), |sum, &value| {
         let magnitude = F::from_with_cfg(value.unsigned_abs(), field);
         let coefficient = if value < 0 {
             field.neg(&magnitude)
@@ -758,12 +838,7 @@ fn project(
             magnitude
         };
         field.add(&field.mul(&sum, &alpha), &coefficient)
-    });
-    ProjectedClaim {
-        row,
-        column,
-        target,
-    }
+    })
 }
 
 fn error(message: impl Into<String>) -> FalconError {
@@ -843,7 +918,22 @@ mod tests {
             let (vf, verified) = verify(&mut vt, &layout, &statement, &proof, target).unwrap();
             assert_eq!(pf.modulus_u128(), vf.modulus_u128());
             assert!((PRIME_MIN..=PRIME_MAX).contains(&pf.modulus_u128()));
-            assert_eq!(claim, verified);
+            assert_eq!(claim.target, verified.target);
+            let point: Vec<F> = (0..layout.source_bits().ilog2())
+                .map(|i| F::from_with_cfg(u128::from(i + 7), &pf))
+                .collect();
+            let split = layout.signature_stride().ilog2() as usize;
+            let local = crate::piop::spartan::matrix::eq_table(&point[..split], &pf).unwrap();
+            let instances = crate::piop::spartan::matrix::eq_table(&point[split..], &pf).unwrap();
+            let dot = |a: &[F], b: &[F]| {
+                a.iter()
+                    .zip(b)
+                    .fold(pf.zero(), |s, (x, y)| pf.add(&s, &pf.mul(x, y)))
+            };
+            assert_eq!(
+                verified.evaluate(&layout, &local, &instances, &pf).unwrap(),
+                pf.mul(&dot(&claim.row, &instances), &dot(&claim.column, &local))
+            );
             assert_eq!(claim.target, source_dot(&claim, &source, &pf));
             assert!(claim.row[batch..].iter().all(|&v| v == pf.zero()));
             assert_eq!(
@@ -853,6 +943,84 @@ mod tests {
             assert_eq!(proof.outer.len(), layout.capacity().ilog2() as usize);
             assert_eq!(proof.inner.len(), INNER_ROUNDS);
         }
+    }
+
+    #[test]
+    fn lazy_projection_matches_materialized_canonical_coordinates() {
+        let (layout, _, _, _) = fixture(3);
+        let field = F::make_cfg(&Uint::from((1u128 << 127) - 1)).unwrap();
+        let mut row = vec![element(17), element(41), element(99), Ext::ZERO];
+        let point: Vec<_> = (0..INNER_ROUNDS).map(|i| element(i + 2)).collect();
+        let omega = [element(7), element(8), element(9), element(10)];
+        let (column, _) = bit_query(&layout, &row, &point, &omega).unwrap();
+        let dot = |a: &[F], b: &[F]| {
+            a.iter()
+                .zip(b)
+                .fold(field.zero(), |s, (x, y)| field.add(&s, &field.mul(x, y)))
+        };
+        for alpha in [
+            field.zero(),
+            field.one(),
+            field.neg(&field.one()),
+            F::from_with_cfg(1729u128, &field),
+        ] {
+            let materialized = project(&row, &column, &[0; LIFT_COEFFICIENTS], alpha, &field);
+            let lazy = VerifierProjectedClaim {
+                row: row.clone(),
+                point: point.clone(),
+                omega,
+                alpha,
+                target: field.zero(),
+            };
+            // Dense maximum representatives also exercise the delayed-reduction bound.
+            let local = vec![field.neg(&field.one()); layout.signature_stride()];
+            let instances = vec![field.neg(&field.one()); layout.capacity()];
+            assert_eq!(
+                lazy.evaluate(&layout, &local, &instances, &field).unwrap(),
+                field.mul(
+                    &dot(&materialized.row, &instances),
+                    &dot(&materialized.column, &local)
+                )
+            );
+            assert!(
+                lazy.evaluate(&layout, &local[1..], &instances, &field)
+                    .is_err()
+            );
+            for slot in [
+                layout.offsets().s1 + 13,
+                layout.public_key_offset().unwrap() + 14335,
+                layout.offsets().encoded_signature + 8 * (1 + NONCE_BYTES),
+                layout.signature_stride() - 1,
+            ] {
+                let mut local = vec![field.zero(); layout.signature_stride()];
+                local[slot] = field.one();
+                assert_eq!(
+                    lazy.evaluate(&layout, &local, &instances, &field).unwrap(),
+                    field.mul(
+                        &dot(&materialized.row, &instances),
+                        &materialized.column[slot]
+                    )
+                );
+            }
+        }
+        row.fill(Ext::ZERO);
+        let lazy = VerifierProjectedClaim {
+            row,
+            point,
+            omega,
+            alpha: field.one(),
+            target: field.zero(),
+        };
+        assert_eq!(
+            lazy.evaluate(
+                &layout,
+                &vec![field.one(); layout.signature_stride()],
+                &vec![field.one(); layout.capacity()],
+                &field
+            )
+            .unwrap(),
+            field.zero()
+        );
     }
 
     #[test]
@@ -1178,7 +1346,7 @@ mod tests {
                 .collect()
         }
 
-        fn measure(mut kernel: impl FnMut() -> Vec<F>) -> f64 {
+        fn measure<T>(mut kernel: impl FnMut() -> T) -> f64 {
             let start = Instant::now();
             for _ in 0..ITERATIONS {
                 black_box(kernel());
@@ -1244,6 +1412,38 @@ mod tests {
                 assert_eq!(a, b, "{name} at {index}");
             }
         }
+
+        let endpoint: Vec<_> = (0..layout.source_bits().ilog2())
+            .map(|_| squeeze_field(&mut transcript, &field).unwrap())
+            .collect();
+        let split = layout.signature_stride().ilog2() as usize;
+        let local = crate::piop::spartan::matrix::eq_table(&endpoint[..split], &field).unwrap();
+        let instances = crate::piop::spartan::matrix::eq_table(&endpoint[split..], &field).unwrap();
+        let lazy = VerifierProjectedClaim {
+            row: row.clone(),
+            point: position_point.clone(),
+            omega,
+            alpha,
+            target: field.zero(),
+        };
+        let materialized_endpoint = || {
+            let (column, _) = bit_query(&layout, &row, &position_point, &omega).unwrap();
+            let claim = project(&row, &column, &[0; LIFT_COEFFICIENTS], alpha, &field);
+            let dot = |a: &[F], b: &[F]| {
+                a.iter().zip(b).fold(field.zero(), |sum, (x, y)| {
+                    field.add(&sum, &field.mul(x, y))
+                })
+            };
+            field.mul(&dot(&claim.row, &instances), &dot(&claim.column, &local))
+        };
+        let lazy_endpoint = || lazy.evaluate(&layout, &local, &instances, &field).unwrap();
+        assert_eq!(materialized_endpoint(), lazy_endpoint());
+        let materialized_ms = measure(materialized_endpoint);
+        let lazy_ms = measure(lazy_endpoint);
+        eprintln!(
+            "projection_endpoint materialized_ms={materialized_ms:.6} lazy_ms={lazy_ms:.6} ratio={:.6}",
+            lazy_ms / materialized_ms
+        );
 
         let current = measure(|| {
             window::<false, false>(black_box(&column), black_box(&tables), black_box(&field))

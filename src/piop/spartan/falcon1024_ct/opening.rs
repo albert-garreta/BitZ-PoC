@@ -5,7 +5,7 @@
 //! binary source.  One degree-two inner sumcheck reduces that form to one MLE
 //! evaluation authenticated by the shared hybrid opening.
 
-use std::{borrow::Cow, collections::HashMap, sync::OnceLock};
+use std::{collections::HashMap, sync::OnceLock};
 
 use field::{BatchMulAcc, MergeAccumulator, RingOps, Uint};
 #[cfg(feature = "parallel")]
@@ -22,7 +22,8 @@ use crate::{
         boundary::{ProverGrindingRoundBoundary, VerifierGrindingRoundBoundary},
         inner::{
             packed::{
-                ColumnMajorPackedBits, PackedInput, StreamingCoefficientSource, StreamingMle,
+                ColumnMajorPackedBits, FactoredOverlayInput, PackedInput,
+                StreamingCoefficientSource, StreamingMle,
             },
             prove_inner_sumcheck,
         },
@@ -34,7 +35,7 @@ use super::{
     FalconError, FalconPiopProof, FalconPublicKey, FalconSignatureCt, FalconSourceLayout,
     FalconSourceOffsets, FalconSourceWitness, FalconVerificationTrace, HASH_TO_POINT_SAMPLES, N, Q,
     decode_public_key, decode_signature_ct, encode_signature_ct,
-    piop::{prove_falcon_piop, security_schedule, verify_falcon_piop},
+    piop::{FalconPiopClaimRef, prove_falcon_piop, security_schedule, verify_falcon_piop},
 };
 
 #[path = "opening_compact.rs"]
@@ -225,7 +226,7 @@ pub(super) fn prove_binding_prefix(
         transcript,
         layout,
         statement,
-        &algebraic,
+        algebraic.as_claim_ref(),
         &linear_point,
         &field,
         native_claim,
@@ -262,21 +263,31 @@ pub(super) fn prove_binding_prefix(
             prefix_vars,
         )
     };
-    let output = if target_bits == 128 {
-        let mut boundary = ProverGrindingRoundBoundary::<BindingGrinding>::with_round_offset(
-            security_schedule(layout, target_bits)?.binding_round_bits,
-            0,
-        );
-        let output = prove_inner_sumcheck(&field, transcript, target, input(), (), &mut boundary)
-            .map_err(|error| piop(error.to_string()))?;
-        (output, boundary.into_nonces())
+    let output = if let Some(ring) = &binding.ring {
+        prove_binding_inner(
+            transcript,
+            &field,
+            layout,
+            target_bits,
+            target,
+            FactoredOverlayInput::new(
+                &binding.integer,
+                &packed_source,
+                &ring.row,
+                &ring.column,
+                binding.integer_scale,
+                source_rounds(layout),
+                layout.source_bits(),
+                prefix_vars,
+            ),
+        )?
     } else {
-        let mut boundary = crate::sumcheck::UngrindedRoundBoundary;
-        let output = prove_inner_sumcheck(&field, transcript, target, input(), (), &mut boundary)
-            .map_err(|error| piop(error.to_string()))?;
-        (output, Vec::new())
+        prove_binding_inner(transcript, &field, layout, target_bits, target, input())?
     };
     let (output, binding_nonces) = output;
+    // The source templates and folded public tables are no longer needed.
+    // Release them before compacting the proof and entering the BitZ bridge.
+    drop(binding);
     let binding_terminal = output.terminal_evaluations;
     absorb_field_elements(transcript, &binding_terminal, &field);
     bind_opening_claim(
@@ -311,6 +322,33 @@ pub(super) fn prove_binding_prefix(
     Ok((prefix, row_weights, bridge_claim))
 }
 
+fn prove_binding_inner<V>(
+    transcript: &mut impl Transcript,
+    field: &Cfg,
+    layout: &FalconSourceLayout,
+    target_bits: usize,
+    target: F,
+    input: V,
+) -> Result<(crate::sumcheck::inner::InnerSumcheckOutput<F>, Vec<u64>), FalconError>
+where
+    V: crate::sumcheck::inner::input::Input<Cfg, Weights = ()>,
+{
+    if target_bits == 128 {
+        let mut boundary = ProverGrindingRoundBoundary::<BindingGrinding>::with_round_offset(
+            security_schedule(layout, target_bits)?.binding_round_bits,
+            0,
+        );
+        let output = prove_inner_sumcheck(field, transcript, target, input, (), &mut boundary)
+            .map_err(|error| piop(error.to_string()))?;
+        Ok((output, boundary.into_nonces()))
+    } else {
+        let mut boundary = crate::sumcheck::UngrindedRoundBoundary;
+        let output = prove_inner_sumcheck(field, transcript, target, input, (), &mut boundary)
+            .map_err(|error| piop(error.to_string()))?;
+        Ok((output, Vec::new()))
+    }
+}
+
 pub(super) fn verify_binding_prefix(
     transcript: &mut impl Transcript,
     layout: &FalconSourceLayout,
@@ -327,19 +365,25 @@ pub(super) fn verify_binding_prefix(
     {
         return Err(piop("Falcon prefix proof shape mismatch"));
     }
+    let shared_algebraic;
     let (field, native_claim, projected, algebraic) =
         match (&proof.ring, &proof.piop, layout.is_shared_prime()) {
             (RingProof::Shared(ring), PiopProof::Shared(integer), true) => {
                 let (field, projected) =
                     super::shared_ring::verify(transcript, layout, statement, ring, target_bits)?;
-                let algebraic = super::piop::verify_shared_falcon_piop_in_field(
+                shared_algebraic = super::piop::verify_shared_falcon_piop_in_field(
                     transcript,
                     layout,
                     integer,
                     target_bits,
                     &field,
                 )?;
-                (field, None, Some(projected), Cow::Owned(algebraic))
+                (
+                    field,
+                    None,
+                    Some(projected),
+                    shared_algebraic.as_claim_ref(),
+                )
             }
             (RingProof::Native(ring), PiopProof::Native(integer), false) => {
                 verify_falcon_piop(transcript, layout, integer, target_bits)?;
@@ -352,7 +396,7 @@ pub(super) fn verify_binding_prefix(
                     &field,
                     target_bits as u32,
                 )?;
-                (field, Some(claim), None, Cow::Borrowed(integer))
+                (field, Some(claim), None, integer.as_claim_ref())
             }
             _ => return Err(piop("Falcon ring protocol mismatch")),
         };
@@ -363,7 +407,7 @@ pub(super) fn verify_binding_prefix(
         transcript,
         layout,
         statement,
-        &algebraic,
+        algebraic,
         &linear_point,
         &field,
         native_claim,
@@ -374,8 +418,11 @@ pub(super) fn verify_binding_prefix(
     } else {
         field.one()
     };
-    let binding = JoinedBinding::new(integer, projected, merge)?;
-    let target = binding.target()?;
+    let target = integer.target()?;
+    let target = match &projected {
+        Some(ring) => field.add(&ring.target, &field.mul(&merge, &target)),
+        None => target,
+    };
     transcript.absorb_slice(b"bitz/falcon1024-ct/shared-inner/v1");
     let (point, final_claims) = if target_bits == 128 {
         let mut boundary = VerifierGrindingRoundBoundary::<BindingGrinding>::new(
@@ -414,7 +461,21 @@ pub(super) fn verify_binding_prefix(
     {
         return Err(piop("shared inner terminal mismatch"));
     }
-    if binding.evaluate(&point)? != proof.binding_terminal[0] {
+    let coefficient = if let Some(ring) = &projected {
+        let split = layout.signature_stride().ilog2() as usize;
+        let local = eq_table(&point[..split], &field).map_err(|e| piop(e.to_string()))?;
+        let instances = eq_table(&point[split..], &field).map_err(|e| piop(e.to_string()))?;
+        field.add(
+            &ring.evaluate(layout, &local, &instances, &field)?,
+            &field.mul(
+                &merge,
+                &integer.evaluate_compact_weights(&local, &instances)?,
+            ),
+        )
+    } else {
+        integer.evaluate(&point)?
+    };
+    if coefficient != proof.binding_terminal[0] {
         return Err(piop("shared coefficient MLE mismatch"));
     }
     absorb_field_elements(transcript, &proof.binding_terminal, &field);
@@ -466,7 +527,7 @@ fn grind_linear_point(
 struct BindingForm<'a> {
     layout: &'a FalconSourceLayout,
     statement: &'a FalconPublicStatement,
-    proof: &'a FalconPiopProof,
+    proof: FalconPiopClaimRef<'a>,
     field: &'a Cfg,
     #[cfg(test)]
     linear_weights: crate::poly::mle::EqualityWeights<F>,
@@ -546,7 +607,7 @@ fn prepare_binding_form<'a>(
         transcript,
         layout,
         statement,
-        proof,
+        proof.as_claim_ref(),
         linear_point,
         field,
         Some(native_claim),
@@ -557,7 +618,7 @@ fn prepare_binding_form_optional<'a>(
     transcript: &mut impl Transcript,
     layout: &'a FalconSourceLayout,
     statement: &'a FalconPublicStatement,
-    proof: &'a FalconPiopProof,
+    proof: FalconPiopClaimRef<'a>,
     linear_point: &[F],
     field: &'a Cfg,
     native_claim: Option<super::native_ring::PreparedNativeClaim>,
@@ -732,7 +793,7 @@ fn add_norm_claims_prepared(
     scale: &mut F,
     eta: F,
     layout: &FalconSourceLayout,
-    proof: &FalconPiopProof,
+    proof: FalconPiopClaimRef<'_>,
     field: &Cfg,
     weights: &crate::poly::mle::EqualityWeights<F>,
     instance_weights: &[F],
@@ -834,7 +895,7 @@ fn add_compaction_product_claims_prepared(
     scale: &mut F,
     eta: F,
     layout: &FalconSourceLayout,
-    proof: &FalconPiopProof,
+    proof: FalconPiopClaimRef<'_>,
     field: &Cfg,
     weights: &crate::poly::mle::EqualityWeights<F>,
 ) -> Result<(), FalconError> {

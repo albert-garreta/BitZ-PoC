@@ -355,6 +355,8 @@ mod composite;
 pub(crate) use composite::CompactCompositeMle;
 mod state;
 pub use state::PackedInput;
+mod overlay;
+pub(crate) use overlay::FactoredOverlayInput;
 mod streaming;
 pub(crate) use streaming::{StreamingCoefficientSource, StreamingMle};
 

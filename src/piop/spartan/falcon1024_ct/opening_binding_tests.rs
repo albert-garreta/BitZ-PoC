@@ -169,7 +169,7 @@ fn add_norm_claims(
     scale: &mut F,
     eta: F,
     layout: &FalconSourceLayout,
-    proof: &FalconPiopProof,
+    proof: FalconPiopClaimRef<'_>,
     field: &Cfg,
 ) -> Result<(), FalconError> {
     let weights = factored_weights(&proof.norm.point, field)?;
@@ -194,7 +194,7 @@ fn add_compaction_product_claims(
     scale: &mut F,
     eta: F,
     layout: &FalconSourceLayout,
-    proof: &FalconPiopProof,
+    proof: FalconPiopClaimRef<'_>,
     field: &Cfg,
 ) -> Result<(), FalconError> {
     let weights = factored_weights(&proof.compact_products.point, field)?;
@@ -216,7 +216,7 @@ fn add_product_tree_claims(
     scale: &mut F,
     eta: F,
     layout: &FalconSourceLayout,
-    proof: &FalconPiopProof,
+    proof: FalconPiopClaimRef<'_>,
     field: &Cfg,
 ) -> Result<(), FalconError> {
     let offsets = layout.offsets();
@@ -503,7 +503,7 @@ fn shared_prime_streaming_overlay_matches_independent_bit_oracle() {
             &mut transcript,
             &layout,
             &statement,
-            &proof,
+            proof.as_claim_ref(),
             &linear_point,
             &field,
             None,
@@ -1223,7 +1223,7 @@ fn check_norm_binding(layout: FalconSourceLayout) {
             &mut scale,
             eta,
             &layout,
-            proof,
+            proof.as_claim_ref(),
             &field,
         )
         .unwrap();
@@ -1248,7 +1248,7 @@ fn shared_forest_weights_require_candidate_and_output_endpoints_to_match() {
     let field = config();
     let layout = FalconSourceLayout::new(3).unwrap();
     let proof = full_terminal_fixture(&layout, &field);
-    assert!(native::LeafWeights::new(&layout, &proof, &field).is_ok());
+    assert!(native::LeafWeights::new(&layout, proof.as_claim_ref(), &field).is_ok());
     for output in [false, true] {
         let mut bad = proof.clone();
         let pair = &mut bad.compaction[1];
@@ -1258,6 +1258,189 @@ fn shared_forest_weights_require_candidate_and_output_endpoints_to_match() {
             &mut pair.candidate
         };
         tree.terminal_point[0] = field.add(&tree.terminal_point[0], &field.one());
-        assert!(native::LeafWeights::new(&layout, &bad, &field).is_err());
+        assert!(native::LeafWeights::new(&layout, bad.as_claim_ref(), &field).is_err());
     }
+}
+
+/// Matched old/new kernel timings over the real compiled integer binder.
+/// Run explicitly in release mode on x86; preparation stays outside each timer.
+#[test]
+#[ignore = "x86 matched shared-binding kernel benchmark"]
+#[cfg(target_arch = "x86_64")]
+fn shared_binding_factored_overlay_benchmark() {
+    use std::{hint::black_box, time::Instant};
+
+    let field = crate::prime_sampling::sample_prime_context(
+        &mut Blake3Transcript::new(),
+        1u128 << 125,
+        (1u128 << 126) - 1,
+        128,
+    )
+    .unwrap();
+    let run = || {
+        for batch in [1, 3, 32] {
+            let layout = FalconSourceLayout::new_shared_prime(batch).unwrap();
+            let statement = statement_with_key_groups(&vec![0; batch]);
+            let proof = full_terminal_fixture(&layout, &field);
+            let linear_point = point(linear_rounds(&layout), &field);
+            let scale = field.neg(&unsigned(71, &field));
+            let row: Vec<_> = (0..layout.capacity())
+                .map(|i| {
+                    if i < batch {
+                        unsigned(19 + 31 * i as u128, &field)
+                    } else {
+                        field.zero()
+                    }
+                })
+                .collect();
+            let offsets = layout.offsets();
+            let h = layout.public_key_offset().unwrap();
+            let s2 = offsets.encoded_signature + 8 * (1 + super::super::NONCE_BYTES);
+            let column: Vec<_> = (0..layout.signature_stride())
+                .map(|i| {
+                    let live = (offsets.hash_point..offsets.hash_point + 14 * N).contains(&i)
+                        || (offsets.s1..offsets.s1 + 14 * N).contains(&i)
+                        || (h..h + 14 * N).contains(&i)
+                        || (s2..s2 + 12 * N).contains(&i);
+                    if live {
+                        unsigned(7 + i as u128 * i as u128, &field)
+                    } else {
+                        field.zero()
+                    }
+                })
+                .collect();
+            let mut words = vec![0u64; layout.source_bits() / 64];
+            for s in 0..batch {
+                for local in 0..layout.live_bits() {
+                    let index = s * layout.signature_stride() + local;
+                    let bit = ((index as u64 * 0x9e37_79b9 ^ (index as u64 >> 3)).count_ones() & 1)
+                        as u64;
+                    words[index / 64] |= bit << (index % 64);
+                }
+            }
+            let make_binding = || {
+                let integer = prepare_binding_form_optional(
+                    &mut Blake3Transcript::new(),
+                    &layout,
+                    &statement,
+                    proof.as_claim_ref(),
+                    &linear_point,
+                    &field,
+                    None,
+                )
+                .unwrap();
+                integer.prepared_compact_template().unwrap();
+                JoinedBinding::new(
+                    integer,
+                    Some(super::super::shared_ring::ProjectedClaim {
+                        row: row.clone(),
+                        column: column.clone(),
+                        target: field.zero(),
+                    }),
+                    scale,
+                )
+                .unwrap()
+            };
+            let binding = make_binding();
+            let mut claim = field.zero();
+            binding
+                .for_each_coefficient(&mut |i, value| {
+                    if words[i / 64] >> (i % 64) & 1 != 0 {
+                        claim = field.add(&claim, &value);
+                    }
+                    Ok(())
+                })
+                .unwrap();
+            drop(binding);
+            let prove = |factored: bool| {
+                // A fresh binding avoids giving the old path a warmed folded-
+                // column cache that a single real proof would not have.
+                let binding = make_binding();
+                let mut transcript = Blake3Transcript::new();
+                transcript.absorb_slice(b"bitz/falcon1024-ct/shared-inner/v1");
+                let start = Instant::now();
+                let output = if factored {
+                    let ring = binding.ring.as_ref().unwrap();
+                    prove_inner_sumcheck(
+                        &field,
+                        &mut transcript,
+                        claim,
+                        FactoredOverlayInput::new(
+                            &binding.integer,
+                            &words,
+                            &ring.row,
+                            &ring.column,
+                            scale,
+                            source_rounds(&layout),
+                            layout.source_bits(),
+                            3,
+                        ),
+                        (),
+                        &mut crate::sumcheck::UngrindedRoundBoundary,
+                    )
+                    .unwrap()
+                } else {
+                    prove_inner_sumcheck(
+                        &field,
+                        &mut transcript,
+                        claim,
+                        PackedInput::new(
+                            &StreamingMle::new(&binding),
+                            &words,
+                            source_rounds(&layout),
+                            layout.source_bits(),
+                            3,
+                        ),
+                        (),
+                        &mut crate::sumcheck::UngrindedRoundBoundary,
+                    )
+                    .unwrap()
+                };
+                let elapsed = start.elapsed().as_secs_f64();
+                (
+                    black_box(output),
+                    transcript.get_challenge::<u128>(),
+                    elapsed,
+                )
+            };
+            let (reference, challenge, _) = prove(false);
+            let (actual, actual_challenge, _) = prove(true);
+            assert_eq!(reference, actual);
+            assert_eq!(challenge, actual_challenge);
+            let mut old = Vec::new();
+            let mut new = Vec::new();
+            for repetition in 0..3 {
+                for factored in if repetition % 2 == 0 {
+                    [false, true]
+                } else {
+                    [true, false]
+                } {
+                    let (output, next, elapsed) = prove(factored);
+                    assert_eq!(output, reference);
+                    assert_eq!(next, challenge);
+                    if factored {
+                        new.push(elapsed);
+                    } else {
+                        old.push(elapsed);
+                    }
+                }
+            }
+            old.sort_by(f64::total_cmp);
+            new.sort_by(f64::total_cmp);
+            eprintln!(
+                "shared binding kernel batch={batch} threads=1 old_ms={:.3} factored_ms={:.3} ratio={:.4}",
+                old[1] * 1000.0,
+                new[1] * 1000.0,
+                new[1] / old[1]
+            );
+        }
+    };
+    #[cfg(feature = "parallel")]
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build()
+        .unwrap()
+        .install(run);
+    #[cfg(not(feature = "parallel"))]
+    run();
 }
