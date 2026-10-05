@@ -30,6 +30,10 @@ impl<'a, S: ?Sized, H: ?Sized> FactoredOverlayInput<'a, S, H> {
         live_len: usize,
         prefix: usize,
     ) -> Self {
+        #[cfg(feature = "parallel")]
+        let threads = rayon::current_num_threads();
+        #[cfg(not(feature = "parallel"))]
+        let threads = 1;
         Self {
             integer,
             bits,
@@ -39,7 +43,9 @@ impl<'a, S: ?Sized, H: ?Sized> FactoredOverlayInput<'a, S, H> {
             num_vars,
             live_len,
             prefix,
-            contract_ring: prefix == 3 && row.len() >= 8 && column.len() > 8,
+            // Matched Falcon measurements favor contraction only for larger
+            // single-thread batches; retain the streamed path otherwise.
+            contract_ring: prefix == 3 && row.len() >= 32 && column.len() > 8 && threads == 1,
         }
     }
 
