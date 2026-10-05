@@ -283,6 +283,75 @@ Raw manifests and logs are retained under
 `.tmp/falcon-regression-fixes-764b7b05559ddf9257242032d9b518e23f1e419f` on will
 and in the implementation worktree.
 
+## x86 GKR optimization
+
+Revision `e370e3b3` retains two changes to the x86 BitZ kernels: four-lane
+arithmetic for JIT bucket accumulation, and direct 128-bit loads when assembling
+four lookup values for the JIT fold. Repeated bucket indices accumulate in lane
+order. The fold checks complete tables once per group and retains checked
+lookup for shorter tables. Other architectures retain their existing kernels.
+Field choices, integer bounds, grinding, proof messages, and source bindings
+are unchanged.
+
+The preceding `764b7b05` profile on will, at batch 1024 and 16 threads, identified
+the following costs at the 100-bit target. Each number is a median of six
+instrumented trials across seeds 42, 43, and 44:
+
+| Stage | Milliseconds |
+| --- | ---: |
+| GKR forest | 143.00 |
+| Witness generation and commitments | 140.82 |
+| Shared bit binding | 129.88 |
+| Ring proof | 7.24 |
+
+The bucket microbenchmark improved by 37–82% across its tested group counts
+and patterns. The production fold microbenchmark improved by approximately
+24–29%. These percentages describe isolated kernels, not complete proofs.
+An alternative gather kernel was slower. A ring-row contraction experiment
+gave little parallel benefit and added scratch storage, so it was removed.
+
+The retained code passed 78 BitZ tests, 110 Falcon tests, and four factored
+binding tests on will. Differential coverage includes repeated bucket indices,
+every vector tail length, both sumcheck endpoints, fold modes, short tables,
+and malformed shapes. Kernel logs are retained under
+`.tmp/falcon-final-validation-e370e3b35da692d86e814c687e597c3a1d0a6bea` and
+`.tmp/falcon-jit-validation-75d49dcda0fd3b91203385e3151f75110fbf0307`.
+
+The final seed-42 matrix verified 112 proofs with the same Debug digests and
+payload sizes as `764b7b05`. Total prover medians decreased in 13 of 16 cells.
+The exceptions were both 16-thread batch-32 cells (0.74% and 0.37% higher) and
+the 128-bit, 16-thread batch-1024 cell (8.46% higher). Fresh-process RSS
+increased in six cells by 28–1812 KiB. The strict comparison therefore remains
+failed, and this single-seed matrix does not establish timing parity. Raw
+results are under
+`.tmp/falcon-shared-candidate-e370e3b35da692d86e814c687e597c3a1d0a6bea` and
+`.tmp/falcon-bottleneck-e370e3b35da692d86e814c687e597c3a1d0a6bea`.
+
+Separate profiles measured the GKR forest at 138.167 ms (previously 142.996)
+at 100 bits and 171.744 ms (previously 174.417) at 128 bits. These are medians
+of six instrumented trials per target, at batch 1024 and 16 threads. All 18
+profiled proof runs also preserved the reference digest and payload.
+
+An uninstrumented AB/BA comparison then alternated the saved `764b7b05` and
+`e370e3b3` binaries at batch 1024 and 16 threads, using seeds 42, 43, and 44.
+Each process ran one warmup and three measured proofs. The 12 pairs verified
+96 proofs with identical digests and payloads across both revisions and orders.
+Geometric means of the six process-median ratios per target were:
+
+| Security | Total prover ratio | Proof-only ratio | Verifier ratio |
+| --- | ---: | ---: | ---: |
+| 100 | 0.98683 | 0.98357 | 0.99722 |
+| 128 | 0.99452 | 0.99461 | 1.00026 |
+
+Total prover time includes witness generation and commitments. The observed
+decreases are 1.32% and 0.55%; these diagnostic pairs do not satisfy the full
+timing acceptance campaign. The isolated 8.46% slower case was not reproduced
+as an aggregate slowdown in this paired run, but neither that result nor the
+kernel measurements establishes complete parity against the original native
+prover. The stricter matrix and RSS findings above remain recorded. Artifacts:
+`.tmp/falcon-current-profiles-e370e3b35da6` and
+`.tmp/falcon-incremental-pairs-e370e3b35da692d86e814c687e597c3a1d0a6bea`.
+
 ## Existing measurement reports
 
 These reports describe earlier implementations and budgets. They are historical
