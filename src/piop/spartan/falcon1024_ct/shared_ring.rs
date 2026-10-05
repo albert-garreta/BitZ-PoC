@@ -601,34 +601,60 @@ fn grouped_lift(
     column: &[Ext],
 ) -> [i128; LIFT_COEFFICIENTS] {
     let layout = source.layout();
-    let mut sums = vec![[0u64; EXTENSION_DEGREE]; layout.batch()];
-    for (byte, values) in column.chunks_exact(8).enumerate() {
-        if values.iter().all(|&value| value == Ext::ZERO) {
-            continue;
-        }
-        let low = nibble_sums(&values[..4]);
-        let high = nibble_sums(&values[4..]);
-        for (s, sum) in sums.iter_mut().enumerate() {
-            let flat = s * layout.signature_stride() + 8 * byte;
-            let r = flat & ((1 << layout.row_vars()) - 1);
-            let word = source.rows()[flat >> layout.row_vars()][r / 64];
-            let bits = ((word >> (r % 64)) & 255) as usize;
-            if bits != 0 {
-                for a in 0..EXTENSION_DEGREE {
-                    sum[a] += low[bits & 15][a] + high[bits >> 4][a];
+    let rows = |start: usize, end: usize| {
+        let mut sums = vec![[0u64; EXTENSION_DEGREE]; end - start];
+        for (byte, values) in column.chunks_exact(8).enumerate() {
+            if values.iter().all(|&value| value == Ext::ZERO) {
+                continue;
+            }
+            let low = nibble_sums(&values[..4]);
+            let high = nibble_sums(&values[4..]);
+            for (local, sum) in sums.iter_mut().enumerate() {
+                let flat = (start + local) * layout.signature_stride() + 8 * byte;
+                let r = flat & ((1 << layout.row_vars()) - 1);
+                let word = source.rows()[flat >> layout.row_vars()][r / 64];
+                let bits = ((word >> (r % 64)) & 255) as usize;
+                if bits != 0 {
+                    for a in 0..EXTENSION_DEGREE {
+                        sum[a] += low[bits & 15][a] + high[bits >> 4][a];
+                    }
                 }
             }
         }
-    }
-    let mut result = [0i128; LIFT_COEFFICIENTS];
-    for (a, sum) in row.iter().zip(sums) {
-        for i in 0..EXTENSION_DEGREE {
-            for j in 0..EXTENSION_DEGREE {
-                result[i + j] += i128::from(a.0[i]) * i128::from(sum[j]);
+        let mut result = [0i128; LIFT_COEFFICIENTS];
+        for (a, sum) in row[start..end].iter().zip(sums) {
+            for i in 0..EXTENSION_DEGREE {
+                for j in 0..EXTENSION_DEGREE {
+                    result[i + j] += i128::from(a.0[i]) * i128::from(sum[j]);
+                }
             }
         }
+        result
+    };
+    #[cfg(feature = "parallel")]
+    if layout.batch() >= 128 && rayon::current_num_threads() > 1 {
+        // Reuse each byte's lookup tables across a block of signatures. Each
+        // worker has a disjoint source-row range, and exact integer addition
+        // combines their polynomials within the same global coefficient bound.
+        let chunk = layout
+            .batch()
+            .div_ceil(rayon::current_num_threads())
+            .max(64);
+        return (0..layout.batch())
+            .into_par_iter()
+            .step_by(chunk)
+            .map(|start| rows(start, (start + chunk).min(layout.batch())))
+            .reduce(
+                || [0; LIFT_COEFFICIENTS],
+                |mut left, right| {
+                    for (a, b) in left.iter_mut().zip(right) {
+                        *a += b;
+                    }
+                    left
+                },
+            );
     }
-    result
+    rows(0, layout.batch())
 }
 
 fn nibble_sums(values: &[Ext]) -> [[u64; EXTENSION_DEGREE]; 16] {
@@ -1036,6 +1062,38 @@ mod tests {
             power = field.mul(&power, &alpha);
         }
         assert_eq!(projected.target, expected);
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn blocked_integer_lift_matches_serial_with_distinct_rows_and_partial_block() {
+        let batch = 129;
+        let layout = FalconSourceLayout::new_shared_prime(batch).unwrap();
+        let trace = super::super::verification_trace(PK, MSG, SIG).unwrap();
+        let mut traces = vec![trace; batch];
+        for (s, trace) in traces.iter_mut().enumerate() {
+            // Distinct source rows expose accidental reuse of another block's
+            // witness bits. This test checks the lift, not signature validity.
+            trace.public_key.h[0] = ((73 * s + 19) % Q as usize) as u16;
+            trace.public_key.h[N - 1] = ((97 * s + 31) % Q as usize) as u16;
+        }
+        let source =
+            FalconSourceWitness::from_traces(layout, &vec![MSG; batch], &vec![SIG; batch], &traces)
+                .unwrap();
+        let mut row: Vec<_> = (0..layout.capacity()).map(|s| element(s + 17)).collect();
+        row[batch..].fill(Ext::ZERO);
+        let point: Vec<_> = (0..INNER_ROUNDS).map(|i| element(44 + i)).collect();
+        let (column, _) = bit_query(&layout, &row, &point, &operand_weights(element(31))).unwrap();
+        let run = |threads| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .unwrap()
+                .install(|| grouped_lift(&source, &row, &column))
+        };
+        let serial = run(1);
+        assert_eq!(run(4), serial);
+        assert_eq!(run(16), serial);
     }
 
     /// Diagnostic only: compare the column kernels serially, including output

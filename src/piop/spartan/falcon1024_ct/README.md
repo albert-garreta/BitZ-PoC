@@ -1,8 +1,8 @@
 # Falcon-1024 CT proofs
 
-The `falcon-hybrid` feature provides one non-ZK Falcon prover for 1–1024
-signatures, using native-ring arithmetic, binary Keccak, and one shared opening
-of three source commitments. It proves SHAKE256, HashToPoint rejection and
+The `falcon-hybrid` feature provides non-ZK Falcon proofs for 1–1024
+signatures, using binary Keccak and one shared opening of three source
+commitments. It proves SHAKE256, HashToPoint rejection and
 ordered compaction, the Falcon ring equation, and each signature's norm bound.
 Native witness generation does not substitute for proof constraints.
 
@@ -34,13 +34,54 @@ witness so large buffers can be folded without cloning. Proofs currently have
 an in-memory Rust API, without a Falcon wire codec. `payload_size_bytes()`
 counts stored proof payload, excluding public statements and transport framing.
 
+`PreparedFalconHybrid::new_shared_prime(batch, target_bits)` selects the
+experimental shared-prime protocol. `new` retains the native-coordinate-carry
+protocol. Each prepared verifier accepts only its own protocol and layout.
+
 `FalconSourceLayout::new` rounds the live batch up to a power-of-two capacity.
-There is one arithmetic layout and one compact binder. See
+Both profiles use the optimized integer relations and compact binder. See
 [NATIVE_RING.md](NATIVE_RING.md) for the native ideal proof and coordinate carry
 bounds, and [COMPACTION_SOUNDNESS.md](COMPACTION_SOUNDNESS.md) for the ordered
 compaction argument.
 
+## Shared-prime reduction
+
+The opt-in path in [shared_ring.rs](shared_ring.rs) implements this schedule:
+
+1. Commit the source bits, including public-key coefficients and the existing
+   encoded signature bits used by `S2`. Work in
+   `E = F_12289[theta]/(theta^11 + theta + 14)`.
+2. Read the degree-1022 quotient encoding the ideal polynomial
+   `e(Y) = (Y^1024 + 1)D(Y)`, then sample its evaluation point. Run the cubic
+   signature sumcheck with all four operands `C,H,S2,S1` committed.
+3. Batch the fixed operand endpoints and run the degree-two coefficient
+   sumcheck. Expand the actual affine decoders to a tensor query on those bits.
+4. Fix the 21 coefficients of the exact integer polynomial `P(T)`. Check their
+   bounds and projection to `E`, then sample one 126-bit prime and the fresh
+   projection point. Require `p > max(2 H_P, H_src)`, with
+   `H_src = 43,013,625,445` over every decoder-allowed assignment.
+5. Run the existing specialized norm, rejection, and compaction proofs using
+   that prime. Combine their bit-linear claims with the projected ring query
+   in [the streaming binder](opening_joined.rs), then run one bit-query
+   sumcheck.
+6. Continue through the existing two-limb binary bridge and shared PCS opening.
+   This implementation keeps 8192 bridge rows and radix `2^113`; it does not
+   instantiate the document's unsplit-bridge example.
+
+The source profile appends 14,336 public-key bits and 1024 public-binding rows;
+the live counts become 114,914 bits and 5482 linear rows per signature. Padded
+strides remain 131,072 bits and 8192 rows. `S2` uses the original signature
+slots, and both branches authenticate the same committed source bits.
+
+The shared arithmetic proof stores only transmitted values. Verification
+derives challenge points and reconstructs checked compaction endpoints before
+passing them to the binder. Proof payload accounting uses this compact form.
+The full-prover performance gate remains open: the initial x86 campaign found
+regressions, and the new route is not the default.
+
 ## Committed sources and constraints
+
+The following counts describe the default native profile.
 
 | Arithmetic source per signature | Bits |
 | --- | ---: |
@@ -100,8 +141,10 @@ it does not reconstruct historical schedules. See
 validation obligations. Both targets and every batch from 1 through 1024 are
 covered by the complete-ledger tests.
 
-The statement domains are `native-ring/non-zk/v4` and
-`native-ring/statement/v4`. Earlier proofs must be regenerated. Current
+The native statement domains are `native-ring/non-zk/v4` and
+`native-ring/statement/v4`; the shared-prime profile uses
+`shared-prime/non-zk/v1` and `shared-prime/statement/v1`. Earlier proofs must be
+regenerated. Current
 subprotocol domain separators retain their own versions: those labels separate
 live proof phases and do not enable old backends or old-proof parsing.
 The bridge retains `bitz/falcon-hybrid/wfbitz-joint-limbs/v1` as a transcript
@@ -144,11 +187,39 @@ The script selects native CPU instructions in an isolated target directory;
 ordinary Cargo builds remain portable. `BITZ_FALCON_STAGE_TIMINGS=1` enables
 diagnostic spans. Nested timings overlap and must not be added together.
 
+The `falcon_hybrid` benchmark accepts `--protocol native|shared-prime`.
+[`run_falcon_campaign.py`](../../../../scripts/run_falcon_campaign.py) records
+the complete x86 diagnostic matrix at an exact clean revision, and
+[`compare_falcon_benchmarks.py`](../../../../scripts/compare_falcon_benchmarks.py)
+checks provenance, matched security settings, timing, proof size, and fresh
+process peak memory. A diagnostic matrix alone does not establish parity;
+the timing acceptance gate requires multiple seeds and paired process runs.
+
+At `dde14649`, will (Ryzen 9 9950X3D, Rust 1.98.1, release,
+`-C target-cpu=native`) passed 107 Falcon tests and verified all 112 proofs in
+the 16-case diagnostic matrix. Every proof digest matched the pre-optimization
+shared-prime revision `344a1656`. Against native baseline `4491309f`, seed-42
+medians after one warmup and five measured proofs were:
+
+| Security / batch / threads | Native prover ms | Shared prover ms | Native verifier ms | Shared verifier ms |
+| --- | ---: | ---: | ---: | ---: |
+| 100 / 1 / 1 | 33.85 | 37.35 | 14.92 | 17.17 |
+| 100 / 1024 / 16 | 790.60 | 831.44 | 71.79 | 62.35 |
+| 128 / 1 / 1 | 170.99 | 188.92 | 15.21 | 17.70 |
+| 128 / 1024 / 16 | 894.12 | 1102.93 | 75.54 | 71.57 |
+
+These runs do not establish timing parity. The strict gate also reports peak
+memory increases in several cases and a 1084-byte payload increase for the
+100-bit, batch-one proof (207,104 to 208,188 bytes). Payloads decreased for the
+other tested security/batch combinations. Full raw campaign manifests and
+stage logs are retained under `.tmp/falcon-shared-candidate-dde146490503ee593407cd7ce4c28be867744ca7`
+and `.tmp/falcon-shared-profiles-dde146490503` on will and in the implementation
+worktree.
+
 ## Existing measurement reports
 
-These reports describe the v3 implementation before backend retirement and the
-current explicit budget. They are historical measurements, not results of this
-cleanup; no runtime tests or benchmarks were executed for this change.
+These reports describe earlier implementations and budgets. They are historical
+measurements, not results for the shared-prime backend.
 
 Current v3 kernel performance and validation are in
 [SIMD_THROUGHPUT.md](SIMD_THROUGHPUT.md). Earlier kernel work is measured in
