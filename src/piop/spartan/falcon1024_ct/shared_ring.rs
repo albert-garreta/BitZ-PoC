@@ -135,12 +135,15 @@ pub(super) fn prove(
     absorb_lift(transcript, &lift);
     let field = sample_shared_field(transcript, layout)?;
     transcript.absorb_slice(b"ring-prime-projection");
-    let projection_nonce = grind_and_absorb(
-        transcript,
-        GrindingRound::<ProjectionGrinding>::new(0),
-        projection_grinding_bits(target_bits),
-    )
-    .map_err(|e| error(e.to_string()))?;
+    let projection_nonce = {
+        let _span = tracing::info_span!("falcon_shared_ring:projection_grinding").entered();
+        grind_and_absorb(
+            transcript,
+            GrindingRound::<ProjectionGrinding>::new(0),
+            projection_grinding_bits(target_bits),
+        )
+        .map_err(|e| error(e.to_string()))?
+    };
     let alpha = squeeze_field(transcript, &field).map_err(|e| error(e.to_string()))?;
     let projected = project(&row, &column, &lift, alpha, &field);
     Ok((
@@ -208,13 +211,16 @@ pub(super) fn verify(
     absorb_lift(transcript, &proof.lift);
     let field = sample_shared_field(transcript, layout)?;
     transcript.absorb_slice(b"ring-prime-projection");
-    verify_and_absorb(
-        transcript,
-        GrindingRound::<ProjectionGrinding>::new(0),
-        projection_grinding_bits(target_bits),
-        proof.projection_nonce,
-    )
-    .map_err(|e| error(e.to_string()))?;
+    {
+        let _span = tracing::info_span!("falcon_shared_ring:verify_projection_grinding").entered();
+        verify_and_absorb(
+            transcript,
+            GrindingRound::<ProjectionGrinding>::new(0),
+            projection_grinding_bits(target_bits),
+            proof.projection_nonce,
+        )
+        .map_err(|e| error(e.to_string()))?;
+    }
     let alpha = squeeze_field(transcript, &field).map_err(|e| error(e.to_string()))?;
     Ok((
         field.clone(),
@@ -297,6 +303,7 @@ fn dot_ext(a: &[Ext], b: &[Ext]) -> Ext {
         .fold(Ext::ZERO, |sum, (&a, &b)| sum.add(a.mul(b)))
 }
 
+#[tracing::instrument(skip_all, name = "falcon_shared_ring:beta_powers")]
 fn powers(beta: Ext) -> Vec<Ext> {
     let mut powers = vec![Ext::ONE; N];
     for j in 1..N {
@@ -323,6 +330,7 @@ fn coefficients(trace: &FalconVerificationTrace, j: usize) -> [u16; 4] {
     ]
 }
 
+#[tracing::instrument(skip_all, name = "falcon_shared_ring:operand_evaluations")]
 fn evaluation_tables(
     layout: &FalconSourceLayout,
     traces: &[FalconVerificationTrace],
@@ -352,6 +360,7 @@ fn evaluation_tables(
     })
 }
 
+#[tracing::instrument(skip_all, name = "falcon_shared_ring:collapse_positions")]
 fn collapse_positions(
     traces: &[FalconVerificationTrace],
     row: &[Ext],
@@ -434,6 +443,7 @@ fn round_challenge<const K: usize>(
     Ok((point, eval_ext(polynomial, point)))
 }
 
+#[tracing::instrument(skip_all, name = "falcon_shared_ring:outer_sumcheck")]
 fn prove_outer(
     transcript: &mut impl Transcript,
     mut weights: Vec<Ext>,
@@ -466,6 +476,7 @@ fn prove_outer(
     Ok((proof, point, evaluations))
 }
 
+#[tracing::instrument(skip_all, name = "falcon_shared_ring:inner_sumcheck")]
 fn prove_inner(
     transcript: &mut impl Transcript,
     mut left: Vec<Ext>,
@@ -490,6 +501,7 @@ fn prove_inner(
     Ok((proof, point, right[0]))
 }
 
+#[tracing::instrument(skip_all, name = "falcon_shared_ring:verify_sumcheck", fields(degree = K - 1))]
 fn verify_sumcheck<const K: usize>(
     transcript: &mut impl Transcript,
     label: &[u8],
@@ -544,6 +556,7 @@ fn check_inner_terminal(claim: Ext, beta: Ext, u: &[Ext], witness: Ext) -> Resul
     Ok(())
 }
 
+#[tracing::instrument(skip_all, name = "falcon_shared_ring:bit_query")]
 fn bit_query(
     layout: &FalconSourceLayout,
     row: &[Ext],
@@ -581,6 +594,7 @@ fn bit_query(
 
 /// Group eight canonical coordinate vectors by their witness byte before
 /// multiplying by the row lift. This avoids a degree-20 convolution per bit.
+#[tracing::instrument(skip_all, name = "falcon_shared_ring:integer_lift")]
 fn grouped_lift(
     source: &FalconSourceWitness,
     row: &[Ext],
@@ -633,6 +647,7 @@ fn lift_bound(layout: &FalconSourceLayout) -> u128 {
     EXTENSION_DEGREE as u128 * layout.source_bits() as u128 * (Q as u128 - 1).pow(2)
 }
 
+#[tracing::instrument(skip_all, name = "falcon_shared_ring:lift_read_off")]
 fn check_lift(
     layout: &FalconSourceLayout,
     lift: &[i128; LIFT_COEFFICIENTS],
@@ -663,6 +678,7 @@ fn absorb_lift(transcript: &mut impl Transcript, lift: &[i128; LIFT_COEFFICIENTS
     }
 }
 
+#[tracing::instrument(skip_all, name = "falcon_shared_ring:sample_prime")]
 fn sample_shared_field(
     transcript: &mut impl Transcript,
     layout: &FalconSourceLayout,
@@ -678,6 +694,7 @@ fn sample_shared_field(
     Ok(field)
 }
 
+#[tracing::instrument(skip_all, name = "falcon_shared_ring:project")]
 fn project(
     row: &[Ext],
     column: &[Ext],
@@ -1028,5 +1045,185 @@ mod tests {
             power = field.mul(&power, &alpha);
         }
         assert_eq!(projected.target, expected);
+    }
+
+    /// Diagnostic only: compare the column kernels serially, including output
+    /// allocation and excluding their small, precomputed public tables.
+    #[test]
+    #[ignore = "projection kernel timings; run release on the benchmark host"]
+    fn shared_ring_projection_kernel_benchmark() {
+        #[cfg(feature = "parallel")]
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap()
+            .install(projection_kernel_benchmark);
+        #[cfg(not(feature = "parallel"))]
+        projection_kernel_benchmark();
+    }
+
+    fn projection_kernel_benchmark() {
+        use field::{FpLinearAcc, Reduce, Uint};
+        use std::{hint::black_box, time::Instant};
+
+        const LOW: usize = 256;
+        const HIGH: usize = (Q as usize - 1) / LOW + 1;
+        const WINDOW: usize = LOW + HIGH;
+        const ITERATIONS: usize = 20;
+
+        fn window<const SKIP_ZERO: bool, const DELAYED: bool>(
+            column: &[Ext],
+            tables: &[F],
+            field: &Cfg,
+        ) -> Vec<F> {
+            column
+                .iter()
+                .map(|value| {
+                    if SKIP_ZERO && *value == Ext::ZERO {
+                        return field.zero();
+                    }
+                    if DELAYED {
+                        // Exactly 22 field-by-integer-one terms retain scale R.
+                        // The typed reduction takes a remainder, not an R^-1 REDC.
+                        let mut sum = FpLinearAcc::<2, 1>::default();
+                        let one = Uint::from_words([1]);
+                        for (&coordinate, table) in value.0.iter().zip(tables.chunks_exact(WINDOW))
+                        {
+                            sum.accumulate(&table[usize::from(coordinate) & 255], &one);
+                            sum.accumulate(&table[LOW + (usize::from(coordinate) >> 8)], &one);
+                        }
+                        field.reduce(sum)
+                    } else {
+                        value.0.iter().zip(tables.chunks_exact(WINDOW)).fold(
+                            field.zero(),
+                            |sum, (&coordinate, table)| {
+                                field.add(
+                                    &sum,
+                                    &field.add(
+                                        &table[usize::from(coordinate) & 255],
+                                        &table[LOW + (usize::from(coordinate) >> 8)],
+                                    ),
+                                )
+                            },
+                        )
+                    }
+                })
+                .collect()
+        }
+
+        fn coordinates(column: &[Ext], powers: &[F], field: &Cfg) -> Vec<F> {
+            column
+                .iter()
+                .map(|value| {
+                    if *value == Ext::ZERO {
+                        return field.zero();
+                    }
+                    // Eleven field-by-u14 terms are within the accumulator's
+                    // fewer-than-2^64-term capacity and retain scale R.
+                    let mut sum = FpLinearAcc::<2, 1>::default();
+                    for (&coordinate, power) in value.0.iter().zip(powers) {
+                        sum.accumulate(power, &Uint::from_words([u64::from(coordinate)]));
+                    }
+                    field.reduce(sum)
+                })
+                .collect()
+        }
+
+        fn measure(mut kernel: impl FnMut() -> Vec<F>) -> f64 {
+            let start = Instant::now();
+            for _ in 0..ITERATIONS {
+                black_box(kernel());
+            }
+            start.elapsed().as_secs_f64() * 1000.0 / ITERATIONS as f64
+        }
+
+        let layout = FalconSourceLayout::new_shared_prime(32).unwrap();
+        let mut transcript = Blake3Transcript::new();
+        transcript.absorb_slice(b"shared-ring-projection-kernel-benchmark/v1");
+        let signature_point = sample_point(&mut transcript, b"signature-point", 5).unwrap();
+        let row = equality_weights(&signature_point);
+        let position_point =
+            sample_point(&mut transcript, b"position-point", INNER_ROUNDS).unwrap();
+        let omega = operand_weights(challenge(&mut transcript, b"operand-batching").unwrap());
+        let (column, _) = bit_query(&layout, &row, &position_point, &omega).unwrap();
+        let field = sample_shared_field(&mut transcript, &layout).unwrap();
+        let alpha = squeeze_field(&mut transcript, &field).unwrap();
+        let mut powers = vec![field.one(); EXTENSION_DEGREE];
+        for i in 1..EXTENSION_DEGREE {
+            powers[i] = field.mul(&powers[i - 1], &alpha);
+        }
+        let mut tables = vec![field.zero(); EXTENSION_DEGREE * WINDOW];
+        for (table, power) in tables.chunks_exact_mut(WINDOW).zip(&powers) {
+            for i in 1..LOW {
+                table[i] = field.add(&table[i - 1], power);
+            }
+            let step = field.add(&table[LOW - 1], power);
+            for i in 1..HIGH {
+                table[LOW + i] = field.add(&table[LOW + i - 1], &step);
+            }
+        }
+
+        let expected = project(&row, &column, &[0; LIFT_COEFFICIENTS], alpha, &field).column;
+        for (index, value) in column.iter().enumerate() {
+            let horner = value.0.iter().rev().fold(field.zero(), |sum, &v| {
+                field.add(
+                    &field.mul(&sum, &alpha),
+                    &F::from_with_cfg(u128::from(v), &field),
+                )
+            });
+            assert_eq!(expected[index], horner, "production projection at {index}");
+        }
+        for (name, actual) in [
+            (
+                "current_window",
+                window::<false, false>(&column, &tables, &field),
+            ),
+            (
+                "zero_skip_window",
+                window::<true, false>(&column, &tables, &field),
+            ),
+            (
+                "zero_skip_lookup_acc",
+                window::<true, true>(&column, &tables, &field),
+            ),
+            (
+                "zero_skip_coordinate_acc",
+                coordinates(&column, &powers, &field),
+            ),
+        ] {
+            for (index, (a, b)) in actual.iter().zip(&expected).enumerate() {
+                assert_eq!(a, b, "{name} at {index}");
+            }
+        }
+
+        let current = measure(|| {
+            window::<false, false>(black_box(&column), black_box(&tables), black_box(&field))
+        });
+        let skipped = measure(|| {
+            window::<true, false>(black_box(&column), black_box(&tables), black_box(&field))
+        });
+        let lookup_acc = measure(|| {
+            window::<true, true>(black_box(&column), black_box(&tables), black_box(&field))
+        });
+        let coordinate_acc =
+            measure(|| coordinates(black_box(&column), black_box(&powers), black_box(&field)));
+        eprintln!(
+            "shared_ring_projection_kernel_benchmark arch={} columns={} active={} iterations={} threads=1",
+            std::env::consts::ARCH,
+            column.len(),
+            column.iter().filter(|&&value| value != Ext::ZERO).count(),
+            ITERATIONS,
+        );
+        for (name, elapsed) in [
+            ("current_window", current),
+            ("zero_skip_window", skipped),
+            ("zero_skip_lookup_acc", lookup_acc),
+            ("zero_skip_coordinate_acc", coordinate_acc),
+        ] {
+            eprintln!(
+                "{name}: mean_ms={elapsed:.6} ratio_to_current={:.6}",
+                elapsed / current
+            );
+        }
     }
 }
