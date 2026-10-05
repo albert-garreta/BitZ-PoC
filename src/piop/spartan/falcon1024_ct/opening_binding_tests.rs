@@ -492,7 +492,12 @@ fn shared_prime_streaming_overlay_matches_independent_bit_oracle() {
     let statement = statement_with_key_groups(&[0, 1, 2]);
     let proof = full_terminal_fixture(&layout, &field);
     let linear_point = point(linear_rounds(&layout), &field);
-    for scale in [field.zero(), field.one(), unsigned(29, &field)] {
+    for scale in [
+        field.zero(),
+        field.one(),
+        field.neg(&field.one()),
+        unsigned(29, &field),
+    ] {
         let mut transcript = Blake3Transcript::new();
         let integer = prepare_binding_form_optional(
             &mut transcript,

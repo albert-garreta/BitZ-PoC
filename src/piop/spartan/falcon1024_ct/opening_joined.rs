@@ -217,11 +217,24 @@ impl StreamingCoefficientSource for JoinedBinding<'_> {
             let field = self.integer.field;
             let base = s * column.len();
             let mut next = base;
+            // Both coefficients are public. At most two products enter each
+            // accumulator; the shared 126-bit modulus permits one REDC.
+            let reduce = field.prepare_product_reduction(2);
             let mut output = |index: usize, integer: F| -> Result<(), SumcheckError> {
-                let value = field.add(
-                    &field.mul(&ring.row[s], &column[index - base]),
-                    &field.mul(&self.integer_scale, &integer),
-                );
+                let ring_column = column[index - base];
+                let value = if ring_column == field.zero() {
+                    if integer == field.zero() {
+                        return Ok(());
+                    }
+                    field.mul(&self.integer_scale, &integer)
+                } else if integer == field.zero() {
+                    field.mul(&ring.row[s], &ring_column)
+                } else {
+                    let mut sum = field::FpProductAcc::<2>::default();
+                    sum.accumulate(&ring.row[s], &ring_column);
+                    sum.accumulate(&self.integer_scale, &integer);
+                    reduce.reduce(sum)
+                };
                 if value != field.zero() {
                     emit(index, value)?;
                 }

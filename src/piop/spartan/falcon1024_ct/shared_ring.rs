@@ -5,7 +5,7 @@
 //! e(Y)=(Y^1024+1)D(Y) has the required degree and ideal membership by construction.
 //! The later 21-coefficient polynomial is an unreduced integer lift, not D.
 
-use field::RingOps;
+use field::{FpLinearAcc, Reduce, RingOps, Uint};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
@@ -702,36 +702,22 @@ fn project(
     alpha: F,
     field: &Cfg,
 ) -> ProjectedClaim {
-    // Fourteen-bit coordinate window tables amortize projection over all columns.
-    const LOW: usize = 256;
-    const HIGH: usize = (Q as usize - 1) / LOW + 1;
-    const WINDOW: usize = LOW + HIGH;
-    let mut tables = vec![field.zero(); EXTENSION_DEGREE * WINDOW];
-    let mut power = field.one();
-    for table in tables.chunks_exact_mut(WINDOW) {
-        for i in 1..LOW {
-            table[i] = field.add(&table[i - 1], &power);
-        }
-        let step = field.add(&table[LOW - 1], &power);
-        for i in 1..HIGH {
-            table[LOW + i] = field.add(&table[LOW + i - 1], &step);
-        }
-        power = field.mul(&power, &alpha);
+    let mut powers = [field.one(); EXTENSION_DEGREE];
+    for i in 1..EXTENSION_DEGREE {
+        powers[i] = field.mul(&powers[i - 1], &alpha);
     }
     let evaluate = |value: &Ext| {
-        value
-            .0
-            .iter()
-            .zip(tables.chunks_exact(WINDOW))
-            .fold(field.zero(), |sum, (&c, table)| {
-                field.add(
-                    &sum,
-                    &field.add(
-                        &table[usize::from(c) & 255],
-                        &table[LOW + (usize::from(c) >> 8)],
-                    ),
-                )
-            })
+        if *value == Ext::ZERO {
+            return field.zero();
+        }
+        // Public canonical coordinates are integers below q. Eleven field ×
+        // u14 terms fit the accumulator and retain Montgomery scale R; reduce
+        // once with the linear accumulator's remainder operation (not REDC).
+        let mut sum = FpLinearAcc::<2, 1>::default();
+        for (&coordinate, power) in value.0.iter().zip(&powers) {
+            sum.accumulate(power, &Uint::from_words([u64::from(coordinate)]));
+        }
+        field.reduce(sum)
     };
     #[cfg(feature = "parallel")]
     let column = column.par_iter().map(evaluate).collect();
@@ -1007,11 +993,16 @@ mod tests {
     }
 
     #[test]
-    fn coordinate_window_projection_matches_integer_horner() {
+    fn coordinate_projection_matches_integer_horner() {
         let field = field::FpCtx::from_prime_u128((1 << 127) - 1);
         let alpha = F::from_with_cfg(912345678u128, &field);
-        let row = [element(1), element(2)];
-        let column = [element(3), element(4), element(5)];
+        let row = [element(1), element(2), Ext::ZERO];
+        let column = [
+            element(3),
+            element(4),
+            Ext::ZERO,
+            Ext([(Q - 1) as u16; EXTENSION_DEGREE]),
+        ];
         let lift = std::array::from_fn(|i| {
             if i % 2 == 0 {
                 (i as i128 + 1) * 91
