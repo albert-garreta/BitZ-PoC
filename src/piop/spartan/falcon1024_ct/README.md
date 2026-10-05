@@ -195,25 +195,25 @@ checks provenance, matched security settings, timing, proof size, and fresh
 process peak memory. A diagnostic matrix alone does not establish parity;
 the timing acceptance gate requires multiple seeds and paired process runs.
 
-At `dde14649`, will (Ryzen 9 9950X3D, Rust 1.98.1, release,
-`-C target-cpu=native`) passed 107 Falcon tests and verified all 112 proofs in
+At `1d62b520`, will (Ryzen 9 9950X3D, Rust 1.98.1, release,
+`-C target-cpu=native`) passed 108 Falcon tests and verified all 112 proofs in
 the 16-case diagnostic matrix. Every proof digest matched the pre-optimization
 shared-prime revision `344a1656`. Against native baseline `4491309f`, seed-42
 medians after one warmup and five measured proofs were:
 
 | Security / batch / threads | Native prover ms | Shared prover ms | Native verifier ms | Shared verifier ms |
 | --- | ---: | ---: | ---: | ---: |
-| 100 / 1 / 1 | 33.85 | 37.35 | 14.92 | 17.17 |
-| 100 / 1024 / 16 | 790.60 | 831.44 | 71.79 | 62.35 |
-| 128 / 1 / 1 | 170.99 | 188.92 | 15.21 | 17.70 |
-| 128 / 1024 / 16 | 894.12 | 1102.93 | 75.54 | 71.57 |
+| 100 / 1 / 1 | 33.85 | 36.55 | 14.92 | 16.86 |
+| 100 / 1024 / 16 | 790.60 | 808.69 | 71.79 | 62.20 |
+| 128 / 1 / 1 | 170.99 | 187.02 | 15.21 | 17.96 |
+| 128 / 1024 / 16 | 894.12 | 1010.13 | 75.54 | 65.47 |
 
 These runs do not establish timing parity. The strict gate also reports peak
 memory increases in several cases and a 1084-byte payload increase for the
 100-bit, batch-one proof (207,104 to 208,188 bytes). Payloads decreased for the
 other tested security/batch combinations. Full raw campaign manifests and
-stage logs are retained under `.tmp/falcon-shared-candidate-dde146490503ee593407cd7ce4c28be867744ca7`
-and `.tmp/falcon-shared-profiles-dde146490503` on will and in the implementation
+stage logs are retained under `.tmp/falcon-shared-candidate-1d62b520c22f9f57db3afb52a5b311ea7205a3cd`
+and `.tmp/falcon-shared-profiles-1d62b520c22f` on will and in the implementation
 worktree.
 
 ## Existing measurement reports
