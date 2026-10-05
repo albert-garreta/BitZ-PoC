@@ -1,0 +1,29 @@
+{
+  "label": "baseline",
+  "command": [
+    "/Users/johnwu/code/zk/f2z-pcs/results/falcon-mac-449-vs-shared-20261005T225234Z/falcon_hybrid_baseline_4491309f5d1e",
+    "--security",
+    "128",
+    "--batch",
+    "1024",
+    "--threads",
+    "8",
+    "--seed",
+    "42",
+    "--warmup",
+    "1",
+    "--iterations",
+    "5"
+  ],
+  "started": 1791242444.437887,
+  "binary_sha256": "0c000a1a0f0bb3fe38e3eea8892b7d84a62961422c2e6bd08450a5390c18da02",
+  "revision": "4491309f5d1e45d506410803e3b9ba488047991f",
+  "runtime_revision": "4491309f5d1e45d506410803e3b9ba488047991f",
+  "environment_overrides": {
+    "BITZ_FALCON_STAGE_TIMINGS": "1",
+    "RUSTFLAGS": "-C target-cpu=native",
+    "CARGO_TARGET_DIR": "/private/tmp/falcon-mac-compare-build-20261005T225234Z"
+  },
+  "exit": 0,
+  "elapsed_seconds": 36.800354583072476
+}

@@ -1,0 +1,21 @@
+Mac Falcon comparison archive
+
+REPORT.txt summarizes 44 benchmark processes and 264 verified proofs.
+profiles/REPORT.txt summarizes two additional instrumented processes and
+12 verified proofs. These are diagnostic measurements, not a passed
+no-regression gate. See each report for measurement scope and limitations.
+
+The manifest records baseline 4491309f5d1e45d506410803e3b9ba488047991f
+and candidate df96f014de291df4046464afeb6d8f09a9888a2c, whose runtime code
+is e370e3b35da692d86e814c687e597c3a1d0a6bea. Raw records, stage traces,
+build logs, analysis scripts, and derived summaries are retained unchanged.
+The rejected Cargo-cache build is preserved as provenance and was never
+used for measurements.
+
+Compiled executables and Python bytecode are excluded from Git. The two
+executable SHA-256 values and original local paths are in manifest.json.
+The scripts require those original binaries for strict revalidation; this
+archive alone does not provide a binary-free summary-validation mode.
+A fresh benchmark requires builds of the recorded revisions, separate Cargo
+target directories, the recorded flags, and updated local execution paths.
+Existing raw results must be preserved when preparing a fresh campaign.

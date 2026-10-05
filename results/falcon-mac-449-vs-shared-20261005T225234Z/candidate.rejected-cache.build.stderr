@@ -1,0 +1,1129 @@
+warning: unused import: `crate::gf128::kernels::clmul_128x128`
+ --> vendor/field/src/binary/b127_sumcheck.rs:4:5
+  |
+4 | use crate::gf128::kernels::clmul_128x128;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `clmul_128x128` and `reduce_256_to_128`
+ --> vendor/field/src/gf128/sumcheck.rs:2:22
+  |
+2 | use super::kernels::{clmul_128x128, reduce_256_to_128};
+  |                      ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
+
+warning: function `square_words` is never used
+   --> vendor/field/src/binary/b127_aarch64.rs:217:15
+    |
+217 | pub(crate) fn square_words(a: &[u64; 2]) -> [u64; 2] {
+    |               ^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `reduce_256_to_127` is never used
+ --> vendor/field/src/binary/b127_sumcheck.rs:6:4
+  |
+6 | fn reduce_256_to_127(p: [u64; 4]) -> [u64; 2] {
+  |    ^^^^^^^^^^^^^^^^^
+
+warning: function `reduce_wide` is never used
+ --> vendor/field/src/binary/b127_sumcheck.rs:9:4
+  |
+9 | fn reduce_wide(p: [u64; 4]) -> B127 {
+  |    ^^^^^^^^^^^
+
+warning: function `reduce_wide` is never used
+  --> vendor/field/src/gf128/sumcheck.rs:32:4
+   |
+32 | fn reduce_wide(words: [u64; 4]) -> Gf128 {
+   |    ^^^^^^^^^^^
+
+warning: function `fixed_mul_words` is never used
+   --> vendor/field/src/gf128/kernels/sumcheck_aarch64.rs:300:15
+    |
+300 | pub(crate) fn fixed_mul_words(rl: &[u64; 2], rh: &[u64; 2], a: &Gf128) -> Gf128 {
+    |               ^^^^^^^^^^^^^^^
+
+warning: `field` (lib) generated 7 warnings (run `cargo fix --lib -p field` to apply 2 suggestions)
+warning: unused import: `Zero`
+ --> crates/circuit/src/witgen.rs:3:23
+  |
+3 | use num_traits::{One, Zero};
+  |                       ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `One`
+ --> crates/circuit/src/witgen.rs:3:18
+  |
+3 | use num_traits::{One, Zero};
+  |                  ^^^
+
+warning: method `sum_terms` is never used
+   --> crates/circuit/src/linear_map/builder.rs:203:19
+    |
+ 59 | impl<S: CoefficientStore> WengertBuilder<S> {
+    | ------------------------------------------- method in this implementation
+...
+203 |     pub(super) fn sum_terms(&mut self, terms: Vec<(NodeId, u32)>) -> NodeId {
+    |                   ^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `adjoint_map_segments` is never used
+   --> crates/circuit/src/linear_map/evaluate.rs:318:19
+    |
+210 | impl<'a, F: RingOps + Sync> PreparedWengert<'a, F> {
+    | -------------------------------------------------- method in this implementation
+...
+318 |     pub(super) fn adjoint_map_segments(
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `integer_from_bits` is never used
+  --> crates/circuit/src/witgen.rs:14:15
+   |
+14 | pub(crate) fn integer_from_bits<const L: usize>(bits: &[bool]) -> Z<L> {
+   |               ^^^^^^^^^^^^^^^^^
+
+warning: `circuit` (lib) generated 5 warnings
+warning: unused import: `self`
+  --> src/piop/spartan/u32_mul_relation.rs:36:9
+   |
+36 |         self, BindingHasher, BlockTable, Domains, FieldConfig, Kernel, MatrixSource, PiopWitness,
+   |         ^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `cfg_chunks`
+  --> src/piop/spartan/falcon1024_ct/hybrid_sumcheck.rs:24:20
+   |
+24 | use crate::utils::{cfg_chunks, cfg_chunks_mut};
+   |                    ^^^^^^^^^^
+
+warning: unused import: `crate::sumcheck::boundary::*`
+ --> src/piop/spartan/sumcheck.rs:3:16
+  |
+3 | pub(crate) use crate::sumcheck::boundary::*;
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `ConstZero`
+  --> src/poly/univariate/dense.rs:21:76
+   |
+21 | use num_traits::{CheckedAdd, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One, Zero};
+   |                                                                            ^^^^^^^^^
+
+warning: unused import: `ConstOne`
+  --> src/poly/univariate/dense.rs:21:66
+   |
+21 | use num_traits::{CheckedAdd, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One, Zero};
+   |                                                                  ^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/baby_bear_bitz.rs:23:5
+   |
+23 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `Zero`
+  --> src/bitz/virt.rs:27:23
+   |
+27 | use num_traits::{One, Zero};
+   |                       ^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/baby_bear_bitz.rs:22:5
+   |
+22 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/baby_bear_mul.rs:21:5
+   |
+21 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::sumcheck::bridge::PreparedBinding`
+  --> src/piop/spartan/baby_bear_mul.rs:22:5
+   |
+22 | use crate::sumcheck::bridge::PreparedBinding;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RingOps`
+  --> src/piop/spartan/u32_mul_relation.rs:25:13
+   |
+25 | use field::{RingOps, Uint};
+   |             ^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/cm.rs:35:5
+   |
+35 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `One`
+  --> src/bitz/virt.rs:27:18
+   |
+27 | use num_traits::{One, Zero};
+   |                  ^^^
+
+warning: unused import: `MergeAccumulator`
+  --> src/sumcheck/outer/univariate_api.rs:15:26
+   |
+15 | use field::{BatchMulAcc, MergeAccumulator, Reduce};
+   |                          ^^^^^^^^^^^^^^^^
+
+warning: unused import: `ConstZero`
+  --> src/poly/univariate/binary_ref.rs:18:54
+   |
+18 | use num_traits::{CheckedAdd, CheckedMul, CheckedSub, ConstZero, One, Zero};
+   |                                                      ^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/grinding.rs:20:5
+   |
+20 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/multiswap/proof.rs:39:5
+   |
+39 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/multiswap/proof.rs:36:5
+   |
+36 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `MergeAccumulator`
+ --> src/sumcheck/outer/api.rs:8:26
+  |
+8 | use field::{BatchMulAcc, MergeAccumulator, Reduce};
+  |                          ^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/profile.rs:57:5
+   |
+57 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/protocol/bitify.rs:13:5
+   |
+13 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RingOps`
+  --> src/piop/spartan/protocol/mod.rs:24:13
+   |
+24 | use field::{RingOps, Uint};
+   |             ^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/protocol/mod.rs:23:5
+   |
+23 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/sha256/chain.rs:23:5
+   |
+23 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+ --> src/piop/spartan/sha256/constraints.rs:9:5
+  |
+9 | use field::RingOps;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `SpartanField`
+  --> src/piop/spartan/sha256/constraints.rs:32:5
+   |
+32 |     SpartanField, SpartanMatrixError,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+ --> src/piop/spartan/sha256/constraints.rs:7:5
+  |
+7 | use crate::piop::spartan::SpartanField as _;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+ --> src/piop/spartan/sha256/prime.rs:7:5
+  |
+7 | use crate::piop::spartan::SpartanField as _;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/sha256/proof.rs:20:5
+   |
+20 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/u128_bitz.rs:15:5
+   |
+15 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/u128_mul.rs:16:5
+   |
+16 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/u64_bitz.rs:19:5
+   |
+19 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/u64_mul.rs:16:5
+   |
+16 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/mod.rs:10:5
+   |
+10 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `num_traits::ConstOne`
+   --> src/piop/spartan/mod.rs:144:5
+    |
+144 | use num_traits::ConstOne;
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning[E0133]: call to function `std::arch::aarch64::vreinterpretq_u32_u16` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:166:9
+    |
+166 |         vreinterpretq_u32_u16(vrev32q_u16(vreinterpretq_u16_u32(x)))
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:165:5
+    |
+165 |     unsafe fn rotr16(x: uint32x4_t) -> uint32x4_t {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+    = note: `#[warn(unsafe_op_in_unsafe_fn)]` (part of `#[warn(rust_2024_compatibility)]`) on by default
+
+warning[E0133]: call to function `std::arch::aarch64::vrev32q_u16` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:166:31
+    |
+166 |         vreinterpretq_u32_u16(vrev32q_u16(vreinterpretq_u16_u32(x)))
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vreinterpretq_u16_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:166:43
+    |
+166 |         vreinterpretq_u32_u16(vrev32q_u16(vreinterpretq_u16_u32(x)))
+    |                                           ^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vsriq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:170:9
+    |
+170 |         vsriq_n_u32::<12>(vshlq_n_u32::<20>(x), x)
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:169:5
+    |
+169 |     unsafe fn rotr12(x: uint32x4_t) -> uint32x4_t {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vshlq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:170:27
+    |
+170 |         vsriq_n_u32::<12>(vshlq_n_u32::<20>(x), x)
+    |                           ^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vreinterpretq_u32_u8` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:174:9
+    |
+174 |         vreinterpretq_u32_u8(vqtbl1q_u8(vreinterpretq_u8_u32(x), idx))
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:173:5
+    |
+173 |     unsafe fn rotr8(x: uint32x4_t, idx: uint8x16_t) -> uint32x4_t {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vqtbl1q_u8` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:174:30
+    |
+174 |         vreinterpretq_u32_u8(vqtbl1q_u8(vreinterpretq_u8_u32(x), idx))
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vreinterpretq_u8_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:174:41
+    |
+174 |         vreinterpretq_u32_u8(vqtbl1q_u8(vreinterpretq_u8_u32(x), idx))
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vsriq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:178:9
+    |
+178 |         vsriq_n_u32::<7>(vshlq_n_u32::<25>(x), x)
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:177:5
+    |
+177 |     unsafe fn rotr7(x: uint32x4_t) -> uint32x4_t {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vshlq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:178:26
+    |
+178 |         vsriq_n_u32::<7>(vshlq_n_u32::<25>(x), x)
+    |                          ^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vaddq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:199:20
+    |
+199 |             v[a] = vaddq_u32(vaddq_u32(v[a], v[b]), x);
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:188:5
+    |
+188 | /     unsafe fn g(
+189 | |         v: &mut [[uint32x4_t; 16]; GROUPS],
+190 | |         a: usize,
+191 | |         b: usize,
+...   |
+196 | |         idx: uint8x16_t,
+197 | |     ) {
+    | |_____^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vaddq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:199:30
+    |
+199 |             v[a] = vaddq_u32(vaddq_u32(v[a], v[b]), x);
+    |                              ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::rotr16` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:200:20
+    |
+200 |             v[d] = rotr16(veorq_u32(v[d], v[a]));
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::veorq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:200:27
+    |
+200 |             v[d] = rotr16(veorq_u32(v[d], v[a]));
+    |                           ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vaddq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:201:20
+    |
+201 |             v[c] = vaddq_u32(v[c], v[d]);
+    |                    ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::rotr12` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:202:20
+    |
+202 |             v[b] = rotr12(veorq_u32(v[b], v[c]));
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::veorq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:202:27
+    |
+202 |             v[b] = rotr12(veorq_u32(v[b], v[c]));
+    |                           ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vaddq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:203:20
+    |
+203 |             v[a] = vaddq_u32(vaddq_u32(v[a], v[b]), y);
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vaddq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:203:30
+    |
+203 |             v[a] = vaddq_u32(vaddq_u32(v[a], v[b]), y);
+    |                              ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::rotr8` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:204:20
+    |
+204 |             v[d] = rotr8(veorq_u32(v[d], v[a]), idx);
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::veorq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:204:26
+    |
+204 |             v[d] = rotr8(veorq_u32(v[d], v[a]), idx);
+    |                          ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vaddq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:205:20
+    |
+205 |             v[c] = vaddq_u32(v[c], v[d]);
+    |                    ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::rotr7` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:206:20
+    |
+206 |             v[b] = rotr7(veorq_u32(v[b], v[c]));
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::veorq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:206:26
+    |
+206 |             v[b] = rotr7(veorq_u32(v[b], v[c]));
+    |                          ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:219:9
+    |
+219 |         g(v, 0, 4, 8, 12, w(0), w(1), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:211:5
+    |
+211 | /     unsafe fn round(
+212 | |         v: &mut [[uint32x4_t; 16]; GROUPS],
+213 | |         m: &[[uint32x4_t; 16]; GROUPS],
+214 | |         r: usize,
+215 | |         idx: uint8x16_t,
+216 | |     ) {
+    | |_____^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:220:9
+    |
+220 |         g(v, 1, 5, 9, 13, w(2), w(3), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:221:9
+    |
+221 |         g(v, 2, 6, 10, 14, w(4), w(5), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:222:9
+    |
+222 |         g(v, 3, 7, 11, 15, w(6), w(7), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:223:9
+    |
+223 |         g(v, 0, 5, 10, 15, w(8), w(9), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:224:9
+    |
+224 |         g(v, 1, 6, 11, 12, w(10), w(11), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:225:9
+    |
+225 |         g(v, 2, 7, 8, 13, w(12), w(13), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::g` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:226:9
+    |
+226 |         g(v, 3, 4, 9, 14, w(14), w(15), idx);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `std::arch::aarch64::vld1q_u8` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:235:19
+    |
+235 |         let idx = vld1q_u8(ROTR8_BYTES.as_ptr());
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:234:5
+    |
+234 |     unsafe fn first_words(prefix: &[u32], base: u64) -> [u32; NONCES_PER_CALL as usize] {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vdupq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:236:20
+    |
+236 |         let zero = vdupq_n_u32(0);
+    |                    ^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vdupq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:247:25
+    |
+247 |                 *slot = vdupq_n_u32(w);
+    |                         ^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `std::arch::aarch64::vld1q_u32` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:249:24
+    |
+249 |             m[words] = vld1q_u32(lo.as_ptr());
+    |                        ^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `std::arch::aarch64::vld1q_u32` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:250:28
+    |
+250 |             m[words + 1] = vld1q_u32(hi.as_ptr());
+    |                            ^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vdupq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:252:25
+    |
+252 |                 *slot = vdupq_n_u32(w);
+    |                         ^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vdupq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:254:21
+    |
+254 |             v[14] = vdupq_n_u32(block_len);
+    |                     ^^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::vdupq_n_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:255:21
+    |
+255 |             v[15] = vdupq_n_u32(FLAGS);
+    |                     ^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::round` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:258:13
+    |
+258 |             round(&mut v, &m, r, idx);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `std::arch::aarch64::vst1q_u32` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:262:13
+    |
+262 |             vst1q_u32(out.as_mut_ptr().add(4 * k), veorq_u32(v[0], v[8]));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `std::ptr::mut_ptr::<impl *mut T>::add` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:262:23
+    |
+262 |             vst1q_u32(out.as_mut_ptr().add(4 * k), veorq_u32(v[0], v[8]));
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to function `std::arch::aarch64::veorq_u32` with `#[target_feature]` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:262:52
+    |
+262 |             vst1q_u32(out.as_mut_ptr().add(4 * k), veorq_u32(v[0], v[8]));
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^ call to function with `#[target_feature]`
+    |
+    = help: in order for the call to be safe, the context requires the following additional target feature: neon
+    = note: the neon target feature being enabled in the build configuration does not remove the requirement to list it in `#[target_feature]`
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning[E0133]: call to unsafe function `utils::blake3x4::neon::first_words` is unsafe and requires unsafe block
+   --> src/utils/blake3x4.rs:280:22
+    |
+280 |             let w0 = first_words(&words, base);
+    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+    |
+    = note: consult the function's documentation for information on how to avoid undefined behavior
+note: an unsafe function restricts its caller, but its body is safe by default
+   --> src/utils/blake3x4.rs:267:5
+    |
+267 | /     pub(super) unsafe fn first_pow_nonce(
+268 | |         prefix: &[u8],
+269 | |         start: u64,
+270 | |         end: u64,
+271 | |         bits: u32,
+272 | |     ) -> Option<u64> {
+    | |____________________^
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
+
+warning: trait `ligerito::PackedBits` is more private than the item `ring_switch_prove`
+   --> src/ligerito.rs:474:1
+    |
+474 | / pub fn ring_switch_prove<T: PackedBits>(
+475 | |     transcript: &mut impl Transcript,
+476 | |     p_msg: &[T],
+477 | |     r_hi: &[Gf],
+478 | | ) -> (RingSwitchProof, Vec<Gf>, Gf) {
+    | |___________________________________^ function `ring_switch_prove` is reachable at visibility `pub`
+    |
+note: but trait `ligerito::PackedBits` is only usable at visibility `pub(crate)`
+   --> src/ligerito.rs:255:1
+    |
+255 | pub(crate) trait PackedBits: Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_bounds)]` on by default
+
+warning: trait `ligerito::PackedBits` is more private than the item `ring_switch_prove_with`
+   --> src/ligerito.rs:486:1
+    |
+486 | / pub fn ring_switch_prove_with<T: PackedBits, O: Send>(
+487 | |     transcript: &mut impl Transcript,
+488 | |     p_msg: &[T],
+489 | |     r_hi: &[Gf],
+490 | |     convert: impl Fn(Gf) -> O + Sync + Send,
+491 | | ) -> (RingSwitchProof, Vec<O>, Gf) {
+    | |__________________________________^ function `ring_switch_prove_with` is reachable at visibility `pub`
+    |
+note: but trait `ligerito::PackedBits` is only usable at visibility `pub(crate)`
+   --> src/ligerito.rs:255:1
+    |
+255 | pub(crate) trait PackedBits: Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `is_prefix` is never used
+  --> src/hybrid/sumcheck/table.rs:24:8
+   |
+13 | impl Lanes<'_> {
+   | -------------- method in this implementation
+...
+24 |     fn is_prefix(self) -> bool {
+   |        ^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `matches_rows` is never used
+   --> src/ligerito_flock.rs:191:19
+    |
+161 | impl FlockCommitHint {
+    | -------------------- method in this implementation
+...
+191 |     pub(crate) fn matches_rows(&self, rows: &std::sync::Arc<Vec<Vec<u64>>>) -> bool {
+    |                   ^^^^^^^^^^^^
+
+warning: constant `ASSIGNMENT_BINDING_DOMAIN` is never used
+  --> src/piop/spartan/baby_bear_bitz.rs:54:7
+   |
+54 | const ASSIGNMENT_BINDING_DOMAIN: &[u8] = b"bitz/spartan-baby-bear-bitz/assignment/v1";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `fixed_q_assignment_binding` is never used
+   --> src/piop/spartan/baby_bear_bitz.rs:133:4
+    |
+133 | fn fixed_q_assignment_binding(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `new` is never used
+  --> src/piop/spartan/falcon1024_ct/hybrid_sumcheck.rs:48:12
+   |
+47 | impl Gather {
+   | ----------- associated function in this implementation
+48 |     pub fn new(entries: Vec<(usize, F)>) -> Self {
+   |            ^^^
+
+warning: methods `initial_grinding_bits`, `inner_round_grinding_bits`, `terminal_grinding_bits`, and `accepts_prime` are never used
+   --> src/piop/spartan/sha256/prime.rs:145:18
+    |
+ 87 | impl Sha256PrimeProfile {
+    | ----------------------- methods in this implementation
+...
+145 |     pub const fn initial_grinding_bits(self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^
+...
+150 |     pub const fn inner_round_grinding_bits(self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+155 |     pub const fn terminal_grinding_bits(self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^^
+...
+160 |     pub const fn accepts_prime(self, q: u128) -> bool {
+    |                  ^^^^^^^^^^^^^
+
+warning: struct `CompositeMultilinearExtension` is never constructed
+  --> src/poly/mle/structured.rs:28:19
+   |
+28 | pub(crate) struct CompositeMultilinearExtension<'a, F: SpartanField> {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated items `from_factors` and `evaluate` are never used
+   --> src/poly/mle/structured.rs:45:19
+    |
+ 44 | impl<'a, F: SpartanField> FactoredMultilinearExtension<'a, F> {
+    | ------------------------------------------------------------- associated items in this implementation
+ 45 |     pub(crate) fn from_factors(
+    |                   ^^^^^^^^^^^^
+...
+106 |     pub(crate) fn evaluate(&self, point: &[F], cfg: &F::Config) -> Result<F, EvaluationError> {
+    |                   ^^^^^^^^
+
+warning: multiple associated items are never used
+   --> src/poly/mle/structured.rs:161:19
+    |
+160 | impl<'a, F: SpartanField> CompositeMultilinearExtension<'a, F> {
+    | -------------------------------------------------------------- associated items in this implementation
+161 |     pub(crate) fn from_parts(
+    |                   ^^^^^^^^^^
+...
+191 |     pub(crate) fn with_tail_runs(
+    |                   ^^^^^^^^^^^^^^
+...
+209 |     pub(crate) fn tail_runs(&self) -> Option<&'a [(usize, usize, F)]> {
+    |                   ^^^^^^^^^
+...
+213 |     pub(crate) fn num_vars(&self) -> usize {
+    |                   ^^^^^^^^
+...
+216 |     pub(crate) fn live_len(&self) -> usize {
+    |                   ^^^^^^^^
+...
+219 |     pub(crate) fn repeated(&self) -> &FactoredMultilinearExtension<'a, F> {
+    |                   ^^^^^^^^
+...
+222 |     pub(crate) fn tail_evaluations(&self) -> &[F] {
+    |                   ^^^^^^^^^^^^^^^^
+...
+225 |     pub(crate) fn origin_adjustment(&self) -> &F {
+    |                   ^^^^^^^^^^^^^^^^^
+...
+229 |     pub(crate) fn evaluation_at(&self, index: usize) -> Result<F, EvaluationError> {
+    |                   ^^^^^^^^^^^^^
+...
+246 |     pub(crate) fn evaluate(&self, point: &[F], cfg: &F::Config) -> Result<F, EvaluationError> {
+    |                   ^^^^^^^^
+
+warning: function `check_point` is never used
+   --> src/poly/mle/structured.rs:265:4
+    |
+265 | fn check_point<F>(num_vars: usize, point: &[F]) -> Result<(), EvaluationError> {
+    |    ^^^^^^^^^^^
+
+warning: associated items `new`, `low`, and `high` are never used
+   --> src/poly/mle/structured.rs:283:8
+    |
+282 | impl<F: SpartanField> EqualityWeights<F> {
+    | ---------------------------------------- associated items in this implementation
+283 |     fn new(point: &[F], cfg: &F::Config) -> Self {
+    |        ^^^
+...
+299 |     pub(crate) fn low(&self) -> &[F] {
+    |                   ^^^
+...
+302 |     pub(crate) fn high(&self) -> &[F] {
+    |                   ^^^^
+
+warning: function `equality_table` is never used
+   --> src/poly/mle/structured.rs:313:4
+    |
+313 | fn equality_table<F: SpartanField>(point: &[F], cfg: &F::Config) -> Vec<F> {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `dot_with_equality` is never used
+   --> src/poly/mle/structured.rs:330:4
+    |
+330 | fn dot_with_equality<F: SpartanField>(values: &[F], point: &[F], cfg: &F::Config) -> F {
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: methods `policy` and `coordinate_count` are never used
+   --> src/bitz/grinding.rs:144:19
+    |
+143 | impl Schedule {
+    | ------------- methods in this implementation
+144 |     pub(crate) fn policy(self) -> Policy { self.policy }
+    |                   ^^^^^^
+...
+187 |     pub(crate) fn coordinate_count(self) -> usize {
+    |                   ^^^^^^^^^^^^^^^^
+
+warning: associated function `with_security_and_work` is never used
+   --> src/bitz/pcs.rs:134:19
+    |
+133 | impl Pcs {
+    | -------- associated function in this implementation
+134 |     pub(crate) fn with_security_and_work(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inputs` is never used
+  --> src/sumcheck/inner/binary.rs:75:15
+   |
+75 | pub(crate) fn inputs(pairs: Vec<[Vec<F>; 2]>, num_vars: usize) -> (Vec<[Vec<F>; 2]>, Vec<()>) {
+   |               ^^^^^^
+
+warning: function `encode` is never used
+   --> src/sumcheck/inner/binary.rs:159:15
+    |
+159 | pub(crate) fn encode(
+    |               ^^^^^^
+
+warning: associated function `quadratic` is never used
+   --> src/sumcheck/inner/evaluation_form.rs:152:19
+    |
+151 | impl<F> MultiDegreeSumcheckProof<F> {
+    | ----------------------------------- associated function in this implementation
+152 |     pub(crate) fn quadratic(
+    |                   ^^^^^^^^^
+
+warning: associated function `new` is never used
+   --> src/sumcheck/inner/native.rs:301:19
+    |
+300 | impl NativeConstantPrefix {
+    | ------------------------- associated function in this implementation
+301 |     pub(crate) fn new(block_len: usize) -> Self {
+    |                   ^^^
+
+warning: struct `TailPiece` is never constructed
+   --> src/sumcheck/inner/packed/composite.rs:241:8
+    |
+241 | struct TailPiece {
+    |        ^^^^^^^^^
+
+warning: function `tail_pieces` is never used
+   --> src/sumcheck/inner/packed/composite.rs:252:4
+    |
+252 | fn tail_pieces<const K: usize>(
+    |    ^^^^^^^^^^^
+
+warning: function `ternary_extension_table` is never used
+   --> src/sumcheck/inner/packed/composite.rs:323:4
+    |
+323 | fn ternary_extension_table<const K: usize>() -> Vec<[i8; 16]> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `TailShapeState` is never constructed
+   --> src/sumcheck/inner/packed/composite.rs:367:8
+    |
+367 | struct TailShapeState {
+    |        ^^^^^^^^^^^^^^
+
+warning: associated function `new` is never used
+   --> src/sumcheck/inner/packed/composite.rs:373:8
+    |
+372 | impl TailShapeState {
+    | ------------------- associated function in this implementation
+373 |     fn new<const K: usize>() -> Self {
+    |        ^^^
+
+warning: function `shape_index` is never used
+   --> src/sumcheck/inner/packed/composite.rs:385:4
+    |
+385 | fn shape_index<const K: usize>(lo: usize, hi: usize) -> usize {
+    |    ^^^^^^^^^^^
+
+warning: function `accumulate_tail_block` is never used
+   --> src/sumcheck/inner/packed/composite.rs:391:4
+    |
+391 | fn accumulate_tail_block<const K: usize, H: Sha256InnerBitSource + ?Sized>(
+    |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `tail_run_beta_values` is never used
+   --> src/sumcheck/inner/packed/composite.rs:441:4
+    |
+441 | fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
+    |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `finish_tail_shapes` is never used
+   --> src/sumcheck/inner/packed/composite.rs:528:4
+    |
+528 | fn finish_tail_shapes<const K: usize>(state: TailShapeState, cfg: &FieldConfig, zero: &Field) -> Result<Vec<Field>, SumcheckError> {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: struct `RepeatedState` is never constructed
+   --> src/sumcheck/inner/packed/composite.rs:598:8
+    |
+598 | struct RepeatedState {
+    |        ^^^^^^^^^^^^^
+
+warning: function `repeated_beta_values` is never used
+   --> src/sumcheck/inner/packed/composite.rs:611:4
+    |
+611 | fn repeated_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
+    |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: method `len` is never used
+   --> src/sumcheck/outer/arithmetic.rs:100:19
+    |
+ 91 | impl<'a> NativeProducts<'a> {
+    | --------------------------- method in this implementation
+...
+100 |     pub(crate) fn len(&self) -> usize {
+    |                   ^^^
+
+warning: function `validate_products_for_skip` is never used
+   --> src/sumcheck/outer/univariate.rs:681:4
+    |
+681 | fn validate_products_for_skip<F>(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `validate_equality_factors` is never used
+   --> src/sumcheck/outer/univariate.rs:705:4
+    |
+705 | fn validate_equality_factors<F>(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `has_dense_shape` is never used
+   --> src/sumcheck/outer/univariate.rs:735:4
+    |
+735 | fn has_dense_shape<F>(mle: &DenseMultilinearExtension<F>) -> bool {
+    |    ^^^^^^^^^^^^^^^
+
+warning: variant `Independent` is never constructed
+   --> src/sumcheck/bridge/native.rs:195:5
+    |
+187 | pub(crate) enum RowFunctional<'a> {
+    |                 ------------- variant in this enum
+...
+195 |     Independent([&'a [field::Fp<2>]; 3]),
+    |     ^^^^^^^^^^^
+    |
+    = note: `RowFunctional` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+For more information about this error, try `rustc --explain E0133`.
+warning: `bitz` (lib) generated 117 warnings (run `cargo fix --lib -p bitz` to apply 11 suggestions)
+warning: unused import: `smallest_generator`
+   --> src/bin/bitz.rs:113:38
+    |
+113 | use bitz::pcs::{IntegerMatrixLayout, smallest_generator};
+    |                                      ^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `bitz` (bin "bitz") generated 1 warning (run `cargo fix --bin "bitz" -p bitz` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 0.29s

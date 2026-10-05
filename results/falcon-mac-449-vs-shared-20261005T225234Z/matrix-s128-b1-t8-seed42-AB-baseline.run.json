@@ -1,0 +1,368 @@
+{
+  "name": "matrix-s128-b1-t8-seed42-AB-baseline",
+  "label": "baseline",
+  "security": 128,
+  "batch": 1,
+  "threads": 8,
+  "seed": 42,
+  "series": "matrix",
+  "order": "AB",
+  "command": [
+    "/usr/bin/time",
+    "-l",
+    "/Users/johnwu/code/zk/f2z-pcs/results/falcon-mac-449-vs-shared-20261005T225234Z/falcon_hybrid_baseline_4491309f5d1e",
+    "--security",
+    "128",
+    "--batch",
+    "1",
+    "--threads",
+    "8",
+    "--seed",
+    "42",
+    "--warmup",
+    "1",
+    "--iterations",
+    "5"
+  ],
+  "started": 1791241848.2179399,
+  "exit": 0,
+  "elapsed_seconds": 1.5622699160594493,
+  "peak_rss_bytes": 53985280,
+  "prepared": {
+    "algebraic_security_bits": 129.44287300524124,
+    "arithmetic_auxiliary_values_per_signature": 8605,
+    "arithmetic_live_bits_per_signature": 100578,
+    "batch": 1,
+    "build_rustflags": "-C target-cpu=native",
+    "capacity": 1,
+    "compiled_target_features": {
+      "aes": true,
+      "avx2": false,
+      "avx512f": false,
+      "gfni": false,
+      "pclmulqdq": false,
+      "sse4.1": false,
+      "vpclmulqdq": false
+    },
+    "event": "prepared",
+    "gf128_kernel": "neon",
+    "input_count": 1,
+    "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+    "input_implementation_version": "0.3.0",
+    "input_mode": "original-falcon-1024",
+    "input_rng": "rand_chacha 0.3.1 ChaCha20Rng::seed_from_u64",
+    "input_seed": 42,
+    "input_setup_ms": 17.941417,
+    "input_source": "pornin/rust-fn-dsa",
+    "integer_bridge": "wfbitz-joint-limbs",
+    "measured_trials": 5,
+    "native_verify_includes_public_key_decode": true,
+    "prepare_ms": 2.350375,
+    "protocol": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v4",
+    "public_inputs": [
+      "public_key",
+      "message",
+      "signature_nonce",
+      "signature_s2"
+    ],
+    "runtime_rustflags": "-C target-cpu=native",
+    "schema": "bitz/falcon-hybrid/v3",
+    "security_target": 128,
+    "security_terms": [
+      {
+        "bits": 144.0,
+        "error_bound": 4.484155085839415e-44,
+        "name": "prime sampling"
+      },
+      {
+        "bits": null,
+        "error_bound": 0.0,
+        "name": "per-signature norm identity"
+      },
+      {
+        "bits": 133.67807190511263,
+        "error_bound": 5.739718509874451e-41,
+        "name": "norm sumchecks"
+      },
+      {
+        "bits": 133.5405683813627,
+        "error_bound": 6.313690360861896e-41,
+        "name": "HashToPoint initial row point"
+      },
+      {
+        "bits": 135.95560588064154,
+        "error_bound": 1.1838169426616055e-41,
+        "name": "HashToPoint product sumcheck"
+      },
+      {
+        "bits": 133.0,
+        "error_bound": 9.183549615799121e-41,
+        "name": "ordered compaction fingerprints"
+      },
+      {
+        "bits": 133.63367778575417,
+        "error_bound": 5.919084713308027e-41,
+        "name": "ordered compaction forest sumchecks"
+      },
+      {
+        "bits": 136.60768257722123,
+        "error_bound": 7.533380544210217e-42,
+        "name": "ordered compaction forest claim reductions"
+      },
+      {
+        "bits": null,
+        "error_bound": 0.0,
+        "name": "compaction leaf instance batching"
+      },
+      {
+        "bits": 135.95560588064154,
+        "error_bound": 1.1838169426616055e-41,
+        "name": "compaction leaf sumcheck"
+      },
+      {
+        "bits": 138.43728850069286,
+        "error_bound": 2.1194522806737107e-42,
+        "name": "native ideal batching and projection"
+      },
+      {
+        "bits": 133.67807190511263,
+        "error_bound": 5.739718509874451e-41,
+        "name": "native coordinate carry batching"
+      },
+      {
+        "bits": 133.2995602818589,
+        "error_bound": 7.461634062836786e-41,
+        "name": "linear constraints and terminal batching"
+      },
+      {
+        "bits": 133.91253715874967,
+        "error_bound": 4.878760733393283e-41,
+        "name": "prime source sumcheck"
+      },
+      {
+        "bits": 136.1958689788167,
+        "error_bound": 1.0022086616851092e-41,
+        "name": "batched integer-to-binary forest"
+      },
+      {
+        "bits": 135.61629570752595,
+        "error_bound": 1.4977077986703645e-41,
+        "name": "binary Keccak PIOP"
+      },
+      {
+        "bits": 136.0,
+        "error_bound": 1.1479437019748901e-41,
+        "name": "SHAKE wiring and binary claim batching"
+      },
+      {
+        "bits": 136.60768257722123,
+        "error_bound": 7.533380544210217e-42,
+        "name": "joint binary sumcheck"
+      },
+      {
+        "bits": 136.0,
+        "error_bound": 1.1479437019748901e-41,
+        "name": "ring switch and support padding"
+      },
+      {
+        "bits": 130.44485875003576,
+        "error_bound": 5.397401632686244e-40,
+        "name": "shared Ligerito"
+      }
+    ],
+    "source_bits_per_signature": [
+      131072,
+      1048576,
+      524288
+    ],
+    "stage_timings": false,
+    "target_arch": "aarch64",
+    "threads": 8,
+    "warmup_trials": 1
+  },
+  "trials": [
+    {
+      "batch": 1,
+      "capacity": 1,
+      "end_to_end_ms": 274.281333,
+      "event": "trial",
+      "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+      "input_setup_ms": 17.941417,
+      "native_verify_ms": 0.054459,
+      "prepare_ms": 2.350375,
+      "process_peak_rss_kib": null,
+      "proof_debug_digest": "ae4a30b76f886913c33563e778327f4105623896716bcdda958ab80ab049523c",
+      "proof_payload_bytes": 243464,
+      "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+      "proof_prove_ms": 254.881042,
+      "proof_verify_ms": 17.969790999999997,
+      "roots": [
+        "96e987c40ee1c7a3e2a66f7d0e049d972544dc647a52de1e28117c23b1337f4d",
+        "6470397ecef7e77c2facb2f46ec64ff9d3ab9de8212a10c5f632bb486b68daf7",
+        "9e81dd56de4d7eb8a11ed91fef06b6616b3d96164b60134c186692f1ac90ffc2"
+      ],
+      "sample": null,
+      "schema": "bitz/falcon-hybrid/v3",
+      "security_target": 128,
+      "threads": 8,
+      "total_prover_ms": 256.31154200000003,
+      "trial": "warmup",
+      "verified": true,
+      "witness_commit_ms": 1.4304999999999999
+    },
+    {
+      "batch": 1,
+      "capacity": 1,
+      "end_to_end_ms": 259.25354200000004,
+      "event": "trial",
+      "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+      "input_setup_ms": 17.941417,
+      "native_verify_ms": 0.055708999999999995,
+      "prepare_ms": 2.350375,
+      "process_peak_rss_kib": null,
+      "proof_debug_digest": "ae4a30b76f886913c33563e778327f4105623896716bcdda958ab80ab049523c",
+      "proof_payload_bytes": 243464,
+      "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+      "proof_prove_ms": 239.16512500000002,
+      "proof_verify_ms": 18.804458,
+      "roots": [
+        "96e987c40ee1c7a3e2a66f7d0e049d972544dc647a52de1e28117c23b1337f4d",
+        "6470397ecef7e77c2facb2f46ec64ff9d3ab9de8212a10c5f632bb486b68daf7",
+        "9e81dd56de4d7eb8a11ed91fef06b6616b3d96164b60134c186692f1ac90ffc2"
+      ],
+      "sample": 1,
+      "schema": "bitz/falcon-hybrid/v3",
+      "security_target": 128,
+      "threads": 8,
+      "total_prover_ms": 240.44908400000003,
+      "trial": "sample",
+      "verified": true,
+      "witness_commit_ms": 1.283959
+    },
+    {
+      "batch": 1,
+      "capacity": 1,
+      "end_to_end_ms": 243.708917,
+      "event": "trial",
+      "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+      "input_setup_ms": 17.941417,
+      "native_verify_ms": 0.054541,
+      "prepare_ms": 2.350375,
+      "process_peak_rss_kib": null,
+      "proof_debug_digest": "ae4a30b76f886913c33563e778327f4105623896716bcdda958ab80ab049523c",
+      "proof_payload_bytes": 243464,
+      "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+      "proof_prove_ms": 224.297625,
+      "proof_verify_ms": 18.255292,
+      "roots": [
+        "96e987c40ee1c7a3e2a66f7d0e049d972544dc647a52de1e28117c23b1337f4d",
+        "6470397ecef7e77c2facb2f46ec64ff9d3ab9de8212a10c5f632bb486b68daf7",
+        "9e81dd56de4d7eb8a11ed91fef06b6616b3d96164b60134c186692f1ac90ffc2"
+      ],
+      "sample": 2,
+      "schema": "bitz/falcon-hybrid/v3",
+      "security_target": 128,
+      "threads": 8,
+      "total_prover_ms": 225.45362500000002,
+      "trial": "sample",
+      "verified": true,
+      "witness_commit_ms": 1.156
+    },
+    {
+      "batch": 1,
+      "capacity": 1,
+      "end_to_end_ms": 253.996291,
+      "event": "trial",
+      "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+      "input_setup_ms": 17.941417,
+      "native_verify_ms": 0.053125,
+      "prepare_ms": 2.350375,
+      "process_peak_rss_kib": null,
+      "proof_debug_digest": "ae4a30b76f886913c33563e778327f4105623896716bcdda958ab80ab049523c",
+      "proof_payload_bytes": 243464,
+      "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+      "proof_prove_ms": 234.419666,
+      "proof_verify_ms": 18.339125000000003,
+      "roots": [
+        "96e987c40ee1c7a3e2a66f7d0e049d972544dc647a52de1e28117c23b1337f4d",
+        "6470397ecef7e77c2facb2f46ec64ff9d3ab9de8212a10c5f632bb486b68daf7",
+        "9e81dd56de4d7eb8a11ed91fef06b6616b3d96164b60134c186692f1ac90ffc2"
+      ],
+      "sample": 3,
+      "schema": "bitz/falcon-hybrid/v3",
+      "security_target": 128,
+      "threads": 8,
+      "total_prover_ms": 235.65716600000002,
+      "trial": "sample",
+      "verified": true,
+      "witness_commit_ms": 1.2375
+    },
+    {
+      "batch": 1,
+      "capacity": 1,
+      "end_to_end_ms": 248.66504099999997,
+      "event": "trial",
+      "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+      "input_setup_ms": 17.941417,
+      "native_verify_ms": 0.05575,
+      "prepare_ms": 2.350375,
+      "process_peak_rss_kib": null,
+      "proof_debug_digest": "ae4a30b76f886913c33563e778327f4105623896716bcdda958ab80ab049523c",
+      "proof_payload_bytes": 243464,
+      "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+      "proof_prove_ms": 229.32975,
+      "proof_verify_ms": 18.144458,
+      "roots": [
+        "96e987c40ee1c7a3e2a66f7d0e049d972544dc647a52de1e28117c23b1337f4d",
+        "6470397ecef7e77c2facb2f46ec64ff9d3ab9de8212a10c5f632bb486b68daf7",
+        "9e81dd56de4d7eb8a11ed91fef06b6616b3d96164b60134c186692f1ac90ffc2"
+      ],
+      "sample": 4,
+      "schema": "bitz/falcon-hybrid/v3",
+      "security_target": 128,
+      "threads": 8,
+      "total_prover_ms": 230.520583,
+      "trial": "sample",
+      "verified": true,
+      "witness_commit_ms": 1.190833
+    },
+    {
+      "batch": 1,
+      "capacity": 1,
+      "end_to_end_ms": 220.95716699999997,
+      "event": "trial",
+      "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+      "input_setup_ms": 17.941417,
+      "native_verify_ms": 0.056167,
+      "prepare_ms": 2.350375,
+      "process_peak_rss_kib": null,
+      "proof_debug_digest": "ae4a30b76f886913c33563e778327f4105623896716bcdda958ab80ab049523c",
+      "proof_payload_bytes": 243464,
+      "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+      "proof_prove_ms": 201.716459,
+      "proof_verify_ms": 18.03375,
+      "roots": [
+        "96e987c40ee1c7a3e2a66f7d0e049d972544dc647a52de1e28117c23b1337f4d",
+        "6470397ecef7e77c2facb2f46ec64ff9d3ab9de8212a10c5f632bb486b68daf7",
+        "9e81dd56de4d7eb8a11ed91fef06b6616b3d96164b60134c186692f1ac90ffc2"
+      ],
+      "sample": 5,
+      "schema": "bitz/falcon-hybrid/v3",
+      "security_target": 128,
+      "threads": 8,
+      "total_prover_ms": 202.92341699999997,
+      "trial": "sample",
+      "verified": true,
+      "witness_commit_ms": 1.206958
+    }
+  ],
+  "medians": {
+    "witness_commit_ms": 1.206958,
+    "proof_prove_ms": 229.32975,
+    "total_prover_ms": 230.520583,
+    "proof_verify_ms": 18.255292,
+    "native_verify_ms": 0.055708999999999995,
+    "end_to_end_ms": 248.66504099999997
+  },
+  "payload_bytes": 243464
+}

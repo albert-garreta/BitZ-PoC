@@ -1,0 +1,36 @@
+Falcon Mac comparison: COMPLETE
+Processes 44/44; verified proofs 264/264.
+Baseline 4491309f5d1e45d506410803e3b9ba488047991f; candidate df96f014de291df4046464afeb6d8f09a9888a2c (runtime e370e3b35da692d86e814c687e597c3a1d0a6bea).
+Ratios are shared-prime/native; less than 1 is lower. Timing is diagnostic, not a no-regression acceptance result.
+Matrix timings are process medians of five samples. Payload is bytes. RSS is whole-process maximum MiB from macOS time; includes all six trials/setup.
+
+Matrix: security batch threads | total prover ms baseline -> shared (ratio) | proof ms ratio | verify ms baseline -> shared (ratio) | payload ratio | RSS MiB baseline -> shared (ratio)
+100    1  1 | 39.287 -> 43.756 (1.1138) | 1.1177 | 16.706 -> 17.977 (1.0761) | 0.9977 | 45.70 -> 44.45 (0.9726)
+100    1  8 | 33.625 -> 36.587 (1.0881) | 1.0912 | 17.205 -> 18.536 (1.0774) | 0.9977 | 52.58 -> 55.59 (1.0574)
+100    3  1 | 60.413 -> 65.878 (1.0905) | 1.0990 | 20.198 -> 21.818 (1.0802) | 0.9914 | 61.97 -> 60.75 (0.9803)
+100    3  8 | 45.377 -> 49.598 (1.0930) | 1.0930 | 19.697 -> 21.345 (1.0837) | 0.9914 | 68.53 -> 68.03 (0.9927)
+100   32  1 | 237.059 -> 251.158 (1.0595) | 1.0697 | 38.018 -> 36.637 (0.9637) | 0.9681 | 185.09 -> 195.69 (1.0572)
+100   32  8 | 85.035 -> 94.451 (1.1107) | 1.1362 | 22.140 -> 23.193 (1.0476) | 0.9681 | 186.70 -> 198.36 (1.0624)
+100 1024  1 | 6169.106 -> 6504.779 (1.0544) | 1.0661 | 714.430 -> 588.170 (0.8233) | 0.8141 | 4437.89 -> 4424.91 (0.9971)
+100 1024  8 | 1332.767 -> 1261.470 (0.9465) | 0.9390 | 139.137 -> 118.672 (0.8529) | 0.8141 | 4383.20 -> 4492.52 (1.0249)
+128    1  1 | 874.941 -> 957.659 (1.0945) | 1.0947 | 18.014 -> 19.567 (1.0862) | 0.9902 | 42.44 -> 43.44 (1.0236)
+128    1  8 | 230.521 -> 231.191 (1.0029) | 1.0026 | 18.255 -> 19.712 (1.0798) | 0.9902 | 51.48 -> 52.56 (1.0209)
+128    3  1 | 1678.113 -> 1710.723 (1.0194) | 1.0196 | 21.545 -> 22.621 (1.0500) | 0.9887 | 59.94 -> 60.58 (1.0107)
+128    3  8 | 344.443 -> 332.890 (0.9665) | 0.9658 | 21.352 -> 22.399 (1.0491) | 0.9887 | 67.77 -> 71.05 (1.0484)
+128   32  1 | 2396.990 -> 2270.788 (0.9473) | 0.9466 | 40.036 -> 38.030 (0.9499) | 0.9728 | 186.61 -> 193.59 (1.0374)
+128   32  8 | 512.209 -> 538.409 (1.0512) | 1.0491 | 23.434 -> 26.277 (1.1213) | 0.9728 | 192.28 -> 199.70 (1.0386)
+128 1024  1 | 12551.079 -> 18262.189 (1.4550) | 1.4775 | 705.427 -> 590.192 (0.8366) | 0.8229 | 4424.27 -> 4465.39 (1.0093)
+128 1024  8 | 2110.225 -> 3022.455 (1.4323) | 1.4785 | 140.864 -> 122.029 (0.8663) | 0.8229 | 4441.80 -> 4426.31 (0.9965)
+
+B1024/t8 confirmation: seed42 uses median of two process medians/protocol; seeds43/44 use one each. Aggregate equally weights the three seed ratios. RSS uses each seed's maximum process RSS.
+security 100, seed 42, processes/protocol 2: total 1264.221 -> 1262.445 ms (0.9986); verify ratio 0.8643; payload ratio 0.8141; RSS ratio 1.0249
+security 100, seed 43, processes/protocol 1: total 1257.791 -> 1434.529 ms (1.1405); verify ratio 0.8574; payload ratio 0.8161; RSS ratio 1.0095
+security 100, seed 44, processes/protocol 1: total 1274.168 -> 1279.930 ms (1.0045); verify ratio 0.8679; payload ratio 0.8142; RSS ratio 1.0031
+security 100, equal-seed aggregate ratios: total 1.0459; proof 1.0618; verify 0.8632; payload 0.8148; RSS 1.0125.
+security 128, seed 42, processes/protocol 2: total 2116.218 -> 2937.359 ms (1.3880); verify ratio 0.8545; payload ratio 0.8229; RSS ratio 1.0131
+security 128, seed 43, processes/protocol 1: total 2966.607 -> 2766.759 ms (0.9326); verify ratio 0.8281; payload ratio 0.8245; RSS ratio 1.0026
+security 128, seed 44, processes/protocol 1: total 3544.508 -> 3357.444 ms (0.9472); verify ratio 0.8508; payload ratio 0.8254; RSS ratio 0.9994
+security 128, equal-seed aggregate ratios: total 1.0703; proof 1.0910; verify 0.8443; payload 0.8243; RSS 1.0050.
+
+Complete reported ledger term sets, nonnegative finite errors, per-term bits, total target bound, reported algebraic bits, and no-weaker retained terms/total are checked. This validates numerical consistency of supplied security claims, not an independent protocol/security audit.
+Only seed42 has both orders; three seeds do not establish the strict performance gate.

@@ -1,0 +1,29 @@
+Mac seed-42 proof gap: bounded instrumented diagnostic
+12 verified proofs; 1 warmup and 5 measured proofs per saved binary.
+Each input/proof digest, roots and payload match its own uninstrumented matrix reference.
+All numbers below are medians of five per-trial values, milliseconds.
+
+metric | native449 | shared | shared-minus-native
+proof_prove_ms | 2020.267 | 2688.275 | 668.009
+proof_root_stage_ms | 2020.272 | 2688.279 | 668.007
+pcs_grind_pow_ms | 530.243 | 1241.828 | 711.586
+gkr_spartan_grinding_ms | 251.751 | 238.402 | -13.349
+other_spartan_grinding_ms | 117.885 | 111.572 | -6.312
+recorded_grinding_ms | 898.836 | 1597.179 | 698.343
+proof_minus_recorded_grinding_ms | 1111.292 | 1088.475 | -22.817
+
+Uninstrumented matrix proof-only medians (for context):
+native 1888.451 ms; shared 2792.011 ms.
+
+Instrumented timings are diagnostic and do not replace uninstrumented comparisons.
+PCS grind_pow includes its nested Spartan grinding; GKR and other Spartan categories exclude PCS descendants.
+Missing grinding families or exact paths are unknown, never silently zero.
+Residual contains all proof work not covered by the selected grinding spans, including logging overhead; it is not a separately measured algorithm stage.
+All trials replay the same proof and therefore do not sample independent grinding nonces.
+
+Exact-path sums, counts, coverage, per-trial residuals and provenance: summary.json.
+
+Direct PCS search-work evidence (pcs-nonce-work.json):
+Both protocols use the same 30 positive PCS grinding difficulties in this case.
+Native requires 175,631,309 ascending nonce candidates; shared-prime requires 416,043,581 (2.36885x).
+Counts are sum(nonce+1), excluding parallel/SIMD overscan, identical across all five measured repetitions.

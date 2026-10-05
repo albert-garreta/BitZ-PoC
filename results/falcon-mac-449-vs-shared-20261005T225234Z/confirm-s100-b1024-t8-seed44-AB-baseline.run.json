@@ -1,0 +1,368 @@
+{
+  "name": "confirm-s100-b1024-t8-seed44-AB-baseline",
+  "label": "baseline",
+  "security": 100,
+  "batch": 1024,
+  "threads": 8,
+  "seed": 44,
+  "series": "confirm",
+  "order": "AB",
+  "command": [
+    "/usr/bin/time",
+    "-l",
+    "/Users/johnwu/code/zk/f2z-pcs/results/falcon-mac-449-vs-shared-20261005T225234Z/falcon_hybrid_baseline_4491309f5d1e",
+    "--security",
+    "100",
+    "--batch",
+    "1024",
+    "--threads",
+    "8",
+    "--seed",
+    "44",
+    "--warmup",
+    "1",
+    "--iterations",
+    "5"
+  ],
+  "started": 1791242086.9129338,
+  "exit": 0,
+  "elapsed_seconds": 30.772226999979466,
+  "peak_rss_bytes": 4642816000,
+  "prepared": {
+    "algebraic_security_bits": 104.32415832537146,
+    "arithmetic_auxiliary_values_per_signature": 8605,
+    "arithmetic_live_bits_per_signature": 100578,
+    "batch": 1024,
+    "build_rustflags": "-C target-cpu=native",
+    "capacity": 1024,
+    "compiled_target_features": {
+      "aes": true,
+      "avx2": false,
+      "avx512f": false,
+      "gfni": false,
+      "pclmulqdq": false,
+      "sse4.1": false,
+      "vpclmulqdq": false
+    },
+    "event": "prepared",
+    "gf128_kernel": "neon",
+    "input_count": 1024,
+    "input_digest": "6b134b072cd5539a66d6cac03425a407d127f3886a037caefe77722591a9439b",
+    "input_implementation_version": "0.3.0",
+    "input_mode": "original-falcon-1024",
+    "input_rng": "rand_chacha 0.3.1 ChaCha20Rng::seed_from_u64",
+    "input_seed": 44,
+    "input_setup_ms": 21606.293833,
+    "input_source": "pornin/rust-fn-dsa",
+    "integer_bridge": "wfbitz-joint-limbs",
+    "measured_trials": 5,
+    "native_verify_includes_public_key_decode": true,
+    "prepare_ms": 3.334833,
+    "protocol": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v4",
+    "public_inputs": [
+      "public_key",
+      "message",
+      "signature_nonce",
+      "signature_s2"
+    ],
+    "runtime_rustflags": "-C target-cpu=native",
+    "schema": "bitz/falcon-hybrid/v3",
+    "security_target": 100,
+    "security_terms": [
+      {
+        "bits": 144.0,
+        "error_bound": 4.484155085839415e-44,
+        "name": "prime sampling"
+      },
+      {
+        "bits": 121.67807190511263,
+        "error_bound": 2.350988701644575e-37,
+        "name": "per-signature norm identity"
+      },
+      {
+        "bits": 118.67807190511263,
+        "error_bound": 1.88079096131566e-36,
+        "name": "norm sumchecks"
+      },
+      {
+        "bits": 120.60768257722124,
+        "error_bound": 4.9370762734536075e-37,
+        "name": "HashToPoint initial row point"
+      },
+      {
+        "bits": 119.02272007650008,
+        "error_bound": 1.4811228820360823e-36,
+        "name": "HashToPoint product sumcheck"
+      },
+      {
+        "bits": 114.0,
+        "error_bound": 4.81482486096809e-35,
+        "name": "ordered compaction fingerprints"
+      },
+      {
+        "bits": 117.63367778575419,
+        "error_bound": 3.879131357713549e-36,
+        "name": "ordered compaction forest sumchecks"
+      },
+      {
+        "bits": 118.08113676272541,
+        "error_bound": 2.8446963289899358e-36,
+        "name": "ordered compaction forest claim reductions"
+      },
+      {
+        "bits": 121.67807190511263,
+        "error_bound": 2.350988701644575e-37,
+        "name": "compaction leaf instance batching"
+      },
+      {
+        "bits": 119.02272007650008,
+        "error_bound": 1.4811228820360823e-36,
+        "name": "compaction leaf sumcheck"
+      },
+      {
+        "bits": 138.4302543812443,
+        "error_bound": 2.129811284978079e-42,
+        "name": "native ideal batching and projection"
+      },
+      {
+        "bits": 121.67807190511263,
+        "error_bound": 2.350988701644575e-37,
+        "name": "native coordinate carry batching"
+      },
+      {
+        "bits": 114.95151312600767,
+        "error_bound": 2.489697035041605e-35,
+        "name": "linear constraints and terminal batching"
+      },
+      {
+        "bits": 119.24511249783653,
+        "error_bound": 1.2695338988880705e-36,
+        "name": "prime source sumcheck"
+      },
+      {
+        "bits": 118.2737818406678,
+        "error_bound": 2.4891092878661938e-36,
+        "name": "batched integer-to-binary forest"
+      },
+      {
+        "bits": 118.46084118889196,
+        "error_bound": 2.1864194925294548e-36,
+        "name": "binary Keccak PIOP"
+      },
+      {
+        "bits": 121.0,
+        "error_bound": 3.76158192263132e-37,
+        "name": "SHAKE wiring and binary claim batching"
+      },
+      {
+        "bits": 122.04580368961312,
+        "error_bound": 1.8220162437745456e-37,
+        "name": "joint binary sumcheck"
+      },
+      {
+        "bits": 120.0,
+        "error_bound": 7.52316384526264e-37,
+        "name": "ring switch and support padding"
+      },
+      {
+        "bits": 104.32757170070184,
+        "error_bound": 3.92890514025757e-32,
+        "name": "shared Ligerito"
+      }
+    ],
+    "source_bits_per_signature": [
+      131072,
+      1048576,
+      262144
+    ],
+    "stage_timings": false,
+    "target_arch": "aarch64",
+    "threads": 8,
+    "warmup_trials": 1
+  },
+  "trials": [
+    {
+      "batch": 1024,
+      "capacity": 1024,
+      "end_to_end_ms": 1491.391959,
+      "event": "trial",
+      "input_digest": "6b134b072cd5539a66d6cac03425a407d127f3886a037caefe77722591a9439b",
+      "input_setup_ms": 21606.293833,
+      "native_verify_ms": 51.357541,
+      "prepare_ms": 3.334833,
+      "process_peak_rss_kib": null,
+      "proof_debug_digest": "e9e5a8f9c36951fda5579b1ef1412cf8adcb42f1180c01fe3d941d315e26aef6",
+      "proof_payload_bytes": 2294316,
+      "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+      "proof_prove_ms": 1027.042,
+      "proof_verify_ms": 140.244584,
+      "roots": [
+        "efe2c6e174853fb788ceb6c37073757333f8b3127426f2a3c38c42ebadeacbdf",
+        "8dec1d056befbaf7ed8d741c1375ad8e4822ac0e6e3f3ea248ee5235a7756f11",
+        "c3af73fa1494fe8dfdd2bdf3faa65f4a8f9ce887830099c0d84787ae28da2467"
+      ],
+      "sample": null,
+      "schema": "bitz/falcon-hybrid/v3",
+      "security_target": 100,
+      "threads": 8,
+      "total_prover_ms": 1351.147375,
+      "trial": "warmup",
+      "verified": true,
+      "witness_commit_ms": 324.105375
+    },
+    {
+      "batch": 1024,
+      "capacity": 1024,
+      "end_to_end_ms": 1496.260916,
+      "event": "trial",
+      "input_digest": "6b134b072cd5539a66d6cac03425a407d127f3886a037caefe77722591a9439b",
+      "input_setup_ms": 21606.293833,
+      "native_verify_ms": 52.536083,
+      "prepare_ms": 3.334833,
+      "process_peak_rss_kib": null,
+      "proof_debug_digest": "e9e5a8f9c36951fda5579b1ef1412cf8adcb42f1180c01fe3d941d315e26aef6",
+      "proof_payload_bytes": 2294316,
+      "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+      "proof_prove_ms": 1131.728625,
+      "proof_verify_ms": 139.26925,
+      "roots": [
+        "efe2c6e174853fb788ceb6c37073757333f8b3127426f2a3c38c42ebadeacbdf",
+        "8dec1d056befbaf7ed8d741c1375ad8e4822ac0e6e3f3ea248ee5235a7756f11",
+        "c3af73fa1494fe8dfdd2bdf3faa65f4a8f9ce887830099c0d84787ae28da2467"
+      ],
+      "sample": 1,
+      "schema": "bitz/falcon-hybrid/v3",
+      "security_target": 100,
+      "threads": 8,
+      "total_prover_ms": 1356.991666,
+      "trial": "sample",
+      "verified": true,
+      "witness_commit_ms": 225.263041
+    },
+    {
+      "batch": 1024,
+      "capacity": 1024,
+      "end_to_end_ms": 1381.5751249999998,
+      "event": "trial",
+      "input_digest": "6b134b072cd5539a66d6cac03425a407d127f3886a037caefe77722591a9439b",
+      "input_setup_ms": 21606.293833,
+      "native_verify_ms": 52.824875,
+      "prepare_ms": 3.334833,
+      "process_peak_rss_kib": null,
+      "proof_debug_digest": "e9e5a8f9c36951fda5579b1ef1412cf8adcb42f1180c01fe3d941d315e26aef6",
+      "proof_payload_bytes": 2294316,
+      "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+      "proof_prove_ms": 1020.891542,
+      "proof_verify_ms": 135.446667,
+      "roots": [
+        "efe2c6e174853fb788ceb6c37073757333f8b3127426f2a3c38c42ebadeacbdf",
+        "8dec1d056befbaf7ed8d741c1375ad8e4822ac0e6e3f3ea248ee5235a7756f11",
+        "c3af73fa1494fe8dfdd2bdf3faa65f4a8f9ce887830099c0d84787ae28da2467"
+      ],
+      "sample": 2,
+      "schema": "bitz/falcon-hybrid/v3",
+      "security_target": 100,
+      "threads": 8,
+      "total_prover_ms": 1246.128458,
+      "trial": "sample",
+      "verified": true,
+      "witness_commit_ms": 225.236916
+    },
+    {
+      "batch": 1024,
+      "capacity": 1024,
+      "end_to_end_ms": 1417.2706660000001,
+      "event": "trial",
+      "input_digest": "6b134b072cd5539a66d6cac03425a407d127f3886a037caefe77722591a9439b",
+      "input_setup_ms": 21606.293833,
+      "native_verify_ms": 53.241458,
+      "prepare_ms": 3.334833,
+      "process_peak_rss_kib": null,
+      "proof_debug_digest": "e9e5a8f9c36951fda5579b1ef1412cf8adcb42f1180c01fe3d941d315e26aef6",
+      "proof_payload_bytes": 2294316,
+      "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+      "proof_prove_ms": 1065.117833,
+      "proof_verify_ms": 137.27025,
+      "roots": [
+        "efe2c6e174853fb788ceb6c37073757333f8b3127426f2a3c38c42ebadeacbdf",
+        "8dec1d056befbaf7ed8d741c1375ad8e4822ac0e6e3f3ea248ee5235a7756f11",
+        "c3af73fa1494fe8dfdd2bdf3faa65f4a8f9ce887830099c0d84787ae28da2467"
+      ],
+      "sample": 3,
+      "schema": "bitz/falcon-hybrid/v3",
+      "security_target": 100,
+      "threads": 8,
+      "total_prover_ms": 1280.000416,
+      "trial": "sample",
+      "verified": true,
+      "witness_commit_ms": 214.88258299999998
+    },
+    {
+      "batch": 1024,
+      "capacity": 1024,
+      "end_to_end_ms": 1409.499958,
+      "event": "trial",
+      "input_digest": "6b134b072cd5539a66d6cac03425a407d127f3886a037caefe77722591a9439b",
+      "input_setup_ms": 21606.293833,
+      "native_verify_ms": 52.682874999999996,
+      "prepare_ms": 3.334833,
+      "process_peak_rss_kib": null,
+      "proof_debug_digest": "e9e5a8f9c36951fda5579b1ef1412cf8adcb42f1180c01fe3d941d315e26aef6",
+      "proof_payload_bytes": 2294316,
+      "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+      "proof_prove_ms": 1050.2960830000002,
+      "proof_verify_ms": 135.33225,
+      "roots": [
+        "efe2c6e174853fb788ceb6c37073757333f8b3127426f2a3c38c42ebadeacbdf",
+        "8dec1d056befbaf7ed8d741c1375ad8e4822ac0e6e3f3ea248ee5235a7756f11",
+        "c3af73fa1494fe8dfdd2bdf3faa65f4a8f9ce887830099c0d84787ae28da2467"
+      ],
+      "sample": 4,
+      "schema": "bitz/falcon-hybrid/v3",
+      "security_target": 100,
+      "threads": 8,
+      "total_prover_ms": 1274.1677080000002,
+      "trial": "sample",
+      "verified": true,
+      "witness_commit_ms": 223.871625
+    },
+    {
+      "batch": 1024,
+      "capacity": 1024,
+      "end_to_end_ms": 1309.133292,
+      "event": "trial",
+      "input_digest": "6b134b072cd5539a66d6cac03425a407d127f3886a037caefe77722591a9439b",
+      "input_setup_ms": 21606.293833,
+      "native_verify_ms": 52.37275,
+      "prepare_ms": 3.334833,
+      "process_peak_rss_kib": null,
+      "proof_debug_digest": "e9e5a8f9c36951fda5579b1ef1412cf8adcb42f1180c01fe3d941d315e26aef6",
+      "proof_payload_bytes": 2294316,
+      "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+      "proof_prove_ms": 951.614333,
+      "proof_verify_ms": 135.95629200000002,
+      "roots": [
+        "efe2c6e174853fb788ceb6c37073757333f8b3127426f2a3c38c42ebadeacbdf",
+        "8dec1d056befbaf7ed8d741c1375ad8e4822ac0e6e3f3ea248ee5235a7756f11",
+        "c3af73fa1494fe8dfdd2bdf3faa65f4a8f9ce887830099c0d84787ae28da2467"
+      ],
+      "sample": 5,
+      "schema": "bitz/falcon-hybrid/v3",
+      "security_target": 100,
+      "threads": 8,
+      "total_prover_ms": 1173.177,
+      "trial": "sample",
+      "verified": true,
+      "witness_commit_ms": 221.562667
+    }
+  ],
+  "medians": {
+    "witness_commit_ms": 223.871625,
+    "proof_prove_ms": 1050.2960830000002,
+    "total_prover_ms": 1274.1677080000002,
+    "proof_verify_ms": 135.95629200000002,
+    "native_verify_ms": 52.682874999999996,
+    "end_to_end_ms": 1409.499958
+  },
+  "payload_bytes": 2294316
+}
