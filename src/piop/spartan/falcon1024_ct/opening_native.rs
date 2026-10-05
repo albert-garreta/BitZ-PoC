@@ -119,7 +119,9 @@ impl BindingForm<'_> {
         target: &mut F,
         scale: F,
     ) -> Result<(), FalconError> {
-        let claim = &self.native_claim;
+        let Some(claim) = &self.native_claim else {
+            return Ok(());
+        };
         let field = self.field;
         if claim.weights.len() != self.layout.batch() * N {
             return Err(piop("native ring source dimensions"));

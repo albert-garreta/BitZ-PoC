@@ -39,6 +39,10 @@ use super::{
 type F = SpartanBitzField;
 type Cfg = <F as SpartanField>::Config;
 
+#[path = "piop_shared.rs"]
+mod shared;
+pub(super) use shared::{SharedFalconPiopProof, verify_shared_falcon_piop_in_field};
+
 const PRIME_MIN: u128 = 1u128 << 125;
 const PRIME_MAX: u128 = (1u128 << 126) - 1;
 const COMPACTION_LEAVES: usize = 1 << 11;
@@ -287,13 +291,41 @@ pub fn prove_falcon_piop(
     target_bits: usize,
 ) -> Result<FalconPiopProof, FalconError> {
     validate_inputs(layout, traces, target_bits)?;
+    if layout.is_shared_prime() {
+        return Err(piop("shared-prime PIOP requires its supplied field"));
+    }
     bind_header(transcript, layout, target_bits);
     let field = sample_field(transcript)?;
+    prove_falcon_piop_body(transcript, layout, traces, target_bits, &field)
+}
 
-    let norm = prove_norm(transcript, layout, traces, target_bits, &field)
+/// Runs the retained integer reductions using the prime already sampled after
+/// the shared ring polynomial. The caller must obtain `field` from that sampler
+/// and bind the source commitments before starting either branch.
+pub(super) fn prove_falcon_piop_in_field(
+    transcript: &mut impl Transcript,
+    layout: &FalconSourceLayout,
+    traces: &[FalconVerificationTrace],
+    target_bits: usize,
+    field: &Cfg,
+) -> Result<FalconPiopProof, FalconError> {
+    validate_inputs(layout, traces, target_bits)?;
+    validate_shared_field(layout, field)?;
+    bind_shared_header(transcript, layout, target_bits, field);
+    prove_falcon_piop_body(transcript, layout, traces, target_bits, field)
+}
+
+fn prove_falcon_piop_body(
+    transcript: &mut impl Transcript,
+    layout: &FalconSourceLayout,
+    traces: &[FalconVerificationTrace],
+    target_bits: usize,
+    field: &Cfg,
+) -> Result<FalconPiopProof, FalconError> {
+    let norm = prove_norm(transcript, layout, traces, target_bits, field)
         .map_err(|error| piop(format!("norm: {error}")))?;
     let compact_products =
-        prove_compaction_products(transcript, layout, traces, target_bits, &field)
+        prove_compaction_products(transcript, layout, traces, target_bits, field)
             .map_err(|error| piop(format!("compaction products: {error}")))?;
 
     transcript.absorb_slice(b"bitz/falcon1024-ct/compaction/fingerprint/v1");
@@ -309,12 +341,12 @@ pub fn prove_falcon_piop(
     } else {
         None
     };
-    let gamma = squeeze(transcript, &field)?;
-    let rank_scale = squeeze(transcript, &field)?;
-    let ranks = compaction_ranks(gamma, rank_scale, &field);
+    let gamma = squeeze(transcript, field)?;
+    let rank_scale = squeeze(transcript, field)?;
+    let ranks = compaction_ranks(gamma, rank_scale, field);
     let leaves: Vec<_> = crate::utils::cfg_iter!(traces)
         .map(|trace| {
-            let (candidate, output) = compaction_leaves_with_ranks(trace, &ranks, &field);
+            let (candidate, output) = compaction_leaves_with_ranks(trace, &ranks, field);
             [candidate, output]
         })
         .collect::<Vec<_>>()
@@ -326,7 +358,7 @@ pub fn prove_falcon_piop(
         leaves,
         target_bits,
         security_schedule(layout, target_bits)?,
-        &field,
+        field,
     )?;
     let compaction_leaf = prove_compaction_leaf(
         transcript,
@@ -336,7 +368,7 @@ pub fn prove_falcon_piop(
         gamma,
         rank_scale,
         target_bits,
-        &field,
+        field,
     )?;
 
     Ok(FalconPiopProof {
@@ -364,12 +396,45 @@ pub fn verify_falcon_piop(
     if !matches!(target_bits, 100 | 128) || proof.compaction.len() != layout.batch() {
         return Err(piop("invalid PIOP shape"));
     }
+    if layout.is_shared_prime() {
+        return Err(piop("shared-prime PIOP requires its supplied field"));
+    }
     bind_header(transcript, layout, target_bits);
     let field = sample_field(transcript)?;
     if field.modulus_u128() != proof.modulus {
         return Err(piop("transcript prime mismatch"));
     }
-    verify_norm(transcript, layout, &proof.norm, target_bits, &field)?;
+    verify_falcon_piop_body(transcript, layout, proof, target_bits, &field)
+}
+
+/// Verifies using the authenticated shared-prime context; this entry point does
+/// not draw a prime. Its transcript header separates it from the legacy PIOP.
+pub(super) fn verify_falcon_piop_in_field(
+    transcript: &mut impl Transcript,
+    layout: &FalconSourceLayout,
+    proof: &FalconPiopProof,
+    target_bits: usize,
+    field: &Cfg,
+) -> Result<(), FalconError> {
+    if !matches!(target_bits, 100 | 128) || proof.compaction.len() != layout.batch() {
+        return Err(piop("invalid PIOP shape"));
+    }
+    validate_shared_field(layout, field)?;
+    if field.modulus_u128() != proof.modulus {
+        return Err(piop("shared transcript prime mismatch"));
+    }
+    bind_shared_header(transcript, layout, target_bits, field);
+    verify_falcon_piop_body(transcript, layout, proof, target_bits, field)
+}
+
+fn verify_falcon_piop_body(
+    transcript: &mut impl Transcript,
+    layout: &FalconSourceLayout,
+    proof: &FalconPiopProof,
+    target_bits: usize,
+    field: &Cfg,
+) -> Result<(), FalconError> {
+    verify_norm(transcript, layout, &proof.norm, target_bits, field)?;
     transcript.absorb_slice(b"bitz/falcon1024-ct/compaction-products/v3");
     verify_quadratic(
         transcript,
@@ -377,7 +442,7 @@ pub fn verify_falcon_piop(
         &proof.compact_products,
         target_bits,
         security_schedule(layout, target_bits)?,
-        &field,
+        field,
     )?;
 
     transcript.absorb_slice(b"bitz/falcon1024-ct/compaction/fingerprint/v1");
@@ -392,8 +457,8 @@ pub fn verify_falcon_piop(
         (100, None) => {}
         _ => return Err(piop("invalid fingerprint grinding nonce")),
     }
-    let gamma = squeeze(transcript, &field)?;
-    let rank_scale = squeeze(transcript, &field)?;
+    let gamma = squeeze(transcript, field)?;
+    let rank_scale = squeeze(transcript, field)?;
     if gamma != proof.compaction_gamma || rank_scale != proof.compaction_rank_scale {
         return Err(piop("compaction fingerprint challenge mismatch"));
     }
@@ -403,7 +468,7 @@ pub fn verify_falcon_piop(
         &proof.compaction,
         target_bits,
         security_schedule(layout, target_bits)?,
-        &field,
+        field,
     )?;
     verify_compaction_leaf(
         transcript,
@@ -411,7 +476,7 @@ pub fn verify_falcon_piop(
         &proof.compaction,
         &proof.compaction_leaf,
         target_bits,
-        &field,
+        field,
     )?;
     Ok(())
 }
@@ -432,6 +497,31 @@ fn bind_header(transcript: &mut impl Transcript, layout: &FalconSourceLayout, ta
     transcript.absorb_slice(&(layout.batch() as u64).to_le_bytes());
     transcript.absorb_slice(&(layout.capacity() as u64).to_le_bytes());
     transcript.absorb_slice(&(target_bits as u64).to_le_bytes());
+}
+
+fn validate_shared_field(layout: &FalconSourceLayout, field: &Cfg) -> Result<(), FalconError> {
+    let modulus = field.modulus_u128();
+    if !layout.is_shared_prime()
+        || !(PRIME_MIN..=PRIME_MAX).contains(&modulus)
+        || modulus <= super::constraints::SOURCE_RESIDUAL_BOUND
+    {
+        return Err(piop("invalid shared-prime integer context"));
+    }
+    Ok(())
+}
+
+fn bind_shared_header(
+    transcript: &mut impl Transcript,
+    layout: &FalconSourceLayout,
+    target_bits: usize,
+    field: &Cfg,
+) {
+    transcript.absorb_slice(b"bitz/falcon1024-ct/piop/shared-prime/v1");
+    transcript.absorb_slice(&(layout.batch() as u64).to_le_bytes());
+    transcript.absorb_slice(&(layout.capacity() as u64).to_le_bytes());
+    transcript.absorb_slice(&(target_bits as u64).to_le_bytes());
+    transcript.absorb_slice(&field.modulus_u128().to_le_bytes());
+    transcript.absorb_slice(&(layout.live_bits() as u64).to_le_bytes());
 }
 
 fn sample_field(transcript: &mut impl Transcript) -> Result<Cfg, FalconError> {
@@ -562,6 +652,17 @@ fn verify_norm(
     target_bits: usize,
     field: &Cfg,
 ) -> Result<(), FalconError> {
+    verify_norm_payload(transcript, layout, proof, target_bits, field, true).map(|_| ())
+}
+
+fn verify_norm_payload(
+    transcript: &mut impl Transcript,
+    layout: &FalconSourceLayout,
+    proof: &NormProof,
+    target_bits: usize,
+    field: &Cfg,
+    check_metadata: bool,
+) -> Result<(Vec<F>, Vec<F>, F), FalconError> {
     transcript.absorb_slice(b"bitz/falcon1024-ct/norm/v3");
     match (
         target_bits == 128 && layout.capacity() > 1,
@@ -582,7 +683,7 @@ fn verify_norm(
         layout.capacity().trailing_zeros() as usize,
         field,
     )?;
-    if instance_point != proof.instance_point {
+    if check_metadata && instance_point != proof.instance_point {
         return Err(piop("norm instance point mismatch"));
     }
     validate_field_elements(&[proof.claims[0], proof.claims[1], proof.slack], field)
@@ -599,12 +700,13 @@ fn verify_norm(
         .fold(field.zero(), |sum, weight| field.add(&sum, weight));
     let beta = unsigned(BETA_SQUARED as u128, field);
     let expected = field.mul(&instance_sum, &beta);
-    if field.add(&field.add(&proof.claims[0], &proof.claims[1]), &proof.slack) != expected {
+    let slack = field.sub(&expected, &field.add(&proof.claims[0], &proof.claims[1]));
+    if check_metadata && proof.slack != slack {
         return Err(piop("norm claim does not equal the Falcon bound"));
     }
     absorb_field_elements(
         transcript,
-        &[proof.claims[0], proof.claims[1], proof.slack],
+        &[proof.claims[0], proof.claims[1], slack],
         field,
     );
     let rounds = 10 + layout.capacity().trailing_zeros() as usize;
@@ -636,7 +738,7 @@ fn verify_norm(
     if point.len() != rounds {
         return Err(piop("norm point length mismatch"));
     }
-    if point != proof.point {
+    if check_metadata && point != proof.point {
         return Err(piop("norm terminal point mismatch"));
     }
     for (claim, terminal) in final_claims.iter().zip(proof.terminal.iter()) {
@@ -645,7 +747,7 @@ fn verify_norm(
         }
     }
     absorb_field_elements(transcript, &proof.terminal.concat(), field);
-    Ok(())
+    Ok((instance_point, point, slack))
 }
 
 #[tracing::instrument(skip_all, name = "falcon_arithmetic:hash_to_point_products")]
@@ -783,6 +885,27 @@ fn verify_quadratic(
     security: FalconSecuritySchedule,
     field: &Cfg,
 ) -> Result<(), FalconError> {
+    verify_quadratic_payload(
+        transcript,
+        rounds,
+        proof,
+        target_bits,
+        security,
+        field,
+        true,
+    )
+    .map(|_| ())
+}
+
+fn verify_quadratic_payload(
+    transcript: &mut impl Transcript,
+    rounds: usize,
+    proof: &QuadraticRelationProof,
+    target_bits: usize,
+    security: FalconSecuritySchedule,
+    field: &Cfg,
+    check_metadata: bool,
+) -> Result<Vec<F>, FalconError> {
     match (target_bits, proof.point_nonce) {
         (128, Some(nonce)) => verify_and_absorb(
             transcript,
@@ -823,10 +946,10 @@ fn verify_quadratic(
         )
     }
     .map_err(|error| piop(error.to_string()))?;
-    if output.point != proof.point {
+    if check_metadata && output.point != proof.point {
         return Err(piop("quadratic terminal point mismatch"));
     }
-    Ok(())
+    Ok(output.point)
 }
 
 #[cfg(test)]
@@ -1189,23 +1312,47 @@ fn verify_product_forest(
     security: FalconSecuritySchedule,
     field: &Cfg,
 ) -> Result<(), FalconError> {
-    if compaction.is_empty() || compaction.len() > 1024 || forest.layers.len() != 11 {
+    if compaction.is_empty() || compaction.len() > 1024 {
         return Err(piop("invalid compaction forest shape"));
     }
-    let terminals: Vec<_> = compaction
+    let roots: Vec<_> = compaction
         .iter()
         .flat_map(|pair| [&pair.candidate, &pair.output])
+        .map(|tree| tree.root)
         .collect();
-    let roots: Vec<_> = terminals.iter().map(|tree| tree.root).collect();
-    validate_field_elements(&roots, field).map_err(|error| piop(error.to_string()))?;
+    let (point, claims) =
+        verify_product_forest_payload(transcript, forest, &roots, target_bits, security, field)?;
+    if compaction
+        .iter()
+        .flat_map(|pair| [&pair.candidate, &pair.output])
+        .zip(&claims)
+        .any(|(tree, claim)| tree.terminal_point != point || tree.terminal_claim != *claim)
+    {
+        return Err(piop("product forest terminal mismatch"));
+    }
+    Ok(())
+}
+
+fn verify_product_forest_payload(
+    transcript: &mut impl Transcript,
+    forest: &PrimeProductForestProof,
+    roots: &[F],
+    target_bits: usize,
+    security: FalconSecuritySchedule,
+    field: &Cfg,
+) -> Result<(Vec<F>, Vec<F>), FalconError> {
+    if roots.is_empty() || roots.len() > 2048 || roots.len() % 2 != 0 || forest.layers.len() != 11 {
+        return Err(piop("invalid compaction forest shape"));
+    }
+    validate_field_elements(roots, field).map_err(|error| piop(error.to_string()))?;
     if roots.chunks_exact(2).any(|pair| pair[0] != pair[1]) {
         return Err(piop("compaction product roots differ"));
     }
-    bind_forest(transcript, &roots, field);
-    let mut claims = roots;
+    bind_forest(transcript, roots, field);
+    let mut claims = roots.to_vec();
     let mut point = Vec::new();
     for (level, layer) in forest.layers.iter().enumerate() {
-        if layer.evaluations.len() != terminals.len() {
+        if layer.evaluations.len() != roots.len() {
             return Err(piop("product forest evaluation count mismatch"));
         }
         validate_field_elements(&layer.evaluations.concat(), field)
@@ -1235,7 +1382,7 @@ fn verify_product_forest(
                 security,
                 layer.batching_nonce,
             )?;
-            let scales = forest_scales(transcript, terminals.len(), field)?;
+            let scales = forest_scales(transcript, roots.len(), field)?;
             let initial = weighted_sum(&claims, &scales, field);
             let mut boundary = VerifierGrindingRoundBoundary::<ForestRoundGrinding>::new(
                 if target_bits == 128 {
@@ -1277,14 +1424,7 @@ fn verify_product_forest(
         point = next_point;
         point.push(lambda);
     }
-    if terminals
-        .iter()
-        .zip(&claims)
-        .any(|(tree, claim)| tree.terminal_point != point || tree.terminal_claim != *claim)
-    {
-        return Err(piop("product forest terminal mismatch"));
-    }
-    Ok(())
+    Ok((point, claims))
 }
 
 fn bind_compaction_leaf(
@@ -1459,6 +1599,27 @@ fn verify_compaction_leaf(
     target_bits: usize,
     field: &Cfg,
 ) -> Result<(), FalconError> {
+    verify_compaction_leaf_payload(
+        transcript,
+        layout,
+        compaction,
+        proof,
+        target_bits,
+        field,
+        true,
+    )
+    .map(|_| ())
+}
+
+fn verify_compaction_leaf_payload(
+    transcript: &mut impl Transcript,
+    layout: &FalconSourceLayout,
+    compaction: &[CompactionProof],
+    proof: &CompactionLeafProof,
+    target_bits: usize,
+    field: &Cfg,
+    check_metadata: bool,
+) -> Result<(Vec<F>, Vec<F>), FalconError> {
     let security = security_schedule(layout, target_bits)?;
     bind_compaction_leaf(transcript, compaction, field);
     let instance_rounds = layout.capacity().trailing_zeros() as usize;
@@ -1477,7 +1638,7 @@ fn verify_compaction_leaf(
         _ => return Err(piop("invalid leaf-instance grinding nonce")),
     }
     let instance_point = sample_point(transcript, instance_rounds, field)?;
-    if instance_point != proof.instance_point {
+    if check_metadata && instance_point != proof.instance_point {
         return Err(piop("compaction leaf instance point mismatch"));
     }
     validate_field_elements(&proof.terminal, field).map_err(|error| piop(error.to_string()))?;
@@ -1501,7 +1662,7 @@ fn verify_compaction_leaf(
             &mut boundary,
         )
         .map_err(|error| piop(error.to_string()))?;
-    if point != proof.point
+    if (check_metadata && point != proof.point)
         || final_claim
             != field.mul(
                 &field.mul(&proof.terminal[0], &proof.terminal[1]),
@@ -1511,7 +1672,7 @@ fn verify_compaction_leaf(
         return Err(piop("compaction leaf terminal identity failed"));
     }
     absorb_field_elements(transcript, &proof.terminal, field);
-    Ok(())
+    Ok((instance_point, point))
 }
 
 fn sample_point(
@@ -1570,6 +1731,139 @@ mod tests {
     const MESSAGE: &[u8; 32] = include_bytes!("fixtures/message.bin");
     const SIGNATURE: &[u8; super::super::CT_SIGNATURE_BYTES] =
         include_bytes!("fixtures/signature_ct.bin");
+
+    struct SamplingAudit {
+        inner: Blake3Transcript,
+        prime_draws: usize,
+        shared_headers: usize,
+    }
+
+    impl SamplingAudit {
+        fn new() -> Self {
+            Self {
+                inner: Blake3Transcript::new(),
+                prime_draws: 0,
+                shared_headers: 0,
+            }
+        }
+    }
+
+    impl Transcript for SamplingAudit {
+        fn get_challenge<T: crate::transcript::traits::ConstTranscribable>(&mut self) -> T {
+            self.inner.get_challenge()
+        }
+
+        fn begin_sampling(&mut self) {
+            self.inner.begin_sampling();
+        }
+
+        fn fill_sampling_bytes(&mut self, output: &mut [u8]) {
+            self.inner.fill_sampling_bytes(output);
+        }
+
+        fn absorb_inner(&mut self, bytes: &[u8]) {
+            self.prime_draws += usize::from(bytes == b"bitz/shared-prime-sampling/v1");
+            self.shared_headers += usize::from(bytes == b"bitz/falcon1024-ct/piop/shared-prime/v1");
+            self.inner.absorb_inner(bytes);
+        }
+    }
+
+    #[test]
+    fn supplied_field_piop_roundtrips_without_a_second_prime_draw() {
+        let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+        let layout = FalconSourceLayout::new_shared_prime(3).unwrap();
+        let field = sample_field(&mut Blake3Transcript::new()).unwrap();
+        let mut prover = SamplingAudit::new();
+        let proof = prove_falcon_piop_in_field(
+            &mut prover,
+            &layout,
+            &vec![trace.clone(); layout.batch()],
+            100,
+            &field,
+        )
+        .unwrap();
+        assert_eq!(proof.modulus, field.modulus_u128());
+        assert_eq!(prover.prime_draws, 0);
+        assert_eq!(prover.shared_headers, 1);
+        let mut verifier = SamplingAudit::new();
+        verify_falcon_piop_in_field(&mut verifier, &layout, &proof, 100, &field).unwrap();
+        assert_eq!(verifier.prime_draws, 0);
+        assert_eq!(verifier.shared_headers, 1);
+        assert_eq!(
+            prover.get_challenge::<u128>(),
+            verifier.get_challenge::<u128>()
+        );
+
+        let mut changed = proof.clone();
+        changed.modulus ^= 2;
+        assert!(
+            verify_falcon_piop_in_field(&mut SamplingAudit::new(), &layout, &changed, 100, &field,)
+                .is_err()
+        );
+        assert!(verify_falcon_piop(&mut SamplingAudit::new(), &layout, &proof, 100,).is_err());
+        let legacy = FalconSourceLayout::new(layout.batch()).unwrap();
+        assert!(
+            verify_falcon_piop_in_field(&mut SamplingAudit::new(), &legacy, &proof, 100, &field,)
+                .is_err()
+        );
+        let small = field::FpCtx::from_prime_u128(7);
+        assert!(validate_shared_field(&layout, &small).is_err());
+        let wide = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
+        assert!(validate_shared_field(&layout, &wide).is_err());
+    }
+
+    #[test]
+    fn shared_ring_projection_budget_preserves_449_bound_exactly() {
+        use num_bigint::BigUint;
+
+        // All remaining conservative composition terms are unchanged: H rows
+        // fit the old linear stride and H bits fit the old source stride.
+        let q = BigUint::from(12_289u32);
+        let extension = q.pow(11);
+        let old_denominator = &extension - &q;
+        let extension_product = &extension * &old_denominator;
+        for batch in 1usize..=1024 {
+            let layout = FalconSourceLayout::new_shared_prime(batch).unwrap();
+            let m = layout.capacity().ilog2() as usize;
+            let ring_numerator = 4 * m + 2_046 + 3 + 2 * 10;
+            let baseline_numerator = m + 2_046;
+            for (target, old_grind, expected) in [(100, 0usize, 2usize), (128, 12, 14)] {
+                assert_eq!(
+                    super::super::shared_ring::projection_grinding_bits(target) as usize,
+                    expected
+                );
+                let preserves_baseline = |grind: usize| {
+                    let scale = grind.max(old_grind);
+                    // Cross-multiply positive rational denominators. This
+                    // catches the small E-term increase that carry-only
+                    // accounting misses at one fewer projection grind bit.
+                    let candidate = (BigUint::from(ring_numerator) * &old_denominator
+                        << (125 + scale))
+                        + (BigUint::from(20u8) << (scale - grind)) * &extension_product;
+                    let baseline = (BigUint::from(baseline_numerator) * &extension
+                        << (125 + scale))
+                        + (BigUint::from(10u8) << (scale - old_grind)) * &extension_product;
+                    candidate <= baseline
+                };
+                assert!(
+                    preserves_baseline(expected),
+                    "batch {batch}, target {target}"
+                );
+                assert!(
+                    (0..expected).all(|g| !preserves_baseline(g)),
+                    "batch {batch}, target {target}"
+                );
+                let schedule = FalconSecuritySchedule::for_layout(target, &layout).unwrap();
+                let legacy = FalconSourceLayout::new(batch).unwrap();
+                assert_eq!(
+                    schedule,
+                    FalconSecuritySchedule::for_layout(target, &legacy).unwrap()
+                );
+                assert_eq!(layout.linear_stride(), legacy.linear_stride());
+                assert_eq!(layout.source_bits(), legacy.source_bits());
+            }
+        }
+    }
 
     #[test]
     fn current_grinding_schedule_meets_each_prime_group_budget() {

@@ -39,6 +39,7 @@ impl FalconTraceCounts {
 pub struct FalconSourceLayout {
     batch: usize,
     capacity: usize,
+    shared_prime: bool,
 }
 
 impl FalconSourceLayout {
@@ -55,17 +56,46 @@ impl FalconSourceLayout {
         Ok(Self {
             batch,
             capacity: batch.next_power_of_two(),
+            shared_prime: false,
         })
+    }
+
+    /// Opt-in source view for the shared-prime ring reduction. The public-key
+    /// coefficients follow the legacy columns without changing their offsets.
+    pub fn new_shared_prime(batch: usize) -> Result<Self, FalconError> {
+        let mut layout = Self::new(batch)?;
+        layout.shared_prime = true;
+        if layout.live_bits() > Self::SIGNATURE_STRIDE {
+            return Err(FalconError::SourceStrideOverflow);
+        }
+        Ok(layout)
+    }
+
+    pub const fn is_shared_prime(&self) -> bool {
+        self.shared_prime
+    }
+
+    /// Unsigned, little-endian 14-bit public-key coefficients in each signature.
+    pub const fn public_key_offset(&self) -> Option<usize> {
+        if self.shared_prime {
+            Some(Self::counts().total())
+        } else {
+            None
+        }
+    }
+
+    pub const fn live_bits(&self) -> usize {
+        Self::counts().total() + if self.shared_prime { 14 * N } else { 0 }
     }
 
     pub const fn signature_stride(&self) -> usize {
         Self::SIGNATURE_STRIDE
     }
     pub const fn offsets(&self) -> super::FalconSourceOffsets {
-        super::FalconSourceOffsets::new()
+        super::FalconSourceOffsets::new(self.shared_prime)
     }
     pub const fn linear_rows(&self) -> usize {
-        super::FalconConstraintCounts::per_signature().linear_rows()
+        super::FalconConstraintCounts::for_layout(self).linear_rows()
     }
     pub const fn linear_stride(&self) -> usize {
         1 << 13
@@ -117,6 +147,34 @@ impl FalconSourceLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_prime_layout_appends_only_public_key_bits() {
+        for batch in 1..=1024 {
+            let legacy = FalconSourceLayout::new(batch).unwrap();
+            let shared = FalconSourceLayout::new_shared_prime(batch).unwrap();
+            assert!(!legacy.is_shared_prime());
+            assert!(shared.is_shared_prime());
+            assert_eq!(legacy.public_key_offset(), None);
+            assert_eq!(shared.public_key_offset(), Some(100_578));
+            assert_eq!(shared.offsets().public_key, shared.public_key_offset());
+            assert_eq!(legacy.live_bits(), 100_578);
+            assert_eq!(shared.live_bits(), 114_914);
+            assert_eq!(shared.offsets().end, shared.live_bits());
+            assert_eq!(shared.linear_rows(), 5_482);
+            assert!(shared.linear_rows() < shared.linear_stride());
+            assert!(shared.live_bits() < shared.signature_stride());
+            assert_eq!(shared.source_bits(), legacy.source_bits());
+            assert_eq!(shared.row_vars(), legacy.row_vars());
+            assert_eq!(shared.col_vars(), legacy.col_vars());
+            let mut shared_offsets = shared.offsets();
+            shared_offsets.public_key = None;
+            shared_offsets.end = legacy.offsets().end;
+            assert_eq!(shared_offsets, legacy.offsets());
+        }
+        assert!(FalconSourceLayout::new_shared_prime(0).is_err());
+        assert!(FalconSourceLayout::new_shared_prime(1025).is_err());
+    }
 
     #[test]
     fn source_layout_has_only_required_arithmetic_columns() {

@@ -5,7 +5,7 @@
 //! binary source.  One degree-two inner sumcheck reduces that form to one MLE
 //! evaluation authenticated by the shared hybrid opening.
 
-use std::{collections::HashMap, sync::OnceLock};
+use std::{borrow::Cow, collections::HashMap, sync::OnceLock};
 
 use field::{BatchMulAcc, MergeAccumulator, RingOps, Uint};
 #[cfg(feature = "parallel")]
@@ -39,8 +39,11 @@ use super::{
 
 #[path = "opening_compact.rs"]
 mod compact;
+#[path = "opening_joined.rs"]
+mod joined;
 #[path = "opening_native.rs"]
 mod native;
+use joined::JoinedBinding;
 
 type F = SpartanBitzField;
 type Cfg = <F as SpartanField>::Config;
@@ -128,14 +131,34 @@ impl FalconPublicStatement {
 /// commitment and public statement, and subsequently authenticates its claim.
 #[derive(Clone, Debug)]
 pub struct FalconBindingPrefixProof {
-    pub piop: FalconPiopProof,
-    pub native_ring: super::native_ring::NativeRingProof,
+    pub(super) piop: PiopProof,
+    pub(super) ring: RingProof,
     pub linear_point_nonce: Option<u64>,
     pub binding: SumcheckProof<F, 3>,
+    /// Legacy challenge cache. Empty in SharedPrimeV1, which derives the point.
     pub binding_point: Vec<F>,
-    /// `[coefficient MLE, source MLE]` at `binding_point`.
+    /// `[coefficient MLE, source MLE]` at the binding sumcheck's terminal point.
     pub binding_terminal: [F; 2],
     pub binding_nonces: Vec<u64>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) enum RingProof {
+    Native(super::native_ring::NativeRingProof),
+    Shared(super::shared_ring::Proof),
+}
+
+#[derive(Clone, Debug)]
+pub(super) enum PiopProof {
+    Native(FalconPiopProof),
+    Shared(super::piop::SharedFalconPiopProof),
+}
+
+/// Checked arithmetic context passed directly to the binary bridge.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct BridgeClaim {
+    pub point: Vec<F>,
+    pub modulus: u128,
 }
 
 /// The caller binds the commitments and statement before this call, proves SHAKE
@@ -147,7 +170,7 @@ pub(super) fn prove_binding_prefix(
     traces: &[FalconVerificationTrace],
     source: &FalconSourceWitness,
     target_bits: usize,
-) -> Result<(FalconBindingPrefixProof, Vec<u128>), FalconError> {
+) -> Result<(FalconBindingPrefixProof, Vec<u128>, BridgeClaim), FalconError> {
     statement.validate(layout.batch())?;
     if statement.batch() != layout.batch()
         || statement.messages.len() != layout.batch()
@@ -165,20 +188,40 @@ pub(super) fn prove_binding_prefix(
     {
         return Err(piop("Falcon prefix input shape mismatch"));
     }
-    let algebraic = prove_falcon_piop(transcript, layout, traces, target_bits)?;
-    let field = field_from_modulus(algebraic.modulus)?;
-    let (native_ring, native_claim) = super::native_ring::prove(
-        transcript,
-        layout,
-        statement,
-        traces,
-        &field,
-        target_bits as u32,
-    )?;
+    let (algebraic, field, ring, native_claim, projected) = if layout.is_shared_prime() {
+        let (ring, field, projected) =
+            super::shared_ring::prove(transcript, layout, statement, traces, source, target_bits)?;
+        let algebraic = super::piop::prove_falcon_piop_in_field(
+            transcript,
+            layout,
+            traces,
+            target_bits,
+            &field,
+        )?;
+        (
+            algebraic,
+            field,
+            RingProof::Shared(ring),
+            None,
+            Some(projected),
+        )
+    } else {
+        let algebraic = prove_falcon_piop(transcript, layout, traces, target_bits)?;
+        let field = field_from_modulus(algebraic.modulus)?;
+        let (ring, claim) = super::native_ring::prove(
+            transcript,
+            layout,
+            statement,
+            traces,
+            &field,
+            target_bits as u32,
+        )?;
+        (algebraic, field, RingProof::Native(ring), Some(claim), None)
+    };
 
     let linear_point_nonce = grind_linear_point(transcript, layout, target_bits, None)?;
     let linear_point = sample_point(transcript, linear_rounds(layout), &field)?;
-    let binding = prepare_binding_form(
+    let integer = prepare_binding_form_optional(
         transcript,
         layout,
         statement,
@@ -187,6 +230,13 @@ pub(super) fn prove_binding_prefix(
         &field,
         native_claim,
     )?;
+    let merge = if projected.is_some() {
+        transcript.absorb_slice(b"bitz/falcon1024-ct/shared-prime/merge/v1");
+        squeeze(transcript, &field)?
+    } else {
+        field.one()
+    };
+    let binding = JoinedBinding::new(integer, projected, merge)?;
     let target_span = tracing::info_span!("falcon_arithmetic:binding_target").entered();
     let target = binding.target()?;
     drop(target_span);
@@ -196,7 +246,7 @@ pub(super) fn prove_binding_prefix(
     // particular, do not make Rayon workers wait on a parallel initializer.
     {
         let _template_span = tracing::info_span!("falcon_arithmetic:binding_template").entered();
-        binding.prepared_compact_template()?;
+        binding.integer.prepared_compact_template()?;
     }
     transcript.absorb_slice(b"bitz/falcon1024-ct/shared-inner/v1");
     let packed_source = ColumnMajorPackedBits::new(source.rows(), layout.row_vars());
@@ -237,16 +287,28 @@ pub(super) fn prove_binding_prefix(
         &field,
     );
     let row_weights = canonical_eq_weights(&output.point[..layout.row_vars()], &field)?;
+    let bridge_claim = BridgeClaim {
+        point: output.point,
+        modulus: algebraic.modulus,
+    };
     let prefix = FalconBindingPrefixProof {
-        piop: algebraic,
-        native_ring,
+        piop: if layout.is_shared_prime() {
+            PiopProof::Shared(algebraic.into_shared())
+        } else {
+            PiopProof::Native(algebraic)
+        },
+        ring,
         linear_point_nonce,
         binding: output.proof,
-        binding_point: output.point,
+        binding_point: if layout.is_shared_prime() {
+            Vec::new()
+        } else {
+            bridge_claim.point.clone()
+        },
         binding_terminal,
         binding_nonces,
     };
-    Ok((prefix, row_weights))
+    Ok((prefix, row_weights, bridge_claim))
 }
 
 pub(super) fn verify_binding_prefix(
@@ -255,7 +317,7 @@ pub(super) fn verify_binding_prefix(
     statement: &FalconPublicStatement,
     proof: &FalconBindingPrefixProof,
     target_bits: usize,
-) -> Result<(), FalconError> {
+) -> Result<BridgeClaim, FalconError> {
     statement.validate(layout.batch())?;
     if statement.batch() != layout.batch()
         || statement.messages.len() != layout.batch()
@@ -265,28 +327,54 @@ pub(super) fn verify_binding_prefix(
     {
         return Err(piop("Falcon prefix proof shape mismatch"));
     }
-    verify_falcon_piop(transcript, layout, &proof.piop, target_bits)?;
-    let field = field_from_modulus(proof.piop.modulus)?;
-    let native_claim = super::native_ring::verify(
-        transcript,
-        layout,
-        statement,
-        &proof.native_ring,
-        &field,
-        target_bits as u32,
-    )?;
+    let (field, native_claim, projected, algebraic) =
+        match (&proof.ring, &proof.piop, layout.is_shared_prime()) {
+            (RingProof::Shared(ring), PiopProof::Shared(integer), true) => {
+                let (field, projected) =
+                    super::shared_ring::verify(transcript, layout, statement, ring, target_bits)?;
+                let algebraic = super::piop::verify_shared_falcon_piop_in_field(
+                    transcript,
+                    layout,
+                    integer,
+                    target_bits,
+                    &field,
+                )?;
+                (field, None, Some(projected), Cow::Owned(algebraic))
+            }
+            (RingProof::Native(ring), PiopProof::Native(integer), false) => {
+                verify_falcon_piop(transcript, layout, integer, target_bits)?;
+                let field = field_from_modulus(integer.modulus)?;
+                let claim = super::native_ring::verify(
+                    transcript,
+                    layout,
+                    statement,
+                    ring,
+                    &field,
+                    target_bits as u32,
+                )?;
+                (field, Some(claim), None, Cow::Borrowed(integer))
+            }
+            _ => return Err(piop("Falcon ring protocol mismatch")),
+        };
 
     grind_linear_point(transcript, layout, target_bits, proof.linear_point_nonce)?;
     let linear_point = sample_point(transcript, linear_rounds(layout), &field)?;
-    let binding = prepare_binding_form(
+    let integer = prepare_binding_form_optional(
         transcript,
         layout,
         statement,
-        &proof.piop,
+        &algebraic,
         &linear_point,
         &field,
         native_claim,
     )?;
+    let merge = if projected.is_some() {
+        transcript.absorb_slice(b"bitz/falcon1024-ct/shared-prime/merge/v1");
+        squeeze(transcript, &field)?
+    } else {
+        field.one()
+    };
+    let binding = JoinedBinding::new(integer, projected, merge)?;
     let target = binding.target()?;
     transcript.absorb_slice(b"bitz/falcon1024-ct/shared-inner/v1");
     let (point, final_claims) = if target_bits == 128 {
@@ -316,7 +404,12 @@ pub(super) fn verify_binding_prefix(
     .map_err(|error| piop(error.to_string()))?;
     crate::sumcheck::proof::validate_field_elements(&proof.binding_terminal, &field)
         .map_err(|error| piop(error.to_string()))?;
-    if point != proof.binding_point
+    let valid_point = if layout.is_shared_prime() {
+        proof.binding_point.is_empty()
+    } else {
+        point == proof.binding_point
+    };
+    if !valid_point
         || final_claims[0] != field.mul(&proof.binding_terminal[0], &proof.binding_terminal[1])
     {
         return Err(piop("shared inner terminal mismatch"));
@@ -327,12 +420,15 @@ pub(super) fn verify_binding_prefix(
     absorb_field_elements(transcript, &proof.binding_terminal, &field);
     bind_opening_claim(
         transcript,
-        proof.piop.modulus,
+        field.modulus_u128(),
         &point,
         proof.binding_terminal[1],
         &field,
     );
-    Ok(())
+    Ok(BridgeClaim {
+        point,
+        modulus: field.modulus_u128(),
+    })
 }
 
 fn grind_linear_point(
@@ -381,7 +477,7 @@ struct BindingForm<'a> {
     compact_weights: OnceLock<compact::PreparedWeights>,
     local_linear_point: Vec<F>,
     eta: F,
-    native_claim: super::native_ring::PreparedNativeClaim,
+    native_claim: Option<super::native_ring::PreparedNativeClaim>,
 }
 
 trait CoefficientSink {
@@ -436,6 +532,7 @@ fn factored_weights(
     ))
 }
 
+#[cfg(test)]
 fn prepare_binding_form<'a>(
     transcript: &mut impl Transcript,
     layout: &'a FalconSourceLayout,
@@ -445,11 +542,33 @@ fn prepare_binding_form<'a>(
     field: &'a Cfg,
     native_claim: super::native_ring::PreparedNativeClaim,
 ) -> Result<BindingForm<'a>, FalconError> {
+    prepare_binding_form_optional(
+        transcript,
+        layout,
+        statement,
+        proof,
+        linear_point,
+        field,
+        Some(native_claim),
+    )
+}
+
+fn prepare_binding_form_optional<'a>(
+    transcript: &mut impl Transcript,
+    layout: &'a FalconSourceLayout,
+    statement: &'a FalconPublicStatement,
+    proof: &'a FalconPiopProof,
+    linear_point: &[F],
+    field: &'a Cfg,
+    native_claim: Option<super::native_ring::PreparedNativeClaim>,
+) -> Result<BindingForm<'a>, FalconError> {
     #[cfg(test)]
     let linear_weights = factored_weights(linear_point, field)?;
     // The preceding linear-point nonce protects one atomic challenge block:
-    // its row coordinates followed by eta. No prover message intervenes.
-    // Include eta's degree (batch + 12) in that block's bound.
+    // its row coordinates followed by eta and, for the shared-prime path,
+    // the independent merge scalar. No prover message intervenes. Dropping
+    // the native carry endpoint saves one eta power, paying for that scalar
+    // within the existing conservative degree bound (13 + m + batch + 12).
     transcript.absorb_slice(b"bitz/falcon1024-ct/terminal-collapse/v1");
     let eta = squeeze(transcript, field)?;
     let local_linear_vars = layout.linear_stride().ilog2() as usize;

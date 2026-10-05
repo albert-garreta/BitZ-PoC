@@ -8,12 +8,15 @@
 //! outside prover timing, and the same batch is reused across trials.
 #[path = "common/falcon_inputs.rs"]
 mod falcon_inputs;
-use bitz::piop::spartan::falcon1024_ct::{FalconPublicStatement, PreparedFalconHybrid};
+use bitz::piop::spartan::falcon1024_ct::{
+    FalconProtocol, FalconPublicStatement, PreparedFalconHybrid,
+};
 use falcon_inputs::{generate_cases, reject_fixture_overrides};
 use serde_json::json;
 use std::{error::Error, fmt::Write, fs, time::Instant};
 
 struct Options {
+    protocol: FalconProtocol,
     batch: usize,
     security: usize,
     iterations: usize,
@@ -24,6 +27,7 @@ struct Options {
 
 impl Options {
     fn read() -> Result<Self, Box<dyn Error>> {
+        let mut protocol = FalconProtocol::NativeCarry;
         let mut batch = env_usize("BITZ_FALCON_BATCH")?.unwrap_or(32);
         let mut security = env_usize("BITZ_BENCH_LAMBDA")?;
         let mut iterations = env_usize("BITZ_BENCH_REPS")?.unwrap_or(3);
@@ -41,9 +45,17 @@ impl Options {
             }
             if matches!(flag.as_str(), "--help" | "-h") {
                 println!(
-                    "falcon_hybrid --security 100|128 [--batch 1..1024] [--seed U64] [--iterations N] [--warmup N] [--threads N]\nInputs: distinct fn-dsa 0.3.0 original Falcon-1024 keys and signatures; generation is outside prover timing. Defaults: batch 32, seed 42.\nEnvironment defaults: BITZ_BENCH_LAMBDA, BITZ_FALCON_BATCH, BITZ_FALCON_SEED, BITZ_BENCH_REPS, RAYON_NUM_THREADS."
+                    "falcon_hybrid --security 100|128 [--protocol native|shared-prime] [--batch 1..1024] [--seed U64] [--iterations N] [--warmup N] [--threads N]\nInputs: distinct fn-dsa 0.3.0 original Falcon-1024 keys and signatures; generation is outside prover timing. Defaults: protocol native, batch 32, seed 42.\nEnvironment defaults: BITZ_BENCH_LAMBDA, BITZ_FALCON_BATCH, BITZ_FALCON_SEED, BITZ_BENCH_REPS, RAYON_NUM_THREADS."
                 );
                 std::process::exit(0);
+            }
+            if flag == "--protocol" {
+                protocol = match args.next().ok_or("missing protocol")?.as_str() {
+                    "native" => FalconProtocol::NativeCarry,
+                    "shared-prime" => FalconProtocol::SharedPrimeV1,
+                    _ => return Err("protocol must be native or shared-prime".into()),
+                };
+                continue;
             }
             if flag == "--seed" {
                 seed = args.next().ok_or("missing seed")?.parse()?;
@@ -89,6 +101,7 @@ impl Options {
             return Err("trial count overflow".into());
         }
         Ok(Self {
+            protocol,
             batch,
             security,
             iterations,
@@ -139,7 +152,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     let signatures: Vec<_> = cases.iter().map(|case| case.signature.as_slice()).collect();
 
     let start = Instant::now();
-    let prepared = PreparedFalconHybrid::new(options.batch, options.security)?;
+    let prepared = match options.protocol {
+        FalconProtocol::NativeCarry => PreparedFalconHybrid::new(options.batch, options.security)?,
+        FalconProtocol::SharedPrimeV1 => {
+            PreparedFalconHybrid::new_shared_prime(options.batch, options.security)?
+        }
+    };
+    let protocol = match prepared.protocol() {
+        FalconProtocol::NativeCarry => "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v4",
+        FalconProtocol::SharedPrimeV1 => "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v1",
+    };
     let prepare_ms = ms(start);
     let security = prepared.security();
     let security_terms: Vec<_> = security
@@ -157,9 +179,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         "{}",
         json!({
             "schema": "bitz/falcon-hybrid/v3",
-            "protocol": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v4",
+            "protocol": protocol,
             "integer_bridge": "wfbitz-joint-limbs",
-            "arithmetic_live_bits_per_signature": 100578,
+            "arithmetic_live_bits_per_signature": prepared.live_arithmetic_bits_per_signature(),
             "arithmetic_auxiliary_values_per_signature": 8605,
             "event": "prepared",
             "batch": options.batch,

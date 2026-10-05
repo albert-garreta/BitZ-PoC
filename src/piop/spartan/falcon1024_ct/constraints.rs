@@ -1,7 +1,13 @@
 use super::{
-    BETA_SQUARED, FalconError, FalconSourceLayout, FalconVerificationTrace, HASH_TO_POINT_SAMPLES,
-    N, Q,
+    BETA_SQUARED, FalconError, FalconPublicKey, FalconSourceLayout, FalconSourceWitness,
+    FalconVerificationTrace, HASH_TO_POINT_SAMPLES, N, Q,
 };
+
+/// Maximum absolute exact source residual, before relying on any other
+/// constraint. Raw signed-12 S2 bits may decode to -2048. The norm dominates
+/// division, prefix, public-input, and rejection-bit residuals in both layouts.
+pub(super) const SOURCE_RESIDUAL_BOUND: u128 =
+    N as u128 * (6_144u128.pow(2) + 2_048u128.pow(2)) + ((1u128 << 27) - 1) - BETA_SQUARED as u128;
 
 /// Logical constraint inventory per Falcon signature. These are exact linear
 /// or low-degree relation rows, not generic bit-blasted R1CS rows.
@@ -20,6 +26,14 @@ pub struct FalconConstraintCounts {
 }
 
 impl FalconConstraintCounts {
+    pub const fn for_layout(layout: &FalconSourceLayout) -> Self {
+        let mut counts = Self::per_signature();
+        if layout.is_shared_prime() {
+            counts.public_input_bindings += N;
+        }
+        counts
+    }
+
     /// Scalar relation inventory for the source layout. Native ring membership
     /// and the cubic compaction leaf reduction are separate proof obligations.
     pub const fn per_signature() -> Self {
@@ -143,6 +157,38 @@ pub fn check_exact_constraints(trace: &FalconVerificationTrace) -> Result<(), Fa
         || norm > BETA_SQUARED
     {
         return violation("falcon-norm", 0);
+    }
+    Ok(())
+}
+
+/// Native mirror of the additional shared-prime H rows. This checks decoded
+/// source bits; the proof still authenticates these rows through its binder.
+pub(super) fn check_public_key_bindings(
+    source: &FalconSourceWitness,
+    public_keys: &[FalconPublicKey],
+) -> Result<(), FalconError> {
+    let layout = source.layout();
+    let Some(offset) = layout.public_key_offset() else {
+        return Err(FalconError::Piop(
+            "public-key source needs shared-prime layout".into(),
+        ));
+    };
+    if public_keys.len() != layout.batch() {
+        return Err(FalconError::InvalidBatchCapacity);
+    }
+    for (s, key) in public_keys.iter().enumerate() {
+        for (j, &expected) in key.h.iter().enumerate() {
+            if i64::from(expected) >= Q {
+                return Err(FalconError::PublicKeyCoefficient { index: j });
+            }
+            let base = s * layout.signature_stride() + offset + 14 * j;
+            let actual = (0..14).fold(0u16, |value, bit| {
+                value | (u16::from(source.bit(base + bit)) << bit)
+            });
+            if actual != expected {
+                return violation("public-key-source", s * N + j);
+            }
+        }
     }
     Ok(())
 }
@@ -282,6 +328,33 @@ mod tests {
         assert_eq!(counts.norm_terms, 2_048);
         assert_eq!(counts.norm_round_degree(), 2);
         assert_eq!(counts.product_round_degree(), 3);
+        let shared = FalconSourceLayout::new_shared_prime(3).unwrap();
+        let counts = FalconConstraintCounts::for_layout(&shared);
+        assert_eq!(counts.public_input_bindings, 2_858);
+        assert_eq!(counts.linear_rows(), 5_482);
+    }
+
+    #[test]
+    fn source_residual_bound_covers_all_decoded_assignments() {
+        // No range/public-input equation is assumed while deriving these.
+        let norm_max = N as u128 * (6_144u128.pow(2) + 2_048u128.pow(2)) + ((1u128 << 27) - 1)
+            - u128::from(BETA_SQUARED);
+        let division_max = 7 * Q as u128 + 12_288;
+        let other_bounds = [
+            u128::from(BETA_SQUARED), // minimum norm residual is -BETA_SQUARED
+            division_max,
+            65_535,
+            2_048,  // prefix recurrence
+            2_047,  // initial prefix
+            16_383, // unsigned-14 H minus a canonical public coefficient
+            255,    // public byte
+            1,      // Boolean rejection product
+        ];
+        assert_eq!(division_max, 98_311);
+        assert_eq!(norm_max, 43_013_625_445);
+        assert_eq!(SOURCE_RESIDUAL_BOUND, norm_max);
+        assert!(other_bounds.into_iter().all(|b| b <= SOURCE_RESIDUAL_BOUND));
+        assert!(SOURCE_RESIDUAL_BOUND < 1 << 36);
     }
 
     #[test]

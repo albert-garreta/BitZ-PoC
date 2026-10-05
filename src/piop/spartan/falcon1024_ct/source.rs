@@ -20,11 +20,12 @@ pub struct FalconSourceOffsets {
     pub hash_point: usize,
     pub s1: usize,
     pub norm_slack: usize,
+    pub public_key: Option<usize>,
     pub end: usize,
 }
 
 impl FalconSourceOffsets {
-    pub(super) const fn new() -> Self {
+    pub(super) const fn new(shared_prime: bool) -> Self {
         let counts = FalconSourceLayout::counts();
         let shared_one = 0;
         let message = shared_one + counts.shared_one;
@@ -37,7 +38,9 @@ impl FalconSourceOffsets {
         let hash_point = hash_prefixes + counts.hash_prefixes;
         let s1 = hash_point + counts.hash_point;
         let norm_slack = s1 + counts.s1;
-        let end = norm_slack + counts.norm_slack;
+        let legacy_end = norm_slack + counts.norm_slack;
+        let public_key = if shared_prime { Some(legacy_end) } else { None };
+        let end = legacy_end + if shared_prime { 14 * N } else { 0 };
         Self {
             shared_one,
             message,
@@ -50,6 +53,7 @@ impl FalconSourceOffsets {
             hash_point,
             s1,
             norm_slack,
+            public_key,
             end,
         }
     }
@@ -82,7 +86,7 @@ impl FalconSourceWitness {
         let p = layout.bitz_params();
         let mut rows = vec![vec![0u64; p.rows() / 64]; p.cols()];
         let offsets = layout.offsets();
-        debug_assert_eq!(offsets.end, FalconSourceLayout::counts().total());
+        debug_assert_eq!(offsets.end, layout.live_bits());
 
         crate::utils::cfg_chunks_mut!(rows, layout.signature_stride() >> p.row_vars)
             .enumerate()
@@ -183,6 +187,14 @@ impl FalconSourceWitness {
                 }
                 debug_assert_eq!(trace.norm + trace.norm_slack, BETA_SQUARED);
                 put_unsigned(rows, &p, offsets.norm_slack, trace.norm_slack, 27);
+                if let Some(public_key) = offsets.public_key {
+                    for (i, &coefficient) in trace.public_key.h.iter().enumerate() {
+                        if i64::from(coefficient) >= super::Q {
+                            return Err(FalconError::PublicKeyCoefficient { index: i });
+                        }
+                        put_unsigned(rows, &p, public_key + 14 * i, u64::from(coefficient), 14);
+                    }
+                }
                 Ok(())
             })?;
         Ok(Self { layout, rows })
@@ -194,6 +206,15 @@ impl FalconSourceWitness {
 
     pub fn rows(&self) -> &[Vec<u64>] {
         &self.rows
+    }
+
+    /// Native check of the shared layout's decoded H columns against the
+    /// public statement. Proof verification additionally binds these rows.
+    pub fn check_public_key_bindings(
+        &self,
+        public_keys: &[super::FalconPublicKey],
+    ) -> Result<(), FalconError> {
+        super::constraints::check_public_key_bindings(self, public_keys)
     }
 
     pub fn into_rows(self) -> Vec<Vec<u64>> {
@@ -347,5 +368,45 @@ mod tests {
                 (batch * layout.signature_stride()..layout.source_bits()).all(|i| !witness.bit(i))
             );
         }
+    }
+
+    #[test]
+    fn shared_source_preserves_legacy_bits_and_authenticates_appended_public_keys() {
+        let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+        let batch = 3;
+        let shared = FalconSourceLayout::new_shared_prime(batch).unwrap();
+        let legacy = FalconSourceLayout::new(batch).unwrap();
+        let traces = vec![trace.clone(); batch];
+        let messages = vec![MESSAGE.as_slice(); batch];
+        let signatures = vec![SIGNATURE.as_slice(); batch];
+        let old =
+            FalconSourceWitness::from_traces(legacy, &messages, &signatures, &traces).unwrap();
+        let mut new =
+            FalconSourceWitness::from_traces(shared, &messages, &signatures, &traces).unwrap();
+        let keys = vec![trace.public_key.clone(); batch];
+        new.check_public_key_bindings(&keys).unwrap();
+        let h = shared.public_key_offset().unwrap();
+        for s in 0..batch {
+            let base = s * shared.signature_stride();
+            assert!((0..legacy.live_bits()).all(|j| old.bit(base + j) == new.bit(base + j)));
+            for j in 0..N {
+                assert_eq!(
+                    read_unsigned(&new, base + h + 14 * j, 14),
+                    u64::from(keys[s].h[j])
+                );
+            }
+            assert!((shared.live_bits()..shared.signature_stride()).all(|j| !new.bit(base + j)));
+        }
+        assert!((batch * shared.signature_stride()..shared.source_bits()).all(|j| !new.bit(j)));
+        // Decode H from the committed bits, rather than accepting its trace copy.
+        let flat = shared.signature_stride() + h + 14 * 17 + 3;
+        let row = flat & ((1 << shared.row_vars()) - 1);
+        new.rows[flat >> shared.row_vars()][row / 64] ^= 1 << (row % 64);
+        assert!(
+            matches!(new.check_public_key_bindings(&keys), Err(FalconError::ConstraintViolation {
+            family: "public-key-source", index,
+        }) if index == N + 17)
+        );
+        assert!(old.check_public_key_bindings(&keys).is_err());
     }
 }

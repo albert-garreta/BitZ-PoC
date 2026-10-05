@@ -33,10 +33,10 @@ const DOMAIN: &[u8] = b"bitz/falcon1024-ct/native-ring/v1";
 pub struct Ext(pub [u16; EXTENSION_DEGREE]);
 
 impl Ext {
-    const ZERO: Self = Self([0; EXTENSION_DEGREE]);
-    const ONE: Self = Self([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    pub(super) const ZERO: Self = Self([0; EXTENSION_DEGREE]);
+    pub(super) const ONE: Self = Self([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
-    fn canonical(self) -> bool {
+    pub(super) fn canonical(self) -> bool {
         self.0.iter().all(|&x| i64::from(x) < Q)
     }
 
@@ -45,7 +45,7 @@ impl Ext {
     }
 
     #[inline]
-    fn add(self, rhs: Self) -> Self {
+    pub(super) fn add(self, rhs: Self) -> Self {
         Self(std::array::from_fn(|i| {
             let sum = self.0[i] + rhs.0[i];
             if sum >= Q as u16 { sum - Q as u16 } else { sum }
@@ -53,7 +53,7 @@ impl Ext {
     }
 
     #[inline]
-    fn sub(self, rhs: Self) -> Self {
+    pub(super) fn sub(self, rhs: Self) -> Self {
         Self(std::array::from_fn(|i| {
             let value = self.0[i] + Q as u16 - rhs.0[i];
             if value >= Q as u16 {
@@ -65,7 +65,7 @@ impl Ext {
     }
 
     #[inline]
-    fn mul(self, rhs: Self) -> Self {
+    pub(super) fn mul(self, rhs: Self) -> Self {
         let mut product = [0i64; 2 * EXTENSION_DEGREE - 1];
         for (i, &a) in self.0.iter().enumerate() {
             for (j, &b) in rhs.0.iter().enumerate() {
@@ -274,7 +274,10 @@ fn sample_generator(transcript: &mut impl Transcript) -> Result<Ext, FalconError
     sample_extension(transcript, true)
 }
 
-fn sample_extension(transcript: &mut impl Transcript, generator: bool) -> Result<Ext, FalconError> {
+pub(super) fn sample_extension(
+    transcript: &mut impl Transcript,
+    generator: bool,
+) -> Result<Ext, FalconError> {
     transcript.begin_sampling();
     for _ in 0..128 {
         let mut coordinates = [0u16; EXTENSION_DEGREE];
@@ -303,7 +306,7 @@ fn sample_extension(transcript: &mut impl Transcript, generator: bool) -> Result
     Err(error("native generator sampling exhausted"))
 }
 
-fn absorb_extensions(transcript: &mut impl Transcript, values: &[Ext]) {
+pub(super) fn absorb_extensions(transcript: &mut impl Transcript, values: &[Ext]) {
     let mut bytes = Vec::with_capacity(8 + values.len() * EXTENSION_DEGREE * 2);
     bytes.extend_from_slice(&(values.len() as u64).to_le_bytes());
     for value in values {
@@ -322,7 +325,7 @@ fn absorb_carries(transcript: &mut impl Transcript, carries: &[i64; EXTENSION_DE
     transcript.absorb_slice(&bytes);
 }
 
-fn equality_weights(point: &[Ext]) -> Vec<Ext> {
+pub(super) fn equality_weights(point: &[Ext]) -> Vec<Ext> {
     let mut weights = vec![Ext::ONE];
     for &r in point.iter().rev() {
         let mut next = Vec::with_capacity(2 * weights.len());
@@ -336,7 +339,7 @@ fn equality_weights(point: &[Ext]) -> Vec<Ext> {
 }
 
 #[tracing::instrument(skip_all, name = "falcon_native:certificate")]
-fn certificate(traces: &[FalconVerificationTrace], lambda: &[Ext]) -> Vec<Ext> {
+pub(super) fn certificate(traces: &[FalconVerificationTrace], lambda: &[Ext]) -> Vec<Ext> {
     let coefficient = |j: usize| {
         let mut sum = [0u64; EXTENSION_DEGREE];
         for (trace, weight) in traces.iter().zip(lambda) {

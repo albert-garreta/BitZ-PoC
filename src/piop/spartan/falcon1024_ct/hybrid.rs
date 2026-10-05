@@ -61,6 +61,13 @@ pub struct FalconHybridSecurity {
     pub terms: Vec<(&'static str, f64)>,
 }
 
+/// Explicit protocol selection; the established native-carry prover remains default.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FalconProtocol {
+    NativeCarry,
+    SharedPrimeV1,
+}
+
 /// Prepared public circuit, reusable across witnesses of the same batch size.
 pub struct PreparedFalconHybrid {
     layout: FalconSourceLayout,
@@ -99,10 +106,26 @@ pub struct FalconHybridProof {
 impl PreparedFalconHybrid {
     /// Supports 1..=1024 live signatures, with canonical power-of-two padding.
     pub fn new(batch: usize, target_bits: usize) -> Result<Self, FalconError> {
+        Self::with_protocol(batch, target_bits, FalconProtocol::NativeCarry)
+    }
+
+    /// Experimental four-operand ring reduction and integer-polynomial lift.
+    pub fn new_shared_prime(batch: usize, target_bits: usize) -> Result<Self, FalconError> {
+        Self::with_protocol(batch, target_bits, FalconProtocol::SharedPrimeV1)
+    }
+
+    pub fn with_protocol(
+        batch: usize,
+        target_bits: usize,
+        protocol: FalconProtocol,
+    ) -> Result<Self, FalconError> {
         if !matches!(target_bits, 100 | 128) {
             return Err(error("hybrid security must be 100 or 128 bits"));
         }
-        let layout = FalconSourceLayout::new(batch)?;
+        let layout = match protocol {
+            FalconProtocol::NativeCarry => FalconSourceLayout::new(batch)?,
+            FalconProtocol::SharedPrimeV1 => FalconSourceLayout::new_shared_prime(batch)?,
+        };
         let keccak = [
             PreparedKeccak::new_slab(batch, 0, 16).map_err(error)?,
             PreparedKeccak::new_slab(batch, 16, 4).map_err(error)?,
@@ -151,6 +174,16 @@ impl PreparedFalconHybrid {
     }
     pub fn target_bits(&self) -> usize {
         self.target_bits
+    }
+    pub fn protocol(&self) -> FalconProtocol {
+        if self.layout.is_shared_prime() {
+            FalconProtocol::SharedPrimeV1
+        } else {
+            FalconProtocol::NativeCarry
+        }
+    }
+    pub fn live_arithmetic_bits_per_signature(&self) -> usize {
+        self.layout.live_bits()
     }
     pub fn source_bits_per_signature(&self) -> [usize; 3] {
         [
@@ -206,12 +239,31 @@ impl PreparedFalconHybrid {
                 prime(3 * (11 + d), schedule.cubic_round_bits),
             ),
             (
-                "native ideal batching and projection",
-                (d + 2046) as f64 / ((super::Q as f64).powi(11) - super::Q as f64),
+                if self.layout.is_shared_prime() {
+                    "shared ring outer, endpoint batch and inner"
+                } else {
+                    "native ideal batching and projection"
+                },
+                if self.layout.is_shared_prime() {
+                    (4 * d + 2069) as f64 / (super::Q as f64).powi(11)
+                } else {
+                    (d + 2046) as f64 / ((super::Q as f64).powi(11) - super::Q as f64)
+                },
             ),
             (
-                "native coordinate carry batching",
-                prime(10, if self.target_bits == 128 { 12 } else { 0 }),
+                if self.layout.is_shared_prime() {
+                    "integer polynomial projection"
+                } else {
+                    "native coordinate carry batching"
+                },
+                if self.layout.is_shared_prime() {
+                    prime(
+                        20,
+                        super::shared_ring::projection_grinding_bits(self.target_bits),
+                    )
+                } else {
+                    prime(10, if self.target_bits == 128 { 12 } else { 0 })
+                },
             ),
             (
                 "linear constraints and terminal batching",
@@ -361,7 +413,11 @@ impl PreparedFalconHybrid {
     ) -> Result<(Blake3Transcript, [u8; 32]), FalconError> {
         statement.public.validate(self.batch())?;
         let mut h = blake3::Hasher::new();
-        h.update(b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v4");
+        h.update(if self.layout.is_shared_prime() {
+            b"bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v1".as_slice()
+        } else {
+            b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v4".as_slice()
+        });
         for n in [
             self.batch(),
             self.capacity(),
@@ -373,6 +429,14 @@ impl PreparedFalconHybrid {
             h.update(&(n as u64).to_le_bytes());
         }
         h.update(b"bounded14:low13+4097*top;native:Q12289,theta11+theta+14;Dlen1023;carry22528BN");
+        if self.layout.is_shared_prime() {
+            h.update(b"shared:all-E;C,H,S1,S2:1,l,l2,l3;inner10;Hunsigned14;S2encoded-alias;live-mask;P21-i128;limbs113;merge-in-binder-block/v1");
+            h.update(&(self.layout.live_bits() as u64).to_le_bytes());
+            h.update(
+                &(self.layout.public_key_offset().expect("shared H slots") as u64).to_le_bytes(),
+            );
+            h.update(&super::shared_ring::projection_grinding_bits(self.target_bits).to_le_bytes());
+        }
         h.update(b"compaction:fixed-bad-signature;forest:eq-batching,nonzero-vector-line/v3");
         let schedule = super::FalconSecuritySchedule::for_layout(self.target_bits, &self.layout)
             .expect("prepared security");
@@ -416,7 +480,11 @@ impl PreparedFalconHybrid {
         }
         let digest = *h.finalize().as_bytes();
         let mut t = Blake3Transcript::new();
-        t.absorb_slice(b"bitz/falcon-hybrid/native-ring/statement/v4");
+        t.absorb_slice(if self.layout.is_shared_prime() {
+            b"bitz/falcon-hybrid/shared-prime/statement/v1".as_slice()
+        } else {
+            b"bitz/falcon-hybrid/native-ring/statement/v4".as_slice()
+        });
         t.absorb_slice(&digest);
         self.ligerito.bind(&mut t);
         Ok((t, digest))
@@ -428,7 +496,7 @@ impl PreparedFalconHybrid {
     ) -> Result<FalconHybridProof, FalconError> {
         let (mut t, digest) = self.transcript(&committed.statement)?;
         let arithmetic_span = tracing::info_span!("falcon_hybrid:arithmetic_prefix").entered();
-        let (arithmetic, row_weights) = prove_binding_prefix(
+        let (arithmetic, row_weights, bridge_claim) = prove_binding_prefix(
             &mut t,
             &self.layout,
             &committed.statement.public,
@@ -441,8 +509,8 @@ impl PreparedFalconHybrid {
         let (bridge, a) = hybrid_bridge::prove(
             &mut t,
             &committed.arithmetic,
-            &arithmetic.binding_point,
-            arithmetic.piop.modulus,
+            &bridge_claim.point,
+            bridge_claim.modulus,
             self.binary_grinding(hybrid_bridge::error_numerator(&self.layout)),
             &row_weights,
         )?;
@@ -549,7 +617,7 @@ impl PreparedFalconHybrid {
         if proof.opening.ood.is_some() {
             return Err(error("unexpected hybrid OOD claim"));
         }
-        verify_binding_prefix(
+        let bridge_claim = verify_binding_prefix(
             &mut t,
             &self.layout,
             &statement.public,
@@ -559,9 +627,9 @@ impl PreparedFalconHybrid {
         let a = hybrid_bridge::verify(
             &mut t,
             &self.layout,
-            &proof.arithmetic.binding_point,
+            &bridge_claim.point,
             proof.arithmetic.binding_terminal[1],
-            proof.arithmetic.piop.modulus,
+            bridge_claim.modulus,
             &proof.bridge,
             self.binary_grinding(hybrid_bridge::error_numerator(&self.layout)),
         )?;
@@ -957,6 +1025,51 @@ mod tests {
         let mut changed = proof.clone();
         changed.pcs_nonces.push(0);
         assert!(prepared.verify(&statement, &changed).is_err());
+    }
+
+    #[test]
+    fn shared_prime_hybrid_complete_proofs_and_protocol_binding() {
+        for (batch, target) in [(1, 100), (3, 100), (9, 100), (1, 128)] {
+            let prepared = PreparedFalconHybrid::new_shared_prime(batch, target).unwrap();
+            let native = PreparedFalconHybrid::new(batch, target).unwrap();
+            assert_eq!(prepared.protocol(), FalconProtocol::SharedPrimeV1);
+            assert_eq!(prepared.live_arithmetic_bits_per_signature(), 114_914);
+            assert_eq!(
+                prepared.source_bits_per_signature(),
+                native.source_bits_per_signature()
+            );
+            let committed = prepared.commit(public(batch)).unwrap();
+            let statement = committed.statement.clone();
+            let proof = prepared.prove(committed).unwrap();
+            prepared.verify(&statement, &proof).unwrap();
+            assert!(native.verify(&statement, &proof).is_err());
+            assert!(proof.payload_size_bytes() > 0);
+            assert!(proof.arithmetic.binding_point.is_empty());
+            let mut wrong = proof.clone();
+            wrong
+                .arithmetic
+                .binding_point
+                .push(proof.arithmetic.binding_terminal[0]);
+            assert!(prepared.verify(&statement, &wrong).is_err());
+            let mut wrong = statement.clone();
+            wrong.public.public_keys[0].h[0] =
+                (wrong.public.public_keys[0].h[0] + 1) % super::super::Q as u16;
+            assert!(prepared.verify(&wrong, &proof).is_err());
+            for branch in 0..3 {
+                let mut wrong = statement.clone();
+                wrong.roots[branch][0] ^= 1;
+                assert!(prepared.verify(&wrong, &proof).is_err());
+            }
+            let mut wrong = proof.clone();
+            wrong.bridge.sums[1][0] ^= 1;
+            assert!(prepared.verify(&statement, &wrong).is_err());
+            let mut wrong = proof.clone();
+            let super::super::opening::RingProof::Shared(ring) = &mut wrong.arithmetic.ring else {
+                panic!("shared ring expected");
+            };
+            ring.lift[0] += 1;
+            assert!(prepared.verify(&statement, &wrong).is_err());
+        }
     }
 
     #[test]

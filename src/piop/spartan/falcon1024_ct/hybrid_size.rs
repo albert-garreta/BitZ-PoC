@@ -63,16 +63,20 @@ fn sumcheck_bytes<F, const COEFFICIENTS: usize>(
 fn arithmetic_bytes(proof: &FalconBindingPrefixProof) -> usize {
     let FalconBindingPrefixProof {
         piop,
-        native_ring,
+        ring,
         linear_point_nonce,
         binding,
         binding_point,
         binding_terminal,
         binding_nonces,
     } = proof;
-    piop_bytes(piop)
-        + native_bytes(native_ring)
-        + nonce_bytes(linear_point_nonce)
+    (match piop {
+        super::super::opening::PiopProof::Native(proof) => piop_bytes(proof),
+        super::super::opening::PiopProof::Shared(proof) => proof.payload_size_bytes(),
+    }) + match ring {
+        super::super::opening::RingProof::Native(proof) => native_bytes(proof),
+        super::super::opening::RingProof::Shared(proof) => proof.payload_size_bytes(),
+    } + nonce_bytes(linear_point_nonce)
         + sumcheck_bytes(binding)
         + FIELD_BYTES * (binding_point.len() + binding_terminal.len())
         + NONCE_BYTES * binding_nonces.len()

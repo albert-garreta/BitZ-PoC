@@ -656,6 +656,16 @@ impl BindingForm<'_> {
             &self.layout.offsets(),
             field,
         );
+        if let Some(offset) = self.layout.public_key_offset() {
+            for j in 0..N {
+                common.add_word(
+                    offset + 14 * j,
+                    14,
+                    self.local_linear_weights.at(4458 + j),
+                    field,
+                );
+            }
+        }
         let mut dynamic = WordSink {
             field,
             instance: 0,
@@ -837,6 +847,18 @@ impl BindingForm<'_> {
                             ),
                         );
                     }
+                    if self.layout.is_shared_prime() {
+                        for (j, &value) in self.statement.public_keys[s].h.iter().enumerate() {
+                            signature_bytes = field.add(
+                                &signature_bytes,
+                                &mul_i(
+                                    self.local_linear_weights.at(4458 + j),
+                                    i128::from(value),
+                                    field,
+                                ),
+                            );
+                        }
+                    }
                     Ok(field.mul(alpha, &field.add(&bits, &signature_bytes)))
                 })
                 .collect();
@@ -947,7 +969,9 @@ impl BindingForm<'_> {
             );
             scale = field.mul(&scale, &self.eta);
         }
-        let native = &self.native_claim;
+        let Some(native) = &self.native_claim else {
+            return Ok(target);
+        };
         let native_sum = native
             .weights
             .iter()

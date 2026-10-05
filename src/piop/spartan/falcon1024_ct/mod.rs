@@ -21,12 +21,13 @@ mod layout;
 mod native_ring;
 mod opening;
 mod piop;
+mod shared_ring;
 mod source;
 mod verify;
 #[cfg(feature = "falcon-hybrid")]
 pub use hybrid::{
     CommittedFalconHybrid, FalconHybridProof, FalconHybridSecurity, FalconHybridStatement,
-    PreparedFalconHybrid,
+    FalconProtocol, PreparedFalconHybrid,
 };
 
 pub use format::{

@@ -133,6 +133,14 @@ fn add_linear_constraints(
             -1,
         );
 
+        if let Some(offset) = layout.public_key_offset() {
+            for j in 0..N {
+                let terms: [(usize, i128); 14] =
+                    std::array::from_fn(|bit| (offset + 14 * j + bit, 1i128 << bit));
+                residual(&terms, -i128::from(statement.public_keys[instance].h[j]));
+            }
+        }
+
         if row != layout.linear_rows() {
             return Err(piop(format!(
                 "linear row inventory mismatch: built {row} rows"
@@ -302,8 +310,7 @@ fn emit_binding_reference(binding: &BindingForm<'_>, sink: &mut impl Coefficient
         binding.field,
     )
     .unwrap();
-    {
-        let native = &binding.native_claim;
+    if let Some(native) = &binding.native_claim {
         // Independent bit-level expansion of sum W*(c - bounded14(v) + 6144).
         let offsets = binding.layout.offsets();
         let field = binding.field;
@@ -476,6 +483,159 @@ fn statement_with_key_groups(groups: &[usize]) -> FalconPublicStatement {
         statement.signatures[instance].s2[N - 1] = 2047 - instance as i16;
     }
     statement
+}
+
+#[test]
+fn shared_prime_streaming_overlay_matches_independent_bit_oracle() {
+    let field = config();
+    let layout = FalconSourceLayout::new_shared_prime(3).unwrap();
+    let statement = statement_with_key_groups(&[0, 1, 2]);
+    let proof = full_terminal_fixture(&layout, &field);
+    let linear_point = point(linear_rounds(&layout), &field);
+    for scale in [field.zero(), field.one(), unsigned(29, &field)] {
+        let mut transcript = Blake3Transcript::new();
+        let integer = prepare_binding_form_optional(
+            &mut transcript,
+            &layout,
+            &statement,
+            &proof,
+            &linear_point,
+            &field,
+            None,
+        )
+        .unwrap();
+        let mut expected = DenseSink::new(layout.source_bits(), &field);
+        let integer_target = emit_binding_reference(&integer, &mut expected);
+        assert_eq!(integer.target().unwrap(), integer_target);
+        let mut row = vec![field.zero(); layout.capacity()];
+        for (s, value) in row[..layout.batch()].iter_mut().enumerate() {
+            *value = unsigned((7 + s * 13) as u128, &field);
+        }
+        let column: Vec<_> = (0..layout.signature_stride())
+            .map(|h| {
+                if h < layout.live_bits() && h % 5 != 0 {
+                    unsigned((17 + h * h) as u128, &field)
+                } else {
+                    field.zero()
+                }
+            })
+            .collect();
+        for (i, value) in expected.values.iter_mut().enumerate() {
+            *value = field.add(
+                &field.mul(&scale, value),
+                &field.mul(&row[i / column.len()], &column[i % column.len()]),
+            );
+        }
+        let ring_target = unsigned(53, &field);
+        let joined = JoinedBinding::new(
+            integer,
+            Some(super::super::shared_ring::ProjectedClaim {
+                row,
+                column,
+                target: ring_target,
+            }),
+            scale,
+        )
+        .unwrap();
+        assert_eq!(
+            joined.target().unwrap(),
+            field.add(&ring_target, &field.mul(&scale, &integer_target))
+        );
+        let mut actual = vec![field.zero(); layout.source_bits()];
+        joined
+            .for_each_coefficient(&mut |i, value| {
+                actual[i] = field.add(&actual[i], &value);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(actual, expected.values);
+        for width in [1, 2, 4, 8, 16] {
+            actual.fill(field.zero());
+            for s in 0..layout.capacity() {
+                let mut next = s * layout.signature_stride();
+                joined
+                    .for_each_partition_block(s, width, &mut |base, values| {
+                        assert!(base >= next);
+                        next = base + width;
+                        actual[base..base + width].copy_from_slice(values);
+                        Ok(())
+                    })
+                    .unwrap()
+                    .unwrap();
+            }
+            assert_eq!(actual, expected.values);
+        }
+        assert!(
+            joined
+                .for_each_partition_block(0, 32, &mut |_, _| Ok(()))
+                .unwrap()
+                .is_err()
+        );
+        let weights = eq_table(&point(3, &field), &field).unwrap();
+        let mut folded = vec![field.zero(); layout.source_bits() / weights.len()];
+        for s in 0..layout.capacity() {
+            let mut next = s * layout.signature_stride() / weights.len();
+            joined
+                .for_each_partition_folded_final(s, &weights, &mut |index, value| {
+                    assert!(index >= next);
+                    next = index + 1;
+                    folded[index] = value;
+                    Ok(())
+                })
+                .unwrap()
+                .unwrap();
+        }
+        for (chunk, actual) in expected.values.chunks_exact(weights.len()).zip(folded) {
+            let expected = chunk
+                .iter()
+                .zip(&weights)
+                .fold(field.zero(), |sum, (v, w)| {
+                    field.add(&sum, &field.mul(v, w))
+                });
+            assert_eq!(actual, expected);
+        }
+        for s in 0..layout.capacity() {
+            let byte = |index: usize| ((index / 8).wrapping_mul(37).wrapping_add(91) & 255) as u8;
+            let base = s * layout.signature_stride();
+            let mut expected_buckets = vec![[field.zero(); 8]; 256];
+            for (i, chunk) in expected.values[base..base + layout.signature_stride()]
+                .chunks_exact(8)
+                .enumerate()
+            {
+                let b = usize::from(byte(base + 8 * i));
+                if b == 0 {
+                    continue;
+                }
+                for (sum, value) in expected_buckets[b].iter_mut().zip(chunk) {
+                    *sum = field.add(sum, value);
+                }
+            }
+            let mut buckets = vec![[field.zero(); 8]; 256];
+            let mut next = 0;
+            joined
+                .for_each_partition_byte_bucket(
+                    s,
+                    &mut |index, lanes| {
+                        assert!((1..=8).contains(&lanes));
+                        Ok(byte(index))
+                    },
+                    &mut |b, values| {
+                        assert!(usize::from(b) >= next);
+                        next = usize::from(b) + 1;
+                        buckets[usize::from(b)] = *values;
+                        Ok(())
+                    },
+                )
+                .unwrap()
+                .unwrap();
+            assert_eq!(buckets, expected_buckets);
+        }
+        let endpoint = point(source_rounds(&layout), &field);
+        assert_eq!(
+            joined.evaluate(&endpoint).unwrap(),
+            evaluate_mle_in_place(&mut expected.values, &endpoint, &field).unwrap()
+        );
+    }
 }
 
 #[test]
@@ -923,7 +1083,7 @@ fn compact_prefix_binds_word_products_and_weighted_norm_to_source() {
         transcript.absorb_slice(commitment.as_bytes());
         transcript
     };
-    let (proof, row_weights) = prove_binding_prefix(
+    let (proof, row_weights, bridge_claim) = prove_binding_prefix(
         &mut fresh_transcript(),
         &layout,
         &statement,
@@ -932,10 +1092,16 @@ fn compact_prefix_binds_word_products_and_weighted_norm_to_source() {
         100,
     )
     .unwrap();
-    assert_eq!(proof.piop.compact_products.point.len(), 13);
+    let PiopProof::Native(integer) = &proof.piop else {
+        panic!("native PIOP expected")
+    };
+    assert_eq!(integer.compact_products.point.len(), 13);
     assert_eq!(proof.binding_point.len(), 19);
-    verify_binding_prefix(&mut fresh_transcript(), &layout, &statement, &proof, 100).unwrap();
-    let field = field_from_modulus(proof.piop.modulus).unwrap();
+    assert_eq!(
+        verify_binding_prefix(&mut fresh_transcript(), &layout, &statement, &proof, 100).unwrap(),
+        bridge_claim
+    );
+    let field = field_from_modulus(integer.modulus).unwrap();
     assert_eq!(
         row_weights,
         canonical_eq_weights(&proof.binding_point[..layout.row_vars()], &field).unwrap(),
@@ -959,13 +1125,19 @@ fn compact_prefix_binds_word_products_and_weighted_norm_to_source() {
     }
     assert_eq!(dot, proof.binding_terminal[1]);
     let mut bad = proof.clone();
-    bad.piop.norm.instance_point[0] = field.add(&bad.piop.norm.instance_point[0], &field.one());
+    let PiopProof::Native(integer) = &mut bad.piop else {
+        panic!("native PIOP expected")
+    };
+    integer.norm.instance_point[0] = field.add(&integer.norm.instance_point[0], &field.one());
     assert!(
         verify_binding_prefix(&mut fresh_transcript(), &layout, &statement, &bad, 100).is_err()
     );
     let mut bad = proof;
-    bad.piop.compact_products.terminal.cx =
-        field.add(&bad.piop.compact_products.terminal.cx, &field.one());
+    let PiopProof::Native(integer) = &mut bad.piop else {
+        panic!("native PIOP expected")
+    };
+    integer.compact_products.terminal.cx =
+        field.add(&integer.compact_products.terminal.cx, &field.one());
     assert!(
         verify_binding_prefix(&mut fresh_transcript(), &layout, &statement, &bad, 100).is_err()
     );
