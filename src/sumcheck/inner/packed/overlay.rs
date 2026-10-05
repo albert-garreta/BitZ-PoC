@@ -15,6 +15,7 @@ pub(crate) struct FactoredOverlayInput<'a, S: ?Sized, H: ?Sized> {
     num_vars: usize,
     live_len: usize,
     prefix: usize,
+    contract_ring: bool,
 }
 
 impl<'a, S: ?Sized, H: ?Sized> FactoredOverlayInput<'a, S, H> {
@@ -38,7 +39,14 @@ impl<'a, S: ?Sized, H: ?Sized> FactoredOverlayInput<'a, S, H> {
             num_vars,
             live_len,
             prefix,
+            contract_ring: prefix == 3 && row.len() >= 8 && column.len() > 8,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_ring_contraction_for_test(mut self, enabled: bool) -> Self {
+        self.contract_ring = enabled && self.prefix == 3 && self.column.len() > 8;
+        self
     }
 }
 
@@ -52,6 +60,9 @@ pub(crate) struct OverlayState<'a, S: ?Sized, H: ?Sized, const K: usize> {
     prefix_weights: PreparedPrefixWeights,
     row: Vec<Field>,
     column: Vec<Field>,
+    /// While local variables remain, sum of each signature's bit table
+    /// weighted by the ring row. High-variable rounds use the shared table.
+    contracted_bits: Option<Vec<Field>>,
     next: [Field; 2],
     stride: usize,
 }
@@ -116,6 +127,7 @@ impl<'a, S: StreamingCoefficientSource + ?Sized, H: Sha256InnerBitSource + ?Size
             prefix_weights: PreparedPrefixWeights::default(),
             row: Vec::new(),
             column: Vec::new(),
+            contracted_bits: None,
             next: [zero; 2],
             stride: 1,
         };
@@ -154,41 +166,55 @@ impl<'a, S: StreamingCoefficientSource + ?Sized, H: Sha256InnerBitSource + ?Size
             })
             .collect::<Result<_, _>>()?;
         if self.input.num_vars > K {
-            let (fast, slow) = ring_axes(&self.row, &self.column);
-            self.next = sum_pairs(
-                &mut table.values,
-                2,
-                fast,
-                slow,
-                &self.input.integer_scale,
-                f,
-                |pair, values| {
-                    // Every input partition is complete, so both suffixes
-                    // exist whenever a tail round remains.
-                    let h0 = folded_packed_h::<K, _>(
-                        pair * 2,
-                        self.input.live_len,
-                        self.input.bits,
-                        &self.prefix_weights,
-                        f,
-                        &zero,
-                        &one,
-                    )?;
-                    let h1 = folded_packed_h::<K, _>(
-                        pair * 2 + 1,
-                        self.input.live_len,
-                        self.input.bits,
-                        &self.prefix_weights,
-                        f,
-                        &zero,
-                        &one,
-                    )?;
-                    Ok([
-                        [field_from_raw(&values[0], f), h0],
-                        [field_from_raw(&values[1], f), h1],
-                    ])
-                },
-            )?;
+            if self.input.contract_ring {
+                let (bits, integer) = contract_rows_and_sum_integer(
+                    &table.values,
+                    &self.row,
+                    self.column.len(),
+                    self.input.bits,
+                    &self.prefix_weights,
+                    f,
+                )?;
+                let ring = contracted_round(&self.column, &bits, f)?;
+                self.next = combine_rounds(ring, integer, &self.input.integer_scale, f);
+                self.contracted_bits = Some(bits);
+            } else {
+                let (fast, slow) = ring_axes(&self.row, &self.column);
+                self.next = sum_pairs(
+                    &mut table.values,
+                    2,
+                    fast,
+                    slow,
+                    &self.input.integer_scale,
+                    f,
+                    |pair, values| {
+                        // Every input partition is complete, so both suffixes
+                        // exist whenever a tail round remains.
+                        let h0 = folded_packed_h::<K, _>(
+                            pair * 2,
+                            self.input.live_len,
+                            self.input.bits,
+                            &self.prefix_weights,
+                            f,
+                            &zero,
+                            &one,
+                        )?;
+                        let h1 = folded_packed_h::<K, _>(
+                            pair * 2 + 1,
+                            self.input.live_len,
+                            self.input.bits,
+                            &self.prefix_weights,
+                            f,
+                            &zero,
+                            &one,
+                        )?;
+                        Ok([
+                            [field_from_raw(&values[0], f), h0],
+                            [field_from_raw(&values[1], f), h1],
+                        ])
+                    },
+                )?;
+            }
         }
         self.table = Some(table);
         Ok(())
@@ -219,10 +245,19 @@ impl<'a, S: StreamingCoefficientSource + ?Sized, H: Sha256InnerBitSource + ?Size
             return Ok(());
         }
         let _span = tracing::info_span!("inner_overlay:fold_tail", round = self.round).entered();
+        if let Some(bits) = &mut self.contracted_bits {
+            fold_factor(bits, challenge, f);
+        }
         if self.column.len() > 1 {
             fold_factor(&mut self.column, challenge, f);
         } else {
             fold_factor(&mut self.row, challenge, f);
+        }
+        // The contraction sums over Boolean signature indices. Once those
+        // become the sumcheck variables, use the individual bit evaluations
+        // from the same table that the integer claim has been folding.
+        if self.column.len() == 1 {
+            self.contracted_bits = None;
         }
         let table = self.table.as_mut().unwrap();
         let more = self.round + 1 < self.input.num_vars;
@@ -241,6 +276,30 @@ impl<'a, S: StreamingCoefficientSource + ?Sized, H: Sha256InnerBitSource + ?Size
             } else {
                 fold_interleaved_in_place(&mut table.values, self.stride, challenge, f, &zero);
             }
+        } else if let Some(bits) = &self.contracted_bits {
+            let integer = if self.round == K {
+                fold_first_tail_round_and_prepare_next_in_place::<K, _>(
+                    table,
+                    self.input.live_len,
+                    self.input.bits,
+                    &self.prefix_weights,
+                    challenge,
+                    f,
+                    &zero,
+                    &one,
+                    f,
+                )?
+            } else {
+                fold_interleaved_and_prepare_next_round_in_place(
+                    &mut table.values,
+                    self.stride,
+                    challenge,
+                    f,
+                    &zero,
+                )?
+            };
+            let ring = contracted_round(&self.column, bits, f)?;
+            self.next = combine_rounds(ring, integer, &self.input.integer_scale, f);
         } else {
             let (fast, slow) = ring_axes(&self.row, &self.column);
             if self.round == K {
@@ -352,6 +411,151 @@ fn fold_factor(values: &mut Vec<Field>, challenge: &Field, f: &FieldConfig) {
     values.truncate(values.len() / 2);
 }
 
+fn combine_rounds(
+    ring: [Field; 2],
+    integer: [Field; 2],
+    scale: &Field,
+    f: &FieldConfig,
+) -> [Field; 2] {
+    std::array::from_fn(|i| f.add(&ring[i], &f.mul(scale, &integer[i])))
+}
+
+/// Contract the signature axis after the three packed prefix challenges.
+///
+/// For byte b, H_s(prefix,j) = sum_l prefix_weight[l] bit_l(b). Build
+/// row[s]*H_s(prefix,j) by subset additions from eight weighted entries.
+/// This reuses the initial integer-round scan and never expands source bits.
+#[tracing::instrument(skip_all, name = "inner_overlay:contract_ring_rows")]
+fn contract_rows_and_sum_integer<H: Sha256InnerBitSource + ?Sized>(
+    integer: &[RawMontgomery],
+    rows: &[Field],
+    local_suffixes: usize,
+    bits: &H,
+    prefix: &PreparedPrefixWeights,
+    f: &FieldConfig,
+) -> Result<(Vec<Field>, [Field; 2]), SumcheckError> {
+    debug_assert_eq!(prefix.len(), 8);
+    debug_assert_eq!(integer.len(), rows.len() * local_suffixes);
+    debug_assert!(local_suffixes >= 2 && local_suffixes.is_power_of_two());
+    let unweighted = prefix.byte_sums.as_ref().expect("three-variable prefix");
+    // One 4-KiB lookup per signature, with bounded scratch independent of
+    // batch size. Each task owns a disjoint range of contraction outputs.
+    const ROW_BLOCK: usize = 64;
+    const LOCAL_TILE: usize = 256;
+    let mut contracted: Vec<_> = (0..local_suffixes)
+        .map(|_| linear_accumulator_zero())
+        .collect();
+    let mut integer_sum = std::array::from_fn(|_| product_accumulator_zero());
+    let mut lookups = Vec::with_capacity(ROW_BLOCK);
+    for (block, row_weights) in rows.chunks(ROW_BLOCK).enumerate() {
+        lookups.clear();
+        lookups.extend(
+            row_weights
+                .iter()
+                .map(|row| weighted_byte_sums(row, prefix, f)),
+        );
+        let first_row = block * ROW_BLOCK;
+        let process = |(tile, accumulators): (usize, &mut [LinearAccumulator])| {
+            let first_local = tile * LOCAL_TILE;
+            let mut sums = std::array::from_fn(|_| product_accumulator_zero());
+            for (row, lookup) in lookups.iter().enumerate() {
+                let first = (first_row + row) * local_suffixes + first_local;
+                for pair in 0..accumulators.len() / 2 {
+                    let i = pair * 2;
+                    let lo = bits.bits_at((first + i) * 8, 8)?;
+                    let hi = bits.bits_at((first + i + 1) * 8, 8)?;
+                    if lo > 255 || hi > 255 {
+                        return Err(SumcheckError::InvalidProductDimensions);
+                    }
+                    let (lo, hi) = (lo as usize, hi as usize);
+                    // Weighted lookup values are canonical Montgomery
+                    // residues. A linear accumulator keeps their scale R.
+                    linear_multiply_accumulate(f, &mut accumulators[i], &lookup[lo], &1u64);
+                    linear_multiply_accumulate(f, &mut accumulators[i + 1], &lookup[hi], &1u64);
+                    let (h0, h1) = (unweighted[lo], unweighted[hi]);
+                    let z0 = field_from_raw(&integer[first + i], f);
+                    let z1 = field_from_raw(&integer[first + i + 1], f);
+                    product_multiply_accumulate(f, &mut sums[0], &z0, &h0);
+                    product_multiply_accumulate(
+                        f,
+                        &mut sums[1],
+                        &f.sub(&z1, &z0),
+                        &f.sub(&h1, &h0),
+                    );
+                }
+            }
+            Ok::<_, SumcheckError>(sums)
+        };
+        let empty = || std::array::from_fn(|_| product_accumulator_zero());
+        let serial = |accumulators: &mut [LinearAccumulator]| {
+            accumulators
+                .chunks_mut(LOCAL_TILE)
+                .enumerate()
+                .try_fold(empty(), |sum, tile| {
+                    Ok::<_, SumcheckError>(merge_accumulators(sum, process(tile)?))
+                })
+        };
+        #[cfg(feature = "parallel")]
+        let sums =
+            if local_suffixes * row_weights.len() >= 1 << 10 && rayon::current_num_threads() > 1 {
+                contracted
+                    .par_chunks_mut(LOCAL_TILE)
+                    .enumerate()
+                    .map(process)
+                    .try_reduce(empty, |a, b| Ok(merge_accumulators(a, b)))?
+            } else {
+                serial(&mut contracted)?
+            };
+        #[cfg(not(feature = "parallel"))]
+        let sums = serial(&mut contracted)?;
+        integer_sum = merge_accumulators(integer_sum, sums);
+    }
+    // At Falcon's largest batch, each accumulator sums <=1024 residues
+    // below a 126-bit modulus, hence is below 2^136. For any validated
+    // 64-bit tensor, n<=63 and column>=16 imply rows<=2^59, so the sum
+    // is below 2^187, within the 256-bit linear accumulator. Its 32-byte
+    // representation needs 512 KiB at Falcon's 16,384 local suffixes.
+    let contracted = crate::utils::cfg_into_iter!(contracted)
+        .map(|sum| linear_reduce(sum, f))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((contracted, reduce_product_accumulators(integer_sum, f)?))
+}
+
+fn weighted_byte_sums(row: &Field, prefix: &[Field], f: &FieldConfig) -> [Field; 256] {
+    debug_assert_eq!(prefix.len(), 8);
+    let weights: [Field; 8] = std::array::from_fn(|i| f.mul(row, &prefix[i]));
+    let mut sums = [f.zero(); 256];
+    for pattern in 1usize..256 {
+        sums[pattern] = f.add(
+            &sums[pattern & (pattern - 1)],
+            &weights[pattern.trailing_zeros() as usize],
+        );
+    }
+    sums
+}
+
+/// Low-variable ring rounds need only two column-sized tables after the
+/// signature contraction; no batch-sized ring products remain in this phase.
+fn contracted_round(
+    column: &[Field],
+    bits: &[Field],
+    f: &FieldConfig,
+) -> Result<[Field; 2], SumcheckError> {
+    debug_assert_eq!(column.len(), bits.len());
+    debug_assert!(column.len() >= 2);
+    let mut sums = std::array::from_fn(|_| product_accumulator_zero());
+    for (column, bits) in column.chunks_exact(2).zip(bits.chunks_exact(2)) {
+        product_multiply_accumulate(f, &mut sums[0], &column[0], &bits[0]);
+        product_multiply_accumulate(
+            f,
+            &mut sums[1],
+            &f.sub(&column[1], &column[0]),
+            &f.sub(&bits[1], &bits[0]),
+        );
+    }
+    reduce_product_accumulators(sums, f)
+}
+
 /// Form both polynomials while visiting each new [integer, bit] pair once.
 /// A task stays inside one tensor row: the outer factor multiplies just two
 /// reduced sums instead of every tensor entry. The bit fold runs in `read`.
@@ -427,9 +631,7 @@ fn sum_pairs(
     let (integer, ring) = serial(values)?;
     let integer = reduce_product_accumulators(integer, f)?;
     let ring = reduce_product_accumulators(ring, f)?;
-    Ok(std::array::from_fn(|i| {
-        f.add(&ring[i], &f.mul(scale, &integer[i]))
-    }))
+    Ok(combine_rounds(ring, integer, scale, f))
 }
 
 /// Reuse the streaming byte buckets for an unscaled copy of the small column.
