@@ -1,0 +1,21 @@
+{
+  "command": [
+    "cargo",
+    "bench",
+    "--offline",
+    "--locked",
+    "--features",
+    "falcon-hybrid",
+    "--bench",
+    "falcon_hybrid",
+    "--no-run",
+    "--message-format=json-render-diagnostics"
+  ],
+  "exit_code": 0,
+  "elapsed_seconds": 311.618262052536,
+  "env": {
+    "RUSTUP_TOOLCHAIN": "1.98.1",
+    "RUSTFLAGS": "-C target-cpu=native",
+    "CARGO_TARGET_DIR": "/private/tmp/falcon-v2-test-target"
+  }
+}

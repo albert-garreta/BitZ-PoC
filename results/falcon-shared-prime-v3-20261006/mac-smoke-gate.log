@@ -1,0 +1,26 @@
+[bench_gate] falcon-v3-smoke: idle 89% (streak 1/6)
+[bench_gate] falcon-v3-smoke: idle 89% (streak 2/6)
+[bench_gate] falcon-v3-smoke: idle 89% (streak 3/6)
+[bench_gate] falcon-v3-smoke: idle 91% (streak 4/6)
+[bench_gate] falcon-v3-smoke: idle 90% (streak 5/6)
+[bench_gate] falcon-v3-smoke: idle 89% (streak 6/6)
+[bench_gate] falcon-v3-smoke: starting (swap baseline 1.54 GB, guard +12 GB)
+START s100-b1-t8-seed42-native
+DONE s100-b1-t8-seed42-native: 51.582ms, 207104bytes
+START s128-b1-t8-seed42-native
+DONE s128-b1-t8-seed42-native: 184.817ms, 243464bytes
+START s100-b1-t8-seed42-v3
+DONE s100-b1-t8-seed42-v3: 46.078ms, 207458bytes
+START s100-b3-t8-seed42-v3
+DONE s100-b3-t8-seed42-v3: 61.584ms, 279970bytes
+START s100-b32-t8-seed42-v3
+DONE s100-b32-t8-seed42-v3: 101.544ms, 429314bytes
+START s100-b1024-t8-seed42-v3
+DONE s100-b1024-t8-seed42-v3: 1419.757ms, 1601794bytes
+START s128-b1-t8-seed42-v3
+DONE s128-b1-t8-seed42-v3: 186.105ms, 242850bytes
+START s128-b3-t8-seed42-v3
+DONE s128-b3-t8-seed42-v3: 295.321ms, 337082bytes
+START s128-b32-t8-seed42-v3
+DONE s128-b32-t8-seed42-v3: 443.153ms, 523106bytes
+All smoke proofs and native compatibility checks passed

@@ -1,0 +1,16 @@
+{
+  "command": [
+    "cargo",
+    "bench",
+    "--offline",
+    "--locked",
+    "--features",
+    "falcon-hybrid",
+    "--bench",
+    "falcon_hybrid",
+    "--no-run",
+    "--message-format=json-render-diagnostics"
+  ],
+  "exit_code": 0,
+  "elapsed_seconds": 192.42007517814636
+}

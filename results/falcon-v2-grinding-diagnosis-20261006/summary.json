@@ -1,0 +1,58 @@
+{
+  "Mac": {
+    "total_prover_ms": 139897.086834,
+    "proof_ms": 139549.99137499998,
+    "prime_grinding_ms": 135820.320539,
+    "other_grinding_ms": 2252.2850779999862,
+    "remaining_proof_ms": 1477.3857579999894,
+    "ring_ms": 35.946292,
+    "binary_gkr_ms": 372.269791,
+    "prime_difficulty_counts": {
+      "25": 28,
+      "24": 3,
+      "26": 20,
+      "28": 118,
+      "30": 2
+    },
+    "prime_expected_nonce_prefixes": 36154900480,
+    "prime_grinding_by_stage_ms": {
+      "falcon_shared_ring:projection_grinding": 19.325834,
+      "falcon_arithmetic:norm": 4878.390832,
+      "falcon_arithmetic:hash_to_point_products": 13257.851709000002,
+      "prefix: fingerprint and initial binding": 17826.256375999998,
+      "falcon_arithmetic:compaction_forest": 74243.663582,
+      "falcon_arithmetic:compaction_leaf": 22387.062038000004,
+      "falcon_arithmetic:binding_inner": 3207.770168
+    },
+    "proof_digest": "2820c930d3c9131e28c62de91fa45b60753c8434d2090e6c3f81b922484ab49c",
+    "payload_bytes": 1751402
+  },
+  "will": {
+    "total_prover_ms": 12079.870832999999,
+    "proof_ms": 11911.482747999999,
+    "prime_grinding_ms": 11074.928683,
+    "other_grinding_ms": 206.72563400000035,
+    "remaining_proof_ms": 629.8284309999981,
+    "ring_ms": 8.332372,
+    "binary_gkr_ms": 88.110205,
+    "prime_difficulty_counts": {
+      "25": 28,
+      "24": 3,
+      "26": 20,
+      "28": 118,
+      "30": 2
+    },
+    "prime_expected_nonce_prefixes": 36154900480,
+    "prime_grinding_by_stage_ms": {
+      "falcon_shared_ring:projection_grinding": 1.693155,
+      "falcon_arithmetic:norm": 402.9015940000001,
+      "falcon_arithmetic:hash_to_point_products": 1072.5240860000001,
+      "prefix: fingerprint and initial binding": 1429.313734,
+      "falcon_arithmetic:compaction_forest": 6082.269645999998,
+      "falcon_arithmetic:compaction_leaf": 1833.6713540000003,
+      "falcon_arithmetic:binding_inner": 252.55511400000003
+    },
+    "proof_digest": "2820c930d3c9131e28c62de91fa45b60753c8434d2090e6c3f81b922484ab49c",
+    "payload_bytes": 1751402
+  }
+}

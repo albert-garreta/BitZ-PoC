@@ -1,0 +1,53 @@
+[bench_gate] falcon-v3-mac128: idle 90% (streak 1/6)
+[bench_gate] falcon-v3-mac128: idle 63% (streak 0/6)
+[bench_gate] falcon-v3-mac128: idle 90% (streak 1/6)
+[bench_gate] falcon-v3-mac128: idle 90% (streak 2/6)
+[bench_gate] falcon-v3-mac128: idle 88% (streak 0/6)
+[bench_gate] falcon-v3-mac128: idle 89% (streak 1/6)
+[bench_gate] falcon-v3-mac128: idle 89% (streak 2/6)
+[bench_gate] falcon-v3-mac128: idle 90% (streak 3/6)
+[bench_gate] falcon-v3-mac128: idle 86% (streak 0/6)
+[bench_gate] falcon-v3-mac128: idle 85% (streak 0/6)
+[bench_gate] falcon-v3-mac128: idle 91% (streak 1/6)
+[bench_gate] falcon-v3-mac128: idle 87% (streak 0/6)
+[bench_gate] falcon-v3-mac128: idle 87% (streak 0/6)
+[bench_gate] falcon-v3-mac128: idle 89% (streak 1/6)
+[bench_gate] falcon-v3-mac128: idle 84% (streak 0/6)
+[bench_gate] falcon-v3-mac128: idle 89% (streak 1/6)
+[bench_gate] falcon-v3-mac128: idle 88% (streak 2/6)
+[bench_gate] falcon-v3-mac128: idle 89% (streak 3/6)
+[bench_gate] falcon-v3-mac128: idle 90% (streak 4/6)
+[bench_gate] falcon-v3-mac128: idle 90% (streak 5/6)
+[bench_gate] falcon-v3-mac128: idle 89% (streak 6/6)
+[bench_gate] falcon-v3-mac128: starting (swap baseline 1.54 GB, guard +12 GB)
+START s128-b1024-t8-seed42-native
+DONE s128-b1024-t8-seed42-native: 2144.050ms, 2443748bytes
+START s128-b1024-t8-seed42-v1
+DONE s128-b1024-t8-seed42-v1: 2867.430ms, 2011036bytes
+START s128-b1024-t8-seed42-v3
+DONE s128-b1024-t8-seed42-v3: 2554.248ms, 2015090bytes
+START s128-b1024-t8-seed43-v1
+DONE s128-b1024-t8-seed43-v1: 2893.799ms, 2017820bytes
+START s128-b1024-t8-seed43-v3
+DONE s128-b1024-t8-seed43-v3: 2261.037ms, 2013810bytes
+START s128-b1024-t8-seed43-native
+DONE s128-b1024-t8-seed43-native: 2532.192ms, 2447396bytes
+START s128-b1024-t8-seed44-v3
+DONE s128-b1024-t8-seed44-v3: 2866.934ms, 2010130bytes
+START s128-b1024-t8-seed44-native
+DONE s128-b1024-t8-seed44-native: 3619.684ms, 2442244bytes
+START s128-b1024-t8-seed44-v1
+DONE s128-b1024-t8-seed44-v1: 3591.379ms, 2015900bytes
+START s128-b1024-t8-seed45-v3
+DONE s128-b1024-t8-seed45-v3: 2982.505ms, 2013138bytes
+START s128-b1024-t8-seed45-v1
+DONE s128-b1024-t8-seed45-v1: 3085.936ms, 2012700bytes
+START s128-b1024-t8-seed45-native
+DONE s128-b1024-t8-seed45-native: 2646.340ms, 2442244bytes
+START s128-b1024-t8-seed46-native
+DONE s128-b1024-t8-seed46-native: 2910.462ms, 2447844bytes
+START s128-b1024-t8-seed46-v3
+DONE s128-b1024-t8-seed46-v3: 2332.879ms, 2015122bytes
+START s128-b1024-t8-seed46-v1
+DONE s128-b1024-t8-seed46-v1: 3946.599ms, 2010396bytes
+{"status": "stopped_on_regression", "cells": [{"cell": [128, 1024, 8], "comparisons": [{"baseline": "native", "candidate": "v3", "seeds": [42, 43, 44, 45, 46], "complete": true, "metrics": {"total_prover_ms": {"ratio": 0.9468701459310795, "interval_95": [0.8151417488138175, 1.0998860928914627], "status": "inconclusive"}, "proof_verify_ms": {"ratio": 0.8646478756912834, "interval_95": [0.8547753458897449, 0.8732573620001722], "status": "inconclusive"}}, "payload_pass": true, "memory_pass": false, "status": "regression"}, {"baseline": "v1", "candidate": "v3", "seeds": [42, 43, 44, 45, 46], "complete": true, "metrics": {"total_prover_ms": {"ratio": 0.7949244688617416, "interval_95": [0.6784586884230299, 0.9054303341667256], "status": "inconclusive"}, "proof_verify_ms": {"ratio": 0.9885947364429399, "interval_95": [0.9808442756613865, 0.9933876592722188], "status": "inconclusive"}}, "payload_pass": false, "memory_pass": false, "status": "regression"}]}]}

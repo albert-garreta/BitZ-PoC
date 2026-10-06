@@ -1,0 +1,77 @@
+{
+  "model": "work-normalized grinding",
+  "exact_cases_checked": 2048,
+  "minimum_security": [
+    {
+      "target": 100,
+      "first_worst_batch": 1024,
+      "bits_approx": 101.00229125153106,
+      "exact_error_numerator": "8477778481897231885452792917347357575201464700042412691457",
+      "exact_error_denominator": "21527884865466318685759840543790299974922022831985852588633009598184716036436876144410624"
+    },
+    {
+      "target": 128,
+      "first_worst_batch": 16,
+      "bits_approx": 129.0708939937426,
+      "exact_error_numerator": "30115543322823474643233871430221017077899628726701",
+      "exact_error_denominator": "21527884865466318685759840543790299974922022831985852588633009598184716036436876144410624"
+    }
+  ],
+  "projection_14_preserves_native_ring_bound_and_13_fails_cases": 1024,
+  "expected_128_batch1024_prime_prefixes": [
+    {
+      "category": "instance and outer",
+      "boundaries": 3,
+      "v2_bits": 24,
+      "v3_bits": 13,
+      "v2_prefixes": 50331648,
+      "v3_prefixes": 24576
+    },
+    {
+      "category": "quadratic",
+      "boundaries": 20,
+      "v2_bits": 26,
+      "v3_bits": 15,
+      "v2_prefixes": 1342177280,
+      "v3_prefixes": 655360
+    },
+    {
+      "category": "cubic and forest claims",
+      "boundaries": 118,
+      "v2_bits": 28,
+      "v3_bits": 17,
+      "v2_prefixes": 31675383808,
+      "v3_prefixes": 15466496
+    },
+    {
+      "category": "fingerprint and linear batching",
+      "boundaries": 2,
+      "v2_bits": 30,
+      "v3_bits": 19,
+      "v2_prefixes": 2147483648,
+      "v3_prefixes": 1048576
+    },
+    {
+      "category": "source binder and ring projection",
+      "boundaries": 28,
+      "v2_bits": 25,
+      "v3_bits": 14,
+      "v2_prefixes": 939524096,
+      "v3_prefixes": 458752
+    }
+  ],
+  "expected_128_batch1024_totals": {
+    "v2_prime": 36154900480,
+    "v3_prime": 17653760,
+    "prime_work_factor": 2048,
+    "native_prime": 17641472,
+    "unchanged_pcs": 402535040,
+    "unchanged_other_binary": 14303232,
+    "bridge_prefixes": {
+      "v2": 71827456,
+      "v3": 75235328
+    },
+    "v2_all": 36643566208,
+    "v3_all": 509727360
+  }
+}

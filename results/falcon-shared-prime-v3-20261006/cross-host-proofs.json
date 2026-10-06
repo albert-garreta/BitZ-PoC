@@ -1,0 +1,32 @@
+[
+  {
+    "seed": 42,
+    "payload_bytes": 2015090,
+    "proof_digest": "7425d97c10c905320d8bb7794ea780199d071920a5efa6027dbc21defc1043b5",
+    "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39"
+  },
+  {
+    "seed": 43,
+    "payload_bytes": 2013810,
+    "proof_digest": "9c8ac501f4d9651a181ae2a0a7c459ced954935a1b380db0fc318e1d6de3692f",
+    "input_digest": "eadc20c39680eef1ec6980c1fd00a5a8c261a8bb6b4f1d17dfe753ce885f529f"
+  },
+  {
+    "seed": 44,
+    "payload_bytes": 2010130,
+    "proof_digest": "f71c12df1a73af340d92166aa19f0bcea81e3f6478cb34e38866197f3419a578",
+    "input_digest": "6b134b072cd5539a66d6cac03425a407d127f3886a037caefe77722591a9439b"
+  },
+  {
+    "seed": 45,
+    "payload_bytes": 2013138,
+    "proof_digest": "eb5773d800e3a22a5dd556e4691baec9c8b3e5c1ae4217312dd825224c31f0a2",
+    "input_digest": "dd30c82b20d80e9fef15d095f7bd75e5a0085a9ee1806d8848ee3f03221ca987"
+  },
+  {
+    "seed": 46,
+    "payload_bytes": 2015122,
+    "proof_digest": "2e62643fd332262874472fe37d561c06fe106d378bd1728c519e195ecc863705",
+    "input_digest": "cac700da6e55b4c9b615d428471c1ba06ed7298bf982aa7ddf02004a54f17edf"
+  }
+]

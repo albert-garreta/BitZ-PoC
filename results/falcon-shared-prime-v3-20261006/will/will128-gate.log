@@ -1,0 +1,38 @@
+[bench_gate] falcon-v3-will128: idle 100% (streak 1/6)
+[bench_gate] falcon-v3-will128: idle 100% (streak 2/6)
+[bench_gate] falcon-v3-will128: idle 100% (streak 3/6)
+[bench_gate] falcon-v3-will128: idle 100% (streak 4/6)
+[bench_gate] falcon-v3-will128: idle 100% (streak 5/6)
+[bench_gate] falcon-v3-will128: idle 100% (streak 6/6)
+[bench_gate] falcon-v3-will128: starting (swap baseline 0.00 GB, guard +12 GB)
+START s128-b1024-t16-seed42-native
+DONE s128-b1024-t16-seed42-native: 889.523ms, 2443748bytes
+START s128-b1024-t16-seed42-v1
+DONE s128-b1024-t16-seed42-v1: 985.166ms, 2011036bytes
+START s128-b1024-t16-seed42-v3
+DONE s128-b1024-t16-seed42-v3: 933.075ms, 2015090bytes
+START s128-b1024-t16-seed43-v1
+DONE s128-b1024-t16-seed43-v1: 953.858ms, 2017820bytes
+START s128-b1024-t16-seed43-v3
+DONE s128-b1024-t16-seed43-v3: 992.455ms, 2013810bytes
+START s128-b1024-t16-seed43-native
+DONE s128-b1024-t16-seed43-native: 947.593ms, 2447396bytes
+START s128-b1024-t16-seed44-v3
+DONE s128-b1024-t16-seed44-v3: 966.067ms, 2010130bytes
+START s128-b1024-t16-seed44-native
+DONE s128-b1024-t16-seed44-native: 1019.883ms, 2442244bytes
+START s128-b1024-t16-seed44-v1
+DONE s128-b1024-t16-seed44-v1: 999.647ms, 2015900bytes
+START s128-b1024-t16-seed45-v3
+DONE s128-b1024-t16-seed45-v3: 963.485ms, 2013138bytes
+START s128-b1024-t16-seed45-v1
+DONE s128-b1024-t16-seed45-v1: 1023.513ms, 2012700bytes
+START s128-b1024-t16-seed45-native
+DONE s128-b1024-t16-seed45-native: 1047.106ms, 2442244bytes
+START s128-b1024-t16-seed46-native
+DONE s128-b1024-t16-seed46-native: 1051.272ms, 2447844bytes
+START s128-b1024-t16-seed46-v3
+DONE s128-b1024-t16-seed46-v3: 981.255ms, 2015122bytes
+START s128-b1024-t16-seed46-v1
+DONE s128-b1024-t16-seed46-v1: 1095.601ms, 2010396bytes
+{"status": "stopped_on_regression", "cells": [{"cell": [128, 1024, 16], "comparisons": [{"baseline": "native", "candidate": "v3", "seeds": [42, 43, 44, 45, 46], "complete": true, "metrics": {"total_prover_ms": {"ratio": 0.9777893833323594, "interval_95": [0.9308073063049835, 1.0271428594096297], "status": "inconclusive"}, "proof_verify_ms": {"ratio": 0.8548040464317905, "interval_95": [0.7977887435374064, 0.9021616048739017], "status": "inconclusive"}}, "payload_pass": true, "memory_pass": false, "status": "regression"}, {"baseline": "v1", "candidate": "v3", "seeds": [42, 43, 44, 45, 46], "complete": true, "metrics": {"total_prover_ms": {"ratio": 0.9570513109275349, "interval_95": [0.9184596492369502, 1.0020728855835785], "status": "inconclusive"}, "proof_verify_ms": {"ratio": 1.0028605387892007, "interval_95": [0.9631203035325023, 1.0391345929986977], "status": "inconclusive"}}, "payload_pass": false, "memory_pass": false, "status": "regression"}]}]}

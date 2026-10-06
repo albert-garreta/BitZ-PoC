@@ -1,0 +1,1980 @@
+{
+  "notes": [
+    "Timing geometric means use one process median per seed; cells/hosts are separate. Saved paired CI95 values come from campaign.json; this script checks point estimates but does not recompute intervals.",
+    "RSS is the external warmed-process peak in bytes. Incomplete processes contribute no timing, RSS, or paired estimates. Proof counts include verified warmups.",
+    "Nonce prefix=sum(nonce+1) over stored entries, one repeat-stable proof per seed; includes zero-difficulty placeholders, excludes SIMD/parallel overscan, and is not executed hashes. Totals remain decimal strings in JSON.",
+    "This summarizes measurement evidence and metadata consistency; it is not an independent security audit or a new qualification decision."
+  ],
+  "campaigns": [
+    {
+      "directory": "/Users/johnwu/.codex/worktrees/falcon-shared-prime/f2z-pcs/results/falcon-shared-prime-v3-20261006/mac128",
+      "phase": "discovery",
+      "status": "stopped_on_regression",
+      "qualification_status": "regression",
+      "completed_processes": 15,
+      "complete_verified_proofs": 60,
+      "partial_verified_proofs": 0,
+      "incomplete_processes": [],
+      "variants": [
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "native",
+          "seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "verified_proofs": 20,
+          "geometric_mean_ms": {
+            "total_prover_ms": 2728.989996943385,
+            "proof_verify_ms": 139.52399147668586
+          },
+          "payload_bytes": [
+            2442244,
+            2447844
+          ],
+          "rss_bytes": [
+            4337860608,
+            4392828928
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v1",
+          "seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "verified_proofs": 20,
+          "geometric_mean_ms": {
+            "total_prover_ms": 3250.6222388024967,
+            "proof_verify_ms": 122.03091761580326
+          },
+          "payload_bytes": [
+            2010396,
+            2017820
+          ],
+          "rss_bytes": [
+            4342431744,
+            4391501824
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v3",
+          "seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "verified_proofs": 20,
+          "geometric_mean_ms": {
+            "total_prover_ms": 2583.999156650239,
+            "proof_verify_ms": 120.63912283828508
+          },
+          "payload_bytes": [
+            2010130,
+            2015122
+          ],
+          "rss_bytes": [
+            4366581760,
+            4439392256
+          ]
+        }
+      ],
+      "comparisons": [
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "baseline": "native",
+          "candidate": "v3",
+          "seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "complete": true,
+          "metrics": {
+            "total_prover_ms": {
+              "ratio": 0.9468701459310795,
+              "interval_95": [
+                0.8151417488138175,
+                1.0998860928914627
+              ],
+              "status": "inconclusive"
+            },
+            "proof_verify_ms": {
+              "ratio": 0.8646478756912834,
+              "interval_95": [
+                0.8547753458897449,
+                0.8732573620001722
+              ],
+              "status": "inconclusive"
+            }
+          },
+          "payload_pass": true,
+          "memory_pass": false,
+          "status": "regression",
+          "rss_increase_pairs": 4,
+          "rss_delta_bytes": [
+            -2899968,
+            59621376
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "baseline": "v1",
+          "candidate": "v3",
+          "seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "complete": true,
+          "metrics": {
+            "total_prover_ms": {
+              "ratio": 0.7949244688617416,
+              "interval_95": [
+                0.6784586884230299,
+                0.9054303341667256
+              ],
+              "status": "inconclusive"
+            },
+            "proof_verify_ms": {
+              "ratio": 0.9885947364429399,
+              "interval_95": [
+                0.9808442756613865,
+                0.9933876592722188
+              ],
+              "status": "inconclusive"
+            }
+          },
+          "payload_pass": false,
+          "memory_pass": false,
+          "status": "regression",
+          "rss_increase_pairs": 3,
+          "rss_delta_bytes": [
+            -12812288,
+            96468992
+          ]
+        }
+      ],
+      "nonce_categories": [
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v3",
+          "category": "binary_bridge",
+          "boundaries_min": 287,
+          "boundaries_max": 287,
+          "prefix_min": "67151766",
+          "prefix_median": "74032200",
+          "prefix_max": "84353340",
+          "prefix_sum_across_seeds": "380164533",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 287,
+              "prefix_sum": "73613694"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 287,
+              "prefix_sum": "67151766"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 287,
+              "prefix_sum": "84353340"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 287,
+              "prefix_sum": "74032200"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 287,
+              "prefix_sum": "81013533"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v3",
+          "category": "binary_joint",
+          "boundaries_min": 31,
+          "boundaries_max": 31,
+          "prefix_min": "435991",
+          "prefix_median": "512806",
+          "prefix_max": "622847",
+          "prefix_sum_across_seeds": "2650347",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 31,
+              "prefix_sum": "512806"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 31,
+              "prefix_sum": "622847"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 31,
+              "prefix_sum": "435991"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 31,
+              "prefix_sum": "507121"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 31,
+              "prefix_sum": "571582"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v3",
+          "category": "binary_keccak",
+          "boundaries_min": 74,
+          "boundaries_max": 74,
+          "prefix_min": "9203030",
+          "prefix_median": "9731511",
+          "prefix_max": "11042035",
+          "prefix_sum_across_seeds": "49516949",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 74,
+              "prefix_sum": "9731511"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 74,
+              "prefix_sum": "11042035"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 74,
+              "prefix_sum": "9563823"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 74,
+              "prefix_sum": "9203030"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 74,
+              "prefix_sum": "9976550"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v3",
+          "category": "binary_links",
+          "boundaries_min": 1,
+          "boundaries_max": 1,
+          "prefix_min": "11757",
+          "prefix_median": "18283",
+          "prefix_max": "35745",
+          "prefix_sum_across_seeds": "108743",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "11757"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "35745"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "26475"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "18283"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "16483"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v3",
+          "category": "binary_opening",
+          "boundaries_min": 62,
+          "boundaries_max": 62,
+          "prefix_min": "3178333",
+          "prefix_median": "3793786",
+          "prefix_max": "4334042",
+          "prefix_sum_across_seeds": "18717464",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 62,
+              "prefix_sum": "3178333"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 62,
+              "prefix_sum": "4334042"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 62,
+              "prefix_sum": "3822833"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 62,
+              "prefix_sum": "3588470"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 62,
+              "prefix_sum": "3793786"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v3",
+          "category": "native_ring_carry",
+          "boundaries_min": 0,
+          "boundaries_max": 0,
+          "prefix_min": "0",
+          "prefix_median": "0",
+          "prefix_max": "0",
+          "prefix_sum_across_seeds": "0",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v3",
+          "category": "pcs_auxiliary",
+          "boundaries_min": 5,
+          "boundaries_max": 5,
+          "prefix_min": "435",
+          "prefix_median": "728",
+          "prefix_max": "1731",
+          "prefix_sum_across_seeds": "4272",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 5,
+              "prefix_sum": "435"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 5,
+              "prefix_sum": "784"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 5,
+              "prefix_sum": "728"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 5,
+              "prefix_sum": "594"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 5,
+              "prefix_sum": "1731"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v3",
+          "category": "pcs_folds",
+          "boundaries_min": 19,
+          "boundaries_max": 19,
+          "prefix_min": "220933858",
+          "prefix_median": "325075532",
+          "prefix_max": "421807750",
+          "prefix_sum_across_seeds": "1624359716",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 19,
+              "prefix_sum": "325075532"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 19,
+              "prefix_sum": "244961399"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 19,
+              "prefix_sum": "411581177"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 19,
+              "prefix_sum": "421807750"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 19,
+              "prefix_sum": "220933858"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v3",
+          "category": "pcs_ood",
+          "boundaries_min": 0,
+          "boundaries_max": 0,
+          "prefix_min": "0",
+          "prefix_median": "0",
+          "prefix_max": "0",
+          "prefix_sum_across_seeds": "0",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v3",
+          "category": "pcs_queries",
+          "boundaries_min": 6,
+          "boundaries_max": 6,
+          "prefix_min": "6276",
+          "prefix_median": "10799",
+          "prefix_max": "14136",
+          "prefix_sum_across_seeds": "49992",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 6,
+              "prefix_sum": "14136"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 6,
+              "prefix_sum": "10799"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 6,
+              "prefix_sum": "6276"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 6,
+              "prefix_sum": "10900"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 6,
+              "prefix_sum": "7881"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v3",
+          "category": "prime_binder",
+          "boundaries_min": 28,
+          "boundaries_max": 28,
+          "prefix_min": "705359",
+          "prefix_median": "993130",
+          "prefix_max": "1779188",
+          "prefix_sum_across_seeds": "5391562",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 28,
+              "prefix_sum": "1779188"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 28,
+              "prefix_sum": "1131417"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 28,
+              "prefix_sum": "705359"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 28,
+              "prefix_sum": "993130"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 28,
+              "prefix_sum": "782468"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v3",
+          "category": "prime_fingerprint",
+          "boundaries_min": 1,
+          "boundaries_max": 1,
+          "prefix_min": "41417",
+          "prefix_median": "153094",
+          "prefix_max": "1229571",
+          "prefix_sum_across_seeds": "1701642",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "196809"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "80751"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "153094"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "41417"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "1229571"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v3",
+          "category": "prime_forest",
+          "boundaries_min": 76,
+          "boundaries_max": 76,
+          "prefix_min": "7897372",
+          "prefix_median": "9049217",
+          "prefix_max": "9547293",
+          "prefix_sum_across_seeds": "43963324",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 76,
+              "prefix_sum": "7897372"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 76,
+              "prefix_sum": "9547293"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 76,
+              "prefix_sum": "9049217"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 76,
+              "prefix_sum": "8300498"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 76,
+              "prefix_sum": "9168944"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v3",
+          "category": "prime_leaf",
+          "boundaries_min": 22,
+          "boundaries_max": 22,
+          "prefix_min": "2068639",
+          "prefix_median": "2365568",
+          "prefix_max": "2915062",
+          "prefix_sum_across_seeds": "12448462",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "2257227"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "2365568"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "2068639"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "2915062"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "2841966"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v3",
+          "category": "prime_norm",
+          "boundaries_min": 21,
+          "boundaries_max": 21,
+          "prefix_min": "625093",
+          "prefix_median": "670959",
+          "prefix_max": "825904",
+          "prefix_sum_across_seeds": "3556132",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 21,
+              "prefix_sum": "625093"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 21,
+              "prefix_sum": "802693"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 21,
+              "prefix_sum": "631483"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 21,
+              "prefix_sum": "825904"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 21,
+              "prefix_sum": "670959"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v3",
+          "category": "prime_products",
+          "boundaries_min": 22,
+          "boundaries_max": 22,
+          "prefix_min": "2312495",
+          "prefix_median": "2479175",
+          "prefix_max": "3702809",
+          "prefix_sum_across_seeds": "13587489",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "3702809"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "2744159"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "2312495"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "2348851"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "2479175"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            8
+          ],
+          "variant": "v3",
+          "category": "ring_projection",
+          "boundaries_min": 1,
+          "boundaries_max": 1,
+          "prefix_min": "953",
+          "prefix_median": "20372",
+          "prefix_max": "73574",
+          "prefix_sum_across_seeds": "157524",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "56251"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "20372"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "73574"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "953"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "6374"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "directory": "/Users/johnwu/.codex/worktrees/falcon-shared-prime/f2z-pcs/results/falcon-shared-prime-v3-20261006/will/will128",
+      "phase": "discovery",
+      "status": "stopped_on_regression",
+      "qualification_status": "regression",
+      "completed_processes": 15,
+      "complete_verified_proofs": 60,
+      "partial_verified_proofs": 0,
+      "incomplete_processes": [],
+      "variants": [
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "native",
+          "seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "verified_proofs": 20,
+          "geometric_mean_ms": {
+            "total_prover_ms": 989.0243460067471,
+            "proof_verify_ms": 75.48861414882754
+          },
+          "payload_bytes": [
+            2442244,
+            2447844
+          ],
+          "rss_bytes": [
+            3554377728,
+            3605741568
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v1",
+          "seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "verified_proofs": 20,
+          "geometric_mean_ms": {
+            "total_prover_ms": 1010.4552330066766,
+            "proof_verify_ms": 64.34391457046802
+          },
+          "payload_bytes": [
+            2010396,
+            2017820
+          ],
+          "rss_bytes": [
+            3569987584,
+            3599118336
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v3",
+          "seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "verified_proofs": 20,
+          "geometric_mean_ms": {
+            "total_prover_ms": 967.0575053826273,
+            "proof_verify_ms": 64.52797283394585
+          },
+          "payload_bytes": [
+            2010130,
+            2015122
+          ],
+          "rss_bytes": [
+            3568402432,
+            3616997376
+          ]
+        }
+      ],
+      "comparisons": [
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "baseline": "native",
+          "candidate": "v3",
+          "seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "complete": true,
+          "metrics": {
+            "total_prover_ms": {
+              "ratio": 0.9777893833323594,
+              "interval_95": [
+                0.9308073063049835,
+                1.0271428594096297
+              ],
+              "status": "inconclusive"
+            },
+            "proof_verify_ms": {
+              "ratio": 0.8548040464317905,
+              "interval_95": [
+                0.7977887435374064,
+                0.9021616048739017
+              ],
+              "status": "inconclusive"
+            }
+          },
+          "payload_pass": true,
+          "memory_pass": false,
+          "status": "regression",
+          "rss_increase_pairs": 4,
+          "rss_delta_bytes": [
+            -19632128,
+            47366144
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "baseline": "v1",
+          "candidate": "v3",
+          "seeds": [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          "complete": true,
+          "metrics": {
+            "total_prover_ms": {
+              "ratio": 0.9570513109275349,
+              "interval_95": [
+                0.9184596492369502,
+                1.0020728855835785
+              ],
+              "status": "inconclusive"
+            },
+            "proof_verify_ms": {
+              "ratio": 1.0028605387892007,
+              "interval_95": [
+                0.9631203035325023,
+                1.0391345929986977
+              ],
+              "status": "inconclusive"
+            }
+          },
+          "payload_pass": false,
+          "memory_pass": false,
+          "status": "regression",
+          "rss_increase_pairs": 3,
+          "rss_delta_bytes": [
+            -20549632,
+            46673920
+          ]
+        }
+      ],
+      "nonce_categories": [
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v3",
+          "category": "binary_bridge",
+          "boundaries_min": 287,
+          "boundaries_max": 287,
+          "prefix_min": "67151766",
+          "prefix_median": "74032200",
+          "prefix_max": "84353340",
+          "prefix_sum_across_seeds": "380164533",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 287,
+              "prefix_sum": "73613694"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 287,
+              "prefix_sum": "67151766"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 287,
+              "prefix_sum": "84353340"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 287,
+              "prefix_sum": "74032200"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 287,
+              "prefix_sum": "81013533"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v3",
+          "category": "binary_joint",
+          "boundaries_min": 31,
+          "boundaries_max": 31,
+          "prefix_min": "435991",
+          "prefix_median": "512806",
+          "prefix_max": "622847",
+          "prefix_sum_across_seeds": "2650347",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 31,
+              "prefix_sum": "512806"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 31,
+              "prefix_sum": "622847"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 31,
+              "prefix_sum": "435991"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 31,
+              "prefix_sum": "507121"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 31,
+              "prefix_sum": "571582"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v3",
+          "category": "binary_keccak",
+          "boundaries_min": 74,
+          "boundaries_max": 74,
+          "prefix_min": "9203030",
+          "prefix_median": "9731511",
+          "prefix_max": "11042035",
+          "prefix_sum_across_seeds": "49516949",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 74,
+              "prefix_sum": "9731511"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 74,
+              "prefix_sum": "11042035"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 74,
+              "prefix_sum": "9563823"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 74,
+              "prefix_sum": "9203030"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 74,
+              "prefix_sum": "9976550"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v3",
+          "category": "binary_links",
+          "boundaries_min": 1,
+          "boundaries_max": 1,
+          "prefix_min": "11757",
+          "prefix_median": "18283",
+          "prefix_max": "35745",
+          "prefix_sum_across_seeds": "108743",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "11757"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "35745"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "26475"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "18283"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "16483"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v3",
+          "category": "binary_opening",
+          "boundaries_min": 62,
+          "boundaries_max": 62,
+          "prefix_min": "3178333",
+          "prefix_median": "3793786",
+          "prefix_max": "4334042",
+          "prefix_sum_across_seeds": "18717464",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 62,
+              "prefix_sum": "3178333"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 62,
+              "prefix_sum": "4334042"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 62,
+              "prefix_sum": "3822833"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 62,
+              "prefix_sum": "3588470"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 62,
+              "prefix_sum": "3793786"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v3",
+          "category": "native_ring_carry",
+          "boundaries_min": 0,
+          "boundaries_max": 0,
+          "prefix_min": "0",
+          "prefix_median": "0",
+          "prefix_max": "0",
+          "prefix_sum_across_seeds": "0",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v3",
+          "category": "pcs_auxiliary",
+          "boundaries_min": 5,
+          "boundaries_max": 5,
+          "prefix_min": "435",
+          "prefix_median": "728",
+          "prefix_max": "1731",
+          "prefix_sum_across_seeds": "4272",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 5,
+              "prefix_sum": "435"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 5,
+              "prefix_sum": "784"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 5,
+              "prefix_sum": "728"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 5,
+              "prefix_sum": "594"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 5,
+              "prefix_sum": "1731"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v3",
+          "category": "pcs_folds",
+          "boundaries_min": 19,
+          "boundaries_max": 19,
+          "prefix_min": "220933858",
+          "prefix_median": "325075532",
+          "prefix_max": "421807750",
+          "prefix_sum_across_seeds": "1624359716",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 19,
+              "prefix_sum": "325075532"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 19,
+              "prefix_sum": "244961399"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 19,
+              "prefix_sum": "411581177"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 19,
+              "prefix_sum": "421807750"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 19,
+              "prefix_sum": "220933858"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v3",
+          "category": "pcs_ood",
+          "boundaries_min": 0,
+          "boundaries_max": 0,
+          "prefix_min": "0",
+          "prefix_median": "0",
+          "prefix_max": "0",
+          "prefix_sum_across_seeds": "0",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 0,
+              "prefix_sum": "0"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v3",
+          "category": "pcs_queries",
+          "boundaries_min": 6,
+          "boundaries_max": 6,
+          "prefix_min": "6276",
+          "prefix_median": "10799",
+          "prefix_max": "14136",
+          "prefix_sum_across_seeds": "49992",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 6,
+              "prefix_sum": "14136"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 6,
+              "prefix_sum": "10799"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 6,
+              "prefix_sum": "6276"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 6,
+              "prefix_sum": "10900"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 6,
+              "prefix_sum": "7881"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v3",
+          "category": "prime_binder",
+          "boundaries_min": 28,
+          "boundaries_max": 28,
+          "prefix_min": "705359",
+          "prefix_median": "993130",
+          "prefix_max": "1779188",
+          "prefix_sum_across_seeds": "5391562",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 28,
+              "prefix_sum": "1779188"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 28,
+              "prefix_sum": "1131417"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 28,
+              "prefix_sum": "705359"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 28,
+              "prefix_sum": "993130"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 28,
+              "prefix_sum": "782468"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v3",
+          "category": "prime_fingerprint",
+          "boundaries_min": 1,
+          "boundaries_max": 1,
+          "prefix_min": "41417",
+          "prefix_median": "153094",
+          "prefix_max": "1229571",
+          "prefix_sum_across_seeds": "1701642",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "196809"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "80751"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "153094"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "41417"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "1229571"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v3",
+          "category": "prime_forest",
+          "boundaries_min": 76,
+          "boundaries_max": 76,
+          "prefix_min": "7897372",
+          "prefix_median": "9049217",
+          "prefix_max": "9547293",
+          "prefix_sum_across_seeds": "43963324",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 76,
+              "prefix_sum": "7897372"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 76,
+              "prefix_sum": "9547293"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 76,
+              "prefix_sum": "9049217"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 76,
+              "prefix_sum": "8300498"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 76,
+              "prefix_sum": "9168944"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v3",
+          "category": "prime_leaf",
+          "boundaries_min": 22,
+          "boundaries_max": 22,
+          "prefix_min": "2068639",
+          "prefix_median": "2365568",
+          "prefix_max": "2915062",
+          "prefix_sum_across_seeds": "12448462",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "2257227"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "2365568"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "2068639"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "2915062"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "2841966"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v3",
+          "category": "prime_norm",
+          "boundaries_min": 21,
+          "boundaries_max": 21,
+          "prefix_min": "625093",
+          "prefix_median": "670959",
+          "prefix_max": "825904",
+          "prefix_sum_across_seeds": "3556132",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 21,
+              "prefix_sum": "625093"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 21,
+              "prefix_sum": "802693"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 21,
+              "prefix_sum": "631483"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 21,
+              "prefix_sum": "825904"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 21,
+              "prefix_sum": "670959"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v3",
+          "category": "prime_products",
+          "boundaries_min": 22,
+          "boundaries_max": 22,
+          "prefix_min": "2312495",
+          "prefix_median": "2479175",
+          "prefix_max": "3702809",
+          "prefix_sum_across_seeds": "13587489",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "3702809"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "2744159"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "2312495"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "2348851"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 22,
+              "prefix_sum": "2479175"
+            }
+          ]
+        },
+        {
+          "cell": [
+            128,
+            1024,
+            16
+          ],
+          "variant": "v3",
+          "category": "ring_projection",
+          "boundaries_min": 1,
+          "boundaries_max": 1,
+          "prefix_min": "953",
+          "prefix_median": "20372",
+          "prefix_max": "73574",
+          "prefix_sum_across_seeds": "157524",
+          "seeds": [
+            {
+              "seed": 42,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "56251"
+            },
+            {
+              "seed": 43,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "20372"
+            },
+            {
+              "seed": 44,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "73574"
+            },
+            {
+              "seed": 45,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "953"
+            },
+            {
+              "seed": 46,
+              "process_status": "complete",
+              "boundaries": 1,
+              "prefix_sum": "6374"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

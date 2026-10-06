@@ -1,0 +1,39 @@
+{
+  "command": [
+    "/home/john-wu/code/BitZ-pcs-run/.tmp/falcon-v2/falcon_v2",
+    "--protocol",
+    "shared-prime",
+    "--security",
+    "128",
+    "--batch",
+    "1024",
+    "--seed",
+    "42",
+    "--threads",
+    "16",
+    "--warmup",
+    "0",
+    "--iterations",
+    "1"
+  ],
+  "binary": {
+    "host": "will",
+    "architecture": "x86_64",
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+    "rustflags": "-C target-cpu=native",
+    "features": [
+      "falcon-hybrid"
+    ],
+    "profile": "release",
+    "lock_sha256": "8616e078399dbe80f778f402584dfbc0b95cab8ea3dfb577c61afd328dc33bd3",
+    "binary": "/home/john-wu/code/BitZ-pcs-run/.tmp/falcon-v2/falcon_v2",
+    "sha256": "d46acd940bb3ae44dce2e1b59766806cf1f38aafd752268f02f1c93bc19ef022",
+    "revision": "4fe1d3d538b2940fc20ce235387046a97a2a9f10"
+  },
+  "diagnostic_only": true,
+  "note": "One instrumented proof to locate costs; no warmup, not a performance qualification sample.",
+  "started_at": 1791285353.88863,
+  "pid": 3599143,
+  "exit_code": 0,
+  "finished_at": 1791285375.5735354
+}

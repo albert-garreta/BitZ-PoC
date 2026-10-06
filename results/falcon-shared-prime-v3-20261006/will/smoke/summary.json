@@ -1,0 +1,126 @@
+{
+  "verified_proofs": 9,
+  "native_compatibility": [
+    {
+      "security": 100,
+      "matched_keys": [
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "roots",
+        "input_digest"
+      ],
+      "reference": "results/falcon-shared-prime-v2-20261006/native-compatibility-100-v1.jsonl"
+    },
+    {
+      "security": 128,
+      "matched_keys": [
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "roots",
+        "input_digest"
+      ],
+      "reference": "results/falcon-shared-prime-v2-20261006/native-compatibility-128-v1.jsonl"
+    }
+  ],
+  "cases": [
+    {
+      "label": "native",
+      "case": [
+        100,
+        1,
+        16,
+        42
+      ],
+      "payload": 207104,
+      "proof_digest": "7d4de9b9b02f492ed1f903ebe96bb0271722a05274b59fb452ed0f372519c0e3"
+    },
+    {
+      "label": "native",
+      "case": [
+        128,
+        1,
+        16,
+        42
+      ],
+      "payload": 243464,
+      "proof_digest": "a965067f66d5f39b21f15eaa1ef4d3565214005aa0f3caf762567f0137462a03"
+    },
+    {
+      "label": "v3",
+      "case": [
+        100,
+        1,
+        16,
+        42
+      ],
+      "payload": 207458,
+      "proof_digest": "4f7bc64c1537ed2adb07b5da4f5c618e8299ae9fb61b008958efe779f75dd3cf"
+    },
+    {
+      "label": "v3",
+      "case": [
+        100,
+        3,
+        16,
+        42
+      ],
+      "payload": 279970,
+      "proof_digest": "84433a65fda69d6426d4ed70cab217517cb7e5ae493ae78cfd9b65ca8b4a57bc"
+    },
+    {
+      "label": "v3",
+      "case": [
+        100,
+        32,
+        16,
+        42
+      ],
+      "payload": 429314,
+      "proof_digest": "f3349d417c3c9ee2d098b0541e909ddc2425c075f82f01b18e5e91c8126129ed"
+    },
+    {
+      "label": "v3",
+      "case": [
+        100,
+        1024,
+        16,
+        42
+      ],
+      "payload": 1601794,
+      "proof_digest": "7e007b9af71a72d309c1cbf93bc39c97a644d7922f88e808e464b7403e0cd9fa"
+    },
+    {
+      "label": "v3",
+      "case": [
+        128,
+        1,
+        16,
+        42
+      ],
+      "payload": 242850,
+      "proof_digest": "fdd1945ca1a40ab98c510142b33451203dbec650c9ac4fc6fe55067a71c42684"
+    },
+    {
+      "label": "v3",
+      "case": [
+        128,
+        3,
+        16,
+        42
+      ],
+      "payload": 337082,
+      "proof_digest": "77d82cc2c31d035defa365bfab3dd89652db40a85448e8c0182fbfc627b98d50"
+    },
+    {
+      "label": "v3",
+      "case": [
+        128,
+        32,
+        16,
+        42
+      ],
+      "payload": 523106,
+      "proof_digest": "87bbb3d2c9bb813213265db5d7caf35205afe7a7207d4c879a3868fd4b3c8248"
+    }
+  ]
+}

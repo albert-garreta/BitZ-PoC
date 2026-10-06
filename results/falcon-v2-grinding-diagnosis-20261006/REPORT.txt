@@ -1,0 +1,85 @@
+Falcon V2 128-bit slowdown diagnosis — 2026-10-06
+
+Runtime: 4fe1d3d538b2940fc20ce235387046a97a2a9f10, retained immutable
+binaries from the qualification archive. Checkout: be0d3cdb606192fda0e3cac5ecb344574ce14895.
+No protocol code changed for this diagnosis. One instrumented complete proof
+on each host, batch1024, seed42, target 128, Mac8 threads, will16 threads.
+No warmup: these are bounded diagnostic captures, not timing qualification
+or new median estimates. Every proof verified and exactly matched the prior
+proof digest, roots, input digest, payload and nonce diagnostics. Benchmark
+stage logging was enabled; a five-second stack sample additionally perturbed
+the Mac run. Build settings and binary hashes are retained in run.json.
+
+Cause
+
+At 8192 bridge rows, moving to one unsplit column sum used the smaller shared
+prime floor 2^114 instead of 2^125. Prime-field error terms scale like D/p,
+so their conservative bounds grew 2048-fold. At target 128 the implementation
+preserved the previous category budgets by adding 11 bits to every active
+prime-field grinding difficulty. Expected search cost doubles per bit.
+This compensation uses the existing work-normalized grinding model, not
+unconditional statistical security. The old optimized integer proofs remained,
+but their nonce searches became
+2048 times as expensive in expectation. Target 100 uses no integer grinding.
+
+Batch 1024 has 171 prime/projection boundaries. Current counts by difficulty
+are 3 at 24 bits,28 at 25 bits,20 at 26 bits,118 at 28 bits,2 at 30 bits.
+Expected total: 36,154,900,480 serial nonce prefixes, versus 17,653,760 forV1.
+For example the compaction forest's 76 searches moved from 17 to 28 bits:
+76*2^17=9,961,472 becomes76*2^28=20,401,094,656 expected prefixes.
+The actual seed42 prime total is43,012,645,406, about 1.19x expectation;
+the regression is structural, not chiefly a rare unlucky search.
+Counts mean sum(nonce+1), excluding SIMD/parallel overscan, not executed hashes.
+
+Measured diagnostic durations (seconds)
+                       Mac             will
+Proof generation       139.550         11.911
+Prime grinding         135.820         11.075
+Other grinding           2.252          0.207
+Remaining proof work     1.477          0.630
+Witness+commit+prove    139.897         12.080
+
+The rows prime/other/remaining partition proof time. Other grinding counts
+outer PCS search spans once, excluding their nested Spartan child spans.
+Remaining proof work is the within-run residual, not a prediction of a
+valid proof with grinding removed. Stage logging overhead remains present.
+
+Prime grinding consumes 97.3% of Mac proof time and 93.0% of will proof time.
+Within it, compaction forest grinding alone takes 74.244s/6.082s (Mac/will).
+The entire ring reduction takes 0.036s/0.008s; binary GKR takes 0.372s/0.088s.
+These latter spans overlap the partition above and must not be added to it.
+Direct ring decoding and the one-limb GKR computation do not explain the
+large latency increase. Most new work is in existing integer-proof challenges.
+
+Hardware evidence
+
+Both hosts solve the same deterministic search problems. ARM already uses
+NEON and an 8-thread Rayon search; there is no scalar/single-thread fallback
+for the 32-byte seeds. Will uses 16 threads and its 16-lane AVX-512 kernel;
+ARM's kernel handles 8 nonces using two 4-lane groups. The x86 kernel also
+prepares invariant seed state, skips unnecessary final compression work and
+uses vector hit masks. The ARM path rebuilds state, performs all seven rounds,
+checks stored outputs scalar, and allocates a prefix Vec once per 1024-nonce
+chunk. Those differences are optimization candidates, not a measured causal
+breakdown of the whole host gap. The five-second Mac sample confirms nonce
+scanning across workers is hot; waiting stacks also appear, so sample counts
+must not be read as CPU-time percentages. Allocation is not a demonstrated
+dominant cost. Separate kernel experiments would be needed to attribute it.
+
+Implication
+
+The expensive choice was the 115-bit shared prime plus preservation of old
+per-category 128-bit budgets. Direct decoding can be retained separately.
+Keeping a larger shared prime and two limbs at 128 bits avoids this specific
+11-bit increase; it requires its own measured variant and trades back some
+payload savings. Optimizing the security allocation is another protocol
+parameter change requiring exact per-layout validation. SIMD tuning alone
+cannot remove the fundamental increase in required search work.
+
+Evidence
+
+summary.json gives exact stage totals and difficulty counts. Each host directory
+contains raw stage events, full proof result and process metadata. capture.py
+records the exact single-proof procedure. will-execution-manifest.json records
+the exact remote checkout and successful execution. No repeated qualification
+runs or protocol changes are implied by this diagnostic.

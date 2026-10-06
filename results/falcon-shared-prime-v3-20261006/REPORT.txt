@@ -1,0 +1,105 @@
+Falcon SharedPrimeV3: target-selected prime and bridge
+2026-10-06
+
+Implementation: a6f58d05d641ac6423538d5cadf0b3395823bf43
+Branch: codex/falcon-shared-prime
+Native remains the default. SharedPrimeV3 is experimental; V1/V2 shared proofs
+must be regenerated. The open LaTeX document and primary checkout were unchanged.
+
+IMPLEMENTED
+100-bit target: the capped 115-bit interval [2^114, 2^115-2^102-1], one
+unsplit u128 sum vector, zero arithmetic grinding, projection difficulty 2.
+128-bit target: [2^125, 2^126-1], two bounded limbs, the native arithmetic
+schedule (removing V2's extra 11 bits), projection difficulty 14.
+Both retain direct ring decoding, grouped polynomial lifting, optimized integer
+proofs, the shared binder and PCS opening. The one shared prime is sampled after
+P is fixed and used by both arithmetic branches. Prepared parameters select the
+bridge; V3 transcript domains bind the interval, target, geometry and schedule.
+
+SECURITY AND CORRECTNESS
+124 Falcon tests passed on each machine (Mac: 1 diagnostic ignored; will: 2).
+39 campaign-runner tests passed. Exact integer tests and the independent
+security.py Fraction calculation check all 2048 batch/target combinations.
+Conservative complete-ledger minima: 101.002291251531 and 129.070893993743 bits,
+under the existing work-normalized grinding model, not statistical security.
+The ledger includes PCS, binary reductions, sampler error and both arithmetic
+branches. At 128 bits/B1024 the changed prime/projection boundaries require
+17,653,760 expected serial nonce prefixes instead of 36,154,900,480 (2048x less).
+These counts are search-work expectations, not measured hashes or timing ratios.
+
+Each host verified 60 matched benchmark proofs plus 9 smoke proofs: 138 total.
+Smokes cover both native targets, shared 100 at batches 1/3/32/1024 and shared
+128 at 1/3/32. Matched runs cover shared 128/B1024. Native proof digests, roots,
+inputs and exact payloads match the retained V1 native path at both targets.
+All five V3 B1024 proof digests and payloads match across Mac and x86.
+
+MATCHED 128-BIT / BATCH-1024 DISCOVERY
+Rust 1.98.1, release, -C target-cpu=native, feature falcon-hybrid, fixed lockfile.
+Immutable SHA-256-identified binaries; native baseline 4491309f and retained
+V1 runtime e370e3b3 compared to V3 a6f58d05. The retained Mac V1 binary records
+revision df96f014 (documentation-only changes after e370e3b3); the will V1
+binary is built at e370e3b3. See manifests for exact provenance.
+Five independent input seeds 42..46, cyclic/reversed process order nearly
+balanced across these five seeds, one warmup and three measured verified proofs
+per process (exact position/pair balance requires six seeds). Tracing disabled. Separate processes
+provide warmed peak RSS. CPU-idle gates and swap guards applied. Mac was on AC,
+100% charged. Mac measurements started first, then will ran independently.
+
+Times below are geometric means of per-seed process medians. Total prover time
+includes witness generation, commitment and proving; input fixture generation
+and prepared-parameter construction are outside it. Verification is separate.
+
+Host / threads       native total   V1 total     V3 total    V3 verify
+Mac M1 Max / 8          2.728990 s   3.250622 s   2.583999 s   0.120639 s
+will 9950X3D / 16       0.989024 s   1.010455 s   0.967058 s   0.064528 s
+
+Paired V3 total-time ratio, 95% interval (one seed is the statistical unit):
+Mac / native: 0.946870 [0.815142, 1.099886]
+Mac / V1:     0.794924 [0.678459, 0.905430]
+will / native:0.977789 [0.930807, 1.027143]
+will / V1:    0.957051 [0.918460, 1.002073]
+Native parity remains inconclusive on both hosts. Mac versus V1 favors V3 in
+this discovery sample, but this is not the separate 20-seed confirmation phase.
+
+PAYLOAD AND MEMORY
+V3 total payload range: 2,010,130..2,015,122 bytes, identical across hosts.
+Native: 2,442,244..2,447,844 bytes. V1: 2,010,396..2,017,820 bytes.
+The payload is canonical stored proof content, excluding public statements and
+Falcon framing. At seed 42, V3 is 2,015,090 bytes versus V2's previously recorded
+1,751,402 bytes: +263,688 bytes (+15.06%). The two-limb sums alone add 262,144
+bytes; GKR returns from 273 to 286 messages. V3 is still smaller than native.
+V3 exceeds V1 by 4,054 / 438 / 4,726 bytes at seeds 42 / 45 / 46, respectively.
+The 100-bit B1 smoke is 207,458 bytes versus native 207,104 (+354 bytes).
+
+Peak RSS V3 range: Mac 4,366,581,760..4,439,392,256 bytes;
+will 3,568,402,432..3,616,997,376 bytes. Paired RSS increases occur in 4/5 native
+and 3/5 V1 comparisons on each host. Maximum positive paired deltas:
+Mac: +59,621,376 bytes vs native; +96,468,992 vs V1.
+will:+47,366,144 bytes vs native; +46,673,920 vs V1.
+The strict no-increase RSS rule fails; some differences can reflect allocator
+or process variation, but these measurements cannot certify memory parity.
+
+V2 REGRESSION RECOVERY AND QUALIFICATION LIMITS
+The earlier V2 128-bit seed-42 warmups were 137.9167 s on Mac and 12.08244 s on
+will. Current V3 seed-42 process medians are 2.554248 s and 0.933075 s. This
+historical comparison demonstrates recovery of the grinding regression, but is
+not a matched five-seed V2 speedup estimate (warmup and median differ).
+
+Both discovery cells stopped on the existing strict regression gate because of
+RSS and V1 payload increases. No default promotion or full no-regression claim.
+No new 100-bit performance qualification, one-thread matrix, other-batch matched
+matrix, or 20-seed confirmation was run. The one-limb 100-bit experiment remains
+subject to its earlier unresolved qualification. The user's accepted tradeoff
+allows a modest size increase to recover 128-bit speed; strict historical gate
+outcomes are retained rather than relabeled as passes.
+
+ARTIFACTS
+summary.txt / summary.json: seed aggregates, paired intervals and nonce counts.
+mac128/, will/will128/: all raw records, stderr RSS, commands and campaign state.
+mac-smoke/, will/smoke/: native compatibility and shared profile smoke proofs.
+mac-manifest.json, will/manifest.json: immutable binary/build provenance.
+mac-tests.log, will/tests.log: full Falcon release test outputs.
+security.py / security.json: standalone exact-rational ledger reproduction.
+cross-host-proofs.json: equality of input/proof digests and exact payloads.
+will-*-execution-manifest.json: exact-revision SSH execution records.
+SHA256SUMS: artifact integrity inventory, excluding itself.

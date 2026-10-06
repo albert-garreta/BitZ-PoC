@@ -89,7 +89,9 @@ verified diagnostics showed a large grinding regression. See the
 [V2 qualification report](../../../../results/falcon-shared-prime-v2-20261006/REPORT.txt)
 for exact revisions, payloads, paired timing intervals and unrun configurations.
 V3 restores the larger prime and prior arithmetic grinding schedule at
-128 bits. Its performance qualification is pending; the native route remains
+128 bits. [V3 discovery measurements](../../../../results/falcon-shared-prime-v3-20261006/REPORT.txt)
+confirm recovery of the V2 slowdown, but the strict RSS and V1 payload gates
+still fail and native timing parity is inconclusive. The native route remains
 the default.
 
 ## Committed sources and constraints

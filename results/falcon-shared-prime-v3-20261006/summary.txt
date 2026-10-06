@@ -1,0 +1,50 @@
+Timing geometric means use one process median per seed; cells/hosts are separate. Saved paired CI95 values come from campaign.json; this script checks point estimates but does not recompute intervals.
+RSS is the external warmed-process peak in bytes. Incomplete processes contribute no timing, RSS, or paired estimates. Proof counts include verified warmups.
+Nonce prefix=sum(nonce+1) over stored entries, one repeat-stable proof per seed; includes zero-difficulty placeholders, excludes SIMD/parallel overscan, and is not executed hashes. Totals remain decimal strings in JSON.
+This summarizes measurement evidence and metadata consistency; it is not an independent security audit or a new qualification decision.
+/Users/johnwu/.codex/worktrees/falcon-shared-prime/f2z-pcs/results/falcon-shared-prime-v3-20261006/mac128: phase=discovery status=stopped_on_regression qualification=regression completed_processes=15 completed_verified_proofs=60 partial_verified_proofs=0
+  s128/b1024/t8 native seeds=[42, 43, 44, 45, 46] GM_ms total=2728.989997 verify=139.523991 payloadB=[2442244, 2447844] RSS_B=[4337860608, 4392828928] verified=20
+  s128/b1024/t8 v1 seeds=[42, 43, 44, 45, 46] GM_ms total=3250.622239 verify=122.030918 payloadB=[2010396, 2017820] RSS_B=[4342431744, 4391501824] verified=20
+  s128/b1024/t8 v3 seeds=[42, 43, 44, 45, 46] GM_ms total=2583.999157 verify=120.639123 payloadB=[2010130, 2015122] RSS_B=[4366581760, 4439392256] verified=20
+  paired [128, 1024, 8] v3/native seeds=[42, 43, 44, 45, 46] total=0.946870[0.815142,1.099886] verify=0.864648[0.854775,0.873257] RSS+=4/5 deltaB=[-2899968, 59621376] payload_pass=True memory_pass=False status=regression
+  paired [128, 1024, 8] v3/v1 seeds=[42, 43, 44, 45, 46] total=0.794924[0.678459,0.905430] verify=0.988595[0.980844,0.993388] RSS+=3/5 deltaB=[-12812288, 96468992] payload_pass=False memory_pass=False status=regression
+  nonce [128, 1024, 8] v3 binary_bridge boundaries=287..287 prefix[min,median,max]=[67151766,74032200,84353340] sum_across_seeds=380164533 by_seed=42:73613694,43:67151766,44:84353340,45:74032200,46:81013533
+  nonce [128, 1024, 8] v3 binary_joint boundaries=31..31 prefix[min,median,max]=[435991,512806,622847] sum_across_seeds=2650347 by_seed=42:512806,43:622847,44:435991,45:507121,46:571582
+  nonce [128, 1024, 8] v3 binary_keccak boundaries=74..74 prefix[min,median,max]=[9203030,9731511,11042035] sum_across_seeds=49516949 by_seed=42:9731511,43:11042035,44:9563823,45:9203030,46:9976550
+  nonce [128, 1024, 8] v3 binary_links boundaries=1..1 prefix[min,median,max]=[11757,18283,35745] sum_across_seeds=108743 by_seed=42:11757,43:35745,44:26475,45:18283,46:16483
+  nonce [128, 1024, 8] v3 binary_opening boundaries=62..62 prefix[min,median,max]=[3178333,3793786,4334042] sum_across_seeds=18717464 by_seed=42:3178333,43:4334042,44:3822833,45:3588470,46:3793786
+  nonce [128, 1024, 8] v3 native_ring_carry boundaries=0..0 prefix[min,median,max]=[0,0,0] sum_across_seeds=0 by_seed=42:0,43:0,44:0,45:0,46:0
+  nonce [128, 1024, 8] v3 pcs_auxiliary boundaries=5..5 prefix[min,median,max]=[435,728,1731] sum_across_seeds=4272 by_seed=42:435,43:784,44:728,45:594,46:1731
+  nonce [128, 1024, 8] v3 pcs_folds boundaries=19..19 prefix[min,median,max]=[220933858,325075532,421807750] sum_across_seeds=1624359716 by_seed=42:325075532,43:244961399,44:411581177,45:421807750,46:220933858
+  nonce [128, 1024, 8] v3 pcs_ood boundaries=0..0 prefix[min,median,max]=[0,0,0] sum_across_seeds=0 by_seed=42:0,43:0,44:0,45:0,46:0
+  nonce [128, 1024, 8] v3 pcs_queries boundaries=6..6 prefix[min,median,max]=[6276,10799,14136] sum_across_seeds=49992 by_seed=42:14136,43:10799,44:6276,45:10900,46:7881
+  nonce [128, 1024, 8] v3 prime_binder boundaries=28..28 prefix[min,median,max]=[705359,993130,1779188] sum_across_seeds=5391562 by_seed=42:1779188,43:1131417,44:705359,45:993130,46:782468
+  nonce [128, 1024, 8] v3 prime_fingerprint boundaries=1..1 prefix[min,median,max]=[41417,153094,1229571] sum_across_seeds=1701642 by_seed=42:196809,43:80751,44:153094,45:41417,46:1229571
+  nonce [128, 1024, 8] v3 prime_forest boundaries=76..76 prefix[min,median,max]=[7897372,9049217,9547293] sum_across_seeds=43963324 by_seed=42:7897372,43:9547293,44:9049217,45:8300498,46:9168944
+  nonce [128, 1024, 8] v3 prime_leaf boundaries=22..22 prefix[min,median,max]=[2068639,2365568,2915062] sum_across_seeds=12448462 by_seed=42:2257227,43:2365568,44:2068639,45:2915062,46:2841966
+  nonce [128, 1024, 8] v3 prime_norm boundaries=21..21 prefix[min,median,max]=[625093,670959,825904] sum_across_seeds=3556132 by_seed=42:625093,43:802693,44:631483,45:825904,46:670959
+  nonce [128, 1024, 8] v3 prime_products boundaries=22..22 prefix[min,median,max]=[2312495,2479175,3702809] sum_across_seeds=13587489 by_seed=42:3702809,43:2744159,44:2312495,45:2348851,46:2479175
+  nonce [128, 1024, 8] v3 ring_projection boundaries=1..1 prefix[min,median,max]=[953,20372,73574] sum_across_seeds=157524 by_seed=42:56251,43:20372,44:73574,45:953,46:6374
+/Users/johnwu/.codex/worktrees/falcon-shared-prime/f2z-pcs/results/falcon-shared-prime-v3-20261006/will/will128: phase=discovery status=stopped_on_regression qualification=regression completed_processes=15 completed_verified_proofs=60 partial_verified_proofs=0
+  s128/b1024/t16 native seeds=[42, 43, 44, 45, 46] GM_ms total=989.024346 verify=75.488614 payloadB=[2442244, 2447844] RSS_B=[3554377728, 3605741568] verified=20
+  s128/b1024/t16 v1 seeds=[42, 43, 44, 45, 46] GM_ms total=1010.455233 verify=64.343915 payloadB=[2010396, 2017820] RSS_B=[3569987584, 3599118336] verified=20
+  s128/b1024/t16 v3 seeds=[42, 43, 44, 45, 46] GM_ms total=967.057505 verify=64.527973 payloadB=[2010130, 2015122] RSS_B=[3568402432, 3616997376] verified=20
+  paired [128, 1024, 16] v3/native seeds=[42, 43, 44, 45, 46] total=0.977789[0.930807,1.027143] verify=0.854804[0.797789,0.902162] RSS+=4/5 deltaB=[-19632128, 47366144] payload_pass=True memory_pass=False status=regression
+  paired [128, 1024, 16] v3/v1 seeds=[42, 43, 44, 45, 46] total=0.957051[0.918460,1.002073] verify=1.002861[0.963120,1.039135] RSS+=3/5 deltaB=[-20549632, 46673920] payload_pass=False memory_pass=False status=regression
+  nonce [128, 1024, 16] v3 binary_bridge boundaries=287..287 prefix[min,median,max]=[67151766,74032200,84353340] sum_across_seeds=380164533 by_seed=42:73613694,43:67151766,44:84353340,45:74032200,46:81013533
+  nonce [128, 1024, 16] v3 binary_joint boundaries=31..31 prefix[min,median,max]=[435991,512806,622847] sum_across_seeds=2650347 by_seed=42:512806,43:622847,44:435991,45:507121,46:571582
+  nonce [128, 1024, 16] v3 binary_keccak boundaries=74..74 prefix[min,median,max]=[9203030,9731511,11042035] sum_across_seeds=49516949 by_seed=42:9731511,43:11042035,44:9563823,45:9203030,46:9976550
+  nonce [128, 1024, 16] v3 binary_links boundaries=1..1 prefix[min,median,max]=[11757,18283,35745] sum_across_seeds=108743 by_seed=42:11757,43:35745,44:26475,45:18283,46:16483
+  nonce [128, 1024, 16] v3 binary_opening boundaries=62..62 prefix[min,median,max]=[3178333,3793786,4334042] sum_across_seeds=18717464 by_seed=42:3178333,43:4334042,44:3822833,45:3588470,46:3793786
+  nonce [128, 1024, 16] v3 native_ring_carry boundaries=0..0 prefix[min,median,max]=[0,0,0] sum_across_seeds=0 by_seed=42:0,43:0,44:0,45:0,46:0
+  nonce [128, 1024, 16] v3 pcs_auxiliary boundaries=5..5 prefix[min,median,max]=[435,728,1731] sum_across_seeds=4272 by_seed=42:435,43:784,44:728,45:594,46:1731
+  nonce [128, 1024, 16] v3 pcs_folds boundaries=19..19 prefix[min,median,max]=[220933858,325075532,421807750] sum_across_seeds=1624359716 by_seed=42:325075532,43:244961399,44:411581177,45:421807750,46:220933858
+  nonce [128, 1024, 16] v3 pcs_ood boundaries=0..0 prefix[min,median,max]=[0,0,0] sum_across_seeds=0 by_seed=42:0,43:0,44:0,45:0,46:0
+  nonce [128, 1024, 16] v3 pcs_queries boundaries=6..6 prefix[min,median,max]=[6276,10799,14136] sum_across_seeds=49992 by_seed=42:14136,43:10799,44:6276,45:10900,46:7881
+  nonce [128, 1024, 16] v3 prime_binder boundaries=28..28 prefix[min,median,max]=[705359,993130,1779188] sum_across_seeds=5391562 by_seed=42:1779188,43:1131417,44:705359,45:993130,46:782468
+  nonce [128, 1024, 16] v3 prime_fingerprint boundaries=1..1 prefix[min,median,max]=[41417,153094,1229571] sum_across_seeds=1701642 by_seed=42:196809,43:80751,44:153094,45:41417,46:1229571
+  nonce [128, 1024, 16] v3 prime_forest boundaries=76..76 prefix[min,median,max]=[7897372,9049217,9547293] sum_across_seeds=43963324 by_seed=42:7897372,43:9547293,44:9049217,45:8300498,46:9168944
+  nonce [128, 1024, 16] v3 prime_leaf boundaries=22..22 prefix[min,median,max]=[2068639,2365568,2915062] sum_across_seeds=12448462 by_seed=42:2257227,43:2365568,44:2068639,45:2915062,46:2841966
+  nonce [128, 1024, 16] v3 prime_norm boundaries=21..21 prefix[min,median,max]=[625093,670959,825904] sum_across_seeds=3556132 by_seed=42:625093,43:802693,44:631483,45:825904,46:670959
+  nonce [128, 1024, 16] v3 prime_products boundaries=22..22 prefix[min,median,max]=[2312495,2479175,3702809] sum_across_seeds=13587489 by_seed=42:3702809,43:2744159,44:2312495,45:2348851,46:2479175
+  nonce [128, 1024, 16] v3 ring_projection boundaries=1..1 prefix[min,median,max]=[953,20372,73574] sum_across_seeds=157524 by_seed=42:56251,43:20372,44:73574,45:953,46:6374

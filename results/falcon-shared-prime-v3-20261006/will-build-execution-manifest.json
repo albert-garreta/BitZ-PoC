@@ -1,0 +1,46 @@
+{
+  "remote_dir": "~/code/BitZ-pcs-run",
+  "source_dir": "~/code/BitZ-pcs",
+  "origin": "git@github.com:albert-garreta/f2z-pcs.git",
+  "branch": "codex/falcon-shared-prime",
+  "revision": "a6f58d05d641ac6423538d5cadf0b3395823bf43",
+  "operation": "run",
+  "run_id": "20261006T113921Z-a6f58d05d641-c5352949",
+  "command": [
+    "python3",
+    "-c",
+    "import os, subprocess, json, pathlib, hashlib, time\nout=pathlib.Path('.tmp/falcon-v3'); out.mkdir(exist_ok=True)\nenv=dict(os.environ,RUSTUP_TOOLCHAIN='1.98.1',RUSTFLAGS='-C target-cpu=native',CARGO_TARGET_DIR=str(pathlib.Path('target/falcon-v2').resolve()),RAYON_NUM_THREADS='16')\ncommands=[('tests',['cargo','test','--offline','--locked','--release','--features','falcon-hybrid','--lib','falcon1024_ct','--','--test-threads=1']),('build',['cargo','bench','--offline','--locked','--features','falcon-hybrid','--bench','falcon_hybrid','--no-run','--message-format=json-render-diagnostics'])]\nfor name,cmd in commands:\n start=time.time()\n with (out/(name+'.log')).open('w') as log:\n  result=subprocess.run(cmd,env=env,stdout=log,stderr=subprocess.STDOUT)\n (out/(name+'-run.json')).write_text(json.dumps(dict(command=cmd,exit_code=result.returncode,elapsed_seconds=time.time()-start),indent=2)+'\\n')\n print(name,result.returncode,flush=True)\n if result.returncode: raise SystemExit(result.returncode)\nrows=[]\nfor line in (out/'build.log').read_text().splitlines():\n try: rows.append(json.loads(line))\n except ValueError: pass\nart=[r['executable'] for r in rows if r.get('reason')=='compiler-artifact' and r.get('target',{}).get('name')=='falcon_hybrid' and r.get('executable')]\nassert len(art)==1,art\nbinary=out/'falcon_v3'; binary.write_bytes(pathlib.Path(art[0]).read_bytes()); binary.chmod(0o755)\nmanifest=json.loads(pathlib.Path('results/falcon-shared-prime-v2-20261006/will/manifest.json').read_text())\nitem=manifest['binaries'].pop('v2'); item.update(binary=str(binary.resolve()),sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),revision=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip())\nmanifest['binaries']['v3']=item; manifest['candidate']='v3'\n(out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\\n')\nprint(json.dumps(item),flush=True)\n"
+  ],
+  "host": "john-wu@will",
+  "started_at": 1791286761.5993721,
+  "state": "finished",
+  "exit_code": 0,
+  "ssh_exit_code": 0,
+  "remote_result": {
+    "run_id": "20261006T113921Z-a6f58d05d641-c5352949",
+    "revision": "a6f58d05d641ac6423538d5cadf0b3395823bf43",
+    "branch": "codex/falcon-shared-prime",
+    "host": "will",
+    "architecture": "x86_64",
+    "command": [
+      "python3",
+      "-c",
+      "import os, subprocess, json, pathlib, hashlib, time\nout=pathlib.Path('.tmp/falcon-v3'); out.mkdir(exist_ok=True)\nenv=dict(os.environ,RUSTUP_TOOLCHAIN='1.98.1',RUSTFLAGS='-C target-cpu=native',CARGO_TARGET_DIR=str(pathlib.Path('target/falcon-v2').resolve()),RAYON_NUM_THREADS='16')\ncommands=[('tests',['cargo','test','--offline','--locked','--release','--features','falcon-hybrid','--lib','falcon1024_ct','--','--test-threads=1']),('build',['cargo','bench','--offline','--locked','--features','falcon-hybrid','--bench','falcon_hybrid','--no-run','--message-format=json-render-diagnostics'])]\nfor name,cmd in commands:\n start=time.time()\n with (out/(name+'.log')).open('w') as log:\n  result=subprocess.run(cmd,env=env,stdout=log,stderr=subprocess.STDOUT)\n (out/(name+'-run.json')).write_text(json.dumps(dict(command=cmd,exit_code=result.returncode,elapsed_seconds=time.time()-start),indent=2)+'\\n')\n print(name,result.returncode,flush=True)\n if result.returncode: raise SystemExit(result.returncode)\nrows=[]\nfor line in (out/'build.log').read_text().splitlines():\n try: rows.append(json.loads(line))\n except ValueError: pass\nart=[r['executable'] for r in rows if r.get('reason')=='compiler-artifact' and r.get('target',{}).get('name')=='falcon_hybrid' and r.get('executable')]\nassert len(art)==1,art\nbinary=out/'falcon_v3'; binary.write_bytes(pathlib.Path(art[0]).read_bytes()); binary.chmod(0o755)\nmanifest=json.loads(pathlib.Path('results/falcon-shared-prime-v2-20261006/will/manifest.json').read_text())\nitem=manifest['binaries'].pop('v2'); item.update(binary=str(binary.resolve()),sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),revision=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip())\nmanifest['binaries']['v3']=item; manifest['candidate']='v3'\n(out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\\n')\nprint(json.dumps(item),flush=True)\n"
+    ],
+    "cwd": "/home/john-wu/code/BitZ-pcs-run",
+    "toolchain": {
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+      "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)"
+    },
+    "started_at": 1791286763.3109243,
+    "state": "finished",
+    "exit_code": 0,
+    "remote_log": "/home/john-wu/code/BitZ-pcs-run/.tmp/will-runs/20261006T113921Z-a6f58d05d641-c5352949/output.log",
+    "pid": 3639904,
+    "elapsed_seconds": 485.79849843800184,
+    "finished_at": 1791287249.1095722,
+    "post_run_changes": ""
+  },
+  "elapsed_seconds": 487.55992483289447,
+  "finished_at": 1791287249.1672041
+}

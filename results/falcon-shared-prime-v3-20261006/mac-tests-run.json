@@ -1,0 +1,23 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--offline",
+    "--locked",
+    "--release",
+    "--features",
+    "falcon-hybrid",
+    "--lib",
+    "falcon1024_ct",
+    "--",
+    "--test-threads=1"
+  ],
+  "started": 1791286306.195101,
+  "env": {
+    "RUSTFLAGS": "-C target-cpu=native",
+    "CARGO_TARGET_DIR": "/private/tmp/falcon-v2-test-target",
+    "RAYON_NUM_THREADS": "8"
+  },
+  "exit_code": 0,
+  "finished": 1791286785.28203
+}

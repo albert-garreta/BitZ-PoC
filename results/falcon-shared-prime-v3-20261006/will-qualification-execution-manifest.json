@@ -1,0 +1,46 @@
+{
+  "remote_dir": "~/code/BitZ-pcs-run",
+  "source_dir": "~/code/BitZ-pcs",
+  "origin": "git@github.com:albert-garreta/f2z-pcs.git",
+  "branch": "codex/falcon-shared-prime",
+  "revision": "a6f58d05d641ac6423538d5cadf0b3395823bf43",
+  "operation": "run",
+  "run_id": "20261006T115103Z-a6f58d05d641-05777248",
+  "command": [
+    "python3",
+    "-c",
+    "import subprocess,pathlib,time,json\nout=pathlib.Path(\".tmp/falcon-v3\")\n(out/\"smoke.py\").write_text('import json,sys,pathlib\\nsys.path.insert(0,str(pathlib.Path(\"scripts\").resolve()))\\nfrom falcon_v2_campaign import run_one,save\\nbase=pathlib.Path(\".tmp/falcon-v3\")\\nmanifest=json.loads((base/\"manifest.json\").read_text())\\nthreads=int(sys.argv[1]); out=base/\"smoke\"; out.mkdir()\\nrecords=[]; compatibility=[]\\nfor sec in [100,128]:\\n r=run_one(out,manifest[\"binaries\"][\"v3\"],\"native\",(sec,1,threads,42),0,1,180)\\n reference=pathlib.Path(f\"results/falcon-shared-prime-v2-20261006/native-compatibility-{sec}-v1.jsonl\")\\n before=next(x for x in map(json.loads,reference.read_text().splitlines()) if x.get(\"event\")==\"trial\")\\n after=next(x for x in map(json.loads,(out/f\"s{sec}-b1-t{threads}-seed42-native.jsonl\").read_text().splitlines()) if x.get(\"event\")==\"trial\")\\n keys=[\"proof_debug_digest\",\"proof_payload_bytes\",\"roots\",\"input_digest\"]\\n assert all(before[k]==after[k] for k in keys),(sec,\"native compatibility mismatch\")\\n compatibility.append(dict(security=sec,matched_keys=keys,reference=str(reference)))\\n records.append(r)\\nfor sec,batch in [(100,1),(100,3),(100,32),(100,1024),(128,1),(128,3),(128,32)]:\\n records.append(run_one(out,manifest[\"binaries\"][\"v3\"],\"v3\",(sec,batch,threads,42),0,1,180))\\nsave(out/\"summary.json\",dict(verified_proofs=sum(r[\"verified_proofs\"] for r in records),native_compatibility=compatibility,cases=[dict(label=r[\"label\"],case=r[\"case\"],payload=r[\"payload_bytes\"],proof_digest=r[\"proof_digest\"]) for r in records]))\\nprint(\"All smoke proofs and native compatibility checks passed\",flush=True)\\n')\nstages=[('smoke',['python3',str(out/'smoke.py'),'16']),('will128',['python3','scripts/falcon_v2_campaign.py',str(out/'manifest.json'),'--output',str(out/'will128'),'--phase','discovery','--security','128','--batches','1024','--threads','16','--seeds','42','43','44','45','46','--warmup','1','--iterations','3','--timeout','180','--stop-on-regression'])]\nfor name,cmd in stages:\n full=['python3','scripts/bench_gate.py','run','--label','falcon-v3-'+name,'--hold-seconds','30','--poll-seconds','5','--max-idle-wait-seconds','600','--']+cmd\n start=time.time()\n with (out/(name+'-gate.log')).open('w') as log:r=subprocess.run(full,stdout=log,stderr=subprocess.STDOUT)\n (out/(name+'-execution.json')).write_text(json.dumps(dict(command=full,exit_code=r.returncode,started=start,finished=time.time()),indent=2)+'\\n')\n print(name,r.returncode,flush=True)\n if r.returncode:raise SystemExit(r.returncode)\n"
+  ],
+  "host": "john-wu@will",
+  "started_at": 1791287463.797361,
+  "state": "finished",
+  "exit_code": 0,
+  "ssh_exit_code": 0,
+  "remote_result": {
+    "run_id": "20261006T115103Z-a6f58d05d641-05777248",
+    "revision": "a6f58d05d641ac6423538d5cadf0b3395823bf43",
+    "branch": "codex/falcon-shared-prime",
+    "host": "will",
+    "architecture": "x86_64",
+    "command": [
+      "python3",
+      "-c",
+      "import subprocess,pathlib,time,json\nout=pathlib.Path(\".tmp/falcon-v3\")\n(out/\"smoke.py\").write_text('import json,sys,pathlib\\nsys.path.insert(0,str(pathlib.Path(\"scripts\").resolve()))\\nfrom falcon_v2_campaign import run_one,save\\nbase=pathlib.Path(\".tmp/falcon-v3\")\\nmanifest=json.loads((base/\"manifest.json\").read_text())\\nthreads=int(sys.argv[1]); out=base/\"smoke\"; out.mkdir()\\nrecords=[]; compatibility=[]\\nfor sec in [100,128]:\\n r=run_one(out,manifest[\"binaries\"][\"v3\"],\"native\",(sec,1,threads,42),0,1,180)\\n reference=pathlib.Path(f\"results/falcon-shared-prime-v2-20261006/native-compatibility-{sec}-v1.jsonl\")\\n before=next(x for x in map(json.loads,reference.read_text().splitlines()) if x.get(\"event\")==\"trial\")\\n after=next(x for x in map(json.loads,(out/f\"s{sec}-b1-t{threads}-seed42-native.jsonl\").read_text().splitlines()) if x.get(\"event\")==\"trial\")\\n keys=[\"proof_debug_digest\",\"proof_payload_bytes\",\"roots\",\"input_digest\"]\\n assert all(before[k]==after[k] for k in keys),(sec,\"native compatibility mismatch\")\\n compatibility.append(dict(security=sec,matched_keys=keys,reference=str(reference)))\\n records.append(r)\\nfor sec,batch in [(100,1),(100,3),(100,32),(100,1024),(128,1),(128,3),(128,32)]:\\n records.append(run_one(out,manifest[\"binaries\"][\"v3\"],\"v3\",(sec,batch,threads,42),0,1,180))\\nsave(out/\"summary.json\",dict(verified_proofs=sum(r[\"verified_proofs\"] for r in records),native_compatibility=compatibility,cases=[dict(label=r[\"label\"],case=r[\"case\"],payload=r[\"payload_bytes\"],proof_digest=r[\"proof_digest\"]) for r in records]))\\nprint(\"All smoke proofs and native compatibility checks passed\",flush=True)\\n')\nstages=[('smoke',['python3',str(out/'smoke.py'),'16']),('will128',['python3','scripts/falcon_v2_campaign.py',str(out/'manifest.json'),'--output',str(out/'will128'),'--phase','discovery','--security','128','--batches','1024','--threads','16','--seeds','42','43','44','45','46','--warmup','1','--iterations','3','--timeout','180','--stop-on-regression'])]\nfor name,cmd in stages:\n full=['python3','scripts/bench_gate.py','run','--label','falcon-v3-'+name,'--hold-seconds','30','--poll-seconds','5','--max-idle-wait-seconds','600','--']+cmd\n start=time.time()\n with (out/(name+'-gate.log')).open('w') as log:r=subprocess.run(full,stdout=log,stderr=subprocess.STDOUT)\n (out/(name+'-execution.json')).write_text(json.dumps(dict(command=full,exit_code=r.returncode,started=start,finished=time.time()),indent=2)+'\\n')\n print(name,r.returncode,flush=True)\n if r.returncode:raise SystemExit(r.returncode)\n"
+    ],
+    "cwd": "/home/john-wu/code/BitZ-pcs-run",
+    "toolchain": {
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+      "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)"
+    },
+    "started_at": 1791287465.5560992,
+    "state": "finished",
+    "exit_code": 0,
+    "remote_log": "/home/john-wu/code/BitZ-pcs-run/.tmp/will-runs/20261006T115103Z-a6f58d05d641-05777248/output.log",
+    "pid": 3663390,
+    "elapsed_seconds": 284.58821770099166,
+    "finished_at": 1791287750.144437,
+    "post_run_changes": ""
+  },
+  "elapsed_seconds": 286.3996279160492,
+  "finished_at": 1791287750.2017658
+}

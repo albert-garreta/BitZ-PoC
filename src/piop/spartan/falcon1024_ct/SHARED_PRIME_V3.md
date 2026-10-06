@@ -84,5 +84,10 @@ rejects, and the accepted-composite error remains included in the ledger.
 
 The source also tests mode-dependent GKR error/message counts, padded two-limb
 proofs, malformed vector counts, target/field mismatch, transcript agreement,
-source authentication and altered proof messages. Final build and matched performance qualification are pending. Security
-bounds alone do not establish performance parity.
+source authentication and altered proof messages. Both machines pass 124
+Falcon tests. The five-seed 128-bit/batch-1024 discovery comparison recovers the V2 grinding slowdown, but strict RSS and V1
+payload gates still fail; native proving-time parity remains inconclusive.
+The native backend therefore remains the default. See the
+[V3 qualification report](../../../../results/falcon-shared-prime-v3-20261006/REPORT.txt)
+for exact timings, proof sizes, and limits of the measurements. The 100-bit
+experiment still needs performance qualification.

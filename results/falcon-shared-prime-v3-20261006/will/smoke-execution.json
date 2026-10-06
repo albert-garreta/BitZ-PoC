@@ -1,0 +1,22 @@
+{
+  "command": [
+    "python3",
+    "scripts/bench_gate.py",
+    "run",
+    "--label",
+    "falcon-v3-smoke",
+    "--hold-seconds",
+    "30",
+    "--poll-seconds",
+    "5",
+    "--max-idle-wait-seconds",
+    "600",
+    "--",
+    "python3",
+    ".tmp/falcon-v3/smoke.py",
+    "16"
+  ],
+  "exit_code": 0,
+  "started": 1791287465.5723639,
+  "finished": 1791287508.642353
+}

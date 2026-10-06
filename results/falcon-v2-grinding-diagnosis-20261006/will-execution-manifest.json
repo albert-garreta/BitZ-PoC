@@ -1,0 +1,46 @@
+{
+  "remote_dir": "~/code/BitZ-pcs-run",
+  "source_dir": "~/code/BitZ-pcs",
+  "origin": "git@github.com:albert-garreta/f2z-pcs.git",
+  "branch": "codex/falcon-shared-prime",
+  "revision": "be0d3cdb606192fda0e3cac5ecb344574ce14895",
+  "operation": "run",
+  "run_id": "20261006T111551Z-be0d3cdb6061-14a8bccd",
+  "command": [
+    "python3",
+    "-c",
+    "import hashlib\nimport json\nimport os\nimport platform\nfrom pathlib import Path\nimport subprocess\nimport time\n\nroot = Path.cwd()\nmac = platform.system() == 'Darwin'\nout = root / '.tmp/falcon-v2-diagnosis-20261006'\nout.mkdir(parents=True, exist_ok=False)\nmanifest = json.loads((root / 'results/falcon-shared-prime-v2-20261006' / ('mac-manifest.json' if mac else 'will/manifest.json')).read_text())\nitem = manifest['binaries']['v2']\nbinary = Path(item['binary'])\nassert hashlib.sha256(binary.read_bytes()).hexdigest() == item['sha256']\nthreads = 8 if mac else 16\ncmd = [str(binary), '--protocol', 'shared-prime', '--security', '128', '--batch', '1024', '--seed', '42', '--threads', str(threads), '--warmup', '0', '--iterations', '1']\nenv = {k:v for k,v in os.environ.items() if not k.startswith(('BITZ_', 'FLOCK_'))}\nenv.update(BITZ_FALCON_STAGE_TIMINGS='1', RAYON_NUM_THREADS=str(threads))\nrecord = dict(command=cmd, binary=item, diagnostic_only=True, note='One instrumented proof to locate costs; no warmup, not a performance qualification sample.', started_at=time.time())\nwith (out/'stdout.jsonl').open('x') as stdout, (out/'stages.jsonl').open('x') as stderr:\n    process = subprocess.Popen(cmd, env=env, stdout=stdout, stderr=stderr)\n    record['pid'] = process.pid\n    (out/'run.json').write_text(json.dumps(record, indent=2)+'\\n')\n    print(json.dumps(dict(started=process.pid, output=str(out))), flush=True)\n    try:\n        record['exit_code'] = process.wait(timeout=420)\n    finally:\n        if process.poll() is None:\n            process.terminate()\n            try:\n                process.wait(timeout=10)\n            except subprocess.TimeoutExpired:\n                process.kill()\n                process.wait()\n        record['finished_at'] = time.time()\n        (out/'run.json').write_text(json.dumps(record, indent=2)+'\\n')\nassert record['exit_code'] == 0\nrows = [json.loads(x) for x in (out/'stdout.jsonl').read_text().splitlines()]\ntrial = next(x for x in rows if x.get('event') == 'trial')\nref = json.loads((root/'results/falcon-shared-prime-v2-20261006'/('mac-discovery128' if mac else 'will/will-discovery128')/'early-stop.json').read_text())['candidate']\nfor key in ('input_digest', 'proof_debug_digest', 'roots', 'proof_payload_bytes', 'grinding_diagnostics'):\n    assert trial[key] == ref[key], key\nassert trial['verified'] and rows[-1]['verified']\nprint(json.dumps(dict(verified=True, total_prover_ms=trial['total_prover_ms'], prove_ms=trial['proof_prove_ms'], proof_digest=trial['proof_debug_digest'])), flush=True)\n"
+  ],
+  "host": "john-wu@will",
+  "started_at": 1791285351.3316128,
+  "state": "finished",
+  "exit_code": 0,
+  "ssh_exit_code": 0,
+  "remote_result": {
+    "run_id": "20261006T111551Z-be0d3cdb6061-14a8bccd",
+    "revision": "be0d3cdb606192fda0e3cac5ecb344574ce14895",
+    "branch": "codex/falcon-shared-prime",
+    "host": "will",
+    "architecture": "x86_64",
+    "command": [
+      "python3",
+      "-c",
+      "import hashlib\nimport json\nimport os\nimport platform\nfrom pathlib import Path\nimport subprocess\nimport time\n\nroot = Path.cwd()\nmac = platform.system() == 'Darwin'\nout = root / '.tmp/falcon-v2-diagnosis-20261006'\nout.mkdir(parents=True, exist_ok=False)\nmanifest = json.loads((root / 'results/falcon-shared-prime-v2-20261006' / ('mac-manifest.json' if mac else 'will/manifest.json')).read_text())\nitem = manifest['binaries']['v2']\nbinary = Path(item['binary'])\nassert hashlib.sha256(binary.read_bytes()).hexdigest() == item['sha256']\nthreads = 8 if mac else 16\ncmd = [str(binary), '--protocol', 'shared-prime', '--security', '128', '--batch', '1024', '--seed', '42', '--threads', str(threads), '--warmup', '0', '--iterations', '1']\nenv = {k:v for k,v in os.environ.items() if not k.startswith(('BITZ_', 'FLOCK_'))}\nenv.update(BITZ_FALCON_STAGE_TIMINGS='1', RAYON_NUM_THREADS=str(threads))\nrecord = dict(command=cmd, binary=item, diagnostic_only=True, note='One instrumented proof to locate costs; no warmup, not a performance qualification sample.', started_at=time.time())\nwith (out/'stdout.jsonl').open('x') as stdout, (out/'stages.jsonl').open('x') as stderr:\n    process = subprocess.Popen(cmd, env=env, stdout=stdout, stderr=stderr)\n    record['pid'] = process.pid\n    (out/'run.json').write_text(json.dumps(record, indent=2)+'\\n')\n    print(json.dumps(dict(started=process.pid, output=str(out))), flush=True)\n    try:\n        record['exit_code'] = process.wait(timeout=420)\n    finally:\n        if process.poll() is None:\n            process.terminate()\n            try:\n                process.wait(timeout=10)\n            except subprocess.TimeoutExpired:\n                process.kill()\n                process.wait()\n        record['finished_at'] = time.time()\n        (out/'run.json').write_text(json.dumps(record, indent=2)+'\\n')\nassert record['exit_code'] == 0\nrows = [json.loads(x) for x in (out/'stdout.jsonl').read_text().splitlines()]\ntrial = next(x for x in rows if x.get('event') == 'trial')\nref = json.loads((root/'results/falcon-shared-prime-v2-20261006'/('mac-discovery128' if mac else 'will/will-discovery128')/'early-stop.json').read_text())['candidate']\nfor key in ('input_digest', 'proof_debug_digest', 'roots', 'proof_payload_bytes', 'grinding_diagnostics'):\n    assert trial[key] == ref[key], key\nassert trial['verified'] and rows[-1]['verified']\nprint(json.dumps(dict(verified=True, total_prover_ms=trial['total_prover_ms'], prove_ms=trial['proof_prove_ms'], proof_digest=trial['proof_debug_digest'])), flush=True)\n"
+    ],
+    "cwd": "/home/john-wu/code/BitZ-pcs-run",
+    "toolchain": {
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+      "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)"
+    },
+    "started_at": 1791285353.867996,
+    "state": "finished",
+    "exit_code": 0,
+    "remote_log": "/home/john-wu/code/BitZ-pcs-run/.tmp/will-runs/20261006T111551Z-be0d3cdb6061-14a8bccd/output.log",
+    "pid": 3599142,
+    "elapsed_seconds": 21.70906552800443,
+    "finished_at": 1791285375.577191,
+    "post_run_changes": ""
+  },
+  "elapsed_seconds": 24.27565720898565,
+  "finished_at": 1791285375.607726
+}
