@@ -6,8 +6,8 @@ row weights. SHAKE, HashToPoint,
 Falcon arithmetic, every signature's norm bound, the three committed sources,
 and the joint binary sumcheck and shared PCS opening remain enforced.
 
-The statement uses `native-ring/non-zk/v4` and its transcript uses
-`native-ring/statement/v4`; the bridge grinding domain remains v4.
+The statement uses `native-ring/non-zk/v5` and its transcript uses
+`native-ring/statement/v5`; the bridge grinding domain remains v4.
 The statement digest binds the derived bridge numerator and grinding difficulty.
 
 ## Scope and model
@@ -261,7 +261,7 @@ independent cryptographic audit of the global Fiat-Shamir model.
   and [`src/hybrid/opening/grinding.rs`](../../../hybrid/opening/grinding.rs):
   current Flock work budgets and their shared-opening transcript adapter,
   with configuration, challenge-block, and nonce-consumption checks.
-- [`hybrid.rs`](hybrid.rs): native-ring/v4 statement binding, category accounting, joint
+- [`hybrid.rs`](hybrid.rs): native-ring/v5 statement binding, category accounting, joint
   binary sumcheck, and shared PCS authentication.
 
 The prefix helpers in `opening.rs` run under the enclosing Falcon statement

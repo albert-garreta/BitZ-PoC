@@ -1,0 +1,248 @@
+{
+  "description": "Sequential matched V3/V4 performance comparison; uninstrumented latency, distinct seeds as paired statistical units",
+  "baseline": {
+    "host": "will",
+    "architecture": "x86_64",
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+    "rustflags": "-C target-cpu=native",
+    "features": [
+      "falcon-hybrid"
+    ],
+    "profile": "release",
+    "lock_sha256": "8616e078399dbe80f778f402584dfbc0b95cab8ea3dfb577c61afd328dc33bd3",
+    "candidate": "v3",
+    "binaries": {
+      "native": {
+        "host": "will",
+        "architecture": "x86_64",
+        "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+        "rustflags": "-C target-cpu=native",
+        "features": [
+          "falcon-hybrid"
+        ],
+        "profile": "release",
+        "lock_sha256": "8616e078399dbe80f778f402584dfbc0b95cab8ea3dfb577c61afd328dc33bd3",
+        "binary": "/home/john-wu/code/BitZ-pcs-run/.tmp/falcon-baseline-449-20261005T180359Z/falcon_hybrid_4491309f",
+        "sha256": "3a4f62756ba098780a9f51b7f435199d932ed14ef54b1b9a4bf56e12270da7c3",
+        "revision": "4491309f5d1e45d506410803e3b9ba488047991f",
+        "original_manifest": "/home/john-wu/code/BitZ-pcs-run/.tmp/falcon-baseline-449-20261005T180359Z/manifest.json"
+      },
+      "v1": {
+        "host": "will",
+        "architecture": "x86_64",
+        "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+        "rustflags": "-C target-cpu=native",
+        "features": [
+          "falcon-hybrid"
+        ],
+        "profile": "release",
+        "lock_sha256": "8616e078399dbe80f778f402584dfbc0b95cab8ea3dfb577c61afd328dc33bd3",
+        "binary": "/home/john-wu/code/BitZ-pcs-run/.tmp/falcon-shared-candidate-e370e3b35da692d86e814c687e597c3a1d0a6bea/falcon_hybrid_e370e3b35da6",
+        "sha256": "b673d6a72f759be291deee7f696120a298897e71a79e0de2ededfc788b517227",
+        "revision": "e370e3b35da692d86e814c687e597c3a1d0a6bea",
+        "original_manifest": "/home/john-wu/code/BitZ-pcs-run/.tmp/falcon-shared-candidate-e370e3b35da692d86e814c687e597c3a1d0a6bea/manifest.json"
+      },
+      "v3": {
+        "host": "will",
+        "architecture": "x86_64",
+        "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+        "rustflags": "-C target-cpu=native",
+        "features": [
+          "falcon-hybrid"
+        ],
+        "profile": "release",
+        "lock_sha256": "8616e078399dbe80f778f402584dfbc0b95cab8ea3dfb577c61afd328dc33bd3",
+        "binary": "/home/john-wu/code/BitZ-pcs-run/.tmp/falcon-v3/falcon_v3",
+        "sha256": "999d40922b47849e93ceaae540069444e994b2d520f0fde97d1a6f6c40260d8e",
+        "revision": "a6f58d05d641ac6423538d5cadf0b3395823bf43"
+      }
+    }
+  },
+  "candidate": {
+    "description": "Single-trial proof-size and verification smoke tests; not a paired performance qualification",
+    "base_revision": "3ca99b2142bc3dc9be70f1b5a5c89bd6d1cc9296",
+    "uncommitted_changes": true,
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "architecture": "x86_64",
+    "build_command": "RUSTFLAGS=\"-C target-cpu=native\" CARGO_TARGET_DIR=target/falcon-native cargo bench --offline --locked --profile release --features falcon-hybrid --bench falcon_hybrid",
+    "arguments": "--protocol shared-prime --batch 1024 --security TARGET --threads 16 --warmup 0 --iterations 1 --seed 42",
+    "binary_sha256": "3c2885e99f76f8f5a4f67a36bdca961b5f808640f72308face81a72f882c2e19",
+    "changed_rust_files_sha256": {
+      "benches/falcon_hybrid.rs": "a54da086bfe060c231444938a981fe92b3dc2a951ae6c7915a1f043921aafa74",
+      "src/piop/spartan/falcon1024_ct/hybrid.rs": "3a2a8cd3d6c6714553ef3beb311be3343e89acf2db1ec0b4f5218c2f7a1f8319",
+      "src/piop/spartan/falcon1024_ct/hybrid_size.rs": "e27e477b89bd114a027440d6cf77f0188054b84e61bb6477d4ef568ecf7bf0ab",
+      "src/piop/spartan/falcon1024_ct/opening.rs": "fa6d88d598bd1dd7bd8df3b0082edf9c2ce62f77c93b8667a2396805aa10a660",
+      "src/piop/spartan/falcon1024_ct/opening_binding_tests.rs": "553b115d002de9bc28c68c0ef08f5d1432d3dc2e9ff2f0cbeb93a0e8b9bf35c4",
+      "src/piop/spartan/falcon1024_ct/opening_compact.rs": "565dfe4362a18e7b9503830f80948f5ad110f6e6a4c90fbda634d3a0144f6c68",
+      "src/piop/spartan/falcon1024_ct/opening_native.rs": "326c65fa8b91f12afe4a7a40bc1ec20ad055b8723df17eb70992185490bacb4c",
+      "src/piop/spartan/falcon1024_ct/piop.rs": "7027a0e121b1849cff7bd176ac843fbbb05cb89aff901aaf4446da0b17fdcde8",
+      "src/piop/spartan/falcon1024_ct/piop_shared.rs": "f36fdc504e5cd8812bc1258bd3962cb6ecf589e4af170f8123ce58470b96e10f"
+    },
+    "validation": {
+      "falcon_release_tests_passed": 126,
+      "falcon_release_manual_benchmarks_ignored": 2,
+      "additional_native_exact_ledger_test_passed": 1,
+      "python_script_tests_passed": 66,
+      "compile_features": [
+        "falcon-hybrid: lib/tests/benches",
+        "falcon: lib, no default features"
+      ]
+    }
+  },
+  "binaries": {
+    "v3": {
+      "binary": "/home/john-wu/code/BitZ-pcs-run/.tmp/falcon-v3/falcon_v3",
+      "sha256": "999d40922b47849e93ceaae540069444e994b2d520f0fde97d1a6f6c40260d8e"
+    },
+    "v4": {
+      "binary": "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/falcon_hybrid-0d2856552ca243a9",
+      "sha256": "3c2885e99f76f8f5a4f67a36bdca961b5f808640f72308face81a72f882c2e19"
+    }
+  },
+  "baseline_code_equivalence": "a6f58d05d641ac6423538d5cadf0b3395823bf43 and HEAD 3ca99b2142bc3dc9be70f1b5a5c89bd6d1cc9296 have identical build inputs; differences are result artifacts, README.md and SHARED_PRIME_V3.md.",
+  "cpu": "AMD Ryzen 9 9950X3D 16-Core Processor",
+  "host": "will",
+  "affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31
+  ],
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "lock_sha256": "8616e078399dbe80f778f402584dfbc0b95cab8ea3dfb577c61afd328dc33bd3",
+  "campaign_plan": {
+    "threads": 16,
+    "latency": [
+      {
+        "batches": [
+          1024
+        ],
+        "seeds": [
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51
+        ],
+        "seed_invocation_blocks": [
+          [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          [
+            47,
+            48,
+            49,
+            50,
+            51
+          ]
+        ]
+      },
+      {
+        "batches": [
+          1,
+          32
+        ],
+        "seeds": [
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51
+        ],
+        "seed_invocation_blocks": [
+          [
+            42,
+            43,
+            44,
+            45,
+            46
+          ],
+          [
+            47,
+            48,
+            49,
+            50,
+            51
+          ]
+        ]
+      }
+    ],
+    "targets": [
+      100,
+      128
+    ],
+    "warmup_trials": 1,
+    "measured_trials": 3,
+    "cold_and_stage_diagnostics": {
+      "batch": 1024,
+      "seeds": [
+        42
+      ],
+      "warmup_trials": 0,
+      "measured_trials": 1
+    },
+    "timing_gate": {
+      "minimum_idle_percent": 88,
+      "initial_hold_seconds": 30,
+      "per_process_idle_sample_seconds": 1,
+      "swap_growth_limit_gib": 0.1
+    },
+    "statistical_unit": "Per-seed median of three measured proofs; pair V4/V3 on identical workload. Ten seeds balance each target: five V3-first and five V4-first."
+  },
+  "status": "complete",
+  "audit": {
+    "verified_proofs": 488,
+    "validated_processes": 128,
+    "balanced_first_run_counts_per_cell": {
+      "v3": 5,
+      "v4": 5
+    },
+    "minimum_pre_process_idle_percent": 99.21728240450845,
+    "maximum_swap_growth_gib": 0.0,
+    "final_binary_and_source_hashes_match": true,
+    "latency_instrumented": false,
+    "small_batch_confirmation_initial_idle_hold_seconds": 15
+  }
+}

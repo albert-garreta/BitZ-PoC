@@ -1,0 +1,28 @@
+{
+  "command": [
+    "/home/john-wu/code/BitZ-pcs/target/falcon-native/release/deps/falcon_hybrid-0d2856552ca243a9",
+    "--protocol",
+    "shared-prime",
+    "--security",
+    "100",
+    "--batch",
+    "1024",
+    "--threads",
+    "16",
+    "--seed",
+    "43",
+    "--warmup",
+    "1",
+    "--iterations",
+    "3"
+  ],
+  "label": "v4",
+  "binary_sha256": "3c2885e99f76f8f5a4f67a36bdca961b5f808640f72308face81a72f882c2e19",
+  "started": 1791295114.1613336,
+  "idle_before_percent": 99.90622069396686,
+  "swap_before_gib": 0.004467010498046875,
+  "elapsed_seconds": 12.98173008201411,
+  "returncode": 0,
+  "swap_after_gib": 0.004467010498046875,
+  "status": "validated"
+}

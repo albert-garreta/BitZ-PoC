@@ -65,7 +65,7 @@ pub struct FalconHybridSecurity {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FalconProtocol {
     NativeCarry,
-    SharedPrimeV3,
+    SharedPrimeV4,
 }
 
 /// Prepared public circuit, reusable across witnesses of the same batch size.
@@ -112,7 +112,7 @@ impl PreparedFalconHybrid {
 
     /// Experimental four-operand ring reduction and integer-polynomial lift.
     pub fn new_shared_prime(batch: usize, target_bits: usize) -> Result<Self, FalconError> {
-        Self::with_protocol(batch, target_bits, FalconProtocol::SharedPrimeV3)
+        Self::with_protocol(batch, target_bits, FalconProtocol::SharedPrimeV4)
     }
 
     pub fn with_protocol(
@@ -125,9 +125,9 @@ impl PreparedFalconHybrid {
         }
         let layout = match protocol {
             FalconProtocol::NativeCarry => FalconSourceLayout::new(batch)?,
-            FalconProtocol::SharedPrimeV3 => FalconSourceLayout::new_shared_prime(batch)?,
+            FalconProtocol::SharedPrimeV4 => FalconSourceLayout::new_shared_prime(batch)?,
         };
-        let bridge_mode = if protocol == FalconProtocol::SharedPrimeV3 && target_bits == 100 {
+        let bridge_mode = if protocol == FalconProtocol::SharedPrimeV4 && target_bits == 100 {
             hybrid_bridge::BridgeMode::Unsplit
         } else {
             hybrid_bridge::BridgeMode::TwoLimbs
@@ -184,7 +184,7 @@ impl PreparedFalconHybrid {
     }
     pub fn protocol(&self) -> FalconProtocol {
         if self.layout.is_shared_prime() {
-            FalconProtocol::SharedPrimeV3
+            FalconProtocol::SharedPrimeV4
         } else {
             FalconProtocol::NativeCarry
         }
@@ -249,15 +249,11 @@ impl PreparedFalconHybrid {
             ),
             (
                 "ordered compaction forest sumchecks",
-                prime(165, schedule.cubic_round_bits),
+                prime(2 * (11 * (d + 1) + 55), schedule.forest_round_bits),
             ),
             (
                 "ordered compaction forest claim reductions",
-                prime(10 * (d + 1) + 11, schedule.forest_claim_bits),
-            ),
-            (
-                "compaction leaf instance batching",
-                prime(d, schedule.norm_instance_bits),
+                prime(d + 11, schedule.forest_claim_bits),
             ),
             (
                 "compaction leaf sumcheck",
@@ -442,9 +438,9 @@ impl PreparedFalconHybrid {
         statement.public.validate(self.batch())?;
         let mut h = blake3::Hasher::new();
         h.update(if self.layout.is_shared_prime() {
-            b"bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v3".as_slice()
+            b"bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v4".as_slice()
         } else {
-            b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v4".as_slice()
+            b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v5".as_slice()
         });
         for n in [
             self.batch(),
@@ -472,7 +468,7 @@ impl PreparedFalconHybrid {
             h.update(&(bridge_layout.col_vars as u64).to_le_bytes());
             h.update(&super::shared_ring::projection_grinding_bits(self.target_bits).to_le_bytes());
         }
-        h.update(b"compaction:fixed-bad-signature;forest:eq-batching,nonzero-vector-line/v3");
+        h.update(b"compaction:fixed-bad-signature;forest:joint-index,signed-root,weighted-quadratic,scalar-line;leaf:inherited-instance/v4");
         let schedule = super::FalconSecuritySchedule::for_layout(self.target_bits, &self.layout)
             .expect("prepared security");
         for bits in [
@@ -480,6 +476,7 @@ impl PreparedFalconHybrid {
             schedule.outer_point_bits,
             schedule.quadratic_round_bits,
             schedule.cubic_round_bits,
+            schedule.forest_round_bits,
             schedule.forest_claim_bits,
             schedule.fingerprint_bits,
             schedule.linear_point_bits,
@@ -516,9 +513,9 @@ impl PreparedFalconHybrid {
         let digest = *h.finalize().as_bytes();
         let mut t = Blake3Transcript::new();
         t.absorb_slice(if self.layout.is_shared_prime() {
-            b"bitz/falcon-hybrid/shared-prime/statement/v3".as_slice()
+            b"bitz/falcon-hybrid/shared-prime/statement/v4".as_slice()
         } else {
-            b"bitz/falcon-hybrid/native-ring/statement/v4".as_slice()
+            b"bitz/falcon-hybrid/native-ring/statement/v5".as_slice()
         });
         t.absorb_slice(&digest);
         self.ligerito.bind(&mut t);
@@ -1023,6 +1020,47 @@ mod tests {
     }
 
     #[test]
+    fn native_composition_meets_both_targets_with_exact_rational_bounds() {
+        use num_bigint::BigUint;
+
+        const SCALE: usize = 144;
+        let q = BigUint::from(super::super::Q as u64);
+        let ring_denominator = q.pow(11) - &q;
+        for batch in 1usize..=1024 {
+            let layout = FalconSourceLayout::new(batch).unwrap();
+            let d = layout.capacity().ilog2() as usize;
+            for target in [100, 128] {
+                let schedule =
+                    super::super::FalconSecuritySchedule::for_layout(target, &layout).unwrap();
+                // Bound the sampler, complete PCS, and six binary components
+                // independently of the floating-point report's accumulated sum.
+                let mut dyadic = BigUint::from(1u8)
+                    + (BigUint::from(1u8) << (SCALE - target - 2))
+                    + (BigUint::from(6u8) << (SCALE - target - 8));
+                for (numerator, bits) in [
+                    (d, schedule.norm_instance_bits),
+                    (4 * (10 + d), schedule.quadratic_round_bits),
+                    (11 + d, schedule.outer_point_bits),
+                    (6 * (11 + d), schedule.cubic_round_bits),
+                    (2 * (11 * (d + 1) + 55), schedule.forest_round_bits),
+                    (d + 11, schedule.forest_claim_bits),
+                    (2048, schedule.fingerprint_bits),
+                    (13 + d + batch + 12, schedule.linear_point_bits),
+                    (2 * (17 + d), schedule.binding_round_bits),
+                    (10, if target == 128 { 12 } else { 0 }),
+                ] {
+                    let exponent = 125 + bits as usize;
+                    assert!(exponent <= SCALE);
+                    dyadic += BigUint::from(numerator) << (SCALE - exponent);
+                }
+                let error = dyadic * &ring_denominator + (BigUint::from(d + 2046) << SCALE);
+                let budget = &ring_denominator << (SCALE - target);
+                assert!(error <= budget, "batch {batch}, target {target}");
+            }
+        }
+    }
+
+    #[test]
     fn hybrid_falcon_roundtrip_and_tampering() {
         let prepared = PreparedFalconHybrid::new(1, 100).unwrap();
         let committed = prepared.commit(public(1)).unwrap();
@@ -1106,7 +1144,7 @@ mod tests {
         for (batch, target) in [(1, 100), (3, 100), (9, 100), (1, 128), (3, 128)] {
             let prepared = PreparedFalconHybrid::new_shared_prime(batch, target).unwrap();
             let native = PreparedFalconHybrid::new(batch, target).unwrap();
-            assert_eq!(prepared.protocol(), FalconProtocol::SharedPrimeV3);
+            assert_eq!(prepared.protocol(), FalconProtocol::SharedPrimeV4);
             assert_eq!(prepared.live_arithmetic_bits_per_signature(), 114_914);
             assert_eq!(
                 prepared.source_bits_per_signature(),

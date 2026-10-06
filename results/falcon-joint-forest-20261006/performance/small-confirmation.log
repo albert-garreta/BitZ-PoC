@@ -1,0 +1,104 @@
+[bench_gate] falcon-joint-small-batch-confirm: idle 100% (streak 1/3)
+[bench_gate] falcon-joint-small-batch-confirm: idle 100% (streak 2/3)
+[bench_gate] falcon-joint-small-batch-confirm: idle 100% (streak 3/3)
+[bench_gate] falcon-joint-small-batch-confirm: starting (swap baseline 0.00 GB, guard +1 GB)
+START latency s128-b1-t16-seed47-v3
+DONE s128-b1-t16-seed47-v3 {"total_prover_ms": 36.00605, "proof_verify_ms": 16.931402000000002, "witness_commit_ms": 0.721285, "proof_prove_ms": 35.297118000000005}
+START latency s128-b1-t16-seed47-v4
+DONE s128-b1-t16-seed47-v4 {"total_prover_ms": 36.561921999999996, "proof_verify_ms": 16.967049000000003, "witness_commit_ms": 0.78723, "proof_prove_ms": 35.783018}
+MATCHED (128, 1, 16, 47)
+START latency s100-b1-t16-seed47-v4
+DONE s100-b1-t16-seed47-v4 {"total_prover_ms": 26.118047999999998, "proof_verify_ms": 16.480178000000002, "witness_commit_ms": 0.98829, "proof_prove_ms": 25.142311}
+START latency s100-b1-t16-seed47-v3
+DONE s100-b1-t16-seed47-v3 {"total_prover_ms": 24.829938000000002, "proof_verify_ms": 16.393013, "witness_commit_ms": 0.900614, "proof_prove_ms": 23.908024}
+MATCHED (100, 1, 16, 47)
+START latency s100-b1-t16-seed48-v4
+DONE s100-b1-t16-seed48-v4 {"total_prover_ms": 27.667759, "proof_verify_ms": 15.532405, "witness_commit_ms": 0.964796, "proof_prove_ms": 26.657598}
+START latency s100-b1-t16-seed48-v3
+DONE s100-b1-t16-seed48-v3 {"total_prover_ms": 26.523785, "proof_verify_ms": 15.832803, "witness_commit_ms": 0.9112239999999999, "proof_prove_ms": 25.525105}
+MATCHED (100, 1, 16, 48)
+START latency s128-b1-t16-seed48-v3
+DONE s128-b1-t16-seed48-v3 {"total_prover_ms": 37.920832999999995, "proof_verify_ms": 16.595526, "witness_commit_ms": 0.874906, "proof_prove_ms": 37.074560999999996}
+START latency s128-b1-t16-seed48-v4
+DONE s128-b1-t16-seed48-v4 {"total_prover_ms": 35.397467, "proof_verify_ms": 16.745279, "witness_commit_ms": 0.78737, "proof_prove_ms": 34.623872999999996}
+MATCHED (128, 1, 16, 48)
+START latency s128-b1-t16-seed49-v3
+DONE s128-b1-t16-seed49-v3 {"total_prover_ms": 37.141619, "proof_verify_ms": 18.279894000000002, "witness_commit_ms": 0.7562209999999999, "proof_prove_ms": 36.385398}
+START latency s128-b1-t16-seed49-v4
+DONE s128-b1-t16-seed49-v4 {"total_prover_ms": 38.216703, "proof_verify_ms": 16.816826, "witness_commit_ms": 0.782351, "proof_prove_ms": 37.465401}
+MATCHED (128, 1, 16, 49)
+START latency s100-b1-t16-seed49-v4
+DONE s100-b1-t16-seed49-v4 {"total_prover_ms": 22.455886, "proof_verify_ms": 15.188132999999999, "witness_commit_ms": 0.827736, "proof_prove_ms": 21.628149999999998}
+START latency s100-b1-t16-seed49-v3
+DONE s100-b1-t16-seed49-v3 {"total_prover_ms": 26.974287, "proof_verify_ms": 16.152137, "witness_commit_ms": 0.916143, "proof_prove_ms": 25.947464}
+MATCHED (100, 1, 16, 49)
+START latency s100-b1-t16-seed50-v4
+DONE s100-b1-t16-seed50-v4 {"total_prover_ms": 27.684803000000002, "proof_verify_ms": 17.087547, "witness_commit_ms": 0.883783, "proof_prove_ms": 26.703596}
+START latency s100-b1-t16-seed50-v3
+DONE s100-b1-t16-seed50-v3 {"total_prover_ms": 26.346619999999998, "proof_verify_ms": 15.619229, "witness_commit_ms": 0.994843, "proof_prove_ms": 25.339192999999998}
+MATCHED (100, 1, 16, 50)
+START latency s128-b1-t16-seed50-v3
+DONE s128-b1-t16-seed50-v3 {"total_prover_ms": 38.720426, "proof_verify_ms": 17.694997, "witness_commit_ms": 1.0369629999999999, "proof_prove_ms": 37.51746}
+START latency s128-b1-t16-seed50-v4
+DONE s128-b1-t16-seed50-v4 {"total_prover_ms": 35.902263, "proof_verify_ms": 18.370003999999998, "witness_commit_ms": 0.968513, "proof_prove_ms": 34.739723}
+MATCHED (128, 1, 16, 50)
+START latency s128-b1-t16-seed51-v3
+DONE s128-b1-t16-seed51-v3 {"total_prover_ms": 36.265319999999996, "proof_verify_ms": 17.051509, "witness_commit_ms": 0.775628, "proof_prove_ms": 35.523787}
+START latency s128-b1-t16-seed51-v4
+DONE s128-b1-t16-seed51-v4 {"total_prover_ms": 37.921234000000005, "proof_verify_ms": 18.788897, "witness_commit_ms": 0.941632, "proof_prove_ms": 36.955907}
+MATCHED (128, 1, 16, 51)
+START latency s100-b1-t16-seed51-v4
+DONE s100-b1-t16-seed51-v4 {"total_prover_ms": 22.795971, "proof_verify_ms": 17.387845, "witness_commit_ms": 0.786218, "proof_prove_ms": 22.009753}
+START latency s100-b1-t16-seed51-v3
+DONE s100-b1-t16-seed51-v3 {"total_prover_ms": 21.649691, "proof_verify_ms": 15.634287, "witness_commit_ms": 1.011815, "proof_prove_ms": 20.940308}
+MATCHED (100, 1, 16, 51)
+START latency s128-b32-t16-seed47-v4
+DONE s128-b32-t16-seed47-v4 {"total_prover_ms": 82.246487, "proof_verify_ms": 19.910951, "witness_commit_ms": 4.501209, "proof_prove_ms": 77.782449}
+START latency s128-b32-t16-seed47-v3
+DONE s128-b32-t16-seed47-v3 {"total_prover_ms": 82.547547, "proof_verify_ms": 20.280258999999997, "witness_commit_ms": 5.4759329999999995, "proof_prove_ms": 77.071614}
+MATCHED (128, 32, 16, 47)
+START latency s100-b32-t16-seed47-v3
+DONE s100-b32-t16-seed47-v3 {"total_prover_ms": 47.876774, "proof_verify_ms": 18.666275, "witness_commit_ms": 5.531548, "proof_prove_ms": 42.43718}
+START latency s100-b32-t16-seed47-v4
+DONE s100-b32-t16-seed47-v4 {"total_prover_ms": 47.672467999999995, "proof_verify_ms": 19.021047, "witness_commit_ms": 5.1892309999999995, "proof_prove_ms": 42.006595}
+MATCHED (100, 32, 16, 47)
+START latency s100-b32-t16-seed48-v3
+DONE s100-b32-t16-seed48-v3 {"total_prover_ms": 48.116046999999995, "proof_verify_ms": 18.841457, "witness_commit_ms": 5.515037, "proof_prove_ms": 42.726558}
+START latency s100-b32-t16-seed48-v4
+DONE s100-b32-t16-seed48-v4 {"total_prover_ms": 43.581585999999994, "proof_verify_ms": 19.572661, "witness_commit_ms": 5.107766, "proof_prove_ms": 38.657728000000006}
+MATCHED (100, 32, 16, 48)
+START latency s128-b32-t16-seed48-v4
+DONE s128-b32-t16-seed48-v4 {"total_prover_ms": 83.35491499999999, "proof_verify_ms": 20.605595, "witness_commit_ms": 5.590018000000001, "proof_prove_ms": 77.729419}
+START latency s128-b32-t16-seed48-v3
+DONE s128-b32-t16-seed48-v3 {"total_prover_ms": 83.065477, "proof_verify_ms": 19.740338, "witness_commit_ms": 5.566134, "proof_prove_ms": 77.499724}
+MATCHED (128, 32, 16, 48)
+START latency s128-b32-t16-seed49-v4
+DONE s128-b32-t16-seed49-v4 {"total_prover_ms": 83.02952900000001, "proof_verify_ms": 20.484907, "witness_commit_ms": 5.505859, "proof_prove_ms": 77.509432}
+START latency s128-b32-t16-seed49-v3
+DONE s128-b32-t16-seed49-v3 {"total_prover_ms": 76.69964, "proof_verify_ms": 20.870324999999998, "witness_commit_ms": 5.495801, "proof_prove_ms": 71.08248}
+MATCHED (128, 32, 16, 49)
+START latency s100-b32-t16-seed49-v3
+DONE s100-b32-t16-seed49-v3 {"total_prover_ms": 47.266279000000004, "proof_verify_ms": 18.072701, "witness_commit_ms": 5.538982, "proof_prove_ms": 41.705916}
+START latency s100-b32-t16-seed49-v4
+DONE s100-b32-t16-seed49-v4 {"total_prover_ms": 46.511329999999994, "proof_verify_ms": 18.360146, "witness_commit_ms": 5.372287, "proof_prove_ms": 41.143792999999995}
+MATCHED (100, 32, 16, 49)
+START latency s100-b32-t16-seed50-v3
+DONE s100-b32-t16-seed50-v3 {"total_prover_ms": 43.610440999999994, "proof_verify_ms": 19.606444, "witness_commit_ms": 4.7194519999999995, "proof_prove_ms": 38.890989}
+START latency s100-b32-t16-seed50-v4
+DONE s100-b32-t16-seed50-v4 {"total_prover_ms": 46.457318, "proof_verify_ms": 18.189593000000002, "witness_commit_ms": 5.463389, "proof_prove_ms": 40.993929}
+MATCHED (100, 32, 16, 50)
+START latency s128-b32-t16-seed50-v4
+DONE s128-b32-t16-seed50-v4 {"total_prover_ms": 80.46225099999998, "proof_verify_ms": 20.213844, "witness_commit_ms": 5.422142, "proof_prove_ms": 75.04010899999999}
+START latency s128-b32-t16-seed50-v3
+DONE s128-b32-t16-seed50-v3 {"total_prover_ms": 79.109351, "proof_verify_ms": 19.890031, "witness_commit_ms": 5.483557, "proof_prove_ms": 73.717447}
+MATCHED (128, 32, 16, 50)
+START latency s128-b32-t16-seed51-v4
+DONE s128-b32-t16-seed51-v4 {"total_prover_ms": 81.68096700000001, "proof_verify_ms": 20.052688999999997, "witness_commit_ms": 5.473098, "proof_prove_ms": 76.207869}
+START latency s128-b32-t16-seed51-v3
+DONE s128-b32-t16-seed51-v3 {"total_prover_ms": 81.944776, "proof_verify_ms": 20.279888999999997, "witness_commit_ms": 5.452419, "proof_prove_ms": 76.398911}
+MATCHED (128, 32, 16, 51)
+START latency s100-b32-t16-seed51-v3
+DONE s100-b32-t16-seed51-v3 {"total_prover_ms": 47.606553, "proof_verify_ms": 18.347542, "witness_commit_ms": 5.565332, "proof_prove_ms": 42.041221}
+START latency s100-b32-t16-seed51-v4
+DONE s100-b32-t16-seed51-v4 {"total_prover_ms": 47.549986000000004, "proof_verify_ms": 18.702043000000003, "witness_commit_ms": 5.51698, "proof_prove_ms": 41.981037}
+MATCHED (100, 32, 16, 51)

@@ -52,7 +52,7 @@ impl Options {
             if flag == "--protocol" {
                 protocol = match args.next().ok_or("missing protocol")?.as_str() {
                     "native" => FalconProtocol::NativeCarry,
-                    "shared-prime" => FalconProtocol::SharedPrimeV3,
+                    "shared-prime" => FalconProtocol::SharedPrimeV4,
                     _ => return Err("protocol must be native or shared-prime".into()),
                 };
                 continue;
@@ -154,13 +154,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
     let prepared = match options.protocol {
         FalconProtocol::NativeCarry => PreparedFalconHybrid::new(options.batch, options.security)?,
-        FalconProtocol::SharedPrimeV3 => {
+        FalconProtocol::SharedPrimeV4 => {
             PreparedFalconHybrid::new_shared_prime(options.batch, options.security)?
         }
     };
     let protocol = match prepared.protocol() {
-        FalconProtocol::NativeCarry => "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v4",
-        FalconProtocol::SharedPrimeV3 => "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v3",
+        FalconProtocol::NativeCarry => "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v5",
+        FalconProtocol::SharedPrimeV4 => "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v4",
     };
     let prepare_ms = ms(start);
     let security = prepared.security();

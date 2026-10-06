@@ -609,7 +609,7 @@ pub(super) struct PreparedWeights {
     norm_instances: Vec<F>,
     products: crate::poly::mle::EqualityWeights<F>,
     leaf: native::LeafWeights,
-    tree_scales: Vec<F>,
+    output_scale: F,
 }
 
 impl BindingForm<'_> {
@@ -618,13 +618,8 @@ impl BindingForm<'_> {
             return Ok(weights);
         }
         let field = self.field;
-        let mut tree_scales = Vec::new();
         let mut scale = self.eta;
         for _ in 0..11 {
-            scale = field.mul(&scale, &self.eta);
-        }
-        for _ in self.proof.compaction {
-            tree_scales.push(scale);
             scale = field.mul(&scale, &self.eta);
         }
         let weights = PreparedWeights {
@@ -633,7 +628,7 @@ impl BindingForm<'_> {
                 .map_err(|error| piop(error.to_string()))?,
             products: factored_weights(&self.proof.compact_products.point, field)?,
             leaf: native::LeafWeights::new(self.layout, self.proof, field)?,
-            tree_scales,
+            output_scale: scale,
         };
         // Concurrent first partitions may prepare a small duplicate, but never
         // block Rayon workers while one initializer launches parallel work.
@@ -745,7 +740,7 @@ impl BindingForm<'_> {
             &prepared.leaf,
         )?;
         let weights = &prepared.leaf.forest;
-        let tree_scale = prepared.tree_scales[instance];
+        let tree_scale = field.mul(&prepared.output_scale, &prepared.leaf.beta[instance]);
         for (i, &weight) in weights.iter().take(N).enumerate() {
             sink.add_word(
                 base + offsets.hash_point + 14 * i,
@@ -754,7 +749,7 @@ impl BindingForm<'_> {
                 field,
             );
         }
-        let native_scale = field.mul(prepared.tree_scales.last().expect("live batch"), &self.eta);
+        let native_scale = field.mul(&prepared.output_scale, &self.eta);
         self.add_native_claim(sink, &mut ignored, native_scale)?;
         Ok(())
     }
@@ -817,12 +812,8 @@ impl BindingForm<'_> {
         if proof.norm.point.len() != 10 + batch_vars
             || proof.norm.instance_point.len() != batch_vars
             || proof.compact_products.point.len() != 11 + batch_vars
-            || proof.compaction.len() != self.layout.batch()
-            || proof.compaction.iter().any(|pair| {
-                [&pair.candidate, &pair.output]
-                    .iter()
-                    .any(|tree| tree.terminal_point.len() != 11)
-            })
+            || proof.compaction.instance_point.len() != batch_vars
+            || proof.compaction.terminal_point.len() != 11
         {
             return Err(piop("hybrid binding terminal dimensions mismatch"));
         }
@@ -950,34 +941,34 @@ impl BindingForm<'_> {
             add_claim_target(&mut target, scale, *claim, field.mul(&scale, &c), field);
             scale = field.mul(&scale, &self.eta);
         }
-        for pair in proof.compaction {
-            let point = &pair.output.terminal_point;
-            let rank = point[..10]
-                .iter()
-                .enumerate()
-                .fold(field.zero(), |sum, (bit, &v)| {
-                    field.add(&sum, &mul_i(v, 1 << bit, field))
-                });
-            let lower = field.add(
-                &proof.compaction_gamma,
-                &field.mul(&proof.compaction_rank_scale, &rank),
-            );
-            let constant = field.mul(
-                &scale,
-                &field.add(
-                    &field.mul(&field.sub(&field.one(), &point[10]), &lower),
-                    &point[10],
+        let point = &proof.compaction.terminal_point;
+        let rank = point[..10]
+            .iter()
+            .enumerate()
+            .fold(field.zero(), |sum, (bit, &v)| {
+                field.add(&sum, &mul_i(v, 1 << bit, field))
+            });
+        let lower_correction = field.add(
+            &field.sub(&proof.compaction_gamma, &field.one()),
+            &field.mul(&proof.compaction_rank_scale, &rank),
+        );
+        let live_weight = weights.beta[..self.layout.batch()]
+            .iter()
+            .fold(field.zero(), |sum, value| field.add(&sum, value));
+        // Every dummy signature and every upper-half leaf is one. Start from
+        // that constant table, then modify only live lower-half leaves.
+        let constant = field.mul(
+            &scale,
+            &field.add(
+                &field.one(),
+                &field.mul(
+                    &live_weight,
+                    &field.mul(&field.sub(&field.one(), &point[10]), &lower_correction),
                 ),
-            );
-            add_claim_target(
-                &mut target,
-                scale,
-                pair.output.terminal_claim,
-                constant,
-                field,
-            );
-            scale = field.mul(&scale, &self.eta);
-        }
+            ),
+        );
+        add_claim_target(&mut target, scale, proof.compaction.output, constant, field);
+        scale = field.mul(&scale, &self.eta);
         let Some(native) = &self.native_claim else {
             return Ok(target);
         };

@@ -1,7 +1,7 @@
 use super::super::{
     piop::{
         CompactionLeafProof, CompactionProof, NormProof, PrimeProductForestProof,
-        PrimeProductTreeProof, QuadraticRelationProof,
+        QuadraticRelationProof,
     },
     verification_trace,
 };
@@ -220,18 +220,16 @@ fn add_product_tree_claims(
     field: &Cfg,
 ) -> Result<(), FalconError> {
     let offsets = layout.offsets();
-    let instances = coefficients.instances(layout.batch());
-    for _ in 0..instances.start {
-        *scale = field.mul(scale, &eta);
-    }
-    for instance in instances {
+    let instances =
+        eq_table(&proof.compaction.instance_point, field).map_err(|e| piop(e.to_string()))?;
+    let weights =
+        eq_table(&proof.compaction.terminal_point, field).map_err(|e| piop(e.to_string()))?;
+    let mut constant = field.zero();
+    for (instance, &instance_weight) in instances.iter().enumerate() {
         let base = instance * layout.signature_stride();
-        let tree = &proof.compaction[instance].output;
-        let weights = eq_table(&tree.terminal_point, field).map_err(|e| piop(e.to_string()))?;
-        let mut constant = field.zero();
         for (i, &leaf_weight) in weights.iter().enumerate() {
-            let weight = field.mul(scale, &leaf_weight);
-            if i < N {
+            let weight = field.mul(scale, &field.mul(&instance_weight, &leaf_weight));
+            if instance < layout.batch() && i < N {
                 constant = field.add(
                     &constant,
                     &field.mul(
@@ -253,9 +251,9 @@ fn add_product_tree_claims(
                 constant = field.add(&constant, &weight);
             }
         }
-        add_claim_target(target, *scale, tree.terminal_claim, constant, field);
-        *scale = field.mul(scale, &eta);
     }
+    add_claim_target(target, *scale, proof.compaction.output, constant, field);
+    *scale = field.mul(scale, &eta);
     Ok(())
 }
 
@@ -373,11 +371,18 @@ fn terminal_fixture(field: &Cfg) -> FalconPiopProof {
         fingerprint_nonce: None,
         compaction_gamma: field.zero(),
         compaction_rank_scale: field.zero(),
-        compaction: Vec::new(),
-        compaction_forest: PrimeProductForestProof { layers: Vec::new() },
+        compaction: CompactionProof {
+            instance_point: Vec::new(),
+            terminal_point: Vec::new(),
+            candidate: field.zero(),
+            output: field.zero(),
+        },
+        compaction_forest: PrimeProductForestProof {
+            root_nonce: None,
+            layers: Vec::new(),
+        },
         compaction_leaf: CompactionLeafProof {
             instance_point: Vec::new(),
-            instance_nonce: None,
             sumcheck: SumcheckProof {
                 round_polynomials: Vec::new(),
             },
@@ -421,25 +426,14 @@ fn full_terminal_fixture(layout: &FalconSourceLayout, field: &Cfg) -> FalconPiop
     proof.compact_products.point = point(11 + batch_vars, field);
     proof.compaction_gamma = unsigned(29, field);
     proof.compaction_rank_scale = unsigned(31, field);
-    proof.compaction = (0..layout.batch())
-        .map(|instance| {
-            let tree = |side: usize| {
-                let terminal_point = point(11, field);
-                PrimeProductTreeProof {
-                    root: field.one(),
-                    terminal_point,
-                    terminal_claim: unsigned((instance + side + 13) as u128, field),
-                }
-            };
-            CompactionProof {
-                candidate: tree(0),
-                output: tree(1),
-            }
-        })
-        .collect();
+    proof.compaction = CompactionProof {
+        instance_point: point(batch_vars, field),
+        terminal_point: point(11, field),
+        candidate: unsigned(13, field),
+        output: unsigned(14, field),
+    };
     proof.compaction_leaf = CompactionLeafProof {
         instance_point: point(batch_vars, field),
-        instance_nonce: None,
         sumcheck: SumcheckProof {
             round_polynomials: Vec::new(),
         },
@@ -740,12 +734,17 @@ fn compact_binding_targets_match_constants_oracle_at_boolean_points() {
         for (bit, coordinate) in proof.norm.instance_point.iter_mut().enumerate() {
             *coordinate = unsigned(((selected >> bit) & 1) as u128, &field);
         }
+        proof.compaction.instance_point = proof.norm.instance_point.clone();
+        proof.compaction_leaf.instance_point = proof.compaction.instance_point.clone();
         for candidate in [
             0,
             HASH_TO_POINT_SAMPLES - 1,
             HASH_TO_POINT_SAMPLES,
             COMPACTION_LEAVES - 1,
         ] {
+            for (bit, coordinate) in proof.compaction.terminal_point.iter_mut().enumerate() {
+                *coordinate = unsigned(((candidate >> bit) & 1) as u128, &field);
+            }
             for (bit, coordinate) in proof.compact_products.point.iter_mut().enumerate() {
                 *coordinate = unsigned(
                     (((selected * COMPACTION_LEAVES + candidate) >> bit) & 1) as u128,
@@ -1244,20 +1243,32 @@ fn check_norm_binding(layout: FalconSourceLayout) {
 }
 
 #[test]
-fn shared_forest_weights_require_candidate_and_output_endpoints_to_match() {
+fn shared_forest_weights_require_inherited_instance_point_and_correct_dimensions() {
     let field = config();
     let layout = FalconSourceLayout::new(3).unwrap();
     let proof = full_terminal_fixture(&layout, &field);
     assert!(native::LeafWeights::new(&layout, proof.as_claim_ref(), &field).is_ok());
-    for output in [false, true] {
+    for mutation in 0..5 {
         let mut bad = proof.clone();
-        let pair = &mut bad.compaction[1];
-        let tree = if output {
-            &mut pair.output
-        } else {
-            &mut pair.candidate
-        };
-        tree.terminal_point[0] = field.add(&tree.terminal_point[0], &field.one());
+        match mutation {
+            0 => {
+                bad.compaction.instance_point[0] =
+                    field.add(&bad.compaction.instance_point[0], &field.one())
+            }
+            1 => {
+                bad.compaction.instance_point.pop();
+            }
+            2 => {
+                bad.compaction.terminal_point.pop();
+            }
+            3 => {
+                bad.compaction_leaf.instance_point.pop();
+            }
+            4 => {
+                bad.compaction_leaf.point.pop();
+            }
+            _ => unreachable!(),
+        }
         assert!(native::LeafWeights::new(&layout, bad.as_claim_ref(), &field).is_err());
     }
 }

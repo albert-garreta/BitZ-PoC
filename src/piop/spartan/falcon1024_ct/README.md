@@ -35,10 +35,11 @@ an in-memory Rust API, without a Falcon wire codec. `payload_size_bytes()`
 counts stored proof payload, excluding public statements and transport framing.
 
 `PreparedFalconHybrid::new_shared_prime(batch, target_bits)` selects the
-experimental `SharedPrimeV3` protocol. `new` retains the native-coordinate-carry
-protocol. Each prepared verifier accepts only its own protocol and layout.
-Old shared-prime proofs must be regenerated; the native format is unchanged.
-See [SHARED_PRIME_V3.md](SHARED_PRIME_V3.md) for the target-selected bounds and transcript.
+experimental `SharedPrimeV4` protocol. `new` retains the native-coordinate-carry
+profile under its v5 transcript. Both use the joint HashToPoint compaction
+forest. Earlier native and shared-prime proofs must be regenerated.
+Each prepared verifier accepts only its own protocol and layout.
+See [SHARED_PRIME_V4.md](SHARED_PRIME_V4.md) for component accounting and versions.
 
 `FalconSourceLayout::new` rounds the live batch up to a power-of-two capacity.
 Both profiles use the optimized integer relations and compact binder. See
@@ -81,15 +82,19 @@ strides remain 131,072 bits and 8192 rows. `S2` uses the original signature
 slots, and both branches authenticate the same committed source bits.
 
 The shared arithmetic proof stores only transmitted values. Verification
-derives challenge points and reconstructs checked compaction endpoints before
+derives challenge points and checks aggregate compaction endpoints before
 passing them to the binder. Proof payload accounting uses this compact form.
+At batch 1024, the joint compaction forest contains 176 weighted quadratic
+rounds and eleven child pairs: 5,984 field-message bytes, plus 32 bytes for
+the final candidate/output split. Grinding nonces and terminal authentication
+are additional components. These counts are not a full-proof benchmark.
 The preceding V2 correctness tests passed on Mac and will, but performance
 qualification failed: 100-bit discovery exceeded the strict peak-memory gate, and 128-bit
 verified diagnostics showed a large grinding regression. See the
 [V2 qualification report](../../../../results/falcon-shared-prime-v2-20261006/REPORT.txt)
 for exact revisions, payloads, paired timing intervals and unrun configurations.
-V3 restores the larger prime and prior arithmetic grinding schedule at
-128 bits. [V3 discovery measurements](../../../../results/falcon-shared-prime-v3-20261006/REPORT.txt)
+The historical V3 revision restored the larger prime and prior arithmetic
+grinding schedule at 128 bits. [V3 discovery measurements](../../../../results/falcon-shared-prime-v3-20261006/REPORT.txt)
 confirm recovery of the V2 slowdown, but the strict RSS and V1 payload gates
 still fail and native timing parity is inconclusive. The native route remains
 the default.
@@ -134,7 +139,7 @@ The native arithmetic terminal passes through a two-limb integer-to-binary
 bridge using the current BitZ PCS's [integer folds](../../../bitz/fold.rs) and
 [product GKR](../../../bitz/forest.rs). The fixed binary source layout has
 13 row variables; [the native bridge](hybrid_bridge.rs) splits prime-field row
-weights into 113-bit limbs. Shared-prime V3 uses this two-limb bridge at
+weights into 113-bit limbs. Shared-prime V4 retains this two-limb bridge at
 128 bits; its 100-bit profile folds canonical 115-bit-field weights directly
 through the same integer-folding kernels.
 The joint binary sumcheck binds arithmetic, both Keccak claims, and these copy
@@ -142,7 +147,7 @@ checks to the shared ring-switch/Ligerito opening.
 Falcon uses `MATCHED_UDR` with no initial OOD message. Physical padding and all
 three roots remain authenticated. See
 [BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md) for the native bridge's
-index map and error bound, and [SHARED_PRIME_V3.md](SHARED_PRIME_V3.md) for the
+index map and error bound, and [SHARED_PRIME_V4.md](SHARED_PRIME_V4.md) for the
 shared-prime profile selection.
 
 ## Security and protocol domains
@@ -154,25 +159,25 @@ repository's computational grinding convention: raw challenge error `e` with
 not unconditional statistical soundness. BLAKE3's collision bound is separate.
 
 The schedule allocates explicit budgets to protocol groups. At the 128-bit
-target, V3 restores the 126-bit prime family and the native arithmetic
-schedule; ring projection uses difficulty 14. At the 100-bit target,
+target, both profiles use the 126-bit prime family and the revised joint
+forest schedule; ring projection uses difficulty 14 in the shared profile. At the 100-bit target,
 integer-prime challenges retain zero grinding and projection retains two bits.
 The complete bound uses the target-selected prime and bridge geometry. See
-[SHARED_PRIME_V3.md](SHARED_PRIME_V3.md) for the V3 accounting and
-[OPTIMIZATION_SECURITY.md](OPTIMIZATION_SECURITY.md) for the preceding
-allocation and validation obligations. Exact-integer ledger tests cover
-both targets and every batch from 1 through 1024; the conservative reported
-minima are about 101.002291 and 129.070893 bits under the stated model.
+[SHARED_PRIME_V4.md](SHARED_PRIME_V4.md) and
+[OPTIMIZATION_SECURITY.md](OPTIMIZATION_SECURITY.md) for the current allocation
+and validation obligations. Exact-integer ledger tests cover both targets
+and every batch from 1 through 1024. Historical V2/V3 security minima and
+benchmark payloads describe their original schedules.
 
-The native statement domains are `native-ring/non-zk/v4` and
-`native-ring/statement/v4`; the shared-prime profile uses
-`shared-prime/non-zk/v3` and `shared-prime/statement/v3`.
-Earlier shared-prime proofs must be regenerated. Subprotocol domain
+The native statement domains are `native-ring/non-zk/v5` and
+`native-ring/statement/v5`; the shared-prime profile uses
+`shared-prime/non-zk/v4` and `shared-prime/statement/v4`.
+Earlier native and shared-prime proofs must be regenerated. Subprotocol domain
 separators retain their own versions: those labels separate
 live proof phases and do not enable old backends or old-proof parsing.
 The two-limb bridge retains `bitz/falcon-hybrid/wfbitz-joint-limbs/v1`; the
 unsplit bridge retains its separate binding, root-query, and grinding domains.
-The shared V3 parent transcript binds the selected bridge explicitly.
+The shared V4 parent transcript binds the selected bridge explicitly.
 Both implementations use `crate::bitz`.
 
 The shared opening resolves its Flock work budgets through
@@ -294,11 +299,12 @@ diagnostic subset does not satisfy the full timing acceptance requirements;
 the strict payload/RSS gates remain failed. Paired artifacts are under
 `.tmp/falcon-paired-764b7b05559ddf9257242032d9b518e23f1e419f`.
 
-This accounting excludes Falcon transport framing and the public statement.
-At batch 1024, the two-limb bridge's integer sums alone occupy 524,288 bytes
-(`2 * 16384 * 16`); the compaction forest's child evaluations occupy another
-720,896 bytes (`11 * 2048 * 2 * 16`). These are retained proof components,
-not temporary allocations. The final PCS already uses one shared opening.
+This historical accounting excludes Falcon transport framing and the public
+statement. At batch 1024, the two-limb bridge's integer sums occupy 524,288
+bytes (`2 * 16384 * 16`). The preceding compaction forest retained 720,896
+child-evaluation bytes (`11 * 2048 * 2 * 16`). The current joint forest replaces
+that table; see [SHARED_PRIME_V4.md](SHARED_PRIME_V4.md). These earlier complete
+proof sizes are not measurements of V4. The final PCS uses one shared opening.
 
 Isolated one-thread kernel measurements reduced ring endpoint evaluation from
 2.428 to 1.128 ms. The factored binding kernel decreased by 2.2%, 3.2%, and
@@ -386,7 +392,7 @@ prover. The stricter matrix and RSS findings above remain recorded. Artifacts:
 These reports describe earlier implementations and budgets. They are historical
 measurements, not results for the shared-prime backend.
 
-Current v3 kernel performance and validation are in
+Historical v3 kernel performance and validation are in
 [SIMD_THROUGHPUT.md](SIMD_THROUGHPUT.md). Earlier kernel work is measured in
 [KERNEL_THROUGHPUT.md](KERNEL_THROUGHPUT.md), and the preceding v3 protocol
 changes are measured in [THROUGHPUT.md](THROUGHPUT.md).

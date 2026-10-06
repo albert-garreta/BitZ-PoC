@@ -1,0 +1,28 @@
+{
+  "command": [
+    "/home/john-wu/code/BitZ-pcs-run/.tmp/falcon-v3/falcon_v3",
+    "--protocol",
+    "shared-prime",
+    "--security",
+    "100",
+    "--batch",
+    "32",
+    "--threads",
+    "16",
+    "--seed",
+    "50",
+    "--warmup",
+    "1",
+    "--iterations",
+    "3"
+  ],
+  "label": "v3",
+  "binary_sha256": "999d40922b47849e93ceaae540069444e994b2d520f0fde97d1a6f6c40260d8e",
+  "started": 1791295908.507784,
+  "idle_before_percent": 99.71857410881802,
+  "swap_before_gib": 0.004467010498046875,
+  "elapsed_seconds": 0.6648301070090383,
+  "returncode": 0,
+  "swap_after_gib": 0.004467010498046875,
+  "status": "validated"
+}

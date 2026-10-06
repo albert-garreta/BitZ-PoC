@@ -5,7 +5,7 @@ use super::super::{
     opening::FalconBindingPrefixProof,
     piop::{
         CompactionLeafProof, CompactionProof, FalconPiopProof, NormProof, PrimeProductForestProof,
-        PrimeProductTreeProof, ProductForestLayerProof, QuadraticRelationProof,
+        ProductForestLayerProof, QuadraticRelationProof,
     },
 };
 use super::*;
@@ -213,7 +213,7 @@ fn visit_native_prime_nonces(proof: &FalconPiopProof, mut visit: impl FnMut(&'st
         fingerprint_nonce,
         compaction_gamma: _,
         compaction_rank_scale: _,
-        compaction,
+        compaction: _,
         compaction_forest,
         compaction_leaf,
     } = proof;
@@ -243,41 +243,29 @@ fn visit_native_prime_nonces(proof: &FalconPiopProof, mut visit: impl FnMut(&'st
     for &nonce in fingerprint_nonce.iter() {
         visit("prime_fingerprint", nonce);
     }
-    // These endpoint-only trees currently contain no additional nonce fields.
-    for CompactionProof { candidate, output } in compaction {
-        for PrimeProductTreeProof {
-            root: _,
-            terminal_point: _,
-            terminal_claim: _,
-        } in [candidate, output]
-        {}
+    let PrimeProductForestProof { root_nonce, layers } = compaction_forest;
+    for &nonce in root_nonce.iter() {
+        visit("prime_forest", nonce);
     }
-    let PrimeProductForestProof { layers } = compaction_forest;
     for ProductForestLayerProof {
-        sumcheck: _,
+        round_polynomials: _,
         evaluations: _,
         grinding_nonces,
-        batching_nonce,
         line_nonce,
     } in layers
     {
-        for &nonce in grinding_nonces
-            .iter()
-            .chain(batching_nonce)
-            .chain(line_nonce)
-        {
+        for &nonce in grinding_nonces.iter().chain(line_nonce) {
             visit("prime_forest", nonce);
         }
     }
     let CompactionLeafProof {
         instance_point: _,
-        instance_nonce,
         sumcheck: _,
         terminal: _,
         point: _,
         grinding_nonces,
     } = compaction_leaf;
-    for &nonce in instance_nonce.iter().chain(grinding_nonces) {
+    for &nonce in grinding_nonces {
         visit("prime_leaf", nonce);
     }
 }
@@ -348,10 +336,7 @@ fn piop_bytes(proof: &FalconPiopProof) -> usize {
         + norm_bytes(norm)
         + quadratic_bytes(compact_products)
         + nonce_bytes(fingerprint_nonce)
-        + compaction
-            .iter()
-            .map(|CompactionProof { candidate, output }| tree_bytes(candidate) + tree_bytes(output))
-            .sum::<usize>()
+        + compaction_bytes(compaction)
         + forest_bytes(compaction_forest)
         + leaf_bytes(compaction_leaf)
 }
@@ -397,48 +382,46 @@ fn quadratic_bytes(proof: &QuadraticRelationProof) -> usize {
         + NONCE_BYTES * grinding_nonces.len()
 }
 
-fn tree_bytes(proof: &PrimeProductTreeProof) -> usize {
-    let PrimeProductTreeProof {
-        root: _,
+fn compaction_bytes(proof: &CompactionProof) -> usize {
+    let CompactionProof {
+        instance_point,
         terminal_point,
-        terminal_claim: _,
+        candidate: _,
+        output: _,
     } = proof;
-    FIELD_BYTES * (2 + terminal_point.len())
+    FIELD_BYTES * (2 + instance_point.len() + terminal_point.len())
 }
 
 fn forest_bytes(proof: &PrimeProductForestProof) -> usize {
-    let PrimeProductForestProof { layers } = proof;
-    layers
-        .iter()
-        .map(
-            |ProductForestLayerProof {
-                 sumcheck,
-                 evaluations,
-                 grinding_nonces,
-                 batching_nonce,
-                 line_nonce,
-             }| {
-                sumcheck.as_ref().map_or(0, sumcheck_bytes)
-                    + 2 * FIELD_BYTES * evaluations.len()
-                    + NONCE_BYTES * grinding_nonces.len()
-                    + nonce_bytes(batching_nonce)
-                    + nonce_bytes(line_nonce)
-            },
-        )
-        .sum()
+    let PrimeProductForestProof { root_nonce, layers } = proof;
+    nonce_bytes(root_nonce)
+        + layers
+            .iter()
+            .map(
+                |ProductForestLayerProof {
+                     round_polynomials,
+                     evaluations,
+                     grinding_nonces,
+                     line_nonce,
+                 }| {
+                    2 * FIELD_BYTES * round_polynomials.len()
+                        + FIELD_BYTES * evaluations.len()
+                        + NONCE_BYTES * grinding_nonces.len()
+                        + nonce_bytes(line_nonce)
+                },
+            )
+            .sum::<usize>()
 }
 
 fn leaf_bytes(proof: &CompactionLeafProof) -> usize {
     let CompactionLeafProof {
         instance_point,
-        instance_nonce,
         sumcheck,
         terminal,
         point,
         grinding_nonces,
     } = proof;
     FIELD_BYTES * (instance_point.len() + terminal.len() + point.len())
-        + nonce_bytes(instance_nonce)
         + sumcheck_bytes(sumcheck)
         + NONCE_BYTES * grinding_nonces.len()
 }
@@ -575,7 +558,7 @@ mod tests {
         .unwrap();
         let full_bytes = piop_bytes(&full);
         // Distinct synthetic nonces exercise every stored arithmetic field,
-        // including optional forest batching/line boundaries. Compression
+        // including optional forest root/line boundaries. Compression
         // must preserve this inventory even though it removes other fields.
         let mut audited = full.clone();
         audited.norm.instance_nonce = Some(0);
@@ -583,11 +566,10 @@ mod tests {
         audited.compact_products.point_nonce = Some(3);
         audited.compact_products.grinding_nonces = vec![4];
         audited.fingerprint_nonce = Some(5);
-        audited.compaction_leaf.instance_nonce = Some(6);
+        audited.compaction_forest.root_nonce = Some(6);
         audited.compaction_leaf.grinding_nonces = vec![7, 8];
         for (i, layer) in audited.compaction_forest.layers.iter_mut().enumerate() {
             layer.grinding_nonces = vec![10 + i as u64];
-            layer.batching_nonce = Some(30 + i as u64);
             layer.line_nonce = Some(50 + i as u64);
         }
         let mut native_nonces = Vec::new();
@@ -607,19 +589,20 @@ mod tests {
         assert_eq!(counts["prime_norm"], (3, 6));
         assert_eq!(counts["prime_products"], (2, 9));
         assert_eq!(counts["prime_fingerprint"], (1, 6));
-        assert_eq!(counts["prime_leaf"], (3, 24));
+        assert_eq!(counts["prime_leaf"], (2, 17));
         assert_eq!(
             counts["prime_forest"],
             (
-                3 * layers,
-                (93 * layers + 3 * layers * (layers - 1) / 2) as u128
+                1 + 2 * layers,
+                (7 + 62 * layers + layers * (layers - 1)) as u128
             )
         );
         let stored = full.into_shared();
-        // 992 bytes of omitted metadata plus 97 omitted linear coefficients.
+        // The forest is already compact; omit only derived points and the
+        // norm, rejection, and candidate-leaf linear coefficients.
         assert_eq!(
             full_bytes - stored.payload_size_bytes(),
-            992 + 97 * FIELD_BYTES
+            752 + 42 * FIELD_BYTES
         );
     }
 }

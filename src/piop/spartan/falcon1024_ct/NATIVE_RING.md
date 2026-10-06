@@ -1,8 +1,8 @@
 # Native-ring batch Falcon prover
 
 `PreparedFalconHybrid` uses one native-ring arithmetic path. Its statement domain
-is `bitz/falcon1024-ct/hybrid/native-ring/non-zk/v4`; earlier proofs are
-incompatible. This is the only Falcon proving backend.
+is `bitz/falcon1024-ct/hybrid/native-ring/non-zk/v5`; earlier proofs are
+incompatible. This profile remains the default; shared-prime V4 is opt-in.
 
 The public statement still contains each public key, 32-byte message, and exact
 CT signature. The prover is not zero knowledge. Binary Keccak, SHAKE wiring,
@@ -47,9 +47,11 @@ capacity2. The shared virtual binary domain remains2097152*capacity bits.
 3. Use existing signature equality weights and synchronized quadratic norm
    sumchecks. Division, prefixes, and public byte constraints remain linear.
 4. Prove q_bit2*q_bit0=d with one rejection outer sumcheck across the batch.
-5. Sample compaction fingerprints. Retain all2B product trees and each
-   signature's own root equality. Authenticate nonlinear candidate leaves using
-   a new cubic sumcheck; all operands are zero on unused candidates/instances.
+5. Sample compaction fingerprints and a signature equality point. Reduce the
+   weighted difference of each signature's candidate/output roots through a
+   joint weighted quadratic forest. Its scalar candidate/output split reaches
+   the committed bits through the cubic leaf proof and one affine output claim.
+   The leaf proof inherits the signature point; padded trees have all-one leaves.
 6. Prove the native ideal claim and its bounded coordinate lift below.
 7. Batch norm, rejection, leaf, output-tree, native-ring, and linear source
    claims into one arithmetic binder. Retain indexed word templates and fused
@@ -96,16 +98,17 @@ Native batching/projection contributes at most
 `(log2(capacity)+2046)/(12289^11-12289)`.
 Carry collapse contributes `10/p` before grinding. At target128, its independent
 12-bit grinding block gives work-normalized contribution below2^-133.
-The security report also includes leaf instance batching and cubic rounds;
+The security report includes root batching, quadratic forest rounds, scalar
+line reductions, and cubic leaf rounds;
 all configured batch sizes must meet the target in the complete union bound.
 These are the repository's computational grinding bounds, not statistical128-bit
 soundness. Every carry and certificate precedes the challenge testing it.
 
-The current schedule uses equality-weight forest batching, a nonzero-vector
-line bound, and a fixed incorrect signature argument for fingerprints. Each
-prime reduction group has an explicit budget independent of earlier schedules.
-At batch1024, cubic, forest, and fingerprint difficulties are17,17,19 bits;
-fingerprint difficulty is19 for every batch. See the
+The current schedule uses one signed root equality, weighted quadratic forest
+rounds, scalar line reductions, and a fixed incorrect signature argument for
+fingerprints. Each prime group has an explicit budget. At batch 1024, cubic,
+forest-round, and root/line difficulties are all 17 bits; fingerprint difficulty
+is 19 bits for every batch. See the
 [security ledger](OPTIMIZATION_SECURITY.md) and
 [compaction argument](COMPACTION_SOUNDNESS.md).
 
@@ -118,8 +121,8 @@ transcripts are not expected to match historical Debug digests.
 
 ## Prior kernel measurements
 
-The v3 measurement reports predate the current grinding allocation. They do
-not measure this cleanup. No runtime validation was performed for this change.
+The v3 measurement reports predate the current joint forest and grinding
+allocation. They are historical measurements, not results for native v5.
 See [KERNEL_THROUGHPUT.md](KERNEL_THROUGHPUT.md) for the previous kernel
 measurements.
 

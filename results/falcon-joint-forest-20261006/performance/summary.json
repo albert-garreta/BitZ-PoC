@@ -1,0 +1,4842 @@
+{
+  "description": "Ratios are V4/V3. Each seed contributes one process median (1 warmup, 3 measured proofs). Intervals bootstrap paired seed log ratios; they are exploratory, not simultaneous qualification bounds.",
+  "cases": [
+    {
+      "security": 100,
+      "batch": 1,
+      "threads": 16,
+      "seeds": [
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51
+      ],
+      "metrics": {
+        "total_prover_ms": {
+          "v3": {
+            "median": 24.056175,
+            "p05": 22.06525565,
+            "p95": 26.7715611,
+            "minimum": 21.649691,
+            "maximum": 26.974287,
+            "count": 10
+          },
+          "v4": {
+            "median": 25.7155055,
+            "p05": 22.60892425,
+            "p95": 28.1286123,
+            "minimum": 22.455886,
+            "maximum": 28.491729,
+            "count": 10
+          },
+          "paired_ratios": [
+            1.0732729832461811,
+            1.1732264007377868,
+            1.0568177247622395,
+            1.262194522275296,
+            0.9809101108689581,
+            1.0518772942566348,
+            1.0431301188725515,
+            0.8324922916405538,
+            1.050791448770279,
+            1.0529467141124556
+          ],
+          "paired_geomean_ratio": 1.0523142041436797,
+          "paired_bootstrap_95_ci": [
+            0.9858196707006416,
+            1.1187131106148454
+          ]
+        },
+        "proof_verify_ms": {
+          "v3": {
+            "median": 15.947931,
+            "p05": 15.53898015,
+            "p95": 16.88625985,
+            "minimum": 15.473322,
+            "maximum": 17.068612,
+            "count": 10
+          },
+          "v4": {
+            "median": 16.690426000000002,
+            "p05": 15.343055399999999,
+            "p95": 18.03004845,
+            "minimum": 15.188132999999999,
+            "maximum": 18.486204,
+            "count": 10
+          },
+          "paired_ratios": [
+            1.0921696067432445,
+            1.0284469626300787,
+            1.0764107410160535,
+            1.083052564555337,
+            1.0037097504498638,
+            1.0053172043479746,
+            0.9810268592364852,
+            0.9403172471853105,
+            1.094007072948351,
+            1.1121610470627792
+          ],
+          "paired_geomean_ratio": 1.040196507320915,
+          "paired_bootstrap_95_ci": [
+            1.0056019840789712,
+            1.0738826327904432
+          ]
+        },
+        "witness_commit_ms": {
+          "v3": {
+            "median": 0.9136835,
+            "p05": 0.8469448500000001,
+            "p95": 1.0483432499999998,
+            "minimum": 0.834339,
+            "maximum": 1.0782299999999998,
+            "count": 10
+          },
+          "v4": {
+            "median": 0.9193195000000001,
+            "p05": 0.8049011,
+            "p95": 0.98499015,
+            "minimum": 0.786218,
+            "maximum": 0.98829,
+            "count": 10
+          },
+          "paired_ratios": [
+            0.843689194327741,
+            1.0945297890287826,
+            1.1261705373954711,
+            1.0772260051579865,
+            0.9194974392364231,
+            1.0973513625149065,
+            1.0587912522058243,
+            0.9035008726803566,
+            0.8883642946676008,
+            0.777037304250283
+          ],
+          "paired_geomean_ratio": 0.9711781836379693,
+          "paired_bootstrap_95_ci": [
+            0.8973099215545541,
+            1.0481722380090126
+          ]
+        },
+        "proof_prove_ms": {
+          "v3": {
+            "median": 23.152009,
+            "p05": 21.2870366,
+            "p95": 25.75740245,
+            "minimum": 20.940308,
+            "maximum": 25.947464,
+            "count": 10
+          },
+          "v4": {
+            "median": 24.7727915,
+            "p05": 21.79987135,
+            "p95": 27.1159134,
+            "minimum": 21.628149999999998,
+            "maximum": 27.453264,
+            "count": 10
+          },
+          "paired_ratios": [
+            1.0842717172498986,
+            1.1764269294657665,
+            1.0393997961203187,
+            1.2644971059586152,
+            0.9834936236627415,
+            1.0516264748604902,
+            1.044367809652497,
+            0.8335361791040542,
+            1.053845558538506,
+            1.051071120825921
+          ],
+          "paired_geomean_ratio": 1.0527429988205739,
+          "paired_bootstrap_95_ci": [
+            0.986247830100606,
+            1.1200373618544222
+          ]
+        },
+        "proof_payload_bytes": {
+          "v3": {
+            "median": 207218.0,
+            "p05": 203830.8,
+            "p95": 208907.6,
+            "minimum": 203586,
+            "maximum": 209570,
+            "count": 10
+          },
+          "v4": {
+            "median": 205026.0,
+            "p05": 204338.0,
+            "p95": 206934.8,
+            "minimum": 204338,
+            "maximum": 207122,
+            "count": 10
+          },
+          "paired_ratios": [
+            0.9983803950679173,
+            0.9834693269517246,
+            0.9831410398283311,
+            1.0066509521620486,
+            0.986333921839958,
+            0.9915739837084134,
+            1.0093523130274185,
+            1.00180277274286,
+            0.9843534727775476,
+            0.9941752662388723
+          ],
+          "paired_geomean_ratio": 0.9938800507646235,
+          "paired_bootstrap_95_ci": [
+            0.9883443248751205,
+            0.9997203450001366
+          ]
+        }
+      },
+      "grinding_nonce_prefix_means": {
+        "v3": {
+          "binary_bridge": 0,
+          "binary_joint": 0,
+          "binary_keccak": 0,
+          "binary_links": 0,
+          "binary_opening": 0,
+          "native_ring_carry": 0,
+          "pcs_auxiliary": 0,
+          "pcs_folds": 0,
+          "pcs_ood": 0,
+          "pcs_queries": 121.8,
+          "prime_binder": 0,
+          "prime_fingerprint": 0,
+          "prime_forest": 0,
+          "prime_leaf": 0,
+          "prime_norm": 0,
+          "prime_products": 0,
+          "ring_projection": 5
+        },
+        "v4": {
+          "binary_bridge": 0,
+          "binary_joint": 0,
+          "binary_keccak": 0,
+          "binary_links": 0,
+          "binary_opening": 0,
+          "native_ring_carry": 0,
+          "pcs_auxiliary": 0,
+          "pcs_folds": 0,
+          "pcs_ood": 0,
+          "pcs_queries": 144.9,
+          "prime_binder": 0,
+          "prime_fingerprint": 0,
+          "prime_forest": 0,
+          "prime_leaf": 0,
+          "prime_norm": 0,
+          "prime_products": 0,
+          "ring_projection": 2.5
+        }
+      },
+      "paired_process_medians": {
+        "42": {
+          "v3": {
+            "total_prover_ms": 23.584832000000002,
+            "proof_verify_ms": 15.997996,
+            "witness_commit_ms": 1.0782299999999998,
+            "proof_prove_ms": 22.506602,
+            "proof_payload_bytes": 207458,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 68,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 1
+            },
+            "security_bits": 102.43424392345746
+          },
+          "v4": {
+            "total_prover_ms": 25.312963,
+            "proof_verify_ms": 17.472524999999997,
+            "witness_commit_ms": 0.909691,
+            "proof_prove_ms": 24.403272,
+            "proof_payload_bytes": 207122,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 120,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 2
+            },
+            "security_bits": 102.45485506690002
+          }
+        },
+        "43": {
+          "v3": {
+            "total_prover_ms": 22.93345,
+            "proof_verify_ms": 15.897866,
+            "witness_commit_ms": 0.896236,
+            "proof_prove_ms": 22.037214,
+            "proof_payload_bytes": 208098,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 79,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 2
+            },
+            "security_bits": 102.43424392345746
+          },
+          "v4": {
+            "total_prover_ms": 26.906129,
+            "proof_verify_ms": 16.350112,
+            "witness_commit_ms": 0.980957,
+            "proof_prove_ms": 25.925172,
+            "proof_payload_bytes": 204658,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 126,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 6
+            },
+            "security_bits": 102.45485506690002
+          }
+        },
+        "44": {
+          "v3": {
+            "total_prover_ms": 23.893037,
+            "proof_verify_ms": 15.473322,
+            "witness_commit_ms": 0.834339,
+            "proof_prove_ms": 23.058698,
+            "proof_payload_bytes": 207842,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 142,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 2
+            },
+            "security_bits": 102.43424392345746
+          },
+          "v4": {
+            "total_prover_ms": 25.250585,
+            "proof_verify_ms": 16.65565,
+            "witness_commit_ms": 0.939608,
+            "proof_prove_ms": 23.967206,
+            "proof_payload_bytes": 204338,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 80,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 2
+            },
+            "security_bits": 102.45485506690002
+          }
+        },
+        "45": {
+          "v3": {
+            "total_prover_ms": 22.573168000000003,
+            "proof_verify_ms": 17.068612,
+            "witness_commit_ms": 0.862352,
+            "proof_prove_ms": 21.710816,
+            "proof_payload_bytes": 204482,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 287,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 10
+            },
+            "security_bits": 102.43424392345746
+          },
+          "v4": {
+            "total_prover_ms": 28.491729,
+            "proof_verify_ms": 18.486204,
+            "witness_commit_ms": 0.928948,
+            "proof_prove_ms": 27.453264,
+            "proof_payload_bytes": 205842,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 131,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 4
+            },
+            "security_bits": 102.45485506690002
+          }
+        },
+        "46": {
+          "v3": {
+            "total_prover_ms": 24.219313,
+            "proof_verify_ms": 16.663384999999998,
+            "witness_commit_ms": 0.973733,
+            "proof_prove_ms": 23.24532,
+            "proof_payload_bytes": 209570,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 66,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 2
+            },
+            "security_bits": 102.43424392345746
+          },
+          "v4": {
+            "total_prover_ms": 23.756968999999998,
+            "proof_verify_ms": 16.725202000000003,
+            "witness_commit_ms": 0.895345,
+            "proof_prove_ms": 22.861624,
+            "proof_payload_bytes": 206706,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 91,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 4
+            },
+            "security_bits": 102.45485506690002
+          }
+        },
+        "47": {
+          "v3": {
+            "total_prover_ms": 24.829938000000002,
+            "proof_verify_ms": 16.393013,
+            "witness_commit_ms": 0.900614,
+            "proof_prove_ms": 23.908024,
+            "proof_payload_bytes": 206978,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 63,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 13
+            },
+            "security_bits": 102.43424392345746
+          },
+          "v4": {
+            "total_prover_ms": 26.118047999999998,
+            "proof_verify_ms": 16.480178000000002,
+            "witness_commit_ms": 0.98829,
+            "proof_prove_ms": 25.142311,
+            "proof_payload_bytes": 205234,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 145,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 1
+            },
+            "security_bits": 102.45485506690002
+          }
+        },
+        "48": {
+          "v3": {
+            "total_prover_ms": 26.523785,
+            "proof_verify_ms": 15.832803,
+            "witness_commit_ms": 0.9112239999999999,
+            "proof_prove_ms": 25.525105,
+            "proof_payload_bytes": 203586,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 154,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 5
+            },
+            "security_bits": 102.43424392345746
+          },
+          "v4": {
+            "total_prover_ms": 27.667759,
+            "proof_verify_ms": 15.532405,
+            "witness_commit_ms": 0.964796,
+            "proof_prove_ms": 26.657598,
+            "proof_payload_bytes": 205490,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 144,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 2
+            },
+            "security_bits": 102.45485506690002
+          }
+        },
+        "49": {
+          "v3": {
+            "total_prover_ms": 26.974287,
+            "proof_verify_ms": 16.152137,
+            "witness_commit_ms": 0.916143,
+            "proof_prove_ms": 25.947464,
+            "proof_payload_bytes": 204130,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 121,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 2
+            },
+            "security_bits": 102.43424392345746
+          },
+          "v4": {
+            "total_prover_ms": 22.455886,
+            "proof_verify_ms": 15.188132999999999,
+            "witness_commit_ms": 0.827736,
+            "proof_prove_ms": 21.628149999999998,
+            "proof_payload_bytes": 204498,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 58,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 1
+            },
+            "security_bits": 102.45485506690002
+          }
+        },
+        "50": {
+          "v3": {
+            "total_prover_ms": 26.346619999999998,
+            "proof_verify_ms": 15.619229,
+            "witness_commit_ms": 0.994843,
+            "proof_prove_ms": 25.339192999999998,
+            "proof_payload_bytes": 207586,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 44,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 9
+            },
+            "security_bits": 102.43424392345746
+          },
+          "v4": {
+            "total_prover_ms": 27.684803000000002,
+            "proof_verify_ms": 17.087547,
+            "witness_commit_ms": 0.883783,
+            "proof_prove_ms": 26.703596,
+            "proof_payload_bytes": 204338,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 346,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 1
+            },
+            "security_bits": 102.45485506690002
+          }
+        },
+        "51": {
+          "v3": {
+            "total_prover_ms": 21.649691,
+            "proof_verify_ms": 15.634287,
+            "witness_commit_ms": 1.011815,
+            "proof_prove_ms": 20.940308,
+            "proof_payload_bytes": 206018,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 194,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 4
+            },
+            "security_bits": 102.43424392345746
+          },
+          "v4": {
+            "total_prover_ms": 22.795971,
+            "proof_verify_ms": 17.387845,
+            "witness_commit_ms": 0.786218,
+            "proof_prove_ms": 22.009753,
+            "proof_payload_bytes": 204818,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 208,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 2
+            },
+            "security_bits": 102.45485506690002
+          }
+        }
+      }
+    },
+    {
+      "security": 100,
+      "batch": 32,
+      "threads": 16,
+      "seeds": [
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51
+      ],
+      "metrics": {
+        "total_prover_ms": {
+          "v3": {
+            "median": 47.436416,
+            "p05": 43.54969404999999,
+            "p95": 48.03385135,
+            "minimum": 43.49999199999999,
+            "maximum": 48.116046999999995,
+            "count": 10
+          },
+          "v4": {
+            "median": 46.806148,
+            "p05": 43.97592055,
+            "p95": 47.89521075,
+            "minimum": 43.581585999999994,
+            "maximum": 48.06984,
+            "count": 10
+          },
+          "paired_ratios": [
+            0.9947507363864728,
+            0.9320683171070745,
+            1.0224015366829193,
+            1.0052160341211047,
+            1.0717710017050122,
+            0.9957326698745408,
+            0.9057599016810337,
+            0.9840277462924465,
+            1.06527971134252,
+            0.9988117812268409
+          ],
+          "paired_geomean_ratio": 0.9963812404025888,
+          "paired_bootstrap_95_ci": [
+            0.9658444336363698,
+            1.02602185686018
+          ]
+        },
+        "proof_verify_ms": {
+          "v3": {
+            "median": 18.496524,
+            "p05": 17.825674,
+            "p95": 19.26500875,
+            "minimum": 17.623561,
+            "maximum": 19.606444,
+            "count": 10
+          },
+          "v4": {
+            "median": 19.1532215,
+            "p05": 18.26634185,
+            "p95": 19.67660995,
+            "minimum": 18.189593000000002,
+            "maximum": 19.726321000000002,
+            "count": 10
+          },
+          "paired_ratios": [
+            1.0305404919719907,
+            1.0391402722734078,
+            1.0718748125363518,
+            1.0196655038912759,
+            1.113047017001842,
+            1.0190060416446238,
+            1.038808251400091,
+            1.015904927547908,
+            0.9277354424902344,
+            1.019321443711643
+          ],
+          "paired_geomean_ratio": 1.0285265491703655,
+          "paired_bootstrap_95_ci": [
+            0.9996580282370758,
+            1.0546975043383409
+          ]
+        },
+        "witness_commit_ms": {
+          "v3": {
+            "median": 5.5146515,
+            "p05": 4.78495175,
+            "p95": 5.5577936,
+            "minimum": 4.7194519999999995,
+            "maximum": 5.565332,
+            "count": 10
+          },
+          "v4": {
+            "median": 5.417838,
+            "p05": 5.1319184,
+            "p95": 5.6886724,
+            "minimum": 5.107766,
+            "maximum": 5.690359,
+            "count": 10
+          },
+          "paired_ratios": [
+            1.031934077899035,
+            0.9637341088858041,
+            1.081796197493531,
+            1.0065528477556418,
+            1.0986757059136811,
+            0.938115514861301,
+            0.9261526259932615,
+            0.9699051197494414,
+            1.1576320725372353,
+            0.9913119289199639
+          ],
+          "paired_geomean_ratio": 1.0141238007276272,
+          "paired_bootstrap_95_ci": [
+            0.9735756930571964,
+            1.060721222736774
+          ]
+        },
+        "proof_prove_ms": {
+          "v3": {
+            "median": 41.900589499999995,
+            "p05": 38.79015365,
+            "p95": 42.61907865,
+            "minimum": 38.707652,
+            "maximum": 42.726558,
+            "count": 10
+          },
+          "v4": {
+            "median": 41.4806145,
+            "p05": 38.945151550000006,
+            "p95": 42.3425163,
+            "minimum": 38.657728000000006,
+            "maximum": 42.617361,
+            "count": 10
+          },
+          "paired_ratios": [
+            0.988318999974463,
+            0.9280630816874922,
+            1.0205317016841828,
+            1.006022376650435,
+            1.0725337977100755,
+            0.9898535906485775,
+            0.9047704708626426,
+            0.986521744301216,
+            1.054072679920791,
+            0.9985684526146374
+          ],
+          "paired_geomean_ratio": 0.993752927450454,
+          "paired_bootstrap_95_ci": [
+            0.9633512630719674,
+            1.0230081442419137
+          ]
+        },
+        "proof_payload_bytes": {
+          "v3": {
+            "median": 430002.0,
+            "p05": 428330.0,
+            "p95": 431626.0,
+            "minimum": 428258,
+            "maximum": 431842,
+            "count": 10
+          },
+          "v4": {
+            "median": 407618.0,
+            "p05": 406437.2,
+            "p95": 410531.6,
+            "minimum": 406034,
+            "maximum": 410834,
+            "count": 10
+          },
+          "paired_ratios": [
+            0.950395281775111,
+            0.9458205701483241,
+            0.9544811684038069,
+            0.9554453827803687,
+            0.9462747886544994,
+            0.9497964533324689,
+            0.9504971302345783,
+            0.943360796732211,
+            0.9448583994601262,
+            0.9531890211364006
+          ],
+          "paired_geomean_ratio": 0.949403539269144,
+          "paired_bootstrap_95_ci": [
+            0.9469516621029307,
+            0.9518824834404589
+          ]
+        }
+      },
+      "grinding_nonce_prefix_means": {
+        "v3": {
+          "binary_bridge": 0,
+          "binary_joint": 0,
+          "binary_keccak": 0,
+          "binary_links": 0,
+          "binary_opening": 0,
+          "native_ring_carry": 0,
+          "pcs_auxiliary": 0,
+          "pcs_folds": 0,
+          "pcs_ood": 0,
+          "pcs_queries": 618.4,
+          "prime_binder": 0,
+          "prime_fingerprint": 0,
+          "prime_forest": 0,
+          "prime_leaf": 0,
+          "prime_norm": 0,
+          "prime_products": 0,
+          "ring_projection": 4.6
+        },
+        "v4": {
+          "binary_bridge": 0,
+          "binary_joint": 0,
+          "binary_keccak": 0,
+          "binary_links": 0,
+          "binary_opening": 0,
+          "native_ring_carry": 0,
+          "pcs_auxiliary": 0,
+          "pcs_folds": 0,
+          "pcs_ood": 0,
+          "pcs_queries": 573.4,
+          "prime_binder": 0,
+          "prime_fingerprint": 0,
+          "prime_forest": 0,
+          "prime_leaf": 0,
+          "prime_norm": 0,
+          "prime_products": 0,
+          "ring_projection": 4.6
+        }
+      },
+      "paired_process_medians": {
+        "42": {
+          "v3": {
+            "total_prover_ms": 47.93339,
+            "proof_verify_ms": 18.847699,
+            "witness_commit_ms": 5.514266,
+            "proof_prove_ms": 42.487715,
+            "proof_payload_bytes": 429314,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 439,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 2
+            },
+            "security_bits": 102.40368000963183
+          },
+          "v4": {
+            "total_prover_ms": 47.681774999999995,
+            "proof_verify_ms": 19.423316999999997,
+            "witness_commit_ms": 5.690359,
+            "proof_prove_ms": 41.991415999999994,
+            "proof_payload_bytes": 408018,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 522,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 2
+            },
+            "security_bits": 102.39578061548035
+          }
+        },
+        "43": {
+          "v3": {
+            "total_prover_ms": 47.698097,
+            "proof_verify_ms": 18.558992,
+            "witness_commit_ms": 5.355666,
+            "proof_prove_ms": 42.342431,
+            "proof_payload_bytes": 430274,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 738,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 6
+            },
+            "security_bits": 102.40368000963183
+          },
+          "v4": {
+            "total_prover_ms": 44.457885,
+            "proof_verify_ms": 19.285396,
+            "witness_commit_ms": 5.1614379999999995,
+            "proof_prove_ms": 39.296447,
+            "proof_payload_bytes": 406962,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 945,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 2
+            },
+            "security_bits": 102.39578061548035
+          }
+        },
+        "44": {
+          "v3": {
+            "total_prover_ms": 47.016596,
+            "proof_verify_ms": 18.403568,
+            "witness_commit_ms": 5.256638,
+            "proof_prove_ms": 41.759958,
+            "proof_payload_bytes": 428482,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 727,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 1
+            },
+            "security_bits": 102.40368000963183
+          },
+          "v4": {
+            "total_prover_ms": 48.06984,
+            "proof_verify_ms": 19.726321000000002,
+            "witness_commit_ms": 5.686611,
+            "proof_prove_ms": 42.617361,
+            "proof_payload_bytes": 408978,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 311,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 3
+            },
+            "security_bits": 102.39578061548035
+          }
+        },
+        "45": {
+          "v3": {
+            "total_prover_ms": 46.746435,
+            "proof_verify_ms": 18.434056,
+            "witness_commit_ms": 5.54858,
+            "proof_prove_ms": 41.197855,
+            "proof_payload_bytes": 428418,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 358,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 2
+            },
+            "security_bits": 102.40368000963183
+          },
+          "v4": {
+            "total_prover_ms": 46.990266,
+            "proof_verify_ms": 18.796571,
+            "witness_commit_ms": 5.584938999999999,
+            "proof_prove_ms": 41.445964000000004,
+            "proof_payload_bytes": 409330,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 491,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 1
+            },
+            "security_bits": 102.39578061548035
+          }
+        },
+        "46": {
+          "v3": {
+            "total_prover_ms": 43.49999199999999,
+            "proof_verify_ms": 17.623561,
+            "witness_commit_ms": 4.865007,
+            "proof_prove_ms": 38.707652,
+            "proof_payload_bytes": 430338,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 809,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 3
+            },
+            "security_bits": 102.40368000963183
+          },
+          "v4": {
+            "total_prover_ms": 46.62203,
+            "proof_verify_ms": 19.615852,
+            "witness_commit_ms": 5.345065000000001,
+            "proof_prove_ms": 41.515265,
+            "proof_payload_bytes": 407218,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 359,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 1
+            },
+            "security_bits": 102.39578061548035
+          }
+        },
+        "47": {
+          "v3": {
+            "total_prover_ms": 47.876774,
+            "proof_verify_ms": 18.666275,
+            "witness_commit_ms": 5.531548,
+            "proof_prove_ms": 42.43718,
+            "proof_payload_bytes": 431842,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 509,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 9
+            },
+            "security_bits": 102.40368000963183
+          },
+          "v4": {
+            "total_prover_ms": 47.672467999999995,
+            "proof_verify_ms": 19.021047,
+            "witness_commit_ms": 5.1892309999999995,
+            "proof_prove_ms": 42.006595,
+            "proof_payload_bytes": 410162,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 646,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 7
+            },
+            "security_bits": 102.39578061548035
+          }
+        },
+        "48": {
+          "v3": {
+            "total_prover_ms": 48.116046999999995,
+            "proof_verify_ms": 18.841457,
+            "witness_commit_ms": 5.515037,
+            "proof_prove_ms": 42.726558,
+            "proof_payload_bytes": 428258,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 468,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 15
+            },
+            "security_bits": 102.40368000963183
+          },
+          "v4": {
+            "total_prover_ms": 43.581585999999994,
+            "proof_verify_ms": 19.572661,
+            "witness_commit_ms": 5.107766,
+            "proof_prove_ms": 38.657728000000006,
+            "proof_payload_bytes": 407058,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 479,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 8
+            },
+            "security_bits": 102.39578061548035
+          }
+        },
+        "49": {
+          "v3": {
+            "total_prover_ms": 47.266279000000004,
+            "proof_verify_ms": 18.072701,
+            "witness_commit_ms": 5.538982,
+            "proof_prove_ms": 41.705916,
+            "proof_payload_bytes": 431362,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 724,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 2
+            },
+            "security_bits": 102.40368000963183
+          },
+          "v4": {
+            "total_prover_ms": 46.511329999999994,
+            "proof_verify_ms": 18.360146,
+            "witness_commit_ms": 5.372287,
+            "proof_prove_ms": 41.143792999999995,
+            "proof_payload_bytes": 406930,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 420,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 3
+            },
+            "security_bits": 102.39578061548035
+          }
+        },
+        "50": {
+          "v3": {
+            "total_prover_ms": 43.610440999999994,
+            "proof_verify_ms": 19.606444,
+            "witness_commit_ms": 4.7194519999999995,
+            "proof_prove_ms": 38.890989,
+            "proof_payload_bytes": 429730,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 694,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 1
+            },
+            "security_bits": 102.40368000963183
+          },
+          "v4": {
+            "total_prover_ms": 46.457318,
+            "proof_verify_ms": 18.189593000000002,
+            "witness_commit_ms": 5.463389,
+            "proof_prove_ms": 40.993929,
+            "proof_payload_bytes": 406034,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 469,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 16
+            },
+            "security_bits": 102.39578061548035
+          }
+        },
+        "51": {
+          "v3": {
+            "total_prover_ms": 47.606553,
+            "proof_verify_ms": 18.347542,
+            "witness_commit_ms": 5.565332,
+            "proof_prove_ms": 42.041221,
+            "proof_payload_bytes": 431010,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 718,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 5
+            },
+            "security_bits": 102.40368000963183
+          },
+          "v4": {
+            "total_prover_ms": 47.549986000000004,
+            "proof_verify_ms": 18.702043000000003,
+            "witness_commit_ms": 5.51698,
+            "proof_prove_ms": 41.981037,
+            "proof_payload_bytes": 410834,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 1092,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 3
+            },
+            "security_bits": 102.39578061548035
+          }
+        }
+      }
+    },
+    {
+      "security": 100,
+      "batch": 1024,
+      "threads": 16,
+      "seeds": [
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51
+      ],
+      "metrics": {
+        "total_prover_ms": {
+          "v3": {
+            "median": 737.2882875,
+            "p05": 715.3305975000001,
+            "p95": 794.25140805,
+            "minimum": 713.4235470000001,
+            "maximum": 835.0346790000001,
+            "count": 10
+          },
+          "v4": {
+            "median": 710.6269345000001,
+            "p05": 702.31414855,
+            "p95": 756.2065023,
+            "minimum": 701.701384,
+            "maximum": 772.963443,
+            "count": 10
+          },
+          "paired_ratios": [
+            0.9606874720021831,
+            0.9896173904088924,
+            0.9519499873942937,
+            0.9679101451714104,
+            0.9938919708179889,
+            0.8503076648868135,
+            1.0383638580982053,
+            0.9835691391890655,
+            0.9889105801084181,
+            0.986386280276592
+          ],
+          "paired_geomean_ratio": 0.9700122971000924,
+          "paired_bootstrap_95_ci": [
+            0.9370807426069578,
+            0.9957014957824188
+          ]
+        },
+        "proof_verify_ms": {
+          "v3": {
+            "median": 58.953973000000005,
+            "p05": 58.2984011,
+            "p95": 63.97423739999999,
+            "minimum": 58.284641,
+            "maximum": 67.055589,
+            "count": 10
+          },
+          "v4": {
+            "median": 57.287890000000004,
+            "p05": 56.4310991,
+            "p95": 64.679034,
+            "minimum": 56.331875,
+            "maximum": 65.670879,
+            "count": 10
+          },
+          "paired_ratios": [
+            1.00253944306807,
+            1.0752513555131658,
+            0.978355711988357,
+            0.9464074800117147,
+            0.9566765778095477,
+            0.8534150374847949,
+            1.1261361978251339,
+            1.01182908547039,
+            0.9718660436892917,
+            0.9409051350534033
+          ],
+          "paired_geomean_ratio": 0.9837759862082519,
+          "paired_bootstrap_95_ci": [
+            0.9413036826802048,
+            1.0292409128613693
+          ]
+        },
+        "witness_commit_ms": {
+          "v3": {
+            "median": 144.47596850000002,
+            "p05": 140.3854214,
+            "p95": 153.9199709,
+            "minimum": 139.906598,
+            "maximum": 156.516209,
+            "count": 10
+          },
+          "v4": {
+            "median": 145.2899645,
+            "p05": 141.65148434999998,
+            "p95": 152.90107485,
+            "minimum": 141.460008,
+            "maximum": 158.036676,
+            "count": 10
+          },
+          "paired_ratios": [
+            1.0430592344186655,
+            0.9682504386913949,
+            0.9707973455440132,
+            1.008752992200859,
+            1.0093861424354706,
+            0.9367990059099884,
+            1.0921289960839469,
+            1.0042248920015349,
+            0.9585757815567697,
+            1.0129218603116326
+          ],
+          "paired_geomean_ratio": 0.999590492307655,
+          "paired_bootstrap_95_ci": [
+            0.9747321623004863,
+            1.0271114109574735
+          ]
+        },
+        "proof_prove_ms": {
+          "v3": {
+            "median": 592.457981,
+            "p05": 573.8461689,
+            "p95": 646.1912338499999,
+            "minimum": 571.974132,
+            "maximum": 686.7001740000001,
+            "count": 10
+          },
+          "v4": {
+            "median": 565.132744,
+            "p05": 560.7765535,
+            "p95": 602.7856538499999,
+            "minimum": 560.4626470000001,
+            "maximum": 610.67467,
+            "count": 10
+          },
+          "paired_ratios": [
+            0.9404704838029789,
+            0.9965892625243276,
+            0.9446220682828078,
+            0.9732404142199428,
+            0.9862505093301057,
+            0.8219209552726864,
+            1.0238185858105224,
+            0.9798741160553044,
+            1.002342316135476,
+            0.9809562273776689
+          ],
+          "paired_geomean_ratio": 0.9634331551443349,
+          "paired_bootstrap_95_ci": [
+            0.9251187404521637,
+            0.9921767721987413
+          ]
+        },
+        "proof_payload_bytes": {
+          "v3": {
+            "median": 1604466.0,
+            "p05": 1601406.8,
+            "p95": 1608162.0,
+            "minimum": 1601090,
+            "maximum": 1608450,
+            "count": 10
+          },
+          "v4": {
+            "median": 887314.0,
+            "p05": 885122.0,
+            "p95": 892365.2,
+            "minimum": 884114,
+            "maximum": 892466,
+            "count": 10
+          },
+          "paired_ratios": [
+            0.5571665270315659,
+            0.5527544991587269,
+            0.5514196329168247,
+            0.5554884086218328,
+            0.5533187305283813,
+            0.5509617529791098,
+            0.5549132153720278,
+            0.5518163503260882,
+            0.5524831662939685,
+            0.5547216264105195
+          ],
+          "paired_geomean_ratio": 0.5535011318239063,
+          "paired_bootstrap_95_ci": [
+            0.5523559688285101,
+            0.5547325447809484
+          ]
+        }
+      },
+      "grinding_nonce_prefix_means": {
+        "v3": {
+          "binary_bridge": 0,
+          "binary_joint": 0,
+          "binary_keccak": 0,
+          "binary_links": 0,
+          "binary_opening": 0,
+          "native_ring_carry": 0,
+          "pcs_auxiliary": 0,
+          "pcs_folds": 0,
+          "pcs_ood": 0,
+          "pcs_queries": 614.8,
+          "prime_binder": 0,
+          "prime_fingerprint": 0,
+          "prime_forest": 0,
+          "prime_leaf": 0,
+          "prime_norm": 0,
+          "prime_products": 0,
+          "ring_projection": 3.2
+        },
+        "v4": {
+          "binary_bridge": 0,
+          "binary_joint": 0,
+          "binary_keccak": 0,
+          "binary_links": 0,
+          "binary_opening": 0,
+          "native_ring_carry": 0,
+          "pcs_auxiliary": 0,
+          "pcs_folds": 0,
+          "pcs_ood": 0,
+          "pcs_queries": 693.2,
+          "prime_binder": 0,
+          "prime_fingerprint": 0,
+          "prime_forest": 0,
+          "prime_leaf": 0,
+          "prime_norm": 0,
+          "prime_products": 0,
+          "ring_projection": 5.5
+        }
+      },
+      "paired_process_medians": {
+        "42": {
+          "v3": {
+            "total_prover_ms": 736.026134,
+            "proof_verify_ms": 59.981262,
+            "witness_commit_ms": 139.906598,
+            "proof_prove_ms": 596.680307,
+            "proof_payload_bytes": 1601794,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 656,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 5
+            },
+            "security_bits": 101.85945024659586
+          },
+          "v4": {
+            "total_prover_ms": 707.091086,
+            "proof_verify_ms": 60.133581,
+            "witness_commit_ms": 145.930869,
+            "proof_prove_ms": 561.160217,
+            "proof_payload_bytes": 892466,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 653,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 2
+            },
+            "security_bits": 101.83505425430904
+          }
+        },
+        "43": {
+          "v3": {
+            "total_prover_ms": 743.4446929999999,
+            "proof_verify_ms": 59.025063,
+            "witness_commit_ms": 150.286171,
+            "proof_prove_ms": 593.158522,
+            "proof_payload_bytes": 1603522,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 870,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 1
+            },
+            "security_bits": 101.85945024659586
+          },
+          "v4": {
+            "total_prover_ms": 735.7257970000001,
+            "proof_verify_ms": 63.466779,
+            "witness_commit_ms": 145.514651,
+            "proof_prove_ms": 591.1354140000001,
+            "proof_payload_bytes": 886354,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 762,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 1
+            },
+            "security_bits": 101.83505425430904
+          }
+        },
+        "44": {
+          "v3": {
+            "total_prover_ms": 738.550441,
+            "proof_verify_ms": 58.618283,
+            "witness_commit_ms": 145.715281,
+            "proof_prove_ms": 594.697454,
+            "proof_payload_bytes": 1607810,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 258,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 2
+            },
+            "security_bits": 101.85945024659586
+          },
+          "v4": {
+            "total_prover_ms": 703.063083,
+            "proof_verify_ms": 57.349532,
+            "witness_commit_ms": 141.460008,
+            "proof_prove_ms": 561.764339,
+            "proof_payload_bytes": 886578,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 824,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 5
+            },
+            "security_bits": 101.83505425430904
+          }
+        },
+        "45": {
+          "v3": {
+            "total_prover_ms": 727.0322699999999,
+            "proof_verify_ms": 60.208141,
+            "witness_commit_ms": 140.97065,
+            "proof_prove_ms": 576.9359109999999,
+            "proof_payload_bytes": 1601794,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 263,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 5
+            },
+            "security_bits": 101.85945024659586
+          },
+          "v4": {
+            "total_prover_ms": 703.70191,
+            "proof_verify_ms": 56.981435,
+            "witness_commit_ms": 142.204565,
+            "proof_prove_ms": 561.497345,
+            "proof_payload_bytes": 889778,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 1046,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 5
+            },
+            "security_bits": 101.83505425430904
+          }
+        },
+        "46": {
+          "v3": {
+            "total_prover_ms": 717.661437,
+            "proof_verify_ms": 58.882883,
+            "witness_commit_ms": 143.716336,
+            "proof_prove_ms": 576.1342139999999,
+            "proof_payload_bytes": 1604258,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 1073,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 3
+            },
+            "security_bits": 101.85945024659586
+          },
+          "v4": {
+            "total_prover_ms": 713.27794,
+            "proof_verify_ms": 56.331875,
+            "witness_commit_ms": 145.06527799999998,
+            "proof_prove_ms": 568.212662,
+            "proof_payload_bytes": 887666,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 827,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 19
+            },
+            "security_bits": 101.83505425430904
+          }
+        },
+        "47": {
+          "v3": {
+            "total_prover_ms": 835.0346790000001,
+            "proof_verify_ms": 67.055589,
+            "witness_commit_ms": 156.516209,
+            "proof_prove_ms": 686.7001740000001,
+            "proof_payload_bytes": 1604674,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 626,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 5
+            },
+            "security_bits": 101.85945024659586
+          },
+          "v4": {
+            "total_prover_ms": 710.036388,
+            "proof_verify_ms": 57.226248,
+            "witness_commit_ms": 146.62422899999999,
+            "proof_prove_ms": 564.413263,
+            "proof_payload_bytes": 884114,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 533,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 6
+            },
+            "security_bits": 101.83505425430904
+          }
+        },
+        "48": {
+          "v3": {
+            "total_prover_ms": 744.4051880000001,
+            "proof_verify_ms": 58.315219,
+            "witness_commit_ms": 144.705137,
+            "proof_prove_ms": 596.467654,
+            "proof_payload_bytes": 1601090,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 418,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 1
+            },
+            "security_bits": 101.85945024659586
+          },
+          "v4": {
+            "total_prover_ms": 772.963443,
+            "proof_verify_ms": 65.670879,
+            "witness_commit_ms": 158.036676,
+            "proof_prove_ms": 610.67467,
+            "proof_payload_bytes": 888466,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 894,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 3
+            },
+            "security_bits": 101.83505425430904
+          }
+        },
+        "49": {
+          "v3": {
+            "total_prover_ms": 713.4235470000001,
+            "proof_verify_ms": 58.284641,
+            "witness_commit_ms": 141.288582,
+            "proof_prove_ms": 571.974132,
+            "proof_payload_bytes": 1607234,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 677,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 5
+            },
+            "security_bits": 101.85945024659586
+          },
+          "v4": {
+            "total_prover_ms": 701.701384,
+            "proof_verify_ms": 58.974095,
+            "witness_commit_ms": 141.88551099999998,
+            "proof_prove_ms": 560.4626470000001,
+            "proof_payload_bytes": 886898,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 486,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 2
+            },
+            "security_bits": 101.83505425430904
+          }
+        },
+        "50": {
+          "v3": {
+            "total_prover_ms": 740.936774,
+            "proof_verify_ms": 58.484949,
+            "witness_commit_ms": 150.746791,
+            "proof_prove_ms": 591.75744,
+            "proof_payload_bytes": 1605410,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 437,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 2
+            },
+            "security_bits": 101.85945024659586
+          },
+          "v4": {
+            "total_prover_ms": 732.7202149999999,
+            "proof_verify_ms": 56.839536,
+            "witness_commit_ms": 144.50222300000001,
+            "proof_prove_ms": 593.143523,
+            "proof_payload_bytes": 886962,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 623,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 2
+            },
+            "security_bits": 101.83505425430904
+          }
+        },
+        "51": {
+          "v3": {
+            "total_prover_ms": 721.0334280000001,
+            "proof_verify_ms": 60.104223999999995,
+            "witness_commit_ms": 144.2468,
+            "proof_prove_ms": 576.837385,
+            "proof_payload_bytes": 1608450,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 870,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 3
+            },
+            "security_bits": 101.85945024659586
+          },
+          "v4": {
+            "total_prover_ms": 711.217481,
+            "proof_verify_ms": 56.552373,
+            "witness_commit_ms": 146.110737,
+            "proof_prove_ms": 565.852225,
+            "proof_payload_bytes": 892242,
+            "nonce_prefixes": {
+              "binary_bridge": 0,
+              "binary_joint": 0,
+              "binary_keccak": 0,
+              "binary_links": 0,
+              "binary_opening": 0,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 0,
+              "pcs_folds": 0,
+              "pcs_ood": 0,
+              "pcs_queries": 284,
+              "prime_binder": 0,
+              "prime_fingerprint": 0,
+              "prime_forest": 0,
+              "prime_leaf": 0,
+              "prime_norm": 0,
+              "prime_products": 0,
+              "ring_projection": 10
+            },
+            "security_bits": 101.83505425430904
+          }
+        }
+      }
+    },
+    {
+      "security": 128,
+      "batch": 1,
+      "threads": 16,
+      "seeds": [
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51
+      ],
+      "metrics": {
+        "total_prover_ms": {
+          "v3": {
+            "median": 37.418918500000004,
+            "p05": 36.0831143,
+            "p95": 38.57695565,
+            "minimum": 36.00605,
+            "maximum": 38.720426,
+            "count": 10
+          },
+          "v4": {
+            "median": 37.182641000000004,
+            "p05": 35.6246252,
+            "p95": 38.25887425,
+            "minimum": 35.397467,
+            "maximum": 38.293378,
+            "count": 10
+          },
+          "paired_ratios": [
+            1.0352672769645854,
+            0.9663846584737625,
+            1.0145807214291094,
+            0.9941700919685593,
+            0.9882838113892486,
+            1.015438294397747,
+            0.9334569997447051,
+            1.0289455341190163,
+            0.9272176654254783,
+            1.0456610888860214
+          ],
+          "paired_geomean_ratio": 0.9941557713121173,
+          "paired_bootstrap_95_ci": [
+            0.9683677326925326,
+            1.0179799151170257
+          ]
+        },
+        "proof_verify_ms": {
+          "v3": {
+            "median": 16.9914555,
+            "p05": 16.35685845,
+            "p95": 18.01669035,
+            "minimum": 16.161585,
+            "maximum": 18.279894000000002,
+            "count": 10
+          },
+          "v4": {
+            "median": 16.972038500000004,
+            "p05": 16.6816671,
+            "p95": 18.600395149999997,
+            "minimum": 16.629621,
+            "maximum": 18.788897,
+            "count": 10
+          },
+          "paired_ratios": [
+            1.0066005562299836,
+            1.0430348480894291,
+            1.0621375976774698,
+            1.0289597833380824,
+            0.9622289077413476,
+            1.0021053779244036,
+            1.0090236971096909,
+            0.9199629932208576,
+            1.038146771090156,
+            1.1018905716790226
+          ],
+          "paired_geomean_ratio": 1.0162477354894903,
+          "paired_bootstrap_95_ci": [
+            0.9857094675472491,
+            1.045995266387708
+          ]
+        },
+        "witness_commit_ms": {
+          "v3": {
+            "median": 0.8896085,
+            "p05": 0.7118508499999999,
+            "p95": 1.0138158999999998,
+            "minimum": 0.704132,
+            "maximum": 1.0369629999999999,
+            "count": 10
+          },
+          "v4": {
+            "median": 0.7882115000000001,
+            "p05": 0.753231,
+            "p95": 0.9753077,
+            "minimum": 0.750891,
+            "maximum": 0.980867,
+            "count": 10
+          },
+          "paired_ratios": [
+            1.0362427778030154,
+            0.7790424790219367,
+            0.8360962102639468,
+            1.1206038072406879,
+            0.8294431901778241,
+            1.0914271057903604,
+            0.8999481087111073,
+            1.034553391138305,
+            0.9339899302096604,
+            1.2140252801600768
+          ],
+          "paired_geomean_ratio": 0.9680666719114394,
+          "paired_bootstrap_95_ci": [
+            0.8890480064171097,
+            1.0575101941774725
+          ]
+        },
+        "proof_prove_ms": {
+          "v3": {
+            "median": 36.5480455,
+            "p05": 35.16490075,
+            "p95": 37.41307845,
+            "minimum": 35.056723,
+            "maximum": 37.51746,
+            "count": 10
+          },
+          "v4": {
+            "median": 36.340548,
+            "p05": 34.676005499999995,
+            "p95": 37.51161145,
+            "minimum": 34.623872999999996,
+            "maximum": 37.54942,
+            "count": 10
+          },
+          "paired_ratios": [
+            1.036274268989717,
+            0.9749826346707801,
+            1.0198553836308428,
+            0.9929698254500641,
+            0.9925480022945904,
+            1.0137659964193109,
+            0.9338983946431625,
+            1.0296823192644478,
+            0.9259614856656073,
+            1.0403143955344627
+          ],
+          "paired_geomean_ratio": 0.9952669656705005,
+          "paired_bootstrap_95_ci": [
+            0.9697452346880793,
+            1.0182678885435095
+          ]
+        },
+        "proof_payload_bytes": {
+          "v3": {
+            "median": 242866.0,
+            "p05": 239965.2,
+            "p95": 243336.4,
+            "minimum": 239778,
+            "maximum": 243394,
+            "count": 10
+          },
+          "v4": {
+            "median": 241754.0,
+            "p05": 240760.4,
+            "p95": 244229.2,
+            "minimum": 240602,
+            "maximum": 245050,
+            "count": 10
+          },
+          "paired_ratios": [
+            0.9969363804817789,
+            0.9953557694683015,
+            0.9946984103463321,
+            0.9989091720450545,
+            1.008240956217835,
+            1.0016986269432209,
+            0.9948294458120981,
+            0.9998355709388077,
+            1.0131978268240043,
+            0.9899751020978331
+          ],
+          "paired_geomean_ratio": 0.9993463619600278,
+          "paired_bootstrap_95_ci": [
+            0.9955639635991074,
+            1.0036775685564188
+          ]
+        }
+      },
+      "grinding_nonce_prefix_means": {
+        "v3": {
+          "binary_bridge": 20970703.3,
+          "binary_joint": 339947.3,
+          "binary_keccak": 7479639.6,
+          "binary_links": 23357.7,
+          "binary_opening": 2146731.8,
+          "native_ring_carry": 0,
+          "pcs_auxiliary": 112.6,
+          "pcs_folds": 213323.5,
+          "pcs_ood": 0,
+          "pcs_queries": 2560.6,
+          "prime_binder": 297575.9,
+          "prime_fingerprint": 426885.8,
+          "prime_forest": 4864861.3,
+          "prime_leaf": 724772.1,
+          "prime_norm": 139811.6,
+          "prime_products": 825244.3,
+          "ring_projection": 11638
+        },
+        "v4": {
+          "binary_bridge": 19738815.9,
+          "binary_joint": 321322,
+          "binary_keccak": 6620809,
+          "binary_links": 20132.5,
+          "binary_opening": 1927912.9,
+          "native_ring_carry": 0,
+          "pcs_auxiliary": 160,
+          "pcs_folds": 219283.3,
+          "pcs_ood": 0,
+          "pcs_queries": 3349.6,
+          "prime_binder": 297812.4,
+          "prime_fingerprint": 766011.4,
+          "prime_forest": 4507115.2,
+          "prime_leaf": 634085.1,
+          "prime_norm": 148984,
+          "prime_products": 704191.6,
+          "ring_projection": 16064
+        }
+      },
+      "paired_process_medians": {
+        "42": {
+          "v3": {
+            "total_prover_ms": 36.177304,
+            "proof_verify_ms": 16.84555,
+            "witness_commit_ms": 0.946561,
+            "proof_prove_ms": 35.056723,
+            "proof_payload_bytes": 242850,
+            "nonce_prefixes": {
+              "binary_bridge": 20373331,
+              "binary_joint": 381280,
+              "binary_keccak": 6590545,
+              "binary_links": 15438,
+              "binary_opening": 1485251,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 69,
+              "pcs_folds": 370903,
+              "pcs_ood": 0,
+              "pcs_queries": 3978,
+              "prime_binder": 278860,
+              "prime_fingerprint": 379625,
+              "prime_forest": 4701468,
+              "prime_leaf": 992570,
+              "prime_norm": 127741,
+              "prime_products": 567794,
+              "ring_projection": 20359
+            },
+            "security_bits": 129.4816884723385
+          },
+          "v4": {
+            "total_prover_ms": 37.453179000000006,
+            "proof_verify_ms": 16.95674,
+            "witness_commit_ms": 0.980867,
+            "proof_prove_ms": 36.32838,
+            "proof_payload_bytes": 242106,
+            "nonce_prefixes": {
+              "binary_bridge": 20084071,
+              "binary_joint": 287763,
+              "binary_keccak": 8379089,
+              "binary_links": 5344,
+              "binary_opening": 2329466,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 76,
+              "pcs_folds": 321030,
+              "pcs_ood": 0,
+              "pcs_queries": 2428,
+              "prime_binder": 330164,
+              "prime_fingerprint": 2949535,
+              "prime_forest": 3430684,
+              "prime_leaf": 1185122,
+              "prime_norm": 211309,
+              "prime_products": 620904,
+              "ring_projection": 2159
+            },
+            "security_bits": 129.48661520055674
+          }
+        },
+        "43": {
+          "v3": {
+            "total_prover_ms": 38.401602999999994,
+            "proof_verify_ms": 16.614512,
+            "witness_commit_ms": 0.963864,
+            "proof_prove_ms": 37.285501,
+            "proof_payload_bytes": 242882,
+            "nonce_prefixes": {
+              "binary_bridge": 21469278,
+              "binary_joint": 481534,
+              "binary_keccak": 7362641,
+              "binary_links": 21152,
+              "binary_opening": 1884155,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 361,
+              "pcs_folds": 112546,
+              "pcs_ood": 0,
+              "pcs_queries": 1399,
+              "prime_binder": 296623,
+              "prime_fingerprint": 105365,
+              "prime_forest": 5118251,
+              "prime_leaf": 845456,
+              "prime_norm": 117977,
+              "prime_products": 836957,
+              "ring_projection": 11028
+            },
+            "security_bits": 129.4816884723385
+          },
+          "v4": {
+            "total_prover_ms": 37.11072000000001,
+            "proof_verify_ms": 17.329515,
+            "witness_commit_ms": 0.750891,
+            "proof_prove_ms": 36.352716,
+            "proof_payload_bytes": 241754,
+            "nonce_prefixes": {
+              "binary_bridge": 18954739,
+              "binary_joint": 346399,
+              "binary_keccak": 6048808,
+              "binary_links": 261,
+              "binary_opening": 2255157,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 77,
+              "pcs_folds": 211086,
+              "pcs_ood": 0,
+              "pcs_queries": 2028,
+              "prime_binder": 271245,
+              "prime_fingerprint": 975847,
+              "prime_forest": 4544700,
+              "prime_leaf": 525519,
+              "prime_norm": 106734,
+              "prime_products": 881676,
+              "ring_projection": 12643
+            },
+            "security_bits": 129.48661520055674
+          }
+        },
+        "44": {
+          "v3": {
+            "total_prover_ms": 37.743057,
+            "proof_verify_ms": 17.115129,
+            "witness_commit_ms": 0.904311,
+            "proof_prove_ms": 36.818377,
+            "proof_payload_bytes": 242946,
+            "nonce_prefixes": {
+              "binary_bridge": 19700222,
+              "binary_joint": 594073,
+              "binary_keccak": 7946709,
+              "binary_links": 27152,
+              "binary_opening": 1909264,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 95,
+              "pcs_folds": 212892,
+              "pcs_ood": 0,
+              "pcs_queries": 2339,
+              "prime_binder": 322588,
+              "prime_fingerprint": 826627,
+              "prime_forest": 4760253,
+              "prime_leaf": 436299,
+              "prime_norm": 154436,
+              "prime_products": 1060277,
+              "ring_projection": 23277
+            },
+            "security_bits": 129.4816884723385
+          },
+          "v4": {
+            "total_prover_ms": 38.293378,
+            "proof_verify_ms": 18.178621999999997,
+            "witness_commit_ms": 0.756091,
+            "proof_prove_ms": 37.54942,
+            "proof_payload_bytes": 241658,
+            "nonce_prefixes": {
+              "binary_bridge": 21343821,
+              "binary_joint": 311024,
+              "binary_keccak": 8651485,
+              "binary_links": 29512,
+              "binary_opening": 1557933,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 54,
+              "pcs_folds": 195975,
+              "pcs_ood": 0,
+              "pcs_queries": 3060,
+              "prime_binder": 283114,
+              "prime_fingerprint": 354364,
+              "prime_forest": 5549659,
+              "prime_leaf": 791603,
+              "prime_norm": 151262,
+              "prime_products": 731940,
+              "ring_projection": 11772
+            },
+            "security_bits": 129.48661520055674
+          }
+        },
+        "45": {
+          "v3": {
+            "total_prover_ms": 36.718418,
+            "proof_verify_ms": 16.161585,
+            "witness_commit_ms": 0.704132,
+            "proof_prove_ms": 36.050314,
+            "proof_payload_bytes": 242018,
+            "nonce_prefixes": {
+              "binary_bridge": 22912966,
+              "binary_joint": 307856,
+              "binary_keccak": 6665362,
+              "binary_links": 6541,
+              "binary_opening": 3153820,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 36,
+              "pcs_folds": 238272,
+              "pcs_ood": 0,
+              "pcs_queries": 2216,
+              "prime_binder": 329875,
+              "prime_fingerprint": 292095,
+              "prime_forest": 4185815,
+              "prime_leaf": 891688,
+              "prime_norm": 131223,
+              "prime_products": 408905,
+              "ring_projection": 3941
+            },
+            "security_bits": 129.4816884723385
+          },
+          "v4": {
+            "total_prover_ms": 36.504353,
+            "proof_verify_ms": 16.629621,
+            "witness_commit_ms": 0.789053,
+            "proof_prove_ms": 35.796874,
+            "proof_payload_bytes": 241754,
+            "nonce_prefixes": {
+              "binary_bridge": 20273012,
+              "binary_joint": 359369,
+              "binary_keccak": 6554381,
+              "binary_links": 43358,
+              "binary_opening": 1876702,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 356,
+              "pcs_folds": 242841,
+              "pcs_ood": 0,
+              "pcs_queries": 1504,
+              "prime_binder": 314205,
+              "prime_fingerprint": 1410480,
+              "prime_forest": 3688749,
+              "prime_leaf": 469504,
+              "prime_norm": 188781,
+              "prime_products": 509994,
+              "ring_projection": 13796
+            },
+            "security_bits": 129.48661520055674
+          }
+        },
+        "46": {
+          "v3": {
+            "total_prover_ms": 37.696218,
+            "proof_verify_ms": 17.64344,
+            "witness_commit_ms": 0.9855249999999999,
+            "proof_prove_ms": 36.710693,
+            "proof_payload_bytes": 239778,
+            "nonce_prefixes": {
+              "binary_bridge": 18329093,
+              "binary_joint": 186882,
+              "binary_keccak": 8817186,
+              "binary_links": 16639,
+              "binary_opening": 2111519,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 105,
+              "pcs_folds": 329870,
+              "pcs_ood": 0,
+              "pcs_queries": 3474,
+              "prime_binder": 378906,
+              "prime_fingerprint": 153862,
+              "prime_forest": 5180462,
+              "prime_leaf": 541478,
+              "prime_norm": 103860,
+              "prime_products": 1180377,
+              "ring_projection": 2335
+            },
+            "security_bits": 129.4816884723385
+          },
+          "v4": {
+            "total_prover_ms": 37.254562,
+            "proof_verify_ms": 16.977028,
+            "witness_commit_ms": 0.817437,
+            "proof_prove_ms": 36.437125,
+            "proof_payload_bytes": 241754,
+            "nonce_prefixes": {
+              "binary_bridge": 19960739,
+              "binary_joint": 413990,
+              "binary_keccak": 5946343,
+              "binary_links": 9229,
+              "binary_opening": 2459226,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 177,
+              "pcs_folds": 134141,
+              "pcs_ood": 0,
+              "pcs_queries": 6246,
+              "prime_binder": 276053,
+              "prime_fingerprint": 76870,
+              "prime_forest": 5291061,
+              "prime_leaf": 440601,
+              "prime_norm": 141371,
+              "prime_products": 752170,
+              "ring_projection": 35602
+            },
+            "security_bits": 129.48661520055674
+          }
+        },
+        "47": {
+          "v3": {
+            "total_prover_ms": 36.00605,
+            "proof_verify_ms": 16.931402000000002,
+            "witness_commit_ms": 0.721285,
+            "proof_prove_ms": 35.297118000000005,
+            "proof_payload_bytes": 240194,
+            "nonce_prefixes": {
+              "binary_bridge": 22343336,
+              "binary_joint": 366647,
+              "binary_keccak": 5788814,
+              "binary_links": 9256,
+              "binary_opening": 1625480,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 117,
+              "pcs_folds": 72856,
+              "pcs_ood": 0,
+              "pcs_queries": 1129,
+              "prime_binder": 290657,
+              "prime_fingerprint": 129696,
+              "prime_forest": 5254824,
+              "prime_leaf": 463536,
+              "prime_norm": 213893,
+              "prime_products": 678676,
+              "ring_projection": 16687
+            },
+            "security_bits": 129.4816884723385
+          },
+          "v4": {
+            "total_prover_ms": 36.561921999999996,
+            "proof_verify_ms": 16.967049000000003,
+            "witness_commit_ms": 0.78723,
+            "proof_prove_ms": 35.783018,
+            "proof_payload_bytes": 240602,
+            "nonce_prefixes": {
+              "binary_bridge": 17897522,
+              "binary_joint": 322314,
+              "binary_keccak": 6221038,
+              "binary_links": 6905,
+              "binary_opening": 1842027,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 174,
+              "pcs_folds": 204526,
+              "pcs_ood": 0,
+              "pcs_queries": 1683,
+              "prime_binder": 237780,
+              "prime_fingerprint": 978711,
+              "prime_forest": 3781560,
+              "prime_leaf": 774935,
+              "prime_norm": 163899,
+              "prime_products": 408260,
+              "ring_projection": 37780
+            },
+            "security_bits": 129.48661520055674
+          }
+        },
+        "48": {
+          "v3": {
+            "total_prover_ms": 37.920832999999995,
+            "proof_verify_ms": 16.595526,
+            "witness_commit_ms": 0.874906,
+            "proof_prove_ms": 37.074560999999996,
+            "proof_payload_bytes": 242914,
+            "nonce_prefixes": {
+              "binary_bridge": 21394278,
+              "binary_joint": 302779,
+              "binary_keccak": 7969263,
+              "binary_links": 9627,
+              "binary_opening": 2375624,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 163,
+              "pcs_folds": 156773,
+              "pcs_ood": 0,
+              "pcs_queries": 3766,
+              "prime_binder": 219986,
+              "prime_fingerprint": 667079,
+              "prime_forest": 5367682,
+              "prime_leaf": 922247,
+              "prime_norm": 105381,
+              "prime_products": 628757,
+              "ring_projection": 122
+            },
+            "security_bits": 129.4816884723385
+          },
+          "v4": {
+            "total_prover_ms": 35.397467,
+            "proof_verify_ms": 16.745279,
+            "witness_commit_ms": 0.78737,
+            "proof_prove_ms": 34.623872999999996,
+            "proof_payload_bytes": 241658,
+            "nonce_prefixes": {
+              "binary_bridge": 19926492,
+              "binary_joint": 317800,
+              "binary_keccak": 6153155,
+              "binary_links": 38199,
+              "binary_opening": 1377062,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 159,
+              "pcs_folds": 151702,
+              "pcs_ood": 0,
+              "pcs_queries": 6147,
+              "prime_binder": 273354,
+              "prime_fingerprint": 202940,
+              "prime_forest": 4577538,
+              "prime_leaf": 541276,
+              "prime_norm": 141272,
+              "prime_products": 895288,
+              "ring_projection": 25414
+            },
+            "security_bits": 129.48661520055674
+          }
+        },
+        "49": {
+          "v3": {
+            "total_prover_ms": 37.141619,
+            "proof_verify_ms": 18.279894000000002,
+            "witness_commit_ms": 0.7562209999999999,
+            "proof_prove_ms": 36.385398,
+            "proof_payload_bytes": 243266,
+            "nonce_prefixes": {
+              "binary_bridge": 19336731,
+              "binary_joint": 254864,
+              "binary_keccak": 8952606,
+              "binary_links": 26470,
+              "binary_opening": 2163480,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 68,
+              "pcs_folds": 214457,
+              "pcs_ood": 0,
+              "pcs_queries": 3383,
+              "prime_binder": 286474,
+              "prime_fingerprint": 1218625,
+              "prime_forest": 5398138,
+              "prime_leaf": 668991,
+              "prime_norm": 211884,
+              "prime_products": 935999,
+              "ring_projection": 26232
+            },
+            "security_bits": 129.4816884723385
+          },
+          "v4": {
+            "total_prover_ms": 38.216703,
+            "proof_verify_ms": 16.816826,
+            "witness_commit_ms": 0.782351,
+            "proof_prove_ms": 37.465401,
+            "proof_payload_bytes": 243226,
+            "nonce_prefixes": {
+              "binary_bridge": 19027237,
+              "binary_joint": 262513,
+              "binary_keccak": 5910205,
+              "binary_links": 8335,
+              "binary_opening": 1066507,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 80,
+              "pcs_folds": 103969,
+              "pcs_ood": 0,
+              "pcs_queries": 4887,
+              "prime_binder": 347887,
+              "prime_fingerprint": 343839,
+              "prime_forest": 4733239,
+              "prime_leaf": 399052,
+              "prime_norm": 91164,
+              "prime_products": 735174,
+              "ring_projection": 4706
+            },
+            "security_bits": 129.48661520055674
+          }
+        },
+        "50": {
+          "v3": {
+            "total_prover_ms": 38.720426,
+            "proof_verify_ms": 17.694997,
+            "witness_commit_ms": 1.0369629999999999,
+            "proof_prove_ms": 37.51746,
+            "proof_payload_bytes": 241858,
+            "nonce_prefixes": {
+              "binary_bridge": 22144669,
+              "binary_joint": 278432,
+              "binary_keccak": 7558473,
+              "binary_links": 67540,
+              "binary_opening": 2305512,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 50,
+              "pcs_folds": 233078,
+              "pcs_ood": 0,
+              "pcs_queries": 1590,
+              "prime_binder": 246976,
+              "prime_fingerprint": 381819,
+              "prime_forest": 4795330,
+              "prime_leaf": 516236,
+              "prime_norm": 123027,
+              "prime_products": 1227942,
+              "ring_projection": 2898
+            },
+            "security_bits": 129.4816884723385
+          },
+          "v4": {
+            "total_prover_ms": 35.902263,
+            "proof_verify_ms": 18.370003999999998,
+            "witness_commit_ms": 0.968513,
+            "proof_prove_ms": 34.739723,
+            "proof_payload_bytes": 245050,
+            "nonce_prefixes": {
+              "binary_bridge": 18721279,
+              "binary_joint": 262789,
+              "binary_keccak": 5496708,
+              "binary_links": 57866,
+              "binary_opening": 1753462,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 241,
+              "pcs_folds": 392898,
+              "pcs_ood": 0,
+              "pcs_queries": 4121,
+              "prime_binder": 440954,
+              "prime_fingerprint": 311009,
+              "prime_forest": 4439444,
+              "prime_leaf": 696504,
+              "prime_norm": 174215,
+              "prime_products": 583569,
+              "ring_projection": 16549
+            },
+            "security_bits": 129.48661520055674
+          }
+        },
+        "51": {
+          "v3": {
+            "total_prover_ms": 36.265319999999996,
+            "proof_verify_ms": 17.051509,
+            "witness_commit_ms": 0.775628,
+            "proof_prove_ms": 35.523787,
+            "proof_payload_bytes": 243394,
+            "nonce_prefixes": {
+              "binary_bridge": 21703129,
+              "binary_joint": 245126,
+              "binary_keccak": 7144797,
+              "binary_links": 33762,
+              "binary_opening": 2453213,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 62,
+              "pcs_folds": 191588,
+              "pcs_ood": 0,
+              "pcs_queries": 2332,
+              "prime_binder": 324814,
+              "prime_fingerprint": 114065,
+              "prime_forest": 3886390,
+              "prime_leaf": 969220,
+              "prime_norm": 108694,
+              "prime_products": 726759,
+              "ring_projection": 9501
+            },
+            "security_bits": 129.4816884723385
+          },
+          "v4": {
+            "total_prover_ms": 37.921234000000005,
+            "proof_verify_ms": 18.788897,
+            "witness_commit_ms": 0.941632,
+            "proof_prove_ms": 36.955907,
+            "proof_payload_bytes": 240954,
+            "nonce_prefixes": {
+              "binary_bridge": 21199247,
+              "binary_joint": 329259,
+              "binary_keccak": 6846878,
+              "binary_links": 2316,
+              "binary_opening": 2761587,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 206,
+              "pcs_folds": 234665,
+              "pcs_ood": 0,
+              "pcs_queries": 1392,
+              "prime_binder": 203368,
+              "prime_fingerprint": 56519,
+              "prime_forest": 5034518,
+              "prime_leaf": 516735,
+              "prime_norm": 119833,
+              "prime_products": 922941,
+              "ring_projection": 219
+            },
+            "security_bits": 129.48661520055674
+          }
+        }
+      }
+    },
+    {
+      "security": 128,
+      "batch": 32,
+      "threads": 16,
+      "seeds": [
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51
+      ],
+      "metrics": {
+        "total_prover_ms": {
+          "v3": {
+            "median": 82.2461615,
+            "p05": 77.78400995,
+            "p95": 84.87013999999999,
+            "minimum": 76.69964,
+            "maximum": 85.588142,
+            "count": 10
+          },
+          "v4": {
+            "median": 82.92899350000002,
+            "p05": 80.88013765,
+            "p95": 84.97084960000001,
+            "minimum": 80.46225099999998,
+            "maximum": 85.401649,
+            "count": 10
+          },
+          "paired_ratios": [
+            0.9866357070819459,
+            0.9920610543023546,
+            1.057220509533308,
+            0.9861401569962456,
+            1.0247071974250432,
+            0.9963528898078583,
+            1.0034844560033043,
+            1.0825282752304966,
+            1.0171016445325152,
+            0.9967806489580252
+          ],
+          "paired_geomean_ratio": 1.013847484137811,
+          "paired_bootstrap_95_ci": [
+            0.9969201326883714,
+            1.0336930587017852
+          ]
+        },
+        "proof_verify_ms": {
+          "v3": {
+            "median": 20.280074,
+            "p05": 19.76256035,
+            "p95": 20.798265599999997,
+            "minimum": 19.740338,
+            "maximum": 20.870324999999998,
+            "count": 10
+          },
+          "v4": {
+            "median": 20.5136765,
+            "p05": 19.974733099999998,
+            "p95": 21.0040044,
+            "minimum": 19.910951,
+            "maximum": 21.276915,
+            "count": 10
+          },
+          "paired_ratios": [
+            1.0369961103141618,
+            1.0328401469971813,
+            0.9988481360360186,
+            1.0274874516927248,
+            0.9969154802178813,
+            0.981789778917518,
+            1.0438319242558056,
+            0.981532726490843,
+            1.0162801656769667,
+            0.9887967828620758
+          ],
+          "paired_geomean_ratio": 1.0102803194200838,
+          "paired_bootstrap_95_ci": [
+            0.9967080528327181,
+            1.0242017143038888
+          ]
+        },
+        "witness_commit_ms": {
+          "v3": {
+            "median": 5.479744999999999,
+            "p05": 5.206866,
+            "p95": 5.714375499999999,
+            "minimum": 5.178570000000001,
+            "maximum": 5.8356639999999995,
+            "count": 10
+          },
+          "v4": {
+            "median": 5.489478500000001,
+            "p05": 4.80880335,
+            "p95": 5.603640400000001,
+            "minimum": 4.501209,
+            "maximum": 5.6147860000000005,
+            "count": 10
+          },
+          "paired_ratios": [
+            1.0490639307762566,
+            1.0623104293659198,
+            0.8884596508640662,
+            1.0396036505828392,
+            1.0014913811516988,
+            0.8219985525754242,
+            1.0042909495172054,
+            1.0018301244895875,
+            0.9888001528934595,
+            1.0037926285562426
+          ],
+          "paired_geomean_ratio": 0.9834410531547529,
+          "paired_bootstrap_95_ci": [
+            0.9336012096011529,
+            1.0246941214735172
+          ]
+        },
+        "proof_prove_ms": {
+          "v3": {
+            "median": 76.7352625,
+            "p05": 72.1492302,
+            "p95": 79.5557484,
+            "minimum": 71.08248,
+            "maximum": 80.156853,
+            "count": 10
+          },
+          "v4": {
+            "median": 77.6072225,
+            "p05": 75.2611175,
+            "p95": 79.74884985,
+            "minimum": 75.04010899999999,
+            "maximum": 80.359386,
+            "count": 10
+          },
+          "paired_ratios": [
+            0.9856005574470346,
+            0.987001169463773,
+            1.0713250500361016,
+            0.9784795980617621,
+            1.0282929489803525,
+            1.0092230454652216,
+            1.0029638170066257,
+            1.0904154160068698,
+            1.0179423196790847,
+            0.9974994146186195
+          ],
+          "paired_geomean_ratio": 1.016274135326265,
+          "paired_bootstrap_95_ci": [
+            0.9967757246418141,
+            1.0389852773756034
+          ]
+        },
+        "proof_payload_bytes": {
+          "v3": {
+            "median": 522738.0,
+            "p05": 519646.8,
+            "p95": 525189.2,
+            "minimum": 519618,
+            "maximum": 525794,
+            "count": 10
+          },
+          "v4": {
+            "median": 503378.0,
+            "p05": 500358.8,
+            "p95": 504611.6,
+            "minimum": 500114,
+            "maximum": 504626,
+            "count": 10
+          },
+          "paired_ratios": [
+            0.957087091335217,
+            0.9608832566750005,
+            0.9624647337082242,
+            0.9622004004194871,
+            0.9579150770073451,
+            0.9651741103049563,
+            0.9680249891326509,
+            0.9599573917326216,
+            0.9678083847036123,
+            0.9653634337922037
+          ],
+          "paired_geomean_ratio": 0.9626809694441194,
+          "paired_bootstrap_95_ci": [
+            0.9604873748532458,
+            0.9649326219345743
+          ]
+        }
+      },
+      "grinding_nonce_prefix_means": {
+        "v3": {
+          "binary_bridge": 58397158.9,
+          "binary_joint": 447793.8,
+          "binary_keccak": 8337730,
+          "binary_links": 33466.8,
+          "binary_opening": 3223482.9,
+          "native_ring_carry": 0,
+          "pcs_auxiliary": 756,
+          "pcs_folds": 12792157.8,
+          "pcs_ood": 0,
+          "pcs_queries": 10885.3,
+          "prime_binder": 356622.5,
+          "prime_fingerprint": 401270.3,
+          "prime_forest": 8428642.5,
+          "prime_leaf": 2191805,
+          "prime_norm": 266418.4,
+          "prime_products": 2080438,
+          "ring_projection": 18295.1
+        },
+        "v4": {
+          "binary_bridge": 57141560.2,
+          "binary_joint": 410938.4,
+          "binary_keccak": 8678339.1,
+          "binary_links": 37067.6,
+          "binary_opening": 3115203.4,
+          "native_ring_carry": 0,
+          "pcs_auxiliary": 514.1,
+          "pcs_folds": 11217737.5,
+          "pcs_ood": 0,
+          "pcs_queries": 9583.9,
+          "prime_binder": 355116,
+          "prime_fingerprint": 198256.5,
+          "prime_forest": 16467901.5,
+          "prime_leaf": 1097762.2,
+          "prime_norm": 252150.1,
+          "prime_products": 1019683.2,
+          "ring_projection": 29206.9
+        }
+      },
+      "paired_process_medians": {
+        "42": {
+          "v3": {
+            "total_prover_ms": 85.588142,
+            "proof_verify_ms": 19.809569,
+            "witness_commit_ms": 5.178570000000001,
+            "proof_prove_ms": 80.156853,
+            "proof_payload_bytes": 523106,
+            "nonce_prefixes": {
+              "binary_bridge": 63344965,
+              "binary_joint": 425529,
+              "binary_keccak": 8489542,
+              "binary_links": 8143,
+              "binary_opening": 2197521,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 501,
+              "pcs_folds": 12735768,
+              "pcs_ood": 0,
+              "pcs_queries": 14822,
+              "prime_binder": 372122,
+              "prime_fingerprint": 76838,
+              "prime_forest": 8827442,
+              "prime_leaf": 1294621,
+              "prime_norm": 259503,
+              "prime_products": 2523793,
+              "ring_projection": 10124
+            },
+            "security_bits": 129.4360781427549
+          },
+          "v4": {
+            "total_prover_ms": 84.444317,
+            "proof_verify_ms": 20.542445999999998,
+            "witness_commit_ms": 5.432651,
+            "proof_prove_ms": 79.002639,
+            "proof_payload_bytes": 500658,
+            "nonce_prefixes": {
+              "binary_bridge": 58840841,
+              "binary_joint": 351324,
+              "binary_keccak": 8090467,
+              "binary_links": 49705,
+              "binary_opening": 3632784,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 132,
+              "pcs_folds": 8856923,
+              "pcs_ood": 0,
+              "pcs_queries": 7661,
+              "prime_binder": 329960,
+              "prime_fingerprint": 185053,
+              "prime_forest": 16273259,
+              "prime_leaf": 1432071,
+              "prime_norm": 272840,
+              "prime_products": 972245,
+              "ring_projection": 42490
+            },
+            "security_bits": 129.41361885615748
+          }
+        },
+        "43": {
+          "v3": {
+            "total_prover_ms": 83.96983999999999,
+            "proof_verify_ms": 20.600395,
+            "witness_commit_ms": 5.2414499999999995,
+            "proof_prove_ms": 78.72838999999999,
+            "proof_payload_bytes": 523970,
+            "nonce_prefixes": {
+              "binary_bridge": 61433538,
+              "binary_joint": 553839,
+              "binary_keccak": 8284820,
+              "binary_links": 46651,
+              "binary_opening": 3341081,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 774,
+              "pcs_folds": 8903989,
+              "pcs_ood": 0,
+              "pcs_queries": 11707,
+              "prime_binder": 306045,
+              "prime_fingerprint": 333555,
+              "prime_forest": 6141881,
+              "prime_leaf": 2246835,
+              "prime_norm": 251502,
+              "prime_products": 1361020,
+              "ring_projection": 8063
+            },
+            "security_bits": 129.4360781427549
+          },
+          "v4": {
+            "total_prover_ms": 83.30320800000001,
+            "proof_verify_ms": 21.276915,
+            "witness_commit_ms": 5.568047,
+            "proof_prove_ms": 77.70501300000001,
+            "proof_payload_bytes": 503474,
+            "nonce_prefixes": {
+              "binary_bridge": 58135314,
+              "binary_joint": 521743,
+              "binary_keccak": 9955443,
+              "binary_links": 8311,
+              "binary_opening": 3066462,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 194,
+              "pcs_folds": 7789320,
+              "pcs_ood": 0,
+              "pcs_queries": 8254,
+              "prime_binder": 340867,
+              "prime_fingerprint": 112264,
+              "prime_forest": 14211478,
+              "prime_leaf": 746537,
+              "prime_norm": 212208,
+              "prime_products": 741021,
+              "ring_projection": 18302
+            },
+            "security_bits": 129.41361885615748
+          }
+        },
+        "44": {
+          "v3": {
+            "total_prover_ms": 80.77941,
+            "proof_verify_ms": 20.694284,
+            "witness_commit_ms": 5.8356639999999995,
+            "proof_prove_ms": 75.00934099999999,
+            "proof_payload_bytes": 519618,
+            "nonce_prefixes": {
+              "binary_bridge": 52803891,
+              "binary_joint": 416525,
+              "binary_keccak": 7738115,
+              "binary_links": 47973,
+              "binary_opening": 3324583,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 1686,
+              "pcs_folds": 8269985,
+              "pcs_ood": 0,
+              "pcs_queries": 7464,
+              "prime_binder": 365724,
+              "prime_fingerprint": 273277,
+              "prime_forest": 11545555,
+              "prime_leaf": 1627627,
+              "prime_norm": 379114,
+              "prime_products": 2727583,
+              "ring_projection": 13594
+            },
+            "security_bits": 129.4360781427549
+          },
+          "v4": {
+            "total_prover_ms": 85.401649,
+            "proof_verify_ms": 20.670447000000003,
+            "witness_commit_ms": 5.184752,
+            "proof_prove_ms": 80.359386,
+            "proof_payload_bytes": 500114,
+            "nonce_prefixes": {
+              "binary_bridge": 56177683,
+              "binary_joint": 374599,
+              "binary_keccak": 9963454,
+              "binary_links": 29277,
+              "binary_opening": 2910843,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 122,
+              "pcs_folds": 19190914,
+              "pcs_ood": 0,
+              "pcs_queries": 7839,
+              "prime_binder": 264150,
+              "prime_fingerprint": 390394,
+              "prime_forest": 18092152,
+              "prime_leaf": 1181483,
+              "prime_norm": 366974,
+              "prime_products": 1285445,
+              "ring_projection": 28188
+            },
+            "security_bits": 129.41361885615748
+          }
+        },
+        "45": {
+          "v3": {
+            "total_prover_ms": 83.99258199999998,
+            "proof_verify_ms": 19.789721,
+            "witness_commit_ms": 5.400891,
+            "proof_prove_ms": 78.82106499999999,
+            "proof_payload_bytes": 524450,
+            "nonce_prefixes": {
+              "binary_bridge": 56812066,
+              "binary_joint": 330439,
+              "binary_keccak": 7754697,
+              "binary_links": 96152,
+              "binary_opening": 3217479,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 1173,
+              "pcs_folds": 28162699,
+              "pcs_ood": 0,
+              "pcs_queries": 7743,
+              "prime_binder": 300774,
+              "prime_fingerprint": 333628,
+              "prime_forest": 8877091,
+              "prime_leaf": 1733624,
+              "prime_norm": 141920,
+              "prime_products": 1674836,
+              "ring_projection": 21248
+            },
+            "security_bits": 129.4360781427549
+          },
+          "v4": {
+            "total_prover_ms": 82.82845800000001,
+            "proof_verify_ms": 20.33369,
+            "witness_commit_ms": 5.6147860000000005,
+            "proof_prove_ms": 77.12480400000001,
+            "proof_payload_bytes": 504626,
+            "nonce_prefixes": {
+              "binary_bridge": 56434594,
+              "binary_joint": 390966,
+              "binary_keccak": 10426542,
+              "binary_links": 10590,
+              "binary_opening": 3445048,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 563,
+              "pcs_folds": 12818184,
+              "pcs_ood": 0,
+              "pcs_queries": 7248,
+              "prime_binder": 332016,
+              "prime_fingerprint": 140260,
+              "prime_forest": 20490528,
+              "prime_leaf": 1353776,
+              "prime_norm": 264856,
+              "prime_products": 921616,
+              "ring_projection": 2731
+            },
+            "security_bits": 129.41361885615748
+          }
+        },
+        "46": {
+          "v3": {
+            "total_prover_ms": 79.428434,
+            "proof_verify_ms": 20.710192999999997,
+            "witness_commit_ms": 5.529102999999999,
+            "proof_prove_ms": 73.453036,
+            "proof_payload_bytes": 525794,
+            "nonce_prefixes": {
+              "binary_bridge": 55122203,
+              "binary_joint": 436186,
+              "binary_keccak": 8904559,
+              "binary_links": 11,
+              "binary_opening": 4097202,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 560,
+              "pcs_folds": 12760879,
+              "pcs_ood": 0,
+              "pcs_queries": 11892,
+              "prime_binder": 410993,
+              "prime_fingerprint": 1146846,
+              "prime_forest": 7260617,
+              "prime_leaf": 2740741,
+              "prime_norm": 197972,
+              "prime_products": 1808442,
+              "ring_projection": 18416
+            },
+            "security_bits": 129.4360781427549
+          },
+          "v4": {
+            "total_prover_ms": 81.390888,
+            "proof_verify_ms": 20.646312,
+            "witness_commit_ms": 5.537349,
+            "proof_prove_ms": 75.531239,
+            "proof_payload_bytes": 503666,
+            "nonce_prefixes": {
+              "binary_bridge": 59644488,
+              "binary_joint": 261564,
+              "binary_keccak": 8245225,
+              "binary_links": 59752,
+              "binary_opening": 3491935,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 1039,
+              "pcs_folds": 8251370,
+              "pcs_ood": 0,
+              "pcs_queries": 6117,
+              "prime_binder": 415065,
+              "prime_fingerprint": 274415,
+              "prime_forest": 16364170,
+              "prime_leaf": 905617,
+              "prime_norm": 213684,
+              "prime_products": 1324145,
+              "ring_projection": 10323
+            },
+            "security_bits": 129.41361885615748
+          }
+        },
+        "47": {
+          "v3": {
+            "total_prover_ms": 82.547547,
+            "proof_verify_ms": 20.280258999999997,
+            "witness_commit_ms": 5.4759329999999995,
+            "proof_prove_ms": 77.071614,
+            "proof_payload_bytes": 522370,
+            "nonce_prefixes": {
+              "binary_bridge": 64890446,
+              "binary_joint": 481043,
+              "binary_keccak": 7461737,
+              "binary_links": 48643,
+              "binary_opening": 2986801,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 249,
+              "pcs_folds": 10117297,
+              "pcs_ood": 0,
+              "pcs_queries": 5912,
+              "prime_binder": 408455,
+              "prime_fingerprint": 748269,
+              "prime_forest": 7763746,
+              "prime_leaf": 2962130,
+              "prime_norm": 308334,
+              "prime_products": 2055884,
+              "ring_projection": 8114
+            },
+            "security_bits": 129.4360781427549
+          },
+          "v4": {
+            "total_prover_ms": 82.246487,
+            "proof_verify_ms": 19.910951,
+            "witness_commit_ms": 4.501209,
+            "proof_prove_ms": 77.782449,
+            "proof_payload_bytes": 504178,
+            "nonce_prefixes": {
+              "binary_bridge": 56062536,
+              "binary_joint": 393287,
+              "binary_keccak": 9007578,
+              "binary_links": 23999,
+              "binary_opening": 2367707,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 425,
+              "pcs_folds": 9030876,
+              "pcs_ood": 0,
+              "pcs_queries": 7863,
+              "prime_binder": 408746,
+              "prime_fingerprint": 43960,
+              "prime_forest": 17813083,
+              "prime_leaf": 849939,
+              "prime_norm": 166570,
+              "prime_products": 837809,
+              "ring_projection": 1123
+            },
+            "security_bits": 129.41361885615748
+          }
+        },
+        "48": {
+          "v3": {
+            "total_prover_ms": 83.065477,
+            "proof_verify_ms": 19.740338,
+            "witness_commit_ms": 5.566134,
+            "proof_prove_ms": 77.499724,
+            "proof_payload_bytes": 519906,
+            "nonce_prefixes": {
+              "binary_bridge": 59037281,
+              "binary_joint": 567100,
+              "binary_keccak": 10277285,
+              "binary_links": 40965,
+              "binary_opening": 3157935,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 582,
+              "pcs_folds": 16867190,
+              "pcs_ood": 0,
+              "pcs_queries": 7488,
+              "prime_binder": 473082,
+              "prime_fingerprint": 201001,
+              "prime_forest": 9786963,
+              "prime_leaf": 2634201,
+              "prime_norm": 315218,
+              "prime_products": 2207366,
+              "ring_projection": 56248
+            },
+            "security_bits": 129.4360781427549
+          },
+          "v4": {
+            "total_prover_ms": 83.35491499999999,
+            "proof_verify_ms": 20.605595,
+            "witness_commit_ms": 5.590018000000001,
+            "proof_prove_ms": 77.729419,
+            "proof_payload_bytes": 503282,
+            "nonce_prefixes": {
+              "binary_bridge": 59478038,
+              "binary_joint": 409441,
+              "binary_keccak": 7179623,
+              "binary_links": 1809,
+              "binary_opening": 3398729,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 986,
+              "pcs_folds": 11769516,
+              "pcs_ood": 0,
+              "pcs_queries": 12282,
+              "prime_binder": 369098,
+              "prime_fingerprint": 279029,
+              "prime_forest": 15303105,
+              "prime_leaf": 1577798,
+              "prime_norm": 264051,
+              "prime_products": 1225444,
+              "ring_projection": 88876
+            },
+            "security_bits": 129.41361885615748
+          }
+        },
+        "49": {
+          "v3": {
+            "total_prover_ms": 76.69964,
+            "proof_verify_ms": 20.870324999999998,
+            "witness_commit_ms": 5.495801,
+            "proof_prove_ms": 71.08248,
+            "proof_payload_bytes": 523842,
+            "nonce_prefixes": {
+              "binary_bridge": 55655841,
+              "binary_joint": 552800,
+              "binary_keccak": 6951172,
+              "binary_links": 14856,
+              "binary_opening": 2976673,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 837,
+              "pcs_folds": 12239865,
+              "pcs_ood": 0,
+              "pcs_queries": 18395,
+              "prime_binder": 381102,
+              "prime_fingerprint": 298139,
+              "prime_forest": 6741263,
+              "prime_leaf": 2074555,
+              "prime_norm": 422277,
+              "prime_products": 2897209,
+              "ring_projection": 7775
+            },
+            "security_bits": 129.4360781427549
+          },
+          "v4": {
+            "total_prover_ms": 83.02952900000001,
+            "proof_verify_ms": 20.484907,
+            "witness_commit_ms": 5.505859,
+            "proof_prove_ms": 77.509432,
+            "proof_payload_bytes": 502866,
+            "nonce_prefixes": {
+              "binary_bridge": 55529808,
+              "binary_joint": 498814,
+              "binary_keccak": 7753601,
+              "binary_links": 92750,
+              "binary_opening": 2323151,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 117,
+              "pcs_folds": 17874088,
+              "pcs_ood": 0,
+              "pcs_queries": 19846,
+              "prime_binder": 367808,
+              "prime_fingerprint": 68334,
+              "prime_forest": 16593424,
+              "prime_leaf": 1167609,
+              "prime_norm": 232736,
+              "prime_products": 636473,
+              "ring_projection": 42843
+            },
+            "security_bits": 129.41361885615748
+          }
+        },
+        "50": {
+          "v3": {
+            "total_prover_ms": 79.109351,
+            "proof_verify_ms": 19.890031,
+            "witness_commit_ms": 5.483557,
+            "proof_prove_ms": 73.717447,
+            "proof_payload_bytes": 521378,
+            "nonce_prefixes": {
+              "binary_bridge": 53309104,
+              "binary_joint": 282923,
+              "binary_keccak": 8275337,
+              "binary_links": 29421,
+              "binary_opening": 3177738,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 495,
+              "pcs_folds": 7047345,
+              "pcs_ood": 0,
+              "pcs_queries": 14736,
+              "prime_binder": 282352,
+              "prime_fingerprint": 530801,
+              "prime_forest": 9577286,
+              "prime_leaf": 2694595,
+              "prime_norm": 179792,
+              "prime_products": 1771173,
+              "ring_projection": 14563
+            },
+            "security_bits": 129.4360781427549
+          },
+          "v4": {
+            "total_prover_ms": 80.46225099999998,
+            "proof_verify_ms": 20.213844,
+            "witness_commit_ms": 5.422142,
+            "proof_prove_ms": 75.04010899999999,
+            "proof_payload_bytes": 504594,
+            "nonce_prefixes": {
+              "binary_bridge": 55841256,
+              "binary_joint": 387335,
+              "binary_keccak": 8543561,
+              "binary_links": 86579,
+              "binary_opening": 2879809,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 463,
+              "pcs_folds": 5448391,
+              "pcs_ood": 0,
+              "pcs_queries": 7098,
+              "prime_binder": 372538,
+              "prime_fingerprint": 117250,
+              "prime_forest": 14678436,
+              "prime_leaf": 1281132,
+              "prime_norm": 222215,
+              "prime_products": 1264230,
+              "ring_projection": 29646
+            },
+            "security_bits": 129.41361885615748
+          }
+        },
+        "51": {
+          "v3": {
+            "total_prover_ms": 81.944776,
+            "proof_verify_ms": 20.279888999999997,
+            "witness_commit_ms": 5.452419,
+            "proof_prove_ms": 76.398911,
+            "proof_payload_bytes": 519682,
+            "nonce_prefixes": {
+              "binary_bridge": 61562254,
+              "binary_joint": 431554,
+              "binary_keccak": 9240036,
+              "binary_links": 1853,
+              "binary_opening": 3757816,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 703,
+              "pcs_folds": 10816561,
+              "pcs_ood": 0,
+              "pcs_queries": 8694,
+              "prime_binder": 265576,
+              "prime_fingerprint": 70349,
+              "prime_forest": 7764581,
+              "prime_leaf": 1909121,
+              "prime_norm": 208552,
+              "prime_products": 1777074,
+              "ring_projection": 24806
+            },
+            "security_bits": 129.4360781427549
+          },
+          "v4": {
+            "total_prover_ms": 81.68096700000001,
+            "proof_verify_ms": 20.052688999999997,
+            "witness_commit_ms": 5.473098,
+            "proof_prove_ms": 76.207869,
+            "proof_payload_bytes": 501682,
+            "nonce_prefixes": {
+              "binary_bridge": 55271044,
+              "binary_joint": 520311,
+              "binary_keccak": 7617897,
+              "binary_links": 7904,
+              "binary_opening": 3635566,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 1100,
+              "pcs_folds": 11147793,
+              "pcs_ood": 0,
+              "pcs_queries": 11631,
+              "prime_binder": 350912,
+              "prime_fingerprint": 371606,
+              "prime_forest": 14859380,
+              "prime_leaf": 481660,
+              "prime_norm": 305367,
+              "prime_products": 988404,
+              "ring_projection": 27547
+            },
+            "security_bits": 129.41361885615748
+          }
+        }
+      }
+    },
+    {
+      "security": 128,
+      "batch": 1024,
+      "threads": 16,
+      "seeds": [
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51
+      ],
+      "metrics": {
+        "total_prover_ms": {
+          "v3": {
+            "median": 934.1297099999999,
+            "p05": 900.1303378,
+            "p95": 999.0468761,
+            "minimum": 892.495681,
+            "maximum": 1025.679335,
+            "count": 10
+          },
+          "v4": {
+            "median": 949.0230385,
+            "p05": 906.2843665,
+            "p95": 1084.2755058999999,
+            "minimum": 904.020358,
+            "maximum": 1127.697238,
+            "count": 10
+          },
+          "paired_ratios": [
+            1.0076713598184601,
+            0.9940170897927482,
+            0.9900465148888296,
+            0.9421231135824017,
+            1.0300148847442996,
+            1.092332304497672,
+            1.0669515453488752,
+            1.0212338881480703,
+            1.2302127941929049,
+            0.9292198589532858
+          ],
+          "paired_geomean_ratio": 1.0273165720386919,
+          "paired_bootstrap_95_ci": [
+            0.9839092215667512,
+            1.0806379342451884
+          ]
+        },
+        "proof_verify_ms": {
+          "v3": {
+            "median": 62.8598195,
+            "p05": 62.19741585,
+            "p95": 66.4747164,
+            "minimum": 62.196743999999995,
+            "maximum": 66.885948,
+            "count": 10
+          },
+          "v4": {
+            "median": 61.337182999999996,
+            "p05": 60.2876721,
+            "p95": 63.35655575,
+            "minimum": 59.893446000000004,
+            "maximum": 63.788126,
+            "count": 10
+          },
+          "paired_ratios": [
+            0.9861499868462227,
+            0.9555209166132088,
+            0.9790461693490897,
+            0.9429891120640391,
+            0.981645737316231,
+            0.9583218923472344,
+            0.9891790662812515,
+            0.9806950102856634,
+            1.0255862589848754,
+            0.9087563354861921
+          ],
+          "paired_geomean_ratio": 0.970328470980523,
+          "paired_bootstrap_95_ci": [
+            0.9508332107535338,
+            0.9884787758972283
+          ]
+        },
+        "witness_commit_ms": {
+          "v3": {
+            "median": 144.3868125,
+            "p05": 137.94453685,
+            "p95": 151.03739269999997,
+            "minimum": 136.50995799999998,
+            "maximum": 155.31671899999998,
+            "count": 10
+          },
+          "v4": {
+            "median": 142.33016349999997,
+            "p05": 139.871879,
+            "p95": 151.4449905,
+            "minimum": 139.20418700000002,
+            "maximum": 154.971906,
+            "count": 10
+          },
+          "paired_ratios": [
+            0.9803079944255763,
+            1.0091025125284534,
+            0.9754810899263483,
+            0.9954477225288224,
+            1.0197365015671607,
+            1.0056448248899306,
+            0.9851626192028822,
+            1.00934488562252,
+            1.084885236731865,
+            0.9196089765455322
+          ],
+          "paired_geomean_ratio": 0.9977005795424496,
+          "paired_bootstrap_95_ci": [
+            0.973388739210308,
+            1.0227089297214513
+          ]
+        },
+        "proof_prove_ms": {
+          "v3": {
+            "median": 792.6511385,
+            "p05": 762.55808665,
+            "p95": 848.8964866,
+            "minimum": 757.282567,
+            "maximum": 866.616718,
+            "count": 10
+          },
+          "v4": {
+            "median": 807.764226,
+            "p05": 758.3912924,
+            "p95": 935.6681955999999,
+            "minimum": 755.113928,
+            "maximum": 972.725332,
+            "count": 10
+          },
+          "paired_ratios": [
+            1.0076506422276401,
+            0.9763263774337975,
+            0.9924153577798136,
+            0.929007625223611,
+            1.024687125803069,
+            1.0972272003242987,
+            1.0763234782326225,
+            1.0254721945296172,
+            1.2633129804414087,
+            0.9352363693957726
+          ],
+          "paired_geomean_ratio": 1.0289172913252829,
+          "paired_bootstrap_95_ci": [
+            0.9813546317821776,
+            1.0889622285194143
+          ]
+        },
+        "proof_payload_bytes": {
+          "v3": {
+            "median": 2013474.0,
+            "p05": 2009400.4,
+            "p95": 2015597.2,
+            "minimum": 2008882,
+            "maximum": 2015986,
+            "count": 10
+          },
+          "v4": {
+            "median": 1297834.0,
+            "p05": 1294902.8,
+            "p95": 1300941.2,
+            "minimum": 1294874,
+            "maximum": 1301402,
+            "count": 10
+          },
+          "paired_ratios": [
+            0.6425886684961962,
+            0.6455395494113149,
+            0.6457980329630422,
+            0.6445310753659212,
+            0.6458179703263623,
+            0.6453353525363252,
+            0.6429573681477075,
+            0.644763406095082,
+            0.647314277294535,
+            0.6440226761200185
+          ],
+          "paired_geomean_ratio": 0.6448654336017042,
+          "paired_bootstrap_95_ci": [
+            0.6440179216701735,
+            0.6456845841315983
+          ]
+        }
+      },
+      "grinding_nonce_prefix_means": {
+        "v3": {
+          "binary_bridge": 75988167.2,
+          "binary_joint": 540977.9,
+          "binary_keccak": 9913454.2,
+          "binary_links": 21168.5,
+          "binary_opening": 3886761.1,
+          "native_ring_carry": 0,
+          "pcs_auxiliary": 733,
+          "pcs_folds": 315023153.3,
+          "pcs_ood": 0,
+          "pcs_queries": 11845.9,
+          "prime_binder": 1148940.6,
+          "prime_fingerprint": 605206,
+          "prime_forest": 9420053.7,
+          "prime_leaf": 2766390.1,
+          "prime_norm": 651319.3,
+          "prime_products": 2592531.6,
+          "ring_projection": 23774.6
+        },
+        "v4": {
+          "binary_bridge": 76918048.9,
+          "binary_joint": 500463.8,
+          "binary_keccak": 9859593.2,
+          "binary_links": 31298.8,
+          "binary_opening": 4251921.7,
+          "native_ring_carry": 0,
+          "pcs_auxiliary": 715.3,
+          "pcs_folds": 428330675.8,
+          "pcs_ood": 0,
+          "pcs_queries": 9311.6,
+          "prime_binder": 909916.5,
+          "prime_fingerprint": 454031.6,
+          "prime_forest": 24570053,
+          "prime_leaf": 2576587.8,
+          "prime_norm": 653634.3,
+          "prime_products": 3065639.7,
+          "ring_projection": 23428.8
+        }
+      },
+      "paired_process_medians": {
+        "42": {
+          "v3": {
+            "total_prover_ms": 942.453642,
+            "proof_verify_ms": 63.22138400000001,
+            "witness_commit_ms": 143.514026,
+            "proof_prove_ms": 802.853253,
+            "proof_payload_bytes": 2015090,
+            "nonce_prefixes": {
+              "binary_bridge": 73613694,
+              "binary_joint": 512806,
+              "binary_keccak": 9731511,
+              "binary_links": 11757,
+              "binary_opening": 3178333,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 435,
+              "pcs_folds": 325075532,
+              "pcs_ood": 0,
+              "pcs_queries": 14136,
+              "prime_binder": 1779188,
+              "prime_fingerprint": 196809,
+              "prime_forest": 7897372,
+              "prime_leaf": 2257227,
+              "prime_norm": 625093,
+              "prime_products": 3702809,
+              "ring_projection": 56251
+            },
+            "security_bits": 129.3504595103101
+          },
+          "v4": {
+            "total_prover_ms": 949.6835430000001,
+            "proof_verify_ms": 62.345767,
+            "witness_commit_ms": 140.687947,
+            "proof_prove_ms": 808.9955960000001,
+            "proof_payload_bytes": 1294874,
+            "nonce_prefixes": {
+              "binary_bridge": 78951571,
+              "binary_joint": 518572,
+              "binary_keccak": 9528542,
+              "binary_links": 9960,
+              "binary_opening": 3004455,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 675,
+              "pcs_folds": 433641196,
+              "pcs_ood": 0,
+              "pcs_queries": 10088,
+              "prime_binder": 734037,
+              "prime_fingerprint": 838465,
+              "prime_forest": 23704852,
+              "prime_leaf": 2148150,
+              "prime_norm": 436952,
+              "prime_products": 3234599,
+              "ring_projection": 31335
+            },
+            "security_bits": 129.33105606326285
+          }
+        },
+        "43": {
+          "v3": {
+            "total_prover_ms": 909.4615849999999,
+            "proof_verify_ms": 63.598298,
+            "witness_commit_ms": 145.80710499999998,
+            "proof_prove_ms": 773.4236679999999,
+            "proof_payload_bytes": 2013810,
+            "nonce_prefixes": {
+              "binary_bridge": 67151766,
+              "binary_joint": 622847,
+              "binary_keccak": 11042035,
+              "binary_links": 35745,
+              "binary_opening": 4334042,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 784,
+              "pcs_folds": 244961399,
+              "pcs_ood": 0,
+              "pcs_queries": 10799,
+              "prime_binder": 1131417,
+              "prime_fingerprint": 80751,
+              "prime_forest": 9547293,
+              "prime_leaf": 2365568,
+              "prime_norm": 802693,
+              "prime_products": 2744159,
+              "ring_projection": 20372
+            },
+            "security_bits": 129.3504595103101
+          },
+          "v4": {
+            "total_prover_ms": 904.020358,
+            "proof_verify_ms": 60.769504000000005,
+            "witness_commit_ms": 147.13431599999998,
+            "proof_prove_ms": 755.113928,
+            "proof_payload_bytes": 1299994,
+            "nonce_prefixes": {
+              "binary_bridge": 73134569,
+              "binary_joint": 457862,
+              "binary_keccak": 7033097,
+              "binary_links": 124018,
+              "binary_opening": 4070027,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 883,
+              "pcs_folds": 255210936,
+              "pcs_ood": 0,
+              "pcs_queries": 6885,
+              "prime_binder": 707958,
+              "prime_fingerprint": 811440,
+              "prime_forest": 28893871,
+              "prime_leaf": 2823324,
+              "prime_norm": 784260,
+              "prime_products": 3075988,
+              "ring_projection": 60414
+            },
+            "security_bits": 129.33105606326285
+          }
+        },
+        "44": {
+          "v3": {
+            "total_prover_ms": 957.8969470000001,
+            "proof_verify_ms": 62.457648999999996,
+            "witness_commit_ms": 145.39459499999998,
+            "proof_prove_ms": 812.696871,
+            "proof_payload_bytes": 2010130,
+            "nonce_prefixes": {
+              "binary_bridge": 84353340,
+              "binary_joint": 435991,
+              "binary_keccak": 9563823,
+              "binary_links": 26475,
+              "binary_opening": 3822833,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 728,
+              "pcs_folds": 411581177,
+              "pcs_ood": 0,
+              "pcs_queries": 6276,
+              "prime_binder": 705359,
+              "prime_fingerprint": 153094,
+              "prime_forest": 9049217,
+              "prime_leaf": 2068639,
+              "prime_norm": 631483,
+              "prime_products": 2312495,
+              "ring_projection": 73574
+            },
+            "security_bits": 129.3504595103101
+          },
+          "v4": {
+            "total_prover_ms": 948.362534,
+            "proof_verify_ms": 61.148922,
+            "witness_commit_ms": 141.82967799999997,
+            "proof_prove_ms": 806.532856,
+            "proof_payload_bytes": 1298138,
+            "nonce_prefixes": {
+              "binary_bridge": 70921144,
+              "binary_joint": 606393,
+              "binary_keccak": 9532063,
+              "binary_links": 11711,
+              "binary_opening": 4115748,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 555,
+              "pcs_folds": 427037449,
+              "pcs_ood": 0,
+              "pcs_queries": 8640,
+              "prime_binder": 384715,
+              "prime_fingerprint": 648722,
+              "prime_forest": 23277008,
+              "prime_leaf": 2242612,
+              "prime_norm": 478026,
+              "prime_products": 3352624,
+              "ring_projection": 9028
+            },
+            "security_bits": 129.33105606326285
+          }
+        },
+        "45": {
+          "v3": {
+            "total_prover_ms": 964.8967049999999,
+            "proof_verify_ms": 65.97210000000001,
+            "witness_commit_ms": 145.25959899999998,
+            "proof_prove_ms": 820.657376,
+            "proof_payload_bytes": 2013138,
+            "nonce_prefixes": {
+              "binary_bridge": 74032200,
+              "binary_joint": 507121,
+              "binary_keccak": 9203030,
+              "binary_links": 18283,
+              "binary_opening": 3588470,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 594,
+              "pcs_folds": 421807750,
+              "pcs_ood": 0,
+              "pcs_queries": 10900,
+              "prime_binder": 993130,
+              "prime_fingerprint": 41417,
+              "prime_forest": 8300498,
+              "prime_leaf": 2915062,
+              "prime_norm": 825904,
+              "prime_products": 2348851,
+              "ring_projection": 953
+            },
+            "security_bits": 129.3504595103101
+          },
+          "v4": {
+            "total_prover_ms": 909.0514880000001,
+            "proof_verify_ms": 62.210972000000005,
+            "witness_commit_ms": 144.598337,
+            "proof_prove_ms": 762.39696,
+            "proof_payload_bytes": 1297530,
+            "nonce_prefixes": {
+              "binary_bridge": 71987121,
+              "binary_joint": 437449,
+              "binary_keccak": 9977489,
+              "binary_links": 19290,
+              "binary_opening": 4924212,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 468,
+              "pcs_folds": 257947306,
+              "pcs_ood": 0,
+              "pcs_queries": 5895,
+              "prime_binder": 625941,
+              "prime_fingerprint": 128901,
+              "prime_forest": 23244269,
+              "prime_leaf": 2743724,
+              "prime_norm": 570328,
+              "prime_products": 5064698,
+              "ring_projection": 55833
+            },
+            "security_bits": 129.33105606326285
+          }
+        },
+        "46": {
+          "v3": {
+            "total_prover_ms": 892.495681,
+            "proof_verify_ms": 62.292505,
+            "witness_commit_ms": 136.50995799999998,
+            "proof_prove_ms": 757.282567,
+            "proof_payload_bytes": 2015122,
+            "nonce_prefixes": {
+              "binary_bridge": 81013533,
+              "binary_joint": 571582,
+              "binary_keccak": 9976550,
+              "binary_links": 16483,
+              "binary_opening": 3793786,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 1731,
+              "pcs_folds": 220933858,
+              "pcs_ood": 0,
+              "pcs_queries": 7881,
+              "prime_binder": 782468,
+              "prime_fingerprint": 1229571,
+              "prime_forest": 9168944,
+              "prime_leaf": 2841966,
+              "prime_norm": 670959,
+              "prime_products": 2479175,
+              "ring_projection": 6374
+            },
+            "security_bits": 129.3504595103101
+          },
+          "v4": {
+            "total_prover_ms": 919.2838360000001,
+            "proof_verify_ms": 61.149172,
+            "witness_commit_ms": 139.20418700000002,
+            "proof_prove_ms": 775.9776969999999,
+            "proof_payload_bytes": 1301402,
+            "nonce_prefixes": {
+              "binary_bridge": 76422169,
+              "binary_joint": 495011,
+              "binary_keccak": 12616803,
+              "binary_links": 31077,
+              "binary_opening": 4206805,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 1039,
+              "pcs_folds": 327665272,
+              "pcs_ood": 0,
+              "pcs_queries": 5533,
+              "prime_binder": 1051026,
+              "prime_fingerprint": 224961,
+              "prime_forest": 27410524,
+              "prime_leaf": 2103138,
+              "prime_norm": 664275,
+              "prime_products": 2721815,
+              "ring_projection": 2749
+            },
+            "security_bits": 129.33105606326285
+          }
+        },
+        "47": {
+          "v3": {
+            "total_prover_ms": 925.805778,
+            "proof_verify_ms": 62.498255,
+            "witness_commit_ms": 145.264205,
+            "proof_prove_ms": 782.449024,
+            "proof_payload_bytes": 2010034,
+            "nonce_prefixes": {
+              "binary_bridge": 74339881,
+              "binary_joint": 552208,
+              "binary_keccak": 10516377,
+              "binary_links": 660,
+              "binary_opening": 3798879,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 880,
+              "pcs_folds": 311551688,
+              "pcs_ood": 0,
+              "pcs_queries": 16479,
+              "prime_binder": 565282,
+              "prime_fingerprint": 113009,
+              "prime_forest": 10250879,
+              "prime_leaf": 3746142,
+              "prime_norm": 541427,
+              "prime_products": 1542100,
+              "ring_projection": 7028
+            },
+            "security_bits": 129.3504595103101
+          },
+          "v4": {
+            "total_prover_ms": 1011.2875590000001,
+            "proof_verify_ms": 59.893446000000004,
+            "witness_commit_ms": 146.084196,
+            "proof_prove_ms": 858.524352,
+            "proof_payload_bytes": 1297146,
+            "nonce_prefixes": {
+              "binary_bridge": 82971063,
+              "binary_joint": 445514,
+              "binary_keccak": 9031226,
+              "binary_links": 5091,
+              "binary_opening": 5198758,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 544,
+              "pcs_folds": 588411510,
+              "pcs_ood": 0,
+              "pcs_queries": 8863,
+              "prime_binder": 691724,
+              "prime_fingerprint": 167688,
+              "prime_forest": 22657153,
+              "prime_leaf": 2064182,
+              "prime_norm": 496695,
+              "prime_products": 2149063,
+              "ring_projection": 15386
+            },
+            "security_bits": 129.33105606326285
+          }
+        },
+        "48": {
+          "v3": {
+            "total_prover_ms": 966.496093,
+            "proof_verify_ms": 62.198237000000006,
+            "witness_commit_ms": 142.949354,
+            "proof_prove_ms": 827.238426,
+            "proof_payload_bytes": 2014034,
+            "nonce_prefixes": {
+              "binary_bridge": 73861867,
+              "binary_joint": 481652,
+              "binary_keccak": 10113991,
+              "binary_links": 92337,
+              "binary_opening": 3326392,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 494,
+              "pcs_folds": 424784652,
+              "pcs_ood": 0,
+              "pcs_queries": 10254,
+              "prime_binder": 1292314,
+              "prime_fingerprint": 464012,
+              "prime_forest": 9751361,
+              "prime_leaf": 2844834,
+              "prime_norm": 580207,
+              "prime_products": 2613104,
+              "ring_projection": 3518
+            },
+            "security_bits": 129.3504595103101
+          },
+          "v4": {
+            "total_prover_ms": 1031.2045,
+            "proof_verify_ms": 61.525194,
+            "witness_commit_ms": 140.82836,
+            "proof_prove_ms": 890.37614,
+            "proof_payload_bytes": 1294938,
+            "nonce_prefixes": {
+              "binary_bridge": 75079732,
+              "binary_joint": 528484,
+              "binary_keccak": 11862149,
+              "binary_links": 78933,
+              "binary_opening": 4404599,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 1351,
+              "pcs_folds": 578536035,
+              "pcs_ood": 0,
+              "pcs_queries": 14286,
+              "prime_binder": 465522,
+              "prime_fingerprint": 248345,
+              "prime_forest": 29585924,
+              "prime_leaf": 1815272,
+              "prime_norm": 836362,
+              "prime_products": 1701635,
+              "ring_projection": 13674
+            },
+            "security_bits": 129.33105606326285
+          }
+        },
+        "49": {
+          "v3": {
+            "total_prover_ms": 910.5251410000001,
+            "proof_verify_ms": 64.065872,
+            "witness_commit_ms": 139.697911,
+            "proof_prove_ms": 769.005944,
+            "proof_payload_bytes": 2015986,
+            "nonce_prefixes": {
+              "binary_bridge": 79286891,
+              "binary_joint": 558015,
+              "binary_keccak": 9613266,
+              "binary_links": 370,
+              "binary_opening": 4661739,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 289,
+              "pcs_folds": 252149857,
+              "pcs_ood": 0,
+              "pcs_queries": 10152,
+              "prime_binder": 646704,
+              "prime_fingerprint": 114789,
+              "prime_forest": 11836886,
+              "prime_leaf": 2358334,
+              "prime_norm": 573272,
+              "prime_products": 2523918,
+              "ring_projection": 24317
+            },
+            "security_bits": 129.3504595103101
+          },
+          "v4": {
+            "total_prover_ms": 929.8591299999999,
+            "proof_verify_ms": 62.829080999999995,
+            "witness_commit_ms": 141.00337199999998,
+            "proof_prove_ms": 788.594213,
+            "proof_payload_bytes": 1299834,
+            "nonce_prefixes": {
+              "binary_bridge": 79787422,
+              "binary_joint": 468868,
+              "binary_keccak": 9607957,
+              "binary_links": 1281,
+              "binary_opening": 3486181,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 314,
+              "pcs_folds": 349047182,
+              "pcs_ood": 0,
+              "pcs_queries": 8309,
+              "prime_binder": 648548,
+              "prime_fingerprint": 52233,
+              "prime_forest": 22061142,
+              "prime_leaf": 3751592,
+              "prime_norm": 872150,
+              "prime_products": 3089430,
+              "ring_projection": 39848
+            },
+            "security_bits": 129.33105606326285
+          }
+        },
+        "50": {
+          "v3": {
+            "total_prover_ms": 916.668436,
+            "proof_verify_ms": 62.196743999999995,
+            "witness_commit_ms": 142.846359,
+            "proof_prove_ms": 769.979686,
+            "proof_payload_bytes": 2008882,
+            "nonce_prefixes": {
+              "binary_bridge": 69303634,
+              "binary_joint": 443126,
+              "binary_keccak": 10315161,
+              "binary_links": 1797,
+              "binary_opening": 4374229,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 541,
+              "pcs_folds": 241337033,
+              "pcs_ood": 0,
+              "pcs_queries": 7068,
+              "prime_binder": 1480228,
+              "prime_fingerprint": 1854739,
+              "prime_forest": 10487745,
+              "prime_leaf": 3092007,
+              "prime_norm": 658549,
+              "prime_products": 2575311,
+              "ring_projection": 15525
+            },
+            "security_bits": 129.3504595103101
+          },
+          "v4": {
+            "total_prover_ms": 1127.697238,
+            "proof_verify_ms": 63.788126,
+            "witness_commit_ms": 154.971906,
+            "proof_prove_ms": 972.725332,
+            "proof_payload_bytes": 1300378,
+            "nonce_prefixes": {
+              "binary_bridge": 76453832,
+              "binary_joint": 579658,
+              "binary_keccak": 10809771,
+              "binary_links": 4337,
+              "binary_opening": 5117467,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 415,
+              "pcs_folds": 643191097,
+              "pcs_ood": 0,
+              "pcs_queries": 13402,
+              "prime_binder": 1738658,
+              "prime_fingerprint": 788119,
+              "prime_forest": 23571863,
+              "prime_leaf": 3560481,
+              "prime_norm": 653262,
+              "prime_products": 2674301,
+              "ring_projection": 2796
+            },
+            "security_bits": 129.33105606326285
+          }
+        },
+        "51": {
+          "v3": {
+            "total_prover_ms": 1025.679335,
+            "proof_verify_ms": 66.885948,
+            "witness_commit_ms": 155.31671899999998,
+            "proof_prove_ms": 866.616718,
+            "proof_payload_bytes": 2012690,
+            "nonce_prefixes": {
+              "binary_bridge": 82924866,
+              "binary_joint": 724431,
+              "binary_keccak": 9058798,
+              "binary_links": 7778,
+              "binary_opening": 3988908,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 854,
+              "pcs_folds": 296048587,
+              "pcs_ood": 0,
+              "pcs_queries": 24514,
+              "prime_binder": 2113316,
+              "prime_fingerprint": 1803869,
+              "prime_forest": 7910342,
+              "prime_leaf": 3174122,
+              "prime_norm": 603606,
+              "prime_products": 3083394,
+              "ring_projection": 29834
+            },
+            "security_bits": 129.3504595103101
+          },
+          "v4": {
+            "total_prover_ms": 953.0816070000001,
+            "proof_verify_ms": 60.783029,
+            "witness_commit_ms": 142.830649,
+            "proof_prove_ms": 810.491473,
+            "proof_payload_bytes": 1296218,
+            "nonce_prefixes": {
+              "binary_bridge": 83471866,
+              "binary_joint": 466827,
+              "binary_keccak": 8596835,
+              "binary_links": 27290,
+              "binary_opening": 3990965,
+              "native_ring_carry": 0,
+              "pcs_auxiliary": 909,
+              "pcs_folds": 422618775,
+              "pcs_ood": 0,
+              "pcs_queries": 11215,
+              "prime_binder": 2051036,
+              "prime_fingerprint": 631442,
+              "prime_forest": 21293924,
+              "prime_leaf": 2513403,
+              "prime_norm": 744033,
+              "prime_products": 3592244,
+              "ring_projection": 3225
+            },
+            "security_bits": 129.33105606326285
+          }
+        }
+      }
+    }
+  ],
+  "cold_process_peak_memory": [
+    {
+      "protocol": "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v3",
+      "security": 100,
+      "batch": 1024,
+      "threads": 16,
+      "seed": 42,
+      "process_peak_rss_kib": 3078424
+    },
+    {
+      "protocol": "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v4",
+      "security": 100,
+      "batch": 1024,
+      "threads": 16,
+      "seed": 42,
+      "process_peak_rss_kib": 3078784
+    },
+    {
+      "protocol": "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v3",
+      "security": 128,
+      "batch": 1024,
+      "threads": 16,
+      "seed": 42,
+      "process_peak_rss_kib": 3080156
+    },
+    {
+      "protocol": "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v4",
+      "security": 128,
+      "batch": 1024,
+      "threads": 16,
+      "seed": 42,
+      "process_peak_rss_kib": 3076360
+    }
+  ],
+  "single_trial_stage_diagnostics": [
+    {
+      "run": "s100-b1024-t16-seed42-v3",
+      "forest_ms": 39.590292999999996,
+      "forest_grinding_ms": 0,
+      "forest_non_grinding_ms": 39.590292999999996
+    },
+    {
+      "run": "s100-b1024-t16-seed42-v4",
+      "forest_ms": 36.023032,
+      "forest_grinding_ms": 0,
+      "forest_non_grinding_ms": 36.023032
+    },
+    {
+      "run": "s128-b1024-t16-seed42-v3",
+      "forest_ms": 45.786888999999995,
+      "forest_grinding_ms": 3.286823,
+      "forest_non_grinding_ms": 42.500066
+    },
+    {
+      "run": "s128-b1024-t16-seed42-v4",
+      "forest_ms": 53.351955,
+      "forest_grinding_ms": 9.82768,
+      "forest_non_grinding_ms": 43.524274999999996
+    }
+  ],
+  "audit": "Paired commitment roots match. Cold/instrumented proofs match the corresponding latency proof digest and payload size."
+}

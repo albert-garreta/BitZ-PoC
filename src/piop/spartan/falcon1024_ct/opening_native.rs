@@ -19,16 +19,10 @@ impl LeafWeights {
         if leaf.point.len() != 11 + d || leaf.instance_point.len() != d {
             return Err(piop("compaction leaf binding dimensions"));
         }
-        let point = &proof
-            .compaction
-            .first()
-            .ok_or_else(|| piop("missing compaction forest"))?
-            .candidate
-            .terminal_point;
+        let point = &proof.compaction.terminal_point;
         if point.len() != 11
-            || proof.compaction.iter().any(|pair| {
-                pair.candidate.terminal_point != *point || pair.output.terminal_point != *point
-            })
+            || proof.compaction.instance_point.len() != d
+            || leaf.instance_point != proof.compaction.instance_point
         {
             return Err(piop("compaction forest endpoint mismatch"));
         }

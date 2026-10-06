@@ -1,4 +1,7 @@
-# Shared-prime Falcon V3
+# Shared-prime Falcon V3 (historical)
+
+Superseded by [SharedPrimeV4](SHARED_PRIME_V4.md). The measurements and
+protocol details below describe this historical revision.
 
 `PreparedFalconHybrid::new_shared_prime(batch, target_bits)` prepares the
 experimental `SharedPrimeV3` protocol for 1–1024 signatures. The native backend

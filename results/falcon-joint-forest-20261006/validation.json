@@ -1,0 +1,31 @@
+{
+  "description": "Single-trial proof-size and verification smoke tests; not a paired performance qualification",
+  "base_revision": "3ca99b2142bc3dc9be70f1b5a5c89bd6d1cc9296",
+  "uncommitted_changes": true,
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "architecture": "x86_64",
+  "build_command": "RUSTFLAGS=\"-C target-cpu=native\" CARGO_TARGET_DIR=target/falcon-native cargo bench --offline --locked --profile release --features falcon-hybrid --bench falcon_hybrid",
+  "arguments": "--protocol shared-prime --batch 1024 --security TARGET --threads 16 --warmup 0 --iterations 1 --seed 42",
+  "binary_sha256": "3c2885e99f76f8f5a4f67a36bdca961b5f808640f72308face81a72f882c2e19",
+  "changed_rust_files_sha256": {
+    "benches/falcon_hybrid.rs": "a54da086bfe060c231444938a981fe92b3dc2a951ae6c7915a1f043921aafa74",
+    "src/piop/spartan/falcon1024_ct/hybrid.rs": "3a2a8cd3d6c6714553ef3beb311be3343e89acf2db1ec0b4f5218c2f7a1f8319",
+    "src/piop/spartan/falcon1024_ct/hybrid_size.rs": "e27e477b89bd114a027440d6cf77f0188054b84e61bb6477d4ef568ecf7bf0ab",
+    "src/piop/spartan/falcon1024_ct/opening.rs": "fa6d88d598bd1dd7bd8df3b0082edf9c2ce62f77c93b8667a2396805aa10a660",
+    "src/piop/spartan/falcon1024_ct/opening_binding_tests.rs": "553b115d002de9bc28c68c0ef08f5d1432d3dc2e9ff2f0cbeb93a0e8b9bf35c4",
+    "src/piop/spartan/falcon1024_ct/opening_compact.rs": "565dfe4362a18e7b9503830f80948f5ad110f6e6a4c90fbda634d3a0144f6c68",
+    "src/piop/spartan/falcon1024_ct/opening_native.rs": "326c65fa8b91f12afe4a7a40bc1ec20ad055b8723df17eb70992185490bacb4c",
+    "src/piop/spartan/falcon1024_ct/piop.rs": "7027a0e121b1849cff7bd176ac843fbbb05cb89aff901aaf4446da0b17fdcde8",
+    "src/piop/spartan/falcon1024_ct/piop_shared.rs": "f36fdc504e5cd8812bc1258bd3962cb6ecf589e4af170f8123ce58470b96e10f"
+  },
+  "validation": {
+    "falcon_release_tests_passed": 126,
+    "falcon_release_manual_benchmarks_ignored": 2,
+    "additional_native_exact_ledger_test_passed": 1,
+    "python_script_tests_passed": 66,
+    "compile_features": [
+      "falcon-hybrid: lib/tests/benches",
+      "falcon: lib, no default features"
+    ]
+  }
+}

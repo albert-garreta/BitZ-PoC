@@ -1,61 +1,72 @@
 # Falcon security accounting
 
-The sole Falcon proving backend combines native-ring arithmetic, binary Keccak,
-and one shared PCS opening. This note describes its current budget directly.
+The native and shared-prime profiles combine arithmetic relations, binary
+Keccak, and one shared PCS opening. Both use the joint HashToPoint forest.
 
 ## Security model
 
 A challenge with algebraic error numerator `n`, field size `p`, and grinding
 difficulty `g` contributes `n / (p * 2^g)` under the repository's computational
-proof-of-work/random-oracle convention. The arithmetic prime satisfies
-`p >= 2^125`. This convention does not improve an interactive sumcheck's raw
-statistical soundness and is not an independent proof of Fiat–Shamir security.
-BLAKE3's 128-bit collision bound is stated separately.
+proof-of-work/random-oracle convention. This does not improve an interactive
+sumcheck's raw statistical soundness and is not an independent proof of
+Fiat–Shamir security. BLAKE3's 128-bit collision bound is stated separately.
 
-`PreparedFalconHybrid::security()` sums all configured terms. Preparation
-rejects a configuration below the requested target. Target 100 needs no
-arithmetic grinding; target 128 uses the budgets below.
+The native prime satisfies `p >= 2^125`. The shared profile has `p >= 2^114`
+at target 100 and `p >= 2^125` at target 128. `PreparedFalconHybrid::security()`
+sums terms using the selected floor and rejects a configuration below its
+requested target. Target 100 needs no arithmetic grinding; the separate ring
+projection retains two grinding bits. Target 128 uses the budgets below.
 
 ## Prime reduction groups
 
-Let `B` be the live batch and `d = log2(next_power_of_two(B))`. Each of seven
-prime reduction groups receives at most `2^-(target+5)` work-normalized error:
+Let `B` be the live batch and `d = log2(next_power_of_two(B))`. At target 128,
+each of seven prime groups receives at most `2^-133` work-normalized error:
 
 | Group | Error numerator before grinding |
 | --- | ---: |
-| Norm and leaf instance batching together | `2*d` |
+| Norm instance batching | `d` |
 | Norm sumchecks | `4*(10+d)` |
 | HashToPoint initial row point | `11+d` |
-| Rejection, leaf, and forest reductions together | Defined below |
+| Rejection, leaf, and joint forest reductions | Defined below |
 | Ordered compaction fingerprints | `2048` |
 | Linear constraints and terminal batching | `13+d+B+12` |
 | Prime source sumcheck | `2*(17+d)` |
 
-For a single numerator `n`, use
-`g(n) = max(0, target+5+ceil(log2(n))-125)`, with `g(0)=0`.
-The fingerprint argument fixes one incorrect signature before the challenge;
-it needs no batch-size union factor or partial-batch rounding adjustment.
+For a single numerator `n`, use `g(n)=8+ceil(log2(n))`, with `g(0)=0`.
+The fingerprint argument fixes one incorrect signature before its challenge;
+it needs no batch-size union factor. The linear group retains its previous
+conservative bound even though the joint forest has one output claim.
+Candidate-leaf authentication now inherits the forest's signature point and
+has no additional instance-batching error term.
 
-## Current compaction allocation
+## Joint compaction allocation
 
-The two cubic sample/leaf sumchecks and product forest have
-`R = 2*(11+d)+55` rounds, with total numerator `A=3*R`.
-Ten forest equality-weight draws and eleven line draws have total numerator
-`H=10*(d+1)+11`. See [COMPACTION_SOUNDNESS.md](COMPACTION_SOUNDNESS.md) for the
-nonzero-vector argument and challenge order.
+The rejection and candidate-leaf cubic sumchecks have
+`R_cubic=2*(11+d)` rounds. The forest has `R_forest=11*(d+1)+55` weighted
+quadratic rounds. Its initial signature batching and eleven scalar line
+reductions have total numerator `H=d+11`, across `M=11+(d>0)` nonce blocks.
+See [COMPACTION_SOUNDNESS.md](COMPACTION_SOUNDNESS.md) for the signed root
+identity, challenge ordering, and source authentication.
 
-At target 128, choose cubic difficulty `r` and forest-claim difficulty `c`
-subject to the explicit group budget
+Choose cubic difficulty `r`, forest-round difficulty `q`, and root/line
+difficulty `c` subject to
 
+```text
+3*R_cubic/2^r + 2*R_forest/2^q + H/2^c <= 1/256.
 ```
-A/2^r + H/2^c <= 1/256.
-```
 
-Multiplying by `1/p <= 2^-125` gives the required `2^-133` group bound.
-One deterministic integer search minimizes `R*2^r + 21*2^c` within its bounded
-candidate range, using a common power-of-two denominator. The initial uniform
-pair is feasible by construction. No floating-point decision or saved protocol
-schedule determines these difficulties. Target 100 uses `(0,0)`.
+Multiplying by `1/p <= 2^-125` gives the required group bound. A deterministic
+integer search minimizes `R_cubic*2^r + R_forest*2^q + M*2^c` using a common
+power-of-two denominator. The uniform schedule is feasible by construction;
+the bounded search includes every potentially cheaper schedule. No floating
+point or saved historical schedule determines difficulties. Target 100 uses
+`(r,q,c)=(0,0,0)`.
+
+At batch 1024 the group has 42 cubic rounds, 176 quadratic rounds, and twelve
+root/line nonce blocks. The allocation is `(17,17,17)`, with an expected
+30,146,560 nonce trials. The preceding forest's corresponding group used
+15,466,496 expected trials. These are analytic counts for this group only,
+not measured prover times; other groups and field arithmetic also change.
 
 ## Remaining terms and composition
 
@@ -63,32 +74,38 @@ The complete report also includes:
 
 - Prime sampling error `2^-144`.
 - Native ideal batching/projection error at most
-  `(d+2046)/(12289^11-12289)`.
-- Native coordinate carry batching, `10/p`, with 12 grinding bits at target 128.
-- The wfbitz integer-to-binary bridge, both binary Keccak prefixes, SHAKE wiring,
-  binary claim batching, the joint sumcheck, ring switching, and support padding.
-  These binary components reserve an eight-bit margin over the requested target.
+  `(d+2046)/(12289^11-12289)`, and native coordinate carry batching `10/p`
+  with twelve grinding bits at target 128.
+- For the shared profile, ring error `(4*d+2049)/12289^11` and degree-20
+  integer-polynomial projection. Projection difficulties are 2 and 14 at
+  targets 100 and 128 respectively.
+- The integer-to-binary bridge, both binary Keccak prefixes, SHAKE wiring,
+  binary claim batching, joint sumcheck, ring switching, and support padding.
+  These binary components reserve an eight-bit margin over the target.
 - Shared Ligerito. If its plan has `k` challenge blocks, each targets
   `target+2+ceil(log2(k))`, so their sum is at most `2^-(target+2)`.
 
 The seven prime groups together spend at most `7/32` of the target error
-budget, leaving room for these separately counted terms. Native carries and
-certificates precede their challenges, and all three source roots and public
-inputs precede the reductions they authenticate.
+budget at target 128, leaving room for separately counted terms. At target
+100, exact rational composition uses the actual selected prime floor rather
+than applying this target-128 allocation. Source roots and public inputs
+precede the reductions they authenticate.
 
 ## Enforcement and validation
 
-Prover and verifier derive difficulties from the same validated layout; proofs
-cannot supply a weaker schedule. The header binds every schedule field, and
-nonce seeds bind domain, round, and difficulty. Every nonce is consumed.
-The statement and arithmetic PIOP domains are updated for this allocation;
-old proofs must be regenerated. There is no historical backend selector.
+Prover and verifier derive difficulties from the validated layout; proofs
+cannot supply a weaker schedule. The statement binds every schedule field,
+including the separate forest-round difficulty. Nonce seeds bind domain,
+round, and difficulty; every nonce must be consumed.
 
-Direct budget tests cover every live batch from 1 through 1024. The complete
-ledger covers both supported targets, and weaker-nonce rejection tests remain.
-Reference checks cover padding, equality batching, candidate leaves, optimized
-arithmetic kernels, and binary/PCS transcripts. These are implementation checks,
-not substitutes for the underlying security argument.
+The current outer domains are native v5 and shared-prime V4. Earlier proofs
+must be regenerated. Subprotocol labels version the weighted forest, signed
+root relation, inherited leaf point, and final source binding.
 
-This cleanup was validated by static review, compilation, and linting only;
-its runtime tests and benchmarks were not executed.
+Exact-integer group and complete-ledger tests cover every batch from 1 through
+1024 and both targets. Reference and tampering tests cover padding, weighted
+round reconstruction, individual signature root errors, altered terminals,
+and source authentication. Tests are implementation checks, not substitutes
+for the soundness argument. No new end-to-end benchmark result is implied by
+this accounting; previous V2/V3 measurements describe their respective
+historical protocols.
