@@ -133,9 +133,20 @@ def run_one(out, item, label, case, warmup, measured, timeout):
         process=subprocess.Popen(command,stdout=stdout,stderr=stderr,env=environment(threads),start_new_session=True)
         try:
             code=process.wait(timeout=timeout)
-        except BaseException:
-            stop_process_group(process)
-            record.update(status="interrupted",elapsed_seconds=time.monotonic()-start)
+        except BaseException as interruption:
+            # Persist the interruption before cleanup, which can itself fail.
+            record.update(status="interrupted",elapsed_seconds=time.monotonic()-start,
+                          interruption_error=f"{type(interruption).__name__}: {interruption}",
+                          cleanup_status="pending")
+            save(record_path,record)
+            try:
+                stop_process_group(process)
+            except BaseException as cleanup_error:
+                record.update(cleanup_status="failed",elapsed_seconds=time.monotonic()-start,
+                              cleanup_error=f"{type(cleanup_error).__name__}: {cleanup_error}")
+                save(record_path,record)
+                raise cleanup_error from interruption
+            record.update(cleanup_status="succeeded",elapsed_seconds=time.monotonic()-start)
             save(record_path,record)
             raise
     record.update(exit_code=code,elapsed_seconds=time.monotonic()-start,status="failed")

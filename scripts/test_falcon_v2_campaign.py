@@ -259,6 +259,43 @@ class ProcessCleanupTests(unittest.TestCase):
                 cleanup.assert_called_once_with(process)
             record = runner.json.loads(next(out.glob("*.run.json")).read_text())
             self.assertEqual(record["status"], "interrupted")
+            self.assertEqual(record["cleanup_status"], "succeeded")
+            self.assertEqual(record["interruption_error"], "SystemExit: 143")
+            self.assertNotIn("cleanup_error", record)
+
+    def test_cleanup_permission_error_preserves_interruption_and_propagates(self):
+        for interruption in (SystemExit(143), runner.subprocess.TimeoutExpired("binary", 30)):
+            with self.subTest(interruption=type(interruption).__name__), tempfile.TemporaryDirectory() as temporary:
+                out = Path(temporary)
+                binary = out / "binary"
+                binary.write_bytes(b"test binary")
+                item = dict(binary=str(binary), sha256=runner.digest(binary))
+                process = mock.Mock()
+                process.wait.side_effect = interruption
+                cleanup_error = PermissionError(1, "Operation not permitted")
+
+                def fail_cleanup(child):
+                    self.assertIs(child, process)
+                    record = runner.json.loads(next(out.glob("*.run.json")).read_text())
+                    self.assertEqual(record["status"], "interrupted")
+                    self.assertEqual(record["cleanup_status"], "pending")
+                    self.assertEqual(record["interruption_error"],
+                                     f"{type(interruption).__name__}: {interruption}")
+                    raise cleanup_error
+
+                with mock.patch.object(runner.subprocess, "Popen", return_value=process), \
+                        mock.patch.object(runner, "stop_process_group", side_effect=fail_cleanup) as cleanup:
+                    with self.assertRaises(PermissionError) as caught:
+                        runner.run_one(out, item, "v2", (100, 1, 1, 42), 1, 3, 30)
+                    cleanup.assert_called_once_with(process)
+                self.assertIs(caught.exception, cleanup_error)
+                self.assertIs(caught.exception.__cause__, interruption)
+                record = runner.json.loads(next(out.glob("*.run.json")).read_text())
+                self.assertEqual(record["status"], "interrupted")
+                self.assertEqual(record["cleanup_status"], "failed")
+                self.assertEqual(record["cleanup_error"],
+                                 "PermissionError: [Errno 1] Operation not permitted")
+                self.assertNotIn("verified_proofs", record)
 
 if __name__ == "__main__":
     unittest.main()
