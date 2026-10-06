@@ -136,7 +136,7 @@ pub struct FalconBindingPrefixProof {
     pub(super) ring: RingProof,
     pub linear_point_nonce: Option<u64>,
     pub binding: SumcheckProof<F, 3>,
-    /// Legacy challenge cache. Empty in SharedPrimeV2, which derives the point.
+    /// Legacy challenge cache. Empty in SharedPrimeV3, which derives the point.
     pub binding_point: Vec<F>,
     /// `[coefficient MLE, source MLE]` at the binding sumcheck's terminal point.
     pub binding_terminal: [F; 2],

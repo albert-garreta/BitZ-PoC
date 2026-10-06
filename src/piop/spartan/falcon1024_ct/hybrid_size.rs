@@ -556,10 +556,12 @@ mod tests {
             include_bytes!("fixtures/signature_ct.bin"),
         )
         .unwrap();
+        let (prime_min, prime_max) =
+            crate::piop::spartan::falcon1024_ct::shared_ring::prime_bounds(100).unwrap();
         let field = crate::prime_sampling::sample_prime_context(
             &mut crate::transcript::Blake3Transcript::new(),
-            crate::piop::spartan::falcon1024_ct::shared_ring::PRIME_MIN,
-            crate::piop::spartan::falcon1024_ct::shared_ring::PRIME_MAX,
+            prime_min,
+            prime_max,
             128,
         )
         .unwrap();

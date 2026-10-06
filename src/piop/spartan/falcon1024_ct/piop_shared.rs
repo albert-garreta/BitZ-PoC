@@ -559,7 +559,7 @@ pub(in super::super) fn verify_shared_falcon_piop_in_field(
     if !matches!(target_bits, 100 | 128) {
         return Err(piop("invalid shared PIOP security target"));
     }
-    validate_shared_field(layout, field)?;
+    validate_shared_field(layout, target_bits, field)?;
     if target_bits == 100 && !proof.compact_products.grinding_nonces.is_empty() {
         return Err(piop("unexpected shared product grinding nonces"));
     }
@@ -745,10 +745,12 @@ mod tests {
     fn compact_shared_piop_reconstructs_every_omitted_value_and_transcript() {
         for (batch, target) in [(1, 100), (3, 100), (1, 128)] {
             let layout = FalconSourceLayout::new_shared_prime(batch).unwrap();
+            let (prime_min, prime_max) =
+                crate::piop::spartan::falcon1024_ct::shared_ring::prime_bounds(target).unwrap();
             let field = crate::prime_sampling::sample_prime_context(
                 &mut Blake3Transcript::new(),
-                crate::piop::spartan::falcon1024_ct::shared_ring::PRIME_MIN,
-                crate::piop::spartan::falcon1024_ct::shared_ring::PRIME_MAX,
+                prime_min,
+                prime_max,
                 128,
             )
             .unwrap();
@@ -839,10 +841,12 @@ mod tests {
     #[test]
     fn compact_shared_piop_rejects_changed_messages_and_forest_shapes() {
         let layout = FalconSourceLayout::new_shared_prime(1).unwrap();
+        let (prime_min, prime_max) =
+            crate::piop::spartan::falcon1024_ct::shared_ring::prime_bounds(100).unwrap();
         let field = crate::prime_sampling::sample_prime_context(
             &mut Blake3Transcript::new(),
-            crate::piop::spartan::falcon1024_ct::shared_ring::PRIME_MIN,
-            crate::piop::spartan::falcon1024_ct::shared_ring::PRIME_MAX,
+            prime_min,
+            prime_max,
             128,
         )
         .unwrap();

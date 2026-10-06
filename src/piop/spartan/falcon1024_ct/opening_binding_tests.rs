@@ -1270,10 +1270,11 @@ fn shared_forest_weights_require_candidate_and_output_endpoints_to_match() {
 fn shared_binding_factored_overlay_benchmark() {
     use std::{hint::black_box, time::Instant};
 
+    let (prime_min, prime_max) = super::super::shared_ring::prime_bounds(128).unwrap();
     let field = crate::prime_sampling::sample_prime_context(
         &mut Blake3Transcript::new(),
-        super::super::shared_ring::PRIME_MIN,
-        super::super::shared_ring::PRIME_MAX,
+        prime_min,
+        prime_max,
         128,
     )
     .unwrap();

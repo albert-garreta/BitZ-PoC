@@ -1,7 +1,7 @@
 //! Prime-field source evaluation reduced through the BitZ PCS's product GKR.
 //!
-//! Native proofs retain two bounded limbs with an unmultiplied limb coordinate.
-//! Shared-prime proofs use one unsplit, bounded exponent per original row.
+//! Native and 128-bit shared proofs use two bounded limbs with an unmultiplied
+//! limb coordinate. 100-bit shared proofs use one unsplit exponent per row.
 //! Both terminal claims are authenticated by the shared binary PCS.
 use super::hybrid_keccak::grinding::{
     ProverBlockGrindingTranscript, VerifierBlockGrindingTranscript,
@@ -28,12 +28,19 @@ use rayon::prelude::*;
 type F = SpartanBitzField;
 type Cfg = <F as SpartanField>::Config;
 
+/// Selected by the prepared protocol and security target, never by proof data.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum BridgeMode {
+    Unsplit,
+    TwoLimbs,
+}
+
 /// One arity-2 forest: root projection degree s, degree-three
 /// sumcheck rounds, and one linear child fold per layer. See the bridge audit.
-pub(super) fn error_numerator(layout: &super::FalconSourceLayout) -> usize {
+pub(super) fn error_numerator(layout: &super::FalconSourceLayout, mode: BridgeMode) -> usize {
     let p = layout.bitz_params();
     let d = p.row_vars;
-    let s = p.col_vars + usize::from(!layout.is_shared_prime());
+    let s = p.col_vars + usize::from(mode == BridgeMode::TwoLimbs);
     s + 3 * (d * (d - 1) / 2 + d * s) + d
 }
 
@@ -173,12 +180,13 @@ fn row_images(chunks: &[Vec<u128>], comb: &FixedBasePow) -> Vec<Gf> {
 pub(super) fn prove(
     t: &mut impl Transcript,
     source: &FalconSourceWitness,
+    mode: BridgeMode,
     point: &[F],
     modulus: u128,
     grinding_bits: u32,
     row_weights: &[u128],
 ) -> Result<(Proof, Vec<BinaryClaim>), FalconError> {
-    if source.layout().is_shared_prime() {
+    if mode == BridgeMode::Unsplit {
         return prove_unsplit(t, source, point, modulus, grinding_bits, row_weights);
     }
     let p = source.layout().bitz_params();
@@ -246,13 +254,14 @@ pub(super) fn prove(
 pub(super) fn verify(
     t: &mut impl Transcript,
     layout: &super::FalconSourceLayout,
+    mode: BridgeMode,
     point: &[F],
     value: F,
     modulus: u128,
     proof: &Proof,
     grinding_bits: u32,
 ) -> Result<Vec<BinaryClaim>, FalconError> {
-    if layout.is_shared_prime() {
+    if mode == BridgeMode::Unsplit {
         return verify_unsplit(t, layout, point, value, modulus, proof, grinding_bits);
     }
     let p = layout.bitz_params();
@@ -529,10 +538,10 @@ mod tests {
             let rounds: usize = (0..p.row_vars).map(|layer| layer + p.col_vars).sum();
             assert_eq!(unsplit_message_count(&p), rounds + p.row_vars);
             assert_eq!(
-                error_numerator(&layout),
+                error_numerator(&layout, BridgeMode::Unsplit),
                 p.col_vars + 3 * rounds + p.row_vars
             );
-            assert!((407..=807).contains(&error_numerator(&layout)));
+            assert!((407..=807).contains(&error_numerator(&layout, BridgeMode::Unsplit)));
             assert_eq!(message_count(&p) - unsplit_message_count(&p), p.row_vars);
             assert!(unsplit_shape(&p, 1u128 << 114).is_ok());
             assert!(unsplit_shape(&p, UNSPLIT_PRIME_MAX).is_ok());
@@ -733,6 +742,7 @@ mod tests {
             let (proof, claims) = prove(
                 &mut pt,
                 &source,
+                BridgeMode::Unsplit,
                 &point,
                 modulus,
                 grinding_bits,
@@ -754,6 +764,7 @@ mod tests {
             let verified = verify(
                 &mut vt,
                 &layout,
+                BridgeMode::Unsplit,
                 &point,
                 value,
                 modulus,
@@ -782,6 +793,7 @@ mod tests {
                     verify(
                         &mut Blake3Transcript::new(),
                         &layout,
+                        BridgeMode::Unsplit,
                         &point,
                         value,
                         modulus,
@@ -845,6 +857,7 @@ mod tests {
                 verify(
                     &mut Blake3Transcript::new(),
                     &layout,
+                    BridgeMode::Unsplit,
                     &point,
                     value,
                     modulus,
@@ -854,24 +867,28 @@ mod tests {
                 .is_err()
             );
             let native = FalconSourceLayout::new(batch).unwrap();
-            assert!(
-                verify(
-                    &mut Blake3Transcript::new(),
-                    &native,
-                    &point,
-                    value,
-                    modulus,
-                    &proof,
-                    grinding_bits
-                )
-                .is_err()
-            );
+            for other_layout in [&layout, &native] {
+                assert!(
+                    verify(
+                        &mut Blake3Transcript::new(),
+                        other_layout,
+                        BridgeMode::TwoLimbs,
+                        &point,
+                        value,
+                        modulus,
+                        &proof,
+                        grinding_bits
+                    )
+                    .is_err()
+                );
+            }
             let mut bad_weights = row_weights.clone();
             bad_weights[0] = modulus;
             assert!(
                 prove(
                     &mut Blake3Transcript::new(),
                     &source,
+                    BridgeMode::Unsplit,
                     &point,
                     modulus,
                     grinding_bits,
@@ -883,6 +900,7 @@ mod tests {
                 prove(
                     &mut Blake3Transcript::new(),
                     &source,
+                    BridgeMode::Unsplit,
                     &point,
                     (1u128 << 115) - 1,
                     grinding_bits,
@@ -904,8 +922,20 @@ mod tests {
             assert_eq!(s, 5 + layout.capacity().ilog2() as usize);
             // Count the accepted verifier rounds independently of the formula.
             let sumcheck_rounds: usize = (0..d).map(|ell| ell + s).sum();
-            assert_eq!(error_numerator(&layout), s + 3 * sumcheck_rounds + d);
-            assert!((447..=847).contains(&error_numerator(&layout)));
+            assert_eq!(
+                error_numerator(&layout, BridgeMode::TwoLimbs),
+                s + 3 * sumcheck_rounds + d
+            );
+            assert!((447..=847).contains(&error_numerator(&layout, BridgeMode::TwoLimbs)));
+            // Security geometry follows the selected mode, independently of
+            // whether these source slots also contain the shared public key.
+            let shared = FalconSourceLayout::new_shared_prime(batch).unwrap();
+            for mode in [BridgeMode::Unsplit, BridgeMode::TwoLimbs] {
+                assert_eq!(
+                    error_numerator(&layout, mode),
+                    error_numerator(&shared, mode)
+                );
+            }
             assert_eq!(limb_width(&p), 113);
             for prime_bits in [126, 127] {
                 assert_eq!(usize::div_ceil(prime_bits, limb_width(&p)), 2);
@@ -968,15 +998,69 @@ mod tests {
 
     #[test]
     fn batched_limbs_authenticate_source_and_reject_compensating_changes() {
+        assert_batched_limbs_authenticate_source(
+            FalconSourceLayout::new(1).unwrap(),
+            (1u128 << 127) - 1,
+        );
+    }
+
+    #[test]
+    fn shared_128_bit_bridge_uses_two_limbs_and_authenticates_padded_source() {
+        let field = crate::prime_sampling::sample_prime_context(
+            &mut Blake3Transcript::new(),
+            1u128 << 125,
+            (1u128 << 126) - 1,
+            128,
+        )
+        .unwrap();
+        for batch in [1, 3] {
+            assert_batched_limbs_authenticate_source(
+                FalconSourceLayout::new_shared_prime(batch).unwrap(),
+                field.modulus_u128(),
+            );
+        }
+    }
+
+    #[test]
+    fn shared_126_bit_weights_have_bounded_113_bit_limbs() {
+        let p = FalconSourceLayout::new_shared_prime(1024)
+            .unwrap()
+            .bitz_params();
+        let width = limb_width(&p);
+        assert_eq!(width, 113);
+        // Cover the entire allowed 126-bit family, including its largest
+        // possible weight; this check does not assume those bounds are prime.
+        for modulus in [1u128 << 125, (1u128 << 126) - 1] {
+            let original = vec![modulus - 1; p.rows()];
+            let limbs = weight_limbs(&original, width, 126);
+            assert_eq!(limbs.len(), 2);
+            for row in 0..p.rows() {
+                assert_eq!(limbs[0][row] + (limbs[1][row] << width), original[row]);
+                assert!(limbs[0][row] < 1u128 << 113);
+                assert!(limbs[1][row] < 1u128 << 13);
+            }
+            for limb in &limbs {
+                let bound = checked_weight_sum(limb).unwrap();
+                assert!(bound < 1u128 << 126);
+                assert!(bound < u128::MAX);
+            }
+            assert!(unsplit_shape(&p, modulus).is_err());
+        }
+    }
+
+    fn assert_batched_limbs_authenticate_source(layout: FalconSourceLayout, modulus: u128) {
         const PK: &[u8] = include_bytes!("fixtures/public_key.bin");
         const MSG: &[u8] = include_bytes!("fixtures/message.bin");
         const SIG: &[u8] = include_bytes!("fixtures/signature_ct.bin");
-        let layout = FalconSourceLayout::new(1).unwrap();
         let trace = verification_trace(PK, MSG, SIG).unwrap();
-        let source =
-            FalconSourceWitness::from_traces(layout.clone(), &[MSG], &[SIG], &[trace]).unwrap();
+        let source = FalconSourceWitness::from_traces(
+            layout,
+            &vec![MSG; layout.batch()],
+            &vec![SIG; layout.batch()],
+            &vec![trace; layout.batch()],
+        )
+        .unwrap();
         let p = layout.bitz_params();
-        let modulus = (1u128 << 127) - 1;
         let field = F::make_cfg(&Uint::from(modulus)).unwrap();
         let point: Vec<_> = (0..p.row_vars + p.col_vars)
             .map(|i| F::from_with_cfg(Uint::from(3 + 2 * i as u128), &field))
@@ -996,14 +1080,35 @@ mod tests {
         }
         let value = F::from_with_cfg(Uint::from(value), &field);
         let mut pt = Blake3Transcript::new();
-        let (proof, claims) = prove(&mut pt, &source, &point, modulus, 2, &row_weights).unwrap();
+        let (proof, claims) = prove(
+            &mut pt,
+            &source,
+            BridgeMode::TwoLimbs,
+            &point,
+            modulus,
+            2,
+            &row_weights,
+        )
+        .unwrap();
+        assert_eq!(proof.sums.len(), 2);
+        assert!(proof.sums.iter().all(|sums| sums.len() == p.cols()));
         assert_eq!(claims.len(), 1);
         let s = p.col_vars + 1;
         let rounds: usize = (0..p.row_vars).map(|ell| ell + s).sum();
         assert_eq!(proof.nonces.len(), 1 + rounds + p.row_vars);
         assert_eq!(proof.forest.len(), rounds + p.row_vars);
         let mut vt = Blake3Transcript::new();
-        let verified = verify(&mut vt, &layout, &point, value, modulus, &proof, 2).unwrap();
+        let verified = verify(
+            &mut vt,
+            &layout,
+            BridgeMode::TwoLimbs,
+            &point,
+            value,
+            modulus,
+            &proof,
+            2,
+        )
+        .unwrap();
         for (claim, verified) in claims.iter().zip(&verified) {
             assert_eq!(claim.low, verified.low);
             assert_eq!(claim.high_point, verified.high_point);
@@ -1028,6 +1133,7 @@ mod tests {
                 verify(
                     &mut Blake3Transcript::new(),
                     &layout,
+                    BridgeMode::TwoLimbs,
                     &point,
                     value,
                     modulus,
@@ -1037,6 +1143,44 @@ mod tests {
                 .is_err()
             );
         };
+        // Container shape cannot silently select the unsplit protocol.
+        let mut changed = proof.clone();
+        changed.sums.pop();
+        reject(&changed);
+        let mut changed = proof.clone();
+        changed.sums.clear();
+        reject(&changed);
+        let mut changed = proof.clone();
+        changed.sums.push(changed.sums[0].clone());
+        reject(&changed);
+        let mut changed = proof.clone();
+        changed.sums[1].pop();
+        reject(&changed);
+        assert!(
+            verify(
+                &mut Blake3Transcript::new(),
+                &layout,
+                BridgeMode::Unsplit,
+                &point,
+                value,
+                modulus,
+                &proof,
+                2,
+            )
+            .is_err()
+        );
+        assert!(
+            prove(
+                &mut Blake3Transcript::new(),
+                &source,
+                BridgeMode::Unsplit,
+                &point,
+                modulus,
+                2,
+                &row_weights,
+            )
+            .is_err()
+        );
         let mut changed = proof.clone();
         changed.nonces.pop();
         reject(&changed);
@@ -1050,6 +1194,7 @@ mod tests {
             verify(
                 &mut Blake3Transcript::new(),
                 &layout,
+                BridgeMode::TwoLimbs,
                 &point,
                 value,
                 modulus,
@@ -1076,6 +1221,7 @@ mod tests {
         let error = verify(
             &mut Blake3Transcript::new(),
             &layout,
+            BridgeMode::TwoLimbs,
             &point,
             value,
             modulus,

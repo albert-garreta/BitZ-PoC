@@ -52,7 +52,7 @@ impl Options {
             if flag == "--protocol" {
                 protocol = match args.next().ok_or("missing protocol")?.as_str() {
                     "native" => FalconProtocol::NativeCarry,
-                    "shared-prime" => FalconProtocol::SharedPrimeV2,
+                    "shared-prime" => FalconProtocol::SharedPrimeV3,
                     _ => return Err("protocol must be native or shared-prime".into()),
                 };
                 continue;
@@ -154,16 +154,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
     let prepared = match options.protocol {
         FalconProtocol::NativeCarry => PreparedFalconHybrid::new(options.batch, options.security)?,
-        FalconProtocol::SharedPrimeV2 => {
+        FalconProtocol::SharedPrimeV3 => {
             PreparedFalconHybrid::new_shared_prime(options.batch, options.security)?
         }
     };
     let protocol = match prepared.protocol() {
         FalconProtocol::NativeCarry => "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v4",
-        FalconProtocol::SharedPrimeV2 => "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v2",
+        FalconProtocol::SharedPrimeV3 => "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v3",
     };
     let prepare_ms = ms(start);
     let security = prepared.security();
+    let (prime_min, prime_max) = prepared.prime_modulus_bounds();
     let security_terms: Vec<_> = security
         .terms
         .iter()
@@ -180,7 +181,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         json!({
             "schema": "bitz/falcon-hybrid/v3",
             "protocol": protocol,
-            "integer_bridge": if options.protocol == FalconProtocol::SharedPrimeV2 { "wfbitz-unsplit" } else { "wfbitz-joint-limbs" },
+            "integer_bridge": prepared.integer_bridge_name(),
+            "arithmetic_prime_bits": u128::BITS - prime_max.leading_zeros(),
+            "arithmetic_prime_min": prime_min.to_string(),
+            "arithmetic_prime_max": prime_max.to_string(),
             "arithmetic_live_bits_per_signature": prepared.live_arithmetic_bits_per_signature(),
             "arithmetic_auxiliary_values_per_signature": 8605,
             "event": "prepared",

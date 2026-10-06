@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Matched Falcon V2 measurements. Raw failures are retained; partial runs cannot pass.
+"""Matched Falcon shared-prime measurements. Raw failures are retained; partial runs cannot pass.
 
 The manifest supplies immutable binaries and their build provenance. Discovery
 uses seeds42..46; confirmation uses47..66, one warmup and three samples. Each
-seed is the statistical unit. Both baseline comparisons use the same V2 run.
+seed is the statistical unit. Both baseline comparisons use the same candidate run. Historical V2 manifests
+remain valid; select candidate v3 explicitly for the target-dependent profile.
 """
 import argparse
 import hashlib
@@ -29,6 +30,10 @@ PROFILES = {
     "v2": ("bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v2", "wfbitz-unsplit"),
     "direct": ("bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v2", "wfbitz-joint-limbs"),
 }
+V3_PROFILES = {
+    100: ("bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v3", "wfbitz-unsplit"),
+    128: ("bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v3", "wfbitz-joint-limbs"),
+}
 MATCHED = ("batch", "capacity", "security_target", "threads", "target_arch", "gf128_kernel",
            "compiled_target_features", "input_source", "input_implementation_version", "input_mode",
            "input_rng", "input_seed", "input_count", "input_digest", "public_inputs",
@@ -46,12 +51,39 @@ RING_TERMS = {
     "native": {"native ideal batching and projection", "native coordinate carry batching"},
     "v1": {"shared ring outer, endpoint batch and inner", "integer polynomial projection"},
     "v2": {"shared ring outer and endpoint batch", "integer polynomial projection"},
+    "v3": {"shared ring outer and endpoint batch", "integer polynomial projection"},
     "direct": {"shared ring outer and endpoint batch", "integer polynomial projection"},
 }
 
 def require(test, message):
     if not test:
         raise ValueError(message)
+
+def validate_profile(header, label, security):
+    require(label in PROFILES or label == "v3", "unknown variant")
+    require(security in (100, 128), "unsupported security target")
+    expected = V3_PROFILES[security] if label == "v3" else PROFILES[label]
+    require((header.get("protocol"), header.get("integer_bridge")) == expected, "wrong protocol/bridge")
+    small = label == "v2" or (label == "v3" and security == 100)
+    expected_prime = {
+        "arithmetic_prime_bits": 115 if small else 126,
+        "arithmetic_prime_min": str(1 << (114 if small else 125)),
+        "arithmetic_prime_max": str((1 << 115) - (1 << 102) - 1 if small else (1 << 126) - 1),
+    }
+    # Historical binaries do not report these fields. V3 requires all of them;
+    # any supplied interval must match the selected protocol and security.
+    if label == "v3" or any(key in header for key in expected_prime):
+        require(all(type(header.get(key)) is type(value) and header.get(key) == value
+                    for key, value in expected_prime.items()), "wrong arithmetic prime profile")
+
+
+def process_order(labels, index):
+    labels = list(labels)
+    require(len(labels) >= 2 and len(set(labels)) == len(labels), "need distinct process variants")
+    rotations = [labels[offset:] + labels[:offset] for offset in range(len(labels))]
+    cycle = rotations + [list(reversed(order)) for order in rotations]
+    return cycle[index % len(cycle)]
+
 
 def digest(path):
     with open(path, "rb") as stream:
@@ -67,7 +99,7 @@ def validate(rows, label, case, warmup, measured):
     require(len(headers) == len(finals) == 1 and len(rows) == len(trials)+2, "incomplete process")
     h = headers[0]
     require(all(r.get("schema") == "bitz/falcon-hybrid/v3" for r in rows), "unknown schema")
-    require((h.get("protocol"), h.get("integer_bridge")) == PROFILES[label], "wrong protocol/bridge")
+    validate_profile(h, label, case[0])
     require(h.get("stage_timings") is False, "instrumented latency")
     for key, value in zip(("security_target", "batch", "threads", "input_seed"), case):
         require(h.get(key) == value, "wrong workload: " + key)
@@ -212,7 +244,7 @@ def main():
     binaries=manifest["binaries"]
     candidate=manifest.get("candidate","v2")
     require(candidate in binaries and len(binaries)>=2,"need candidate and baseline")
-    require(all(x in PROFILES for x in binaries),"unknown variant")
+    require(all(x in PROFILES or x == "v3" for x in binaries),"unknown variant")
     provenance=("host","architecture","rustc","rustflags","features","profile","lock_sha256")
     for item in binaries.values():
         require(all(item.get(k) == manifest.get(k) and item.get(k) is not None for k in provenance),"binary provenance mismatch")
@@ -222,15 +254,14 @@ def main():
     require(manifest["host"]==platform.node() and manifest["architecture"]==platform.machine(),"wrong benchmark host")
     args.output.mkdir(parents=True,exist_ok=False)
     state=dict(manifest=manifest,phase=args.phase,seeds=seeds,warmup=args.warmup,iterations=args.iterations,
-               status="running",qualification_status="inconclusive",cells=[],confidence_scope="95% per metric/cell; seed-level paired bootstrap, not simultaneous")
+               status="running",qualification_status="inconclusive",cells=[],confidence_scope="95% per metric/cell; seed-level paired bootstrap, not simultaneous",
+               process_order_cycle=[process_order(binaries, i) for i in range(2*len(binaries))])
     save(args.output/"campaign.json",state)
     try:
         for cell in itertools.product(args.security,args.batches,args.threads):
             records={k:{} for k in binaries}
             for i,seed in enumerate(seeds):
-                labels=list(binaries)
-                if i%2: labels.reverse()
-                for label in labels:
+                for label in process_order(binaries, i):
                     records[label][seed]=run_one(args.output,binaries[label],label,(*cell,seed),args.warmup,args.iterations,args.timeout)
             comparisons=compare(records,candidate,seeds,args.phase=="confirmation")
             state["cells"].append(dict(cell=cell,comparisons=comparisons))
@@ -250,7 +281,7 @@ def main():
         if any(x["status"] == "regression" for x in comparisons):
             state["qualification_status"] = "regression"
         elif (state["status"] == "complete" and args.phase == "confirmation" and seen_cells == full_cells
-              and set(binaries) == {"native","v1","v2"} and candidate == "v2"
+              and candidate in ("v2", "v3") and set(binaries) == {"native","v1",candidate}
               and all(x["status"] == "pass" for x in comparisons)):
             state["qualification_status"] = "pass"
         save(args.output/"campaign.json",state)

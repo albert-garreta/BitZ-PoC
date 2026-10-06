@@ -44,8 +44,8 @@ pub(super) use shared::{
 };
 use shared::{ForestLayerPayload, LeafPayload, NormPayload, QuadraticPayload, verify_round_proofs};
 
-const PRIME_MIN: u128 = 1u128 << 125;
-const PRIME_MAX: u128 = (1u128 << 126) - 1;
+pub(super) const PRIME_MIN: u128 = 1u128 << 125;
+pub(super) const PRIME_MAX: u128 = (1u128 << 126) - 1;
 const COMPACTION_LEAVES: usize = 1 << 11;
 
 /// Proof-of-work schedule for the selected projection field and requested
@@ -85,33 +85,29 @@ impl FalconSecuritySchedule {
         }
         let d = layout.capacity().trailing_zeros() as usize;
         let (cubic_round_bits, forest_claim_bits) = compaction_grinding_bits(d);
-        // Shared v2 lowers the prime floor from 2^125 to 2^114. Adding eleven
-        // bits preserves each old work-normalized prime-group error budget.
-        // The joint compaction allocation keeps its relative difficulties.
-        let extra = if layout.is_shared_prime() { 11 } else { 0 };
         Some(Self {
             // Independent instance batching for norms and candidate leaves.
             // Batch one has no instance challenge, so its difficulty stays 0.
             norm_instance_bits: if d == 0 {
                 0
             } else {
-                component_grinding_bits(2 * d) + extra
+                component_grinding_bits(2 * d)
             },
-            quadratic_round_bits: component_grinding_bits(4 * (10 + d)) + extra,
-            outer_point_bits: component_grinding_bits(11 + d) + extra,
-            cubic_round_bits: cubic_round_bits + extra,
-            forest_claim_bits: forest_claim_bits + extra,
+            quadratic_round_bits: component_grinding_bits(4 * (10 + d)),
+            outer_point_bits: component_grinding_bits(11 + d),
+            cubic_round_bits,
+            forest_claim_bits,
             // Acceptance checks every root equality, so one fixed incorrect
             // signature suffices: there is no union over the batch here.
-            fingerprint_bits: component_grinding_bits(2048) + extra,
-            linear_point_bits: component_grinding_bits(13 + d + layout.batch() + 12) + extra,
-            binding_round_bits: component_grinding_bits(2 * (17 + d)) + extra,
+            fingerprint_bits: component_grinding_bits(2048),
+            linear_point_bits: component_grinding_bits(13 + d + layout.batch() + 12),
+            binding_round_bits: component_grinding_bits(2 * (17 + d)),
         })
     }
 }
 
-// Native p >= 2^125 and target+5 = 133: each group's weighted numerator
-// must be at most 2^-8 before division by p. Shared v2 adds eleven bits above.
+// At target 128 both profiles have p >= 2^125 and target+5 = 133: each
+// group's weighted numerator must be at most 2^-8 before division by p.
 const PRIME_GROUP_MARGIN: u32 = 8;
 
 const fn component_grinding_bits(numerator: usize) -> u32 {
@@ -320,7 +316,7 @@ pub(super) fn prove_falcon_piop_in_field(
     field: &Cfg,
 ) -> Result<FalconPiopProof, FalconError> {
     validate_inputs(layout, traces, target_bits)?;
-    validate_shared_field(layout, field)?;
+    validate_shared_field(layout, target_bits, field)?;
     bind_shared_header(transcript, layout, target_bits, field);
     prove_falcon_piop_body(transcript, layout, traces, target_bits, field)
 }
@@ -429,7 +425,7 @@ pub(super) fn verify_falcon_piop_in_field(
     if !matches!(target_bits, 100 | 128) || proof.compaction.len() != layout.batch() {
         return Err(piop("invalid PIOP shape"));
     }
-    validate_shared_field(layout, field)?;
+    validate_shared_field(layout, target_bits, field)?;
     if field.modulus_u128() != proof.modulus {
         return Err(piop("shared transcript prime mismatch"));
     }
@@ -509,10 +505,15 @@ fn bind_header(transcript: &mut impl Transcript, layout: &FalconSourceLayout, ta
     transcript.absorb_slice(&(target_bits as u64).to_le_bytes());
 }
 
-fn validate_shared_field(layout: &FalconSourceLayout, field: &Cfg) -> Result<(), FalconError> {
+fn validate_shared_field(
+    layout: &FalconSourceLayout,
+    target_bits: usize,
+    field: &Cfg,
+) -> Result<(), FalconError> {
+    let (prime_min, prime_max) = super::shared_ring::prime_bounds(target_bits)?;
     let modulus = field.modulus_u128();
     if !layout.is_shared_prime()
-        || !(super::shared_ring::PRIME_MIN..=super::shared_ring::PRIME_MAX).contains(&modulus)
+        || !(prime_min..=prime_max).contains(&modulus)
         || modulus <= super::constraints::SOURCE_RESIDUAL_BOUND
     {
         return Err(piop("invalid shared-prime integer context"));
@@ -526,7 +527,7 @@ fn bind_shared_header(
     target_bits: usize,
     field: &Cfg,
 ) {
-    transcript.absorb_slice(b"bitz/falcon1024-ct/piop/shared-prime/v2");
+    transcript.absorb_slice(b"bitz/falcon1024-ct/piop/shared-prime/v3");
     transcript.absorb_slice(&(layout.batch() as u64).to_le_bytes());
     transcript.absorb_slice(&(layout.capacity() as u64).to_le_bytes());
     transcript.absorb_slice(&(target_bits as u64).to_le_bytes());
@@ -1802,7 +1803,7 @@ mod tests {
 
         fn absorb_inner(&mut self, bytes: &[u8]) {
             self.prime_draws += usize::from(bytes == b"bitz/shared-prime-sampling/v1");
-            self.shared_headers += usize::from(bytes == b"bitz/falcon1024-ct/piop/shared-prime/v2");
+            self.shared_headers += usize::from(bytes == b"bitz/falcon1024-ct/piop/shared-prime/v3");
             self.inner.absorb_inner(bytes);
         }
     }
@@ -1811,10 +1812,11 @@ mod tests {
     fn supplied_field_piop_roundtrips_without_a_second_prime_draw() {
         let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
         let layout = FalconSourceLayout::new_shared_prime(3).unwrap();
+        let (prime_min, prime_max) = super::super::shared_ring::prime_bounds(100).unwrap();
         let field = crate::prime_sampling::sample_prime_context(
             &mut Blake3Transcript::new(),
-            super::super::shared_ring::PRIME_MIN,
-            super::super::shared_ring::PRIME_MAX,
+            prime_min,
+            prime_max,
             128,
         )
         .unwrap();
@@ -1852,11 +1854,14 @@ mod tests {
                 .is_err()
         );
         let small = field::FpCtx::from_prime_u128(7);
-        assert!(validate_shared_field(&layout, &small).is_err());
+        assert!(validate_shared_field(&layout, 100, &small).is_err());
         let wide = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
-        assert!(validate_shared_field(&layout, &wide).is_err());
+        assert!(validate_shared_field(&layout, 128, &wide).is_err());
         let legacy_field = sample_field(&mut Blake3Transcript::new()).unwrap();
-        assert!(validate_shared_field(&layout, &legacy_field).is_err());
+        assert!(validate_shared_field(&layout, 100, &legacy_field).is_err());
+        assert!(validate_shared_field(&layout, 128, &legacy_field).is_ok());
+        assert!(validate_shared_field(&layout, 128, &field).is_err());
+        assert!(validate_shared_field(&layout, 127, &field).is_err());
     }
 
     #[test]
@@ -1867,7 +1872,7 @@ mod tests {
         let extension = q.pow(11);
         let old_denominator = &extension - &q;
         let extension_product = &extension * &old_denominator;
-        assert_eq!(super::super::shared_ring::projection_grinding_bits(128), 25);
+        assert_eq!(super::super::shared_ring::projection_grinding_bits(128), 14);
         for batch in 1usize..=1024 {
             let layout = FalconSourceLayout::new_shared_prime(batch).unwrap();
             let m = layout.capacity().ilog2() as usize;
@@ -1876,19 +1881,20 @@ mod tests {
             let ring_numerator = 4 * m + 2_049;
             let baseline_numerator = m + 2_046;
             let preserves_baseline = |grind: usize| {
-                let candidate_exponent = 114 + grind;
+                let candidate_exponent =
+                    super::super::shared_ring::prime_floor_bits(128).unwrap() + grind;
                 let baseline_exponent = 125 + 12;
                 let scale = candidate_exponent.max(baseline_exponent);
                 // Cross-multiply positive denominators, including the E-term
-                // increase that projection-only accounting would miss at g=24.
+                // increase that projection-only accounting would miss at g=13.
                 let candidate = (BigUint::from(ring_numerator) * &old_denominator << scale)
                     + (BigUint::from(20u8) << (scale - candidate_exponent)) * &extension_product;
                 let baseline = (BigUint::from(baseline_numerator) * &extension << scale)
                     + (BigUint::from(10u8) << (scale - baseline_exponent)) * &extension_product;
                 candidate <= baseline
             };
-            assert!(preserves_baseline(25), "batch {batch}");
-            assert!((0..25).all(|g| !preserves_baseline(g)), "batch {batch}");
+            assert!(preserves_baseline(14), "batch {batch}");
+            assert!((0..14).all(|g| !preserves_baseline(g)), "batch {batch}");
             let legacy = FalconSourceLayout::new(batch).unwrap();
             assert_eq!(layout.linear_stride(), legacy.linear_stride());
             assert_eq!(layout.source_bits(), legacy.source_bits());
@@ -1896,20 +1902,48 @@ mod tests {
     }
 
     #[test]
-    fn shared_prime_interval_supports_one_unsplit_limb_and_integer_lifts() {
-        use super::super::shared_ring::{PRIME_MAX, PRIME_MIN};
+    fn shared_prime_profiles_support_their_bridge_shapes_and_integer_lifts() {
+        use super::super::shared_ring::{prime_bounds, prime_floor_bits};
 
-        assert_eq!(PRIME_MIN, 1u128 << 114);
-        assert_eq!(PRIME_MAX, (1u128 << 115) - (1u128 << 102) - 1);
-        assert!(super::super::constraints::SOURCE_RESIDUAL_BOUND < PRIME_MIN);
+        assert_eq!(
+            prime_bounds(100).unwrap(),
+            (1u128 << 114, (1u128 << 115) - (1u128 << 102) - 1)
+        );
+        assert_eq!(
+            prime_bounds(128).unwrap(),
+            (1u128 << 125, (1u128 << 126) - 1)
+        );
+        assert_eq!(prime_floor_bits(100).unwrap(), 114);
+        assert_eq!(prime_floor_bits(128).unwrap(), 125);
+        assert!(prime_bounds(127).is_err());
+        assert!(prime_floor_bits(127).is_err());
         for batch in 1..=1024 {
             let layout = FalconSourceLayout::new_shared_prime(batch).unwrap();
             let shape = crate::bitz::Shape::new(layout.row_vars(), layout.col_vars()).unwrap();
-            assert!(shape.supports_modulus_bound(PRIME_MAX));
-            // The uncapped 115-bit interval cannot satisfy the strict gate.
-            assert!(!shape.supports_modulus_bound((1u128 << 115) - 1));
-            let lift_bound = 11 * layout.source_bits() as u128 * 12_288u128.pow(2);
-            assert!(2 * lift_bound < PRIME_MIN);
+            let rows = shape.rows() as u128;
+            for target in [100, 128] {
+                let (prime_min, prime_max) = prime_bounds(target).unwrap();
+                assert!(super::super::constraints::SOURCE_RESIDUAL_BOUND < prime_min);
+                let lift_bound = 11 * layout.source_bits() as u128 * 12_288u128.pow(2);
+                assert!(2 * lift_bound < prime_min);
+                if target == 100 {
+                    assert!(shape.supports_modulus_bound(prime_max));
+                    // The uncapped 115-bit interval cannot satisfy the strict gate.
+                    assert!(!shape.supports_modulus_bound((1u128 << 115) - 1));
+                } else {
+                    // The 126-bit family requires two bounded limbs, with the
+                    // extra forest coordinate selecting the unmultiplied limb.
+                    assert!(!shape.supports_modulus_bound(prime_max));
+                    let width = 126 - layout.row_vars();
+                    let limb_bound = 1u128 << width;
+                    assert!(shape.supports_modulus_bound(limb_bound));
+                    let low_sum = rows * (limb_bound - 1);
+                    let high_sum = rows * ((prime_max - 1) >> width);
+                    assert!(low_sum < 1u128 << 126);
+                    assert!(high_sum < 1u128 << 26);
+                    assert!(low_sum < u128::MAX && high_sum < u128::MAX);
+                }
+            }
         }
     }
 
@@ -1947,7 +1981,8 @@ mod tests {
                         super::super::shared_ring::projection_grinding_bits(target),
                     ),
                 ] {
-                    let exponent = 114 + bits as usize;
+                    let exponent = super::super::shared_ring::prime_floor_bits(target).unwrap()
+                        + bits as usize;
                     assert!(exponent <= SCALE);
                     dyadic += BigUint::from(numerator) << (SCALE - exponent);
                 }
@@ -1999,27 +2034,9 @@ mod tests {
             assert!(error << 8 <= 1u128 << denominator, "batch {batch}");
             let shared_layout = FalconSourceLayout::new_shared_prime(batch).unwrap();
             let shared = FalconSecuritySchedule::for_layout(128, &shared_layout).unwrap();
-            assert_eq!(
-                shared.norm_instance_bits,
-                if d == 0 {
-                    0
-                } else {
-                    schedule.norm_instance_bits + 11
-                }
-            );
-            for (native_bits, shared_bits) in [
-                (schedule.quadratic_round_bits, shared.quadratic_round_bits),
-                (schedule.outer_point_bits, shared.outer_point_bits),
-                (schedule.cubic_round_bits, shared.cubic_round_bits),
-                (schedule.forest_claim_bits, shared.forest_claim_bits),
-                (schedule.fingerprint_bits, shared.fingerprint_bits),
-                (schedule.linear_point_bits, shared.linear_point_bits),
-                (schedule.binding_round_bits, shared.binding_round_bits),
-            ] {
-                // Equal positive power-of-two denominators preserve the exact
-                // old category bounds, including both compaction subgroups.
-                assert_eq!(125 + native_bits, 114 + shared_bits);
-            }
+            // Target 128 now uses the same field floor and arithmetic
+            // schedule for both profiles; native transcript behavior is retained.
+            assert_eq!(shared, schedule);
             let unground = FalconSecuritySchedule::for_layout(100, &layout).unwrap();
             assert_eq!(
                 FalconSecuritySchedule::for_layout(100, &shared_layout).unwrap(),

@@ -32,9 +32,22 @@ type Cfg = <F as SpartanField>::Config;
 
 const COEFFICIENT_LOG: usize = N.ilog2() as usize;
 const LIFT_COEFFICIENTS: usize = 2 * EXTENSION_DEGREE - 1;
-pub(super) const PRIME_MIN: u128 = 1 << 114;
-pub(super) const PRIME_MAX: u128 = (1 << 115) - (1 << 102) - 1;
-const DOMAIN: &[u8] = b"bitz/falcon1024-ct/shared-ring/v2";
+const DOMAIN: &[u8] = b"bitz/falcon1024-ct/shared-ring/v3";
+
+/// Target 100 uses one unsplit bounded exponent. Target 128 retains the
+/// native prime family and its two bounded bridge limbs.
+pub(super) fn prime_bounds(target_bits: usize) -> Result<(u128, u128), FalconError> {
+    match target_bits {
+        100 => Ok((1 << 114, (1 << 115) - (1 << 102) - 1)),
+        128 => Ok((super::piop::PRIME_MIN, super::piop::PRIME_MAX)),
+        _ => Err(error("unsupported shared prime security target")),
+    }
+}
+
+#[cfg(test)]
+pub(super) fn prime_floor_bits(target_bits: usize) -> Result<usize, FalconError> {
+    Ok(prime_bounds(target_bits)?.0.ilog2() as usize)
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct Proof {
@@ -114,12 +127,12 @@ impl VerifierProjectedClaim {
 }
 
 pub(super) const fn projection_grinding_bits(target_bits: usize) -> u32 {
-    if target_bits == 128 { 25 } else { 2 }
+    if target_bits == 128 { 14 } else { 2 }
 }
 
 struct ProjectionGrinding;
 impl GrindingDomain for ProjectionGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/shared-ring/projection-grinding/v1";
+    const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/shared-ring/projection-grinding/v3";
 }
 
 #[tracing::instrument(skip_all, name = "falcon_shared_ring:prove")]
@@ -143,7 +156,7 @@ pub(super) fn prove(
             "shared ring witness shape or public statement mismatch",
         ));
     }
-    bind_parameters(transcript, layout, target_bits);
+    bind_parameters(transcript, layout, target_bits)?;
     let r = sample_point(transcript, b"instances", layout.capacity().ilog2() as usize)?;
     let lambda = equality_weights(&r);
     let certificate = certificate(traces, &lambda);
@@ -174,7 +187,7 @@ pub(super) fn prove(
     let lift = grouped_lift(source, &row, &column);
     check_lift(layout, &lift, target)?;
     absorb_lift(transcript, &lift);
-    let field = sample_shared_field(transcript, layout)?;
+    let field = sample_shared_field(transcript, layout, target_bits)?;
     transcript.absorb_slice(b"ring-prime-projection");
     let projection_nonce = {
         let _span = tracing::info_span!("falcon_shared_ring:projection_grinding").entered();
@@ -218,7 +231,7 @@ pub(super) fn verify(
     {
         return Err(error("invalid shared ring proof encoding"));
     }
-    bind_parameters(transcript, layout, target_bits);
+    bind_parameters(transcript, layout, target_bits)?;
     let r = sample_point(transcript, b"instances", rounds)?;
     transcript.absorb_slice(b"quotient-certificate");
     absorb_extensions(transcript, &proof.certificate);
@@ -239,7 +252,7 @@ pub(super) fn verify(
     let offset = decoder_offset(&row, position_sum, &omega);
     check_lift(layout, &proof.lift, tau.sub(offset))?;
     absorb_lift(transcript, &proof.lift);
-    let field = sample_shared_field(transcript, layout)?;
+    let field = sample_shared_field(transcript, layout, target_bits)?;
     transcript.absorb_slice(b"ring-prime-projection");
     {
         let _span = tracing::info_span!("falcon_shared_ring:verify_projection_grinding").entered();
@@ -273,13 +286,19 @@ fn validate_context(
     if !layout.is_shared_prime() || !matches!(target_bits, 100 | 128) {
         return Err(error("unsupported shared ring layout or security target"));
     }
-    if 2 * lift_bound(layout) >= PRIME_MIN || SOURCE_RESIDUAL_BOUND >= PRIME_MIN {
+    let (prime_min, _) = prime_bounds(target_bits)?;
+    if 2 * lift_bound(layout) >= prime_min || SOURCE_RESIDUAL_BOUND >= prime_min {
         return Err(error("shared ring bounds exceed the prime family"));
     }
     Ok(())
 }
 
-fn bind_parameters(t: &mut impl Transcript, layout: &FalconSourceLayout, target: usize) {
+fn bind_parameters(
+    t: &mut impl Transcript,
+    layout: &FalconSourceLayout,
+    target: usize,
+) -> Result<(), FalconError> {
+    let (prime_min, prime_max) = prime_bounds(target)?;
     t.absorb_slice(DOMAIN);
     for value in [
         Q as usize,
@@ -300,9 +319,10 @@ fn bind_parameters(t: &mut impl Transcript, layout: &FalconSourceLayout, target:
     );
     t.absorb_slice(&lift_bound(layout).to_le_bytes());
     t.absorb_slice(&SOURCE_RESIDUAL_BOUND.to_le_bytes());
-    t.absorb_slice(&PRIME_MIN.to_le_bytes());
-    t.absorb_slice(&PRIME_MAX.to_le_bytes());
+    t.absorb_slice(&prime_min.to_le_bytes());
+    t.absorb_slice(&prime_max.to_le_bytes());
     t.absorb_slice(&projection_grinding_bits(target).to_le_bytes());
+    Ok(())
 }
 
 fn challenge(t: &mut impl Transcript, label: &[u8]) -> Result<Ext, FalconError> {
@@ -753,9 +773,11 @@ fn absorb_lift(transcript: &mut impl Transcript, lift: &[i128; LIFT_COEFFICIENTS
 fn sample_shared_field(
     transcript: &mut impl Transcript,
     layout: &FalconSourceLayout,
+    target_bits: usize,
 ) -> Result<Cfg, FalconError> {
+    let (prime_min, prime_max) = prime_bounds(target_bits)?;
     transcript.absorb_slice(b"shared-prime-after-ring-lift");
-    let field = crate::prime_sampling::sample_prime_context(transcript, PRIME_MIN, PRIME_MAX, 128)
+    let field = crate::prime_sampling::sample_prime_context(transcript, prime_min, prime_max, 128)
         .map_err(|e| error(e.to_string()))?;
     if field.modulus_u128() <= 2 * lift_bound(layout)
         || field.modulus_u128() <= SOURCE_RESIDUAL_BOUND
@@ -890,7 +912,8 @@ mod tests {
             let mut vt = Blake3Transcript::new();
             let (vf, verified) = verify(&mut vt, &layout, &statement, &proof, target).unwrap();
             assert_eq!(pf.modulus_u128(), vf.modulus_u128());
-            assert!((PRIME_MIN..=PRIME_MAX).contains(&pf.modulus_u128()));
+            let (prime_min, prime_max) = prime_bounds(target).unwrap();
+            assert!((prime_min..=prime_max).contains(&pf.modulus_u128()));
             assert_eq!(claim.target, verified.target);
             let point: Vec<F> = (0..layout.source_bits().ilog2())
                 .map(|i| F::from_with_cfg(u128::from(i + 7), &pf))
@@ -1513,7 +1536,7 @@ mod tests {
         let positions = powers(beta);
         let omega = operand_weights(challenge(&mut transcript, b"operand-batching").unwrap());
         let (column, _) = bit_query(&layout, &row, &positions, &omega).unwrap();
-        let field = sample_shared_field(&mut transcript, &layout).unwrap();
+        let field = sample_shared_field(&mut transcript, &layout, 100).unwrap();
         let alpha = squeeze_field(&mut transcript, &field).unwrap();
         let mut powers = vec![field.one(); EXTENSION_DEGREE];
         for i in 1..EXTENSION_DEGREE {

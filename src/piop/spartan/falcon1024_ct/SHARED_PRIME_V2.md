@@ -1,4 +1,8 @@
-# Shared-prime Falcon V2
+# Shared-prime Falcon V2 (historical)
+
+This describes runtime revision `4fe1d3d5`. The current API selects
+[SharedPrimeV3](SHARED_PRIME_V3.md), with a larger prime and two limbs at
+128 bits. V2 binaries and qualification records remain available for comparison.
 
 `PreparedFalconHybrid::new_shared_prime(batch, target_bits)` selects the
 non-ZK `SharedPrimeV2` protocol for 1–1024 signatures and targets 100 or 128.

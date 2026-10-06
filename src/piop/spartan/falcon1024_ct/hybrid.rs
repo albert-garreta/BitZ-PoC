@@ -65,7 +65,7 @@ pub struct FalconHybridSecurity {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FalconProtocol {
     NativeCarry,
-    SharedPrimeV2,
+    SharedPrimeV3,
 }
 
 /// Prepared public circuit, reusable across witnesses of the same batch size.
@@ -74,6 +74,7 @@ pub struct PreparedFalconHybrid {
     keccak: [PreparedKeccak; 2],
     geometry: shared::Geometry<3>,
     target_bits: usize,
+    bridge_mode: hybrid_bridge::BridgeMode,
     ligerito: ResolvedLigerito,
     pcs_grinding: GrindingPlan,
     scratch: Mutex<Scratch>,
@@ -111,7 +112,7 @@ impl PreparedFalconHybrid {
 
     /// Experimental four-operand ring reduction and integer-polynomial lift.
     pub fn new_shared_prime(batch: usize, target_bits: usize) -> Result<Self, FalconError> {
-        Self::with_protocol(batch, target_bits, FalconProtocol::SharedPrimeV2)
+        Self::with_protocol(batch, target_bits, FalconProtocol::SharedPrimeV3)
     }
 
     pub fn with_protocol(
@@ -124,7 +125,12 @@ impl PreparedFalconHybrid {
         }
         let layout = match protocol {
             FalconProtocol::NativeCarry => FalconSourceLayout::new(batch)?,
-            FalconProtocol::SharedPrimeV2 => FalconSourceLayout::new_shared_prime(batch)?,
+            FalconProtocol::SharedPrimeV3 => FalconSourceLayout::new_shared_prime(batch)?,
+        };
+        let bridge_mode = if protocol == FalconProtocol::SharedPrimeV3 && target_bits == 100 {
+            hybrid_bridge::BridgeMode::Unsplit
+        } else {
+            hybrid_bridge::BridgeMode::TwoLimbs
         };
         let keccak = [
             PreparedKeccak::new_slab(batch, 0, 16).map_err(error)?,
@@ -154,6 +160,7 @@ impl PreparedFalconHybrid {
             keccak,
             geometry,
             target_bits,
+            bridge_mode,
             ligerito,
             pcs_grinding,
             scratch: Mutex::default(),
@@ -177,11 +184,28 @@ impl PreparedFalconHybrid {
     }
     pub fn protocol(&self) -> FalconProtocol {
         if self.layout.is_shared_prime() {
-            FalconProtocol::SharedPrimeV2
+            FalconProtocol::SharedPrimeV3
         } else {
             FalconProtocol::NativeCarry
         }
     }
+    /// The bridge is selected from validated public parameters, never proof shape.
+    pub fn integer_bridge_name(&self) -> &'static str {
+        match self.bridge_mode {
+            hybrid_bridge::BridgeMode::Unsplit => "wfbitz-unsplit",
+            hybrid_bridge::BridgeMode::TwoLimbs => "wfbitz-joint-limbs",
+        }
+    }
+
+    /// Inclusive interval for the transcript-selected arithmetic prime.
+    pub fn prime_modulus_bounds(&self) -> (u128, u128) {
+        if self.layout.is_shared_prime() {
+            super::shared_ring::prime_bounds(self.target_bits).expect("prepared shared target")
+        } else {
+            (super::piop::PRIME_MIN, super::piop::PRIME_MAX)
+        }
+    }
+
     pub fn live_arithmetic_bits_per_signature(&self) -> usize {
         self.layout.live_bits()
     }
@@ -198,11 +222,7 @@ impl PreparedFalconHybrid {
         let d = self.capacity().ilog2() as usize;
         let schedule = super::FalconSecuritySchedule::for_layout(self.target_bits, &self.layout)
             .expect("prepared target");
-        let prime_bits = if self.layout.is_shared_prime() {
-            114
-        } else {
-            125
-        };
+        let prime_bits = self.prime_modulus_bounds().0.ilog2() as i32;
         let prime = |n: usize, g: u32| n as f64 * 2f64.powi(-prime_bits - g as i32);
         let binary = |n: usize| n as f64 * 2f64.powi(-128 - self.binary_grinding(n) as i32);
         let terms = vec![
@@ -280,7 +300,10 @@ impl PreparedFalconHybrid {
             ),
             (
                 "batched integer-to-binary forest",
-                binary(hybrid_bridge::error_numerator(&self.layout)),
+                binary(hybrid_bridge::error_numerator(
+                    &self.layout,
+                    self.bridge_mode,
+                )),
             ),
             (
                 "binary Keccak PIOP",
@@ -419,7 +442,7 @@ impl PreparedFalconHybrid {
         statement.public.validate(self.batch())?;
         let mut h = blake3::Hasher::new();
         h.update(if self.layout.is_shared_prime() {
-            b"bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v2".as_slice()
+            b"bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v3".as_slice()
         } else {
             b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v4".as_slice()
         });
@@ -435,11 +458,18 @@ impl PreparedFalconHybrid {
         }
         h.update(b"bounded14:low13+4097*top;native:Q12289,theta11+theta+14;Dlen1023;carry22528BN");
         if self.layout.is_shared_prime() {
-            h.update(b"shared:all-E;C,H,S1,S2:1,l,l2,l3;direct-beta-decoder;Hunsigned14;S2encoded-alias;live-mask;P21-i128;prime115-capped;unsplit8192;merge-in-binder-block/v2");
+            h.update(b"shared:all-E;C,H,S1,S2:1,l,l2,l3;direct-beta-decoder;Hunsigned14;S2encoded-alias;live-mask;P21-i128;target-selected-prime-and-bridge;merge-in-binder-block/v3");
             h.update(&(self.layout.live_bits() as u64).to_le_bytes());
             h.update(
                 &(self.layout.public_key_offset().expect("shared H slots") as u64).to_le_bytes(),
             );
+            let (prime_min, prime_max) = self.prime_modulus_bounds();
+            h.update(&prime_min.to_le_bytes());
+            h.update(&prime_max.to_le_bytes());
+            h.update(self.integer_bridge_name().as_bytes());
+            let bridge_layout = self.layout.bitz_params();
+            h.update(&(bridge_layout.row_vars as u64).to_le_bytes());
+            h.update(&(bridge_layout.col_vars as u64).to_le_bytes());
             h.update(&super::shared_ring::projection_grinding_bits(self.target_bits).to_le_bytes());
         }
         h.update(b"compaction:fixed-bad-signature;forest:eq-batching,nonzero-vector-line/v3");
@@ -460,7 +490,7 @@ impl PreparedFalconHybrid {
         }
         // The bridge schedule is public and deterministic, but bind it explicitly
         // so proofs cannot be replayed under a different bridge error budget.
-        let bridge_numerator = hybrid_bridge::error_numerator(&self.layout);
+        let bridge_numerator = hybrid_bridge::error_numerator(&self.layout, self.bridge_mode);
         h.update(&(bridge_numerator as u64).to_le_bytes());
         h.update(&self.binary_grinding(bridge_numerator).to_le_bytes());
         for root in &statement.roots {
@@ -486,7 +516,7 @@ impl PreparedFalconHybrid {
         let digest = *h.finalize().as_bytes();
         let mut t = Blake3Transcript::new();
         t.absorb_slice(if self.layout.is_shared_prime() {
-            b"bitz/falcon-hybrid/shared-prime/statement/v2".as_slice()
+            b"bitz/falcon-hybrid/shared-prime/statement/v3".as_slice()
         } else {
             b"bitz/falcon-hybrid/native-ring/statement/v4".as_slice()
         });
@@ -514,9 +544,13 @@ impl PreparedFalconHybrid {
         let (bridge, a) = hybrid_bridge::prove(
             &mut t,
             &committed.arithmetic,
+            self.bridge_mode,
             &bridge_claim.point,
             bridge_claim.modulus,
-            self.binary_grinding(hybrid_bridge::error_numerator(&self.layout)),
+            self.binary_grinding(hybrid_bridge::error_numerator(
+                &self.layout,
+                self.bridge_mode,
+            )),
             &row_weights,
         )?;
         drop(row_weights);
@@ -632,11 +666,15 @@ impl PreparedFalconHybrid {
         let a = hybrid_bridge::verify(
             &mut t,
             &self.layout,
+            self.bridge_mode,
             &bridge_claim.point,
             proof.arithmetic.binding_terminal[1],
             bridge_claim.modulus,
             &proof.bridge,
-            self.binary_grinding(hybrid_bridge::error_numerator(&self.layout)),
+            self.binary_grinding(hybrid_bridge::error_numerator(
+                &self.layout,
+                self.bridge_mode,
+            )),
         )?;
         let mut k = Vec::new();
         for slab in 0..2 {
@@ -954,7 +992,8 @@ mod tests {
                 let prepared = PreparedFalconHybrid::new(batch, target).unwrap();
                 let security = prepared.security();
                 assert!(security.algebraic_bits >= target as f64);
-                let numerator = hybrid_bridge::error_numerator(&prepared.layout);
+                let numerator =
+                    hybrid_bridge::error_numerator(&prepared.layout, prepared.bridge_mode);
                 let bits = prepared.binary_grinding(numerator);
                 assert_eq!(
                     bits,
@@ -1033,11 +1072,41 @@ mod tests {
     }
 
     #[test]
+    fn shared_profiles_bind_target_selected_prime_and_bridge() {
+        for target in [100, 128] {
+            for batch in [1, 3, 32, 1024] {
+                let prepared = PreparedFalconHybrid::new_shared_prime(batch, target).unwrap();
+                let (min, max) = prepared.prime_modulus_bounds();
+                let expected = if target == 100 {
+                    (
+                        (1u128 << 114, (1u128 << 115) - (1u128 << 102) - 1),
+                        "wfbitz-unsplit",
+                    )
+                } else {
+                    ((1u128 << 125, (1u128 << 126) - 1), "wfbitz-joint-limbs")
+                };
+                assert_eq!((min, max), expected.0);
+                assert_eq!(prepared.integer_bridge_name(), expected.1);
+                assert!(prepared.security().algebraic_bits >= target as f64);
+                if target == 128 {
+                    let native = PreparedFalconHybrid::new(batch, target).unwrap();
+                    assert_eq!(
+                        prepared.prime_modulus_bounds(),
+                        native.prime_modulus_bounds()
+                    );
+                    assert_eq!(prepared.bridge_mode, native.bridge_mode);
+                }
+            }
+        }
+        assert!(PreparedFalconHybrid::new_shared_prime(1, 127).is_err());
+    }
+
+    #[test]
     fn shared_prime_hybrid_complete_proofs_and_protocol_binding() {
-        for (batch, target) in [(1, 100), (3, 100), (9, 100), (1, 128)] {
+        for (batch, target) in [(1, 100), (3, 100), (9, 100), (1, 128), (3, 128)] {
             let prepared = PreparedFalconHybrid::new_shared_prime(batch, target).unwrap();
             let native = PreparedFalconHybrid::new(batch, target).unwrap();
-            assert_eq!(prepared.protocol(), FalconProtocol::SharedPrimeV2);
+            assert_eq!(prepared.protocol(), FalconProtocol::SharedPrimeV3);
             assert_eq!(prepared.live_arithmetic_bits_per_signature(), 114_914);
             assert_eq!(
                 prepared.source_bits_per_signature(),
@@ -1050,6 +1119,22 @@ mod tests {
             assert!(native.verify(&statement, &proof).is_err());
             assert!(proof.payload_size_bytes() > 0);
             assert!(proof.arithmetic.binding_point.is_empty());
+            let other_target = PreparedFalconHybrid::new_shared_prime(
+                batch,
+                if target == 100 { 128 } else { 100 },
+            )
+            .unwrap();
+            assert!(other_target.verify(&statement, &proof).is_err());
+            let mut wrong_shape = proof.clone();
+            if target == 100 {
+                wrong_shape
+                    .bridge
+                    .sums
+                    .push(wrong_shape.bridge.sums[0].clone());
+            } else {
+                wrong_shape.bridge.sums.pop();
+            }
+            assert!(prepared.verify(&statement, &wrong_shape).is_err());
             let mut wrong = proof.clone();
             wrong
                 .arithmetic
@@ -1066,7 +1151,7 @@ mod tests {
                 assert!(prepared.verify(&wrong, &proof).is_err());
             }
             let mut wrong = proof.clone();
-            assert_eq!(wrong.bridge.sums.len(), 1);
+            assert_eq!(wrong.bridge.sums.len(), if target == 100 { 1 } else { 2 });
             wrong.bridge.sums[0][0] ^= 1;
             assert!(prepared.verify(&statement, &wrong).is_err());
             let mut wrong = proof.clone();
