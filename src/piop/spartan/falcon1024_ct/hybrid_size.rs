@@ -16,6 +16,155 @@ const HASH_BYTES: usize = 32;
 const EXTENSION_BYTES: usize = 2 * EXTENSION_DEGREE;
 
 impl FalconHybridProof {
+    /// Untimed diagnostics as `(category, stored_nonce_boundaries, prefix_sum)`.
+    /// `prefix_sum` is sum(nonce + 1), accumulated in u128. It describes the
+    /// serial ascending nonce prefixes, not executed hashes: parallel/SIMD
+    /// overscan is excluded, and zero-difficulty placeholders still count as
+    /// one stored prefix entry. No proof or transcript data is changed.
+    pub fn grinding_diagnostics(&self) -> Vec<(&'static str, usize, u128)> {
+        let Self {
+            arithmetic,
+            bridge,
+            keccak,
+            links_nonces,
+            joint,
+            opening,
+            opening_nonces,
+            pcs_nonces,
+        } = self;
+        let mut counts = std::collections::BTreeMap::from([
+            ("ring_projection", (0, 0)),
+            ("native_ring_carry", (0, 0)),
+            ("prime_norm", (0, 0)),
+            ("prime_products", (0, 0)),
+            ("prime_fingerprint", (0, 0)),
+            ("prime_forest", (0, 0)),
+            ("prime_leaf", (0, 0)),
+            ("prime_binder", (0, 0)),
+            ("binary_bridge", (0, 0)),
+            ("binary_keccak", (0, 0)),
+            ("binary_links", (0, 0)),
+            ("binary_joint", (0, 0)),
+            ("binary_opening", (0, 0)),
+            ("pcs_auxiliary", (0, 0)),
+            ("pcs_queries", (0, 0)),
+            ("pcs_folds", (0, 0)),
+            ("pcs_ood", (0, 0)),
+        ]);
+        let mut visit = |category, nonce| add_nonce(&mut counts, category, nonce);
+        let FalconBindingPrefixProof {
+            piop,
+            ring,
+            linear_point_nonce,
+            binding: _,
+            binding_point: _,
+            binding_terminal: _,
+            binding_nonces,
+        } = arithmetic;
+        match piop {
+            super::super::opening::PiopProof::Native(proof) => {
+                visit_native_prime_nonces(proof, &mut visit)
+            }
+            super::super::opening::PiopProof::Shared(proof) => {
+                proof.visit_grinding_nonces(&mut visit)
+            }
+        }
+        match ring {
+            super::super::opening::RingProof::Native(proof) => {
+                let NativeRingProof {
+                    certificate: _,
+                    instance_point: _,
+                    alpha: _,
+                    carries: _,
+                    carry_nonce,
+                } = proof;
+                for &nonce in carry_nonce.iter() {
+                    visit("native_ring_carry", nonce);
+                }
+            }
+            super::super::opening::RingProof::Shared(proof) => {
+                let super::super::shared_ring::Proof {
+                    certificate: _,
+                    outer: _,
+                    evaluations: _,
+                    lift: _,
+                    projection_nonce,
+                } = proof;
+                visit("ring_projection", *projection_nonce);
+            }
+        }
+        for &nonce in linear_point_nonce.iter().chain(binding_nonces) {
+            visit("prime_binder", nonce);
+        }
+        let hybrid_bridge::Proof {
+            sums: _,
+            forest: _,
+            nonces,
+        } = bridge;
+        for &nonce in nonces {
+            visit("binary_bridge", nonce);
+        }
+        for hybrid_keccak::PrefixProof {
+            zerocheck: _,
+            lincheck: _,
+            grinding_nonces,
+        } in keccak
+        {
+            for &nonce in grinding_nonces {
+                visit("binary_keccak", nonce);
+            }
+        }
+        for &nonce in links_nonces {
+            visit("binary_links", nonce);
+        }
+        let joint::Proof {
+            rounds: _,
+            value: _,
+            nonces,
+        } = joint;
+        for &nonce in nonces {
+            visit("binary_joint", nonce);
+        }
+        for &nonce in opening_nonces {
+            visit("binary_opening", nonce);
+        }
+        for &nonce in pcs_nonces {
+            visit("pcs_auxiliary", nonce);
+        }
+        let shared::Proof {
+            ood,
+            ring: _,
+            ligerito,
+            paths: _,
+        } = opening;
+        if let Some(crate::ligerito_flock::OodRound { y: _, nonce }) = ood {
+            for &nonce in nonce.iter() {
+                visit("pcs_ood", nonce);
+            }
+        }
+        let flock_core::pcs::ligerito::LigeritoProof {
+            initial_root: _,
+            initial_proof: _,
+            recursive_roots: _,
+            recursive_proofs: _,
+            final_proof: _,
+            sumcheck_transcript: _,
+            grinding_nonces,
+            ood_values: _,
+            fold_grinding_nonces,
+        } = ligerito;
+        for &nonce in grinding_nonces {
+            visit("pcs_queries", nonce);
+        }
+        for &nonce in fold_grinding_nonces {
+            visit("pcs_folds", nonce);
+        }
+        counts
+            .into_iter()
+            .map(|(category, (boundaries, prefix_sum))| (category, boundaries, prefix_sum))
+            .collect()
+    }
+
     /// Size of this proof's stored payload in bytes, including redundant
     /// challenge points. Prime/binary fields use 16 bytes, extension elements
     /// use eleven canonical u16 coordinates, carries/nonces use eight bytes,
@@ -43,6 +192,93 @@ impl FalconHybridProof {
             + joint_bytes(joint)
             + opening_bytes(opening)
             + NONCE_BYTES * (opening_nonces.len() + pcs_nonces.len())
+    }
+}
+
+fn add_nonce(
+    counts: &mut std::collections::BTreeMap<&'static str, (usize, u128)>,
+    category: &'static str,
+    nonce: u64,
+) {
+    let entry = counts.entry(category).or_default();
+    entry.0 += 1;
+    entry.1 += u128::from(nonce) + 1;
+}
+
+fn visit_native_prime_nonces(proof: &FalconPiopProof, mut visit: impl FnMut(&'static str, u64)) {
+    let FalconPiopProof {
+        modulus: _,
+        norm,
+        compact_products,
+        fingerprint_nonce,
+        compaction_gamma: _,
+        compaction_rank_scale: _,
+        compaction,
+        compaction_forest,
+        compaction_leaf,
+    } = proof;
+    let NormProof {
+        instance_point: _,
+        instance_nonce,
+        claims: _,
+        slack: _,
+        sumchecks: _,
+        terminal: _,
+        point: _,
+        grinding_nonces,
+    } = norm;
+    for &nonce in instance_nonce.iter().chain(grinding_nonces) {
+        visit("prime_norm", nonce);
+    }
+    let QuadraticRelationProof {
+        point_nonce,
+        sumcheck: _,
+        terminal: _,
+        point: _,
+        grinding_nonces,
+    } = compact_products;
+    for &nonce in point_nonce.iter().chain(grinding_nonces) {
+        visit("prime_products", nonce);
+    }
+    for &nonce in fingerprint_nonce.iter() {
+        visit("prime_fingerprint", nonce);
+    }
+    // These endpoint-only trees currently contain no additional nonce fields.
+    for CompactionProof { candidate, output } in compaction {
+        for PrimeProductTreeProof {
+            root: _,
+            terminal_point: _,
+            terminal_claim: _,
+        } in [candidate, output]
+        {}
+    }
+    let PrimeProductForestProof { layers } = compaction_forest;
+    for ProductForestLayerProof {
+        sumcheck: _,
+        evaluations: _,
+        grinding_nonces,
+        batching_nonce,
+        line_nonce,
+    } in layers
+    {
+        for &nonce in grinding_nonces
+            .iter()
+            .chain(batching_nonce)
+            .chain(line_nonce)
+        {
+            visit("prime_forest", nonce);
+        }
+    }
+    let CompactionLeafProof {
+        instance_point: _,
+        instance_nonce,
+        sumcheck: _,
+        terminal: _,
+        point: _,
+        grinding_nonces,
+    } = compaction_leaf;
+    for &nonce in instance_nonce.iter().chain(grinding_nonces) {
+        visit("prime_leaf", nonce);
     }
 }
 
@@ -250,6 +486,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn nonce_prefix_accounting_keeps_zero_and_full_u64_values_exact() {
+        let mut counts = std::collections::BTreeMap::new();
+        add_nonce(&mut counts, "test", 0);
+        add_nonce(&mut counts, "test", u64::MAX);
+        add_nonce(&mut counts, "other", 7);
+        assert_eq!(counts["test"], (2, (1u128 << 64) + 1));
+        assert_eq!(counts["other"], (1, 8));
+    }
+
+    #[test]
     fn native_payload_counts_canonical_certificate_carries_and_challenges() {
         let mut proof = NativeRingProof {
             certificate: vec![Ext([7; EXTENSION_DEGREE]); 1023],
@@ -312,8 +558,8 @@ mod tests {
         .unwrap();
         let field = crate::prime_sampling::sample_prime_context(
             &mut crate::transcript::Blake3Transcript::new(),
-            1u128 << 125,
-            (1u128 << 126) - 1,
+            crate::piop::spartan::falcon1024_ct::shared_ring::PRIME_MIN,
+            crate::piop::spartan::falcon1024_ct::shared_ring::PRIME_MAX,
             128,
         )
         .unwrap();
@@ -326,6 +572,47 @@ mod tests {
         )
         .unwrap();
         let full_bytes = piop_bytes(&full);
+        // Distinct synthetic nonces exercise every stored arithmetic field,
+        // including optional forest batching/line boundaries. Compression
+        // must preserve this inventory even though it removes other fields.
+        let mut audited = full.clone();
+        audited.norm.instance_nonce = Some(0);
+        audited.norm.grinding_nonces = vec![1, 2];
+        audited.compact_products.point_nonce = Some(3);
+        audited.compact_products.grinding_nonces = vec![4];
+        audited.fingerprint_nonce = Some(5);
+        audited.compaction_leaf.instance_nonce = Some(6);
+        audited.compaction_leaf.grinding_nonces = vec![7, 8];
+        for (i, layer) in audited.compaction_forest.layers.iter_mut().enumerate() {
+            layer.grinding_nonces = vec![10 + i as u64];
+            layer.batching_nonce = Some(30 + i as u64);
+            layer.line_nonce = Some(50 + i as u64);
+        }
+        let mut native_nonces = Vec::new();
+        visit_native_prime_nonces(&audited, |category, nonce| {
+            native_nonces.push((category, nonce))
+        });
+        let layers = audited.compaction_forest.layers.len();
+        let mut compact_nonces = Vec::new();
+        audited
+            .into_shared()
+            .visit_grinding_nonces(|category, nonce| compact_nonces.push((category, nonce)));
+        assert_eq!(native_nonces, compact_nonces);
+        let mut counts = std::collections::BTreeMap::new();
+        for (category, nonce) in native_nonces {
+            add_nonce(&mut counts, category, nonce);
+        }
+        assert_eq!(counts["prime_norm"], (3, 6));
+        assert_eq!(counts["prime_products"], (2, 9));
+        assert_eq!(counts["prime_fingerprint"], (1, 6));
+        assert_eq!(counts["prime_leaf"], (3, 24));
+        assert_eq!(
+            counts["prime_forest"],
+            (
+                3 * layers,
+                (93 * layers + 3 * layers * (layers - 1) / 2) as u128
+            )
+        );
         let stored = full.into_shared();
         // 992 bytes of omitted metadata plus 97 omitted linear coefficients.
         assert_eq!(

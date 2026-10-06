@@ -1272,8 +1272,8 @@ fn shared_binding_factored_overlay_benchmark() {
 
     let field = crate::prime_sampling::sample_prime_context(
         &mut Blake3Transcript::new(),
-        1u128 << 125,
-        (1u128 << 126) - 1,
+        super::super::shared_ring::PRIME_MIN,
+        super::super::shared_ring::PRIME_MAX,
         128,
     )
     .unwrap();

@@ -35,8 +35,10 @@ an in-memory Rust API, without a Falcon wire codec. `payload_size_bytes()`
 counts stored proof payload, excluding public statements and transport framing.
 
 `PreparedFalconHybrid::new_shared_prime(batch, target_bits)` selects the
-experimental shared-prime protocol. `new` retains the native-coordinate-carry
+experimental `SharedPrimeV2` protocol. `new` retains the native-coordinate-carry
 protocol. Each prepared verifier accepts only its own protocol and layout.
+Old shared-prime proofs must be regenerated; the native format is unchanged.
+See [SHARED_PRIME_V2.md](SHARED_PRIME_V2.md) for the V2 bounds and transcript.
 
 `FalconSourceLayout::new` rounds the live batch up to a power-of-two capacity.
 Both profiles use the optimized integer relations and compact binder. See
@@ -54,19 +56,24 @@ The opt-in path in [shared_ring.rs](shared_ring.rs) implements this schedule:
 2. Read the degree-1022 quotient encoding the ideal polynomial
    `e(Y) = (Y^1024 + 1)D(Y)`, then sample its evaluation point. Run the cubic
    signature sumcheck with all four operands `C,H,S2,S1` committed.
-3. Batch the fixed operand endpoints and run the degree-two coefficient
-   sumcheck. Expand the actual affine decoders to a tensor query on those bits.
+3. Batch the fixed operand endpoints and expand the affine decoders directly
+   with position weights `beta^j`, retaining the live-signature mask and S2
+   bit permutation. Include the geometric sum in the S1 affine offset. There
+   is no coefficient-domain inner sumcheck.
 4. Fix the 21 coefficients of the exact integer polynomial `P(T)`. Check their
-   bounds and projection to `E`, then sample one 126-bit prime and the fresh
-   projection point. Require `p > max(2 H_P, H_src)`, with
-   `H_src = 43,013,625,445` over every decoder-allowed assignment.
+   bounds and projection to `E`, then sample one prime in
+   `[2^114, 2^115 - 2^102 - 1]` and the fresh projection point. Require
+   `p > max(2 H_P, H_src)`, with `H_src = 43,013,625,445` over every
+   decoder-allowed assignment. The upper cap also satisfies the conservative
+   BitZ exponent bound.
 5. Run the existing specialized norm, rejection, and compaction proofs using
    that prime. Combine their bit-linear claims with the projected ring query
    in [the streaming binder](opening_joined.rs), then run one bit-query
    sumcheck.
-6. Continue through the existing two-limb binary bridge and shared PCS opening.
-   This implementation keeps 8192 bridge rows and radix `2^113`; it does not
-   instantiate the document's unsplit-bridge example.
+6. Continue through one unsplit product forest over the original bits and
+   the shared PCS opening. The bridge retains 8192 rows, sends one bounded
+   integer sum per column, and has no limb coordinate. Its final binary claim
+   authenticates the original row and column slots.
 
 The source profile appends 14,336 public-key bits and 1024 public-binding rows;
 the live counts become 114,914 bits and 5482 linear rows per signature. Padded
@@ -76,8 +83,9 @@ slots, and both branches authenticate the same committed source bits.
 The shared arithmetic proof stores only transmitted values. Verification
 derives challenge points and reconstructs checked compaction endpoints before
 passing them to the binder. Proof payload accounting uses this compact form.
-The full-prover performance gate remains open: the initial x86 campaign found
-regressions, and the new route is not the default.
+Final V2 validation and matched performance results are pending. Historical
+x86 and Mac measurements describe earlier shared-prime revisions and do not
+establish parity for V2. The native route remains the default.
 
 ## Committed sources and constraints
 
@@ -115,17 +123,19 @@ Authenticated copy checks connect the sources:
    the transition between the two slabs.
 3. Extracted rate bytes equal the 1,311 big-endian words consumed by HashToPoint.
 
-The arithmetic terminal passes through a two-limb integer-to-binary bridge
-using the current BitZ PCS's [integer folds](../../../bitz/fold.rs) and
+The native arithmetic terminal passes through a two-limb integer-to-binary
+bridge using the current BitZ PCS's [integer folds](../../../bitz/fold.rs) and
 [product GKR](../../../bitz/forest.rs). The fixed binary source layout has
-13 row variables; [the bridge](hybrid_bridge.rs) splits prime-field row weights
-into 113-bit limbs before folding each limb through `bitz::fold::fold_columns`.
+13 row variables; [the native bridge](hybrid_bridge.rs) splits prime-field row
+weights into 113-bit limbs. Shared-prime V2 instead folds canonical weights
+in the 115-bit prime field directly through the same integer-folding kernels.
 The joint binary sumcheck binds arithmetic, both Keccak claims, and these copy
 checks to the shared ring-switch/Ligerito opening.
 Falcon uses `MATCHED_UDR` with no initial OOD message. Physical padding and all
 three roots remain authenticated. See
-[BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md) for the bridge's index map
-and error bound.
+[BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md) for the native bridge's
+index map and error bound, and [SHARED_PRIME_V2.md](SHARED_PRIME_V2.md) for the
+unsplit shared-prime bridge.
 
 ## Security and protocol domains
 
@@ -135,20 +145,26 @@ repository's computational grinding convention: raw challenge error `e` with
 `g` grinding bits contributes `e / 2^g` per unit of adversarial work. This is
 not unconditional statistical soundness. BLAKE3's collision bound is separate.
 
-The current schedule allocates explicit budgets to current protocol groups;
-it does not reconstruct historical schedules. See
-[OPTIMIZATION_SECURITY.md](OPTIMIZATION_SECURITY.md) for the allocation and
-validation obligations. Both targets and every batch from 1 through 1024 are
-covered by the complete-ledger tests.
+The schedule allocates explicit budgets to protocol groups. At the 128-bit
+target, V2 adds 11 bits to retained prime-challenge grinding difficulties to
+account for its smaller prime family. Expected work per affected block rises
+by 2048 times; this carries no prover-speed guarantee. At the 100-bit target,
+integer-prime challenges retain zero grinding and projection retains two bits;
+the complete bound is recalculated with the smaller prime. See
+[SHARED_PRIME_V2.md](SHARED_PRIME_V2.md) for the V2 accounting and
+[OPTIMIZATION_SECURITY.md](OPTIMIZATION_SECURITY.md) for the preceding
+allocation and validation obligations. Complete-ledger validation must cover
+both targets and every batch from 1 through 1024.
 
 The native statement domains are `native-ring/non-zk/v4` and
 `native-ring/statement/v4`; the shared-prime profile uses
-`shared-prime/non-zk/v1` and `shared-prime/statement/v1`. Earlier proofs must be
-regenerated. Current
-subprotocol domain separators retain their own versions: those labels separate
+`shared-prime/non-zk/v2` and `shared-prime/statement/v2`.
+Earlier shared-prime proofs must be regenerated. Subprotocol domain
+separators retain their own versions: those labels separate
 live proof phases and do not enable old backends or old-proof parsing.
-The bridge retains `bitz/falcon-hybrid/wfbitz-joint-limbs/v1` as a transcript
-label while its implementation uses `crate::bitz`.
+The native bridge retains `bitz/falcon-hybrid/wfbitz-joint-limbs/v1`; the V2
+shared bridge uses separate unsplit binding, root-query, and grinding domains.
+Both implementations use `crate::bitz`.
 
 The shared opening resolves its Flock work budgets through
 [`GrindingPlan`](../../../ligerito_flock/grinding_plan.rs). Its
@@ -195,15 +211,18 @@ checks provenance, matched security settings, timing, proof size, and fresh
 process peak memory. A diagnostic matrix alone does not establish parity;
 the timing acceptance gate requires multiple seeds and paired process runs.
 
-The shared-prime implementation now evaluates the verifier's canonical ring
+The following measurements describe pre-V2 shared-prime implementations.
+Final V2 validation and benchmark results are pending.
+
+The pre-V2 shared-prime implementation evaluates the verifier's canonical ring
 projection directly at the binding endpoint and shares its equality-weight
 buffers with the integer verifier. The prover keeps the ring tensor separate
 from the unscaled integer query while folding one bit table. Shared integer
 proofs omit each round's linear coefficient, reconstructing it before the
 original transcript absorption; verification retains only endpoint claims.
-These changes preserve the field choices, grinding schedule, and authenticated
-relation. The incremental payload saving is `1552 + 64*m` bytes, where
-`m = log2(padded_batch)`.
+Those earlier changes preserved the field choices, grinding schedule, and
+authenticated relation. Their incremental payload saving is `1552 + 64*m`
+bytes, where `m = log2(padded_batch)`.
 
 [`run_falcon_paired.py`](../../../../scripts/run_falcon_paired.py) runs balanced
 AB/BA processes against the preserved native baseline executable. Its default

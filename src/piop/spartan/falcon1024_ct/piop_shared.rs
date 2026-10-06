@@ -422,6 +422,64 @@ impl FalconPiopProof {
 }
 
 impl SharedFalconPiopProof {
+    /// Visit every stored arithmetic nonce without expanding compact rounds.
+    pub(in super::super) fn visit_grinding_nonces(&self, mut visit: impl FnMut(&'static str, u64)) {
+        let Self {
+            norm,
+            compact_products,
+            fingerprint_nonce,
+            compaction_forest,
+            compaction_leaf,
+        } = self;
+        let SharedNormProof {
+            instance_nonce,
+            claims: _,
+            sumchecks: _,
+            terminal: _,
+            grinding_nonces,
+        } = norm;
+        for &nonce in instance_nonce.iter().chain(grinding_nonces) {
+            visit("prime_norm", nonce);
+        }
+        let SharedQuadraticProof {
+            point_nonce,
+            sumcheck: _,
+            terminal: _,
+            grinding_nonces,
+        } = compact_products;
+        for &nonce in point_nonce.iter().chain(grinding_nonces) {
+            visit("prime_products", nonce);
+        }
+        for &nonce in fingerprint_nonce.iter() {
+            visit("prime_fingerprint", nonce);
+        }
+        for SharedForestLayerProof {
+            sumcheck: _,
+            evaluations: _,
+            grinding_nonces,
+            batching_nonce,
+            line_nonce,
+        } in compaction_forest
+        {
+            for &nonce in grinding_nonces
+                .iter()
+                .chain(batching_nonce)
+                .chain(line_nonce)
+            {
+                visit("prime_forest", nonce);
+            }
+        }
+        let SharedLeafProof {
+            instance_nonce,
+            sumcheck: _,
+            terminal: _,
+            grinding_nonces,
+        } = compaction_leaf;
+        for &nonce in instance_nonce.iter().chain(grinding_nonces) {
+            visit("prime_leaf", nonce);
+        }
+    }
+
     /// Canonical scalar payload with the same framing exclusions as native.
     pub(in super::super) fn payload_size_bytes(&self) -> usize {
         let Self {
@@ -687,7 +745,13 @@ mod tests {
     fn compact_shared_piop_reconstructs_every_omitted_value_and_transcript() {
         for (batch, target) in [(1, 100), (3, 100), (1, 128)] {
             let layout = FalconSourceLayout::new_shared_prime(batch).unwrap();
-            let field = sample_field(&mut Blake3Transcript::new()).unwrap();
+            let field = crate::prime_sampling::sample_prime_context(
+                &mut Blake3Transcript::new(),
+                crate::piop::spartan::falcon1024_ct::shared_ring::PRIME_MIN,
+                crate::piop::spartan::falcon1024_ct::shared_ring::PRIME_MAX,
+                128,
+            )
+            .unwrap();
             let mut prover = RecordingTranscript::new();
             let expanded = prove_falcon_piop_in_field(
                 &mut prover,
@@ -775,7 +839,13 @@ mod tests {
     #[test]
     fn compact_shared_piop_rejects_changed_messages_and_forest_shapes() {
         let layout = FalconSourceLayout::new_shared_prime(1).unwrap();
-        let field = sample_field(&mut Blake3Transcript::new()).unwrap();
+        let field = crate::prime_sampling::sample_prime_context(
+            &mut Blake3Transcript::new(),
+            crate::piop::spartan::falcon1024_ct::shared_ring::PRIME_MIN,
+            crate::piop::spartan::falcon1024_ct::shared_ring::PRIME_MAX,
+            128,
+        )
+        .unwrap();
         let expanded = prove_falcon_piop_in_field(
             &mut Blake3Transcript::new(),
             &layout,

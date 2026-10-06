@@ -65,7 +65,7 @@ pub struct FalconHybridSecurity {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FalconProtocol {
     NativeCarry,
-    SharedPrimeV1,
+    SharedPrimeV2,
 }
 
 /// Prepared public circuit, reusable across witnesses of the same batch size.
@@ -111,7 +111,7 @@ impl PreparedFalconHybrid {
 
     /// Experimental four-operand ring reduction and integer-polynomial lift.
     pub fn new_shared_prime(batch: usize, target_bits: usize) -> Result<Self, FalconError> {
-        Self::with_protocol(batch, target_bits, FalconProtocol::SharedPrimeV1)
+        Self::with_protocol(batch, target_bits, FalconProtocol::SharedPrimeV2)
     }
 
     pub fn with_protocol(
@@ -124,7 +124,7 @@ impl PreparedFalconHybrid {
         }
         let layout = match protocol {
             FalconProtocol::NativeCarry => FalconSourceLayout::new(batch)?,
-            FalconProtocol::SharedPrimeV1 => FalconSourceLayout::new_shared_prime(batch)?,
+            FalconProtocol::SharedPrimeV2 => FalconSourceLayout::new_shared_prime(batch)?,
         };
         let keccak = [
             PreparedKeccak::new_slab(batch, 0, 16).map_err(error)?,
@@ -177,7 +177,7 @@ impl PreparedFalconHybrid {
     }
     pub fn protocol(&self) -> FalconProtocol {
         if self.layout.is_shared_prime() {
-            FalconProtocol::SharedPrimeV1
+            FalconProtocol::SharedPrimeV2
         } else {
             FalconProtocol::NativeCarry
         }
@@ -198,7 +198,12 @@ impl PreparedFalconHybrid {
         let d = self.capacity().ilog2() as usize;
         let schedule = super::FalconSecuritySchedule::for_layout(self.target_bits, &self.layout)
             .expect("prepared target");
-        let prime = |n: usize, g: u32| n as f64 * 2f64.powi(-125 - g as i32);
+        let prime_bits = if self.layout.is_shared_prime() {
+            114
+        } else {
+            125
+        };
+        let prime = |n: usize, g: u32| n as f64 * 2f64.powi(-prime_bits - g as i32);
         let binary = |n: usize| n as f64 * 2f64.powi(-128 - self.binary_grinding(n) as i32);
         let terms = vec![
             ("prime sampling", 2f64.powi(-144)),
@@ -240,12 +245,12 @@ impl PreparedFalconHybrid {
             ),
             (
                 if self.layout.is_shared_prime() {
-                    "shared ring outer, endpoint batch and inner"
+                    "shared ring outer and endpoint batch"
                 } else {
                     "native ideal batching and projection"
                 },
                 if self.layout.is_shared_prime() {
-                    (4 * d + 2069) as f64 / (super::Q as f64).powi(11)
+                    (4 * d + 2049) as f64 / (super::Q as f64).powi(11)
                 } else {
                     (d + 2046) as f64 / ((super::Q as f64).powi(11) - super::Q as f64)
                 },
@@ -414,7 +419,7 @@ impl PreparedFalconHybrid {
         statement.public.validate(self.batch())?;
         let mut h = blake3::Hasher::new();
         h.update(if self.layout.is_shared_prime() {
-            b"bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v1".as_slice()
+            b"bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v2".as_slice()
         } else {
             b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v4".as_slice()
         });
@@ -430,7 +435,7 @@ impl PreparedFalconHybrid {
         }
         h.update(b"bounded14:low13+4097*top;native:Q12289,theta11+theta+14;Dlen1023;carry22528BN");
         if self.layout.is_shared_prime() {
-            h.update(b"shared:all-E;C,H,S1,S2:1,l,l2,l3;inner10;Hunsigned14;S2encoded-alias;live-mask;P21-i128;limbs113;merge-in-binder-block/v1");
+            h.update(b"shared:all-E;C,H,S1,S2:1,l,l2,l3;direct-beta-decoder;Hunsigned14;S2encoded-alias;live-mask;P21-i128;prime115-capped;unsplit8192;merge-in-binder-block/v2");
             h.update(&(self.layout.live_bits() as u64).to_le_bytes());
             h.update(
                 &(self.layout.public_key_offset().expect("shared H slots") as u64).to_le_bytes(),
@@ -481,7 +486,7 @@ impl PreparedFalconHybrid {
         let digest = *h.finalize().as_bytes();
         let mut t = Blake3Transcript::new();
         t.absorb_slice(if self.layout.is_shared_prime() {
-            b"bitz/falcon-hybrid/shared-prime/statement/v1".as_slice()
+            b"bitz/falcon-hybrid/shared-prime/statement/v2".as_slice()
         } else {
             b"bitz/falcon-hybrid/native-ring/statement/v4".as_slice()
         });
@@ -1032,7 +1037,7 @@ mod tests {
         for (batch, target) in [(1, 100), (3, 100), (9, 100), (1, 128)] {
             let prepared = PreparedFalconHybrid::new_shared_prime(batch, target).unwrap();
             let native = PreparedFalconHybrid::new(batch, target).unwrap();
-            assert_eq!(prepared.protocol(), FalconProtocol::SharedPrimeV1);
+            assert_eq!(prepared.protocol(), FalconProtocol::SharedPrimeV2);
             assert_eq!(prepared.live_arithmetic_bits_per_signature(), 114_914);
             assert_eq!(
                 prepared.source_bits_per_signature(),
@@ -1061,7 +1066,8 @@ mod tests {
                 assert!(prepared.verify(&wrong, &proof).is_err());
             }
             let mut wrong = proof.clone();
-            wrong.bridge.sums[1][0] ^= 1;
+            assert_eq!(wrong.bridge.sums.len(), 1);
+            wrong.bridge.sums[0][0] ^= 1;
             assert!(prepared.verify(&statement, &wrong).is_err());
             let mut wrong = proof.clone();
             let super::super::opening::RingProof::Shared(ring) = &mut wrong.arithmetic.ring else {

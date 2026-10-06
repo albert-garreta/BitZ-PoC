@@ -52,7 +52,7 @@ impl Options {
             if flag == "--protocol" {
                 protocol = match args.next().ok_or("missing protocol")?.as_str() {
                     "native" => FalconProtocol::NativeCarry,
-                    "shared-prime" => FalconProtocol::SharedPrimeV1,
+                    "shared-prime" => FalconProtocol::SharedPrimeV2,
                     _ => return Err("protocol must be native or shared-prime".into()),
                 };
                 continue;
@@ -154,13 +154,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
     let prepared = match options.protocol {
         FalconProtocol::NativeCarry => PreparedFalconHybrid::new(options.batch, options.security)?,
-        FalconProtocol::SharedPrimeV1 => {
+        FalconProtocol::SharedPrimeV2 => {
             PreparedFalconHybrid::new_shared_prime(options.batch, options.security)?
         }
     };
     let protocol = match prepared.protocol() {
         FalconProtocol::NativeCarry => "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v4",
-        FalconProtocol::SharedPrimeV1 => "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v1",
+        FalconProtocol::SharedPrimeV2 => "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v2",
     };
     let prepare_ms = ms(start);
     let security = prepared.security();
@@ -180,7 +180,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         json!({
             "schema": "bitz/falcon-hybrid/v3",
             "protocol": protocol,
-            "integer_bridge": "wfbitz-joint-limbs",
+            "integer_bridge": if options.protocol == FalconProtocol::SharedPrimeV2 { "wfbitz-unsplit" } else { "wfbitz-joint-limbs" },
             "arithmetic_live_bits_per_signature": prepared.live_arithmetic_bits_per_signature(),
             "arithmetic_auxiliary_values_per_signature": 8605,
             "event": "prepared",
@@ -250,6 +250,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut proof_hash = DebugHasher(blake3::Hasher::new());
         write!(&mut proof_hash, "{proof:?}")?;
         let proof_debug_digest = proof_hash.0.finalize().to_hex().to_string();
+        // Stored nonce accounting is deliberately outside all timed sections.
+        let grinding_diagnostics: Vec<_> = proof
+            .grinding_diagnostics()
+            .into_iter()
+            .map(|(category, boundaries, prefix_sum)| {
+                json!({
+                    "category": category,
+                    "stored_nonce_boundaries": boundaries,
+                    "serial_nonce_prefix_sum": prefix_sum.to_string(),
+                })
+            })
+            .collect();
         let measured = trial >= options.warmup;
         if measured {
             samples.push(([witness_commit_ms, prove_ms, verify_ms], native_verify_ms));
@@ -277,6 +289,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "roots": statement.roots.map(|root| root.iter().map(|byte| format!("{byte:02x}")).collect::<String>()),
                 "input_digest": input_digest,
                 "proof_debug_digest": proof_debug_digest,
+                "grinding_diagnostics": {
+                    "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes",
+                    "categories": grinding_diagnostics,
+                },
                 "proof_payload_bytes": proof.payload_size_bytes(),
                 "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
                 "verified": true,

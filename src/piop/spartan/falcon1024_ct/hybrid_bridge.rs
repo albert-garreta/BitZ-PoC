@@ -1,7 +1,8 @@
 //! Prime-field source evaluation reduced through the BitZ PCS's product GKR.
 //!
-//! The two bounded limbs share a BitZ product tree with the limb coordinate left
-//! unmultiplied. Its terminal claim is authenticated by the shared binary PCS.
+//! Native proofs retain two bounded limbs with an unmultiplied limb coordinate.
+//! Shared-prime proofs use one unsplit, bounded exponent per original row.
+//! Both terminal claims are authenticated by the shared binary PCS.
 use super::hybrid_keccak::grinding::{
     ProverBlockGrindingTranscript, VerifierBlockGrindingTranscript,
 };
@@ -32,7 +33,7 @@ type Cfg = <F as SpartanField>::Config;
 pub(super) fn error_numerator(layout: &super::FalconSourceLayout) -> usize {
     let p = layout.bitz_params();
     let d = p.row_vars;
-    let s = p.col_vars + 1;
+    let s = p.col_vars + usize::from(!layout.is_shared_prime());
     s + 3 * (d * (d - 1) / 2 + d * s) + d
 }
 
@@ -177,6 +178,9 @@ pub(super) fn prove(
     grinding_bits: u32,
     row_weights: &[u128],
 ) -> Result<(Proof, Vec<BinaryClaim>), FalconError> {
+    if source.layout().is_shared_prime() {
+        return prove_unsplit(t, source, point, modulus, grinding_bits, row_weights);
+    }
     let p = source.layout().bitz_params();
     if point.len() != p.row_vars + p.col_vars {
         return Err(err("bridge point shape"));
@@ -248,6 +252,9 @@ pub(super) fn verify(
     proof: &Proof,
     grinding_bits: u32,
 ) -> Result<Vec<BinaryClaim>, FalconError> {
+    if layout.is_shared_prime() {
+        return verify_unsplit(t, layout, point, value, modulus, proof, grinding_bits);
+    }
     let p = layout.bitz_params();
     if point.len() != p.row_vars + p.col_vars {
         return Err(err("bridge point shape"));
@@ -312,11 +319,579 @@ pub(super) fn verify(
     Ok(vec![claim])
 }
 
+struct UnsplitBridgeGrinding;
+impl GrindingDomain for UnsplitBridgeGrinding {
+    const DOMAIN: &'static [u8] = b"bitz/falcon-hybrid/shared-prime/unsplit-bridge-grinding/v2";
+}
+
+fn unsplit_message_count(p: &IntegerMatrixLayout) -> usize {
+    p.row_vars * (p.row_vars - 1) / 2 + p.row_vars * p.col_vars + p.row_vars
+}
+
+fn unsplit_shape(p: &IntegerMatrixLayout, modulus: u128) -> Result<Shape, FalconError> {
+    let shape = Shape::new(p.row_vars, p.col_vars).map_err(|_| err("bridge fold shape"))?;
+    // Retain BitZ's conservative (R + 1)(p - 1) < 2^128 - 1 gate. The
+    // shared prime family must satisfy this at its upper endpoint as well.
+    if !shape.supports_modulus_bound(modulus) {
+        return Err(err("unsplit bridge modulus bound"));
+    }
+    Ok(shape)
+}
+
+fn checked_weight_sum(row_weights: &[u128]) -> Result<u128, FalconError> {
+    let bound = row_weights
+        .iter()
+        .try_fold(0u128, |sum, &weight| sum.checked_add(weight))
+        .ok_or(err("bridge sum bound"))?;
+    // The multiplicative group has order 2^128 - 1, not 2^128. Zero
+    // and the group order must never be two allowed integer read-offs.
+    if bound == u128::MAX {
+        return Err(err("bridge sum bound"));
+    }
+    Ok(bound)
+}
+
+fn bind_unsplit(t: &mut impl Transcript, sums: &[u128]) {
+    t.absorb_slice(b"bitz/falcon-hybrid/shared-prime/unsplit-integer-folds/v2");
+    t.absorb_slice(&(sums.len() as u64).to_le_bytes());
+    for sum in sums {
+        t.absorb_slice(&sum.to_le_bytes());
+    }
+}
+
+fn unsplit_root_point(t: &mut impl Transcript, p: &IntegerMatrixLayout) -> Vec<Gf> {
+    t.absorb_slice(b"bitz/falcon-hybrid/shared-prime/wfbitz-unsplit/v2");
+    t.absorb_slice(&(p.row_vars as u64).to_le_bytes());
+    t.absorb_slice(&(p.col_vars as u64).to_le_bytes());
+    t.get_field_challenges(p.col_vars, &())
+}
+
+fn unsplit_binary_claim(
+    p: &IntegerMatrixLayout,
+    images: &[Gf],
+    point: &[Gf],
+    value: Gf,
+) -> Result<BinaryClaim, FalconError> {
+    // BitZ returns [column | original row]. The leaf at (row, column)
+    // is 1 + (images[row] + 1) * b[row, column], in characteristic two.
+    if point.len() != p.col_vars + p.row_vars || images.len() != p.rows() {
+        return Err(err("unsplit bridge terminal shape"));
+    }
+    let (column_point, row_point) = point.split_at(p.col_vars);
+    let low = build_eq_x_r_vec(row_point, &())
+        .map_err(|_| err("unsplit bridge terminal point"))?
+        .into_iter()
+        .zip(images)
+        .map(|(weight, image)| weight * (*image + Gf::one()))
+        .collect();
+    Ok(BinaryClaim {
+        low,
+        high_point: column_point.to_vec(),
+        value: value + Gf::one(),
+    })
+}
+
+fn prove_unsplit(
+    t: &mut impl Transcript,
+    source: &FalconSourceWitness,
+    point: &[F],
+    modulus: u128,
+    grinding_bits: u32,
+    row_weights: &[u128],
+) -> Result<(Proof, Vec<BinaryClaim>), FalconError> {
+    let p = source.layout().bitz_params();
+    let shape = unsplit_shape(&p, modulus)?;
+    if point.len() != p.row_vars + p.col_vars {
+        return Err(err("bridge point shape"));
+    }
+    F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
+    if row_weights.len() != p.rows() || row_weights.iter().any(|&weight| weight >= modulus) {
+        return Err(err("bridge row weights"));
+    }
+    // All terms are nonnegative. Bounding their full sum also bounds every
+    // partial sum in the digit-table and parallel folding implementations.
+    checked_weight_sum(row_weights)?;
+    let fold_span = tracing::info_span!("falcon_bridge:integer_folds").entered();
+    let sums = vec![fold_columns(&shape, source.rows(), row_weights)];
+    drop(fold_span);
+    bind_unsplit(t, &sums[0]);
+    let packing_span = tracing::info_span!("falcon_bridge:column_packing").entered();
+    let packed_cols = pack_columns_from_rows(&p, source.rows());
+    drop(packing_span);
+    let comb = FixedBasePow::new(crate::pcs::smallest_generator(), 128, WINDOW);
+    let power_span = tracing::info_span!("falcon_bridge:power_tables").entered();
+    let images: Vec<_> = row_weights.iter().map(|&weight| comb.pow(weight)).collect();
+    drop(power_span);
+    let mut grinder =
+        ProverBlockGrindingTranscript::<_, UnsplitBridgeGrinding>::new(t, grinding_bits);
+    let zeta = unsplit_root_point(&mut grinder, &p);
+    let forest_span = tracing::info_span!("falcon_bridge:wfbitz_forest").entered();
+    let mut state = ForestProver {
+        transcript: &mut grinder,
+        messages: Vec::with_capacity(unsplit_message_count(&p)),
+    };
+    let (point, value) = Forest::new(p.row_vars, p.col_vars, &packed_cols, &images)
+        .prove_depth(&mut state, &zeta, p.row_vars);
+    let forest = state.messages;
+    drop(forest_span);
+    let claim = unsplit_binary_claim(&p, &images, &point, value)?;
+    let nonces = grinder.finish();
+    Ok((
+        Proof {
+            sums,
+            forest,
+            nonces,
+        },
+        vec![claim],
+    ))
+}
+
+fn verify_unsplit(
+    t: &mut impl Transcript,
+    layout: &super::FalconSourceLayout,
+    point: &[F],
+    value: F,
+    modulus: u128,
+    proof: &Proof,
+    grinding_bits: u32,
+) -> Result<Vec<BinaryClaim>, FalconError> {
+    let p = layout.bitz_params();
+    unsplit_shape(&p, modulus)?;
+    if point.len() != p.row_vars + p.col_vars {
+        return Err(err("bridge point shape"));
+    }
+    if proof.forest.len() != unsplit_message_count(&p) {
+        return Err(err("bridge forest message count"));
+    }
+    if proof.sums.len() != 1 || proof.sums[0].len() != p.cols() {
+        return Err(err("unsplit bridge sum shape"));
+    }
+    let field = F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
+    let row_weights = weights(&point[..p.row_vars], &field);
+    let bound = checked_weight_sum(&row_weights)?;
+    if proof.sums[0].iter().any(|&sum| sum > bound) {
+        return Err(err("bridge integer fold magnitude"));
+    }
+    let cols = weights(&point[p.row_vars..], &field);
+    let result = proof.sums[0]
+        .iter()
+        .zip(&cols)
+        .fold(0, |acc, (&sum, &weight)| {
+            field.add_u128(acc, field.mul_u128(field.reduce_u128(sum), weight))
+        });
+    if result != u128::from(field.to_integer(&value)) {
+        return Err(err("bridge prime read-off"));
+    }
+    bind_unsplit(t, &proof.sums[0]);
+    let comb = FixedBasePow::new(crate::pcs::smallest_generator(), 128, WINDOW);
+    let mut grinder = VerifierBlockGrindingTranscript::<_, UnsplitBridgeGrinding>::new(
+        t,
+        grinding_bits,
+        &proof.nonces,
+    );
+    let zeta = unsplit_root_point(&mut grinder, &p);
+    let eq = build_eq_x_r_vec(&zeta, &()).expect("nonempty column point");
+    let root_claim = proof.sums[0]
+        .iter()
+        .zip(eq)
+        .fold(Gf::zero(), |acc, (&sum, weight)| {
+            acc + weight * comb.pow(sum)
+        });
+    let mut state = ForestVerifier {
+        transcript: &mut grinder,
+        messages: &proof.forest,
+        cursor: 0,
+    };
+    let (point, value) = gpgkr_verify(&mut state, root_claim, &zeta, p.row_vars as u32)
+        .ok_or(err("bridge forest"))?;
+    if state.cursor != state.messages.len() {
+        return Err(err("bridge forest trailing messages"));
+    }
+    let images: Vec<_> = row_weights.iter().map(|&weight| comb.pow(weight)).collect();
+    let claim = unsplit_binary_claim(&p, &images, &point, value)?;
+    grinder.finish().map_err(|_| err("bridge grinding"))?;
+    Ok(vec![claim])
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::{FalconSourceLayout, verification_trace};
     use super::*;
     use crate::transcript::Blake3Transcript;
+
+    const UNSPLIT_PRIME_MAX: u128 = (1u128 << 115) - (1u128 << 102) - 1;
+
+    #[test]
+    fn unsplit_counts_and_conservative_modulus_gate() {
+        for batch in 1..=1024 {
+            let layout = FalconSourceLayout::new_shared_prime(batch).unwrap();
+            let p = layout.bitz_params();
+            let rounds: usize = (0..p.row_vars).map(|layer| layer + p.col_vars).sum();
+            assert_eq!(unsplit_message_count(&p), rounds + p.row_vars);
+            assert_eq!(
+                error_numerator(&layout),
+                p.col_vars + 3 * rounds + p.row_vars
+            );
+            assert!((407..=807).contains(&error_numerator(&layout)));
+            assert_eq!(message_count(&p) - unsplit_message_count(&p), p.row_vars);
+            assert!(unsplit_shape(&p, 1u128 << 114).is_ok());
+            assert!(unsplit_shape(&p, UNSPLIT_PRIME_MAX).is_ok());
+            // The top of the full 115-bit interval passes R(p-1) < M,
+            // but not the stronger existing Shape gate (R+1)(p-1) < M.
+            let too_large = (1u128 << 115) - 1;
+            assert!((too_large - 1).checked_mul(p.rows() as u128).unwrap() < u128::MAX);
+            assert!(unsplit_shape(&p, too_large).is_err());
+        }
+        assert!(checked_weight_sum(&[u128::MAX]).is_err());
+        assert!(checked_weight_sum(&[u128::MAX - 1, 2]).is_err());
+        assert_eq!(checked_weight_sum(&[0, 0]).unwrap(), 0);
+        assert!(
+            unsplit_shape(
+                &IntegerMatrixLayout {
+                    row_vars: 6,
+                    col_vars: 4
+                },
+                3
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn unsplit_full_width_folds_match_big_integer_reference() {
+        use num_bigint::BigUint;
+
+        let p = IntegerMatrixLayout {
+            row_vars: 13,
+            col_vars: 2,
+        };
+        let shape = unsplit_shape(&p, UNSPLIT_PRIME_MAX).unwrap();
+        let weights: Vec<_> = (0..p.rows())
+            .map(|row| UNSPLIT_PRIME_MAX - 1 - row as u128)
+            .collect();
+        let bound = checked_weight_sum(&weights).unwrap();
+        assert!(bound > 1u128 << 127);
+        let rows: Vec<Vec<u64>> = (0..p.cols())
+            .map(|column| {
+                (0..p.rows() / 64)
+                    .map(|word| match column {
+                        0 => u64::MAX,
+                        1 => 0,
+                        2 => 0xaaaa_aaaa_aaaa_aaaa,
+                        _ => 1u64 << (word % 64),
+                    })
+                    .collect()
+            })
+            .collect();
+        let folds = fold_columns(&shape, &rows, &weights);
+        for (column, &fold) in rows.iter().zip(&folds) {
+            let expected =
+                weights
+                    .iter()
+                    .enumerate()
+                    .fold(BigUint::from(0u8), |sum, (row, &weight)| {
+                        if (column[row / 64] >> (row % 64)) & 1 == 1 {
+                            sum + BigUint::from(weight)
+                        } else {
+                            sum
+                        }
+                    });
+            assert_eq!(BigUint::from(fold), expected);
+            assert!(fold <= bound);
+        }
+        assert_eq!(folds[0], bound);
+        assert_eq!(folds[1], 0);
+    }
+
+    #[test]
+    fn unsplit_terminal_coefficients_use_original_row_and_column_slots() {
+        let p = IntegerMatrixLayout {
+            row_vars: 3,
+            col_vars: 2,
+        };
+        let point: Vec<_> = (0..p.row_vars + p.col_vars)
+            .map(|i| Gf::from_polynomial_words([3 + 2 * i as u64, 1 + i as u64]))
+            .collect();
+        let images: Vec<_> = (0..p.rows())
+            .map(|i| Gf::from_polynomial_words([19 + i as u64, 7 * i as u64]))
+            .collect();
+        let column_eq = build_eq_x_r_vec(&point[..p.col_vars], &()).unwrap();
+        let row_eq = build_eq_x_r_vec(&point[p.col_vars..], &()).unwrap();
+        // Check every one-bit witness independently; this catches transposed
+        // coordinates and an accidentally retained limb-coordinate weight.
+        for column in 0..p.cols() {
+            for row in 0..p.rows() {
+                let expected = column_eq[column] * row_eq[row] * (images[row] + Gf::one());
+                let claim =
+                    unsplit_binary_claim(&p, &images, &point, Gf::one() + expected).unwrap();
+                assert_eq!(claim.low.len(), p.rows());
+                assert_eq!(claim.high_point, point[..p.col_vars]);
+                assert_eq!(column_eq[column] * claim.low[row], claim.value);
+            }
+        }
+        assert!(unsplit_binary_claim(&p, &images[..p.rows() - 1], &point, Gf::zero()).is_err());
+        assert!(unsplit_binary_claim(&p, &images, &point[..point.len() - 1], Gf::zero()).is_err());
+        let mut extra_point = point.clone();
+        extra_point.push(Gf::one());
+        assert!(unsplit_binary_claim(&p, &images, &extra_point, Gf::zero()).is_err());
+    }
+
+    #[test]
+    fn native_frames_remain_legacy_and_unsplit_domains_are_distinct() {
+        use crate::piop::spartan::grinding::{GrindingRound, derive_grinding_seed};
+
+        let p = FalconSourceLayout::new(1).unwrap().bitz_params();
+        let sums = vec![vec![1, 17], vec![23, 31]];
+        let mut actual = Blake3Transcript::new();
+        bind(&mut actual, &sums);
+        let actual_point = root_point(&mut actual, &p);
+        let mut expected = Blake3Transcript::new();
+        expected.absorb_slice(b"bitz/falcon-hybrid/integer-folds/v2");
+        expected.absorb_slice(&2u64.to_le_bytes());
+        for column in &sums {
+            expected.absorb_slice(&2u64.to_le_bytes());
+            for sum in column {
+                expected.absorb_slice(&sum.to_le_bytes());
+            }
+        }
+        expected.absorb_slice(b"bitz/falcon-hybrid/wfbitz-joint-limbs/v1");
+        expected.absorb_slice(&13u64.to_le_bytes());
+        expected.absorb_slice(&4u64.to_le_bytes());
+        assert_eq!(actual_point, expected.get_field_challenges::<Gf>(5, &()));
+        assert_eq!(
+            actual.get_challenge::<u128>(),
+            expected.get_challenge::<u128>()
+        );
+        assert_eq!(
+            BridgeGrinding::DOMAIN,
+            b"bitz/falcon-hybrid/bridge-grinding/v4"
+        );
+        let native_seed = derive_grinding_seed(
+            &mut Blake3Transcript::new(),
+            GrindingRound::<BridgeGrinding>::new(0),
+            2,
+        )
+        .unwrap();
+        let shared_seed = derive_grinding_seed(
+            &mut Blake3Transcript::new(),
+            GrindingRound::<UnsplitBridgeGrinding>::new(0),
+            2,
+        )
+        .unwrap();
+        assert_ne!(native_seed, shared_seed);
+        let mut shared = Blake3Transcript::new();
+        bind_unsplit(&mut shared, &sums[0]);
+        assert_eq!(unsplit_root_point(&mut shared, &p).len(), p.col_vars);
+        assert_ne!(
+            shared.get_challenge::<u128>(),
+            actual.get_challenge::<u128>()
+        );
+    }
+
+    #[test]
+    fn unsplit_bridge_authenticates_source_and_rejects_malformed_proofs() {
+        const PK: &[u8] = include_bytes!("fixtures/public_key.bin");
+        const MSG: &[u8] = include_bytes!("fixtures/message.bin");
+        const SIG: &[u8] = include_bytes!("fixtures/signature_ct.bin");
+        let trace = verification_trace(PK, MSG, SIG).unwrap();
+        let field = crate::prime_sampling::sample_prime_context(
+            &mut Blake3Transcript::new(),
+            1u128 << 114,
+            UNSPLIT_PRIME_MAX,
+            128,
+        )
+        .unwrap();
+        let modulus = field.modulus_u128();
+        for (batch, grinding_bits) in [(1, 0), (3, 2)] {
+            let layout = FalconSourceLayout::new_shared_prime(batch).unwrap();
+            let source = FalconSourceWitness::from_traces(
+                layout.clone(),
+                &vec![MSG; batch],
+                &vec![SIG; batch],
+                &vec![trace.clone(); batch],
+            )
+            .unwrap();
+            let p = layout.bitz_params();
+            let point: Vec<_> = (0..p.row_vars + p.col_vars)
+                .map(|i| F::from_with_cfg(Uint::from(3 + 2 * i as u128), &field))
+                .collect();
+            let row_weights = weights(&point[..p.row_vars], &field);
+            let column_weights = weights(&point[p.row_vars..], &field);
+            let mut value = 0;
+            for (column, bits) in source.rows().iter().enumerate() {
+                for row in 0..p.rows() {
+                    if (bits[row / 64] >> (row % 64)) & 1 == 1 {
+                        value = field.add_u128(
+                            value,
+                            field.mul_u128(row_weights[row], column_weights[column]),
+                        );
+                    }
+                }
+            }
+            let value = F::from_with_cfg(Uint::from(value), &field);
+            let mut pt = Blake3Transcript::new();
+            let (proof, claims) = prove(
+                &mut pt,
+                &source,
+                &point,
+                modulus,
+                grinding_bits,
+                &row_weights,
+            )
+            .unwrap();
+            assert_eq!(proof.sums.len(), 1);
+            assert_eq!(proof.sums[0].len(), p.cols());
+            assert_eq!(proof.forest.len(), unsplit_message_count(&p));
+            assert_eq!(
+                proof.nonces.len(),
+                if grinding_bits == 0 {
+                    0
+                } else {
+                    1 + unsplit_message_count(&p)
+                }
+            );
+            let mut vt = Blake3Transcript::new();
+            let verified = verify(
+                &mut vt,
+                &layout,
+                &point,
+                value,
+                modulus,
+                &proof,
+                grinding_bits,
+            )
+            .unwrap();
+            assert_eq!(claims.len(), 1);
+            assert_eq!(verified.len(), 1);
+            assert_eq!(claims[0].low, verified[0].low);
+            assert_eq!(claims[0].high_point, verified[0].high_point);
+            assert_eq!(claims[0].value, verified[0].value);
+            assert_eq!(pt.get_challenge::<u128>(), vt.get_challenge::<u128>());
+            let column_eq = build_eq_x_r_vec(&claims[0].high_point, &()).unwrap();
+            let mut binary_value = Gf::zero();
+            for (column, bits) in source.rows().iter().enumerate() {
+                for row in 0..p.rows() {
+                    if (bits[row / 64] >> (row % 64)) & 1 == 1 {
+                        binary_value += column_eq[column] * claims[0].low[row];
+                    }
+                }
+            }
+            assert_eq!(binary_value, claims[0].value);
+            let reject = |changed: &Proof| {
+                assert!(
+                    verify(
+                        &mut Blake3Transcript::new(),
+                        &layout,
+                        &point,
+                        value,
+                        modulus,
+                        changed,
+                        grinding_bits
+                    )
+                    .is_err()
+                );
+            };
+            let mut changed = proof.clone();
+            changed.sums.clear();
+            reject(&changed);
+            let mut changed = proof.clone();
+            changed.sums.push(changed.sums[0].clone());
+            reject(&changed);
+            let mut changed = proof.clone();
+            changed.sums[0].pop();
+            reject(&changed);
+            let mut changed = proof.clone();
+            changed.sums[0][0] = u128::MAX;
+            reject(&changed);
+            let mut changed = proof.clone();
+            changed.sums[0][0] = checked_weight_sum(&row_weights).unwrap() + 1;
+            reject(&changed);
+            let mut changed = proof.clone();
+            changed.sums[0][0] ^= 1;
+            reject(&changed);
+            // A whole prime can be subtracted without changing the prime
+            // read-off. The authenticated exponent forest must still reject.
+            let mut changed = proof.clone();
+            let column = changed.sums[0]
+                .iter()
+                .position(|&sum| sum >= modulus)
+                .unwrap();
+            changed.sums[0][column] -= modulus;
+            reject(&changed);
+            let mut changed = proof.clone();
+            changed.forest[0][0] += Gf::one();
+            reject(&changed);
+            let mut changed = proof.clone();
+            changed.forest.last_mut().unwrap()[1] += Gf::one();
+            reject(&changed);
+            let mut changed = proof.clone();
+            changed.forest.pop();
+            reject(&changed);
+            let mut changed = proof.clone();
+            changed.forest.push([Gf::zero(); 2]);
+            reject(&changed);
+            let mut changed = proof.clone();
+            changed.nonces.push(0);
+            reject(&changed);
+            if grinding_bits != 0 {
+                let mut changed = proof.clone();
+                changed.nonces.pop();
+                reject(&changed);
+                let mut changed = proof.clone();
+                changed.nonces[0] ^= 1;
+                reject(&changed);
+            }
+            assert!(
+                verify(
+                    &mut Blake3Transcript::new(),
+                    &layout,
+                    &point,
+                    value,
+                    modulus,
+                    &proof,
+                    grinding_bits + 1
+                )
+                .is_err()
+            );
+            let native = FalconSourceLayout::new(batch).unwrap();
+            assert!(
+                verify(
+                    &mut Blake3Transcript::new(),
+                    &native,
+                    &point,
+                    value,
+                    modulus,
+                    &proof,
+                    grinding_bits
+                )
+                .is_err()
+            );
+            let mut bad_weights = row_weights.clone();
+            bad_weights[0] = modulus;
+            assert!(
+                prove(
+                    &mut Blake3Transcript::new(),
+                    &source,
+                    &point,
+                    modulus,
+                    grinding_bits,
+                    &bad_weights
+                )
+                .is_err()
+            );
+            assert!(
+                prove(
+                    &mut Blake3Transcript::new(),
+                    &source,
+                    &point,
+                    (1u128 << 115) - 1,
+                    grinding_bits,
+                    &row_weights
+                )
+                .is_err()
+            );
+        }
+    }
 
     #[test]
     fn bitz_joint_limb_forest_fits_security_budget() {
