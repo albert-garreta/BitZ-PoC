@@ -10,6 +10,7 @@ use super::{FalconError, FalconSourceWitness};
 use crate::{
     bitz::{
         FixedBasePow, Shape, WINDOW,
+        column_sums::{ColumnSums, FoldValue, LargeNumber},
         fold::fold_columns,
         forest::Forest,
         gkr::{GkrProverTranscript, GkrVerifierTranscript, gpgkr_verify},
@@ -54,16 +55,56 @@ fn limb_width(p: &IntegerMatrixLayout) -> usize {
     126 - p.row_vars
 }
 
-fn weight_limbs(weights: &[u128], width: usize, q_bits: usize) -> Vec<Vec<u128>> {
+/// Conservative preparation gate for every modulus in the selected family.
+fn split_bounds(p: &IntegerMatrixLayout, modulus: u128) -> Result<LargeNumber, FalconError> {
+    let width = 126usize
+        .checked_sub(p.row_vars)
+        .filter(|&w| w > 0 && w < 128)
+        .ok_or(err("bridge limb width"))?;
+    let q_bits = 128 - modulus.leading_zeros() as usize;
+    if modulus < 2 || q_bits.div_ceil(width) != 2 {
+        return Err(err("bridge needs two bounded prime limbs"));
+    }
+    let lower = ((1u128 << width) - 1)
+        .checked_mul(p.rows() as u128)
+        .ok_or(err("bridge sum bound"))?;
+    let upper = ((modulus - 1) >> width)
+        .checked_mul(p.rows() as u128)
+        .ok_or(err("bridge sum bound"))?;
+    LargeNumber::checked_new(lower, upper).ok_or(err("bridge upper sum exceeds u32"))
+}
+
+pub(super) fn validate_layout(
+    p: &IntegerMatrixLayout,
+    mode: BridgeMode,
+    modulus: u128,
+) -> Result<(), FalconError> {
+    match mode {
+        BridgeMode::Unsplit => unsplit_shape(p, modulus).map(|_| ()),
+        BridgeMode::TwoLimbs => split_bounds(p, modulus).map(|_| ()),
+    }
+}
+
+fn weight_limbs(weights: &[u128], width: usize) -> Result<Vec<LargeNumber>, FalconError> {
     let mask = (1u128 << width) - 1;
-    (0..q_bits.div_ceil(width))
-        .map(|limb| {
-            weights
-                .iter()
-                .map(|&w| (w >> (limb * width)) & mask)
-                .collect()
+    weights
+        .iter()
+        .map(|&w| {
+            LargeNumber::checked_new(w & mask, w >> width)
+                .ok_or(err("bridge upper weight exceeds u32"))
         })
         .collect()
+}
+
+fn checked_split_weight_sum(weights: &[LargeNumber]) -> Result<LargeNumber, FalconError> {
+    let bound = weights
+        .iter()
+        .try_fold(LargeNumber::ZERO, |a, &b| a.checked_add(b))
+        .ok_or(err("bridge sum bound"))?;
+    if bound.lower == u128::MAX {
+        return Err(err("bridge sum bound"));
+    }
+    Ok(bound)
 }
 
 fn binary_claim(p: &IntegerMatrixLayout, images: &[Gf], point: &[Gf], value: Gf) -> BinaryClaim {
@@ -95,7 +136,7 @@ impl GrindingDomain for BridgeGrinding {
 
 #[derive(Clone, Debug)]
 pub(super) struct Proof {
-    pub sums: Vec<Vec<u128>>,
+    pub sums: ColumnSums,
     pub forest: Vec<[Gf; 2]>,
     pub nonces: Vec<u64>,
 }
@@ -151,13 +192,20 @@ fn weights(point: &[F], field: &Cfg) -> Vec<u128> {
         .collect()
 }
 
-fn bind(t: &mut impl Transcript, sums: &[Vec<u128>]) {
+fn bind(t: &mut impl Transcript, sums: &[LargeNumber]) {
     t.absorb_slice(b"bitz/falcon-hybrid/integer-folds/v2");
-    t.absorb_slice(&(sums.len() as u64).to_le_bytes());
-    for column in sums {
-        t.absorb_slice(&(column.len() as u64).to_le_bytes());
-        for x in column {
-            t.absorb_slice(&x.to_le_bytes());
+    t.absorb_slice(&2u64.to_le_bytes());
+    // Preserve the original limb-major, 16-byte transcript representation.
+    // The compact column-major transport encoding is deliberately separate.
+    for upper in [false, true] {
+        t.absorb_slice(&(sums.len() as u64).to_le_bytes());
+        for sum in sums {
+            let value = if upper {
+                u128::from(sum.upper)
+            } else {
+                sum.lower
+            };
+            t.absorb_slice(&value.to_le_bytes());
         }
     }
 }
@@ -171,9 +219,10 @@ fn root_point(t: &mut impl Transcript, p: &IntegerMatrixLayout) -> Vec<Gf> {
     t.get_field_challenges(p.col_vars + 1, &())
 }
 
-fn row_images(chunks: &[Vec<u128>], comb: &FixedBasePow) -> Vec<Gf> {
-    (0..chunks[0].len())
-        .flat_map(|r| [comb.pow(chunks[0][r]), comb.pow(chunks[1][r])])
+fn row_images(chunks: &[LargeNumber], comb: &FixedBasePow) -> Vec<Gf> {
+    chunks
+        .iter()
+        .flat_map(|w| [comb.pow(w.lower), comb.pow(u128::from(w.upper))])
         .collect()
 }
 
@@ -197,17 +246,12 @@ pub(super) fn prove(
     if row_weights.len() != p.rows() || row_weights.iter().any(|&weight| weight >= modulus) {
         return Err(err("bridge row weights"));
     }
-    let q_bits = 128 - modulus.leading_zeros() as usize;
-    let chunks = weight_limbs(row_weights, limb_width(&p), q_bits);
-    if chunks.len() != 2 {
-        return Err(err("bridge needs two bounded prime limbs"));
-    }
+    split_bounds(&p, modulus)?;
+    let chunks = weight_limbs(row_weights, limb_width(&p))?;
+    checked_split_weight_sum(&chunks)?;
     let fold_span = tracing::info_span!("falcon_bridge:integer_folds").entered();
     let shape = Shape::new(p.row_vars, p.col_vars).map_err(|_| err("bridge fold shape"))?;
-    let sums: Vec<_> = chunks
-        .iter()
-        .map(|w| fold_columns(&shape, source.rows(), w))
-        .collect();
+    let sums = fold_columns(&shape, source.rows(), &chunks);
     drop(fold_span);
     bind(t, &sums);
     let packing_span = tracing::info_span!("falcon_bridge:column_packing").entered();
@@ -243,7 +287,7 @@ pub(super) fn prove(
     let nonces = grinder.finish();
     Ok((
         Proof {
-            sums,
+            sums: ColumnSums::Split(sums),
             forest,
             nonces,
         },
@@ -272,44 +316,45 @@ pub(super) fn verify(
         return Err(err("bridge forest message count"));
     }
     let field = F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
-    let q_bits = 128 - modulus.leading_zeros() as usize;
+    split_bounds(&p, modulus)?;
     let width = limb_width(&p);
-    let chunks = weight_limbs(&weights(&point[..p.row_vars], &field), width, q_bits);
-    if chunks.len() != 2 || proof.sums.len() != chunks.len() {
+    let chunks = weight_limbs(&weights(&point[..p.row_vars], &field), width)?;
+    let ColumnSums::Split(sums) = &proof.sums else {
         return Err(err("bridge chunk shape"));
+    };
+    let bound = checked_split_weight_sum(&chunks)?;
+    if sums.len() != p.cols() || sums.iter().any(|&sum| !sum.within(bound)) {
+        return Err(err("bridge integer fold magnitude"));
     }
     let cols = weights(&point[p.row_vars..], &field);
-    let mut result = 0;
-    let mut scale = 1;
-    for (w, sums) in chunks.iter().zip(&proof.sums) {
-        let bound = w
-            .iter()
-            .try_fold(0u128, |a, &b| a.checked_add(b))
-            .ok_or(err("bridge sum bound"))?;
-        if bound == u128::MAX || sums.len() != p.cols() || sums.iter().any(|&s| s > bound) {
-            return Err(err("bridge integer fold magnitude"));
-        }
-        let partial = sums.iter().zip(&cols).fold(0, |a, (&s, &c)| {
-            field.add_u128(a, field.mul_u128(field.reduce_u128(s), c))
+    let partial = sums
+        .iter()
+        .zip(&cols)
+        .fold([0, 0], |[low, high], (sum, &c)| {
+            [
+                field.add_u128(low, field.mul_u128(field.reduce_u128(sum.lower), c)),
+                field.add_u128(
+                    high,
+                    field.mul_u128(field.reduce_u128(u128::from(sum.upper)), c),
+                ),
+            ]
         });
-        result = field.add_u128(result, field.mul_u128(scale, partial));
-        scale = field.mul_u128(scale, 1u128 << width);
-    }
+    let result = field.add_u128(partial[0], field.mul_u128(1u128 << width, partial[1]));
     if result != u128::from(field.to_integer(&value)) {
         return Err(err("bridge prime read-off"));
     }
-    bind(t, &proof.sums);
+    bind(t, sums);
     let comb = FixedBasePow::new(crate::pcs::smallest_generator(), 128, WINDOW);
     let mut grinder =
         VerifierBlockGrindingTranscript::<_, BridgeGrinding>::new(t, grinding_bits, &proof.nonces);
     let zeta = root_point(&mut grinder, &p);
     let eq = build_eq_x_r_vec(&zeta, &()).expect("nonempty column and limb point");
-    let root_claim = proof
-        .sums
+    let root_claim = sums
         .iter()
-        .flatten()
+        .map(|sum| sum.lower)
+        .chain(sums.iter().map(|sum| u128::from(sum.upper)))
         .zip(eq)
-        .fold(Gf::zero(), |acc, (&sum, weight)| {
+        .fold(Gf::zero(), |acc, (sum, weight)| {
             acc + weight * comb.pow(sum)
         });
     let mut state = ForestVerifier {
@@ -421,9 +466,9 @@ fn prove_unsplit(
     // partial sum in the digit-table and parallel folding implementations.
     checked_weight_sum(row_weights)?;
     let fold_span = tracing::info_span!("falcon_bridge:integer_folds").entered();
-    let sums = vec![fold_columns(&shape, source.rows(), row_weights)];
+    let sums = fold_columns(&shape, source.rows(), row_weights);
     drop(fold_span);
-    bind_unsplit(t, &sums[0]);
+    bind_unsplit(t, &sums);
     let packing_span = tracing::info_span!("falcon_bridge:column_packing").entered();
     let packed_cols = pack_columns_from_rows(&p, source.rows());
     drop(packing_span);
@@ -447,7 +492,7 @@ fn prove_unsplit(
     let nonces = grinder.finish();
     Ok((
         Proof {
-            sums,
+            sums: ColumnSums::Unsplit(sums),
             forest,
             nonces,
         },
@@ -472,26 +517,26 @@ fn verify_unsplit(
     if proof.forest.len() != unsplit_message_count(&p) {
         return Err(err("bridge forest message count"));
     }
-    if proof.sums.len() != 1 || proof.sums[0].len() != p.cols() {
+    let ColumnSums::Unsplit(sums) = &proof.sums else {
+        return Err(err("unsplit bridge sum shape"));
+    };
+    if sums.len() != p.cols() {
         return Err(err("unsplit bridge sum shape"));
     }
     let field = F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
     let row_weights = weights(&point[..p.row_vars], &field);
     let bound = checked_weight_sum(&row_weights)?;
-    if proof.sums[0].iter().any(|&sum| sum > bound) {
+    if sums.iter().any(|&sum| sum > bound) {
         return Err(err("bridge integer fold magnitude"));
     }
     let cols = weights(&point[p.row_vars..], &field);
-    let result = proof.sums[0]
-        .iter()
-        .zip(&cols)
-        .fold(0, |acc, (&sum, &weight)| {
-            field.add_u128(acc, field.mul_u128(field.reduce_u128(sum), weight))
-        });
+    let result = sums.iter().zip(&cols).fold(0, |acc, (&sum, &weight)| {
+        field.add_u128(acc, field.mul_u128(field.reduce_u128(sum), weight))
+    });
     if result != u128::from(field.to_integer(&value)) {
         return Err(err("bridge prime read-off"));
     }
-    bind_unsplit(t, &proof.sums[0]);
+    bind_unsplit(t, sums);
     let comb = FixedBasePow::new(crate::pcs::smallest_generator(), 128, WINDOW);
     let mut grinder = VerifierBlockGrindingTranscript::<_, UnsplitBridgeGrinding>::new(
         t,
@@ -500,12 +545,9 @@ fn verify_unsplit(
     );
     let zeta = unsplit_root_point(&mut grinder, &p);
     let eq = build_eq_x_r_vec(&zeta, &()).expect("nonempty column point");
-    let root_claim = proof.sums[0]
-        .iter()
-        .zip(eq)
-        .fold(Gf::zero(), |acc, (&sum, weight)| {
-            acc + weight * comb.pow(sum)
-        });
+    let root_claim = sums.iter().zip(eq).fold(Gf::zero(), |acc, (&sum, weight)| {
+        acc + weight * comb.pow(sum)
+    });
     let mut state = ForestVerifier {
         transcript: &mut grinder,
         messages: &proof.forest,
@@ -529,6 +571,72 @@ mod tests {
     use crate::transcript::Blake3Transcript;
 
     const UNSPLIT_PRIME_MAX: u128 = (1u128 << 115) - (1u128 << 102) - 1;
+
+    fn unsplit_sums(proof: &mut Proof) -> &mut Vec<u128> {
+        let ColumnSums::Unsplit(sums) = &mut proof.sums else {
+            panic!("unsplit sums");
+        };
+        sums
+    }
+
+    fn split_sums(proof: &mut Proof) -> &mut Vec<LargeNumber> {
+        let ColumnSums::Split(sums) = &mut proof.sums else {
+            panic!("split sums");
+        };
+        sums
+    }
+
+    #[test]
+    fn compact_sums_preserve_legacy_absorbed_bytes() {
+        use crate::transcript::traits::ConstTranscribable;
+        #[derive(Default)]
+        struct Recording(Vec<Vec<u8>>);
+        impl Transcript for Recording {
+            fn get_challenge<T: ConstTranscribable>(&mut self) -> T {
+                panic!("binding draws no challenges");
+            }
+            fn fill_sampling_bytes(&mut self, _: &mut [u8]) {
+                panic!("binding draws no sampling bytes");
+            }
+            fn absorb_inner(&mut self, bytes: &[u8]) {
+                self.0.push(bytes.to_vec());
+            }
+        }
+        let lower = [0, 1, (1u128 << 113) + 7, (1u128 << 126) - 8192];
+        let upper = [11u128, 0, 1, (1u128 << 26) - 8192];
+        let sums: Vec<_> = lower
+            .iter()
+            .zip(upper)
+            .map(|(&lo, hi)| LargeNumber::checked_new(lo, hi).unwrap())
+            .collect();
+        let mut actual = Recording::default();
+        bind(&mut actual, &sums);
+        let mut legacy = Recording::default();
+        legacy.absorb_slice(b"bitz/falcon-hybrid/integer-folds/v2");
+        legacy.absorb_slice(&2u64.to_le_bytes());
+        for limb in [lower, upper] {
+            legacy.absorb_slice(&4u64.to_le_bytes());
+            for value in limb {
+                legacy.absorb_slice(&value.to_le_bytes());
+            }
+        }
+        assert_eq!(actual.0, legacy.0);
+    }
+
+    #[test]
+    fn reject_layouts_whose_upper_sum_does_not_fit() {
+        let mut p = FalconSourceLayout::new_shared_prime(1024)
+            .unwrap()
+            .bitz_params();
+        assert_eq!(
+            split_bounds(&p, (1u128 << 126) - 1).unwrap().upper,
+            (1u32 << 26) - 8192
+        );
+        p.row_vars = 17;
+        assert!(split_bounds(&p, (1u128 << 126) - 1).is_err());
+        p.row_vars = 126;
+        assert!(split_bounds(&p, (1u128 << 126) - 1).is_err());
+    }
 
     #[test]
     fn unsplit_counts_and_conservative_modulus_gate() {
@@ -650,9 +758,19 @@ mod tests {
         use crate::piop::spartan::grinding::{GrindingRound, derive_grinding_seed};
 
         let p = FalconSourceLayout::new(1).unwrap().bitz_params();
-        let sums = vec![vec![1, 17], vec![23, 31]];
+        let sums = [[1u128, 17], [23, 31]];
+        let packed = [
+            LargeNumber {
+                lower: 1,
+                upper: 23,
+            },
+            LargeNumber {
+                lower: 17,
+                upper: 31,
+            },
+        ];
         let mut actual = Blake3Transcript::new();
-        bind(&mut actual, &sums);
+        bind(&mut actual, &packed);
         let actual_point = root_point(&mut actual, &p);
         let mut expected = Blake3Transcript::new();
         expected.absorb_slice(b"bitz/falcon-hybrid/integer-folds/v2");
@@ -739,7 +857,7 @@ mod tests {
             }
             let value = F::from_with_cfg(Uint::from(value), &field);
             let mut pt = Blake3Transcript::new();
-            let (proof, claims) = prove(
+            let (mut proof, claims) = prove(
                 &mut pt,
                 &source,
                 BridgeMode::Unsplit,
@@ -749,8 +867,15 @@ mod tests {
                 &row_weights,
             )
             .unwrap();
-            assert_eq!(proof.sums.len(), 1);
-            assert_eq!(proof.sums[0].len(), p.cols());
+            assert!(matches!(&proof.sums, ColumnSums::Unsplit(sums) if sums.len() == p.cols()));
+            proof.sums = ColumnSums::decode(
+                &proof.sums.encode(),
+                p.cols(),
+                crate::bitz::column_sums::ColumnSumBounds::Unsplit(
+                    checked_weight_sum(&row_weights).unwrap(),
+                ),
+            )
+            .unwrap();
             assert_eq!(proof.forest.len(), unsplit_message_count(&p));
             assert_eq!(
                 proof.nonces.len(),
@@ -804,31 +929,31 @@ mod tests {
                 );
             };
             let mut changed = proof.clone();
-            changed.sums.clear();
+            changed.sums = ColumnSums::Unsplit(vec![]);
             reject(&changed);
             let mut changed = proof.clone();
-            changed.sums.push(changed.sums[0].clone());
+            changed.sums = ColumnSums::Split(vec![LargeNumber::ZERO; p.cols()]);
             reject(&changed);
             let mut changed = proof.clone();
-            changed.sums[0].pop();
+            unsplit_sums(&mut changed).pop();
             reject(&changed);
             let mut changed = proof.clone();
-            changed.sums[0][0] = u128::MAX;
+            unsplit_sums(&mut changed)[0] = u128::MAX;
             reject(&changed);
             let mut changed = proof.clone();
-            changed.sums[0][0] = checked_weight_sum(&row_weights).unwrap() + 1;
+            unsplit_sums(&mut changed)[0] = checked_weight_sum(&row_weights).unwrap() + 1;
             reject(&changed);
             let mut changed = proof.clone();
-            changed.sums[0][0] ^= 1;
+            unsplit_sums(&mut changed)[0] ^= 1;
             reject(&changed);
             // A whole prime can be subtracted without changing the prime
             // read-off. The authenticated exponent forest must still reject.
             let mut changed = proof.clone();
-            let column = changed.sums[0]
+            let column = unsplit_sums(&mut changed)
                 .iter()
                 .position(|&sum| sum >= modulus)
                 .unwrap();
-            changed.sums[0][column] -= modulus;
+            unsplit_sums(&mut changed)[column] -= modulus;
             reject(&changed);
             let mut changed = proof.clone();
             changed.forest[0][0] += Gf::one();
@@ -1032,18 +1157,20 @@ mod tests {
         // possible weight; this check does not assume those bounds are prime.
         for modulus in [1u128 << 125, (1u128 << 126) - 1] {
             let original = vec![modulus - 1; p.rows()];
-            let limbs = weight_limbs(&original, width, 126);
-            assert_eq!(limbs.len(), 2);
+            let limbs = weight_limbs(&original, width).unwrap();
+            assert_eq!(limbs.len(), p.rows());
             for row in 0..p.rows() {
-                assert_eq!(limbs[0][row] + (limbs[1][row] << width), original[row]);
-                assert!(limbs[0][row] < 1u128 << 113);
-                assert!(limbs[1][row] < 1u128 << 13);
+                assert_eq!(
+                    limbs[row].lower + (u128::from(limbs[row].upper) << width),
+                    original[row]
+                );
+                assert!(limbs[row].lower < 1u128 << 113);
+                assert!(limbs[row].upper < 1u32 << 13);
             }
-            for limb in &limbs {
-                let bound = checked_weight_sum(limb).unwrap();
-                assert!(bound < 1u128 << 126);
-                assert!(bound < u128::MAX);
-            }
+            let bound = checked_split_weight_sum(&limbs).unwrap();
+            assert!(bound.lower < 1u128 << 126);
+            assert!(bound.upper < 1u32 << 26);
+            assert!(bound.within(split_bounds(&p, modulus).unwrap()));
             assert!(unsplit_shape(&p, modulus).is_err());
         }
     }
@@ -1080,7 +1207,7 @@ mod tests {
         }
         let value = F::from_with_cfg(Uint::from(value), &field);
         let mut pt = Blake3Transcript::new();
-        let (proof, claims) = prove(
+        let (mut proof, claims) = prove(
             &mut pt,
             &source,
             BridgeMode::TwoLimbs,
@@ -1090,8 +1217,18 @@ mod tests {
             &row_weights,
         )
         .unwrap();
-        assert_eq!(proof.sums.len(), 2);
-        assert!(proof.sums.iter().all(|sums| sums.len() == p.cols()));
+        assert!(matches!(&proof.sums, ColumnSums::Split(sums) if sums.len() == p.cols()));
+        let split_weights = weight_limbs(&row_weights, limb_width(&p)).unwrap();
+        let decoded = ColumnSums::decode(
+            &proof.sums.encode(),
+            p.cols(),
+            crate::bitz::column_sums::ColumnSumBounds::Split(
+                checked_split_weight_sum(&split_weights).unwrap(),
+            ),
+        )
+        .unwrap();
+        assert_eq!(decoded, proof.sums);
+        proof.sums = decoded;
         assert_eq!(claims.len(), 1);
         let s = p.col_vars + 1;
         let rounds: usize = (0..p.row_vars).map(|ell| ell + s).sum();
@@ -1145,16 +1282,16 @@ mod tests {
         };
         // Container shape cannot silently select the unsplit protocol.
         let mut changed = proof.clone();
-        changed.sums.pop();
+        changed.sums = ColumnSums::Unsplit(vec![0; p.cols()]);
         reject(&changed);
         let mut changed = proof.clone();
-        changed.sums.clear();
+        changed.sums = ColumnSums::Split(vec![]);
         reject(&changed);
         let mut changed = proof.clone();
-        changed.sums.push(changed.sums[0].clone());
+        split_sums(&mut changed).push(LargeNumber::ZERO);
         reject(&changed);
         let mut changed = proof.clone();
-        changed.sums[1].pop();
+        split_sums(&mut changed).pop();
         reject(&changed);
         assert!(
             verify(
@@ -1205,19 +1342,24 @@ mod tests {
         );
         for limb in 0..2 {
             let mut changed = proof.clone();
-            changed.sums[limb][0] ^= 1;
+            let sum = &mut split_sums(&mut changed)[0];
+            if limb == 0 {
+                sum.lower ^= 1;
+            } else {
+                sum.upper ^= 1;
+            }
             reject(&changed);
         }
         // Preserve the prime read-off exactly while shifting mass between
         // limbs. Only the authenticated forest can detect this forgery.
         let mut changed = proof.clone();
         let radix = 1u128 << limb_width(&p);
-        let c = changed.sums[0]
-            .iter()
-            .position(|&sum| sum >= radix)
+        let sum = split_sums(&mut changed)
+            .iter_mut()
+            .find(|sum| sum.lower >= radix)
             .unwrap();
-        changed.sums[0][c] -= radix;
-        changed.sums[1][c] += 1;
+        sum.lower -= radix;
+        sum.upper += 1;
         let error = verify(
             &mut Blake3Transcript::new(),
             &layout,
@@ -1232,7 +1374,8 @@ mod tests {
         .unwrap();
         assert!(error.to_string().contains("bridge forest"));
         let mut changed = proof.clone();
-        changed.sums.swap(0, 1);
+        split_sums(&mut changed)[0].upper =
+            checked_split_weight_sum(&split_weights).unwrap().upper + 1;
         reject(&changed);
         let mut changed = proof.clone();
         changed.forest[0][0] += Gf::one();

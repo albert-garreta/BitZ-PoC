@@ -7,6 +7,7 @@ use rayon::prelude::*;
 
 use crate::cfg_into_iter;
 
+use super::column_sums::FoldValue;
 use super::forest::NibbleRows;
 use super::params::{ClaimError, LinearClaim, Shape};
 use super::transcript::{ProverState, VerifierState};
@@ -77,13 +78,15 @@ pub fn fold_column(row: &[u64], exponents: &[u128]) -> u128 {
 /// [`crate::ligerito::fold_values_bits`] streams its whole table once per
 /// 32-column block and exits its digit loop on a data-dependent count; at
 /// `2^28` bits it measured 11 ms against 7.3 here.)
-pub fn fold_columns(shape: &Shape, rows: &[Vec<u64>], exponents: &[u128]) -> Vec<u128> {
+/// The caller must bound the total weight in every component before calling;
+/// the kernel uses wrapping operations under that no-overflow invariant.
+pub fn fold_columns<T: FoldValue>(shape: &Shape, rows: &[Vec<u64>], exponents: &[T]) -> Vec<T> {
     let cols = shape.columns();
     assert_eq!(rows.len(), cols);
     let words = shape.rows() / 64;
     assert!(rows.iter().all(|row| row.len() == words));
     assert_eq!(exponents.len(), shape.rows());
-    fold_columns_digits::<FOLD_DIGIT_BITS>(rows, exponents, words, cols)
+    fold_columns_digits::<FOLD_DIGIT_BITS, T>(rows, exponents, words, cols)
 }
 
 /// The digit width of [`fold_columns`]'s tables: nibbles, 16-entry tables,
@@ -96,42 +99,44 @@ const FOLD_DIGIT_BITS: usize = 4;
 /// against 7.3 with 128 at `2^28` bits).
 const FOLD_COLUMN_BLOCK: usize = 128;
 
-fn fold_columns_digits<const D: usize>(
+fn fold_columns_digits<const D: usize, T: FoldValue>(
     rows: &[Vec<u64>],
-    exponents: &[u128],
+    exponents: &[T],
     words: usize,
     cols: usize,
-) -> Vec<u128> {
+) -> Vec<T> {
     const { assert!(D == 4 || D == 8) };
     let per_word = 64 / D;
     let entries = 1usize << D;
     let digits = words * per_word;
     // The tables, digit-major: `tbl[(d ≪ D) | v]`.
-    let mut tbl: Vec<u128> = Vec::with_capacity(digits * entries);
+    let mut tbl: Vec<T> = Vec::with_capacity(digits * entries);
     let spare = &mut tbl.spare_capacity_mut()[..digits * entries];
-    crate::cfg_chunks_mut!(spare, entries).enumerate().for_each(|(d, table)| {
-        let base = d * D;
-        table[0].write(0);
-        for v in 1..entries {
-            // `T[v] = T[v without its lowest bit] + that bit's weight`.
-            let lower = unsafe { table[v & (v - 1)].assume_init() };
-            table[v].write(lower.wrapping_add(exponents[base + v.trailing_zeros() as usize]));
-        }
-    });
+    crate::cfg_chunks_mut!(spare, entries)
+        .enumerate()
+        .for_each(|(d, table)| {
+            let base = d * D;
+            table[0].write(T::ZERO);
+            for v in 1..entries {
+                // `T[v] = T[v without its lowest bit] + that bit's weight`.
+                let lower = unsafe { table[v & (v - 1)].assume_init() };
+                table[v].write(lower.wrapping_add(exponents[base + v.trailing_zeros() as usize]));
+            }
+        });
     // SAFETY: every entry of every table was written above.
     unsafe { tbl.set_len(digits * entries) };
     let mask = (entries - 1) as u64;
 
     // One accumulator per column, the words split across tasks (each
     // task's sums merged at the end — exact integers either way).
-    let sum_words = |acc: &mut [u128], range: std::ops::Range<usize>| {
+    let sum_words = |acc: &mut [T], range: std::ops::Range<usize>| {
         for c0 in (0..cols).step_by(FOLD_COLUMN_BLOCK) {
             let c1 = (c0 + FOLD_COLUMN_BLOCK).min(cols);
             for wi in range.clone() {
                 let tables = &tbl[wi * per_word * entries..(wi + 1) * per_word * entries];
                 for c in c0..c1 {
                     let w = rows[c][wi];
-                    let mut sum = 0u128;
+                    let mut sum = T::ZERO;
                     for k in 0..per_word {
                         let v = ((w >> (k * D)) & mask) as usize;
                         sum = sum.wrapping_add(tables[(k << D) | v]);
@@ -145,15 +150,15 @@ fn fold_columns_digits<const D: usize>(
     {
         let threads = rayon::current_num_threads().max(1);
         let chunk = words.div_ceil(4 * threads).max(1);
-        let partials: Vec<Vec<u128>> = (0..words.div_ceil(chunk))
+        let partials: Vec<Vec<T>> = (0..words.div_ceil(chunk))
             .into_par_iter()
             .map(|i| {
-                let mut acc = vec![0u128; cols];
+                let mut acc = vec![T::ZERO; cols];
                 sum_words(&mut acc, i * chunk..((i + 1) * chunk).min(words));
                 acc
             })
             .collect();
-        let mut out = vec![0u128; cols];
+        let mut out = vec![T::ZERO; cols];
         for acc in partials {
             for (o, a) in out.iter_mut().zip(acc) {
                 *o = o.wrapping_add(a);
@@ -163,7 +168,7 @@ fn fold_columns_digits<const D: usize>(
     }
     #[cfg(not(feature = "parallel"))]
     {
-        let mut out = vec![0u128; cols];
+        let mut out = vec![T::ZERO; cols];
         sum_words(&mut out, 0..words);
         out
     }
@@ -414,10 +419,101 @@ mod tests {
                 .collect();
             let want: Vec<u128> = rows.iter().map(|row| fold_column(row, &exponents)).collect();
             let words = (1usize << log_rows) / 64;
-            assert_eq!(fold_columns_digits::<4>(&rows, &exponents, words, 1 << log_cols), want, "t {log_rows} s {log_cols}");
-            assert_eq!(fold_columns_digits::<8>(&rows, &exponents, words, 1 << log_cols), want, "t {log_rows} s {log_cols}");
+            assert_eq!(
+                fold_columns_digits::<4, u128>(&rows, &exponents, words, 1 << log_cols),
+                want,
+                "t {log_rows} s {log_cols}"
+            );
+            assert_eq!(
+                fold_columns_digits::<8, u128>(&rows, &exponents, words, 1 << log_cols),
+                want,
+                "t {log_rows} s {log_cols}"
+            );
             if let Ok(shape) = Shape::new(log_rows, log_cols) {
-                assert_eq!(fold_columns(&shape, &rows, &exponents), want, "t {log_rows} s {log_cols}");
+                assert_eq!(
+                    fold_columns(&shape, &rows, &exponents),
+                    want,
+                    "t {log_rows} s {log_cols}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn split_folds_match_independent_scalar_sums() {
+        use super::super::column_sums::{FoldValue, LargeNumber};
+        use super::{fold_columns, fold_columns_digits};
+
+        let mut state = 0x2545_F491_4F6C_DD1Du64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for (log_rows, log_cols) in [(6, 0), (9, 4), (13, 8)] {
+            let count = 1usize << log_rows;
+            let words = count / 64;
+            let mut rows: Vec<Vec<u64>> = (0..1 << log_cols)
+                .map(|_| (0..words).map(|_| next()).collect())
+                .collect();
+            rows[0].fill(u64::MAX);
+            let weights: Vec<_> = (0..count)
+                .map(|r| LargeNumber {
+                    lower: if r % 3 == 0 {
+                        (1u128 << 113) - 1
+                    } else {
+                        u128::from(next())
+                    },
+                    upper: if r % 3 == 0 {
+                        (1u32 << 13) - 1
+                    } else {
+                        (next() & 8191) as u32
+                    },
+                })
+                .collect();
+            let bound = weights
+                .iter()
+                .try_fold(LargeNumber::ZERO, |sum, &w| sum.checked_add(w))
+                .unwrap();
+            let reference: Vec<_> = rows
+                .iter()
+                .map(|bits| {
+                    let mut lower = 0u128;
+                    let mut upper = 0u128;
+                    for (r, weight) in weights.iter().enumerate() {
+                        if bits[r / 64] >> (r % 64) & 1 == 1 {
+                            lower += weight.lower;
+                            upper += u128::from(weight.upper);
+                        }
+                    }
+                    LargeNumber::checked_new(lower, upper).unwrap()
+                })
+                .collect();
+            assert_eq!(reference[0], bound);
+            assert_eq!(
+                fold_columns_digits::<4, _>(&rows, &weights, words, rows.len()),
+                reference
+            );
+            assert_eq!(
+                fold_columns_digits::<8, _>(&rows, &weights, words, rows.len()),
+                reference
+            );
+            let lower: Vec<_> = weights.iter().map(|w| w.lower).collect();
+            let upper: Vec<_> = weights.iter().map(|w| u128::from(w.upper)).collect();
+            if let Ok(shape) = Shape::new(log_rows, log_cols) {
+                assert_eq!(fold_columns(&shape, &rows, &weights), reference);
+                assert_eq!(
+                    fold_columns(&shape, &rows, &lower),
+                    reference.iter().map(|s| s.lower).collect::<Vec<_>>()
+                );
+                assert_eq!(
+                    fold_columns(&shape, &rows, &upper),
+                    reference
+                        .iter()
+                        .map(|s| u128::from(s.upper))
+                        .collect::<Vec<_>>()
+                );
             }
         }
     }

@@ -165,6 +165,11 @@ impl PreparedFalconHybrid {
             pcs_grinding,
             scratch: Mutex::default(),
         };
+        hybrid_bridge::validate_layout(
+            &prepared.layout.bitz_params(),
+            bridge_mode,
+            prepared.prime_modulus_bounds().1,
+        )?;
         if prepared.security().algebraic_bits < target_bits as f64 {
             return Err(error(
                 "Falcon hybrid composition misses its security target",
@@ -1099,7 +1104,10 @@ mod tests {
         changed.roots.swap(0, 1);
         assert!(prepared.verify(&changed, &proof).is_err());
         let mut changed = proof.clone();
-        changed.bridge.sums[0][0] ^= 1;
+        match &mut changed.bridge.sums {
+            crate::bitz::column_sums::ColumnSums::Unsplit(sums) => sums[0] ^= 1,
+            crate::bitz::column_sums::ColumnSums::Split(sums) => sums[0].lower ^= 1,
+        }
         assert!(prepared.verify(&statement, &changed).is_err());
         let mut changed = proof.clone();
         changed.joint.value += Gf::ONE;
@@ -1156,6 +1164,10 @@ mod tests {
             prepared.verify(&statement, &proof).unwrap();
             assert!(native.verify(&statement, &proof).is_err());
             assert!(proof.payload_size_bytes() > 0);
+            assert_eq!(
+                proof.encode_integer_column_sums().len(),
+                prepared.layout.bitz_params().cols() * if target == 100 { 16 } else { 20 }
+            );
             assert!(proof.arithmetic.binding_point.is_empty());
             let other_target = PreparedFalconHybrid::new_shared_prime(
                 batch,
@@ -1164,14 +1176,14 @@ mod tests {
             .unwrap();
             assert!(other_target.verify(&statement, &proof).is_err());
             let mut wrong_shape = proof.clone();
-            if target == 100 {
-                wrong_shape
-                    .bridge
-                    .sums
-                    .push(wrong_shape.bridge.sums[0].clone());
+            wrong_shape.bridge.sums = if target == 100 {
+                crate::bitz::column_sums::ColumnSums::Split(vec![
+                        crate::bitz::column_sums::LargeNumber { lower: 0, upper: 0 };
+                        proof.bridge.sums.len()
+                    ])
             } else {
-                wrong_shape.bridge.sums.pop();
-            }
+                crate::bitz::column_sums::ColumnSums::Unsplit(vec![0; proof.bridge.sums.len()])
+            };
             assert!(prepared.verify(&statement, &wrong_shape).is_err());
             let mut wrong = proof.clone();
             wrong
@@ -1189,8 +1201,16 @@ mod tests {
                 assert!(prepared.verify(&wrong, &proof).is_err());
             }
             let mut wrong = proof.clone();
-            assert_eq!(wrong.bridge.sums.len(), if target == 100 { 1 } else { 2 });
-            wrong.bridge.sums[0][0] ^= 1;
+            match &mut wrong.bridge.sums {
+                crate::bitz::column_sums::ColumnSums::Unsplit(sums) => {
+                    assert_eq!(target, 100);
+                    sums[0] ^= 1;
+                }
+                crate::bitz::column_sums::ColumnSums::Split(sums) => {
+                    assert_eq!(target, 128);
+                    sums[0].lower ^= 1;
+                }
+            }
             assert!(prepared.verify(&statement, &wrong).is_err());
             let mut wrong = proof.clone();
             let super::super::opening::RingProof::Shared(ring) = &mut wrong.arithmetic.ring else {

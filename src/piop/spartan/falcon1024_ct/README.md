@@ -142,6 +142,16 @@ bridge using the current BitZ PCS's [integer folds](../../../bitz/fold.rs) and
 weights into 113-bit limbs. Shared-prime V4 retains this two-limb bridge at
 128 bits; its 100-bit profile folds canonical 115-bit-field weights directly
 through the same integer-folding kernels.
+The two-limb sums are stored in inline `LargeNumber { lower: u128, upper: u32 }`
+records. The shared generic folding kernel adds the components independently
+in one source traversal. With 8,192 rows the sums are below `2^126` and `2^26`;
+preparation checks the upper storage bound and verification checks each actual
+sum bound. The explicit column-table codec uses 20 bytes per column, reducing
+the batch-1,024 table from 524,288 to 327,680 bytes. The transcript retains its
+previous limb-major order and 16-byte absorption of both sums. Struct padding
+does not enter the encoding; this change makes no 20-byte RAM-layout guarantee.
+`FalconHybridProof::encode_integer_column_sums` exposes this component codec;
+a complete Falcon transport codec is still not defined.
 The joint binary sumcheck binds arithmetic, both Keccak claims, and these copy
 checks to the shared ring-switch/Ligerito opening.
 Falcon uses `MATCHED_UDR` with no initial OOD message. Physical padding and all

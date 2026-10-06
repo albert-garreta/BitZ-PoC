@@ -16,6 +16,13 @@ const HASH_BYTES: usize = 32;
 const EXTENSION_BYTES: usize = 2 * EXTENSION_DEGREE;
 
 impl FalconHybridProof {
+    /// Encode just the integer column table: 16 bytes per unsplit column or
+    /// 20 bytes per split column, in column order. The prepared profile fixes
+    /// the representation and count. This does not encode the rest of Falcon.
+    pub fn encode_integer_column_sums(&self) -> Vec<u8> {
+        self.bridge.sums.encode()
+    }
+
     /// Untimed diagnostics as `(category, stored_nonce_boundaries, prefix_sum)`.
     /// `prefix_sum` is sum(nonce + 1), accumulated in u128. It describes the
     /// serial ascending nonce prefixes, not executed hashes: parallel/SIMD
@@ -168,8 +175,10 @@ impl FalconHybridProof {
     /// Size of this proof's stored payload in bytes, including redundant
     /// challenge points. Prime/binary fields use 16 bytes, extension elements
     /// use eleven canonical u16 coordinates, carries/nonces use eight bytes,
-    /// and hashes use 32 bytes. Keccak and Ligerito use their existing bincode
-    /// serialization sizes, including those components' internal framing.
+    /// and hashes use 32 bytes. Integer sums use 16 bytes for the lower sum
+    /// and four bytes for the upper sum when split. Keccak and Ligerito use
+    /// their existing bincode serialization sizes, including those components'
+    /// internal framing.
     ///
     /// This excludes the public statement and Falcon-level vector lengths,
     /// option tags, protocol headers, and transport framing. It is a payload
@@ -193,6 +202,7 @@ impl FalconHybridProof {
             + opening_bytes(opening)
             + NONCE_BYTES * (opening_nonces.len() + pcs_nonces.len())
     }
+
 }
 
 fn add_nonce(
@@ -432,9 +442,7 @@ fn bridge_bytes(proof: &hybrid_bridge::Proof) -> usize {
         forest,
         nonces,
     } = proof;
-    FIELD_BYTES * sums.iter().map(Vec::len).sum::<usize>()
-        + 2 * FIELD_BYTES * forest.len()
-        + NONCE_BYTES * nonces.len()
+    sums.encoded_len() + 2 * FIELD_BYTES * forest.len() + NONCE_BYTES * nonces.len()
 }
 
 fn joint_bytes(proof: &joint::Proof) -> usize {
@@ -520,11 +528,18 @@ mod tests {
     #[test]
     fn bridge_payload_counts_each_integer_sum_and_binary_pair() {
         let proof = hybrid_bridge::Proof {
-            sums: vec![vec![1, 2, 3], vec![4, 5]],
+            sums: crate::bitz::column_sums::ColumnSums::Split(vec![
+                crate::bitz::column_sums::LargeNumber { lower: 1, upper: 4 },
+                crate::bitz::column_sums::LargeNumber { lower: 2, upper: 5 },
+            ]),
             forest: vec![[Gf::zero(); 2]; 7],
             nonces: vec![0; 11],
         };
-        assert_eq!(bridge_bytes(&proof), 5 * 16 + 7 * 32 + 11 * 8);
+        assert_eq!(
+            bridge_bytes(&proof),
+            proof.sums.encode().len() + 7 * 32 + 11 * 8
+        );
+        assert_eq!(proof.sums.encoded_len(), 40);
     }
 
     #[test]

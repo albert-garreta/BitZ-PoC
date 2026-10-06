@@ -26,6 +26,7 @@
 
 pub mod chained;
 pub mod codec;
+pub mod column_sums;
 pub mod fold;
 pub mod forest;
 pub mod gkr;
