@@ -1,0 +1,5 @@
+{
+  "power": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=23527523)\t80%; AC attached; not charging present: true\n",
+  "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+  "machine": "Darwin Johns-MacBook-Pro-5.local 25.5.0 Darwin Kernel Version 25.5.0: Tue Jun  9 22:18:58 PDT 2026; root:xnu-12377.121.10~1/RELEASE_ARM64_T6000 arm64\n"
+}

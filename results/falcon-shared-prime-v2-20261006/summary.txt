@@ -1,0 +1,42 @@
+Ratios: geometric mean of paired per-seed process medians; CI95: 10,000 seed-bootstrap draws, per metric/cell, not simultaneous. RSS: external warmed-process peak, bytes. Proof totals include warmups; comparison rows share candidate proofs and must not be added together.
+V2 nonce prefixes: one repeat-stable proof per seed; sum(nonce+1), includes zero-difficulty placeholders, excludes SIMD/parallel overscan; not executed hashes. Incomplete processes are excluded. This is a consistency check, not an independent security audit.
+/Users/johnwu/.codex/worktrees/falcon-shared-prime/f2z-pcs/results/falcon-shared-prime-v2-20261006/mac-discovery100: phase=discovery status=stopped_on_regression qualification=regression completed_processes=15 verified_proofs=60 incomplete_processes=0
+  s100/b1024/t8 v2/native seeds=42;43;44;45;46 prover=1.065505[0.981539,1.211194] proof_only=1.047353[0.992122,1.124571] verify=0.861683[0.814958,0.944791] payloadB=2293228..2297132->1599298..1607810 RSS+=4/5 deltaB=-31686656..100892672 maxRSSratio=1.023318 proofs=40 status=regression
+  s100/b1024/t8 v2/v1 seeds=42;43;44;45;46 prover=1.039541[0.944958,1.159861] proof_only=1.011861[0.936402,1.099478] verify=1.050507[0.981417,1.125366] payloadB=1867852..1871980->1599298..1607810 RSS+=2/5 deltaB=-59817984..4292608 maxRSSratio=1.000979 proofs=40 status=regression
+  s100/b1024/t8 v2 nonce binary_bridge: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t8 v2 nonce binary_joint: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t8 v2 nonce binary_keccak: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t8 v2 nonce binary_links: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t8 v2 nonce binary_opening: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t8 v2 nonce native_ring_carry: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t8 v2 nonce pcs_auxiliary: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t8 v2 nonce pcs_folds: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t8 v2 nonce pcs_ood: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t8 v2 nonce pcs_queries: seeds=5 boundaries=6..6 prefix[min,median,max]=[490,676,715]
+  s100/b1024/t8 v2 nonce prime_binder: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t8 v2 nonce prime_fingerprint: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t8 v2 nonce prime_forest: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t8 v2 nonce prime_leaf: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t8 v2 nonce prime_norm: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t8 v2 nonce prime_products: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t8 v2 nonce ring_projection: seeds=5 boundaries=1..1 prefix[min,median,max]=[1,1,3]
+/Users/johnwu/.codex/worktrees/falcon-shared-prime/f2z-pcs/results/falcon-shared-prime-v2-20261006/will/will-discovery100: phase=discovery status=stopped_on_regression qualification=regression completed_processes=15 verified_proofs=60 incomplete_processes=0
+  s100/b1024/t16 v2/native seeds=42;43;44;45;46 prover=0.896326[0.888124,0.903689] proof_only=0.873540[0.865990,0.879080] verify=0.795977[0.776061,0.814079] payloadB=2293228..2297132->1599298..1607810 RSS+=2/5 deltaB=-12369920..10686464 maxRSSratio=1.003011 proofs=40 status=regression
+  s100/b1024/t16 v2/v1 seeds=42;43;44;45;46 prover=0.885421[0.877037,0.892207] proof_only=0.862224[0.852993,0.869220] verify=0.948852[0.931104,0.969280] payloadB=1867852..1871980->1599298..1607810 RSS+=1/5 deltaB=-25001984..6643712 maxRSSratio=1.001869 proofs=40 status=regression
+  s100/b1024/t16 v2 nonce binary_bridge: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t16 v2 nonce binary_joint: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t16 v2 nonce binary_keccak: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t16 v2 nonce binary_links: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t16 v2 nonce binary_opening: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t16 v2 nonce native_ring_carry: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t16 v2 nonce pcs_auxiliary: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t16 v2 nonce pcs_folds: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t16 v2 nonce pcs_ood: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t16 v2 nonce pcs_queries: seeds=5 boundaries=6..6 prefix[min,median,max]=[490,676,715]
+  s100/b1024/t16 v2 nonce prime_binder: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t16 v2 nonce prime_fingerprint: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t16 v2 nonce prime_forest: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t16 v2 nonce prime_leaf: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t16 v2 nonce prime_norm: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t16 v2 nonce prime_products: seeds=5 boundaries=0..0 prefix[min,median,max]=[0,0,0]
+  s100/b1024/t16 v2 nonce ring_projection: seeds=5 boundaries=1..1 prefix[min,median,max]=[1,1,3]

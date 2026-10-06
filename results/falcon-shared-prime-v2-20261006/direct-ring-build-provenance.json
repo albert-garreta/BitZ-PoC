@@ -1,0 +1,15 @@
+{
+  "host": "Johns-MacBook-Pro-5.local",
+  "architecture": "arm64",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+  "rustflags": "-C target-cpu=native",
+  "features": [
+    "falcon-hybrid"
+  ],
+  "profile": "release",
+  "lock_sha256": "8616e078399dbe80f778f402584dfbc0b95cab8ea3dfb577c61afd328dc33bd3",
+  "parent_revision": "fae6524b75eee1fe383e02c11efe46d347978410",
+  "patch_sha256": "2a63d1395c6b19241e34d7d5726629061b86651b3bb4a3f8d40b3ba8be0cc44c",
+  "command": "cargo test --offline --locked --release --features falcon-hybrid --lib shared_ring -- --test-threads=1",
+  "target": "/private/tmp/falcon-v2-test-target"
+}

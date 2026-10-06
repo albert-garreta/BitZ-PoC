@@ -1,0 +1,74 @@
+[bench_gate] falcon-v2-mac-discovery100: idle 71% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 74% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 74% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 71% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 72% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 74% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 72% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 73% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 74% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 64% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 71% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 73% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 78% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 77% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 79% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 79% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 80% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 78% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 79% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 77% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 79% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 80% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 78% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 78% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 78% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 79% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 77% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 79% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 74% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 84% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 86% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 85% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 79% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 86% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 84% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 83% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 78% (streak 0/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 93% (streak 1/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 90% (streak 2/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 92% (streak 3/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 94% (streak 4/5)
+[bench_gate] falcon-v2-mac-discovery100: idle 94% (streak 5/5)
+[bench_gate] falcon-v2-mac-discovery100: starting (swap baseline 1.54 GB, guard +12 GB)
+START s100-b1024-t8-seed42-native
+DONE s100-b1024-t8-seed42-native: 1283.039ms, 2294444bytes
+START s100-b1024-t8-seed42-v1
+DONE s100-b1024-t8-seed42-v1: 1426.642ms, 1867852bytes
+START s100-b1024-t8-seed42-v2
+DONE s100-b1024-t8-seed42-v2: 1368.109ms, 1599298bytes
+START s100-b1024-t8-seed43-v2
+DONE s100-b1024-t8-seed43-v2: 1252.495ms, 1605442bytes
+START s100-b1024-t8-seed43-v1
+DONE s100-b1024-t8-seed43-v1: 1274.960ms, 1871980bytes
+START s100-b1024-t8-seed43-native
+DONE s100-b1024-t8-seed43-native: 1281.343ms, 2293932bytes
+START s100-b1024-t8-seed44-native
+DONE s100-b1024-t8-seed44-native: 1232.763ms, 2294316bytes
+START s100-b1024-t8-seed44-v1
+DONE s100-b1024-t8-seed44-v1: 1334.027ms, 1868012bytes
+START s100-b1024-t8-seed44-v2
+DONE s100-b1024-t8-seed44-v2: 1218.290ms, 1607810bytes
+START s100-b1024-t8-seed45-v2
+DONE s100-b1024-t8-seed45-v2: 1742.667ms, 1606914bytes
+START s100-b1024-t8-seed45-v1
+DONE s100-b1024-t8-seed45-v1: 1366.241ms, 1868780bytes
+START s100-b1024-t8-seed45-native
+DONE s100-b1024-t8-seed45-native: 1283.873ms, 2293228bytes
+START s100-b1024-t8-seed46-native
+DONE s100-b1024-t8-seed46-native: 1551.964ms, 2297132bytes
+START s100-b1024-t8-seed46-v1
+DONE s100-b1024-t8-seed46-v1: 1378.018ms, 1868428bytes
+START s100-b1024-t8-seed46-v2
+DONE s100-b1024-t8-seed46-v2: 1524.421ms, 1604162bytes
+{"status": "stopped_on_regression", "cells": [{"cell": [100, 1024, 8], "comparisons": [{"baseline": "native", "candidate": "v2", "seeds": [42, 43, 44, 45, 46], "complete": true, "metrics": {"total_prover_ms": {"ratio": 1.065505293656448, "interval_95": [0.9815393461676865, 1.2111938207647546], "status": "inconclusive"}, "proof_verify_ms": {"ratio": 0.8616834185544298, "interval_95": [0.814958338222677, 0.9447914725840616], "status": "inconclusive"}}, "payload_pass": true, "memory_pass": false, "status": "regression"}, {"baseline": "v1", "candidate": "v2", "seeds": [42, 43, 44, 45, 46], "complete": true, "metrics": {"total_prover_ms": {"ratio": 1.039540960266911, "interval_95": [0.9449580001452121, 1.1598613744847461], "status": "inconclusive"}, "proof_verify_ms": {"ratio": 1.050506801597016, "interval_95": [0.9814168859708118, 1.125366073925568], "status": "inconclusive"}}, "payload_pass": true, "memory_pass": false, "status": "regression"}]}]}

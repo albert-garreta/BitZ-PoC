@@ -83,9 +83,12 @@ slots, and both branches authenticate the same committed source bits.
 The shared arithmetic proof stores only transmitted values. Verification
 derives challenge points and reconstructs checked compaction endpoints before
 passing them to the binder. Proof payload accounting uses this compact form.
-Final V2 validation and matched performance results are pending. Historical
-x86 and Mac measurements describe earlier shared-prime revisions and do not
-establish parity for V2. The native route remains the default.
+V2 correctness tests pass on Mac and will, but performance qualification
+failed: 100-bit discovery exceeded the strict peak-memory gate, and 128-bit
+verified diagnostics showed a large grinding regression. See the
+[V2 qualification report](../../../../results/falcon-shared-prime-v2-20261006/REPORT.txt)
+for exact revisions, payloads, paired timing intervals and unrun configurations.
+The native route remains the default.
 
 ## Committed sources and constraints
 
@@ -153,8 +156,9 @@ integer-prime challenges retain zero grinding and projection retains two bits;
 the complete bound is recalculated with the smaller prime. See
 [SHARED_PRIME_V2.md](SHARED_PRIME_V2.md) for the V2 accounting and
 [OPTIMIZATION_SECURITY.md](OPTIMIZATION_SECURITY.md) for the preceding
-allocation and validation obligations. Complete-ledger validation must cover
-both targets and every batch from 1 through 1024.
+allocation and validation obligations. Exact-integer ledger tests cover
+both targets and every batch from 1 through 1024; the conservative reported
+minima are about 101.002291 and 129.070893 bits under the stated model.
 
 The native statement domains are `native-ring/non-zk/v4` and
 `native-ring/statement/v4`; the shared-prime profile uses
@@ -212,7 +216,8 @@ process peak memory. A diagnostic matrix alone does not establish parity;
 the timing acceptance gate requires multiple seeds and paired process runs.
 
 The following measurements describe pre-V2 shared-prime implementations.
-Final V2 validation and benchmark results are pending.
+For V2 results and the failed promotion gate, see the
+[V2 qualification report](../../../../results/falcon-shared-prime-v2-20261006/REPORT.txt).
 
 The pre-V2 shared-prime implementation evaluates the verifier's canonical ring
 projection directly at the binding endpoint and shares its equality-weight

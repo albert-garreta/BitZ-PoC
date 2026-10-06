@@ -6,9 +6,13 @@ non-ZK `SharedPrimeV2` protocol for 1–1024 signatures and targets 100 or 128.
 V2 changes the shared proof format and transcript; old shared-prime proofs
 must be regenerated. The native proof format and transcript are retained.
 
-This document describes the final V2 configuration. Its validation and matched
-performance results are pending; the historical V1 measurements in
-[README.md](README.md) do not establish V2 performance or parity.
+This document describes the implemented V2 configuration. Correctness tests
+pass on Mac and will. Performance qualification failed: 100-bit discovery
+exceeded the strict peak-memory gate, and 128-bit diagnostics showed a large
+grinding regression. The remaining matrix and confirmation runs were skipped
+under the requested regression policy. See the
+[qualification report](../../../../results/falcon-shared-prime-v2-20261006/REPORT.txt)
+for evidence and scope; native remains the default.
 
 ## Ring reduction and shared binding
 
@@ -92,8 +96,10 @@ instead of 14. At the 100-bit target, integer-prime challenges retain zero
 grinding and projection retains difficulty 2. That profile spends part of
 the preceding protocol's security margin rather than preserving every old
 prime-error bound. Binary-field and PCS schedules retain their own budgets.
-The complete ledger must still meet each requested target using the smaller
-prime family, including prime sampling and every remaining reduction.
+Exact-integer tests verify the complete configured ledger for every batch
+from 1 through 1024, including prime sampling and every remaining reduction.
+The conservative reported minima are about 101.002291 bits for the 100-bit
+profile and 129.070893 bits for the 128-bit profile under this model.
 
 At the 128-bit target, an extra 11 grinding bits means 2048 times the
 expected nonce-search work per affected challenge block. It is not a prediction for total prover time;

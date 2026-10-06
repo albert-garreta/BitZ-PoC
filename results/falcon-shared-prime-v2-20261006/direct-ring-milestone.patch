@@ -1,0 +1,871 @@
+diff --git a/benches/falcon_hybrid.rs b/benches/falcon_hybrid.rs
+index 71143863..9ae8848a 100644
+--- a/benches/falcon_hybrid.rs
++++ b/benches/falcon_hybrid.rs
+@@ -52,7 +52,7 @@ impl Options {
+             if flag == "--protocol" {
+                 protocol = match args.next().ok_or("missing protocol")?.as_str() {
+                     "native" => FalconProtocol::NativeCarry,
+-                    "shared-prime" => FalconProtocol::SharedPrimeV1,
++                    "shared-prime" => FalconProtocol::SharedPrimeV2,
+                     _ => return Err("protocol must be native or shared-prime".into()),
+                 };
+                 continue;
+@@ -154,13 +154,13 @@ fn main() -> Result<(), Box<dyn Error>> {
+     let start = Instant::now();
+     let prepared = match options.protocol {
+         FalconProtocol::NativeCarry => PreparedFalconHybrid::new(options.batch, options.security)?,
+-        FalconProtocol::SharedPrimeV1 => {
++        FalconProtocol::SharedPrimeV2 => {
+             PreparedFalconHybrid::new_shared_prime(options.batch, options.security)?
+         }
+     };
+     let protocol = match prepared.protocol() {
+         FalconProtocol::NativeCarry => "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v4",
+-        FalconProtocol::SharedPrimeV1 => "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v1",
++        FalconProtocol::SharedPrimeV2 => "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v2",
+     };
+     let prepare_ms = ms(start);
+     let security = prepared.security();
+diff --git a/src/piop/spartan/falcon1024_ct/hybrid.rs b/src/piop/spartan/falcon1024_ct/hybrid.rs
+index 663ac470..dc1a4d44 100644
+--- a/src/piop/spartan/falcon1024_ct/hybrid.rs
++++ b/src/piop/spartan/falcon1024_ct/hybrid.rs
+@@ -65,7 +65,7 @@ pub struct FalconHybridSecurity {
+ #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+ pub enum FalconProtocol {
+     NativeCarry,
+-    SharedPrimeV1,
++    SharedPrimeV2,
+ }
+ 
+ /// Prepared public circuit, reusable across witnesses of the same batch size.
+@@ -111,7 +111,7 @@ impl PreparedFalconHybrid {
+ 
+     /// Experimental four-operand ring reduction and integer-polynomial lift.
+     pub fn new_shared_prime(batch: usize, target_bits: usize) -> Result<Self, FalconError> {
+-        Self::with_protocol(batch, target_bits, FalconProtocol::SharedPrimeV1)
++        Self::with_protocol(batch, target_bits, FalconProtocol::SharedPrimeV2)
+     }
+ 
+     pub fn with_protocol(
+@@ -124,7 +124,7 @@ impl PreparedFalconHybrid {
+         }
+         let layout = match protocol {
+             FalconProtocol::NativeCarry => FalconSourceLayout::new(batch)?,
+-            FalconProtocol::SharedPrimeV1 => FalconSourceLayout::new_shared_prime(batch)?,
++            FalconProtocol::SharedPrimeV2 => FalconSourceLayout::new_shared_prime(batch)?,
+         };
+         let keccak = [
+             PreparedKeccak::new_slab(batch, 0, 16).map_err(error)?,
+@@ -177,7 +177,7 @@ impl PreparedFalconHybrid {
+     }
+     pub fn protocol(&self) -> FalconProtocol {
+         if self.layout.is_shared_prime() {
+-            FalconProtocol::SharedPrimeV1
++            FalconProtocol::SharedPrimeV2
+         } else {
+             FalconProtocol::NativeCarry
+         }
+@@ -240,12 +240,12 @@ impl PreparedFalconHybrid {
+             ),
+             (
+                 if self.layout.is_shared_prime() {
+-                    "shared ring outer, endpoint batch and inner"
++                    "shared ring outer and endpoint batch"
+                 } else {
+                     "native ideal batching and projection"
+                 },
+                 if self.layout.is_shared_prime() {
+-                    (4 * d + 2069) as f64 / (super::Q as f64).powi(11)
++                    (4 * d + 2049) as f64 / (super::Q as f64).powi(11)
+                 } else {
+                     (d + 2046) as f64 / ((super::Q as f64).powi(11) - super::Q as f64)
+                 },
+@@ -414,7 +414,7 @@ impl PreparedFalconHybrid {
+         statement.public.validate(self.batch())?;
+         let mut h = blake3::Hasher::new();
+         h.update(if self.layout.is_shared_prime() {
+-            b"bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v1".as_slice()
++            b"bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v2".as_slice()
+         } else {
+             b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v4".as_slice()
+         });
+@@ -430,7 +430,7 @@ impl PreparedFalconHybrid {
+         }
+         h.update(b"bounded14:low13+4097*top;native:Q12289,theta11+theta+14;Dlen1023;carry22528BN");
+         if self.layout.is_shared_prime() {
+-            h.update(b"shared:all-E;C,H,S1,S2:1,l,l2,l3;inner10;Hunsigned14;S2encoded-alias;live-mask;P21-i128;limbs113;merge-in-binder-block/v1");
++            h.update(b"shared:all-E;C,H,S1,S2:1,l,l2,l3;direct-beta-decoder;Hunsigned14;S2encoded-alias;live-mask;P21-i128;limbs113;merge-in-binder-block/v1");
+             h.update(&(self.layout.live_bits() as u64).to_le_bytes());
+             h.update(
+                 &(self.layout.public_key_offset().expect("shared H slots") as u64).to_le_bytes(),
+@@ -1032,7 +1032,7 @@ mod tests {
+         for (batch, target) in [(1, 100), (3, 100), (9, 100), (1, 128)] {
+             let prepared = PreparedFalconHybrid::new_shared_prime(batch, target).unwrap();
+             let native = PreparedFalconHybrid::new(batch, target).unwrap();
+-            assert_eq!(prepared.protocol(), FalconProtocol::SharedPrimeV1);
++            assert_eq!(prepared.protocol(), FalconProtocol::SharedPrimeV2);
+             assert_eq!(prepared.live_arithmetic_bits_per_signature(), 114_914);
+             assert_eq!(
+                 prepared.source_bits_per_signature(),
+diff --git a/src/piop/spartan/falcon1024_ct/shared_ring.rs b/src/piop/spartan/falcon1024_ct/shared_ring.rs
+index 6f1bb81f..a48ca0f4 100644
+--- a/src/piop/spartan/falcon1024_ct/shared_ring.rs
++++ b/src/piop/spartan/falcon1024_ct/shared_ring.rs
+@@ -30,11 +30,11 @@ use super::{
+ type F = SpartanBitzField;
+ type Cfg = <F as SpartanField>::Config;
+ 
+-const INNER_ROUNDS: usize = 10;
++const COEFFICIENT_LOG: usize = N.ilog2() as usize;
+ const LIFT_COEFFICIENTS: usize = 2 * EXTENSION_DEGREE - 1;
+-const PRIME_MIN: u128 = 1 << 125;
+-const PRIME_MAX: u128 = (1 << 126) - 1;
+-const DOMAIN: &[u8] = b"bitz/falcon1024-ct/shared-ring/v1";
++pub(super) const PRIME_MIN: u128 = 1 << 125;
++pub(super) const PRIME_MAX: u128 = (1 << 126) - 1;
++const DOMAIN: &[u8] = b"bitz/falcon1024-ct/shared-ring/v2";
+ 
+ #[derive(Clone, Debug, Eq, PartialEq)]
+ pub(super) struct Proof {
+@@ -42,16 +42,13 @@ pub(super) struct Proof {
+     pub outer: Vec<[Ext; 4]>,
+     /// Transcript order: C, H, S2, S1. Batching powers are 0, 1, 3, 2.
+     pub evaluations: [Ext; 4],
+-    pub inner: Vec<[Ext; 3]>,
+-    pub inner_evaluation: Ext,
+     pub lift: [i128; LIFT_COEFFICIENTS],
+     pub projection_nonce: u64,
+ }
+ 
+ impl Proof {
+     pub(super) fn payload_size_bytes(&self) -> usize {
+-        2 * EXTENSION_DEGREE
+-            * (self.certificate.len() + 4 * self.outer.len() + 4 + 3 * self.inner.len() + 1)
++        2 * EXTENSION_DEGREE * (self.certificate.len() + 4 * self.outer.len() + 4)
+             + 16 * LIFT_COEFFICIENTS
+             + 8
+     }
+@@ -68,7 +65,7 @@ pub(super) struct ProjectedClaim {
+ /// Only the small extension-field factors survive until the binding endpoint.
+ pub(super) struct VerifierProjectedClaim {
+     row: Vec<Ext>,
+-    point: Vec<Ext>,
++    beta: Ext,
+     omega: [Ext; 4],
+     alpha: F,
+     pub target: F,
+@@ -90,7 +87,8 @@ impl VerifierProjectedClaim {
+         // This does NOT project an extension-field sum: reduction modulo q must
+         // happen separately for every public bit coefficient before accumulation.
+         let mut column = [FpLinearAcc::<2, 1>::default(); EXTENSION_DEGREE];
+-        visit_bit_query(layout, &self.point, &self.omega, |slot, value| {
++        let positions = powers(self.beta);
++        visit_bit_query(layout, &positions, &self.omega, |slot, value| {
+             for (sum, coordinate) in column.iter_mut().zip(value.0) {
+                 sum.accumulate(&local[slot], &Uint::from_words([u64::from(coordinate)]));
+             }
+@@ -169,18 +167,10 @@ pub(super) fn prove(
+     let tau = dot_ext(&omega, &evaluations);
+     let mut row = equality_weights(&t);
+     row[layout.batch()..].fill(Ext::ZERO);
+-    let combined = collapse_positions(traces, &row, &omega);
+-    let (inner, u, inner_evaluation) = prove_inner(transcript, powers, combined, tau)?;
+-    transcript.absorb_slice(b"inner-witness-evaluation");
+-    absorb_extensions(transcript, &[inner_evaluation]);
+-    check_inner_terminal(
+-        initial_after_rounds(&inner, &u, tau),
+-        beta,
+-        &u,
+-        inner_evaluation,
+-    )?;
+-    let (column, offset) = bit_query(layout, &row, &u, &omega)?;
+-    let target = inner_evaluation.sub(offset);
++    // Transpose the coefficient decoder directly onto the committed bits.
++    // The shared prime-field binder authenticates this tensor query later.
++    let (column, offset) = bit_query(layout, &row, &powers, &omega)?;
++    let target = tau.sub(offset);
+     let lift = grouped_lift(source, &row, &column);
+     check_lift(layout, &lift, target)?;
+     absorb_lift(transcript, &lift);
+@@ -202,8 +192,6 @@ pub(super) fn prove(
+             certificate,
+             outer,
+             evaluations,
+-            inner,
+-            inner_evaluation,
+             lift,
+             projection_nonce,
+         },
+@@ -224,12 +212,9 @@ pub(super) fn verify(
+     let rounds = layout.capacity().ilog2() as usize;
+     if proof.certificate.len() != N - 1
+         || proof.outer.len() != rounds
+-        || proof.inner.len() != INNER_ROUNDS
+         || !proof.certificate.iter().all(|x| x.canonical())
+         || !proof.outer.iter().flatten().all(|x| x.canonical())
+         || !proof.evaluations.iter().all(|x| x.canonical())
+-        || !proof.inner.iter().flatten().all(|x| x.canonical())
+-        || !proof.inner_evaluation.canonical()
+     {
+         return Err(error("invalid shared ring proof encoding"));
+     }
+@@ -238,11 +223,9 @@ pub(super) fn verify(
+     transcript.absorb_slice(b"quotient-certificate");
+     absorb_extensions(transcript, &proof.certificate);
+     let beta = challenge(transcript, b"polynomial-evaluation")?;
+-    // The verifier needs only beta^N and D(beta), not all public operand evaluations.
+-    let mut beta_n = beta;
+-    for _ in 0..INNER_ROUNDS {
+-        beta_n = beta_n.mul(beta_n);
+-    }
++    // Only the polynomial power and its geometric sum are needed before the
++    // deferred source endpoint. Doubling also covers beta = 0, 1, and -1.
++    let (beta_n, position_sum) = polynomial_weights_summary(beta);
+     let initial = eval_ext(&proof.certificate, beta).mul(Ext::ONE.add(beta_n));
+     let (t, outer_claim) = verify_sumcheck(transcript, b"outer-cubic", &proof.outer, initial)?;
+     transcript.absorb_slice(b"outer-evaluations-C-H-S2-S1");
+@@ -251,14 +234,10 @@ pub(super) fn verify(
+     let batching = challenge(transcript, b"operand-batching")?;
+     let omega = operand_weights(batching);
+     let tau = dot_ext(&omega, &proof.evaluations);
+-    let (u, inner_claim) = verify_sumcheck(transcript, b"inner-quadratic", &proof.inner, tau)?;
+-    transcript.absorb_slice(b"inner-witness-evaluation");
+-    absorb_extensions(transcript, &[proof.inner_evaluation]);
+-    check_inner_terminal(inner_claim, beta, &u, proof.inner_evaluation)?;
+     let mut row = equality_weights(&t);
+     row[layout.batch()..].fill(Ext::ZERO);
+-    let offset = decoder_offset(&row, &omega);
+-    check_lift(layout, &proof.lift, proof.inner_evaluation.sub(offset))?;
++    let offset = decoder_offset(&row, position_sum, &omega);
++    check_lift(layout, &proof.lift, tau.sub(offset))?;
+     absorb_lift(transcript, &proof.lift);
+     let field = sample_shared_field(transcript, layout)?;
+     transcript.absorb_slice(b"ring-prime-projection");
+@@ -277,7 +256,7 @@ pub(super) fn verify(
+         field.clone(),
+         VerifierProjectedClaim {
+             row,
+-            point: u,
++            beta,
+             omega,
+             alpha,
+             target: project_lift(&proof.lift, alpha, &field),
+@@ -317,7 +296,7 @@ fn bind_parameters(t: &mut impl Transcript, layout: &FalconSourceLayout, target:
+         t.absorb_slice(&(value as u64).to_le_bytes());
+     }
+     t.absorb_slice(
+-        b"f:T11+T+14;D:1023;P:i128le21;live-mask;C:u14;H:u14;S1:bounded14-6144;S2:encoded-signed12",
++        b"f:T11+T+14;D:1023;direct-beta-decoder;P:i128le21;live-mask;C:u14;H:u14;S1:bounded14-6144;S2:encoded-signed12;aliases:sum-in-E",
+     );
+     t.absorb_slice(&lift_bound(layout).to_le_bytes());
+     t.absorb_slice(&SOURCE_RESIDUAL_BOUND.to_le_bytes());
+@@ -369,6 +348,17 @@ fn powers(beta: Ext) -> Vec<Ext> {
+     powers
+ }
+ 
++/// Return beta^N and sum_{j=0}^{N-1} beta^j without division.
++fn polynomial_weights_summary(beta: Ext) -> (Ext, Ext) {
++    let mut power = beta;
++    let mut sum = Ext::ONE;
++    for _ in 0..COEFFICIENT_LOG {
++        sum = sum.mul(Ext::ONE.add(power));
++        power = power.mul(power);
++    }
++    (power, sum)
++}
++
+ fn quotient_evaluation(certificate: &[Ext], beta: Ext, powers: &[Ext]) -> Ext {
+     eval_ext(certificate, beta).mul(Ext::ONE.add(powers[N - 1].mul(beta)))
+ }
+@@ -417,30 +407,6 @@ fn evaluation_tables(
+     })
+ }
+ 
+-#[tracing::instrument(skip_all, name = "falcon_shared_ring:collapse_positions")]
+-fn collapse_positions(
+-    traces: &[FalconVerificationTrace],
+-    row: &[Ext],
+-    omega: &[Ext; 4],
+-) -> Vec<Ext> {
+-    let collapse = |j| {
+-        let mut sums = [[0u64; EXTENSION_DEGREE]; 4];
+-        for (trace, weight) in traces.iter().zip(row) {
+-            for (sum, coefficient) in sums.iter_mut().zip(coefficients(trace, j)) {
+-                for (value, &coordinate) in sum.iter_mut().zip(&weight.0) {
+-                    *value += u64::from(coefficient) * u64::from(coordinate);
+-                }
+-            }
+-        }
+-        let values = sums.map(|sum| Ext(sum.map(|c| (c % Q as u64) as u16)));
+-        dot_ext(omega, &values)
+-    };
+-    #[cfg(feature = "parallel")]
+-    return (0..N).into_par_iter().map(collapse).collect();
+-    #[cfg(not(feature = "parallel"))]
+-    (0..N).map(collapse).collect()
+-}
+-
+ fn fold(table: &mut Vec<Ext>, challenge: Ext) {
+     for j in 0..table.len() / 2 {
+         table[j] = table[2 * j].add(challenge.mul(table[2 * j + 1].sub(table[2 * j])));
+@@ -471,20 +437,6 @@ fn outer_round(weights: &[Ext], tables: &[Vec<Ext>; 4]) -> [Ext; 4] {
+     polynomial
+ }
+ 
+-fn inner_round(left: &[Ext], right: &[Ext]) -> [Ext; 3] {
+-    let mut polynomial = [Ext::ZERO; 3];
+-    for i in (0..left.len()).step_by(2) {
+-        let a = [left[i], left[i + 1].sub(left[i])];
+-        let b = [right[i], right[i + 1].sub(right[i])];
+-        for x in 0..2 {
+-            for y in 0..2 {
+-                polynomial[x + y] = polynomial[x + y].add(a[x].mul(b[y]));
+-            }
+-        }
+-    }
+-    polynomial
+-}
+-
+ fn round_challenge<const K: usize>(
+     transcript: &mut impl Transcript,
+     index: usize,
+@@ -533,31 +485,6 @@ fn prove_outer(
+     Ok((proof, point, evaluations))
+ }
+ 
+-#[tracing::instrument(skip_all, name = "falcon_shared_ring:inner_sumcheck")]
+-fn prove_inner(
+-    transcript: &mut impl Transcript,
+-    mut left: Vec<Ext>,
+-    mut right: Vec<Ext>,
+-    mut claim: Ext,
+-) -> Result<(Vec<[Ext; 3]>, Vec<Ext>, Ext), FalconError> {
+-    transcript.absorb_slice(b"inner-quadratic");
+-    let mut proof = Vec::new();
+-    let mut point = Vec::new();
+-    while left.len() > 1 {
+-        let polynomial = inner_round(&left, &right);
+-        let (challenge, next) = round_challenge(transcript, proof.len(), &polynomial, claim)?;
+-        fold(&mut left, challenge);
+-        fold(&mut right, challenge);
+-        proof.push(polynomial);
+-        point.push(challenge);
+-        claim = next;
+-    }
+-    if left[0].mul(right[0]) != claim {
+-        return Err(error("shared ring inner prover terminal"));
+-    }
+-    Ok((proof, point, right[0]))
+-}
+-
+ #[tracing::instrument(skip_all, name = "falcon_shared_ring:verify_sumcheck", fields(degree = K - 1))]
+ fn verify_sumcheck<const K: usize>(
+     transcript: &mut impl Transcript,
+@@ -600,68 +527,114 @@ fn check_outer_terminal(
+     Ok(())
+ }
+ 
+-fn check_inner_terminal(claim: Ext, beta: Ext, u: &[Ext], witness: Ext) -> Result<(), FalconError> {
+-    let mut power = beta;
+-    let mut public = Ext::ONE;
+-    for &coordinate in u {
+-        public = public.mul(Ext::ONE.sub(coordinate).add(coordinate.mul(power)));
+-        power = power.mul(power);
+-    }
+-    if claim != public.mul(witness) {
+-        return Err(error("shared ring inner terminal identity"));
+-    }
+-    Ok(())
+-}
+-
+ #[tracing::instrument(skip_all, name = "falcon_shared_ring:bit_query")]
+ fn bit_query(
+     layout: &FalconSourceLayout,
+     row: &[Ext],
+-    point: &[Ext],
++    positions: &[Ext],
+     omega: &[Ext; 4],
+ ) -> Result<(Vec<Ext>, Ext), FalconError> {
++    if row.len() != layout.capacity() {
++        return Err(error("shared ring signature weights shape"));
++    }
+     let mut column = vec![Ext::ZERO; layout.signature_stride()];
+-    visit_bit_query(layout, point, omega, |slot, value| column[slot] = value)?;
+-    Ok((column, decoder_offset(row, omega)))
++    visit_bit_query(layout, positions, omega, |slot, value| {
++        column[slot] = column[slot].add(value);
++    })?;
++    let position_sum = positions
++        .iter()
++        .fold(Ext::ZERO, |sum, &value| sum.add(value));
++    Ok((column, decoder_offset(row, position_sum, omega)))
+ }
+ 
+-fn decoder_offset(row: &[Ext], omega: &[Ext; 4]) -> Ext {
++fn decoder_offset(row: &[Ext], position_sum: Ext, omega: &[Ext; 4]) -> Ext {
+     let row_sum = row.iter().fold(Ext::ZERO, |sum, &v| sum.add(v));
+-    // Position equality weights sum to one. Only S1 has an affine offset.
+-    scale(row_sum.mul(omega[3]), -6144)
++    // Only S1 has an affine offset. Polynomial weights need not sum to one.
++    scale(row_sum.mul(omega[3]).mul(position_sum), -6144)
+ }
+ 
+ fn visit_bit_query(
+     layout: &FalconSourceLayout,
+-    point: &[Ext],
++    positions: &[Ext],
+     omega: &[Ext; 4],
+-    mut visit: impl FnMut(usize, Ext),
++    visit: impl FnMut(usize, Ext),
+ ) -> Result<(), FalconError> {
+     let offsets = layout.offsets();
+     let key = layout
+         .public_key_offset()
+         .ok_or_else(|| error("missing shared public-key source"))?;
+-    for (j, weight) in equality_weights(point).into_iter().enumerate() {
++    let s2 = offsets.encoded_signature + 8 * (1 + NONCE_BYTES);
++    let ranges = [
++        offsets.hash_point..offsets.hash_point + 14 * N,
++        key..key + 14 * N,
++        s2..s2 + 12 * N,
++        offsets.s1..offsets.s1 + 14 * N,
++    ];
++    visit_decoder_query(layout.signature_stride(), &ranges, positions, omega, visit)
++}
++
++/// Coalesce any decoder aliases in E before their canonical coordinates are
++/// lifted. The usual four disjoint ranges stream without allocating a column.
++fn visit_decoder_query(
++    domain_len: usize,
++    ranges: &[std::ops::Range<usize>; 4],
++    positions: &[Ext],
++    omega: &[Ext; 4],
++    mut visit: impl FnMut(usize, Ext),
++) -> Result<(), FalconError> {
++    if positions.len() != N
++        || ranges.iter().zip([14, 14, 12, 14]).any(|(range, width)| {
++            range.end > domain_len || range.end.checked_sub(range.start) != Some(width * N)
++        })
++    {
++        return Err(error("shared ring decoder query dimensions"));
++    }
++    let overlaps = (0..4).any(|a| {
++        (a + 1..4).any(|b| ranges[a].start < ranges[b].end && ranges[b].start < ranges[a].end)
++    });
++    if overlaps {
++        let mut column = vec![Ext::ZERO; domain_len];
++        visit_decoder_terms(ranges, positions, omega, |slot, value| {
++            column[slot] = column[slot].add(value);
++        });
++        for (slot, value) in column.into_iter().enumerate() {
++            if value != Ext::ZERO {
++                visit(slot, value);
++            }
++        }
++    } else {
++        // Every decoder visits its entire range bijectively, so disjoint
++        // ranges guarantee that these are already canonical slot sums.
++        visit_decoder_terms(ranges, positions, omega, visit);
++    }
++    Ok(())
++}
++
++fn visit_decoder_terms(
++    ranges: &[std::ops::Range<usize>; 4],
++    positions: &[Ext],
++    omega: &[Ext; 4],
++    mut emit: impl FnMut(usize, Ext),
++) {
++    for (j, &weight) in positions.iter().enumerate() {
+         let c = weight.mul(omega[0]);
+         let h = weight.mul(omega[1]);
+         let s2 = weight.mul(omega[2]);
+         let s1 = weight.mul(omega[3]);
+         for bit in 0..14 {
+-            visit(offsets.hash_point + 14 * j + bit, scale(c, 1 << bit));
+-            visit(key + 14 * j + bit, scale(h, 1 << bit));
+-            visit(
+-                offsets.s1 + 14 * j + bit,
++            emit(ranges[0].start + 14 * j + bit, scale(c, 1 << bit));
++            emit(ranges[1].start + 14 * j + bit, scale(h, 1 << bit));
++            emit(
++                ranges[3].start + 14 * j + bit,
+                 scale(s1, if bit == 13 { 4097 } else { 1 << bit }),
+             );
+         }
+         for bit in 0..12 {
+             let stream = 12 * j + 11 - bit;
+-            let slot =
+-                offsets.encoded_signature + 8 * (1 + NONCE_BYTES + stream / 8) + 7 - stream % 8;
+-            visit(slot, scale(s2, if bit == 11 { -2048 } else { 1 << bit }));
++            let slot = ranges[2].start + 8 * (stream / 8) + 7 - stream % 8;
++            emit(slot, scale(s2, if bit == 11 { -2048 } else { 1 << bit }));
+         }
+     }
+-    Ok(())
+ }
+ 
+ /// Group eight canonical coordinate vectors by their witness byte before
+@@ -941,7 +914,12 @@ mod tests {
+                 sample_extension(&mut vt, false).unwrap()
+             );
+             assert_eq!(proof.outer.len(), layout.capacity().ilog2() as usize);
+-            assert_eq!(proof.inner.len(), INNER_ROUNDS);
++            assert_eq!(
++                proof.payload_size_bytes(),
++                2 * EXTENSION_DEGREE * (N - 1 + 4 * proof.outer.len() + 4)
++                    + 16 * LIFT_COEFFICIENTS
++                    + 8,
++            );
+         }
+     }
+ 
+@@ -950,9 +928,10 @@ mod tests {
+         let (layout, _, _, _) = fixture(3);
+         let field = F::make_cfg(&Uint::from((1u128 << 127) - 1)).unwrap();
+         let mut row = vec![element(17), element(41), element(99), Ext::ZERO];
+-        let point: Vec<_> = (0..INNER_ROUNDS).map(|i| element(i + 2)).collect();
++        let beta = element(213);
++        let positions = powers(beta);
+         let omega = [element(7), element(8), element(9), element(10)];
+-        let (column, _) = bit_query(&layout, &row, &point, &omega).unwrap();
++        let (column, _) = bit_query(&layout, &row, &positions, &omega).unwrap();
+         let dot = |a: &[F], b: &[F]| {
+             a.iter()
+                 .zip(b)
+@@ -967,7 +946,7 @@ mod tests {
+             let materialized = project(&row, &column, &[0; LIFT_COEFFICIENTS], alpha, &field);
+             let lazy = VerifierProjectedClaim {
+                 row: row.clone(),
+-                point: point.clone(),
++                beta,
+                 omega,
+                 alpha,
+                 target: field.zero(),
+@@ -1006,7 +985,7 @@ mod tests {
+         row.fill(Ext::ZERO);
+         let lazy = VerifierProjectedClaim {
+             row,
+-            point,
++            beta,
+             omega,
+             alpha: field.one(),
+             target: field.zero(),
+@@ -1059,16 +1038,10 @@ mod tests {
+             reject(&bad);
+         }
+         let mut bad = proof.clone();
+-        bad.inner.pop();
+-        reject(&bad);
+-        let mut bad = proof.clone();
+-        bad.inner[0][0].0[10] = Q as u16;
++        bad.outer[0][0].0[10] = Q as u16;
+         reject(&bad);
+         let mut bad = proof.clone();
+-        bad.inner[0][2] = bad.inner[0][2].add(Ext::ONE);
+-        reject(&bad);
+-        let mut bad = proof.clone();
+-        bad.inner_evaluation = bad.inner_evaluation.add(Ext::ONE);
++        bad.evaluations[2].0[9] = Q as u16;
+         reject(&bad);
+         let mut bad = proof.clone();
+         bad.lift[20] += 1;
+@@ -1099,12 +1072,11 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn extension_sumcheck_rounds_and_position_order_match_direct_tables() {
++    fn extension_outer_sumcheck_rounds_match_direct_tables() {
+         let weights: Vec<_> = (0..8).map(element).collect();
+         let tables: [Vec<Ext>; 4] =
+             std::array::from_fn(|j| (0..8).map(|i| element(9 * j + i + 3)).collect());
+         let outer = outer_round(&weights, &tables);
+-        let inner = inner_round(&tables[0], &tables[1]);
+         for z in [Ext::ZERO, Ext::ONE, element(117)] {
+             let at = |table: &[Ext], pair: usize| {
+                 table[2 * pair]
+@@ -1117,40 +1089,217 @@ mod tests {
+                     .sub(at(&tables[3], pair));
+                 sum.add(at(&weights, pair).mul(residual))
+             });
+-            let expected_inner = (0..4).fold(Ext::ZERO, |sum, pair| {
+-                sum.add(at(&tables[0], pair).mul(at(&tables[1], pair)))
+-            });
+             assert_eq!(eval_ext(&outer, z), expected_outer);
+-            assert_eq!(eval_ext(&inner, z), expected_inner);
+         }
+-        let beta = element(213);
+-        let point: Vec<_> = (0..INNER_ROUNDS).map(|i| element(i + 55)).collect();
+-        let table = powers(beta);
+-        let expected = (0..N).fold(Ext::ZERO, |sum, j| {
+-            let eq = point.iter().enumerate().fold(Ext::ONE, |p, (bit, &u)| {
+-                p.mul(if j >> bit & 1 == 0 {
+-                    Ext::ONE.sub(u)
+-                } else {
+-                    u
++    }
++
++    #[test]
++    fn polynomial_power_sum_and_decoder_offset_cover_zero_one_and_minus_one() {
++        let row = [element(2), element(19), Ext::ZERO, element(7)];
++        let omega = operand_weights(element(113));
++        for beta in [Ext::ZERO, Ext::ONE, Ext::ZERO.sub(Ext::ONE), element(44)] {
++            let positions = powers(beta);
++            let (last, sum) = polynomial_weights_summary(beta);
++            assert_eq!(last, positions[N - 1].mul(beta));
++            assert_eq!(sum, positions.iter().fold(Ext::ZERO, |sum, &v| sum.add(v)));
++            let expected = row.iter().fold(Ext::ZERO, |total, &weight| {
++                positions.iter().fold(total, |total, &position| {
++                    total.add(scale(weight.mul(position).mul(omega[3]), -6144))
+                 })
+             });
+-            sum.add(eq.mul(table[j]))
+-        });
+-        check_inner_terminal(expected, beta, &point, Ext::ONE).unwrap();
+-        let mut reversed = point;
+-        reversed.reverse();
+-        assert!(check_inner_terminal(expected, beta, &reversed, Ext::ONE).is_err());
++            assert_eq!(decoder_offset(&row, sum, &omega), expected);
++        }
++        assert_eq!(
++            polynomial_weights_summary(Ext::ONE).1,
++            scale(Ext::ONE, N as i64)
++        );
++        assert_eq!(
++            polynomial_weights_summary(Ext::ZERO.sub(Ext::ONE)).1,
++            Ext::ZERO
++        );
++        assert_eq!(decoder_offset(&[Ext::ZERO; 4], Ext::ONE, &omega), Ext::ZERO);
++    }
++
++    #[test]
++    fn direct_decoder_tensor_matches_raw_signed_words_and_masked_padding() {
++        let layout = FalconSourceLayout::new_shared_prime(3).unwrap();
++        let offsets = layout.offsets();
++        let key = layout.public_key_offset().unwrap();
++        let stride = layout.signature_stride();
++        // Padding deliberately contains nonzero bits: its vanishing row weight,
++        // rather than an accidental all-zero fixture, must remove it.
++        let mut bits = vec![false; layout.source_bits()];
++        let mut decoded = vec![vec![[0i64; 4]; N]; layout.capacity()];
++        for (s, coefficients) in decoded.iter_mut().enumerate() {
++            let base = s * stride;
++            for (j, coefficient) in coefficients.iter_mut().enumerate() {
++                let unsigned = [0u16, 1, (Q - 1) as u16, Q as u16, 16383, 8192];
++                let signed = [0u16, 1, 2047, 2048, 2049, 4095];
++                let bounded = [0u16, 1, 8191, 8192, 16383, 4096];
++                let c = unsigned[(j + s) % unsigned.len()];
++                let h = unsigned[(3 * j + 2 * s + 1) % unsigned.len()];
++                let s2 = signed[(5 * j + s + 2) % signed.len()];
++                let s1 = bounded[(j + 3 * s + 4) % bounded.len()];
++                for (offset, word) in [(offsets.hash_point, c), (key, h), (offsets.s1, s1)] {
++                    for bit in 0..14 {
++                        bits[base + offset + 14 * j + bit] = word >> bit & 1 != 0;
++                    }
++                }
++                // Encode the signed coefficient independently as 12 MSB-first
++                // stream bits, then place each byte's bits little-endian.
++                for digit in 0..12 {
++                    let stream = 12 * j + digit;
++                    let slot = offsets.encoded_signature + 8 * (1 + NONCE_BYTES + stream / 8) + 7
++                        - stream % 8;
++                    bits[base + slot] = s2 >> (11 - digit) & 1 != 0;
++                }
++                *coefficient = [
++                    i64::from(c),
++                    i64::from(h),
++                    i64::from(s2) - if s2 & 2048 != 0 { 4096 } else { 0 },
++                    i64::from(s1 & 8191) + 4097 * i64::from(s1 >> 13) - 6144,
++                ];
++            }
++        }
++        let row = [element(4), element(8), element(12), Ext::ZERO];
++        let mut mixtures = (0..4)
++            .map(|operand| {
++                let mut omega = [Ext::ZERO; 4];
++                omega[operand] = Ext::ONE;
++                omega
++            })
++            .collect::<Vec<_>>();
++        mixtures.push(operand_weights(element(31)));
++        for beta in [Ext::ZERO, Ext::ONE, Ext::ZERO.sub(Ext::ONE), element(57)] {
++            let positions = powers(beta);
++            let endpoints: [Ext; 4] = std::array::from_fn(|operand| {
++                decoded
++                    .iter()
++                    .zip(row)
++                    .fold(Ext::ZERO, |sum, (coefficients, weight)| {
++                        let value = coefficients.iter().rev().fold(Ext::ZERO, |value, c| {
++                            value.mul(beta).add(scale(Ext::ONE, c[operand]))
++                        });
++                        sum.add(weight.mul(value))
++                    })
++            });
++            for omega in &mixtures {
++                let (column, offset) = bit_query(&layout, &row, &positions, omega).unwrap();
++                let slots: Vec<_> = column
++                    .iter()
++                    .enumerate()
++                    .filter(|(_, value)| **value != Ext::ZERO)
++                    .collect();
++                let actual = row.iter().enumerate().fold(offset, |sum, (s, &weight)| {
++                    let local = slots.iter().fold(Ext::ZERO, |sum, &(slot, &value)| {
++                        if bits[s * stride + slot] {
++                            sum.add(value)
++                        } else {
++                            sum
++                        }
++                    });
++                    sum.add(weight.mul(local))
++                });
++                assert_eq!(actual, dot_ext(omega, &endpoints));
++                assert!(
++                    column[layout.live_bits()..]
++                        .iter()
++                        .all(|&value| value == Ext::ZERO)
++                );
++            }
++        }
++    }
++
++    #[test]
++    fn decoder_aliases_are_summed_in_extension_before_coordinate_projection() {
++        let disjoint = [0..14 * N, 14 * N..28 * N, 28 * N..40 * N, 40 * N..54 * N];
++        let aliases = [0..14 * N, 0..14 * N, 3..3 + 12 * N, 7..7 + 14 * N];
++        let domain = 7 + 14 * N;
++        let positions = powers(element(31));
++        let omega = operand_weights(element(13));
++        let mut expected = vec![Ext::ZERO; domain];
++        visit_decoder_query(54 * N, &disjoint, &positions, &omega, |slot, value| {
++            let operand = disjoint
++                .iter()
++                .position(|range| range.contains(&slot))
++                .unwrap();
++            let mapped = aliases[operand].start + slot - disjoint[operand].start;
++            expected[mapped] = expected[mapped].add(value);
++        })
++        .unwrap();
++        let mut actual = vec![Ext::ZERO; domain];
++        let mut seen = vec![false; domain];
++        visit_decoder_query(domain, &aliases, &positions, &omega, |slot, value| {
++            assert!(
++                !seen[slot],
++                "a source slot must be projected only after all aliases are added"
++            );
++            seen[slot] = true;
++            assert!(value.canonical());
++            actual[slot] = value;
++        })
++        .unwrap();
++        assert_eq!(actual, expected);
++
++        // C + (-H) on identical slots is zero in E. Projecting their two
++        // unreduced canonical representatives first would incorrectly give q.
++        let omega = [Ext::ONE, Ext::ZERO.sub(Ext::ONE), Ext::ZERO, Ext::ZERO];
++        let field = field::FpCtx::from_prime_u128((1 << 127) - 1);
++        let mut projected = [FpLinearAcc::<2, 1>::default(); EXTENSION_DEGREE];
++        visit_decoder_query(
++            domain,
++            &aliases,
++            &vec![Ext::ONE; N],
++            &omega,
++            |slot, value| {
++                let local = F::from_with_cfg(slot as u128 + 1, &field);
++                for (sum, coordinate) in projected.iter_mut().zip(value.0) {
++                    sum.accumulate(&local, &Uint::from_words([u64::from(coordinate)]));
++                }
++            },
++        )
++        .unwrap();
++        assert!(
++            projected
++                .into_iter()
++                .all(|coordinate| field.reduce(coordinate) == field.zero())
++        );
++
++        assert!(visit_decoder_query(domain, &aliases, &positions[1..], &omega, |_, _| {}).is_err());
++        assert!(visit_decoder_query(domain - 1, &aliases, &positions, &omega, |_, _| {}).is_err());
++        let mut reversed = aliases;
++        reversed[0] = 1..0;
++        assert!(visit_decoder_query(domain, &reversed, &positions, &omega, |_, _| {}).is_err());
+     }
+ 
+     #[test]
+     fn decoder_tensor_and_grouped_integer_lift_match_original_source_bits() {
+         let (layout, _, traces, source) = fixture(3);
+         let row = vec![element(4), element(8), element(12), Ext::ZERO];
+-        let point: Vec<_> = (0..INNER_ROUNDS).map(|i| element(44 + i)).collect();
++        let beta = element(44);
++        let positions = powers(beta);
+         let omega = operand_weights(element(31));
+-        let (column, offset) = bit_query(&layout, &row, &point, &omega).unwrap();
+-        let collapsed = collapse_positions(&traces, &row, &omega);
+-        let expected = dot_ext(&collapsed, &equality_weights(&point)).sub(offset);
++        let (column, offset) = bit_query(&layout, &row, &positions, &omega).unwrap();
++        // Independently evaluate the four ordinary coefficient polynomials by
++        // Horner, then interpolate signatures; no coefficient-domain MLE.
++        let expected = traces
++            .iter()
++            .zip(&row)
++            .fold(Ext::ZERO, |sum, (trace, &weight)| {
++                let values: [Ext; 4] = std::array::from_fn(|operand| {
++                    (0..N).rev().fold(Ext::ZERO, |value, j| {
++                        let coefficient = match operand {
++                            0 => i64::from(trace.hash_to_point.point[j]),
++                            1 => i64::from(trace.public_key.h[j]),
++                            2 => i64::from(trace.signature.s2[j]),
++                            _ => i64::from(trace.s1[j]),
++                        };
++                        value.mul(beta).add(scale(Ext::ONE, coefficient))
++                    })
++                });
++                sum.add(weight.mul(dot_ext(&omega, &values)))
++            })
++            .sub(offset);
+         let lift = grouped_lift(&source, &row, &column);
+         check_lift(&layout, &lift, expected).unwrap();
+         // Independently convolve a sparse subset, crossing physical word/byte boundaries.
+@@ -1250,8 +1399,9 @@ mod tests {
+                 .unwrap();
+         let mut row: Vec<_> = (0..layout.capacity()).map(|s| element(s + 17)).collect();
+         row[batch..].fill(Ext::ZERO);
+-        let point: Vec<_> = (0..INNER_ROUNDS).map(|i| element(44 + i)).collect();
+-        let (column, _) = bit_query(&layout, &row, &point, &operand_weights(element(31))).unwrap();
++        let positions = powers(element(44));
++        let (column, _) =
++            bit_query(&layout, &row, &positions, &operand_weights(element(31))).unwrap();
+         let run = |threads| {
+             rayon::ThreadPoolBuilder::new()
+                 .num_threads(threads)
+@@ -1359,10 +1509,10 @@ mod tests {
+         transcript.absorb_slice(b"shared-ring-projection-kernel-benchmark/v1");
+         let signature_point = sample_point(&mut transcript, b"signature-point", 5).unwrap();
+         let row = equality_weights(&signature_point);
+-        let position_point =
+-            sample_point(&mut transcript, b"position-point", INNER_ROUNDS).unwrap();
++        let beta = challenge(&mut transcript, b"polynomial-evaluation").unwrap();
++        let positions = powers(beta);
+         let omega = operand_weights(challenge(&mut transcript, b"operand-batching").unwrap());
+-        let (column, _) = bit_query(&layout, &row, &position_point, &omega).unwrap();
++        let (column, _) = bit_query(&layout, &row, &positions, &omega).unwrap();
+         let field = sample_shared_field(&mut transcript, &layout).unwrap();
+         let alpha = squeeze_field(&mut transcript, &field).unwrap();
+         let mut powers = vec![field.one(); EXTENSION_DEGREE];
+@@ -1421,13 +1571,13 @@ mod tests {
+         let instances = crate::piop::spartan::matrix::eq_table(&endpoint[split..], &field).unwrap();
+         let lazy = VerifierProjectedClaim {
+             row: row.clone(),
+-            point: position_point.clone(),
++            beta,
+             omega,
+             alpha,
+             target: field.zero(),
+         };
+         let materialized_endpoint = || {
+-            let (column, _) = bit_query(&layout, &row, &position_point, &omega).unwrap();
++            let (column, _) = bit_query(&layout, &row, &positions, &omega).unwrap();
+             let claim = project(&row, &column, &[0; LIFT_COEFFICIENTS], alpha, &field);
+             let dot = |a: &[F], b: &[F]| {
+                 a.iter().zip(b).fold(field.zero(), |sum, (x, y)| {

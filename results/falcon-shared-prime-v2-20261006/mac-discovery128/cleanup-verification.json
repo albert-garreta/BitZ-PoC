@@ -1,0 +1,6 @@
+{
+  "checked_at": 1791253975.030663,
+  "owned_mac_benchmark_processes_remaining": false,
+  "method": "Escalated ps -axo pid,ppid,pgid,etime,%cpu,command; no falcon_v2 or falcon-v2-mac-discovery128 process remained.",
+  "note": "SIGTERM early stop completed, but a subsequent SIGKILL cleanup call returned EPERM. The original run record remains running because runner4fe saved interruption after cleanup. Preserve original logs; do not treat this process as complete or timing qualification."
+}

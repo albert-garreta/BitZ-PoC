@@ -1,0 +1,34 @@
+{
+  "label": "v2",
+  "case": [
+    128,
+    1024,
+    16,
+    42
+  ],
+  "command": [
+    "/usr/bin/time",
+    "-v",
+    "/home/john-wu/code/BitZ-pcs-run/.tmp/falcon-v2/falcon_v2",
+    "--security",
+    "128",
+    "--batch",
+    "1024",
+    "--threads",
+    "16",
+    "--seed",
+    "42",
+    "--warmup",
+    "1",
+    "--iterations",
+    "3",
+    "--protocol",
+    "shared-prime"
+  ],
+  "started": 1791254208.0327442,
+  "status": "interrupted",
+  "binary_sha256": "d46acd940bb3ae44dce2e1b59766806cf1f38aafd752268f02f1c93bc19ef022",
+  "elapsed_seconds": 23.380495855992194,
+  "interruption_error": "SystemExit: 143",
+  "cleanup_status": "succeeded"
+}

@@ -1,0 +1,46 @@
+{
+  "remote_dir": "~/code/BitZ-pcs-run",
+  "source_dir": "~/code/BitZ-pcs",
+  "origin": "git@github.com:albert-garreta/f2z-pcs.git",
+  "branch": "codex/falcon-shared-prime",
+  "revision": "967aa9a33c527acb7af55e19a1b1e553cdeb1a07",
+  "operation": "run",
+  "run_id": "20261006T023605Z-967aa9a33c52-252890ec",
+  "command": [
+    "python3",
+    "-c",
+    "from pathlib import Path\nimport json,signal,subprocess,time\nout=Path('.tmp/falcon-v2/will-discovery128')\ncommand=['python3','scripts/bench_gate.py','run','--label','falcon-v2-will-discovery128','--min-idle','88','--hold-seconds','10','--poll-seconds','2','--max-idle-wait-seconds','300','--','python3','scripts/falcon_v2_campaign.py','.tmp/falcon-v2/manifest.json','--output',str(out),'--phase','discovery','--security','128','--batches','1024','32','3','1','--threads','16','1','--seeds','42','43','44','45','46','--warmup','1','--iterations','3','--stop-on-regression']\nwith Path('.tmp/falcon-v2/will-discovery128.log').open('w') as log:\n process=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT)\n early=False\n while process.poll() is None:\n  files={label:out/f's128-b1024-t16-seed42-{label}.jsonl' for label in ['native','v1','v2']}\n  warmups={}\n  for label,path in files.items():\n   if not path.exists(): continue\n   for line in path.read_text().splitlines():\n    try: r=json.loads(line)\n    except json.JSONDecodeError: continue\n    if r.get('event')=='trial' and r.get('trial')=='warmup' and r.get('verified'):\n     warmups[label]=r;break\n  if len(warmups)==3 and all(warmups['v2']['total_prover_ms']>10*warmups[x]['total_prover_ms'] for x in ['native','v1']):\n   record=dict(reason='Early stop under requested regression policy: verified V2 warmup exceeds both matched baseline warmups by more than 10x. No completed V2 measured process or paired confidence interval; diagnostic only.',candidate=warmups['v2'],baseline_warmups={x:warmups[x] for x in ['native','v1']},stopped_at=time.time(),owned_gate_pid=process.pid)\n   (out/'early-stop.json').write_text(json.dumps(record,indent=2)+'\\n')\n   process.send_signal(signal.SIGTERM)\n   early=True;break\n  time.sleep(2)\n code=process.wait()\n print(json.dumps(dict(gate_exit_code=code,early_stop=early,output=str(out))))\n if not early and code: raise SystemExit(code)\n"
+  ],
+  "host": "john-wu@will",
+  "started_at": 1791254165.612298,
+  "state": "finished",
+  "exit_code": 0,
+  "ssh_exit_code": 0,
+  "remote_result": {
+    "run_id": "20261006T023605Z-967aa9a33c52-252890ec",
+    "revision": "967aa9a33c527acb7af55e19a1b1e553cdeb1a07",
+    "branch": "codex/falcon-shared-prime",
+    "host": "will",
+    "architecture": "x86_64",
+    "command": [
+      "python3",
+      "-c",
+      "from pathlib import Path\nimport json,signal,subprocess,time\nout=Path('.tmp/falcon-v2/will-discovery128')\ncommand=['python3','scripts/bench_gate.py','run','--label','falcon-v2-will-discovery128','--min-idle','88','--hold-seconds','10','--poll-seconds','2','--max-idle-wait-seconds','300','--','python3','scripts/falcon_v2_campaign.py','.tmp/falcon-v2/manifest.json','--output',str(out),'--phase','discovery','--security','128','--batches','1024','32','3','1','--threads','16','1','--seeds','42','43','44','45','46','--warmup','1','--iterations','3','--stop-on-regression']\nwith Path('.tmp/falcon-v2/will-discovery128.log').open('w') as log:\n process=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT)\n early=False\n while process.poll() is None:\n  files={label:out/f's128-b1024-t16-seed42-{label}.jsonl' for label in ['native','v1','v2']}\n  warmups={}\n  for label,path in files.items():\n   if not path.exists(): continue\n   for line in path.read_text().splitlines():\n    try: r=json.loads(line)\n    except json.JSONDecodeError: continue\n    if r.get('event')=='trial' and r.get('trial')=='warmup' and r.get('verified'):\n     warmups[label]=r;break\n  if len(warmups)==3 and all(warmups['v2']['total_prover_ms']>10*warmups[x]['total_prover_ms'] for x in ['native','v1']):\n   record=dict(reason='Early stop under requested regression policy: verified V2 warmup exceeds both matched baseline warmups by more than 10x. No completed V2 measured process or paired confidence interval; diagnostic only.',candidate=warmups['v2'],baseline_warmups={x:warmups[x] for x in ['native','v1']},stopped_at=time.time(),owned_gate_pid=process.pid)\n   (out/'early-stop.json').write_text(json.dumps(record,indent=2)+'\\n')\n   process.send_signal(signal.SIGTERM)\n   early=True;break\n  time.sleep(2)\n code=process.wait()\n print(json.dumps(dict(gate_exit_code=code,early_stop=early,output=str(out))))\n if not early and code: raise SystemExit(code)\n"
+    ],
+    "cwd": "/home/john-wu/code/BitZ-pcs-run",
+    "toolchain": {
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+      "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)"
+    },
+    "started_at": 1791254167.3861198,
+    "state": "finished",
+    "exit_code": 0,
+    "remote_log": "/home/john-wu/code/BitZ-pcs-run/.tmp/will-runs/20261006T023605Z-967aa9a33c52-252890ec/output.log",
+    "pid": 2697131,
+    "elapsed_seconds": 64.0386695950001,
+    "finished_at": 1791254231.4249346,
+    "post_run_changes": ""
+  },
+  "elapsed_seconds": 65.82061087503098,
+  "finished_at": 1791254231.432537
+}

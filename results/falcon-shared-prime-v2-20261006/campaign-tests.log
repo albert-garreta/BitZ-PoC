@@ -1,0 +1,28 @@
+test_complete_confirmation_passes_against_both_baselines (test_falcon_v2_campaign.PairedComparisonTests.test_complete_confirmation_passes_against_both_baselines) ... ok
+test_discovery_and_incomplete_seed_sets_cannot_pass (test_falcon_v2_campaign.PairedComparisonTests.test_discovery_and_incomplete_seed_sets_cannot_pass) ... ok
+test_even_small_slowdown_is_regression (test_falcon_v2_campaign.PairedComparisonTests.test_even_small_slowdown_is_regression) ... ok
+test_one_extra_payload_or_rss_byte_is_regression (test_falcon_v2_campaign.PairedComparisonTests.test_one_extra_payload_or_rss_byte_is_regression) ... ok
+test_seed_key_must_match_its_prepared_workload (test_falcon_v2_campaign.PairedComparisonTests.test_seed_key_must_match_its_prepared_workload) ... ok
+test_single_seed_is_inconclusive (test_falcon_v2_campaign.PairedComparisonTests.test_single_seed_is_inconclusive) ... ok
+test_uncertain_seed_ratios_are_inconclusive (test_falcon_v2_campaign.PairedComparisonTests.test_uncertain_seed_ratios_are_inconclusive) ... ok
+test_unpaired_seed_and_changed_input_are_rejected (test_falcon_v2_campaign.PairedComparisonTests.test_unpaired_seed_and_changed_input_are_rejected) ... ok
+test_cleanup_permission_error_preserves_interruption_and_propagates (test_falcon_v2_campaign.ProcessCleanupTests.test_cleanup_permission_error_preserves_interruption_and_propagates) ... START s100-b1-t1-seed42-v2
+START s100-b1-t1-seed42-v2
+ok
+test_gate_termination_is_catchable (test_falcon_v2_campaign.ProcessCleanupTests.test_gate_termination_is_catchable) ... ok
+test_interrupted_run_reaps_child_group_and_records_failure (test_falcon_v2_campaign.ProcessCleanupTests.test_interrupted_run_reaps_child_group_and_records_failure) ... START s100-b1-t1-seed42-v2
+ok
+test_all_four_profiles_are_accepted_with_exact_bridge (test_falcon_v2_campaign.ValidationTests.test_all_four_profiles_are_accepted_with_exact_bridge) ... ok
+test_changed_proof_or_input_digest_is_rejected (test_falcon_v2_campaign.ValidationTests.test_changed_proof_or_input_digest_is_rejected) ... ok
+test_empty_or_nonhex_digests_are_rejected_even_when_repeated (test_falcon_v2_campaign.ValidationTests.test_empty_or_nonhex_digests_are_rejected_even_when_repeated) ... ok
+test_incomplete_unverified_or_instrumented_process_is_rejected (test_falcon_v2_campaign.ValidationTests.test_incomplete_unverified_or_instrumented_process_is_rejected) ... ok
+test_missing_duplicate_and_wrong_security_terms_are_rejected (test_falcon_v2_campaign.ValidationTests.test_missing_duplicate_and_wrong_security_terms_are_rejected) ... ok
+test_missing_matched_provenance_is_rejected (test_falcon_v2_campaign.ValidationTests.test_missing_matched_provenance_is_rejected) ... ok
+test_nonfinite_negative_weak_or_misreported_security_is_rejected (test_falcon_v2_campaign.ValidationTests.test_nonfinite_negative_weak_or_misreported_security_is_rejected) ... ok
+test_wrong_protocol_and_bridge_are_rejected_separately (test_falcon_v2_campaign.ValidationTests.test_wrong_protocol_and_bridge_are_rejected_separately) ... ok
+test_wrong_warmup_label_and_summary_workload_are_rejected (test_falcon_v2_campaign.ValidationTests.test_wrong_warmup_label_and_summary_workload_are_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 20 tests in 1.433s
+
+OK

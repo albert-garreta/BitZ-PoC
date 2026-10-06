@@ -1,0 +1,11 @@
+[bench_gate] falcon-v2-will-discovery128: idle 100% (streak 1/5)
+[bench_gate] falcon-v2-will-discovery128: idle 99% (streak 2/5)
+[bench_gate] falcon-v2-will-discovery128: idle 100% (streak 3/5)
+[bench_gate] falcon-v2-will-discovery128: idle 100% (streak 4/5)
+[bench_gate] falcon-v2-will-discovery128: idle 100% (streak 5/5)
+[bench_gate] falcon-v2-will-discovery128: starting (swap baseline 0.00 GB, guard +12 GB)
+START s128-b1024-t16-seed42-native
+DONE s128-b1024-t16-seed42-native: 888.896ms, 2443748bytes
+START s128-b1024-t16-seed42-v1
+DONE s128-b1024-t16-seed42-v1: 943.852ms, 2011036bytes
+START s128-b1024-t16-seed42-v2

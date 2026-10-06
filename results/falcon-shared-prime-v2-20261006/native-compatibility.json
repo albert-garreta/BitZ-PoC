@@ -1,0 +1,21 @@
+{
+  "timings_excluded": true,
+  "results": [
+    {
+      "security": 100,
+      "batch": 1,
+      "threads": 8,
+      "proof_debug_digest": "7d4de9b9b02f492ed1f903ebe96bb0271722a05274b59fb452ed0f372519c0e3",
+      "proof_payload_bytes": 207104,
+      "matches_prior_native": true
+    },
+    {
+      "security": 128,
+      "batch": 1,
+      "threads": 8,
+      "proof_debug_digest": "a965067f66d5f39b21f15eaa1ef4d3565214005aa0f3caf762567f0137462a03",
+      "proof_payload_bytes": 243464,
+      "matches_prior_native": true
+    }
+  ]
+}

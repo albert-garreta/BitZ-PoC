@@ -1,0 +1,31 @@
+{
+  "label": "v2",
+  "case": [
+    128,
+    1024,
+    8,
+    42
+  ],
+  "command": [
+    "/usr/bin/time",
+    "-l",
+    "/Users/johnwu/.codex/worktrees/falcon-shared-prime/f2z-pcs/.tmp/falcon-v2/falcon_v2",
+    "--security",
+    "128",
+    "--batch",
+    "1024",
+    "--threads",
+    "8",
+    "--seed",
+    "42",
+    "--warmup",
+    "1",
+    "--iterations",
+    "3",
+    "--protocol",
+    "shared-prime"
+  ],
+  "started": 1791253438.402859,
+  "status": "running",
+  "binary_sha256": "989fc49569ea0fc4121d4e15a78bf867d81b8f26c0607b237afcf1e3e9633e63"
+}

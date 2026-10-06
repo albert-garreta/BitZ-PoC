@@ -1,0 +1,12 @@
+[bench_gate] falcon-direct-ring-milestone: idle 91% (streak 1/2)
+[bench_gate] falcon-direct-ring-milestone: idle 87% (streak 0/2)
+[bench_gate] falcon-direct-ring-milestone: idle 93% (streak 1/2)
+[bench_gate] falcon-direct-ring-milestone: idle 92% (streak 2/2)
+[bench_gate] falcon-direct-ring-milestone: starting (swap baseline 1.54 GB, guard +12 GB)
+START s100-b1024-t8-seed42-native
+DONE s100-b1024-t8-seed42-native: 1264.601ms, 2294444bytes
+START s100-b1024-t8-seed42-v1
+DONE s100-b1024-t8-seed42-v1: 1334.174ms, 1867852bytes
+START s100-b1024-t8-seed42-direct
+DONE s100-b1024-t8-seed42-direct: 1484.551ms, 1864866bytes
+{"status": "complete", "cells": [{"cell": [100, 1024, 8], "comparisons": [{"baseline": "native", "candidate": "direct", "seeds": [42], "complete": true, "metrics": {"total_prover_ms": {"ratio": 1.1739285530597086, "interval_95": null, "status": "inconclusive"}, "proof_verify_ms": {"ratio": 0.9172656171355327, "interval_95": null, "status": "inconclusive"}}, "payload_pass": true, "memory_pass": false, "status": "regression"}, {"baseline": "v1", "candidate": "direct", "seeds": [42], "complete": true, "metrics": {"total_prover_ms": {"ratio": 1.1127122063374428, "interval_95": null, "status": "inconclusive"}, "proof_verify_ms": {"ratio": 1.0539527547589262, "interval_95": null, "status": "inconclusive"}}, "payload_pass": true, "memory_pass": false, "status": "regression"}]}]}

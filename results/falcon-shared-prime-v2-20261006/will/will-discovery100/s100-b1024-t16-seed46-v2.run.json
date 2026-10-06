@@ -1,0 +1,195 @@
+{
+  "label": "v2",
+  "case": [
+    100,
+    1024,
+    16,
+    46
+  ],
+  "command": [
+    "/usr/bin/time",
+    "-v",
+    "/home/john-wu/code/BitZ-pcs-run/.tmp/falcon-v2/falcon_v2",
+    "--security",
+    "100",
+    "--batch",
+    "1024",
+    "--threads",
+    "16",
+    "--seed",
+    "46",
+    "--warmup",
+    "1",
+    "--iterations",
+    "3",
+    "--protocol",
+    "shared-prime"
+  ],
+  "started": 1791254070.7682307,
+  "status": "complete",
+  "binary_sha256": "d46acd940bb3ae44dce2e1b59766806cf1f38aafd752268f02f1c93bc19ef022",
+  "exit_code": 0,
+  "elapsed_seconds": 12.930216361011844,
+  "rss_bytes": 3575517184,
+  "prepared": {
+    "algebraic_security_bits": 101.85945024659586,
+    "arithmetic_auxiliary_values_per_signature": 8605,
+    "arithmetic_live_bits_per_signature": 114914,
+    "batch": 1024,
+    "build_rustflags": "-C target-cpu=native",
+    "capacity": 1024,
+    "compiled_target_features": {
+      "aes": true,
+      "avx2": true,
+      "avx512f": true,
+      "gfni": true,
+      "pclmulqdq": true,
+      "sse4.1": true,
+      "vpclmulqdq": true
+    },
+    "event": "prepared",
+    "gf128_kernel": "pclmul-karatsuba-barrett",
+    "input_count": 1024,
+    "input_digest": "cac700da6e55b4c9b615d428471c1ba06ed7298bf982aa7ddf02004a54f17edf",
+    "input_implementation_version": "0.3.0",
+    "input_mode": "original-falcon-1024",
+    "input_rng": "rand_chacha 0.3.1 ChaCha20Rng::seed_from_u64",
+    "input_seed": 46,
+    "input_setup_ms": 9456.156195,
+    "input_source": "pornin/rust-fn-dsa",
+    "integer_bridge": "wfbitz-unsplit",
+    "measured_trials": 3,
+    "native_verify_includes_public_key_decode": true,
+    "prepare_ms": 3.323754,
+    "protocol": "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v2",
+    "public_inputs": [
+      "public_key",
+      "message",
+      "signature_nonce",
+      "signature_s2"
+    ],
+    "runtime_rustflags": "-C target-cpu=native",
+    "schema": "bitz/falcon-hybrid/v3",
+    "security_target": 100,
+    "security_terms": [
+      {
+        "bits": 144.0,
+        "error_bound": 4.484155085839415e-44,
+        "name": "prime sampling"
+      },
+      {
+        "bits": 110.67807190511263,
+        "error_bound": 4.81482486096809e-34,
+        "name": "per-signature norm identity"
+      },
+      {
+        "bits": 107.67807190511263,
+        "error_bound": 3.851859888774472e-33,
+        "name": "norm sumchecks"
+      },
+      {
+        "bits": 109.60768257722124,
+        "error_bound": 1.0111132208032988e-33,
+        "name": "HashToPoint initial row point"
+      },
+      {
+        "bits": 108.02272007650008,
+        "error_bound": 3.0333396624098965e-33,
+        "name": "HashToPoint product sumcheck"
+      },
+      {
+        "bits": 103.0,
+        "error_bound": 9.860761315262648e-32,
+        "name": "ordered compaction fingerprints"
+      },
+      {
+        "bits": 106.63367778575419,
+        "error_bound": 7.944461020597348e-33,
+        "name": "ordered compaction forest sumchecks"
+      },
+      {
+        "bits": 107.08113676272541,
+        "error_bound": 5.8259380817713885e-33,
+        "name": "ordered compaction forest claim reductions"
+      },
+      {
+        "bits": 110.67807190511263,
+        "error_bound": 4.81482486096809e-34,
+        "name": "compaction leaf instance batching"
+      },
+      {
+        "bits": 108.02272007650008,
+        "error_bound": 3.0333396624098965e-33,
+        "name": "compaction leaf sumcheck"
+      },
+      {
+        "bits": 138.40728215337109,
+        "error_bound": 2.1639959991824935e-42,
+        "name": "shared ring outer and endpoint batch"
+      },
+      {
+        "bits": 111.67807190511263,
+        "error_bound": 2.407412430484045e-34,
+        "name": "integer polynomial projection"
+      },
+      {
+        "bits": 103.95151312600767,
+        "error_bound": 5.098899527765207e-32,
+        "name": "linear constraints and terminal batching"
+      },
+      {
+        "bits": 108.24511249783653,
+        "error_bound": 2.6000054249227684e-33,
+        "name": "prime source sumcheck"
+      },
+      {
+        "bits": 118.34357513672222,
+        "error_bound": 2.371559852783965e-36,
+        "name": "batched integer-to-binary forest"
+      },
+      {
+        "bits": 118.46084118889196,
+        "error_bound": 2.1864194925294548e-36,
+        "name": "binary Keccak PIOP"
+      },
+      {
+        "bits": 121.0,
+        "error_bound": 3.76158192263132e-37,
+        "name": "SHAKE wiring and binary claim batching"
+      },
+      {
+        "bits": 122.04580368961312,
+        "error_bound": 1.8220162437745456e-37,
+        "name": "joint binary sumcheck"
+      },
+      {
+        "bits": 120.0,
+        "error_bound": 7.52316384526264e-37,
+        "name": "ring switch and support padding"
+      },
+      {
+        "bits": 104.32757170070184,
+        "error_bound": 3.92890514025757e-32,
+        "name": "shared Ligerito"
+      }
+    ],
+    "source_bits_per_signature": [
+      131072,
+      1048576,
+      262144
+    ],
+    "stage_timings": false,
+    "target_arch": "x86_64",
+    "threads": 16,
+    "warmup_trials": 1
+  },
+  "medians": {
+    "total_prover_ms": 732.982583,
+    "proof_verify_ms": 57.625903,
+    "witness_commit_ms": 146.701798,
+    "proof_prove_ms": 586.280785
+  },
+  "payload_bytes": 1604162,
+  "proof_digest": "44ce968023362f3d76fca9eb08e2725aa506c34b72a536b002ba3bb8e6d8f3ad",
+  "verified_proofs": 4
+}

@@ -1,0 +1,226 @@
+FALCON SHARED-PRIME V2 — IMPLEMENTATION AND QUALIFICATION
+Recorded 2026-10-06 UTC
+
+Outcome
+
+SharedPrimeV2 is implemented and pushed on codex/falcon-shared-prime.
+The native backend remains the default. V2 passes the implemented correctness
+checks, but does not pass the requested performance promotion gate. The full
+remaining benchmark matrix and twenty-seed confirmation were skipped under
+the requested regression policy; this report does not claim performance parity.
+
+Runtime revision: 4fe1d3d538b2940fc20ce235387046a97a2a9f10.
+Benchmark interruption fix: 967aa9a33c527acb7af55e19a1b1e553cdeb1a07.
+The latter changes only the runner and its tests, not Rust proof code.
+Baseline native: 4491309f5d1e45d506410803e3b9ba488047991f.
+Baseline shared V1 runtime: e370e3b35da692d86e814c687e597c3a1d0a6bea,
+recorded previously at fae6524b. The Mac retained binary was built at df96f014;
+its Rust runtime, benchmark, Cargo files and build.rs match e370e3b3.
+
+Implemented protocol
+
+* Direct ring decoding retains the ideal quotient, cubic outer sumcheck and
+  four endpoint answers. It uses beta^j, masked signature equality weights,
+  storage weights (1,chi,chi^3,chi^2), signed source encodings and the S1 offset.
+  Aliases accumulate in E before lifting coordinates. The geometric sum is
+  division-free at beta=0,1,-1. The ten ring inner rounds and endpoint are gone.
+* Grouped polynomial lifting and lazy verifier projection are retained. P is
+  fixed before the single shared prime and alpha are derived. The optimized
+  integer proofs and shared prime-field binder continue to use that prime.
+* The 115-bit family is 2^114 <= p <= 2^115 - 2^102 - 1. The 8192-row bridge
+  uses one u128 sum per column, one product family and original source slots.
+  The verifier checks actual sum bounds, prime-field reconstruction and the
+  original-bit terminal query. Native retains its existing two-limb path.
+* Shared protocol/statement domains are V2. Proof containers and public entry
+  points are retained; V2 requires one sum vector and native requires two.
+  Old shared-prime proofs must be regenerated. The final shared PCS remains.
+
+At batch 1024 the structural changes remove 682 stored ring bytes, reduce the
+integer-sum component from 524,288 to 262,144 bytes, and reduce GKR messages
+from 286 to 273. Other transcript-dependent components mean the complete
+payload difference need not equal those structural savings.
+
+Bounds and security
+
+For every supported batch 1 through 1024, the exact-integer ledger tests check
+both targets, the prime interval, integer bounds and the changed GKR geometry.
+At maximum size H_P=222,928,181,554,839,552 and H_src=43,013,625,445;
+every allowed prime exceeds max(2H_P,H_src). The prime cap satisfies the
+conservative (8192+1)(p-1) < 2^128-1 guard. Each actual column-sum bound is
+checked independently at verification.
+
+The ring inner sumcheck error term is removed; cubic endpoint batching and
+the degree-20 projection term remain. At 100 bits, arithmetic grinding is
+zero and projection difficulty is 2. At 128 bits, retained prime-category
+budgets add 11 grinding bits and projection difficulty is 25. The complete
+conservative ledger minima are approximately 101.002291 and 129.070893 bits.
+These are the repository's existing computational work-normalized grinding
+bounds, not unconditional statistical security or an independent audit.
+The probable-prime sampler retains its composite-error budget (at most
+2^-144) and rejects sampling failure; no new sampler availability guarantee
+is claimed.
+
+Correctness evidence
+
+Mac Falcon tests: 120 passed, 0 failed, 1 ignored.
+Will Falcon tests at the final runtime revision: 121 passed, 0 failed,
+2 ignored, including the additional nonce-accounting test. Mac's full suite
+preceded the diagnostic-only nonce visitor addition; will exercised it.
+Campaign-validator tests: 20 passed on each machine after the runner fix.
+The ignored tests are not counted as passes. Logs are retained here.
+
+Coverage includes direct decoding at beta=0,1,-1, signed boundaries, aliases,
+padding; grouped lift versus independent convolution; lazy versus materialized
+projection; wide-integer maximum-weight/all-one column references; excessive
+sums and invalid prime/layout rejection; altered certificates, endpoints,
+lift coefficients, reconstruction, GKR messages, nonces, public inputs and
+protocol versions; transcript ordering; and complete proofs at both targets.
+
+The native path in V2 matches the retained V1 native path's exact Debug proof
+digest, roots and payload for batch 1 / seed 42 at both targets. Relative to
+4491309f, native roots and payload also match, but Debug digests are not a
+wire-format comparison: V1 had already introduced enum wrappers and renamed
+the ring field. These compatibility runs are excluded from timing acceptance.
+
+Measurement procedure
+
+Mac: M1 Max, 8 performance + 2 efficiency cores, 64 GB; measured at 8 threads.
+Power report showed AC and 80% charge, without a thermal or performance
+warning. Will: Ryzen 9 9950X3D; measured at 16 threads.
+All compared binaries use Rust 1.98.1, release, falcon-hybrid, and
+RUSTFLAGS='-C target-cpu=native', with matching Cargo.lock hashes. Separate
+build directories and immutable retained executables were used; SHA-256,
+revision and build provenance appear in mac-manifest.json and will/manifest.json.
+Will ran in /home/john-wu/code/BitZ-pcs-run. The user's other checkout was not
+modified. Mac qualification preceded will qualification.
+
+Primary time is witness + commitment + proving, without subtracting grinding.
+Proof verification is separate. Tracing is disabled. RSS is the external
+process peak from the warmed process; setup and warmup remain part of that
+peak. Payload is the canonical stored proof payload, excluding Falcon
+transport framing and the public statement. Nonce accounting runs after the
+timed region and does not alter proof transcripts.
+
+100-bit discovery: batch 1024, five independent seeds 42..46, alternating
+forward/reverse process order, one warmup and three measured proofs per process.
+There were three native/V1/V2 orders and two V2/V1/native orders; V1 always
+occupied the middle position, so this was not fully balanced by position. Each host completed
+15 processes and verified all 60 proofs. Each statistical observation is the
+median within a seed/process, not one repetition. The reported ratio is the
+geometric mean of paired seed ratios; 95% intervals use 10,000 paired bootstrap
+draws. Intervals are per metric/cell, not simultaneous or family-wise.
+No held-out twenty-seed confirmation ran after the RSS gate failed.
+
+100-bit results (ratio below 1 is faster)
+
+Host / comparison       Total prover ratio [95% interval]   Verification ratio
+Mac V2/native           1.065505 [0.981539,1.211194]           0.861683
+Mac V2/V1               1.039541 [0.944958,1.159861]           1.050507
+Will V2/native          0.896326 [0.888124,0.903689]           0.795977
+Will V2/V1              0.885421 [0.877037,0.892207]           0.948852
+
+Mac total-prover intervals cross 1: timing is inconclusive, not a confirmed
+slowdown or parity. Will discovery estimates 10.4% and 11.5% faster proving.
+Those estimates do not establish promotion: confirmation did not run and the
+strict no-increase RSS gate failed. The Mac seed-45 timing spike is retained.
+
+Peak RSS paired increases:
+* Mac versus native: 4/5 seeds increased, largest +100,892,672 bytes (2.33%).
+* Mac versus V1: 2/5 increased, largest +4,292,608 bytes (0.10%).
+* Will versus native: 2/5 increased, largest +10,686,464 bytes (0.30%).
+* Will versus V1: 1/5 increased, largest +6,643,712 bytes (0.19%).
+The policy treats any measured increase as failure; these observations alone
+do not distinguish allocator/measurement variability from intrinsic growth.
+
+100-bit batch-1024 payload ranges (identical across the two hosts):
+Native: 2,293,228..2,297,132 bytes.
+V1:     1,867,852..1,871,980 bytes.
+V2:     1,599,298..1,607,810 bytes.
+All observed V2 payloads decreased against both matched baselines.
+
+128-bit early-stop diagnostics
+
+Batch 1024, seed 42. These are verified WARMUPS, compared like-for-like;
+they are not completed measured processes or paired timing estimates.
+
+Host / threads       Native warmup       V1 warmup         V2 warmup
+Mac / 8                 2.408769 s        2.958011 s       137.916737 s
+Will / 16               0.945225 s        0.990113 s        12.082442 s
+
+Each host completed the two baseline processes (8 verified baseline proofs)
+and one verified V2 warmup. Candidate measurement was stopped when that
+warmup exceeded both matched baseline warmups by more than 10x. There is no
+V2 paired confidence interval or complete process-RSS comparison at 128 bits.
+The identical V2 proof digest on both machines is
+2820c930d3c9131e28c62de91fa45b60753c8434d2090e6c3f81b922484ab49c.
+
+128-bit payload for that verified proof:
+Native 2,443,748 bytes; V1 2,011,036 bytes; V2 1,751,402 bytes.
+
+The V2 proof has a serial nonce-prefix total of 43,012,645,406 across prime
+categories and ring projection (43,709,996,763 across all categories).
+The largest category is prime forest: 23,629,050,590; then prime leaf:
+7,113,939,625; binder: 5,134,779,553; products: 4,179,216,643; norm:
+1,559,831,599; fingerprint: 1,389,347,706; projection: 6,479,690.
+These diagnostics sum nonce+1 per stored nonce boundary, include zero-difficulty
+placeholders, and exclude SIMD/parallel overscan. They are NOT executed hash
+counts or measured per-stage times. They support the expected grinding-cost
+regression: +11 bits means 2048x expected search work per affected challenge
+block, not 2048x total prover time.
+
+The Mac early stop exposed a runner-cleanup issue: a second SIGKILL returned
+EPERM after termination, before the old runner saved interrupted status.
+Raw failed/stale records are preserved; cleanup-verification.json records the
+subsequent process check showing no owned benchmark process remained.
+Commit 967aa9a3 saves interruption before cleanup and preserves cleanup errors.
+The will early stop exercised that fixed runner and recorded interruption and
+successful cleanup. Neither partial candidate process is counted as complete.
+
+Separate direct-decoder milestone
+
+Before switching the prime and bridge, a retained intermediate binary used
+direct ring decoding with the old 126-bit family and two-limb bridge.
+At batch 1024 / 100 bits / Mac 8 threads / seed 42, its 12-proof diagnostic
+(native, V1, direct; each warmup+3 samples) reported median total times
+1264.601 / 1334.174 / 1484.551 ms and payloads
+2,294,444 / 1,867,852 / 1,864,866 bytes. One seed is insufficient for a timing
+conclusion; the RSS gate failed. Its patch, provenance, tests and raw logs are
+retained separately. These figures are not the final V2 results.
+
+Qualification scope and decision
+
+Completed: direct-decoder milestone diagnostic; final correctness tests;
+five-seed 100-bit batch-1024 discovery on Mac 8 threads and will 16 threads;
+verified 128-bit early-stop diagnostics on those same configurations.
+Not run after regression: batches 1,3,32 in the qualification matrix; the
+one-thread qualification matrix; remaining 128-bit discovery seeds/measured
+V2 processes; all twenty-seed confirmation runs. Smaller-batch correctness
+proofs and compatibility checks are not substitutes for that qualification.
+
+Do not promote V2. Native remains the default. The 100-bit will timing gain
+and payload reductions are useful, but neither removes the RSS failure or the
+large 128-bit grinding regression. Compaction redesign and PCS grinding
+optimization remain outside this change.
+
+Reproduction and archive
+
+The archive contains text evidence, not executable binaries. Manifests record
+retained binary paths and hashes. Full commands and exact revisions for will
+are in will/execution-records/*/manifest.json and output.log. Build JSONL,
+stderr, Falcon test logs, campaign-validator logs and raw per-process records
+are retained. summary.txt and summary.csv are generated from completed
+100-bit processes only; early-stop.json records the 128-bit diagnostics.
+
+From repository root, reproduce the 100-bit summary with:
+  python3 results/falcon-shared-prime-v2-20261006/summarize.py     results/falcon-shared-prime-v2-20261006/mac-discovery100     results/falcon-shared-prime-v2-20261006/will/will-discovery100
+
+Run a fresh cell using a manifest whose immutable binaries remain available:
+  python3 scripts/falcon_v2_campaign.py MANIFEST.json --output NEW_OUTPUT     --phase discovery --batches 1024 --threads 8 --security 100     --warmup 1 --iterations 3 --stop-on-regression
+Use threads 16 on will. Do not overwrite the archived output directory.
+The runner's default confirmation seeds are 47..66, disjoint from discovery.
+
+Falcon tests use a separate CARGO_TARGET_DIR, RUSTFLAGS='-C target-cpu=native',
+and cargo test --offline --locked --release --features falcon-hybrid
+--lib falcon1024_ct -- --test-threads=1. The campaign tests use
+python3 -m unittest discover -s scripts -p test_falcon_v2_campaign.py -v.
+File hashes for this evidence archive are listed in SHA256SUMS.

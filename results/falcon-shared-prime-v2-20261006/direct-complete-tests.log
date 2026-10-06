@@ -1,0 +1,6 @@
+
+running 1 test
+test piop::spartan::falcon1024_ct::hybrid::tests::shared_prime_hybrid_complete_proofs_and_protocol_binding ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 642 filtered out; finished in 0.58s
+
