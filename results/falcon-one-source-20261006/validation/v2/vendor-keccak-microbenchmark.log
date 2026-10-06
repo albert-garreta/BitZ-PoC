@@ -1,0 +1,7 @@
+
+running 1 test
+test r1cs_hashes::keccak::tests::combined_walker_microbenchmark ... Keccak coefficient walker, 64 alternating pairs: old median 1.280228 ms, factored median 0.177050 ms, ratio 0.138296, saved 1.103179 ms/call
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 84 filtered out; finished in 0.11s
+

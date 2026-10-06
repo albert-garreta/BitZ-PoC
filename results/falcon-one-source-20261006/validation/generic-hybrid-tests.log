@@ -1,0 +1,15 @@
+
+running 10 tests
+test hybrid::tests::chained_sha_matches_known_digest ... ok
+test hybrid::tests::equal_operation_counts_below_the_standalone_floor_roundtrip ... ok
+test hybrid::tests::field_representations_agree ... ok
+test hybrid::tests::hybrid_proof_digest_smoke ... ok
+test hybrid::tests::hybrid_roundtrip_and_tampering ... ok
+test hybrid::tests::modular_multiplication_claims_bind_each_limb ... ok
+test hybrid::tests::multiplication_fork_roundtrips_and_rejects_old_versions ... ok
+test hybrid::tests::padded_sources_recommitted_nonzero_are_rejected_in_both_regimes ... ok
+test hybrid::tests::rate_one_eighth_roundtrip_solves_component_target ... ok
+test hybrid::tests::supported_geometries_bound_initial_leaf_width ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 674 filtered out; finished in 1.57s
+

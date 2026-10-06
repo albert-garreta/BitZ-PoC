@@ -1,5 +1,8 @@
 # Shared-prime Falcon V4
 
+Historical forest protocol. Superseded by the [joint source commitment](ONE_SOURCE.md);
+current APIs select `FalconProtocol::SharedPrime` and reject earlier proofs.
+
 `PreparedFalconHybrid::new_shared_prime(batch, target_bits)` selects
 `SharedPrimeV4` for 1–1024 signatures. The native profile remains the default
 and receives the same joint HashToPoint forest under its v5 transcript.

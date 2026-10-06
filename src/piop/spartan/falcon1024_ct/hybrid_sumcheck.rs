@@ -42,6 +42,8 @@ pub(crate) struct Gather {
     entries: Vec<(usize, F)>,
     high_point: Vec<F>,
     repeat_start: Option<usize>,
+    /// Only these initial repeat indices carry equality weights.
+    repeat_limit: Option<usize>,
 }
 
 impl Gather {
@@ -57,6 +59,7 @@ impl Gather {
             entries,
             high_point,
             repeat_start: None,
+            repeat_limit: None,
         }
     }
 
@@ -71,6 +74,20 @@ impl Gather {
             repeat_start: Some(repeat_start),
             ..Self::repeated(entries, repeat_point)
         }
+    }
+
+    /// Restrict the repeated map to a public prefix of its repeat domain.
+    pub fn with_repeat_limit(mut self, limit: usize) -> Self {
+        self.repeat_limit = Some(limit);
+        self
+    }
+
+    fn repeat_weights(&self) -> Vec<F> {
+        let mut weights = eq_table(&self.high_point);
+        if let Some(limit) = self.repeat_limit {
+            weights[limit..].fill(F::ZERO);
+        }
+        weights
     }
 
     fn axis(&self, source_vars: usize) -> usize {
@@ -162,6 +179,9 @@ fn validate<const N: usize>(
                     .entries
                     .last()
                     .is_some_and(|&(index, _)| index >= 1 << (bits - gather.high_point.len()))
+                || gather
+                    .repeat_limit
+                    .is_some_and(|limit| limit > 1 << gather.high_point.len())
             {
                 return Err(Error::Invalid("joint binary gather index"));
             }
@@ -280,7 +300,7 @@ struct GatherState {
 
 impl GatherState {
     fn new(gather: &Gather, packed: &[F], source_vars: usize) -> Self {
-        let high = eq_table(&gather.high_point);
+        let high = gather.repeat_weights();
         let mut words = Vec::new();
         let mut low = Vec::new();
         for &(index, coefficient) in &gather.entries {
@@ -821,6 +841,30 @@ fn equality(a: &[F], b: &[F]) -> F {
         .fold(F::ONE, |value, (&a, &b)| value * (F::ONE + a + b))
 }
 
+/// Sum `eq(a,i) * eq(b,i)` over `i < limit`, without expanding the repeat
+/// domain. At each bit, retain the equal-prefix contribution and the sum
+/// over all assignments to lower bits. The full prefix is ordinary equality.
+fn prefix_equality(a: &[F], b: &[F], limit: usize) -> F {
+    debug_assert_eq!(a.len(), b.len());
+    debug_assert!(limit <= 1 << a.len());
+    if limit == 1 << a.len() {
+        return equality(a, b);
+    }
+    let mut below = F::ZERO;
+    let mut all = F::ONE;
+    for (bit, (&a, &b)) in a.iter().zip(b).enumerate() {
+        let zero = (F::ONE + a) * (F::ONE + b);
+        let one = a * b;
+        below = if limit >> bit & 1 == 1 {
+            zero * all + one * below
+        } else {
+            zero * below
+        };
+        all *= zero + one;
+    }
+    below
+}
+
 impl Coefficients {
     fn evaluate(&self, point: &[F]) -> F {
         let mut value = F::ZERO;
@@ -851,7 +895,12 @@ impl Coefficients {
             for &(index, coefficient) in &gather.entries {
                 local += coefficient * low[index & (low.len() - 1)] * high[index >> split];
             }
-            value += local * equality(&gather.high_point, &point[repeat_start..repeat_end]);
+            let repeat_point = &point[repeat_start..repeat_end];
+            let repeat = match gather.repeat_limit {
+                Some(limit) => prefix_equality(&gather.high_point, repeat_point, limit),
+                None => equality(&gather.high_point, repeat_point),
+            };
+            value += local * repeat;
         }
         value
     }
@@ -1080,6 +1129,9 @@ mod tests {
                 let high = eq_table(&gather.high_point);
                 let repeat_start = gather.axis(geometry.logs[branch] + 7);
                 for (repeat, weight) in high.into_iter().enumerate() {
+                    if gather.repeat_limit.is_some_and(|limit| repeat >= limit) {
+                        continue;
+                    }
                     for &(index, coefficient) in &gather.entries {
                         // Independent insertion oracle, one coordinate at a time.
                         let mut source = 0usize;
@@ -1167,6 +1219,130 @@ mod tests {
             },
             point,
         )
+    }
+
+    #[test]
+    fn prefix_equality_matches_dense_for_every_limit() {
+        let mut random = Random(0x7072_6566_6978);
+        for vars in 0..=6 {
+            let a: Vec<_> = (0..vars).map(|_| random.next()).collect();
+            for kind in 0..3 {
+                let b: Vec<_> = (0..vars)
+                    .map(|i| match kind {
+                        0 => F::ZERO,
+                        1 if i % 2 == 0 => F::ONE,
+                        _ => random.next(),
+                    })
+                    .collect();
+                let products: Vec<_> = eq_table(&a)
+                    .into_iter()
+                    .zip(eq_table(&b))
+                    .map(|(a, b)| a * b)
+                    .collect();
+                let mut expected = F::ZERO;
+                for limit in 0..=1 << vars {
+                    assert_eq!(prefix_equality(&a, &b, limit), expected);
+                    if limit < products.len() {
+                        expected += products[limit];
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn masked_gathers_match_subcubes_and_dense_proof() {
+        let (geometry, packed, _) = fixture([9, 10]);
+        let sources = packed.each_ref().map(Vec::as_slice);
+        let mut random = Random(0x6d61_736b_6761_7468);
+        for (repeat_vars, live, pinned) in [
+            (2, 3, false),
+            (3, 7, false),
+            (4, 9, false),
+            (3, 8, false),
+            (1, 1, true), // Batch-one K4's physical signature coordinate.
+        ] {
+            let repeat: Vec<_> = (0..repeat_vars)
+                .map(|_| if pinned { F::ZERO } else { random.next() })
+                .collect();
+            let mut masked: [Coefficients; 2] = std::array::from_fn(|_| Coefficients::default());
+            let mut subcubes = masked.clone();
+            for branch in 0..2 {
+                let local_bits = geometry.logs[branch] + 7 - repeat_vars;
+                let axis = if branch == 0 { 7 } else { local_bits };
+                let mut entries: Vec<_> = (0..64)
+                    .map(|_| {
+                        (
+                            random.next().lo as usize & ((1 << local_bits) - 1),
+                            random.next(),
+                        )
+                    })
+                    .collect();
+                entries.extend([(127, F::ONE), (127, F::ONE), (64, random.next())]);
+                masked[branch].gathers.push(
+                    Gather::repeated_at(entries.clone(), repeat.clone(), axis)
+                        .with_repeat_limit(live),
+                );
+                for (point, scale) in super::super::hybrid::live_subcubes(&repeat, live) {
+                    subcubes[branch].gathers.push(Gather::repeated_at(
+                        entries.iter().map(|&(i, w)| (i, w * scale)).collect(),
+                        point,
+                        axis,
+                    ));
+                }
+            }
+            let (witness, weights, target) = dense_tables(&geometry, sources, masked.each_ref());
+            let (_, old_weights, old_target) =
+                dense_tables(&geometry, sources, subcubes.each_ref());
+            assert_eq!(weights, old_weights);
+            assert_eq!(target, old_target);
+            let actual = prove(
+                &mut transcript(false),
+                &geometry,
+                sources,
+                masked.each_ref(),
+                target,
+                0,
+                &mut Scratch::default(),
+            )
+            .unwrap();
+            let old = prove(
+                &mut transcript(false),
+                &geometry,
+                sources,
+                subcubes.each_ref(),
+                target,
+                0,
+                &mut Scratch::default(),
+            )
+            .unwrap();
+            assert_eq!(actual, old);
+            assert_eq!(
+                actual,
+                dense_prove(
+                    &mut transcript(false),
+                    &geometry,
+                    witness,
+                    weights,
+                    target,
+                    0
+                )
+            );
+            assert_eq!(
+                verify(
+                    &mut transcript(false),
+                    &geometry,
+                    masked.each_ref(),
+                    target,
+                    0,
+                    &actual.0,
+                )
+                .unwrap(),
+                actual.1
+            );
+            masked[0].gathers[0].repeat_limit = Some((1 << repeat_vars) + 1);
+            assert!(validate(&geometry, masked.each_ref()).is_err());
+        }
     }
 
     #[test]

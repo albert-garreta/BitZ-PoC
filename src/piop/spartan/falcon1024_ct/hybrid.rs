@@ -22,10 +22,7 @@ use crate::{
     piop::spartan::grinding::GrindingDomain,
     transcript::{Blake3Transcript, traits::Transcript},
 };
-use flock_core::{
-    field::Gf128 as Gf,
-    pcs::commit::{Commitment, ProverData, commit},
-};
+use flock_core::field::Gf128 as Gf;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use std::sync::Mutex;
@@ -45,11 +42,11 @@ impl GrindingDomain for OpeningGrinding {
     const DOMAIN: &'static [u8] = b"bitz/falcon-hybrid/opening-grinding/v1";
 }
 
-/// Public keys, messages, signatures, and the three authenticated binary sources.
+/// Public keys, messages, signatures, and the joint binary source commitment.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FalconHybridStatement {
     pub public: FalconPublicStatement,
-    pub roots: [[u8; 32]; 3],
+    pub source_root: [u8; 32],
 }
 
 /// Union-bound terms in the existing computational grinding model. This is
@@ -65,7 +62,7 @@ pub struct FalconHybridSecurity {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FalconProtocol {
     NativeCarry,
-    SharedPrimeV4,
+    SharedPrime,
 }
 
 /// Prepared public circuit, reusable across witnesses of the same batch size.
@@ -80,7 +77,7 @@ pub struct PreparedFalconHybrid {
     scratch: Mutex<Scratch>,
 }
 
-/// Packed witness and its commitments. Consumed by proving so large auxiliary
+/// Packed witness and its joint commitment. Consumed by proving so large auxiliary
 /// tables can be folded in place without cloning them.
 pub struct CommittedFalconHybrid {
     pub statement: FalconHybridStatement,
@@ -88,8 +85,7 @@ pub struct CommittedFalconHybrid {
     arithmetic: FalconSourceWitness,
     auxiliary: [KeccakAuxiliary; 2],
     packed: [Vec<Gf>; 3],
-    commitments: [Commitment; 3],
-    data: [ProverData; 3],
+    data: shared::JointProverData<3>,
 }
 
 #[derive(Clone, Debug)]
@@ -99,7 +95,7 @@ pub struct FalconHybridProof {
     keccak: [hybrid_keccak::PrefixProof; 2],
     links_nonces: Vec<u64>,
     joint: joint::Proof,
-    opening: shared::Proof<3>,
+    opening: shared::JointProof,
     opening_nonces: Vec<u64>,
     pcs_nonces: Vec<u64>,
 }
@@ -112,7 +108,7 @@ impl PreparedFalconHybrid {
 
     /// Experimental four-operand ring reduction and integer-polynomial lift.
     pub fn new_shared_prime(batch: usize, target_bits: usize) -> Result<Self, FalconError> {
-        Self::with_protocol(batch, target_bits, FalconProtocol::SharedPrimeV4)
+        Self::with_protocol(batch, target_bits, FalconProtocol::SharedPrime)
     }
 
     pub fn with_protocol(
@@ -125,9 +121,9 @@ impl PreparedFalconHybrid {
         }
         let layout = match protocol {
             FalconProtocol::NativeCarry => FalconSourceLayout::new(batch)?,
-            FalconProtocol::SharedPrimeV4 => FalconSourceLayout::new_shared_prime(batch)?,
+            FalconProtocol::SharedPrime => FalconSourceLayout::new_shared_prime(batch)?,
         };
-        let bridge_mode = if protocol == FalconProtocol::SharedPrimeV4 && target_bits == 100 {
+        let bridge_mode = if protocol == FalconProtocol::SharedPrime && target_bits == 100 {
             hybrid_bridge::BridgeMode::Unsplit
         } else {
             hybrid_bridge::BridgeMode::TwoLimbs
@@ -189,7 +185,7 @@ impl PreparedFalconHybrid {
     }
     pub fn protocol(&self) -> FalconProtocol {
         if self.layout.is_shared_prime() {
-            FalconProtocol::SharedPrimeV4
+            FalconProtocol::SharedPrime
         } else {
             FalconProtocol::NativeCarry
         }
@@ -379,12 +375,12 @@ impl PreparedFalconHybrid {
         let [k16, k4] = keccak_packed;
         let packed = [arithmetic_packed, k16, k4];
         let rate = self.ligerito.prover().log_inv_rates[0];
-        let (ca, da) = commit(&packed[0], &self.geometry.params(0, rate));
-        let (ck, dk) = commit(&packed[1], &self.geometry.params(1, rate));
-        let (ct, dt) = commit(&packed[2], &self.geometry.params(2, rate));
+        let (source_root, data) =
+            shared::commit_sources(&self.geometry, packed.each_ref().map(Vec::as_slice), rate)
+                .map_err(error)?;
         let statement = FalconHybridStatement {
             public,
-            roots: [ca.root, ck.root, ct.root],
+            source_root,
         };
         Ok(CommittedFalconHybrid {
             statement,
@@ -392,8 +388,7 @@ impl PreparedFalconHybrid {
             arithmetic,
             auxiliary,
             packed,
-            commitments: [ca, ck, ct],
-            data: [da, dk, dt],
+            data,
         })
     }
 
@@ -443,9 +438,9 @@ impl PreparedFalconHybrid {
         statement.public.validate(self.batch())?;
         let mut h = blake3::Hasher::new();
         h.update(if self.layout.is_shared_prime() {
-            b"bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v4".as_slice()
+            b"bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v5".as_slice()
         } else {
-            b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v5".as_slice()
+            b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6".as_slice()
         });
         for n in [
             self.batch(),
@@ -495,9 +490,18 @@ impl PreparedFalconHybrid {
         let bridge_numerator = hybrid_bridge::error_numerator(&self.layout, self.bridge_mode);
         h.update(&(bridge_numerator as u64).to_le_bytes());
         h.update(&self.binary_grinding(bridge_numerator).to_le_bytes());
-        for root in &statement.roots {
-            h.update(root);
+        h.update(
+            b"source:joint-rs-row,canonical-16-lanes;keccak:constant-prefix-mask,zero-inactive/v1",
+        );
+        for n in std::iter::once(self.geometry.position_log)
+            .chain(std::iter::once(self.geometry.virtual_lane_log))
+            .chain(self.geometry.physical_logs)
+            .chain(self.geometry.lane_logs)
+            .chain(self.geometry.offsets)
+        {
+            h.update(&(n as u64).to_le_bytes());
         }
+        h.update(&statement.source_root);
         for ((pk, msg), signature) in statement
             .public
             .public_keys
@@ -518,9 +522,9 @@ impl PreparedFalconHybrid {
         let digest = *h.finalize().as_bytes();
         let mut t = Blake3Transcript::new();
         t.absorb_slice(if self.layout.is_shared_prime() {
-            b"bitz/falcon-hybrid/shared-prime/statement/v4".as_slice()
+            b"bitz/falcon-hybrid/shared-prime/statement/v5".as_slice()
         } else {
-            b"bitz/falcon-hybrid/native-ring/statement/v5".as_slice()
+            b"bitz/falcon-hybrid/native-ring/statement/v6".as_slice()
         });
         t.absorb_slice(&digest);
         self.ligerito.bind(&mut t);
@@ -566,7 +570,8 @@ impl PreparedFalconHybrid {
                 .prove_prefix(
                     &committed.packed[slab + 1],
                     auxiliary,
-                    &committed.commitments[slab + 1],
+                    &committed.statement.source_root,
+                    &digest,
                     &mut t,
                     (self.target_bits + 8) as u32,
                 )
@@ -623,14 +628,14 @@ impl PreparedFalconHybrid {
             &mut t,
             self.binary_grinding(256),
         );
-        let opening = shared::prove_sources_with_security(
+        let opening = shared::prove_joint_sources_with_security(
             &mut opening_t,
             &self.geometry,
             &digest,
             committed.packed.each_ref().map(Vec::as_slice),
             None,
             &self.ligerito,
-            committed.data.each_ref(),
+            &committed.data,
             &point,
             Some(&mut pcs),
         )
@@ -680,16 +685,11 @@ impl PreparedFalconHybrid {
         )?;
         let mut k = Vec::new();
         for slab in 0..2 {
-            let commitment = Commitment {
-                root: statement.roots[slab + 1],
-                params: self
-                    .geometry
-                    .params(slab + 1, self.ligerito.prover().log_inv_rates[0]),
-            };
             let claims = self.keccak[slab]
                 .verify_prefix(
                     &proof.keccak[slab],
-                    &commitment,
+                    &statement.source_root,
+                    &digest,
                     &mut t,
                     (self.target_bits + 8) as u32,
                 )
@@ -731,11 +731,11 @@ impl PreparedFalconHybrid {
             self.binary_grinding(256),
             &proof.opening_nonces,
         );
-        shared::verify_with_security(
+        shared::verify_joint_with_security(
             &mut opening_t,
             &self.geometry,
             &digest,
-            &statement.roots,
+            &statement.source_root,
             &point,
             proof.joint.value,
             None,
@@ -846,30 +846,39 @@ impl PreparedFalconHybrid {
                 arithmetic.push((offsets.hash_words + 16 * sample + bit, w));
             }
         }
-        // A prefix of live instances is a disjoint union of at most log(B)
-        // Boolean subcubes. This masks padding without expanding the wiring.
-        for (point, scale) in live_subcubes(&instance_point, self.batch()) {
-            result[0].gathers.push(Gather::repeated(
-                arithmetic.iter().map(|&(i, w)| (i, w * scale)).collect(),
-                point.clone(),
-            ));
-            for slab in 0..2 {
-                let mut repeat = point.clone();
-                // At batch one the four-permutation slab has one padded
-                // signature coordinate to meet Flock's eight-block minimum.
+        if self.batch() == self.capacity() {
+            result[0]
+                .gathers
+                .push(Gather::repeated(arithmetic, instance_point.clone()));
+            for (slab, entries) in binary.into_iter().enumerate() {
+                let mut repeat = instance_point.clone();
+                // The four-permutation slab still has a padded signature
+                // coordinate at batch one; its wiring selects signature zero.
                 repeat.resize(self.keccak[slab].capacity().ilog2() as usize, Gf::ZERO);
-                result[slab + 1].gathers.push(Gather::repeated_at(
-                    binary[slab].iter().map(|&(i, w)| (i, w * scale)).collect(),
-                    repeat,
-                    7,
-                ));
+                result[slab + 1]
+                    .gathers
+                    .push(Gather::repeated_at(entries, repeat, 7));
             }
+            return (result, target);
+        }
+        // The public live prefix masks the repeat weights directly, so the
+        // same local wiring is sorted and scanned only once per source.
+        result[0].gathers.push(
+            Gather::repeated(arithmetic, instance_point.clone()).with_repeat_limit(self.batch()),
+        );
+        for (slab, entries) in binary.into_iter().enumerate() {
+            let mut repeat = instance_point.clone();
+            repeat.resize(self.keccak[slab].capacity().ilog2() as usize, Gf::ZERO);
+            result[slab + 1]
+                .gathers
+                .push(Gather::repeated_at(entries, repeat, 7).with_repeat_limit(self.batch()));
         }
         (result, target)
     }
 }
 
-fn live_subcubes(point: &[Gf], live: usize) -> Vec<(Vec<Gf>, Gf)> {
+#[cfg(test)]
+pub(super) fn live_subcubes(point: &[Gf], live: usize) -> Vec<(Vec<Gf>, Gf)> {
     let mut out = Vec::new();
     let mut start = 0usize;
     while start < live {
@@ -908,6 +917,17 @@ mod tests {
     fn public(batch: usize) -> FalconPublicStatement {
         FalconPublicStatement::from_bytes(&vec![PK; batch], &vec![MSG; batch], &vec![SIG; batch])
             .unwrap()
+    }
+
+    fn recommit(prepared: &PreparedFalconHybrid, committed: &mut CommittedFalconHybrid) {
+        let (root, data) = shared::commit_sources(
+            &prepared.geometry,
+            committed.packed.each_ref().map(Vec::as_slice),
+            prepared.ligerito.prover().log_inv_rates[0],
+        )
+        .unwrap();
+        committed.statement.source_root = root;
+        committed.data = data;
     }
 
     #[test]
@@ -1101,7 +1121,7 @@ mod tests {
         changed.public.signatures[0].s2[0] = -2048;
         assert!(prepared.verify(&changed, &proof).is_err());
         let mut changed = statement.clone();
-        changed.roots.swap(0, 1);
+        changed.source_root[0] ^= 1;
         assert!(prepared.verify(&changed, &proof).is_err());
         let mut changed = proof.clone();
         match &mut changed.bridge.sums {
@@ -1115,6 +1135,32 @@ mod tests {
         let mut changed = proof.clone();
         changed.pcs_nonces.push(0);
         assert!(prepared.verify(&statement, &changed).is_err());
+    }
+
+    #[test]
+    #[ignore = "full profile matrix includes batch 1024; run serially for qualification"]
+    fn joint_source_supported_profiles_roundtrip() {
+        for protocol in [FalconProtocol::NativeCarry, FalconProtocol::SharedPrime] {
+            for target in [100, 128] {
+                for batch in [1, 2, 3, 7, 8, 9, 1024] {
+                    let prepared =
+                        PreparedFalconHybrid::with_protocol(batch, target, protocol).unwrap();
+                    let committed = prepared.commit(public(batch)).unwrap();
+                    let statement = committed.statement.clone();
+                    let proof = prepared.prove(committed).unwrap();
+                    prepared.verify(&statement, &proof).unwrap();
+                    assert!(prepared.security().algebraic_bits >= target as f64);
+                    assert_eq!(
+                        proof
+                            .payload_size_breakdown()
+                            .iter()
+                            .map(|(_, n)| n)
+                            .sum::<usize>(),
+                        proof.payload_size_bytes(),
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -1152,7 +1198,7 @@ mod tests {
         for (batch, target) in [(1, 100), (3, 100), (9, 100), (1, 128), (3, 128)] {
             let prepared = PreparedFalconHybrid::new_shared_prime(batch, target).unwrap();
             let native = PreparedFalconHybrid::new(batch, target).unwrap();
-            assert_eq!(prepared.protocol(), FalconProtocol::SharedPrimeV4);
+            assert_eq!(prepared.protocol(), FalconProtocol::SharedPrime);
             assert_eq!(prepared.live_arithmetic_bits_per_signature(), 114_914);
             assert_eq!(
                 prepared.source_bits_per_signature(),
@@ -1167,6 +1213,14 @@ mod tests {
             assert_eq!(
                 proof.encode_integer_column_sums().len(),
                 prepared.layout.bitz_params().cols() * if target == 100 { 16 } else { 20 }
+            );
+            assert_eq!(
+                proof
+                    .payload_size_breakdown()
+                    .iter()
+                    .map(|(_, bytes)| bytes)
+                    .sum::<usize>(),
+                proof.payload_size_bytes()
             );
             assert!(proof.arithmetic.binding_point.is_empty());
             let other_target = PreparedFalconHybrid::new_shared_prime(
@@ -1195,11 +1249,9 @@ mod tests {
             wrong.public.public_keys[0].h[0] =
                 (wrong.public.public_keys[0].h[0] + 1) % super::super::Q as u16;
             assert!(prepared.verify(&wrong, &proof).is_err());
-            for branch in 0..3 {
-                let mut wrong = statement.clone();
-                wrong.roots[branch][0] ^= 1;
-                assert!(prepared.verify(&wrong, &proof).is_err());
-            }
+            let mut wrong = statement.clone();
+            wrong.source_root[0] ^= 1;
+            assert!(prepared.verify(&wrong, &proof).is_err());
             let mut wrong = proof.clone();
             match &mut wrong.bridge.sums {
                 crate::bitz::column_sums::ColumnSums::Unsplit(sums) => {
@@ -1242,16 +1294,8 @@ mod tests {
         for (slab, packed) in wrong.into_iter().enumerate() {
             let branch = slab + 1;
             committed.packed[branch] = packed;
-            let (cm, data) = commit(
-                &committed.packed[branch],
-                &prepared
-                    .geometry
-                    .params(branch, prepared.ligerito.prover().log_inv_rates[0]),
-            );
-            committed.statement.roots[branch] = cm.root;
-            committed.commitments[branch] = cm;
-            committed.data[branch] = data;
         }
+        recommit(&prepared, &mut committed);
         let statement = committed.statement.clone();
         if let Ok(proof) = prepared.prove(committed) {
             assert!(prepared.verify(&statement, &proof).is_err());
@@ -1271,7 +1315,7 @@ mod tests {
     }
 
     #[test]
-    fn hybrid_fused_batch_roundtrip_and_all_three_roots_are_bound() {
+    fn hybrid_fused_batch_roundtrip_and_joint_source_authentication() {
         let prepared = PreparedFalconHybrid::new(9, 100).unwrap();
         let committed = prepared.commit(public(9)).unwrap();
         assert_eq!(
@@ -1285,14 +1329,29 @@ mod tests {
         let statement = committed.statement.clone();
         let proof = prepared.prove(committed).unwrap();
         prepared.verify(&statement, &proof).unwrap();
+        let mut wrong = statement.clone();
+        wrong.source_root[0] ^= 1;
+        assert!(prepared.verify(&wrong, &proof).is_err());
         for branch in 0..3 {
-            let mut wrong = statement.clone();
-            wrong.roots[branch][0] ^= 1;
-            assert!(prepared.verify(&wrong, &proof).is_err());
             let mut wrong = proof.clone();
-            wrong.opening.paths[branch][0][0] ^= 1;
+            wrong.opening.ligerito.initial_proof.opened_rows[0]
+                [prepared.geometry.offset(branch)] += Gf::ONE;
             assert!(prepared.verify(&statement, &wrong).is_err());
         }
+        let mut wrong = proof.clone();
+        wrong.opening.ligerito.initial_proof.merkle_proof[0][0] ^= 1;
+        assert!(prepared.verify(&statement, &wrong).is_err());
+        let mut wrong = proof.clone();
+        wrong
+            .opening
+            .ligerito
+            .initial_proof
+            .merkle_proof
+            .push([0; 32]);
+        assert!(prepared.verify(&statement, &wrong).is_err());
+        let mut wrong = proof.clone();
+        wrong.opening.ligerito.initial_proof.merkle_proof.pop();
+        assert!(prepared.verify(&statement, &wrong).is_err());
         let mut wrong = proof.clone();
         wrong.keccak.swap(0, 1);
         assert!(prepared.verify(&statement, &wrong).is_err());
@@ -1305,27 +1364,28 @@ mod tests {
         // This is a valid four-permutation Keccak chain, but its input is not
         // permutation 15's output from the other authenticated commitment.
         let (packed, auxiliary, _) = prepared.keccak[1].generate_chain(&[[0; 25]]).unwrap();
-        let (cm, data) = commit(
-            &packed,
-            &prepared
-                .geometry
-                .params(2, prepared.ligerito.prover().log_inv_rates[0]),
-        );
+        committed.packed[2] = packed;
+        recommit(&prepared, &mut committed);
+        let (_, digest) = prepared.transcript(&committed.statement).unwrap();
+        let root = &committed.statement.source_root;
         let (prefix, claims, _) = prepared.keccak[1]
-            .prove_prefix(&packed, auxiliary, &cm, &mut Blake3Transcript::new(), 108)
+            .prove_prefix(
+                &committed.packed[2],
+                auxiliary,
+                root,
+                &digest,
+                &mut Blake3Transcript::new(),
+                108,
+            )
             .unwrap();
         assert_eq!(
             prepared.keccak[1]
-                .verify_prefix(&prefix, &cm, &mut Blake3Transcript::new(), 108)
+                .verify_prefix(&prefix, root, &digest, &mut Blake3Transcript::new(), 108)
                 .unwrap(),
             claims
         );
         let (_, auxiliary, _) = prepared.keccak[1].generate_chain(&[[0; 25]]).unwrap();
-        committed.packed[2] = packed;
         committed.auxiliary[1] = auxiliary;
-        committed.commitments[2] = cm;
-        committed.data[2] = data;
-        committed.statement.roots[2] = committed.commitments[2].root;
         let statement = committed.statement.clone();
         if let Ok(proof) = prepared.prove(committed) {
             assert!(prepared.verify(&statement, &proof).is_err());

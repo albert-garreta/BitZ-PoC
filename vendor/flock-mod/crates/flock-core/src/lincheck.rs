@@ -239,13 +239,20 @@ pub trait LincheckCircuit: Sync {
     /// Column index of a constant-one wire to pin, or `None` if the circuit has
     /// no such wire. When `Some(col)`, lincheck folds one extra `β`-term into the
     /// comb so the sumcheck also proves that the committed constant column is the
-    /// all-ones vector (whose MLE is the constant `1`), closing the all-zero
-    /// witness soundness gap. This REQUIRES the witness to set that wire to `1`
-    /// in *every* batched instance — padding included. See
+    /// prescribed public vector, closing the all-zero witness soundness gap.
+    /// By default this is the all-ones vector, including padding. See
     /// `docs/const-wire-pin.md`. Default `None` keeps the transcript unchanged
     /// for circuits without a constant wire.
     fn const_pin_col(&self) -> Option<usize> {
         None
+    }
+
+    /// MLE of the public constant-wire column at the block coordinates.
+    /// A circuit using an activity mask must bind that mask's public parameters
+    /// before any challenges. The default preserves constant one for existing
+    /// circuits; this value is used only when `const_pin_col()` is present.
+    fn const_pin_value(&self, _outer_point: &[Gf128]) -> Gf128 {
+        Gf128::ONE
     }
 }
 
@@ -1407,7 +1414,8 @@ fn prove_padded_inner<Ch: Challenger>(
     }
 
     // 2b. Constant-wire pin. Fold β·eq(j*, ·) into the comb so the same sumcheck
-    //     also proves z_vec[j*] = 1 (the all-ones constant column). Since j* is a
+    //     also proves z_vec[j*] equals the circuit's public constant-column MLE.
+    //     Since j* is a
     //     boolean index, eq(j*, ·) is the one-hot vector and this is a single
     //     entry update. β is sampled after α; the verifier mirrors both. See
     //     docs/const-wire-pin.md.
@@ -1615,13 +1623,13 @@ pub fn verify<Ch: Challenger>(
     //    vector of length 2^k_skip. Parallel fold for the early (large) rounds.
     let t = std::time::Instant::now();
     // Constant-wire pin (mirror of prove): β sampled after α, comb gains +β at
-    // the constant column, and the initial target gains +β·1 — the honest
-    // all-ones constant column folds to 1. See docs/const-wire-pin.md.
+    // the constant column, and the initial target gains the public column's
+    // folded value times β. See docs/const-wire-pin.md.
     let mut target = alpha * v_a + v_b;
     if let Some(col) = circuit.const_pin_col() {
         let beta = challenger.sample_f128();
         comb_vec[col] += beta;
-        target += beta;
+        target += beta * circuit.const_pin_value(&x_ab.x_outer);
     }
     let mut running = target;
     let mut r_rounds = Vec::with_capacity(inner_rest_len);

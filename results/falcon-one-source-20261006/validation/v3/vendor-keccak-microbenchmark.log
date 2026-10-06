@@ -1,0 +1,11 @@
+
+running 1 test
+test r1cs_hashes::keccak::tests::partial_chain_stripes_microbenchmark ... partial stripe B=1, C=1, P=16: old 0.174861 ms, new 0.003136 ms, ratio 0.017934, saved 0.171725 ms
+partial stripe B=1, C=2, P=4: old 0.034415 ms, new 0.001658 ms, ratio 0.048191, saved 0.032757 ms
+partial stripe B=3, C=4, P=16: old 0.557701 ms, new 0.015244 ms, ratio 0.027333, saved 0.542458 ms
+partial stripe B=3, C=4, P=4: old 0.126920 ms, new 0.003176 ms, ratio 0.025024, saved 0.123744 ms
+partial stripe B=9, C=16, P=16: old 0.176174 ms, new 0.035762 ms, ratio 0.202995, saved 0.140412 ms
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 86 filtered out; finished in 0.09s
+

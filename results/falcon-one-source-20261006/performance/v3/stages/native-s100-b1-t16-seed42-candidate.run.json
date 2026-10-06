@@ -1,0 +1,33 @@
+{
+  "status": "validated",
+  "command": [
+    "/tmp/falcon-one-source-binaries/candidate-v3",
+    "--protocol",
+    "native",
+    "--security",
+    "100",
+    "--batch",
+    "1",
+    "--threads",
+    "16",
+    "--seed",
+    "42",
+    "--warmup",
+    "0",
+    "--iterations",
+    "1"
+  ],
+  "label": "candidate",
+  "pair_index": 0,
+  "order": [
+    "baseline",
+    "candidate"
+  ],
+  "binary_sha256": "2753f4b6afdc0ccbc73da9924411509faa6ede32a7502938c88d5b9f657c4efc",
+  "started_at": 1791312872.8322093,
+  "swap_before_gib": 0.43465423583984375,
+  "stdout_sha256": "d16601b46f3bba9910f4014cc484c3d4d95de2dde053a806e3b1e0841566ae36",
+  "stderr_sha256": "e215c5863e05f77a52e9653973dad3d9d6ad0825c3762b15fec590f2aea9fbba",
+  "elapsed_seconds": 0.11441166402073577,
+  "swap_after_gib": 0.43465423583984375
+}

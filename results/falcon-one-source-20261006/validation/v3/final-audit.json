@@ -1,0 +1,17 @@
+{
+  "source_files_matching_frozen_candidate": 1727,
+  "source_mismatches": [],
+  "completed_pairs": 960,
+  "raw_process_logs": 1920,
+  "verified_proofs": 7680,
+  "timing_gates_passed": 32,
+  "payload_gates_passed": 16,
+  "worst_upper_one_sided_95": [
+    0.973817869702485,
+    "shared-prime",
+    128,
+    1024,
+    "total_prover_ms"
+  ],
+  "git_diff_check": 0
+}

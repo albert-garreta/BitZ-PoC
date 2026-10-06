@@ -1,0 +1,1038 @@
+{
+  "status": "diagnostic",
+  "complete": true,
+  "qualifying": false,
+  "timing_limit": 1.02,
+  "verified_proofs_in_complete_pairs": 256,
+  "measured_trials_per_seed": [
+    3
+  ],
+  "estimator": "ratio of arithmetic means of per-seed process medians",
+  "confidence": "paired percentile bootstrap, one-sided 95%, fixed 60 seeds",
+  "cells": [
+    {
+      "protocol": "native",
+      "security": 100,
+      "batch": 1,
+      "seeds": [
+        42,
+        43
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 26.5848145,
+          "candidate_mean_ms": 26.6536905,
+          "ratio": 1.0025908023544794,
+          "lower_one_sided_95": 0.9586546964448678,
+          "upper_one_sided_95": 1.0496705017672383,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 18.1257115,
+          "candidate_mean_ms": 18.723458,
+          "ratio": 1.0329778226912638,
+          "lower_one_sided_95": 0.9984438288724669,
+          "upper_one_sided_95": 1.07213410513775,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 0.9149065000000001,
+          "candidate_mean_ms": 1.0367570000000002,
+          "ratio": 1.1331835548222688,
+          "lower_one_sided_95": 1.01897973627543,
+          "upper_one_sided_95": 1.2696360072832127,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 25.669908,
+          "candidate_mean_ms": 25.495368,
+          "ratio": 0.9932005989269614,
+          "lower_one_sided_95": 0.9472153527351659,
+          "upper_one_sided_95": 1.042285751195269,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 51644,
+        "candidate": 51732
+      },
+      "payload": {
+        "maximum_ratio": 0.8216590220010884,
+        "ratio_of_mean_bytes": 0.820427443085024,
+        "baseline_mean_bytes": 206624,
+        "candidate_mean_bytes": 169520,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 100,
+      "batch": 3,
+      "seeds": [
+        42,
+        43
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 31.7671675,
+          "candidate_mean_ms": 33.2106335,
+          "ratio": 1.0454389268416833,
+          "lower_one_sided_95": 0.9733368309810024,
+          "upper_one_sided_95": 1.1241223682568204,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 17.8767855,
+          "candidate_mean_ms": 18.0767735,
+          "ratio": 1.0111870224095938,
+          "lower_one_sided_95": 0.9732727253276776,
+          "upper_one_sided_95": 1.0536212823119153,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 2.0545934999999997,
+          "candidate_mean_ms": 2.4805945000000005,
+          "ratio": 1.2073407708142758,
+          "lower_one_sided_95": 1.1901957360041915,
+          "upper_one_sided_95": 1.2255896332460363,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 29.6656205,
+          "candidate_mean_ms": 30.730038999999998,
+          "ratio": 1.0358805405738942,
+          "lower_one_sided_95": 0.9614416847165331,
+          "upper_one_sided_95": 1.1170081888032335,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 64740,
+        "candidate": 65004
+      },
+      "payload": {
+        "maximum_ratio": 0.7641513428075474,
+        "ratio_of_mean_bytes": 0.76147074201252,
+        "baseline_mean_bytes": 283068,
+        "candidate_mean_bytes": 215548,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 100,
+      "batch": 32,
+      "seeds": [
+        42,
+        43
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 47.9631975,
+          "candidate_mean_ms": 46.485125,
+          "ratio": 0.9691831950945304,
+          "lower_one_sided_95": 0.9688940056206835,
+          "upper_one_sided_95": 0.9694774314921762,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 18.6827355,
+          "candidate_mean_ms": 18.110262499999997,
+          "ratio": 0.9693581809794394,
+          "lower_one_sided_95": 0.956100785452441,
+          "upper_one_sided_95": 0.9827914598691717,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 5.4723655,
+          "candidate_mean_ms": 4.442427,
+          "ratio": 0.8117928161048453,
+          "lower_one_sided_95": 0.7817395168703671,
+          "upper_one_sided_95": 0.8419718275814586,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 42.498360500000004,
+          "candidate_mean_ms": 42.21543,
+          "ratio": 0.9933425549439724,
+          "lower_one_sided_95": 0.9930388881716035,
+          "upper_one_sided_95": 0.9936406264319614,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 184332,
+        "candidate": 176372
+      },
+      "payload": {
+        "maximum_ratio": 0.728700798251679,
+        "ratio_of_mean_bytes": 0.7264230685632864,
+        "baseline_mean_bytes": 414070,
+        "candidate_mean_bytes": 300790,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 100,
+      "batch": 1024,
+      "seeds": [
+        42,
+        43
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 798.9796590000001,
+          "candidate_mean_ms": 748.8050814999999,
+          "ratio": 0.9372016835036846,
+          "lower_one_sided_95": 0.9314648907435018,
+          "upper_one_sided_95": 0.9429225519177924,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 71.980879,
+          "candidate_mean_ms": 73.31576999999999,
+          "ratio": 1.018545077783782,
+          "lower_one_sided_95": 1.017097742479955,
+          "upper_one_sided_95": 1.020008713314192,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 145.95139749999998,
+          "candidate_mean_ms": 114.22604999999999,
+          "ratio": 0.7826307384278386,
+          "lower_one_sided_95": 0.7617429850183355,
+          "upper_one_sided_95": 0.8035383158645205,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 653.0282615000001,
+          "candidate_mean_ms": 633.1529525,
+          "ratio": 0.9695643968695218,
+          "lower_one_sided_95": 0.9667397511761183,
+          "upper_one_sided_95": 0.9723992663639754,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 3474864,
+        "candidate": 3222216
+      },
+      "payload": {
+        "maximum_ratio": 0.8008442328086336,
+        "ratio_of_mean_bytes": 0.8000258063441984,
+        "baseline_mean_bytes": 961004,
+        "candidate_mean_bytes": 768828,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 128,
+      "batch": 1,
+      "seeds": [
+        42,
+        43
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 35.1253575,
+          "candidate_mean_ms": 36.077719,
+          "ratio": 1.0271132187053185,
+          "lower_one_sided_95": 0.9859578818191159,
+          "upper_one_sided_95": 1.068526619939841,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 16.355667,
+          "candidate_mean_ms": 16.455496,
+          "ratio": 1.0061036336824416,
+          "lower_one_sided_95": 0.9804012464143375,
+          "upper_one_sided_95": 1.0332134051625121,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 0.8131235,
+          "candidate_mean_ms": 0.9608234999999999,
+          "ratio": 1.18164522363454,
+          "lower_one_sided_95": 1.028092603534404,
+          "upper_one_sided_95": 1.3447954423816904,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 34.364518000000004,
+          "candidate_mean_ms": 34.9898705,
+          "ratio": 1.0181976217446145,
+          "lower_one_sided_95": 0.9828845001569912,
+          "upper_one_sided_95": 1.0537943143462403,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 52280,
+        "candidate": 51892
+      },
+      "payload": {
+        "maximum_ratio": 0.8425577646426652,
+        "ratio_of_mean_bytes": 0.8325909181570375,
+        "baseline_mean_bytes": 240656,
+        "candidate_mean_bytes": 200368,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 128,
+      "batch": 3,
+      "seeds": [
+        42,
+        43
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 52.01674800000001,
+          "candidate_mean_ms": 52.30596,
+          "ratio": 1.0055599784900047,
+          "lower_one_sided_95": 0.983969304858184,
+          "upper_one_sided_95": 1.0268586777783935,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 18.834007,
+          "candidate_mean_ms": 18.780165,
+          "ratio": 0.9971412350011338,
+          "lower_one_sided_95": 0.984315600410231,
+          "upper_one_sided_95": 1.010194992625879,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 1.820986,
+          "candidate_mean_ms": 2.338976,
+          "ratio": 1.2844557838445767,
+          "lower_one_sided_95": 1.2697702819566732,
+          "upper_one_sided_95": 1.2966527690865546,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 50.326294000000004,
+          "candidate_mean_ms": 49.892693,
+          "ratio": 0.9913842056400973,
+          "lower_one_sided_95": 0.9665095690313069,
+          "upper_one_sided_95": 1.0162045233327925,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 68436,
+        "candidate": 65304
+      },
+      "payload": {
+        "maximum_ratio": 0.768445003293216,
+        "ratio_of_mean_bytes": 0.7656061888357789,
+        "baseline_mean_bytes": 335572,
+        "candidate_mean_bytes": 256916,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 128,
+      "batch": 32,
+      "seeds": [
+        42,
+        43
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 81.1214615,
+          "candidate_mean_ms": 80.157437,
+          "ratio": 0.9881162828901943,
+          "lower_one_sided_95": 0.9609970340724344,
+          "upper_one_sided_95": 1.018494586588031,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 19.53302,
+          "candidate_mean_ms": 19.701248,
+          "ratio": 1.008612493101425,
+          "lower_one_sided_95": 0.9874509062289379,
+          "upper_one_sided_95": 1.0296141628251596,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 5.3583655,
+          "candidate_mean_ms": 4.4142285,
+          "ratio": 0.8238013065738051,
+          "lower_one_sided_95": 0.8036746059639354,
+          "upper_one_sided_95": 0.8454076818253144,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 75.76309599999999,
+          "candidate_mean_ms": 75.772284,
+          "ratio": 1.0001212727631934,
+          "lower_one_sided_95": 0.9718847319850789,
+          "upper_one_sided_95": 1.0318465630936164,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 185884,
+        "candidate": 174408
+      },
+      "payload": {
+        "maximum_ratio": 0.7289141806243976,
+        "ratio_of_mean_bytes": 0.7280560888341524,
+        "baseline_mean_bytes": 496926,
+        "candidate_mean_bytes": 361790,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 128,
+      "batch": 1024,
+      "seeds": [
+        42,
+        43
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 912.9656689999999,
+          "candidate_mean_ms": 905.9858750000001,
+          "ratio": 0.9923548121939294,
+          "lower_one_sided_95": 0.9806677858730514,
+          "upper_one_sided_95": 1.0041147556571426,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 72.91625400000001,
+          "candidate_mean_ms": 72.06235849999999,
+          "ratio": 0.9882893668673651,
+          "lower_one_sided_95": 0.9813441801853466,
+          "upper_one_sided_95": 0.9953512541061937,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 140.919992,
+          "candidate_mean_ms": 114.16010500000002,
+          "ratio": 0.8101058152203132,
+          "lower_one_sided_95": 0.789902249806877,
+          "upper_one_sided_95": 0.8308599657773911,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 767.9217735,
+          "candidate_mean_ms": 794.214686,
+          "ratio": 1.0342390506524686,
+          "lower_one_sided_95": 1.023332203085968,
+          "upper_one_sided_95": 1.045201796399586,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 3462768,
+        "candidate": 3201024
+      },
+      "payload": {
+        "maximum_ratio": 0.7872819970214262,
+        "ratio_of_mean_bytes": 0.7863829448212676,
+        "baseline_mean_bytes": 1104556,
+        "candidate_mean_bytes": 868604,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 100,
+      "batch": 1,
+      "seeds": [
+        42,
+        43
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 23.4750795,
+          "candidate_mean_ms": 27.563612499999998,
+          "ratio": 1.1741648201872967,
+          "lower_one_sided_95": 1.1652137143762704,
+          "upper_one_sided_95": 1.183468352067189,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 16.035570999999997,
+          "candidate_mean_ms": 17.16839,
+          "ratio": 1.0706441323480156,
+          "lower_one_sided_95": 0.9969059001492908,
+          "upper_one_sided_95": 1.1393450053120977,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 0.9679515,
+          "candidate_mean_ms": 1.0231765,
+          "ratio": 1.0570534784025851,
+          "lower_one_sided_95": 0.9252025804955761,
+          "upper_one_sided_95": 1.2320774633494194,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 22.446513000000003,
+          "candidate_mean_ms": 26.5185795,
+          "ratio": 1.1814119859062295,
+          "lower_one_sided_95": 1.177727629321893,
+          "upper_one_sided_95": 1.185029798819614,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 50924,
+        "candidate": 50764
+      },
+      "payload": {
+        "maximum_ratio": 0.8153407147533934,
+        "ratio_of_mean_bytes": 0.8102287629316626,
+        "baseline_mean_bytes": 205890,
+        "candidate_mean_bytes": 166818,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 100,
+      "batch": 3,
+      "seeds": [
+        42,
+        43
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 31.140702,
+          "candidate_mean_ms": 30.549037,
+          "ratio": 0.9810002677524738,
+          "lower_one_sided_95": 0.946232065141163,
+          "upper_one_sided_95": 1.0170692659130893,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 18.325795,
+          "candidate_mean_ms": 18.9475575,
+          "ratio": 1.0339282688690994,
+          "lower_one_sided_95": 0.9191189828245485,
+          "upper_one_sided_95": 1.1564997171475382,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 1.7151915,
+          "candidate_mean_ms": 2.1958905,
+          "ratio": 1.2802596677980271,
+          "lower_one_sided_95": 1.1356958949386182,
+          "upper_one_sided_95": 1.4304896375274638,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 29.248526,
+          "candidate_mean_ms": 28.246223999999998,
+          "ratio": 0.9657315380610975,
+          "lower_one_sided_95": 0.9463578289477594,
+          "upper_one_sided_95": 0.985590672447979,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 65184,
+        "candidate": 65084
+      },
+      "payload": {
+        "maximum_ratio": 0.7659311537005422,
+        "ratio_of_mean_bytes": 0.7639893087214177,
+        "baseline_mean_bytes": 279106,
+        "candidate_mean_bytes": 213234,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 100,
+      "batch": 32,
+      "seeds": [
+        42,
+        43
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 46.724052,
+          "candidate_mean_ms": 42.943006499999996,
+          "ratio": 0.9190771061550911,
+          "lower_one_sided_95": 0.9122185413715355,
+          "upper_one_sided_95": 0.9261701265227387,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 19.02851,
+          "candidate_mean_ms": 19.168855999999998,
+          "ratio": 1.0073755643505455,
+          "lower_one_sided_95": 0.9733425730791189,
+          "upper_one_sided_95": 1.0417176257174543,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 5.531338,
+          "candidate_mean_ms": 3.9221675000000005,
+          "ratio": 0.7090811481778913,
+          "lower_one_sided_95": 0.7079459625584392,
+          "upper_one_sided_95": 0.7102781349070089,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 41.192713999999995,
+          "candidate_mean_ms": 38.796158999999996,
+          "ratio": 0.9418209006573347,
+          "lower_one_sided_95": 0.9364390070103433,
+          "upper_one_sided_95": 0.9473722950204585,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 184228,
+        "candidate": 176400
+      },
+      "payload": {
+        "maximum_ratio": 0.7262865853957423,
+        "ratio_of_mean_bytes": 0.7255392770374733,
+        "baseline_mean_bytes": 407490,
+        "candidate_mean_bytes": 295650,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 100,
+      "batch": 1024,
+      "seeds": [
+        42,
+        43
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 717.8468654999999,
+          "candidate_mean_ms": 679.8324714999999,
+          "ratio": 0.9470438671156947,
+          "lower_one_sided_95": 0.943293021244174,
+          "upper_one_sided_95": 0.9508441677427864,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 57.039989,
+          "candidate_mean_ms": 57.882739,
+          "ratio": 1.014774722344354,
+          "lower_one_sided_95": 0.997505288065703,
+          "upper_one_sided_95": 1.0320491716642959,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 145.363901,
+          "candidate_mean_ms": 113.59375349999999,
+          "ratio": 0.7814440360953163,
+          "lower_one_sided_95": 0.7770292821799397,
+          "upper_one_sided_95": 0.785887264710949,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 573.8137879999999,
+          "candidate_mean_ms": 566.6055265,
+          "ratio": 0.9874379778758472,
+          "lower_one_sided_95": 0.9848778220221674,
+          "upper_one_sided_95": 0.9900326106753314,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 3501604,
+        "candidate": 3243864
+      },
+      "payload": {
+        "maximum_ratio": 0.7890865275048119,
+        "ratio_of_mean_bytes": 0.7869688894885374,
+        "baseline_mean_bytes": 889410,
+        "candidate_mean_bytes": 699938,
+        "limit": 0.8,
+        "strict": false,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 128,
+      "batch": 1,
+      "seeds": [
+        42,
+        43
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 37.463026,
+          "candidate_mean_ms": 36.6006985,
+          "ratio": 0.976981904771921,
+          "lower_one_sided_95": 0.9659268071906495,
+          "upper_one_sided_95": 0.988227113478233,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 17.3278715,
+          "candidate_mean_ms": 16.9550165,
+          "ratio": 0.9784823542810782,
+          "lower_one_sided_95": 0.9759417880399123,
+          "upper_one_sided_95": 0.9810868565188204,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 0.8308525,
+          "candidate_mean_ms": 0.8249059999999999,
+          "ratio": 0.9928428932933342,
+          "lower_one_sided_95": 0.9391162809445115,
+          "upper_one_sided_95": 1.048233943916918,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 36.688235000000006,
+          "candidate_mean_ms": 35.746853,
+          "ratio": 0.9743410387553393,
+          "lower_one_sided_95": 0.9620280655916381,
+          "upper_one_sided_95": 0.9869005679684637,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 52696,
+        "candidate": 51476
+      },
+      "payload": {
+        "maximum_ratio": 0.8255354732946407,
+        "ratio_of_mean_bytes": 0.823478311229513,
+        "baseline_mean_bytes": 241738,
+        "candidate_mean_bytes": 199066,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 128,
+      "batch": 3,
+      "seeds": [
+        42,
+        43
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 55.109049999999996,
+          "candidate_mean_ms": 54.857008,
+          "ratio": 0.9954264862123372,
+          "lower_one_sided_95": 0.9450670642788905,
+          "upper_one_sided_95": 1.0482597669253182,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 20.8572565,
+          "candidate_mean_ms": 19.0959225,
+          "ratio": 0.9155529395728533,
+          "lower_one_sided_95": 0.9076575203280721,
+          "upper_one_sided_95": 0.923755218131828,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 1.7222499999999998,
+          "candidate_mean_ms": 2.116535,
+          "ratio": 1.2289359849034693,
+          "lower_one_sided_95": 1.1156632851731225,
+          "upper_one_sided_95": 1.3496643828386636,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 53.2289775,
+          "candidate_mean_ms": 52.7881185,
+          "ratio": 0.9917176879830165,
+          "lower_one_sided_95": 0.936189662220455,
+          "upper_one_sided_95": 1.0500972600226555,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 66552,
+        "candidate": 66616
+      },
+      "payload": {
+        "maximum_ratio": 0.7723528386798291,
+        "ratio_of_mean_bytes": 0.7671227140301865,
+        "baseline_mean_bytes": 334322,
+        "candidate_mean_bytes": 256466,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 128,
+      "batch": 32,
+      "seeds": [
+        42,
+        43
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 81.88940500000001,
+          "candidate_mean_ms": 81.80726,
+          "ratio": 0.9989968787781519,
+          "lower_one_sided_95": 0.9690413445950758,
+          "upper_one_sided_95": 1.0305035751167002,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 21.053838,
+          "candidate_mean_ms": 20.040771,
+          "ratio": 0.951882074897698,
+          "lower_one_sided_95": 0.9445056842489664,
+          "upper_one_sided_95": 0.9589864257967207,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 5.367653,
+          "candidate_mean_ms": 4.459314000000001,
+          "ratio": 0.8307753873061469,
+          "lower_one_sided_95": 0.8196917075174631,
+          "upper_one_sided_95": 0.8423836189560059,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 76.521752,
+          "candidate_mean_ms": 77.3664855,
+          "ratio": 1.0110391291093281,
+          "lower_one_sided_95": 0.9774788709619388,
+          "upper_one_sided_95": 1.046577647520732,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 187584,
+        "candidate": 176536
+      },
+      "payload": {
+        "maximum_ratio": 0.7293180779512815,
+        "ratio_of_mean_bytes": 0.7286347449800573,
+        "baseline_mean_bytes": 495922,
+        "candidate_mean_bytes": 361346,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 128,
+      "batch": 1024,
+      "seeds": [
+        42,
+        43
+      ],
+      "timings": {
+        "total_prover_ms": {
+          "baseline_mean_ms": 944.788983,
+          "candidate_mean_ms": 972.6829045,
+          "ratio": 1.0295239699042933,
+          "lower_one_sided_95": 1.0254165730479594,
+          "upper_one_sided_95": 1.0336461055042416,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_verify_ms": {
+          "baseline_mean_ms": 62.802645,
+          "candidate_mean_ms": 64.842986,
+          "ratio": 1.032488138039409,
+          "lower_one_sided_95": 0.989083237997357,
+          "upper_one_sided_95": 1.076642252358269,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "witness_commit_ms": {
+          "baseline_mean_ms": 146.8077935,
+          "candidate_mean_ms": 123.45912249999998,
+          "ratio": 0.8409575510717009,
+          "lower_one_sided_95": 0.8288293462533979,
+          "upper_one_sided_95": 0.853797090400962,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        },
+        "proof_prove_ms": {
+          "baseline_mean_ms": 795.2851675,
+          "candidate_mean_ms": 845.6091015,
+          "ratio": 1.0632778480682528,
+          "lower_one_sided_95": 1.0434961728688381,
+          "upper_one_sided_95": 1.0836232215624293,
+          "bootstrap_draws": 20000,
+          "pairs": 2,
+          "status": "diagnostic"
+        }
+      },
+      "peak_rss_kib": {
+        "baseline": 3516244,
+        "candidate": 3257804
+      },
+      "payload": {
+        "maximum_ratio": 0.7899233883230474,
+        "ratio_of_mean_bytes": 0.7858771504306766,
+        "baseline_mean_bytes": 1100826,
+        "candidate_mean_bytes": 865114,
+        "limit": 0.8,
+        "strict": false,
+        "pass_gate": true
+      }
+    }
+  ]
+}

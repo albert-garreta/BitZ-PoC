@@ -686,8 +686,34 @@ pub fn prove_fast_committed_prefix<Ch: Challenger>(
     challenger: &mut Ch,
 ) -> CommittedPrefix {
     assert_eq!(commitment.params.m, r1cs.m);
+    prove_fast_source_prefix(
+        r1cs,
+        &commitment.root,
+        z_packed,
+        a_packed_f128,
+        b_packed_f128,
+        z_packed_lincheck,
+        lincheck_circuit,
+        challenger,
+    )
+}
+
+/// Prove a local circuit prefix whose witness is a projection of a source
+/// committed by the caller. `source_context` binds that commitment and the
+/// public projection; both returned claims still need source authentication.
+#[allow(clippy::too_many_arguments)]
+pub fn prove_fast_source_prefix<Ch: Challenger>(
+    r1cs: &BlockR1cs,
+    source_context: &[u8; 32],
+    z_packed: &[Gf128],
+    a_packed_f128: Vec<Gf128>,
+    b_packed_f128: Vec<Gf128>,
+    z_packed_lincheck: Vec<u8>,
+    lincheck_circuit: &dyn lincheck::LincheckCircuit,
+    challenger: &mut Ch,
+) -> CommittedPrefix {
     assert_eq!(z_packed.len(), 1usize << (r1cs.m - pcs::LOG_PACKING));
-    bind_statement(challenger, r1cs, commitment);
+    flock_core::proof::bind_source_statement(challenger, r1cs, source_context);
 
     let padding = r1cs.padding_spec();
     let (zc_proof, zc_claim, s_hat_v_c) = {

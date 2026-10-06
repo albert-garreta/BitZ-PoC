@@ -1,0 +1,6 @@
+
+running 1 test
+test piop::spartan::falcon1024_ct::hybrid::tests::joint_source_supported_profiles_roundtrip ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 683 filtered out; finished in 5.33s
+

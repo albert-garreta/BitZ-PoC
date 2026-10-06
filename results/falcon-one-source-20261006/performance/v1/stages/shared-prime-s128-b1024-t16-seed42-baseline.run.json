@@ -1,0 +1,33 @@
+{
+  "status": "validated",
+  "command": [
+    "/tmp/falcon-one-source-binaries/baseline-51405193",
+    "--protocol",
+    "shared-prime",
+    "--security",
+    "128",
+    "--batch",
+    "1024",
+    "--threads",
+    "16",
+    "--seed",
+    "42",
+    "--warmup",
+    "0",
+    "--iterations",
+    "1"
+  ],
+  "label": "baseline",
+  "pair_index": 0,
+  "order": [
+    "baseline",
+    "candidate"
+  ],
+  "binary_sha256": "8eef23b81fbcd557b29bc556dfb80bd62af1468ac2fcbb9ef869ca9c012b285f",
+  "started_at": 1791309779.0418785,
+  "swap_before_gib": 1.0503959655761719,
+  "stdout_sha256": "c8893a5662d8d6a8f2234416672a9899215e0e7977f078a27859c98439202bb2",
+  "stderr_sha256": "24f808d64b140aa929061ac75d433a899cec6643258c982d9a6d1483820d5ecd",
+  "elapsed_seconds": 2.6661737899994478,
+  "swap_after_gib": 1.0503883361816406
+}

@@ -9,7 +9,7 @@ turn the argument into unconditional statistical security.
 
 Condition on the source commitments authenticating one fixed bit source and
 on the separately accounted division, rejection, prefix, and source-binding
-checks being sound. All three source roots and the public statement precede
+checks being sound. The joint source root and the public statement precede
 the shared fingerprint challenges `gamma,rho`.
 
 The 16-bit sample, 3-bit quotient, bounded remainder, and integer division

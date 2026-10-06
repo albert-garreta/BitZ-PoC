@@ -3,7 +3,7 @@
 //! Example: `RAYON_NUM_THREADS=16 BITZ_BENCH_LAMBDA=128 cargo bench
 //! --features falcon-hybrid --bench falcon_hybrid -- --batch 32 --iterations 2`.
 //! Security must be selected explicitly. Each trial commits a fresh batch and
-//! verifies the resulting full proof against all roots. fn-dsa 0.3.0
+//! verifies the resulting full proof against its joint source root. fn-dsa 0.3.0
 //! generates distinct original Falcon-1024 keypairs/messages/signatures once,
 //! outside prover timing, and the same batch is reused across trials.
 #[path = "common/falcon_inputs.rs"]
@@ -52,7 +52,7 @@ impl Options {
             if flag == "--protocol" {
                 protocol = match args.next().ok_or("missing protocol")?.as_str() {
                     "native" => FalconProtocol::NativeCarry,
-                    "shared-prime" => FalconProtocol::SharedPrimeV4,
+                    "shared-prime" => FalconProtocol::SharedPrime,
                     _ => return Err("protocol must be native or shared-prime".into()),
                 };
                 continue;
@@ -154,13 +154,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
     let prepared = match options.protocol {
         FalconProtocol::NativeCarry => PreparedFalconHybrid::new(options.batch, options.security)?,
-        FalconProtocol::SharedPrimeV4 => {
+        FalconProtocol::SharedPrime => {
             PreparedFalconHybrid::new_shared_prime(options.batch, options.security)?
         }
     };
     let protocol = match prepared.protocol() {
-        FalconProtocol::NativeCarry => "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v5",
-        FalconProtocol::SharedPrimeV4 => "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v4",
+        FalconProtocol::NativeCarry => "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6",
+        FalconProtocol::SharedPrime => "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v5",
     };
     let prepare_ms = ms(start);
     let security = prepared.security();
@@ -290,7 +290,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "total_prover_ms": witness_commit_ms + prove_ms,
                 "end_to_end_ms": witness_commit_ms + prove_ms + verify_ms,
                 "process_peak_rss_kib": process_peak_rss_kib(),
-                "roots": statement.roots.map(|root| root.iter().map(|byte| format!("{byte:02x}")).collect::<String>()),
+                "source_root": statement.source_root.iter().map(|byte| format!("{byte:02x}")).collect::<String>(),
                 "input_digest": input_digest,
                 "proof_debug_digest": proof_debug_digest,
                 "grinding_diagnostics": {

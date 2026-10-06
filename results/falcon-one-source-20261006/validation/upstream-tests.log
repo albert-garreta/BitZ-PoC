@@ -1,0 +1,9 @@
+
+running 4 tests
+test benchmark_inputs_are_distinct_reproducible_and_interoperable ... ok
+test conversion_rejects_noncanonical_compressed_encodings ... ok
+test falcon_inputs::cache_tests::cached_cases_preserve_generated_cases_and_reject_tampering ... ok
+test proof_binds_the_exact_public_upstream_signature ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s
+

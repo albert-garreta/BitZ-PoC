@@ -1,0 +1,104 @@
+{
+  "status": "pass",
+  "binaries": {
+    "v2": "5339f98479a2dec2af4f5131df7e75ce3ad5784cd39db09d451db2c5a66727c7",
+    "v3": "2753f4b6afdc0ccbc73da9924411509faa6ede32a7502938c88d5b9f657c4efc"
+  },
+  "cases": [
+    {
+      "protocol": "native",
+      "security": 100,
+      "batch": 7,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "proof_debug_digest": "df343adfe99df7f8da2fc181102afe0b0bad25f63f5501e4b96b7351ef332ec7",
+      "proof_payload_bytes": 237490
+    },
+    {
+      "protocol": "native",
+      "security": 100,
+      "batch": 9,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "proof_debug_digest": "f3ba07c5e1fa57b9df98528389e13f782085793aedfc844453afa86e4984aaf0",
+      "proof_payload_bytes": 263912
+    },
+    {
+      "protocol": "native",
+      "security": 128,
+      "batch": 7,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "proof_debug_digest": "17339d242e23c2b4b63b7f5e859a5b06880735fe9a0bd2b93e152f35e26e4a97",
+      "proof_payload_bytes": 282794
+    },
+    {
+      "protocol": "native",
+      "security": 128,
+      "batch": 9,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "proof_debug_digest": "3359ea79166d0710998d05bba4fb260839a6fef0b06a65b2a77d5a9bbeca2f49",
+      "proof_payload_bytes": 317520
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 100,
+      "batch": 7,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "proof_debug_digest": "c7f978e3a3831017cbf3ccfa4370f183f22f2023d7d2e78317ee08acec18dc51",
+      "proof_payload_bytes": 233034
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 100,
+      "batch": 9,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "proof_debug_digest": "026fd62fee6dd8b0923d6314040d994da2463bc11f1ac24fbd5ee4a648c93835",
+      "proof_payload_bytes": 259506
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 128,
+      "batch": 7,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "proof_debug_digest": "99a7d639bb5218e690c2a9ab909d3b183d7c8a0d2603f256e56ce90a793d9d97",
+      "proof_payload_bytes": 281050
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 128,
+      "batch": 9,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "proof_debug_digest": "9d8e068f4f7b9a1707504e834ab5508fbd5a0361109d8e790067dae138fb8210",
+      "proof_payload_bytes": 314834
+    }
+  ],
+  "cache": {
+    "7": {
+      "sha256": "2f6c53fb34e732f2291281b8bb8390689bcf5b2e748fdcf10860159513bb8f5c",
+      "input_digest": "f1214c680d3732224de7516c4f4a26e56f8b4cf5818d1a11904f5ac3b984fa2c",
+      "generated_by": "candidate-v2",
+      "bytes": 33148
+    },
+    "9": {
+      "sha256": "4035e9e2b96db615e3d17521e817209f3958915ee2f0f39dcecda37126ba57d0",
+      "input_digest": "60a21a1e30becddbf29885f3fd5f5fc382fa176259dac9c09b48f5d171ce1a9b",
+      "generated_by": "candidate-v2",
+      "bytes": 42576
+    }
+  },
+  "verified_proofs": 16
+}

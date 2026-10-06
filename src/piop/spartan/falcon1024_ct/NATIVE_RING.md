@@ -1,12 +1,12 @@
 # Native-ring batch Falcon prover
 
 `PreparedFalconHybrid` uses one native-ring arithmetic path. Its statement domain
-is `bitz/falcon1024-ct/hybrid/native-ring/non-zk/v5`; earlier proofs are
+is `bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6`; earlier proofs are
 incompatible. This profile remains the default; shared-prime V4 is opt-in.
 
 The public statement still contains each public key, 32-byte message, and exact
 CT signature. The prover is not zero knowledge. Binary Keccak, SHAKE wiring,
-three source commitments, the jointly batched two-limb bridge, and the UDR shared
+one joint source commitment, the jointly batched two-limb bridge, and the UDR shared
 PCS opening retain their existing roles.
 
 ## Source representation and counts

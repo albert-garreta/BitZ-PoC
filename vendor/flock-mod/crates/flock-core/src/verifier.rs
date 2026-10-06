@@ -248,13 +248,34 @@ pub fn verify_core<Ch: Challenger>(
     lincheck_circuit: &dyn lincheck::LincheckCircuit,
     challenger: &mut Ch,
 ) -> Result<(ZClaim, ZClaim), VerifyError> {
+    verify_source_core(
+        r1cs,
+        zerocheck_proof,
+        lincheck_proof,
+        &commitment.root,
+        lincheck_circuit,
+        challenger,
+    )
+}
+
+/// Verify a prefix whose two local witness claims will be authenticated through
+/// a caller-defined projection of a committed source. The digest must bind the
+/// source root, projection, and public circuit policy before any challenges.
+pub fn verify_source_core<Ch: Challenger>(
+    r1cs: &BlockR1cs,
+    zerocheck_proof: &zerocheck::ZerocheckProof,
+    lincheck_proof: &lincheck::LincheckProof,
+    source_context: &[u8; 32],
+    lincheck_circuit: &dyn lincheck::LincheckCircuit,
+    challenger: &mut Ch,
+) -> Result<(ZClaim, ZClaim), VerifyError> {
     // Verification is single-threaded; run the body on the dedicated 1-thread pool.
     verifier_pool().install(move || {
         verify_core_inner(
             r1cs,
             zerocheck_proof,
             lincheck_proof,
-            commitment,
+            source_context,
             lincheck_circuit,
             challenger,
         )
@@ -265,7 +286,7 @@ fn verify_core_inner<Ch: Challenger>(
     r1cs: &BlockR1cs,
     zerocheck_proof: &zerocheck::ZerocheckProof,
     lincheck_proof: &lincheck::LincheckProof,
-    commitment: &Commitment,
+    source_context: &[u8; 32],
     lincheck_circuit: &dyn lincheck::LincheckCircuit,
     challenger: &mut Ch,
 ) -> Result<(ZClaim, ZClaim), VerifyError> {
@@ -281,7 +302,7 @@ fn verify_core_inner<Ch: Challenger>(
 
     // ---- Bind FS transcript to the statement (mirrors prover::prove).
     let t = std::time::Instant::now();
-    crate::proof::bind_statement(challenger, r1cs, commitment);
+    crate::proof::bind_source_statement(challenger, r1cs, source_context);
     if trace {
         eprintln!(
             "      [vco] bind_statement: {}",

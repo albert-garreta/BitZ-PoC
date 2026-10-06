@@ -138,11 +138,10 @@ impl FalconHybridProof {
         for &nonce in pcs_nonces {
             visit("pcs_auxiliary", nonce);
         }
-        let shared::Proof {
+        let shared::JointProof {
             ood,
             ring: _,
             ligerito,
-            paths: _,
         } = opening;
         if let Some(crate::ligerito_flock::OodRound { y: _, nonce }) = ood {
             for &nonce in nonce.iter() {
@@ -203,6 +202,115 @@ impl FalconHybridProof {
             + NONCE_BYTES * (opening_nonces.len() + pcs_nonces.len())
     }
 
+    /// Disjoint byte counts under the same accounting as `payload_size_bytes`.
+    /// This inspects stored messages only; it does not change the transcript.
+    pub fn payload_size_breakdown(&self) -> Vec<(&'static str, usize)> {
+        let piop = match &self.arithmetic.piop {
+            super::super::opening::PiopProof::Native(proof) => piop_bytes(proof),
+            super::super::opening::PiopProof::Shared(proof) => proof.payload_size_bytes(),
+        };
+        let ring = match &self.arithmetic.ring {
+            super::super::opening::RingProof::Native(proof) => native_bytes(proof),
+            super::super::opening::RingProof::Shared(proof) => proof.payload_size_bytes(),
+        };
+        let pcs = &self.opening.ligerito;
+        let rows_bytes = |rows: &[Vec<flock_core::field::Gf128>]| {
+            FIELD_BYTES * rows.iter().map(Vec::len).sum::<usize>()
+        };
+        let initial_rows = rows_bytes(&pcs.initial_proof.opened_rows);
+        let initial_paths = HASH_BYTES * pcs.initial_proof.merkle_proof.len();
+        let recursive_rows = pcs
+            .recursive_proofs
+            .iter()
+            .map(|proof| rows_bytes(&proof.opened_rows))
+            .sum::<usize>();
+        let recursive_paths = HASH_BYTES
+            * pcs
+                .recursive_proofs
+                .iter()
+                .map(|proof| proof.merkle_proof.len())
+                .sum::<usize>();
+        let final_rows = rows_bytes(&pcs.final_proof.opened_rows);
+        let final_paths = HASH_BYTES * pcs.final_proof.merkle_proof.len();
+        let final_polynomial = FIELD_BYTES * pcs.final_proof.yr.len();
+        let roots = HASH_BYTES * (1 + pcs.recursive_roots.len());
+        let sumchecks = 2 * FIELD_BYTES * pcs.sumcheck_transcript.len();
+        let ood = FIELD_BYTES * pcs.ood_values.len();
+        let nonces = NONCE_BYTES * (pcs.grinding_nonces.len() + pcs.fold_grinding_nonces.len());
+        let pcs_payload = initial_rows
+            + initial_paths
+            + recursive_rows
+            + recursive_paths
+            + final_rows
+            + final_paths
+            + final_polynomial
+            + roots
+            + sumchecks
+            + ood
+            + nonces;
+        let parts = vec![
+            ("arithmetic_piop", piop),
+            ("ring_certificate_and_reduction", ring),
+            (
+                "arithmetic_source_binding",
+                arithmetic_bytes(&self.arithmetic) - piop - ring,
+            ),
+            (
+                "integer_column_sums_first_limb",
+                self.bridge.sums.lower_encoded_len(),
+            ),
+            (
+                "integer_column_sums_remaining_limbs",
+                self.bridge.sums.upper_encoded_len(),
+            ),
+            (
+                "binary_bridge_gkr",
+                2 * FIELD_BYTES * self.bridge.forest.len(),
+            ),
+            (
+                "binary_bridge_nonces",
+                NONCE_BYTES * self.bridge.nonces.len(),
+            ),
+            (
+                "keccak_piops",
+                self.keccak.iter().map(serialized_bytes).sum(),
+            ),
+            ("binary_link_nonces", NONCE_BYTES * self.links_nonces.len()),
+            ("joint_binary_sumcheck", joint_bytes(&self.joint)),
+            (
+                "opening_ood",
+                self.opening
+                    .ood
+                    .as_ref()
+                    .map_or(0, |round| FIELD_BYTES + nonce_bytes(&round.nonce)),
+            ),
+            (
+                "opening_ring_switch",
+                FIELD_BYTES * self.opening.ring.s_v.len(),
+            ),
+            ("source_authentication_joint", initial_paths),
+            ("pcs_initial_opened_rows", initial_rows),
+            ("pcs_recursive_opened_rows", recursive_rows),
+            ("pcs_recursive_authentication", recursive_paths),
+            ("pcs_final_opened_rows", final_rows),
+            ("pcs_final_authentication", final_paths),
+            ("pcs_final_polynomial", final_polynomial),
+            ("pcs_roots", roots),
+            ("pcs_sumchecks", sumchecks),
+            ("pcs_ood_values", ood),
+            ("pcs_nonces", nonces),
+            ("pcs_bincode_framing", serialized_bytes(pcs) - pcs_payload),
+            (
+                "opening_and_auxiliary_nonces",
+                NONCE_BYTES * (self.opening_nonces.len() + self.pcs_nonces.len()),
+            ),
+        ];
+        debug_assert_eq!(
+            parts.iter().map(|(_, bytes)| bytes).sum::<usize>(),
+            self.payload_size_bytes()
+        );
+        parts
+    }
 }
 
 fn add_nonce(
@@ -454,12 +562,11 @@ fn joint_bytes(proof: &joint::Proof) -> usize {
     FIELD_BYTES * (2 * rounds.len() + 1) + NONCE_BYTES * nonces.len()
 }
 
-fn opening_bytes(proof: &shared::Proof<3>) -> usize {
-    let shared::Proof {
+fn opening_bytes(proof: &shared::JointProof) -> usize {
+    let shared::JointProof {
         ood,
         ring,
         ligerito,
-        paths,
     } = proof;
     let crate::ligerito::RingSwitchProof { s_v } = ring;
     ood.as_ref()
@@ -468,7 +575,6 @@ fn opening_bytes(proof: &shared::Proof<3>) -> usize {
         })
         + FIELD_BYTES * s_v.len()
         + serialized_bytes(ligerito)
-        + HASH_BYTES * paths.iter().map(Vec::len).sum::<usize>()
 }
 
 #[cfg(test)]

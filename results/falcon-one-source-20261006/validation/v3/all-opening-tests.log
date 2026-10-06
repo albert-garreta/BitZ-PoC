@@ -1,0 +1,14 @@
+
+running 9 tests
+test hybrid::opening::geometry_tests::deferred_initial_requires_two_supported_lookahead_rounds ... ok
+test hybrid::opening::geometry_tests::direct_padding_matches_separate_basis_updates ... ok
+test hybrid::opening::geometry_tests::joint_opening_binds_root_and_rejects_nonzero_physical_padding ... ok
+test hybrid::opening::geometry_tests::joint_projection_matches_binary_mle_at_non_boolean_points ... ok
+test hybrid::opening::geometry_tests::joint_source_authentication_rejects_rows_paths_and_padding_tampering ... ok
+test hybrid::opening::geometry_tests::joint_source_encoding_and_paths_match_dense_reference ... ok
+test hybrid::opening::geometry_tests::streamed_ring_switch_and_initial_tables_match_dense_reference ... ok
+test hybrid::opening::geometry_tests::streamed_shared_opening_preserves_entire_proof_and_transcript ... ok
+test hybrid::opening::geometry_tests::three_root_padding_basis_matches_logical_support_exactly ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 677 filtered out; finished in 0.04s
+

@@ -1,0 +1,84 @@
+warning: function `square_n` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:104:8
+    |
+104 | pub fn square_n(a: [u64; 2], k: u32) -> [u64; 2] {
+    |        ^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `wide_words` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:116:15
+    |
+116 | pub(crate) fn wide_words(value: Wide) -> [u64; 4] {
+    |               ^^^^^^^^^^
+
+warning: function `wide_zero` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:137:8
+    |
+137 | pub fn wide_zero() -> Wide {
+    |        ^^^^^^^^^
+
+warning: function `wide_of` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:141:8
+    |
+141 | pub fn wide_of(a: [u64; 2]) -> Wide {
+    |        ^^^^^^^
+
+warning: function `wide_add` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:149:8
+    |
+149 | pub fn wide_add(x: Wide, y: Wide) -> Wide {
+    |        ^^^^^^^^
+
+warning: function `wide_add_low` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:155:8
+    |
+155 | pub fn wide_add_low(x: Wide, a: [u64; 2]) -> Wide {
+    |        ^^^^^^^^^^^^
+
+warning: function `wide_reduce` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:159:8
+    |
+159 | pub fn wide_reduce(w: Wide) -> [u64; 2] {
+    |        ^^^^^^^^^^^
+
+warning: function `wide_from_words` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:321:8
+    |
+321 | pub fn wide_from_words(words: [u64; 4]) -> Wide {
+    |        ^^^^^^^^^^^^^^^
+
+warning: `field` (lib) generated 8 warnings
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running unittests src/lib.rs (/tmp/falcon-vendor-tests/release/deps/flock_core-1141e3f160406a7a)
+
+running 26 tests
+test merkle::tests::blake3_batch_dispatch_agrees ... ok
+test merkle::tests::blake3_batched_matches_scalar_spec ... ok
+test merkle::tests::blake3_separates_leaf_and_parent_domains ... ok
+test merkle::tests::generated_rows_match_dense_tree ... ok
+test merkle::tests::merkle_proof_rejects_tampered_path ... ok
+test merkle::tests::merkle_proof_rejects_the_other_hash ... ok
+test merkle::tests::merkle_proof_rejects_wrong_index ... ok
+test merkle::tests::merkle_proof_roundtrips_at_every_leaf ... ok
+test merkle::tests::multi_proof_beats_independent_paths_at_scale ... ok
+test merkle::tests::multi_proof_full_query_set_is_root_only ... ok
+test merkle::tests::multi_proof_random_subsets_roundtrip ... ok
+test merkle::tests::multi_proof_rejects_extra_or_missing_hashes ... ok
+test merkle::tests::multi_proof_rejects_tampered_proof_hash ... ok
+test merkle::tests::multi_proof_rejects_unsorted_positions ... ok
+test merkle::tests::multi_proof_rejects_wrong_leaf ... ok
+test merkle::tests::multi_proof_sibling_pair_emits_no_hashes_at_leaf_level ... ok
+test merkle::tests::multi_proof_single_position_matches_single_proof ... ok
+test merkle::tests::one_leaf_root_is_the_leaf_hash ... ok
+test merkle::tests::parallel_matches_sequential ... ok
+test merkle::tests::parallel_matches_sequential_tail_shapes ... ok
+test merkle::tests::power_of_two_assertion ... ok
+test merkle::tests::primitives_match_reference_implementations ... ok
+test merkle::tests::rejects_non_power_of_two - should panic ... ok
+test merkle::tests::root_changes_when_any_leaf_changes ... ok
+test merkle::tests::the_two_kinds_produce_different_roots ... ok
+test merkle::tests::two_leaves_matches_hand_computation ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 284 filtered out; finished in 0.00s
+

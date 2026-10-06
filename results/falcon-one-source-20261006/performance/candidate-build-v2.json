@@ -1,0 +1,24 @@
+{
+  "revision": "51405193878e15e1e4259216464f2bb856c8b592",
+  "binary": "/tmp/falcon-one-source-binaries/candidate-v2",
+  "sha256": "5339f98479a2dec2af4f5131df7e75ce3ad5784cd39db09d451db2c5a66727c7",
+  "source_root": "/tmp/falcon-one-source-candidate-v2",
+  "source_manifest": "/tmp/falcon-one-source-candidate-v2/source-manifest.json",
+  "source_manifest_sha256": "507d88530ec95fe9b330d2c4f8cb788bfca28fbfb290eba598fc014cfbf5663b",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8",
+  "lock_sha256": "8616e078399dbe80f778f402584dfbc0b95cab8ea3dfb577c61afd328dc33bd3",
+  "rustflags": "-C target-cpu=native",
+  "features": [
+    "falcon-hybrid"
+  ],
+  "profile": "release",
+  "target_arch": "x86_64",
+  "root_count": 1,
+  "protocols": {
+    "native": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6",
+    "shared-prime": "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v5"
+  },
+  "build_command": "RUSTFLAGS='-C target-cpu=native' CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=target/falcon-native cargo build --offline --locked --release --features falcon-hybrid --bench falcon_hybrid --message-format=json-render-diagnostics",
+  "working_tree": true,
+  "working_patch_sha256": "ff883da95c4bf9b80fcee8b476d2d7bd11b219a5c892bee985095e008fb4a2a6"
+}

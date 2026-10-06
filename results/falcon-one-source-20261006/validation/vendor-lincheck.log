@@ -1,0 +1,70 @@
+warning: function `square_n` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:104:8
+    |
+104 | pub fn square_n(a: [u64; 2], k: u32) -> [u64; 2] {
+    |        ^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `wide_words` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:116:15
+    |
+116 | pub(crate) fn wide_words(value: Wide) -> [u64; 4] {
+    |               ^^^^^^^^^^
+
+warning: function `wide_zero` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:137:8
+    |
+137 | pub fn wide_zero() -> Wide {
+    |        ^^^^^^^^^
+
+warning: function `wide_of` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:141:8
+    |
+141 | pub fn wide_of(a: [u64; 2]) -> Wide {
+    |        ^^^^^^^
+
+warning: function `wide_add` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:149:8
+    |
+149 | pub fn wide_add(x: Wide, y: Wide) -> Wide {
+    |        ^^^^^^^^
+
+warning: function `wide_add_low` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:155:8
+    |
+155 | pub fn wide_add_low(x: Wide, a: [u64; 2]) -> Wide {
+    |        ^^^^^^^^^^^^
+
+warning: function `wide_reduce` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:159:8
+    |
+159 | pub fn wide_reduce(w: Wide) -> [u64; 2] {
+    |        ^^^^^^^^^^^
+
+warning: function `wide_from_words` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:321:8
+    |
+321 | pub fn wide_from_words(words: [u64; 4]) -> Wide {
+    |        ^^^^^^^^^^^^^^^
+
+warning: `field` (lib) generated 8 warnings
+   Compiling flock-core v0.1.0 (/tmp/falcon-vendor-workspace/flock-mod/crates/flock-core)
+    Finished `release` profile [optimized] target(s) in 16.03s
+     Running unittests src/lib.rs (/tmp/falcon-vendor-tests/release/deps/flock_core-1141e3f160406a7a)
+
+running 11 tests
+test lincheck::tests::eq_table_matches_direct_formula ... ok
+test lincheck::tests::partial_fold_dispatch_handles_small_k ... ok
+test lincheck::tests::partial_fold_fast_matches_serial ... ok
+test lincheck::tests::partial_fold_is_mle_at_outer_point ... ok
+test lincheck::tests::partial_fold_matches_direct ... ok
+test lincheck::tests::partial_fold_padded_matches_dense ... ok
+test lincheck::tests::partial_fold_x86_tiled_matches_serial ... ok
+test lincheck::tests::prove_verify_roundtrip_honest ... ok
+test lincheck::tests::sparse_row_fold_matches_dense ... ok
+test lincheck::tests::verify_rejects_mutations ... ok
+test lincheck::tests::verify_rejects_shape_errors ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 299 filtered out; finished in 0.01s
+

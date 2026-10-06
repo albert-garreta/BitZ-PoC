@@ -10,8 +10,7 @@ pub(crate) mod grinding;
 
 use flock_core::{
     field::Gf128,
-    lincheck::LincheckProof,
-    pcs::Commitment,
+    lincheck::{LincheckCircuit, LincheckProof},
     proof::ZClaim,
     r1cs::{BlockR1cs, WitnessLayout},
     zerocheck::ZerocheckProof,
@@ -57,8 +56,8 @@ pub(crate) struct PrefixProof {
     pub(crate) grinding_nonces: Vec<u64>,
 }
 
-/// Scratch consumed by zerocheck and lincheck. The caller retains `packed`
-/// separately so its initial commitment is reused by the joint opening.
+/// Scratch consumed by zerocheck and lincheck. The caller retains the local
+/// packed source view for the joint opening.
 pub(crate) struct KeccakAuxiliary {
     a: Vec<Gf128>,
     b: Vec<Gf128>,
@@ -97,6 +96,53 @@ pub(crate) struct PreparedKeccak {
     r1cs: BlockR1cs,
     first_permutation: usize,
     permutations: usize,
+}
+
+/// The block index is [signature | permutation], so the public constant
+/// column is the prefix mask of the signature coordinates. All circuit
+/// coefficients remain those of the real Keccak walker.
+struct ActiveKeccakCircuit {
+    batch_len: usize,
+    capacity: usize,
+}
+
+impl LincheckCircuit for ActiveKeccakCircuit {
+    fn n_cols(&self) -> usize {
+        compact::KeccakLincheckCircuit.n_cols()
+    }
+
+    fn fold_alpha_batched(&self, alpha: Gf128, eq_inner: &[Gf128]) -> Vec<Gf128> {
+        compact::KeccakLincheckCircuit.fold_alpha_batched(alpha, eq_inner)
+    }
+
+    fn const_pin_col(&self) -> Option<usize> {
+        Some(compact::Z_CONST)
+    }
+
+    fn const_pin_value(&self, outer_point: &[Gf128]) -> Gf128 {
+        let signature_vars = self.capacity.ilog2() as usize;
+        assert!(outer_point.len() >= signature_vars);
+        prefix_mask(&outer_point[..signature_vars], self.batch_len)
+    }
+}
+
+/// MLE of `[index < count]`, in O(log capacity) field operations.
+fn prefix_mask(point: &[Gf128], count: usize) -> Gf128 {
+    assert!(count <= 1usize << point.len());
+    if count == 1usize << point.len() {
+        return Gf128::ONE;
+    }
+    let mut equal = Gf128::ONE;
+    let mut less = Gf128::ZERO;
+    for (bit, &r) in point.iter().enumerate().rev() {
+        if count >> bit & 1 == 1 {
+            less += equal * (Gf128::ONE + r);
+            equal *= r;
+        } else {
+            equal *= Gf128::ONE + r;
+        }
+    }
+    less
 }
 
 impl PreparedKeccak {
@@ -236,34 +282,46 @@ impl PreparedKeccak {
         )
     }
 
-    fn bind<T: Transcript>(&self, t: &mut T, security: PrefixSecurity) {
-        t.absorb_slice(b"bitz/falcon1024-ct/hybrid-keccak-prefix/v2");
-        t.absorb_slice(&(self.first_permutation as u64).to_le_bytes());
-        t.absorb_slice(&(self.permutations as u64).to_le_bytes());
-        t.absorb_slice(&(self.batch_len as u64).to_le_bytes());
-        t.absorb_slice(&(self.capacity as u64).to_le_bytes());
-        t.absorb_slice(&security.component_bits.to_le_bytes());
-        t.absorb_slice(&security.grinding_bits.to_le_bytes());
-    }
-
-    fn validate_commitment(&self, commitment: &Commitment) -> Result<(), KeccakError> {
-        if commitment.params.m != self.bit_vars() {
-            return Err(KeccakError::Invalid(
-                "commitment has the wrong witness dimension",
-            ));
+    fn bind<T: Transcript>(
+        &self,
+        t: &mut T,
+        source_root: &[u8; 32],
+        statement_digest: &[u8; 32],
+        security: PrefixSecurity,
+    ) -> [u8; 32] {
+        let mut h = blake3::Hasher::new();
+        h.update(b"bitz/falcon1024-ct/hybrid-keccak-projected-prefix/v3");
+        h.update(source_root);
+        h.update(statement_digest);
+        h.update(b"compact-keccak-24:state0,state24,chi24;batch-major/v1");
+        h.update(b"constant=signature<batch;inactive=all-zero;signature-before-permutation/v1");
+        h.update(&self.r1cs.statement_digest());
+        for n in [
+            self.first_permutation,
+            self.permutations,
+            self.batch_len,
+            self.capacity,
+            self.bit_vars(),
+        ] {
+            h.update(&(n as u64).to_le_bytes());
         }
-        Ok(())
+        h.update(&security.component_bits.to_le_bytes());
+        h.update(&security.grinding_bits.to_le_bytes());
+        let digest = *h.finalize().as_bytes();
+        t.absorb_slice(b"bitz/falcon1024-ct/hybrid-keccak-projected-prefix/v3");
+        t.absorb_slice(&digest);
+        digest
     }
 
     pub(crate) fn prove_prefix<T: Transcript + Send>(
         &self,
         packed: &[Gf128],
         auxiliary: KeccakAuxiliary,
-        commitment: &Commitment,
+        source_root: &[u8; 32],
+        statement_digest: &[u8; 32],
         transcript: &mut T,
         component_bits: u32,
     ) -> Result<(PrefixProof, [BinaryLinearClaim; 2], [Vec<Gf128>; 2]), KeccakError> {
-        self.validate_commitment(commitment)?;
         let n = 1usize << self.packed_vars();
         if packed.len() != n
             || auxiliary.a.len() != n
@@ -275,19 +333,23 @@ impl PreparedKeccak {
             ));
         }
         let security = self.security(component_bits)?;
-        self.bind(transcript, security);
+        let context = self.bind(transcript, source_root, statement_digest, security);
         let mut grinding = ProverBlockGrindingTranscript::<_, PrefixGrinding>::new(
             transcript,
             security.grinding_bits,
         );
-        let prefix = flock_prover::prover::prove_fast_committed_prefix(
+        let circuit = ActiveKeccakCircuit {
+            batch_len: self.batch_len,
+            capacity: self.capacity,
+        };
+        let prefix = flock_prover::prover::prove_fast_source_prefix(
             &self.r1cs,
-            commitment,
+            &context,
             packed,
             auxiliary.a,
             auxiliary.b,
             auxiliary.lincheck,
-            &compact::KeccakLincheckCircuit,
+            &circuit,
             &mut ZincChallenger(&mut grinding),
         );
         if grinding.block_count() != security.challenge_blocks {
@@ -319,11 +381,11 @@ impl PreparedKeccak {
     pub(crate) fn verify_prefix<T: Transcript + Send>(
         &self,
         proof: &PrefixProof,
-        commitment: &Commitment,
+        source_root: &[u8; 32],
+        statement_digest: &[u8; 32],
         transcript: &mut T,
         component_bits: u32,
     ) -> Result<[BinaryLinearClaim; 2], KeccakError> {
-        self.validate_commitment(commitment)?;
         let security = self.security(component_bits)?;
         let expected_nonces = if security.grinding_bits == 0 {
             0
@@ -335,18 +397,22 @@ impl PreparedKeccak {
                 "wrong binary prefix grinding nonce count",
             ));
         }
-        self.bind(transcript, security);
+        let context = self.bind(transcript, source_root, statement_digest, security);
         let mut grinding = VerifierBlockGrindingTranscript::<_, PrefixGrinding>::new(
             transcript,
             security.grinding_bits,
             &proof.grinding_nonces,
         );
-        let result = flock_core::verifier::verify_core(
+        let circuit = ActiveKeccakCircuit {
+            batch_len: self.batch_len,
+            capacity: self.capacity,
+        };
+        let result = flock_core::verifier::verify_source_core(
             &self.r1cs,
             &proof.zerocheck,
             &proof.lincheck,
-            commitment,
-            &compact::KeccakLincheckCircuit,
+            &context,
+            &circuit,
             &mut ZincChallenger(&mut grinding),
         );
         let blocks = grinding.block_count();
@@ -463,16 +529,50 @@ mod tests {
     }
 
     #[test]
+    fn activity_mask_matches_dense_prefix_at_nonboolean_points() {
+        for signature_vars in 0..=7 {
+            let point: Vec<_> = (0..signature_vars)
+                .map(|i| Gf128 {
+                    lo: 31 + i as u64,
+                    hi: 19 * i as u64 + 3,
+                })
+                .collect();
+            let weights = flock_core::lincheck::build_eq_table(&point);
+            for count in 0..=weights.len() {
+                let expected = weights[..count]
+                    .iter()
+                    .copied()
+                    .fold(Gf128::ZERO, |a, b| a + b);
+                assert_eq!(prefix_mask(&point, count), expected);
+                let circuit = ActiveKeccakCircuit {
+                    batch_len: count,
+                    capacity: weights.len(),
+                };
+                let mut outer = point.clone();
+                outer.extend([Gf128 { lo: 71, hi: 9 }, Gf128 { lo: 13, hi: 42 }]);
+                assert_eq!(circuit.const_pin_value(&outer), expected);
+            }
+        }
+    }
+
+    #[test]
     fn fused_chain_matches_reference_witness_in_every_buffer() {
-        for (live, capacity, permutations) in [(1, 2, 4), (3, 4, 16), (7, 8, 4), (9, 16, 16)] {
+        for (live, capacity, permutations) in [
+            (1, 2, 4),
+            (3, 4, 16),
+            (7, 8, 4),
+            (8, 8, 4),
+            (9, 16, 16),
+            (16, 16, 4),
+        ] {
             let initial: Vec<_> = (0..live)
                 .map(|i| initial_state(&[i as u8 + 7; 40], &[i as u8 + 31; 32]))
                 .collect();
             let (z, a, b, stripe, outputs) =
                 compact::generate_chained_witness_batch_major(&initial, capacity, permutations);
             let mut states = vec![[false; compact::STATE_BITS]; capacity * permutations];
-            for signature in 0..capacity {
-                let mut lanes = initial.get(signature).copied().unwrap_or([0; 25]);
+            for signature in 0..live {
+                let mut lanes = initial[signature];
                 for permutation in 0..permutations {
                     states[permutation * capacity + signature] = compact::lanes_to_state(&lanes);
                     for round in 0..24 {
@@ -481,10 +581,26 @@ mod tests {
                     assert_eq!(outputs[signature][permutation], lanes);
                 }
             }
-            let expected = compact::generate_witness_batch_major(
+            let mut expected = compact::generate_witness_batch_major(
                 &states,
                 (capacity * permutations).ilog2() as usize,
             );
+            // Reference generator uses the legacy all-one constant policy;
+            // retain its live computations and replace every inactive block.
+            for signature in live..capacity {
+                assert!(outputs[signature].iter().all(|state| *state == [0; 25]));
+                for permutation in 0..permutations {
+                    let block = permutation * capacity + signature;
+                    for source in [&mut expected.0, &mut expected.1, &mut expected.2] {
+                        for chunk in 0..compact::K / 128 {
+                            source[chunk * capacity * permutations + block] = Gf128::ZERO;
+                        }
+                    }
+                    for local_bit in 0..compact::K {
+                        expected.3[block / 8 * compact::K + local_bit] &= !(1 << (block % 8));
+                    }
+                }
+            }
             assert_eq!(z, expected.0, "source: live={live}");
             assert_eq!(a, expected.1, "A: live={live}");
             assert_eq!(b, expected.2, "B: live={live}");
@@ -653,38 +769,18 @@ mod tests {
                     }
                 }
             }
-            // Padded signatures are valid chains starting at zero in each slab.
-            // In particular K4 has one padding signature when the live batch is one.
+            // Every inactive signature has an all-zero witness, including
+            // the constant wire, intermediate χ outputs, and unused slots.
             for (slab, words) in prepared.iter().zip(&packed) {
                 for signature in batch..slab.capacity() {
-                    let mut state = [0u64; 25];
                     for permutation in
                         slab.first_permutation..slab.first_permutation + slab.permutations
                     {
-                        assert!(bit(
-                            words,
-                            slab.bit_index(signature, permutation, compact::Z_CONST)
-                        ));
-                        for state_bit in 0..compact::STATE_BITS {
-                            assert_eq!(
-                                bit(
-                                    words,
-                                    slab.initial_bit_index(signature, permutation, state_bit)
-                                ),
-                                (state[state_bit / 64] >> (state_bit % 64)) & 1 != 0
-                            );
-                        }
-                        for round in 0..compact::N_ROUNDS {
-                            compact::keccak_round_lanes(&mut state, round);
-                        }
-                        for state_bit in 0..compact::STATE_BITS {
-                            assert_eq!(
-                                bit(
-                                    words,
-                                    slab.output_bit_index(signature, permutation, state_bit)
-                                ),
-                                (state[state_bit / 64] >> (state_bit % 64)) & 1 != 0
-                            );
+                        for local_bit in 0..compact::K {
+                            assert!(!bit(
+                                words,
+                                slab.bit_index(signature, permutation, local_bit)
+                            ));
                         }
                     }
                 }
@@ -702,12 +798,19 @@ mod tests {
             let (commitment, _data) = commit(&packed, &params(prepared.bit_vars()));
             let start = || {
                 let mut t = Blake3Transcript::new();
-                t.absorb_slice(b"caller has already bound both roots and Round 0");
+                t.absorb_slice(b"caller has already bound the source root and geometry");
                 t
             };
             let mut pt = start();
             let (proof, claims, marginals) = prepared
-                .prove_prefix(&packed, auxiliary, &commitment, &mut pt, 108)
+                .prove_prefix(
+                    &packed,
+                    auxiliary,
+                    &commitment.root,
+                    &[0x42; 32],
+                    &mut pt,
+                    108,
+                )
                 .unwrap();
             for (claim, cached) in claims.iter().zip(&marginals) {
                 assert_eq!(evaluate(&packed, claim), claim.value);
@@ -719,7 +822,7 @@ mod tests {
             }
             let mut vt = start();
             let checked = prepared
-                .verify_prefix(&proof, &commitment, &mut vt, 108)
+                .verify_prefix(&proof, &commitment.root, &[0x42; 32], &mut vt, 108)
                 .unwrap();
             assert_eq!(claims, checked);
             assert_eq!(pt.get_challenge::<u128>(), vt.get_challenge::<u128>());
@@ -728,40 +831,45 @@ mod tests {
             tampered.zerocheck.round1_ab[0] += Gf128::ONE;
             assert!(
                 prepared
-                    .verify_prefix(&tampered, &commitment, &mut start(), 108)
+                    .verify_prefix(&tampered, &commitment.root, &[0x42; 32], &mut start(), 108)
                     .is_err()
             );
             let mut tampered = proof.clone();
             tampered.lincheck.rounds[0].0 += Gf128::ONE;
             assert!(
                 prepared
-                    .verify_prefix(&tampered, &commitment, &mut start(), 108)
+                    .verify_prefix(&tampered, &commitment.root, &[0x42; 32], &mut start(), 108)
                     .is_err()
             );
             let mut tampered = proof.clone();
             tampered.lincheck.z_partial[0] += Gf128::ONE;
             assert!(
                 prepared
-                    .verify_prefix(&tampered, &commitment, &mut start(), 108)
+                    .verify_prefix(&tampered, &commitment.root, &[0x42; 32], &mut start(), 108)
                     .is_err()
             );
             let mut tampered = proof.clone();
             tampered.grinding_nonces.push(0);
             assert!(
                 prepared
-                    .verify_prefix(&tampered, &commitment, &mut start(), 108)
+                    .verify_prefix(&tampered, &commitment.root, &[0x42; 32], &mut start(), 108)
                     .is_err()
             );
             let mut wrong_root = commitment.clone();
             wrong_root.root[0] ^= 1;
             assert!(
                 prepared
-                    .verify_prefix(&proof, &wrong_root, &mut start(), 108)
+                    .verify_prefix(&proof, &wrong_root.root, &[0x42; 32], &mut start(), 108)
                     .is_err()
             );
             assert!(
                 prepared
-                    .verify_prefix(&proof, &commitment, &mut start(), 136)
+                    .verify_prefix(&proof, &commitment.root, &[0x42; 32], &mut start(), 136)
+                    .is_err()
+            );
+            assert!(
+                prepared
+                    .verify_prefix(&proof, &commitment.root, &[0x43; 32], &mut start(), 108)
                     .is_err()
             );
         }
@@ -797,7 +905,14 @@ mod tests {
             let (commitment, _data) = commit(&packed, &params(prepared.bit_vars()));
             let mut pt = Blake3Transcript::new();
             let (proof, claims, marginals) = prepared
-                .prove_prefix(&packed, auxiliary, &commitment, &mut pt, 136)
+                .prove_prefix(
+                    &packed,
+                    auxiliary,
+                    &commitment.root,
+                    &[0x42; 32],
+                    &mut pt,
+                    136,
+                )
                 .unwrap();
             assert_eq!(proof.grinding_nonces.len(), prepared.bit_vars() + 8);
             for (claim, cached) in claims.iter().zip(&marginals) {
@@ -810,7 +925,7 @@ mod tests {
             let mut vt = Blake3Transcript::new();
             assert_eq!(
                 prepared
-                    .verify_prefix(&proof, &commitment, &mut vt, 136)
+                    .verify_prefix(&proof, &commitment.root, &[0x42; 32], &mut vt, 136)
                     .unwrap(),
                 claims
             );
@@ -827,21 +942,39 @@ mod tests {
             *nonce -= 1;
             assert!(
                 prepared
-                    .verify_prefix(&tampered, &commitment, &mut Blake3Transcript::new(), 136)
+                    .verify_prefix(
+                        &tampered,
+                        &commitment.root,
+                        &[0x42; 32],
+                        &mut Blake3Transcript::new(),
+                        136
+                    )
                     .is_err()
             );
             let mut missing = proof.clone();
             missing.grinding_nonces.pop();
             assert!(
                 prepared
-                    .verify_prefix(&missing, &commitment, &mut Blake3Transcript::new(), 136)
+                    .verify_prefix(
+                        &missing,
+                        &commitment.root,
+                        &[0x42; 32],
+                        &mut Blake3Transcript::new(),
+                        136
+                    )
                     .is_err()
             );
             let mut extra = proof.clone();
             extra.grinding_nonces.push(0);
             assert!(
                 prepared
-                    .verify_prefix(&extra, &commitment, &mut Blake3Transcript::new(), 136)
+                    .verify_prefix(
+                        &extra,
+                        &commitment.root,
+                        &[0x42; 32],
+                        &mut Blake3Transcript::new(),
+                        136
+                    )
                     .is_err()
             );
         }
@@ -865,16 +998,53 @@ mod tests {
                 .prove_prefix(
                     &packed,
                     auxiliary,
-                    &commitment,
+                    &commitment.root,
+                    &[0x42; 32],
                     &mut Blake3Transcript::new(),
                     108,
                 )
                 .unwrap();
             assert!(
                 prepared
-                    .verify_prefix(&proof, &commitment, &mut Blake3Transcript::new(), 108)
+                    .verify_prefix(
+                        &proof,
+                        &commitment.root,
+                        &[0x42; 32],
+                        &mut Blake3Transcript::new(),
+                        108
+                    )
                     .is_err()
             );
         }
+    }
+
+    #[test]
+    fn valid_dummy_keccak_in_inactive_slot_is_rejected_by_activity_pin() {
+        let prepared = PreparedKeccak::new_slab(1, 16, 4).unwrap();
+        assert_eq!(prepared.capacity(), 2);
+        // Every block is a valid Keccak permutation with constant one; the
+        // blocks assigned to signature 1 violate the public activity policy.
+        let states = vec![[false; compact::STATE_BITS]; prepared.capacity() * 4];
+        let (packed, a, b, lincheck) = compact::generate_witness_batch_major(
+            &states,
+            (prepared.capacity() * 4).ilog2() as usize,
+        );
+        let root = [0x81; 32];
+        let context = [0x82; 32];
+        let (proof, _, _) = prepared
+            .prove_prefix(
+                &packed,
+                KeccakAuxiliary { a, b, lincheck },
+                &root,
+                &context,
+                &mut Blake3Transcript::new(),
+                108,
+            )
+            .unwrap();
+        assert!(
+            prepared
+                .verify_prefix(&proof, &root, &context, &mut Blake3Transcript::new(), 108,)
+                .is_err()
+        );
     }
 }

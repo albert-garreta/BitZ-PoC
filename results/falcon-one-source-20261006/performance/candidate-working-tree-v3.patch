@@ -1,0 +1,4079 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index c5497c66..7eea20a8 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -262,6 +262,10 @@ required-features = ["binius64-bench"]
+ name = "grind_probe"
+ required-features = ["parallel", "span-metrics"]
+ 
++[[example]]
++name = "falcon_size_breakdown"
++required-features = ["falcon-hybrid"]
++
+ [[example]]
+ name = "hybrid_probe"
+ required-features = ["span-metrics", "hybrid"]
+diff --git a/benches/common/falcon_inputs.rs b/benches/common/falcon_inputs.rs
+index a18d0df4..e9b96b75 100644
+--- a/benches/common/falcon_inputs.rs
++++ b/benches/common/falcon_inputs.rs
+@@ -13,9 +13,10 @@ use rand_chacha::{
+     ChaCha20Rng,
+     rand_core::{RngCore, SeedableRng},
+ };
+-use std::error::Error;
++use serde::{Deserialize, Serialize};
++use std::{error::Error, fs, io::Write, path::Path};
+ 
+-#[derive(Clone, Debug, PartialEq, Eq)]
++#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+ pub struct FalconCase {
+     pub public_key: Vec<u8>,
+     pub message: Vec<u8>,
+@@ -69,6 +70,128 @@ pub fn reject_fixture_overrides() -> Result<(), Box<dyn Error>> {
+ /// Generate distinct keys and 32-byte messages, verify upstream immediately,
+ /// convert the signature, and preflight the native BitZ verifier.
+ pub fn generate_cases(count: usize, seed: u64) -> Result<Vec<FalconCase>, Box<dyn Error>> {
++    if let Some(directory) = std::env::var_os("BITZ_FALCON_CASE_CACHE") {
++        return cached_cases(Path::new(&directory), count, seed);
++    }
++    generate_cases_uncached(count, seed)
++}
++
++const CASE_CACHE_FORMAT: &str = "bitz/falcon-cases/v1;fn-dsa=0.3.0;original-falcon-1024";
++
++#[derive(Serialize, Deserialize)]
++struct CaseCache {
++    format: String,
++    count: usize,
++    seed: u64,
++    input_digest: [u8; 32],
++    cases: Vec<FalconCase>,
++}
++
++fn input_digest(cases: &[FalconCase]) -> [u8; 32] {
++    let mut hash = blake3::Hasher::new();
++    for case in cases {
++        case.hash_into(&mut hash);
++    }
++    *hash.finalize().as_bytes()
++}
++
++fn encode_cache(
++    count: usize,
++    seed: u64,
++    cases: Vec<FalconCase>,
++) -> Result<Vec<u8>, Box<dyn Error>> {
++    let mut bytes = bincode::serialize(&CaseCache {
++        format: CASE_CACHE_FORMAT.into(),
++        count,
++        seed,
++        input_digest: input_digest(&cases),
++        cases,
++    })?;
++    let checksum = *blake3::hash(&bytes).as_bytes();
++    bytes.extend_from_slice(&checksum);
++    Ok(bytes)
++}
++
++fn decode_cache(bytes: &[u8], count: usize, seed: u64) -> Result<Vec<FalconCase>, Box<dyn Error>> {
++    use bincode::Options;
++
++    let payload_len = bytes
++        .len()
++        .checked_sub(32)
++        .ok_or("truncated Falcon input cache")?;
++    if blake3::hash(&bytes[..payload_len]).as_bytes() != &bytes[payload_len..] {
++        return Err("Falcon input cache checksum mismatch".into());
++    }
++    let cache: CaseCache = bincode::DefaultOptions::new()
++        .with_fixint_encoding()
++        .with_limit(payload_len as u64)
++        .reject_trailing_bytes()
++        .deserialize(&bytes[..payload_len])?;
++    if cache.format != CASE_CACHE_FORMAT
++        || cache.count != count
++        || cache.seed != seed
++        || cache.cases.len() != count
++        || cache.input_digest != input_digest(&cache.cases)
++    {
++        return Err("Falcon input cache metadata/digest mismatch".into());
++    }
++    for (index, case) in cache.cases.iter().enumerate() {
++        if case.public_key.len() != vrfy_key_size(FN_DSA_LOGN_1024)
++            || case.message.len() != 32
++            || case.message[..8] != (index as u64).to_le_bytes()
++        {
++            return Err("Falcon input cache case shape mismatch".into());
++        }
++        case.verify_upstream()?;
++        if compressed_to_ct(&case.upstream_signature)? != case.signature {
++            return Err("Falcon input cache CT signature mismatch".into());
++        }
++        verify_falcon1024_ct(&case.public_key, &case.message, &case.signature)?;
++    }
++    Ok(cache.cases)
++}
++
++/// Cache only deterministic public cases, with the same upstream/native
++/// preflight checks as generation. Cache I/O is outside all proof timings.
++fn cached_cases(
++    directory: &Path,
++    count: usize,
++    seed: u64,
++) -> Result<Vec<FalconCase>, Box<dyn Error>> {
++    fs::create_dir_all(directory)?;
++    let path = directory.join(format!("fn-dsa-0.3.0-b{count}-seed{seed}.bin"));
++    if path.exists() {
++        return decode_cache(&fs::read(path)?, count, seed);
++    }
++    let cases = generate_cases_uncached(count, seed)?;
++    let bytes = encode_cache(count, seed, cases.clone())?;
++    let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
++    let mut file = fs::OpenOptions::new()
++        .write(true)
++        .create_new(true)
++        .open(&temporary)?;
++    file.write_all(&bytes)?;
++    file.sync_all()?;
++    drop(file);
++    // A concurrent generator may publish the same deterministic fixture. Never
++    // overwrite an existing cache; validate the winner before returning it.
++    match fs::hard_link(&temporary, &path) {
++        Ok(()) => {
++            fs::remove_file(temporary)?;
++            Ok(cases)
++        }
++        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
++            fs::remove_file(temporary)?;
++            decode_cache(&fs::read(path)?, count, seed)
++        }
++        Err(error) => {
++            let _ = fs::remove_file(temporary);
++            Err(error.into())
++        }
++    }
++}
++
++fn generate_cases_uncached(count: usize, seed: u64) -> Result<Vec<FalconCase>, Box<dyn Error>> {
+     let mut rng = ChaCha20Rng::seed_from_u64(seed);
+     let mut keygen = KeyPairGenerator1024::default();
+     let mut cases = Vec::with_capacity(count);
+@@ -103,6 +226,26 @@ pub fn generate_cases(count: usize, seed: u64) -> Result<Vec<FalconCase>, Box<dy
+     Ok(cases)
+ }
+ 
++#[cfg(test)]
++mod cache_tests {
++    #[test]
++    fn cached_cases_preserve_generated_cases_and_reject_tampering() {
++        let cases = super::generate_cases_uncached(2, 42).unwrap();
++        let bytes = super::encode_cache(2, 42, cases.clone()).unwrap();
++        assert_eq!(super::decode_cache(&bytes, 2, 42).unwrap(), cases);
++        assert!(super::decode_cache(&bytes, 1, 42).is_err());
++        assert!(super::decode_cache(&bytes, 2, 43).is_err());
++        let mut corrupted = bytes.clone();
++        corrupted[100] ^= 1;
++        assert!(super::decode_cache(&corrupted, 2, 42).is_err());
++        let mut invalid = cases;
++        invalid[0].signature[20] ^= 1;
++        // A recomputed cache checksum cannot hide a mismatch between the
++        // upstream signature and its claimed CT encoding.
++        assert!(super::decode_cache(&super::encode_cache(2, 42, invalid).unwrap(), 2, 42).is_err());
++    }
++}
++
+ /// Preserve the 40-byte nonce and all 1024 signed coefficients, changing only
+ /// their serialization from upstream's compressed form to Falcon's CT format.
+ pub fn compressed_to_ct(signature: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
+diff --git a/benches/falcon_hybrid.rs b/benches/falcon_hybrid.rs
+index 1e895522..fd3bc6ec 100644
+--- a/benches/falcon_hybrid.rs
++++ b/benches/falcon_hybrid.rs
+@@ -3,7 +3,7 @@
+ //! Example: `RAYON_NUM_THREADS=16 BITZ_BENCH_LAMBDA=128 cargo bench
+ //! --features falcon-hybrid --bench falcon_hybrid -- --batch 32 --iterations 2`.
+ //! Security must be selected explicitly. Each trial commits a fresh batch and
+-//! verifies the resulting full proof against all roots. fn-dsa 0.3.0
++//! verifies the resulting full proof against its joint source root. fn-dsa 0.3.0
+ //! generates distinct original Falcon-1024 keypairs/messages/signatures once,
+ //! outside prover timing, and the same batch is reused across trials.
+ #[path = "common/falcon_inputs.rs"]
+@@ -52,7 +52,7 @@ impl Options {
+             if flag == "--protocol" {
+                 protocol = match args.next().ok_or("missing protocol")?.as_str() {
+                     "native" => FalconProtocol::NativeCarry,
+-                    "shared-prime" => FalconProtocol::SharedPrimeV4,
++                    "shared-prime" => FalconProtocol::SharedPrime,
+                     _ => return Err("protocol must be native or shared-prime".into()),
+                 };
+                 continue;
+@@ -154,13 +154,13 @@ fn main() -> Result<(), Box<dyn Error>> {
+     let start = Instant::now();
+     let prepared = match options.protocol {
+         FalconProtocol::NativeCarry => PreparedFalconHybrid::new(options.batch, options.security)?,
+-        FalconProtocol::SharedPrimeV4 => {
++        FalconProtocol::SharedPrime => {
+             PreparedFalconHybrid::new_shared_prime(options.batch, options.security)?
+         }
+     };
+     let protocol = match prepared.protocol() {
+-        FalconProtocol::NativeCarry => "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v5",
+-        FalconProtocol::SharedPrimeV4 => "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v4",
++        FalconProtocol::NativeCarry => "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6",
++        FalconProtocol::SharedPrime => "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v5",
+     };
+     let prepare_ms = ms(start);
+     let security = prepared.security();
+@@ -290,7 +290,7 @@ fn main() -> Result<(), Box<dyn Error>> {
+                 "total_prover_ms": witness_commit_ms + prove_ms,
+                 "end_to_end_ms": witness_commit_ms + prove_ms + verify_ms,
+                 "process_peak_rss_kib": process_peak_rss_kib(),
+-                "roots": statement.roots.map(|root| root.iter().map(|byte| format!("{byte:02x}")).collect::<String>()),
++                "source_root": statement.source_root.iter().map(|byte| format!("{byte:02x}")).collect::<String>(),
+                 "input_digest": input_digest,
+                 "proof_debug_digest": proof_debug_digest,
+                 "grinding_diagnostics": {
+diff --git a/scripts/run_falcon_campaign.py b/scripts/run_falcon_campaign.py
+index 6fd8e026..6464eb76 100644
+--- a/scripts/run_falcon_campaign.py
++++ b/scripts/run_falcon_campaign.py
+@@ -40,8 +40,8 @@ THREADS = [1, 16]
+ SECURITY = [100, 128]
+ RUSTFLAGS = "-C target-cpu=native"
+ PROTOCOLS = {
+-    "native": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v5",
+-    "shared-prime": "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v4",
++    "native": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6",
++    "shared-prime": "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v5",
+ }
+ 
+ 
+diff --git a/src/hybrid/opening.rs b/src/hybrid/opening.rs
+index b14e7204..2fb93fd5 100644
+--- a/src/hybrid/opening.rs
++++ b/src/hybrid/opening.rs
+@@ -47,7 +47,7 @@ use rayon::prelude::*;
+ /// committed codewords.
+ pub(crate) const LOG_INV_RATE: usize = 1;
+ 
+-#[derive(Clone, Debug)]
++#[derive(Clone, Debug, Eq, PartialEq)]
+ pub(crate) struct Geometry<const N: usize = 2> {
+     pub logs: [usize; N],
+     pub physical_logs: [usize; N],
+@@ -72,7 +72,7 @@ impl<const N: usize> Geometry<N> {
+             offsets[1] = 8;
+         } else {
+             // Largest first keeps every power-of-two slice aligned. Falcon's
+-            // A/K16/K4 branches occupy 2+8+2 of the 16 authenticated lanes.
++            // A/K16/K4 widths depend on the prepared circuit capacities.
+             let mut order: Vec<_> = (0..N).collect();
+             order.sort_by_key(|&i| std::cmp::Reverse(lane_logs[i]));
+             let mut next = 0;
+@@ -420,6 +420,234 @@ mod geometry_tests {
+     use super::*;
+     use crate::hybrid::sumcheck::eq_table;
+ 
++    fn sources<const N: usize>(geometry: &Geometry<N>) -> [Vec<F>; N] {
++        std::array::from_fn(|branch| {
++            (0..1 << geometry.physical_logs[branch])
++                .map(|i| {
++                    if i < 1 << geometry.logs[branch] {
++                        F {
++                            lo: (i as u64 + 1).wrapping_mul(0x9e3779b97f4a7c15),
++                            hi: (i as u64 + branch as u64 + 7).wrapping_mul(0x85ebca6b27d4eb2f),
++                        }
++                    } else {
++                        F::ZERO
++                    }
++                })
++                .collect()
++        })
++    }
++
++    fn bit_evaluation(words: &[F], point: &[F]) -> F {
++        let weights: [F; 128] = eq_table(&point[..7]).try_into().unwrap();
++        let low = super::super::sumcheck::byte_table(&weights);
++        words
++            .iter()
++            .zip(eq_table(&point[7..]))
++            .fold(F::ZERO, |sum, (&word, weight)| {
++                sum + super::super::sumcheck::apply(&low, word) * weight
++            })
++    }
++
++    #[test]
++    fn joint_source_encoding_and_paths_match_dense_reference() {
++        use flock_core::pcs::commit::commit;
++
++        // Cover Falcon's ordinary and batch-one widths, plus physical padding.
++        for logs in [[9, 12, 10], [10, 13, 12], [9, 13, 10]] {
++            let geometry = Geometry::new(logs).unwrap();
++            let sources = sources(&geometry);
++            let borrowed = sources.each_ref().map(Vec::as_slice);
++            let packed = geometry.virtual_packed(borrowed);
++            for rate in [1, 2, 3] {
++                let (root, data) = commit_sources(&geometry, borrowed, rate).unwrap();
++                let params = PcsParams {
++                    m: geometry.bit_log(),
++                    log_inv_rate: rate,
++                    log_batch_size: geometry.virtual_lane_log,
++                    profile: ligerito::LigeritoProfile::Secure,
++                    merkle_hash: merkle::HashKind::Blake3,
++                };
++                let (dense, reference) = commit(&packed, &params);
++                assert_eq!(root, dense.root, "logs={logs:?}, rate={rate}");
++                assert_eq!(data.merkle_tree, reference.merkle_tree);
++                let positions = params.n_positions();
++                let queries = [0, 1, positions / 2, positions - 1];
++                let opening = data.open(positions, geometry.lanes(), &queries);
++                for (&q, row) in queries.iter().zip(&opening.opened_rows) {
++                    assert_eq!(row, &reference.codeword[q * 16..(q + 1) * 16]);
++                }
++                assert!(authenticate_joint(
++                    &geometry,
++                    &root,
++                    positions,
++                    16,
++                    &queries,
++                    &opening,
++                    params.merkle_hash
++                ));
++                assert_eq!(
++                    opening.merkle_proof,
++                    merkle::merkle_multi_proof(&reference.merkle_tree, positions, &queries)
++                );
++            }
++        }
++    }
++
++    #[test]
++    fn joint_projection_matches_binary_mle_at_non_boolean_points() {
++        for logs in [[9, 12, 10], [10, 13, 12], [9, 13, 10]] {
++            let geometry = Geometry::new(logs).unwrap();
++            let sources = sources(&geometry);
++            let packed = geometry.virtual_packed(sources.each_ref().map(Vec::as_slice));
++            let point: Vec<_> = (0..geometry.bit_log())
++                .map(|i| F {
++                    lo: i as u64 + 37,
++                    hi: 23,
++                })
++                .collect();
++            let projected = (0..3).fold(F::ZERO, |sum, branch| {
++                let (local, scale) = geometry.project_point(branch, &point);
++                sum + scale * bit_evaluation(&sources[branch][..1 << logs[branch]], &local)
++            });
++            assert_eq!(bit_evaluation(&packed, &point), projected);
++        }
++    }
++
++    #[test]
++    fn joint_source_authentication_rejects_rows_paths_and_padding_tampering() {
++        let geometry = Geometry::new([9, 12, 10]).unwrap();
++        let sources = sources(&geometry);
++        let (root, data) =
++            commit_sources(&geometry, sources.each_ref().map(Vec::as_slice), 1).unwrap();
++        let positions = 1 << (geometry.position_log + 1);
++        let queries = [0, 1, 17, positions - 1];
++        let opening = data.open(positions, 16, &queries);
++        let valid = |proof: &RecursiveProof| {
++            authenticate_joint(
++                &geometry,
++                &root,
++                positions,
++                16,
++                &queries,
++                proof,
++                merkle::HashKind::Blake3,
++            )
++        };
++        assert!(valid(&opening));
++        for lane in [
++            geometry.offset(0),
++            geometry.offset(1),
++            geometry.offset(2),
++            15,
++        ] {
++            let mut wrong = opening.clone();
++            wrong.opened_rows[0][lane] += F::ONE;
++            assert!(!valid(&wrong));
++        }
++        let mut wrong = opening.clone();
++        wrong.merkle_proof[0][0] ^= 1;
++        assert!(!valid(&wrong));
++        let mut wrong = opening.clone();
++        wrong.merkle_proof.pop();
++        assert!(!valid(&wrong));
++        let mut wrong = opening.clone();
++        wrong.merkle_proof.push([0; 32]);
++        assert!(!valid(&wrong));
++        let mut wrong = opening.clone();
++        wrong.opened_rows.pop();
++        assert!(!valid(&wrong));
++        let mut wrong = opening.clone();
++        wrong.opened_rows[0].pop();
++        assert!(!valid(&wrong));
++        let mut wrong_root = root;
++        wrong_root[0] ^= 1;
++        assert!(!authenticate_joint(
++            &geometry,
++            &wrong_root,
++            positions,
++            16,
++            &queries,
++            &opening,
++            merkle::HashKind::Blake3
++        ));
++    }
++
++    #[test]
++    fn joint_opening_binds_root_and_rejects_nonzero_physical_padding() {
++        use crate::{ligerito_flock::LigeritoSelection, transcript::Blake3Transcript};
++
++        for bad_padding in [false, true] {
++            let geometry = Geometry::new([9, 13, 10]).unwrap();
++            let mut sources = sources(&geometry);
++            if bad_padding {
++                sources[0][1 << geometry.logs[0]] = F::ONE;
++            }
++            let borrowed = sources.each_ref().map(Vec::as_slice);
++            let resolved = LigeritoSelection::MATCHED_UDR
++                .resolve(geometry.packed_log(), 100)
++                .unwrap();
++            let (root, data) =
++                commit_sources(&geometry, borrowed, resolved.prover().log_inv_rates[0]).unwrap();
++            let statement = *blake3::hash(&root).as_bytes();
++            let point: Vec<_> = (0..geometry.bit_log())
++                .map(|i| F {
++                    lo: i as u64 + 37,
++                    hi: 23,
++                })
++                .collect();
++            let value = bit_evaluation(&geometry.virtual_packed(borrowed), &point);
++            let start = || {
++                let mut t = Blake3Transcript::new();
++                t.absorb_slice(&statement);
++                t
++            };
++            let proof = prove_joint_sources_with_security(
++                &mut start(),
++                &geometry,
++                &statement,
++                borrowed,
++                None,
++                &resolved,
++                &data,
++                &point,
++                None,
++            )
++            .unwrap();
++            let result = verify_joint_with_security(
++                &mut start(),
++                &geometry,
++                &statement,
++                &root,
++                &point,
++                value,
++                None,
++                &resolved,
++                &proof,
++                None,
++            );
++            assert_eq!(result.is_ok(), !bad_padding);
++            if !bad_padding {
++                let mut wrong = proof.clone();
++                wrong.ligerito.initial_root[0] ^= 1;
++                assert!(
++                    verify_joint_with_security(
++                        &mut start(),
++                        &geometry,
++                        &statement,
++                        &root,
++                        &point,
++                        value,
++                        None,
++                        &resolved,
++                        &wrong,
++                        None,
++                    )
++                    .is_err()
++                );
++            }
++        }
++    }
++
+     #[test]
+     fn three_root_padding_basis_matches_logical_support_exactly() {
+         for logs in [[9, 11, 9], [9, 11, 10], [9, 13, 10]] {
+@@ -709,6 +937,252 @@ pub(crate) struct Proof<const N: usize = 2> {
+     pub paths: [Vec<Hash>; N],
+ }
+ 
++/// A shared opening with one initial Merkle multiproof, stored in Ligerito's
++/// initial proof. The logical source count is independent of this proof shape.
++#[derive(Clone, Debug)]
++pub(crate) struct JointProof {
++    pub ood: Option<OodRound>,
++    pub ring: RingSwitchProof,
++    pub ligerito: LigeritoProof,
++}
++
++pub(crate) struct JointProverData<const N: usize> {
++    geometry: Geometry<N>,
++    log_inv_rate: usize,
++    codewords: [Vec<F>; N],
++    merkle_tree: Vec<Hash>,
++}
++
++impl<const N: usize> Drop for JointProverData<N> {
++    fn drop(&mut self) {
++        for words in &mut self.codewords {
++            flock_core::scratch::give_f128(std::mem::take(words));
++        }
++    }
++}
++
++fn validate_geometry<const N: usize>(geometry: &Geometry<N>) -> Result<(), Error> {
++    if *geometry != Geometry::new(geometry.logs)? {
++        return Err(Error::Invalid("joint source geometry"));
++    }
++    Ok(())
++}
++
++/// RS-encode populated lanes and build one tree over full canonical virtual
++/// rows. Zero lanes are synthesized in bounded leaf-hashing buffers.
++pub(crate) fn commit_sources<const N: usize>(
++    geometry: &Geometry<N>,
++    sources: [&[F]; N],
++    log_inv_rate: usize,
++) -> Result<(Hash, JointProverData<N>), Error> {
++    validate_geometry(geometry)?;
++    if log_inv_rate == 0
++        || geometry
++            .packed_log()
++            .checked_add(log_inv_rate)
++            .is_none_or(|log| log >= usize::BITS as usize)
++        || (0..N).any(|branch| sources[branch].len() != 1 << geometry.physical_logs[branch])
++    {
++        return Err(Error::Invalid("joint source encoding shape"));
++    }
++    let timing = std::env::var_os("FLOCK_COMMIT_TIMING").is_some();
++    let encode_started = std::time::Instant::now();
++    let encode_span = tracing::info_span!("shared_source:encode").entered();
++    let codewords = std::array::from_fn(|branch| {
++        flock_core::pcs::commit::encode(sources[branch], &geometry.params(branch, log_inv_rate))
++    });
++    drop(encode_span);
++    if timing {
++        eprintln!(
++            "[joint-commit-timing] encoding: {:.2} ms",
++            encode_started.elapsed().as_secs_f64() * 1e3
++        );
++    }
++    let positions = 1 << (geometry.position_log + log_inv_rate);
++    let merkle_started = std::time::Instant::now();
++    let merkle_span = tracing::info_span!("shared_source:merkle").entered();
++    let merkle_tree = merkle::merkle_tree_from_rows(
++        positions,
++        geometry.lanes() * 16,
++        merkle::HashKind::Blake3,
++        |first, bytes| {
++            bytes.fill(0);
++            for (row_index, row) in bytes.chunks_exact_mut(geometry.lanes() * 16).enumerate() {
++                for branch in 0..N {
++                    let width = 1 << geometry.lane_logs[branch];
++                    let first_word = (first + row_index) * width;
++                    for (lane, word) in codewords[branch][first_word..first_word + width]
++                        .iter()
++                        .enumerate()
++                    {
++                        let offset = (geometry.offset(branch) + lane) * 16;
++                        row[offset..offset + 8].copy_from_slice(&word.lo.to_le_bytes());
++                        row[offset + 8..offset + 16].copy_from_slice(&word.hi.to_le_bytes());
++                    }
++                }
++            }
++        },
++    );
++    drop(merkle_span);
++    if timing {
++        eprintln!(
++            "[joint-commit-timing] merkle: {:.2} ms",
++            merkle_started.elapsed().as_secs_f64() * 1e3
++        );
++    }
++    let root = *merkle_tree.last().expect("nonempty joint source tree");
++    Ok((
++        root,
++        JointProverData {
++            geometry: geometry.clone(),
++            log_inv_rate,
++            codewords,
++            merkle_tree,
++        },
++    ))
++}
++
++impl<const N: usize> JointProverData<N> {
++    fn open(&self, positions: usize, lanes: usize, queries: &[usize]) -> RecursiveProof {
++        assert_eq!(
++            positions,
++            1 << (self.geometry.position_log + self.log_inv_rate)
++        );
++        assert_eq!(lanes, self.geometry.lanes());
++        let mut rows = vec![vec![F::ZERO; lanes]; queries.len()];
++        for branch in 0..N {
++            let width = 1 << self.geometry.lane_logs[branch];
++            let start = self.geometry.offset(branch);
++            for (row, &q) in rows.iter_mut().zip(queries) {
++                row[start..start + width]
++                    .copy_from_slice(&self.codewords[branch][q * width..(q + 1) * width]);
++            }
++        }
++        RecursiveProof {
++            opened_rows: rows,
++            merkle_proof: merkle::merkle_multi_proof(&self.merkle_tree, positions, queries),
++        }
++    }
++}
++
++#[allow(clippy::too_many_arguments)]
++pub(crate) fn prove_joint_sources_with_security<const N: usize>(
++    t: &mut (impl Transcript + Send),
++    geometry: &Geometry<N>,
++    statement: &Hash,
++    sources: [&[F]; N],
++    ood: Option<&OodProverClaim>,
++    resolved: &crate::ligerito_flock::ResolvedLigerito,
++    data: &JointProverData<N>,
++    point: &[Gf],
++    security: Option<&mut grinding::GrindingContext<'_>>,
++) -> Result<JointProof, Error> {
++    if *geometry != data.geometry
++        || data.log_inv_rate != resolved.prover().log_inv_rates[0]
++        || point.len() != geometry.bit_log()
++        || (0..N).any(|branch| sources[branch].len() != 1 << geometry.physical_logs[branch])
++    {
++        return Err(Error::Invalid("joint source opening shape"));
++    }
++    prove_sources_initial_with_security(
++        t,
++        geometry,
++        statement,
++        sources,
++        ood,
++        resolved,
++        |positions, lanes, queries| data.open(positions, lanes, queries),
++        point,
++        security,
++    )
++}
++
++fn authenticate_joint<const N: usize>(
++    geometry: &Geometry<N>,
++    root: &Hash,
++    positions: usize,
++    lanes: usize,
++    queries: &[usize],
++    opening: &RecursiveProof,
++    hash: merkle::HashKind,
++) -> bool {
++    if lanes != geometry.lanes() || opening.opened_rows.len() != queries.len() {
++        return false;
++    }
++    let mut occupied = vec![false; lanes];
++    for branch in 0..N {
++        let start = geometry.offset(branch);
++        occupied[start..start + (1 << geometry.lane_logs[branch])].fill(true);
++    }
++    let mut bytes = vec![0u8; lanes * 16];
++    let mut hashes = Vec::with_capacity(queries.len());
++    for row in &opening.opened_rows {
++        if row.len() != lanes {
++            return false;
++        }
++        for (lane, word) in row.iter().enumerate() {
++            if !occupied[lane] && *word != F::ZERO {
++                return false;
++            }
++            bytes[lane * 16..lane * 16 + 8].copy_from_slice(&word.lo.to_le_bytes());
++            bytes[lane * 16 + 8..(lane + 1) * 16].copy_from_slice(&word.hi.to_le_bytes());
++        }
++        hashes.push(merkle::hash_leaf(&bytes, hash));
++    }
++    merkle::verify_merkle_multi_proof(
++        root,
++        positions,
++        queries,
++        &hashes,
++        &opening.merkle_proof,
++        hash,
++    )
++}
++
++#[allow(clippy::too_many_arguments)]
++pub(crate) fn verify_joint_with_security<const N: usize>(
++    t: &mut (impl Transcript + Send),
++    geometry: &Geometry<N>,
++    statement: &Hash,
++    root: &Hash,
++    point: &[Gf],
++    value: F,
++    ood: Option<&OodVerifierClaim>,
++    resolved: &crate::ligerito_flock::ResolvedLigerito,
++    proof: &JointProof,
++    security: Option<&mut grinding::GrindingContext<'_>>,
++) -> Result<(), Error> {
++    validate_geometry(geometry)?;
++    if point.len() != geometry.bit_log() {
++        return Err(Error::Invalid("joint source opening point"));
++    }
++    let vc = resolved.verifier();
++    verify_initial_with_security(
++        t,
++        geometry,
++        statement,
++        point,
++        value,
++        ood,
++        resolved,
++        &proof.ring,
++        &proof.ligerito,
++        |positions, lanes, queries, opening| {
++            positions == 1 << (geometry.position_log + vc.log_inv_rates[0])
++                && authenticate_joint(
++                    geometry,
++                    root,
++                    positions,
++                    lanes,
++                    queries,
++                    opening,
++                    vc.merkle_hash,
++                )
++        },
++        security,
++    )
++}
++
+ /// Round 0 on the prover side, on the virtual packed witness `packed`.
+ /// Must run right after the statement, before any other challenge.
+ pub(crate) fn prove_ood(
+@@ -844,6 +1318,7 @@ pub(crate) fn prove_with_security<const N: usize>(
+ 
+ /// Branch-aware shared opener: preserve the dense prover's messages while
+ /// avoiding its full virtual witness/equality allocation during ring switch.
++#[cfg(test)]
+ #[allow(clippy::too_many_arguments)]
+ pub(crate) fn prove_sources_with_security<const N: usize>(
+     t: &mut (impl Transcript + Send),
+@@ -856,6 +1331,38 @@ pub(crate) fn prove_sources_with_security<const N: usize>(
+     point: &[Gf],
+     security: Option<&mut grinding::GrindingContext<'_>>,
+ ) -> Result<Proof<N>, Error> {
++    let mut paths = std::array::from_fn(|_| Vec::new());
++    let proof = prove_sources_initial_with_security(
++        t,
++        geometry,
++        statement,
++        sources,
++        ood,
++        resolved,
++        separate_initial(geometry, data, &mut paths),
++        point,
++        security,
++    )?;
++    Ok(Proof {
++        ood: proof.ood,
++        ring: proof.ring,
++        ligerito: proof.ligerito,
++        paths,
++    })
++}
++
++#[allow(clippy::too_many_arguments)]
++fn prove_sources_initial_with_security<const N: usize>(
++    t: &mut (impl Transcript + Send),
++    geometry: &Geometry<N>,
++    statement: &Hash,
++    sources: [&[F]; N],
++    ood: Option<&OodProverClaim>,
++    resolved: &crate::ligerito_flock::ResolvedLigerito,
++    open_initial: impl FnOnce(usize, usize, &[usize]) -> RecursiveProof,
++    point: &[Gf],
++    security: Option<&mut grinding::GrindingContext<'_>>,
++) -> Result<JointProof, Error> {
+     let ring_scope = tracing::info_span!("op:ring_switch").entered();
+     let marginal = geometry.ring_marginal(sources, &point[7..]);
+     let (ring, eq_r2, mut target) = ring_switch_prove_marginal(t, marginal);
+@@ -893,8 +1400,16 @@ pub(crate) fn prove_sources_with_security<const N: usize>(
+         }
+     };
+     drop(basis_scope);
+-    continue_prove(
+-        t, geometry, statement, initial, target, ring, ood, resolved, data, security,
++    continue_prove_with_initial(
++        t,
++        statement,
++        initial,
++        target,
++        ring,
++        ood,
++        resolved,
++        open_initial,
++        security,
+     )
+ }
+ 
+@@ -920,28 +1435,66 @@ fn continue_prove<const N: usize>(
+     data: [&ProverData; N],
+     security: Option<&mut grinding::GrindingContext<'_>>,
+ ) -> Result<Proof<N>, Error> {
++    let mut paths = std::array::from_fn(|_| Vec::new());
++    let proof = continue_prove_with_initial(
++        t,
++        statement,
++        initial,
++        target,
++        ring,
++        ood,
++        resolved,
++        separate_initial(geometry, data, &mut paths),
++        security,
++    )?;
++    Ok(Proof {
++        ood: proof.ood,
++        ring: proof.ring,
++        ligerito: proof.ligerito,
++        paths,
++    })
++}
++
++fn separate_initial<'a, const N: usize>(
++    geometry: &'a Geometry<N>,
++    data: [&'a ProverData; N],
++    paths: &'a mut [Vec<Hash>; N],
++) -> impl FnOnce(usize, usize, &[usize]) -> RecursiveProof + 'a {
++    move |positions, lanes, queries: &[usize]| {
++        let mut rows = vec![vec![F::ZERO; lanes]; queries.len()];
++        for branch in 0..N {
++            let width = 1 << geometry.lane_logs[branch];
++            let start = geometry.offset(branch);
++            for (row, &q) in rows.iter_mut().zip(queries) {
++                row[start..start + width]
++                    .copy_from_slice(&data[branch].codeword[q * width..(q + 1) * width]);
++            }
++            paths[branch] =
++                merkle::merkle_multi_proof(&data[branch].merkle_tree, positions, queries);
++        }
++        RecursiveProof {
++            opened_rows: rows,
++            merkle_proof: Vec::new(),
++        }
++    }
++}
++
++#[allow(clippy::too_many_arguments)]
++fn continue_prove_with_initial(
++    t: &mut (impl Transcript + Send),
++    statement: &Hash,
++    initial: PreparedInitial<'_>,
++    target: F,
++    ring: RingSwitchProof,
++    ood: Option<&OodProverClaim>,
++    resolved: &crate::ligerito_flock::ResolvedLigerito,
++    open_initial: impl FnOnce(usize, usize, &[usize]) -> RecursiveProof,
++    security: Option<&mut grinding::GrindingContext<'_>>,
++) -> Result<JointProof, Error> {
+     let _lig_scope = tracing::info_span!("op:ligerito").entered();
+     let pc = resolved.prover();
+-    let mut paths = std::array::from_fn(|_| Vec::new());
+     macro_rules! run {
+         ($challenger:expr) => {{
+-            let open_initial = |positions, lanes, queries: &[usize]| {
+-                let mut rows = vec![vec![F::ZERO; lanes]; queries.len()];
+-                for branch in 0..N {
+-                    let width = 1 << geometry.lane_logs[branch];
+-                    let start = geometry.offset(branch);
+-                    for (row, &q) in rows.iter_mut().zip(queries) {
+-                        row[start..start + width]
+-                            .copy_from_slice(&data[branch].codeword[q * width..(q + 1) * width]);
+-                    }
+-                    paths[branch] =
+-                        merkle::merkle_multi_proof(&data[branch].merkle_tree, positions, queries);
+-                }
+-                RecursiveProof {
+-                    opened_rows: rows,
+-                    merkle_proof: Vec::new(),
+-                }
+-            };
+             match initial {
+                 PreparedInitial::Deferred(initial) => {
+                     ligerito::recursive_prover_with_basis_initial_deferred(
+@@ -994,11 +1547,10 @@ fn continue_prove<const N: usize>(
+     } else {
+         run!(&mut ZincChallenger(t))
+     };
+-    Ok(Proof {
++    Ok(JointProof {
+         ood: ood.map(|claim| claim.round),
+         ring,
+         ligerito: proof,
+-        paths,
+     })
+ }
+ 
+@@ -1032,7 +1584,78 @@ pub(crate) fn verify_with_security<const N: usize>(
+     proof: &Proof<N>,
+     security: Option<&mut grinding::GrindingContext<'_>>,
+ ) -> Result<(), Error> {
+-    let (eq_r2, mut target) = ring_switch_verify(t, &proof.ring, value, &point[..7])
++    let vc = resolved.verifier();
++    let authenticate_initial = |positions, lanes, queries: &[usize], opening: &RecursiveProof| {
++        if !opening.merkle_proof.is_empty() || lanes != geometry.lanes() {
++            return false;
++        }
++        let mut hashes: [Vec<Hash>; N] = std::array::from_fn(|_| Vec::with_capacity(queries.len()));
++        for row in &opening.opened_rows {
++            // Authenticate every branch and reject all unused virtual lanes.
++            if row.len() != lanes {
++                return false;
++            }
++            for (lane, &word) in row.iter().enumerate() {
++                let occupied = (0..N).any(|branch| {
++                    let start = geometry.offset(branch);
++                    (start..start + (1 << geometry.lane_logs[branch])).contains(&lane)
++                });
++                if !occupied && word != F::ZERO {
++                    return false;
++                }
++            }
++            for branch in 0..N {
++                let start = geometry.offset(branch);
++                let end = start + (1 << geometry.lane_logs[branch]);
++                let mut bytes = Vec::with_capacity((end - start) * 16);
++                for word in &row[start..end] {
++                    bytes.extend_from_slice(&word.lo.to_le_bytes());
++                    bytes.extend_from_slice(&word.hi.to_le_bytes());
++                }
++                hashes[branch].push(merkle::hash_leaf(&bytes, vc.merkle_hash));
++            }
++        }
++        (0..N).all(|branch| {
++            merkle::verify_merkle_multi_proof(
++                &roots[branch],
++                positions,
++                queries,
++                &hashes[branch],
++                &proof.paths[branch],
++                vc.merkle_hash,
++            )
++        })
++    };
++    verify_initial_with_security(
++        t,
++        geometry,
++        statement,
++        point,
++        value,
++        ood,
++        resolved,
++        &proof.ring,
++        &proof.ligerito,
++        authenticate_initial,
++        security,
++    )
++}
++
++#[allow(clippy::too_many_arguments)]
++fn verify_initial_with_security<const N: usize>(
++    t: &mut (impl Transcript + Send),
++    geometry: &Geometry<N>,
++    statement: &Hash,
++    point: &[Gf],
++    value: F,
++    ood: Option<&OodVerifierClaim>,
++    resolved: &crate::ligerito_flock::ResolvedLigerito,
++    ring: &RingSwitchProof,
++    proof: &LigeritoProof,
++    authenticate_initial: impl FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
++    security: Option<&mut grinding::GrindingContext<'_>>,
++) -> Result<(), Error> {
++    let (eq_r2, mut target) = ring_switch_verify(t, ring, value, &point[..7])
+         .map_err(|_| Error::Invalid("ring switch"))?;
+     let eta_ood: Option<Gf> = ood.map(|claim| {
+         let eta: Gf = t.get_field_challenge(&());
+@@ -1054,11 +1677,11 @@ pub(crate) fn verify_with_security<const N: usize>(
+         .zip(level_ks)
+         .map(|(&bits, k)| (0..k).filter(|&j| bits.saturating_sub(j) > 0).count())
+         .sum();
+-    if proof.ligerito.recursive_roots.len() != vc.recursive_steps
+-        || proof.ligerito.recursive_proofs.len() + 1 != vc.recursive_steps
+-        || proof.ligerito.grinding_nonces.len() != vc.recursive_steps + 1
+-        || proof.ligerito.ood_values.len() != expected_ood_values
+-        || proof.ligerito.fold_grinding_nonces.len() != expected_fold_nonces
++    if proof.recursive_roots.len() != vc.recursive_steps
++        || proof.recursive_proofs.len() + 1 != vc.recursive_steps
++        || proof.grinding_nonces.len() != vc.recursive_steps + 1
++        || proof.ood_values.len() != expected_ood_values
++        || proof.fold_grinding_nonces.len() != expected_fold_nonces
+     {
+         return Err(Error::Invalid("Ligerito proof shape"));
+     }
+@@ -1066,7 +1689,7 @@ pub(crate) fn verify_with_security<const N: usize>(
+         ($challenger:expr) => {
+             ligerito::recursive_verifier_with_basis_initial(
+                 &vc,
+-                &proof.ligerito,
++                proof,
+                 geometry.packed_log(),
+                 target,
+                 statement,
+@@ -1091,48 +1714,7 @@ pub(crate) fn verify_with_security<const N: usize>(
+                     }
+                     out.into_iter().collect()
+                 },
+-                |positions, lanes, queries, opening| {
+-                    if !opening.merkle_proof.is_empty() || lanes != geometry.lanes() {
+-                        return false;
+-                    }
+-                    let mut hashes: [Vec<Hash>; N] =
+-                        std::array::from_fn(|_| Vec::with_capacity(queries.len()));
+-                    for row in &opening.opened_rows {
+-                        // Authenticate every branch and reject all unused virtual lanes.
+-                        if row.len() != lanes {
+-                            return false;
+-                        }
+-                        for (lane, &word) in row.iter().enumerate() {
+-                            let occupied = (0..N).any(|branch| {
+-                                let start = geometry.offset(branch);
+-                                (start..start + (1 << geometry.lane_logs[branch])).contains(&lane)
+-                            });
+-                            if !occupied && word != F::ZERO {
+-                                return false;
+-                            }
+-                        }
+-                        for branch in 0..N {
+-                            let start = geometry.offset(branch);
+-                            let end = start + (1 << geometry.lane_logs[branch]);
+-                            let mut bytes = Vec::with_capacity((end - start) * 16);
+-                            for word in &row[start..end] {
+-                                bytes.extend_from_slice(&word.lo.to_le_bytes());
+-                                bytes.extend_from_slice(&word.hi.to_le_bytes());
+-                            }
+-                            hashes[branch].push(merkle::hash_leaf(&bytes, vc.merkle_hash));
+-                        }
+-                    }
+-                    (0..N).all(|branch| {
+-                        merkle::verify_merkle_multi_proof(
+-                            &roots[branch],
+-                            positions,
+-                            queries,
+-                            &hashes[branch],
+-                            &proof.paths[branch],
+-                            vc.merkle_hash,
+-                        )
+-                    })
+-                },
++                authenticate_initial,
+                 $challenger,
+             )
+         };
+@@ -1147,6 +1729,6 @@ pub(crate) fn verify_with_security<const N: usize>(
+     if valid {
+         Ok(())
+     } else {
+-        Err(Error::Invalid("multi-root Ligerito opening"))
++        Err(Error::Invalid("shared Ligerito opening"))
+     }
+ }
+diff --git a/src/piop/spartan/falcon1024_ct/COMPACTION_SOUNDNESS.md b/src/piop/spartan/falcon1024_ct/COMPACTION_SOUNDNESS.md
+index 361845c1..e3f51613 100644
+--- a/src/piop/spartan/falcon1024_ct/COMPACTION_SOUNDNESS.md
++++ b/src/piop/spartan/falcon1024_ct/COMPACTION_SOUNDNESS.md
+@@ -9,7 +9,7 @@ turn the argument into unconditional statistical security.
+ 
+ Condition on the source commitments authenticating one fixed bit source and
+ on the separately accounted division, rejection, prefix, and source-binding
+-checks being sound. All three source roots and the public statement precede
++checks being sound. The joint source root and the public statement precede
+ the shared fingerprint challenges `gamma,rho`.
+ 
+ The 16-bit sample, 3-bit quotient, bounded remainder, and integer division
+diff --git a/src/piop/spartan/falcon1024_ct/NATIVE_RING.md b/src/piop/spartan/falcon1024_ct/NATIVE_RING.md
+index ee3ed5bb..0dc1e95e 100644
+--- a/src/piop/spartan/falcon1024_ct/NATIVE_RING.md
++++ b/src/piop/spartan/falcon1024_ct/NATIVE_RING.md
+@@ -1,12 +1,12 @@
+ # Native-ring batch Falcon prover
+ 
+ `PreparedFalconHybrid` uses one native-ring arithmetic path. Its statement domain
+-is `bitz/falcon1024-ct/hybrid/native-ring/non-zk/v5`; earlier proofs are
++is `bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6`; earlier proofs are
+ incompatible. This profile remains the default; shared-prime V4 is opt-in.
+ 
+ The public statement still contains each public key, 32-byte message, and exact
+ CT signature. The prover is not zero knowledge. Binary Keccak, SHAKE wiring,
+-three source commitments, the jointly batched two-limb bridge, and the UDR shared
++one joint source commitment, the jointly batched two-limb bridge, and the UDR shared
+ PCS opening retain their existing roles.
+ 
+ ## Source representation and counts
+diff --git a/src/piop/spartan/falcon1024_ct/README.md b/src/piop/spartan/falcon1024_ct/README.md
+index 39d6de09..cf5535c2 100644
+--- a/src/piop/spartan/falcon1024_ct/README.md
++++ b/src/piop/spartan/falcon1024_ct/README.md
+@@ -1,8 +1,8 @@
+ # Falcon-1024 CT proofs
+ 
+ The `falcon-hybrid` feature provides non-ZK Falcon proofs for 1–1024
+-signatures, using binary Keccak and one shared opening of three source
+-commitments. It proves SHAKE256, HashToPoint rejection and
++signatures, using binary Keccak and one joint source commitment with a shared
++opening. It proves SHAKE256, HashToPoint rejection and
+ ordered compaction, the Falcon ring equation, and each signature's norm bound.
+ Native witness generation does not substitute for proof constraints.
+ 
+@@ -35,11 +35,12 @@ an in-memory Rust API, without a Falcon wire codec. `payload_size_bytes()`
+ counts stored proof payload, excluding public statements and transport framing.
+ 
+ `PreparedFalconHybrid::new_shared_prime(batch, target_bits)` selects the
+-experimental `SharedPrimeV4` protocol. `new` retains the native-coordinate-carry
+-profile under its v5 transcript. Both use the joint HashToPoint compaction
++experimental `SharedPrime` protocol. `new` retains the native-coordinate-carry
++profile under its v6 transcript. Both use the joint HashToPoint compaction
+ forest. Earlier native and shared-prime proofs must be regenerated.
+ Each prepared verifier accepts only its own protocol and layout.
+-See [SHARED_PRIME_V4.md](SHARED_PRIME_V4.md) for component accounting and versions.
++See [ONE_SOURCE.md](ONE_SOURCE.md) for the joint commitment and current versions,
++and [SHARED_PRIME_V4.md](SHARED_PRIME_V4.md) for historical forest accounting.
+ 
+ `FalconSourceLayout::new` rounds the live batch up to a power-of-two capacity.
+ Both profiles use the optimized integer relations and compact binder. See
+@@ -123,9 +124,10 @@ prime-field Keccak, or integer ring-quotient columns are committed.
+ Keccak uses two permutation-major slabs of 16 and 4 permutations. Each
+ permutation occupies a 65,536-bit compact circuit block. At batch one, the
+ four-permutation slab has a second padded signature slot to satisfy Flock's
+-minimum geometry. Padded slots contain valid Keccak chains. The optimized
+-chain producer handles capacities at least eight; smaller capacities retain
+-the reference setup and packed producer.
++minimum geometry. Inactive slots are all zero and their constant wires are
++pinned to the public activity mask. The producer runs SIMD kernels only for
++full live groups and scalar generation for partial groups; it does not execute
++dummy Keccak computations. See [ONE_SOURCE.md](ONE_SOURCE.md).
+ 
+ Authenticated copy checks connect the sources:
+ 
+@@ -139,7 +141,7 @@ The native arithmetic terminal passes through a two-limb integer-to-binary
+ bridge using the current BitZ PCS's [integer folds](../../../bitz/fold.rs) and
+ [product GKR](../../../bitz/forest.rs). The fixed binary source layout has
+ 13 row variables; [the native bridge](hybrid_bridge.rs) splits prime-field row
+-weights into 113-bit limbs. Shared-prime V4 retains this two-limb bridge at
++weights into 113-bit limbs. Shared-prime retains this two-limb bridge at
+ 128 bits; its 100-bit profile folds canonical 115-bit-field weights directly
+ through the same integer-folding kernels.
+ The two-limb sums are stored in inline `LargeNumber { lower: u128, upper: u32 }`
+@@ -155,7 +157,7 @@ a complete Falcon transport codec is still not defined.
+ The joint binary sumcheck binds arithmetic, both Keccak claims, and these copy
+ checks to the shared ring-switch/Ligerito opening.
+ Falcon uses `MATCHED_UDR` with no initial OOD message. Physical padding and all
+-three roots remain authenticated. See
++three logical sources are authenticated against one joint source root. See
+ [BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md) for the native bridge's
+ index map and error bound, and [SHARED_PRIME_V4.md](SHARED_PRIME_V4.md) for the
+ shared-prime profile selection.
+@@ -179,15 +181,15 @@ and validation obligations. Exact-integer ledger tests cover both targets
+ and every batch from 1 through 1024. Historical V2/V3 security minima and
+ benchmark payloads describe their original schedules.
+ 
+-The native statement domains are `native-ring/non-zk/v5` and
+-`native-ring/statement/v5`; the shared-prime profile uses
+-`shared-prime/non-zk/v4` and `shared-prime/statement/v4`.
++The native statement domains are `native-ring/non-zk/v6` and
++`native-ring/statement/v6`; the shared-prime profile uses
++`shared-prime/non-zk/v5` and `shared-prime/statement/v5`.
+ Earlier native and shared-prime proofs must be regenerated. Subprotocol domain
+ separators retain their own versions: those labels separate
+ live proof phases and do not enable old backends or old-proof parsing.
+ The two-limb bridge retains `bitz/falcon-hybrid/wfbitz-joint-limbs/v1`; the
+ unsplit bridge retains its separate binding, root-query, and grinding domains.
+-The shared V4 parent transcript binds the selected bridge explicitly.
++The shared-prime parent transcript binds the selected bridge explicitly.
+ Both implementations use `crate::bitz`.
+ 
+ The shared opening resolves its Flock work budgets through
+diff --git a/src/piop/spartan/falcon1024_ct/SHARED_PRIME_V4.md b/src/piop/spartan/falcon1024_ct/SHARED_PRIME_V4.md
+index 5d323156..b69d00ed 100644
+--- a/src/piop/spartan/falcon1024_ct/SHARED_PRIME_V4.md
++++ b/src/piop/spartan/falcon1024_ct/SHARED_PRIME_V4.md
+@@ -1,5 +1,8 @@
+ # Shared-prime Falcon V4
+ 
++Historical forest protocol. Superseded by the [joint source commitment](ONE_SOURCE.md);
++current APIs select `FalconProtocol::SharedPrime` and reject earlier proofs.
++
+ `PreparedFalconHybrid::new_shared_prime(batch, target_bits)` selects
+ `SharedPrimeV4` for 1–1024 signatures. The native profile remains the default
+ and receives the same joint HashToPoint forest under its v5 transcript.
+diff --git a/src/piop/spartan/falcon1024_ct/hybrid.rs b/src/piop/spartan/falcon1024_ct/hybrid.rs
+index d3f2e778..be4d9831 100644
+--- a/src/piop/spartan/falcon1024_ct/hybrid.rs
++++ b/src/piop/spartan/falcon1024_ct/hybrid.rs
+@@ -22,10 +22,7 @@ use crate::{
+     piop::spartan::grinding::GrindingDomain,
+     transcript::{Blake3Transcript, traits::Transcript},
+ };
+-use flock_core::{
+-    field::Gf128 as Gf,
+-    pcs::commit::{Commitment, ProverData, commit},
+-};
++use flock_core::field::Gf128 as Gf;
+ #[cfg(feature = "parallel")]
+ use rayon::prelude::*;
+ use std::sync::Mutex;
+@@ -45,11 +42,11 @@ impl GrindingDomain for OpeningGrinding {
+     const DOMAIN: &'static [u8] = b"bitz/falcon-hybrid/opening-grinding/v1";
+ }
+ 
+-/// Public keys, messages, signatures, and the three authenticated binary sources.
++/// Public keys, messages, signatures, and the joint binary source commitment.
+ #[derive(Clone, Debug, Eq, PartialEq)]
+ pub struct FalconHybridStatement {
+     pub public: FalconPublicStatement,
+-    pub roots: [[u8; 32]; 3],
++    pub source_root: [u8; 32],
+ }
+ 
+ /// Union-bound terms in the existing computational grinding model. This is
+@@ -65,7 +62,7 @@ pub struct FalconHybridSecurity {
+ #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+ pub enum FalconProtocol {
+     NativeCarry,
+-    SharedPrimeV4,
++    SharedPrime,
+ }
+ 
+ /// Prepared public circuit, reusable across witnesses of the same batch size.
+@@ -80,7 +77,7 @@ pub struct PreparedFalconHybrid {
+     scratch: Mutex<Scratch>,
+ }
+ 
+-/// Packed witness and its commitments. Consumed by proving so large auxiliary
++/// Packed witness and its joint commitment. Consumed by proving so large auxiliary
+ /// tables can be folded in place without cloning them.
+ pub struct CommittedFalconHybrid {
+     pub statement: FalconHybridStatement,
+@@ -88,8 +85,7 @@ pub struct CommittedFalconHybrid {
+     arithmetic: FalconSourceWitness,
+     auxiliary: [KeccakAuxiliary; 2],
+     packed: [Vec<Gf>; 3],
+-    commitments: [Commitment; 3],
+-    data: [ProverData; 3],
++    data: shared::JointProverData<3>,
+ }
+ 
+ #[derive(Clone, Debug)]
+@@ -99,7 +95,7 @@ pub struct FalconHybridProof {
+     keccak: [hybrid_keccak::PrefixProof; 2],
+     links_nonces: Vec<u64>,
+     joint: joint::Proof,
+-    opening: shared::Proof<3>,
++    opening: shared::JointProof,
+     opening_nonces: Vec<u64>,
+     pcs_nonces: Vec<u64>,
+ }
+@@ -112,7 +108,7 @@ impl PreparedFalconHybrid {
+ 
+     /// Experimental four-operand ring reduction and integer-polynomial lift.
+     pub fn new_shared_prime(batch: usize, target_bits: usize) -> Result<Self, FalconError> {
+-        Self::with_protocol(batch, target_bits, FalconProtocol::SharedPrimeV4)
++        Self::with_protocol(batch, target_bits, FalconProtocol::SharedPrime)
+     }
+ 
+     pub fn with_protocol(
+@@ -125,9 +121,9 @@ impl PreparedFalconHybrid {
+         }
+         let layout = match protocol {
+             FalconProtocol::NativeCarry => FalconSourceLayout::new(batch)?,
+-            FalconProtocol::SharedPrimeV4 => FalconSourceLayout::new_shared_prime(batch)?,
++            FalconProtocol::SharedPrime => FalconSourceLayout::new_shared_prime(batch)?,
+         };
+-        let bridge_mode = if protocol == FalconProtocol::SharedPrimeV4 && target_bits == 100 {
++        let bridge_mode = if protocol == FalconProtocol::SharedPrime && target_bits == 100 {
+             hybrid_bridge::BridgeMode::Unsplit
+         } else {
+             hybrid_bridge::BridgeMode::TwoLimbs
+@@ -189,7 +185,7 @@ impl PreparedFalconHybrid {
+     }
+     pub fn protocol(&self) -> FalconProtocol {
+         if self.layout.is_shared_prime() {
+-            FalconProtocol::SharedPrimeV4
++            FalconProtocol::SharedPrime
+         } else {
+             FalconProtocol::NativeCarry
+         }
+@@ -379,12 +375,12 @@ impl PreparedFalconHybrid {
+         let [k16, k4] = keccak_packed;
+         let packed = [arithmetic_packed, k16, k4];
+         let rate = self.ligerito.prover().log_inv_rates[0];
+-        let (ca, da) = commit(&packed[0], &self.geometry.params(0, rate));
+-        let (ck, dk) = commit(&packed[1], &self.geometry.params(1, rate));
+-        let (ct, dt) = commit(&packed[2], &self.geometry.params(2, rate));
++        let (source_root, data) =
++            shared::commit_sources(&self.geometry, packed.each_ref().map(Vec::as_slice), rate)
++                .map_err(error)?;
+         let statement = FalconHybridStatement {
+             public,
+-            roots: [ca.root, ck.root, ct.root],
++            source_root,
+         };
+         Ok(CommittedFalconHybrid {
+             statement,
+@@ -392,8 +388,7 @@ impl PreparedFalconHybrid {
+             arithmetic,
+             auxiliary,
+             packed,
+-            commitments: [ca, ck, ct],
+-            data: [da, dk, dt],
++            data,
+         })
+     }
+ 
+@@ -443,9 +438,9 @@ impl PreparedFalconHybrid {
+         statement.public.validate(self.batch())?;
+         let mut h = blake3::Hasher::new();
+         h.update(if self.layout.is_shared_prime() {
+-            b"bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v4".as_slice()
++            b"bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v5".as_slice()
+         } else {
+-            b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v5".as_slice()
++            b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6".as_slice()
+         });
+         for n in [
+             self.batch(),
+@@ -495,9 +490,18 @@ impl PreparedFalconHybrid {
+         let bridge_numerator = hybrid_bridge::error_numerator(&self.layout, self.bridge_mode);
+         h.update(&(bridge_numerator as u64).to_le_bytes());
+         h.update(&self.binary_grinding(bridge_numerator).to_le_bytes());
+-        for root in &statement.roots {
+-            h.update(root);
++        h.update(
++            b"source:joint-rs-row,canonical-16-lanes;keccak:constant-prefix-mask,zero-inactive/v1",
++        );
++        for n in std::iter::once(self.geometry.position_log)
++            .chain(std::iter::once(self.geometry.virtual_lane_log))
++            .chain(self.geometry.physical_logs)
++            .chain(self.geometry.lane_logs)
++            .chain(self.geometry.offsets)
++        {
++            h.update(&(n as u64).to_le_bytes());
+         }
++        h.update(&statement.source_root);
+         for ((pk, msg), signature) in statement
+             .public
+             .public_keys
+@@ -518,9 +522,9 @@ impl PreparedFalconHybrid {
+         let digest = *h.finalize().as_bytes();
+         let mut t = Blake3Transcript::new();
+         t.absorb_slice(if self.layout.is_shared_prime() {
+-            b"bitz/falcon-hybrid/shared-prime/statement/v4".as_slice()
++            b"bitz/falcon-hybrid/shared-prime/statement/v5".as_slice()
+         } else {
+-            b"bitz/falcon-hybrid/native-ring/statement/v5".as_slice()
++            b"bitz/falcon-hybrid/native-ring/statement/v6".as_slice()
+         });
+         t.absorb_slice(&digest);
+         self.ligerito.bind(&mut t);
+@@ -566,7 +570,8 @@ impl PreparedFalconHybrid {
+                 .prove_prefix(
+                     &committed.packed[slab + 1],
+                     auxiliary,
+-                    &committed.commitments[slab + 1],
++                    &committed.statement.source_root,
++                    &digest,
+                     &mut t,
+                     (self.target_bits + 8) as u32,
+                 )
+@@ -623,14 +628,14 @@ impl PreparedFalconHybrid {
+             &mut t,
+             self.binary_grinding(256),
+         );
+-        let opening = shared::prove_sources_with_security(
++        let opening = shared::prove_joint_sources_with_security(
+             &mut opening_t,
+             &self.geometry,
+             &digest,
+             committed.packed.each_ref().map(Vec::as_slice),
+             None,
+             &self.ligerito,
+-            committed.data.each_ref(),
++            &committed.data,
+             &point,
+             Some(&mut pcs),
+         )
+@@ -680,16 +685,11 @@ impl PreparedFalconHybrid {
+         )?;
+         let mut k = Vec::new();
+         for slab in 0..2 {
+-            let commitment = Commitment {
+-                root: statement.roots[slab + 1],
+-                params: self
+-                    .geometry
+-                    .params(slab + 1, self.ligerito.prover().log_inv_rates[0]),
+-            };
+             let claims = self.keccak[slab]
+                 .verify_prefix(
+                     &proof.keccak[slab],
+-                    &commitment,
++                    &statement.source_root,
++                    &digest,
+                     &mut t,
+                     (self.target_bits + 8) as u32,
+                 )
+@@ -731,11 +731,11 @@ impl PreparedFalconHybrid {
+             self.binary_grinding(256),
+             &proof.opening_nonces,
+         );
+-        shared::verify_with_security(
++        shared::verify_joint_with_security(
+             &mut opening_t,
+             &self.geometry,
+             &digest,
+-            &statement.roots,
++            &statement.source_root,
+             &point,
+             proof.joint.value,
+             None,
+@@ -846,30 +846,39 @@ impl PreparedFalconHybrid {
+                 arithmetic.push((offsets.hash_words + 16 * sample + bit, w));
+             }
+         }
+-        // A prefix of live instances is a disjoint union of at most log(B)
+-        // Boolean subcubes. This masks padding without expanding the wiring.
+-        for (point, scale) in live_subcubes(&instance_point, self.batch()) {
+-            result[0].gathers.push(Gather::repeated(
+-                arithmetic.iter().map(|&(i, w)| (i, w * scale)).collect(),
+-                point.clone(),
+-            ));
+-            for slab in 0..2 {
+-                let mut repeat = point.clone();
+-                // At batch one the four-permutation slab has one padded
+-                // signature coordinate to meet Flock's eight-block minimum.
++        if self.batch() == self.capacity() {
++            result[0]
++                .gathers
++                .push(Gather::repeated(arithmetic, instance_point.clone()));
++            for (slab, entries) in binary.into_iter().enumerate() {
++                let mut repeat = instance_point.clone();
++                // The four-permutation slab still has a padded signature
++                // coordinate at batch one; its wiring selects signature zero.
+                 repeat.resize(self.keccak[slab].capacity().ilog2() as usize, Gf::ZERO);
+-                result[slab + 1].gathers.push(Gather::repeated_at(
+-                    binary[slab].iter().map(|&(i, w)| (i, w * scale)).collect(),
+-                    repeat,
+-                    7,
+-                ));
++                result[slab + 1]
++                    .gathers
++                    .push(Gather::repeated_at(entries, repeat, 7));
+             }
++            return (result, target);
++        }
++        // The public live prefix masks the repeat weights directly, so the
++        // same local wiring is sorted and scanned only once per source.
++        result[0].gathers.push(
++            Gather::repeated(arithmetic, instance_point.clone()).with_repeat_limit(self.batch()),
++        );
++        for (slab, entries) in binary.into_iter().enumerate() {
++            let mut repeat = instance_point.clone();
++            repeat.resize(self.keccak[slab].capacity().ilog2() as usize, Gf::ZERO);
++            result[slab + 1]
++                .gathers
++                .push(Gather::repeated_at(entries, repeat, 7).with_repeat_limit(self.batch()));
+         }
+         (result, target)
+     }
+ }
+ 
+-fn live_subcubes(point: &[Gf], live: usize) -> Vec<(Vec<Gf>, Gf)> {
++#[cfg(test)]
++pub(super) fn live_subcubes(point: &[Gf], live: usize) -> Vec<(Vec<Gf>, Gf)> {
+     let mut out = Vec::new();
+     let mut start = 0usize;
+     while start < live {
+@@ -910,6 +919,17 @@ mod tests {
+             .unwrap()
+     }
+ 
++    fn recommit(prepared: &PreparedFalconHybrid, committed: &mut CommittedFalconHybrid) {
++        let (root, data) = shared::commit_sources(
++            &prepared.geometry,
++            committed.packed.each_ref().map(Vec::as_slice),
++            prepared.ligerito.prover().log_inv_rates[0],
++        )
++        .unwrap();
++        committed.statement.source_root = root;
++        committed.data = data;
++    }
++
+     #[test]
+     fn hybrid_shake_matches_rustcrypto_samples_and_source_bits() {
+         use rand::{RngExt, SeedableRng, rngs::StdRng};
+@@ -1101,7 +1121,7 @@ mod tests {
+         changed.public.signatures[0].s2[0] = -2048;
+         assert!(prepared.verify(&changed, &proof).is_err());
+         let mut changed = statement.clone();
+-        changed.roots.swap(0, 1);
++        changed.source_root[0] ^= 1;
+         assert!(prepared.verify(&changed, &proof).is_err());
+         let mut changed = proof.clone();
+         match &mut changed.bridge.sums {
+@@ -1117,6 +1137,32 @@ mod tests {
+         assert!(prepared.verify(&statement, &changed).is_err());
+     }
+ 
++    #[test]
++    #[ignore = "full profile matrix includes batch 1024; run serially for qualification"]
++    fn joint_source_supported_profiles_roundtrip() {
++        for protocol in [FalconProtocol::NativeCarry, FalconProtocol::SharedPrime] {
++            for target in [100, 128] {
++                for batch in [1, 2, 3, 7, 8, 9, 1024] {
++                    let prepared =
++                        PreparedFalconHybrid::with_protocol(batch, target, protocol).unwrap();
++                    let committed = prepared.commit(public(batch)).unwrap();
++                    let statement = committed.statement.clone();
++                    let proof = prepared.prove(committed).unwrap();
++                    prepared.verify(&statement, &proof).unwrap();
++                    assert!(prepared.security().algebraic_bits >= target as f64);
++                    assert_eq!(
++                        proof
++                            .payload_size_breakdown()
++                            .iter()
++                            .map(|(_, n)| n)
++                            .sum::<usize>(),
++                        proof.payload_size_bytes(),
++                    );
++                }
++            }
++        }
++    }
++
+     #[test]
+     fn shared_profiles_bind_target_selected_prime_and_bridge() {
+         for target in [100, 128] {
+@@ -1152,7 +1198,7 @@ mod tests {
+         for (batch, target) in [(1, 100), (3, 100), (9, 100), (1, 128), (3, 128)] {
+             let prepared = PreparedFalconHybrid::new_shared_prime(batch, target).unwrap();
+             let native = PreparedFalconHybrid::new(batch, target).unwrap();
+-            assert_eq!(prepared.protocol(), FalconProtocol::SharedPrimeV4);
++            assert_eq!(prepared.protocol(), FalconProtocol::SharedPrime);
+             assert_eq!(prepared.live_arithmetic_bits_per_signature(), 114_914);
+             assert_eq!(
+                 prepared.source_bits_per_signature(),
+@@ -1168,6 +1214,14 @@ mod tests {
+                 proof.encode_integer_column_sums().len(),
+                 prepared.layout.bitz_params().cols() * if target == 100 { 16 } else { 20 }
+             );
++            assert_eq!(
++                proof
++                    .payload_size_breakdown()
++                    .iter()
++                    .map(|(_, bytes)| bytes)
++                    .sum::<usize>(),
++                proof.payload_size_bytes()
++            );
+             assert!(proof.arithmetic.binding_point.is_empty());
+             let other_target = PreparedFalconHybrid::new_shared_prime(
+                 batch,
+@@ -1195,11 +1249,9 @@ mod tests {
+             wrong.public.public_keys[0].h[0] =
+                 (wrong.public.public_keys[0].h[0] + 1) % super::super::Q as u16;
+             assert!(prepared.verify(&wrong, &proof).is_err());
+-            for branch in 0..3 {
+-                let mut wrong = statement.clone();
+-                wrong.roots[branch][0] ^= 1;
+-                assert!(prepared.verify(&wrong, &proof).is_err());
+-            }
++            let mut wrong = statement.clone();
++            wrong.source_root[0] ^= 1;
++            assert!(prepared.verify(&wrong, &proof).is_err());
+             let mut wrong = proof.clone();
+             match &mut wrong.bridge.sums {
+                 crate::bitz::column_sums::ColumnSums::Unsplit(sums) => {
+@@ -1242,16 +1294,8 @@ mod tests {
+         for (slab, packed) in wrong.into_iter().enumerate() {
+             let branch = slab + 1;
+             committed.packed[branch] = packed;
+-            let (cm, data) = commit(
+-                &committed.packed[branch],
+-                &prepared
+-                    .geometry
+-                    .params(branch, prepared.ligerito.prover().log_inv_rates[0]),
+-            );
+-            committed.statement.roots[branch] = cm.root;
+-            committed.commitments[branch] = cm;
+-            committed.data[branch] = data;
+         }
++        recommit(&prepared, &mut committed);
+         let statement = committed.statement.clone();
+         if let Ok(proof) = prepared.prove(committed) {
+             assert!(prepared.verify(&statement, &proof).is_err());
+@@ -1271,7 +1315,7 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn hybrid_fused_batch_roundtrip_and_all_three_roots_are_bound() {
++    fn hybrid_fused_batch_roundtrip_and_joint_source_authentication() {
+         let prepared = PreparedFalconHybrid::new(9, 100).unwrap();
+         let committed = prepared.commit(public(9)).unwrap();
+         assert_eq!(
+@@ -1285,15 +1329,30 @@ mod tests {
+         let statement = committed.statement.clone();
+         let proof = prepared.prove(committed).unwrap();
+         prepared.verify(&statement, &proof).unwrap();
++        let mut wrong = statement.clone();
++        wrong.source_root[0] ^= 1;
++        assert!(prepared.verify(&wrong, &proof).is_err());
+         for branch in 0..3 {
+-            let mut wrong = statement.clone();
+-            wrong.roots[branch][0] ^= 1;
+-            assert!(prepared.verify(&wrong, &proof).is_err());
+             let mut wrong = proof.clone();
+-            wrong.opening.paths[branch][0][0] ^= 1;
++            wrong.opening.ligerito.initial_proof.opened_rows[0]
++                [prepared.geometry.offset(branch)] += Gf::ONE;
+             assert!(prepared.verify(&statement, &wrong).is_err());
+         }
+         let mut wrong = proof.clone();
++        wrong.opening.ligerito.initial_proof.merkle_proof[0][0] ^= 1;
++        assert!(prepared.verify(&statement, &wrong).is_err());
++        let mut wrong = proof.clone();
++        wrong
++            .opening
++            .ligerito
++            .initial_proof
++            .merkle_proof
++            .push([0; 32]);
++        assert!(prepared.verify(&statement, &wrong).is_err());
++        let mut wrong = proof.clone();
++        wrong.opening.ligerito.initial_proof.merkle_proof.pop();
++        assert!(prepared.verify(&statement, &wrong).is_err());
++        let mut wrong = proof.clone();
+         wrong.keccak.swap(0, 1);
+         assert!(prepared.verify(&statement, &wrong).is_err());
+     }
+@@ -1305,27 +1364,28 @@ mod tests {
+         // This is a valid four-permutation Keccak chain, but its input is not
+         // permutation 15's output from the other authenticated commitment.
+         let (packed, auxiliary, _) = prepared.keccak[1].generate_chain(&[[0; 25]]).unwrap();
+-        let (cm, data) = commit(
+-            &packed,
+-            &prepared
+-                .geometry
+-                .params(2, prepared.ligerito.prover().log_inv_rates[0]),
+-        );
++        committed.packed[2] = packed;
++        recommit(&prepared, &mut committed);
++        let (_, digest) = prepared.transcript(&committed.statement).unwrap();
++        let root = &committed.statement.source_root;
+         let (prefix, claims, _) = prepared.keccak[1]
+-            .prove_prefix(&packed, auxiliary, &cm, &mut Blake3Transcript::new(), 108)
++            .prove_prefix(
++                &committed.packed[2],
++                auxiliary,
++                root,
++                &digest,
++                &mut Blake3Transcript::new(),
++                108,
++            )
+             .unwrap();
+         assert_eq!(
+             prepared.keccak[1]
+-                .verify_prefix(&prefix, &cm, &mut Blake3Transcript::new(), 108)
++                .verify_prefix(&prefix, root, &digest, &mut Blake3Transcript::new(), 108)
+                 .unwrap(),
+             claims
+         );
+         let (_, auxiliary, _) = prepared.keccak[1].generate_chain(&[[0; 25]]).unwrap();
+-        committed.packed[2] = packed;
+         committed.auxiliary[1] = auxiliary;
+-        committed.commitments[2] = cm;
+-        committed.data[2] = data;
+-        committed.statement.roots[2] = committed.commitments[2].root;
+         let statement = committed.statement.clone();
+         if let Ok(proof) = prepared.prove(committed) {
+             assert!(prepared.verify(&statement, &proof).is_err());
+diff --git a/src/piop/spartan/falcon1024_ct/hybrid_keccak.rs b/src/piop/spartan/falcon1024_ct/hybrid_keccak.rs
+index 448f6123..32b165ce 100644
+--- a/src/piop/spartan/falcon1024_ct/hybrid_keccak.rs
++++ b/src/piop/spartan/falcon1024_ct/hybrid_keccak.rs
+@@ -10,8 +10,7 @@ pub(crate) mod grinding;
+ 
+ use flock_core::{
+     field::Gf128,
+-    lincheck::LincheckProof,
+-    pcs::Commitment,
++    lincheck::{LincheckCircuit, LincheckProof},
+     proof::ZClaim,
+     r1cs::{BlockR1cs, WitnessLayout},
+     zerocheck::ZerocheckProof,
+@@ -57,8 +56,8 @@ pub(crate) struct PrefixProof {
+     pub(crate) grinding_nonces: Vec<u64>,
+ }
+ 
+-/// Scratch consumed by zerocheck and lincheck. The caller retains `packed`
+-/// separately so its initial commitment is reused by the joint opening.
++/// Scratch consumed by zerocheck and lincheck. The caller retains the local
++/// packed source view for the joint opening.
+ pub(crate) struct KeccakAuxiliary {
+     a: Vec<Gf128>,
+     b: Vec<Gf128>,
+@@ -99,6 +98,53 @@ pub(crate) struct PreparedKeccak {
+     permutations: usize,
+ }
+ 
++/// The block index is [signature | permutation], so the public constant
++/// column is the prefix mask of the signature coordinates. All circuit
++/// coefficients remain those of the real Keccak walker.
++struct ActiveKeccakCircuit {
++    batch_len: usize,
++    capacity: usize,
++}
++
++impl LincheckCircuit for ActiveKeccakCircuit {
++    fn n_cols(&self) -> usize {
++        compact::KeccakLincheckCircuit.n_cols()
++    }
++
++    fn fold_alpha_batched(&self, alpha: Gf128, eq_inner: &[Gf128]) -> Vec<Gf128> {
++        compact::KeccakLincheckCircuit.fold_alpha_batched(alpha, eq_inner)
++    }
++
++    fn const_pin_col(&self) -> Option<usize> {
++        Some(compact::Z_CONST)
++    }
++
++    fn const_pin_value(&self, outer_point: &[Gf128]) -> Gf128 {
++        let signature_vars = self.capacity.ilog2() as usize;
++        assert!(outer_point.len() >= signature_vars);
++        prefix_mask(&outer_point[..signature_vars], self.batch_len)
++    }
++}
++
++/// MLE of `[index < count]`, in O(log capacity) field operations.
++fn prefix_mask(point: &[Gf128], count: usize) -> Gf128 {
++    assert!(count <= 1usize << point.len());
++    if count == 1usize << point.len() {
++        return Gf128::ONE;
++    }
++    let mut equal = Gf128::ONE;
++    let mut less = Gf128::ZERO;
++    for (bit, &r) in point.iter().enumerate().rev() {
++        if count >> bit & 1 == 1 {
++            less += equal * (Gf128::ONE + r);
++            equal *= r;
++        } else {
++            equal *= Gf128::ONE + r;
++        }
++    }
++    less
++}
++
+ impl PreparedKeccak {
+     pub(crate) fn new_slab(
+         batch_len: usize,
+@@ -236,34 +282,46 @@ impl PreparedKeccak {
+         )
+     }
+ 
+-    fn bind<T: Transcript>(&self, t: &mut T, security: PrefixSecurity) {
+-        t.absorb_slice(b"bitz/falcon1024-ct/hybrid-keccak-prefix/v2");
+-        t.absorb_slice(&(self.first_permutation as u64).to_le_bytes());
+-        t.absorb_slice(&(self.permutations as u64).to_le_bytes());
+-        t.absorb_slice(&(self.batch_len as u64).to_le_bytes());
+-        t.absorb_slice(&(self.capacity as u64).to_le_bytes());
+-        t.absorb_slice(&security.component_bits.to_le_bytes());
+-        t.absorb_slice(&security.grinding_bits.to_le_bytes());
+-    }
+-
+-    fn validate_commitment(&self, commitment: &Commitment) -> Result<(), KeccakError> {
+-        if commitment.params.m != self.bit_vars() {
+-            return Err(KeccakError::Invalid(
+-                "commitment has the wrong witness dimension",
+-            ));
++    fn bind<T: Transcript>(
++        &self,
++        t: &mut T,
++        source_root: &[u8; 32],
++        statement_digest: &[u8; 32],
++        security: PrefixSecurity,
++    ) -> [u8; 32] {
++        let mut h = blake3::Hasher::new();
++        h.update(b"bitz/falcon1024-ct/hybrid-keccak-projected-prefix/v3");
++        h.update(source_root);
++        h.update(statement_digest);
++        h.update(b"compact-keccak-24:state0,state24,chi24;batch-major/v1");
++        h.update(b"constant=signature<batch;inactive=all-zero;signature-before-permutation/v1");
++        h.update(&self.r1cs.statement_digest());
++        for n in [
++            self.first_permutation,
++            self.permutations,
++            self.batch_len,
++            self.capacity,
++            self.bit_vars(),
++        ] {
++            h.update(&(n as u64).to_le_bytes());
+         }
+-        Ok(())
++        h.update(&security.component_bits.to_le_bytes());
++        h.update(&security.grinding_bits.to_le_bytes());
++        let digest = *h.finalize().as_bytes();
++        t.absorb_slice(b"bitz/falcon1024-ct/hybrid-keccak-projected-prefix/v3");
++        t.absorb_slice(&digest);
++        digest
+     }
+ 
+     pub(crate) fn prove_prefix<T: Transcript + Send>(
+         &self,
+         packed: &[Gf128],
+         auxiliary: KeccakAuxiliary,
+-        commitment: &Commitment,
++        source_root: &[u8; 32],
++        statement_digest: &[u8; 32],
+         transcript: &mut T,
+         component_bits: u32,
+     ) -> Result<(PrefixProof, [BinaryLinearClaim; 2], [Vec<Gf128>; 2]), KeccakError> {
+-        self.validate_commitment(commitment)?;
+         let n = 1usize << self.packed_vars();
+         if packed.len() != n
+             || auxiliary.a.len() != n
+@@ -275,19 +333,23 @@ impl PreparedKeccak {
+             ));
+         }
+         let security = self.security(component_bits)?;
+-        self.bind(transcript, security);
++        let context = self.bind(transcript, source_root, statement_digest, security);
+         let mut grinding = ProverBlockGrindingTranscript::<_, PrefixGrinding>::new(
+             transcript,
+             security.grinding_bits,
+         );
+-        let prefix = flock_prover::prover::prove_fast_committed_prefix(
++        let circuit = ActiveKeccakCircuit {
++            batch_len: self.batch_len,
++            capacity: self.capacity,
++        };
++        let prefix = flock_prover::prover::prove_fast_source_prefix(
+             &self.r1cs,
+-            commitment,
++            &context,
+             packed,
+             auxiliary.a,
+             auxiliary.b,
+             auxiliary.lincheck,
+-            &compact::KeccakLincheckCircuit,
++            &circuit,
+             &mut ZincChallenger(&mut grinding),
+         );
+         if grinding.block_count() != security.challenge_blocks {
+@@ -319,11 +381,11 @@ impl PreparedKeccak {
+     pub(crate) fn verify_prefix<T: Transcript + Send>(
+         &self,
+         proof: &PrefixProof,
+-        commitment: &Commitment,
++        source_root: &[u8; 32],
++        statement_digest: &[u8; 32],
+         transcript: &mut T,
+         component_bits: u32,
+     ) -> Result<[BinaryLinearClaim; 2], KeccakError> {
+-        self.validate_commitment(commitment)?;
+         let security = self.security(component_bits)?;
+         let expected_nonces = if security.grinding_bits == 0 {
+             0
+@@ -335,18 +397,22 @@ impl PreparedKeccak {
+                 "wrong binary prefix grinding nonce count",
+             ));
+         }
+-        self.bind(transcript, security);
++        let context = self.bind(transcript, source_root, statement_digest, security);
+         let mut grinding = VerifierBlockGrindingTranscript::<_, PrefixGrinding>::new(
+             transcript,
+             security.grinding_bits,
+             &proof.grinding_nonces,
+         );
+-        let result = flock_core::verifier::verify_core(
++        let circuit = ActiveKeccakCircuit {
++            batch_len: self.batch_len,
++            capacity: self.capacity,
++        };
++        let result = flock_core::verifier::verify_source_core(
+             &self.r1cs,
+             &proof.zerocheck,
+             &proof.lincheck,
+-            commitment,
+-            &compact::KeccakLincheckCircuit,
++            &context,
++            &circuit,
+             &mut ZincChallenger(&mut grinding),
+         );
+         let blocks = grinding.block_count();
+@@ -462,17 +528,51 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn activity_mask_matches_dense_prefix_at_nonboolean_points() {
++        for signature_vars in 0..=7 {
++            let point: Vec<_> = (0..signature_vars)
++                .map(|i| Gf128 {
++                    lo: 31 + i as u64,
++                    hi: 19 * i as u64 + 3,
++                })
++                .collect();
++            let weights = flock_core::lincheck::build_eq_table(&point);
++            for count in 0..=weights.len() {
++                let expected = weights[..count]
++                    .iter()
++                    .copied()
++                    .fold(Gf128::ZERO, |a, b| a + b);
++                assert_eq!(prefix_mask(&point, count), expected);
++                let circuit = ActiveKeccakCircuit {
++                    batch_len: count,
++                    capacity: weights.len(),
++                };
++                let mut outer = point.clone();
++                outer.extend([Gf128 { lo: 71, hi: 9 }, Gf128 { lo: 13, hi: 42 }]);
++                assert_eq!(circuit.const_pin_value(&outer), expected);
++            }
++        }
++    }
++
+     #[test]
+     fn fused_chain_matches_reference_witness_in_every_buffer() {
+-        for (live, capacity, permutations) in [(1, 2, 4), (3, 4, 16), (7, 8, 4), (9, 16, 16)] {
++        for (live, capacity, permutations) in [
++            (1, 2, 4),
++            (3, 4, 16),
++            (7, 8, 4),
++            (8, 8, 4),
++            (9, 16, 16),
++            (16, 16, 4),
++        ] {
+             let initial: Vec<_> = (0..live)
+                 .map(|i| initial_state(&[i as u8 + 7; 40], &[i as u8 + 31; 32]))
+                 .collect();
+             let (z, a, b, stripe, outputs) =
+                 compact::generate_chained_witness_batch_major(&initial, capacity, permutations);
+             let mut states = vec![[false; compact::STATE_BITS]; capacity * permutations];
+-            for signature in 0..capacity {
+-                let mut lanes = initial.get(signature).copied().unwrap_or([0; 25]);
++            for signature in 0..live {
++                let mut lanes = initial[signature];
+                 for permutation in 0..permutations {
+                     states[permutation * capacity + signature] = compact::lanes_to_state(&lanes);
+                     for round in 0..24 {
+@@ -481,10 +581,26 @@ mod tests {
+                     assert_eq!(outputs[signature][permutation], lanes);
+                 }
+             }
+-            let expected = compact::generate_witness_batch_major(
++            let mut expected = compact::generate_witness_batch_major(
+                 &states,
+                 (capacity * permutations).ilog2() as usize,
+             );
++            // Reference generator uses the legacy all-one constant policy;
++            // retain its live computations and replace every inactive block.
++            for signature in live..capacity {
++                assert!(outputs[signature].iter().all(|state| *state == [0; 25]));
++                for permutation in 0..permutations {
++                    let block = permutation * capacity + signature;
++                    for source in [&mut expected.0, &mut expected.1, &mut expected.2] {
++                        for chunk in 0..compact::K / 128 {
++                            source[chunk * capacity * permutations + block] = Gf128::ZERO;
++                        }
++                    }
++                    for local_bit in 0..compact::K {
++                        expected.3[block / 8 * compact::K + local_bit] &= !(1 << (block % 8));
++                    }
++                }
++            }
+             assert_eq!(z, expected.0, "source: live={live}");
+             assert_eq!(a, expected.1, "A: live={live}");
+             assert_eq!(b, expected.2, "B: live={live}");
+@@ -653,38 +769,18 @@ mod tests {
+                     }
+                 }
+             }
+-            // Padded signatures are valid chains starting at zero in each slab.
+-            // In particular K4 has one padding signature when the live batch is one.
++            // Every inactive signature has an all-zero witness, including
++            // the constant wire, intermediate χ outputs, and unused slots.
+             for (slab, words) in prepared.iter().zip(&packed) {
+                 for signature in batch..slab.capacity() {
+-                    let mut state = [0u64; 25];
+                     for permutation in
+                         slab.first_permutation..slab.first_permutation + slab.permutations
+                     {
+-                        assert!(bit(
+-                            words,
+-                            slab.bit_index(signature, permutation, compact::Z_CONST)
+-                        ));
+-                        for state_bit in 0..compact::STATE_BITS {
+-                            assert_eq!(
+-                                bit(
+-                                    words,
+-                                    slab.initial_bit_index(signature, permutation, state_bit)
+-                                ),
+-                                (state[state_bit / 64] >> (state_bit % 64)) & 1 != 0
+-                            );
+-                        }
+-                        for round in 0..compact::N_ROUNDS {
+-                            compact::keccak_round_lanes(&mut state, round);
+-                        }
+-                        for state_bit in 0..compact::STATE_BITS {
+-                            assert_eq!(
+-                                bit(
+-                                    words,
+-                                    slab.output_bit_index(signature, permutation, state_bit)
+-                                ),
+-                                (state[state_bit / 64] >> (state_bit % 64)) & 1 != 0
+-                            );
++                        for local_bit in 0..compact::K {
++                            assert!(!bit(
++                                words,
++                                slab.bit_index(signature, permutation, local_bit)
++                            ));
+                         }
+                     }
+                 }
+@@ -702,12 +798,19 @@ mod tests {
+             let (commitment, _data) = commit(&packed, &params(prepared.bit_vars()));
+             let start = || {
+                 let mut t = Blake3Transcript::new();
+-                t.absorb_slice(b"caller has already bound both roots and Round 0");
++                t.absorb_slice(b"caller has already bound the source root and geometry");
+                 t
+             };
+             let mut pt = start();
+             let (proof, claims, marginals) = prepared
+-                .prove_prefix(&packed, auxiliary, &commitment, &mut pt, 108)
++                .prove_prefix(
++                    &packed,
++                    auxiliary,
++                    &commitment.root,
++                    &[0x42; 32],
++                    &mut pt,
++                    108,
++                )
+                 .unwrap();
+             for (claim, cached) in claims.iter().zip(&marginals) {
+                 assert_eq!(evaluate(&packed, claim), claim.value);
+@@ -719,7 +822,7 @@ mod tests {
+             }
+             let mut vt = start();
+             let checked = prepared
+-                .verify_prefix(&proof, &commitment, &mut vt, 108)
++                .verify_prefix(&proof, &commitment.root, &[0x42; 32], &mut vt, 108)
+                 .unwrap();
+             assert_eq!(claims, checked);
+             assert_eq!(pt.get_challenge::<u128>(), vt.get_challenge::<u128>());
+@@ -728,40 +831,45 @@ mod tests {
+             tampered.zerocheck.round1_ab[0] += Gf128::ONE;
+             assert!(
+                 prepared
+-                    .verify_prefix(&tampered, &commitment, &mut start(), 108)
++                    .verify_prefix(&tampered, &commitment.root, &[0x42; 32], &mut start(), 108)
+                     .is_err()
+             );
+             let mut tampered = proof.clone();
+             tampered.lincheck.rounds[0].0 += Gf128::ONE;
+             assert!(
+                 prepared
+-                    .verify_prefix(&tampered, &commitment, &mut start(), 108)
++                    .verify_prefix(&tampered, &commitment.root, &[0x42; 32], &mut start(), 108)
+                     .is_err()
+             );
+             let mut tampered = proof.clone();
+             tampered.lincheck.z_partial[0] += Gf128::ONE;
+             assert!(
+                 prepared
+-                    .verify_prefix(&tampered, &commitment, &mut start(), 108)
++                    .verify_prefix(&tampered, &commitment.root, &[0x42; 32], &mut start(), 108)
+                     .is_err()
+             );
+             let mut tampered = proof.clone();
+             tampered.grinding_nonces.push(0);
+             assert!(
+                 prepared
+-                    .verify_prefix(&tampered, &commitment, &mut start(), 108)
++                    .verify_prefix(&tampered, &commitment.root, &[0x42; 32], &mut start(), 108)
+                     .is_err()
+             );
+             let mut wrong_root = commitment.clone();
+             wrong_root.root[0] ^= 1;
+             assert!(
+                 prepared
+-                    .verify_prefix(&proof, &wrong_root, &mut start(), 108)
++                    .verify_prefix(&proof, &wrong_root.root, &[0x42; 32], &mut start(), 108)
++                    .is_err()
++            );
++            assert!(
++                prepared
++                    .verify_prefix(&proof, &commitment.root, &[0x42; 32], &mut start(), 136)
+                     .is_err()
+             );
+             assert!(
+                 prepared
+-                    .verify_prefix(&proof, &commitment, &mut start(), 136)
++                    .verify_prefix(&proof, &commitment.root, &[0x43; 32], &mut start(), 108)
+                     .is_err()
+             );
+         }
+@@ -797,7 +905,14 @@ mod tests {
+             let (commitment, _data) = commit(&packed, &params(prepared.bit_vars()));
+             let mut pt = Blake3Transcript::new();
+             let (proof, claims, marginals) = prepared
+-                .prove_prefix(&packed, auxiliary, &commitment, &mut pt, 136)
++                .prove_prefix(
++                    &packed,
++                    auxiliary,
++                    &commitment.root,
++                    &[0x42; 32],
++                    &mut pt,
++                    136,
++                )
+                 .unwrap();
+             assert_eq!(proof.grinding_nonces.len(), prepared.bit_vars() + 8);
+             for (claim, cached) in claims.iter().zip(&marginals) {
+@@ -810,7 +925,7 @@ mod tests {
+             let mut vt = Blake3Transcript::new();
+             assert_eq!(
+                 prepared
+-                    .verify_prefix(&proof, &commitment, &mut vt, 136)
++                    .verify_prefix(&proof, &commitment.root, &[0x42; 32], &mut vt, 136)
+                     .unwrap(),
+                 claims
+             );
+@@ -827,21 +942,39 @@ mod tests {
+             *nonce -= 1;
+             assert!(
+                 prepared
+-                    .verify_prefix(&tampered, &commitment, &mut Blake3Transcript::new(), 136)
++                    .verify_prefix(
++                        &tampered,
++                        &commitment.root,
++                        &[0x42; 32],
++                        &mut Blake3Transcript::new(),
++                        136
++                    )
+                     .is_err()
+             );
+             let mut missing = proof.clone();
+             missing.grinding_nonces.pop();
+             assert!(
+                 prepared
+-                    .verify_prefix(&missing, &commitment, &mut Blake3Transcript::new(), 136)
++                    .verify_prefix(
++                        &missing,
++                        &commitment.root,
++                        &[0x42; 32],
++                        &mut Blake3Transcript::new(),
++                        136
++                    )
+                     .is_err()
+             );
+             let mut extra = proof.clone();
+             extra.grinding_nonces.push(0);
+             assert!(
+                 prepared
+-                    .verify_prefix(&extra, &commitment, &mut Blake3Transcript::new(), 136)
++                    .verify_prefix(
++                        &extra,
++                        &commitment.root,
++                        &[0x42; 32],
++                        &mut Blake3Transcript::new(),
++                        136
++                    )
+                     .is_err()
+             );
+         }
+@@ -865,16 +998,53 @@ mod tests {
+                 .prove_prefix(
+                     &packed,
+                     auxiliary,
+-                    &commitment,
++                    &commitment.root,
++                    &[0x42; 32],
+                     &mut Blake3Transcript::new(),
+                     108,
+                 )
+                 .unwrap();
+             assert!(
+                 prepared
+-                    .verify_prefix(&proof, &commitment, &mut Blake3Transcript::new(), 108)
++                    .verify_prefix(
++                        &proof,
++                        &commitment.root,
++                        &[0x42; 32],
++                        &mut Blake3Transcript::new(),
++                        108
++                    )
+                     .is_err()
+             );
+         }
+     }
++
++    #[test]
++    fn valid_dummy_keccak_in_inactive_slot_is_rejected_by_activity_pin() {
++        let prepared = PreparedKeccak::new_slab(1, 16, 4).unwrap();
++        assert_eq!(prepared.capacity(), 2);
++        // Every block is a valid Keccak permutation with constant one; the
++        // blocks assigned to signature 1 violate the public activity policy.
++        let states = vec![[false; compact::STATE_BITS]; prepared.capacity() * 4];
++        let (packed, a, b, lincheck) = compact::generate_witness_batch_major(
++            &states,
++            (prepared.capacity() * 4).ilog2() as usize,
++        );
++        let root = [0x81; 32];
++        let context = [0x82; 32];
++        let (proof, _, _) = prepared
++            .prove_prefix(
++                &packed,
++                KeccakAuxiliary { a, b, lincheck },
++                &root,
++                &context,
++                &mut Blake3Transcript::new(),
++                108,
++            )
++            .unwrap();
++        assert!(
++            prepared
++                .verify_prefix(&proof, &root, &context, &mut Blake3Transcript::new(), 108,)
++                .is_err()
++        );
++    }
+ }
+diff --git a/src/piop/spartan/falcon1024_ct/hybrid_size.rs b/src/piop/spartan/falcon1024_ct/hybrid_size.rs
+index 2fdff8b7..07c4b5f3 100644
+--- a/src/piop/spartan/falcon1024_ct/hybrid_size.rs
++++ b/src/piop/spartan/falcon1024_ct/hybrid_size.rs
+@@ -138,11 +138,10 @@ impl FalconHybridProof {
+         for &nonce in pcs_nonces {
+             visit("pcs_auxiliary", nonce);
+         }
+-        let shared::Proof {
++        let shared::JointProof {
+             ood,
+             ring: _,
+             ligerito,
+-            paths: _,
+         } = opening;
+         if let Some(crate::ligerito_flock::OodRound { y: _, nonce }) = ood {
+             for &nonce in nonce.iter() {
+@@ -203,6 +202,115 @@ impl FalconHybridProof {
+             + NONCE_BYTES * (opening_nonces.len() + pcs_nonces.len())
+     }
+ 
++    /// Disjoint byte counts under the same accounting as `payload_size_bytes`.
++    /// This inspects stored messages only; it does not change the transcript.
++    pub fn payload_size_breakdown(&self) -> Vec<(&'static str, usize)> {
++        let piop = match &self.arithmetic.piop {
++            super::super::opening::PiopProof::Native(proof) => piop_bytes(proof),
++            super::super::opening::PiopProof::Shared(proof) => proof.payload_size_bytes(),
++        };
++        let ring = match &self.arithmetic.ring {
++            super::super::opening::RingProof::Native(proof) => native_bytes(proof),
++            super::super::opening::RingProof::Shared(proof) => proof.payload_size_bytes(),
++        };
++        let pcs = &self.opening.ligerito;
++        let rows_bytes = |rows: &[Vec<flock_core::field::Gf128>]| {
++            FIELD_BYTES * rows.iter().map(Vec::len).sum::<usize>()
++        };
++        let initial_rows = rows_bytes(&pcs.initial_proof.opened_rows);
++        let initial_paths = HASH_BYTES * pcs.initial_proof.merkle_proof.len();
++        let recursive_rows = pcs
++            .recursive_proofs
++            .iter()
++            .map(|proof| rows_bytes(&proof.opened_rows))
++            .sum::<usize>();
++        let recursive_paths = HASH_BYTES
++            * pcs
++                .recursive_proofs
++                .iter()
++                .map(|proof| proof.merkle_proof.len())
++                .sum::<usize>();
++        let final_rows = rows_bytes(&pcs.final_proof.opened_rows);
++        let final_paths = HASH_BYTES * pcs.final_proof.merkle_proof.len();
++        let final_polynomial = FIELD_BYTES * pcs.final_proof.yr.len();
++        let roots = HASH_BYTES * (1 + pcs.recursive_roots.len());
++        let sumchecks = 2 * FIELD_BYTES * pcs.sumcheck_transcript.len();
++        let ood = FIELD_BYTES * pcs.ood_values.len();
++        let nonces = NONCE_BYTES * (pcs.grinding_nonces.len() + pcs.fold_grinding_nonces.len());
++        let pcs_payload = initial_rows
++            + initial_paths
++            + recursive_rows
++            + recursive_paths
++            + final_rows
++            + final_paths
++            + final_polynomial
++            + roots
++            + sumchecks
++            + ood
++            + nonces;
++        let parts = vec![
++            ("arithmetic_piop", piop),
++            ("ring_certificate_and_reduction", ring),
++            (
++                "arithmetic_source_binding",
++                arithmetic_bytes(&self.arithmetic) - piop - ring,
++            ),
++            (
++                "integer_column_sums_first_limb",
++                self.bridge.sums.lower_encoded_len(),
++            ),
++            (
++                "integer_column_sums_remaining_limbs",
++                self.bridge.sums.upper_encoded_len(),
++            ),
++            (
++                "binary_bridge_gkr",
++                2 * FIELD_BYTES * self.bridge.forest.len(),
++            ),
++            (
++                "binary_bridge_nonces",
++                NONCE_BYTES * self.bridge.nonces.len(),
++            ),
++            (
++                "keccak_piops",
++                self.keccak.iter().map(serialized_bytes).sum(),
++            ),
++            ("binary_link_nonces", NONCE_BYTES * self.links_nonces.len()),
++            ("joint_binary_sumcheck", joint_bytes(&self.joint)),
++            (
++                "opening_ood",
++                self.opening
++                    .ood
++                    .as_ref()
++                    .map_or(0, |round| FIELD_BYTES + nonce_bytes(&round.nonce)),
++            ),
++            (
++                "opening_ring_switch",
++                FIELD_BYTES * self.opening.ring.s_v.len(),
++            ),
++            ("source_authentication_joint", initial_paths),
++            ("pcs_initial_opened_rows", initial_rows),
++            ("pcs_recursive_opened_rows", recursive_rows),
++            ("pcs_recursive_authentication", recursive_paths),
++            ("pcs_final_opened_rows", final_rows),
++            ("pcs_final_authentication", final_paths),
++            ("pcs_final_polynomial", final_polynomial),
++            ("pcs_roots", roots),
++            ("pcs_sumchecks", sumchecks),
++            ("pcs_ood_values", ood),
++            ("pcs_nonces", nonces),
++            ("pcs_bincode_framing", serialized_bytes(pcs) - pcs_payload),
++            (
++                "opening_and_auxiliary_nonces",
++                NONCE_BYTES * (self.opening_nonces.len() + self.pcs_nonces.len()),
++            ),
++        ];
++        debug_assert_eq!(
++            parts.iter().map(|(_, bytes)| bytes).sum::<usize>(),
++            self.payload_size_bytes()
++        );
++        parts
++    }
+ }
+ 
+ fn add_nonce(
+@@ -454,12 +562,11 @@ fn joint_bytes(proof: &joint::Proof) -> usize {
+     FIELD_BYTES * (2 * rounds.len() + 1) + NONCE_BYTES * nonces.len()
+ }
+ 
+-fn opening_bytes(proof: &shared::Proof<3>) -> usize {
+-    let shared::Proof {
++fn opening_bytes(proof: &shared::JointProof) -> usize {
++    let shared::JointProof {
+         ood,
+         ring,
+         ligerito,
+-        paths,
+     } = proof;
+     let crate::ligerito::RingSwitchProof { s_v } = ring;
+     ood.as_ref()
+@@ -468,7 +575,6 @@ fn opening_bytes(proof: &shared::Proof<3>) -> usize {
+         })
+         + FIELD_BYTES * s_v.len()
+         + serialized_bytes(ligerito)
+-        + HASH_BYTES * paths.iter().map(Vec::len).sum::<usize>()
+ }
+ 
+ #[cfg(test)]
+diff --git a/src/piop/spartan/falcon1024_ct/hybrid_sumcheck.rs b/src/piop/spartan/falcon1024_ct/hybrid_sumcheck.rs
+index 2f6bf47a..548b193d 100644
+--- a/src/piop/spartan/falcon1024_ct/hybrid_sumcheck.rs
++++ b/src/piop/spartan/falcon1024_ct/hybrid_sumcheck.rs
+@@ -42,6 +42,8 @@ pub(crate) struct Gather {
+     entries: Vec<(usize, F)>,
+     high_point: Vec<F>,
+     repeat_start: Option<usize>,
++    /// Only these initial repeat indices carry equality weights.
++    repeat_limit: Option<usize>,
+ }
+ 
+ impl Gather {
+@@ -57,6 +59,7 @@ impl Gather {
+             entries,
+             high_point,
+             repeat_start: None,
++            repeat_limit: None,
+         }
+     }
+ 
+@@ -73,6 +76,20 @@ impl Gather {
+         }
+     }
+ 
++    /// Restrict the repeated map to a public prefix of its repeat domain.
++    pub fn with_repeat_limit(mut self, limit: usize) -> Self {
++        self.repeat_limit = Some(limit);
++        self
++    }
++
++    fn repeat_weights(&self) -> Vec<F> {
++        let mut weights = eq_table(&self.high_point);
++        if let Some(limit) = self.repeat_limit {
++            weights[limit..].fill(F::ZERO);
++        }
++        weights
++    }
++
+     fn axis(&self, source_vars: usize) -> usize {
+         self.repeat_start
+             .unwrap_or(source_vars - self.high_point.len())
+@@ -162,6 +179,9 @@ fn validate<const N: usize>(
+                     .entries
+                     .last()
+                     .is_some_and(|&(index, _)| index >= 1 << (bits - gather.high_point.len()))
++                || gather
++                    .repeat_limit
++                    .is_some_and(|limit| limit > 1 << gather.high_point.len())
+             {
+                 return Err(Error::Invalid("joint binary gather index"));
+             }
+@@ -280,7 +300,7 @@ struct GatherState {
+ 
+ impl GatherState {
+     fn new(gather: &Gather, packed: &[F], source_vars: usize) -> Self {
+-        let high = eq_table(&gather.high_point);
++        let high = gather.repeat_weights();
+         let mut words = Vec::new();
+         let mut low = Vec::new();
+         for &(index, coefficient) in &gather.entries {
+@@ -821,6 +841,30 @@ fn equality(a: &[F], b: &[F]) -> F {
+         .fold(F::ONE, |value, (&a, &b)| value * (F::ONE + a + b))
+ }
+ 
++/// Sum `eq(a,i) * eq(b,i)` over `i < limit`, without expanding the repeat
++/// domain. At each bit, retain the equal-prefix contribution and the sum
++/// over all assignments to lower bits. The full prefix is ordinary equality.
++fn prefix_equality(a: &[F], b: &[F], limit: usize) -> F {
++    debug_assert_eq!(a.len(), b.len());
++    debug_assert!(limit <= 1 << a.len());
++    if limit == 1 << a.len() {
++        return equality(a, b);
++    }
++    let mut below = F::ZERO;
++    let mut all = F::ONE;
++    for (bit, (&a, &b)) in a.iter().zip(b).enumerate() {
++        let zero = (F::ONE + a) * (F::ONE + b);
++        let one = a * b;
++        below = if limit >> bit & 1 == 1 {
++            zero * all + one * below
++        } else {
++            zero * below
++        };
++        all *= zero + one;
++    }
++    below
++}
++
+ impl Coefficients {
+     fn evaluate(&self, point: &[F]) -> F {
+         let mut value = F::ZERO;
+@@ -851,7 +895,12 @@ impl Coefficients {
+             for &(index, coefficient) in &gather.entries {
+                 local += coefficient * low[index & (low.len() - 1)] * high[index >> split];
+             }
+-            value += local * equality(&gather.high_point, &point[repeat_start..repeat_end]);
++            let repeat_point = &point[repeat_start..repeat_end];
++            let repeat = match gather.repeat_limit {
++                Some(limit) => prefix_equality(&gather.high_point, repeat_point, limit),
++                None => equality(&gather.high_point, repeat_point),
++            };
++            value += local * repeat;
+         }
+         value
+     }
+@@ -1080,6 +1129,9 @@ mod tests {
+                 let high = eq_table(&gather.high_point);
+                 let repeat_start = gather.axis(geometry.logs[branch] + 7);
+                 for (repeat, weight) in high.into_iter().enumerate() {
++                    if gather.repeat_limit.is_some_and(|limit| repeat >= limit) {
++                        continue;
++                    }
+                     for &(index, coefficient) in &gather.entries {
+                         // Independent insertion oracle, one coordinate at a time.
+                         let mut source = 0usize;
+@@ -1169,6 +1221,130 @@ mod tests {
+         )
+     }
+ 
++    #[test]
++    fn prefix_equality_matches_dense_for_every_limit() {
++        let mut random = Random(0x7072_6566_6978);
++        for vars in 0..=6 {
++            let a: Vec<_> = (0..vars).map(|_| random.next()).collect();
++            for kind in 0..3 {
++                let b: Vec<_> = (0..vars)
++                    .map(|i| match kind {
++                        0 => F::ZERO,
++                        1 if i % 2 == 0 => F::ONE,
++                        _ => random.next(),
++                    })
++                    .collect();
++                let products: Vec<_> = eq_table(&a)
++                    .into_iter()
++                    .zip(eq_table(&b))
++                    .map(|(a, b)| a * b)
++                    .collect();
++                let mut expected = F::ZERO;
++                for limit in 0..=1 << vars {
++                    assert_eq!(prefix_equality(&a, &b, limit), expected);
++                    if limit < products.len() {
++                        expected += products[limit];
++                    }
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn masked_gathers_match_subcubes_and_dense_proof() {
++        let (geometry, packed, _) = fixture([9, 10]);
++        let sources = packed.each_ref().map(Vec::as_slice);
++        let mut random = Random(0x6d61_736b_6761_7468);
++        for (repeat_vars, live, pinned) in [
++            (2, 3, false),
++            (3, 7, false),
++            (4, 9, false),
++            (3, 8, false),
++            (1, 1, true), // Batch-one K4's physical signature coordinate.
++        ] {
++            let repeat: Vec<_> = (0..repeat_vars)
++                .map(|_| if pinned { F::ZERO } else { random.next() })
++                .collect();
++            let mut masked: [Coefficients; 2] = std::array::from_fn(|_| Coefficients::default());
++            let mut subcubes = masked.clone();
++            for branch in 0..2 {
++                let local_bits = geometry.logs[branch] + 7 - repeat_vars;
++                let axis = if branch == 0 { 7 } else { local_bits };
++                let mut entries: Vec<_> = (0..64)
++                    .map(|_| {
++                        (
++                            random.next().lo as usize & ((1 << local_bits) - 1),
++                            random.next(),
++                        )
++                    })
++                    .collect();
++                entries.extend([(127, F::ONE), (127, F::ONE), (64, random.next())]);
++                masked[branch].gathers.push(
++                    Gather::repeated_at(entries.clone(), repeat.clone(), axis)
++                        .with_repeat_limit(live),
++                );
++                for (point, scale) in super::super::hybrid::live_subcubes(&repeat, live) {
++                    subcubes[branch].gathers.push(Gather::repeated_at(
++                        entries.iter().map(|&(i, w)| (i, w * scale)).collect(),
++                        point,
++                        axis,
++                    ));
++                }
++            }
++            let (witness, weights, target) = dense_tables(&geometry, sources, masked.each_ref());
++            let (_, old_weights, old_target) =
++                dense_tables(&geometry, sources, subcubes.each_ref());
++            assert_eq!(weights, old_weights);
++            assert_eq!(target, old_target);
++            let actual = prove(
++                &mut transcript(false),
++                &geometry,
++                sources,
++                masked.each_ref(),
++                target,
++                0,
++                &mut Scratch::default(),
++            )
++            .unwrap();
++            let old = prove(
++                &mut transcript(false),
++                &geometry,
++                sources,
++                subcubes.each_ref(),
++                target,
++                0,
++                &mut Scratch::default(),
++            )
++            .unwrap();
++            assert_eq!(actual, old);
++            assert_eq!(
++                actual,
++                dense_prove(
++                    &mut transcript(false),
++                    &geometry,
++                    witness,
++                    weights,
++                    target,
++                    0
++                )
++            );
++            assert_eq!(
++                verify(
++                    &mut transcript(false),
++                    &geometry,
++                    masked.each_ref(),
++                    target,
++                    0,
++                    &actual.0,
++                )
++                .unwrap(),
++                actual.1
++            );
++            masked[0].gathers[0].repeat_limit = Some((1 << repeat_vars) + 1);
++            assert!(validate(&geometry, masked.each_ref()).is_err());
++        }
++    }
++
+     #[test]
+     fn cached_gather_rounds_match_repeat_scan_for_every_axis_and_round() {
+         let mut random = Random(0x3894abc012);
+diff --git a/vendor/flock-mod/crates/flock-core/src/lincheck.rs b/vendor/flock-mod/crates/flock-core/src/lincheck.rs
+index 0181722f..789aa5bd 100644
+--- a/vendor/flock-mod/crates/flock-core/src/lincheck.rs
++++ b/vendor/flock-mod/crates/flock-core/src/lincheck.rs
+@@ -239,14 +239,21 @@ pub trait LincheckCircuit: Sync {
+     /// Column index of a constant-one wire to pin, or `None` if the circuit has
+     /// no such wire. When `Some(col)`, lincheck folds one extra `β`-term into the
+     /// comb so the sumcheck also proves that the committed constant column is the
+-    /// all-ones vector (whose MLE is the constant `1`), closing the all-zero
+-    /// witness soundness gap. This REQUIRES the witness to set that wire to `1`
+-    /// in *every* batched instance — padding included. See
++    /// prescribed public vector, closing the all-zero witness soundness gap.
++    /// By default this is the all-ones vector, including padding. See
+     /// `docs/const-wire-pin.md`. Default `None` keeps the transcript unchanged
+     /// for circuits without a constant wire.
+     fn const_pin_col(&self) -> Option<usize> {
+         None
+     }
++
++    /// MLE of the public constant-wire column at the block coordinates.
++    /// A circuit using an activity mask must bind that mask's public parameters
++    /// before any challenges. The default preserves constant one for existing
++    /// circuits; this value is used only when `const_pin_col()` is present.
++    fn const_pin_value(&self, _outer_point: &[Gf128]) -> Gf128 {
++        Gf128::ONE
++    }
+ }
+ 
+ /// Default `LincheckCircuit` over a pair of sparse binary matrices. Delegates
+@@ -1407,7 +1414,8 @@ fn prove_padded_inner<Ch: Challenger>(
+     }
+ 
+     // 2b. Constant-wire pin. Fold β·eq(j*, ·) into the comb so the same sumcheck
+-    //     also proves z_vec[j*] = 1 (the all-ones constant column). Since j* is a
++    //     also proves z_vec[j*] equals the circuit's public constant-column MLE.
++    //     Since j* is a
+     //     boolean index, eq(j*, ·) is the one-hot vector and this is a single
+     //     entry update. β is sampled after α; the verifier mirrors both. See
+     //     docs/const-wire-pin.md.
+@@ -1615,13 +1623,13 @@ pub fn verify<Ch: Challenger>(
+     //    vector of length 2^k_skip. Parallel fold for the early (large) rounds.
+     let t = std::time::Instant::now();
+     // Constant-wire pin (mirror of prove): β sampled after α, comb gains +β at
+-    // the constant column, and the initial target gains +β·1 — the honest
+-    // all-ones constant column folds to 1. See docs/const-wire-pin.md.
++    // the constant column, and the initial target gains the public column's
++    // folded value times β. See docs/const-wire-pin.md.
+     let mut target = alpha * v_a + v_b;
+     if let Some(col) = circuit.const_pin_col() {
+         let beta = challenger.sample_f128();
+         comb_vec[col] += beta;
+-        target += beta;
++        target += beta * circuit.const_pin_value(&x_ab.x_outer);
+     }
+     let mut running = target;
+     let mut r_rounds = Vec::with_capacity(inner_rest_len);
+diff --git a/vendor/flock-mod/crates/flock-core/src/merkle.rs b/vendor/flock-mod/crates/flock-core/src/merkle.rs
+index 54378657..9aa4c322 100644
+--- a/vendor/flock-mod/crates/flock-core/src/merkle.rs
++++ b/vendor/flock-mod/crates/flock-core/src/merkle.rs
+@@ -555,6 +555,44 @@ pub fn merkle_tree(data: &[u8], num_leaves: usize, kind: HashKind) -> Vec<Hash>
+     }
+ }
+ 
++/// Build a tree from canonical rows assembled in bounded temporary buffers.
++/// `fill_rows(first, bytes)` must write every byte of the consecutive rows
++/// starting at `first`. No full concatenated codeword is allocated.
++pub fn merkle_tree_from_rows<F>(
++    num_leaves: usize,
++    leaf_size: usize,
++    kind: HashKind,
++    fill_rows: F,
++) -> Vec<Hash>
++where
++    F: Fn(usize, &mut [u8]) + Sync,
++{
++    assert!(num_leaves.is_power_of_two() && num_leaves > 0);
++    assert!(leaf_size > 0);
++    let build = || {
++        let mut tree: Vec<Hash> = crate::alloc_uninit_vec(2 * num_leaves - 1);
++        let tile_rows = (128 * 1024 / leaf_size).max(1);
++        tree[..num_leaves]
++            .par_chunks_mut(tile_rows)
++            .enumerate()
++            .for_each_init(
++                || vec![0u8; tile_rows * leaf_size],
++                |buffer, (tile, hashes)| {
++                    let bytes = &mut buffer[..hashes.len() * leaf_size];
++                    fill_rows(tile * tile_rows, bytes);
++                    hash_leaves(bytes, leaf_size, hashes, kind);
++                },
++            );
++        fill_internal_levels(&mut tree, num_leaves, kind);
++        tree
++    };
++    if merkle_use_all_cores(num_leaves.saturating_mul(leaf_size)) {
++        crate::all_core_pool().install(build)
++    } else {
++        build()
++    }
++}
++
+ fn merkle_tree_impl(data: &[u8], num_leaves: usize, kind: HashKind) -> Vec<Hash> {
+     assert!(
+         num_leaves.is_power_of_two() && num_leaves > 0,
+@@ -576,7 +614,12 @@ fn merkle_tree_impl(data: &[u8], num_leaves: usize, kind: HashKind) -> Vec<Hash>
+     // 1. Leaves — fully parallel, SIMD-batched across leaves where possible.
+     hash_leaves(data, leaf_size, &mut tree[..num_leaves], kind);
+ 
+-    // 2. Internal levels — parallel within a level, sequential across levels.
++    fill_internal_levels(&mut tree, num_leaves, kind);
++    tree
++}
++
++fn fill_internal_levels(tree: &mut [Hash], num_leaves: usize, kind: HashKind) {
++    // Internal levels are parallel within a level, sequential across levels.
+     let mut read_start = 0usize;
+     let mut read_len = num_leaves;
+     while read_len > 1 {
+@@ -591,8 +634,6 @@ fn merkle_tree_impl(data: &[u8], num_leaves: usize, kind: HashKind) -> Vec<Hash>
+         read_start += read_len;
+         read_len = next_len;
+     }
+-
+-    tree
+ }
+ 
+ /// Sequential (single-threaded) version of [`merkle_tree`]. Used for
+@@ -830,6 +871,24 @@ mod tests {
+     /// for the other.
+     const KINDS: [HashKind; 2] = [HashKind::Sha256, HashKind::Blake3];
+ 
++    #[test]
++    fn generated_rows_match_dense_tree() {
++        for kind in KINDS {
++            for leaves in [1usize, 32, 1024] {
++                for leaf_size in [16usize, 256] {
++                    let bytes: Vec<_> = (0..leaves * leaf_size)
++                        .map(|i| (i.wrapping_mul(37) >> 3) as u8)
++                        .collect();
++                    let actual = merkle_tree_from_rows(leaves, leaf_size, kind, |first, out| {
++                        let start = first * leaf_size;
++                        out.copy_from_slice(&bytes[start..start + out.len()]);
++                    });
++                    assert_eq!(actual, merkle_tree(&bytes, leaves, kind));
++                }
++            }
++        }
++    }
++
+     #[test]
+     fn two_leaves_matches_hand_computation() {
+         // Two 8-byte leaves: [0,1,2,3,4,5,6,7] and [8,9,10,11,12,13,14,15].
+diff --git a/vendor/flock-mod/crates/flock-core/src/pcs/commit.rs b/vendor/flock-mod/crates/flock-core/src/pcs/commit.rs
+index 1a20c4d9..3ec28384 100644
+--- a/vendor/flock-mod/crates/flock-core/src/pcs/commit.rs
++++ b/vendor/flock-mod/crates/flock-core/src/pcs/commit.rs
+@@ -231,6 +231,18 @@ pub fn commit_into(
+     finalize_commit(codeword, params)
+ }
+ 
++/// Encode populated witness lanes without constructing a Merkle tree.
++/// Callers combining several sources can authenticate their encoded rows in
++/// one tree. The returned buffer has the same layout as `ProverData::codeword`.
++pub fn encode(z_packed: &[Gf128], params: &PcsParams) -> Vec<Gf128> {
++    params.validate();
++    assert_eq!(z_packed.len(), 1usize << params.log_msg_len());
++    let mut codeword = crate::scratch::take_f128(params.codeword_len_f128());
++    replicate_message_fill(&mut codeword, z_packed);
++    encode_replicated(&mut codeword, params);
++    codeword
++}
++
+ /// Fill `codeword` with `2^r` replicas of `msg` (`r = log2(codeword.len() /
+ /// msg.len())`) — the exact state after the first `r` forward-NTT layers on
+ /// the zero-padded coefficient vector `[msg, 0, …, 0]`. Pair with
+@@ -266,12 +278,7 @@ fn finalize_commit(mut codeword: Vec<Gf128>, params: &PcsParams) -> (Commitment,
+     // sub-NTTs with shared twiddles. Each sub-NTT operates on its lane of the
+     // SoA buffer. The first `log_inv_rate` layers were pre-applied by the
+     // caller's replicate-fill (commit_into), so start past them.
+-    let ntt = AdditiveNttF128::standard(params.k_code());
+-    ntt.forward_transform_interleaved_from_layer(
+-        &mut codeword,
+-        params.num_ntts(),
+-        params.log_inv_rate,
+-    );
++    encode_replicated(&mut codeword, params);
+     if timing {
+         eprintln!(
+             "[commit-timing] ntt: {:.2} ms",
+@@ -314,6 +321,14 @@ fn finalize_commit(mut codeword: Vec<Gf128>, params: &PcsParams) -> (Commitment,
+     )
+ }
+ 
++fn encode_replicated(codeword: &mut [Gf128], params: &PcsParams) {
++    AdditiveNttF128::standard(params.k_code()).forward_transform_interleaved_from_layer(
++        codeword,
++        params.num_ntts(),
++        params.log_inv_rate,
++    );
++}
++
+ /// Tag the current thread as background QoS. On macOS the scheduler then
+ /// strongly prefers efficiency (E) cores — ideal for the fault/bandwidth-bound
+ /// codeword pre-fault, which we want OFF the performance cores running witness
+diff --git a/vendor/flock-mod/crates/flock-core/src/proof.rs b/vendor/flock-mod/crates/flock-core/src/proof.rs
+index 504370cb..64659c7e 100644
+--- a/vendor/flock-mod/crates/flock-core/src/proof.rs
++++ b/vendor/flock-mod/crates/flock-core/src/proof.rs
+@@ -66,8 +66,19 @@ pub fn bind_statement<Ch: Challenger>(
+     challenger: &mut Ch,
+     r1cs: &BlockR1cs,
+     commitment: &Commitment,
++) {
++    bind_source_statement(challenger, r1cs, &commitment.root);
++}
++
++/// Bind a circuit prefix to a caller-defined source context. The caller must
++/// bind the source root, projection, and public circuit policy in this digest
++/// and authenticate the returned local claims through that projection.
++pub fn bind_source_statement<Ch: Challenger>(
++    challenger: &mut Ch,
++    r1cs: &BlockR1cs,
++    source_context: &[u8; 32],
+ ) {
+     challenger.observe_label(b"flock-r1cs-v0");
+     challenger.observe_bytes(&r1cs.statement_digest());
+-    challenger.observe_bytes(&commitment.root);
++    challenger.observe_bytes(source_context);
+ }
+diff --git a/vendor/flock-mod/crates/flock-core/src/verifier.rs b/vendor/flock-mod/crates/flock-core/src/verifier.rs
+index 4731608f..60972031 100644
+--- a/vendor/flock-mod/crates/flock-core/src/verifier.rs
++++ b/vendor/flock-mod/crates/flock-core/src/verifier.rs
+@@ -247,6 +247,27 @@ pub fn verify_core<Ch: Challenger>(
+     commitment: &Commitment,
+     lincheck_circuit: &dyn lincheck::LincheckCircuit,
+     challenger: &mut Ch,
++) -> Result<(ZClaim, ZClaim), VerifyError> {
++    verify_source_core(
++        r1cs,
++        zerocheck_proof,
++        lincheck_proof,
++        &commitment.root,
++        lincheck_circuit,
++        challenger,
++    )
++}
++
++/// Verify a prefix whose two local witness claims will be authenticated through
++/// a caller-defined projection of a committed source. The digest must bind the
++/// source root, projection, and public circuit policy before any challenges.
++pub fn verify_source_core<Ch: Challenger>(
++    r1cs: &BlockR1cs,
++    zerocheck_proof: &zerocheck::ZerocheckProof,
++    lincheck_proof: &lincheck::LincheckProof,
++    source_context: &[u8; 32],
++    lincheck_circuit: &dyn lincheck::LincheckCircuit,
++    challenger: &mut Ch,
+ ) -> Result<(ZClaim, ZClaim), VerifyError> {
+     // Verification is single-threaded; run the body on the dedicated 1-thread pool.
+     verifier_pool().install(move || {
+@@ -254,7 +275,7 @@ pub fn verify_core<Ch: Challenger>(
+             r1cs,
+             zerocheck_proof,
+             lincheck_proof,
+-            commitment,
++            source_context,
+             lincheck_circuit,
+             challenger,
+         )
+@@ -265,7 +286,7 @@ fn verify_core_inner<Ch: Challenger>(
+     r1cs: &BlockR1cs,
+     zerocheck_proof: &zerocheck::ZerocheckProof,
+     lincheck_proof: &lincheck::LincheckProof,
+-    commitment: &Commitment,
++    source_context: &[u8; 32],
+     lincheck_circuit: &dyn lincheck::LincheckCircuit,
+     challenger: &mut Ch,
+ ) -> Result<(ZClaim, ZClaim), VerifyError> {
+@@ -281,7 +302,7 @@ fn verify_core_inner<Ch: Challenger>(
+ 
+     // ---- Bind FS transcript to the statement (mirrors prover::prove).
+     let t = std::time::Instant::now();
+-    crate::proof::bind_statement(challenger, r1cs, commitment);
++    crate::proof::bind_source_statement(challenger, r1cs, source_context);
+     if trace {
+         eprintln!(
+             "      [vco] bind_statement: {}",
+diff --git a/vendor/flock-mod/crates/flock-prover/src/prover.rs b/vendor/flock-mod/crates/flock-prover/src/prover.rs
+index 811a3193..77dbb039 100644
+--- a/vendor/flock-mod/crates/flock-prover/src/prover.rs
++++ b/vendor/flock-mod/crates/flock-prover/src/prover.rs
+@@ -686,8 +686,34 @@ pub fn prove_fast_committed_prefix<Ch: Challenger>(
+     challenger: &mut Ch,
+ ) -> CommittedPrefix {
+     assert_eq!(commitment.params.m, r1cs.m);
++    prove_fast_source_prefix(
++        r1cs,
++        &commitment.root,
++        z_packed,
++        a_packed_f128,
++        b_packed_f128,
++        z_packed_lincheck,
++        lincheck_circuit,
++        challenger,
++    )
++}
++
++/// Prove a local circuit prefix whose witness is a projection of a source
++/// committed by the caller. `source_context` binds that commitment and the
++/// public projection; both returned claims still need source authentication.
++#[allow(clippy::too_many_arguments)]
++pub fn prove_fast_source_prefix<Ch: Challenger>(
++    r1cs: &BlockR1cs,
++    source_context: &[u8; 32],
++    z_packed: &[Gf128],
++    a_packed_f128: Vec<Gf128>,
++    b_packed_f128: Vec<Gf128>,
++    z_packed_lincheck: Vec<u8>,
++    lincheck_circuit: &dyn lincheck::LincheckCircuit,
++    challenger: &mut Ch,
++) -> CommittedPrefix {
+     assert_eq!(z_packed.len(), 1usize << (r1cs.m - pcs::LOG_PACKING));
+-    bind_statement(challenger, r1cs, commitment);
++    flock_core::proof::bind_source_statement(challenger, r1cs, source_context);
+ 
+     let padding = r1cs.padding_spec();
+     let (zc_proof, zc_claim, s_hat_v_c) = {
+diff --git a/vendor/flock-mod/crates/flock-prover/src/r1cs_hashes/keccak.rs b/vendor/flock-mod/crates/flock-prover/src/r1cs_hashes/keccak.rs
+index e2cb7bff..f6cbd0f9 100644
+--- a/vendor/flock-mod/crates/flock-prover/src/r1cs_hashes/keccak.rs
++++ b/vendor/flock-mod/crates/flock-prover/src/r1cs_hashes/keccak.rs
+@@ -520,20 +520,39 @@ pub fn min_n_keccaks_log(n_keccaks: usize) -> usize {
+ /// Apply φᵀ to a length-`STATE_BITS` Gf128 buffer: `out[s_in] = Σ_{s_out :
+ /// s_in ∈ preim(s_out)} in[s_out]`.
+ pub(crate) fn apply_phi_t(v: &[Gf128]) -> Vec<Gf128> {
+-    debug_assert_eq!(v.len(), STATE_BITS);
+     let mut out = vec![Gf128::ZERO; STATE_BITS];
+-    for s_out in 0..STATE_BITS {
+-        let z_p = s_out / N_LANES;
+-        let xy = s_out % N_LANES;
+-        let y_p = xy / 5;
+-        let x_p = xy % 5;
+-        let preim = theta_rho_pi_preimage(x_p, y_p, z_p);
+-        let val = v[s_out];
+-        for &s_in in preim.iter() {
+-            out[s_in] += val;
++    apply_phi_t_into(v, &mut out);
++    out
++}
++
++/// Factor phi^T = theta^T * (pi * rho)^T. The inverse permutation writes
++/// every output coordinate exactly once. Theta's shared column parities
++/// then replace the eleven-way scatter for each coordinate.
++fn apply_phi_t_into(v: &[Gf128], out: &mut [Gf128]) {
++    debug_assert_eq!(v.len(), STATE_BITS);
++    debug_assert_eq!(out.len(), STATE_BITS);
++    let mut parity = [[Gf128::ZERO; 5]; LANE_BITS];
++    for x in 0..5 {
++        for y in 0..5 {
++            let a = (x + 3 * y) % 5;
++            let b = x;
++            let rotation = RHO_OFFSETS[a][b] as usize;
++            for z in 0..LANE_BITS {
++                let c = (z + LANE_BITS - rotation) % LANE_BITS;
++                let value = v[state_idx(x, y, z)];
++                out[state_idx(a, b, c)] = value;
++                parity[c][a] += value;
++            }
++        }
++    }
++    for z in 0..LANE_BITS {
++        for x in 0..5 {
++            let column = parity[z][(x + 1) % 5] + parity[(z + 1) % LANE_BITS][(x + 4) % 5];
++            for y in 0..5 {
++                out[state_idx(x, y, z)] += column;
++            }
+         }
+     }
+-    out
+ }
+ 
+ /// Forward-apply φ on a `bool` state — tracks the round-constant accumulator
+@@ -662,20 +681,9 @@ pub fn generate_witness_with_ab_packed_and_lincheck(
+ }
+ 
+ // ---------------------------------------------------------------------------
+-// Lincheck circuit walker — extends [`keccak::KeccakLincheckCircuit`] by one
+-// transpose-recurrence round to absorb the state_24 pin rows.
+-//
+-//   K^A_24 = vec_pin (where vec_pin[j] = eq_inner[z_pos_state(24, j)])
+-//   K^A_r  = φᵀ(K^A_{r+1}) ⊕ χ_{r,A}   for r ∈ 23..0
+-//
+-// Scattering: K^A_24 → t_23 col (pin row's t_23 coefficient = φ^0 · K^A_24);
+-// K^A_r → t_{r-1} col for r ∈ {23..1}; K^A_0 → state_0 col. The state_24 col
+-// itself receives no A or B contribution (pin row writes to it via C = I).
+-//
+-// B side: pin's B = [Z_CONST] only. K^B_24 = 0; recurrence collapses to
+-// `keccak`'s B-side recurrence.
+-//
+-// Z_CONST: receives `α·dot(vec_pin, RC_24) + sum_eq_pin` extra (vs `keccak`).
++// Lincheck circuit walker. Reverse a single alpha*A+B linear form through
++// each affine state transition, adding chi-row weights before phi^T and
++// charging round constants directly to the homogeneous constant column.
+ // ---------------------------------------------------------------------------
+ 
+ pub struct KeccakLincheckCircuit;
+@@ -695,136 +703,53 @@ impl LincheckCircuit for KeccakLincheckCircuit {
+     fn fold_alpha_batched(&self, alpha: Gf128, eq_inner: &[Gf128]) -> Vec<Gf128> {
+         assert_eq!(eq_inner.len(), K, "eq_inner length must equal n_cols = K");
+         let mut comb = vec![Gf128::ZERO; K];
++        let mut constant = (alpha + Gf128::ONE) * eq_inner[Z_CONST];
+ 
+-        // ---- Row 0 (const): A = [Z_CONST], B = [Z_CONST].
+-        let e0 = eq_inner[Z_CONST];
+-        comb[Z_CONST] += alpha * e0;
+-        comb[Z_CONST] += e0;
+-
+-        // ---- state_0 input self-loops: A = [row], B = [Z_CONST].
+-        for j in 0..STATE_BITS {
+-            let row = z_pos_state(0, j);
+-            let e = eq_inner[row];
+-            comb[row] += alpha * e;
+-            comb[Z_CONST] += e;
+-        }
+-
+-        // ---- state_24 pin rows: A = L_24[j], B = [Z_CONST].
+-        let mut vec_pin: Vec<Gf128> = vec![Gf128::ZERO; STATE_BITS];
+-        let mut sum_eq_pin = Gf128::ZERO;
+-        for j in 0..STATE_BITS {
+-            let row = z_pos_state(24, j);
+-            let e = eq_inner[row];
+-            vec_pin[j] = e;
+-            sum_eq_pin += e;
+-        }
+-        comb[Z_CONST] += sum_eq_pin; // B-side from pin's B = [Z_CONST]
+-
+-        // ---- t-AND rows: build per-round χ marginals on state_r positions.
+-        let mut chi_a: Vec<Vec<Gf128>> = (0..N_T).map(|_| vec![Gf128::ZERO; STATE_BITS]).collect();
+-        let mut chi_b: Vec<Vec<Gf128>> = (0..N_T).map(|_| vec![Gf128::ZERO; STATE_BITS]).collect();
+-        let mut sum_eq_t = Gf128::ZERO;
+-
+-        for r in 0..N_T {
+-            for zpos in 0..64 {
+-                for y in 0..5 {
+-                    for x in 0..5 {
+-                        let row = z_pos_t(r, state_idx(x, y, zpos));
+-                        let e = eq_inner[row];
+-                        sum_eq_t += e;
+-                        for &s in theta_rho_pi_preimage((x + 1) % 5, y, zpos).iter() {
+-                            chi_a[r][s] += e;
+-                        }
+-                        for &s in theta_rho_pi_preimage((x + 2) % 5, y, zpos).iter() {
+-                            chi_b[r][s] += e;
+-                        }
+-                    }
+-                }
+-            }
+-        }
+-        comb[Z_CONST] += alpha * sum_eq_t;
+-
+-        // ---- Round-constant accumulation. After loop rc = RC_24.
+-        let mut rc = [false; STATE_BITS];
+-        let mut rc_a = Gf128::ZERO;
+-        let mut rc_b = Gf128::ZERO;
+-        for r in 0..N_T {
+-            for s in 0..STATE_BITS {
+-                if rc[s] {
+-                    rc_a += chi_a[r][s];
+-                    rc_b += chi_b[r][s];
+-                }
+-            }
+-            rc = apply_phi_bool(&rc);
+-            for zpos in 0..64 {
+-                if (ROUND_CONSTANTS[r] >> zpos) & 1 == 1 {
+-                    let s = state_idx(0, 0, zpos);
+-                    rc[s] ^= true;
+-                }
+-            }
+-        }
+-        let mut rc_pin = Gf128::ZERO;
++        // Input self-loops have A = [row], B = [Z_CONST]. Output pin rows
++        // contribute alpha * L_24 on A and [Z_CONST] on B.
++        let mut k = vec![Gf128::ZERO; STATE_BITS];
+         for s in 0..STATE_BITS {
+-            if rc[s] {
+-                rc_pin += vec_pin[s];
+-            }
++            let input = z_pos_state(0, s);
++            let output_weight = eq_inner[z_pos_state(24, s)];
++            comb[input] = alpha * eq_inner[input];
++            constant += eq_inner[input] + output_weight;
++            k[s] = alpha * output_weight;
+         }
+-        comb[Z_CONST] += alpha * rc_a;
+-        comb[Z_CONST] += rc_b;
+-        comb[Z_CONST] += alpha * rc_pin;
+ 
+-        // ---- Transpose recurrence, A side. Starts at K^A_24 = vec_pin.
+-        // Step 1: scatter K^A_24 → t_23 col.
+-        let t23_base = t_u64_base(N_T - 1);
+-        for s in 0..STATE_BITS {
+-            let pos = (t23_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
+-            comb[pos] += alpha * vec_pin[s];
+-        }
+-        // Step 2: K^A_23 = φᵀ(K^A_24) ⊕ χ_{23,A}.
+-        let mut k_a = apply_phi_t(&vec_pin);
+-        for s in 0..STATE_BITS {
+-            k_a[s] += chi_a[N_T - 1][s];
+-        }
+-        // Step 3: standard recurrence for r ∈ {23..1}.
+-        for r in (1..N_T).rev() {
+-            let t_base = t_u64_base(r - 1);
++        // Reverse the *combined* linear form through
++        // L_(r+1) = phi(L_r) + t_r + RC_r * z_const.
++        // A chi row adds alpha * e to phi(L_r)[x+1] and e to
++        // phi(L_r)[x+2], plus alpha * e to the constant coefficient.
++        // Linearity lets A and B share one transpose recurrence; round
++        // constants are absorbed where they enter, without expanding RC_r.
++        let mut scratch = vec![Gf128::ZERO; STATE_BITS];
++        let mut sum_chi_weights = Gf128::ZERO;
++        for r in (0..N_T).rev() {
+             for s in 0..STATE_BITS {
+-                let pos = (t_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
+-                comb[pos] += alpha * k_a[s];
++                comb[z_pos_t(r, s)] = k[s];
+             }
+-            let mut new_k = apply_phi_t(&k_a);
+-            for s in 0..STATE_BITS {
+-                new_k[s] += chi_a[r - 1][s];
++            let mut rc = ROUND_CONSTANTS[r];
++            while rc != 0 {
++                constant += k[state_idx(0, 0, rc.trailing_zeros() as usize)];
++                rc &= rc - 1;
+             }
+-            k_a = new_k;
+-        }
+-        let s0_base = state_u64_base(0);
+-        for s in 0..STATE_BITS {
+-            let pos = (s0_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
+-            comb[pos] += alpha * k_a[s];
+-        }
+-
+-        // ---- Transpose recurrence, B side. K^B_24 = 0, so K^B_23 = χ_{23,B}
+-        // — same starting point as `keccak`. Pin row doesn't contribute to
+-        // t_23 col on B side.
+-        let mut k_b = chi_b[N_T - 1].clone();
+-        for r in (1..N_T).rev() {
+-            let t_base = t_u64_base(r - 1);
+-            for s in 0..STATE_BITS {
+-                let pos = (t_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
+-                comb[pos] += k_b[s];
+-            }
+-            let mut new_k = apply_phi_t(&k_b);
+-            for s in 0..STATE_BITS {
+-                new_k[s] += chi_b[r - 1][s];
++            for z in 0..LANE_BITS {
++                for y in 0..5 {
++                    for x in 0..5 {
++                        let e = eq_inner[z_pos_t(r, state_idx(x, y, z))];
++                        sum_chi_weights += e;
++                        k[state_idx((x + 1) % 5, y, z)] += alpha * e;
++                        k[state_idx((x + 2) % 5, y, z)] += e;
++                    }
++                }
+             }
+-            k_b = new_k;
++            apply_phi_t_into(&k, &mut scratch);
++            std::mem::swap(&mut k, &mut scratch);
+         }
+         for s in 0..STATE_BITS {
+-            let pos = (s0_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
+-            comb[pos] += k_b[s];
++            comb[z_pos_state(0, s)] += k[s];
+         }
+-
++        comb[Z_CONST] = constant + alpha * sum_chi_weights;
+         comb
+     }
+ }
+@@ -1065,7 +990,7 @@ impl KeccakSetup {
+ // zeroes the contiguous padding suffix of the recycled scratch buffers.
+ // ---------------------------------------------------------------------------
+ 
+-use super::common::{nt_store_row, SendPtr, BM_V};
++use super::common::{BM_V, SendPtr, nt_store_row};
+ 
+ type VLane = [u64; BM_V];
+ type VLanes = [[u64; BM_V]; N_LANES];
+@@ -1396,8 +1321,10 @@ pub fn generate_witness_batch_major(
+ /// Execute independent Keccak chains and emit their circuit witness in one pass.
+ /// Block IDs are `permutation * capacity + signature`. The returned outputs
+ /// supply both the next slab's inputs and the SHAKE samples, without replaying
+-/// the permutations. Small batches use the scalar reference setup because the
+-/// byte-stripe producer operates on eight blocks at a time.
++/// the permutations. Inactive signatures have zero witnesses, including their
++/// constant wire, and no permutations are executed for them. The caller must
++/// use a lincheck circuit whose constant-column pin is the live-signature mask.
++/// Full live groups use SIMD; remaining live signatures use the scalar producer.
+ pub fn generate_chained_witness_batch_major(
+     initial: &[[u64; N_LANES]],
+     capacity: usize,
+@@ -1414,21 +1341,6 @@ pub fn generate_chained_witness_batch_major(
+     assert!(initial.len() <= capacity && capacity * permutations >= BM_V);
+     let n_log = (capacity * permutations).ilog2() as usize;
+     let mut outputs = vec![vec![[0; N_LANES]; permutations]; capacity];
+-    if capacity < BM_V {
+-        let mut states = vec![[false; STATE_BITS]; capacity * permutations];
+-        for signature in 0..capacity {
+-            let mut lanes = initial.get(signature).copied().unwrap_or([0; N_LANES]);
+-            for permutation in 0..permutations {
+-                states[permutation * capacity + signature] = lanes_to_state(&lanes);
+-                for round in 0..N_ROUNDS {
+-                    keccak_round_lanes(&mut lanes, round);
+-                }
+-                outputs[signature][permutation] = lanes;
+-            }
+-        }
+-        let (z, a, b, stripe) = generate_witness_batch_major(&states, n_log);
+-        return (z, a, b, stripe, outputs);
+-    }
+     let total = capacity * permutations * (U64_PER_BLOCK / 2);
+     let mut z = flock_core::scratch::take_f128(total);
+     let mut a = flock_core::scratch::take_f128(total);
+@@ -1439,6 +1351,18 @@ pub fn generate_chained_witness_batch_major(
+         buf[tail..]
+             .par_chunks_mut(1 << 16)
+             .for_each(|c| c.fill(Gf128::ZERO));
++        // A recycled buffer may contain a previous live witness. Initialize
++        // every inactive block in the useful prefix, not only the tail.
++        if initial.len() < capacity {
++            buf[..tail]
++                .par_chunks_mut(capacity * permutations)
++                .for_each(|row| {
++                    for permutation in 0..permutations {
++                        row[permutation * capacity + initial.len()..(permutation + 1) * capacity]
++                            .fill(Gf128::ZERO);
++                    }
++                });
++        }
+     }
+     let (zp, ap, bp, sp) = (
+         SendPtr(z.as_mut_ptr() as *mut u64),
+@@ -1449,11 +1373,11 @@ pub fn generate_chained_witness_batch_major(
+     outputs
+         .par_chunks_mut(BM_V)
+         .enumerate()
++        .take(initial.len() / BM_V)
+         .for_each(|(group, out)| {
+             let first = group * BM_V;
+-            let mut lanes: VLanes = std::array::from_fn(|lane| {
+-                std::array::from_fn(|j| initial.get(first + j).map_or(0, |state| state[lane]))
+-            });
++            let mut lanes: VLanes =
++                std::array::from_fn(|lane| std::array::from_fn(|j| initial[first + j][lane]));
+             for permutation in 0..permutations {
+                 // SAFETY: each worker owns 8 signature IDs in every permutation.
+                 // Their packed rows and byte stripes are disjoint; the padding
+@@ -1474,9 +1398,91 @@ pub fn generate_chained_witness_batch_major(
+                 }
+             }
+         });
++    if initial.len().is_multiple_of(BM_V) {
++        return (z, a, b, stripe, outputs);
++    }
++    // Partial groups cannot use the vector producer: that would execute dummy
++    // permutations and set inactive constants to one. Scatter scalar live
++    // blocks only. Once these words are complete, transpose their stripe
++    // groups together, including groups spanning permutations (capacity < 8).
++    let mut local_z = vec![0u64; U64_PER_BLOCK];
++    let mut local_a = vec![0u64; U64_PER_BLOCK];
++    let mut local_b = vec![0u64; U64_PER_BLOCK];
++    for signature in initial.len() / BM_V * BM_V..initial.len() {
++        let mut lanes = initial[signature];
++        for permutation in 0..permutations {
++            build_chain_witness_ab_packed_into(
++                &lanes_to_state(&lanes),
++                &mut local_z,
++                &mut local_a,
++                &mut local_b,
++            );
++            let block = permutation * capacity + signature;
++            for (dest, local) in [(&mut z, &local_z), (&mut a, &local_a), (&mut b, &local_b)] {
++                for (chunk, pair) in local.chunks_exact(2).enumerate() {
++                    dest[(chunk << n_log) | block] = Gf128 {
++                        lo: pair[0],
++                        hi: pair[1],
++                    };
++                }
++            }
++            lanes.copy_from_slice(&local_z[state_u64_base(24)..state_u64_base(24) + N_LANES]);
++            outputs[signature][permutation] = lanes;
++        }
++    }
++    write_partial_chain_stripes(
++        &z,
++        capacity,
++        permutations,
++        initial.len() / BM_V * BM_V,
++        &mut stripe,
++    );
+     (z, a, b, stripe, outputs)
+ }
+ 
++/// Transpose only stripe groups touched by scalar live signatures. When the
++/// capacity is below eight, a group spans several permutations. Otherwise
++/// there is one partial signature group per permutation. Inactive packed words
++/// have already been zeroed, so a whole-group transpose preserves zero padding
++/// and avoids a read/OR store for every set witness bit.
++fn write_partial_chain_stripes(
++    z: &[Gf128],
++    capacity: usize,
++    permutations: usize,
++    first_partial_signature: usize,
++    stripe: &mut [u8],
++) {
++    use flock_core::bits::transpose_8_u64s_to_64_bytes;
++    let blocks = capacity * permutations;
++    let groups = if capacity < BM_V {
++        blocks / BM_V
++    } else {
++        permutations
++    };
++    for i in 0..groups {
++        let group = if capacity < BM_V {
++            i
++        } else {
++            i * (capacity / BM_V) + first_partial_signature / BM_V
++        };
++        let destination = &mut stripe[group * K..(group + 1) * K];
++        for (chunk, row) in z
++            .chunks_exact(blocks)
++            .take(USEFUL_BITS.div_ceil(128))
++            .enumerate()
++        {
++            let words = &row[group * BM_V..(group + 1) * BM_V];
++            let low = std::array::from_fn(|j| words[j].lo);
++            let high = std::array::from_fn(|j| words[j].hi);
++            transpose_8_u64s_to_64_bytes(&low, &mut destination[128 * chunk..128 * chunk + 64]);
++            transpose_8_u64s_to_64_bytes(
++                &high,
++                &mut destination[128 * chunk + 64..128 * chunk + 128],
++            );
++        }
++    }
++}
++
+ // ---------------------------------------------------------------------------
+ // Tests
+ // ---------------------------------------------------------------------------
+@@ -1575,6 +1581,162 @@ mod tests {
+         s
+     }
+ 
++    // Frozen pre-factorization walker: separate A/B recurrences, explicit
++    // eleven-preimage scatters, and forward-expanded round constants. Keep
++    // this independent of apply_phi_t_into as an exact coefficient oracle.
++    fn reference_apply_phi_t(v: &[Gf128]) -> Vec<Gf128> {
++        debug_assert_eq!(v.len(), STATE_BITS);
++        let mut out = vec![Gf128::ZERO; STATE_BITS];
++        for s_out in 0..STATE_BITS {
++            let z_p = s_out / N_LANES;
++            let xy = s_out % N_LANES;
++            let y_p = xy / 5;
++            let x_p = xy % 5;
++            let preim = theta_rho_pi_preimage(x_p, y_p, z_p);
++            let val = v[s_out];
++            for &s_in in preim.iter() {
++                out[s_in] += val;
++            }
++        }
++        out
++    }
++
++    fn reference_fold_alpha_batched(alpha: Gf128, eq_inner: &[Gf128]) -> Vec<Gf128> {
++        assert_eq!(eq_inner.len(), K, "eq_inner length must equal n_cols = K");
++        let mut comb = vec![Gf128::ZERO; K];
++
++        // ---- Row 0 (const): A = [Z_CONST], B = [Z_CONST].
++        let e0 = eq_inner[Z_CONST];
++        comb[Z_CONST] += alpha * e0;
++        comb[Z_CONST] += e0;
++
++        // ---- state_0 input self-loops: A = [row], B = [Z_CONST].
++        for j in 0..STATE_BITS {
++            let row = z_pos_state(0, j);
++            let e = eq_inner[row];
++            comb[row] += alpha * e;
++            comb[Z_CONST] += e;
++        }
++
++        // ---- state_24 pin rows: A = L_24[j], B = [Z_CONST].
++        let mut vec_pin: Vec<Gf128> = vec![Gf128::ZERO; STATE_BITS];
++        let mut sum_eq_pin = Gf128::ZERO;
++        for j in 0..STATE_BITS {
++            let row = z_pos_state(24, j);
++            let e = eq_inner[row];
++            vec_pin[j] = e;
++            sum_eq_pin += e;
++        }
++        comb[Z_CONST] += sum_eq_pin; // B-side from pin's B = [Z_CONST]
++
++        // ---- t-AND rows: build per-round χ marginals on state_r positions.
++        let mut chi_a: Vec<Vec<Gf128>> = (0..N_T).map(|_| vec![Gf128::ZERO; STATE_BITS]).collect();
++        let mut chi_b: Vec<Vec<Gf128>> = (0..N_T).map(|_| vec![Gf128::ZERO; STATE_BITS]).collect();
++        let mut sum_eq_t = Gf128::ZERO;
++
++        for r in 0..N_T {
++            for zpos in 0..64 {
++                for y in 0..5 {
++                    for x in 0..5 {
++                        let row = z_pos_t(r, state_idx(x, y, zpos));
++                        let e = eq_inner[row];
++                        sum_eq_t += e;
++                        for &s in theta_rho_pi_preimage((x + 1) % 5, y, zpos).iter() {
++                            chi_a[r][s] += e;
++                        }
++                        for &s in theta_rho_pi_preimage((x + 2) % 5, y, zpos).iter() {
++                            chi_b[r][s] += e;
++                        }
++                    }
++                }
++            }
++        }
++        comb[Z_CONST] += alpha * sum_eq_t;
++
++        // ---- Round-constant accumulation. After loop rc = RC_24.
++        let mut rc = [false; STATE_BITS];
++        let mut rc_a = Gf128::ZERO;
++        let mut rc_b = Gf128::ZERO;
++        for r in 0..N_T {
++            for s in 0..STATE_BITS {
++                if rc[s] {
++                    rc_a += chi_a[r][s];
++                    rc_b += chi_b[r][s];
++                }
++            }
++            rc = apply_phi_bool(&rc);
++            for zpos in 0..64 {
++                if (ROUND_CONSTANTS[r] >> zpos) & 1 == 1 {
++                    let s = state_idx(0, 0, zpos);
++                    rc[s] ^= true;
++                }
++            }
++        }
++        let mut rc_pin = Gf128::ZERO;
++        for s in 0..STATE_BITS {
++            if rc[s] {
++                rc_pin += vec_pin[s];
++            }
++        }
++        comb[Z_CONST] += alpha * rc_a;
++        comb[Z_CONST] += rc_b;
++        comb[Z_CONST] += alpha * rc_pin;
++
++        // ---- Transpose recurrence, A side. Starts at K^A_24 = vec_pin.
++        // Step 1: scatter K^A_24 → t_23 col.
++        let t23_base = t_u64_base(N_T - 1);
++        for s in 0..STATE_BITS {
++            let pos = (t23_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
++            comb[pos] += alpha * vec_pin[s];
++        }
++        // Step 2: K^A_23 = φᵀ(K^A_24) ⊕ χ_{23,A}.
++        let mut k_a = reference_apply_phi_t(&vec_pin);
++        for s in 0..STATE_BITS {
++            k_a[s] += chi_a[N_T - 1][s];
++        }
++        // Step 3: standard recurrence for r ∈ {23..1}.
++        for r in (1..N_T).rev() {
++            let t_base = t_u64_base(r - 1);
++            for s in 0..STATE_BITS {
++                let pos = (t_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
++                comb[pos] += alpha * k_a[s];
++            }
++            let mut new_k = reference_apply_phi_t(&k_a);
++            for s in 0..STATE_BITS {
++                new_k[s] += chi_a[r - 1][s];
++            }
++            k_a = new_k;
++        }
++        let s0_base = state_u64_base(0);
++        for s in 0..STATE_BITS {
++            let pos = (s0_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
++            comb[pos] += alpha * k_a[s];
++        }
++
++        // ---- Transpose recurrence, B side. K^B_24 = 0, so K^B_23 = χ_{23,B}
++        // — same starting point as `keccak`. Pin row doesn't contribute to
++        // t_23 col on B side.
++        let mut k_b = chi_b[N_T - 1].clone();
++        for r in (1..N_T).rev() {
++            let t_base = t_u64_base(r - 1);
++            for s in 0..STATE_BITS {
++                let pos = (t_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
++                comb[pos] += k_b[s];
++            }
++            let mut new_k = reference_apply_phi_t(&k_b);
++            for s in 0..STATE_BITS {
++                new_k[s] += chi_b[r - 1][s];
++            }
++            k_b = new_k;
++        }
++        for s in 0..STATE_BITS {
++            let pos = (s0_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
++            comb[pos] += k_b[s];
++        }
++
++        comb
++    }
++
+     // -------- Primitive tests.
+ 
+     #[test]
+@@ -1646,8 +1808,498 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn factored_phi_transpose_matches_preimages_on_every_basis_vector() {
++        let mut basis = vec![Gf128::ZERO; STATE_BITS];
++        let mut actual = vec![Gf128::ONE; STATE_BITS];
++        for s in 0..STATE_BITS {
++            basis[s] = Gf128::ONE;
++            apply_phi_t_into(&basis, &mut actual);
++            assert_eq!(
++                actual,
++                reference_apply_phi_t(&basis),
++                "basis coordinate {s}"
++            );
++            basis[s] = Gf128::ZERO;
++        }
++    }
++
++    #[test]
++    fn combined_walker_matches_original_coefficients_for_arbitrary_weights() {
++        let mut rng = Rng::new(0xFACA_DECA_F123);
++        for _ in 0..3 {
++            // Arbitrary weights exercise the full linear map, without relying
++            // on the product structure of an equality-polynomial table.
++            let weights: Vec<_> = (0..K)
++                .map(|_| Gf128 {
++                    lo: rng.next_u64(),
++                    hi: rng.next_u64(),
++                })
++                .collect();
++            for alpha in [
++                Gf128::ZERO,
++                Gf128::ONE,
++                Gf128 {
++                    lo: rng.next_u64(),
++                    hi: rng.next_u64(),
++                },
++            ] {
++                assert_eq!(
++                    KeccakLincheckCircuit.fold_alpha_batched(alpha, &weights),
++                    reference_fold_alpha_batched(alpha, &weights),
++                );
++            }
++        }
++    }
++
++    #[test]
++    #[ignore = "timing benchmark; run alone on an idle machine"]
++    fn combined_walker_microbenchmark() {
++        use std::{hint::black_box, time::Instant};
++        let mut rng = Rng::new(0xBEAC_2026);
++        let weights: Vec<_> = (0..K)
++            .map(|_| Gf128 {
++                lo: rng.next_u64(),
++                hi: rng.next_u64(),
++            })
++            .collect();
++        let alpha = Gf128 {
++            lo: rng.next_u64(),
++            hi: rng.next_u64(),
++        };
++        let measure = |original: bool| {
++            let start = Instant::now();
++            let coefficients = black_box(if original {
++                reference_fold_alpha_batched(black_box(alpha), black_box(&weights))
++            } else {
++                KeccakLincheckCircuit.fold_alpha_batched(black_box(alpha), black_box(&weights))
++            });
++            let elapsed = start.elapsed().as_secs_f64();
++            black_box(coefficients);
++            elapsed
++        };
++        assert_eq!(
++            KeccakLincheckCircuit.fold_alpha_batched(alpha, &weights),
++            reference_fold_alpha_batched(alpha, &weights),
++        );
++        for _ in 0..8 {
++            measure(true);
++            measure(false);
++        }
++        let mut original = Vec::new();
++        let mut factored = Vec::new();
++        for pair in 0..64 {
++            if pair % 2 == 0 {
++                original.push(measure(true));
++                factored.push(measure(false));
++            } else {
++                factored.push(measure(false));
++                original.push(measure(true));
++            }
++        }
++        original.sort_by(f64::total_cmp);
++        factored.sort_by(f64::total_cmp);
++        let old_ms = 1000.0 * (original[31] + original[32]) / 2.0;
++        let new_ms = 1000.0 * (factored[31] + factored[32]) / 2.0;
++        eprintln!(
++            "Keccak coefficient walker, 64 alternating pairs: old median {old_ms:.6} ms, factored median {new_ms:.6} ms, ratio {:.6}, saved {:.6} ms/call",
++            new_ms / old_ms,
++            old_ms - new_ms
++        );
++    }
++
+     // -------- R1CS tests (I/O-aligned layout with state_24 pin).
+ 
++    /// Independent forward application of the real homogeneous Keccak rows.
++    /// `build_block_r1cs` carries empty matrix stubs, so its `satisfies` method
++    /// cannot validate these circuit-walker constraints.
++    fn homogeneous_images(z: &[u64]) -> (Vec<u64>, Vec<u64>) {
++        assert_eq!(z.len(), U64_PER_BLOCK);
++        let mut a = vec![0; U64_PER_BLOCK];
++        let mut b = vec![0; U64_PER_BLOCK];
++        let constant = z[Z_CONST_U64] & 1;
++        let mask = 0u64.wrapping_sub(constant);
++        a[Z_CONST_U64] = constant;
++        b[Z_CONST_U64] = constant;
++        let mut state = [0; N_LANES];
++        state.copy_from_slice(&z[state_u64_base(0)..state_u64_base(0) + N_LANES]);
++        for lane in 0..N_LANES {
++            a[state_u64_base(0) + lane] = state[lane];
++            b[state_u64_base(0) + lane] = mask;
++        }
++        for round in 0..N_ROUNDS {
++            theta_lanes(&mut state);
++            let linear = rho_pi_lanes(&state);
++            for y in 0..5 {
++                for x in 0..5 {
++                    let lane = x + 5 * y;
++                    a[t_u64_base(round) + lane] = mask ^ linear[(x + 1) % 5 + 5 * y];
++                    b[t_u64_base(round) + lane] = linear[(x + 2) % 5 + 5 * y];
++                    // Substitute the witness's χ output, not its recomputation:
++                    // A and B must be linear functions of an arbitrary witness.
++                    state[lane] = linear[lane] ^ z[t_u64_base(round) + lane];
++                }
++            }
++            state[0] ^= ROUND_CONSTANTS[round] & mask;
++        }
++        for lane in 0..N_LANES {
++            a[state_u64_base(24) + lane] = state[lane];
++            b[state_u64_base(24) + lane] = mask;
++        }
++        (a, b)
++    }
++
++    /// Original scalar stripe emitter, independent of the grouped transpose.
++    fn reference_scalar_stripes(z: &[Gf128], blocks: usize) -> Vec<u8> {
++        let mut stripe = vec![0; z.len() * 16];
++        for block in 0..blocks {
++            for word in 0..U64_PER_BLOCK {
++                let packed = z[(word / 2) * blocks + block];
++                let mut bits = if word % 2 == 0 { packed.lo } else { packed.hi };
++                while bits != 0 {
++                    let bit = bits.trailing_zeros() as usize;
++                    stripe[(block / BM_V) * K + word * 64 + bit] |= 1 << (block % BM_V);
++                    bits &= bits - 1;
++                }
++            }
++        }
++        stripe
++    }
++
++    #[test]
++    fn partial_chain_stripes_match_scalar_oracle_and_real_constraints() {
++        let mut rng = Rng::new(0x57A1_9E55);
++        for (live, capacity, permutations) in [
++            (1, 1, 16),
++            (1, 2, 4),
++            (2, 2, 4),
++            (3, 4, 4),
++            (3, 4, 16),
++            (4, 4, 16),
++            (5, 8, 4),
++            (7, 8, 4),
++            (9, 16, 16),
++            (13, 16, 4),
++            (16, 16, 4),
++        ] {
++            let initial: Vec<_> = (0..live)
++                .map(|_| std::array::from_fn(|_| rng.next_u64()))
++                .collect();
++            let blocks = capacity * permutations;
++            // Exercise write-before-read for both inactive blocks and gaps
++            // using recycled buffers containing nonzero, arbitrary old data.
++            flock_core::scratch::clear();
++            for _ in 0..3 {
++                flock_core::scratch::give_f128(
++                    (0..blocks * U64_PER_BLOCK / 2)
++                        .map(|_| Gf128 {
++                            lo: rng.next_u64(),
++                            hi: rng.next_u64(),
++                        })
++                        .collect(),
++                );
++            }
++            let (z, a, b, stripe, outputs) =
++                generate_chained_witness_batch_major(&initial, capacity, permutations);
++            assert_eq!(
++                stripe,
++                reference_scalar_stripes(&z, blocks),
++                "stripe: B={live}, C={capacity}, P={permutations}"
++            );
++            let unpack = |packed: &[Gf128], block: usize| -> Vec<u64> {
++                (0..U64_PER_BLOCK)
++                    .map(|word| {
++                        let value = packed[(word / 2) * blocks + block];
++                        if word % 2 == 0 { value.lo } else { value.hi }
++                    })
++                    .collect()
++            };
++            for permutation in 0..permutations {
++                for signature in 0..capacity {
++                    let block = permutation * capacity + signature;
++                    let zw = unpack(&z, block);
++                    let aw = unpack(&a, block);
++                    let bw = unpack(&b, block);
++                    let (expected_a, expected_b) = homogeneous_images(&zw);
++                    assert_eq!(aw, expected_a);
++                    assert_eq!(bw, expected_b);
++                    assert!(aw.iter().zip(&bw).zip(&zw).all(|((&a, &b), &z)| a & b == z));
++                    if signature < live {
++                        assert_eq!(zw[Z_CONST_U64], 1);
++                        let input = if permutation == 0 {
++                            initial[signature]
++                        } else {
++                            outputs[signature][permutation - 1]
++                        };
++                        assert_eq!(&zw[state_u64_base(0)..state_u64_base(0) + N_LANES], &input);
++                        assert_eq!(
++                            &zw[state_u64_base(24)..state_u64_base(24) + N_LANES],
++                            &outputs[signature][permutation]
++                        );
++                    } else {
++                        assert!(zw.iter().chain(&aw).chain(&bw).all(|&word| word == 0));
++                        assert_eq!(outputs[signature][permutation], [0; N_LANES]);
++                    }
++                }
++            }
++        }
++    }
++
++    #[test]
++    #[ignore = "timing benchmark; run alone on an idle machine"]
++    fn partial_chain_stripes_microbenchmark() {
++        use std::{hint::black_box, time::Instant};
++        let mut rng = Rng::new(0xBEAC_5719);
++        for (live, capacity, permutations) in
++            [(1, 1, 16), (1, 2, 4), (3, 4, 16), (3, 4, 4), (9, 16, 16)]
++        {
++            let initial: Vec<_> = (0..live)
++                .map(|_| std::array::from_fn(|_| rng.next_u64()))
++                .collect();
++            let (z, _, _, _, _) =
++                generate_chained_witness_batch_major(&initial, capacity, permutations);
++            let mut stripe = vec![0; z.len() * 16];
++            let blocks = capacity * permutations;
++            let partial_start = live / BM_V * BM_V;
++            // The former emitter read contiguous scalar witness buffers,
++            // rather than gathering its words from the batch-major source.
++            let local_blocks: Vec<_> = (partial_start..live)
++                .flat_map(|signature| {
++                    (0..permutations).map(move |permutation| permutation * capacity + signature)
++                })
++                .map(|block| {
++                    (
++                        block,
++                        (0..U64_PER_BLOCK)
++                            .map(|word| {
++                                let packed = z[(word / 2) * blocks + block];
++                                if word % 2 == 0 { packed.lo } else { packed.hi }
++                            })
++                            .collect::<Vec<_>>(),
++                    )
++                })
++                .collect();
++            let mut measure = |original: bool| {
++                stripe.fill(0);
++                let start = Instant::now();
++                if original {
++                    // The former generator emitted only its scalar live tail.
++                    for (block, words) in black_box(&local_blocks) {
++                        for (word, &value) in words.iter().enumerate() {
++                            let mut bits = value;
++                            while bits != 0 {
++                                let bit = bits.trailing_zeros() as usize;
++                                stripe[(block / BM_V) * K + word * 64 + bit] |= 1 << (block % BM_V);
++                                bits &= bits - 1;
++                            }
++                        }
++                    }
++                } else {
++                    write_partial_chain_stripes(
++                        black_box(&z),
++                        capacity,
++                        permutations,
++                        partial_start,
++                        &mut stripe,
++                    );
++                }
++                let elapsed = start.elapsed().as_secs_f64();
++                black_box(&stripe);
++                elapsed
++            };
++            for _ in 0..8 {
++                measure(true);
++                measure(false);
++            }
++            let mut old = Vec::new();
++            let mut new = Vec::new();
++            for pair in 0..64 {
++                if pair % 2 == 0 {
++                    old.push(measure(true));
++                    new.push(measure(false));
++                } else {
++                    new.push(measure(false));
++                    old.push(measure(true));
++                }
++            }
++            old.sort_by(f64::total_cmp);
++            new.sort_by(f64::total_cmp);
++            let old_ms = 500.0 * (old[31] + old[32]);
++            let new_ms = 500.0 * (new[31] + new[32]);
++            eprintln!(
++                "partial stripe B={live}, C={capacity}, P={permutations}: old {old_ms:.6} ms, new {new_ms:.6} ms, ratio {:.6}, saved {:.6} ms",
++                new_ms / old_ms,
++                old_ms - new_ms
++            );
++        }
++    }
++
++    #[test]
++    fn inactive_zero_constraints_reject_nonzero_input_output_chi_and_padding() {
++        let zero = vec![0; U64_PER_BLOCK];
++        let (a, b) = homogeneous_images(&zero);
++        assert!(a.iter().chain(&b).all(|&v| v == 0));
++        for local_bit in [
++            STATE0_BIT_BASE + 97,
++            STATE24_BIT_BASE + 123,
++            T_PACKED_BIT_BASE,
++            T_PACKED_BIT_BASE + 23 * STATE_BITS + 51,
++            Z_CONST + 1,
++            K - 1,
++        ] {
++            let mut altered = zero.clone();
++            altered[local_bit / 64] = 1 << (local_bit % 64);
++            let (a, b) = homogeneous_images(&altered);
++            assert!(
++                a.iter()
++                    .zip(&b)
++                    .zip(&altered)
++                    .any(|((&a, &b), &z)| a & b != z),
++                "nonzero inactive bit {local_bit} escaped the actual homogeneous rows"
++            );
++        }
++    }
++
++    #[test]
++    fn homogeneous_constraint_images_match_real_walker_with_both_constant_values() {
++        let mut rng = Rng::new(0xA671_0177_C0DE);
++        let weights: Vec<_> = (0..K)
++            .map(|_| Gf128 {
++                lo: rng.next_u64(),
++                hi: rng.next_u64(),
++            })
++            .collect();
++        let alpha = Gf128 {
++            lo: rng.next_u64(),
++            hi: rng.next_u64(),
++        };
++        let comb = KeccakLincheckCircuit.fold_alpha_batched(alpha, &weights);
++        let dot = |words: &[u64], coefficients: &[Gf128]| {
++            let mut result = Gf128::ZERO;
++            for (word, &value) in words.iter().enumerate() {
++                let mut bits = value;
++                while bits != 0 {
++                    result += coefficients[64 * word + bits.trailing_zeros() as usize];
++                    bits &= bits - 1;
++                }
++            }
++            result
++        };
++        for constant in [0, 1] {
++            let mut z: Vec<_> = (0..U64_PER_BLOCK).map(|_| rng.next_u64()).collect();
++            z[Z_CONST_U64] = (z[Z_CONST_U64] & !1) | constant;
++            let (a, b) = homogeneous_images(&z);
++            assert_eq!(
++                dot(&z, &comb),
++                alpha * dot(&a, &weights) + dot(&b, &weights)
++            );
++        }
++    }
++
++    #[test]
++    fn committed_prefix_wrappers_preserve_constant_one_for_both_layouts() {
++        use flock_core::{
++            challenger::{Challenger, FsChallenger},
++            pcs::commit::commit,
++            proof::ZClaim,
++            r1cs::WitnessLayout,
++        };
++
++        let evaluate = |words: &[Gf128], claim: &ZClaim| {
++            let skip = claim.point.z_skip.weights(K_SKIP);
++            let suffix: Vec<_> = claim
++                .point
++                .x_inner_rest
++                .iter()
++                .chain(&claim.point.x_outer)
++                .copied()
++                .collect();
++            let high = flock_core::lincheck::build_eq_table(&suffix);
++            let mut result = Gf128::ZERO;
++            for (index, word) in words.iter().enumerate() {
++                for (half, mut bits) in [word.lo, word.hi].into_iter().enumerate() {
++                    let mut low = Gf128::ZERO;
++                    while bits != 0 {
++                        low += skip[bits.trailing_zeros() as usize];
++                        bits &= bits - 1;
++                    }
++                    result += low * high[2 * index + half];
++                }
++            }
++            result
++        };
++        let mut rng = Rng::new(0xC057_017E);
++        let inputs: Vec<_> = (0..5).map(|_| random_state(&mut rng)).collect();
++        for layout in [WitnessLayout::RowMajor, WitnessLayout::BatchMajor] {
++            let mut r1cs = build_block_r1cs(3);
++            r1cs.layout = layout;
++            let params = PcsParams {
++                m: r1cs.m,
++                log_inv_rate: 1,
++                log_batch_size: 4,
++                profile: flock_core::pcs::ligerito::LigeritoProfile::Fast,
++                merkle_hash: Default::default(),
++            };
++            let (z, a, b, stripe) = match layout {
++                WitnessLayout::RowMajor => generate_witness_with_ab_packed_and_lincheck(&inputs, 3),
++                WitnessLayout::BatchMajor => generate_witness_batch_major(&inputs, 3),
++            };
++            let (commitment, _data) = commit(&z, &params);
++            let mut prover = FsChallenger::new(b"constant-one-prefix-compatibility");
++            let proof = crate::prover::prove_fast_committed_prefix(
++                &r1cs,
++                &commitment,
++                &z,
++                a,
++                b,
++                stripe,
++                &KeccakLincheckCircuit,
++                &mut prover,
++            );
++            let mut verifier = FsChallenger::new(b"constant-one-prefix-compatibility");
++            let (ab, c) = flock_core::verifier::verify_core(
++                &r1cs,
++                &proof.zc_proof,
++                &proof.lc_proof,
++                &commitment,
++                &KeccakLincheckCircuit,
++                &mut verifier,
++            )
++            .unwrap();
++            assert_eq!(ab, proof.ab);
++            assert_eq!(c, proof.c);
++            assert_eq!(evaluate(&z, &ab), ab.value);
++            assert_eq!(evaluate(&z, &c), c.value);
++            assert_eq!(prover.sample_f128(), verifier.sample_f128());
++
++            // Legacy clients still require constant one in every block,
++            // including the three padding blocks in this fixture.
++            let zero = vec![Gf128::ZERO; z.len()];
++            let (commitment, _data) = commit(&zero, &params);
++            let proof = crate::prover::prove_fast_committed_prefix(
++                &r1cs,
++                &commitment,
++                &zero,
++                zero.clone(),
++                zero.clone(),
++                vec![0; zero.len() * 16],
++                &KeccakLincheckCircuit,
++                &mut FsChallenger::new(b"constant-one-prefix-compatibility"),
++            );
++            assert!(matches!(
++                flock_core::verifier::verify_core(
++                    &r1cs,
++                    &proof.zc_proof,
++                    &proof.lc_proof,
++                    &commitment,
++                    &KeccakLincheckCircuit,
++                    &mut FsChallenger::new(b"constant-one-prefix-compatibility"),
++                ),
++                Err(flock_core::verifier::VerifyError::Lincheck(_))
++            ));
++        }
++    }
++
+     #[test]
+     fn layout_constants_consistent() {
+         assert_eq!(K, 65_536);
+@@ -1889,7 +2541,7 @@ mod tests {
+     /// word addressing.
+     #[test]
+     fn batch_major_chain_fold_matches_row_major() {
+-        use crate::r1cs_hashes::chain_common::{fold_in_out, ChainFold};
++        use crate::r1cs_hashes::chain_common::{ChainFold, fold_in_out};
+         let n_log = 3;
+         let mut rng = Rng::new(0xF01D_BA7C);
+         let inputs: Vec<State> = (0..8).map(|_| random_state(&mut rng)).collect();

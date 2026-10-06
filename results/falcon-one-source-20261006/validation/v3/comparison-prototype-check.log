@@ -1,0 +1,571 @@
+    Checking zeroize v1.9.0
+    Checking zerocopy v0.8.57
+    Checking generic-array v0.14.9
+    Checking crypto-common v0.1.6
+    Checking block-buffer v0.10.4
+    Checking digest v0.10.7
+    Checking der v0.7.10
+    Checking spki v0.7.3
+    Checking pkcs8 v0.10.2
+    Checking sha3 v0.11.0
+    Checking sec1 v0.7.3
+    Checking sha2 v0.10.9
+    Checking crypto-bigint v0.5.5
+    Checking ppv-lite86 v0.2.21
+    Checking rand_chacha v0.3.1
+    Checking elliptic-curve v0.13.8
+    Checking rand v0.8.8
+    Checking hmac v0.12.1
+    Checking fn-dsa-comm v0.3.0
+    Checking rfc6979 v0.4.0
+    Checking spongefish v0.7.4
+    Checking signature v2.2.0
+    Checking ecdsa v0.16.9
+    Checking field v0.1.0 (/home/john-wu/code/BitZ-pcs/vendor/field)
+    Checking fn-dsa-kgen v0.3.0
+    Checking fn-dsa-sign v0.3.0
+    Checking fn-dsa-vrfy v0.3.0
+    Checking primeorder v0.13.6
+warning: function `square_n` is never used
+   --> vendor/field/src/gf128/portable.rs:104:8
+    |
+104 | pub fn square_n(a: [u64; 2], k: u32) -> [u64; 2] {
+    |        ^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `wide_words` is never used
+   --> vendor/field/src/gf128/portable.rs:116:15
+    |
+116 | pub(crate) fn wide_words(value: Wide) -> [u64; 4] {
+    |               ^^^^^^^^^^
+
+warning: function `wide_zero` is never used
+   --> vendor/field/src/gf128/portable.rs:137:8
+    |
+137 | pub fn wide_zero() -> Wide {
+    |        ^^^^^^^^^
+
+warning: function `wide_of` is never used
+   --> vendor/field/src/gf128/portable.rs:141:8
+    |
+141 | pub fn wide_of(a: [u64; 2]) -> Wide {
+    |        ^^^^^^^
+
+warning: function `wide_add` is never used
+   --> vendor/field/src/gf128/portable.rs:149:8
+    |
+149 | pub fn wide_add(x: Wide, y: Wide) -> Wide {
+    |        ^^^^^^^^
+
+warning: function `wide_add_low` is never used
+   --> vendor/field/src/gf128/portable.rs:155:8
+    |
+155 | pub fn wide_add_low(x: Wide, a: [u64; 2]) -> Wide {
+    |        ^^^^^^^^^^^^
+
+warning: function `wide_reduce` is never used
+   --> vendor/field/src/gf128/portable.rs:159:8
+    |
+159 | pub fn wide_reduce(w: Wide) -> [u64; 2] {
+    |        ^^^^^^^^^^^
+
+warning: function `wide_from_words` is never used
+   --> vendor/field/src/gf128/portable.rs:321:8
+    |
+321 | pub fn wide_from_words(words: [u64; 4]) -> Wide {
+    |        ^^^^^^^^^^^^^^^
+
+    Checking keccak v0.1.6
+    Checking sha3 v0.10.9
+warning: `field` (lib) generated 8 warnings
+    Checking flock-core v0.1.0 (/home/john-wu/code/BitZ-pcs/vendor/flock-mod/crates/flock-core)
+    Checking circuit v0.1.0 (/home/john-wu/code/BitZ-pcs/crates/circuit)
+warning: unused import: `Zero`
+ --> crates/circuit/src/witgen.rs:3:23
+  |
+3 | use num_traits::{One, Zero};
+  |                       ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `One`
+ --> crates/circuit/src/witgen.rs:3:18
+  |
+3 | use num_traits::{One, Zero};
+  |                  ^^^
+
+warning: `circuit` (lib) generated 2 warnings
+    Checking p256 v0.13.2
+    Checking fn-dsa v0.3.0
+    Checking k256 v0.13.4
+    Checking flock-prover v0.1.0 (/home/john-wu/code/BitZ-pcs/vendor/flock-mod/crates/flock-prover)
+    Checking bitz v0.1.0 (/home/john-wu/code/BitZ-pcs)
+warning: unused import: `cfg_chunks`
+  --> src/piop/spartan/falcon1024_ct/hybrid_sumcheck.rs:24:20
+   |
+24 | use crate::utils::{cfg_chunks, cfg_chunks_mut};
+   |                    ^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Zero`
+  --> src/bitz/virt.rs:27:23
+   |
+27 | use num_traits::{One, Zero};
+   |                       ^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/baby_bear_bitz.rs:23:5
+   |
+23 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/baby_bear_bitz.rs:22:5
+   |
+22 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/baby_bear_mul.rs:21:5
+   |
+21 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::sumcheck::bridge::PreparedBinding`
+  --> src/piop/spartan/baby_bear_mul.rs:22:5
+   |
+22 | use crate::sumcheck::bridge::PreparedBinding;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `ConstOne`
+  --> src/poly/univariate/dense.rs:21:66
+   |
+21 | use num_traits::{CheckedAdd, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One, Zero};
+   |                                                                  ^^^^^^^^
+
+warning: unused import: `RingOps`
+  --> src/piop/spartan/u32_mul_relation.rs:25:13
+   |
+25 | use field::{RingOps, Uint};
+   |             ^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/cm.rs:35:5
+   |
+35 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+ --> src/piop/spartan/ecdsa_sha256/codec.rs:3:5
+  |
+3 | use crate::piop::spartan::SpartanField as _;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `One`
+  --> src/bitz/virt.rs:27:18
+   |
+27 | use num_traits::{One, Zero};
+   |                  ^^^
+
+warning: unused import: `MergeAccumulator`
+  --> src/sumcheck/outer/univariate_api.rs:15:26
+   |
+15 | use field::{BatchMulAcc, MergeAccumulator, Reduce};
+   |                          ^^^^^^^^^^^^^^^^
+
+warning: unused import: `ConstZero`
+  --> src/poly/univariate/binary_ref.rs:18:54
+   |
+18 | use num_traits::{CheckedAdd, CheckedMul, CheckedSub, ConstZero, One, Zero};
+   |                                                      ^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/grinding.rs:20:5
+   |
+20 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/multiswap/proof.rs:39:5
+   |
+39 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/multiswap/proof.rs:36:5
+   |
+36 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `MergeAccumulator`
+ --> src/sumcheck/outer/api.rs:8:26
+  |
+8 | use field::{BatchMulAcc, MergeAccumulator, Reduce};
+  |                          ^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/profile.rs:57:5
+   |
+57 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/protocol/bitify.rs:13:5
+   |
+13 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RingOps`
+  --> src/piop/spartan/protocol/mod.rs:24:13
+   |
+24 | use field::{RingOps, Uint};
+   |             ^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/protocol/mod.rs:23:5
+   |
+23 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/sha256/chain.rs:23:5
+   |
+23 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+ --> src/piop/spartan/sha256/constraints.rs:9:5
+  |
+9 | use field::RingOps;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `SpartanField`
+  --> src/piop/spartan/sha256/constraints.rs:32:5
+   |
+32 |     SpartanField, SpartanMatrixError,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+ --> src/piop/spartan/sha256/constraints.rs:7:5
+  |
+7 | use crate::piop::spartan::SpartanField as _;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+ --> src/piop/spartan/sha256/prime.rs:7:5
+  |
+7 | use crate::piop::spartan::SpartanField as _;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/sha256/proof.rs:20:5
+   |
+20 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/u128_bitz.rs:15:5
+   |
+15 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/u128_mul.rs:16:5
+   |
+16 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/u64_bitz.rs:19:5
+   |
+19 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/u64_mul.rs:16:5
+   |
+16 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/mod.rs:10:5
+   |
+10 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `num_traits::ConstOne`
+   --> src/piop/spartan/mod.rs:144:5
+    |
+144 | use num_traits::ConstOne;
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `ConstZero`
+  --> src/poly/univariate/dense.rs:21:76
+   |
+21 | use num_traits::{CheckedAdd, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One, Zero};
+   |                                                                            ^^^^^^^^^
+
+warning: trait `ligerito::PackedBits` is more private than the item `ring_switch_prove`
+   --> src/ligerito.rs:474:1
+    |
+474 | / pub fn ring_switch_prove<T: PackedBits>(
+475 | |     transcript: &mut impl Transcript,
+476 | |     p_msg: &[T],
+477 | |     r_hi: &[Gf],
+478 | | ) -> (RingSwitchProof, Vec<Gf>, Gf) {
+    | |___________________________________^ function `ring_switch_prove` is reachable at visibility `pub`
+    |
+note: but trait `ligerito::PackedBits` is only usable at visibility `pub(crate)`
+   --> src/ligerito.rs:255:1
+    |
+255 | pub(crate) trait PackedBits: Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_bounds)]` on by default
+
+warning: trait `ligerito::PackedBits` is more private than the item `ring_switch_prove_with`
+   --> src/ligerito.rs:486:1
+    |
+486 | / pub fn ring_switch_prove_with<T: PackedBits, O: Send>(
+487 | |     transcript: &mut impl Transcript,
+488 | |     p_msg: &[T],
+489 | |     r_hi: &[Gf],
+490 | |     convert: impl Fn(Gf) -> O + Sync + Send,
+491 | | ) -> (RingSwitchProof, Vec<O>, Gf) {
+    | |__________________________________^ function `ring_switch_prove_with` is reachable at visibility `pub`
+    |
+note: but trait `ligerito::PackedBits` is only usable at visibility `pub(crate)`
+   --> src/ligerito.rs:255:1
+    |
+255 | pub(crate) trait PackedBits: Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `b` and `c` are never read
+   --> src/piop/spartan/ecdsa_sha256/relation.rs:130:9
+    |
+120 | pub(crate) struct LocalRelation {
+    |                   ------------- fields in this struct
+...
+130 |     pub b: CsrMatrix<IndexedCoefficients<Arc<IntegerTable>>, u32>,
+    |         ^
+131 |     pub c: CsrMatrix<IndexedCoefficients<Arc<IntegerTable>>, u32>,
+    |         ^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `h_bit` is never used
+   --> src/piop/spartan/ecdsa_sha256/witness.rs:123:19
+    |
+ 34 | impl Sha256EcdsaWitness {
+    | ----------------------- method in this implementation
+...
+123 |     pub(crate) fn h_bit(&self, index: usize, p: &IntegerMatrixLayout) -> u64 {
+    |                   ^^^^^
+
+warning: associated function `new` is never used
+  --> src/piop/spartan/falcon1024_ct/hybrid_sumcheck.rs:50:12
+   |
+49 | impl Gather {
+   | ----------- associated function in this implementation
+50 |     pub fn new(entries: Vec<(usize, F)>) -> Self {
+   |            ^^^
+
+warning: method `evaluate` is never used
+  --> src/piop/spartan/falcon1024_ct/opening_joined.rs:48:19
+   |
+13 | impl<'a> JoinedBinding<'a> {
+   | -------------------------- method in this implementation
+...
+48 |     pub(super) fn evaluate(&self, point: &[F]) -> Result<F, FalconError> {
+   |                   ^^^^^^^^
+
+warning: function `verify_falcon_piop_in_field` is never used
+   --> src/piop/spartan/falcon1024_ct/piop.rs:420:15
+    |
+420 | pub(super) fn verify_falcon_piop_in_field(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `REVISION` is never used
+ --> src/piop/spartan/../../../benches/outer_regression/adapter.rs:7:18
+  |
+7 | pub(super) const REVISION: &str = "current";
+  |                  ^^^^^^^^
+
+warning: function `take_measurements` is never used
+   --> src/piop/spartan/../../../benches/outer_regression/adapter.rs:146:15
+    |
+146 | pub(super) fn take_measurements() -> Option<[u64; 4]> {
+    |               ^^^^^^^^^^^^^^^^^
+
+warning: methods `initial_grinding_bits`, `inner_round_grinding_bits`, `terminal_grinding_bits`, and `accepts_prime` are never used
+   --> src/piop/spartan/sha256/prime.rs:145:18
+    |
+ 87 | impl Sha256PrimeProfile {
+    | ----------------------- methods in this implementation
+...
+145 |     pub const fn initial_grinding_bits(self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^
+...
+150 |     pub const fn inner_round_grinding_bits(self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+155 |     pub const fn terminal_grinding_bits(self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^^
+...
+160 |     pub const fn accepts_prime(self, q: u128) -> bool {
+    |                  ^^^^^^^^^^^^^
+
+warning: struct `CompositeMultilinearExtension` is never constructed
+  --> src/poly/mle/structured.rs:28:19
+   |
+28 | pub(crate) struct CompositeMultilinearExtension<'a, F: SpartanField> {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: multiple associated items are never used
+   --> src/poly/mle/structured.rs:161:19
+    |
+160 | impl<'a, F: SpartanField> CompositeMultilinearExtension<'a, F> {
+    | -------------------------------------------------------------- associated items in this implementation
+161 |     pub(crate) fn from_parts(
+    |                   ^^^^^^^^^^
+...
+191 |     pub(crate) fn with_tail_runs(
+    |                   ^^^^^^^^^^^^^^
+...
+209 |     pub(crate) fn tail_runs(&self) -> Option<&'a [(usize, usize, F)]> {
+    |                   ^^^^^^^^^
+...
+213 |     pub(crate) fn num_vars(&self) -> usize {
+    |                   ^^^^^^^^
+...
+216 |     pub(crate) fn live_len(&self) -> usize {
+    |                   ^^^^^^^^
+...
+219 |     pub(crate) fn repeated(&self) -> &FactoredMultilinearExtension<'a, F> {
+    |                   ^^^^^^^^
+...
+222 |     pub(crate) fn tail_evaluations(&self) -> &[F] {
+    |                   ^^^^^^^^^^^^^^^^
+...
+225 |     pub(crate) fn origin_adjustment(&self) -> &F {
+    |                   ^^^^^^^^^^^^^^^^^
+...
+229 |     pub(crate) fn evaluation_at(&self, index: usize) -> Result<F, EvaluationError> {
+    |                   ^^^^^^^^^^^^^
+...
+246 |     pub(crate) fn evaluate(&self, point: &[F], cfg: &F::Config) -> Result<F, EvaluationError> {
+    |                   ^^^^^^^^
+
+warning: function `jit_sums_group` is never used
+   --> src/bitz/kernels/x86.rs:362:15
+    |
+362 | pub(crate) fn jit_sums_group(
+    |               ^^^^^^^^^^^^^^
+
+warning: function `inputs` is never used
+  --> src/sumcheck/inner/binary.rs:75:15
+   |
+75 | pub(crate) fn inputs(pairs: Vec<[Vec<F>; 2]>, num_vars: usize) -> (Vec<[Vec<F>; 2]>, Vec<()>) {
+   |               ^^^^^^
+
+warning: function `encode` is never used
+   --> src/sumcheck/inner/binary.rs:159:15
+    |
+159 | pub(crate) fn encode(
+    |               ^^^^^^
+
+warning: associated function `quadratic` is never used
+   --> src/sumcheck/inner/evaluation_form.rs:152:19
+    |
+151 | impl<F> MultiDegreeSumcheckProof<F> {
+    | ----------------------------------- associated function in this implementation
+152 |     pub(crate) fn quadratic(
+    |                   ^^^^^^^^^
+
+warning: associated function `new` is never used
+   --> src/sumcheck/inner/native.rs:301:19
+    |
+300 | impl NativeConstantPrefix {
+    | ------------------------- associated function in this implementation
+301 |     pub(crate) fn new(block_len: usize) -> Self {
+    |                   ^^^
+
+warning: function `tail_pieces` is never used
+   --> src/sumcheck/inner/packed/composite.rs:252:4
+    |
+252 | fn tail_pieces<const K: usize>(
+    |    ^^^^^^^^^^^
+
+warning: function `tail_run_beta_values` is never used
+   --> src/sumcheck/inner/packed/composite.rs:441:4
+    |
+441 | fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
+    |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `take` is never used
+  --> src/sumcheck/outer/measure.rs:11:15
+   |
+11 | pub(crate) fn take() -> Option<[u64; 4]> {
+   |               ^^^^
+
+warning: method `len` is never used
+   --> src/sumcheck/outer/arithmetic.rs:100:19
+    |
+ 91 | impl<'a> NativeProducts<'a> {
+    | --------------------------- method in this implementation
+...
+100 |     pub(crate) fn len(&self) -> usize {
+    |                   ^^^
+
+warning: function `validate_products_for_skip` is never used
+   --> src/sumcheck/outer/univariate.rs:681:4
+    |
+681 | fn validate_products_for_skip<F>(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `validate_equality_factors` is never used
+   --> src/sumcheck/outer/univariate.rs:705:4
+    |
+705 | fn validate_equality_factors<F>(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `has_dense_shape` is never used
+   --> src/sumcheck/outer/univariate.rs:735:4
+    |
+735 | fn has_dense_shape<F>(mle: &DenseMultilinearExtension<F>) -> bool {
+    |    ^^^^^^^^^^^^^^^
+
+warning: variant `Independent` is never constructed
+   --> src/sumcheck/bridge/native.rs:195:5
+    |
+187 | pub(crate) enum RowFunctional<'a> {
+    |                 ------------- variant in this enum
+...
+195 |     Independent([&'a [field::Fp<2>]; 3]),
+    |     ^^^^^^^^^^^
+    |
+    = note: `RowFunctional` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: `bitz` (lib) generated 59 warnings (run `cargo fix --lib -p bitz` to apply 1 suggestion)
+error[E0599]: no method named `committed_source_bits` found for struct `CommittedFalconHybrid` in the current scope
+   --> examples/proof_size_comparison.rs:178:43
+    |
+178 |     let committed_source_bits = committed.committed_source_bits();
+    |                                           ^^^^^^^^^^^^^^^^^^^^^ method not found in `CommittedFalconHybrid`
+
+error[E0599]: no method named `encoded_source_bits` found for struct `CommittedFalconHybrid` in the current scope
+   --> examples/proof_size_comparison.rs:179:41
+    |
+179 |     let encoded_source_bits = committed.encoded_source_bits();
+    |                                         ^^^^^^^^^^^^^^^^^^^ method not found in `CommittedFalconHybrid`
+
+error[E0599]: no method named `size_breakdown` found for struct `Sha256EcdsaProof` in the current scope
+   --> examples/proof_size_comparison.rs:290:47
+    |
+290 |     let components = checked_components(proof.size_breakdown(), bytes.len());
+    |                                               ^^^^^^^^^^^^^^ method not found in `Sha256EcdsaProof`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `bitz` (example "proof_size_comparison") due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...

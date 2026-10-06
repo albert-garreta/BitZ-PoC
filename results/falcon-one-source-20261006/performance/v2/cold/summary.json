@@ -1,0 +1,366 @@
+{
+  "status": "diagnostic",
+  "complete": true,
+  "qualifying": false,
+  "timing_limit": 1.02,
+  "verified_proofs_in_complete_pairs": 32,
+  "measured_trials_per_seed": [
+    1
+  ],
+  "estimator": "ratio of arithmetic means of per-seed process medians",
+  "confidence": "paired percentile bootstrap, one-sided 95%, fixed 60 seeds",
+  "cells": [
+    {
+      "protocol": "native",
+      "security": 100,
+      "batch": 1,
+      "seeds": [
+        42
+      ],
+      "timings": {},
+      "peak_rss_kib": {
+        "baseline": 47640,
+        "candidate": 43312
+      },
+      "payload": {
+        "maximum_ratio": 0.8192055534130351,
+        "ratio_of_mean_bytes": 0.8192055534130351,
+        "baseline_mean_bytes": 207440,
+        "candidate_mean_bytes": 169936,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 100,
+      "batch": 3,
+      "seeds": [
+        42
+      ],
+      "timings": {},
+      "peak_rss_kib": {
+        "baseline": 59504,
+        "candidate": 57828
+      },
+      "payload": {
+        "maximum_ratio": 0.7641513428075474,
+        "ratio_of_mean_bytes": 0.7641513428075474,
+        "baseline_mean_bytes": 283436,
+        "candidate_mean_bytes": 216588,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 100,
+      "batch": 32,
+      "seeds": [
+        42
+      ],
+      "timings": {},
+      "peak_rss_kib": {
+        "baseline": 134880,
+        "candidate": 129268
+      },
+      "payload": {
+        "maximum_ratio": 0.7241499109740739,
+        "ratio_of_mean_bytes": 0.7241499109740739,
+        "baseline_mean_bytes": 414486,
+        "candidate_mean_bytes": 300150,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 100,
+      "batch": 1024,
+      "seeds": [
+        42
+      ],
+      "timings": {},
+      "peak_rss_kib": {
+        "baseline": 3049624,
+        "candidate": 2786596
+      },
+      "payload": {
+        "maximum_ratio": 0.799205988827188,
+        "ratio_of_mean_bytes": 0.799205988827188,
+        "baseline_mean_bytes": 960188,
+        "candidate_mean_bytes": 767388,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 128,
+      "batch": 1,
+      "seeds": [
+        42
+      ],
+      "timings": {},
+      "peak_rss_kib": {
+        "baseline": 47360,
+        "candidate": 44012
+      },
+      "payload": {
+        "maximum_ratio": 0.8425577646426652,
+        "ratio_of_mean_bytes": 0.8425577646426652,
+        "baseline_mean_bytes": 238208,
+        "candidate_mean_bytes": 200704,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 128,
+      "batch": 3,
+      "seeds": [
+        42
+      ],
+      "timings": {},
+      "peak_rss_kib": {
+        "baseline": 61440,
+        "candidate": 58540
+      },
+      "payload": {
+        "maximum_ratio": 0.768445003293216,
+        "ratio_of_mean_bytes": 0.768445003293216,
+        "baseline_mean_bytes": 334020,
+        "candidate_mean_bytes": 256676,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 128,
+      "batch": 32,
+      "seeds": [
+        42
+      ],
+      "timings": {},
+      "peak_rss_kib": {
+        "baseline": 136088,
+        "candidate": 128980
+      },
+      "payload": {
+        "maximum_ratio": 0.7289141806243976,
+        "ratio_of_mean_bytes": 0.7289141806243976,
+        "baseline_mean_bytes": 495902,
+        "candidate_mean_bytes": 361470,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 128,
+      "batch": 1024,
+      "seeds": [
+        42
+      ],
+      "timings": {},
+      "peak_rss_kib": {
+        "baseline": 3080604,
+        "candidate": 2789560
+      },
+      "payload": {
+        "maximum_ratio": 0.7854849859033611,
+        "ratio_of_mean_bytes": 0.7854849859033611,
+        "baseline_mean_bytes": 1105228,
+        "candidate_mean_bytes": 868140,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 100,
+      "batch": 1,
+      "seeds": [
+        42
+      ],
+      "timings": {},
+      "peak_rss_kib": {
+        "baseline": 46128,
+        "candidate": 43080
+      },
+      "payload": {
+        "maximum_ratio": 0.8051776247815298,
+        "ratio_of_mean_bytes": 0.8051776247815298,
+        "baseline_mean_bytes": 207122,
+        "candidate_mean_bytes": 166770,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 100,
+      "batch": 3,
+      "seeds": [
+        42
+      ],
+      "timings": {},
+      "peak_rss_kib": {
+        "baseline": 55732,
+        "candidate": 54552
+      },
+      "payload": {
+        "maximum_ratio": 0.7620351800334979,
+        "ratio_of_mean_bytes": 0.7620351800334979,
+        "baseline_mean_bytes": 278226,
+        "candidate_mean_bytes": 212018,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 100,
+      "batch": 32,
+      "seeds": [
+        42
+      ],
+      "timings": {},
+      "peak_rss_kib": {
+        "baseline": 139216,
+        "candidate": 129796
+      },
+      "payload": {
+        "maximum_ratio": 0.7262865853957423,
+        "ratio_of_mean_bytes": 0.7262865853957423,
+        "baseline_mean_bytes": 408018,
+        "candidate_mean_bytes": 296338,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 100,
+      "batch": 1024,
+      "seeds": [
+        42
+      ],
+      "timings": {},
+      "peak_rss_kib": {
+        "baseline": 3078636,
+        "candidate": 2815908
+      },
+      "payload": {
+        "maximum_ratio": 0.7848657539895078,
+        "ratio_of_mean_bytes": 0.7848657539895078,
+        "baseline_mean_bytes": 892466,
+        "candidate_mean_bytes": 700466,
+        "limit": 0.8,
+        "strict": false,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 128,
+      "batch": 1,
+      "seeds": [
+        42
+      ],
+      "timings": {},
+      "peak_rss_kib": {
+        "baseline": 47740,
+        "candidate": 44496
+      },
+      "payload": {
+        "maximum_ratio": 0.8214241424638508,
+        "ratio_of_mean_bytes": 0.8214241424638508,
+        "baseline_mean_bytes": 241914,
+        "candidate_mean_bytes": 198714,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 128,
+      "batch": 3,
+      "seeds": [
+        42
+      ],
+      "timings": {},
+      "peak_rss_kib": {
+        "baseline": 60240,
+        "candidate": 57708
+      },
+      "payload": {
+        "maximum_ratio": 0.7619379470959979,
+        "ratio_of_mean_bytes": 0.7619379470959979,
+        "baseline_mean_bytes": 335778,
+        "candidate_mean_bytes": 255842,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 128,
+      "batch": 32,
+      "seeds": [
+        42
+      ],
+      "timings": {},
+      "peak_rss_kib": {
+        "baseline": 138372,
+        "candidate": 128700
+      },
+      "payload": {
+        "maximum_ratio": 0.7293180779512815,
+        "ratio_of_mean_bytes": 0.7293180779512815,
+        "baseline_mean_bytes": 494514,
+        "candidate_mean_bytes": 360658,
+        "limit": 1.0,
+        "strict": true,
+        "pass_gate": true
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 128,
+      "batch": 1024,
+      "seeds": [
+        42
+      ],
+      "timings": {},
+      "peak_rss_kib": {
+        "baseline": 3078248,
+        "candidate": 2816612
+      },
+      "payload": {
+        "maximum_ratio": 0.7899233883230474,
+        "ratio_of_mean_bytes": 0.7899233883230474,
+        "baseline_mean_bytes": 1098266,
+        "candidate_mean_bytes": 867546,
+        "limit": 0.8,
+        "strict": false,
+        "pass_gate": true
+      }
+    }
+  ]
+}

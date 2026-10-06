@@ -40,8 +40,8 @@ THREADS = [1, 16]
 SECURITY = [100, 128]
 RUSTFLAGS = "-C target-cpu=native"
 PROTOCOLS = {
-    "native": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v5",
-    "shared-prime": "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v4",
+    "native": "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6",
+    "shared-prime": "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v5",
 }
 
 

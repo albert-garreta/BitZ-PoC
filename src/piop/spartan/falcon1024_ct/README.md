@@ -1,8 +1,8 @@
 # Falcon-1024 CT proofs
 
 The `falcon-hybrid` feature provides non-ZK Falcon proofs for 1–1024
-signatures, using binary Keccak and one shared opening of three source
-commitments. It proves SHAKE256, HashToPoint rejection and
+signatures, using binary Keccak and one joint source commitment with a shared
+opening. It proves SHAKE256, HashToPoint rejection and
 ordered compaction, the Falcon ring equation, and each signature's norm bound.
 Native witness generation does not substitute for proof constraints.
 
@@ -35,11 +35,12 @@ an in-memory Rust API, without a Falcon wire codec. `payload_size_bytes()`
 counts stored proof payload, excluding public statements and transport framing.
 
 `PreparedFalconHybrid::new_shared_prime(batch, target_bits)` selects the
-experimental `SharedPrimeV4` protocol. `new` retains the native-coordinate-carry
-profile under its v5 transcript. Both use the joint HashToPoint compaction
+experimental `SharedPrime` protocol. `new` retains the native-coordinate-carry
+profile under its v6 transcript. Both use the joint HashToPoint compaction
 forest. Earlier native and shared-prime proofs must be regenerated.
 Each prepared verifier accepts only its own protocol and layout.
-See [SHARED_PRIME_V4.md](SHARED_PRIME_V4.md) for component accounting and versions.
+See [ONE_SOURCE.md](ONE_SOURCE.md) for the joint commitment and current versions,
+and [SHARED_PRIME_V4.md](SHARED_PRIME_V4.md) for historical forest accounting.
 
 `FalconSourceLayout::new` rounds the live batch up to a power-of-two capacity.
 Both profiles use the optimized integer relations and compact binder. See
@@ -123,9 +124,10 @@ prime-field Keccak, or integer ring-quotient columns are committed.
 Keccak uses two permutation-major slabs of 16 and 4 permutations. Each
 permutation occupies a 65,536-bit compact circuit block. At batch one, the
 four-permutation slab has a second padded signature slot to satisfy Flock's
-minimum geometry. Padded slots contain valid Keccak chains. The optimized
-chain producer handles capacities at least eight; smaller capacities retain
-the reference setup and packed producer.
+minimum geometry. Inactive slots are all zero and their constant wires are
+pinned to the public activity mask. The producer runs SIMD kernels only for
+full live groups and scalar generation for partial groups; it does not execute
+dummy Keccak computations. See [ONE_SOURCE.md](ONE_SOURCE.md).
 
 Authenticated copy checks connect the sources:
 
@@ -139,7 +141,7 @@ The native arithmetic terminal passes through a two-limb integer-to-binary
 bridge using the current BitZ PCS's [integer folds](../../../bitz/fold.rs) and
 [product GKR](../../../bitz/forest.rs). The fixed binary source layout has
 13 row variables; [the native bridge](hybrid_bridge.rs) splits prime-field row
-weights into 113-bit limbs. Shared-prime V4 retains this two-limb bridge at
+weights into 113-bit limbs. Shared-prime retains this two-limb bridge at
 128 bits; its 100-bit profile folds canonical 115-bit-field weights directly
 through the same integer-folding kernels.
 The two-limb sums are stored in inline `LargeNumber { lower: u128, upper: u32 }`
@@ -155,7 +157,7 @@ a complete Falcon transport codec is still not defined.
 The joint binary sumcheck binds arithmetic, both Keccak claims, and these copy
 checks to the shared ring-switch/Ligerito opening.
 Falcon uses `MATCHED_UDR` with no initial OOD message. Physical padding and all
-three roots remain authenticated. See
+three logical sources are authenticated against one joint source root. See
 [BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md) for the native bridge's
 index map and error bound, and [SHARED_PRIME_V4.md](SHARED_PRIME_V4.md) for the
 shared-prime profile selection.
@@ -179,15 +181,15 @@ and validation obligations. Exact-integer ledger tests cover both targets
 and every batch from 1 through 1024. Historical V2/V3 security minima and
 benchmark payloads describe their original schedules.
 
-The native statement domains are `native-ring/non-zk/v5` and
-`native-ring/statement/v5`; the shared-prime profile uses
-`shared-prime/non-zk/v4` and `shared-prime/statement/v4`.
+The native statement domains are `native-ring/non-zk/v6` and
+`native-ring/statement/v6`; the shared-prime profile uses
+`shared-prime/non-zk/v5` and `shared-prime/statement/v5`.
 Earlier native and shared-prime proofs must be regenerated. Subprotocol domain
 separators retain their own versions: those labels separate
 live proof phases and do not enable old backends or old-proof parsing.
 The two-limb bridge retains `bitz/falcon-hybrid/wfbitz-joint-limbs/v1`; the
 unsplit bridge retains its separate binding, root-query, and grinding domains.
-The shared V4 parent transcript binds the selected bridge explicitly.
+The shared-prime parent transcript binds the selected bridge explicitly.
 Both implementations use `crate::bitz`.
 
 The shared opening resolves its Flock work budgets through

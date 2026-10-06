@@ -520,20 +520,39 @@ pub fn min_n_keccaks_log(n_keccaks: usize) -> usize {
 /// Apply φᵀ to a length-`STATE_BITS` Gf128 buffer: `out[s_in] = Σ_{s_out :
 /// s_in ∈ preim(s_out)} in[s_out]`.
 pub(crate) fn apply_phi_t(v: &[Gf128]) -> Vec<Gf128> {
-    debug_assert_eq!(v.len(), STATE_BITS);
     let mut out = vec![Gf128::ZERO; STATE_BITS];
-    for s_out in 0..STATE_BITS {
-        let z_p = s_out / N_LANES;
-        let xy = s_out % N_LANES;
-        let y_p = xy / 5;
-        let x_p = xy % 5;
-        let preim = theta_rho_pi_preimage(x_p, y_p, z_p);
-        let val = v[s_out];
-        for &s_in in preim.iter() {
-            out[s_in] += val;
+    apply_phi_t_into(v, &mut out);
+    out
+}
+
+/// Factor phi^T = theta^T * (pi * rho)^T. The inverse permutation writes
+/// every output coordinate exactly once. Theta's shared column parities
+/// then replace the eleven-way scatter for each coordinate.
+fn apply_phi_t_into(v: &[Gf128], out: &mut [Gf128]) {
+    debug_assert_eq!(v.len(), STATE_BITS);
+    debug_assert_eq!(out.len(), STATE_BITS);
+    let mut parity = [[Gf128::ZERO; 5]; LANE_BITS];
+    for x in 0..5 {
+        for y in 0..5 {
+            let a = (x + 3 * y) % 5;
+            let b = x;
+            let rotation = RHO_OFFSETS[a][b] as usize;
+            for z in 0..LANE_BITS {
+                let c = (z + LANE_BITS - rotation) % LANE_BITS;
+                let value = v[state_idx(x, y, z)];
+                out[state_idx(a, b, c)] = value;
+                parity[c][a] += value;
+            }
         }
     }
-    out
+    for z in 0..LANE_BITS {
+        for x in 0..5 {
+            let column = parity[z][(x + 1) % 5] + parity[(z + 1) % LANE_BITS][(x + 4) % 5];
+            for y in 0..5 {
+                out[state_idx(x, y, z)] += column;
+            }
+        }
+    }
 }
 
 /// Forward-apply φ on a `bool` state — tracks the round-constant accumulator
@@ -662,20 +681,9 @@ pub fn generate_witness_with_ab_packed_and_lincheck(
 }
 
 // ---------------------------------------------------------------------------
-// Lincheck circuit walker — extends [`keccak::KeccakLincheckCircuit`] by one
-// transpose-recurrence round to absorb the state_24 pin rows.
-//
-//   K^A_24 = vec_pin (where vec_pin[j] = eq_inner[z_pos_state(24, j)])
-//   K^A_r  = φᵀ(K^A_{r+1}) ⊕ χ_{r,A}   for r ∈ 23..0
-//
-// Scattering: K^A_24 → t_23 col (pin row's t_23 coefficient = φ^0 · K^A_24);
-// K^A_r → t_{r-1} col for r ∈ {23..1}; K^A_0 → state_0 col. The state_24 col
-// itself receives no A or B contribution (pin row writes to it via C = I).
-//
-// B side: pin's B = [Z_CONST] only. K^B_24 = 0; recurrence collapses to
-// `keccak`'s B-side recurrence.
-//
-// Z_CONST: receives `α·dot(vec_pin, RC_24) + sum_eq_pin` extra (vs `keccak`).
+// Lincheck circuit walker. Reverse a single alpha*A+B linear form through
+// each affine state transition, adding chi-row weights before phi^T and
+// charging round constants directly to the homogeneous constant column.
 // ---------------------------------------------------------------------------
 
 pub struct KeccakLincheckCircuit;
@@ -695,136 +703,53 @@ impl LincheckCircuit for KeccakLincheckCircuit {
     fn fold_alpha_batched(&self, alpha: Gf128, eq_inner: &[Gf128]) -> Vec<Gf128> {
         assert_eq!(eq_inner.len(), K, "eq_inner length must equal n_cols = K");
         let mut comb = vec![Gf128::ZERO; K];
+        let mut constant = (alpha + Gf128::ONE) * eq_inner[Z_CONST];
 
-        // ---- Row 0 (const): A = [Z_CONST], B = [Z_CONST].
-        let e0 = eq_inner[Z_CONST];
-        comb[Z_CONST] += alpha * e0;
-        comb[Z_CONST] += e0;
-
-        // ---- state_0 input self-loops: A = [row], B = [Z_CONST].
-        for j in 0..STATE_BITS {
-            let row = z_pos_state(0, j);
-            let e = eq_inner[row];
-            comb[row] += alpha * e;
-            comb[Z_CONST] += e;
+        // Input self-loops have A = [row], B = [Z_CONST]. Output pin rows
+        // contribute alpha * L_24 on A and [Z_CONST] on B.
+        let mut k = vec![Gf128::ZERO; STATE_BITS];
+        for s in 0..STATE_BITS {
+            let input = z_pos_state(0, s);
+            let output_weight = eq_inner[z_pos_state(24, s)];
+            comb[input] = alpha * eq_inner[input];
+            constant += eq_inner[input] + output_weight;
+            k[s] = alpha * output_weight;
         }
 
-        // ---- state_24 pin rows: A = L_24[j], B = [Z_CONST].
-        let mut vec_pin: Vec<Gf128> = vec![Gf128::ZERO; STATE_BITS];
-        let mut sum_eq_pin = Gf128::ZERO;
-        for j in 0..STATE_BITS {
-            let row = z_pos_state(24, j);
-            let e = eq_inner[row];
-            vec_pin[j] = e;
-            sum_eq_pin += e;
-        }
-        comb[Z_CONST] += sum_eq_pin; // B-side from pin's B = [Z_CONST]
-
-        // ---- t-AND rows: build per-round χ marginals on state_r positions.
-        let mut chi_a: Vec<Vec<Gf128>> = (0..N_T).map(|_| vec![Gf128::ZERO; STATE_BITS]).collect();
-        let mut chi_b: Vec<Vec<Gf128>> = (0..N_T).map(|_| vec![Gf128::ZERO; STATE_BITS]).collect();
-        let mut sum_eq_t = Gf128::ZERO;
-
-        for r in 0..N_T {
-            for zpos in 0..64 {
+        // Reverse the *combined* linear form through
+        // L_(r+1) = phi(L_r) + t_r + RC_r * z_const.
+        // A chi row adds alpha * e to phi(L_r)[x+1] and e to
+        // phi(L_r)[x+2], plus alpha * e to the constant coefficient.
+        // Linearity lets A and B share one transpose recurrence; round
+        // constants are absorbed where they enter, without expanding RC_r.
+        let mut scratch = vec![Gf128::ZERO; STATE_BITS];
+        let mut sum_chi_weights = Gf128::ZERO;
+        for r in (0..N_T).rev() {
+            for s in 0..STATE_BITS {
+                comb[z_pos_t(r, s)] = k[s];
+            }
+            let mut rc = ROUND_CONSTANTS[r];
+            while rc != 0 {
+                constant += k[state_idx(0, 0, rc.trailing_zeros() as usize)];
+                rc &= rc - 1;
+            }
+            for z in 0..LANE_BITS {
                 for y in 0..5 {
                     for x in 0..5 {
-                        let row = z_pos_t(r, state_idx(x, y, zpos));
-                        let e = eq_inner[row];
-                        sum_eq_t += e;
-                        for &s in theta_rho_pi_preimage((x + 1) % 5, y, zpos).iter() {
-                            chi_a[r][s] += e;
-                        }
-                        for &s in theta_rho_pi_preimage((x + 2) % 5, y, zpos).iter() {
-                            chi_b[r][s] += e;
-                        }
+                        let e = eq_inner[z_pos_t(r, state_idx(x, y, z))];
+                        sum_chi_weights += e;
+                        k[state_idx((x + 1) % 5, y, z)] += alpha * e;
+                        k[state_idx((x + 2) % 5, y, z)] += e;
                     }
                 }
             }
-        }
-        comb[Z_CONST] += alpha * sum_eq_t;
-
-        // ---- Round-constant accumulation. After loop rc = RC_24.
-        let mut rc = [false; STATE_BITS];
-        let mut rc_a = Gf128::ZERO;
-        let mut rc_b = Gf128::ZERO;
-        for r in 0..N_T {
-            for s in 0..STATE_BITS {
-                if rc[s] {
-                    rc_a += chi_a[r][s];
-                    rc_b += chi_b[r][s];
-                }
-            }
-            rc = apply_phi_bool(&rc);
-            for zpos in 0..64 {
-                if (ROUND_CONSTANTS[r] >> zpos) & 1 == 1 {
-                    let s = state_idx(0, 0, zpos);
-                    rc[s] ^= true;
-                }
-            }
-        }
-        let mut rc_pin = Gf128::ZERO;
-        for s in 0..STATE_BITS {
-            if rc[s] {
-                rc_pin += vec_pin[s];
-            }
-        }
-        comb[Z_CONST] += alpha * rc_a;
-        comb[Z_CONST] += rc_b;
-        comb[Z_CONST] += alpha * rc_pin;
-
-        // ---- Transpose recurrence, A side. Starts at K^A_24 = vec_pin.
-        // Step 1: scatter K^A_24 → t_23 col.
-        let t23_base = t_u64_base(N_T - 1);
-        for s in 0..STATE_BITS {
-            let pos = (t23_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
-            comb[pos] += alpha * vec_pin[s];
-        }
-        // Step 2: K^A_23 = φᵀ(K^A_24) ⊕ χ_{23,A}.
-        let mut k_a = apply_phi_t(&vec_pin);
-        for s in 0..STATE_BITS {
-            k_a[s] += chi_a[N_T - 1][s];
-        }
-        // Step 3: standard recurrence for r ∈ {23..1}.
-        for r in (1..N_T).rev() {
-            let t_base = t_u64_base(r - 1);
-            for s in 0..STATE_BITS {
-                let pos = (t_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
-                comb[pos] += alpha * k_a[s];
-            }
-            let mut new_k = apply_phi_t(&k_a);
-            for s in 0..STATE_BITS {
-                new_k[s] += chi_a[r - 1][s];
-            }
-            k_a = new_k;
-        }
-        let s0_base = state_u64_base(0);
-        for s in 0..STATE_BITS {
-            let pos = (s0_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
-            comb[pos] += alpha * k_a[s];
-        }
-
-        // ---- Transpose recurrence, B side. K^B_24 = 0, so K^B_23 = χ_{23,B}
-        // — same starting point as `keccak`. Pin row doesn't contribute to
-        // t_23 col on B side.
-        let mut k_b = chi_b[N_T - 1].clone();
-        for r in (1..N_T).rev() {
-            let t_base = t_u64_base(r - 1);
-            for s in 0..STATE_BITS {
-                let pos = (t_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
-                comb[pos] += k_b[s];
-            }
-            let mut new_k = apply_phi_t(&k_b);
-            for s in 0..STATE_BITS {
-                new_k[s] += chi_b[r - 1][s];
-            }
-            k_b = new_k;
+            apply_phi_t_into(&k, &mut scratch);
+            std::mem::swap(&mut k, &mut scratch);
         }
         for s in 0..STATE_BITS {
-            let pos = (s0_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
-            comb[pos] += k_b[s];
+            comb[z_pos_state(0, s)] += k[s];
         }
-
+        comb[Z_CONST] = constant + alpha * sum_chi_weights;
         comb
     }
 }
@@ -1065,7 +990,7 @@ impl KeccakSetup {
 // zeroes the contiguous padding suffix of the recycled scratch buffers.
 // ---------------------------------------------------------------------------
 
-use super::common::{nt_store_row, SendPtr, BM_V};
+use super::common::{BM_V, SendPtr, nt_store_row};
 
 type VLane = [u64; BM_V];
 type VLanes = [[u64; BM_V]; N_LANES];
@@ -1396,8 +1321,10 @@ pub fn generate_witness_batch_major(
 /// Execute independent Keccak chains and emit their circuit witness in one pass.
 /// Block IDs are `permutation * capacity + signature`. The returned outputs
 /// supply both the next slab's inputs and the SHAKE samples, without replaying
-/// the permutations. Small batches use the scalar reference setup because the
-/// byte-stripe producer operates on eight blocks at a time.
+/// the permutations. Inactive signatures have zero witnesses, including their
+/// constant wire, and no permutations are executed for them. The caller must
+/// use a lincheck circuit whose constant-column pin is the live-signature mask.
+/// Full live groups use SIMD; remaining live signatures use the scalar producer.
 pub fn generate_chained_witness_batch_major(
     initial: &[[u64; N_LANES]],
     capacity: usize,
@@ -1414,21 +1341,6 @@ pub fn generate_chained_witness_batch_major(
     assert!(initial.len() <= capacity && capacity * permutations >= BM_V);
     let n_log = (capacity * permutations).ilog2() as usize;
     let mut outputs = vec![vec![[0; N_LANES]; permutations]; capacity];
-    if capacity < BM_V {
-        let mut states = vec![[false; STATE_BITS]; capacity * permutations];
-        for signature in 0..capacity {
-            let mut lanes = initial.get(signature).copied().unwrap_or([0; N_LANES]);
-            for permutation in 0..permutations {
-                states[permutation * capacity + signature] = lanes_to_state(&lanes);
-                for round in 0..N_ROUNDS {
-                    keccak_round_lanes(&mut lanes, round);
-                }
-                outputs[signature][permutation] = lanes;
-            }
-        }
-        let (z, a, b, stripe) = generate_witness_batch_major(&states, n_log);
-        return (z, a, b, stripe, outputs);
-    }
     let total = capacity * permutations * (U64_PER_BLOCK / 2);
     let mut z = flock_core::scratch::take_f128(total);
     let mut a = flock_core::scratch::take_f128(total);
@@ -1439,6 +1351,18 @@ pub fn generate_chained_witness_batch_major(
         buf[tail..]
             .par_chunks_mut(1 << 16)
             .for_each(|c| c.fill(Gf128::ZERO));
+        // A recycled buffer may contain a previous live witness. Initialize
+        // every inactive block in the useful prefix, not only the tail.
+        if initial.len() < capacity {
+            buf[..tail]
+                .par_chunks_mut(capacity * permutations)
+                .for_each(|row| {
+                    for permutation in 0..permutations {
+                        row[permutation * capacity + initial.len()..(permutation + 1) * capacity]
+                            .fill(Gf128::ZERO);
+                    }
+                });
+        }
     }
     let (zp, ap, bp, sp) = (
         SendPtr(z.as_mut_ptr() as *mut u64),
@@ -1449,11 +1373,11 @@ pub fn generate_chained_witness_batch_major(
     outputs
         .par_chunks_mut(BM_V)
         .enumerate()
+        .take(initial.len() / BM_V)
         .for_each(|(group, out)| {
             let first = group * BM_V;
-            let mut lanes: VLanes = std::array::from_fn(|lane| {
-                std::array::from_fn(|j| initial.get(first + j).map_or(0, |state| state[lane]))
-            });
+            let mut lanes: VLanes =
+                std::array::from_fn(|lane| std::array::from_fn(|j| initial[first + j][lane]));
             for permutation in 0..permutations {
                 // SAFETY: each worker owns 8 signature IDs in every permutation.
                 // Their packed rows and byte stripes are disjoint; the padding
@@ -1474,7 +1398,89 @@ pub fn generate_chained_witness_batch_major(
                 }
             }
         });
+    if initial.len().is_multiple_of(BM_V) {
+        return (z, a, b, stripe, outputs);
+    }
+    // Partial groups cannot use the vector producer: that would execute dummy
+    // permutations and set inactive constants to one. Scatter scalar live
+    // blocks only. Once these words are complete, transpose their stripe
+    // groups together, including groups spanning permutations (capacity < 8).
+    let mut local_z = vec![0u64; U64_PER_BLOCK];
+    let mut local_a = vec![0u64; U64_PER_BLOCK];
+    let mut local_b = vec![0u64; U64_PER_BLOCK];
+    for signature in initial.len() / BM_V * BM_V..initial.len() {
+        let mut lanes = initial[signature];
+        for permutation in 0..permutations {
+            build_chain_witness_ab_packed_into(
+                &lanes_to_state(&lanes),
+                &mut local_z,
+                &mut local_a,
+                &mut local_b,
+            );
+            let block = permutation * capacity + signature;
+            for (dest, local) in [(&mut z, &local_z), (&mut a, &local_a), (&mut b, &local_b)] {
+                for (chunk, pair) in local.chunks_exact(2).enumerate() {
+                    dest[(chunk << n_log) | block] = Gf128 {
+                        lo: pair[0],
+                        hi: pair[1],
+                    };
+                }
+            }
+            lanes.copy_from_slice(&local_z[state_u64_base(24)..state_u64_base(24) + N_LANES]);
+            outputs[signature][permutation] = lanes;
+        }
+    }
+    write_partial_chain_stripes(
+        &z,
+        capacity,
+        permutations,
+        initial.len() / BM_V * BM_V,
+        &mut stripe,
+    );
     (z, a, b, stripe, outputs)
+}
+
+/// Transpose only stripe groups touched by scalar live signatures. When the
+/// capacity is below eight, a group spans several permutations. Otherwise
+/// there is one partial signature group per permutation. Inactive packed words
+/// have already been zeroed, so a whole-group transpose preserves zero padding
+/// and avoids a read/OR store for every set witness bit.
+fn write_partial_chain_stripes(
+    z: &[Gf128],
+    capacity: usize,
+    permutations: usize,
+    first_partial_signature: usize,
+    stripe: &mut [u8],
+) {
+    use flock_core::bits::transpose_8_u64s_to_64_bytes;
+    let blocks = capacity * permutations;
+    let groups = if capacity < BM_V {
+        blocks / BM_V
+    } else {
+        permutations
+    };
+    for i in 0..groups {
+        let group = if capacity < BM_V {
+            i
+        } else {
+            i * (capacity / BM_V) + first_partial_signature / BM_V
+        };
+        let destination = &mut stripe[group * K..(group + 1) * K];
+        for (chunk, row) in z
+            .chunks_exact(blocks)
+            .take(USEFUL_BITS.div_ceil(128))
+            .enumerate()
+        {
+            let words = &row[group * BM_V..(group + 1) * BM_V];
+            let low = std::array::from_fn(|j| words[j].lo);
+            let high = std::array::from_fn(|j| words[j].hi);
+            transpose_8_u64s_to_64_bytes(&low, &mut destination[128 * chunk..128 * chunk + 64]);
+            transpose_8_u64s_to_64_bytes(
+                &high,
+                &mut destination[128 * chunk + 64..128 * chunk + 128],
+            );
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1575,6 +1581,162 @@ mod tests {
         s
     }
 
+    // Frozen pre-factorization walker: separate A/B recurrences, explicit
+    // eleven-preimage scatters, and forward-expanded round constants. Keep
+    // this independent of apply_phi_t_into as an exact coefficient oracle.
+    fn reference_apply_phi_t(v: &[Gf128]) -> Vec<Gf128> {
+        debug_assert_eq!(v.len(), STATE_BITS);
+        let mut out = vec![Gf128::ZERO; STATE_BITS];
+        for s_out in 0..STATE_BITS {
+            let z_p = s_out / N_LANES;
+            let xy = s_out % N_LANES;
+            let y_p = xy / 5;
+            let x_p = xy % 5;
+            let preim = theta_rho_pi_preimage(x_p, y_p, z_p);
+            let val = v[s_out];
+            for &s_in in preim.iter() {
+                out[s_in] += val;
+            }
+        }
+        out
+    }
+
+    fn reference_fold_alpha_batched(alpha: Gf128, eq_inner: &[Gf128]) -> Vec<Gf128> {
+        assert_eq!(eq_inner.len(), K, "eq_inner length must equal n_cols = K");
+        let mut comb = vec![Gf128::ZERO; K];
+
+        // ---- Row 0 (const): A = [Z_CONST], B = [Z_CONST].
+        let e0 = eq_inner[Z_CONST];
+        comb[Z_CONST] += alpha * e0;
+        comb[Z_CONST] += e0;
+
+        // ---- state_0 input self-loops: A = [row], B = [Z_CONST].
+        for j in 0..STATE_BITS {
+            let row = z_pos_state(0, j);
+            let e = eq_inner[row];
+            comb[row] += alpha * e;
+            comb[Z_CONST] += e;
+        }
+
+        // ---- state_24 pin rows: A = L_24[j], B = [Z_CONST].
+        let mut vec_pin: Vec<Gf128> = vec![Gf128::ZERO; STATE_BITS];
+        let mut sum_eq_pin = Gf128::ZERO;
+        for j in 0..STATE_BITS {
+            let row = z_pos_state(24, j);
+            let e = eq_inner[row];
+            vec_pin[j] = e;
+            sum_eq_pin += e;
+        }
+        comb[Z_CONST] += sum_eq_pin; // B-side from pin's B = [Z_CONST]
+
+        // ---- t-AND rows: build per-round χ marginals on state_r positions.
+        let mut chi_a: Vec<Vec<Gf128>> = (0..N_T).map(|_| vec![Gf128::ZERO; STATE_BITS]).collect();
+        let mut chi_b: Vec<Vec<Gf128>> = (0..N_T).map(|_| vec![Gf128::ZERO; STATE_BITS]).collect();
+        let mut sum_eq_t = Gf128::ZERO;
+
+        for r in 0..N_T {
+            for zpos in 0..64 {
+                for y in 0..5 {
+                    for x in 0..5 {
+                        let row = z_pos_t(r, state_idx(x, y, zpos));
+                        let e = eq_inner[row];
+                        sum_eq_t += e;
+                        for &s in theta_rho_pi_preimage((x + 1) % 5, y, zpos).iter() {
+                            chi_a[r][s] += e;
+                        }
+                        for &s in theta_rho_pi_preimage((x + 2) % 5, y, zpos).iter() {
+                            chi_b[r][s] += e;
+                        }
+                    }
+                }
+            }
+        }
+        comb[Z_CONST] += alpha * sum_eq_t;
+
+        // ---- Round-constant accumulation. After loop rc = RC_24.
+        let mut rc = [false; STATE_BITS];
+        let mut rc_a = Gf128::ZERO;
+        let mut rc_b = Gf128::ZERO;
+        for r in 0..N_T {
+            for s in 0..STATE_BITS {
+                if rc[s] {
+                    rc_a += chi_a[r][s];
+                    rc_b += chi_b[r][s];
+                }
+            }
+            rc = apply_phi_bool(&rc);
+            for zpos in 0..64 {
+                if (ROUND_CONSTANTS[r] >> zpos) & 1 == 1 {
+                    let s = state_idx(0, 0, zpos);
+                    rc[s] ^= true;
+                }
+            }
+        }
+        let mut rc_pin = Gf128::ZERO;
+        for s in 0..STATE_BITS {
+            if rc[s] {
+                rc_pin += vec_pin[s];
+            }
+        }
+        comb[Z_CONST] += alpha * rc_a;
+        comb[Z_CONST] += rc_b;
+        comb[Z_CONST] += alpha * rc_pin;
+
+        // ---- Transpose recurrence, A side. Starts at K^A_24 = vec_pin.
+        // Step 1: scatter K^A_24 → t_23 col.
+        let t23_base = t_u64_base(N_T - 1);
+        for s in 0..STATE_BITS {
+            let pos = (t23_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
+            comb[pos] += alpha * vec_pin[s];
+        }
+        // Step 2: K^A_23 = φᵀ(K^A_24) ⊕ χ_{23,A}.
+        let mut k_a = reference_apply_phi_t(&vec_pin);
+        for s in 0..STATE_BITS {
+            k_a[s] += chi_a[N_T - 1][s];
+        }
+        // Step 3: standard recurrence for r ∈ {23..1}.
+        for r in (1..N_T).rev() {
+            let t_base = t_u64_base(r - 1);
+            for s in 0..STATE_BITS {
+                let pos = (t_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
+                comb[pos] += alpha * k_a[s];
+            }
+            let mut new_k = reference_apply_phi_t(&k_a);
+            for s in 0..STATE_BITS {
+                new_k[s] += chi_a[r - 1][s];
+            }
+            k_a = new_k;
+        }
+        let s0_base = state_u64_base(0);
+        for s in 0..STATE_BITS {
+            let pos = (s0_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
+            comb[pos] += alpha * k_a[s];
+        }
+
+        // ---- Transpose recurrence, B side. K^B_24 = 0, so K^B_23 = χ_{23,B}
+        // — same starting point as `keccak`. Pin row doesn't contribute to
+        // t_23 col on B side.
+        let mut k_b = chi_b[N_T - 1].clone();
+        for r in (1..N_T).rev() {
+            let t_base = t_u64_base(r - 1);
+            for s in 0..STATE_BITS {
+                let pos = (t_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
+                comb[pos] += k_b[s];
+            }
+            let mut new_k = reference_apply_phi_t(&k_b);
+            for s in 0..STATE_BITS {
+                new_k[s] += chi_b[r - 1][s];
+            }
+            k_b = new_k;
+        }
+        for s in 0..STATE_BITS {
+            let pos = (s0_base + s % N_LANES) * LANE_BITS + (s / N_LANES);
+            comb[pos] += k_b[s];
+        }
+
+        comb
+    }
+
     // -------- Primitive tests.
 
     #[test]
@@ -1646,7 +1808,497 @@ mod tests {
         }
     }
 
+    #[test]
+    fn factored_phi_transpose_matches_preimages_on_every_basis_vector() {
+        let mut basis = vec![Gf128::ZERO; STATE_BITS];
+        let mut actual = vec![Gf128::ONE; STATE_BITS];
+        for s in 0..STATE_BITS {
+            basis[s] = Gf128::ONE;
+            apply_phi_t_into(&basis, &mut actual);
+            assert_eq!(
+                actual,
+                reference_apply_phi_t(&basis),
+                "basis coordinate {s}"
+            );
+            basis[s] = Gf128::ZERO;
+        }
+    }
+
+    #[test]
+    fn combined_walker_matches_original_coefficients_for_arbitrary_weights() {
+        let mut rng = Rng::new(0xFACA_DECA_F123);
+        for _ in 0..3 {
+            // Arbitrary weights exercise the full linear map, without relying
+            // on the product structure of an equality-polynomial table.
+            let weights: Vec<_> = (0..K)
+                .map(|_| Gf128 {
+                    lo: rng.next_u64(),
+                    hi: rng.next_u64(),
+                })
+                .collect();
+            for alpha in [
+                Gf128::ZERO,
+                Gf128::ONE,
+                Gf128 {
+                    lo: rng.next_u64(),
+                    hi: rng.next_u64(),
+                },
+            ] {
+                assert_eq!(
+                    KeccakLincheckCircuit.fold_alpha_batched(alpha, &weights),
+                    reference_fold_alpha_batched(alpha, &weights),
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "timing benchmark; run alone on an idle machine"]
+    fn combined_walker_microbenchmark() {
+        use std::{hint::black_box, time::Instant};
+        let mut rng = Rng::new(0xBEAC_2026);
+        let weights: Vec<_> = (0..K)
+            .map(|_| Gf128 {
+                lo: rng.next_u64(),
+                hi: rng.next_u64(),
+            })
+            .collect();
+        let alpha = Gf128 {
+            lo: rng.next_u64(),
+            hi: rng.next_u64(),
+        };
+        let measure = |original: bool| {
+            let start = Instant::now();
+            let coefficients = black_box(if original {
+                reference_fold_alpha_batched(black_box(alpha), black_box(&weights))
+            } else {
+                KeccakLincheckCircuit.fold_alpha_batched(black_box(alpha), black_box(&weights))
+            });
+            let elapsed = start.elapsed().as_secs_f64();
+            black_box(coefficients);
+            elapsed
+        };
+        assert_eq!(
+            KeccakLincheckCircuit.fold_alpha_batched(alpha, &weights),
+            reference_fold_alpha_batched(alpha, &weights),
+        );
+        for _ in 0..8 {
+            measure(true);
+            measure(false);
+        }
+        let mut original = Vec::new();
+        let mut factored = Vec::new();
+        for pair in 0..64 {
+            if pair % 2 == 0 {
+                original.push(measure(true));
+                factored.push(measure(false));
+            } else {
+                factored.push(measure(false));
+                original.push(measure(true));
+            }
+        }
+        original.sort_by(f64::total_cmp);
+        factored.sort_by(f64::total_cmp);
+        let old_ms = 1000.0 * (original[31] + original[32]) / 2.0;
+        let new_ms = 1000.0 * (factored[31] + factored[32]) / 2.0;
+        eprintln!(
+            "Keccak coefficient walker, 64 alternating pairs: old median {old_ms:.6} ms, factored median {new_ms:.6} ms, ratio {:.6}, saved {:.6} ms/call",
+            new_ms / old_ms,
+            old_ms - new_ms
+        );
+    }
+
     // -------- R1CS tests (I/O-aligned layout with state_24 pin).
+
+    /// Independent forward application of the real homogeneous Keccak rows.
+    /// `build_block_r1cs` carries empty matrix stubs, so its `satisfies` method
+    /// cannot validate these circuit-walker constraints.
+    fn homogeneous_images(z: &[u64]) -> (Vec<u64>, Vec<u64>) {
+        assert_eq!(z.len(), U64_PER_BLOCK);
+        let mut a = vec![0; U64_PER_BLOCK];
+        let mut b = vec![0; U64_PER_BLOCK];
+        let constant = z[Z_CONST_U64] & 1;
+        let mask = 0u64.wrapping_sub(constant);
+        a[Z_CONST_U64] = constant;
+        b[Z_CONST_U64] = constant;
+        let mut state = [0; N_LANES];
+        state.copy_from_slice(&z[state_u64_base(0)..state_u64_base(0) + N_LANES]);
+        for lane in 0..N_LANES {
+            a[state_u64_base(0) + lane] = state[lane];
+            b[state_u64_base(0) + lane] = mask;
+        }
+        for round in 0..N_ROUNDS {
+            theta_lanes(&mut state);
+            let linear = rho_pi_lanes(&state);
+            for y in 0..5 {
+                for x in 0..5 {
+                    let lane = x + 5 * y;
+                    a[t_u64_base(round) + lane] = mask ^ linear[(x + 1) % 5 + 5 * y];
+                    b[t_u64_base(round) + lane] = linear[(x + 2) % 5 + 5 * y];
+                    // Substitute the witness's χ output, not its recomputation:
+                    // A and B must be linear functions of an arbitrary witness.
+                    state[lane] = linear[lane] ^ z[t_u64_base(round) + lane];
+                }
+            }
+            state[0] ^= ROUND_CONSTANTS[round] & mask;
+        }
+        for lane in 0..N_LANES {
+            a[state_u64_base(24) + lane] = state[lane];
+            b[state_u64_base(24) + lane] = mask;
+        }
+        (a, b)
+    }
+
+    /// Original scalar stripe emitter, independent of the grouped transpose.
+    fn reference_scalar_stripes(z: &[Gf128], blocks: usize) -> Vec<u8> {
+        let mut stripe = vec![0; z.len() * 16];
+        for block in 0..blocks {
+            for word in 0..U64_PER_BLOCK {
+                let packed = z[(word / 2) * blocks + block];
+                let mut bits = if word % 2 == 0 { packed.lo } else { packed.hi };
+                while bits != 0 {
+                    let bit = bits.trailing_zeros() as usize;
+                    stripe[(block / BM_V) * K + word * 64 + bit] |= 1 << (block % BM_V);
+                    bits &= bits - 1;
+                }
+            }
+        }
+        stripe
+    }
+
+    #[test]
+    fn partial_chain_stripes_match_scalar_oracle_and_real_constraints() {
+        let mut rng = Rng::new(0x57A1_9E55);
+        for (live, capacity, permutations) in [
+            (1, 1, 16),
+            (1, 2, 4),
+            (2, 2, 4),
+            (3, 4, 4),
+            (3, 4, 16),
+            (4, 4, 16),
+            (5, 8, 4),
+            (7, 8, 4),
+            (9, 16, 16),
+            (13, 16, 4),
+            (16, 16, 4),
+        ] {
+            let initial: Vec<_> = (0..live)
+                .map(|_| std::array::from_fn(|_| rng.next_u64()))
+                .collect();
+            let blocks = capacity * permutations;
+            // Exercise write-before-read for both inactive blocks and gaps
+            // using recycled buffers containing nonzero, arbitrary old data.
+            flock_core::scratch::clear();
+            for _ in 0..3 {
+                flock_core::scratch::give_f128(
+                    (0..blocks * U64_PER_BLOCK / 2)
+                        .map(|_| Gf128 {
+                            lo: rng.next_u64(),
+                            hi: rng.next_u64(),
+                        })
+                        .collect(),
+                );
+            }
+            let (z, a, b, stripe, outputs) =
+                generate_chained_witness_batch_major(&initial, capacity, permutations);
+            assert_eq!(
+                stripe,
+                reference_scalar_stripes(&z, blocks),
+                "stripe: B={live}, C={capacity}, P={permutations}"
+            );
+            let unpack = |packed: &[Gf128], block: usize| -> Vec<u64> {
+                (0..U64_PER_BLOCK)
+                    .map(|word| {
+                        let value = packed[(word / 2) * blocks + block];
+                        if word % 2 == 0 { value.lo } else { value.hi }
+                    })
+                    .collect()
+            };
+            for permutation in 0..permutations {
+                for signature in 0..capacity {
+                    let block = permutation * capacity + signature;
+                    let zw = unpack(&z, block);
+                    let aw = unpack(&a, block);
+                    let bw = unpack(&b, block);
+                    let (expected_a, expected_b) = homogeneous_images(&zw);
+                    assert_eq!(aw, expected_a);
+                    assert_eq!(bw, expected_b);
+                    assert!(aw.iter().zip(&bw).zip(&zw).all(|((&a, &b), &z)| a & b == z));
+                    if signature < live {
+                        assert_eq!(zw[Z_CONST_U64], 1);
+                        let input = if permutation == 0 {
+                            initial[signature]
+                        } else {
+                            outputs[signature][permutation - 1]
+                        };
+                        assert_eq!(&zw[state_u64_base(0)..state_u64_base(0) + N_LANES], &input);
+                        assert_eq!(
+                            &zw[state_u64_base(24)..state_u64_base(24) + N_LANES],
+                            &outputs[signature][permutation]
+                        );
+                    } else {
+                        assert!(zw.iter().chain(&aw).chain(&bw).all(|&word| word == 0));
+                        assert_eq!(outputs[signature][permutation], [0; N_LANES]);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "timing benchmark; run alone on an idle machine"]
+    fn partial_chain_stripes_microbenchmark() {
+        use std::{hint::black_box, time::Instant};
+        let mut rng = Rng::new(0xBEAC_5719);
+        for (live, capacity, permutations) in
+            [(1, 1, 16), (1, 2, 4), (3, 4, 16), (3, 4, 4), (9, 16, 16)]
+        {
+            let initial: Vec<_> = (0..live)
+                .map(|_| std::array::from_fn(|_| rng.next_u64()))
+                .collect();
+            let (z, _, _, _, _) =
+                generate_chained_witness_batch_major(&initial, capacity, permutations);
+            let mut stripe = vec![0; z.len() * 16];
+            let blocks = capacity * permutations;
+            let partial_start = live / BM_V * BM_V;
+            // The former emitter read contiguous scalar witness buffers,
+            // rather than gathering its words from the batch-major source.
+            let local_blocks: Vec<_> = (partial_start..live)
+                .flat_map(|signature| {
+                    (0..permutations).map(move |permutation| permutation * capacity + signature)
+                })
+                .map(|block| {
+                    (
+                        block,
+                        (0..U64_PER_BLOCK)
+                            .map(|word| {
+                                let packed = z[(word / 2) * blocks + block];
+                                if word % 2 == 0 { packed.lo } else { packed.hi }
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect();
+            let mut measure = |original: bool| {
+                stripe.fill(0);
+                let start = Instant::now();
+                if original {
+                    // The former generator emitted only its scalar live tail.
+                    for (block, words) in black_box(&local_blocks) {
+                        for (word, &value) in words.iter().enumerate() {
+                            let mut bits = value;
+                            while bits != 0 {
+                                let bit = bits.trailing_zeros() as usize;
+                                stripe[(block / BM_V) * K + word * 64 + bit] |= 1 << (block % BM_V);
+                                bits &= bits - 1;
+                            }
+                        }
+                    }
+                } else {
+                    write_partial_chain_stripes(
+                        black_box(&z),
+                        capacity,
+                        permutations,
+                        partial_start,
+                        &mut stripe,
+                    );
+                }
+                let elapsed = start.elapsed().as_secs_f64();
+                black_box(&stripe);
+                elapsed
+            };
+            for _ in 0..8 {
+                measure(true);
+                measure(false);
+            }
+            let mut old = Vec::new();
+            let mut new = Vec::new();
+            for pair in 0..64 {
+                if pair % 2 == 0 {
+                    old.push(measure(true));
+                    new.push(measure(false));
+                } else {
+                    new.push(measure(false));
+                    old.push(measure(true));
+                }
+            }
+            old.sort_by(f64::total_cmp);
+            new.sort_by(f64::total_cmp);
+            let old_ms = 500.0 * (old[31] + old[32]);
+            let new_ms = 500.0 * (new[31] + new[32]);
+            eprintln!(
+                "partial stripe B={live}, C={capacity}, P={permutations}: old {old_ms:.6} ms, new {new_ms:.6} ms, ratio {:.6}, saved {:.6} ms",
+                new_ms / old_ms,
+                old_ms - new_ms
+            );
+        }
+    }
+
+    #[test]
+    fn inactive_zero_constraints_reject_nonzero_input_output_chi_and_padding() {
+        let zero = vec![0; U64_PER_BLOCK];
+        let (a, b) = homogeneous_images(&zero);
+        assert!(a.iter().chain(&b).all(|&v| v == 0));
+        for local_bit in [
+            STATE0_BIT_BASE + 97,
+            STATE24_BIT_BASE + 123,
+            T_PACKED_BIT_BASE,
+            T_PACKED_BIT_BASE + 23 * STATE_BITS + 51,
+            Z_CONST + 1,
+            K - 1,
+        ] {
+            let mut altered = zero.clone();
+            altered[local_bit / 64] = 1 << (local_bit % 64);
+            let (a, b) = homogeneous_images(&altered);
+            assert!(
+                a.iter()
+                    .zip(&b)
+                    .zip(&altered)
+                    .any(|((&a, &b), &z)| a & b != z),
+                "nonzero inactive bit {local_bit} escaped the actual homogeneous rows"
+            );
+        }
+    }
+
+    #[test]
+    fn homogeneous_constraint_images_match_real_walker_with_both_constant_values() {
+        let mut rng = Rng::new(0xA671_0177_C0DE);
+        let weights: Vec<_> = (0..K)
+            .map(|_| Gf128 {
+                lo: rng.next_u64(),
+                hi: rng.next_u64(),
+            })
+            .collect();
+        let alpha = Gf128 {
+            lo: rng.next_u64(),
+            hi: rng.next_u64(),
+        };
+        let comb = KeccakLincheckCircuit.fold_alpha_batched(alpha, &weights);
+        let dot = |words: &[u64], coefficients: &[Gf128]| {
+            let mut result = Gf128::ZERO;
+            for (word, &value) in words.iter().enumerate() {
+                let mut bits = value;
+                while bits != 0 {
+                    result += coefficients[64 * word + bits.trailing_zeros() as usize];
+                    bits &= bits - 1;
+                }
+            }
+            result
+        };
+        for constant in [0, 1] {
+            let mut z: Vec<_> = (0..U64_PER_BLOCK).map(|_| rng.next_u64()).collect();
+            z[Z_CONST_U64] = (z[Z_CONST_U64] & !1) | constant;
+            let (a, b) = homogeneous_images(&z);
+            assert_eq!(
+                dot(&z, &comb),
+                alpha * dot(&a, &weights) + dot(&b, &weights)
+            );
+        }
+    }
+
+    #[test]
+    fn committed_prefix_wrappers_preserve_constant_one_for_both_layouts() {
+        use flock_core::{
+            challenger::{Challenger, FsChallenger},
+            pcs::commit::commit,
+            proof::ZClaim,
+            r1cs::WitnessLayout,
+        };
+
+        let evaluate = |words: &[Gf128], claim: &ZClaim| {
+            let skip = claim.point.z_skip.weights(K_SKIP);
+            let suffix: Vec<_> = claim
+                .point
+                .x_inner_rest
+                .iter()
+                .chain(&claim.point.x_outer)
+                .copied()
+                .collect();
+            let high = flock_core::lincheck::build_eq_table(&suffix);
+            let mut result = Gf128::ZERO;
+            for (index, word) in words.iter().enumerate() {
+                for (half, mut bits) in [word.lo, word.hi].into_iter().enumerate() {
+                    let mut low = Gf128::ZERO;
+                    while bits != 0 {
+                        low += skip[bits.trailing_zeros() as usize];
+                        bits &= bits - 1;
+                    }
+                    result += low * high[2 * index + half];
+                }
+            }
+            result
+        };
+        let mut rng = Rng::new(0xC057_017E);
+        let inputs: Vec<_> = (0..5).map(|_| random_state(&mut rng)).collect();
+        for layout in [WitnessLayout::RowMajor, WitnessLayout::BatchMajor] {
+            let mut r1cs = build_block_r1cs(3);
+            r1cs.layout = layout;
+            let params = PcsParams {
+                m: r1cs.m,
+                log_inv_rate: 1,
+                log_batch_size: 4,
+                profile: flock_core::pcs::ligerito::LigeritoProfile::Fast,
+                merkle_hash: Default::default(),
+            };
+            let (z, a, b, stripe) = match layout {
+                WitnessLayout::RowMajor => generate_witness_with_ab_packed_and_lincheck(&inputs, 3),
+                WitnessLayout::BatchMajor => generate_witness_batch_major(&inputs, 3),
+            };
+            let (commitment, _data) = commit(&z, &params);
+            let mut prover = FsChallenger::new(b"constant-one-prefix-compatibility");
+            let proof = crate::prover::prove_fast_committed_prefix(
+                &r1cs,
+                &commitment,
+                &z,
+                a,
+                b,
+                stripe,
+                &KeccakLincheckCircuit,
+                &mut prover,
+            );
+            let mut verifier = FsChallenger::new(b"constant-one-prefix-compatibility");
+            let (ab, c) = flock_core::verifier::verify_core(
+                &r1cs,
+                &proof.zc_proof,
+                &proof.lc_proof,
+                &commitment,
+                &KeccakLincheckCircuit,
+                &mut verifier,
+            )
+            .unwrap();
+            assert_eq!(ab, proof.ab);
+            assert_eq!(c, proof.c);
+            assert_eq!(evaluate(&z, &ab), ab.value);
+            assert_eq!(evaluate(&z, &c), c.value);
+            assert_eq!(prover.sample_f128(), verifier.sample_f128());
+
+            // Legacy clients still require constant one in every block,
+            // including the three padding blocks in this fixture.
+            let zero = vec![Gf128::ZERO; z.len()];
+            let (commitment, _data) = commit(&zero, &params);
+            let proof = crate::prover::prove_fast_committed_prefix(
+                &r1cs,
+                &commitment,
+                &zero,
+                zero.clone(),
+                zero.clone(),
+                vec![0; zero.len() * 16],
+                &KeccakLincheckCircuit,
+                &mut FsChallenger::new(b"constant-one-prefix-compatibility"),
+            );
+            assert!(matches!(
+                flock_core::verifier::verify_core(
+                    &r1cs,
+                    &proof.zc_proof,
+                    &proof.lc_proof,
+                    &commitment,
+                    &KeccakLincheckCircuit,
+                    &mut FsChallenger::new(b"constant-one-prefix-compatibility"),
+                ),
+                Err(flock_core::verifier::VerifyError::Lincheck(_))
+            ));
+        }
+    }
 
     #[test]
     fn layout_constants_consistent() {
@@ -1889,7 +2541,7 @@ mod tests {
     /// word addressing.
     #[test]
     fn batch_major_chain_fold_matches_row_major() {
-        use crate::r1cs_hashes::chain_common::{fold_in_out, ChainFold};
+        use crate::r1cs_hashes::chain_common::{ChainFold, fold_in_out};
         let n_log = 3;
         let mut rng = Rng::new(0xF01D_BA7C);
         let inputs: Vec<State> = (0..8).map(|_| random_state(&mut rng)).collect();

@@ -1,0 +1,107 @@
+warning: function `square_n` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:104:8
+    |
+104 | pub fn square_n(a: [u64; 2], k: u32) -> [u64; 2] {
+    |        ^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `wide_words` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:116:15
+    |
+116 | pub(crate) fn wide_words(value: Wide) -> [u64; 4] {
+    |               ^^^^^^^^^^
+
+warning: function `wide_zero` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:137:8
+    |
+137 | pub fn wide_zero() -> Wide {
+    |        ^^^^^^^^^
+
+warning: function `wide_of` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:141:8
+    |
+141 | pub fn wide_of(a: [u64; 2]) -> Wide {
+    |        ^^^^^^^
+
+warning: function `wide_add` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:149:8
+    |
+149 | pub fn wide_add(x: Wide, y: Wide) -> Wide {
+    |        ^^^^^^^^
+
+warning: function `wide_add_low` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:155:8
+    |
+155 | pub fn wide_add_low(x: Wide, a: [u64; 2]) -> Wide {
+    |        ^^^^^^^^^^^^
+
+warning: function `wide_reduce` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:159:8
+    |
+159 | pub fn wide_reduce(w: Wide) -> [u64; 2] {
+    |        ^^^^^^^^^^^
+
+warning: function `wide_from_words` is never used
+   --> /tmp/falcon-vendor-workspace/field/src/gf128/portable.rs:321:8
+    |
+321 | pub fn wide_from_words(words: [u64; 4]) -> Wide {
+    |        ^^^^^^^^^^^^^^^
+
+warning: `field` (lib) generated 8 warnings
+   Compiling flock-prover v0.1.0 (/tmp/falcon-vendor-workspace/flock-mod/crates/flock-prover)
+    Finished `release` profile [optimized] target(s) in 8.88s
+     Running unittests src/lib.rs (/tmp/falcon-vendor-tests/release/deps/flock_prover-01d4cb92b5c679ae)
+
+running 29 tests
+test r1cs_hashes::keccak3::tests::all_zero_witness_rejected ... FAILED
+test r1cs_hashes::keccak3::tests::fold_matches_witness_consistency ... ok
+test r1cs_hashes::keccak3::tests::layout_constants_consistent ... ok
+test r1cs_hashes::keccak3::tests::pack_win ... ignored, timing comparison; run manually with --nocapture
+test r1cs_hashes::keccak3::tests::prove_fast_ligerito_roundtrip ... ignored
+test r1cs_hashes::keccak3::tests::prove_fast_roundtrip ... FAILED
+test r1cs_hashes::keccak3::tests::prove_fast_timed_roundtrip ... ignored
+test r1cs_hashes::keccak3::tests::setup_sizes_correctly ... ok
+test r1cs_hashes::keccak3::tests::witness_layout_round_trip ... ok
+test r1cs_hashes::keccak::tests::batch_major_chain_fold_matches_row_major ... ok
+test r1cs_hashes::keccak::tests::batch_major_prove_chain_ligerito_roundtrip ... ignored
+test r1cs_hashes::keccak::tests::batch_major_prove_fast_roundtrip ... ignored
+test r1cs_hashes::keccak::tests::batch_major_witness_matches_row_major_transposed ... ok
+test r1cs_hashes::keccak::tests::bit_keccak_f_matches_u64_lane ... ok
+test r1cs_hashes::keccak::tests::combined_walker_matches_original_coefficients_for_arbitrary_weights ... ok
+test r1cs_hashes::keccak::tests::combined_walker_microbenchmark ... ignored, timing benchmark; run alone on an idle machine
+test r1cs_hashes::keccak::tests::committed_prefix_wrappers_preserve_constant_one_for_both_layouts ... ok
+test r1cs_hashes::keccak::tests::const_pin_all_zero_rejected ... ignored
+test r1cs_hashes::keccak::tests::factored_phi_transpose_matches_preimages_on_every_basis_vector ... ok
+test r1cs_hashes::keccak::tests::fold_matches_witness_consistency ... ok
+test r1cs_hashes::keccak::tests::homogeneous_constraint_images_match_real_walker_with_both_constant_values ... ok
+test r1cs_hashes::keccak::tests::inactive_zero_constraints_reject_nonzero_input_output_chi_and_padding ... ok
+test r1cs_hashes::keccak::tests::layout_constants_consistent ... ok
+test r1cs_hashes::keccak::tests::prove_chain_roundtrip ... ignored
+test r1cs_hashes::keccak::tests::prove_fast_roundtrip ... ignored
+test r1cs_hashes::keccak::tests::setup_sizes_correctly ... ok
+test r1cs_hashes::keccak::tests::theta_rho_pi_preimage_has_no_duplicates ... ok
+test r1cs_hashes::keccak::tests::theta_rho_pi_preimage_matches_pipeline ... ok
+test r1cs_hashes::keccak::tests::witness_layout_round_trip ... ok
+
+failures:
+
+---- r1cs_hashes::keccak3::tests::all_zero_witness_rejected stdout ----
+
+thread 'r1cs_hashes::keccak3::tests::all_zero_witness_rejected' (75) panicked at crates/flock-prover/src/prover.rs:218:10:
+Ligerito default config; bump m for tiny instances: "embedded config for (m=22, profile=fast) has initial_k=4 but caller requested log_batch_size=6"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- r1cs_hashes::keccak3::tests::prove_fast_roundtrip stdout ----
+
+thread 'r1cs_hashes::keccak3::tests::prove_fast_roundtrip' (82) panicked at crates/flock-prover/src/prover.rs:218:10:
+Ligerito default config; bump m for tiny instances: "embedded config for (m=22, profile=fast) has initial_k=4 but caller requested log_batch_size=6"
+
+
+failures:
+    r1cs_hashes::keccak3::tests::all_zero_witness_rejected
+    r1cs_hashes::keccak3::tests::prove_fast_roundtrip
+
+test result: FAILED. 18 passed; 2 failed; 9 ignored; 0 measured; 56 filtered out; finished in 0.12s
+
+error: test failed, to rerun pass `-p flock-prover --lib`

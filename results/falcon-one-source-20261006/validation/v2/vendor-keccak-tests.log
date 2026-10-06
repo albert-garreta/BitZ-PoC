@@ -1,0 +1,25 @@
+
+running 20 tests
+test r1cs_hashes::keccak::tests::batch_major_chain_fold_matches_row_major ... ok
+test r1cs_hashes::keccak::tests::batch_major_prove_chain_ligerito_roundtrip ... ignored
+test r1cs_hashes::keccak::tests::batch_major_prove_fast_roundtrip ... ignored
+test r1cs_hashes::keccak::tests::batch_major_witness_matches_row_major_transposed ... ok
+test r1cs_hashes::keccak::tests::bit_keccak_f_matches_u64_lane ... ok
+test r1cs_hashes::keccak::tests::combined_walker_matches_original_coefficients_for_arbitrary_weights ... ok
+test r1cs_hashes::keccak::tests::combined_walker_microbenchmark ... ignored, timing benchmark; run alone on an idle machine
+test r1cs_hashes::keccak::tests::committed_prefix_wrappers_preserve_constant_one_for_both_layouts ... ok
+test r1cs_hashes::keccak::tests::const_pin_all_zero_rejected ... ignored
+test r1cs_hashes::keccak::tests::factored_phi_transpose_matches_preimages_on_every_basis_vector ... ok
+test r1cs_hashes::keccak::tests::fold_matches_witness_consistency ... ok
+test r1cs_hashes::keccak::tests::homogeneous_constraint_images_match_real_walker_with_both_constant_values ... ok
+test r1cs_hashes::keccak::tests::inactive_zero_constraints_reject_nonzero_input_output_chi_and_padding ... ok
+test r1cs_hashes::keccak::tests::layout_constants_consistent ... ok
+test r1cs_hashes::keccak::tests::prove_chain_roundtrip ... ignored
+test r1cs_hashes::keccak::tests::prove_fast_roundtrip ... ignored
+test r1cs_hashes::keccak::tests::setup_sizes_correctly ... ok
+test r1cs_hashes::keccak::tests::theta_rho_pi_preimage_has_no_duplicates ... ok
+test r1cs_hashes::keccak::tests::theta_rho_pi_preimage_matches_pipeline ... ok
+test r1cs_hashes::keccak::tests::witness_layout_round_trip ... ok
+
+test result: ok. 14 passed; 0 failed; 6 ignored; 0 measured; 65 filtered out; finished in 0.11s
+

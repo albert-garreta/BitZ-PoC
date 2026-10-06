@@ -1,0 +1,266 @@
+{
+  "status": "pass",
+  "description": "Exact V1/V2 proof equivalence across all 16 seed-42 configurations. Both revisions verified every proof; source roots, proof Debug digests, payload bytes, input digests, grinding diagnostics, and security headers match.",
+  "binaries": {
+    "v1": "6fdbb2ab2f8b123d56304ff9655229b45e9dce87d7e3453cc43e7919972bbfd1",
+    "v2": "5339f98479a2dec2af4f5131df7e75ce3ad5784cd39db09d451db2c5a66727c7"
+  },
+  "cases": [
+    {
+      "protocol": "native",
+      "security": 100,
+      "batch": 1,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "source_root": "764f8b6917c71687e749535a3d13f89100c596be6faee7f3022a83562090b292",
+      "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+      "proof_debug_digest": "74391adddbba138c9b5d9830df3b8d2f94cfb82e0b91b570e1b387c41973f67a",
+      "proof_payload_bytes": 169936,
+      "records": {
+        "v1": "v1/cold/native-s100-b1-t16-seed42-candidate.jsonl",
+        "v2": "v2/cold/native-s100-b1-t16-seed42-candidate.jsonl"
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 100,
+      "batch": 3,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "source_root": "2fa5667bb37a2cd9d05934f6f3c8bc11dea4fd1d29d419c1c837e6c41d82fc5a",
+      "input_digest": "92405c4fb7692dee8a591762c40dbca902d28fa71cadb2ada27e35a8c2269924",
+      "proof_debug_digest": "7d5df7f81ff4efecdab04900a5830d39451f46ca2171408dad32e7adb8c23f1e",
+      "proof_payload_bytes": 216588,
+      "records": {
+        "v1": "v1/cold/native-s100-b3-t16-seed42-candidate.jsonl",
+        "v2": "v2/cold/native-s100-b3-t16-seed42-candidate.jsonl"
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 100,
+      "batch": 32,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "source_root": "6c01624f8aa373aedb2eed8fbe83c1f0581fb92173ba44896ac1e71928425444",
+      "input_digest": "8e13abdaab7d13f141273f898c38b9eb8f9841f3efba64d329b8b4970ad18745",
+      "proof_debug_digest": "dcaf6cb12ef8b24de8709fe5e97efe501b20d3eb1f8c294a914d2d362a319c17",
+      "proof_payload_bytes": 300150,
+      "records": {
+        "v1": "v1/cold/native-s100-b32-t16-seed42-candidate.jsonl",
+        "v2": "v2/cold/native-s100-b32-t16-seed42-candidate.jsonl"
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 100,
+      "batch": 1024,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "source_root": "53663f248b9c7ebc3d69d56d237325ca71e22a9f54d684560e9e499b41566b74",
+      "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+      "proof_debug_digest": "ec6fa269aba2bddeac8a2d7b4b5b54d4ff096e3944feb8ac52ea6dd5b3d6a5b6",
+      "proof_payload_bytes": 767388,
+      "records": {
+        "v1": "v1/cold/native-s100-b1024-t16-seed42-candidate.jsonl",
+        "v2": "v2/cold/native-s100-b1024-t16-seed42-candidate.jsonl"
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 128,
+      "batch": 1,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "source_root": "764f8b6917c71687e749535a3d13f89100c596be6faee7f3022a83562090b292",
+      "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+      "proof_debug_digest": "dec3fcd9b58e02654958ea74108850f3726fe17da02974b98975731205cf80c5",
+      "proof_payload_bytes": 200704,
+      "records": {
+        "v1": "v1/cold/native-s128-b1-t16-seed42-candidate.jsonl",
+        "v2": "v2/cold/native-s128-b1-t16-seed42-candidate.jsonl"
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 128,
+      "batch": 3,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "source_root": "2fa5667bb37a2cd9d05934f6f3c8bc11dea4fd1d29d419c1c837e6c41d82fc5a",
+      "input_digest": "92405c4fb7692dee8a591762c40dbca902d28fa71cadb2ada27e35a8c2269924",
+      "proof_debug_digest": "631696b1a0b10c8cb1688c8f398bee0d0b25435ce66fefad38a5c1ce6fa6c1b4",
+      "proof_payload_bytes": 256676,
+      "records": {
+        "v1": "v1/cold/native-s128-b3-t16-seed42-candidate.jsonl",
+        "v2": "v2/cold/native-s128-b3-t16-seed42-candidate.jsonl"
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 128,
+      "batch": 32,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "source_root": "6c01624f8aa373aedb2eed8fbe83c1f0581fb92173ba44896ac1e71928425444",
+      "input_digest": "8e13abdaab7d13f141273f898c38b9eb8f9841f3efba64d329b8b4970ad18745",
+      "proof_debug_digest": "651465344c9f18e6c5b7d7a67ec3653d86de8eac615c4a271c846c106bc36631",
+      "proof_payload_bytes": 361470,
+      "records": {
+        "v1": "v1/cold/native-s128-b32-t16-seed42-candidate.jsonl",
+        "v2": "v2/cold/native-s128-b32-t16-seed42-candidate.jsonl"
+      }
+    },
+    {
+      "protocol": "native",
+      "security": 128,
+      "batch": 1024,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "source_root": "53663f248b9c7ebc3d69d56d237325ca71e22a9f54d684560e9e499b41566b74",
+      "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+      "proof_debug_digest": "5cab446524b7966a954e687517ba4a7765498ebd05414dbdd9fd46df210339b4",
+      "proof_payload_bytes": 868140,
+      "records": {
+        "v1": "v1/cold/native-s128-b1024-t16-seed42-candidate.jsonl",
+        "v2": "v2/cold/native-s128-b1024-t16-seed42-candidate.jsonl"
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 100,
+      "batch": 1,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "source_root": "cf2b388fea7a4d5b8a9bdb2d019fb91e8456a8aa365578b4b7a9714036639c80",
+      "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+      "proof_debug_digest": "42ff85d8a7e306f4262696d8b249973189f6f722993328dbdbf1374219b7ff59",
+      "proof_payload_bytes": 166770,
+      "records": {
+        "v1": "v1/cold/shared-prime-s100-b1-t16-seed42-candidate.jsonl",
+        "v2": "v2/cold/shared-prime-s100-b1-t16-seed42-candidate.jsonl"
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 100,
+      "batch": 3,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "source_root": "b2372a48c7f7012e1ffdf9af8bf1fda5ccb1109091d458faa1ac48cb7a4e3bad",
+      "input_digest": "92405c4fb7692dee8a591762c40dbca902d28fa71cadb2ada27e35a8c2269924",
+      "proof_debug_digest": "5e62297bea90f64c60043fa57e13a5225d8b08af542ac2d73369a8b2718c41e1",
+      "proof_payload_bytes": 212018,
+      "records": {
+        "v1": "v1/cold/shared-prime-s100-b3-t16-seed42-candidate.jsonl",
+        "v2": "v2/cold/shared-prime-s100-b3-t16-seed42-candidate.jsonl"
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 100,
+      "batch": 32,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "source_root": "74894c594444c7eb9df4f98c61e05662986096d29f7266021a4bb5fd04c15d1e",
+      "input_digest": "8e13abdaab7d13f141273f898c38b9eb8f9841f3efba64d329b8b4970ad18745",
+      "proof_debug_digest": "d90d1e00019dedc79f1c9c26376b4aa9499fb49d1045e3d5721e7e07971d19dd",
+      "proof_payload_bytes": 296338,
+      "records": {
+        "v1": "v1/cold/shared-prime-s100-b32-t16-seed42-candidate.jsonl",
+        "v2": "v2/cold/shared-prime-s100-b32-t16-seed42-candidate.jsonl"
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 100,
+      "batch": 1024,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "source_root": "fdd55bad39df6b20ae3e89c82f4fc1315e5de4d8bded60b01b52f4215cfe2b94",
+      "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+      "proof_debug_digest": "14f6ed092905e2f7815020721279b4ae5f4610f6c8b8f9843b35192f482e5c18",
+      "proof_payload_bytes": 700466,
+      "records": {
+        "v1": "v1/cold/shared-prime-s100-b1024-t16-seed42-candidate.jsonl",
+        "v2": "v2/cold/shared-prime-s100-b1024-t16-seed42-candidate.jsonl"
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 128,
+      "batch": 1,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "source_root": "cf2b388fea7a4d5b8a9bdb2d019fb91e8456a8aa365578b4b7a9714036639c80",
+      "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+      "proof_debug_digest": "c6139ec6c3e2dffd1d295ea1879e65683e41311ba53fb4e11af1f89417f24f78",
+      "proof_payload_bytes": 198714,
+      "records": {
+        "v1": "v1/cold/shared-prime-s128-b1-t16-seed42-candidate.jsonl",
+        "v2": "v2/cold/shared-prime-s128-b1-t16-seed42-candidate.jsonl"
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 128,
+      "batch": 3,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "source_root": "b2372a48c7f7012e1ffdf9af8bf1fda5ccb1109091d458faa1ac48cb7a4e3bad",
+      "input_digest": "92405c4fb7692dee8a591762c40dbca902d28fa71cadb2ada27e35a8c2269924",
+      "proof_debug_digest": "2425179c8b3b92834b4a9b07691209e118f3689586e85f4ce64c2e80db97c8a1",
+      "proof_payload_bytes": 255842,
+      "records": {
+        "v1": "v1/cold/shared-prime-s128-b3-t16-seed42-candidate.jsonl",
+        "v2": "v2/cold/shared-prime-s128-b3-t16-seed42-candidate.jsonl"
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 128,
+      "batch": 32,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "source_root": "74894c594444c7eb9df4f98c61e05662986096d29f7266021a4bb5fd04c15d1e",
+      "input_digest": "8e13abdaab7d13f141273f898c38b9eb8f9841f3efba64d329b8b4970ad18745",
+      "proof_debug_digest": "0efdc8585920a37175b35c89a29c73bc0b0502d82f221e954403ff57b197fab5",
+      "proof_payload_bytes": 360658,
+      "records": {
+        "v1": "v1/cold/shared-prime-s128-b32-t16-seed42-candidate.jsonl",
+        "v2": "v2/cold/shared-prime-s128-b32-t16-seed42-candidate.jsonl"
+      }
+    },
+    {
+      "protocol": "shared-prime",
+      "security": 128,
+      "batch": 1024,
+      "seed": 42,
+      "threads": 16,
+      "verified": true,
+      "source_root": "fdd55bad39df6b20ae3e89c82f4fc1315e5de4d8bded60b01b52f4215cfe2b94",
+      "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+      "proof_debug_digest": "1adcf55a268e0d3904b02b75070f69fe9ba06b0eda8c549421c2800499362059",
+      "proof_payload_bytes": 867546,
+      "records": {
+        "v1": "v1/cold/shared-prime-s128-b1024-t16-seed42-candidate.jsonl",
+        "v2": "v2/cold/shared-prime-s128-b1024-t16-seed42-candidate.jsonl"
+      }
+    }
+  ]
+}

@@ -47,7 +47,7 @@ use rayon::prelude::*;
 /// committed codewords.
 pub(crate) const LOG_INV_RATE: usize = 1;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Geometry<const N: usize = 2> {
     pub logs: [usize; N],
     pub physical_logs: [usize; N],
@@ -72,7 +72,7 @@ impl<const N: usize> Geometry<N> {
             offsets[1] = 8;
         } else {
             // Largest first keeps every power-of-two slice aligned. Falcon's
-            // A/K16/K4 branches occupy 2+8+2 of the 16 authenticated lanes.
+            // A/K16/K4 widths depend on the prepared circuit capacities.
             let mut order: Vec<_> = (0..N).collect();
             order.sort_by_key(|&i| std::cmp::Reverse(lane_logs[i]));
             let mut next = 0;
@@ -420,6 +420,234 @@ mod geometry_tests {
     use super::*;
     use crate::hybrid::sumcheck::eq_table;
 
+    fn sources<const N: usize>(geometry: &Geometry<N>) -> [Vec<F>; N] {
+        std::array::from_fn(|branch| {
+            (0..1 << geometry.physical_logs[branch])
+                .map(|i| {
+                    if i < 1 << geometry.logs[branch] {
+                        F {
+                            lo: (i as u64 + 1).wrapping_mul(0x9e3779b97f4a7c15),
+                            hi: (i as u64 + branch as u64 + 7).wrapping_mul(0x85ebca6b27d4eb2f),
+                        }
+                    } else {
+                        F::ZERO
+                    }
+                })
+                .collect()
+        })
+    }
+
+    fn bit_evaluation(words: &[F], point: &[F]) -> F {
+        let weights: [F; 128] = eq_table(&point[..7]).try_into().unwrap();
+        let low = super::super::sumcheck::byte_table(&weights);
+        words
+            .iter()
+            .zip(eq_table(&point[7..]))
+            .fold(F::ZERO, |sum, (&word, weight)| {
+                sum + super::super::sumcheck::apply(&low, word) * weight
+            })
+    }
+
+    #[test]
+    fn joint_source_encoding_and_paths_match_dense_reference() {
+        use flock_core::pcs::commit::commit;
+
+        // Cover Falcon's ordinary and batch-one widths, plus physical padding.
+        for logs in [[9, 12, 10], [10, 13, 12], [9, 13, 10]] {
+            let geometry = Geometry::new(logs).unwrap();
+            let sources = sources(&geometry);
+            let borrowed = sources.each_ref().map(Vec::as_slice);
+            let packed = geometry.virtual_packed(borrowed);
+            for rate in [1, 2, 3] {
+                let (root, data) = commit_sources(&geometry, borrowed, rate).unwrap();
+                let params = PcsParams {
+                    m: geometry.bit_log(),
+                    log_inv_rate: rate,
+                    log_batch_size: geometry.virtual_lane_log,
+                    profile: ligerito::LigeritoProfile::Secure,
+                    merkle_hash: merkle::HashKind::Blake3,
+                };
+                let (dense, reference) = commit(&packed, &params);
+                assert_eq!(root, dense.root, "logs={logs:?}, rate={rate}");
+                assert_eq!(data.merkle_tree, reference.merkle_tree);
+                let positions = params.n_positions();
+                let queries = [0, 1, positions / 2, positions - 1];
+                let opening = data.open(positions, geometry.lanes(), &queries);
+                for (&q, row) in queries.iter().zip(&opening.opened_rows) {
+                    assert_eq!(row, &reference.codeword[q * 16..(q + 1) * 16]);
+                }
+                assert!(authenticate_joint(
+                    &geometry,
+                    &root,
+                    positions,
+                    16,
+                    &queries,
+                    &opening,
+                    params.merkle_hash
+                ));
+                assert_eq!(
+                    opening.merkle_proof,
+                    merkle::merkle_multi_proof(&reference.merkle_tree, positions, &queries)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn joint_projection_matches_binary_mle_at_non_boolean_points() {
+        for logs in [[9, 12, 10], [10, 13, 12], [9, 13, 10]] {
+            let geometry = Geometry::new(logs).unwrap();
+            let sources = sources(&geometry);
+            let packed = geometry.virtual_packed(sources.each_ref().map(Vec::as_slice));
+            let point: Vec<_> = (0..geometry.bit_log())
+                .map(|i| F {
+                    lo: i as u64 + 37,
+                    hi: 23,
+                })
+                .collect();
+            let projected = (0..3).fold(F::ZERO, |sum, branch| {
+                let (local, scale) = geometry.project_point(branch, &point);
+                sum + scale * bit_evaluation(&sources[branch][..1 << logs[branch]], &local)
+            });
+            assert_eq!(bit_evaluation(&packed, &point), projected);
+        }
+    }
+
+    #[test]
+    fn joint_source_authentication_rejects_rows_paths_and_padding_tampering() {
+        let geometry = Geometry::new([9, 12, 10]).unwrap();
+        let sources = sources(&geometry);
+        let (root, data) =
+            commit_sources(&geometry, sources.each_ref().map(Vec::as_slice), 1).unwrap();
+        let positions = 1 << (geometry.position_log + 1);
+        let queries = [0, 1, 17, positions - 1];
+        let opening = data.open(positions, 16, &queries);
+        let valid = |proof: &RecursiveProof| {
+            authenticate_joint(
+                &geometry,
+                &root,
+                positions,
+                16,
+                &queries,
+                proof,
+                merkle::HashKind::Blake3,
+            )
+        };
+        assert!(valid(&opening));
+        for lane in [
+            geometry.offset(0),
+            geometry.offset(1),
+            geometry.offset(2),
+            15,
+        ] {
+            let mut wrong = opening.clone();
+            wrong.opened_rows[0][lane] += F::ONE;
+            assert!(!valid(&wrong));
+        }
+        let mut wrong = opening.clone();
+        wrong.merkle_proof[0][0] ^= 1;
+        assert!(!valid(&wrong));
+        let mut wrong = opening.clone();
+        wrong.merkle_proof.pop();
+        assert!(!valid(&wrong));
+        let mut wrong = opening.clone();
+        wrong.merkle_proof.push([0; 32]);
+        assert!(!valid(&wrong));
+        let mut wrong = opening.clone();
+        wrong.opened_rows.pop();
+        assert!(!valid(&wrong));
+        let mut wrong = opening.clone();
+        wrong.opened_rows[0].pop();
+        assert!(!valid(&wrong));
+        let mut wrong_root = root;
+        wrong_root[0] ^= 1;
+        assert!(!authenticate_joint(
+            &geometry,
+            &wrong_root,
+            positions,
+            16,
+            &queries,
+            &opening,
+            merkle::HashKind::Blake3
+        ));
+    }
+
+    #[test]
+    fn joint_opening_binds_root_and_rejects_nonzero_physical_padding() {
+        use crate::{ligerito_flock::LigeritoSelection, transcript::Blake3Transcript};
+
+        for bad_padding in [false, true] {
+            let geometry = Geometry::new([9, 13, 10]).unwrap();
+            let mut sources = sources(&geometry);
+            if bad_padding {
+                sources[0][1 << geometry.logs[0]] = F::ONE;
+            }
+            let borrowed = sources.each_ref().map(Vec::as_slice);
+            let resolved = LigeritoSelection::MATCHED_UDR
+                .resolve(geometry.packed_log(), 100)
+                .unwrap();
+            let (root, data) =
+                commit_sources(&geometry, borrowed, resolved.prover().log_inv_rates[0]).unwrap();
+            let statement = *blake3::hash(&root).as_bytes();
+            let point: Vec<_> = (0..geometry.bit_log())
+                .map(|i| F {
+                    lo: i as u64 + 37,
+                    hi: 23,
+                })
+                .collect();
+            let value = bit_evaluation(&geometry.virtual_packed(borrowed), &point);
+            let start = || {
+                let mut t = Blake3Transcript::new();
+                t.absorb_slice(&statement);
+                t
+            };
+            let proof = prove_joint_sources_with_security(
+                &mut start(),
+                &geometry,
+                &statement,
+                borrowed,
+                None,
+                &resolved,
+                &data,
+                &point,
+                None,
+            )
+            .unwrap();
+            let result = verify_joint_with_security(
+                &mut start(),
+                &geometry,
+                &statement,
+                &root,
+                &point,
+                value,
+                None,
+                &resolved,
+                &proof,
+                None,
+            );
+            assert_eq!(result.is_ok(), !bad_padding);
+            if !bad_padding {
+                let mut wrong = proof.clone();
+                wrong.ligerito.initial_root[0] ^= 1;
+                assert!(
+                    verify_joint_with_security(
+                        &mut start(),
+                        &geometry,
+                        &statement,
+                        &root,
+                        &point,
+                        value,
+                        None,
+                        &resolved,
+                        &wrong,
+                        None,
+                    )
+                    .is_err()
+                );
+            }
+        }
+    }
+
     #[test]
     fn three_root_padding_basis_matches_logical_support_exactly() {
         for logs in [[9, 11, 9], [9, 11, 10], [9, 13, 10]] {
@@ -709,6 +937,252 @@ pub(crate) struct Proof<const N: usize = 2> {
     pub paths: [Vec<Hash>; N],
 }
 
+/// A shared opening with one initial Merkle multiproof, stored in Ligerito's
+/// initial proof. The logical source count is independent of this proof shape.
+#[derive(Clone, Debug)]
+pub(crate) struct JointProof {
+    pub ood: Option<OodRound>,
+    pub ring: RingSwitchProof,
+    pub ligerito: LigeritoProof,
+}
+
+pub(crate) struct JointProverData<const N: usize> {
+    geometry: Geometry<N>,
+    log_inv_rate: usize,
+    codewords: [Vec<F>; N],
+    merkle_tree: Vec<Hash>,
+}
+
+impl<const N: usize> Drop for JointProverData<N> {
+    fn drop(&mut self) {
+        for words in &mut self.codewords {
+            flock_core::scratch::give_f128(std::mem::take(words));
+        }
+    }
+}
+
+fn validate_geometry<const N: usize>(geometry: &Geometry<N>) -> Result<(), Error> {
+    if *geometry != Geometry::new(geometry.logs)? {
+        return Err(Error::Invalid("joint source geometry"));
+    }
+    Ok(())
+}
+
+/// RS-encode populated lanes and build one tree over full canonical virtual
+/// rows. Zero lanes are synthesized in bounded leaf-hashing buffers.
+pub(crate) fn commit_sources<const N: usize>(
+    geometry: &Geometry<N>,
+    sources: [&[F]; N],
+    log_inv_rate: usize,
+) -> Result<(Hash, JointProverData<N>), Error> {
+    validate_geometry(geometry)?;
+    if log_inv_rate == 0
+        || geometry
+            .packed_log()
+            .checked_add(log_inv_rate)
+            .is_none_or(|log| log >= usize::BITS as usize)
+        || (0..N).any(|branch| sources[branch].len() != 1 << geometry.physical_logs[branch])
+    {
+        return Err(Error::Invalid("joint source encoding shape"));
+    }
+    let timing = std::env::var_os("FLOCK_COMMIT_TIMING").is_some();
+    let encode_started = std::time::Instant::now();
+    let encode_span = tracing::info_span!("shared_source:encode").entered();
+    let codewords = std::array::from_fn(|branch| {
+        flock_core::pcs::commit::encode(sources[branch], &geometry.params(branch, log_inv_rate))
+    });
+    drop(encode_span);
+    if timing {
+        eprintln!(
+            "[joint-commit-timing] encoding: {:.2} ms",
+            encode_started.elapsed().as_secs_f64() * 1e3
+        );
+    }
+    let positions = 1 << (geometry.position_log + log_inv_rate);
+    let merkle_started = std::time::Instant::now();
+    let merkle_span = tracing::info_span!("shared_source:merkle").entered();
+    let merkle_tree = merkle::merkle_tree_from_rows(
+        positions,
+        geometry.lanes() * 16,
+        merkle::HashKind::Blake3,
+        |first, bytes| {
+            bytes.fill(0);
+            for (row_index, row) in bytes.chunks_exact_mut(geometry.lanes() * 16).enumerate() {
+                for branch in 0..N {
+                    let width = 1 << geometry.lane_logs[branch];
+                    let first_word = (first + row_index) * width;
+                    for (lane, word) in codewords[branch][first_word..first_word + width]
+                        .iter()
+                        .enumerate()
+                    {
+                        let offset = (geometry.offset(branch) + lane) * 16;
+                        row[offset..offset + 8].copy_from_slice(&word.lo.to_le_bytes());
+                        row[offset + 8..offset + 16].copy_from_slice(&word.hi.to_le_bytes());
+                    }
+                }
+            }
+        },
+    );
+    drop(merkle_span);
+    if timing {
+        eprintln!(
+            "[joint-commit-timing] merkle: {:.2} ms",
+            merkle_started.elapsed().as_secs_f64() * 1e3
+        );
+    }
+    let root = *merkle_tree.last().expect("nonempty joint source tree");
+    Ok((
+        root,
+        JointProverData {
+            geometry: geometry.clone(),
+            log_inv_rate,
+            codewords,
+            merkle_tree,
+        },
+    ))
+}
+
+impl<const N: usize> JointProverData<N> {
+    fn open(&self, positions: usize, lanes: usize, queries: &[usize]) -> RecursiveProof {
+        assert_eq!(
+            positions,
+            1 << (self.geometry.position_log + self.log_inv_rate)
+        );
+        assert_eq!(lanes, self.geometry.lanes());
+        let mut rows = vec![vec![F::ZERO; lanes]; queries.len()];
+        for branch in 0..N {
+            let width = 1 << self.geometry.lane_logs[branch];
+            let start = self.geometry.offset(branch);
+            for (row, &q) in rows.iter_mut().zip(queries) {
+                row[start..start + width]
+                    .copy_from_slice(&self.codewords[branch][q * width..(q + 1) * width]);
+            }
+        }
+        RecursiveProof {
+            opened_rows: rows,
+            merkle_proof: merkle::merkle_multi_proof(&self.merkle_tree, positions, queries),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prove_joint_sources_with_security<const N: usize>(
+    t: &mut (impl Transcript + Send),
+    geometry: &Geometry<N>,
+    statement: &Hash,
+    sources: [&[F]; N],
+    ood: Option<&OodProverClaim>,
+    resolved: &crate::ligerito_flock::ResolvedLigerito,
+    data: &JointProverData<N>,
+    point: &[Gf],
+    security: Option<&mut grinding::GrindingContext<'_>>,
+) -> Result<JointProof, Error> {
+    if *geometry != data.geometry
+        || data.log_inv_rate != resolved.prover().log_inv_rates[0]
+        || point.len() != geometry.bit_log()
+        || (0..N).any(|branch| sources[branch].len() != 1 << geometry.physical_logs[branch])
+    {
+        return Err(Error::Invalid("joint source opening shape"));
+    }
+    prove_sources_initial_with_security(
+        t,
+        geometry,
+        statement,
+        sources,
+        ood,
+        resolved,
+        |positions, lanes, queries| data.open(positions, lanes, queries),
+        point,
+        security,
+    )
+}
+
+fn authenticate_joint<const N: usize>(
+    geometry: &Geometry<N>,
+    root: &Hash,
+    positions: usize,
+    lanes: usize,
+    queries: &[usize],
+    opening: &RecursiveProof,
+    hash: merkle::HashKind,
+) -> bool {
+    if lanes != geometry.lanes() || opening.opened_rows.len() != queries.len() {
+        return false;
+    }
+    let mut occupied = vec![false; lanes];
+    for branch in 0..N {
+        let start = geometry.offset(branch);
+        occupied[start..start + (1 << geometry.lane_logs[branch])].fill(true);
+    }
+    let mut bytes = vec![0u8; lanes * 16];
+    let mut hashes = Vec::with_capacity(queries.len());
+    for row in &opening.opened_rows {
+        if row.len() != lanes {
+            return false;
+        }
+        for (lane, word) in row.iter().enumerate() {
+            if !occupied[lane] && *word != F::ZERO {
+                return false;
+            }
+            bytes[lane * 16..lane * 16 + 8].copy_from_slice(&word.lo.to_le_bytes());
+            bytes[lane * 16 + 8..(lane + 1) * 16].copy_from_slice(&word.hi.to_le_bytes());
+        }
+        hashes.push(merkle::hash_leaf(&bytes, hash));
+    }
+    merkle::verify_merkle_multi_proof(
+        root,
+        positions,
+        queries,
+        &hashes,
+        &opening.merkle_proof,
+        hash,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn verify_joint_with_security<const N: usize>(
+    t: &mut (impl Transcript + Send),
+    geometry: &Geometry<N>,
+    statement: &Hash,
+    root: &Hash,
+    point: &[Gf],
+    value: F,
+    ood: Option<&OodVerifierClaim>,
+    resolved: &crate::ligerito_flock::ResolvedLigerito,
+    proof: &JointProof,
+    security: Option<&mut grinding::GrindingContext<'_>>,
+) -> Result<(), Error> {
+    validate_geometry(geometry)?;
+    if point.len() != geometry.bit_log() {
+        return Err(Error::Invalid("joint source opening point"));
+    }
+    let vc = resolved.verifier();
+    verify_initial_with_security(
+        t,
+        geometry,
+        statement,
+        point,
+        value,
+        ood,
+        resolved,
+        &proof.ring,
+        &proof.ligerito,
+        |positions, lanes, queries, opening| {
+            positions == 1 << (geometry.position_log + vc.log_inv_rates[0])
+                && authenticate_joint(
+                    geometry,
+                    root,
+                    positions,
+                    lanes,
+                    queries,
+                    opening,
+                    vc.merkle_hash,
+                )
+        },
+        security,
+    )
+}
+
 /// Round 0 on the prover side, on the virtual packed witness `packed`.
 /// Must run right after the statement, before any other challenge.
 pub(crate) fn prove_ood(
@@ -844,6 +1318,7 @@ pub(crate) fn prove_with_security<const N: usize>(
 
 /// Branch-aware shared opener: preserve the dense prover's messages while
 /// avoiding its full virtual witness/equality allocation during ring switch.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prove_sources_with_security<const N: usize>(
     t: &mut (impl Transcript + Send),
@@ -856,6 +1331,38 @@ pub(crate) fn prove_sources_with_security<const N: usize>(
     point: &[Gf],
     security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<Proof<N>, Error> {
+    let mut paths = std::array::from_fn(|_| Vec::new());
+    let proof = prove_sources_initial_with_security(
+        t,
+        geometry,
+        statement,
+        sources,
+        ood,
+        resolved,
+        separate_initial(geometry, data, &mut paths),
+        point,
+        security,
+    )?;
+    Ok(Proof {
+        ood: proof.ood,
+        ring: proof.ring,
+        ligerito: proof.ligerito,
+        paths,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prove_sources_initial_with_security<const N: usize>(
+    t: &mut (impl Transcript + Send),
+    geometry: &Geometry<N>,
+    statement: &Hash,
+    sources: [&[F]; N],
+    ood: Option<&OodProverClaim>,
+    resolved: &crate::ligerito_flock::ResolvedLigerito,
+    open_initial: impl FnOnce(usize, usize, &[usize]) -> RecursiveProof,
+    point: &[Gf],
+    security: Option<&mut grinding::GrindingContext<'_>>,
+) -> Result<JointProof, Error> {
     let ring_scope = tracing::info_span!("op:ring_switch").entered();
     let marginal = geometry.ring_marginal(sources, &point[7..]);
     let (ring, eq_r2, mut target) = ring_switch_prove_marginal(t, marginal);
@@ -893,8 +1400,16 @@ pub(crate) fn prove_sources_with_security<const N: usize>(
         }
     };
     drop(basis_scope);
-    continue_prove(
-        t, geometry, statement, initial, target, ring, ood, resolved, data, security,
+    continue_prove_with_initial(
+        t,
+        statement,
+        initial,
+        target,
+        ring,
+        ood,
+        resolved,
+        open_initial,
+        security,
     )
 }
 
@@ -920,28 +1435,66 @@ fn continue_prove<const N: usize>(
     data: [&ProverData; N],
     security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<Proof<N>, Error> {
+    let mut paths = std::array::from_fn(|_| Vec::new());
+    let proof = continue_prove_with_initial(
+        t,
+        statement,
+        initial,
+        target,
+        ring,
+        ood,
+        resolved,
+        separate_initial(geometry, data, &mut paths),
+        security,
+    )?;
+    Ok(Proof {
+        ood: proof.ood,
+        ring: proof.ring,
+        ligerito: proof.ligerito,
+        paths,
+    })
+}
+
+fn separate_initial<'a, const N: usize>(
+    geometry: &'a Geometry<N>,
+    data: [&'a ProverData; N],
+    paths: &'a mut [Vec<Hash>; N],
+) -> impl FnOnce(usize, usize, &[usize]) -> RecursiveProof + 'a {
+    move |positions, lanes, queries: &[usize]| {
+        let mut rows = vec![vec![F::ZERO; lanes]; queries.len()];
+        for branch in 0..N {
+            let width = 1 << geometry.lane_logs[branch];
+            let start = geometry.offset(branch);
+            for (row, &q) in rows.iter_mut().zip(queries) {
+                row[start..start + width]
+                    .copy_from_slice(&data[branch].codeword[q * width..(q + 1) * width]);
+            }
+            paths[branch] =
+                merkle::merkle_multi_proof(&data[branch].merkle_tree, positions, queries);
+        }
+        RecursiveProof {
+            opened_rows: rows,
+            merkle_proof: Vec::new(),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn continue_prove_with_initial(
+    t: &mut (impl Transcript + Send),
+    statement: &Hash,
+    initial: PreparedInitial<'_>,
+    target: F,
+    ring: RingSwitchProof,
+    ood: Option<&OodProverClaim>,
+    resolved: &crate::ligerito_flock::ResolvedLigerito,
+    open_initial: impl FnOnce(usize, usize, &[usize]) -> RecursiveProof,
+    security: Option<&mut grinding::GrindingContext<'_>>,
+) -> Result<JointProof, Error> {
     let _lig_scope = tracing::info_span!("op:ligerito").entered();
     let pc = resolved.prover();
-    let mut paths = std::array::from_fn(|_| Vec::new());
     macro_rules! run {
         ($challenger:expr) => {{
-            let open_initial = |positions, lanes, queries: &[usize]| {
-                let mut rows = vec![vec![F::ZERO; lanes]; queries.len()];
-                for branch in 0..N {
-                    let width = 1 << geometry.lane_logs[branch];
-                    let start = geometry.offset(branch);
-                    for (row, &q) in rows.iter_mut().zip(queries) {
-                        row[start..start + width]
-                            .copy_from_slice(&data[branch].codeword[q * width..(q + 1) * width]);
-                    }
-                    paths[branch] =
-                        merkle::merkle_multi_proof(&data[branch].merkle_tree, positions, queries);
-                }
-                RecursiveProof {
-                    opened_rows: rows,
-                    merkle_proof: Vec::new(),
-                }
-            };
             match initial {
                 PreparedInitial::Deferred(initial) => {
                     ligerito::recursive_prover_with_basis_initial_deferred(
@@ -994,11 +1547,10 @@ fn continue_prove<const N: usize>(
     } else {
         run!(&mut ZincChallenger(t))
     };
-    Ok(Proof {
+    Ok(JointProof {
         ood: ood.map(|claim| claim.round),
         ring,
         ligerito: proof,
-        paths,
     })
 }
 
@@ -1032,7 +1584,78 @@ pub(crate) fn verify_with_security<const N: usize>(
     proof: &Proof<N>,
     security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<(), Error> {
-    let (eq_r2, mut target) = ring_switch_verify(t, &proof.ring, value, &point[..7])
+    let vc = resolved.verifier();
+    let authenticate_initial = |positions, lanes, queries: &[usize], opening: &RecursiveProof| {
+        if !opening.merkle_proof.is_empty() || lanes != geometry.lanes() {
+            return false;
+        }
+        let mut hashes: [Vec<Hash>; N] = std::array::from_fn(|_| Vec::with_capacity(queries.len()));
+        for row in &opening.opened_rows {
+            // Authenticate every branch and reject all unused virtual lanes.
+            if row.len() != lanes {
+                return false;
+            }
+            for (lane, &word) in row.iter().enumerate() {
+                let occupied = (0..N).any(|branch| {
+                    let start = geometry.offset(branch);
+                    (start..start + (1 << geometry.lane_logs[branch])).contains(&lane)
+                });
+                if !occupied && word != F::ZERO {
+                    return false;
+                }
+            }
+            for branch in 0..N {
+                let start = geometry.offset(branch);
+                let end = start + (1 << geometry.lane_logs[branch]);
+                let mut bytes = Vec::with_capacity((end - start) * 16);
+                for word in &row[start..end] {
+                    bytes.extend_from_slice(&word.lo.to_le_bytes());
+                    bytes.extend_from_slice(&word.hi.to_le_bytes());
+                }
+                hashes[branch].push(merkle::hash_leaf(&bytes, vc.merkle_hash));
+            }
+        }
+        (0..N).all(|branch| {
+            merkle::verify_merkle_multi_proof(
+                &roots[branch],
+                positions,
+                queries,
+                &hashes[branch],
+                &proof.paths[branch],
+                vc.merkle_hash,
+            )
+        })
+    };
+    verify_initial_with_security(
+        t,
+        geometry,
+        statement,
+        point,
+        value,
+        ood,
+        resolved,
+        &proof.ring,
+        &proof.ligerito,
+        authenticate_initial,
+        security,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn verify_initial_with_security<const N: usize>(
+    t: &mut (impl Transcript + Send),
+    geometry: &Geometry<N>,
+    statement: &Hash,
+    point: &[Gf],
+    value: F,
+    ood: Option<&OodVerifierClaim>,
+    resolved: &crate::ligerito_flock::ResolvedLigerito,
+    ring: &RingSwitchProof,
+    proof: &LigeritoProof,
+    authenticate_initial: impl FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
+    security: Option<&mut grinding::GrindingContext<'_>>,
+) -> Result<(), Error> {
+    let (eq_r2, mut target) = ring_switch_verify(t, ring, value, &point[..7])
         .map_err(|_| Error::Invalid("ring switch"))?;
     let eta_ood: Option<Gf> = ood.map(|claim| {
         let eta: Gf = t.get_field_challenge(&());
@@ -1054,11 +1677,11 @@ pub(crate) fn verify_with_security<const N: usize>(
         .zip(level_ks)
         .map(|(&bits, k)| (0..k).filter(|&j| bits.saturating_sub(j) > 0).count())
         .sum();
-    if proof.ligerito.recursive_roots.len() != vc.recursive_steps
-        || proof.ligerito.recursive_proofs.len() + 1 != vc.recursive_steps
-        || proof.ligerito.grinding_nonces.len() != vc.recursive_steps + 1
-        || proof.ligerito.ood_values.len() != expected_ood_values
-        || proof.ligerito.fold_grinding_nonces.len() != expected_fold_nonces
+    if proof.recursive_roots.len() != vc.recursive_steps
+        || proof.recursive_proofs.len() + 1 != vc.recursive_steps
+        || proof.grinding_nonces.len() != vc.recursive_steps + 1
+        || proof.ood_values.len() != expected_ood_values
+        || proof.fold_grinding_nonces.len() != expected_fold_nonces
     {
         return Err(Error::Invalid("Ligerito proof shape"));
     }
@@ -1066,7 +1689,7 @@ pub(crate) fn verify_with_security<const N: usize>(
         ($challenger:expr) => {
             ligerito::recursive_verifier_with_basis_initial(
                 &vc,
-                &proof.ligerito,
+                proof,
                 geometry.packed_log(),
                 target,
                 statement,
@@ -1091,48 +1714,7 @@ pub(crate) fn verify_with_security<const N: usize>(
                     }
                     out.into_iter().collect()
                 },
-                |positions, lanes, queries, opening| {
-                    if !opening.merkle_proof.is_empty() || lanes != geometry.lanes() {
-                        return false;
-                    }
-                    let mut hashes: [Vec<Hash>; N] =
-                        std::array::from_fn(|_| Vec::with_capacity(queries.len()));
-                    for row in &opening.opened_rows {
-                        // Authenticate every branch and reject all unused virtual lanes.
-                        if row.len() != lanes {
-                            return false;
-                        }
-                        for (lane, &word) in row.iter().enumerate() {
-                            let occupied = (0..N).any(|branch| {
-                                let start = geometry.offset(branch);
-                                (start..start + (1 << geometry.lane_logs[branch])).contains(&lane)
-                            });
-                            if !occupied && word != F::ZERO {
-                                return false;
-                            }
-                        }
-                        for branch in 0..N {
-                            let start = geometry.offset(branch);
-                            let end = start + (1 << geometry.lane_logs[branch]);
-                            let mut bytes = Vec::with_capacity((end - start) * 16);
-                            for word in &row[start..end] {
-                                bytes.extend_from_slice(&word.lo.to_le_bytes());
-                                bytes.extend_from_slice(&word.hi.to_le_bytes());
-                            }
-                            hashes[branch].push(merkle::hash_leaf(&bytes, vc.merkle_hash));
-                        }
-                    }
-                    (0..N).all(|branch| {
-                        merkle::verify_merkle_multi_proof(
-                            &roots[branch],
-                            positions,
-                            queries,
-                            &hashes[branch],
-                            &proof.paths[branch],
-                            vc.merkle_hash,
-                        )
-                    })
-                },
+                authenticate_initial,
                 $challenger,
             )
         };
@@ -1147,6 +1729,6 @@ pub(crate) fn verify_with_security<const N: usize>(
     if valid {
         Ok(())
     } else {
-        Err(Error::Invalid("multi-root Ligerito opening"))
+        Err(Error::Invalid("shared Ligerito opening"))
     }
 }

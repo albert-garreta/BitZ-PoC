@@ -231,6 +231,18 @@ pub fn commit_into(
     finalize_commit(codeword, params)
 }
 
+/// Encode populated witness lanes without constructing a Merkle tree.
+/// Callers combining several sources can authenticate their encoded rows in
+/// one tree. The returned buffer has the same layout as `ProverData::codeword`.
+pub fn encode(z_packed: &[Gf128], params: &PcsParams) -> Vec<Gf128> {
+    params.validate();
+    assert_eq!(z_packed.len(), 1usize << params.log_msg_len());
+    let mut codeword = crate::scratch::take_f128(params.codeword_len_f128());
+    replicate_message_fill(&mut codeword, z_packed);
+    encode_replicated(&mut codeword, params);
+    codeword
+}
+
 /// Fill `codeword` with `2^r` replicas of `msg` (`r = log2(codeword.len() /
 /// msg.len())`) — the exact state after the first `r` forward-NTT layers on
 /// the zero-padded coefficient vector `[msg, 0, …, 0]`. Pair with
@@ -266,12 +278,7 @@ fn finalize_commit(mut codeword: Vec<Gf128>, params: &PcsParams) -> (Commitment,
     // sub-NTTs with shared twiddles. Each sub-NTT operates on its lane of the
     // SoA buffer. The first `log_inv_rate` layers were pre-applied by the
     // caller's replicate-fill (commit_into), so start past them.
-    let ntt = AdditiveNttF128::standard(params.k_code());
-    ntt.forward_transform_interleaved_from_layer(
-        &mut codeword,
-        params.num_ntts(),
-        params.log_inv_rate,
-    );
+    encode_replicated(&mut codeword, params);
     if timing {
         eprintln!(
             "[commit-timing] ntt: {:.2} ms",
@@ -312,6 +319,14 @@ fn finalize_commit(mut codeword: Vec<Gf128>, params: &PcsParams) -> (Commitment,
             merkle_tree,
         },
     )
+}
+
+fn encode_replicated(codeword: &mut [Gf128], params: &PcsParams) {
+    AdditiveNttF128::standard(params.k_code()).forward_transform_interleaved_from_layer(
+        codeword,
+        params.num_ntts(),
+        params.log_inv_rate,
+    );
 }
 
 /// Tag the current thread as background QoS. On macOS the scheduler then

@@ -555,6 +555,44 @@ pub fn merkle_tree(data: &[u8], num_leaves: usize, kind: HashKind) -> Vec<Hash> 
     }
 }
 
+/// Build a tree from canonical rows assembled in bounded temporary buffers.
+/// `fill_rows(first, bytes)` must write every byte of the consecutive rows
+/// starting at `first`. No full concatenated codeword is allocated.
+pub fn merkle_tree_from_rows<F>(
+    num_leaves: usize,
+    leaf_size: usize,
+    kind: HashKind,
+    fill_rows: F,
+) -> Vec<Hash>
+where
+    F: Fn(usize, &mut [u8]) + Sync,
+{
+    assert!(num_leaves.is_power_of_two() && num_leaves > 0);
+    assert!(leaf_size > 0);
+    let build = || {
+        let mut tree: Vec<Hash> = crate::alloc_uninit_vec(2 * num_leaves - 1);
+        let tile_rows = (128 * 1024 / leaf_size).max(1);
+        tree[..num_leaves]
+            .par_chunks_mut(tile_rows)
+            .enumerate()
+            .for_each_init(
+                || vec![0u8; tile_rows * leaf_size],
+                |buffer, (tile, hashes)| {
+                    let bytes = &mut buffer[..hashes.len() * leaf_size];
+                    fill_rows(tile * tile_rows, bytes);
+                    hash_leaves(bytes, leaf_size, hashes, kind);
+                },
+            );
+        fill_internal_levels(&mut tree, num_leaves, kind);
+        tree
+    };
+    if merkle_use_all_cores(num_leaves.saturating_mul(leaf_size)) {
+        crate::all_core_pool().install(build)
+    } else {
+        build()
+    }
+}
+
 fn merkle_tree_impl(data: &[u8], num_leaves: usize, kind: HashKind) -> Vec<Hash> {
     assert!(
         num_leaves.is_power_of_two() && num_leaves > 0,
@@ -576,7 +614,12 @@ fn merkle_tree_impl(data: &[u8], num_leaves: usize, kind: HashKind) -> Vec<Hash>
     // 1. Leaves — fully parallel, SIMD-batched across leaves where possible.
     hash_leaves(data, leaf_size, &mut tree[..num_leaves], kind);
 
-    // 2. Internal levels — parallel within a level, sequential across levels.
+    fill_internal_levels(&mut tree, num_leaves, kind);
+    tree
+}
+
+fn fill_internal_levels(tree: &mut [Hash], num_leaves: usize, kind: HashKind) {
+    // Internal levels are parallel within a level, sequential across levels.
     let mut read_start = 0usize;
     let mut read_len = num_leaves;
     while read_len > 1 {
@@ -591,8 +634,6 @@ fn merkle_tree_impl(data: &[u8], num_leaves: usize, kind: HashKind) -> Vec<Hash>
         read_start += read_len;
         read_len = next_len;
     }
-
-    tree
 }
 
 /// Sequential (single-threaded) version of [`merkle_tree`]. Used for
@@ -829,6 +870,24 @@ mod tests {
     /// multi-proof logic is hash-agnostic, so anything true of one must hold
     /// for the other.
     const KINDS: [HashKind; 2] = [HashKind::Sha256, HashKind::Blake3];
+
+    #[test]
+    fn generated_rows_match_dense_tree() {
+        for kind in KINDS {
+            for leaves in [1usize, 32, 1024] {
+                for leaf_size in [16usize, 256] {
+                    let bytes: Vec<_> = (0..leaves * leaf_size)
+                        .map(|i| (i.wrapping_mul(37) >> 3) as u8)
+                        .collect();
+                    let actual = merkle_tree_from_rows(leaves, leaf_size, kind, |first, out| {
+                        let start = first * leaf_size;
+                        out.copy_from_slice(&bytes[start..start + out.len()]);
+                    });
+                    assert_eq!(actual, merkle_tree(&bytes, leaves, kind));
+                }
+            }
+        }
+    }
 
     #[test]
     fn two_leaves_matches_hand_computation() {

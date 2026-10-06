@@ -67,7 +67,18 @@ pub fn bind_statement<Ch: Challenger>(
     r1cs: &BlockR1cs,
     commitment: &Commitment,
 ) {
+    bind_source_statement(challenger, r1cs, &commitment.root);
+}
+
+/// Bind a circuit prefix to a caller-defined source context. The caller must
+/// bind the source root, projection, and public circuit policy in this digest
+/// and authenticate the returned local claims through that projection.
+pub fn bind_source_statement<Ch: Challenger>(
+    challenger: &mut Ch,
+    r1cs: &BlockR1cs,
+    source_context: &[u8; 32],
+) {
     challenger.observe_label(b"flock-r1cs-v0");
     challenger.observe_bytes(&r1cs.statement_digest());
-    challenger.observe_bytes(&commitment.root);
+    challenger.observe_bytes(source_context);
 }
