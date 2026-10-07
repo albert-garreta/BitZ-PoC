@@ -7,10 +7,6 @@ use super::*;
 enum WordKind {
     Unsigned,
     Signed,
-    #[cfg(test)]
-    Encoded {
-        offset: u8,
-    },
     /// A CT payload byte, mapped into aligned little-endian coefficient digits.
     SignatureByte {
         offset: u8,
@@ -152,14 +148,6 @@ impl Word {
         match self.kind {
             WordKind::Unsigned => (self.base + bit, false),
             WordKind::Signed => (self.base + bit, bit + 1 == usize::from(self.width)),
-            #[cfg(test)]
-            WordKind::Encoded { offset } => {
-                let stream = usize::from(offset) + SIGNATURE_BITS - 1 - bit;
-                (
-                    self.base + 8 * (stream / 8) + 7 - stream % 8,
-                    bit == SIGNATURE_BITS - 1,
-                )
-            }
             WordKind::SignatureByte { offset } => {
                 let stream = usize::from(offset) + 7 - bit;
                 (
@@ -171,6 +159,62 @@ impl Word {
             }
         }
     }
+
+    fn evaluate(self, local: &[F], field: &Cfg) -> F {
+        let mut sum = field.zero();
+        for bit in (0..usize::from(self.width)).rev() {
+            let (index, negative) = self.bit_position(bit);
+            sum = field.add(&sum, &sum);
+            sum = if negative {
+                field.sub(&sum, &local[index])
+            } else {
+                field.add(&sum, &local[index])
+            };
+        }
+        sum
+    }
+}
+
+struct LocalEvaluation<'a> {
+    local: &'a [F],
+    field: &'a Cfg,
+    sum: F,
+}
+
+impl<'a> LocalEvaluation<'a> {
+    fn new(local: &'a [F], field: &'a Cfg) -> Self {
+        Self {
+            local,
+            field,
+            sum: field.zero(),
+        }
+    }
+
+    fn word(&mut self, base: usize, width: usize, kind: WordKind, scale: F) {
+        let value = Word {
+            base,
+            width: width as u8,
+            kind,
+        }
+        .evaluate(self.local, self.field);
+        self.sum = self.field.add(&self.sum, &self.field.mul(&scale, &value));
+    }
+}
+
+impl CoefficientSink for LocalEvaluation<'_> {
+    fn add(&mut self, index: usize, coefficient: F) {
+        self.sum = self
+            .field
+            .add(&self.sum, &self.field.mul(&coefficient, &self.local[index]));
+    }
+
+    fn add_word(&mut self, base: usize, width: usize, scale: F, _: &Cfg) {
+        self.word(base, width, WordKind::Unsigned, scale);
+    }
+
+    fn add_signed_word(&mut self, base: usize, width: usize, scale: F, _: &Cfg) {
+        self.word(base, width, WordKind::Signed, scale);
+    }
 }
 
 /// All instances share the public operator and the same dynamic addition order.
@@ -179,6 +223,7 @@ impl Word {
 pub(super) struct CompiledTemplate {
     words: std::sync::Arc<[Word]>,
     common: Vec<(usize, F)>,
+    rejection: Vec<(usize, F)>,
     dynamic_slots: Vec<usize>,
     folded: std::sync::Arc<std::sync::OnceLock<FoldedWords>>,
     byte_runs: std::sync::Arc<std::sync::OnceLock<ByteRuns>>,
@@ -279,8 +324,13 @@ impl<A: WordAccumulator> WordSink<'_, A> {
 }
 
 impl CompiledTemplate {
-    fn new(common: CompiledCoefficients, dynamic_words: Vec<Word>) -> Self {
+    fn new(
+        common: CompiledCoefficients,
+        rejection: CompiledCoefficients,
+        dynamic_words: Vec<Word>,
+    ) -> Self {
         let mut words = common.words.to_vec();
+        words.extend_from_slice(&rejection.words);
         words.extend_from_slice(&dynamic_words);
         words.sort_unstable();
         words.dedup();
@@ -290,6 +340,17 @@ impl CompiledTemplate {
             .zip(common.coefficients)
             .map(|(word, value)| (words.binary_search(word).expect("common word slot"), value))
             .collect();
+        let rejection = rejection
+            .words
+            .iter()
+            .zip(rejection.coefficients)
+            .map(|(word, value)| {
+                (
+                    words.binary_search(word).expect("rejection word slot"),
+                    value,
+                )
+            })
+            .collect();
         let dynamic_slots = dynamic_words
             .iter()
             .map(|word| words.binary_search(word).expect("dynamic word slot"))
@@ -297,6 +358,7 @@ impl CompiledTemplate {
         Self {
             words: words.into(),
             common,
+            rejection,
             dynamic_slots,
             folded: Default::default(),
             byte_runs: Default::default(),
@@ -308,11 +370,16 @@ impl CompiledTemplate {
         instance: usize,
         base: usize,
         alpha: F,
+        rejection_scale: F,
         field: &'a Cfg,
     ) -> WordSink<'a, IndexedWords<'a>> {
         let mut coefficients = vec![field.zero(); self.words.len()];
         for &(slot, value) in &self.common {
             coefficients[slot] = field.mul(&alpha, &value);
+        }
+        for &(slot, value) in &self.rejection {
+            coefficients[slot] =
+                field.add(&coefficients[slot], &field.mul(&rejection_scale, &value));
         }
         WordSink {
             field,
@@ -360,18 +427,6 @@ impl<A: WordAccumulator> CoefficientSink for WordSink<'_, A> {
         self.word(base, width, WordKind::Unsigned, scale);
     }
 
-    #[cfg(test)]
-    fn add_encoded_word(&mut self, base: usize, offset: usize, scale: F, _: &Cfg) {
-        self.word(
-            base,
-            SIGNATURE_BITS,
-            WordKind::Encoded {
-                offset: offset as u8,
-            },
-            scale,
-        );
-    }
-
     fn add_signed_word(&mut self, base: usize, width: usize, scale: F, _: &Cfg) {
         self.word(base, width, WordKind::Signed, scale);
     }
@@ -407,17 +462,43 @@ impl CompiledCoefficients {
         read_byte: &mut impl FnMut(usize, usize) -> Result<u8, crate::sumcheck::SumcheckError>,
         emit: &mut impl FnMut(u8, &[F; 8]) -> Result<(), crate::sumcheck::SumcheckError>,
     ) -> Result<(), crate::sumcheck::SumcheckError> {
+        self.emit_word_buckets::<1>(
+            base,
+            field,
+            &mut |base, lanes| read_byte(base, lanes).map(u16::from),
+            &mut |_, byte, values| emit(byte, values),
+        )
+    }
+
+    pub(super) fn emit_byte_pair_buckets(
+        &self,
+        base: usize,
+        field: &Cfg,
+        read_pair: &mut impl FnMut(usize, usize) -> Result<u16, crate::sumcheck::SumcheckError>,
+        emit: &mut impl FnMut(usize, u8, &[F; 8]) -> Result<(), crate::sumcheck::SumcheckError>,
+    ) -> Result<(), crate::sumcheck::SumcheckError> {
+        self.emit_word_buckets::<3>(base, field, read_pair, emit)
+    }
+
+    fn emit_word_buckets<const TABLES: usize>(
+        &self,
+        base: usize,
+        field: &Cfg,
+        read: &mut impl FnMut(usize, usize) -> Result<u16, crate::sumcheck::SumcheckError>,
+        emit: &mut impl FnMut(usize, u8, &[F; 8]) -> Result<(), crate::sumcheck::SumcheckError>,
+    ) -> Result<(), crate::sumcheck::SumcheckError> {
         use crate::sumcheck::SumcheckError;
         use field::{CtOrd, Reduce};
-        if base % 8 != 0 {
+        let width = if TABLES == 3 { 16 } else { 8 };
+        if base % width != 0 {
             return Err(SumcheckError::InvalidProductDimensions);
         }
         let compiled = self.byte_runs.get_or_init(|| ByteRuns::new(&self.words));
         // Each accumulator receives fewer than 2^64 field-by-u64 products;
         // native coefficient widths are at most 27 bits. The extra accumulator
         // limb therefore preserves exact sums for every supported batch.
-        let mut differences = vec![field::FpLinearAcc::<2, 1>::zero(); 256 * 8];
-        let mut occupied = [false; 256];
+        let mut differences = vec![field::FpLinearAcc::<2, 1>::zero(); TABLES * 256 * 8];
+        let mut occupied = vec![false; TABLES * 256];
         for (word, &scale) in self.coefficients.iter().enumerate() {
             if !scale
                 .as_montgomery_integer()
@@ -431,13 +512,19 @@ impl CompiledCoefficients {
             }
             let negative = field.neg(&scale);
             for run in &compiled.runs[compiled.starts[word]..compiled.starts[word + 1]] {
-                let pattern =
-                    usize::from(read_byte(base + run.base, usize::from(run.lane + run.len))?);
-                if pattern == 0 {
-                    continue;
-                }
-                occupied[pattern] = true;
-                let values = &mut differences[8 * pattern..][..8];
+                let side = if TABLES == 3 { (run.base % 16) / 8 } else { 0 };
+                let word = read(
+                    base + (run.base & !(width - 1)),
+                    8 * side + usize::from(run.lane + run.len),
+                )?;
+                let destinations = if TABLES == 3 {
+                    [
+                        (side, (word >> (8 * side)) as u8),
+                        (2, (word >> (8 * (1 - side))) as u8),
+                    ]
+                } else {
+                    [(0, word as u8), (0, 0)]
+                };
                 let lane = usize::from(run.lane);
                 let len = usize::from(run.len);
                 let (positive, negative) = if run.negative {
@@ -445,13 +532,21 @@ impl CompiledCoefficients {
                 } else {
                     (&scale, &negative)
                 };
-                field.mul_acc(&mut values[lane], positive, &(1u64 << run.shift));
-                if lane + len < 8 {
-                    field.mul_acc(
-                        &mut values[lane + len],
-                        negative,
-                        &(1u64 << (usize::from(run.shift) + len)),
-                    );
+                for (table, byte) in destinations {
+                    if byte == 0 {
+                        continue;
+                    }
+                    let bucket = table * 256 + usize::from(byte);
+                    occupied[bucket] = true;
+                    let values = &mut differences[8 * bucket..][..8];
+                    field.mul_acc(&mut values[lane], positive, &(1u64 << run.shift));
+                    if lane + len < 8 {
+                        field.mul_acc(
+                            &mut values[lane + len],
+                            negative,
+                            &(1u64 << (usize::from(run.shift) + len)),
+                        );
+                    }
                 }
             }
         }
@@ -465,7 +560,7 @@ impl CompiledCoefficients {
                     previous = field.add(&field.add(&previous, &previous), &difference);
                     *value = previous;
                 }
-                emit(pattern as u8, &values)?;
+                emit(pattern / 256, (pattern % 256) as u8, &values)?;
             }
         }
         Ok(())
@@ -678,9 +773,7 @@ fn flush_window(
 pub(super) struct PreparedWeights {
     norm: crate::poly::mle::EqualityWeights<F>,
     norm_instances: Vec<F>,
-    products: crate::poly::mle::EqualityWeights<F>,
-    leaf: leaf::LeafWeights,
-    output_scale: F,
+    rejection: rejection::RejectionWeights,
 }
 
 impl BindingForm<'_> {
@@ -689,17 +782,11 @@ impl BindingForm<'_> {
             return Ok(weights);
         }
         let field = self.field;
-        let mut scale = self.eta;
-        for _ in 0..11 {
-            scale = field.mul(&scale, &self.eta);
-        }
         let weights = PreparedWeights {
             norm: factored_weights(self.proof.norm.point, field)?,
             norm_instances: eq_table(self.proof.norm.instance_point, field)
                 .map_err(|error| piop(error.to_string()))?,
-            products: factored_weights(self.proof.compact_products.point, field)?,
-            leaf: leaf::LeafWeights::new(self.layout, self.proof, field)?,
-            output_scale: scale,
+            rejection: rejection::RejectionWeights::new(self.layout, self.proof, self.eta, field)?,
         };
         // Concurrent first partitions may prepare a small duplicate, but never
         // block Rayon workers while one initializer launches parallel work.
@@ -729,14 +816,20 @@ impl BindingForm<'_> {
                 );
             }
         }
+        let prepared = self.prepared_compact_weights()?;
+        let mut rejection = WordSink::new(0, 0, field);
+        prepared
+            .rejection
+            .emit_local(&mut rejection, self.layout, field);
         let mut dynamic = WordSink {
             field,
             instance: 0,
             base: 0,
             accumulator: RecordWords::default(),
         };
-        self.emit_compact_instance_terms(0, &mut dynamic, self.prepared_compact_weights()?)?;
-        let template = CompiledTemplate::new(common.finish(), dynamic.accumulator.0);
+        self.emit_compact_instance_terms(0, &mut dynamic, prepared)?;
+        let template =
+            CompiledTemplate::new(common.finish(), rejection.finish(), dynamic.accumulator.0);
         let _ = self.compact_linear.set(template);
         Ok(self
             .compact_linear
@@ -757,6 +850,9 @@ impl BindingForm<'_> {
             instance,
             instance * self.layout.signature_stride(),
             self.linear_instance_weights[instance],
+            self.prepared_compact_weights()?
+                .rejection
+                .instance_weights()[instance],
             self.field,
         );
         self.emit_compact_instance_terms(instance, &mut sink, self.prepared_compact_weights()?)?;
@@ -772,7 +868,6 @@ impl BindingForm<'_> {
     ) -> Result<(), FalconError> {
         let field = self.field;
         let layout = self.layout;
-        let base = instance * layout.signature_stride();
         let mut ignored = field.zero();
         let mut scale = self.eta;
         add_norm_claims_prepared(
@@ -786,36 +881,42 @@ impl BindingForm<'_> {
             &prepared.norm,
             &prepared.norm_instances,
         )?;
-        add_compaction_product_claims_prepared(
-            sink,
-            &mut ignored,
-            &mut scale,
-            self.eta,
-            layout,
-            self.proof,
-            field,
-            &prepared.products,
-        )?;
-        leaf::add_leaf_claims_prepared(
-            sink,
-            &mut ignored,
-            &mut scale,
-            self.eta,
-            layout,
-            self.proof,
-            field,
-            &prepared.leaf,
-        )?;
-        let weights = &prepared.leaf.forest;
-        let tree_scale = field.mul(&prepared.output_scale, &prepared.leaf.beta[instance]);
-        for (i, &weight) in weights.iter().take(N).enumerate() {
-            sink.add_word(
-                base + layout.hash_point_bit(i, 0),
-                14,
-                field.mul(&tree_scale, &weight),
-                field,
-            );
+        debug_assert_eq!(sink.instances(layout.batch()), instance..instance + 1);
+        let base = instance * layout.signature_stride();
+        let alpha = self.linear_instance_weights[instance];
+        let offsets = layout.offsets();
+        let cutoff = self.selection.cutoff(instance);
+        let indices = self.selection.indices(instance);
+        let mut selected = 0;
+        // The slot inventory includes every candidate, including zero weights,
+        // so distinct public masks share the same compiled word topology.
+        for j in 0..HASH_TO_POINT_SAMPLES {
+            let mask_weight = if j <= cutoff {
+                field.mul(
+                    &alpha,
+                    &self.local_linear_weights.at(selection_mask_row() + j),
+                )
+            } else {
+                field.zero()
+            };
+            sink.add(base + offsets.hash_accept_ands + j, mask_weight);
+            let weight = if selected < N && usize::from(indices[selected]) == j {
+                let weight = field.neg(
+                    &field.mul(
+                        &alpha,
+                        &self
+                            .local_linear_weights
+                            .at(selection_output_row() + selected),
+                    ),
+                );
+                selected += 1;
+                weight
+            } else {
+                field.zero()
+            };
+            add_value_scaled(sink, base + offsets.hash_remainders + 14 * j, weight, field);
         }
+        debug_assert_eq!(selected, N);
         Ok(())
     }
 
@@ -835,38 +936,127 @@ impl BindingForm<'_> {
     ) -> Result<F, FalconError> {
         use field::Reduce;
         let field = self.field;
+        if local.len() != self.layout.signature_stride()
+            || instances.len() != self.layout.capacity()
+        {
+            return Err(piop("binding coefficient endpoint dimension mismatch"));
+        }
+        let prepared = self.prepared_compact_weights()?;
         let template = self.prepared_compact_template()?;
         let endpoints: Vec<F> = template
             .words
             .iter()
-            .map(|&word| {
-                let mut sum = field.zero();
-                for bit in (0..usize::from(word.width)).rev() {
-                    let (index, negative) = word.bit_position(bit);
-                    sum = field.add(&sum, &sum);
-                    sum = if negative {
-                        field.sub(&sum, &local[index])
-                    } else {
-                        field.add(&sum, &local[index])
-                    };
-                }
-                sum
-            })
+            .map(|&word| word.evaluate(local, field))
             .collect();
-        let values: Result<Vec<F>, FalconError> =
-            crate::utils::cfg_into_iter!(0..self.layout.batch())
-                .map(|s| {
-                    let coefficients = self.compact_instance(s)?;
-                    let mut sum = <Cfg as BatchMulAcc<F>>::Accumulator::zero();
-                    for (coefficient, endpoint) in coefficients.coefficients.iter().zip(&endpoints)
-                    {
-                        field.mul_acc(&mut sum, coefficient, endpoint);
-                    }
-                    let value: F = field.reduce(sum);
-                    Ok(field.mul(&instances[s], &value))
-                })
-                .collect();
-        Ok(values?.iter().fold(field.zero(), |s, v| field.add(&s, v)))
+        let local_dot = |terms: &[(usize, F)]| -> F {
+            let mut sum = <Cfg as BatchMulAcc<F>>::Accumulator::zero();
+            for &(index, value) in terms {
+                field.mul_acc(&mut sum, &value, &endpoints[index]);
+            }
+            field.reduce(sum)
+        };
+        let linear = local_dot(&template.common);
+        let rejection = local_dot(&template.rejection);
+
+        // Five repeated forms cover common linear rows, rejection, S1, S2 and
+        // slack. Public selection contributes an additional sparse routing
+        // form evaluated directly from the same local coefficient endpoints.
+        // In particular the verifier never prepares per-signature word tables.
+        let norm_local = eq_table(&self.proof.norm.point[..COEFFICIENT_LOG], field)
+            .map_err(|error| piop(error.to_string()))?;
+        let norm_instances = eq_table(&self.proof.norm.point[COEFFICIENT_LOG..], field)
+            .map_err(|error| piop(error.to_string()))?;
+        let mut s1 = LocalEvaluation::new(local, field);
+        let mut s2 = LocalEvaluation::new(local, field);
+        let mut slack = LocalEvaluation::new(local, field);
+        for (i, &weight) in norm_local.iter().enumerate() {
+            add_value_scaled(&mut s1, self.layout.s1_bit(i, 0), weight, field);
+            add_signed_source_scaled(&mut s2, 0, self.layout, i, weight, field);
+        }
+        let mut power = field.one();
+        for bit in 0..NORM_BITS {
+            slack.add(self.layout.norm_slack_bit(bit), power);
+            power = field.add(&power, &power);
+        }
+        let mut linear_weight = field.zero();
+        let mut rejection_weight = field.zero();
+        let mut norm_weight = field.zero();
+        let mut weighted_norm = field.zero();
+        let mut slack_weight = field.zero();
+        let offsets = self.layout.offsets();
+        let mut mask_prefix = vec![field.zero(); HASH_TO_POINT_SAMPLES + 1];
+        let mut remainders = Vec::with_capacity(HASH_TO_POINT_SAMPLES);
+        for j in 0..HASH_TO_POINT_SAMPLES {
+            mask_prefix[j + 1] = field.add(
+                &mask_prefix[j],
+                &field.mul(
+                    &self.local_linear_weights.at(selection_mask_row() + j),
+                    &local[offsets.hash_accept_ands + j],
+                ),
+            );
+            let mut endpoint = LocalEvaluation::new(local, field);
+            add_value_scaled(
+                &mut endpoint,
+                offsets.hash_remainders + 14 * j,
+                field.one(),
+                field,
+            );
+            remainders.push(endpoint.sum);
+        }
+        let selection_weights: Vec<_> = (0..N)
+            .map(|k| self.local_linear_weights.at(selection_output_row() + k))
+            .collect();
+        let mut selection = field.zero();
+        for (s, &instance) in instances.iter().take(self.layout.batch()).enumerate() {
+            let alpha = field.mul(&instance, &self.linear_instance_weights[s]);
+            linear_weight = field.add(&linear_weight, &alpha);
+            let mut routed = <Cfg as BatchMulAcc<F>>::Accumulator::zero();
+            for (&index, weight) in self.selection.indices(s).iter().zip(&selection_weights) {
+                field.mul_acc(&mut routed, weight, &remainders[usize::from(index)]);
+            }
+            let routing = field.sub(
+                &mask_prefix[self.selection.cutoff(s) + 1],
+                &field.reduce(routed),
+            );
+            selection = field.add(&selection, &field.mul(&alpha, &routing));
+            rejection_weight = field.add(
+                &rejection_weight,
+                &field.mul(&instance, &prepared.rejection.instance_weights()[s]),
+            );
+            let norm = field.mul(&instance, &norm_instances[s]);
+            norm_weight = field.add(&norm_weight, &norm);
+            weighted_norm = field.add(
+                &weighted_norm,
+                &field.mul(&norm, &prepared.norm_instances[s]),
+            );
+            slack_weight = field.add(
+                &slack_weight,
+                &field.mul(&instance, &prepared.norm_instances[s]),
+            );
+        }
+        let eta2 = field.mul(&self.eta, &self.eta);
+        let eta3 = field.mul(&eta2, &self.eta);
+        let eta4 = field.mul(&eta3, &self.eta);
+        let eta5 = field.mul(&eta4, &self.eta);
+        let s1_weight = field.add(
+            &field.mul(&self.eta, &weighted_norm),
+            &field.mul(&eta2, &norm_weight),
+        );
+        let s2_weight = field.add(
+            &field.mul(&eta3, &weighted_norm),
+            &field.mul(&eta4, &norm_weight),
+        );
+        let mut sum = <Cfg as BatchMulAcc<F>>::Accumulator::zero();
+        for (value, weight) in [
+            (linear, linear_weight),
+            (rejection, rejection_weight),
+            (s1.sum, s1_weight),
+            (s2.sum, s2_weight),
+            (slack.sum, field.mul(&eta5, &slack_weight)),
+        ] {
+            field.mul_acc(&mut sum, &value, &weight);
+        }
+        Ok(field.add(&field.reduce(sum), &selection))
     }
 
     pub(super) fn compact_target(&self) -> Result<F, FalconError> {
@@ -875,9 +1065,6 @@ impl BindingForm<'_> {
         let batch_vars = self.layout.capacity().ilog2() as usize;
         if proof.norm.point.len() != COEFFICIENT_LOG + batch_vars
             || proof.norm.instance_point.len() != batch_vars
-            || proof.compact_products.point.len() != COMPACTION_LOG + batch_vars
-            || proof.compaction.instance_point.len() != batch_vars
-            || proof.compaction.terminal_point.len() != COMPACTION_LOG
         {
             return Err(piop("hybrid binding terminal dimensions mismatch"));
         }
@@ -887,6 +1074,13 @@ impl BindingForm<'_> {
             .iter()
             .fold(field.zero(), |sum, weight| field.add(&sum, weight));
         constant = field.mul(&constant, &instance_sum);
+        let mut mask_prefix = vec![field.zero(); HASH_TO_POINT_SAMPLES + 1];
+        for j in 0..HASH_TO_POINT_SAMPLES {
+            mask_prefix[j + 1] = field.add(
+                &mask_prefix[j],
+                &self.local_linear_weights.at(selection_mask_row() + j),
+            );
+        }
         let public_constants: Result<Vec<F>, FalconError> =
             crate::utils::cfg_into_iter!(0..self.layout.batch())
                 .map(|s| {
@@ -912,6 +1106,16 @@ impl BindingForm<'_> {
                         );
                     }
 
+                    let mut expected_mask = mask_prefix[self.selection.cutoff(s) + 1];
+                    for &index in self.selection.indices(s) {
+                        expected_mask = field.sub(
+                            &expected_mask,
+                            &self
+                                .local_linear_weights
+                                .at(selection_mask_row() + usize::from(index)),
+                        );
+                    }
+                    signature_bytes = field.add(&signature_bytes, &expected_mask);
                     for (j, &value) in self.statement.public_keys[s].h.iter().enumerate() {
                         signature_bytes = field.add(
                             &signature_bytes,
@@ -968,100 +1172,28 @@ impl BindingForm<'_> {
             }
         }
         add_claim_target(&mut target, scale, proof.norm.slack, field.zero(), field);
-        scale = field.mul(&scale, &self.eta);
-        for claim in [
-            proof.compact_products.terminal.ax,
-            proof.compact_products.terminal.bx,
-            proof.compact_products.terminal.cx,
-        ] {
-            add_claim_target(&mut target, scale, claim, field.zero(), field);
-            scale = field.mul(&scale, &self.eta);
-        }
-        let leaf = &proof.compaction_leaf;
-        let weights = &self.prepared_compact_weights()?.leaf;
-        let local_sum = weights.local[..HASH_TO_POINT_SAMPLES]
-            .iter()
-            .fold(field.zero(), |s, w| field.add(&s, w));
-        let instance_sum = weights.instances[..self.layout.batch()]
-            .iter()
-            .fold(field.zero(), |s, w| field.add(&s, w));
-        let ordinary_constant = field.mul(&local_sum, &instance_sum);
-        let local_weighted = weights
-            .local
-            .iter()
-            .zip(&weights.forest)
-            .take(HASH_TO_POINT_SAMPLES)
-            .fold(field.zero(), |s, (a, b)| field.add(&s, &field.mul(a, b)));
-        let instance_weighted = weights
-            .instances
-            .iter()
-            .zip(&weights.beta)
-            .take(self.layout.batch())
-            .fold(field.zero(), |s, (a, b)| field.add(&s, &field.mul(a, b)));
-        let third_constant = field.mul(
-            &field.mul(&local_weighted, &instance_weighted),
-            &field.sub(&proof.compaction_gamma, &field.one()),
-        );
-        for (claim, c) in
-            leaf.terminal
-                .iter()
-                .zip([ordinary_constant, ordinary_constant, third_constant])
-        {
-            add_claim_target(&mut target, scale, *claim, field.mul(&scale, &c), field);
-            scale = field.mul(&scale, &self.eta);
-        }
-        let point = &proof.compaction.terminal_point;
-        let rank = point[..COEFFICIENT_LOG]
-            .iter()
-            .enumerate()
-            .fold(field.zero(), |sum, (bit, &v)| {
-                field.add(&sum, &mul_i(v, 1 << bit, field))
-            });
-        let lower_correction = field.add(
-            &field.sub(&proof.compaction_gamma, &field.one()),
-            &field.mul(&proof.compaction_rank_scale, &rank),
-        );
-        let live_weight = weights.beta[..self.layout.batch()]
-            .iter()
-            .fold(field.zero(), |sum, value| field.add(&sum, value));
-        // Every dummy signature and every upper-half leaf is one. Start from
-        // that constant table, then modify only live lower-half leaves.
-        let constant = field.mul(
-            &scale,
-            &field.add(
-                &field.one(),
-                &field.mul(
-                    &live_weight,
-                    &field.mul(
-                        &point[COEFFICIENT_LOG..].iter().fold(field.one(), |acc, x| {
-                            field.mul(&acc, &field.sub(&field.one(), x))
-                        }),
-                        &lower_correction,
-                    ),
-                ),
-            ),
-        );
-        add_claim_target(&mut target, scale, proof.compaction.output, constant, field);
-        Ok(target)
+        Ok(field.add(
+            &target,
+            &self.prepared_compact_weights()?.rejection.target(),
+        ))
     }
 }
 
 /// Constants of the repeated hybrid linear template, excluding public messages
 /// and the instance-specific nonce and signature coefficient bytes.
 fn linear_constant(weights: &crate::poly::mle::EqualityWeights<F>, field: &Cfg) -> F {
-    let mut constant = field.neg(&weights.at(0));
-    constant = field.sub(
-        &constant,
-        &mul_i(weights.at(257), (0x50 + COEFFICIENT_LOG) as i128, field),
-    );
-    let start = 1 + 256 + super::super::CT_SIGNATURE_BYTES;
-    for i in 0..HASH_TO_POINT_SAMPLES {
-        constant = field.sub(&constant, &weights.at(start + 2 * i + 1));
-    }
     field.sub(
-        &constant,
-        &weights.at(start + 2 * HASH_TO_POINT_SAMPLES + 1),
+        &field.neg(&weights.at(0)),
+        &mul_i(weights.at(257), (0x50 + COEFFICIENT_LOG) as i128, field),
     )
+}
+
+fn selection_mask_row() -> usize {
+    1 + 256 + super::super::CT_SIGNATURE_BYTES + HASH_TO_POINT_SAMPLES
+}
+
+fn selection_output_row() -> usize {
+    selection_mask_row() + HASH_TO_POINT_SAMPLES
 }
 
 fn emit_linear_template(
@@ -1099,26 +1231,14 @@ fn emit_linear_template(
             field.neg(&weight),
             field,
         );
-        let weight = next();
-        sink.add_word(
-            offsets.hash_prefixes + PREFIX_BITS * (i + 1),
-            PREFIX_BITS,
-            weight,
-            field,
-        );
-        sink.add_word(
-            offsets.hash_prefixes + PREFIX_BITS * i,
-            PREFIX_BITS,
-            field.neg(&weight),
-            field,
-        );
-        sink.add(offsets.hash_accept_ands + i, weight);
     }
-    sink.add_word(offsets.hash_prefixes, PREFIX_BITS, next(), field);
-    sink.add(
-        offsets.hash_prefixes + PREFIX_BITS * HASH_TO_POINT_SAMPLES + PREFIX_BITS - 1,
-        next(),
-    );
+    // Public masks determine the rejection rows' support per signature.
+    for _ in 0..HASH_TO_POINT_SAMPLES {
+        next();
+    }
+    for k in 0..N {
+        sink.add_word(layout.hash_point_bit(k, 0), 14, next(), field);
+    }
     debug_assert_eq!(
         row,
         super::super::FalconConstraintCounts::per_signature().linear_rows() - N
@@ -1137,11 +1257,6 @@ mod tests {
                     width,
                     kind: WordKind::Unsigned,
                 })
-                .chain((0..8).map(|offset| Word {
-                    base,
-                    width: SIGNATURE_BITS as u8,
-                    kind: WordKind::Encoded { offset },
-                }))
                 .chain((1..=15).map(|width| Word { base, width, kind: WordKind::Signed }))
                 .chain((0..SIGNATURE_BITS as u8).map(|offset| Word {
                     base,
@@ -1267,6 +1382,56 @@ mod tests {
     }
 
     #[test]
+    fn direct_byte_pair_buckets_match_dense_overlapping_word_expansion() {
+        for field in [
+            crate::piop::spartan::spartan_bitz_field_config(),
+            field::FpCtx::from_prime_u128((1u128 << 127) - 1),
+            field::FpCtx::from_prime_u128(7),
+        ] {
+            for base in [0, 256] {
+                let mut sink = WordSink::new(base / 256, base, &field);
+                overlapping_words(&mut sink, base, &field);
+                let compact = sink.finish();
+                let mut dense = Dense { values: vec![field.zero(); 512], field: &field };
+                overlapping_words(&mut dense, base, &field);
+                for pattern in [0u16, 1, 0x0100, 0x00ff, 0xff00, 0xffff, 0xaa55, 0x55aa, 0x8001, 0x0180, 0x1994] {
+                    let pair = |index: usize| pattern.rotate_left(((index / 16) % 16) as u32);
+                    let mut expected = vec![[field.zero(); 8]; 3 * 256];
+                    for index in (base..base + 256).step_by(16) {
+                        let witness = pair(index);
+                        let bytes = [(witness & 255) as usize, (witness >> 8) as usize];
+                        for lane in 0..8 {
+                            let c0 = dense.values[index + lane];
+                            let c1 = dense.values[index + 8 + lane];
+                            for (table, byte, value) in [(0, bytes[0], c0), (1, bytes[1], c1), (2, bytes[1], c0), (2, bytes[0], c1)] {
+                                if byte != 0 {
+                                    expected[table * 256 + byte][lane] = field.add(&expected[table * 256 + byte][lane], &value);
+                                }
+                            }
+                        }
+                    }
+                    let mut actual = vec![[field.zero(); 8]; 3 * 256];
+                    let mut next = 0;
+                    compact.emit_byte_pair_buckets(base, &field, &mut |index, lanes| {
+                        assert_eq!(index % 16, 0);
+                        assert!((base..base + 256).contains(&index));
+                        assert!((1..=16).contains(&lanes));
+                        Ok(pair(index))
+                    }, &mut |table, byte, values| {
+                        assert!(table < 3);
+                        let bucket = table * 256 + usize::from(byte);
+                        assert!(bucket >= next);
+                        next = bucket + 1;
+                        actual[bucket] = *values;
+                        Ok(())
+                    }).unwrap();
+                    assert_eq!(actual, expected, "base={base}, pattern={pattern}");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn direct_byte_buckets_reject_noncanonical_words_and_unaligned_base() {
         let field = crate::piop::spartan::spartan_bitz_field_config();
         let mut sink = WordSink::new(0, 0, &field);
@@ -1277,6 +1442,7 @@ mod tests {
                 .emit_byte_buckets(1, &field, &mut |_, _| Ok(0), &mut |_, _| Ok(()))
                 .is_err()
         );
+        assert!(compact.emit_byte_pair_buckets(8, &field, &mut |_, _| Ok(0), &mut |_, _, _| Ok(())).is_err());
         compact.coefficients[0] = crate::piop::spartan::noncanonical_test_value(&field);
         // Malformed coefficients are rejected even for an all-zero witness.
         assert!(
@@ -1284,6 +1450,7 @@ mod tests {
                 .emit_byte_buckets(0, &field, &mut |_, _| Ok(0), &mut |_, _| Ok(()))
                 .is_err()
         );
+        assert!(compact.emit_byte_pair_buckets(0, &field, &mut |_, _| Ok(0), &mut |_, _, _| Ok(())).is_err());
     }
 
     fn overlapping_words(sink: &mut impl CoefficientSink, base: usize, field: &Cfg) {
@@ -1302,10 +1469,6 @@ mod tests {
             sink.add_word(base + local + 1, 14, scale, field);
             sink.add_signed_word(base + local + 2, SIGNATURE_BITS, scale, field);
             sink.add(base + local + 26, field.neg(&scale));
-        }
-        // CT encoding has a reversed bit order and alternates nibble offsets.
-        for (local, offset) in [(8, 0), (24, 4), (56, 4), (120, 0), (224, 4)] {
-            sink.add_encoded_word(base + local, offset, scale, field);
         }
         sink.add_word(base + 192, 8, scale, field);
         sink.add_word(base + 192, 8, field.neg(&scale), field);
@@ -1413,7 +1576,10 @@ mod tests {
         // Slots cannot be dropped just because this first instance is zero.
         overlapping_words_scaled(&mut record, 0, field.zero(), &field);
         record.add_word(300, 8, field.zero(), &field);
-        let template = CompiledTemplate::new(common.finish(), record.accumulator.0);
+        let mut rejection = WordSink::new(0, 0, &field);
+        rejection.add_word(300, 8, unsigned(17, &field), &field);
+        rejection.add_word(310, 13, unsigned(23, &field), &field);
+        let template = CompiledTemplate::new(common.finish(), rejection.finish(), record.accumulator.0);
         for (instance, alpha, dynamic_scale) in [
             (0, field.zero(), field.zero()),
             (1, field.zero(), unsigned(91, &field)),
@@ -1421,7 +1587,7 @@ mod tests {
             (1, unsigned(23, &field), unsigned(91, &field)),
         ] {
             let base = instance * 512;
-            let mut indexed = template.sink(instance, base, alpha, &field);
+            let mut indexed = template.sink(instance, base, alpha, dynamic_scale, &field);
             overlapping_words_scaled(&mut indexed, base, dynamic_scale, &field);
             indexed.add_word(base + 300, 8, dynamic_scale, &field);
             let compact = indexed.finish();
@@ -1438,6 +1604,8 @@ mod tests {
             );
             overlapping_words_scaled(&mut expected, base, dynamic_scale, &field);
             expected.add_word(base + 300, 8, dynamic_scale, &field);
+            expected.add_word(base + 300, 8, field.mul(&dynamic_scale, &unsigned(17, &field)), &field);
+            expected.add_word(base + 310, 13, field.mul(&dynamic_scale, &unsigned(23, &field)), &field);
             let mut actual = vec![field.zero(); 1024];
             compact
                 .emit(base, &field, &mut |index, value| {

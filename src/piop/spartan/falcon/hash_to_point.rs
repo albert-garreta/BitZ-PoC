@@ -8,14 +8,11 @@ pub struct HashToPointTrace {
     pub quotients: Box<[u8; HASH_TO_POINT_SAMPLES]>,
     pub remainders: Box<[u16; HASH_TO_POINT_SAMPLES]>,
     pub accepted: Box<[bool; HASH_TO_POINT_SAMPLES]>,
-    /// Number of accepted candidates before each candidate, followed by the
-    /// final accepted count.  These ranks drive the compaction fingerprint.
-    pub prefix: Box<[u16; HASH_TO_POINT_SAMPLES + 1]>,
     pub point: Box<[u16; N]>,
 }
 
-/// Hashes `nonce || message`, draws exactly 1311 big-endian 16-bit words,
-/// rejects words at least `5q`, and stably selects the first 1024 residues.
+/// Hashes `nonce || message`, draws the profile's fixed number of big-endian
+/// 16-bit words, rejects words at least `5q`, and selects the first N residues.
 pub fn hash_to_point_ct(nonce: &[u8; 40], message: &[u8]) -> Result<HashToPointTrace, FalconError> {
     let mut input = Vec::with_capacity(nonce.len() + message.len());
     input.extend_from_slice(nonce);
@@ -37,7 +34,6 @@ pub(super) fn from_shake_bytes(
     let mut quotients = Box::new([0u8; HASH_TO_POINT_SAMPLES]);
     let mut remainders = Box::new([0u16; HASH_TO_POINT_SAMPLES]);
     let mut accepted = Box::new([false; HASH_TO_POINT_SAMPLES]);
-    let mut prefix = Box::new([0u16; HASH_TO_POINT_SAMPLES + 1]);
     let mut point = Box::new([0u16; N]);
     let mut count = 0usize;
 
@@ -50,7 +46,6 @@ pub(super) fn from_shake_bytes(
         quotients[index] = quotient as u8;
         remainders[index] = remainder as u16;
         accepted[index] = keep;
-        prefix[index] = count as u16;
         if keep {
             if count < N {
                 point[count] = remainder as u16;
@@ -58,7 +53,6 @@ pub(super) fn from_shake_bytes(
             count += 1;
         }
     }
-    prefix[HASH_TO_POINT_SAMPLES] = count as u16;
     if count < N {
         return Err(FalconError::HashToPointUnderflow { accepted: count });
     }
@@ -69,7 +63,6 @@ pub(super) fn from_shake_bytes(
         quotients,
         remainders,
         accepted,
-        prefix,
         point,
     })
 }
@@ -120,7 +113,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_division_and_prefix_constraints_hold() {
+    fn exact_division_and_selection_constraints_hold() {
         let trace = hash_to_point_ct(&[7u8; 40], &[3u8; 32]).unwrap();
         for i in 0..HASH_TO_POINT_SAMPLES {
             assert_eq!(
@@ -129,12 +122,8 @@ mod tests {
             );
             assert!(trace.remainders[i] < Q as u16);
             assert_eq!(trace.accepted[i], trace.quotients[i] < 5);
-            assert_eq!(
-                trace.prefix[i + 1],
-                trace.prefix[i] + u16::from(trace.accepted[i])
-            );
         }
-        assert!(trace.prefix[HASH_TO_POINT_SAMPLES] >= N as u16);
+        assert!(trace.accepted.iter().filter(|&&accepted| accepted).count() >= N);
         let expected: Vec<_> = trace
             .remainders
             .iter()

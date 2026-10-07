@@ -30,7 +30,7 @@ witness so large buffers can be folded without cloning. The four presets are
 The `falcon` feature retains direct signature verification and reference helpers.
 
 There is one proving protocol and no NativeCarry or old-proof verifier. The
-protocol identifier is `bitz/falcon/shared-prime/non-zk/v2`. Proofs must be
+protocol identifier is `bitz/falcon/shared-prime/non-zk/v4`. Proofs must be
 regenerated. Falcon currently exposes in-memory proofs without a full transport
 codec. `payload_size_bytes()` counts stored messages, excluding the public
 statement and transport framing; `payload_size_breakdown()` reports disjoint
@@ -44,7 +44,10 @@ components. Column sums have their own canonical encoding.
    encoded rows of the joint source. Logical source projections do not create
    separate source trees. Bind the statement, root, layout, activity policy,
    circuit identifiers, and security parameters before challenges.
-2. In `E = F_12289[T]/(T^k + T + c_k)`, prove the ring identity using its quotient
+2. Send canonical packed public selection masks with exactly N ones each.
+   Bind them before the ring challenges. They specify linear routing; the
+   arithmetic proof checks them against the SHAKE-authenticated rejection bits.
+   In `E = F_12289[T]/(T^k + T + c_k)`, prove the ring identity using its quotient
    polynomial, a signature sumcheck, and an operand batch over `C,H,S2,S1`.
    Transpose affine decoders into bit coefficients, combining aliases before
    canonical integer lifting. Keep signature and local-position coefficients
@@ -54,8 +57,11 @@ components. Column sums have their own canonical encoding.
    polynomial against the projected committed bits. The inclusive prime
    intervals are `[2^114, 2^115−2^102−1]` at 100 bits and `[2^125, 2^126−1]`
    at 128 bits. Coefficient and source-residual bounds prevent wraparound.
-4. Run norm, rejection, and joint compaction sumchecks on the smaller arithmetic
-   source. Store only compact sumcheck messages and endpoint values; derive
+4. Run the norm proof and one quadratic R1CS sumcheck for rejection bits.
+   Public-mask validity and selected coefficient routing are linear constraints
+   on existing committed bits. There are no intermediate HashToPoint polynomial
+   witnesses, and no HashToPoint grand-product/GKR proof.
+   Store only compact sumcheck messages and endpoint values; derive
    challenge points during verification. The binder combines exact public
    equalities and authenticated endpoints with the factored ring projection,
    then reduces them to one arithmetic-source evaluation.
@@ -74,7 +80,7 @@ See [ONE_SOURCE.md](ONE_SOURCE.md) for the projection geometry,
 
 ## Layout and performance
 
-Falcon-1024 uses 114,914 live arithmetic bits and 5,482 linear rows per signature,
+Falcon-1024 uses 100,482 live arithmetic bits and 6,504 linear rows per signature,
 padded to strides of 131,072 bits and 8,192 rows. The first `4*N*16` positions
 form aligned coefficient blocks ordered `S1,S2,C,H`. The coefficient encodings
 remain bounded14 minus 6144, signed12, unsigned14, and unsigned14 respectively.
@@ -83,25 +89,32 @@ header/nonce bytes and the remaining HashToPoint columns follow these blocks;
 the exact CT payload is reconstructed from the aligned `S2` bits without a
 second copy. SHAKE nonce and sample links use the same address map.
 
-For Falcon-1024 there are 10,213 internal padding bits and 5,945 trailing padding
-bits. The occupied extent is 125,127, distinct from the 114,914 live-bit count.
+For Falcon-1024 there are 10,213 internal padding bits and 20,377 trailing padding
+bits. The occupied extent is 110,695, distinct from the 100,482 live-bit count.
 Every internal hole, trailing bit, and inactive signature is constrained to zero.
 Use the layout's coefficient, signature-byte, and slack address methods rather
-than assuming a contiguous live prefix. The full arithmetic domain and Keccak
-domains retain their previous sizes; coefficient alignment does not halve this
-prover's commitment. At batch 1,024 the
-column table occupies 262,144 bytes at 100 bits and 327,680 bytes at 128 bits.
-It remains a substantial proof-size cost.
+than assuming a contiguous live prefix. Keccak domains retain their previous
+sizes. Falcon-512 uses 52,637 live bits in a 65,536-bit stride and 3,524 linear
+rows in a 4,096-row stride. Quadratic rejection domains have 1,024 / 2,048
+rows. Compared with the previous grand-product protocol, removing prefix
+counters saves 7,180 / 14,432 live bits without changing the padded domains.
+Masks add 90 / 164 bytes per signature to the proof payload, outside the source.
+At batch 1,024 the Falcon-1024 column table occupies 262,144 bytes at 100 bits
+and 327,680 bytes at 128 bits. It remains a substantial proof-size cost.
 
 The implementation preserves packed source buffers, factored ring coefficients,
 compiled binder templates, compact zero-lane and final-message encodings, and
 SIMD Keccak/grinding kernels. Simplification does not change security targets,
 code rates, query counts, or grinding requirements.
 
-Runtime qualification compares fresh builds against `5f9b23edd`, with both
-Falcon degrees, both security targets, and batches 1, 3, 32, and 1,024. Every case
-uses 60 fixed seeds, one warmup and three measured repetitions, 16 threads,
-balanced execution order, and paired bootstrap bounds. Both total proving and
-verification must have a one-sided 95% upper time ratio at most 1.02. The payload
-gate compares equivalent public query shapes; changed transcript challenges
-can change authentication-path lengths. Partial measurements are not a pass.
+HashToPoint qualification uses the full Falcon archive at
+`results/falcon-power-basis-20261007/results-candidate`, for both degrees,
+both targets, batch 1,024, seed 42, and 1/2/4/8/16 threads. Preserve its build,
+affinity, one-warmup/five-sample schedule, and input digests. Total prover time
+and verification time must not increase. Process peak RSS and payload are
+reported separately, following the user's timing-first qualification. The comparison
+script `scripts/compare_falcon_h2p.py` also requires independent-bootstrap
+one-sided 95% upper timing ratios at most 1.00. This estimates timing variation
+on the archived fixed input, not multi-seed grinding variation. Partial
+measurements never qualify. Algebraic Falcon
+is outside this performance campaign.

@@ -178,7 +178,7 @@ macro_rules! backend_runner {
         "{}",
         json!({
             "schema": "bitz/falcon-hybrid/profile-v2",
-            "source_layout": "aligned16-v2",
+            "source_layout": "aligned16-h2p-selection-v4",
             "degree": options.degree,
             "ring_extension": options.extension,
             "ring_extension_selection": options.extension_selection,
@@ -282,7 +282,7 @@ macro_rules! backend_runner {
             "{}",
             json!({
                 "schema": "bitz/falcon-hybrid/profile-v2",
-                "source_layout": "aligned16-v2",
+                "source_layout": "aligned16-h2p-selection-v4",
             "degree": options.degree,
             "ring_extension": options.extension,
             "ring_extension_selection": options.extension_selection,
@@ -332,7 +332,7 @@ macro_rules! backend_runner {
         "{}",
         json!({
             "schema": "bitz/falcon-hybrid/profile-v2",
-            "source_layout": "aligned16-v2",
+            "source_layout": "aligned16-h2p-selection-v4",
             "degree": options.degree,
             "ring_extension": options.extension,
             "ring_extension_selection": options.extension_selection,

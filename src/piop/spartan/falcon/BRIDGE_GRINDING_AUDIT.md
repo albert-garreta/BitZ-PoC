@@ -4,10 +4,13 @@ At 128 bits, SharedPrime uses one partially reduced product tree over both
 bounded integer limbs of its arithmetic row weights. The single joint source
 commitment authenticates arithmetic and Keccak projections. Ring, norm,
 HashToPoint, wiring, padding, and recursive PCS checks remain enforced.
-At 100 bits, the smaller prime supports one unsplit limb; the separate unsplit
-bounds and tests in `hybrid_bridge.rs` apply.
+At 100 bits, the smaller prime supports one unsplit limb; the shared unsplit
+bounds and tests in `src/hybrid/integer_bridge.rs` apply. Public selection
+masks reduce HashToPoint
+to linear selection/output checks and quadratic rejection rows; this
+integer-to-binary BitZ forest remains part of the protocol.
 
-The enclosing protocol is `bitz/falcon/shared-prime/non-zk/v1`. The statement
+The enclosing protocol is `bitz/falcon/shared-prime/non-zk/v4`. The statement
 digest binds the derived bridge numerator and grinding difficulty.
 
 ## Scope and model
@@ -23,18 +26,23 @@ Supported live batch sizes are 1 through 1024, padded to their next power of
 two. The arithmetic source is a binary matrix with `d=row_vars=13` and
 `c=col_vars=log2(signature_stride)-13+log2(capacity)`. The numerical
 examples below use Falcon-1024, whose signature stride is `2^17`; Falcon-512
-uses `2^16`, reducing `c` by one. Its layout has only row and column dimensions;
-each cell is one bit. There are exactly two bounded limbs. The forest
+uses `2^16`, reducing `c` by one. Public selection removes the committed
+polynomial-tree coefficients and restores these compact strides. The row
+count remains 8192, so the per-column integer bounds are unchanged.
+The layout has only row and column dimensions; each cell is one bit. At
+target 128 there are exactly two bounded limbs. The forest
 uses an interleaved row grid of geometric width `t=d+1=14`, but reduces only
 `d=13` product-tree levels. Its root-table width is therefore
-`s=c+1=5+log2(capacity)`, ranging from 5 to 15. The unreduced coordinate is the
+`s=c+1=5+log2(capacity)`, ranging from 5 to 15 for Falcon-1024
+and from 4 to 14 for Falcon-512. The unreduced coordinate is the
 limb index; it is not multiplied away.
 
 ## Integer binding has no probabilistic loss
 
-Prime row weights are lifted canonically and split by the bridge's local
-`weight_limbs` helper. Its `limb_width` is `126-row_vars=113`; each limb is
-folded with `bitz::fold::fold_columns` over the validated binary shape. The
+Prime row weights are lifted canonically and split by the shared
+`integer_bridge::weight_limbs` helper. Its `limb_width` is
+`126-row_vars=113`; each limb is folded with `bitz::fold::fold_columns` over
+the validated binary shape. The
 production prime has 126 bits, so the second limb has at most 13 bits (the
 bridge test also covers a 127-bit modulus). For every limb, an honest binary
 column's integer sum is at most
@@ -180,6 +188,8 @@ handing buffers to the optimized forest.
 
 ## Derived difficulties and composition
 
+The following table is for Falcon-1024 with the two-limb bridge at target 128.
+
 | Capacity | s | Sumcheck rounds R | Challenge blocks | Numerator | Bits at target 128 |
 | ---: | ---: | ---: | ---: | ---: | ---: |
 | 1 | 5 | 143 | 157 | 447 | 17 |
@@ -201,10 +211,23 @@ allocator uses
 g = max(0, target + 8 + ceil(log2(numerator)) - 128).
 ```
 
-The bridge therefore remains at most `2^-(target+8)`. Target 100 needs zero
-grinding throughout the supported range. Target 128 needs 17 bits for capacities
-one and two, and 18 bits for larger capacities. These counts and difficulties
-are derived directly from the current forest geometry.
+The bridge therefore remains at most `2^-(target+8)`. At target 128,
+Falcon-1024 uses 17 grinding bits at capacities one and two, and 18 bits at
+capacities four through 1024. Falcon-512 has one fewer column coordinate:
+subtract 13 from `R`, 13 from the challenge-block count, and 40 from the
+numerator in each table row. It uses 17 bits at capacities one, two, and four
+(numerators 407, 447, and 487), then 18 bits from capacity eight onward.
+
+At target 100, the unsplit bridge has `s=c` and no limb coordinate. Its
+numerators are `367+40*log2(capacity)` for Falcon-512 and
+`407+40*log2(capacity)` for Falcon-1024. The same allocation gives zero
+grinding throughout the supported range. Its forest eliminates all 13 row
+coordinates, and its terminal point has `c+13` coordinates. The canonical
+weight bound is checked against the strict binary-shape gate for the actual
+prime; the entire selected family is validated during preparation. The
+interval's upper endpoint `2^115-2^102-1` remains valid because the matrix
+row count is unchanged. Column counts affect forest geometry and proof
+size, not injectivity of a column's integer sum.
 
 The complete SharedPrime composition additionally accounts for the ring
 sumcheck over `F_12289^k`, its degree-`2k-2` integer-polynomial projection,
@@ -235,10 +258,11 @@ independent cryptographic audit of the global Fiat-Shamir model.
 
 ## Code paths
 
-- [`hybrid_bridge.rs`](hybrid_bridge.rs): local `limb_width` and `weight_limbs`
-  helpers, magnitude/read-off checks, root
-  derivation, interleaved source/images, forest adapter, endpoint contraction,
-  shape validation, and grinder completion.
+- [`hybrid_bridge.rs`](hybrid_bridge.rs): Falcon layout/source adapter.
+- [`src/hybrid/integer_bridge.rs`](../../../hybrid/integer_bridge.rs):
+  `limb_width`, `weight_limbs`, magnitude/read-off checks, root derivation,
+  interleaved source/images, forest adapter, endpoint contraction, shape
+  validation, and grinder completion for both bridge modes.
 - [`src/bitz/fold.rs`](../../../bitz/fold.rs): bounded integer folds for each
   limb through `fold_columns` and the current PCS's binary `Shape`.
 - [`src/bitz/forest.rs`](../../../bitz/forest.rs),
@@ -257,8 +281,11 @@ independent cryptographic audit of the global Fiat-Shamir model.
 - [`hybrid.rs`](hybrid.rs): SharedPrime statement binding, category accounting, joint
   binary sumcheck, and shared PCS authentication.
 
-The prefix helpers in `opening.rs` run under the enclosing Falcon statement
-binding and feed this bridge directly.
+The arithmetic coefficient helpers in `opening.rs` and `opening_rejection.rs`
+run under the enclosing Falcon statement binding and feed this bridge. They
+authenticate rejection rows and the public-mask linear selection/output
+relations through the original source commitment. No prefix-count witness,
+polynomial-tree witness, or separate H2P forest remains.
 
 The root challenge retains the transcript label
 `bitz/falcon-hybrid/wfbitz-joint-limbs/v1`; this protocol label does not refer

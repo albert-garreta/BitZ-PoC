@@ -1,4 +1,4 @@
-use super::{COEFFICIENT_LOG, PREFIX_BITS, SIGNATURE_BITS};
+use super::{COEFFICIENT_LOG, SIGNATURE_BITS};
 // Four committed Falcon operands reduced to one tensor query over the shared
 // arithmetic prime. The returned query still requires the source-bit binder.
 //
@@ -306,7 +306,8 @@ fn bind_parameters(
         EXTENSION_DEGREE,
         crate::piop::spartan::falcon_parameters::extension_constant(EXTENSION_DEGREE) as usize,
         SIGNATURE_BITS,
-        PREFIX_BITS,
+        // Preserve the established framing word after removing prefix counters.
+        COEFFICIENT_LOG + 1,
         layout.batch(),
         layout.capacity(),
         layout.signature_stride(),

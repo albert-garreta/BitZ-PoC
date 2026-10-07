@@ -8,6 +8,7 @@
 mod constraints;
 mod format;
 mod hash_to_point;
+mod hash_to_point_selection;
 #[cfg(feature = "falcon-hybrid")]
 mod hybrid;
 #[cfg(feature = "falcon-hybrid")]
@@ -59,10 +60,8 @@ pub const CT_SIGNATURE_BYTES: usize = PARAMETERS.signature_bytes();
 pub const NONCE_BYTES: usize = 40;
 pub const HASH_TO_POINT_SAMPLES: usize = PARAMETERS.samples();
 pub const SIGNATURE_BITS: usize = PARAMETERS.signature_bits;
-pub const PREFIX_BITS: usize = PARAMETERS.prefix_bits();
 pub const NORM_BITS: usize = PARAMETERS.norm_bits();
 pub const COEFFICIENT_LOG: usize = N.ilog2() as usize;
-pub const COMPACTION_LOG: usize = PARAMETERS.compaction_log();
 pub const KECCAK_SLABS: usize = PARAMETERS.slab_count();
 pub const SOURCE_COUNT: usize = 1 + KECCAK_SLABS;
 

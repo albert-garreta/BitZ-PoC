@@ -34,10 +34,7 @@ impl FalconHybridProof {
         let mut counts = std::collections::BTreeMap::from([
             ("ring_projection", (0, 0)),
             ("prime_norm", (0, 0)),
-            ("prime_products", (0, 0)),
-            ("prime_fingerprint", (0, 0)),
-            ("prime_forest", (0, 0)),
-            ("prime_leaf", (0, 0)),
+            ("prime_h2p_rows", (0, 0)),
             ("prime_binder", (0, 0)),
             ("binary_bridge", (0, 0)),
             ("binary_keccak", (0, 0)),
@@ -50,6 +47,7 @@ impl FalconHybridProof {
         ]);
         let mut visit = |category, nonce| add_nonce(&mut counts, category, nonce);
         let FalconBindingPrefixProof {
+            selection_masks: _,
             piop,
             ring,
             linear_point_nonce,
@@ -158,6 +156,12 @@ impl FalconHybridProof {
     pub fn payload_size_breakdown(&self) -> Vec<(&'static str, usize)> {
         let piop = self.arithmetic.piop.payload_size_bytes();
         let ring = self.arithmetic.ring.payload_size_bytes();
+        let selection = self
+            .arithmetic
+            .selection_masks
+            .iter()
+            .map(Vec::len)
+            .sum::<usize>();
         let pcs = &self.opening.ligerito;
         let rows_bytes = |rows: &[Vec<flock_core::field::Gf128>]| {
             FIELD_BYTES * rows.iter().map(Vec::len).sum::<usize>()
@@ -192,9 +196,10 @@ impl FalconHybridProof {
         let parts = vec![
             ("arithmetic_piop", piop),
             ("ring_certificate_and_reduction", ring),
+            ("hash_to_point_selection_masks", selection),
             (
                 "arithmetic_source_binding",
-                arithmetic_bytes(&self.arithmetic) - piop - ring,
+                arithmetic_bytes(&self.arithmetic) - piop - ring - selection,
             ),
             (
                 "integer_column_sums_first_limb",
@@ -271,6 +276,7 @@ fn sumcheck_bytes<F, const COEFFICIENTS: usize>(
 
 fn arithmetic_bytes(proof: &FalconBindingPrefixProof) -> usize {
     let FalconBindingPrefixProof {
+        selection_masks,
         piop,
         ring,
         linear_point_nonce,
@@ -278,7 +284,8 @@ fn arithmetic_bytes(proof: &FalconBindingPrefixProof) -> usize {
         binding_terminal,
         binding_nonces,
     } = proof;
-    piop.payload_size_bytes()
+    selection_masks.iter().map(Vec::len).sum::<usize>()
+        + piop.payload_size_bytes()
         + ring.payload_size_bytes()
         + nonce_bytes(linear_point_nonce)
         + sumcheck_bytes(binding)
@@ -369,42 +376,21 @@ mod tests {
             &field,
         )
         .unwrap();
-        // Distinct synthetic nonces exercise every stored arithmetic field,
-        // including optional forest root/line boundaries. Compression
-        // must preserve this inventory even though it removes other fields.
+        // Distinct synthetic nonces exercise every stored arithmetic boundary.
         let mut audited = stored.clone();
         audited.norm.instance_nonce = Some(0);
         audited.norm.grinding_nonces = vec![1, 2];
-        audited.compact_products.point_nonce = Some(3);
-        audited.compact_products.grinding_nonces = vec![4];
-        audited.fingerprint_nonce = Some(5);
-        audited.compaction_forest.root_nonce = Some(6);
-        audited.compaction_leaf.grinding_nonces = vec![7, 8];
-        for (i, layer) in audited.compaction_forest.layers.iter_mut().enumerate() {
-            layer.grinding_nonces = vec![10 + i as u64];
-            layer.line_nonce = Some(50 + i as u64);
-        }
-        let layers = audited.compaction_forest.layers.len();
+        audited.h2p_rejection.rows.point_nonce = Some(3);
+        audited.h2p_rejection.rows.grinding_nonces = vec![4];
         let mut counts = std::collections::BTreeMap::new();
         audited.visit_grinding_nonces(|category, nonce| add_nonce(&mut counts, category, nonce));
         assert_eq!(counts["prime_norm"], (3, 6));
-        assert_eq!(counts["prime_products"], (2, 9));
-        assert_eq!(counts["prime_fingerprint"], (1, 6));
-        assert_eq!(counts["prime_leaf"], (2, 17));
-        assert_eq!(
-            counts["prime_forest"],
-            (
-                1 + 2 * layers,
-                (7 + 62 * layers + layers * (layers - 1)) as u128
-            )
-        );
-        // One signature: 10 norm rounds, 11 product/leaf rounds, and
-        // 66 forest rounds. All messages use canonical 16-byte field values.
+        assert_eq!(counts["prime_h2p_rows"], (2, 9));
+        // One signature: two 10-round norms and one 11-round rejection relation.
+        // At target 100 none of these arithmetic messages has a stored nonce.
         let norm = (2 + 4 + 2 * 10 * 2) * FIELD_BYTES;
-        let products = (3 + 11 * 3) * FIELD_BYTES;
-        let forest = (66 * 2 + 11 * 2 + 2) * FIELD_BYTES;
-        let leaf = (3 + 11 * 3) * FIELD_BYTES;
-        assert_eq!(stored.payload_size_bytes(), norm + products + forest + leaf);
+        let rejection = (3 + 11 * 3) * FIELD_BYTES;
+        assert_eq!(stored.payload_size_bytes(), norm + rejection);
     }
 }
 

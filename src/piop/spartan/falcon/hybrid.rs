@@ -1,5 +1,5 @@
+use super::SIGNATURE_BITS;
 use super::ring_field::EXTENSION_DEGREE;
-use super::{COEFFICIENT_LOG, COMPACTION_LOG, PREFIX_BITS, SIGNATURE_BITS};
 use super::{KECCAK_SLABS, N, PARAMETERS, SOURCE_COUNT};
 // Non-ZK Falcon composition with compact binary Keccak and one shared PCS opening.
 use super::{
@@ -210,10 +210,10 @@ impl PreparedFalconHybrid {
     }
 
     pub fn security(&self) -> FalconHybridSecurity {
-        let b = self.batch();
         let d = self.capacity().ilog2() as usize;
         let schedule = super::FalconSecuritySchedule::for_layout(self.target_bits, &self.layout)
             .expect("prepared target");
+        let numerators = super::piop::FalconSecurityNumerators::for_layout(&self.layout);
         let prime_bits = self.prime_modulus_bounds().0.ilog2() as i32;
         let prime = |n: usize, g: u32| n as f64 * 2f64.powi(-prime_bits - g as i32);
         let binary = |n: usize| n as f64 * 2f64.powi(-128 - self.binary_grinding(n) as i32);
@@ -221,38 +221,19 @@ impl PreparedFalconHybrid {
             ("prime sampling", 2f64.powi(-144)),
             (
                 "per-signature norm identity",
-                prime(d, schedule.norm_instance_bits),
+                prime(numerators.norm_instances, schedule.norm_instance_bits),
             ),
             (
                 "norm sumchecks",
-                prime(4 * (COEFFICIENT_LOG + d), schedule.quadratic_round_bits),
+                prime(numerators.norm_rounds, schedule.quadratic_round_bits),
             ),
             (
                 "HashToPoint initial row point",
-                prime(COMPACTION_LOG + d, schedule.outer_point_bits),
+                prime(numerators.outer_point, schedule.outer_point_bits),
             ),
             (
-                "HashToPoint product sumcheck",
-                prime(3 * (COMPACTION_LOG + d), schedule.cubic_round_bits),
-            ),
-            (
-                "ordered compaction fingerprints",
-                prime(1 << COMPACTION_LOG, schedule.fingerprint_bits),
-            ),
-            (
-                "ordered compaction forest sumchecks",
-                prime(
-                    2 * (COMPACTION_LOG * (d + 1) + COMPACTION_LOG * (COMPACTION_LOG - 1) / 2),
-                    schedule.forest_round_bits,
-                ),
-            ),
-            (
-                "ordered compaction forest claim reductions",
-                prime(d + COMPACTION_LOG, schedule.forest_claim_bits),
-            ),
-            (
-                "compaction leaf sumcheck",
-                prime(3 * (COMPACTION_LOG + d), schedule.cubic_round_bits),
+                "HashToPoint rejection sumcheck",
+                prime(numerators.cubic_rounds, schedule.cubic_round_bits),
             ),
             (
                 "shared ring outer and endpoint batch",
@@ -269,17 +250,11 @@ impl PreparedFalconHybrid {
             ),
             (
                 "linear constraints and terminal batching",
-                prime(
-                    self.layout.linear_stride().ilog2() as usize + d + b + 12,
-                    schedule.linear_point_bits,
-                ),
+                prime(numerators.linear, schedule.linear_point_bits),
             ),
             (
                 "prime source sumcheck",
-                prime(
-                    2 * (self.layout.signature_stride().ilog2() as usize + d),
-                    schedule.binding_round_bits,
-                ),
+                prime(numerators.binding, schedule.binding_round_bits),
             ),
             (
                 "batched integer-to-binary forest",
@@ -462,7 +437,6 @@ impl PreparedFalconHybrid {
             super::BETA_SQUARED as usize,
             super::HASH_TO_POINT_SAMPLES,
             SIGNATURE_BITS,
-            PREFIX_BITS,
             crate::piop::spartan::falcon_parameters::extension_constant(EXTENSION_DEGREE) as usize,
         ] {
             h.update(&(n as u64).to_le_bytes());
@@ -489,7 +463,8 @@ impl PreparedFalconHybrid {
         h.update(&(bridge_layout.col_vars as u64).to_le_bytes());
         h.update(&super::shared_ring::projection_grinding_bits(self.target_bits).to_le_bytes());
 
-        h.update(b"compaction:fixed-bad-signature;forest:joint-index,signed-root,weighted-quadratic,scalar-line;leaf:inherited-instance/v4");
+        h.update(b"hash-to-point:transcript-bound-public-selection;canonical-mask;first-N-accepted;linear-C-remainder-routing;quadratic-rejection/v1");
+        h.update(&(super::HASH_TO_POINT_SAMPLES as u64).to_le_bytes());
         let schedule = super::FalconSecuritySchedule::for_layout(self.target_bits, &self.layout)
             .expect("prepared security");
         for bits in [
@@ -497,9 +472,6 @@ impl PreparedFalconHybrid {
             schedule.outer_point_bits,
             schedule.quadratic_round_bits,
             schedule.cubic_round_bits,
-            schedule.forest_round_bits,
-            schedule.forest_claim_bits,
-            schedule.fingerprint_bits,
             schedule.linear_point_bits,
             schedule.binding_round_bits,
         ] {
@@ -541,7 +513,7 @@ impl PreparedFalconHybrid {
         }
         let digest = *h.finalize().as_bytes();
         let mut t = Blake3Transcript::new();
-        t.absorb_slice(b"bitz/falcon/shared-prime/statement/v2");
+        t.absorb_slice(b"bitz/falcon/shared-prime/statement/v4");
         t.absorb_slice(&digest);
         self.ligerito.bind(&mut t);
         Ok((t, digest))
@@ -935,7 +907,7 @@ impl PreparedFalconHybrid {
 pub(super) use crate::hybrid::joint_sumcheck::live_subcubes;
 falcon_tests! {
 mod tests {
-    use super::super::decode_signature_ct;
+    use super::super::{decode_signature_ct, HASH_TO_POINT_SAMPLES};
     use super::*;
     const PK: &[u8] = include_bytes!("fixtures/public_key.bin");
     const MSG: &[u8] = include_bytes!("fixtures/message.bin");
@@ -1018,15 +990,17 @@ mod tests {
                 [prepared.geometry.offset(branch)] += Gf::ONE;
             reject("changed source lane", &altered);
         }
+        if occupied < 16 {
+            let mut altered = proof.clone();
+            altered.opening.ligerito.initial_proof.opened_rows[0].resize(16, Gf::ZERO);
+            reject("noncompact sixteen-lane row", &altered);
+        }
         let mutations: &[(&str, fn(&mut FalconHybridProof))] = &[
             ("short initial row", |p| {
                 p.opening.ligerito.initial_proof.opened_rows[0].pop();
             }),
             ("extra initial field", |p| {
                 p.opening.ligerito.initial_proof.opened_rows[0].push(Gf::ZERO);
-            }),
-            ("noncompact sixteen-lane row", |p| {
-                p.opening.ligerito.initial_proof.opened_rows[0].resize(16, Gf::ZERO);
             }),
             ("missing initial query", |p| {
                 p.opening.ligerito.initial_proof.opened_rows.pop();
@@ -1202,7 +1176,7 @@ mod tests {
                     (numerator as f64) * 2f64.powi(-128 - bits as i32)
                 );
                 assert!(bridge_error <= 2f64.powi(-(target as i32) - 8));
-                assert_eq!(FalconSourceLayout::counts().total(), 114_914);
+                assert_eq!(FalconSourceLayout::counts().total(), 100_482);
             }
         }
         assert!(PreparedFalconHybrid::prepare(1025, 128, 1024).is_err());
@@ -1212,32 +1186,30 @@ mod tests {
     fn composition_meets_both_targets_with_exact_rational_bounds() {
         use num_bigint::BigUint;
         const SCALE: usize = 160;
-        let ring_denominator = BigUint::from(super::super::Q as u64).pow(11);
+        let ring_denominator = BigUint::from(super::super::Q as u64).pow(EXTENSION_DEGREE as u32);
         for batch in 1usize..=1024 {
             let layout = FalconSourceLayout::new(batch).unwrap();
             let d = layout.capacity().ilog2() as usize;
             for target in [100, 128] {
                 let schedule = super::super::FalconSecuritySchedule::for_layout(target, &layout).unwrap();
+                let n = super::super::piop::FalconSecurityNumerators::for_layout(&layout);
                 // Sampler, complete PCS, and six binary components use disjoint budgets.
                 let mut dyadic = (BigUint::from(1u8) << (SCALE - 144))
                     + (BigUint::from(1u8) << (SCALE - target - 2))
                     + (BigUint::from(6u8) << (SCALE - target - 8));
                 let prime_bits = if target == 100 { 114 } else { 125 };
                 for (numerator, bits) in [
-                    (d, schedule.norm_instance_bits),
-                    (4 * (10 + d), schedule.quadratic_round_bits),
-                    (11 + d, schedule.outer_point_bits),
-                    (6 * (11 + d), schedule.cubic_round_bits),
-                    (2 * (11 * (d + 1) + 55), schedule.forest_round_bits),
-                    (d + 11, schedule.forest_claim_bits),
-                    (2048, schedule.fingerprint_bits),
-                    (13 + d + batch + 12, schedule.linear_point_bits),
-                    (2 * (17 + d), schedule.binding_round_bits),
-                    (20, super::super::shared_ring::projection_grinding_bits(target)),
+                    (n.norm_instances, schedule.norm_instance_bits),
+                    (n.norm_rounds, schedule.quadratic_round_bits),
+                    (n.outer_point, schedule.outer_point_bits),
+                    (n.cubic_rounds, schedule.cubic_round_bits),
+                    (n.linear, schedule.linear_point_bits),
+                    (n.binding, schedule.binding_round_bits),
+                    (2 * EXTENSION_DEGREE - 2, super::super::shared_ring::projection_grinding_bits(target)),
                 ] {
                     dyadic += BigUint::from(numerator) << (SCALE - prime_bits - bits as usize);
                 }
-                let error = dyadic * &ring_denominator + (BigUint::from(4 * d + 2049) << SCALE);
+                let error = dyadic * &ring_denominator + (BigUint::from(4 * d + 2 * N + 1) << SCALE);
                 let budget = &ring_denominator << (SCALE - target);
                 assert!(error <= budget, "batch {batch}, target {target}");
             }
@@ -1350,7 +1322,7 @@ mod tests {
     fn shared_prime_hybrid_complete_proofs_and_protocol_binding() {
         for (batch, target) in [(1, 100), (3, 100), (9, 100), (1, 128), (3, 128)] {
             let prepared = PreparedFalconHybrid::prepare(batch, target, 1024).unwrap();
-            assert_eq!(prepared.live_arithmetic_bits_per_signature(), 114_914);
+            assert_eq!(prepared.live_arithmetic_bits_per_signature(), 100_482);
             let committed = prepared.commit(public(batch)).unwrap();
             let statement = committed.statement.clone();
             let proof = prepared.prove(committed).unwrap();
@@ -1409,6 +1381,75 @@ mod tests {
             let ring = &mut wrong.arithmetic.ring;
             ring.lift[0] += 1;
             assert!(prepared.verify(&statement, &wrong).is_err());
+        }
+    }
+
+    #[test]
+    fn public_selection_mask_is_canonical_and_transcript_bound() {
+        for target in [100, 128] {
+            let prepared = PreparedFalconHybrid::prepare(3, target, 1024).unwrap();
+            let committed = prepared.commit(public(3)).unwrap();
+            let statement = committed.statement.clone();
+            let proof = prepared.prove(committed).unwrap();
+            prepared.verify(&statement, &proof).unwrap();
+
+            let mut changed = proof.clone();
+            let mask = &mut changed.arithmetic.selection_masks[1];
+            let selected = (0..HASH_TO_POINT_SAMPLES)
+                .find(|&j| mask[j / 8] >> (j % 8) & 1 != 0).unwrap();
+            let unselected = (0..HASH_TO_POINT_SAMPLES)
+                .find(|&j| mask[j / 8] >> (j % 8) & 1 == 0).unwrap();
+            // The mask remains canonical and has exactly N ones. It must
+            // nevertheless change the transcript and invalidate the proof.
+            mask[selected / 8] ^= 1 << (selected % 8);
+            mask[unselected / 8] ^= 1 << (unselected % 8);
+            assert!(prepared.verify(&statement, &changed).is_err());
+
+            let mut changed = proof.clone();
+            changed.arithmetic.selection_masks[0].pop();
+            assert!(prepared.verify(&statement, &changed).is_err());
+            let mut changed = proof.clone();
+            changed.arithmetic.selection_masks.pop();
+            assert!(prepared.verify(&statement, &changed).is_err());
+        }
+    }
+
+    #[test]
+    fn recommitted_hash_to_point_words_remainders_and_rejection_bits_are_rejected() {
+        for target in [100, 128] {
+            let prepared = PreparedFalconHybrid::prepare(3, target, 1024).unwrap();
+            let layout = prepared.layout;
+            let offsets = layout.offsets();
+            let cases = [
+                ("SHAKE word", offsets.hash_words),
+                ("quotient", offsets.hash_quotients),
+                ("remainder", offsets.hash_remainders),
+                ("rejection bit", offsets.hash_accept_ands),
+                ("C unsigned top bit", layout.hash_point_bit(0, 13)),
+            ];
+            for (case, (name, local)) in cases.into_iter().enumerate() {
+                let mut committed = prepared.commit(public(3)).unwrap();
+                let flat = (case % 3) * layout.signature_stride() + local;
+                assert!(!layout.is_padding(local));
+                // Authenticate the changed bit in both prover representations
+                // and the Merkle tree. Native traces deliberately stay fixed:
+                // cached row evaluations must still bind to these source bits.
+                committed.arithmetic.flip_bit(flat);
+                let word = &mut committed.packed[0][flat / 128];
+                if flat % 128 < 64 {
+                    word.lo ^= 1 << (flat % 64);
+                } else {
+                    word.hi ^= 1 << (flat % 64);
+                }
+                recommit(&prepared, &mut committed);
+                let statement = committed.statement.clone();
+                if let Ok(proof) = prepared.prove(committed) {
+                    assert!(
+                        prepared.verify(&statement, &proof).is_err(),
+                        "accepted recommitted {name} at target {target}",
+                    );
+                }
+            }
         }
     }
 

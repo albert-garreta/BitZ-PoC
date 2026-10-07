@@ -832,7 +832,12 @@ mod tests {
                 error_numerator(&layout, BridgeMode::Unsplit),
                 p.col_vars + 3 * rounds + p.row_vars
             );
-            assert!((407..=807).contains(&error_numerator(&layout, BridgeMode::Unsplit)));
+            let batch_vars = layout.capacity().ilog2() as usize;
+            assert_eq!(p.col_vars, 4 + batch_vars);
+            assert_eq!(
+                error_numerator(&layout, BridgeMode::Unsplit),
+                407 + 40 * batch_vars
+            );
             assert_eq!(message_count(&p) - unsplit_message_count(&p), p.row_vars);
             assert!(unsplit_shape(&p, 1u128 << 114).is_ok());
             assert!(unsplit_shape(&p, UNSPLIT_PRIME_MAX).is_ok());
@@ -940,7 +945,12 @@ mod tests {
     fn native_frames_remain_reference_and_unsplit_domains_are_distinct() {
         use crate::piop::spartan::grinding::{GrindingRound, derive_grinding_seed};
 
-        let p = FalconSourceLayout::new(1).unwrap().bitz_params();
+        // This pins historical bridge framing bytes independently of the
+        // current Falcon source stride. Current geometry is checked below.
+        let p = IntegerMatrixLayout {
+            row_vars: 13,
+            col_vars: 4,
+        };
         let sums = [[1u128, 17], [23, 31]];
         let packed = [
             LargeNumber {
@@ -1225,22 +1235,38 @@ mod tests {
             let d = p.row_vars;
             let s = p.col_vars + 1;
             assert_eq!(d, 13);
-            assert_eq!(s, 5 + layout.capacity().ilog2() as usize);
+            let batch_vars = layout.capacity().ilog2() as usize;
+            assert_eq!(layout.signature_stride(), 1 << 17);
+            assert_eq!(s, 5 + batch_vars);
             // Count the accepted verifier rounds independently of the formula.
             let sumcheck_rounds: usize = (0..d).map(|ell| ell + s).sum();
             assert_eq!(
                 error_numerator(&layout, BridgeMode::TwoLimbs),
                 s + 3 * sumcheck_rounds + d
             );
-            assert!((447..=847).contains(&error_numerator(&layout, BridgeMode::TwoLimbs)));
-            // Security geometry follows the selected mode, independently of
-            // whether these source slots also contain the shared public key.
-            let shared = FalconSourceLayout::new(batch).unwrap();
-            for mode in [BridgeMode::Unsplit, BridgeMode::TwoLimbs] {
+            let numerator = error_numerator(&layout, BridgeMode::TwoLimbs);
+            assert_eq!(numerator, 447 + 40 * batch_vars);
+            // Retaining the limb coordinate adds one root degree and three
+            // degrees for each of the 13 additional sumcheck rounds.
+            assert_eq!(
+                numerator - error_numerator(&layout, BridgeMode::Unsplit),
+                3 * d + 1
+            );
+            for (target, mode) in [(100u32, BridgeMode::Unsplit), (128, BridgeMode::TwoLimbs)] {
+                let stage_numerator = error_numerator(&layout, mode);
+                let bits =
+                    (target + 8 + stage_numerator.next_power_of_two().ilog2()).saturating_sub(128);
                 assert_eq!(
-                    error_numerator(&layout, mode),
-                    error_numerator(&shared, mode)
+                    bits,
+                    if target == 100 {
+                        0
+                    } else if stage_numerator <= 512 {
+                        17
+                    } else {
+                        18
+                    }
                 );
+                assert!(stage_numerator <= 1usize << (128 + bits - target - 8));
             }
             assert_eq!(limb_width(&p), 113);
             for prime_bits in [126, 127] {

@@ -1,8 +1,8 @@
+use super::NORM_BITS;
 use super::{
     BETA_SQUARED, FalconError, FalconSourceLayout, FalconVerificationTrace, HASH_TO_POINT_SAMPLES,
     N,
 };
-use super::{NORM_BITS, PREFIX_BITS};
 use crate::piop::spartan::falcon_bit_layout::{COEFFICIENT_STRIDE, coefficient_bit};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -19,7 +19,6 @@ pub struct FalconSourceOffsets {
     pub hash_quotients: usize,
     pub hash_remainders: usize,
     pub hash_accept_ands: usize,
-    pub hash_prefixes: usize,
     pub hash_point: usize,
     pub s1: usize,
     pub s2: usize,
@@ -41,8 +40,7 @@ impl FalconSourceOffsets {
         let hash_quotients = hash_words + counts.hash_words;
         let hash_remainders = hash_quotients + counts.hash_quotients;
         let hash_accept_ands = hash_remainders + counts.hash_remainders;
-        let hash_prefixes = hash_accept_ands + counts.hash_accept_ands;
-        let occupied_end = hash_prefixes + counts.hash_prefixes;
+        let occupied_end = hash_accept_ands + counts.hash_accept_ands;
         Self {
             shared_one,
             message,
@@ -51,7 +49,6 @@ impl FalconSourceOffsets {
             hash_quotients,
             hash_remainders,
             hash_accept_ands,
-            hash_prefixes,
             hash_point,
             s1,
             s2,
@@ -185,16 +182,6 @@ impl FalconSourceWitness {
                         1,
                     );
                 }
-                for (i, &prefix) in trace.hash_to_point.prefix.iter().enumerate() {
-                    put_unsigned(
-                        rows,
-                        &p,
-                        offsets.hash_prefixes + PREFIX_BITS * i,
-                        u64::from(prefix),
-                        PREFIX_BITS,
-                    );
-                }
-
                 for i in 0..N {
                     put_unsigned(
                         rows,
@@ -315,6 +302,7 @@ fn put_unsigned(
 falcon_tests! {
 mod tests {
     use super::*;
+    use super::super::hash_to_point_selection::Selection;
     use crate::piop::spartan::falcon_profiles::n1024_k11::verification_trace;
 
     const PUBLIC_KEY: &[u8; super::super::PUBLIC_KEY_BYTES] =
@@ -327,6 +315,35 @@ mod tests {
         (0..width).fold(0, |value, bit| {
             value | (u64::from(witness.bit(flat + bit)) << bit)
         })
+    }
+
+    fn exact_hash_rows_hold(source: &FalconSourceWitness, selection: &Selection) -> bool {
+        let layout = source.layout();
+        let offsets = layout.offsets();
+        for instance in 0..selection.batch() {
+            let base = instance * layout.signature_stride();
+            let read = |offset, width| read_unsigned(source, base + offset, width);
+            for j in 0..HASH_TO_POINT_SAMPLES {
+                let word = read(offsets.hash_words + 16 * j, 16);
+                let quotient = read(offsets.hash_quotients + 3 * j, 3);
+                let remainder = u64::from(bounded14_decode(read(offsets.hash_remainders + 14 * j, 14) as u16));
+                let rejected = read(offsets.hash_accept_ands + j, 1);
+                if word != super::super::Q as u64 * quotient + remainder
+                    || rejected != (quotient >> 2 & 1) * (quotient & 1)
+                    || (j <= selection.cutoff(instance)
+                        && rejected != u64::from(!selection.selected(instance, j)))
+                {
+                    return false;
+                }
+            }
+            for (k, &j) in selection.indices(instance).iter().enumerate() {
+                let remainder = bounded14_decode(read(offsets.hash_remainders + 14 * usize::from(j), 14) as u16);
+                if read(layout.hash_point_bit(k, 0), 14) != u64::from(remainder) {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     #[test]
@@ -393,12 +410,6 @@ mod tests {
                         u64::from(!trace.hash_to_point.accepted[i])
                     );
                 }
-                for i in 0..=HASH_TO_POINT_SAMPLES {
-                    assert_eq!(
-                        read(offsets.hash_prefixes + 11 * i, 11),
-                        u64::from(trace.hash_to_point.prefix[i])
-                    );
-                }
                 for i in 0..N {
                     assert_eq!(
                         read(layout.hash_point_bit(i, 0), 14),
@@ -424,6 +435,51 @@ mod tests {
                 (batch * layout.signature_stride()..layout.source_bits()).all(|i| !witness.bit(i))
             );
         }
+    }
+
+    #[test]
+    fn public_selection_binds_acceptance_order_and_selected_coefficients() {
+        let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+        let layout = FalconSourceLayout::new(1).unwrap();
+        let selection = Selection::from_traces(&[trace.clone()]).unwrap();
+        let source = FalconSourceWitness::from_traces(
+            layout, &[MESSAGE.as_slice()], &[SIGNATURE.as_slice()], &[trace.clone()],
+        ).unwrap();
+        assert!(exact_hash_rows_hold(&source, &selection));
+        let first = usize::from(selection.indices(0)[0]);
+        let corruptions = [
+            layout.hash_point_bit(0, 0),
+            layout.offsets().hash_remainders + 14 * first,
+            layout.offsets().hash_quotients,
+            layout.offsets().hash_words,
+            layout.offsets().hash_accept_ands,
+        ];
+        for bit in corruptions {
+            let mut corrupted = source.clone();
+            corrupted.flip_bit(bit);
+            assert!(!exact_hash_rows_hold(&corrupted, &selection), "undetected source bit {bit}");
+        }
+
+        // A different mask with the right cardinality is a valid encoding,
+        // but cannot skip an earlier accepted value or select a rejected one.
+        let rejected = (0..=selection.cutoff(0)).find(|&j| !selection.selected(0, j)).unwrap();
+        let mut wrong = selection.masks().to_vec();
+        wrong[0][first / 8] ^= 1 << (first % 8);
+        wrong[0][rejected / 8] ^= 1 << (rejected % 8);
+        let wrong = Selection::from_masks(wrong, 1).unwrap();
+        assert!(!exact_hash_rows_hold(&source, &wrong));
+
+    }
+
+    #[test]
+    fn native_selection_rejects_underflow_and_inconsistent_point() {
+        let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+        let mut wrong_point = trace.clone();
+        wrong_point.hash_to_point.point[0] ^= 1;
+        assert!(Selection::from_traces(&[wrong_point]).is_err());
+        let mut underflow = trace;
+        underflow.hash_to_point.accepted.fill(false);
+        assert!(matches!(Selection::from_traces(&[underflow]), Err(FalconError::HashToPointUnderflow { accepted: 0 })));
     }
 
     #[test]

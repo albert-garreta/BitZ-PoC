@@ -4,7 +4,7 @@ SharedPrime authenticates the arithmetic and Keccak slab witnesses
 through one initial Merkle tree. The logical source dimensions, arithmetic
 bridge, ring switch, and recursive Ligerito commitments remain separate
 concepts. There is no compatibility path for the preceding Falcon proofs.
-The protocol identifier is `bitz/falcon/shared-prime/non-zk/v1`. `FalconHybridStatement::source_root` is the one
+The protocol identifier is `bitz/falcon/shared-prime/non-zk/v4`. `FalconHybridStatement::source_root` is the one
 source root. Ligerito's `initial_root` field is still the statement identifier,
 not that Merkle root; its authentication callback checks `source_root`.
 
@@ -113,6 +113,14 @@ canonical integer lifting. A decoder transpose does not cross fields: the
 integer polynomial reduction and BitZ bridge remain necessary. The bridge
 consumes the same prime-field terminal value that the source binder checks.
 
+HashToPoint's canonical public selection masks are bound before the ring
+challenges. For mask a and remainder decoder B, C=M_a B A, where M_a selects
+the first N accepted candidates in order. The binder proves both the public
+mask's consistency with committed rejection bits and this linear equality.
+Partial polynomials reuse the same bits through these fixed maps; no
+intermediate U/V coefficients are committed. The masks add proof data, not
+another witness commitment. This protocol remains non-ZK.
+
 Keccak contributes its two local AB/C linear claims for each slab. The public
 nonce/input, chaining (including K16 to K4), and HashToPoint extraction checks
 remain in the joint binary sumcheck. The parent transcript binds all values
@@ -177,9 +185,11 @@ separate from BLAKE3 collision security; the protocol does not provide ZK.
 
 ## Qualification
 
-The current simplification qualification is described in [README.md](README.md).
-It uses both degrees, both security targets, all four benchmark batches, and
-the fixed sixty-seed 2% runtime gate. Structural payloads must not increase for
-equivalent public query shapes. Initial source roots must match, while transcript
-and authentication-path digests may change. Historical commitment and encoding
-campaigns remain evidence for their own revisions; they do not qualify a new build.
+Full Falcon HashToPoint qualification against the archived baseline, including
+its timing, witness-size, and process-memory accounting, is described in
+[README.md](README.md).
+It uses both degrees, both security targets, batch 1,024, and threads 1/2/4/8/16.
+The fixed archived seed and five measured trials qualify only this input and
+sampling schedule. Source roots change with the new layout; protocol version
+and mask binding also change transcript challenges. Historical campaigns
+remain evidence for their own revisions; they do not qualify a new build.

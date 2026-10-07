@@ -1,161 +1,106 @@
-# Joint HashToPoint compaction forest
+# HashToPoint public selection and linear routing
 
-This note describes the joint forest used by native v5 and shared-prime V4.
-It assumes the source-commitment binding, Fiat–Shamir, and work-normalized
-model of [the security ledger](OPTIMIZATION_SECURITY.md). Grinding does not
-turn the argument into unconditional statistical security.
+Full Falcon shares one committed binary witness across SHAKE, rejection,
+ordered compaction, the native ring equation, and the norm. HashToPoint has
+no grand-product or layered GKR proof. BitZ's internal integer-to-binary
+product GKR and the shared PCS opening remain necessary. The proof is non-ZK.
 
-## Fix the source before the fingerprint
+## Integer witnesses and rejection
 
-Condition on the source commitments authenticating one fixed bit source and
-on the separately accounted division, rejection, prefix, and source-binding
-checks being sound. The joint source root and the public statement precede
-the shared fingerprint challenges `gamma,rho`.
+For q=12289 and D=717/1311 draws, SHAKE links authenticate the big-endian
+words t[j]=256*y[2*j]+y[2*j+1]. Constrain
 
-The 16-bit sample, 3-bit quotient, bounded remainder, and integer division
-relation imply `0 <= q <= 5`; `d=q_2*q_0` is exactly rejection. The prefix
-recurrence with `P_0=0` is the accepted count. Its 11-bit encoding, the sample
-count 1311, and `P_M[10]=1` imply at least 1024 accepted samples. Therefore
-`(1-d_i)*(1-P_i[10])` selects exactly the first 1024 accepted samples, whose
-prefix ranks are exactly `0..1023`. These integers embed injectively in either
-arithmetic prime family.
+    t[j] = q*u[j] + v[j].
+    u[j] = u0 + 2*u1 + 4*u2.
+    v[j] = sum(k=0..12, 2^k*vbit[k]) + 4097*vbit[13].
+    e[j] = u2*u0.
 
-For signature `s`, define
+Every remainder encoding lies in [0,q-1]. The 16-bit word and exact division
+equation force u into 0..5, so e is exactly rejection. All bits are from the
+original source and require BitZ authentication; native witness checks alone
+do not establish these claims. No committed prefix counters are needed.
 
-```text
-I_s(gamma,rho) = product(selected i, gamma + rho*P_i + r_i)
-O_s(gamma,rho) = product(j=0..1023, gamma + rho*j + c_j)
-F_s = I_s - O_s.
-```
+## Public mask
 
-The monic linear factors in `gamma` have distinct rank tags. Unique
-factorization in `F_p[gamma,rho]` implies that `F_s` is nonzero whenever its
-ordered output differs from the selected input. Padding factors are one.
-The conservative total-degree bound remains 2048 (1024 suffices).
+Each proof supplies ceil(D/8) bytes containing a public Boolean mask a, with
+little-endian bits inside each byte. The verifier checks the exact byte count,
+zero unused high bits, exactly N set bits, and exactly one mask per live
+signature. The increasing selected positions j[0],...,j[N-1] and cutoff
+J=j[N-1] are deterministic. Define the public constant d[j]=[j<=J].
 
-If any signature is wrong, fix one such signature from the committed source
-before sampling `gamma,rho`. Its nonzero fingerprint vanishes with probability
-at most `2048/p`. No batch-size union factor is needed. Condition below on
-the resulting vector of fingerprint differences remaining nonzero.
+Before the native ring challenge or shared-prime sampling, absorb the
+canonical masks and their domain separator. On committed rejection bits,
+enforce the linear rows
 
-## Start with a signed root equality
+    d[j]*e[j] = d[j]-a[j].
 
-Let `d=log2(next_power_of_two(B))`. Pad signatures to this capacity with
-candidate and output trees whose leaves are all one, so every padded root
-difference is zero. Sample a fresh signature point `tau` after the source and
-fingerprint are fixed. The claimed starting identity is
+Thus for every j<=J, a[j]=1-e[j]; after J, a[j]=0 by the mask's definition.
+Together with its checked cardinality N, the mask selects exactly the first
+N accepted draws. A malicious prover cannot skip an earlier accepted draw,
+include a rejected draw, or reorder the selected indices. Masks are public
+proof messages, not trusted advice or independent commitments.
 
-```text
-0 = sum_s eq(tau,s) * (I_s - O_s).
-```
+## Reuse the existing bits
 
-A nonzero root-difference vector has a nonzero multilinear extension of
-degree at most `d`. Thus this batching step loses an incorrect signature
-with probability at most `d/p`, rather than checking an unweighted global
-product. At batch one, no signature challenge or root-batching nonce exists.
+Let b be the committed remainder bits and B their bounded-14 decoder. Define
 
-Represent candidate/output by one additional Boolean tree coordinate `b`.
-The first multiplication layer uses weights `+1,-1` on this coordinate.
-There is no transmitted root vector and no prover-selected common root value.
-The root sumcheck reduces the signed equality directly to child claims.
+    M_a[k,j] = [j=j[k]].
+    C = M_a B b.
 
-## Weighted quadratic rounds
+The N linear routing rows bind the existing unsigned-14 C coefficients to
+the selected bounded remainders. The different top-bit weights (8192 for C,
+4097 for v) are preserved by each decoder. Canonical C then follows from
+this equality and the remainder bounds.
 
-At layer `ell`, keep the tree coordinates and the `ell` position coordinates
-inside the same sumcheck. There are `d+1+ell` rounds. Its factors are the
-multilinear child tables `L` and `R`; equality weights are handled explicitly
-by the verifier instead of being counted as a third polynomial factor.
+A partial polynomial on the draw interval [l,r) can be recovered as
 
-For an ordinary coordinate with equality parameter `r`, let the quadratic
-round polynomial `h` sum `L*R` over remaining Boolean coordinates with their
-remaining weights. Verify
+    V[l,r](X) = sum(l<=j<r, a[j]=1) v[j]*X^sum(l<=t<j, a[t]).
+    U[l,r](X) = X^sum(l<=t<r, a[t]).
 
-```text
-C = (1-r)*h(0) + r*h(1),
-```
+For fixed a every coefficient of V is a fixed linear expression in b and U
+is public. The implementation needs only the final C equality: it stores no
+intermediate U/V polynomials and proves no affine-composition tree. This
+linear construction relies on making routing public and validating it. It
+does not justify an unchecked witness-dependent decoder for a private mask.
 
-then sample a fresh `u` and continue with `C=h(u)`. For the signed root-side
-coordinate the check is `C=h(0)-h(1)`. This is a weighted sumcheck, not a
-substitution of a product of averages for an average of products.
+The native ring proof and norm consume the same committed C,S1,S2 bits.
+SHAKE consumes the same output bits linked to t. Linear routing never casts
+an extension-field element into the arithmetic prime field.
 
-Each round needs two field elements. If `h(z)=a+b*z+c*z^2`, an ordinary
-round sends `b,c`, recovering `a=C-r*(b+c)`. This uses no division, including
-when `r` is zero or one. A signed round sends `a,c` and recovers `b=-C-c`.
-Round messages precede their grinding nonce and challenge.
+## Reduction to BitZ
 
-After all coordinates are reduced, send just `L(u),R(u)` and check their
-product against the final scalar claim. Absorb both before sampling the
-fresh line challenge `lambda`. Continue at the next layer with
+There are D quadratic rejection rows, padded to 1,024 / 2,048. Prove
 
-```text
-C_next = (1-lambda)*L(u) + lambda*R(u).
-```
+    sum(r in {0,1}^ell, eq(tau,r)*(A(r)*B(r)-C(r))) = 0
 
-Condition on all preceding checks retaining a false claim. An incorrect
-weighted round polynomial differs from the correct one by a nonzero
-polynomial of degree at most two, giving error at most `2/p`. At the layer
-endpoint, a false product implies a nonzero pair of child errors. Its affine
-combination vanishes at at most one `lambda`, giving error at most `1/p`.
-No new tree-batching challenge is needed at subsequent layers.
+with a degree-three sumcheck, where A=u2, B=u0, C=e. The three endpoint MLEs
+are linear functions of committed bits. Padded rows and inactive signatures
+are zero. The norm contributes five additional endpoint claims. Bind all
+endpoints before their random batching coefficients are sampled.
 
-There are eleven layers, so
+Merge these eight endpoints, the native ring projection, public-input rows,
+candidate divisions, mask-validity rows, routing rows, and padding checks
+into one arithmetic-source sumcheck. Its source evaluation is authenticated
+by the existing BitZ bridge. SHAKE, its output links, and the bridge join the
+final binary opening against the single source root.
 
-```text
-R_forest = sum(ell=0..10, d+1+ell) = 11*(d+1)+55
-forest error <= (d + 2*R_forest + 11)/p.
-```
+Division residuals are bounded by 98,311 on arbitrary source bits; selection
+residuals by 1; routing residuals by 16,383. These are below either supported
+prime family, so a zero residual in Fp is the intended integer equality.
+Norm bounds remain the dominant exact-source bound. The rejection sumcheck
+needs its row-point and cubic-round error allocations; there is no extra
+HashToPoint polynomial-evaluation challenge or projection error.
 
-For batch 1024 this is `(10+352+11)/p = 373/p`, excluding the separately
-accounted fingerprint and terminal authentication. Folding position
-coordinates first lets the added tree-coordinate rounds operate on small
-tables after each tree has reduced to one child pair.
+## Witness and payload
 
-## Authenticate the joint leaf claim
+Falcon-512 / Falcon-1024 now use 52,637 / 100,482 live arithmetic bits,
+removing 7,180 / 14,432 prefix-counter bits relative to the grand-product
+baseline. Arithmetic strides remain 2^16 / 2^17; SHAKE sizes are unchanged.
+At batch 1,024 total packed source storage remains 96 / 176 MiB. Public masks
+add 90 / 164 bytes per signature (90 / 164 KiB per batch of 1,024) to the
+proof payload. Other proof components change too, so total payload must be
+measured independently. No additional initial Merkle tree is introduced.
 
-The forest finishes at a signature point, side coordinate, and 11 position
-coordinates. The prover sends one candidate value `a` and one output value
-`b`. Check that their side-coordinate affine combination equals the forest
-claim. A false mixed claim necessarily leaves at least one false endpoint;
-this deterministic split introduces no additional random challenge.
-
-Authenticate `a` with the existing `11+d`-round cubic candidate-leaf
-sumcheck, using the inherited signature point. Its three terminal tables
-remain affine in committed bits: accepted flags, the prefix-high-bit
-selector, and the fingerprint weighted by the inherited signature and
-position equality tables. No fresh leaf instance-batching challenge remains.
-Authenticate `b` as one weighted affine claim on committed output bits.
-Both claims include the public contribution of all-one padded signature
-trees. Their terminal claims enter the same source-bit binder and shared PCS
-opening as the other arithmetic obligations.
-
-A weighted Boolean table's multilinear extension generally differs from the
-product of its factors' multilinear extensions. The binder reconstructs the
-former from source coefficients; replacing it with the latter off the Boolean
-cube would not authenticate the leaf proof.
-
-## Grinding and payload accounting
-
-At target 128 the prime is at least `2^125`. Put
-
-```text
-R_cubic = 2*(11+d)
-H = d+11
-M = 11 + (d>0).
-```
-
-Choose cubic, forest-round, and root/line difficulties `r,q,c` to minimize
-`R_cubic*2^r + R_forest*2^q + M*2^c`, subject to
-
-```text
-3*R_cubic/2^r + 2*R_forest/2^q + H/2^c <= 1/256.
-```
-
-This group contributes at most `2^-133` under work-normalized accounting.
-Target 100 retains zero arithmetic grinding. Fingerprint grinding remains
-separately budgeted. Difficulties, dimensions, and versions are transcript-bound.
-
-For batch 1024, compact forest field messages occupy
-`176*2*16 + 11*2*16 = 5,984` bytes. The final candidate/output split adds
-32 bytes. These counts exclude nonces, the candidate-leaf proof, other
-arithmetic messages, and the final PCS opening; they are not an end-to-end
-proof-size or performance measurement.
+Qualification compares full Falcon against matched archived prover/verifier
+timings and reports process-wide peak RSS separately. Source size alone does
+not establish a speedup.

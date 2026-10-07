@@ -1,12 +1,10 @@
+use super::super::hash_to_point_selection::{REJECTION_ROWS, REJECTION_STRIDE};
 use super::super::{
-    piop::{CompactionProof, FalconPiopClaims, LeafClaims, NormClaims, QuadraticClaims},
+    piop::{FalconPiopClaims, HashToPointRejectionClaims, NormClaims},
     verification_trace,
 };
 use super::*;
-use crate::sumcheck::{
-    inner::packed::{PackedInput, StreamingMle},
-    outer::OuterEvaluations,
-};
+use crate::sumcheck::inner::packed::{PackedInput, StreamingMle};
 
 use crate::transcript::Blake3Transcript;
 
@@ -65,6 +63,7 @@ fn add_linear_constraints(
     weights: &crate::poly::mle::EqualityWeights<F>,
     layout: &FalconSourceLayout,
     statement: &FalconPublicStatement,
+    selection: &Selection,
     field: &Cfg,
 ) -> Result<F, FalconError> {
     let offsets = layout.offsets();
@@ -117,33 +116,27 @@ fn add_linear_constraints(
             );
             push_value_terms(&mut division, offsets.hash_remainders + 14 * i, -1);
             residual(&division, 0);
-
-            let mut prefix = Vec::with_capacity(23);
-            push_unsigned_terms(
-                &mut prefix,
-                offsets.hash_prefixes + PREFIX_BITS * (i + 1),
-                PREFIX_BITS,
-                1,
-            );
-            push_unsigned_terms(
-                &mut prefix,
-                offsets.hash_prefixes + PREFIX_BITS * i,
-                PREFIX_BITS,
+        }
+        for j in 0..HASH_TO_POINT_SAMPLES {
+            if j <= selection.cutoff(instance) {
+                residual(
+                    &[(offsets.hash_accept_ands + j, 1)],
+                    -i128::from(!selection.selected(instance, j)),
+                );
+            } else {
+                residual(&[], 0);
+            }
+        }
+        for (k, &selected) in selection.indices(instance).iter().enumerate() {
+            let mut terms = Vec::new();
+            push_unsigned_terms(&mut terms, layout.hash_point_bit(k, 0), 14, 1);
+            push_value_terms(
+                &mut terms,
+                offsets.hash_remainders + 14 * usize::from(selected),
                 -1,
             );
-            prefix.push((offsets.hash_accept_ands + i, 1));
-            residual(&prefix, -1);
+            residual(&terms, 0);
         }
-        let mut prefix_zero = Vec::with_capacity(PREFIX_BITS);
-        push_unsigned_terms(&mut prefix_zero, offsets.hash_prefixes, PREFIX_BITS, 1);
-        residual(&prefix_zero, 0);
-        residual(
-            &[(
-                offsets.hash_prefixes + PREFIX_BITS * HASH_TO_POINT_SAMPLES + PREFIX_BITS - 1,
-                1,
-            )],
-            -1,
-        );
 
         for j in 0..N {
             let terms: [(usize, i128); 14] =
@@ -198,7 +191,9 @@ fn add_norm_claims(
     )
 }
 
-fn add_compaction_product_claims(
+// Bit-level transpose oracle: expand each row independently before combining
+// endpoints, instead of aggregating atoms and streaming polynomial words.
+fn add_rejection_claims(
     coefficients: &mut impl CoefficientSink,
     target: &mut F,
     scale: &mut F,
@@ -207,62 +202,32 @@ fn add_compaction_product_claims(
     proof: FalconPiopClaimRef<'_>,
     field: &Cfg,
 ) -> Result<(), FalconError> {
-    let weights = factored_weights(&proof.compact_products.point, field)?;
-    add_compaction_product_claims_prepared(
-        coefficients,
-        target,
-        scale,
-        eta,
-        layout,
-        proof,
-        field,
-        &weights,
-    )
-}
-
-fn add_product_tree_claims(
-    coefficients: &mut impl CoefficientSink,
-    target: &mut F,
-    scale: &mut F,
-    eta: F,
-    layout: &FalconSourceLayout,
-    proof: FalconPiopClaimRef<'_>,
-    field: &Cfg,
-) -> Result<(), FalconError> {
-    let instances =
-        eq_table(&proof.compaction.instance_point, field).map_err(|e| piop(e.to_string()))?;
-    let weights =
-        eq_table(&proof.compaction.terminal_point, field).map_err(|e| piop(e.to_string()))?;
-    let mut constant = field.zero();
-    for (instance, &instance_weight) in instances.iter().enumerate() {
-        let base = instance * layout.signature_stride();
-        for (i, &leaf_weight) in weights.iter().enumerate() {
-            let weight = field.mul(scale, &field.mul(&instance_weight, &leaf_weight));
-            if instance < layout.batch() && i < N {
-                constant = field.add(
-                    &constant,
-                    &field.mul(
-                        &weight,
-                        &field.add(
-                            &proof.compaction_gamma,
-                            &field.mul(&proof.compaction_rank_scale, &unsigned(i as u128, field)),
-                        ),
-                    ),
+    let weights = factored_weights(proof.h2p_rejection.point, field)?;
+    let offsets = layout.offsets();
+    for coordinate in 0..3 {
+        for instance in coefficients.instances(layout.batch()) {
+            let base = instance * layout.signature_stride();
+            for j in 0..HASH_TO_POINT_SAMPLES {
+                let address = match coordinate {
+                    0 => offsets.hash_quotients + 3 * j + 2,
+                    1 => offsets.hash_quotients + 3 * j,
+                    _ => offsets.hash_accept_ands + j,
+                };
+                coefficients.add(
+                    base + address,
+                    field.mul(scale, &weights.at(instance * REJECTION_STRIDE + j)),
                 );
-                add_unsigned_scaled(
-                    coefficients,
-                    base + layout.hash_point_bit(i, 0),
-                    14,
-                    weight,
-                    field,
-                );
-            } else {
-                constant = field.add(&constant, &weight);
             }
         }
+        add_claim_target(
+            target,
+            *scale,
+            proof.h2p_rejection.terminal[coordinate],
+            field.zero(),
+            field,
+        );
+        *scale = field.mul(scale, &eta);
     }
-    add_claim_target(target, *scale, proof.compaction.output, constant, field);
-    *scale = field.mul(scale, &eta);
     Ok(())
 }
 
@@ -272,6 +237,7 @@ fn emit_binding_reference(binding: &BindingForm<'_>, sink: &mut impl Coefficient
         &binding.linear_weights,
         binding.layout,
         binding.statement,
+        binding.selection,
         binding.field,
     )
     .unwrap();
@@ -287,27 +253,7 @@ fn emit_binding_reference(binding: &BindingForm<'_>, sink: &mut impl Coefficient
         binding.field,
     )
     .unwrap();
-    add_compaction_product_claims(
-        sink,
-        &mut target,
-        &mut scale,
-        binding.eta,
-        binding.layout,
-        binding.proof,
-        binding.field,
-    )
-    .unwrap();
-    leaf::add_leaf_claims(
-        sink,
-        &mut target,
-        &mut scale,
-        binding.eta,
-        binding.layout,
-        binding.proof,
-        binding.field,
-    )
-    .unwrap();
-    add_product_tree_claims(
+    add_rejection_claims(
         sink,
         &mut target,
         &mut scale,
@@ -329,24 +275,7 @@ fn terminal_fixture(field: &Cfg) -> FalconPiopClaims {
             slack: field.zero(),
             point: Vec::new(),
         },
-        compact_products: QuadraticClaims {
-            terminal: OuterEvaluations {
-                ax: unsigned(7, field),
-                bx: unsigned(11, field),
-                cx: unsigned(13, field),
-            },
-            point: Vec::new(),
-        },
-        compaction_gamma: field.zero(),
-        compaction_rank_scale: field.zero(),
-        compaction: CompactionProof {
-            instance_point: Vec::new(),
-            terminal_point: Vec::new(),
-            candidate: field.zero(),
-            output: field.zero(),
-        },
-        compaction_leaf: LeafClaims {
-            instance_point: Vec::new(),
+        h2p_rejection: HashToPointRejectionClaims {
             terminal: [field.zero(); 3],
             point: Vec::new(),
         },
@@ -363,25 +292,29 @@ fn complete_claim_fixture(layout: &FalconSourceLayout, field: &Cfg) -> FalconPio
         [unsigned(7, field), unsigned(11, field)],
     ];
     claims.norm.slack = unsigned(41, field);
-    claims.compact_products.point = point(COMPACTION_LOG + batch_vars, field);
-    claims.compaction_gamma = unsigned(29, field);
-    claims.compaction_rank_scale = unsigned(31, field);
-    claims.compaction = CompactionProof {
-        instance_point: point(batch_vars, field),
-        terminal_point: point(COMPACTION_LOG, field),
-        candidate: unsigned(13, field),
-        output: unsigned(14, field),
-    };
-    claims.compaction_leaf = LeafClaims {
-        instance_point: point(batch_vars, field),
+    claims.h2p_rejection = HashToPointRejectionClaims {
         terminal: [
             unsigned(17, field),
             unsigned(19, field),
             unsigned(23, field),
         ],
-        point: point(COMPACTION_LOG + batch_vars, field),
+        point: point(REJECTION_STRIDE.ilog2() as usize + batch_vars, field),
     };
     claims
+}
+
+fn selection_fixture(batch: usize) -> Selection {
+    let masks = (0..batch)
+        .map(|s| {
+            let mut mask = vec![0u8; HASH_TO_POINT_SAMPLES.div_ceil(8)];
+            let start = (17 * s) % (HASH_TO_POINT_SAMPLES - N + 1);
+            for j in start..start + N {
+                mask[j / 8] |= 1 << (j % 8);
+            }
+            mask
+        })
+        .collect();
+    Selection::from_masks(masks, batch).unwrap()
 }
 
 fn statement_with_key_groups(groups: &[usize]) -> FalconPublicStatement {
@@ -410,10 +343,12 @@ fn streaming_binding_forms_match_independent_bit_oracle() {
     let statement = statement_with_key_groups(&[0, 1, 2]);
     let claims = complete_claim_fixture(&layout, &field);
     let linear_point = point(linear_rounds(&layout), &field);
+    let selection = selection_fixture(layout.batch());
     let binding = prepare_binding_form(
         &mut Blake3Transcript::new(),
         &layout,
         &statement,
+        &selection,
         claims.as_claim_ref(),
         &linear_point,
         &field,
@@ -519,15 +454,65 @@ fn streaming_binding_forms_match_independent_bit_oracle() {
 }
 
 #[test]
+fn five_factored_local_forms_match_dense_padded_batch_without_instance_caches() {
+    let field = config();
+    let layout = FalconSourceLayout::new(3).unwrap();
+    let statement = statement_with_key_groups(&[0, 1, 2]);
+    let proof = complete_claim_fixture(&layout, &field);
+    for eta in [field.zero(), field.one(), unsigned(19, &field)] {
+        let selection = selection_fixture(layout.batch());
+        let mut binding = prepare_binding_form(
+            &mut Blake3Transcript::new(),
+            &layout,
+            &statement,
+            &selection,
+            proof.as_claim_ref(),
+            &point(linear_rounds(&layout), &field),
+            &field,
+        )
+        .unwrap();
+        binding.eta = eta;
+        let mut dense = DenseSink::new(layout.source_bits(), &field);
+        assert_eq!(
+            binding.target().unwrap(),
+            emit_binding_reference(&binding, &mut dense)
+        );
+        let endpoint = point(source_rounds(&layout), &field);
+        let actual = binding.evaluate(&endpoint).unwrap();
+        assert!(
+            binding
+                .compact_instances
+                .iter()
+                .all(|cache| cache.get().is_none())
+        );
+        assert_eq!(
+            actual,
+            evaluate_mle_in_place(&mut dense.values, &endpoint, &field).unwrap()
+        );
+        let mut inactive = endpoint;
+        inactive[layout.signature_stride().ilog2() as usize..].fill(field.one());
+        assert_eq!(binding.evaluate(&inactive).unwrap(), field.zero());
+        assert!(
+            binding
+                .compact_instances
+                .iter()
+                .all(|cache| cache.get().is_none())
+        );
+    }
+}
+
+#[test]
 fn factored_overlay_matches_dense_sumcheck_and_endpoint() {
     let field = config();
     let layout = FalconSourceLayout::new(3).unwrap();
     let statement = statement_with_key_groups(&[0, 1, 2]);
     let claims = complete_claim_fixture(&layout, &field);
+    let selection = selection_fixture(layout.batch());
     let binding = prepare_binding_form(
         &mut Blake3Transcript::new(),
         &layout,
         &statement,
+        &selection,
         claims.as_claim_ref(),
         &point(linear_rounds(&layout), &field),
         &field,
@@ -676,10 +661,12 @@ fn binding_matches_dense_reference_at_degenerate_points() {
             let mut reference_transcript = transcript.clone();
             reference_transcript.absorb_slice(b"bitz/falcon1024-ct/terminal-collapse/v1");
             let eta = squeeze(&mut reference_transcript, &field).unwrap();
+            let selection = selection_fixture(layout.batch());
             let binding = prepare_binding_form(
                 &mut transcript,
                 &layout,
                 &statement,
+                &selection,
                 proof.as_claim_ref(),
                 &linear_point,
                 &field,
@@ -751,30 +738,29 @@ fn compact_binding_targets_match_constants_oracle_at_boolean_points() {
         for (bit, coordinate) in proof.norm.instance_point.iter_mut().enumerate() {
             *coordinate = unsigned(((selected >> bit) & 1) as u128, &field);
         }
-        proof.compaction.instance_point = proof.norm.instance_point.clone();
-        proof.compaction_leaf.instance_point = proof.compaction.instance_point.clone();
-        for candidate in [
+        for row in [
             0,
             HASH_TO_POINT_SAMPLES - 1,
             HASH_TO_POINT_SAMPLES,
-            COMPACTION_LEAVES - 1,
+            REJECTION_ROWS - 1,
+            REJECTION_ROWS,
+            REJECTION_STRIDE - 1,
         ] {
-            for (bit, coordinate) in proof.compaction.terminal_point.iter_mut().enumerate() {
-                *coordinate = unsigned(((candidate >> bit) & 1) as u128, &field);
-            }
-            for (bit, coordinate) in proof.compact_products.point.iter_mut().enumerate() {
+            for (bit, coordinate) in proof.h2p_rejection.point.iter_mut().enumerate() {
                 *coordinate = unsigned(
-                    (((selected * COMPACTION_LEAVES + candidate) >> bit) & 1) as u128,
+                    (((selected * REJECTION_STRIDE + row) >> bit) & 1) as u128,
                     &field,
                 );
             }
             for eta in [field.zero(), field.one(), unsigned(29, &field)] {
                 let linear_point = point(linear_rounds(&layout), &field);
                 let mut transcript = Blake3Transcript::new();
+                let selection = selection_fixture(layout.batch());
                 let mut binding = prepare_binding_form(
                     &mut transcript,
                     &layout,
                     &statement,
+                    &selection,
                     proof.as_claim_ref(),
                     &linear_point,
                     &field,
@@ -798,10 +784,12 @@ fn binding_preserves_inner_sumcheck_transcript() {
     let proof = complete_claim_fixture(&layout, &field);
     let linear_point = point(linear_rounds(&layout), &field);
     let mut transcript = Blake3Transcript::new();
+    let selection = selection_fixture(layout.batch());
     let binding = prepare_binding_form(
         &mut transcript,
         &layout,
         &statement,
+        &selection,
         proof.as_claim_ref(),
         &linear_point,
         &field,
@@ -960,15 +948,24 @@ fn public_signature_bytes_are_constrained_to_the_committed_source() {
                 field: &field,
                 value: field.zero(),
             };
-            let constant =
-                add_linear_constraints(&mut sink, &weights, &layout, public, &field).unwrap();
+            let constant = add_linear_constraints(
+                &mut sink,
+                &weights,
+                &layout,
+                public,
+                &selection_fixture(layout.batch()),
+                &field,
+            )
+            .unwrap();
             assert_eq!(field.add(&sink.value, &constant), expected);
 
             let mut transcript = Blake3Transcript::new();
+            let selection = selection_fixture(layout.batch());
             let mut binding = prepare_binding_form(
                 &mut transcript,
                 &layout,
                 public,
+                &selection,
                 proof.as_claim_ref(),
                 &linear_point,
                 &field,
@@ -1144,17 +1141,159 @@ fn compact_prefix_binds_word_products_and_weighted_norm_to_source() {
         }
     }
     assert_eq!(dot, proof.binding_terminal[1]);
+    // Shape errors are rejected before the public mask enters the transcript.
+    for case in 0..4 {
+        let mut bad = proof.clone();
+        match case {
+            0 => {
+                bad.selection_masks.pop();
+            }
+            1 => {
+                bad.selection_masks[0].pop();
+            }
+            2 => {
+                *bad.selection_masks[0].last_mut().unwrap() |= 1 << (HASH_TO_POINT_SAMPLES % 8);
+            }
+            _ => {
+                let selected =
+                    Selection::from_masks(bad.selection_masks.clone(), layout.batch()).unwrap();
+                let index = usize::from(selected.indices(0)[0]);
+                bad.selection_masks[0][index / 8] ^= 1 << (index % 8);
+            }
+        }
+        let mut verifier = fresh_transcript();
+        assert!(verify_binding_prefix(&mut verifier, &layout, &statement, &bad, 100).is_err());
+        assert_eq!(
+            verifier.get_challenge::<u128>(),
+            fresh_transcript().get_challenge::<u128>()
+        );
+    }
+    // A canonical mutation keeps the selected count but changes transcript-bound routing.
+    let mut bad = proof.clone();
+    let selection = Selection::from_masks(bad.selection_masks.clone(), layout.batch()).unwrap();
+    let removed = usize::from(selection.indices(0)[0]);
+    let added = (0..HASH_TO_POINT_SAMPLES)
+        .find(|&j| !selection.selected(0, j))
+        .unwrap();
+    for j in [removed, added] {
+        bad.selection_masks[0][j / 8] ^= 1 << (j % 8);
+    }
+    assert!(Selection::from_masks(bad.selection_masks.clone(), layout.batch()).is_ok());
+    assert!(
+        verify_binding_prefix(&mut fresh_transcript(), &layout, &statement, &bad, 100).is_err()
+    );
     let mut bad = proof.clone();
     bad.piop.norm.terminal[0][0] = field.add(&bad.piop.norm.terminal[0][0], &field.one());
     assert!(
         verify_binding_prefix(&mut fresh_transcript(), &layout, &statement, &bad, 100).is_err()
     );
     let mut bad = proof;
-    bad.piop.compact_products.terminal.cx =
-        field.add(&bad.piop.compact_products.terminal.cx, &field.one());
+    bad.piop.h2p_rejection.rows.terminal.cx =
+        field.add(&bad.piop.h2p_rejection.rows.terminal.cx, &field.one());
     assert!(
         verify_binding_prefix(&mut fresh_transcript(), &layout, &statement, &bad, 100).is_err()
     );
+}
+
+#[test]
+fn public_selection_enforces_first_accepted_and_distinct_remainder_decoders() {
+    let layout = FalconSourceLayout::new(3).unwrap();
+    let field = config();
+    let traces = vec![verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap(); 3];
+    let source = FalconSourceWitness::from_traces(
+        layout,
+        &[MESSAGE.as_slice(); 3],
+        &[SIGNATURE.as_slice(); 3],
+        &traces,
+    )
+    .unwrap();
+    let statement = FalconPublicStatement::from_bytes(
+        &[PUBLIC_KEY.as_slice(); 3],
+        &[MESSAGE.as_slice(); 3],
+        &[SIGNATURE.as_slice(); 3],
+    )
+    .unwrap();
+    let selection = Selection::from_traces(&traces).unwrap();
+    let claims = complete_claim_fixture(&layout, &field);
+    struct SourceDot<'a> {
+        source: &'a FalconSourceWitness,
+        field: &'a Cfg,
+        flipped: Option<usize>,
+        value: F,
+    }
+    impl CoefficientSink for SourceDot<'_> {
+        fn add(&mut self, index: usize, coefficient: F) {
+            if self.source.bit(index) ^ (self.flipped == Some(index)) {
+                self.value = self.field.add(&self.value, &coefficient);
+            }
+        }
+    }
+    let residual = |selection: &Selection, row: usize, flipped: Option<usize>| {
+        let linear_point: Vec<_> = (0..linear_rounds(&layout))
+            .map(|bit| unsigned(((row >> bit) & 1) as u128, &field))
+            .collect();
+        let weights = factored_weights(&linear_point, &field).unwrap();
+        let mut dot = SourceDot {
+            source: &source,
+            field: &field,
+            flipped,
+            value: field.zero(),
+        };
+        let constant =
+            add_linear_constraints(&mut dot, &weights, &layout, &statement, selection, &field)
+                .unwrap();
+        let expected = field.add(&dot.value, &constant);
+        let mut binding = prepare_binding_form(
+            &mut Blake3Transcript::new(),
+            &layout,
+            &statement,
+            selection,
+            claims.as_claim_ref(),
+            &linear_point,
+            &field,
+        )
+        .unwrap();
+        binding.eta = field.zero();
+        dot.value = field.zero();
+        binding
+            .for_each_coefficient(&mut |index, value| {
+                dot.add(index, value);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(field.sub(&dot.value, &binding.target().unwrap()), expected);
+        expected
+    };
+    let first = usize::from(selection.indices(0)[0]);
+    let mask_row = 1 + 256 + super::super::CT_SIGNATURE_BYTES + HASH_TO_POINT_SAMPLES + first;
+    assert_eq!(residual(&selection, mask_row, None), field.zero());
+    let mut masks = selection.masks().to_vec();
+    let added = (0..HASH_TO_POINT_SAMPLES)
+        .find(|&j| !selection.selected(0, j))
+        .unwrap();
+    for j in [first, added] {
+        masks[0][j / 8] ^= 1 << (j % 8);
+    }
+    let changed = Selection::from_masks(masks, layout.batch()).unwrap();
+    // Skipping the first accepted candidate fails even with the row challenge fixed.
+    assert_eq!(residual(&changed, mask_row, None), field.neg(&field.one()));
+
+    let output_row = 1 + 256 + super::super::CT_SIGNATURE_BYTES + 2 * HASH_TO_POINT_SAMPLES;
+    assert_eq!(residual(&selection, output_row, None), field.zero());
+    for (index, coefficient) in [
+        (layout.hash_point_bit(0, 13), 8192i128),
+        (layout.offsets().hash_remainders + 14 * first + 13, -4097),
+    ] {
+        let delta = if source.bit(index) {
+            -coefficient
+        } else {
+            coefficient
+        };
+        assert_eq!(
+            residual(&selection, output_row, Some(index)),
+            signed(delta, &field)
+        );
+    }
 }
 
 fn check_norm_binding(layout: FalconSourceLayout) {
@@ -1253,32 +1392,86 @@ fn check_norm_binding(layout: FalconSourceLayout) {
 }
 
 #[test]
-fn shared_forest_weights_require_inherited_instance_point_and_correct_dimensions() {
+fn rejection_transpose_authenticates_raw_bits_and_each_terminal() {
+    let field = config();
+    let layout = FalconSourceLayout::new(3).unwrap();
+    let mut proof = complete_claim_fixture(&layout, &field);
+    let weights = eq_table(&proof.h2p_rejection.point, &field).unwrap();
+    proof.h2p_rejection.terminal.fill(field.zero());
+    let raw_bit = |index: usize| (index.wrapping_mul(37) ^ (index >> 3)).count_ones() % 2 != 0;
+    let offsets = layout.offsets();
+    for instance in 0..layout.batch() {
+        for j in 0..HASH_TO_POINT_SAMPLES {
+            for (coordinate, address) in [
+                offsets.hash_quotients + 3 * j + 2,
+                offsets.hash_quotients + 3 * j,
+                offsets.hash_accept_ands + j,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                if raw_bit(instance * layout.signature_stride() + address) {
+                    proof.h2p_rejection.terminal[coordinate] = field.add(
+                        &proof.h2p_rejection.terminal[coordinate],
+                        &weights[instance * REJECTION_STRIDE + j],
+                    );
+                }
+            }
+        }
+    }
+    let eta = unsigned(19, &field);
+    let prepared =
+        rejection::RejectionWeights::new(&layout, proof.as_claim_ref(), eta, &field).unwrap();
+    let mut dense = DenseSink::new(layout.source_bits(), &field);
+    prepared.emit(&mut dense, &layout, &field);
+    let dot = dense
+        .values
+        .iter()
+        .enumerate()
+        .fold(field.zero(), |sum, (index, value)| {
+            if raw_bit(index) {
+                field.add(&sum, value)
+            } else {
+                sum
+            }
+        });
+    assert_eq!(dot, prepared.target());
+    for coordinate in 0..3 {
+        let mut bad = proof.clone();
+        bad.h2p_rejection.terminal[coordinate] =
+            field.add(&bad.h2p_rejection.terminal[coordinate], &field.one());
+        assert_ne!(
+            dot,
+            rejection::RejectionWeights::new(&layout, bad.as_claim_ref(), eta, &field)
+                .unwrap()
+                .target()
+        );
+    }
+}
+
+#[test]
+fn rejection_weights_require_exact_row_point_dimensions() {
     let field = config();
     let layout = FalconSourceLayout::new(3).unwrap();
     let proof = complete_claim_fixture(&layout, &field);
-    assert!(leaf::LeafWeights::new(&layout, proof.as_claim_ref(), &field).is_ok());
-    for mutation in 0..5 {
+    let eta = unsigned(19, &field);
+    assert!(rejection::RejectionWeights::new(&layout, proof.as_claim_ref(), eta, &field).is_ok());
+    for mutation in 0..3 {
         let mut bad = proof.clone();
         match mutation {
             0 => {
-                bad.compaction.instance_point[0] =
-                    field.add(&bad.compaction.instance_point[0], &field.one())
+                bad.h2p_rejection.point.pop();
             }
             1 => {
-                bad.compaction.instance_point.pop();
+                bad.h2p_rejection.point.push(field.zero());
             }
             2 => {
-                bad.compaction.terminal_point.pop();
-            }
-            3 => {
-                bad.compaction_leaf.instance_point.pop();
-            }
-            4 => {
-                bad.compaction_leaf.point.pop();
+                bad.h2p_rejection.point.clear();
             }
             _ => unreachable!(),
         }
-        assert!(leaf::LeafWeights::new(&layout, bad.as_claim_ref(), &field).is_err());
+        assert!(
+            rejection::RejectionWeights::new(&layout, bad.as_claim_ref(), eta, &field).is_err()
+        );
     }
 }

@@ -1,5 +1,5 @@
+use super::NORM_BITS;
 use super::{FalconError, HASH_TO_POINT_SAMPLES, N};
-use super::{NORM_BITS, PREFIX_BITS};
 use crate::pcs::IntegerMatrixLayout;
 use crate::piop::spartan::falcon_bit_layout::{COEFFICIENT_STRIDE, coefficient_bit, slack_bit};
 
@@ -15,7 +15,6 @@ pub struct FalconTraceCounts {
     pub hash_quotients: usize,
     pub hash_remainders: usize,
     pub hash_accept_ands: usize,
-    pub hash_prefixes: usize,
     pub hash_point: usize,
     pub s1: usize,
     pub norm_slack: usize,
@@ -32,7 +31,6 @@ impl FalconTraceCounts {
             + self.hash_quotients
             + self.hash_remainders
             + self.hash_accept_ands
-            + self.hash_prefixes
             + self.hash_point
             + self.s1
             + self.norm_slack
@@ -185,7 +183,6 @@ impl FalconSourceLayout {
             // bounded14 decodes every bit string into 0..=12288.
             hash_remainders: HASH_TO_POINT_SAMPLES * 14,
             hash_accept_ands: HASH_TO_POINT_SAMPLES,
-            hash_prefixes: (HASH_TO_POINT_SAMPLES + 1) * PREFIX_BITS,
             hash_point: N * 14,
             // bounded14 value minus 6144, shared by norms and the native ideal.
             s1: N * 14,
@@ -236,7 +233,7 @@ mod profile_layout_tests {
         );
         assert_eq!(
             layout.occupied_bits(),
-            if N == 512 { 64_911 } else { 125_127 }
+            if N == 512 { 57_731 } else { 110_695 }
         );
         assert!(layout.is_padding(layout.occupied_bits()));
     }
@@ -279,13 +276,13 @@ mod tests {
         for batch in 1..=1024 {
             let layout = FalconSourceLayout::new(batch).unwrap();
             let counts = FalconSourceLayout::counts();
-            assert_eq!(counts.total(), 114_914);
-            assert_eq!(layout.occupied_bits(), 125_127);
+            assert_eq!(counts.total(), 100_482);
+            assert_eq!(layout.occupied_bits(), 110_695);
             assert_eq!(layout.occupied_bits() - counts.total(), 10_213);
             assert_eq!(layout.signature_stride(), 131_072);
             assert_eq!(layout.capacity(), batch.next_power_of_two());
             assert_eq!(layout.source_bits(), 131_072 * layout.capacity());
-            assert_eq!(layout.linear_rows(), 5_482);
+            assert_eq!(layout.linear_rows(), 6_504);
             assert_eq!(layout.linear_stride(), 8_192);
             assert_eq!(layout.row_vars(), 13);
             assert_eq!(
@@ -296,20 +293,10 @@ mod tests {
                 counts.shared_one + counts.message + counts.signature_header_nonce + counts.s2,
                 12_873
             );
-            assert_eq!(counts.total() - 12_873, 102_041);
+            assert_eq!(counts.total() - 12_873, 87_609);
             assert_eq!(layout.public_key_offset(), 49_152);
             assert_eq!(counts.public_key, 14 * N);
-            assert_eq!(
-                counts.hash_words / 16
-                    + counts.hash_quotients / 3
-                    + counts.hash_remainders / 14
-                    + counts.hash_accept_ands
-                    + counts.hash_prefixes / 11
-                    + counts.hash_point / 14
-                    + counts.s1 / 14
-                    + counts.norm_slack / 27,
-                8_605
-            );
+            assert_eq!(counts.hash_accept_ands, HASH_TO_POINT_SAMPLES);
         }
         assert!(FalconSourceLayout::new(0).is_err());
         assert!(FalconSourceLayout::new(1025).is_err());

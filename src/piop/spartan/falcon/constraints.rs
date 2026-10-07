@@ -6,7 +6,7 @@ use super::{NORM_BITS, SIGNATURE_BITS};
 
 /// Maximum absolute exact source residual, before relying on any other
 /// constraint. Raw signed-12 S2 bits may decode to -2048. The norm dominates
-/// division, prefix, public-input, and rejection-bit residuals in both layouts.
+/// division, public selection, and public-input residuals in both layouts.
 pub(super) const SOURCE_RESIDUAL_BOUND: u128 = N as u128
     * (6_144u128.pow(2) + (1u128 << (SIGNATURE_BITS - 1)).pow(2))
     + ((1u128 << NORM_BITS) - 1)
@@ -18,26 +18,23 @@ pub(super) const SOURCE_RESIDUAL_BOUND: u128 = N as u128
 pub struct FalconConstraintCounts {
     /// Public one/message-bit/signature-byte bindings.
     pub public_input_bindings: usize,
-    /// Division and prefix recurrence, plus initial/final prefix boundaries.
+    /// Candidate divisions, public-mask acceptance, and selected-coefficient rows.
     pub hash_to_point_linear: usize,
     /// Terms in the degree-2 norm sumcheck.
     pub norm_terms: usize,
-    /// Leaves in each stable-compaction product tree after padding.
-    pub compaction_leaves: usize,
-    /// Rejection rows; selection is reduced by the separate cubic leaf proof.
-    pub compaction_product_rows: usize,
+    /// Rejection bits as products of the two quotient bits.
+    pub hash_to_point_quadratic: usize,
 }
 
 impl FalconConstraintCounts {
     /// Scalar relation inventory for the source layout. Native ring membership
-    /// and the cubic compaction leaf reduction are separate proof obligations.
+    /// and the quadratic rejection-bit reduction are separate obligations.
     pub const fn per_signature() -> Self {
         Self {
             public_input_bindings: 1 + 32 * 8 + super::CT_SIGNATURE_BYTES + N,
-            hash_to_point_linear: 2 * HASH_TO_POINT_SAMPLES + 2,
+            hash_to_point_linear: 2 * HASH_TO_POINT_SAMPLES + N,
             norm_terms: 2 * N,
-            compaction_leaves: HASH_TO_POINT_SAMPLES.next_power_of_two(),
-            compaction_product_rows: HASH_TO_POINT_SAMPLES,
+            hash_to_point_quadratic: HASH_TO_POINT_SAMPLES,
         }
     }
 
@@ -56,7 +53,7 @@ impl FalconConstraintCounts {
         2
     }
 
-    /// The product-forest layer sumchecks have degree three (`eq * L * R`).
+    /// Quadratic row sumchecks have degree three (`eq * (A * B - C)`).
     pub const fn product_round_degree(self) -> usize {
         3
     }
@@ -69,9 +66,6 @@ impl FalconConstraintCounts {
 pub fn check_exact_constraints(trace: &FalconVerificationTrace) -> Result<(), FalconError> {
     check_keccak_constraints(trace)?;
     let hash = &trace.hash_to_point;
-    if hash.prefix[0] != 0 {
-        return violation("hash-prefix-initial", 0);
-    }
     for i in 0..HASH_TO_POINT_SAMPLES {
         let word = i64::from(hash.words[i]);
         let quotient = i64::from(hash.quotients[i]);
@@ -89,11 +83,8 @@ pub fn check_exact_constraints(trace: &FalconVerificationTrace) -> Result<(), Fa
         if hash.accepted[i] != (reject_and == 0) {
             return violation("hash-accept-and", i);
         }
-        if Some(hash.prefix[i + 1]) != hash.prefix[i].checked_add(u16::from(hash.accepted[i])) {
-            return violation("hash-prefix", i);
-        }
     }
-    if usize::from(hash.prefix[HASH_TO_POINT_SAMPLES]) < N {
+    if hash.accepted.iter().filter(|&&accepted| accepted).count() < N {
         return violation("hash-accepted-count", HASH_TO_POINT_SAMPLES);
     }
     let compacted: Vec<_> = hash
@@ -310,10 +301,9 @@ mod tests {
     fn scalar_counts_include_public_keys_and_exclude_nonlinear_reductions() {
         let counts = FalconConstraintCounts::per_signature();
         assert_eq!(counts.public_input_bindings, 2_858);
-        assert_eq!(counts.hash_to_point_linear, 2_624);
-        assert_eq!(counts.linear_rows(), 5_482);
-        assert_eq!(counts.compaction_product_rows, 1_311);
-        assert_eq!(counts.compaction_leaves, 2_048);
+        assert_eq!(counts.hash_to_point_linear, 3_646);
+        assert_eq!(counts.linear_rows(), 6_504);
+        assert_eq!(counts.hash_to_point_quadratic, 1_311);
         assert_eq!(counts.norm_terms, 2_048);
         assert_eq!(counts.norm_round_degree(), 2);
         assert_eq!(counts.product_round_degree(), 3);
@@ -330,8 +320,7 @@ mod tests {
             u128::from(BETA_SQUARED), // minimum norm residual is -BETA_SQUARED
             division_max,
             65_535,
-            2_048,  // prefix recurrence
-            2_047,  // initial prefix
+            16_383, // selected unsigned-14 C minus bounded14 residue
             16_383, // unsigned-14 H minus a canonical public coefficient
             255,    // public byte
             1,      // Boolean rejection product
@@ -375,15 +364,13 @@ mod tests {
     }
 
     #[test]
-    fn shifted_prefix_witness_is_rejected_at_the_initial_boundary() {
+    fn corrupted_selected_point_is_rejected() {
         let mut trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
-        for prefix in trace.hash_to_point.prefix.iter_mut() {
-            *prefix += 1;
-        }
+        trace.hash_to_point.point[0] ^= 1;
         assert!(matches!(
             check_exact_constraints(&trace),
             Err(FalconError::ConstraintViolation {
-                family: "hash-prefix-initial",
+                family: "hash-stable-compaction",
                 index: 0
             })
         ));

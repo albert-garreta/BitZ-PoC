@@ -1,4 +1,4 @@
-use super::{COEFFICIENT_LOG, COMPACTION_LOG, NORM_BITS, PREFIX_BITS, SIGNATURE_BITS};
+use super::{COEFFICIENT_LOG, NORM_BITS, SIGNATURE_BITS};
 // Commitment-bound terminal reduction for the Falcon-1024 PIOP.
 //
 // All exact linear Falcon relations and all terminal values emitted by the
@@ -35,18 +35,17 @@ use super::{
     FalconError, FalconPiopProof, FalconPublicKey, FalconSignatureCt, FalconSourceLayout,
     FalconSourceWitness, FalconVerificationTrace, HASH_TO_POINT_SAMPLES, N, Q, decode_public_key,
     decode_signature_ct, encode_signature_ct,
+    hash_to_point_selection::Selection,
     piop::{FalconPiopClaimRef, security_schedule},
 };
 
 #[path = "opening_compact.rs"]
 mod compact;
-#[path = "opening_leaf.rs"]
-mod leaf;
+#[path = "opening_rejection.rs"]
+mod rejection;
 
 type F = SpartanBitzField;
 type Cfg = <F as SpartanField>::Config;
-
-const COMPACTION_LEAVES: usize = 1 << COMPACTION_LOG;
 
 struct LinearPointGrinding;
 impl GrindingDomain for LinearPointGrinding {
@@ -129,6 +128,8 @@ impl FalconPublicStatement {
 /// commitment and public statement, and subsequently authenticates its claim.
 #[derive(Clone, Debug)]
 pub struct FalconBindingPrefixProof {
+    /// Canonical public masks selecting the first N accepted candidates.
+    pub selection_masks: Vec<Vec<u8>>,
     pub(super) piop: FalconPiopProof,
     pub(super) ring: super::shared_ring::Proof,
     pub linear_point_nonce: Option<u64>,
@@ -172,6 +173,8 @@ pub(super) fn prove_binding_prefix(
     {
         return Err(piop("Falcon prefix input shape mismatch"));
     }
+    let selection = Selection::from_traces(traces)?;
+    bind_selection(transcript, &selection);
     let (ring, field, projected) =
         super::shared_ring::prove(transcript, layout, statement, traces, source, target_bits)?;
     let (piop_proof, algebraic) =
@@ -182,6 +185,7 @@ pub(super) fn prove_binding_prefix(
         transcript,
         layout,
         statement,
+        &selection,
         algebraic.as_claim_ref(),
         &linear_point,
         &field,
@@ -222,7 +226,7 @@ pub(super) fn prove_binding_prefix(
             merge,
             source_rounds(layout),
             layout.source_bits(),
-            3,
+            4,
         ),
     )?;
     // Release coefficient tables before entering the BitZ bridge.
@@ -243,6 +247,7 @@ pub(super) fn prove_binding_prefix(
         modulus: algebraic.modulus,
     };
     let prefix = FalconBindingPrefixProof {
+        selection_masks: selection.into_masks(),
         piop: piop_proof,
         ring,
         linear_point_nonce,
@@ -291,11 +296,17 @@ pub(super) fn verify_binding_prefix(
     if statement.batch() != layout.batch()
         || statement.messages.len() != layout.batch()
         || !matches!(target_bits, 100 | 128)
-        || (target_bits == 128 && proof.linear_point_nonce.is_none())
         || (target_bits == 100 && !proof.binding_nonces.is_empty())
     {
         return Err(piop("Falcon prefix proof shape mismatch"));
     }
+    if proof.linear_point_nonce.is_some()
+        != (security_schedule(layout, target_bits)?.linear_point_bits != 0)
+    {
+        return Err(piop("linear-point grinding nonce shape mismatch"));
+    }
+    let selection = Selection::from_masks(proof.selection_masks.clone(), layout.batch())?;
+    bind_selection(transcript, &selection);
     let (field, projected) =
         super::shared_ring::verify(transcript, layout, statement, &proof.ring, target_bits)?;
     let algebraic = super::piop::verify_falcon_piop_in_field(
@@ -311,6 +322,7 @@ pub(super) fn verify_binding_prefix(
         transcript,
         layout,
         statement,
+        &selection,
         algebraic.as_claim_ref(),
         &linear_point,
         &field,
@@ -376,13 +388,23 @@ pub(super) fn verify_binding_prefix(
     })
 }
 
+fn bind_selection(transcript: &mut impl Transcript, selection: &Selection) {
+    transcript.absorb_slice(b"bitz/falcon/public-hash-to-point-selection/v1");
+    transcript.absorb_slice(&(selection.batch() as u64).to_le_bytes());
+    for mask in selection.masks() {
+        transcript.absorb_slice(&(mask.len() as u64).to_le_bytes());
+        transcript.absorb_slice(mask);
+    }
+}
+
 fn grind_linear_point(
     transcript: &mut impl Transcript,
     layout: &FalconSourceLayout,
     target_bits: usize,
     nonce: Option<u64>,
 ) -> Result<Option<u64>, FalconError> {
-    if target_bits == 100 {
+    let bits = security_schedule(layout, target_bits)?.linear_point_bits;
+    if bits == 0 {
         return if nonce.is_none() {
             Ok(None)
         } else {
@@ -393,14 +415,14 @@ fn grind_linear_point(
         None => grind_and_absorb(
             transcript,
             GrindingRound::<LinearPointGrinding>::new(0),
-            security_schedule(layout, target_bits)?.linear_point_bits,
+            bits,
         )
         .map(Some)
         .map_err(|error| piop(error.to_string())),
         Some(nonce) => verify_and_absorb(
             transcript,
             GrindingRound::<LinearPointGrinding>::new(0),
-            security_schedule(layout, target_bits)?.linear_point_bits,
+            bits,
             nonce,
         )
         .map(|()| Some(nonce))
@@ -411,6 +433,7 @@ fn grind_linear_point(
 struct BindingForm<'a> {
     layout: &'a FalconSourceLayout,
     statement: &'a FalconPublicStatement,
+    selection: &'a Selection,
     proof: FalconPiopClaimRef<'a>,
     field: &'a Cfg,
     #[cfg(test)]
@@ -440,25 +463,6 @@ trait CoefficientSink {
         }
         for bit in 0..width {
             self.add(base + bit, scale);
-            scale = field.add(&scale, &scale);
-        }
-    }
-    #[cfg(test)]
-    fn add_encoded_word(&mut self, base: usize, offset: usize, mut scale: F, field: &Cfg) {
-        if !self.enabled() {
-            return;
-        }
-        for bit in 0..SIGNATURE_BITS {
-            let stream = offset + SIGNATURE_BITS - 1 - bit;
-            let index = base + 8 * (stream / 8) + 7 - stream % 8;
-            self.add(
-                index,
-                if bit == SIGNATURE_BITS - 1 {
-                    field.sub(&field.zero(), &scale)
-                } else {
-                    scale
-                },
-            );
             scale = field.add(&scale, &scale);
         }
     }
@@ -511,10 +515,14 @@ fn prepare_binding_form<'a>(
     transcript: &mut impl Transcript,
     layout: &'a FalconSourceLayout,
     statement: &'a FalconPublicStatement,
+    selection: &'a Selection,
     proof: FalconPiopClaimRef<'a>,
     linear_point: &[F],
     field: &'a Cfg,
 ) -> Result<BindingForm<'a>, FalconError> {
+    if selection.batch() != layout.batch() || linear_point.len() != linear_rounds(layout) {
+        return Err(piop("selection or linear point dimension mismatch"));
+    }
     #[cfg(test)]
     let linear_weights = factored_weights(linear_point, field)?;
     // The nonce protects one atomic block: row coordinates, eta, then merge.
@@ -529,6 +537,7 @@ fn prepare_binding_form<'a>(
     Ok(BindingForm {
         layout,
         statement,
+        selection,
         proof,
         field,
         #[cfg(test)]
@@ -657,6 +666,30 @@ impl StreamingCoefficientSource for BindingForm<'_> {
                 )
         })())
     }
+
+    fn for_each_partition_byte_pair_bucket(
+        &self,
+        partition: usize,
+        read_pair: &mut impl FnMut(usize, usize) -> Result<u16, crate::sumcheck::SumcheckError>,
+        emit: &mut impl FnMut(usize, u8, &[F; 8]) -> Result<(), crate::sumcheck::SumcheckError>,
+    ) -> Option<Result<(), crate::sumcheck::SumcheckError>> {
+        Some((|| {
+            if partition >= self.layout.capacity() {
+                return Err(crate::sumcheck::SumcheckError::InvalidProductDimensions);
+            }
+            if partition >= self.layout.batch() {
+                return Ok(());
+            }
+            self.compact_instance(partition)
+                .map_err(|_| crate::sumcheck::SumcheckError::InvalidProductDimensions)?
+                .emit_byte_pair_buckets(
+                    partition * self.layout.signature_stride(),
+                    self.field,
+                    read_pair,
+                    emit,
+                )
+        })())
+    }
 }
 
 impl BindingForm<'_> {
@@ -758,44 +791,6 @@ fn add_norm_claims_prepared(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-fn add_compaction_product_claims_prepared(
-    coefficients: &mut impl CoefficientSink,
-    target: &mut F,
-    scale: &mut F,
-    eta: F,
-    layout: &FalconSourceLayout,
-    proof: FalconPiopClaimRef<'_>,
-    field: &Cfg,
-    weights: &crate::poly::mle::EqualityWeights<F>,
-) -> Result<(), FalconError> {
-    let offsets = layout.offsets();
-    let claims = [
-        proof.compact_products.terminal.ax,
-        proof.compact_products.terminal.bx,
-        proof.compact_products.terminal.cx,
-    ];
-    for (coordinate, claim) in claims.into_iter().enumerate() {
-        for instance in coefficients.instances(layout.batch()) {
-            let base = instance * layout.signature_stride();
-            for i in 0..HASH_TO_POINT_SAMPLES {
-                let index = match coordinate {
-                    0 => offsets.hash_quotients + 3 * i + 2,
-                    1 => offsets.hash_quotients + 3 * i,
-                    _ => offsets.hash_accept_ands + i,
-                };
-                coefficients.add(
-                    base + index,
-                    field.mul(scale, &weights.at(instance * COMPACTION_LEAVES + i)),
-                );
-            }
-        }
-        add_claim_target(target, *scale, claim, field.zero(), field);
-        *scale = field.mul(scale, &eta);
-    }
-    Ok(())
-}
-
 fn add_value_scaled(values: &mut impl CoefficientSink, base: usize, scale: F, field: &Cfg) {
     values.add_word(base, 14, scale, field);
     values.add(base + 13, mul_i(scale, -4095, field));
@@ -803,16 +798,6 @@ fn add_value_scaled(values: &mut impl CoefficientSink, base: usize, scale: F, fi
 
 fn add_claim_target(target: &mut F, scale: F, claimed: F, constant: F, field: &Cfg) {
     *target = field.add(target, &field.sub(&field.mul(&scale, &claimed), &constant));
-}
-
-fn add_unsigned_scaled(
-    values: &mut impl CoefficientSink,
-    base: usize,
-    width: usize,
-    scale: F,
-    field: &Cfg,
-) {
-    values.add_word(base, width, scale, field);
 }
 
 fn add_signed_source_scaled(

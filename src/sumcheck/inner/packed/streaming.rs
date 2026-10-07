@@ -60,6 +60,23 @@ pub(crate) trait StreamingCoefficientSource: Sync {
         None
     }
 
+    /// Optional coefficient buckets for a four-variable prefix. Split each
+    /// aligned 16-position block into C0,C1 and witness bytes h0,h1. Table 0
+    /// groups C0 by h0; table 1 groups C1 by h1; table 2 groups C0 by h1 plus
+    /// C1 by h0. Each bucket contains eight final lane sums. Emit in strictly
+    /// increasing (table, byte) order, with table in 0..3; zero bytes may be
+    /// omitted. Read witness pairs only through read_pair, whose second
+    /// argument is the highest occupied coefficient lane plus one (1..=16).
+    /// Return None without invoking callbacks when unsupported.
+    fn for_each_partition_byte_pair_bucket(
+        &self,
+        _partition: usize,
+        _read_pair: &mut impl FnMut(usize, usize) -> Result<u16, SumcheckError>,
+        _emit: &mut impl FnMut(usize, u8, &[Field; 8]) -> Result<(), SumcheckError>,
+    ) -> Option<Result<(), SumcheckError>> {
+        None
+    }
+
     /// Optional additive replay after binding the low variables with the given
     /// equality weights. Indices are in the original domain divided by the
     /// weights' length; padding and omitted entries remain zero.
@@ -518,6 +535,13 @@ impl<S: StreamingCoefficientSource + ?Sized> StreamingMle<'_, S> {
         cfg: &FieldConfig,
         zero: &Field,
     ) -> Result<PrefixAccumulators, SumcheckError> {
+        if K == 4 && self.source.partition_len() >= 1 << 12 {
+            if let Some(result) =
+                self.build_four_variable_partition(partition, live_len, bits, cfg, zero)
+            {
+                return result;
+            }
+        }
         let mut state = PrefixBuildState::new::<K>(zero);
         // For a fixed witness byte, every prefix accumulator is linear in its
         // eight coefficient values. Sum those values before the ternary
@@ -660,6 +684,130 @@ impl<S: StreamingCoefficientSource + ?Sized> StreamingMle<'_, S> {
         }
         finish_partition::<K>(state, cfg, zero)
     }
+
+    fn build_four_variable_partition<H: Sha256InnerBitSource + ?Sized>(
+        &self,
+        partition: usize,
+        live_len: usize,
+        bits: &H,
+        cfg: &FieldConfig,
+        zero: &Field,
+    ) -> Option<Result<PrefixAccumulators, SumcheckError>> {
+        let mut states = std::array::from_fn(|_| PrefixBuildState::new::<3>(zero));
+        let start = partition * self.source.partition_len();
+        let end = (start + self.source.partition_len()).min(live_len);
+        let mut next_bucket = 0;
+        if let Some(result) = self.source.for_each_partition_byte_pair_bucket(
+            partition,
+            &mut |base, occupied_lanes| {
+                if base % 16 != 0
+                    || !(start..end).contains(&base)
+                    || occupied_lanes == 0
+                    || occupied_lanes > 16
+                    || occupied_lanes > end - base
+                {
+                    return Err(SumcheckError::InvalidProductDimensions);
+                }
+                let active = 16.min(end - base);
+                let word = bits.bits_at(base, active)?;
+                if word & !low_bits_mask(active) != 0 {
+                    return Err(SumcheckError::InvalidProductDimensions);
+                }
+                Ok(word as u16)
+            },
+            &mut |table, byte, values| {
+                if table >= 3 {
+                    return Err(SumcheckError::InvalidProductDimensions);
+                }
+                let bucket = 256 * table + usize::from(byte);
+                if bucket < next_bucket {
+                    return Err(SumcheckError::InvalidProductDimensions);
+                }
+                next_bucket = bucket + 1;
+                validate_field_values(values, cfg)?;
+                if byte != 0 {
+                    accumulate_three_variable_block(
+                        &mut states[table],
+                        values,
+                        usize::from(byte),
+                        cfg,
+                        zero,
+                    );
+                }
+                Ok(())
+            },
+        ) {
+            return Some(result.and_then(|()| finish_four_variable_partition(states, cfg, zero)));
+        }
+        // Sources without a word adapter can still aggregate checked blocks.
+        // Three byte tables replace a ternary extension for every 16 bits.
+        let mut buckets = vec![*zero; 3 * 256 * 8];
+        let mut occupied = [false; 3 * 256];
+        self.visit_blocks_checked::<4>(partition, cfg, |base, values| {
+            let active = 16.min(end - base);
+            let word = bits.bits_at(base, active)?;
+            if word & !low_bits_mask(active) != 0 {
+                return Err(SumcheckError::InvalidProductDimensions);
+            }
+            let bytes = [(word & 255) as usize, (word >> 8) as usize];
+            for side in 0..2 {
+                for (table, byte) in [(side, bytes[side]), (2, bytes[1 - side])] {
+                    if byte == 0 {
+                        continue;
+                    }
+                    let bucket = table * 256 + byte;
+                    occupied[bucket] = true;
+                    for (sum, value) in buckets[8 * bucket..][..8]
+                        .iter_mut()
+                        .zip(&values[8 * side..][..8])
+                    {
+                        *sum = cfg.add(sum, value);
+                    }
+                }
+            }
+            Ok(())
+        })
+        .map(|result| {
+            result?;
+            for (bucket, used) in occupied.into_iter().enumerate() {
+                if used {
+                    accumulate_three_variable_block(
+                        &mut states[bucket / 256],
+                        &buckets[8 * bucket..][..8],
+                        bucket % 256,
+                        cfg,
+                        zero,
+                    );
+                }
+            }
+            finish_four_variable_partition(states, cfg, zero)
+        })
+    }
+}
+
+fn finish_four_variable_partition(
+    states: [PrefixBuildState; 3],
+    cfg: &FieldConfig,
+    zero: &Field,
+) -> Result<PrefixAccumulators, SumcheckError> {
+    let sums = states
+        .into_iter()
+        .map(|state| {
+            state
+                .partial_sums
+                .into_iter()
+                .map(|sum| linear_reduce(sum, cfg))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut beta = vec![*zero; 81];
+    for i in 0..27 {
+        // (C1-C0)(h1-h0) = C0h0 + C1h1 - (C0h1+C1h0).
+        beta[i] = cfg.sub(&cfg.add(&sums[0][i], &sums[1][i]), &sums[2][i]);
+        beta[27 + i] = sums[0][i];
+        beta[54 + i] = sums[1][i];
+    }
+    Ok(scatter_beta_values::<4>(&beta, zero, cfg))
 }
 
 fn finish_partition<const K: usize>(
@@ -2101,5 +2249,437 @@ mod tests {
             check!(3);
             check!(4);
         }
+    }
+
+    /// Independent, dense coefficient oracle for the specialized pair hook.
+    struct PairBuckets<'a> {
+        blocks: Blocks<'a>,
+        cfg: &'a FieldConfig,
+        calls: AtomicUsize,
+    }
+
+    impl StreamingCoefficientSource for PairBuckets<'_> {
+        fn num_vars(&self) -> usize {
+            self.blocks.num_vars()
+        }
+        fn live_len(&self) -> usize {
+            self.blocks.live_len()
+        }
+        fn partition_len(&self) -> usize {
+            self.blocks.partition_len()
+        }
+        fn for_each_coefficient(
+            &self,
+            _: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+        ) -> Result<(), SumcheckError> {
+            panic!("pair bucket source used additive replay")
+        }
+        fn for_each_partition_block(
+            &self,
+            partition: usize,
+            width: usize,
+            emit: &mut impl FnMut(usize, &[Field]) -> Result<(), SumcheckError>,
+        ) -> Option<Result<(), SumcheckError>> {
+            self.blocks.for_each_partition_block(partition, width, emit)
+        }
+        fn for_each_partition_byte_pair_bucket(
+            &self,
+            partition: usize,
+            read_pair: &mut impl FnMut(usize, usize) -> Result<u16, SumcheckError>,
+            emit: &mut impl FnMut(usize, u8, &[Field; 8]) -> Result<(), SumcheckError>,
+        ) -> Option<Result<(), SumcheckError>> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            Some((|| {
+                let mut buckets = vec![[self.cfg.zero(); 8]; 3 * 256];
+                let start = partition * self.partition_len();
+                let end = (start + self.partition_len()).min(self.live_len());
+                for base in (start..end).step_by(16) {
+                    let active = 16.min(end - base);
+                    let occupied = self.blocks.values[base..base + active]
+                        .iter().rposition(|value| *value != self.cfg.zero()).map_or(1, |lane| lane + 1);
+                    // The callback must still return both live witness bytes when
+                    // only the low coefficient half is occupied: cross terms use it.
+                    let word = read_pair(base, occupied)?;
+                    let low = usize::from(word & 255);
+                    let high = usize::from(word >> 8);
+                    for lane in 0..8 {
+                        let c0 = if lane < active {
+                            self.blocks.values[base + lane]
+                        } else {
+                            self.cfg.zero()
+                        };
+                        let c1 = if lane + 8 < active {
+                            self.blocks.values[base + lane + 8]
+                        } else {
+                            self.cfg.zero()
+                        };
+                        for (bucket, coefficient) in [
+                            (low, c0),
+                            (256 + high, c1),
+                            (512 + high, c0),
+                            (512 + low, c1),
+                        ] {
+                            buckets[bucket][lane] =
+                                self.cfg.add(&buckets[bucket][lane], &coefficient);
+                        }
+                    }
+                }
+                // Include zero-byte buckets to exercise their canonical-value checks.
+                for (index, values) in buckets.iter().enumerate() {
+                    emit(index / 256, (index % 256) as u8, values)?;
+                }
+                Ok(())
+            })())
+        }
+    }
+
+    #[test]
+    fn four_variable_pair_bucket_algebra_matches_recursive_ternary_extension() {
+        let cfg = spartan_bitz_field_config();
+        let zero = cfg.zero();
+        let coefficients: [Field; 16] = std::array::from_fn(|i| {
+            let value = Field::from_with_cfg((11 * i + 3) as u64, &cfg);
+            if i % 3 == 0 { cfg.neg(&value) } else { value }
+        });
+        for low in 0u16..256 {
+            for high in [0, 255, low, low ^ 255, (low.rotate_left(3) & 255)] {
+                let word = low | high << 8;
+                let mut states = std::array::from_fn(|_| PrefixBuildState::new::<3>(&zero));
+                accumulate_three_variable_block(
+                    &mut states[0],
+                    &coefficients[..8],
+                    usize::from(low),
+                    &cfg,
+                    &zero,
+                );
+                accumulate_three_variable_block(
+                    &mut states[1],
+                    &coefficients[8..],
+                    usize::from(high),
+                    &cfg,
+                    &zero,
+                );
+                accumulate_three_variable_block(
+                    &mut states[2],
+                    &coefficients[..8],
+                    usize::from(high),
+                    &cfg,
+                    &zero,
+                );
+                accumulate_three_variable_block(
+                    &mut states[2],
+                    &coefficients[8..],
+                    usize::from(low),
+                    &cfg,
+                    &zero,
+                );
+                let actual = finish_four_variable_partition(states, &cfg, &zero).unwrap();
+                let mut recursive = PrefixBuildState::new::<4>(&zero);
+                accumulate_block::<4, _>(
+                    &mut recursive,
+                    0,
+                    &coefficients,
+                    &[u64::from(word)][..],
+                    16,
+                    &cfg,
+                    &zero,
+                )
+                .unwrap();
+                let expected = finish_partition::<4>(recursive, &cfg, &zero).unwrap();
+                assert_eq!(actual.rounds, expected.rounds, "witness pair {word:#06x}");
+            }
+        }
+    }
+
+    #[test]
+    fn four_variable_pair_hook_matches_dense_proofs_with_cancellation_and_padding() {
+        for field_bits in [115, 126] {
+            let cfg = crate::prime_sampling::sample_prime_context(
+                &mut Blake3Transcript::new(),
+                1u128 << (field_bits - 1),
+                (1u128 << field_bits) - 1,
+                128,
+            )
+            .unwrap();
+            for live_len in [1usize, 7, 8, 9, 15, 16, 17, 4096, 4099, 8192, 16371] {
+                let domain = live_len.next_power_of_two().max(4096);
+                let num_vars = domain.ilog2() as usize;
+                let mut bits = vec![0u64; live_len.div_ceil(64)];
+                let coefficients: Vec<_> = (0..live_len)
+                    .map(|i| {
+                        // Every low and high byte occurs, with unequal halves.
+                        let pair = i / 16;
+                        let byte = if i % 16 < 8 {
+                            pair % 256
+                        } else {
+                            (pair * 73 + 19) % 256
+                        };
+                        bits[i / 64] |= (((byte >> (i % 8)) & 1) as u64) << (i % 64);
+                        let value = Field::from_with_cfg((1 + i % 4096) as u64, &cfg);
+                        // Repeated patterns cancel, and one whole partition is empty.
+                        if (8192..12288).contains(&i) || (i / 16 % 5 == 3 && i % 16 >= 3) {
+                            cfg.zero()
+                        } else if i / 4096 % 2 == 1 {
+                            cfg.neg(&value)
+                        } else {
+                            value
+                        }
+                    })
+                    .collect();
+                let witness: Vec<_> = (0..domain)
+                    .map(|i| {
+                        if i < live_len && bits[i / 64] >> (i % 64) & 1 != 0 {
+                            cfg.one()
+                        } else {
+                            cfg.zero()
+                        }
+                    })
+                    .collect();
+                let mut dense = coefficients.clone();
+                dense.resize(domain, cfg.zero());
+                let claim = dense
+                    .iter()
+                    .zip(&witness)
+                    .fold(cfg.zero(), |sum, (a, b)| cfg.add(&sum, &cfg.mul(a, b)));
+                let mut reference_transcript = Blake3Transcript::new();
+                let reference = prove_inner_sumcheck(
+                    &cfg,
+                    &mut reference_transcript,
+                    claim,
+                    witness,
+                    dense,
+                    &mut UngrindedRoundBoundary,
+                )
+                .unwrap();
+                let continuation = reference_transcript.get_challenge::<u128>();
+                for partition_len in [4096, domain] {
+                    let source = PairBuckets {
+                        blocks: Blocks {
+                            values: &coefficients,
+                            zero: cfg.zero(),
+                            num_vars,
+                            partition_len,
+                        },
+                        cfg: &cfg,
+                        calls: AtomicUsize::new(0),
+                    };
+                    let mut transcript = Blake3Transcript::new();
+                    let actual = prove_inner_sumcheck(
+                        &cfg,
+                        &mut transcript,
+                        claim,
+                        PackedInput::new(&StreamingMle::new(&source), &bits, num_vars, live_len, 4),
+                        (),
+                        &mut UngrindedRoundBoundary,
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        source.calls.load(Ordering::Relaxed),
+                        live_len.div_ceil(partition_len)
+                    );
+                    assert_eq!(
+                        actual, reference,
+                        "field={field_bits}, live={live_len}, partition={partition_len}"
+                    );
+                    assert_eq!(transcript.get_challenge::<u128>(), continuation);
+                    // The checked 16-coefficient fallback must produce the same proof too.
+                    let mut fallback_transcript = Blake3Transcript::new();
+                    let fallback = prove_inner_sumcheck(
+                        &cfg,
+                        &mut fallback_transcript,
+                        claim,
+                        PackedInput::new(
+                            &StreamingMle::new(&source.blocks),
+                            &bits,
+                            num_vars,
+                            live_len,
+                            4,
+                        ),
+                        (),
+                        &mut UngrindedRoundBoundary,
+                    )
+                    .unwrap();
+                    assert_eq!(fallback, reference);
+                    assert_eq!(fallback_transcript.get_challenge::<u128>(), continuation);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pair_buckets_reject_invalid_reads_order_and_residues_before_transcript_changes() {
+        struct InvalidPairs<'a> {
+            cfg: &'a FieldConfig,
+            fault: usize,
+        }
+        impl StreamingCoefficientSource for InvalidPairs<'_> {
+            fn num_vars(&self) -> usize {
+                13
+            }
+            fn live_len(&self) -> usize {
+                4099
+            }
+            fn partition_len(&self) -> usize {
+                4096
+            }
+            fn for_each_coefficient(
+                &self,
+                _: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+            ) -> Result<(), SumcheckError> {
+                unreachable!()
+            }
+            fn for_each_partition_byte_pair_bucket(
+                &self,
+                partition: usize,
+                read_pair: &mut impl FnMut(usize, usize) -> Result<u16, SumcheckError>,
+                emit: &mut impl FnMut(usize, u8, &[Field; 8]) -> Result<(), SumcheckError>,
+            ) -> Option<Result<(), SumcheckError>> {
+                let mut values = [self.cfg.zero(); 8];
+                let base = partition * self.partition_len();
+                Some(match self.fault {
+                    0..=2 => {
+                        values[7] = crate::piop::spartan::noncanonical_test_value(self.cfg);
+                        emit(self.fault, 0, &values)
+                    }
+                    3 => emit(3, 0, &values),
+                    4 => emit(usize::MAX, 0, &values),
+                    5 => emit(1, 2, &values).and_then(|_| emit(1, 2, &values)),
+                    6 => emit(2, 2, &values).and_then(|_| emit(2, 1, &values)),
+                    7 => emit(1, 0, &values).and_then(|_| emit(0, 255, &values)),
+                    8 => read_pair(base + 1, 1).map(|_| ()),
+                    9 => read_pair(base + 4096, 1).map(|_| ()),
+                    10 => read_pair(usize::MAX, 1).map(|_| ()),
+                    11 => read_pair(base, 0).map(|_| ()),
+                    12 => read_pair(base, 17).map(|_| ()),
+                    13 if partition == 1 => read_pair(base, 4).map(|_| ()),
+                    14 if partition == 1 => read_pair(base - 16, 16).map(|_| ()),
+                    13 | 14 => Ok(()),
+                    _ => unreachable!(),
+                })
+            }
+        }
+        let cfg = spartan_bitz_field_config();
+        for fault in 0..15 {
+            let source = InvalidPairs { cfg: &cfg, fault };
+            let mut transcript = Blake3Transcript::new();
+            assert!(
+                prove_inner_sumcheck(
+                    &cfg,
+                    &mut transcript,
+                    cfg.zero(),
+                    PackedInput::new(&StreamingMle::new(&source), &vec![0u64; 65], 13, 4099, 4),
+                    (),
+                    &mut UngrindedRoundBoundary,
+                )
+                .is_err(),
+                "fault={fault}"
+            );
+            assert_eq!(
+                transcript.get_challenge::<u128>(),
+                Blake3Transcript::new().get_challenge::<u128>()
+            );
+        }
+    }
+
+    #[test]
+    fn pair_bucket_reads_reject_noncanonical_witness_and_coefficient_padding() {
+        struct ExtraWitnessBit;
+        impl Sha256InnerBitSource for ExtraWitnessBit {
+            fn bit_at(&self, _: usize) -> Result<u64, SumcheckError> {
+                unreachable!()
+            }
+            fn bits_at(&self, _: usize, count: usize) -> Result<u64, SumcheckError> {
+                Ok(1 << count)
+            }
+        }
+        struct PaddedBlocks<'a> {
+            cfg: &'a FieldConfig,
+        }
+        impl StreamingCoefficientSource for PaddedBlocks<'_> {
+            fn num_vars(&self) -> usize {
+                12
+            }
+            fn live_len(&self) -> usize {
+                3
+            }
+            fn partition_len(&self) -> usize {
+                4096
+            }
+            fn for_each_coefficient(
+                &self,
+                _: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+            ) -> Result<(), SumcheckError> {
+                unreachable!()
+            }
+            fn for_each_partition_block(
+                &self,
+                _: usize,
+                width: usize,
+                emit: &mut impl FnMut(usize, &[Field]) -> Result<(), SumcheckError>,
+            ) -> Option<Result<(), SumcheckError>> {
+                assert_eq!(width, 16);
+                let mut block = [self.cfg.zero(); 16];
+                block[3] = self.cfg.one();
+                Some(emit(0, &block))
+            }
+        }
+        let cfg = spartan_bitz_field_config();
+        for live_len in [3usize, 16] {
+            let coefficients = vec![cfg.one(); live_len];
+            let source = PairBuckets {
+                blocks: Blocks {
+                    values: &coefficients,
+                    zero: cfg.zero(),
+                    num_vars: 12,
+                    partition_len: 4096,
+                },
+                cfg: &cfg,
+                calls: AtomicUsize::new(0),
+            };
+            let mut transcript = Blake3Transcript::new();
+            assert!(
+                prove_inner_sumcheck(
+                    &cfg,
+                    &mut transcript,
+                    cfg.zero(),
+                    PackedInput::new(
+                        &StreamingMle::new(&source),
+                        &ExtraWitnessBit,
+                        12,
+                        live_len,
+                        4
+                    ),
+                    (),
+                    &mut UngrindedRoundBoundary,
+                )
+                .is_err()
+            );
+            assert_eq!(
+                transcript.get_challenge::<u128>(),
+                Blake3Transcript::new().get_challenge::<u128>()
+            );
+        }
+        let mut transcript = Blake3Transcript::new();
+        assert!(
+            prove_inner_sumcheck(
+                &cfg,
+                &mut transcript,
+                cfg.zero(),
+                PackedInput::new(
+                    &StreamingMle::new(&PaddedBlocks { cfg: &cfg }),
+                    &[0u64][..],
+                    12,
+                    3,
+                    4
+                ),
+                (),
+                &mut UngrindedRoundBoundary,
+            )
+            .is_err()
+        );
+        assert_eq!(
+            transcript.get_challenge::<u128>(),
+            Blake3Transcript::new().get_challenge::<u128>()
+        );
     }
 }

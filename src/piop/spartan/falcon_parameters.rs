@@ -43,12 +43,6 @@ impl FalconParameters {
         (64 - self.norm_bound.leading_zeros()) as usize
     }
 
-    pub const fn prefix_bits(self) -> usize {
-        self.n.ilog2() as usize + 1
-    }
-    pub const fn compaction_log(self) -> usize {
-        self.samples().next_power_of_two().ilog2() as usize
-    }
     pub const fn permutations(self) -> usize {
         (2 * self.samples()).div_ceil(136)
     }
@@ -178,17 +172,13 @@ mod tests {
         }
     }
     #[test]
-    fn supported_geometry_and_prefix_counter() {
+    fn supported_geometry_and_keccak_slabs() {
         for log in 9..=10 {
             let p = FalconParameters::for_degree(1 << log);
             assert!(p.norm_bound < 1 << p.norm_bits());
             assert!(p.oversampling < p.n);
             assert_eq!((14 * p.n) % 8, 0);
             assert_eq!((p.signature_bits * p.n) % 8, 0);
-            assert!(p.samples() < 1 << p.prefix_bits());
-            for prefix in 0..=p.samples() {
-                assert_eq!(prefix < p.n, (prefix >> (p.prefix_bits() - 1)) == 0);
-            }
             let mut total = 0;
             for i in 0..p.slab_count() {
                 let (first, count) = p.slab(i);
