@@ -23,7 +23,7 @@ use std::sync::Mutex;
 
 struct OpeningGrinding;
 impl GrindingDomain for OpeningGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/opening-grinding/v1";
+    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/opening-grinding/v2";
 }
 
 /// Accounting under the repository's computational grinding model, excluding
@@ -131,9 +131,9 @@ impl PreparedFalconAlgebraic {
             norm_instance_bits: grind(target_bits, d, 125),
             norm_round_bits: grind(target_bits, 4 * (10 + d), 125),
             merge_bits: grind(target_bits, 6, 125),
-            binding_bits: grind(target_bits, 2 * (16 + d), 125),
+            binding_bits: grind(target_bits, 2 * (15 + d), 125),
         };
-        let geometry = shared::Geometry::new([9 + d]).map_err(error)?;
+        let geometry = shared::Geometry::new([8 + d]).map_err(error)?;
         let ligerito = LigeritoSelection::MATCHED_UDR
             .resolve(geometry.packed_log(), target_bits)
             .map_err(error)?;
@@ -200,7 +200,7 @@ impl PreparedFalconAlgebraic {
             ("claim merge", prime(6, self.schedule.merge_bits)),
             (
                 "source binding sumcheck",
-                prime(2 * (16 + d), self.schedule.binding_bits),
+                prime(2 * (15 + d), self.schedule.binding_bits),
             ),
             (
                 "BitZ product GKR",
@@ -320,7 +320,7 @@ impl PreparedFalconAlgebraic {
         public.validate(self.batch())?;
         let mut h = blake3::Hasher::new();
         h.update(PROTOCOL_ID.as_bytes());
-        h.update(b"signed15,signed15,slack27;native11;two-limbs;one-source;zero-padding/v1");
+        h.update(b"signed15-lanes16,slack27-lane15;native11;two-limbs;one-source;zero-padding/v2");
         for value in [
             N,
             Q as usize,
@@ -608,9 +608,9 @@ mod tests {
             for batch in 1..=1024 {
                 // Resolve the PCS at power-of-two batch boundaries.
                 let layout = Layout::new(batch).unwrap();
-                assert_eq!(layout.capacity(), batch.next_power_of_two().max(8));
+                assert_eq!(layout.capacity(), batch.next_power_of_two().max(16));
                 let d = layout.capacity().ilog2() as usize;
-                for numerator in [d, 4 * (10 + d), 6, 2 * (16 + d), 10] {
+                for numerator in [d, 4 * (10 + d), 6, 2 * (15 + d), 10] {
                     let g = grind(target, numerator, 125);
                     assert!(
                         (BigUint::from(numerator) << (target + 4))
@@ -621,7 +621,8 @@ mod tests {
                     let p = PreparedFalconAlgebraic::new(batch, target).unwrap();
                     assert!(p.security().algebraic_bits >= target as f64);
                     assert_eq!(p.live_bits_per_signature(), 30747);
-                    assert_eq!(p.geometry.physical_logs, [9 + d]);
+                    assert_eq!(p.source_bits_per_signature(), 32768);
+                    assert_eq!(p.geometry.physical_logs, [8 + d]);
                 }
             }
         }
@@ -633,7 +634,10 @@ mod tests {
 
     #[test]
     fn end_to_end_and_tampering() {
-        for (batch, target) in [(1, 100), (3, 100), (1, 128)] {
+        for (batch, target) in [100, 128]
+            .into_iter()
+            .flat_map(|target| [1, 3, 8, 9, 16].map(|batch| (batch, target)))
+        {
             let prepared = PreparedFalconAlgebraic::new(batch, target).unwrap();
             let (public, witness) = fixture(batch);
             let committed = prepared.commit(public.clone(), witness).unwrap();
@@ -641,7 +645,11 @@ mod tests {
             prepared.verify(&public, &proof).unwrap();
             assert_eq!(
                 proof.payload_size_bytes(),
-                proof.payload_size_breakdown().iter().map(|(_, n)| n).sum::<usize>()
+                proof
+                    .payload_size_breakdown()
+                    .iter()
+                    .map(|(_, n)| n)
+                    .sum::<usize>()
             );
             let mut bad_public = public.clone();
             bad_public.targets[0][1] ^= 1;
@@ -755,7 +763,7 @@ mod tests {
         let prepared = PreparedFalconAlgebraic::new(3, 100).unwrap();
         let (public, witness) = fixture(3);
         let data = WitnessData::new(&public, witness).unwrap();
-        for index in [LIVE_BITS, 3 * 65536, 15 * N] {
+        for index in [16 * 27 + 15, 3 * prepared.layout.signature_stride(), 16 * N] {
             let mut source = Source::new(prepared.layout, &data);
             source.flip(index);
             let committed = prepared
@@ -773,7 +781,8 @@ mod tests {
             include_bytes!("../falcon/fixtures/public_key.bin"),
             include_bytes!("../falcon/fixtures/message.bin"),
             include_bytes!("../falcon/fixtures/signature_ct.bin"),
-        ).unwrap();
+        )
+        .unwrap();
         let public = FalconAlgebraicStatement {
             public_keys: vec![*trace.public_key.h],
             targets: vec![*trace.hash_to_point.point],
@@ -801,7 +810,9 @@ mod tests {
             for batch in [32, 1024] {
                 let prepared = PreparedFalconAlgebraic::new(batch, target).unwrap();
                 let (public, witness) = fixture(batch);
-                let proof = prepared.prove(prepared.commit(public.clone(), witness).unwrap()).unwrap();
+                let proof = prepared
+                    .prove(prepared.commit(public.clone(), witness).unwrap())
+                    .unwrap();
                 prepared.verify(&public, &proof).unwrap();
             }
         }

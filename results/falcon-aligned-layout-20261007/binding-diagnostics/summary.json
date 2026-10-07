@@ -1,0 +1,178 @@
+[
+  {
+    "kind": "algebraic",
+    "batch": 32,
+    "security_bits": 128,
+    "threads": 1,
+    "baseline_binding_ms": 51.10013,
+    "baseline_samples_ms": [
+      51.30014,
+      51.10013,
+      50.900121,
+      51.10013,
+      51.00014
+    ],
+    "candidate_binding_ms": 8.290140999999998,
+    "candidate_samples_ms": [
+      8.36012,
+      8.310120000000001,
+      8.29012,
+      8.290140999999998,
+      8.28012
+    ]
+  },
+  {
+    "kind": "algebraic",
+    "batch": 32,
+    "security_bits": 128,
+    "threads": 16,
+    "baseline_binding_ms": 5.79023,
+    "baseline_samples_ms": [
+      5.88012,
+      5.75014,
+      5.770480999999999,
+      5.810239999999999,
+      5.79023
+    ],
+    "candidate_binding_ms": 2.21014,
+    "candidate_samples_ms": [
+      2.28015,
+      2.19018,
+      2.21014,
+      2.21014,
+      2.190201
+    ]
+  },
+  {
+    "kind": "algebraic",
+    "batch": 1024,
+    "security_bits": 128,
+    "threads": 1,
+    "baseline_binding_ms": 1620.00025,
+    "baseline_samples_ms": [
+      1640.000151,
+      1640.000481,
+      1620.00016,
+      1620.00025,
+      1620.00014
+    ],
+    "candidate_binding_ms": 248.00017,
+    "candidate_samples_ms": [
+      248.000141,
+      248.00013,
+      248.00017,
+      248.0002,
+      248.00019
+    ]
+  },
+  {
+    "kind": "algebraic",
+    "batch": 1024,
+    "security_bits": 128,
+    "threads": 16,
+    "baseline_binding_ms": 159.00015,
+    "baseline_samples_ms": [
+      158.00015,
+      158.000231,
+      159.000171,
+      159.00015,
+      160.000221
+    ],
+    "candidate_binding_ms": 47.700160000000004,
+    "candidate_samples_ms": [
+      47.400161,
+      48.100251,
+      47.50017,
+      47.700161,
+      47.700160000000004
+    ]
+  },
+  {
+    "kind": "full",
+    "batch": 32,
+    "security_bits": 128,
+    "threads": 1,
+    "baseline_binding_ms": 52.336211,
+    "baseline_samples_ms": [
+      51.881460999999994,
+      52.336211,
+      52.378251,
+      52.33084,
+      52.357941999999994
+    ],
+    "candidate_binding_ms": 53.380437,
+    "candidate_samples_ms": [
+      53.393642,
+      53.380437,
+      53.123801,
+      53.418479,
+      53.255931
+    ]
+  },
+  {
+    "kind": "full",
+    "batch": 32,
+    "security_bits": 128,
+    "threads": 16,
+    "baseline_binding_ms": 9.973161,
+    "baseline_samples_ms": [
+      10.335206,
+      9.973161,
+      10.044647,
+      9.164591,
+      9.393044
+    ],
+    "candidate_binding_ms": 9.601047,
+    "candidate_samples_ms": [
+      9.683142,
+      9.601047,
+      9.892710000000001,
+      9.439943,
+      9.294688
+    ]
+  },
+  {
+    "kind": "full",
+    "batch": 1024,
+    "security_bits": 128,
+    "threads": 1,
+    "baseline_binding_ms": 1571.310773,
+    "baseline_samples_ms": [
+      1569.5497010000001,
+      1579.5736279999999,
+      1571.310773,
+      1570.225239,
+      1572.1175600000001
+    ],
+    "candidate_binding_ms": 1593.121534,
+    "candidate_samples_ms": [
+      1593.121534,
+      1594.290325,
+      1593.202828,
+      1592.4856410000002,
+      1588.351298
+    ]
+  },
+  {
+    "kind": "full",
+    "batch": 1024,
+    "security_bits": 128,
+    "threads": 16,
+    "baseline_binding_ms": 131.022151,
+    "baseline_samples_ms": [
+      131.022151,
+      130.871736,
+      130.505162,
+      132.33636800000002,
+      131.261193
+    ],
+    "candidate_binding_ms": 129.265357,
+    "candidate_samples_ms": [
+      128.790848,
+      131.418521,
+      129.265357,
+      128.61890300000002,
+      130.147356
+    ]
+  }
+]

@@ -6,7 +6,15 @@ use super::*;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum WordKind {
     Unsigned,
-    Encoded { offset: u8 },
+    Signed,
+    #[cfg(test)]
+    Encoded {
+        offset: u8,
+    },
+    /// A CT payload byte, mapped into aligned little-endian coefficient digits.
+    SignatureByte {
+        offset: u8,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -101,23 +109,34 @@ impl FoldedWords {
         }
         let mut starts = Vec::with_capacity(words.len() + 1);
         let mut terms = Vec::new();
+        // Aligned coefficients repeat the same decoder on the low four
+        // variables. Compile each relative shape once, including mapped bytes.
+        let mut shapes = HashMap::<Word, Vec<(usize, F)>>::new();
         for &word in words {
             starts.push(terms.len());
             let base = word.base >> vars;
-            let mut sums = [field.zero(); 32];
-            for bit in 0..usize::from(word.width) {
-                let (index, negative) = word.bit_position(bit);
-                let weight = powers[bit * weights.len() + (index & (weights.len() - 1))];
-                let slot = &mut sums[(index >> vars) - base];
-                *slot = if negative {
-                    field.sub(slot, &weight)
-                } else {
-                    field.add(slot, &weight)
-                };
-            }
-            terms.extend(sums.into_iter().enumerate().filter_map(|(offset, value)| {
-                (value != field.zero()).then_some((base + offset, value))
-            }));
+            let relative = Word {
+                base: word.base & (weights.len() - 1),
+                ..word
+            };
+            let shape = shapes.entry(relative).or_insert_with(|| {
+                let mut sums = [field.zero(); 32];
+                for bit in 0..usize::from(relative.width) {
+                    let (index, negative) = relative.bit_position(bit);
+                    let weight = powers[bit * weights.len() + (index & (weights.len() - 1))];
+                    let slot = &mut sums[index >> vars];
+                    *slot = if negative {
+                        field.sub(slot, &weight)
+                    } else {
+                        field.add(slot, &weight)
+                    };
+                }
+                sums.into_iter()
+                    .enumerate()
+                    .filter(|(_, value)| *value != field.zero())
+                    .collect()
+            });
+            terms.extend(shape.iter().map(|&(offset, value)| (base + offset, value)));
         }
         starts.push(terms.len());
         Self {
@@ -132,11 +151,22 @@ impl Word {
     fn bit_position(self, bit: usize) -> (usize, bool) {
         match self.kind {
             WordKind::Unsigned => (self.base + bit, false),
+            WordKind::Signed => (self.base + bit, bit + 1 == usize::from(self.width)),
+            #[cfg(test)]
             WordKind::Encoded { offset } => {
                 let stream = usize::from(offset) + SIGNATURE_BITS - 1 - bit;
                 (
                     self.base + 8 * (stream / 8) + 7 - stream % 8,
                     bit == SIGNATURE_BITS - 1,
+                )
+            }
+            WordKind::SignatureByte { offset } => {
+                let stream = usize::from(offset) + 7 - bit;
+                (
+                    self.base + 16 * (stream / SIGNATURE_BITS) + SIGNATURE_BITS
+                        - 1
+                        - stream % SIGNATURE_BITS,
+                    false,
                 )
             }
         }
@@ -330,6 +360,7 @@ impl<A: WordAccumulator> CoefficientSink for WordSink<'_, A> {
         self.word(base, width, WordKind::Unsigned, scale);
     }
 
+    #[cfg(test)]
     fn add_encoded_word(&mut self, base: usize, offset: usize, scale: F, _: &Cfg) {
         self.word(
             base,
@@ -339,6 +370,27 @@ impl<A: WordAccumulator> CoefficientSink for WordSink<'_, A> {
             },
             scale,
         );
+    }
+
+    fn add_signed_word(&mut self, base: usize, width: usize, scale: F, _: &Cfg) {
+        self.word(base, width, WordKind::Signed, scale);
+    }
+
+    fn add_signature_byte(&mut self, layout: &FalconSourceLayout, byte: usize, scale: F, _: &Cfg) {
+        let header_bytes = 1 + super::super::NONCE_BYTES;
+        if byte < header_bytes {
+            self.word(layout.signature_bit(byte, 0), 8, WordKind::Unsigned, scale);
+        } else {
+            let stream = 8 * (byte - header_bytes);
+            self.word(
+                layout.s2_bit(stream / SIGNATURE_BITS, 0),
+                8,
+                WordKind::SignatureByte {
+                    offset: (stream % SIGNATURE_BITS) as u8,
+                },
+                scale,
+            );
+        }
     }
 }
 
@@ -664,17 +716,11 @@ impl BindingForm<'_> {
         }
         let field = self.field;
         let mut common = WordSink::new(0, 0, field);
-        emit_linear_template(
-            &mut common,
-            &self.local_linear_weights,
-            &self.layout.offsets(),
-            field,
-        );
+        emit_linear_template(&mut common, &self.local_linear_weights, self.layout, field);
         {
-            let offset = self.layout.public_key_offset();
             for j in 0..N {
                 common.add_word(
-                    offset + 14 * j,
+                    self.layout.public_key_bit(j, 0),
                     14,
                     self.local_linear_weights.at(
                         super::super::FalconConstraintCounts::per_signature().linear_rows() - N + j,
@@ -726,7 +772,6 @@ impl BindingForm<'_> {
     ) -> Result<(), FalconError> {
         let field = self.field;
         let layout = self.layout;
-        let offsets = layout.offsets();
         let base = instance * layout.signature_stride();
         let mut ignored = field.zero();
         let mut scale = self.eta;
@@ -765,7 +810,7 @@ impl BindingForm<'_> {
         let tree_scale = field.mul(&prepared.output_scale, &prepared.leaf.beta[instance]);
         for (i, &weight) in weights.iter().take(N).enumerate() {
             sink.add_word(
-                base + offsets.hash_point + 14 * i,
+                base + layout.hash_point_bit(i, 0),
                 14,
                 field.mul(&tree_scale, &weight),
                 field,
@@ -1007,11 +1052,7 @@ fn linear_constant(weights: &crate::poly::mle::EqualityWeights<F>, field: &Cfg) 
     let mut constant = field.neg(&weights.at(0));
     constant = field.sub(
         &constant,
-        &mul_i(
-            weights.at(257),
-            (0x50 + COEFFICIENT_LOG) as i128,
-            field,
-        ),
+        &mul_i(weights.at(257), (0x50 + COEFFICIENT_LOG) as i128, field),
     );
     let start = 1 + 256 + super::super::CT_SIGNATURE_BYTES;
     for i in 0..HASH_TO_POINT_SAMPLES {
@@ -1026,9 +1067,10 @@ fn linear_constant(weights: &crate::poly::mle::EqualityWeights<F>, field: &Cfg) 
 fn emit_linear_template(
     sink: &mut impl CoefficientSink,
     weights: &crate::poly::mle::EqualityWeights<F>,
-    offsets: &FalconSourceOffsets,
+    layout: &FalconSourceLayout,
     field: &Cfg,
 ) {
+    let offsets = layout.offsets();
     let mut row = 0;
     let mut next = || {
         let w = weights.at(row);
@@ -1040,7 +1082,7 @@ fn emit_linear_template(
         sink.add(offsets.message + bit, next());
     }
     for byte in 0..super::super::CT_SIGNATURE_BYTES {
-        sink.add_word(offsets.encoded_signature + 8 * byte, 8, next(), field);
+        sink.add_signature_byte(layout, byte, next(), field);
     }
     for i in 0..HASH_TO_POINT_SAMPLES {
         let weight = next();
@@ -1097,8 +1139,14 @@ mod tests {
                 })
                 .chain((0..8).map(|offset| Word {
                     base,
-                    width: 12,
+                    width: SIGNATURE_BITS as u8,
                     kind: WordKind::Encoded { offset },
+                }))
+                .chain((1..=15).map(|width| Word { base, width, kind: WordKind::Signed }))
+                .chain((0..SIGNATURE_BITS as u8).map(|offset| Word {
+                    base,
+                    width: 8,
+                    kind: WordKind::SignatureByte { offset },
                 }))
                 .collect::<Vec<_>>();
             let compiled = ByteRuns::new(&words);
@@ -1120,6 +1168,42 @@ mod tests {
                 }
                 assert_eq!(actual, expected, "{word:?}");
             }
+        }
+    }
+
+    #[test]
+    fn compact_signature_bytes_match_layout_addresses_and_dense_expansion() {
+        let layout = FalconSourceLayout::new(1).unwrap();
+        let field = crate::piop::spartan::spartan_bitz_field_config();
+        let mut compact = WordSink::new(0, 0, &field);
+        let mut dense = Dense { values: vec![field.zero(); layout.signature_stride()], field: &field };
+        for byte in 0..super::super::super::CT_SIGNATURE_BYTES {
+            let weight = unsigned((byte + 17) as u128, &field);
+            compact.add_signature_byte(&layout, byte, weight, &field);
+            dense.add_signature_byte(&layout, byte, weight, &field);
+        }
+        let compact = compact.finish();
+        let mut actual = vec![field.zero(); layout.signature_stride()];
+        compact.emit(0, &field, &mut |index, value| {
+            actual[index] = field.add(&actual[index], &value);
+            Ok(())
+        }).unwrap();
+        assert_eq!(actual, dense.values);
+        assert_eq!(compact.words.len(), super::super::super::CT_SIGNATURE_BYTES);
+        for width in [1usize, 2, 4, 8, 16] {
+            let point = (0..width.ilog2()).map(|i| unsigned(19 + u128::from(i), &field)).collect::<Vec<_>>();
+            let weights = eq_table(&point, &field).unwrap();
+            let expected = dense.values.chunks_exact(width).map(|chunk| {
+                chunk.iter().zip(&weights).fold(field.zero(), |sum, (value, weight)| {
+                    field.add(&sum, &field.mul(value, weight))
+                })
+            }).collect::<Vec<_>>();
+            let mut actual = vec![field.zero(); expected.len()];
+            compact.emit_folded(0, &weights, &field, &mut |index, value| {
+                actual[index] = value;
+                Ok(())
+            }).unwrap();
+            assert_eq!(actual, expected, "prefix width {width}");
         }
     }
 
@@ -1216,6 +1300,7 @@ mod tests {
         for local in [0, 15, 31, 63, 127, 224] {
             sink.add_word(base + local, 27, scale, field);
             sink.add_word(base + local + 1, 14, scale, field);
+            sink.add_signed_word(base + local + 2, SIGNATURE_BITS, scale, field);
             sink.add(base + local + 26, field.neg(&scale));
         }
         // CT encoding has a reversed bit order and alternates nibble offsets.

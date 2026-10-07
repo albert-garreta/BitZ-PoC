@@ -44,7 +44,8 @@ pub(crate) struct Gather {
     entries: Vec<(usize, F)>,
     high_point: Vec<F>,
     repeat_start: Option<usize>,
-    /// Only these initial repeat indices carry equality weights.
+    /// Only the half-open interval [repeat_lower, repeat_limit) carries weights.
+    repeat_lower: usize,
     repeat_limit: Option<usize>,
 }
 
@@ -62,6 +63,7 @@ impl Gather {
             entries,
             high_point,
             repeat_start: None,
+            repeat_lower: 0,
             repeat_limit: None,
         }
     }
@@ -81,7 +83,15 @@ impl Gather {
 
     /// Restrict the repeated map to a public prefix of its repeat domain.
     pub fn with_repeat_limit(mut self, limit: usize) -> Self {
+        self.repeat_lower = 0;
         self.repeat_limit = Some(limit);
+        self
+    }
+
+    /// Restrict repeated equality weights to a public half-open interval.
+    pub fn with_repeat_range(mut self, start: usize, end: usize) -> Self {
+        self.repeat_lower = start;
+        self.repeat_limit = Some(end);
         self
     }
 
@@ -90,6 +100,7 @@ impl Gather {
         if let Some(limit) = self.repeat_limit {
             weights[limit..].fill(F::ZERO);
         }
+        weights[..self.repeat_lower].fill(F::ZERO);
         weights
     }
 
@@ -185,6 +196,7 @@ fn validate<const N: usize>(
                 || gather
                     .repeat_limit
                     .is_some_and(|limit| limit > 1 << gather.high_point.len())
+                || gather.repeat_lower > gather.repeat_limit.unwrap_or(1 << gather.high_point.len())
             {
                 return Err(Error::Invalid("joint binary gather index"));
             }
@@ -899,10 +911,14 @@ impl Coefficients {
                 local += coefficient * low[index & (low.len() - 1)] * high[index >> split];
             }
             let repeat_point = &point[repeat_start..repeat_end];
-            let repeat = match gather.repeat_limit {
+            let mut repeat = match gather.repeat_limit {
                 Some(limit) => prefix_equality(&gather.high_point, repeat_point, limit),
                 None => equality(&gather.high_point, repeat_point),
             };
+            // Characteristic two: removing the lower prefix is addition.
+            if gather.repeat_lower != 0 {
+                repeat += prefix_equality(&gather.high_point, repeat_point, gather.repeat_lower);
+            }
             value += local * repeat;
         }
         value
@@ -1160,7 +1176,9 @@ mod tests {
                 let high = eq_table(&gather.high_point);
                 let repeat_start = gather.axis(geometry.logs[branch] + 7);
                 for (repeat, weight) in high.into_iter().enumerate() {
-                    if gather.repeat_limit.is_some_and(|limit| repeat >= limit) {
+                    if repeat < gather.repeat_lower
+                        || gather.repeat_limit.is_some_and(|limit| repeat >= limit)
+                    {
                         continue;
                     }
                     for &(index, coefficient) in &gather.entries {
@@ -1373,6 +1391,90 @@ mod tests {
             );
             masked[0].gathers[0].repeat_limit = Some((1 << repeat_vars) + 1);
             assert!(validate(&geometry, masked.each_ref()).is_err());
+        }
+    }
+
+    #[test]
+    fn repeat_ranges_match_dense_sumcheck_and_reject_invalid_bounds() {
+        let (geometry, packed, _) = fixture([9, 10]);
+        let sources = packed.each_ref().map(Vec::as_slice);
+        let mut random = Random(0x7261_6e67_656d_6173);
+        let repeat: Vec<_> = (0..3).map(|_| random.next()).collect();
+        for (start, end) in [(0, 0), (0, 8), (2, 5), (5, 8), (3, 3)] {
+            let coefficients: [Coefficients; 2] = std::array::from_fn(|branch| {
+                let local_vars = geometry.logs[branch] + 7 - repeat.len();
+                let axis = if branch == 0 { 7 } else { local_vars };
+                Coefficients {
+                    tensors: Vec::new(),
+                    gathers: vec![
+                        Gather::repeated_at(
+                            vec![
+                                (0, random.next()),
+                                (127, random.next()),
+                                ((1 << local_vars) - 1, random.next()),
+                            ],
+                            repeat.clone(),
+                            axis,
+                        )
+                        .with_repeat_range(start, end),
+                    ],
+                }
+            });
+            let (witness, weights, target) =
+                dense_tables(&geometry, sources, coefficients.each_ref());
+            let mut expected_repeats = eq_table(&repeat);
+            for (index, value) in expected_repeats.iter_mut().enumerate() {
+                if !(start..end).contains(&index) {
+                    *value = F::ZERO;
+                }
+            }
+            assert_eq!(
+                coefficients[0].gathers[0].repeat_weights(),
+                expected_repeats
+            );
+            let proof = prove(
+                &mut transcript(false),
+                &geometry,
+                sources,
+                coefficients.each_ref(),
+                target,
+                0,
+                &mut Scratch::default(),
+            )
+            .unwrap();
+            assert_eq!(
+                proof,
+                dense_prove(
+                    &mut transcript(false),
+                    &geometry,
+                    witness,
+                    weights,
+                    target,
+                    0
+                )
+            );
+            assert_eq!(
+                verify(
+                    &mut transcript(false),
+                    &geometry,
+                    coefficients.each_ref(),
+                    target,
+                    0,
+                    &proof.0
+                )
+                .unwrap(),
+                proof.1
+            );
+        }
+        for (start, end) in [(5, 4), (0, 9), (9, 9), (usize::MAX, 8)] {
+            let coefficients = Coefficients {
+                tensors: Vec::new(),
+                gathers: vec![
+                    Gather::repeated(vec![(0, F::ONE)], repeat.clone())
+                        .with_repeat_range(start, end),
+                ],
+            };
+            assert!(validate(&geometry, [&coefficients, &Coefficients::default()]).is_err());
         }
     }
 

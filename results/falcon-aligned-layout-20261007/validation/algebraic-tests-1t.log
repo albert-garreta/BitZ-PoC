@@ -1,0 +1,32 @@
+
+running 27 tests
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::aligned_binding_matches_dense_evaluation_folds_and_sumcheck ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::altered_bits_and_both_kinds_of_padding_are_rejected ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::grinded_messages_roundtrip_and_require_all_nonces ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::invalid_slack_and_cross_witness_binding_are_rejected ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::malformed_messages_and_nonces_are_rejected ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::preceding_transcript_domains_cannot_be_replayed ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::signatures_cannot_borrow_each_others_norm_budget ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::singleton_and_padded_batch_open_the_same_bits ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::combined_commit_matches_separate_preparation ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::combined_commit_rejects_batch_mismatches ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::configuration_bounds_cover_all_supported_batches ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::end_to_end_and_tampering ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::large_batches_at_both_security_targets ... ignored, large end-to-end qualification; run explicitly
+test piop::spartan::falcon1024_algebraic::protocol::tests::original_falcon_fixture_uses_only_algebraic_inputs ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::recommitted_invalid_assignments_are_rejected ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::supplied_noncentered_s1_still_requires_a_valid_relation ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::an_invalid_ring_witness_has_no_coordinate_lift ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::coordinate_bound_covers_the_entire_encoded_witness_range ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::extension_sampler_rejects_biased_tail_and_base_field_evaluations ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::malformed_quotients_carries_and_nonce_shapes_are_rejected ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::ring_claim_matches_negacyclic_witness_for_padded_batches ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::tampering_changes_the_authenticated_claim_or_is_rejected ... ok
+test piop::spartan::falcon1024_algebraic::source::tests::aligned_addresses_are_disjoint_and_preserve_signed15_boundaries ... ok
+test piop::spartan::falcon1024_algebraic::source::tests::combined_preparation_rejects_invalid_shapes_and_public_coefficients ... ok
+test piop::spartan::falcon1024_algebraic::source::tests::exact_norm_boundary_and_coefficient_limits ... ok
+test piop::spartan::falcon1024_algebraic::source::tests::exact_ring_and_norm_match_independent_schoolbook ... ok
+test piop::spartan::falcon1024_algebraic::source::tests::signed15_source_decodes_and_padding_is_zero ... ok
+
+test result: ok. 26 passed; 0 failed; 1 ignored; 0 measured; 707 filtered out; finished in 0.86s
+

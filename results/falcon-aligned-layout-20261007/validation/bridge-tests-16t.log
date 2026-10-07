@@ -1,0 +1,19 @@
+
+running 14 tests
+test hybrid::integer_bridge::tests::batched_limbs_authenticate_source_and_reject_compensating_changes ... ok
+test hybrid::integer_bridge::tests::bitz_joint_limb_forest_fits_security_budget ... ok
+test hybrid::integer_bridge::tests::bridge_rejects_nonces_from_other_domains_and_difficulties ... ok
+test hybrid::integer_bridge::tests::cached_generator_comb_matches_fresh_preparation ... ok
+test hybrid::integer_bridge::tests::compact_sums_preserve_reference_absorbed_bytes ... ok
+test hybrid::integer_bridge::tests::native_frames_remain_reference_and_unsplit_domains_are_distinct ... ok
+test hybrid::integer_bridge::tests::reject_layouts_whose_upper_sum_does_not_fit ... ok
+test hybrid::integer_bridge::tests::shared_126_bit_weights_have_bounded_113_bit_limbs ... ok
+test hybrid::integer_bridge::tests::shared_128_bit_bridge_uses_two_limbs_and_authenticates_padded_source ... ok
+test hybrid::integer_bridge::tests::single_algebraic_source_bridge_authenticates_without_falcon_trace ... ok
+test hybrid::integer_bridge::tests::unsplit_bridge_authenticates_source_and_rejects_malformed_proofs ... ok
+test hybrid::integer_bridge::tests::unsplit_counts_and_conservative_modulus_gate ... ok
+test hybrid::integer_bridge::tests::unsplit_full_width_folds_match_big_integer_reference ... ok
+test hybrid::integer_bridge::tests::unsplit_terminal_coefficients_use_original_row_and_column_slots ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 720 filtered out; finished in 0.06s
+

@@ -21,7 +21,7 @@ use crate::{
 
 use super::{
     FalconError, FalconPublicStatement, FalconSourceLayout, FalconSourceWitness,
-    FalconVerificationTrace, N, NONCE_BYTES, Q,
+    FalconVerificationTrace, N, Q,
     constraints::SOURCE_RESIDUAL_BOUND,
     ring_field::{
         EXTENSION_DEGREE, Ext, absorb_extensions, certificate, equality_weights, sample_extension,
@@ -32,7 +32,7 @@ type F = SpartanBitzField;
 type Cfg = <F as SpartanField>::Config;
 
 const LIFT_COEFFICIENTS: usize = 2 * EXTENSION_DEGREE - 1;
-const DOMAIN: &[u8] = b"bitz/falcon1024-ct/shared-ring/v4";
+const DOMAIN: &[u8] = b"bitz/falcon1024-ct/shared-ring/v5";
 
 /// Target 100 uses one unsplit bounded exponent. Target 128 retains the
 /// native prime family and its two bounded bridge limbs.
@@ -310,6 +310,7 @@ fn bind_parameters(
         layout.batch(),
         layout.capacity(),
         layout.signature_stride(),
+        layout.occupied_bits(),
         layout.public_key_offset(),
         layout.row_vars(),
         layout.col_vars(),
@@ -318,7 +319,7 @@ fn bind_parameters(
         t.absorb_slice(&(value as u64).to_le_bytes());
     }
     t.absorb_slice(
-        b"f:T^k+T+c;D:N-1;direct-beta-decoder;P:i128le(2k-1);live-mask;C:u14;H:u14;S1:bounded14-6144;S2:encoded-signed;aliases:sum-in-E",
+        b"f:T^k+T+c;D:N-1;direct-beta-decoder;P:i128le(2k-1);live-mask;layout:aligned16;C:u14;H:u14;S1:bounded14-6144;S2:lsb-signed;aliases:sum-in-E",
     );
     t.absorb_slice(&lift_bound(layout).to_le_bytes());
     t.absorb_slice(&SOURCE_RESIDUAL_BOUND.to_le_bytes());
@@ -583,13 +584,11 @@ fn visit_bit_query(
     visit: impl FnMut(usize, Ext),
 ) -> Result<(), FalconError> {
     let offsets = layout.offsets();
-    let key = layout.public_key_offset();
-    let s2 = offsets.encoded_signature + 8 * (1 + NONCE_BYTES);
     let ranges = [
-        offsets.hash_point..offsets.hash_point + 14 * N,
-        key..key + 14 * N,
-        s2..s2 + SIGNATURE_BITS * N,
-        offsets.s1..offsets.s1 + 14 * N,
+        offsets.hash_point..offsets.hash_point + 16 * N,
+        offsets.public_key..offsets.public_key + 16 * N,
+        offsets.s2..offsets.s2 + 16 * N,
+        offsets.s1..offsets.s1 + 16 * N,
     ];
     visit_decoder_query(layout.signature_stride(), &ranges, positions, omega, visit)
 }
@@ -604,12 +603,9 @@ fn visit_decoder_query(
     mut visit: impl FnMut(usize, Ext),
 ) -> Result<(), FalconError> {
     if positions.len() != N
-        || ranges
-            .iter()
-            .zip([14, 14, SIGNATURE_BITS, 14])
-            .any(|(range, width)| {
-                range.end > domain_len || range.end.checked_sub(range.start) != Some(width * N)
-            })
+        || ranges.iter().any(|range| {
+            range.end > domain_len || range.end.checked_sub(range.start) != Some(16 * N)
+        })
     {
         return Err(error("shared ring decoder query dimensions"));
     }
@@ -627,7 +623,7 @@ fn visit_decoder_query(
             }
         }
     } else {
-        // Every decoder visits its entire range bijectively, so disjoint
+        // Every decoder visits distinct live slots in its range, so disjoint
         // ranges guarantee that these are already canonical slot sums.
         visit_decoder_terms(ranges, positions, omega, visit);
     }
@@ -646,16 +642,15 @@ fn visit_decoder_terms(
         let s2 = weight.mul(omega[2]);
         let s1 = weight.mul(omega[3]);
         for bit in 0..14 {
-            emit(ranges[0].start + 14 * j + bit, scale(c, 1 << bit));
-            emit(ranges[1].start + 14 * j + bit, scale(h, 1 << bit));
+            emit(ranges[0].start + 16 * j + bit, scale(c, 1 << bit));
+            emit(ranges[1].start + 16 * j + bit, scale(h, 1 << bit));
             emit(
-                ranges[3].start + 14 * j + bit,
+                ranges[3].start + 16 * j + bit,
                 scale(s1, if bit == 13 { 4097 } else { 1 << bit }),
             );
         }
         for bit in 0..SIGNATURE_BITS {
-            let stream = SIGNATURE_BITS * j + SIGNATURE_BITS - 1 - bit;
-            let slot = ranges[2].start + 8 * (stream / 8) + 7 - stream % 8;
+            let slot = ranges[2].start + 16 * j + bit;
             emit(
                 slot,
                 scale(
@@ -1004,9 +999,9 @@ mod tests {
                     .is_err()
             );
             for slot in [
-                layout.offsets().s1 + 13,
-                layout.public_key_offset() + 14335,
-                layout.offsets().encoded_signature + 8 * (1 + NONCE_BYTES),
+                layout.s1_bit(0, 13),
+                layout.public_key_bit(N - 1, 13),
+                layout.s2_bit(0, 0),
                 layout.signature_stride() - 1,
             ] {
                 let mut local = vec![field.zero(); layout.signature_stride()];
@@ -1180,16 +1175,11 @@ mod tests {
                 let s1 = bounded[(j + 3 * s + 4) % bounded.len()];
                 for (offset, word) in [(offsets.hash_point, c), (key, h), (offsets.s1, s1)] {
                     for bit in 0..14 {
-                        bits[base + offset + 14 * j + bit] = word >> bit & 1 != 0;
+                        bits[base + offset + 16 * j + bit] = word >> bit & 1 != 0;
                     }
                 }
-                // Encode the signed coefficient independently as 12 MSB-first
-                // stream bits, then place each byte's bits little-endian.
-                for digit in 0..12 {
-                    let stream = 12 * j + digit;
-                    let slot = offsets.encoded_signature + 8 * (1 + NONCE_BYTES + stream / 8) + 7
-                        - stream % 8;
-                    bits[base + slot] = s2 >> (11 - digit) & 1 != 0;
+                for digit in 0..SIGNATURE_BITS {
+                    bits[base + offsets.s2 + 16 * j + digit] = s2 >> digit & 1 != 0;
                 }
                 *coefficient = [
                     i64::from(c),
@@ -1240,9 +1230,8 @@ mod tests {
                 });
                 assert_eq!(actual, dot_ext(omega, &endpoints));
                 assert!(
-                    column[layout.live_bits()..]
-                        .iter()
-                        .all(|&value| value == Ext::ZERO)
+                    column.iter().enumerate()
+                        .all(|(slot, &value)| !layout.is_padding(slot) || value == Ext::ZERO)
                 );
             }
         }
@@ -1250,13 +1239,13 @@ mod tests {
 
     #[test]
     fn decoder_aliases_are_summed_in_extension_before_coordinate_projection() {
-        let disjoint = [0..14 * N, 14 * N..28 * N, 28 * N..40 * N, 40 * N..54 * N];
-        let aliases = [0..14 * N, 0..14 * N, 3..3 + 12 * N, 7..7 + 14 * N];
-        let domain = 7 + 14 * N;
+        let disjoint = [0..16 * N, 16 * N..32 * N, 32 * N..48 * N, 48 * N..64 * N];
+        let aliases = [0..16 * N, 0..16 * N, 3..3 + 16 * N, 7..7 + 16 * N];
+        let domain = 7 + 16 * N;
         let positions = powers(element(31));
         let omega = operand_weights(element(13));
         let mut expected = vec![Ext::ZERO; domain];
-        visit_decoder_query(54 * N, &disjoint, &positions, &omega, |slot, value| {
+        visit_decoder_query(64 * N, &disjoint, &positions, &omega, |slot, value| {
             let operand = disjoint
                 .iter()
                 .position(|range| range.contains(&slot))
@@ -1348,7 +1337,7 @@ mod tests {
             offsets.hash_point + 63,
             offsets.s1 + 13,
             offsets.s1 + 64,
-            offsets.encoded_signature + 329,
+            layout.s2_bit(1, 1),
             layout.public_key_offset() + 13,
         ] {
             sparse[index] = element(index);

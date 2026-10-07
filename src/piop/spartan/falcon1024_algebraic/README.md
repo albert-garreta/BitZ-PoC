@@ -41,8 +41,11 @@ natively. Prepared configurations accept batches `1..=1024` and security targets
 ## Reduction and shared witness
 
 The source contains 30,747 live bits per signature: two signed15 coefficient
-vectors and a 27-bit nonnegative norm slack. Each slot is padded to 65,536 bits;
-the batch capacity is the next power of two, with a minimum of eight slots to
+vectors and a 27-bit nonnegative norm slack. Each coefficient occupies a 16-bit
+address block: lanes 0..14 contain its signed15 encoding, and lane 15 of the
+first 27 coefficients contains the corresponding norm-slack bit. All other
+lane-15 positions are padding. Each signature occupies 32,768 bits, leaving
+2,021 padding bits. The batch capacity is the next power of two, with a minimum of sixteen slots to
 meet the PCS minimum size. An authenticated linear zero-sum
 claim enforces all internal and inactive-slot padding. The generic shared opener
 also enforces its structural zero lanes.
@@ -62,7 +65,9 @@ residuals are below `2^50` for every supported batch. These bounds apply to each
 equation before random batching.
 
 A fresh seven-claim merge combines the ring claim, four norm endpoints, slack,
-and padding. A streamed sumcheck binds them to one multilinear evaluation of
+and padding. Coefficient index and bit-lane variables are separate: the binder
+evaluates the signed decoder once, aggregates its prefix by witness byte, and
+folds the common decoder before replaying coefficient weights. A streamed sumcheck binds them to one multilinear evaluation of
 the original bits. The existing two-limb BitZ bridge, binary product GKR, binary
 source sumcheck, ring switch, and Ligerito opening authenticate that evaluation.
 SHAKE and HashToPoint proof components are absent; BitZ's own product GKR remains.
@@ -72,7 +77,8 @@ There is no Orthus-style public-input preprocessing in this interface.
 
 ## Security accounting
 
-The configuration is bound into a new transcript domain. Eight arithmetic and
+The aligned layout is bound into the v2 transcript domain; commitments and
+proofs from the preceding layout cannot be reused. Eight arithmetic and
 binary error groups each receive at most `2^(-target-4)`, totaling at most half
 the budget. Their degree numerators are:
 
@@ -82,9 +88,9 @@ the budget. Their degree numerators are:
 | Norm instance batching | d | `2^125` |
 | Two norm sumchecks | 4(10+d) | `2^125` |
 | Seven-claim merge | 6 | `2^125` |
-| Bit-source binder | 2(16+d) | `2^125` |
-| BitZ product GKR | 407+40d | `2^128` |
-| Binary source sumcheck | 2(17+d) | `2^128` |
+| Bit-source binder | 2(15+d) | `2^125` |
+| BitZ product GKR | 367+40d | `2^128` |
+| Binary source sumcheck | 2(16+d) | `2^128` |
 | Ring switch | 256 | `2^128` |
 
 Here `d = log2(capacity)`. Each adaptive challenge boundary uses the derived

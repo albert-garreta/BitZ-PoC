@@ -99,9 +99,8 @@ fn add_linear_constraints(
         {
             // The authenticated source contains bits, so each byte sum is in
             // [0,255] and equality in the proof field fixes all eight bits.
-            let terms: [(usize, i128); 8] = std::array::from_fn(|bit| {
-                (offsets.encoded_signature + 8 * byte + bit, 1i128 << bit)
-            });
+            let terms: [(usize, i128); 8] =
+                std::array::from_fn(|bit| (layout.signature_bit(byte, bit), 1i128 << bit));
             residual(&terms, -i128::from(expected));
         }
 
@@ -147,9 +146,8 @@ fn add_linear_constraints(
         );
 
         for j in 0..N {
-            let terms: [(usize, i128); 14] = std::array::from_fn(|bit| {
-                (layout.public_key_offset() + 14 * j + bit, 1i128 << bit)
-            });
+            let terms: [(usize, i128); 14] =
+                std::array::from_fn(|bit| (layout.public_key_bit(j, bit), 1i128 << bit));
             residual(&terms, -i128::from(statement.public_keys[instance].h[j]));
         }
 
@@ -231,7 +229,6 @@ fn add_product_tree_claims(
     proof: FalconPiopClaimRef<'_>,
     field: &Cfg,
 ) -> Result<(), FalconError> {
-    let offsets = layout.offsets();
     let instances =
         eq_table(&proof.compaction.instance_point, field).map_err(|e| piop(e.to_string()))?;
     let weights =
@@ -254,7 +251,7 @@ fn add_product_tree_claims(
                 );
                 add_unsigned_scaled(
                     coefficients,
-                    base + offsets.hash_point + 14 * i,
+                    base + layout.hash_point_bit(i, 0),
                     14,
                     weight,
                     field,
@@ -550,7 +547,7 @@ fn factored_overlay_matches_dense_sumcheck_and_endpoint() {
         .collect();
     let column: Vec<_> = (0..layout.signature_stride())
         .map(|i| {
-            if i < layout.live_bits() && i % 5 != 0 {
+            if !layout.is_padding(i) && i % 5 != 0 {
                 unsigned(17 + (i as u128).pow(2), &field)
             } else {
                 field.zero()
@@ -559,7 +556,7 @@ fn factored_overlay_matches_dense_sumcheck_and_endpoint() {
         .collect();
     let mut words = vec![0u64; layout.source_bits() / 64];
     for s in 0..layout.batch() {
-        for i in 0..layout.live_bits() {
+        for i in (0..layout.signature_stride()).filter(|&i| !layout.is_padding(i)) {
             let index = s * layout.signature_stride() + i;
             let bit = ((index as u64 * 0x9e37_79b9 ^ (index as u64 >> 3)).count_ones() & 1) as u64;
             words[index / 64] |= bit << (index % 64);
@@ -1067,8 +1064,8 @@ fn shared_projection_authenticates_fixed_committed_operands() {
     // Change packed C and S1 bits independently, after fixing both the source
     // commitment and projection query. Do not regenerate any proof or claim.
     for index in [
-        layout.signature_stride() + layout.offsets().hash_point + 14 * 17,
-        2 * layout.signature_stride() + layout.offsets().s1 + 14 * 31 + 13,
+        layout.signature_stride() + layout.hash_point_bit(17, 0),
+        2 * layout.signature_stride() + layout.s1_bit(31, 13),
     ] {
         assert_ne!(dense[index], field.zero());
         let mut changed = source.rows().to_vec();

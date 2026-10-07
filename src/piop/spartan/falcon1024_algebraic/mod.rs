@@ -27,7 +27,7 @@ pub const N: usize = 1024;
 pub const Q: i64 = 12_289;
 pub const BETA_SQUARED: u64 = 70_265_242;
 pub const LIVE_BITS: usize = 2 * N * 15 + 27;
-pub const PROTOCOL_ID: &str = "bitz/falcon1024-algebraic/non-zk/v1";
+pub const PROTOCOL_ID: &str = "bitz/falcon1024-algebraic/non-zk/v2";
 const PRIME_MIN: u128 = 1 << 125;
 const PRIME_MAX: u128 = (1 << 126) - 1;
 

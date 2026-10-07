@@ -1,0 +1,2798 @@
+--- a/benches/falcon_hybrid.rs
++++ b/benches/falcon_hybrid.rs
+@@ -1,3 +1,4 @@
++#![recursion_limit = "256"]
+ //! Complete Falcon hybrid proof benchmark, including all source commitments.
+ //!
+ //! Example: `RAYON_NUM_THREADS=16 BITZ_BENCH_LAMBDA=128 cargo bench
+@@ -176,7 +177,8 @@
+     println!(
+         "{}",
+         json!({
+-            "schema": "bitz/falcon-hybrid/profile-v1",
++            "schema": "bitz/falcon-hybrid/profile-v2",
++            "source_layout": "aligned16-v2",
+             "degree": options.degree,
+             "ring_extension": options.extension,
+             "ring_extension_selection": options.extension_selection,
+@@ -279,7 +281,8 @@
+         println!(
+             "{}",
+             json!({
+-                "schema": "bitz/falcon-hybrid/profile-v1",
++                "schema": "bitz/falcon-hybrid/profile-v2",
++                "source_layout": "aligned16-v2",
+             "degree": options.degree,
+             "ring_extension": options.extension,
+             "ring_extension_selection": options.extension_selection,
+@@ -328,7 +331,8 @@
+     println!(
+         "{}",
+         json!({
+-            "schema": "bitz/falcon-hybrid/profile-v1",
++            "schema": "bitz/falcon-hybrid/profile-v2",
++            "source_layout": "aligned16-v2",
+             "degree": options.degree,
+             "ring_extension": options.extension,
+             "ring_extension_selection": options.extension_selection,
+--- a/examples/falcon_algebraic.rs
++++ b/examples/falcon_algebraic.rs
+@@ -14,9 +14,7 @@
+ fn main() -> Result<(), Box<dyn std::error::Error>> {
+     use bitz::piop::spartan::{
+         falcon_profiles::n1024_k11::{decode_public_key, decode_signature_ct, hash_to_point_ct},
+-        falcon1024_algebraic::{
+-            FalconAlgebraicStatement, PreparedFalconAlgebraic,
+-        },
++        falcon1024_algebraic::{FalconAlgebraicStatement, PreparedFalconAlgebraic},
+     };
+     use clap::Parser;
+     use serde_json::json;
+@@ -121,6 +119,9 @@
+             "{}",
+             json!({
+                 "relation": "falcon1024-algebraic-public-h-t-private-s1-s2",
++                "layout_version": 2,
++                "source_layout": "aligned16-v2",
++                "coefficient_stride": 16,
+                 "input_corpus": "distinct-fn-dsa-0.3.0-original-falcon",
+                 "input_digest": input_digest,
+                 "batch": options.batch, "security_bits": options.security,
+@@ -136,6 +137,9 @@
+                 "proof_payload_breakdown": proof.payload_size_breakdown(),
+                 "live_bits_per_signature": prepared.live_bits_per_signature(),
+                 "source_bits_per_signature": prepared.source_bits_per_signature(),
++                "capacity": prepared.capacity(),
++                "source_bits": prepared.capacity() * prepared.source_bits_per_signature(),
++                "source_packed_bytes": prepared.capacity() * prepared.source_bits_per_signature() / 8,
+                 "process_peak_rss_kib": peak_rss_kib,
+                 "algebraic_security_bits": prepared.security().algebraic_bits,
+             })
+--- a/src/hybrid/joint_sumcheck.rs
++++ b/src/hybrid/joint_sumcheck.rs
+@@ -44,7 +44,8 @@
+     entries: Vec<(usize, F)>,
+     high_point: Vec<F>,
+     repeat_start: Option<usize>,
+-    /// Only these initial repeat indices carry equality weights.
++    /// Only the half-open interval [repeat_lower, repeat_limit) carries weights.
++    repeat_lower: usize,
+     repeat_limit: Option<usize>,
+ }
+ 
+@@ -62,6 +63,7 @@
+             entries,
+             high_point,
+             repeat_start: None,
++            repeat_lower: 0,
+             repeat_limit: None,
+         }
+     }
+@@ -81,7 +83,15 @@
+ 
+     /// Restrict the repeated map to a public prefix of its repeat domain.
+     pub fn with_repeat_limit(mut self, limit: usize) -> Self {
++        self.repeat_lower = 0;
+         self.repeat_limit = Some(limit);
++        self
++    }
++
++    /// Restrict repeated equality weights to a public half-open interval.
++    pub fn with_repeat_range(mut self, start: usize, end: usize) -> Self {
++        self.repeat_lower = start;
++        self.repeat_limit = Some(end);
+         self
+     }
+ 
+@@ -90,6 +100,7 @@
+         if let Some(limit) = self.repeat_limit {
+             weights[limit..].fill(F::ZERO);
+         }
++        weights[..self.repeat_lower].fill(F::ZERO);
+         weights
+     }
+ 
+@@ -185,6 +196,7 @@
+                 || gather
+                     .repeat_limit
+                     .is_some_and(|limit| limit > 1 << gather.high_point.len())
++                || gather.repeat_lower > gather.repeat_limit.unwrap_or(1 << gather.high_point.len())
+             {
+                 return Err(Error::Invalid("joint binary gather index"));
+             }
+@@ -899,10 +911,14 @@
+                 local += coefficient * low[index & (low.len() - 1)] * high[index >> split];
+             }
+             let repeat_point = &point[repeat_start..repeat_end];
+-            let repeat = match gather.repeat_limit {
++            let mut repeat = match gather.repeat_limit {
+                 Some(limit) => prefix_equality(&gather.high_point, repeat_point, limit),
+                 None => equality(&gather.high_point, repeat_point),
+             };
++            // Characteristic two: removing the lower prefix is addition.
++            if gather.repeat_lower != 0 {
++                repeat += prefix_equality(&gather.high_point, repeat_point, gather.repeat_lower);
++            }
+             value += local * repeat;
+         }
+         value
+@@ -1160,7 +1176,9 @@
+                 let high = eq_table(&gather.high_point);
+                 let repeat_start = gather.axis(geometry.logs[branch] + 7);
+                 for (repeat, weight) in high.into_iter().enumerate() {
+-                    if gather.repeat_limit.is_some_and(|limit| repeat >= limit) {
++                    if repeat < gather.repeat_lower
++                        || gather.repeat_limit.is_some_and(|limit| repeat >= limit)
++                    {
+                         continue;
+                     }
+                     for &(index, coefficient) in &gather.entries {
+@@ -1373,6 +1391,90 @@
+             );
+             masked[0].gathers[0].repeat_limit = Some((1 << repeat_vars) + 1);
+             assert!(validate(&geometry, masked.each_ref()).is_err());
++        }
++    }
++
++    #[test]
++    fn repeat_ranges_match_dense_sumcheck_and_reject_invalid_bounds() {
++        let (geometry, packed, _) = fixture([9, 10]);
++        let sources = packed.each_ref().map(Vec::as_slice);
++        let mut random = Random(0x7261_6e67_656d_6173);
++        let repeat: Vec<_> = (0..3).map(|_| random.next()).collect();
++        for (start, end) in [(0, 0), (0, 8), (2, 5), (5, 8), (3, 3)] {
++            let coefficients: [Coefficients; 2] = std::array::from_fn(|branch| {
++                let local_vars = geometry.logs[branch] + 7 - repeat.len();
++                let axis = if branch == 0 { 7 } else { local_vars };
++                Coefficients {
++                    tensors: Vec::new(),
++                    gathers: vec![
++                        Gather::repeated_at(
++                            vec![
++                                (0, random.next()),
++                                (127, random.next()),
++                                ((1 << local_vars) - 1, random.next()),
++                            ],
++                            repeat.clone(),
++                            axis,
++                        )
++                        .with_repeat_range(start, end),
++                    ],
++                }
++            });
++            let (witness, weights, target) =
++                dense_tables(&geometry, sources, coefficients.each_ref());
++            let mut expected_repeats = eq_table(&repeat);
++            for (index, value) in expected_repeats.iter_mut().enumerate() {
++                if !(start..end).contains(&index) {
++                    *value = F::ZERO;
++                }
++            }
++            assert_eq!(
++                coefficients[0].gathers[0].repeat_weights(),
++                expected_repeats
++            );
++            let proof = prove(
++                &mut transcript(false),
++                &geometry,
++                sources,
++                coefficients.each_ref(),
++                target,
++                0,
++                &mut Scratch::default(),
++            )
++            .unwrap();
++            assert_eq!(
++                proof,
++                dense_prove(
++                    &mut transcript(false),
++                    &geometry,
++                    witness,
++                    weights,
++                    target,
++                    0
++                )
++            );
++            assert_eq!(
++                verify(
++                    &mut transcript(false),
++                    &geometry,
++                    coefficients.each_ref(),
++                    target,
++                    0,
++                    &proof.0
++                )
++                .unwrap(),
++                proof.1
++            );
++        }
++        for (start, end) in [(5, 4), (0, 9), (9, 9), (usize::MAX, 8)] {
++            let coefficients = Coefficients {
++                tensors: Vec::new(),
++                gathers: vec![
++                    Gather::repeated(vec![(0, F::ONE)], repeat.clone())
++                        .with_repeat_range(start, end),
++                ],
++            };
++            assert!(validate(&geometry, [&coefficients, &Coefficients::default()]).is_err());
+         }
+     }
+ 
+--- a/src/piop/spartan/falcon/README.md
++++ b/src/piop/spartan/falcon/README.md
+@@ -30,7 +30,7 @@
+ The `falcon` feature retains direct signature verification and reference helpers.
+ 
+ There is one proving protocol and no NativeCarry or old-proof verifier. The
+-protocol identifier is `bitz/falcon/shared-prime/non-zk/v1`. Proofs must be
++protocol identifier is `bitz/falcon/shared-prime/non-zk/v2`. Proofs must be
+ regenerated. Falcon currently exposes in-memory proofs without a full transport
+ codec. `payload_size_bytes()` counts stored messages, excluding the public
+ statement and transport framing; `payload_size_breakdown()` reports disjoint
+@@ -75,8 +75,21 @@
+ ## Layout and performance
+ 
+ Falcon-1024 uses 114,914 live arithmetic bits and 5,482 linear rows per signature,
+-padded to strides of 131,072 bits and 8,192 rows. Public-key bits account for
+-14,336 bits; `S2` uses the existing encoded-signature slots. At batch 1,024 the
++padded to strides of 131,072 bits and 8,192 rows. The first `4*N*16` positions
++form aligned coefficient blocks ordered `S1,S2,C,H`. The coefficient encodings
++remain bounded14 minus 6144, signed12, unsigned14, and unsigned14 respectively.
++Norm slack bits occupy lane 15 of the first 27 `S1` coefficient rows. Signature
++header/nonce bytes and the remaining HashToPoint columns follow these blocks;
++the exact CT payload is reconstructed from the aligned `S2` bits without a
++second copy. SHAKE nonce and sample links use the same address map.
++
++For Falcon-1024 there are 10,213 internal padding bits and 5,945 trailing padding
++bits. The occupied extent is 125,127, distinct from the 114,914 live-bit count.
++Every internal hole, trailing bit, and inactive signature is constrained to zero.
++Use the layout's coefficient, signature-byte, and slack address methods rather
++than assuming a contiguous live prefix. The full arithmetic domain and Keccak
++domains retain their previous sizes; coefficient alignment does not halve this
++prover's commitment. At batch 1,024 the
+ column table occupies 262,144 bytes at 100 bits and 327,680 bytes at 128 bits.
+ It remains a substantial proof-size cost.
+ 
+--- a/src/piop/spartan/falcon/constraints.rs
++++ b/src/piop/spartan/falcon/constraints.rs
+@@ -163,7 +163,6 @@
+     public_keys: &[FalconPublicKey],
+ ) -> Result<(), FalconError> {
+     let layout = source.layout();
+-    let offset = layout.public_key_offset();
+     if public_keys.len() != layout.batch() {
+         return Err(FalconError::InvalidBatchCapacity);
+     }
+@@ -172,7 +171,7 @@
+             if i64::from(expected) >= Q {
+                 return Err(FalconError::PublicKeyCoefficient { index: j });
+             }
+-            let base = s * layout.signature_stride() + offset + 14 * j;
++            let base = s * layout.signature_stride() + layout.public_key_bit(j, 0);
+             let actual = (0..14).fold(0u16, |value, bit| {
+                 value | (u16::from(source.bit(base + bit)) << bit)
+             });
+--- a/src/piop/spartan/falcon/hybrid.rs
++++ b/src/piop/spartan/falcon/hybrid.rs
+@@ -37,6 +37,10 @@
+     FalconError::Piop(e.to_string())
+ }
+ struct LinkGrinding;
++// The existing binary claims/SHAKE wiring budget is 128. The additional
++// padding polynomial has degree at most 17 + 10 + 1 (local, instance, merge),
++// so 256 conservatively covers their union for every supported profile.
++const LINK_ERROR_NUMERATOR: usize = 256;
+ impl GrindingDomain for LinkGrinding {
+     const DOMAIN: &'static [u8] = b"bitz/falcon-hybrid/link-grinding/v1";
+ }
+@@ -295,7 +299,10 @@
+                     })
+                     .sum(),
+             ),
+-            ("SHAKE wiring and binary claim batching", binary(128)),
++            (
++                "SHAKE wiring, source padding and binary claim batching",
++                binary(LINK_ERROR_NUMERATOR),
++            ),
+             ("joint binary sumcheck", binary(2 * self.geometry.bit_log())),
+             ("ring switch and support padding", binary(256)),
+             (
+@@ -463,7 +470,12 @@
+         for log in self.geometry.logs {
+             h.update(&(log as u64).to_le_bytes());
+         }
+-        h.update(b"bounded14:low13+4097*top;ring:Q12289,T^k+T+c;Dlen:N-1;profile/v1");
++        h.update(b"bounded14:low13+4097*top;ring:Q12289,T^k+T+c;Dlen:N-1;profile/v2");
++        h.update(b"source-layout:aligned16;polynomials:S1,S2,C,H;slack:S1-lane15;signature:header-nonce-and-mapped-signed-payload/v2");
++        h.update(b"arithmetic-padding:random-local-and-instance-equality;active-holes;all-inactive;zero-target/v1");
++        h.update(&(LINK_ERROR_NUMERATOR as u64).to_le_bytes());
++        h.update(&self.binary_grinding(LINK_ERROR_NUMERATOR).to_le_bytes());
++        h.update(&(self.layout.occupied_bits() as u64).to_le_bytes());
+ 
+         h.update(b"shared:all-E;C,H,S1,S2:1,l,l2,l3;direct-beta-decoder;Hunsigned14;S2encoded-alias;live-mask;P(2k-1)-i128;target-selected-prime-and-bridge;merge-in-binder-block/v3");
+         h.update(&(self.layout.live_bits() as u64).to_le_bytes());
+@@ -529,7 +541,7 @@
+         }
+         let digest = *h.finalize().as_bytes();
+         let mut t = Blake3Transcript::new();
+-        t.absorb_slice(b"bitz/falcon/shared-prime/statement/v1");
++        t.absorb_slice(b"bitz/falcon/shared-prime/statement/v2");
+         t.absorb_slice(&digest);
+         self.ligerito.bind(&mut t);
+         Ok((t, digest))
+@@ -596,7 +608,7 @@
+         let links_span = tracing::info_span!("falcon_hybrid:link_coefficients").entered();
+         let mut link_t = ProverBlockGrindingTranscript::<_, LinkGrinding>::new(
+             &mut t,
+-            self.binary_grinding(128),
++            self.binary_grinding(LINK_ERROR_NUMERATOR),
+         );
+         let (mut coefficients, target) =
+             self.coefficients(&mut link_t, &committed.statement.public, &a, &k);
+@@ -705,7 +717,7 @@
+             .unwrap_or_else(|_| unreachable!("profile Keccak slabs"));
+         let mut link_t = VerifierBlockGrindingTranscript::<_, LinkGrinding>::new(
+             &mut t,
+-            self.binary_grinding(128),
++            self.binary_grinding(LINK_ERROR_NUMERATOR),
+             &proof.links_nonces,
+         );
+         let (coefficients, target) = self.coefficients(&mut link_t, &statement.public, &a, &k);
+@@ -754,7 +766,7 @@
+         k: &[[BinaryClaim; 2]; KECCAK_SLABS],
+     ) -> ([Coefficients; SOURCE_COUNT], Gf) {
+         let a = std::slice::from_ref(a);
+-        t.absorb_slice(b"bitz/falcon-hybrid/binary-claims-and-shake-wiring/v3");
++        t.absorb_slice(b"bitz/falcon-hybrid/binary-claims-shake-wiring-and-padding/v4");
+         for claims in std::iter::once(a).chain(k.iter().map(|claims| claims.as_slice())) {
+             t.absorb_slice(&(claims.len() as u64).to_le_bytes());
+             for c in claims {
+@@ -803,7 +815,7 @@
+                 w,
+             ));
+             if bit < 320 {
+-                arithmetic.push((offsets.encoded_signature + 8 + bit, w));
++                arithmetic.push((self.layout.signature_bit(1 + bit / 8, bit % 8), w));
+             } else {
+                 let byte = bit / 8;
+                 for (i, msg) in public.messages.iter().enumerate() {
+@@ -851,6 +863,7 @@
+                 arithmetic.push((offsets.hash_words + 16 * sample + bit, w));
+             }
+         }
++        self.add_arithmetic_padding(t, &mut result[0], &instance_point);
+         if self.batch() == self.capacity() {
+             result[0]
+                 .gathers
+@@ -879,6 +892,42 @@
+                 .push(Gather::repeated_at(entries, repeat, 7).with_repeat_limit(self.batch()));
+         }
+         (result, target)
++    }
++
++    /// Authenticate every arithmetic padding bit through the existing joint
++    /// source opening. A fresh random MLE of those bits must evaluate to zero.
++    fn add_arithmetic_padding(
++        &self,
++        t: &mut impl Transcript,
++        coefficients: &mut Coefficients,
++        instance_point: &[Gf],
++    ) {
++        let point: Vec<Gf> =
++            t.get_field_challenges(self.layout.signature_stride().ilog2() as usize, &());
++        let scale: Gf = t.get_field_challenge(&());
++        let local: Vec<_> = eq_table(&point)
++            .into_iter()
++            .map(|weight| weight * scale)
++            .collect();
++        let holes = local
++            .iter()
++            .enumerate()
++            .filter_map(|(index, &weight)| self.layout.is_padding(index).then_some((index, weight)))
++            .collect();
++        coefficients
++            .gathers
++            .push(Gather::repeated(holes, instance_point.to_vec()).with_repeat_limit(self.batch()));
++        if self.batch() < self.capacity() {
++            // Disjoint from active holes, including for inactive internal holes.
++            // Mask the repeat axis rather than expanding every inactive source.
++            coefficients.gathers.push(
++                Gather::repeated(
++                    local.into_iter().enumerate().collect(),
++                    instance_point.to_vec(),
++                )
++                .with_repeat_range(self.batch(), self.capacity()),
++            );
++        }
+     }
+ }
+ 
+@@ -1364,6 +1413,48 @@
+     }
+ 
+     #[test]
++    fn recommitted_arithmetic_padding_is_rejected() {
++        for target in [100, 128] {
++            let prepared = PreparedFalconHybrid::prepare(3, target, 1024).unwrap();
++            let layout = prepared.layout;
++            let stride = layout.signature_stride();
++            let holes = [
++                layout.s1_bit(0, 14),
++                layout.s1_bit(super::super::NORM_BITS, 15),
++                layout.s2_bit(0, SIGNATURE_BITS),
++                layout.hash_point_bit(0, 14),
++                layout.public_key_bit(super::super::N - 1, 14),
++                layout.occupied_bits(),
++                stride - 1,
++                3 * stride,
++                4 * stride - 1,
++            ];
++            for flat in holes {
++                let mut committed = prepared.commit(public(3)).unwrap();
++                assert!(!committed.arithmetic.bit(flat));
++                assert!(flat >= 3 * stride || layout.is_padding(flat % stride));
++                // Both prover representations and the Merkle commitment must
++                // agree: this tests zero constraints, not a stale commitment.
++                committed.arithmetic.flip_bit(flat);
++                let word = &mut committed.packed[0][flat / 128];
++                if flat % 128 < 64 {
++                    word.lo ^= 1 << (flat % 64);
++                } else {
++                    word.hi ^= 1 << (flat % 64);
++                }
++                recommit(&prepared, &mut committed);
++                let statement = committed.statement.clone();
++                if let Ok(proof) = prepared.prove(committed) {
++                    assert!(
++                        prepared.verify(&statement, &proof).is_err(),
++                        "accepted arithmetic padding bit {flat} at target {target}",
++                    );
++                }
++            }
++        }
++    }
++
++    #[test]
+     fn hybrid_falcon_padding_and_wrong_nonce_branch() {
+         let prepared = PreparedFalconHybrid::prepare(3, 100, 1024).unwrap();
+         let committed = prepared.commit(public(3)).unwrap();
+--- a/src/piop/spartan/falcon/layout.rs
++++ b/src/piop/spartan/falcon/layout.rs
+@@ -1,6 +1,7 @@
+ use super::{FalconError, HASH_TO_POINT_SAMPLES, N};
+ use super::{NORM_BITS, PREFIX_BITS};
+ use crate::pcs::IntegerMatrixLayout;
++use crate::piop::spartan::falcon_bit_layout::{COEFFICIENT_STRIDE, coefficient_bit, slack_bit};
+ 
+ /// Fixed-width committed arithmetic columns for one Falcon signature.
+ /// Binary Keccak has its own source; the binder authenticates all reconstructions.
+@@ -8,7 +9,8 @@
+ pub struct FalconTraceCounts {
+     pub shared_one: usize,
+     pub message: usize,
+-    pub encoded_signature: usize,
++    pub signature_header_nonce: usize,
++    pub s2: usize,
+     pub hash_words: usize,
+     pub hash_quotients: usize,
+     pub hash_remainders: usize,
+@@ -24,7 +26,8 @@
+     pub const fn total(self) -> usize {
+         self.shared_one
+             + self.message
+-            + self.encoded_signature
++            + self.signature_header_nonce
++            + self.s2
+             + self.hash_words
+             + self.hash_quotients
+             + self.hash_remainders
+@@ -56,7 +59,7 @@
+         if !(1..=1024).contains(&batch) {
+             return Err(FalconError::InvalidBatchCapacity);
+         }
+-        if Self::counts().total() > Self::SIGNATURE_STRIDE {
++        if super::FalconSourceOffsets::new().occupied_end > Self::SIGNATURE_STRIDE {
+             return Err(FalconError::SourceStrideOverflow);
+         }
+         Ok(Self {
+@@ -65,13 +68,74 @@
+         })
+     }
+ 
+-    /// Unsigned little-endian public-key coefficients within each signature.
++    /// Base of unsigned public-key coefficients, spaced 16 positions apart.
+     pub const fn public_key_offset(&self) -> usize {
+         self.offsets().public_key
+     }
+ 
+     pub const fn live_bits(&self) -> usize {
+         Self::counts().total()
++    }
++
++    /// End of the occupied source extent, including internal padding holes.
++    pub const fn occupied_bits(&self) -> usize {
++        self.offsets().occupied_end
++    }
++
++    pub const fn s1_bit(&self, index: usize, bit: usize) -> usize {
++        coefficient_bit(N, 0, index, bit)
++    }
++
++    pub const fn s2_bit(&self, index: usize, bit: usize) -> usize {
++        coefficient_bit(N, 1, index, bit)
++    }
++
++    pub const fn hash_point_bit(&self, index: usize, bit: usize) -> usize {
++        coefficient_bit(N, 2, index, bit)
++    }
++
++    pub const fn public_key_bit(&self, index: usize, bit: usize) -> usize {
++        coefficient_bit(N, 3, index, bit)
++    }
++
++    pub const fn norm_slack_bit(&self, bit: usize) -> usize {
++        slack_bit(bit)
++    }
++
++    /// Local address of an LSB-indexed bit of the exact CT signature bytes.
++    /// Payload coefficients are MSB-first on the wire and LSB-first in source.
++    pub const fn signature_bit(&self, byte: usize, bit: usize) -> usize {
++        if byte < 1 + super::NONCE_BYTES {
++            self.offsets().signature_header_nonce + 8 * byte + bit
++        } else {
++            let stream = 8 * (byte - 1 - super::NONCE_BYTES) + (7 - bit);
++            self.s2_bit(
++                stream / super::SIGNATURE_BITS,
++                super::SIGNATURE_BITS - 1 - stream % super::SIGNATURE_BITS,
++            )
++        }
++    }
++
++    /// Whether a local position must be zero for an active signature.
++    pub const fn is_padding(&self, local: usize) -> bool {
++        if local >= self.occupied_bits() {
++            return true;
++        }
++        if local >= 4 * N * COEFFICIENT_STRIDE {
++            return false;
++        }
++        let polynomial = local / (N * COEFFICIENT_STRIDE);
++        let index = local / COEFFICIENT_STRIDE % N;
++        let bit = local % COEFFICIENT_STRIDE;
++        if polynomial == 0 && bit == 15 && index < NORM_BITS {
++            return false;
++        }
++        let width = if polynomial == 1 {
++            super::SIGNATURE_BITS
++        } else {
++            14
++        };
++        bit >= width
+     }
+ 
+     pub const fn signature_stride(&self) -> usize {
+@@ -114,8 +178,8 @@
+         FalconTraceCounts {
+             shared_one: 1,
+             message: 32 * 8,
+-            // Complete CT signature: header, nonce and signed 12-bit s2 payload.
+-            encoded_signature: super::CT_SIGNATURE_BYTES * 8,
++            signature_header_nonce: (1 + super::NONCE_BYTES) * 8,
++            s2: N * super::SIGNATURE_BITS,
+             hash_words: HASH_TO_POINT_SAMPLES * 16,
+             hash_quotients: HASH_TO_POINT_SAMPLES * 3,
+             // bounded14 decodes every bit string into 0..=12288.
+@@ -130,6 +194,82 @@
+         }
+     }
+ }
++
++#[cfg(test)]
++mod profile_layout_tests {
++    use super::*;
++
++    #[test]
++    fn aligned_addresses_cover_exactly_the_live_bits_for_each_profile() {
++        let layout = FalconSourceLayout::new(3).unwrap();
++        let offsets = layout.offsets();
++        let mut used = vec![false; layout.signature_stride()];
++        let mut mark = |address: usize| {
++            assert!(
++                !std::mem::replace(&mut used[address], true),
++                "aliased source bit {address}"
++            );
++        };
++        for j in 0..N {
++            for bit in 0..14 {
++                mark(layout.s1_bit(j, bit));
++                mark(layout.hash_point_bit(j, bit));
++                mark(layout.public_key_bit(j, bit));
++            }
++            for bit in 0..super::super::SIGNATURE_BITS {
++                mark(layout.s2_bit(j, bit));
++            }
++        }
++        for bit in 0..NORM_BITS {
++            mark(layout.norm_slack_bit(bit));
++        }
++        for bit in offsets.shared_one..offsets.occupied_end {
++            mark(bit);
++        }
++        assert_eq!(used.iter().filter(|&&bit| bit).count(), layout.live_bits());
++        for (local, &live) in used.iter().enumerate() {
++            assert_eq!(live, !layout.is_padding(local), "padding mask at {local}");
++        }
++        assert_eq!(
++            layout.signature_stride(),
++            if N == 512 { 65_536 } else { 131_072 }
++        );
++        assert_eq!(
++            layout.occupied_bits(),
++            if N == 512 { 64_911 } else { 125_127 }
++        );
++        assert!(layout.is_padding(layout.occupied_bits()));
++    }
++
++    #[test]
++    fn ct_payload_mapping_is_a_bijection_onto_signed_coefficient_bits() {
++        let layout = FalconSourceLayout::new(1).unwrap();
++        let mut mapped = vec![false; layout.signature_stride()];
++        for byte in 0..super::super::CT_SIGNATURE_BYTES {
++            for bit in 0..8 {
++                let address = layout.signature_bit(byte, bit);
++                assert!(!std::mem::replace(&mut mapped[address], true));
++                assert!(!layout.is_padding(address));
++            }
++        }
++        for j in 0..N {
++            for bit in 0..16 {
++                assert_eq!(
++                    mapped[16 * (N + j) + bit],
++                    bit < super::super::SIGNATURE_BITS
++                );
++            }
++        }
++        let header = layout.offsets().signature_header_nonce;
++        for bit in 0..8 * (1 + super::super::NONCE_BYTES) {
++            assert!(mapped[header + bit]);
++        }
++        assert_eq!(
++            mapped.iter().filter(|&&bit| bit).count(),
++            super::super::CT_SIGNATURE_BYTES * 8
++        );
++    }
++}
+ falcon_tests! {
+ mod tests {
+     use super::*;
+@@ -140,7 +280,8 @@
+             let layout = FalconSourceLayout::new(batch).unwrap();
+             let counts = FalconSourceLayout::counts();
+             assert_eq!(counts.total(), 114_914);
+-            assert_eq!(layout.offsets().end, counts.total());
++            assert_eq!(layout.occupied_bits(), 125_127);
++            assert_eq!(layout.occupied_bits() - counts.total(), 10_213);
+             assert_eq!(layout.signature_stride(), 131_072);
+             assert_eq!(layout.capacity(), batch.next_power_of_two());
+             assert_eq!(layout.source_bits(), 131_072 * layout.capacity());
+@@ -152,11 +293,11 @@
+                 layout.source_bits().trailing_zeros() as usize
+             );
+             assert_eq!(
+-                counts.shared_one + counts.message + counts.encoded_signature,
++                counts.shared_one + counts.message + counts.signature_header_nonce + counts.s2,
+                 12_873
+             );
+             assert_eq!(counts.total() - 12_873, 102_041);
+-            assert_eq!(layout.public_key_offset(), 100_578);
++            assert_eq!(layout.public_key_offset(), 49_152);
+             assert_eq!(counts.public_key, 14 * N);
+             assert_eq!(
+                 counts.hash_words / 16
+--- a/src/piop/spartan/falcon/mod.rs
++++ b/src/piop/spartan/falcon/mod.rs
+@@ -1,7 +1,7 @@
+ //! Shared implementation and errors for Falcon-512 and Falcon-1024.
+ 
+ /// Domain identifier for the full Falcon verification protocol.
+-pub const PROTOCOL_ID: &str = "bitz/falcon/shared-prime/non-zk/v1";
++pub const PROTOCOL_ID: &str = "bitz/falcon/shared-prime/non-zk/v2";
+ 
+ /// A malformed encoding or failed Falcon verification.
+ #[derive(Clone, Debug, thiserror::Error, Eq, PartialEq)]
+--- a/src/piop/spartan/falcon/opening.rs
++++ b/src/piop/spartan/falcon/opening.rs
+@@ -33,8 +33,8 @@
+ 
+ use super::{
+     FalconError, FalconPiopProof, FalconPublicKey, FalconSignatureCt, FalconSourceLayout,
+-    FalconSourceOffsets, FalconSourceWitness, FalconVerificationTrace, HASH_TO_POINT_SAMPLES, N, Q,
+-    decode_public_key, decode_signature_ct, encode_signature_ct,
++    FalconSourceWitness, FalconVerificationTrace, HASH_TO_POINT_SAMPLES, N, Q, decode_public_key,
++    decode_signature_ct, encode_signature_ct,
+     piop::{FalconPiopClaimRef, security_schedule},
+ };
+ 
+@@ -443,6 +443,7 @@
+             scale = field.add(&scale, &scale);
+         }
+     }
++    #[cfg(test)]
+     fn add_encoded_word(&mut self, base: usize, offset: usize, mut scale: F, field: &Cfg) {
+         if !self.enabled() {
+             return;
+@@ -458,6 +459,37 @@
+                     scale
+                 },
+             );
++            scale = field.add(&scale, &scale);
++        }
++    }
++    fn add_signed_word(&mut self, base: usize, width: usize, mut scale: F, field: &Cfg) {
++        if !self.enabled() {
++            return;
++        }
++        for bit in 0..width {
++            self.add(
++                base + bit,
++                if bit + 1 == width {
++                    field.neg(&scale)
++                } else {
++                    scale
++                },
++            );
++            scale = field.add(&scale, &scale);
++        }
++    }
++    fn add_signature_byte(
++        &mut self,
++        layout: &FalconSourceLayout,
++        byte: usize,
++        mut scale: F,
++        field: &Cfg,
++    ) {
++        if !self.enabled() {
++            return;
++        }
++        for bit in 0..8 {
++            self.add(layout.signature_bit(byte, bit), scale);
+             scale = field.add(&scale, &scale);
+         }
+     }
+@@ -659,7 +691,6 @@
+     {
+         return Err(piop("norm binding point dimension mismatch"));
+     }
+-    let offsets = layout.offsets();
+     for side in 0..2 {
+         let mut constant = field.zero();
+         for instance in coefficients.instances(layout.batch()) {
+@@ -670,12 +701,12 @@
+                     &weights.at(instance * N + i),
+                 );
+                 if side == 0 {
+-                    add_value_scaled(coefficients, base + offsets.s1 + 14 * i, weight, field);
++                    add_value_scaled(coefficients, base + layout.s1_bit(i, 0), weight, field);
+                     if coefficients.needs_constants() {
+                         constant = field.add(&constant, &mul_i(weight, -6_144, field));
+                     }
+                 } else {
+-                    add_signed_source_scaled(coefficients, base, &offsets, i, weight, field);
++                    add_signed_source_scaled(coefficients, base, layout, i, weight, field);
+                 }
+             }
+         }
+@@ -693,12 +724,12 @@
+             for i in 0..N {
+                 let weight = field.mul(scale, &weights.at(instance * N + i));
+                 if side == 0 {
+-                    add_value_scaled(coefficients, base + offsets.s1 + 14 * i, weight, field);
++                    add_value_scaled(coefficients, base + layout.s1_bit(i, 0), weight, field);
+                     if coefficients.needs_constants() {
+                         constant = field.add(&constant, &mul_i(weight, -6_144, field));
+                     }
+                 } else {
+-                    add_signed_source_scaled(coefficients, base, &offsets, i, weight, field);
++                    add_signed_source_scaled(coefficients, base, layout, i, weight, field);
+                 }
+             }
+         }
+@@ -713,13 +744,14 @@
+     }
+     let constant = field.zero();
+     for instance in coefficients.instances(layout.batch()) {
+-        add_unsigned_scaled(
+-            coefficients,
+-            instance * layout.signature_stride() + offsets.norm_slack,
+-            NORM_BITS,
+-            field.mul(scale, &instance_weights[instance]),
+-            field,
+-        );
++        let mut weight = field.mul(scale, &instance_weights[instance]);
++        for bit in 0..NORM_BITS {
++            coefficients.add(
++                instance * layout.signature_stride() + layout.norm_slack_bit(bit),
++                weight,
++            );
++            weight = field.add(&weight, &weight);
++        }
+     }
+     add_claim_target(target, *scale, proof.norm.slack, constant, field);
+     *scale = field.mul(scale, &eta);
+@@ -786,15 +818,14 @@
+ fn add_signed_source_scaled(
+     values: &mut impl CoefficientSink,
+     base: usize,
+-    offsets: &FalconSourceOffsets,
++    layout: &FalconSourceLayout,
+     coefficient: usize,
+     scale: F,
+     field: &Cfg,
+ ) {
+-    let stream = SIGNATURE_BITS * coefficient;
+-    values.add_encoded_word(
+-        base + offsets.encoded_signature + 8 * (1 + super::NONCE_BYTES + stream / 8),
+-        stream % 8,
++    values.add_signed_word(
++        base + layout.s2_bit(coefficient, 0),
++        SIGNATURE_BITS,
+         scale,
+         field,
+     );
+--- a/src/piop/spartan/falcon/opening_binding_tests.rs
++++ b/src/piop/spartan/falcon/opening_binding_tests.rs
+@@ -99,9 +99,8 @@
+         {
+             // The authenticated source contains bits, so each byte sum is in
+             // [0,255] and equality in the proof field fixes all eight bits.
+-            let terms: [(usize, i128); 8] = std::array::from_fn(|bit| {
+-                (offsets.encoded_signature + 8 * byte + bit, 1i128 << bit)
+-            });
++            let terms: [(usize, i128); 8] =
++                std::array::from_fn(|bit| (layout.signature_bit(byte, bit), 1i128 << bit));
+             residual(&terms, -i128::from(expected));
+         }
+ 
+@@ -147,9 +146,8 @@
+         );
+ 
+         for j in 0..N {
+-            let terms: [(usize, i128); 14] = std::array::from_fn(|bit| {
+-                (layout.public_key_offset() + 14 * j + bit, 1i128 << bit)
+-            });
++            let terms: [(usize, i128); 14] =
++                std::array::from_fn(|bit| (layout.public_key_bit(j, bit), 1i128 << bit));
+             residual(&terms, -i128::from(statement.public_keys[instance].h[j]));
+         }
+ 
+@@ -231,7 +229,6 @@
+     proof: FalconPiopClaimRef<'_>,
+     field: &Cfg,
+ ) -> Result<(), FalconError> {
+-    let offsets = layout.offsets();
+     let instances =
+         eq_table(&proof.compaction.instance_point, field).map_err(|e| piop(e.to_string()))?;
+     let weights =
+@@ -254,7 +251,7 @@
+                 );
+                 add_unsigned_scaled(
+                     coefficients,
+-                    base + offsets.hash_point + 14 * i,
++                    base + layout.hash_point_bit(i, 0),
+                     14,
+                     weight,
+                     field,
+@@ -550,7 +547,7 @@
+         .collect();
+     let column: Vec<_> = (0..layout.signature_stride())
+         .map(|i| {
+-            if i < layout.live_bits() && i % 5 != 0 {
++            if !layout.is_padding(i) && i % 5 != 0 {
+                 unsigned(17 + (i as u128).pow(2), &field)
+             } else {
+                 field.zero()
+@@ -559,7 +556,7 @@
+         .collect();
+     let mut words = vec![0u64; layout.source_bits() / 64];
+     for s in 0..layout.batch() {
+-        for i in 0..layout.live_bits() {
++        for i in (0..layout.signature_stride()).filter(|&i| !layout.is_padding(i)) {
+             let index = s * layout.signature_stride() + i;
+             let bit = ((index as u64 * 0x9e37_79b9 ^ (index as u64 >> 3)).count_ones() & 1) as u64;
+             words[index / 64] |= bit << (index % 64);
+@@ -1067,8 +1064,8 @@
+     // Change packed C and S1 bits independently, after fixing both the source
+     // commitment and projection query. Do not regenerate any proof or claim.
+     for index in [
+-        layout.signature_stride() + layout.offsets().hash_point + 14 * 17,
+-        2 * layout.signature_stride() + layout.offsets().s1 + 14 * 31 + 13,
++        layout.signature_stride() + layout.hash_point_bit(17, 0),
++        2 * layout.signature_stride() + layout.s1_bit(31, 13),
+     ] {
+         assert_ne!(dense[index], field.zero());
+         let mut changed = source.rows().to_vec();
+--- a/src/piop/spartan/falcon/opening_compact.rs
++++ b/src/piop/spartan/falcon/opening_compact.rs
+@@ -6,7 +6,15 @@
+ #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+ enum WordKind {
+     Unsigned,
+-    Encoded { offset: u8 },
++    Signed,
++    #[cfg(test)]
++    Encoded {
++        offset: u8,
++    },
++    /// A CT payload byte, mapped into aligned little-endian coefficient digits.
++    SignatureByte {
++        offset: u8,
++    },
+ }
+ 
+ #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+@@ -101,23 +109,34 @@
+         }
+         let mut starts = Vec::with_capacity(words.len() + 1);
+         let mut terms = Vec::new();
++        // Aligned coefficients repeat the same decoder on the low four
++        // variables. Compile each relative shape once, including mapped bytes.
++        let mut shapes = HashMap::<Word, Vec<(usize, F)>>::new();
+         for &word in words {
+             starts.push(terms.len());
+             let base = word.base >> vars;
+-            let mut sums = [field.zero(); 32];
+-            for bit in 0..usize::from(word.width) {
+-                let (index, negative) = word.bit_position(bit);
+-                let weight = powers[bit * weights.len() + (index & (weights.len() - 1))];
+-                let slot = &mut sums[(index >> vars) - base];
+-                *slot = if negative {
+-                    field.sub(slot, &weight)
+-                } else {
+-                    field.add(slot, &weight)
+-                };
+-            }
+-            terms.extend(sums.into_iter().enumerate().filter_map(|(offset, value)| {
+-                (value != field.zero()).then_some((base + offset, value))
+-            }));
++            let relative = Word {
++                base: word.base & (weights.len() - 1),
++                ..word
++            };
++            let shape = shapes.entry(relative).or_insert_with(|| {
++                let mut sums = [field.zero(); 32];
++                for bit in 0..usize::from(relative.width) {
++                    let (index, negative) = relative.bit_position(bit);
++                    let weight = powers[bit * weights.len() + (index & (weights.len() - 1))];
++                    let slot = &mut sums[index >> vars];
++                    *slot = if negative {
++                        field.sub(slot, &weight)
++                    } else {
++                        field.add(slot, &weight)
++                    };
++                }
++                sums.into_iter()
++                    .enumerate()
++                    .filter(|(_, value)| *value != field.zero())
++                    .collect()
++            });
++            terms.extend(shape.iter().map(|&(offset, value)| (base + offset, value)));
+         }
+         starts.push(terms.len());
+         Self {
+@@ -132,11 +151,22 @@
+     fn bit_position(self, bit: usize) -> (usize, bool) {
+         match self.kind {
+             WordKind::Unsigned => (self.base + bit, false),
++            WordKind::Signed => (self.base + bit, bit + 1 == usize::from(self.width)),
++            #[cfg(test)]
+             WordKind::Encoded { offset } => {
+                 let stream = usize::from(offset) + SIGNATURE_BITS - 1 - bit;
+                 (
+                     self.base + 8 * (stream / 8) + 7 - stream % 8,
+                     bit == SIGNATURE_BITS - 1,
++                )
++            }
++            WordKind::SignatureByte { offset } => {
++                let stream = usize::from(offset) + 7 - bit;
++                (
++                    self.base + 16 * (stream / SIGNATURE_BITS) + SIGNATURE_BITS
++                        - 1
++                        - stream % SIGNATURE_BITS,
++                    false,
+                 )
+             }
+         }
+@@ -330,6 +360,7 @@
+         self.word(base, width, WordKind::Unsigned, scale);
+     }
+ 
++    #[cfg(test)]
+     fn add_encoded_word(&mut self, base: usize, offset: usize, scale: F, _: &Cfg) {
+         self.word(
+             base,
+@@ -339,6 +370,27 @@
+             },
+             scale,
+         );
++    }
++
++    fn add_signed_word(&mut self, base: usize, width: usize, scale: F, _: &Cfg) {
++        self.word(base, width, WordKind::Signed, scale);
++    }
++
++    fn add_signature_byte(&mut self, layout: &FalconSourceLayout, byte: usize, scale: F, _: &Cfg) {
++        let header_bytes = 1 + super::super::NONCE_BYTES;
++        if byte < header_bytes {
++            self.word(layout.signature_bit(byte, 0), 8, WordKind::Unsigned, scale);
++        } else {
++            let stream = 8 * (byte - header_bytes);
++            self.word(
++                layout.s2_bit(stream / SIGNATURE_BITS, 0),
++                8,
++                WordKind::SignatureByte {
++                    offset: (stream % SIGNATURE_BITS) as u8,
++                },
++                scale,
++            );
++        }
+     }
+ }
+ 
+@@ -664,17 +716,11 @@
+         }
+         let field = self.field;
+         let mut common = WordSink::new(0, 0, field);
+-        emit_linear_template(
+-            &mut common,
+-            &self.local_linear_weights,
+-            &self.layout.offsets(),
+-            field,
+-        );
++        emit_linear_template(&mut common, &self.local_linear_weights, self.layout, field);
+         {
+-            let offset = self.layout.public_key_offset();
+             for j in 0..N {
+                 common.add_word(
+-                    offset + 14 * j,
++                    self.layout.public_key_bit(j, 0),
+                     14,
+                     self.local_linear_weights.at(
+                         super::super::FalconConstraintCounts::per_signature().linear_rows() - N + j,
+@@ -726,7 +772,6 @@
+     ) -> Result<(), FalconError> {
+         let field = self.field;
+         let layout = self.layout;
+-        let offsets = layout.offsets();
+         let base = instance * layout.signature_stride();
+         let mut ignored = field.zero();
+         let mut scale = self.eta;
+@@ -765,7 +810,7 @@
+         let tree_scale = field.mul(&prepared.output_scale, &prepared.leaf.beta[instance]);
+         for (i, &weight) in weights.iter().take(N).enumerate() {
+             sink.add_word(
+-                base + offsets.hash_point + 14 * i,
++                base + layout.hash_point_bit(i, 0),
+                 14,
+                 field.mul(&tree_scale, &weight),
+                 field,
+@@ -1007,11 +1052,7 @@
+     let mut constant = field.neg(&weights.at(0));
+     constant = field.sub(
+         &constant,
+-        &mul_i(
+-            weights.at(257),
+-            (0x50 + COEFFICIENT_LOG) as i128,
+-            field,
+-        ),
++        &mul_i(weights.at(257), (0x50 + COEFFICIENT_LOG) as i128, field),
+     );
+     let start = 1 + 256 + super::super::CT_SIGNATURE_BYTES;
+     for i in 0..HASH_TO_POINT_SAMPLES {
+@@ -1026,9 +1067,10 @@
+ fn emit_linear_template(
+     sink: &mut impl CoefficientSink,
+     weights: &crate::poly::mle::EqualityWeights<F>,
+-    offsets: &FalconSourceOffsets,
++    layout: &FalconSourceLayout,
+     field: &Cfg,
+ ) {
++    let offsets = layout.offsets();
+     let mut row = 0;
+     let mut next = || {
+         let w = weights.at(row);
+@@ -1040,7 +1082,7 @@
+         sink.add(offsets.message + bit, next());
+     }
+     for byte in 0..super::super::CT_SIGNATURE_BYTES {
+-        sink.add_word(offsets.encoded_signature + 8 * byte, 8, next(), field);
++        sink.add_signature_byte(layout, byte, next(), field);
+     }
+     for i in 0..HASH_TO_POINT_SAMPLES {
+         let weight = next();
+@@ -1097,8 +1139,14 @@
+                 })
+                 .chain((0..8).map(|offset| Word {
+                     base,
+-                    width: 12,
++                    width: SIGNATURE_BITS as u8,
+                     kind: WordKind::Encoded { offset },
++                }))
++                .chain((1..=15).map(|width| Word { base, width, kind: WordKind::Signed }))
++                .chain((0..SIGNATURE_BITS as u8).map(|offset| Word {
++                    base,
++                    width: 8,
++                    kind: WordKind::SignatureByte { offset },
+                 }))
+                 .collect::<Vec<_>>();
+             let compiled = ByteRuns::new(&words);
+@@ -1120,6 +1168,42 @@
+                 }
+                 assert_eq!(actual, expected, "{word:?}");
+             }
++        }
++    }
++
++    #[test]
++    fn compact_signature_bytes_match_layout_addresses_and_dense_expansion() {
++        let layout = FalconSourceLayout::new(1).unwrap();
++        let field = crate::piop::spartan::spartan_bitz_field_config();
++        let mut compact = WordSink::new(0, 0, &field);
++        let mut dense = Dense { values: vec![field.zero(); layout.signature_stride()], field: &field };
++        for byte in 0..super::super::super::CT_SIGNATURE_BYTES {
++            let weight = unsigned((byte + 17) as u128, &field);
++            compact.add_signature_byte(&layout, byte, weight, &field);
++            dense.add_signature_byte(&layout, byte, weight, &field);
++        }
++        let compact = compact.finish();
++        let mut actual = vec![field.zero(); layout.signature_stride()];
++        compact.emit(0, &field, &mut |index, value| {
++            actual[index] = field.add(&actual[index], &value);
++            Ok(())
++        }).unwrap();
++        assert_eq!(actual, dense.values);
++        assert_eq!(compact.words.len(), super::super::super::CT_SIGNATURE_BYTES);
++        for width in [1usize, 2, 4, 8, 16] {
++            let point = (0..width.ilog2()).map(|i| unsigned(19 + u128::from(i), &field)).collect::<Vec<_>>();
++            let weights = eq_table(&point, &field).unwrap();
++            let expected = dense.values.chunks_exact(width).map(|chunk| {
++                chunk.iter().zip(&weights).fold(field.zero(), |sum, (value, weight)| {
++                    field.add(&sum, &field.mul(value, weight))
++                })
++            }).collect::<Vec<_>>();
++            let mut actual = vec![field.zero(); expected.len()];
++            compact.emit_folded(0, &weights, &field, &mut |index, value| {
++                actual[index] = value;
++                Ok(())
++            }).unwrap();
++            assert_eq!(actual, expected, "prefix width {width}");
+         }
+     }
+ 
+@@ -1216,6 +1300,7 @@
+         for local in [0, 15, 31, 63, 127, 224] {
+             sink.add_word(base + local, 27, scale, field);
+             sink.add_word(base + local + 1, 14, scale, field);
++            sink.add_signed_word(base + local + 2, SIGNATURE_BITS, scale, field);
+             sink.add(base + local + 26, field.neg(&scale));
+         }
+         // CT encoding has a reversed bit order and alternates nibble offsets.
+--- a/src/piop/spartan/falcon/piop.rs
++++ b/src/piop/spartan/falcon/piop.rs
+@@ -365,12 +365,13 @@
+     target_bits: usize,
+     field: &Cfg,
+ ) {
+-    transcript.absorb_slice(b"bitz/falcon1024-ct/piop/shared-prime/v4");
++    transcript.absorb_slice(b"bitz/falcon1024-ct/piop/shared-prime/aligned16/v5");
+     transcript.absorb_slice(&(layout.batch() as u64).to_le_bytes());
+     transcript.absorb_slice(&(layout.capacity() as u64).to_le_bytes());
+     transcript.absorb_slice(&(target_bits as u64).to_le_bytes());
+     transcript.absorb_slice(&field.modulus_u128().to_le_bytes());
+     transcript.absorb_slice(&(layout.live_bits() as u64).to_le_bytes());
++    transcript.absorb_slice(&(layout.occupied_bits() as u64).to_le_bytes());
+ }
+ 
+ #[tracing::instrument(skip_all, name = "falcon_arithmetic:norm")]
+@@ -1593,7 +1594,7 @@
+ 
+         fn absorb_inner(&mut self, bytes: &[u8]) {
+             self.prime_draws += usize::from(bytes == b"bitz/shared-prime-sampling/v1");
+-            self.shared_headers += usize::from(bytes == b"bitz/falcon1024-ct/piop/shared-prime/v4");
++            self.shared_headers += usize::from(bytes == b"bitz/falcon1024-ct/piop/shared-prime/aligned16/v5");
+             self.inner.absorb_inner(bytes);
+         }
+     }
+--- a/src/piop/spartan/falcon/shared_ring.rs
++++ b/src/piop/spartan/falcon/shared_ring.rs
+@@ -21,7 +21,7 @@
+ 
+ use super::{
+     FalconError, FalconPublicStatement, FalconSourceLayout, FalconSourceWitness,
+-    FalconVerificationTrace, N, NONCE_BYTES, Q,
++    FalconVerificationTrace, N, Q,
+     constraints::SOURCE_RESIDUAL_BOUND,
+     ring_field::{
+         EXTENSION_DEGREE, Ext, absorb_extensions, certificate, equality_weights, sample_extension,
+@@ -32,7 +32,7 @@
+ type Cfg = <F as SpartanField>::Config;
+ 
+ const LIFT_COEFFICIENTS: usize = 2 * EXTENSION_DEGREE - 1;
+-const DOMAIN: &[u8] = b"bitz/falcon1024-ct/shared-ring/v4";
++const DOMAIN: &[u8] = b"bitz/falcon1024-ct/shared-ring/v5";
+ 
+ /// Target 100 uses one unsplit bounded exponent. Target 128 retains the
+ /// native prime family and its two bounded bridge limbs.
+@@ -310,6 +310,7 @@
+         layout.batch(),
+         layout.capacity(),
+         layout.signature_stride(),
++        layout.occupied_bits(),
+         layout.public_key_offset(),
+         layout.row_vars(),
+         layout.col_vars(),
+@@ -318,7 +319,7 @@
+         t.absorb_slice(&(value as u64).to_le_bytes());
+     }
+     t.absorb_slice(
+-        b"f:T^k+T+c;D:N-1;direct-beta-decoder;P:i128le(2k-1);live-mask;C:u14;H:u14;S1:bounded14-6144;S2:encoded-signed;aliases:sum-in-E",
++        b"f:T^k+T+c;D:N-1;direct-beta-decoder;P:i128le(2k-1);live-mask;layout:aligned16;C:u14;H:u14;S1:bounded14-6144;S2:lsb-signed;aliases:sum-in-E",
+     );
+     t.absorb_slice(&lift_bound(layout).to_le_bytes());
+     t.absorb_slice(&SOURCE_RESIDUAL_BOUND.to_le_bytes());
+@@ -583,13 +584,11 @@
+     visit: impl FnMut(usize, Ext),
+ ) -> Result<(), FalconError> {
+     let offsets = layout.offsets();
+-    let key = layout.public_key_offset();
+-    let s2 = offsets.encoded_signature + 8 * (1 + NONCE_BYTES);
+     let ranges = [
+-        offsets.hash_point..offsets.hash_point + 14 * N,
+-        key..key + 14 * N,
+-        s2..s2 + SIGNATURE_BITS * N,
+-        offsets.s1..offsets.s1 + 14 * N,
++        offsets.hash_point..offsets.hash_point + 16 * N,
++        offsets.public_key..offsets.public_key + 16 * N,
++        offsets.s2..offsets.s2 + 16 * N,
++        offsets.s1..offsets.s1 + 16 * N,
+     ];
+     visit_decoder_query(layout.signature_stride(), &ranges, positions, omega, visit)
+ }
+@@ -604,12 +603,9 @@
+     mut visit: impl FnMut(usize, Ext),
+ ) -> Result<(), FalconError> {
+     if positions.len() != N
+-        || ranges
+-            .iter()
+-            .zip([14, 14, SIGNATURE_BITS, 14])
+-            .any(|(range, width)| {
+-                range.end > domain_len || range.end.checked_sub(range.start) != Some(width * N)
+-            })
++        || ranges.iter().any(|range| {
++            range.end > domain_len || range.end.checked_sub(range.start) != Some(16 * N)
++        })
+     {
+         return Err(error("shared ring decoder query dimensions"));
+     }
+@@ -627,7 +623,7 @@
+             }
+         }
+     } else {
+-        // Every decoder visits its entire range bijectively, so disjoint
++        // Every decoder visits distinct live slots in its range, so disjoint
+         // ranges guarantee that these are already canonical slot sums.
+         visit_decoder_terms(ranges, positions, omega, visit);
+     }
+@@ -646,16 +642,15 @@
+         let s2 = weight.mul(omega[2]);
+         let s1 = weight.mul(omega[3]);
+         for bit in 0..14 {
+-            emit(ranges[0].start + 14 * j + bit, scale(c, 1 << bit));
+-            emit(ranges[1].start + 14 * j + bit, scale(h, 1 << bit));
++            emit(ranges[0].start + 16 * j + bit, scale(c, 1 << bit));
++            emit(ranges[1].start + 16 * j + bit, scale(h, 1 << bit));
+             emit(
+-                ranges[3].start + 14 * j + bit,
++                ranges[3].start + 16 * j + bit,
+                 scale(s1, if bit == 13 { 4097 } else { 1 << bit }),
+             );
+         }
+         for bit in 0..SIGNATURE_BITS {
+-            let stream = SIGNATURE_BITS * j + SIGNATURE_BITS - 1 - bit;
+-            let slot = ranges[2].start + 8 * (stream / 8) + 7 - stream % 8;
++            let slot = ranges[2].start + 16 * j + bit;
+             emit(
+                 slot,
+                 scale(
+@@ -1004,9 +999,9 @@
+                     .is_err()
+             );
+             for slot in [
+-                layout.offsets().s1 + 13,
+-                layout.public_key_offset() + 14335,
+-                layout.offsets().encoded_signature + 8 * (1 + NONCE_BYTES),
++                layout.s1_bit(0, 13),
++                layout.public_key_bit(N - 1, 13),
++                layout.s2_bit(0, 0),
+                 layout.signature_stride() - 1,
+             ] {
+                 let mut local = vec![field.zero(); layout.signature_stride()];
+@@ -1180,16 +1175,11 @@
+                 let s1 = bounded[(j + 3 * s + 4) % bounded.len()];
+                 for (offset, word) in [(offsets.hash_point, c), (key, h), (offsets.s1, s1)] {
+                     for bit in 0..14 {
+-                        bits[base + offset + 14 * j + bit] = word >> bit & 1 != 0;
++                        bits[base + offset + 16 * j + bit] = word >> bit & 1 != 0;
+                     }
+                 }
+-                // Encode the signed coefficient independently as 12 MSB-first
+-                // stream bits, then place each byte's bits little-endian.
+-                for digit in 0..12 {
+-                    let stream = 12 * j + digit;
+-                    let slot = offsets.encoded_signature + 8 * (1 + NONCE_BYTES + stream / 8) + 7
+-                        - stream % 8;
+-                    bits[base + slot] = s2 >> (11 - digit) & 1 != 0;
++                for digit in 0..SIGNATURE_BITS {
++                    bits[base + offsets.s2 + 16 * j + digit] = s2 >> digit & 1 != 0;
+                 }
+                 *coefficient = [
+                     i64::from(c),
+@@ -1240,9 +1230,8 @@
+                 });
+                 assert_eq!(actual, dot_ext(omega, &endpoints));
+                 assert!(
+-                    column[layout.live_bits()..]
+-                        .iter()
+-                        .all(|&value| value == Ext::ZERO)
++                    column.iter().enumerate()
++                        .all(|(slot, &value)| !layout.is_padding(slot) || value == Ext::ZERO)
+                 );
+             }
+         }
+@@ -1250,13 +1239,13 @@
+ 
+     #[test]
+     fn decoder_aliases_are_summed_in_extension_before_coordinate_projection() {
+-        let disjoint = [0..14 * N, 14 * N..28 * N, 28 * N..40 * N, 40 * N..54 * N];
+-        let aliases = [0..14 * N, 0..14 * N, 3..3 + 12 * N, 7..7 + 14 * N];
+-        let domain = 7 + 14 * N;
++        let disjoint = [0..16 * N, 16 * N..32 * N, 32 * N..48 * N, 48 * N..64 * N];
++        let aliases = [0..16 * N, 0..16 * N, 3..3 + 16 * N, 7..7 + 16 * N];
++        let domain = 7 + 16 * N;
+         let positions = powers(element(31));
+         let omega = operand_weights(element(13));
+         let mut expected = vec![Ext::ZERO; domain];
+-        visit_decoder_query(54 * N, &disjoint, &positions, &omega, |slot, value| {
++        visit_decoder_query(64 * N, &disjoint, &positions, &omega, |slot, value| {
+             let operand = disjoint
+                 .iter()
+                 .position(|range| range.contains(&slot))
+@@ -1348,7 +1337,7 @@
+             offsets.hash_point + 63,
+             offsets.s1 + 13,
+             offsets.s1 + 64,
+-            offsets.encoded_signature + 329,
++            layout.s2_bit(1, 1),
+             layout.public_key_offset() + 13,
+         ] {
+             sparse[index] = element(index);
+--- a/src/piop/spartan/falcon/source.rs
++++ b/src/piop/spartan/falcon/source.rs
+@@ -3,16 +3,18 @@
+     N,
+ };
+ use super::{NORM_BITS, PREFIX_BITS};
++use crate::piop::spartan::falcon_bit_layout::{COEFFICIENT_STRIDE, coefficient_bit};
+ #[cfg(feature = "parallel")]
+ use rayon::prelude::*;
+ 
+ /// Start offsets of committed columns within one signature stride.
+-/// The interval ending at `end` is live; the rest of the stride is zero.
++/// Ring coefficients have stride 16; slack occupies spare coefficient lanes.
++/// Internal holes and positions at or beyond `occupied_end` are zero.
+ #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+ pub struct FalconSourceOffsets {
+     pub shared_one: usize,
+     pub message: usize,
+-    pub encoded_signature: usize,
++    pub signature_header_nonce: usize,
+     pub hash_words: usize,
+     pub hash_quotients: usize,
+     pub hash_remainders: usize,
+@@ -20,31 +22,31 @@
+     pub hash_prefixes: usize,
+     pub hash_point: usize,
+     pub s1: usize,
+-    pub norm_slack: usize,
++    pub s2: usize,
+     pub public_key: usize,
+-    pub end: usize,
++    pub occupied_end: usize,
+ }
+ 
+ impl FalconSourceOffsets {
+     pub(super) const fn new() -> Self {
+         let counts = FalconSourceLayout::counts();
+-        let shared_one = 0;
++        let s1 = coefficient_bit(N, 0, 0, 0);
++        let s2 = coefficient_bit(N, 1, 0, 0);
++        let hash_point = coefficient_bit(N, 2, 0, 0);
++        let public_key = coefficient_bit(N, 3, 0, 0);
++        let shared_one = 4 * N * COEFFICIENT_STRIDE;
+         let message = shared_one + counts.shared_one;
+-        let encoded_signature = message + counts.message;
+-        let hash_words = encoded_signature + counts.encoded_signature;
++        let signature_header_nonce = message + counts.message;
++        let hash_words = signature_header_nonce + counts.signature_header_nonce;
+         let hash_quotients = hash_words + counts.hash_words;
+         let hash_remainders = hash_quotients + counts.hash_quotients;
+         let hash_accept_ands = hash_remainders + counts.hash_remainders;
+         let hash_prefixes = hash_accept_ands + counts.hash_accept_ands;
+-        let hash_point = hash_prefixes + counts.hash_prefixes;
+-        let s1 = hash_point + counts.hash_point;
+-        let norm_slack = s1 + counts.s1;
+-        let public_key = norm_slack + counts.norm_slack;
+-        let end = public_key + counts.public_key;
++        let occupied_end = hash_prefixes + counts.hash_prefixes;
+         Self {
+             shared_one,
+             message,
+-            encoded_signature,
++            signature_header_nonce,
+             hash_words,
+             hash_quotients,
+             hash_remainders,
+@@ -52,9 +54,9 @@
+             hash_prefixes,
+             hash_point,
+             s1,
+-            norm_slack,
++            s2,
+             public_key,
+-            end,
++            occupied_end,
+         }
+     }
+ }
+@@ -69,8 +71,8 @@
+ impl FalconSourceWitness {
+     /// Packs already-validated native traces. Integer bit strings are stored
+     /// little-endian; remainders and biased s1 use `bounded14_encode`.
+-    /// Raw Falcon bytes retain byte order and use least-significant-bit-first
+-    /// byte bits.
++    /// Header/nonce bytes use least-significant-bit-first byte bits. The exact
++    /// signature payload is rearranged into aligned signed coefficient words.
+     pub fn from_traces(
+         layout: FalconSourceLayout,
+         messages: &[&[u8]],
+@@ -86,7 +88,7 @@
+         let p = layout.bitz_params();
+         let mut rows = vec![vec![0u64; p.rows() / 64]; p.cols()];
+         let offsets = layout.offsets();
+-        debug_assert_eq!(offsets.end, layout.live_bits());
++        debug_assert_eq!(offsets.occupied_end, layout.occupied_bits());
+ 
+         crate::utils::cfg_chunks_mut!(rows, layout.signature_stride() >> p.row_vars)
+             .enumerate()
+@@ -116,15 +118,38 @@
+                     );
+                 }
+ 
+-                for (byte_index, &byte) in signature.iter().enumerate() {
+-                    put_unsigned(
+-                        rows,
+-                        &p,
+-                        offsets.encoded_signature + 8 * byte_index,
++                for (byte_index, &byte) in signature[..1 + super::NONCE_BYTES].iter().enumerate() {
++                    put_unsigned(
++                        rows,
++                        &p,
++                        offsets.signature_header_nonce + 8 * byte_index,
+                         u64::from(byte),
+                         8,
+                     );
+                 }
++                // Read the supplied bytes, not the trace's decoded s2 copy:
++                // the commitment must continue to bind the exact signature.
++                let mut payload = signature[1 + super::NONCE_BYTES..].iter().copied();
++                let mut acc = 0u32;
++                let mut acc_len = 0;
++                for i in 0..N {
++                    while acc_len < super::SIGNATURE_BITS {
++                        acc = (acc << 8) | u32::from(payload.next().expect("length checked"));
++                        acc_len += 8;
++                    }
++                    acc_len -= super::SIGNATURE_BITS;
++                    let word = (acc >> acc_len) & ((1 << super::SIGNATURE_BITS) - 1);
++                    put_unsigned(
++                        rows,
++                        &p,
++                        layout.s2_bit(i, 0),
++                        u64::from(word),
++                        super::SIGNATURE_BITS,
++                    );
++                    acc &= (1 << acc_len) - 1;
++                }
++                debug_assert_eq!(acc_len, 0);
++                debug_assert!(payload.next().is_none());
+ 
+                 for i in 0..HASH_TO_POINT_SAMPLES {
+                     put_unsigned(
+@@ -174,7 +199,7 @@
+                     put_unsigned(
+                         rows,
+                         &p,
+-                        offsets.hash_point + 14 * i,
++                        layout.hash_point_bit(i, 0),
+                         u64::from(trace.hash_to_point.point[i]),
+                         14,
+                     );
+@@ -182,21 +207,33 @@
+                     put_unsigned(
+                         rows,
+                         &p,
+-                        offsets.s1 + 14 * i,
++                        layout.s1_bit(i, 0),
+                         u64::from(bounded14_encode(biased_s1 as u16)),
+                         14,
+                     );
+                 }
+                 debug_assert_eq!(trace.norm + trace.norm_slack, BETA_SQUARED);
+-                put_unsigned(rows, &p, offsets.norm_slack, trace.norm_slack, NORM_BITS);
+-                {
+-                    let public_key = offsets.public_key;
+-                    for (i, &coefficient) in trace.public_key.h.iter().enumerate() {
+-                        if i64::from(coefficient) >= super::Q {
+-                            return Err(FalconError::PublicKeyCoefficient { index: i });
+-                        }
+-                        put_unsigned(rows, &p, public_key + 14 * i, u64::from(coefficient), 14);
++                assert!(trace.norm_slack < 1u64 << NORM_BITS);
++                for bit in 0..NORM_BITS {
++                    put_unsigned(
++                        rows,
++                        &p,
++                        layout.norm_slack_bit(bit),
++                        (trace.norm_slack >> bit) & 1,
++                        1,
++                    );
++                }
++                for (i, &coefficient) in trace.public_key.h.iter().enumerate() {
++                    if i64::from(coefficient) >= super::Q {
++                        return Err(FalconError::PublicKeyCoefficient { index: i });
+                     }
++                    put_unsigned(
++                        rows,
++                        &p,
++                        layout.public_key_bit(i, 0),
++                        u64::from(coefficient),
++                        14,
++                    );
+                 }
+                 Ok(())
+             })?;
+@@ -229,6 +266,13 @@
+         let b = flat & (p.rows() - 1);
+         let c = flat >> p.row_vars;
+         self.rows[c][b / 64] >> (b % 64) & 1 == 1
++    }
++
++    #[cfg(test)]
++    pub(super) fn flip_bit(&mut self, flat: usize) {
++        let p = self.layout.bitz_params();
++        let row = flat & (p.rows() - 1);
++        self.rows[flat >> p.row_vars][row / 64] ^= 1 << (row % 64);
+     }
+ }
+ 
+@@ -328,7 +372,10 @@
+                     assert_eq!(read(offsets.message + 8 * i, 8), u64::from(byte));
+                 }
+                 for (i, &byte) in SIGNATURE.iter().enumerate() {
+-                    assert_eq!(read(offsets.encoded_signature + 8 * i, 8), u64::from(byte));
++                    let actual = (0..8).fold(0u8, |value, bit| {
++                        value | (u8::from(witness.bit(base + layout.signature_bit(i, bit))) << bit)
++                    });
++                    assert_eq!(actual, byte);
+                 }
+                 for i in 0..HASH_TO_POINT_SAMPLES {
+                     assert_eq!(
+@@ -354,17 +401,24 @@
+                 }
+                 for i in 0..N {
+                     assert_eq!(
+-                        read(offsets.hash_point + 14 * i, 14),
++                        read(layout.hash_point_bit(i, 0), 14),
+                         u64::from(trace.hash_to_point.point[i])
+                     );
+-                    let encoded = read(offsets.s1 + 14 * i, 14) as u16;
++                    let encoded = read(layout.s1_bit(i, 0), 14) as u16;
+                     assert_eq!(
+                         i32::from(bounded14_decode(encoded)) - 6_144,
+                         i32::from(trace.s1[i])
+                     );
+-                }
+-                assert_eq!(read(offsets.norm_slack, 27), trace.norm_slack);
+-                assert!((offsets.end..layout.signature_stride()).all(|i| !witness.bit(base + i)));
++                    let s2 = read(layout.s2_bit(i, 0), super::super::SIGNATURE_BITS);
++                    let signed_s2 = s2 as i64
++                        - ((s2 >> (super::super::SIGNATURE_BITS - 1)) << super::super::SIGNATURE_BITS) as i64;
++                    assert_eq!(signed_s2, i64::from(trace.signature.s2[i]));
++                }
++                let slack = (0..NORM_BITS).fold(0u64, |value, bit| {
++                    value | (u64::from(witness.bit(base + layout.norm_slack_bit(bit))) << bit)
++                });
++                assert_eq!(slack, trace.norm_slack);
++                assert!((0..layout.signature_stride()).filter(|&i| layout.is_padding(i)).all(|i| !witness.bit(base + i)));
+             }
+             assert!(
+                 (batch * layout.signature_stride()..layout.source_bits()).all(|i| !witness.bit(i))
+@@ -384,20 +438,19 @@
+             FalconSourceWitness::from_traces(shared, &messages, &signatures, &traces).unwrap();
+         let keys = vec![trace.public_key.clone(); batch];
+         new.check_public_key_bindings(&keys).unwrap();
+-        let h = shared.public_key_offset();
+         for s in 0..batch {
+             let base = s * shared.signature_stride();
+             for j in 0..N {
+                 assert_eq!(
+-                    read_unsigned(&new, base + h + 14 * j, 14),
++                    read_unsigned(&new, base + shared.public_key_bit(j, 0), 14),
+                     u64::from(keys[s].h[j])
+                 );
+             }
+-            assert!((shared.live_bits()..shared.signature_stride()).all(|j| !new.bit(base + j)));
++            assert!((0..shared.signature_stride()).filter(|&j| shared.is_padding(j)).all(|j| !new.bit(base + j)));
+         }
+         assert!((batch * shared.signature_stride()..shared.source_bits()).all(|j| !new.bit(j)));
+         // Decode H from the committed bits, rather than accepting its trace copy.
+-        let flat = shared.signature_stride() + h + 14 * 17 + 3;
++        let flat = shared.signature_stride() + shared.public_key_bit(17, 3);
+         let row = flat & ((1 << shared.row_vars()) - 1);
+         new.rows[flat >> shared.row_vars()][row / 64] ^= 1 << (row % 64);
+         assert!(
+@@ -406,6 +459,58 @@
+         }) if index == N + 17)
+         );
+     }
+-}
+-
+-}
++
++    #[test]
++    fn source_reconstructs_supplied_signature_bytes_even_when_trace_differs() {
++        let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
++        let layout = FalconSourceLayout::new(1).unwrap();
++        let bytes: Vec<u8> = (0..super::super::CT_SIGNATURE_BYTES)
++            .map(|i| (i.wrapping_mul(73) ^ (i >> 3)) as u8)
++            .collect();
++        let source = FalconSourceWitness::from_traces(
++            layout,
++            &[MESSAGE.as_slice()],
++            &[bytes.as_slice()],
++            &[trace],
++        )
++        .unwrap();
++        for (byte, &expected) in bytes.iter().enumerate() {
++            let actual = (0..8).fold(0u8, |value, bit| {
++                value | (u8::from(source.bit(layout.signature_bit(byte, bit))) << bit)
++            });
++            assert_eq!(actual, expected, "signature byte {byte}");
++        }
++    }
++
++    #[test]
++    fn aligned_source_preserves_coefficient_boundaries() {
++        let mut trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
++        let s1 = [-6_144, -2_047, 0, 2_047, 2_048, 6_144];
++        let s2 = [-2_047, -1, 0, 1, 2_046, 2_047];
++        let unsigned = [0, 1, 4_096, 4_097, 8_191, 12_288];
++        trace.s1[..s1.len()].copy_from_slice(&s1);
++        trace.signature.s2[..s2.len()].copy_from_slice(&s2);
++        trace.public_key.h[..unsigned.len()].copy_from_slice(&unsigned);
++        trace.hash_to_point.point[..unsigned.len()].copy_from_slice(&unsigned);
++        let signature = super::super::encode_signature_ct(&trace.signature).unwrap();
++        let layout = FalconSourceLayout::new(1).unwrap();
++        let source = FalconSourceWitness::from_traces(
++            layout,
++            &[MESSAGE.as_slice()],
++            &[signature.as_slice()],
++            &[trace],
++        )
++        .unwrap();
++        for j in 0..s1.len() {
++            // Independent literal slot arithmetic checks the public helpers too.
++            let encoded_s1 = read_unsigned(&source, 16 * j, 14) as u16;
++            assert_eq!(i32::from(bounded14_decode(encoded_s1)) - 6_144, i32::from(s1[j]));
++            let encoded_s2 = read_unsigned(&source, 16 * (N + j), 12) as i16;
++            assert_eq!((encoded_s2 << 4) >> 4, s2[j]);
++            assert_eq!(read_unsigned(&source, 16 * (2 * N + j), 14), u64::from(unsigned[j]));
++            assert_eq!(read_unsigned(&source, 16 * (3 * N + j), 14), u64::from(unsigned[j]));
++        }
++    }
++}
++
++}
+--- a/src/piop/spartan/falcon1024_algebraic/README.md
++++ b/src/piop/spartan/falcon1024_algebraic/README.md
+@@ -41,8 +41,11 @@
+ ## Reduction and shared witness
+ 
+ The source contains 30,747 live bits per signature: two signed15 coefficient
+-vectors and a 27-bit nonnegative norm slack. Each slot is padded to 65,536 bits;
+-the batch capacity is the next power of two, with a minimum of eight slots to
++vectors and a 27-bit nonnegative norm slack. Each coefficient occupies a 16-bit
++address block: lanes 0..14 contain its signed15 encoding, and lane 15 of the
++first 27 coefficients contains the corresponding norm-slack bit. All other
++lane-15 positions are padding. Each signature occupies 32,768 bits, leaving
++2,021 padding bits. The batch capacity is the next power of two, with a minimum of sixteen slots to
+ meet the PCS minimum size. An authenticated linear zero-sum
+ claim enforces all internal and inactive-slot padding. The generic shared opener
+ also enforces its structural zero lanes.
+@@ -62,7 +65,9 @@
+ equation before random batching.
+ 
+ A fresh seven-claim merge combines the ring claim, four norm endpoints, slack,
+-and padding. A streamed sumcheck binds them to one multilinear evaluation of
++and padding. Coefficient index and bit-lane variables are separate: the binder
++evaluates the signed decoder once, aggregates its prefix by witness byte, and
++folds the common decoder before replaying coefficient weights. A streamed sumcheck binds them to one multilinear evaluation of
+ the original bits. The existing two-limb BitZ bridge, binary product GKR, binary
+ source sumcheck, ring switch, and Ligerito opening authenticate that evaluation.
+ SHAKE and HashToPoint proof components are absent; BitZ's own product GKR remains.
+@@ -72,7 +77,8 @@
+ 
+ ## Security accounting
+ 
+-The configuration is bound into a new transcript domain. Eight arithmetic and
++The aligned layout is bound into the v2 transcript domain; commitments and
++proofs from the preceding layout cannot be reused. Eight arithmetic and
+ binary error groups each receive at most `2^(-target-4)`, totaling at most half
+ the budget. Their degree numerators are:
+ 
+@@ -82,9 +88,9 @@
+ | Norm instance batching | d | `2^125` |
+ | Two norm sumchecks | 4(10+d) | `2^125` |
+ | Seven-claim merge | 6 | `2^125` |
+-| Bit-source binder | 2(16+d) | `2^125` |
+-| BitZ product GKR | 407+40d | `2^128` |
+-| Binary source sumcheck | 2(17+d) | `2^128` |
++| Bit-source binder | 2(15+d) | `2^125` |
++| BitZ product GKR | 367+40d | `2^128` |
++| Binary source sumcheck | 2(16+d) | `2^128` |
+ | Ring switch | 256 | `2^128` |
+ 
+ Here `d = log2(capacity)`. Each adaptive challenge boundary uses the derived
+--- a/src/piop/spartan/falcon1024_algebraic/arithmetic.rs
++++ b/src/piop/spartan/falcon1024_algebraic/arithmetic.rs
+@@ -9,6 +9,7 @@
+ use crate::{
+     piop::spartan::{
+         SpartanField, absorb_field_elements,
++        falcon_bit_layout::{COEFFICIENT_STRIDE, coefficient_bit},
+         grinding::{GrindingDomain, GrindingRound, grind_and_absorb, verify_and_absorb},
+         matrix::eq_table,
+         squeeze_field,
+@@ -32,29 +33,26 @@
+ 
+ const COEFFICIENT_BITS: usize = 15;
+ const COEFFICIENT_LOG: usize = 10;
+-const S2_OFFSET: usize = N * COEFFICIENT_BITS;
+-const SLACK_OFFSET: usize = 2 * S2_OFFSET;
+ const SLACK_BITS: usize = 27;
+-const LIVE_BITS: usize = SLACK_OFFSET + SLACK_BITS;
+-const NORM_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/norm/v1";
+-const MERGE_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/merge/v1";
+-const BINDING_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/binding/v1";
++const NORM_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/norm/v2";
++const MERGE_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/merge/v2";
++const BINDING_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/binding/v2";
+ 
+ struct NormInstance;
+ impl GrindingDomain for NormInstance {
+-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/norm-instance/v1";
++    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/norm-instance/v2";
+ }
+ struct NormRound;
+ impl GrindingDomain for NormRound {
+-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/norm-round/v1";
++    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/norm-round/v2";
+ }
+ struct Merge;
+ impl GrindingDomain for Merge {
+-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/merge/v1";
++    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/merge/v2";
+ }
+ struct BindingRound;
+ impl GrindingDomain for BindingRound {
+-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/binding-round/v1";
++    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/binding-round/v2";
+ }
+ 
+ #[derive(Clone, Debug, PartialEq, Eq)]
+@@ -436,62 +434,63 @@
+         ))
+     }
+ 
+-    /// Evaluate the public coefficient MLE without expanding a field table
+-    /// across the entire batch. Only the 2^16 local table is materialized.
++    /// Split bit-lane, coefficient and instance variables. The signed decoder
++    /// is evaluated once, rather than once per coefficient or per signature.
+     fn evaluate(&self, point: &[F]) -> Result<F, FalconError> {
+         if point.len() != source_rounds(self.layout) {
+             return Err(failure("algebraic source opening dimension mismatch"));
+         }
+         let local_vars = self.layout.signature_stride().ilog2() as usize;
+-        let local = eq_table(&point[..local_vars], self.field).map_err(failure)?;
++        let lanes = eq_table(&point[..4], self.field).map_err(failure)?;
++        let coefficients = eq_table(&point[4..local_vars], self.field).map_err(failure)?;
+         let instances = eq_table(&point[local_vars..], self.field).map_err(failure)?;
+-        let decode = |base: usize, width: usize, signed: bool| {
++        let decoder = signed_decoder(&lanes[..COEFFICIENT_BITS], self.field);
++        let mut slack_decoder = self.field.zero();
++        let mut slack_positions = self.field.zero();
++        let mut power = self.field.one();
++        for weight in &coefficients[..SLACK_BITS] {
++            slack_decoder = self
++                .field
++                .add(&slack_decoder, &self.field.mul(weight, &power));
++            slack_positions = self.field.add(&slack_positions, weight);
++            power = self.field.add(&power, &power);
++        }
++        let slack_decoder = self.field.mul(&slack_decoder, &lanes[15]);
++        let mut coefficient_value = self.field.zero();
++        let mut slack_value = self.field.zero();
++        for (instance, weight) in instances.iter().take(self.layout.batch()).enumerate() {
+             let mut value = self.field.zero();
+-            let mut power = self.field.one();
+-            for bit in 0..width {
+-                let term = self.field.mul(&local[base + bit], &power);
+-                value = if signed && bit + 1 == width {
+-                    self.field.sub(&value, &term)
+-                } else {
+-                    self.field.add(&value, &term)
+-                };
+-                power = self.field.add(&power, &power);
+-            }
+-            value
+-        };
+-        let decoded: [Vec<F>; 2] = std::array::from_fn(|side| {
+-            (0..N)
+-                .map(|j| {
+-                    decode(
+-                        side * S2_OFFSET + j * COEFFICIENT_BITS,
+-                        COEFFICIENT_BITS,
+-                        true,
+-                    )
+-                })
+-                .collect()
+-        });
+-        let slack = decode(SLACK_OFFSET, SLACK_BITS, false);
+-        let mut result = self.field.zero();
+-        for (instance, weight) in instances.iter().take(self.layout.batch()).enumerate() {
+-            let mut value = self.field.mul(&self.slacks[instance], &slack);
+-            for (side, decoded) in decoded.iter().enumerate() {
+-                for (j, decoded) in decoded.iter().enumerate() {
++            for side in 0..2 {
++                for (j, coefficient_weight) in
++                    coefficients[side * N..(side + 1) * N].iter().enumerate()
++                {
+                     value = self.field.add(
+                         &value,
+-                        &self
+-                            .field
+-                            .mul(&self.coefficients[side][instance * N + j], decoded),
++                        &self.field.mul(
++                            &self.coefficients[side][instance * N + j],
++                            coefficient_weight,
++                        ),
+                     );
+                 }
+             }
+-            result = self.field.add(&result, &self.field.mul(weight, &value));
+-        }
+-        // The padding indicator is one outside the live prefix of a live slot.
+-        let live_local = local[..LIVE_BITS]
+-            .iter()
+-            .fold(self.field.zero(), |sum, weight| {
+-                self.field.add(&sum, weight)
+-            });
++            coefficient_value = self
++                .field
++                .add(&coefficient_value, &self.field.mul(weight, &value));
++            slack_value = self.field.add(
++                &slack_value,
++                &self.field.mul(weight, &self.slacks[instance]),
++            );
++        }
++        let result = self.field.add(
++            &self.field.mul(&decoder, &coefficient_value),
++            &self.field.mul(&slack_decoder, &slack_value),
++        );
++        // Every lane except lane 15 is live. Lane 15 is live only for the
++        // first 27 coefficients; the rest and all inactive signatures are zero.
++        let live_local = self.field.add(
++            &self.field.sub(&self.field.one(), &lanes[15]),
++            &self.field.mul(&lanes[15], &slack_positions),
++        );
+         let live_instances = instances[..self.layout.batch()]
+             .iter()
+             .fold(self.field.zero(), |sum, weight| {
+@@ -537,7 +536,8 @@
+             return Err(SumcheckError::InvalidProductDimensions);
+         }
+         let base = instance * self.layout.signature_stride();
+-        let padding_start = if instance < self.layout.batch() {
++        if instance < self.layout.batch() {
++            let mut slack = self.slacks[instance];
+             for side in 0..2 {
+                 for j in 0..N {
+                     let mut value = self.coefficients[side][instance * N + j];
+@@ -547,28 +547,192 @@
+                         } else {
+                             value
+                         };
+-                        emit(
+-                            base + side * S2_OFFSET + j * COEFFICIENT_BITS + bit,
+-                            coefficient,
+-                        )?;
++                        emit(base + coefficient_bit(N, side, j, bit), coefficient)?;
+                         value = self.field.add(&value, &value);
+                     }
++                    let spare = if side == 0 && j < SLACK_BITS {
++                        let value = slack;
++                        slack = self.field.add(&slack, &slack);
++                        value
++                    } else {
++                        self.padding
++                    };
++                    emit(base + coefficient_bit(N, side, j, 15), spare)?;
+                 }
+             }
+-            let mut value = self.slacks[instance];
+-            for bit in 0..SLACK_BITS {
+-                emit(base + SLACK_OFFSET + bit, value)?;
+-                value = self.field.add(&value, &value);
+-            }
+-            LIVE_BITS
+         } else {
+-            0
++            for offset in 0..self.layout.signature_stride() {
++                emit(base + offset, self.padding)?;
++            }
++        }
++        Ok(())
++    }
++
++    /// Aggregate coefficient weights by witness byte before expanding the
++    /// common signed decoder. This replaces fifteen updates per coefficient
++    /// with two bucket additions and a small fixed decoder table.
++    fn for_each_partition_byte_bucket(
++        &self,
++        instance: usize,
++        read_byte: &mut impl FnMut(usize, usize) -> Result<u8, SumcheckError>,
++        emit: &mut impl FnMut(u8, &[F; 8]) -> Result<(), SumcheckError>,
++    ) -> Option<Result<(), SumcheckError>> {
++        Some((|| {
++            if instance >= self.layout.capacity() {
++                return Err(SumcheckError::InvalidProductDimensions);
++            }
++            let base = instance * self.layout.signature_stride();
++            let zero = self.field.zero();
++            if instance >= self.layout.batch() {
++                let mut counts = [0u64; 256];
++                for offset in (0..self.layout.signature_stride()).step_by(8) {
++                    counts[read_byte(base + offset, 8)? as usize] += 1;
++                }
++                for (byte, &count) in counts.iter().enumerate().skip(1) {
++                    if count != 0 {
++                        let value = self
++                            .field
++                            .mul(&self.padding, &unsigned(count as u128, self.field));
++                        emit(byte as u8, &[value; 8])?;
++                    }
++                }
++                return Ok(());
++            }
++            let mut low = [zero; 256];
++            let mut high = [zero; 256];
++            let mut spare = [zero; 256];
++            let mut occupied = [false; 256];
++            let mut slack = self.slacks[instance];
++            for side in 0..2 {
++                for j in 0..N {
++                    let offset = base + coefficient_bit(N, side, j, 0);
++                    let low_byte = read_byte(offset, 8)? as usize;
++                    let high_byte = read_byte(offset + 8, 8)? as usize;
++                    let coefficient = self.coefficients[side][instance * N + j];
++                    if low_byte != 0 {
++                        low[low_byte] = self.field.add(&low[low_byte], &coefficient);
++                        occupied[low_byte] = true;
++                    }
++                    let spare_value = if side == 0 && j < SLACK_BITS {
++                        let value = slack;
++                        slack = self.field.add(&slack, &slack);
++                        value
++                    } else {
++                        self.padding
++                    };
++                    if high_byte != 0 {
++                        high[high_byte] = self.field.add(&high[high_byte], &coefficient);
++                        spare[high_byte] = self.field.add(&spare[high_byte], &spare_value);
++                        occupied[high_byte] = true;
++                    }
++                }
++            }
++            let high_scale = unsigned(1 << 8, self.field);
++            for byte in 1..256 {
++                if !occupied[byte] {
++                    continue;
++                }
++                let mut lo = low[byte];
++                let mut hi = self.field.mul(&high[byte], &high_scale);
++                let mut values = [zero; 8];
++                for lane in 0..7 {
++                    values[lane] = if lane == 6 {
++                        self.field.sub(&lo, &hi)
++                    } else {
++                        self.field.add(&lo, &hi)
++                    };
++                    lo = self.field.add(&lo, &lo);
++                    hi = self.field.add(&hi, &hi);
++                }
++                values[7] = self.field.add(&lo, &spare[byte]);
++                emit(byte as u8, &values)?;
++            }
++            Ok(())
++        })())
++    }
++
++    /// Bind up to the four lane variables once for each decoder. The replay
++    /// then needs one multiplication per surviving coefficient group.
++    fn for_each_partition_folded_final(
++        &self,
++        instance: usize,
++        weights: &[F],
++        emit: &mut impl FnMut(usize, F) -> Result<(), SumcheckError>,
++    ) -> Option<Result<(), SumcheckError>> {
++        if !weights.len().is_power_of_two() || weights.len() > COEFFICIENT_STRIDE {
++            return None;
++        }
++        Some((|| {
++            if instance >= self.layout.capacity() {
++                return Err(SumcheckError::InvalidProductDimensions);
++            }
++            let width = weights.len();
++            let base = instance * self.layout.signature_stride() / width;
++            if instance >= self.layout.batch() {
++                let weight = weights
++                    .iter()
++                    .fold(self.field.zero(), |sum, value| self.field.add(&sum, value));
++                let value = self.field.mul(&self.padding, &weight);
++                for offset in 0..self.layout.signature_stride() / width {
++                    emit(base + offset, value)?;
++                }
++                return Ok(());
++            }
++            let mut decoder = [self.field.zero(); COEFFICIENT_STRIDE];
++            let mut power = self.field.one();
++            for lane in 0..COEFFICIENT_BITS {
++                let value = if lane + 1 == COEFFICIENT_BITS {
++                    self.field.neg(&power)
++                } else {
++                    power
++                };
++                decoder[lane / width] = self.field.add(
++                    &decoder[lane / width],
++                    &self.field.mul(&value, &weights[lane % width]),
++                );
++                power = self.field.add(&power, &power);
++            }
++            let groups = COEFFICIENT_STRIDE / width;
++            let mut slack = self.slacks[instance];
++            for side in 0..2 {
++                for j in 0..N {
++                    let coefficient = self.coefficients[side][instance * N + j];
++                    let spare = if side == 0 && j < SLACK_BITS {
++                        let value = slack;
++                        slack = self.field.add(&slack, &slack);
++                        value
++                    } else {
++                        self.padding
++                    };
++                    for (group, decode) in decoder[..groups].iter().enumerate() {
++                        let mut value = self.field.mul(&coefficient, decode);
++                        if group + 1 == groups {
++                            value = self
++                                .field
++                                .add(&value, &self.field.mul(&spare, &weights[width - 1]));
++                        }
++                        emit(base + (side * N + j) * groups + group, value)?;
++                    }
++                }
++            }
++            Ok(())
++        })())
++    }
++}
++
++fn signed_decoder(weights: &[F], field: &Cfg) -> F {
++    let mut value = field.zero();
++    let mut power = field.one();
++    for (bit, weight) in weights.iter().enumerate() {
++        let term = field.mul(weight, &power);
++        value = if bit + 1 == COEFFICIENT_BITS {
++            field.sub(&value, &term)
++        } else {
++            field.add(&value, &term)
+         };
+-        for offset in padding_start..self.layout.signature_stride() {
+-            emit(base + offset, self.padding)?;
+-        }
+-        Ok(())
+-    }
++        power = field.add(&power, &power);
++    }
++    value
+ }
+ 
+ fn bind_opening(
+@@ -577,7 +741,7 @@
+     value: F,
+     field: &Cfg,
+ ) -> BridgeClaim {
+-    transcript.absorb_slice(b"bitz/falcon1024-algebraic/source-opening/v1");
++    transcript.absorb_slice(b"bitz/falcon1024-algebraic/source-opening/v2");
+     transcript.absorb_slice(&field.modulus_u128().to_le_bytes());
+     absorb_field_elements(transcript, &point, field);
+     absorb_field_elements(transcript, &[value], field);
+@@ -656,6 +820,8 @@
+ mod tests {
+     use super::super::FalconAlgebraicWitness;
+     use super::*;
++    use crate::piop::spartan::falcon_bit_layout::slack_bit;
++    use crate::sumcheck::boundary::UngrindedRoundBoundary;
+     use crate::transcript::Blake3Transcript;
+     use field::Uint;
+ 
+@@ -729,6 +895,153 @@
+             .enumerate()
+             .filter(|(i, _)| source.bit(*i))
+             .fold(field.zero(), |sum, (_, weight)| field.add(&sum, &weight))
++    }
++
++    fn reference_coefficient(form: &BindingForm<'_>, index: usize) -> F {
++        let instance = index / (16 * 2 * N);
++        let coefficient = (index / 16) % (2 * N);
++        let lane = index % 16;
++        if instance >= form.layout.batch() {
++            return form.padding;
++        }
++        if lane == 15 {
++            return if coefficient < 27 {
++                form.field.mul(
++                    &form.slacks[instance],
++                    &unsigned(1u128 << coefficient, form.field),
++                )
++            } else {
++                form.padding
++            };
++        }
++        let weight = form.coefficients[coefficient / N][instance * N + coefficient % N];
++        let digit = if lane == 14 {
++            -(1i128 << 14)
++        } else {
++            1i128 << lane
++        };
++        form.field.mul(&weight, &signed(digit, form.field))
++    }
++
++    #[test]
++    fn aligned_binding_matches_dense_evaluation_folds_and_sumcheck() {
++        let field = field();
++        let layout = Layout::new(3).unwrap();
++        let form = BindingForm {
++            layout: &layout,
++            field: &field,
++            coefficients: std::array::from_fn(|side| {
++                (0..3 * N)
++                    .map(|j| signed((j as i128 % 53 - 26) * (side + 1) as i128, &field))
++                    .collect()
++            }),
++            slacks: vec![
++                unsigned(13, &field),
++                signed(-19, &field),
++                unsigned(23, &field),
++            ],
++            padding: unsigned(29, &field),
++        };
++        let point: Vec<_> = (0..form.num_vars())
++            .map(|j| unsigned((j + 2) as u128, &field))
++            .collect();
++        let dense_value = eq_table(&point, &field).unwrap().iter().enumerate().fold(
++            field.zero(),
++            |sum, (index, weight)| {
++                field.add(
++                    &sum,
++                    &field.mul(weight, &reference_coefficient(&form, index)),
++                )
++            },
++        );
++        assert_eq!(form.evaluate(&point).unwrap(), dense_value);
++
++        for instance in [0, 2, 3] {
++            let base = instance * layout.signature_stride();
++            for width in [1usize, 2, 4, 8, 16] {
++                let point: Vec<_> = (0..width.ilog2())
++                    .map(|j| unsigned((j + 3) as u128, &field))
++                    .collect();
++                let weights = eq_table(&point, &field).unwrap();
++                let mut count = 0;
++                form.for_each_partition_folded_final(instance, &weights, &mut |index, value| {
++                    let expected =
++                        weights
++                            .iter()
++                            .enumerate()
++                            .fold(field.zero(), |sum, (lane, weight)| {
++                                field.add(
++                                    &sum,
++                                    &field.mul(
++                                        weight,
++                                        &reference_coefficient(&form, index * width + lane),
++                                    ),
++                                )
++                            });
++                    assert_eq!(index, base / width + count);
++                    assert_eq!(value, expected);
++                    count += 1;
++                    Ok(())
++                })
++                .unwrap()
++                .unwrap();
++                assert_eq!(count, layout.signature_stride() / width);
++            }
++        }
++
++        // Arbitrary bits include every internal and inactive padding position.
++        // The comparison checks the prefix buckets, folded suffix and all
++        // transcript rounds, not only evaluations on honest zero padding.
++        let bits: Vec<_> = (0..layout.source_bits() / 64)
++            .map(|j| {
++                (j as u64)
++                    .wrapping_mul(0x9e37_79b9_7f4a_7c15)
++                    .rotate_left(17)
++                    ^ 0xa591_f027_c37b_40de
++            })
++            .collect();
++        let claim = (0..layout.source_bits())
++            .filter(|&index| bits[index / 64] >> (index % 64) & 1 != 0)
++            .fold(field.zero(), |sum, index| {
++                field.add(&sum, &reference_coefficient(&form, index))
++            });
++        let mut actual_transcript = Blake3Transcript::new();
++        let actual = prove_inner_sumcheck(
++            &field,
++            &mut actual_transcript,
++            claim,
++            PackedInput::new(
++                &StreamingMle::new(&form),
++                &bits,
++                form.num_vars(),
++                form.live_len(),
++                3,
++            ),
++            (),
++            &mut UngrindedRoundBoundary,
++        )
++        .unwrap();
++        let mut reference_transcript = Blake3Transcript::new();
++        let reference = prove_inner_sumcheck(
++            &field,
++            &mut reference_transcript,
++            claim,
++            PackedInput::new(
++                &|index| Ok(reference_coefficient(&form, index)),
++                &bits,
++                form.num_vars(),
++                form.live_len(),
++                3,
++            ),
++            (),
++            &mut UngrindedRoundBoundary,
++        )
++        .unwrap();
++        assert_eq!(actual, reference);
++        assert_eq!(
++            actual_transcript.get_challenge::<u128>(),
++            reference_transcript.get_challenge::<u128>()
++        );
+     }
+ 
+     #[test]
+@@ -843,9 +1156,9 @@
+         let ring = ring(&data, &field);
+         for index in [
+             0,
+-            S2_OFFSET + 14,
+-            SLACK_OFFSET,
+-            LIVE_BITS,
++            coefficient_bit(N, 1, 0, 14),
++            slack_bit(0),
++            slack_bit(SLACK_BITS),
+             3 * layout.signature_stride(),
+         ] {
+             let mut altered = source.clone();
+@@ -920,6 +1233,70 @@
+     }
+ 
+     #[test]
++    fn preceding_transcript_domains_cannot_be_replayed() {
++        struct LegacyDomains(Blake3Transcript);
++        impl Transcript for LegacyDomains {
++            fn get_challenge<T: crate::transcript::traits::ConstTranscribable>(&mut self) -> T {
++                self.0.get_challenge()
++            }
++            fn begin_sampling(&mut self) {
++                self.0.begin_sampling();
++            }
++            fn fill_sampling_bytes(&mut self, output: &mut [u8]) {
++                self.0.fill_sampling_bytes(output);
++            }
++            fn absorb_inner(&mut self, value: &[u8]) {
++                if value.starts_with(b"bitz/falcon1024-algebraic/") && value.ends_with(b"/v2") {
++                    let mut legacy = value.to_vec();
++                    *legacy.last_mut().unwrap() = b'1';
++                    self.0.absorb_inner(&legacy);
++                } else {
++                    self.0.absorb_inner(value);
++                }
++            }
++        }
++        let field = field();
++        let layout = Layout::new(1).unwrap();
++        let data = data(1);
++        let source = Source::new(layout, &data);
++        let ring = ring(&data, &field);
++        // Keep the new geometry here to isolate domain separation itself.
++        let (proof, _, claim) = prove(
++            &mut LegacyDomains(Blake3Transcript::new()),
++            &layout,
++            &data,
++            &source,
++            &field,
++            &ring,
++            &schedule(),
++        )
++        .unwrap();
++        assert_eq!(
++            verify(
++                &mut LegacyDomains(Blake3Transcript::new()),
++                &layout,
++                &field,
++                &ring,
++                &proof,
++                &schedule(),
++            )
++            .unwrap(),
++            claim
++        );
++        assert!(
++            verify(
++                &mut Blake3Transcript::new(),
++                &layout,
++                &field,
++                &ring,
++                &proof,
++                &schedule(),
++            )
++            .is_err()
++        );
++    }
++
++    #[test]
+     fn grinded_messages_roundtrip_and_require_all_nonces() {
+         let field = field();
+         let layout = Layout::new(3).unwrap();
+--- a/src/piop/spartan/falcon1024_algebraic/mod.rs
++++ b/src/piop/spartan/falcon1024_algebraic/mod.rs
+@@ -27,7 +27,7 @@
+ pub const Q: i64 = 12_289;
+ pub const BETA_SQUARED: u64 = 70_265_242;
+ pub const LIVE_BITS: usize = 2 * N * 15 + 27;
+-pub const PROTOCOL_ID: &str = "bitz/falcon1024-algebraic/non-zk/v1";
++pub const PROTOCOL_ID: &str = "bitz/falcon1024-algebraic/non-zk/v2";
+ const PRIME_MIN: u128 = 1 << 125;
+ const PRIME_MAX: u128 = (1 << 126) - 1;
+ 
+--- a/src/piop/spartan/falcon1024_algebraic/protocol.rs
++++ b/src/piop/spartan/falcon1024_algebraic/protocol.rs
+@@ -23,7 +23,7 @@
+ 
+ struct OpeningGrinding;
+ impl GrindingDomain for OpeningGrinding {
+-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/opening-grinding/v1";
++    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/opening-grinding/v2";
+ }
+ 
+ /// Accounting under the repository's computational grinding model, excluding
+@@ -131,9 +131,9 @@
+             norm_instance_bits: grind(target_bits, d, 125),
+             norm_round_bits: grind(target_bits, 4 * (10 + d), 125),
+             merge_bits: grind(target_bits, 6, 125),
+-            binding_bits: grind(target_bits, 2 * (16 + d), 125),
+-        };
+-        let geometry = shared::Geometry::new([9 + d]).map_err(error)?;
++            binding_bits: grind(target_bits, 2 * (15 + d), 125),
++        };
++        let geometry = shared::Geometry::new([8 + d]).map_err(error)?;
+         let ligerito = LigeritoSelection::MATCHED_UDR
+             .resolve(geometry.packed_log(), target_bits)
+             .map_err(error)?;
+@@ -200,7 +200,7 @@
+             ("claim merge", prime(6, self.schedule.merge_bits)),
+             (
+                 "source binding sumcheck",
+-                prime(2 * (16 + d), self.schedule.binding_bits),
++                prime(2 * (15 + d), self.schedule.binding_bits),
+             ),
+             (
+                 "BitZ product GKR",
+@@ -320,7 +320,7 @@
+         public.validate(self.batch())?;
+         let mut h = blake3::Hasher::new();
+         h.update(PROTOCOL_ID.as_bytes());
+-        h.update(b"signed15,signed15,slack27;native11;two-limbs;one-source;zero-padding/v1");
++        h.update(b"signed15-lanes16,slack27-lane15;native11;two-limbs;one-source;zero-padding/v2");
+         for value in [
+             N,
+             Q as usize,
+@@ -608,9 +608,9 @@
+             for batch in 1..=1024 {
+                 // Resolve the PCS at power-of-two batch boundaries.
+                 let layout = Layout::new(batch).unwrap();
+-                assert_eq!(layout.capacity(), batch.next_power_of_two().max(8));
++                assert_eq!(layout.capacity(), batch.next_power_of_two().max(16));
+                 let d = layout.capacity().ilog2() as usize;
+-                for numerator in [d, 4 * (10 + d), 6, 2 * (16 + d), 10] {
++                for numerator in [d, 4 * (10 + d), 6, 2 * (15 + d), 10] {
+                     let g = grind(target, numerator, 125);
+                     assert!(
+                         (BigUint::from(numerator) << (target + 4))
+@@ -621,7 +621,8 @@
+                     let p = PreparedFalconAlgebraic::new(batch, target).unwrap();
+                     assert!(p.security().algebraic_bits >= target as f64);
+                     assert_eq!(p.live_bits_per_signature(), 30747);
+-                    assert_eq!(p.geometry.physical_logs, [9 + d]);
++                    assert_eq!(p.source_bits_per_signature(), 32768);
++                    assert_eq!(p.geometry.physical_logs, [8 + d]);
+                 }
+             }
+         }
+@@ -633,7 +634,10 @@
+ 
+     #[test]
+     fn end_to_end_and_tampering() {
+-        for (batch, target) in [(1, 100), (3, 100), (1, 128)] {
++        for (batch, target) in [100, 128]
++            .into_iter()
++            .flat_map(|target| [1, 3, 8, 9, 16].map(|batch| (batch, target)))
++        {
+             let prepared = PreparedFalconAlgebraic::new(batch, target).unwrap();
+             let (public, witness) = fixture(batch);
+             let committed = prepared.commit(public.clone(), witness).unwrap();
+@@ -641,7 +645,11 @@
+             prepared.verify(&public, &proof).unwrap();
+             assert_eq!(
+                 proof.payload_size_bytes(),
+-                proof.payload_size_breakdown().iter().map(|(_, n)| n).sum::<usize>()
++                proof
++                    .payload_size_breakdown()
++                    .iter()
++                    .map(|(_, n)| n)
++                    .sum::<usize>()
+             );
+             let mut bad_public = public.clone();
+             bad_public.targets[0][1] ^= 1;
+@@ -755,7 +763,7 @@
+         let prepared = PreparedFalconAlgebraic::new(3, 100).unwrap();
+         let (public, witness) = fixture(3);
+         let data = WitnessData::new(&public, witness).unwrap();
+-        for index in [LIVE_BITS, 3 * 65536, 15 * N] {
++        for index in [16 * 27 + 15, 3 * prepared.layout.signature_stride(), 16 * N] {
+             let mut source = Source::new(prepared.layout, &data);
+             source.flip(index);
+             let committed = prepared
+@@ -773,7 +781,8 @@
+             include_bytes!("../falcon/fixtures/public_key.bin"),
+             include_bytes!("../falcon/fixtures/message.bin"),
+             include_bytes!("../falcon/fixtures/signature_ct.bin"),
+-        ).unwrap();
++        )
++        .unwrap();
+         let public = FalconAlgebraicStatement {
+             public_keys: vec![*trace.public_key.h],
+             targets: vec![*trace.hash_to_point.point],
+@@ -801,7 +810,9 @@
+             for batch in [32, 1024] {
+                 let prepared = PreparedFalconAlgebraic::new(batch, target).unwrap();
+                 let (public, witness) = fixture(batch);
+-                let proof = prepared.prove(prepared.commit(public.clone(), witness).unwrap()).unwrap();
++                let proof = prepared
++                    .prove(prepared.commit(public.clone(), witness).unwrap())
++                    .unwrap();
+                 prepared.verify(&public, &proof).unwrap();
+             }
+         }
+--- a/src/piop/spartan/falcon1024_algebraic/ring.rs
++++ b/src/piop/spartan/falcon1024_algebraic/ring.rs
+@@ -21,7 +21,7 @@
+ 
+ pub(super) const EXTENSION_DEGREE: usize = 11;
+ pub(super) type Ext = FalconExtension<EXTENSION_DEGREE>;
+-const DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/native-ring/v1";
++const DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/native-ring/v2";
+ const COEFFICIENT_ABS_BOUND: u64 = 1 << 14;
+ 
+ /// The quotient is fixed before alpha; the carries are fixed before xi.
+@@ -56,7 +56,7 @@
+ 
+ struct ProjectionGrinding;
+ impl GrindingDomain for ProjectionGrinding {
+-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/native-ring/projection-grinding/v1";
++    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/native-ring/projection-grinding/v2";
+ }
+ 
+ #[tracing::instrument(skip_all, name = "falcon_algebraic_ring:prove")]
+--- a/src/piop/spartan/falcon1024_algebraic/source.rs
++++ b/src/piop/spartan/falcon1024_algebraic/source.rs
+@@ -1,5 +1,6 @@
+-use super::{BETA_SQUARED, FalconError, LIVE_BITS, N, Q, error};
++use super::{BETA_SQUARED, FalconError, N, Q, error};
+ use crate::pcs::IntegerMatrixLayout;
++use crate::piop::spartan::falcon_bit_layout::{coefficient_bit, slack_bit};
+ use crate::piop::spartan::falcon_polynomial::integer_polynomial_product;
+ #[cfg(feature = "parallel")]
+ use rayon::prelude::*;
+@@ -77,8 +78,8 @@
+         Ok(Self {
+             batch,
+             // The shared opener doubles the source; Ligerito requires at least
+-            // 2^20 committed bits, so retain at least eight 2^16-bit slots.
+-            capacity: batch.next_power_of_two().max(8),
++            // 2^20 committed bits, so retain at least sixteen 2^15-bit slots.
++            capacity: batch.next_power_of_two().max(16),
+         })
+     }
+     pub const fn batch(&self) -> usize {
+@@ -88,7 +89,7 @@
+         self.capacity
+     }
+     pub const fn signature_stride(&self) -> usize {
+-        1 << 16
++        1 << 15
+     }
+     pub const fn source_bits(&self) -> usize {
+         self.signature_stride() * self.capacity
+@@ -99,8 +100,13 @@
+     pub const fn bitz_params(&self) -> IntegerMatrixLayout {
+         IntegerMatrixLayout {
+             row_vars: self.row_vars(),
+-            col_vars: 3 + self.capacity.ilog2() as usize,
+-        }
++            col_vars: 2 + self.capacity.ilog2() as usize,
++        }
++    }
++    #[cfg(test)]
++    pub fn is_live(&self, index: usize) -> bool {
++        let local = index % self.signature_stride();
++        index / self.signature_stride() < self.batch && (local % 16 < 15 || local / 16 < 27)
+     }
+ }
+ 
+@@ -251,17 +257,19 @@
+         for i in 0..layout.batch() {
+             let base = i * layout.signature_stride();
+             for j in 0..N {
+-                for (offset, coefficient) in
+-                    [(0, data.witness.s1[i][j]), (15 * N, data.witness.s2[i][j])]
++                for (polynomial, coefficient) in
++                    [(0, data.witness.s1[i][j]), (1, data.witness.s2[i][j])]
+                 {
+                     source.put(
+-                        base + offset + 15 * j,
++                        base + coefficient_bit(N, polynomial, j, 0),
+                         15,
+                         (i32::from(coefficient) & 0x7fff) as u64,
+                     );
+                 }
+             }
+-            source.put(base + 30 * N, 27, data.slacks[i]);
++            for bit in 0..27 {
++                source.put(base + slack_bit(bit), 1, (data.slacks[i] >> bit) & 1);
++            }
+         }
+         source
+     }
+@@ -375,16 +383,78 @@
+         assert_eq!(Source::new(layout, &combined).rows(), source.rows());
+         for i in 0..3 {
+             for j in 0..N {
+-                let offset = i * 65536 + 15 * N + 15 * j;
++                let offset = i * layout.signature_stride() + coefficient_bit(N, 1, j, 0);
+                 let low = (0..14)
+                     .map(|b| i32::from(source.bit(offset + b)) * (1 << b))
+                     .sum::<i32>();
+                 let decoded = low - i32::from(source.bit(offset + 14)) * (1 << 14);
+                 assert_eq!(decoded, i32::from(s2[i][j]));
+             }
++            let slack = (0..27)
++                .map(|bit| {
++                    u64::from(source.bit(i * layout.signature_stride() + slack_bit(bit))) << bit
++                })
++                .sum::<u64>();
++            assert_eq!(slack, data.slacks[i]);
+         }
+         for index in 0..layout.source_bits() {
+-            if index / 65536 >= 3 || index % 65536 >= LIVE_BITS {
++            if !layout.is_live(index) {
++                assert!(!source.bit(index));
++            }
++        }
++        assert_eq!(
++            (0..layout.source_bits())
++                .filter(|&index| layout.is_live(index))
++                .count(),
++            3 * super::super::LIVE_BITS
++        );
++    }
++
++    #[test]
++    fn aligned_addresses_are_disjoint_and_preserve_signed15_boundaries() {
++        let layout = Layout::new(1).unwrap();
++        let mut data = WitnessData {
++            witness: FalconAlgebraicWitness {
++                s1: vec![[0; N]],
++                s2: vec![[0; N]],
++            },
++            slacks: vec![(1 << 27) - 1],
++            quotients: vec![vec![0; N - 1]],
++        };
++        // Encoding boundaries are tested independently of the norm gate.
++        data.witness.s1[0][..4].copy_from_slice(&[-16384, -1, 0, 16383]);
++        data.witness.s2[0][N - 4..].copy_from_slice(&[16383, 0, -1, -16384]);
++        let source = Source::new(layout, &data);
++        let mut seen = vec![false; layout.signature_stride()];
++        for side in 0..2 {
++            for j in 0..N {
++                let mut value = 0i32;
++                for bit in 0..15 {
++                    let index = coefficient_bit(N, side, j, bit);
++                    assert!(!std::mem::replace(&mut seen[index], true));
++                    let digit = if bit == 14 { -(1 << 14) } else { 1 << bit };
++                    value += i32::from(source.bit(index)) * digit;
++                }
++                assert_eq!(
++                    value,
++                    i32::from([&data.witness.s1, &data.witness.s2][side][0][j])
++                );
++            }
++        }
++        for bit in 0..27 {
++            let index = slack_bit(bit);
++            assert!(!std::mem::replace(&mut seen[index], true));
++            assert!(source.bit(index));
++        }
++        assert_eq!(seen.iter().filter(|&&live| !live).count(), 2021);
++        for (index, live) in seen.into_iter().enumerate() {
++            assert_eq!(live, layout.is_live(index));
++            if !live {
++                assert!(!source.bit(index));
++            }
++        }
++        for index in 0..layout.source_bits() {
++            if !layout.is_live(index) {
+                 assert!(!source.bit(index));
+             }
+         }
+@@ -393,11 +463,15 @@
+     #[test]
+     fn exact_norm_boundary_and_coefficient_limits() {
+         let public = FalconAlgebraicStatement {
+-            public_keys: vec![[0; N]], targets: vec![[0; N]],
++            public_keys: vec![[0; N]],
++            targets: vec![[0; N]],
+         };
+         let mut s2 = [0; N];
+         s2[..7].copy_from_slice(&[8382, 85, 9, 3, 1, 1, 1]);
+-        let witness = FalconAlgebraicWitness { s1: vec![[0; N]], s2: vec![s2] };
++        let witness = FalconAlgebraicWitness {
++            s1: vec![[0; N]],
++            s2: vec![s2],
++        };
+         let data = WitnessData::new(&public, witness.clone()).unwrap();
+         assert_eq!(data.slacks, vec![0]);
+         let combined = WitnessData::from_s2(&public, witness.s2.clone()).unwrap();
+@@ -405,8 +479,10 @@
+         assert_eq!(combined.slacks, vec![0]);
+         let mut excessive = witness;
+         excessive.s2[0][7] = 1;
+-        assert!(matches!(WitnessData::from_s2(&public, excessive.s2.clone()),
+-            Err(FalconError::NormTooLarge { actual, bound }) if actual == bound + 1));
++        assert!(
++            matches!(WitnessData::from_s2(&public, excessive.s2.clone()),
++            Err(FalconError::NormTooLarge { actual, bound }) if actual == bound + 1)
++        );
+         assert!(matches!(WitnessData::new(&public, excessive),
+             Err(FalconError::NormTooLarge { actual, bound }) if actual == bound + 1));
+ 
+@@ -424,9 +500,16 @@
+         // The algebraic relation also accepts non-centered s1 when its norm fits.
+         let mut public = public;
+         public.targets[0][0] = 7000;
+-        let mut s1 = [0; N]; s1[0] = 7000;
+-        check_algebraic_statement(&public,
+-            &FalconAlgebraicWitness { s1: vec![s1], s2: vec![[0; N]] }).unwrap();
++        let mut s1 = [0; N];
++        s1[0] = 7000;
++        check_algebraic_statement(
++            &public,
++            &FalconAlgebraicWitness {
++                s1: vec![s1],
++                s2: vec![[0; N]],
++            },
++        )
++        .unwrap();
+         public.targets[0][0] = Q as u16;
+         assert!(public.validate(1).is_err());
+     }
+--- /dev/null
++++ b/src/piop/spartan/falcon_bit_layout.rs
+@@ -0,0 +1,19 @@
++//! Addressing shared by the aligned Falcon coefficient sources.
++
++pub(crate) const COEFFICIENT_LOG: usize = 4;
++pub(crate) const COEFFICIENT_STRIDE: usize = 1 << COEFFICIENT_LOG;
++
++/// Local bit address in a polynomial-major, coefficient-major table.
++pub(crate) const fn coefficient_bit(
++    degree: usize,
++    polynomial: usize,
++    index: usize,
++    bit: usize,
++) -> usize {
++    (polynomial * degree + index) * COEFFICIENT_STRIDE + bit
++}
++
++/// Slack bits occupy the spare final lane of the first polynomial's rows.
++pub(crate) const fn slack_bit(bit: usize) -> usize {
++    bit * COEFFICIENT_STRIDE + COEFFICIENT_STRIDE - 1
++}
+--- a/src/piop/spartan/mod.rs
++++ b/src/piop/spartan/mod.rs
+@@ -25,6 +25,8 @@
+ pub mod falcon_profiles;
+ #[cfg(feature = "falcon")]
+ mod falcon_polynomial;
++#[cfg(feature = "falcon")]
++mod falcon_bit_layout;
+ #[cfg(feature = "falcon-hybrid")]
+ pub mod falcon1024_algebraic;
+ pub mod grinding;

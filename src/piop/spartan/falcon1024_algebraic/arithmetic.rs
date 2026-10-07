@@ -9,6 +9,7 @@ use field::RingOps;
 use crate::{
     piop::spartan::{
         SpartanField, absorb_field_elements,
+        falcon_bit_layout::{COEFFICIENT_STRIDE, coefficient_bit},
         grinding::{GrindingDomain, GrindingRound, grind_and_absorb, verify_and_absorb},
         matrix::eq_table,
         squeeze_field,
@@ -32,29 +33,26 @@ use super::{BETA_SQUARED, Cfg, F, FalconError, Layout, N, Schedule, Source, Witn
 
 const COEFFICIENT_BITS: usize = 15;
 const COEFFICIENT_LOG: usize = 10;
-const S2_OFFSET: usize = N * COEFFICIENT_BITS;
-const SLACK_OFFSET: usize = 2 * S2_OFFSET;
 const SLACK_BITS: usize = 27;
-const LIVE_BITS: usize = SLACK_OFFSET + SLACK_BITS;
-const NORM_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/norm/v1";
-const MERGE_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/merge/v1";
-const BINDING_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/binding/v1";
+const NORM_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/norm/v2";
+const MERGE_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/merge/v2";
+const BINDING_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/binding/v2";
 
 struct NormInstance;
 impl GrindingDomain for NormInstance {
-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/norm-instance/v1";
+    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/norm-instance/v2";
 }
 struct NormRound;
 impl GrindingDomain for NormRound {
-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/norm-round/v1";
+    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/norm-round/v2";
 }
 struct Merge;
 impl GrindingDomain for Merge {
-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/merge/v1";
+    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/merge/v2";
 }
 struct BindingRound;
 impl GrindingDomain for BindingRound {
-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/binding-round/v1";
+    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/binding-round/v2";
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -436,62 +434,63 @@ impl<'a> BindingForm<'a> {
         ))
     }
 
-    /// Evaluate the public coefficient MLE without expanding a field table
-    /// across the entire batch. Only the 2^16 local table is materialized.
+    /// Split bit-lane, coefficient and instance variables. The signed decoder
+    /// is evaluated once, rather than once per coefficient or per signature.
     fn evaluate(&self, point: &[F]) -> Result<F, FalconError> {
         if point.len() != source_rounds(self.layout) {
             return Err(failure("algebraic source opening dimension mismatch"));
         }
         let local_vars = self.layout.signature_stride().ilog2() as usize;
-        let local = eq_table(&point[..local_vars], self.field).map_err(failure)?;
+        let lanes = eq_table(&point[..4], self.field).map_err(failure)?;
+        let coefficients = eq_table(&point[4..local_vars], self.field).map_err(failure)?;
         let instances = eq_table(&point[local_vars..], self.field).map_err(failure)?;
-        let decode = |base: usize, width: usize, signed: bool| {
-            let mut value = self.field.zero();
-            let mut power = self.field.one();
-            for bit in 0..width {
-                let term = self.field.mul(&local[base + bit], &power);
-                value = if signed && bit + 1 == width {
-                    self.field.sub(&value, &term)
-                } else {
-                    self.field.add(&value, &term)
-                };
-                power = self.field.add(&power, &power);
-            }
-            value
-        };
-        let decoded: [Vec<F>; 2] = std::array::from_fn(|side| {
-            (0..N)
-                .map(|j| {
-                    decode(
-                        side * S2_OFFSET + j * COEFFICIENT_BITS,
-                        COEFFICIENT_BITS,
-                        true,
-                    )
-                })
-                .collect()
-        });
-        let slack = decode(SLACK_OFFSET, SLACK_BITS, false);
-        let mut result = self.field.zero();
+        let decoder = signed_decoder(&lanes[..COEFFICIENT_BITS], self.field);
+        let mut slack_decoder = self.field.zero();
+        let mut slack_positions = self.field.zero();
+        let mut power = self.field.one();
+        for weight in &coefficients[..SLACK_BITS] {
+            slack_decoder = self
+                .field
+                .add(&slack_decoder, &self.field.mul(weight, &power));
+            slack_positions = self.field.add(&slack_positions, weight);
+            power = self.field.add(&power, &power);
+        }
+        let slack_decoder = self.field.mul(&slack_decoder, &lanes[15]);
+        let mut coefficient_value = self.field.zero();
+        let mut slack_value = self.field.zero();
         for (instance, weight) in instances.iter().take(self.layout.batch()).enumerate() {
-            let mut value = self.field.mul(&self.slacks[instance], &slack);
-            for (side, decoded) in decoded.iter().enumerate() {
-                for (j, decoded) in decoded.iter().enumerate() {
+            let mut value = self.field.zero();
+            for side in 0..2 {
+                for (j, coefficient_weight) in
+                    coefficients[side * N..(side + 1) * N].iter().enumerate()
+                {
                     value = self.field.add(
                         &value,
-                        &self
-                            .field
-                            .mul(&self.coefficients[side][instance * N + j], decoded),
+                        &self.field.mul(
+                            &self.coefficients[side][instance * N + j],
+                            coefficient_weight,
+                        ),
                     );
                 }
             }
-            result = self.field.add(&result, &self.field.mul(weight, &value));
+            coefficient_value = self
+                .field
+                .add(&coefficient_value, &self.field.mul(weight, &value));
+            slack_value = self.field.add(
+                &slack_value,
+                &self.field.mul(weight, &self.slacks[instance]),
+            );
         }
-        // The padding indicator is one outside the live prefix of a live slot.
-        let live_local = local[..LIVE_BITS]
-            .iter()
-            .fold(self.field.zero(), |sum, weight| {
-                self.field.add(&sum, weight)
-            });
+        let result = self.field.add(
+            &self.field.mul(&decoder, &coefficient_value),
+            &self.field.mul(&slack_decoder, &slack_value),
+        );
+        // Every lane except lane 15 is live. Lane 15 is live only for the
+        // first 27 coefficients; the rest and all inactive signatures are zero.
+        let live_local = self.field.add(
+            &self.field.sub(&self.field.one(), &lanes[15]),
+            &self.field.mul(&lanes[15], &slack_positions),
+        );
         let live_instances = instances[..self.layout.batch()]
             .iter()
             .fold(self.field.zero(), |sum, weight| {
@@ -537,7 +536,8 @@ impl StreamingCoefficientSource for BindingForm<'_> {
             return Err(SumcheckError::InvalidProductDimensions);
         }
         let base = instance * self.layout.signature_stride();
-        let padding_start = if instance < self.layout.batch() {
+        if instance < self.layout.batch() {
+            let mut slack = self.slacks[instance];
             for side in 0..2 {
                 for j in 0..N {
                     let mut value = self.coefficients[side][instance * N + j];
@@ -547,28 +547,192 @@ impl StreamingCoefficientSource for BindingForm<'_> {
                         } else {
                             value
                         };
-                        emit(
-                            base + side * S2_OFFSET + j * COEFFICIENT_BITS + bit,
-                            coefficient,
-                        )?;
+                        emit(base + coefficient_bit(N, side, j, bit), coefficient)?;
                         value = self.field.add(&value, &value);
                     }
+                    let spare = if side == 0 && j < SLACK_BITS {
+                        let value = slack;
+                        slack = self.field.add(&slack, &slack);
+                        value
+                    } else {
+                        self.padding
+                    };
+                    emit(base + coefficient_bit(N, side, j, 15), spare)?;
                 }
             }
-            let mut value = self.slacks[instance];
-            for bit in 0..SLACK_BITS {
-                emit(base + SLACK_OFFSET + bit, value)?;
-                value = self.field.add(&value, &value);
-            }
-            LIVE_BITS
         } else {
-            0
-        };
-        for offset in padding_start..self.layout.signature_stride() {
-            emit(base + offset, self.padding)?;
+            for offset in 0..self.layout.signature_stride() {
+                emit(base + offset, self.padding)?;
+            }
         }
         Ok(())
     }
+
+    /// Aggregate coefficient weights by witness byte before expanding the
+    /// common signed decoder. This replaces fifteen updates per coefficient
+    /// with two bucket additions and a small fixed decoder table.
+    fn for_each_partition_byte_bucket(
+        &self,
+        instance: usize,
+        read_byte: &mut impl FnMut(usize, usize) -> Result<u8, SumcheckError>,
+        emit: &mut impl FnMut(u8, &[F; 8]) -> Result<(), SumcheckError>,
+    ) -> Option<Result<(), SumcheckError>> {
+        Some((|| {
+            if instance >= self.layout.capacity() {
+                return Err(SumcheckError::InvalidProductDimensions);
+            }
+            let base = instance * self.layout.signature_stride();
+            let zero = self.field.zero();
+            if instance >= self.layout.batch() {
+                let mut counts = [0u64; 256];
+                for offset in (0..self.layout.signature_stride()).step_by(8) {
+                    counts[read_byte(base + offset, 8)? as usize] += 1;
+                }
+                for (byte, &count) in counts.iter().enumerate().skip(1) {
+                    if count != 0 {
+                        let value = self
+                            .field
+                            .mul(&self.padding, &unsigned(count as u128, self.field));
+                        emit(byte as u8, &[value; 8])?;
+                    }
+                }
+                return Ok(());
+            }
+            let mut low = [zero; 256];
+            let mut high = [zero; 256];
+            let mut spare = [zero; 256];
+            let mut occupied = [false; 256];
+            let mut slack = self.slacks[instance];
+            for side in 0..2 {
+                for j in 0..N {
+                    let offset = base + coefficient_bit(N, side, j, 0);
+                    let low_byte = read_byte(offset, 8)? as usize;
+                    let high_byte = read_byte(offset + 8, 8)? as usize;
+                    let coefficient = self.coefficients[side][instance * N + j];
+                    if low_byte != 0 {
+                        low[low_byte] = self.field.add(&low[low_byte], &coefficient);
+                        occupied[low_byte] = true;
+                    }
+                    let spare_value = if side == 0 && j < SLACK_BITS {
+                        let value = slack;
+                        slack = self.field.add(&slack, &slack);
+                        value
+                    } else {
+                        self.padding
+                    };
+                    if high_byte != 0 {
+                        high[high_byte] = self.field.add(&high[high_byte], &coefficient);
+                        spare[high_byte] = self.field.add(&spare[high_byte], &spare_value);
+                        occupied[high_byte] = true;
+                    }
+                }
+            }
+            let high_scale = unsigned(1 << 8, self.field);
+            for byte in 1..256 {
+                if !occupied[byte] {
+                    continue;
+                }
+                let mut lo = low[byte];
+                let mut hi = self.field.mul(&high[byte], &high_scale);
+                let mut values = [zero; 8];
+                for lane in 0..7 {
+                    values[lane] = if lane == 6 {
+                        self.field.sub(&lo, &hi)
+                    } else {
+                        self.field.add(&lo, &hi)
+                    };
+                    lo = self.field.add(&lo, &lo);
+                    hi = self.field.add(&hi, &hi);
+                }
+                values[7] = self.field.add(&lo, &spare[byte]);
+                emit(byte as u8, &values)?;
+            }
+            Ok(())
+        })())
+    }
+
+    /// Bind up to the four lane variables once for each decoder. The replay
+    /// then needs one multiplication per surviving coefficient group.
+    fn for_each_partition_folded_final(
+        &self,
+        instance: usize,
+        weights: &[F],
+        emit: &mut impl FnMut(usize, F) -> Result<(), SumcheckError>,
+    ) -> Option<Result<(), SumcheckError>> {
+        if !weights.len().is_power_of_two() || weights.len() > COEFFICIENT_STRIDE {
+            return None;
+        }
+        Some((|| {
+            if instance >= self.layout.capacity() {
+                return Err(SumcheckError::InvalidProductDimensions);
+            }
+            let width = weights.len();
+            let base = instance * self.layout.signature_stride() / width;
+            if instance >= self.layout.batch() {
+                let weight = weights
+                    .iter()
+                    .fold(self.field.zero(), |sum, value| self.field.add(&sum, value));
+                let value = self.field.mul(&self.padding, &weight);
+                for offset in 0..self.layout.signature_stride() / width {
+                    emit(base + offset, value)?;
+                }
+                return Ok(());
+            }
+            let mut decoder = [self.field.zero(); COEFFICIENT_STRIDE];
+            let mut power = self.field.one();
+            for lane in 0..COEFFICIENT_BITS {
+                let value = if lane + 1 == COEFFICIENT_BITS {
+                    self.field.neg(&power)
+                } else {
+                    power
+                };
+                decoder[lane / width] = self.field.add(
+                    &decoder[lane / width],
+                    &self.field.mul(&value, &weights[lane % width]),
+                );
+                power = self.field.add(&power, &power);
+            }
+            let groups = COEFFICIENT_STRIDE / width;
+            let mut slack = self.slacks[instance];
+            for side in 0..2 {
+                for j in 0..N {
+                    let coefficient = self.coefficients[side][instance * N + j];
+                    let spare = if side == 0 && j < SLACK_BITS {
+                        let value = slack;
+                        slack = self.field.add(&slack, &slack);
+                        value
+                    } else {
+                        self.padding
+                    };
+                    for (group, decode) in decoder[..groups].iter().enumerate() {
+                        let mut value = self.field.mul(&coefficient, decode);
+                        if group + 1 == groups {
+                            value = self
+                                .field
+                                .add(&value, &self.field.mul(&spare, &weights[width - 1]));
+                        }
+                        emit(base + (side * N + j) * groups + group, value)?;
+                    }
+                }
+            }
+            Ok(())
+        })())
+    }
+}
+
+fn signed_decoder(weights: &[F], field: &Cfg) -> F {
+    let mut value = field.zero();
+    let mut power = field.one();
+    for (bit, weight) in weights.iter().enumerate() {
+        let term = field.mul(weight, &power);
+        value = if bit + 1 == COEFFICIENT_BITS {
+            field.sub(&value, &term)
+        } else {
+            field.add(&value, &term)
+        };
+        power = field.add(&power, &power);
+    }
+    value
 }
 
 fn bind_opening(
@@ -577,7 +741,7 @@ fn bind_opening(
     value: F,
     field: &Cfg,
 ) -> BridgeClaim {
-    transcript.absorb_slice(b"bitz/falcon1024-algebraic/source-opening/v1");
+    transcript.absorb_slice(b"bitz/falcon1024-algebraic/source-opening/v2");
     transcript.absorb_slice(&field.modulus_u128().to_le_bytes());
     absorb_field_elements(transcript, &point, field);
     absorb_field_elements(transcript, &[value], field);
@@ -656,6 +820,8 @@ fn failure(error: impl std::fmt::Display) -> FalconError {
 mod tests {
     use super::super::FalconAlgebraicWitness;
     use super::*;
+    use crate::piop::spartan::falcon_bit_layout::slack_bit;
+    use crate::sumcheck::boundary::UngrindedRoundBoundary;
     use crate::transcript::Blake3Transcript;
     use field::Uint;
 
@@ -729,6 +895,153 @@ mod tests {
             .enumerate()
             .filter(|(i, _)| source.bit(*i))
             .fold(field.zero(), |sum, (_, weight)| field.add(&sum, &weight))
+    }
+
+    fn reference_coefficient(form: &BindingForm<'_>, index: usize) -> F {
+        let instance = index / (16 * 2 * N);
+        let coefficient = (index / 16) % (2 * N);
+        let lane = index % 16;
+        if instance >= form.layout.batch() {
+            return form.padding;
+        }
+        if lane == 15 {
+            return if coefficient < 27 {
+                form.field.mul(
+                    &form.slacks[instance],
+                    &unsigned(1u128 << coefficient, form.field),
+                )
+            } else {
+                form.padding
+            };
+        }
+        let weight = form.coefficients[coefficient / N][instance * N + coefficient % N];
+        let digit = if lane == 14 {
+            -(1i128 << 14)
+        } else {
+            1i128 << lane
+        };
+        form.field.mul(&weight, &signed(digit, form.field))
+    }
+
+    #[test]
+    fn aligned_binding_matches_dense_evaluation_folds_and_sumcheck() {
+        let field = field();
+        let layout = Layout::new(3).unwrap();
+        let form = BindingForm {
+            layout: &layout,
+            field: &field,
+            coefficients: std::array::from_fn(|side| {
+                (0..3 * N)
+                    .map(|j| signed((j as i128 % 53 - 26) * (side + 1) as i128, &field))
+                    .collect()
+            }),
+            slacks: vec![
+                unsigned(13, &field),
+                signed(-19, &field),
+                unsigned(23, &field),
+            ],
+            padding: unsigned(29, &field),
+        };
+        let point: Vec<_> = (0..form.num_vars())
+            .map(|j| unsigned((j + 2) as u128, &field))
+            .collect();
+        let dense_value = eq_table(&point, &field).unwrap().iter().enumerate().fold(
+            field.zero(),
+            |sum, (index, weight)| {
+                field.add(
+                    &sum,
+                    &field.mul(weight, &reference_coefficient(&form, index)),
+                )
+            },
+        );
+        assert_eq!(form.evaluate(&point).unwrap(), dense_value);
+
+        for instance in [0, 2, 3] {
+            let base = instance * layout.signature_stride();
+            for width in [1usize, 2, 4, 8, 16] {
+                let point: Vec<_> = (0..width.ilog2())
+                    .map(|j| unsigned((j + 3) as u128, &field))
+                    .collect();
+                let weights = eq_table(&point, &field).unwrap();
+                let mut count = 0;
+                form.for_each_partition_folded_final(instance, &weights, &mut |index, value| {
+                    let expected =
+                        weights
+                            .iter()
+                            .enumerate()
+                            .fold(field.zero(), |sum, (lane, weight)| {
+                                field.add(
+                                    &sum,
+                                    &field.mul(
+                                        weight,
+                                        &reference_coefficient(&form, index * width + lane),
+                                    ),
+                                )
+                            });
+                    assert_eq!(index, base / width + count);
+                    assert_eq!(value, expected);
+                    count += 1;
+                    Ok(())
+                })
+                .unwrap()
+                .unwrap();
+                assert_eq!(count, layout.signature_stride() / width);
+            }
+        }
+
+        // Arbitrary bits include every internal and inactive padding position.
+        // The comparison checks the prefix buckets, folded suffix and all
+        // transcript rounds, not only evaluations on honest zero padding.
+        let bits: Vec<_> = (0..layout.source_bits() / 64)
+            .map(|j| {
+                (j as u64)
+                    .wrapping_mul(0x9e37_79b9_7f4a_7c15)
+                    .rotate_left(17)
+                    ^ 0xa591_f027_c37b_40de
+            })
+            .collect();
+        let claim = (0..layout.source_bits())
+            .filter(|&index| bits[index / 64] >> (index % 64) & 1 != 0)
+            .fold(field.zero(), |sum, index| {
+                field.add(&sum, &reference_coefficient(&form, index))
+            });
+        let mut actual_transcript = Blake3Transcript::new();
+        let actual = prove_inner_sumcheck(
+            &field,
+            &mut actual_transcript,
+            claim,
+            PackedInput::new(
+                &StreamingMle::new(&form),
+                &bits,
+                form.num_vars(),
+                form.live_len(),
+                3,
+            ),
+            (),
+            &mut UngrindedRoundBoundary,
+        )
+        .unwrap();
+        let mut reference_transcript = Blake3Transcript::new();
+        let reference = prove_inner_sumcheck(
+            &field,
+            &mut reference_transcript,
+            claim,
+            PackedInput::new(
+                &|index| Ok(reference_coefficient(&form, index)),
+                &bits,
+                form.num_vars(),
+                form.live_len(),
+                3,
+            ),
+            (),
+            &mut UngrindedRoundBoundary,
+        )
+        .unwrap();
+        assert_eq!(actual, reference);
+        assert_eq!(
+            actual_transcript.get_challenge::<u128>(),
+            reference_transcript.get_challenge::<u128>()
+        );
     }
 
     #[test]
@@ -843,9 +1156,9 @@ mod tests {
         let ring = ring(&data, &field);
         for index in [
             0,
-            S2_OFFSET + 14,
-            SLACK_OFFSET,
-            LIVE_BITS,
+            coefficient_bit(N, 1, 0, 14),
+            slack_bit(0),
+            slack_bit(SLACK_BITS),
             3 * layout.signature_stride(),
         ] {
             let mut altered = source.clone();
@@ -917,6 +1230,70 @@ mod tests {
         let mut altered = proof.clone();
         altered.binding_nonces.push(0);
         rejects(&altered);
+    }
+
+    #[test]
+    fn preceding_transcript_domains_cannot_be_replayed() {
+        struct LegacyDomains(Blake3Transcript);
+        impl Transcript for LegacyDomains {
+            fn get_challenge<T: crate::transcript::traits::ConstTranscribable>(&mut self) -> T {
+                self.0.get_challenge()
+            }
+            fn begin_sampling(&mut self) {
+                self.0.begin_sampling();
+            }
+            fn fill_sampling_bytes(&mut self, output: &mut [u8]) {
+                self.0.fill_sampling_bytes(output);
+            }
+            fn absorb_inner(&mut self, value: &[u8]) {
+                if value.starts_with(b"bitz/falcon1024-algebraic/") && value.ends_with(b"/v2") {
+                    let mut legacy = value.to_vec();
+                    *legacy.last_mut().unwrap() = b'1';
+                    self.0.absorb_inner(&legacy);
+                } else {
+                    self.0.absorb_inner(value);
+                }
+            }
+        }
+        let field = field();
+        let layout = Layout::new(1).unwrap();
+        let data = data(1);
+        let source = Source::new(layout, &data);
+        let ring = ring(&data, &field);
+        // Keep the new geometry here to isolate domain separation itself.
+        let (proof, _, claim) = prove(
+            &mut LegacyDomains(Blake3Transcript::new()),
+            &layout,
+            &data,
+            &source,
+            &field,
+            &ring,
+            &schedule(),
+        )
+        .unwrap();
+        assert_eq!(
+            verify(
+                &mut LegacyDomains(Blake3Transcript::new()),
+                &layout,
+                &field,
+                &ring,
+                &proof,
+                &schedule(),
+            )
+            .unwrap(),
+            claim
+        );
+        assert!(
+            verify(
+                &mut Blake3Transcript::new(),
+                &layout,
+                &field,
+                &ring,
+                &proof,
+                &schedule(),
+            )
+            .is_err()
+        );
     }
 
     #[test]

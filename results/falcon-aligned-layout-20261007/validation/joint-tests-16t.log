@@ -1,0 +1,18 @@
+
+running 13 tests
+test hybrid::joint_sumcheck::tests::cached_gather_rounds_match_repeat_scan_for_every_axis_and_round ... ok
+test hybrid::joint_sumcheck::tests::cached_keccak_tensor_high_storage_is_bounded_by_tile_factors ... ok
+test hybrid::joint_sumcheck::tests::cached_tensor_tile_factors_match_full_high_tables_and_padding ... ok
+test hybrid::joint_sumcheck::tests::compact_lane_folds_match_dense_for_every_nonempty_lane_support ... ok
+test hybrid::joint_sumcheck::tests::compact_lane_sumcheck_supports_one_and_four_sources ... ok
+test hybrid::joint_sumcheck::tests::compact_lane_tables_preserve_physical_padding_at_the_opening_endpoint ... ok
+test hybrid::joint_sumcheck::tests::joint_sumcheck_rejects_tampering_and_malformed_inputs ... ok
+test hybrid::joint_sumcheck::tests::masked_gathers_match_subcubes_and_dense_proof ... ok
+test hybrid::joint_sumcheck::tests::prefix_equality_matches_dense_for_every_limit ... ok
+test hybrid::joint_sumcheck::tests::repeat_ranges_match_dense_sumcheck_and_reject_invalid_bounds ... ok
+test hybrid::joint_sumcheck::tests::sparse_only_joint_sumcheck_handles_physical_padding ... ok
+test hybrid::joint_sumcheck::tests::structured_joint_sumcheck_matches_dense_two_root_transcript ... ok
+test hybrid::joint_sumcheck::tests::three_root_joint_sumcheck_and_cached_marginals_match_dense_transcript ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 721 filtered out; finished in 0.37s
+

@@ -1,6 +1,7 @@
 use super::{FalconError, HASH_TO_POINT_SAMPLES, N};
 use super::{NORM_BITS, PREFIX_BITS};
 use crate::pcs::IntegerMatrixLayout;
+use crate::piop::spartan::falcon_bit_layout::{COEFFICIENT_STRIDE, coefficient_bit, slack_bit};
 
 /// Fixed-width committed arithmetic columns for one Falcon signature.
 /// Binary Keccak has its own source; the binder authenticates all reconstructions.
@@ -8,7 +9,8 @@ use crate::pcs::IntegerMatrixLayout;
 pub struct FalconTraceCounts {
     pub shared_one: usize,
     pub message: usize,
-    pub encoded_signature: usize,
+    pub signature_header_nonce: usize,
+    pub s2: usize,
     pub hash_words: usize,
     pub hash_quotients: usize,
     pub hash_remainders: usize,
@@ -24,7 +26,8 @@ impl FalconTraceCounts {
     pub const fn total(self) -> usize {
         self.shared_one
             + self.message
-            + self.encoded_signature
+            + self.signature_header_nonce
+            + self.s2
             + self.hash_words
             + self.hash_quotients
             + self.hash_remainders
@@ -56,7 +59,7 @@ impl FalconSourceLayout {
         if !(1..=1024).contains(&batch) {
             return Err(FalconError::InvalidBatchCapacity);
         }
-        if Self::counts().total() > Self::SIGNATURE_STRIDE {
+        if super::FalconSourceOffsets::new().occupied_end > Self::SIGNATURE_STRIDE {
             return Err(FalconError::SourceStrideOverflow);
         }
         Ok(Self {
@@ -65,13 +68,74 @@ impl FalconSourceLayout {
         })
     }
 
-    /// Unsigned little-endian public-key coefficients within each signature.
+    /// Base of unsigned public-key coefficients, spaced 16 positions apart.
     pub const fn public_key_offset(&self) -> usize {
         self.offsets().public_key
     }
 
     pub const fn live_bits(&self) -> usize {
         Self::counts().total()
+    }
+
+    /// End of the occupied source extent, including internal padding holes.
+    pub const fn occupied_bits(&self) -> usize {
+        self.offsets().occupied_end
+    }
+
+    pub const fn s1_bit(&self, index: usize, bit: usize) -> usize {
+        coefficient_bit(N, 0, index, bit)
+    }
+
+    pub const fn s2_bit(&self, index: usize, bit: usize) -> usize {
+        coefficient_bit(N, 1, index, bit)
+    }
+
+    pub const fn hash_point_bit(&self, index: usize, bit: usize) -> usize {
+        coefficient_bit(N, 2, index, bit)
+    }
+
+    pub const fn public_key_bit(&self, index: usize, bit: usize) -> usize {
+        coefficient_bit(N, 3, index, bit)
+    }
+
+    pub const fn norm_slack_bit(&self, bit: usize) -> usize {
+        slack_bit(bit)
+    }
+
+    /// Local address of an LSB-indexed bit of the exact CT signature bytes.
+    /// Payload coefficients are MSB-first on the wire and LSB-first in source.
+    pub const fn signature_bit(&self, byte: usize, bit: usize) -> usize {
+        if byte < 1 + super::NONCE_BYTES {
+            self.offsets().signature_header_nonce + 8 * byte + bit
+        } else {
+            let stream = 8 * (byte - 1 - super::NONCE_BYTES) + (7 - bit);
+            self.s2_bit(
+                stream / super::SIGNATURE_BITS,
+                super::SIGNATURE_BITS - 1 - stream % super::SIGNATURE_BITS,
+            )
+        }
+    }
+
+    /// Whether a local position must be zero for an active signature.
+    pub const fn is_padding(&self, local: usize) -> bool {
+        if local >= self.occupied_bits() {
+            return true;
+        }
+        if local >= 4 * N * COEFFICIENT_STRIDE {
+            return false;
+        }
+        let polynomial = local / (N * COEFFICIENT_STRIDE);
+        let index = local / COEFFICIENT_STRIDE % N;
+        let bit = local % COEFFICIENT_STRIDE;
+        if polynomial == 0 && bit == 15 && index < NORM_BITS {
+            return false;
+        }
+        let width = if polynomial == 1 {
+            super::SIGNATURE_BITS
+        } else {
+            14
+        };
+        bit >= width
     }
 
     pub const fn signature_stride(&self) -> usize {
@@ -114,8 +178,8 @@ impl FalconSourceLayout {
         FalconTraceCounts {
             shared_one: 1,
             message: 32 * 8,
-            // Complete CT signature: header, nonce and signed 12-bit s2 payload.
-            encoded_signature: super::CT_SIGNATURE_BYTES * 8,
+            signature_header_nonce: (1 + super::NONCE_BYTES) * 8,
+            s2: N * super::SIGNATURE_BITS,
             hash_words: HASH_TO_POINT_SAMPLES * 16,
             hash_quotients: HASH_TO_POINT_SAMPLES * 3,
             // bounded14 decodes every bit string into 0..=12288.
@@ -130,6 +194,82 @@ impl FalconSourceLayout {
         }
     }
 }
+
+#[cfg(test)]
+mod profile_layout_tests {
+    use super::*;
+
+    #[test]
+    fn aligned_addresses_cover_exactly_the_live_bits_for_each_profile() {
+        let layout = FalconSourceLayout::new(3).unwrap();
+        let offsets = layout.offsets();
+        let mut used = vec![false; layout.signature_stride()];
+        let mut mark = |address: usize| {
+            assert!(
+                !std::mem::replace(&mut used[address], true),
+                "aliased source bit {address}"
+            );
+        };
+        for j in 0..N {
+            for bit in 0..14 {
+                mark(layout.s1_bit(j, bit));
+                mark(layout.hash_point_bit(j, bit));
+                mark(layout.public_key_bit(j, bit));
+            }
+            for bit in 0..super::super::SIGNATURE_BITS {
+                mark(layout.s2_bit(j, bit));
+            }
+        }
+        for bit in 0..NORM_BITS {
+            mark(layout.norm_slack_bit(bit));
+        }
+        for bit in offsets.shared_one..offsets.occupied_end {
+            mark(bit);
+        }
+        assert_eq!(used.iter().filter(|&&bit| bit).count(), layout.live_bits());
+        for (local, &live) in used.iter().enumerate() {
+            assert_eq!(live, !layout.is_padding(local), "padding mask at {local}");
+        }
+        assert_eq!(
+            layout.signature_stride(),
+            if N == 512 { 65_536 } else { 131_072 }
+        );
+        assert_eq!(
+            layout.occupied_bits(),
+            if N == 512 { 64_911 } else { 125_127 }
+        );
+        assert!(layout.is_padding(layout.occupied_bits()));
+    }
+
+    #[test]
+    fn ct_payload_mapping_is_a_bijection_onto_signed_coefficient_bits() {
+        let layout = FalconSourceLayout::new(1).unwrap();
+        let mut mapped = vec![false; layout.signature_stride()];
+        for byte in 0..super::super::CT_SIGNATURE_BYTES {
+            for bit in 0..8 {
+                let address = layout.signature_bit(byte, bit);
+                assert!(!std::mem::replace(&mut mapped[address], true));
+                assert!(!layout.is_padding(address));
+            }
+        }
+        for j in 0..N {
+            for bit in 0..16 {
+                assert_eq!(
+                    mapped[16 * (N + j) + bit],
+                    bit < super::super::SIGNATURE_BITS
+                );
+            }
+        }
+        let header = layout.offsets().signature_header_nonce;
+        for bit in 0..8 * (1 + super::super::NONCE_BYTES) {
+            assert!(mapped[header + bit]);
+        }
+        assert_eq!(
+            mapped.iter().filter(|&&bit| bit).count(),
+            super::super::CT_SIGNATURE_BYTES * 8
+        );
+    }
+}
 falcon_tests! {
 mod tests {
     use super::*;
@@ -140,7 +280,8 @@ mod tests {
             let layout = FalconSourceLayout::new(batch).unwrap();
             let counts = FalconSourceLayout::counts();
             assert_eq!(counts.total(), 114_914);
-            assert_eq!(layout.offsets().end, counts.total());
+            assert_eq!(layout.occupied_bits(), 125_127);
+            assert_eq!(layout.occupied_bits() - counts.total(), 10_213);
             assert_eq!(layout.signature_stride(), 131_072);
             assert_eq!(layout.capacity(), batch.next_power_of_two());
             assert_eq!(layout.source_bits(), 131_072 * layout.capacity());
@@ -152,11 +293,11 @@ mod tests {
                 layout.source_bits().trailing_zeros() as usize
             );
             assert_eq!(
-                counts.shared_one + counts.message + counts.encoded_signature,
+                counts.shared_one + counts.message + counts.signature_header_nonce + counts.s2,
                 12_873
             );
             assert_eq!(counts.total() - 12_873, 102_041);
-            assert_eq!(layout.public_key_offset(), 100_578);
+            assert_eq!(layout.public_key_offset(), 49_152);
             assert_eq!(counts.public_key, 14 * N);
             assert_eq!(
                 counts.hash_words / 16

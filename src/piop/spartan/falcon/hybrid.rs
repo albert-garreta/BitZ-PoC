@@ -37,6 +37,10 @@ fn error(e: impl std::fmt::Display) -> FalconError {
     FalconError::Piop(e.to_string())
 }
 struct LinkGrinding;
+// The existing binary claims/SHAKE wiring budget is 128. The additional
+// padding polynomial has degree at most 17 + 10 + 1 (local, instance, merge),
+// so 256 conservatively covers their union for every supported profile.
+const LINK_ERROR_NUMERATOR: usize = 256;
 impl GrindingDomain for LinkGrinding {
     const DOMAIN: &'static [u8] = b"bitz/falcon-hybrid/link-grinding/v1";
 }
@@ -295,7 +299,10 @@ impl PreparedFalconHybrid {
                     })
                     .sum(),
             ),
-            ("SHAKE wiring and binary claim batching", binary(128)),
+            (
+                "SHAKE wiring, source padding and binary claim batching",
+                binary(LINK_ERROR_NUMERATOR),
+            ),
             ("joint binary sumcheck", binary(2 * self.geometry.bit_log())),
             ("ring switch and support padding", binary(256)),
             (
@@ -463,7 +470,12 @@ impl PreparedFalconHybrid {
         for log in self.geometry.logs {
             h.update(&(log as u64).to_le_bytes());
         }
-        h.update(b"bounded14:low13+4097*top;ring:Q12289,T^k+T+c;Dlen:N-1;profile/v1");
+        h.update(b"bounded14:low13+4097*top;ring:Q12289,T^k+T+c;Dlen:N-1;profile/v2");
+        h.update(b"source-layout:aligned16;polynomials:S1,S2,C,H;slack:S1-lane15;signature:header-nonce-and-mapped-signed-payload/v2");
+        h.update(b"arithmetic-padding:random-local-and-instance-equality;active-holes;all-inactive;zero-target/v1");
+        h.update(&(LINK_ERROR_NUMERATOR as u64).to_le_bytes());
+        h.update(&self.binary_grinding(LINK_ERROR_NUMERATOR).to_le_bytes());
+        h.update(&(self.layout.occupied_bits() as u64).to_le_bytes());
 
         h.update(b"shared:all-E;C,H,S1,S2:1,l,l2,l3;direct-beta-decoder;Hunsigned14;S2encoded-alias;live-mask;P(2k-1)-i128;target-selected-prime-and-bridge;merge-in-binder-block/v3");
         h.update(&(self.layout.live_bits() as u64).to_le_bytes());
@@ -529,7 +541,7 @@ impl PreparedFalconHybrid {
         }
         let digest = *h.finalize().as_bytes();
         let mut t = Blake3Transcript::new();
-        t.absorb_slice(b"bitz/falcon/shared-prime/statement/v1");
+        t.absorb_slice(b"bitz/falcon/shared-prime/statement/v2");
         t.absorb_slice(&digest);
         self.ligerito.bind(&mut t);
         Ok((t, digest))
@@ -596,7 +608,7 @@ impl PreparedFalconHybrid {
         let links_span = tracing::info_span!("falcon_hybrid:link_coefficients").entered();
         let mut link_t = ProverBlockGrindingTranscript::<_, LinkGrinding>::new(
             &mut t,
-            self.binary_grinding(128),
+            self.binary_grinding(LINK_ERROR_NUMERATOR),
         );
         let (mut coefficients, target) =
             self.coefficients(&mut link_t, &committed.statement.public, &a, &k);
@@ -705,7 +717,7 @@ impl PreparedFalconHybrid {
             .unwrap_or_else(|_| unreachable!("profile Keccak slabs"));
         let mut link_t = VerifierBlockGrindingTranscript::<_, LinkGrinding>::new(
             &mut t,
-            self.binary_grinding(128),
+            self.binary_grinding(LINK_ERROR_NUMERATOR),
             &proof.links_nonces,
         );
         let (coefficients, target) = self.coefficients(&mut link_t, &statement.public, &a, &k);
@@ -754,7 +766,7 @@ impl PreparedFalconHybrid {
         k: &[[BinaryClaim; 2]; KECCAK_SLABS],
     ) -> ([Coefficients; SOURCE_COUNT], Gf) {
         let a = std::slice::from_ref(a);
-        t.absorb_slice(b"bitz/falcon-hybrid/binary-claims-and-shake-wiring/v3");
+        t.absorb_slice(b"bitz/falcon-hybrid/binary-claims-shake-wiring-and-padding/v4");
         for claims in std::iter::once(a).chain(k.iter().map(|claims| claims.as_slice())) {
             t.absorb_slice(&(claims.len() as u64).to_le_bytes());
             for c in claims {
@@ -803,7 +815,7 @@ impl PreparedFalconHybrid {
                 w,
             ));
             if bit < 320 {
-                arithmetic.push((offsets.encoded_signature + 8 + bit, w));
+                arithmetic.push((self.layout.signature_bit(1 + bit / 8, bit % 8), w));
             } else {
                 let byte = bit / 8;
                 for (i, msg) in public.messages.iter().enumerate() {
@@ -851,6 +863,7 @@ impl PreparedFalconHybrid {
                 arithmetic.push((offsets.hash_words + 16 * sample + bit, w));
             }
         }
+        self.add_arithmetic_padding(t, &mut result[0], &instance_point);
         if self.batch() == self.capacity() {
             result[0]
                 .gathers
@@ -879,6 +892,42 @@ impl PreparedFalconHybrid {
                 .push(Gather::repeated_at(entries, repeat, 7).with_repeat_limit(self.batch()));
         }
         (result, target)
+    }
+
+    /// Authenticate every arithmetic padding bit through the existing joint
+    /// source opening. A fresh random MLE of those bits must evaluate to zero.
+    fn add_arithmetic_padding(
+        &self,
+        t: &mut impl Transcript,
+        coefficients: &mut Coefficients,
+        instance_point: &[Gf],
+    ) {
+        let point: Vec<Gf> =
+            t.get_field_challenges(self.layout.signature_stride().ilog2() as usize, &());
+        let scale: Gf = t.get_field_challenge(&());
+        let local: Vec<_> = eq_table(&point)
+            .into_iter()
+            .map(|weight| weight * scale)
+            .collect();
+        let holes = local
+            .iter()
+            .enumerate()
+            .filter_map(|(index, &weight)| self.layout.is_padding(index).then_some((index, weight)))
+            .collect();
+        coefficients
+            .gathers
+            .push(Gather::repeated(holes, instance_point.to_vec()).with_repeat_limit(self.batch()));
+        if self.batch() < self.capacity() {
+            // Disjoint from active holes, including for inactive internal holes.
+            // Mask the repeat axis rather than expanding every inactive source.
+            coefficients.gathers.push(
+                Gather::repeated(
+                    local.into_iter().enumerate().collect(),
+                    instance_point.to_vec(),
+                )
+                .with_repeat_range(self.batch(), self.capacity()),
+            );
+        }
     }
 }
 
@@ -1360,6 +1409,48 @@ mod tests {
             let ring = &mut wrong.arithmetic.ring;
             ring.lift[0] += 1;
             assert!(prepared.verify(&statement, &wrong).is_err());
+        }
+    }
+
+    #[test]
+    fn recommitted_arithmetic_padding_is_rejected() {
+        for target in [100, 128] {
+            let prepared = PreparedFalconHybrid::prepare(3, target, 1024).unwrap();
+            let layout = prepared.layout;
+            let stride = layout.signature_stride();
+            let holes = [
+                layout.s1_bit(0, 14),
+                layout.s1_bit(super::super::NORM_BITS, 15),
+                layout.s2_bit(0, SIGNATURE_BITS),
+                layout.hash_point_bit(0, 14),
+                layout.public_key_bit(super::super::N - 1, 14),
+                layout.occupied_bits(),
+                stride - 1,
+                3 * stride,
+                4 * stride - 1,
+            ];
+            for flat in holes {
+                let mut committed = prepared.commit(public(3)).unwrap();
+                assert!(!committed.arithmetic.bit(flat));
+                assert!(flat >= 3 * stride || layout.is_padding(flat % stride));
+                // Both prover representations and the Merkle commitment must
+                // agree: this tests zero constraints, not a stale commitment.
+                committed.arithmetic.flip_bit(flat);
+                let word = &mut committed.packed[0][flat / 128];
+                if flat % 128 < 64 {
+                    word.lo ^= 1 << (flat % 64);
+                } else {
+                    word.hi ^= 1 << (flat % 64);
+                }
+                recommit(&prepared, &mut committed);
+                let statement = committed.statement.clone();
+                if let Ok(proof) = prepared.prove(committed) {
+                    assert!(
+                        prepared.verify(&statement, &proof).is_err(),
+                        "accepted arithmetic padding bit {flat} at target {target}",
+                    );
+                }
+            }
         }
     }
 

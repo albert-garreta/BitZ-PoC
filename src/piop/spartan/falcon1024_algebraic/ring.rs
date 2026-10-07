@@ -21,7 +21,7 @@ use super::{Cfg, F, FalconAlgebraicStatement, FalconError, Layout, N, Q, Witness
 
 pub(super) const EXTENSION_DEGREE: usize = 11;
 pub(super) type Ext = FalconExtension<EXTENSION_DEGREE>;
-const DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/native-ring/v1";
+const DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/native-ring/v2";
 const COEFFICIENT_ABS_BOUND: u64 = 1 << 14;
 
 /// The quotient is fixed before alpha; the carries are fixed before xi.
@@ -56,7 +56,7 @@ struct Coordinates {
 
 struct ProjectionGrinding;
 impl GrindingDomain for ProjectionGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/native-ring/projection-grinding/v1";
+    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/native-ring/projection-grinding/v2";
 }
 
 #[tracing::instrument(skip_all, name = "falcon_algebraic_ring:prove")]

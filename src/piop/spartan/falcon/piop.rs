@@ -365,12 +365,13 @@ fn bind_shared_header(
     target_bits: usize,
     field: &Cfg,
 ) {
-    transcript.absorb_slice(b"bitz/falcon1024-ct/piop/shared-prime/v4");
+    transcript.absorb_slice(b"bitz/falcon1024-ct/piop/shared-prime/aligned16/v5");
     transcript.absorb_slice(&(layout.batch() as u64).to_le_bytes());
     transcript.absorb_slice(&(layout.capacity() as u64).to_le_bytes());
     transcript.absorb_slice(&(target_bits as u64).to_le_bytes());
     transcript.absorb_slice(&field.modulus_u128().to_le_bytes());
     transcript.absorb_slice(&(layout.live_bits() as u64).to_le_bytes());
+    transcript.absorb_slice(&(layout.occupied_bits() as u64).to_le_bytes());
 }
 
 #[tracing::instrument(skip_all, name = "falcon_arithmetic:norm")]
@@ -1593,7 +1594,7 @@ mod tests {
 
         fn absorb_inner(&mut self, bytes: &[u8]) {
             self.prime_draws += usize::from(bytes == b"bitz/shared-prime-sampling/v1");
-            self.shared_headers += usize::from(bytes == b"bitz/falcon1024-ct/piop/shared-prime/v4");
+            self.shared_headers += usize::from(bytes == b"bitz/falcon1024-ct/piop/shared-prime/aligned16/v5");
             self.inner.absorb_inner(bytes);
         }
     }

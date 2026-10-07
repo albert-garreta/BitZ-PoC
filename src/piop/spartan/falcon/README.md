@@ -30,7 +30,7 @@ witness so large buffers can be folded without cloning. The four presets are
 The `falcon` feature retains direct signature verification and reference helpers.
 
 There is one proving protocol and no NativeCarry or old-proof verifier. The
-protocol identifier is `bitz/falcon/shared-prime/non-zk/v1`. Proofs must be
+protocol identifier is `bitz/falcon/shared-prime/non-zk/v2`. Proofs must be
 regenerated. Falcon currently exposes in-memory proofs without a full transport
 codec. `payload_size_bytes()` counts stored messages, excluding the public
 statement and transport framing; `payload_size_breakdown()` reports disjoint
@@ -75,8 +75,21 @@ See [ONE_SOURCE.md](ONE_SOURCE.md) for the projection geometry,
 ## Layout and performance
 
 Falcon-1024 uses 114,914 live arithmetic bits and 5,482 linear rows per signature,
-padded to strides of 131,072 bits and 8,192 rows. Public-key bits account for
-14,336 bits; `S2` uses the existing encoded-signature slots. At batch 1,024 the
+padded to strides of 131,072 bits and 8,192 rows. The first `4*N*16` positions
+form aligned coefficient blocks ordered `S1,S2,C,H`. The coefficient encodings
+remain bounded14 minus 6144, signed12, unsigned14, and unsigned14 respectively.
+Norm slack bits occupy lane 15 of the first 27 `S1` coefficient rows. Signature
+header/nonce bytes and the remaining HashToPoint columns follow these blocks;
+the exact CT payload is reconstructed from the aligned `S2` bits without a
+second copy. SHAKE nonce and sample links use the same address map.
+
+For Falcon-1024 there are 10,213 internal padding bits and 5,945 trailing padding
+bits. The occupied extent is 125,127, distinct from the 114,914 live-bit count.
+Every internal hole, trailing bit, and inactive signature is constrained to zero.
+Use the layout's coefficient, signature-byte, and slack address methods rather
+than assuming a contiguous live prefix. The full arithmetic domain and Keccak
+domains retain their previous sizes; coefficient alignment does not halve this
+prover's commitment. At batch 1,024 the
 column table occupies 262,144 bytes at 100 bits and 327,680 bytes at 128 bits.
 It remains a substantial proof-size cost.
 

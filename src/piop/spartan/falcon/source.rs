@@ -3,16 +3,18 @@ use super::{
     N,
 };
 use super::{NORM_BITS, PREFIX_BITS};
+use crate::piop::spartan::falcon_bit_layout::{COEFFICIENT_STRIDE, coefficient_bit};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 /// Start offsets of committed columns within one signature stride.
-/// The interval ending at `end` is live; the rest of the stride is zero.
+/// Ring coefficients have stride 16; slack occupies spare coefficient lanes.
+/// Internal holes and positions at or beyond `occupied_end` are zero.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FalconSourceOffsets {
     pub shared_one: usize,
     pub message: usize,
-    pub encoded_signature: usize,
+    pub signature_header_nonce: usize,
     pub hash_words: usize,
     pub hash_quotients: usize,
     pub hash_remainders: usize,
@@ -20,31 +22,31 @@ pub struct FalconSourceOffsets {
     pub hash_prefixes: usize,
     pub hash_point: usize,
     pub s1: usize,
-    pub norm_slack: usize,
+    pub s2: usize,
     pub public_key: usize,
-    pub end: usize,
+    pub occupied_end: usize,
 }
 
 impl FalconSourceOffsets {
     pub(super) const fn new() -> Self {
         let counts = FalconSourceLayout::counts();
-        let shared_one = 0;
+        let s1 = coefficient_bit(N, 0, 0, 0);
+        let s2 = coefficient_bit(N, 1, 0, 0);
+        let hash_point = coefficient_bit(N, 2, 0, 0);
+        let public_key = coefficient_bit(N, 3, 0, 0);
+        let shared_one = 4 * N * COEFFICIENT_STRIDE;
         let message = shared_one + counts.shared_one;
-        let encoded_signature = message + counts.message;
-        let hash_words = encoded_signature + counts.encoded_signature;
+        let signature_header_nonce = message + counts.message;
+        let hash_words = signature_header_nonce + counts.signature_header_nonce;
         let hash_quotients = hash_words + counts.hash_words;
         let hash_remainders = hash_quotients + counts.hash_quotients;
         let hash_accept_ands = hash_remainders + counts.hash_remainders;
         let hash_prefixes = hash_accept_ands + counts.hash_accept_ands;
-        let hash_point = hash_prefixes + counts.hash_prefixes;
-        let s1 = hash_point + counts.hash_point;
-        let norm_slack = s1 + counts.s1;
-        let public_key = norm_slack + counts.norm_slack;
-        let end = public_key + counts.public_key;
+        let occupied_end = hash_prefixes + counts.hash_prefixes;
         Self {
             shared_one,
             message,
-            encoded_signature,
+            signature_header_nonce,
             hash_words,
             hash_quotients,
             hash_remainders,
@@ -52,9 +54,9 @@ impl FalconSourceOffsets {
             hash_prefixes,
             hash_point,
             s1,
-            norm_slack,
+            s2,
             public_key,
-            end,
+            occupied_end,
         }
     }
 }
@@ -69,8 +71,8 @@ pub struct FalconSourceWitness {
 impl FalconSourceWitness {
     /// Packs already-validated native traces. Integer bit strings are stored
     /// little-endian; remainders and biased s1 use `bounded14_encode`.
-    /// Raw Falcon bytes retain byte order and use least-significant-bit-first
-    /// byte bits.
+    /// Header/nonce bytes use least-significant-bit-first byte bits. The exact
+    /// signature payload is rearranged into aligned signed coefficient words.
     pub fn from_traces(
         layout: FalconSourceLayout,
         messages: &[&[u8]],
@@ -86,7 +88,7 @@ impl FalconSourceWitness {
         let p = layout.bitz_params();
         let mut rows = vec![vec![0u64; p.rows() / 64]; p.cols()];
         let offsets = layout.offsets();
-        debug_assert_eq!(offsets.end, layout.live_bits());
+        debug_assert_eq!(offsets.occupied_end, layout.occupied_bits());
 
         crate::utils::cfg_chunks_mut!(rows, layout.signature_stride() >> p.row_vars)
             .enumerate()
@@ -116,15 +118,38 @@ impl FalconSourceWitness {
                     );
                 }
 
-                for (byte_index, &byte) in signature.iter().enumerate() {
+                for (byte_index, &byte) in signature[..1 + super::NONCE_BYTES].iter().enumerate() {
                     put_unsigned(
                         rows,
                         &p,
-                        offsets.encoded_signature + 8 * byte_index,
+                        offsets.signature_header_nonce + 8 * byte_index,
                         u64::from(byte),
                         8,
                     );
                 }
+                // Read the supplied bytes, not the trace's decoded s2 copy:
+                // the commitment must continue to bind the exact signature.
+                let mut payload = signature[1 + super::NONCE_BYTES..].iter().copied();
+                let mut acc = 0u32;
+                let mut acc_len = 0;
+                for i in 0..N {
+                    while acc_len < super::SIGNATURE_BITS {
+                        acc = (acc << 8) | u32::from(payload.next().expect("length checked"));
+                        acc_len += 8;
+                    }
+                    acc_len -= super::SIGNATURE_BITS;
+                    let word = (acc >> acc_len) & ((1 << super::SIGNATURE_BITS) - 1);
+                    put_unsigned(
+                        rows,
+                        &p,
+                        layout.s2_bit(i, 0),
+                        u64::from(word),
+                        super::SIGNATURE_BITS,
+                    );
+                    acc &= (1 << acc_len) - 1;
+                }
+                debug_assert_eq!(acc_len, 0);
+                debug_assert!(payload.next().is_none());
 
                 for i in 0..HASH_TO_POINT_SAMPLES {
                     put_unsigned(
@@ -174,7 +199,7 @@ impl FalconSourceWitness {
                     put_unsigned(
                         rows,
                         &p,
-                        offsets.hash_point + 14 * i,
+                        layout.hash_point_bit(i, 0),
                         u64::from(trace.hash_to_point.point[i]),
                         14,
                     );
@@ -182,21 +207,33 @@ impl FalconSourceWitness {
                     put_unsigned(
                         rows,
                         &p,
-                        offsets.s1 + 14 * i,
+                        layout.s1_bit(i, 0),
                         u64::from(bounded14_encode(biased_s1 as u16)),
                         14,
                     );
                 }
                 debug_assert_eq!(trace.norm + trace.norm_slack, BETA_SQUARED);
-                put_unsigned(rows, &p, offsets.norm_slack, trace.norm_slack, NORM_BITS);
-                {
-                    let public_key = offsets.public_key;
-                    for (i, &coefficient) in trace.public_key.h.iter().enumerate() {
-                        if i64::from(coefficient) >= super::Q {
-                            return Err(FalconError::PublicKeyCoefficient { index: i });
-                        }
-                        put_unsigned(rows, &p, public_key + 14 * i, u64::from(coefficient), 14);
+                assert!(trace.norm_slack < 1u64 << NORM_BITS);
+                for bit in 0..NORM_BITS {
+                    put_unsigned(
+                        rows,
+                        &p,
+                        layout.norm_slack_bit(bit),
+                        (trace.norm_slack >> bit) & 1,
+                        1,
+                    );
+                }
+                for (i, &coefficient) in trace.public_key.h.iter().enumerate() {
+                    if i64::from(coefficient) >= super::Q {
+                        return Err(FalconError::PublicKeyCoefficient { index: i });
                     }
+                    put_unsigned(
+                        rows,
+                        &p,
+                        layout.public_key_bit(i, 0),
+                        u64::from(coefficient),
+                        14,
+                    );
                 }
                 Ok(())
             })?;
@@ -229,6 +266,13 @@ impl FalconSourceWitness {
         let b = flat & (p.rows() - 1);
         let c = flat >> p.row_vars;
         self.rows[c][b / 64] >> (b % 64) & 1 == 1
+    }
+
+    #[cfg(test)]
+    pub(super) fn flip_bit(&mut self, flat: usize) {
+        let p = self.layout.bitz_params();
+        let row = flat & (p.rows() - 1);
+        self.rows[flat >> p.row_vars][row / 64] ^= 1 << (row % 64);
     }
 }
 
@@ -328,7 +372,10 @@ mod tests {
                     assert_eq!(read(offsets.message + 8 * i, 8), u64::from(byte));
                 }
                 for (i, &byte) in SIGNATURE.iter().enumerate() {
-                    assert_eq!(read(offsets.encoded_signature + 8 * i, 8), u64::from(byte));
+                    let actual = (0..8).fold(0u8, |value, bit| {
+                        value | (u8::from(witness.bit(base + layout.signature_bit(i, bit))) << bit)
+                    });
+                    assert_eq!(actual, byte);
                 }
                 for i in 0..HASH_TO_POINT_SAMPLES {
                     assert_eq!(
@@ -354,17 +401,24 @@ mod tests {
                 }
                 for i in 0..N {
                     assert_eq!(
-                        read(offsets.hash_point + 14 * i, 14),
+                        read(layout.hash_point_bit(i, 0), 14),
                         u64::from(trace.hash_to_point.point[i])
                     );
-                    let encoded = read(offsets.s1 + 14 * i, 14) as u16;
+                    let encoded = read(layout.s1_bit(i, 0), 14) as u16;
                     assert_eq!(
                         i32::from(bounded14_decode(encoded)) - 6_144,
                         i32::from(trace.s1[i])
                     );
+                    let s2 = read(layout.s2_bit(i, 0), super::super::SIGNATURE_BITS);
+                    let signed_s2 = s2 as i64
+                        - ((s2 >> (super::super::SIGNATURE_BITS - 1)) << super::super::SIGNATURE_BITS) as i64;
+                    assert_eq!(signed_s2, i64::from(trace.signature.s2[i]));
                 }
-                assert_eq!(read(offsets.norm_slack, 27), trace.norm_slack);
-                assert!((offsets.end..layout.signature_stride()).all(|i| !witness.bit(base + i)));
+                let slack = (0..NORM_BITS).fold(0u64, |value, bit| {
+                    value | (u64::from(witness.bit(base + layout.norm_slack_bit(bit))) << bit)
+                });
+                assert_eq!(slack, trace.norm_slack);
+                assert!((0..layout.signature_stride()).filter(|&i| layout.is_padding(i)).all(|i| !witness.bit(base + i)));
             }
             assert!(
                 (batch * layout.signature_stride()..layout.source_bits()).all(|i| !witness.bit(i))
@@ -384,20 +438,19 @@ mod tests {
             FalconSourceWitness::from_traces(shared, &messages, &signatures, &traces).unwrap();
         let keys = vec![trace.public_key.clone(); batch];
         new.check_public_key_bindings(&keys).unwrap();
-        let h = shared.public_key_offset();
         for s in 0..batch {
             let base = s * shared.signature_stride();
             for j in 0..N {
                 assert_eq!(
-                    read_unsigned(&new, base + h + 14 * j, 14),
+                    read_unsigned(&new, base + shared.public_key_bit(j, 0), 14),
                     u64::from(keys[s].h[j])
                 );
             }
-            assert!((shared.live_bits()..shared.signature_stride()).all(|j| !new.bit(base + j)));
+            assert!((0..shared.signature_stride()).filter(|&j| shared.is_padding(j)).all(|j| !new.bit(base + j)));
         }
         assert!((batch * shared.signature_stride()..shared.source_bits()).all(|j| !new.bit(j)));
         // Decode H from the committed bits, rather than accepting its trace copy.
-        let flat = shared.signature_stride() + h + 14 * 17 + 3;
+        let flat = shared.signature_stride() + shared.public_key_bit(17, 3);
         let row = flat & ((1 << shared.row_vars()) - 1);
         new.rows[flat >> shared.row_vars()][row / 64] ^= 1 << (row % 64);
         assert!(
@@ -405,6 +458,58 @@ mod tests {
             family: "public-key-source", index,
         }) if index == N + 17)
         );
+    }
+
+    #[test]
+    fn source_reconstructs_supplied_signature_bytes_even_when_trace_differs() {
+        let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+        let layout = FalconSourceLayout::new(1).unwrap();
+        let bytes: Vec<u8> = (0..super::super::CT_SIGNATURE_BYTES)
+            .map(|i| (i.wrapping_mul(73) ^ (i >> 3)) as u8)
+            .collect();
+        let source = FalconSourceWitness::from_traces(
+            layout,
+            &[MESSAGE.as_slice()],
+            &[bytes.as_slice()],
+            &[trace],
+        )
+        .unwrap();
+        for (byte, &expected) in bytes.iter().enumerate() {
+            let actual = (0..8).fold(0u8, |value, bit| {
+                value | (u8::from(source.bit(layout.signature_bit(byte, bit))) << bit)
+            });
+            assert_eq!(actual, expected, "signature byte {byte}");
+        }
+    }
+
+    #[test]
+    fn aligned_source_preserves_coefficient_boundaries() {
+        let mut trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+        let s1 = [-6_144, -2_047, 0, 2_047, 2_048, 6_144];
+        let s2 = [-2_047, -1, 0, 1, 2_046, 2_047];
+        let unsigned = [0, 1, 4_096, 4_097, 8_191, 12_288];
+        trace.s1[..s1.len()].copy_from_slice(&s1);
+        trace.signature.s2[..s2.len()].copy_from_slice(&s2);
+        trace.public_key.h[..unsigned.len()].copy_from_slice(&unsigned);
+        trace.hash_to_point.point[..unsigned.len()].copy_from_slice(&unsigned);
+        let signature = super::super::encode_signature_ct(&trace.signature).unwrap();
+        let layout = FalconSourceLayout::new(1).unwrap();
+        let source = FalconSourceWitness::from_traces(
+            layout,
+            &[MESSAGE.as_slice()],
+            &[signature.as_slice()],
+            &[trace],
+        )
+        .unwrap();
+        for j in 0..s1.len() {
+            // Independent literal slot arithmetic checks the public helpers too.
+            let encoded_s1 = read_unsigned(&source, 16 * j, 14) as u16;
+            assert_eq!(i32::from(bounded14_decode(encoded_s1)) - 6_144, i32::from(s1[j]));
+            let encoded_s2 = read_unsigned(&source, 16 * (N + j), 12) as i16;
+            assert_eq!((encoded_s2 << 4) >> 4, s2[j]);
+            assert_eq!(read_unsigned(&source, 16 * (2 * N + j), 14), u64::from(unsigned[j]));
+            assert_eq!(read_unsigned(&source, 16 * (3 * N + j), 14), u64::from(unsigned[j]));
+        }
     }
 }
 

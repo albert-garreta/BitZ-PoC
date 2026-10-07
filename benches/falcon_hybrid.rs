@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 //! Complete Falcon hybrid proof benchmark, including all source commitments.
 //!
 //! Example: `RAYON_NUM_THREADS=16 BITZ_BENCH_LAMBDA=128 cargo bench
@@ -176,7 +177,8 @@ macro_rules! backend_runner {
     println!(
         "{}",
         json!({
-            "schema": "bitz/falcon-hybrid/profile-v1",
+            "schema": "bitz/falcon-hybrid/profile-v2",
+            "source_layout": "aligned16-v2",
             "degree": options.degree,
             "ring_extension": options.extension,
             "ring_extension_selection": options.extension_selection,
@@ -279,7 +281,8 @@ macro_rules! backend_runner {
         println!(
             "{}",
             json!({
-                "schema": "bitz/falcon-hybrid/profile-v1",
+                "schema": "bitz/falcon-hybrid/profile-v2",
+                "source_layout": "aligned16-v2",
             "degree": options.degree,
             "ring_extension": options.extension,
             "ring_extension_selection": options.extension_selection,
@@ -328,7 +331,8 @@ macro_rules! backend_runner {
     println!(
         "{}",
         json!({
-            "schema": "bitz/falcon-hybrid/profile-v1",
+            "schema": "bitz/falcon-hybrid/profile-v2",
+            "source_layout": "aligned16-v2",
             "degree": options.degree,
             "ring_extension": options.extension,
             "ring_extension_selection": options.extension_selection,

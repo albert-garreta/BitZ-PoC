@@ -33,8 +33,8 @@ use crate::{
 
 use super::{
     FalconError, FalconPiopProof, FalconPublicKey, FalconSignatureCt, FalconSourceLayout,
-    FalconSourceOffsets, FalconSourceWitness, FalconVerificationTrace, HASH_TO_POINT_SAMPLES, N, Q,
-    decode_public_key, decode_signature_ct, encode_signature_ct,
+    FalconSourceWitness, FalconVerificationTrace, HASH_TO_POINT_SAMPLES, N, Q, decode_public_key,
+    decode_signature_ct, encode_signature_ct,
     piop::{FalconPiopClaimRef, security_schedule},
 };
 
@@ -443,6 +443,7 @@ trait CoefficientSink {
             scale = field.add(&scale, &scale);
         }
     }
+    #[cfg(test)]
     fn add_encoded_word(&mut self, base: usize, offset: usize, mut scale: F, field: &Cfg) {
         if !self.enabled() {
             return;
@@ -458,6 +459,37 @@ trait CoefficientSink {
                     scale
                 },
             );
+            scale = field.add(&scale, &scale);
+        }
+    }
+    fn add_signed_word(&mut self, base: usize, width: usize, mut scale: F, field: &Cfg) {
+        if !self.enabled() {
+            return;
+        }
+        for bit in 0..width {
+            self.add(
+                base + bit,
+                if bit + 1 == width {
+                    field.neg(&scale)
+                } else {
+                    scale
+                },
+            );
+            scale = field.add(&scale, &scale);
+        }
+    }
+    fn add_signature_byte(
+        &mut self,
+        layout: &FalconSourceLayout,
+        byte: usize,
+        mut scale: F,
+        field: &Cfg,
+    ) {
+        if !self.enabled() {
+            return;
+        }
+        for bit in 0..8 {
+            self.add(layout.signature_bit(byte, bit), scale);
             scale = field.add(&scale, &scale);
         }
     }
@@ -659,7 +691,6 @@ fn add_norm_claims_prepared(
     {
         return Err(piop("norm binding point dimension mismatch"));
     }
-    let offsets = layout.offsets();
     for side in 0..2 {
         let mut constant = field.zero();
         for instance in coefficients.instances(layout.batch()) {
@@ -670,12 +701,12 @@ fn add_norm_claims_prepared(
                     &weights.at(instance * N + i),
                 );
                 if side == 0 {
-                    add_value_scaled(coefficients, base + offsets.s1 + 14 * i, weight, field);
+                    add_value_scaled(coefficients, base + layout.s1_bit(i, 0), weight, field);
                     if coefficients.needs_constants() {
                         constant = field.add(&constant, &mul_i(weight, -6_144, field));
                     }
                 } else {
-                    add_signed_source_scaled(coefficients, base, &offsets, i, weight, field);
+                    add_signed_source_scaled(coefficients, base, layout, i, weight, field);
                 }
             }
         }
@@ -693,12 +724,12 @@ fn add_norm_claims_prepared(
             for i in 0..N {
                 let weight = field.mul(scale, &weights.at(instance * N + i));
                 if side == 0 {
-                    add_value_scaled(coefficients, base + offsets.s1 + 14 * i, weight, field);
+                    add_value_scaled(coefficients, base + layout.s1_bit(i, 0), weight, field);
                     if coefficients.needs_constants() {
                         constant = field.add(&constant, &mul_i(weight, -6_144, field));
                     }
                 } else {
-                    add_signed_source_scaled(coefficients, base, &offsets, i, weight, field);
+                    add_signed_source_scaled(coefficients, base, layout, i, weight, field);
                 }
             }
         }
@@ -713,13 +744,14 @@ fn add_norm_claims_prepared(
     }
     let constant = field.zero();
     for instance in coefficients.instances(layout.batch()) {
-        add_unsigned_scaled(
-            coefficients,
-            instance * layout.signature_stride() + offsets.norm_slack,
-            NORM_BITS,
-            field.mul(scale, &instance_weights[instance]),
-            field,
-        );
+        let mut weight = field.mul(scale, &instance_weights[instance]);
+        for bit in 0..NORM_BITS {
+            coefficients.add(
+                instance * layout.signature_stride() + layout.norm_slack_bit(bit),
+                weight,
+            );
+            weight = field.add(&weight, &weight);
+        }
     }
     add_claim_target(target, *scale, proof.norm.slack, constant, field);
     *scale = field.mul(scale, &eta);
@@ -786,15 +818,14 @@ fn add_unsigned_scaled(
 fn add_signed_source_scaled(
     values: &mut impl CoefficientSink,
     base: usize,
-    offsets: &FalconSourceOffsets,
+    layout: &FalconSourceLayout,
     coefficient: usize,
     scale: F,
     field: &Cfg,
 ) {
-    let stream = SIGNATURE_BITS * coefficient;
-    values.add_encoded_word(
-        base + offsets.encoded_signature + 8 * (1 + super::NONCE_BYTES + stream / 8),
-        stream % 8,
+    values.add_signed_word(
+        base + layout.s2_bit(coefficient, 0),
+        SIGNATURE_BITS,
         scale,
         field,
     );

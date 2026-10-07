@@ -14,9 +14,7 @@ mod falcon_affinity;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use bitz::piop::spartan::{
         falcon_profiles::n1024_k11::{decode_public_key, decode_signature_ct, hash_to_point_ct},
-        falcon1024_algebraic::{
-            FalconAlgebraicStatement, PreparedFalconAlgebraic,
-        },
+        falcon1024_algebraic::{FalconAlgebraicStatement, PreparedFalconAlgebraic},
     };
     use clap::Parser;
     use serde_json::json;
@@ -121,6 +119,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "{}",
             json!({
                 "relation": "falcon1024-algebraic-public-h-t-private-s1-s2",
+                "layout_version": 2,
+                "source_layout": "aligned16-v2",
+                "coefficient_stride": 16,
                 "input_corpus": "distinct-fn-dsa-0.3.0-original-falcon",
                 "input_digest": input_digest,
                 "batch": options.batch, "security_bits": options.security,
@@ -136,6 +137,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "proof_payload_breakdown": proof.payload_size_breakdown(),
                 "live_bits_per_signature": prepared.live_bits_per_signature(),
                 "source_bits_per_signature": prepared.source_bits_per_signature(),
+                "capacity": prepared.capacity(),
+                "source_bits": prepared.capacity() * prepared.source_bits_per_signature(),
+                "source_packed_bytes": prepared.capacity() * prepared.source_bits_per_signature() / 8,
                 "process_peak_rss_kib": peak_rss_kib,
                 "algebraic_security_bits": prepared.security().algebraic_bits,
             })

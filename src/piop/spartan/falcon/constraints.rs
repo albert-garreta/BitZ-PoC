@@ -163,7 +163,6 @@ pub(super) fn check_public_key_bindings(
     public_keys: &[FalconPublicKey],
 ) -> Result<(), FalconError> {
     let layout = source.layout();
-    let offset = layout.public_key_offset();
     if public_keys.len() != layout.batch() {
         return Err(FalconError::InvalidBatchCapacity);
     }
@@ -172,7 +171,7 @@ pub(super) fn check_public_key_bindings(
             if i64::from(expected) >= Q {
                 return Err(FalconError::PublicKeyCoefficient { index: j });
             }
-            let base = s * layout.signature_stride() + offset + 14 * j;
+            let base = s * layout.signature_stride() + layout.public_key_bit(j, 0);
             let actual = (0..14).fold(0u16, |value, bit| {
                 value | (u16::from(source.bit(base + bit)) << bit)
             });

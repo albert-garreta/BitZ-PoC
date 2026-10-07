@@ -1,5 +1,6 @@
-use super::{BETA_SQUARED, FalconError, LIVE_BITS, N, Q, error};
+use super::{BETA_SQUARED, FalconError, N, Q, error};
 use crate::pcs::IntegerMatrixLayout;
+use crate::piop::spartan::falcon_bit_layout::{coefficient_bit, slack_bit};
 use crate::piop::spartan::falcon_polynomial::integer_polynomial_product;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -77,8 +78,8 @@ impl Layout {
         Ok(Self {
             batch,
             // The shared opener doubles the source; Ligerito requires at least
-            // 2^20 committed bits, so retain at least eight 2^16-bit slots.
-            capacity: batch.next_power_of_two().max(8),
+            // 2^20 committed bits, so retain at least sixteen 2^15-bit slots.
+            capacity: batch.next_power_of_two().max(16),
         })
     }
     pub const fn batch(&self) -> usize {
@@ -88,7 +89,7 @@ impl Layout {
         self.capacity
     }
     pub const fn signature_stride(&self) -> usize {
-        1 << 16
+        1 << 15
     }
     pub const fn source_bits(&self) -> usize {
         self.signature_stride() * self.capacity
@@ -99,8 +100,13 @@ impl Layout {
     pub const fn bitz_params(&self) -> IntegerMatrixLayout {
         IntegerMatrixLayout {
             row_vars: self.row_vars(),
-            col_vars: 3 + self.capacity.ilog2() as usize,
+            col_vars: 2 + self.capacity.ilog2() as usize,
         }
+    }
+    #[cfg(test)]
+    pub fn is_live(&self, index: usize) -> bool {
+        let local = index % self.signature_stride();
+        index / self.signature_stride() < self.batch && (local % 16 < 15 || local / 16 < 27)
     }
 }
 
@@ -251,17 +257,19 @@ impl Source {
         for i in 0..layout.batch() {
             let base = i * layout.signature_stride();
             for j in 0..N {
-                for (offset, coefficient) in
-                    [(0, data.witness.s1[i][j]), (15 * N, data.witness.s2[i][j])]
+                for (polynomial, coefficient) in
+                    [(0, data.witness.s1[i][j]), (1, data.witness.s2[i][j])]
                 {
                     source.put(
-                        base + offset + 15 * j,
+                        base + coefficient_bit(N, polynomial, j, 0),
                         15,
                         (i32::from(coefficient) & 0x7fff) as u64,
                     );
                 }
             }
-            source.put(base + 30 * N, 27, data.slacks[i]);
+            for bit in 0..27 {
+                source.put(base + slack_bit(bit), 1, (data.slacks[i] >> bit) & 1);
+            }
         }
         source
     }
@@ -375,16 +383,78 @@ mod tests {
         assert_eq!(Source::new(layout, &combined).rows(), source.rows());
         for i in 0..3 {
             for j in 0..N {
-                let offset = i * 65536 + 15 * N + 15 * j;
+                let offset = i * layout.signature_stride() + coefficient_bit(N, 1, j, 0);
                 let low = (0..14)
                     .map(|b| i32::from(source.bit(offset + b)) * (1 << b))
                     .sum::<i32>();
                 let decoded = low - i32::from(source.bit(offset + 14)) * (1 << 14);
                 assert_eq!(decoded, i32::from(s2[i][j]));
             }
+            let slack = (0..27)
+                .map(|bit| {
+                    u64::from(source.bit(i * layout.signature_stride() + slack_bit(bit))) << bit
+                })
+                .sum::<u64>();
+            assert_eq!(slack, data.slacks[i]);
         }
         for index in 0..layout.source_bits() {
-            if index / 65536 >= 3 || index % 65536 >= LIVE_BITS {
+            if !layout.is_live(index) {
+                assert!(!source.bit(index));
+            }
+        }
+        assert_eq!(
+            (0..layout.source_bits())
+                .filter(|&index| layout.is_live(index))
+                .count(),
+            3 * super::super::LIVE_BITS
+        );
+    }
+
+    #[test]
+    fn aligned_addresses_are_disjoint_and_preserve_signed15_boundaries() {
+        let layout = Layout::new(1).unwrap();
+        let mut data = WitnessData {
+            witness: FalconAlgebraicWitness {
+                s1: vec![[0; N]],
+                s2: vec![[0; N]],
+            },
+            slacks: vec![(1 << 27) - 1],
+            quotients: vec![vec![0; N - 1]],
+        };
+        // Encoding boundaries are tested independently of the norm gate.
+        data.witness.s1[0][..4].copy_from_slice(&[-16384, -1, 0, 16383]);
+        data.witness.s2[0][N - 4..].copy_from_slice(&[16383, 0, -1, -16384]);
+        let source = Source::new(layout, &data);
+        let mut seen = vec![false; layout.signature_stride()];
+        for side in 0..2 {
+            for j in 0..N {
+                let mut value = 0i32;
+                for bit in 0..15 {
+                    let index = coefficient_bit(N, side, j, bit);
+                    assert!(!std::mem::replace(&mut seen[index], true));
+                    let digit = if bit == 14 { -(1 << 14) } else { 1 << bit };
+                    value += i32::from(source.bit(index)) * digit;
+                }
+                assert_eq!(
+                    value,
+                    i32::from([&data.witness.s1, &data.witness.s2][side][0][j])
+                );
+            }
+        }
+        for bit in 0..27 {
+            let index = slack_bit(bit);
+            assert!(!std::mem::replace(&mut seen[index], true));
+            assert!(source.bit(index));
+        }
+        assert_eq!(seen.iter().filter(|&&live| !live).count(), 2021);
+        for (index, live) in seen.into_iter().enumerate() {
+            assert_eq!(live, layout.is_live(index));
+            if !live {
+                assert!(!source.bit(index));
+            }
+        }
+        for index in 0..layout.source_bits() {
+            if !layout.is_live(index) {
                 assert!(!source.bit(index));
             }
         }
@@ -393,11 +463,15 @@ mod tests {
     #[test]
     fn exact_norm_boundary_and_coefficient_limits() {
         let public = FalconAlgebraicStatement {
-            public_keys: vec![[0; N]], targets: vec![[0; N]],
+            public_keys: vec![[0; N]],
+            targets: vec![[0; N]],
         };
         let mut s2 = [0; N];
         s2[..7].copy_from_slice(&[8382, 85, 9, 3, 1, 1, 1]);
-        let witness = FalconAlgebraicWitness { s1: vec![[0; N]], s2: vec![s2] };
+        let witness = FalconAlgebraicWitness {
+            s1: vec![[0; N]],
+            s2: vec![s2],
+        };
         let data = WitnessData::new(&public, witness.clone()).unwrap();
         assert_eq!(data.slacks, vec![0]);
         let combined = WitnessData::from_s2(&public, witness.s2.clone()).unwrap();
@@ -405,8 +479,10 @@ mod tests {
         assert_eq!(combined.slacks, vec![0]);
         let mut excessive = witness;
         excessive.s2[0][7] = 1;
-        assert!(matches!(WitnessData::from_s2(&public, excessive.s2.clone()),
-            Err(FalconError::NormTooLarge { actual, bound }) if actual == bound + 1));
+        assert!(
+            matches!(WitnessData::from_s2(&public, excessive.s2.clone()),
+            Err(FalconError::NormTooLarge { actual, bound }) if actual == bound + 1)
+        );
         assert!(matches!(WitnessData::new(&public, excessive),
             Err(FalconError::NormTooLarge { actual, bound }) if actual == bound + 1));
 
@@ -424,9 +500,16 @@ mod tests {
         // The algebraic relation also accepts non-centered s1 when its norm fits.
         let mut public = public;
         public.targets[0][0] = 7000;
-        let mut s1 = [0; N]; s1[0] = 7000;
-        check_algebraic_statement(&public,
-            &FalconAlgebraicWitness { s1: vec![s1], s2: vec![[0; N]] }).unwrap();
+        let mut s1 = [0; N];
+        s1[0] = 7000;
+        check_algebraic_statement(
+            &public,
+            &FalconAlgebraicWitness {
+                s1: vec![s1],
+                s2: vec![[0; N]],
+            },
+        )
+        .unwrap();
         public.targets[0][0] = Q as u16;
         assert!(public.validate(1).is_err());
     }
