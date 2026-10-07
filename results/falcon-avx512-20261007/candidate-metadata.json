@@ -1,0 +1,12 @@
+{
+  "base_commit": "9903fdb6c369c1bb242dfc9208865c7dc43f82d3",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "rustflags": "-C target-cpu=native",
+  "sources": {
+    "vendor/field/src/q12289.rs": "5a91cbe16c6486c858c63496cedc114e6f3df968bfe1ec2eceff1c79aa1870c6",
+    "vendor/field/src/q12289/avx512.rs": "1e051db9ebbcf3c341eb77234840c6ad08872dba9cc591362e590f95e4327291",
+    "vendor/field/examples/q12289_power_pair.rs": "211ef854c474e4ee92fdebbd7dbf5449532da6bea58e401a7899323343892412",
+    "src/piop/spartan/falcon1024_algebraic/ring.rs": "6d32f58fdf15b7261450c0b390a2a4d75916ce823ccdf3d729f77dd44228ec33"
+  },
+  "binary_sha256": "452572542ec2def5465f80d89473e62e42331abf211275baec1fbd3966054905"
+}

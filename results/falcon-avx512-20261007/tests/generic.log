@@ -1,0 +1,12 @@
+
+running 8 tests
+test q12289::avx512::tests::paired_reduction_exhaustive ... ignored, exhaustive: every feedback/top pair with predecessor endpoints
+test q12289::power_basis_tests::paired_sequences_reject_mismatched_lengths - should panic ... ok
+test q12289::power_basis_tests::rejects_noncanonical_and_nongenerating_elements ... ok
+test q12289::tests::registered_fields ... ok
+test q12289::power_basis_tests::paired_dispatch_matches_individual_sequences ... ok
+test q12289::avx512::tests::paired_recurrence_matches_fixed_basis_multiplication ... ok
+test q12289::power_basis_tests::recurrence_matches_extension_multiplication ... ok
+test q12289::avx512::tests::paired_recurrence_matches_portable_with_guarded_tails ... ok
+
+test result: ok. 7 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s

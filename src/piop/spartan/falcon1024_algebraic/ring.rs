@@ -369,8 +369,7 @@ fn coordinates(
         *target = lambda[i].mul(eval_public(&public.targets[i], &powers));
         // Convert only the starts. Every stored weight remains in the alpha
         // basis, canonically reduced before the exact signed integer lift.
-        basis.fill_powers(basis.encode(lambda[i]), a);
-        basis.fill_powers(basis.encode(lambda_h), b);
+        basis.fill_powers_pair([basis.encode(lambda[i]), basis.encode(lambda_h)], [a, b]);
     };
     #[cfg(feature = "parallel")]
     s1.par_chunks_mut(N)

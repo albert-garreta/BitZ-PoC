@@ -6,6 +6,12 @@
 
 pub const Q: u64 = 12_289;
 
+#[cfg(all(
+    target_arch = "x86_64",
+    any(test, all(target_feature = "avx512f", target_feature = "avx512bw"))
+))]
+mod avx512;
+
 pub const fn extension_constant(k: usize) -> u16 {
     match k {
         9 => 60,
@@ -290,6 +296,37 @@ impl<const K: usize> PowerBasis<K> {
             self.advance(&mut value);
         }
     }
+
+    /// Emit two independent sequences with the same public generator.
+    ///
+    /// The output lengths must agree. Degree 11 uses a paired SIMD kernel when
+    /// compiled for x86-64 with AVX512F and AVX512BW (e.g. target-cpu=native on
+    /// a supporting CPU); other targets and degrees use the portable recurrence.
+    pub fn fill_powers_pair(
+        &self,
+        starts: [PowerCoordinates<K>; 2],
+        outputs: [&mut [PowerCoordinates<K>]; 2],
+    ) {
+        assert_eq!(
+            outputs[0].len(),
+            outputs[1].len(),
+            "sequence lengths differ"
+        );
+        #[cfg(all(
+            target_arch = "x86_64",
+            target_feature = "avx512f",
+            target_feature = "avx512bw"
+        ))]
+        if K == 11 {
+            // SAFETY: the build target supplies both features, the degree and
+            // lengths were checked, and this type retains canonical coordinates.
+            unsafe { avx512::fill_powers_pair(&self.feedback, starts, outputs) };
+            return;
+        }
+        let [a, b] = outputs;
+        self.fill_powers(starts[0], a);
+        self.fill_powers(starts[1], b);
+    }
 }
 
 #[inline]
@@ -362,6 +399,48 @@ mod power_basis_tests {
         check::<9>();
         check::<10>();
         check::<11>();
+    }
+
+    fn check_pair<const K: usize>() {
+        let mut alpha = Q12289Extension::<K>::ONE;
+        alpha.0[1] = 1;
+        let basis = PowerBasis::try_new(alpha).unwrap();
+        let starts = [
+            basis.encode(alpha),
+            basis.encode(Q12289Extension([12288; K])),
+        ];
+        for n in [0, 1, 2, 3, 31, 32, 33, 512, 1024] {
+            let mut expected = [
+                vec![PowerCoordinates::ZERO; n],
+                vec![PowerCoordinates::ZERO; n],
+            ];
+            for i in 0..2 {
+                basis.fill_powers(starts[i], &mut expected[i]);
+            }
+            let mut a = vec![PowerCoordinates::ZERO; n];
+            let mut b = a.clone();
+            basis.fill_powers_pair(starts, [&mut a, &mut b]);
+            assert_eq!([a, b], expected);
+        }
+    }
+
+    #[test]
+    fn paired_dispatch_matches_individual_sequences() {
+        check_pair::<9>();
+        check_pair::<10>();
+        check_pair::<11>();
+    }
+
+    #[test]
+    #[should_panic(expected = "sequence lengths differ")]
+    fn paired_sequences_reject_mismatched_lengths() {
+        let mut alpha = Q12289Extension::<11>::ZERO;
+        alpha.0[1] = 1;
+        let basis = PowerBasis::try_new(alpha).unwrap();
+        basis.fill_powers_pair(
+            [PowerCoordinates::ZERO; 2],
+            [&mut [], &mut [PowerCoordinates::ZERO]],
+        );
     }
 
     fn trace<const K: usize>(degree: usize) -> Q12289Extension<K> {

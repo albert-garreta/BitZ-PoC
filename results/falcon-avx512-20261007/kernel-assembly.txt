@@ -1,0 +1,253 @@
+
+/tmp/falcon-avx512/field-pair-bench:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+0000000000012090 <field::q12289::avx512::fill_powers_pair::<11>>:
+   12090:	55                   	push   rbp
+   12091:	48 89 e5             	mov    rbp,rsp
+   12094:	48 83 e4 c0          	and    rsp,0xffffffffffffffc0
+   12098:	48 81 ec c0 00 00 00 	sub    rsp,0xc0
+   1209f:	48 8b 4a 08          	mov    rcx,QWORD PTR [rdx+0x8]
+   120a3:	4c 8b 42 18          	mov    r8,QWORD PTR [rdx+0x18]
+   120a7:	48 8b 42 10          	mov    rax,QWORD PTR [rdx+0x10]
+   120ab:	48 89 4c 24 38       	mov    QWORD PTR [rsp+0x38],rcx
+   120b0:	4c 89 44 24 40       	mov    QWORD PTR [rsp+0x40],r8
+   120b5:	4c 39 c1             	cmp    rcx,r8
+   120b8:	0f 85 f0 03 00 00    	jne    124ae <field::q12289::avx512::fill_powers_pair::<11>+0x41e>
+   120be:	c5 f9 6e 4f 10       	vmovd  xmm1,DWORD PTR [rdi+0x10]
+   120c3:	c5 e8 57 d2          	vxorps xmm2,xmm2,xmm2
+   120c7:	c5 fc 11 54 24 60    	vmovups YMMWORD PTR [rsp+0x60],ymm2
+   120cd:	c5 fc 11 54 24 56    	vmovups YMMWORD PTR [rsp+0x56],ymm2
+   120d3:	c5 f9 10 07          	vmovupd xmm0,XMMWORD PTR [rdi]
+   120d7:	c5 fa 6f 16          	vmovdqu xmm2,XMMWORD PTR [rsi]
+   120db:	c5 fa 6f 5e 16       	vmovdqu xmm3,XMMWORD PTR [rsi+0x16]
+   120e0:	4c 8b 46 0e          	mov    r8,QWORD PTR [rsi+0xe]
+   120e4:	48 8b 76 24          	mov    rsi,QWORD PTR [rsi+0x24]
+   120e8:	c5 f1 c4 4f 14 02    	vpinsrw xmm1,xmm1,WORD PTR [rdi+0x14],0x2
+   120ee:	4c 89 44 24 4e       	mov    QWORD PTR [rsp+0x4e],r8
+   120f3:	c5 f9 7f 54 24 40    	vmovdqa XMMWORD PTR [rsp+0x40],xmm2
+   120f9:	c5 f9 7f 5c 24 60    	vmovdqa XMMWORD PTR [rsp+0x60],xmm3
+   120ff:	48 89 74 24 6e       	mov    QWORD PTR [rsp+0x6e],rsi
+   12104:	48 85 c9             	test   rcx,rcx
+   12107:	0f 84 99 03 00 00    	je     124a6 <field::q12289::avx512::fill_powers_pair::<11>+0x416>
+   1210d:	c5 e9 73 f8 06       	vpslldq xmm2,xmm0,0x6
+   12112:	62 f2 7d 48 58 1d e0 	vpbroadcastd zmm3,DWORD PTR [rip+0xffffffffffff14e0]        # 35fc <__abi_tag+0x3300>
+   12119:	14 ff ff
+   1211c:	62 f2 7d 48 58 2d e2 	vpbroadcastd zmm5,DWORD PTR [rip+0xffffffffffff14e2]        # 3608 <__abi_tag+0x330c>
+   12123:	14 ff ff
+   12126:	62 f1 fd 48 6f 25 90 	vmovdqa64 zmm4,ZMMWORD PTR [rip+0xffffffffffff1590]        # 36c0 <__abi_tag+0x33c4>
+   1212d:	15 ff ff
+   12130:	48 8b 12             	mov    rdx,QWORD PTR [rdx]
+   12133:	89 ce                	mov    esi,ecx
+   12135:	83 e6 03             	and    esi,0x3
+   12138:	c4 e3 69 0e c9 07    	vpblendw xmm1,xmm2,xmm1,0x7
+   1213e:	62 f3 6d 48 25 d2 ff 	vpternlogd zmm2,zmm2,zmm2,0xff
+   12145:	c4 e3 7d 18 c1 01    	vinsertf128 ymm0,ymm0,xmm1,0x1
+   1214b:	62 f3 fd 28 3e 0d 6a 	vpcmpnleuw k1,ymm0,YMMWORD PTR [rip+0xffffffffffff146a]        # 35c0 <__abi_tag+0x32c4>
+   12152:	14 ff ff 06
+   12156:	62 f2 7d 48 33 c8    	vpmovzxwd zmm1,ymm0
+   1215c:	62 f1 75 59 fe 0d ba 	vpaddd zmm1{k1},zmm1,DWORD BCST [rip+0xffffffffffff14ba]        # 3620 <__abi_tag+0x3324>
+   12163:	14 ff ff
+   12166:	62 f1 75 48 66 ca    	vpcmpgtd k1,zmm1,zmm2
+   1216c:	62 f1 7d 48 72 f1 0f 	vpslld zmm0,zmm1,0xf
+   12173:	62 f2 7d 49 58 1d 6f 	vpbroadcastd zmm3{k1},DWORD PTR [rip+0xffffffffffff146f]        # 35ec <__abi_tag+0x32f0>
+   1217a:	14 ff ff
+   1217d:	62 f1 65 48 fe c0    	vpaddd zmm0,zmm3,zmm0
+   12183:	62 f2 fd 48 28 dd    	vpmuldq zmm3,zmm0,zmm5
+   12189:	62 f1 7d 48 70 c0 f5 	vpshufd zmm0,zmm0,0xf5
+   12190:	62 f2 fd 48 28 c5    	vpmuldq zmm0,zmm0,zmm5
+   12196:	62 f2 65 48 76 e0    	vpermi2d zmm4,zmm3,zmm0
+   1219c:	62 f1 fd 48 6f 1d 9a 	vmovdqa64 zmm3,ZMMWORD PTR [rip+0xffffffffffff159a]        # 3740 <__abi_tag+0x3444>
+   121a3:	15 ff ff
+   121a6:	62 f1 7d 48 72 d4 1f 	vpsrld zmm0,zmm4,0x1f
+   121ad:	62 f1 6d 48 72 d4 0c 	vpsrld zmm2,zmm4,0xc
+   121b4:	62 f1 fd 48 6f 64 24 	vmovdqa64 zmm4,ZMMWORD PTR [rsp+0x40]
+   121bb:	01
+   121bc:	62 f1 6d 48 fe c0    	vpaddd zmm0,zmm2,zmm0
+   121c2:	62 f1 fd 48 6f 15 34 	vmovdqa64 zmm2,ZMMWORD PTR [rip+0xffffffffffff1534]        # 3700 <__abi_tag+0x3404>
+   121c9:	15 ff ff
+   121cc:	62 f2 7e 48 33 c0    	vpmovdw ymm0,zmm0
+   121d2:	62 f2 6d 48 36 c9    	vpermd zmm1,zmm2,zmm1
+   121d8:	c5 e9 ef d2          	vpxor  xmm2,xmm2,xmm2
+   121dc:	62 f2 e5 48 7d c2    	vpermt2w zmm0,zmm3,zmm2
+   121e2:	62 f2 7e 48 33 c9    	vpmovdw ymm1,zmm1
+   121e8:	62 f2 e5 48 7d ca    	vpermt2w zmm1,zmm3,zmm2
+   121ee:	62 f1 fd 48 6f 15 08 	vmovdqa64 zmm2,ZMMWORD PTR [rip+0xffffffffffff5408]        # 7600 <__abi_tag+0x7304>
+   121f5:	54 ff ff
+   121f8:	62 f1 fd 48 6f 1d 3e 	vmovdqa64 zmm3,ZMMWORD PTR [rip+0xffffffffffff543e]        # 7640 <__abi_tag+0x7344>
+   121ff:	54 ff ff
+   12202:	48 83 f9 04          	cmp    rcx,0x4
+   12206:	73 07                	jae    1220f <field::q12289::avx512::fill_powers_pair::<11>+0x17f>
+   12208:	31 ff                	xor    edi,edi
+   1220a:	e9 e7 01 00 00       	jmp    123f6 <field::q12289::avx512::fill_powers_pair::<11>+0x366>
+   1220f:	62 f2 7d 48 5a 2d b7 	vbroadcasti32x4 zmm5,XMMWORD PTR [rip+0xffffffffffff1fb7]        # 41d0 <__abi_tag+0x3ed4>
+   12216:	1f ff ff
+   12219:	62 f2 fd 48 5b 35 5d 	vbroadcasti64x4 zmm6,YMMWORD PTR [rip+0xffffffffffff125d]        # 3480 <__abi_tag+0x3184>
+   12220:	12 ff ff
+   12223:	62 f2 7d 48 5a 3d 23 	vbroadcasti32x4 zmm7,XMMWORD PTR [rip+0xffffffffffff1f23]        # 4150 <__abi_tag+0x3e54>
+   1222a:	1f ff ff
+   1222d:	41 b8 ff 07 00 00    	mov    r8d,0x7ff
+   12233:	48 83 e1 fc          	and    rcx,0xfffffffffffffffc
+   12237:	31 ff                	xor    edi,edi
+   12239:	c4 c1 7b 92 c8       	kmovd  k1,r8d
+   1223e:	45 31 c0             	xor    r8d,r8d
+   12241:	66 66 66 66 66 66 2e 	data16 data16 data16 data16 data16 cs nop WORD PTR [rax+rax*1+0x0]
+   12248:	0f 1f 84 00 00 00 00
+   1224f:	00
+   12250:	62 72 ed 48 8d dc    	vpermw zmm11,zmm2,zmm4
+   12256:	62 b1 ff 49 7f 24 02 	vmovdqu16 ZMMWORD PTR [rdx+r8*1]{k1},zmm4
+   1225d:	62 d3 fd 48 3b e0 01 	vextracti64x4 ymm8,zmm4,0x1
+   12264:	62 f2 e5 48 8d e4    	vpermw zmm4,zmm3,zmm4
+   1226a:	48 83 c7 04          	add    rdi,0x4
+   1226e:	62 31 ff 49 7f 04 00 	vmovdqu16 ZMMWORD PTR [rax+r8*1]{k1},zmm8
+   12275:	62 72 25 48 0b c8    	vpmulhrsw zmm9,zmm11,zmm0
+   1227b:	62 71 25 48 d5 c1    	vpmullw zmm8,zmm11,zmm1
+   12281:	62 f1 dd 48 db e6    	vpandq zmm4,zmm4,zmm6
+   12287:	62 71 35 48 d5 cd    	vpmullw zmm9,zmm9,zmm5
+   1228d:	62 f1 3d 48 fd e4    	vpaddw zmm4,zmm8,zmm4
+   12293:	62 f1 35 48 fd e4    	vpaddw zmm4,zmm9,zmm4
+   12299:	62 71 5d 48 fd c7    	vpaddw zmm8,zmm4,zmm7
+   1229f:	62 d2 5d 48 3a e0    	vpminuw zmm4,zmm4,zmm8
+   122a5:	62 71 5d 48 fd c5    	vpaddw zmm8,zmm4,zmm5
+   122ab:	62 d2 5d 48 3a e0    	vpminuw zmm4,zmm4,zmm8
+   122b1:	62 72 ed 48 8d d4    	vpermw zmm10,zmm2,zmm4
+   122b7:	62 b1 ff 49 7f a4 02 	vmovdqu16 ZMMWORD PTR [rdx+r8*1+0x16]{k1},zmm4
+   122be:	16 00 00 00
+   122c2:	62 d3 fd 48 3b e0 01 	vextracti64x4 ymm8,zmm4,0x1
+   122c9:	62 f2 e5 48 8d e4    	vpermw zmm4,zmm3,zmm4
+   122cf:	62 31 ff 49 7f 84 00 	vmovdqu16 ZMMWORD PTR [rax+r8*1+0x16]{k1},zmm8
+   122d6:	16 00 00 00
+   122da:	62 72 2d 48 0b c8    	vpmulhrsw zmm9,zmm10,zmm0
+   122e0:	62 71 2d 48 d5 c1    	vpmullw zmm8,zmm10,zmm1
+   122e6:	62 f1 dd 48 db e6    	vpandq zmm4,zmm4,zmm6
+   122ec:	62 71 35 48 d5 cd    	vpmullw zmm9,zmm9,zmm5
+   122f2:	62 f1 3d 48 fd e4    	vpaddw zmm4,zmm8,zmm4
+   122f8:	62 f1 35 48 fd e4    	vpaddw zmm4,zmm9,zmm4
+   122fe:	62 71 5d 48 fd c7    	vpaddw zmm8,zmm4,zmm7
+   12304:	62 d2 5d 48 3a e0    	vpminuw zmm4,zmm4,zmm8
+   1230a:	62 71 5d 48 fd c5    	vpaddw zmm8,zmm4,zmm5
+   12310:	62 d2 5d 48 3a e0    	vpminuw zmm4,zmm4,zmm8
+   12316:	62 72 ed 48 8d dc    	vpermw zmm11,zmm2,zmm4
+   1231c:	62 b1 ff 49 7f a4 02 	vmovdqu16 ZMMWORD PTR [rdx+r8*1+0x2c]{k1},zmm4
+   12323:	2c 00 00 00
+   12327:	62 d3 fd 48 3b e0 01 	vextracti64x4 ymm8,zmm4,0x1
+   1232e:	62 f2 e5 48 8d e4    	vpermw zmm4,zmm3,zmm4
+   12334:	62 31 ff 49 7f 84 00 	vmovdqu16 ZMMWORD PTR [rax+r8*1+0x2c]{k1},zmm8
+   1233b:	2c 00 00 00
+   1233f:	62 72 25 48 0b c8    	vpmulhrsw zmm9,zmm11,zmm0
+   12345:	62 71 25 48 d5 c1    	vpmullw zmm8,zmm11,zmm1
+   1234b:	62 f1 dd 48 db e6    	vpandq zmm4,zmm4,zmm6
+   12351:	62 71 35 48 d5 cd    	vpmullw zmm9,zmm9,zmm5
+   12357:	62 f1 3d 48 fd e4    	vpaddw zmm4,zmm8,zmm4
+   1235d:	62 f1 35 48 fd e4    	vpaddw zmm4,zmm9,zmm4
+   12363:	62 71 5d 48 fd c7    	vpaddw zmm8,zmm4,zmm7
+   12369:	62 d2 5d 48 3a e0    	vpminuw zmm4,zmm4,zmm8
+   1236f:	62 71 5d 48 fd c5    	vpaddw zmm8,zmm4,zmm5
+   12375:	62 d2 5d 48 3a e0    	vpminuw zmm4,zmm4,zmm8
+   1237b:	62 72 ed 48 8d d4    	vpermw zmm10,zmm2,zmm4
+   12381:	62 b1 ff 49 7f a4 02 	vmovdqu16 ZMMWORD PTR [rdx+r8*1+0x42]{k1},zmm4
+   12388:	42 00 00 00
+   1238c:	62 d3 fd 48 3b e0 01 	vextracti64x4 ymm8,zmm4,0x1
+   12393:	62 f2 e5 48 8d e4    	vpermw zmm4,zmm3,zmm4
+   12399:	62 31 ff 49 7f 84 00 	vmovdqu16 ZMMWORD PTR [rax+r8*1+0x42]{k1},zmm8
+   123a0:	42 00 00 00
+   123a4:	49 83 c0 58          	add    r8,0x58
+   123a8:	62 72 2d 48 0b c8    	vpmulhrsw zmm9,zmm10,zmm0
+   123ae:	62 71 2d 48 d5 c1    	vpmullw zmm8,zmm10,zmm1
+   123b4:	62 f1 dd 48 db e6    	vpandq zmm4,zmm4,zmm6
+   123ba:	62 71 35 48 d5 cd    	vpmullw zmm9,zmm9,zmm5
+   123c0:	62 f1 3d 48 fd e4    	vpaddw zmm4,zmm8,zmm4
+   123c6:	62 f1 35 48 fd e4    	vpaddw zmm4,zmm9,zmm4
+   123cc:	62 71 5d 48 fd c7    	vpaddw zmm8,zmm4,zmm7
+   123d2:	62 d2 5d 48 3a e0    	vpminuw zmm4,zmm4,zmm8
+   123d8:	62 71 5d 48 fd c5    	vpaddw zmm8,zmm4,zmm5
+   123de:	62 d2 5d 48 3a e0    	vpminuw zmm4,zmm4,zmm8
+   123e4:	48 39 f9             	cmp    rcx,rdi
+   123e7:	0f 85 63 fe ff ff    	jne    12250 <field::q12289::avx512::fill_powers_pair::<11>+0x1c0>
+   123ed:	48 85 f6             	test   rsi,rsi
+   123f0:	0f 84 b0 00 00 00    	je     124a6 <field::q12289::avx512::fill_powers_pair::<11>+0x416>
+   123f6:	48 8d 0c bf          	lea    rcx,[rdi+rdi*4]
+   123fa:	62 f2 7d 48 5a 2d cc 	vbroadcasti32x4 zmm5,XMMWORD PTR [rip+0xffffffffffff1dcc]        # 41d0 <__abi_tag+0x3ed4>
+   12401:	1d ff ff
+   12404:	62 f2 fd 48 5b 35 72 	vbroadcasti64x4 zmm6,YMMWORD PTR [rip+0xffffffffffff1072]        # 3480 <__abi_tag+0x3184>
+   1240b:	10 ff ff
+   1240e:	62 f2 7d 48 5a 3d 38 	vbroadcasti32x4 zmm7,XMMWORD PTR [rip+0xffffffffffff1d38]        # 4150 <__abi_tag+0x3e54>
+   12415:	1d ff ff
+   12418:	48 8d 0c 8f          	lea    rcx,[rdi+rcx*4]
+   1241c:	48 01 f9             	add    rcx,rdi
+   1241f:	bf ff 07 00 00       	mov    edi,0x7ff
+   12424:	48 01 c8             	add    rax,rcx
+   12427:	48 01 ca             	add    rdx,rcx
+   1242a:	48 8d 0c b6          	lea    rcx,[rsi+rsi*4]
+   1242e:	c5 fb 92 cf          	kmovd  k1,edi
+   12432:	48 8d 0c 8e          	lea    rcx,[rsi+rcx*4]
+   12436:	48 01 f1             	add    rcx,rsi
+   12439:	31 f6                	xor    esi,esi
+   1243b:	0f 1f 44 00 00       	nop    DWORD PTR [rax+rax*1+0x0]
+   12440:	62 72 ed 48 8d d4    	vpermw zmm10,zmm2,zmm4
+   12446:	62 f1 ff 49 7f 24 32 	vmovdqu16 ZMMWORD PTR [rdx+rsi*1]{k1},zmm4
+   1244d:	62 d3 fd 48 3b e0 01 	vextracti64x4 ymm8,zmm4,0x1
+   12454:	62 f2 e5 48 8d e4    	vpermw zmm4,zmm3,zmm4
+   1245a:	62 71 ff 49 7f 04 30 	vmovdqu16 ZMMWORD PTR [rax+rsi*1]{k1},zmm8
+   12461:	48 83 c6 16          	add    rsi,0x16
+   12465:	62 72 2d 48 0b c8    	vpmulhrsw zmm9,zmm10,zmm0
+   1246b:	62 71 2d 48 d5 c1    	vpmullw zmm8,zmm10,zmm1
+   12471:	62 f1 dd 48 db e6    	vpandq zmm4,zmm4,zmm6
+   12477:	62 71 35 48 d5 cd    	vpmullw zmm9,zmm9,zmm5
+   1247d:	62 f1 3d 48 fd e4    	vpaddw zmm4,zmm8,zmm4
+   12483:	62 f1 35 48 fd e4    	vpaddw zmm4,zmm9,zmm4
+   12489:	62 71 5d 48 fd c7    	vpaddw zmm8,zmm4,zmm7
+   1248f:	62 d2 5d 48 3a e0    	vpminuw zmm4,zmm4,zmm8
+   12495:	62 71 5d 48 fd c5    	vpaddw zmm8,zmm4,zmm5
+   1249b:	62 d2 5d 48 3a e0    	vpminuw zmm4,zmm4,zmm8
+   124a1:	48 39 f1             	cmp    rcx,rsi
+   124a4:	75 9a                	jne    12440 <field::q12289::avx512::fill_powers_pair::<11>+0x3b0>
+   124a6:	48 89 ec             	mov    rsp,rbp
+   124a9:	5d                   	pop    rbp
+   124aa:	c5 f8 77             	vzeroupper
+   124ad:	c3                   	ret
+   124ae:	48 8d 0d 53 4b 04 00 	lea    rcx,[rip+0x44b53]        # 57008 <__frame_dummy_init_array_entry+0x28>
+   124b5:	48 8d 7c 24 38       	lea    rdi,[rsp+0x38]
+   124ba:	48 8d 74 24 40       	lea    rsi,[rsp+0x40]
+   124bf:	31 d2                	xor    edx,edx
+   124c1:	e8 ec 61 00 00       	call   186b2 <core::panicking::assert_failed::<usize, usize>>
+   124c6:	cc                   	int3
+   124c7:	cc                   	int3
+   124c8:	cc                   	int3
+   124c9:	cc                   	int3
+   124ca:	cc                   	int3
+   124cb:	cc                   	int3
+   124cc:	cc                   	int3
+   124cd:	cc                   	int3
+   124ce:	cc                   	int3
+   124cf:	cc                   	int3
+
+00000000000124d0 <std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>>:
+   124d0:	50                   	push   rax
+   124d1:	ff d7                	call   rdi
+   124d3:	58                   	pop    rax
+   124d4:	c3                   	ret
+   124d5:	cc                   	int3
+   124d6:	cc                   	int3
+   124d7:	cc                   	int3
+   124d8:	cc                   	int3
+   124d9:	cc                   	int3
+   124da:	cc                   	int3
+   124db:	cc                   	int3
+   124dc:	cc                   	int3
+   124dd:	cc                   	int3
+   124de:	cc                   	int3
+   124df:	cc                   	int3
+
+00000000000124e0 <std::rt::lang_start::<()>::{closure#0}>:
+   124e0:	50                   	push   rax
+   124e1:	48 8b 3f             	mov    rdi,QWORD PTR [rdi]
+   124e4:	e8 e7 ff ff ff       	call   124d0 <std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>>
+   124e9:	31 c0                	xor    eax,eax
+   124eb:	59                   	pop    rcx
+   124ec:	c3                   	ret
+   124ed:	cc                   	int3
+   124ee:	cc                   	int3
+   124ef:	cc                   	int3
