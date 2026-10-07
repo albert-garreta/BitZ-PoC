@@ -30,6 +30,7 @@ use crate::{
     transcript::traits::Transcript,
 };
 use flock_core::{
+    challenger::Challenger,
     field::Gf128 as F,
     merkle::{self, Hash},
     pcs::{
@@ -494,6 +495,228 @@ mod geometry_tests {
     }
 
     #[test]
+    fn compact_source_rows_reconstruct_canonical_openings() {
+        for (logs, expected_lanes) in [([9, 12, 10], 11), ([10, 13, 12], 13), ([9, 13, 10], 10)] {
+            let geometry = Geometry::new(logs).unwrap();
+            let sources = sources(&geometry);
+            let (root, data) =
+                commit_sources(&geometry, sources.each_ref().map(Vec::as_slice), 1).unwrap();
+            let positions = 1 << (geometry.position_log + 1);
+            let queries = [0, 1, positions / 2, positions - 1];
+            let original = data.open(positions, geometry.lanes(), &queries);
+            let mut compact = original.clone();
+            compact_initial_rows(&geometry, &mut compact).unwrap();
+            let occupied = occupied_lanes(&geometry);
+            assert_eq!(occupied.len(), expected_lanes);
+            assert!(
+                compact
+                    .opened_rows
+                    .iter()
+                    .all(|row| row.len() == occupied.len())
+            );
+            let expanded = expand_initial_rows(&geometry, &compact, queries.len(), 1).unwrap();
+            assert_eq!(expanded, original);
+            let valid = |opening: &RecursiveProof| {
+                expand_initial_rows(&geometry, opening, queries.len(), 1).is_ok_and(|full| {
+                    authenticate_joint(
+                        &geometry,
+                        &root,
+                        positions,
+                        geometry.lanes(),
+                        &queries,
+                        &full,
+                        merkle::HashKind::Blake3,
+                    )
+                })
+            };
+            assert!(valid(&compact));
+            // The former full-width representation is not an accepted encoding.
+            assert!(!valid(&original));
+            let mut wrong = compact.clone();
+            wrong.opened_rows[0].push(F::ZERO);
+            assert!(!valid(&wrong));
+            let mut wrong = compact.clone();
+            wrong.opened_rows[0].pop();
+            assert!(!valid(&wrong));
+            let mut wrong = compact.clone();
+            wrong.opened_rows.pop();
+            assert!(!valid(&wrong));
+            let mut wrong = compact.clone();
+            wrong.opened_rows[0].swap(0, occupied.len() - 1);
+            assert!(!valid(&wrong));
+            for lane in 0..occupied.len() {
+                let mut wrong = compact.clone();
+                wrong.opened_rows[0][lane] += F::ONE;
+                assert!(!valid(&wrong));
+            }
+            let mut wrong = compact.clone();
+            wrong
+                .merkle_proof
+                .resize(queries.len() * (geometry.position_log + 1) + 1, [0; 32]);
+            assert!(!valid(&wrong));
+            let mut nonzero_padding = original;
+            nonzero_padding.opened_rows[0][15] = F::ONE;
+            assert!(compact_initial_rows(&geometry, &mut nonzero_padding).is_err());
+        }
+    }
+
+    #[test]
+    fn compact_source_rows_preserve_gapped_two_source_lanes() {
+        let geometry = Geometry::new([9, 12]).unwrap();
+        let mut row = vec![F::ZERO; 16];
+        row[0] = F::ONE;
+        for (index, value) in row[8..].iter_mut().enumerate() {
+            *value = F {
+                lo: index as u64 + 10,
+                hi: 1,
+            };
+        }
+        let expected = std::iter::once(row[0])
+            .chain(row[8..].iter().copied())
+            .collect::<Vec<_>>();
+        let original = RecursiveProof {
+            opened_rows: vec![row],
+            merkle_proof: Vec::new(),
+        };
+        let mut compact = original.clone();
+        compact_initial_rows(&geometry, &mut compact).unwrap();
+        assert_eq!(compact.opened_rows[0], expected);
+        assert_eq!(
+            expand_initial_rows(&geometry, &compact, 1, 1).unwrap(),
+            original
+        );
+        let mut invalid = original;
+        invalid.opened_rows[0][1] = F::ONE;
+        assert!(compact_initial_rows(&geometry, &mut invalid).is_err());
+    }
+
+    #[test]
+    fn compact_joint_opening_preserves_roots_messages_and_transcript() {
+        use crate::{ligerito_flock::LigeritoSelection, transcript::Blake3Transcript};
+
+        for logs in [[9, 12, 10], [10, 13, 12], [9, 14, 10]] {
+            let geometry = Geometry::new(logs).unwrap();
+            let sources = sources(&geometry);
+            let borrowed = sources.each_ref().map(Vec::as_slice);
+            let resolved = LigeritoSelection::MATCHED_UDR
+                .resolve(geometry.packed_log(), 100)
+                .unwrap();
+            let (root, data) =
+                commit_sources(&geometry, borrowed, resolved.prover().log_inv_rates[0]).unwrap();
+            let statement = *blake3::hash(&root).as_bytes();
+            let point: Vec<_> = (0..geometry.bit_log())
+                .map(|i| F {
+                    lo: i as u64 + 37,
+                    hi: 23,
+                })
+                .collect();
+            let value = bit_evaluation(&geometry.virtual_packed(borrowed), &point);
+            let start = || {
+                let mut t = Blake3Transcript::new();
+                t.absorb_slice(&statement);
+                t
+            };
+            let mut full_t = start();
+            let full: JointProof<ligerito::FinalProof> = prove_sources_initial_with_security(
+                &mut full_t,
+                &geometry,
+                &statement,
+                borrowed,
+                None,
+                &resolved,
+                |positions, lanes, queries| data.open(positions, lanes, queries),
+                &point,
+                None,
+            )
+            .unwrap();
+            let mut compact_t = start();
+            let compact = prove_joint_sources_with_security(
+                &mut compact_t,
+                &geometry,
+                &statement,
+                borrowed,
+                None,
+                &resolved,
+                &data,
+                &point,
+                None,
+            )
+            .unwrap();
+            let full_next: F = full_t.get_field_challenge(&());
+            let compact_next: F = compact_t.get_field_challenge(&());
+            assert_eq!(full_next, compact_next);
+            assert_eq!(full.ring.s_v, compact.ring.s_v);
+            let original = &full.ligerito;
+            let encoded = &compact.ligerito;
+            assert_eq!(original.initial_root, encoded.initial_root);
+            assert_eq!(original.recursive_roots, encoded.recursive_roots);
+            assert_eq!(original.recursive_proofs, encoded.recursive_proofs);
+            assert_eq!(original.sumcheck_transcript, encoded.sumcheck_transcript);
+            assert_eq!(original.grinding_nonces, encoded.grinding_nonces);
+            assert_eq!(original.fold_grinding_nonces, encoded.fold_grinding_nonces);
+            assert_eq!(original.ood_values, encoded.ood_values);
+            let vc = resolved.verifier();
+            assert_eq!(
+                original.initial_proof,
+                expand_initial_rows(
+                    &geometry,
+                    &encoded.initial_proof,
+                    vc.queries[0],
+                    vc.log_inv_rates[0]
+                )
+                .unwrap(),
+            );
+            assert!(
+                bincode::serialized_size(encoded).unwrap()
+                    < bincode::serialized_size(original).unwrap()
+            );
+            let mut full_t = start();
+            verify_initial_with_security(
+                &mut full_t,
+                &geometry,
+                &statement,
+                &point,
+                value,
+                None,
+                &resolved,
+                &full.ring,
+                original,
+                &original.initial_proof,
+                |positions, lanes, queries, opening| {
+                    authenticate_joint(
+                        &geometry,
+                        &root,
+                        positions,
+                        lanes,
+                        queries,
+                        opening,
+                        vc.merkle_hash,
+                    )
+                },
+                None,
+            )
+            .unwrap();
+            let mut compact_t = start();
+            verify_joint_with_security(
+                &mut compact_t,
+                &geometry,
+                &statement,
+                &root,
+                &point,
+                value,
+                None,
+                &resolved,
+                &compact,
+                None,
+            )
+            .unwrap();
+            let full_next: F = full_t.get_field_challenge(&());
+            let compact_next: F = compact_t.get_field_challenge(&());
+            assert_eq!(full_next, compact_next);
+        }
+    }
+
+    #[test]
     fn joint_projection_matches_binary_mle_at_non_boolean_points() {
         for logs in [[9, 12, 10], [10, 13, 12], [9, 13, 10]] {
             let geometry = Geometry::new(logs).unwrap();
@@ -937,13 +1160,14 @@ pub(crate) struct Proof<const N: usize = 2> {
     pub paths: [Vec<Hash>; N],
 }
 
-/// A shared opening with one initial Merkle multiproof, stored in Ligerito's
-/// initial proof. The logical source count is independent of this proof shape.
+/// One initial multiproof authenticates rows stored without structural-zero
+/// lanes. The compact terminal stores the complete final pre-fold message.
+/// The logical source count is independent of this proof shape.
 #[derive(Clone, Debug)]
-pub(crate) struct JointProof {
+pub(crate) struct JointProof<Final = Vec<F>> {
     pub ood: Option<OodRound>,
     pub ring: RingSwitchProof,
-    pub ligerito: LigeritoProof,
+    pub ligerito: LigeritoProof<Final>,
 }
 
 pub(crate) struct JointProverData<const N: usize> {
@@ -966,6 +1190,87 @@ fn validate_geometry<const N: usize>(geometry: &Geometry<N>) -> Result<(), Error
         return Err(Error::Invalid("joint source geometry"));
     }
     Ok(())
+}
+
+/// The transport order is canonical lane order, independent of branch order.
+/// Only entire unused lanes are omitted: padding inside an occupied source
+/// does not imply zero RS evaluations.
+fn occupied_lanes<const N: usize>(geometry: &Geometry<N>) -> Vec<usize> {
+    (0..geometry.lanes())
+        .filter(|&lane| {
+            (0..N).any(|branch| {
+                let start = geometry.offset(branch);
+                (start..start + (1 << geometry.lane_logs[branch])).contains(&lane)
+            })
+        })
+        .collect()
+}
+
+fn compact_initial_rows<const N: usize>(
+    geometry: &Geometry<N>,
+    opening: &mut RecursiveProof,
+) -> Result<(), Error> {
+    let occupied = occupied_lanes(geometry);
+    let occupied_prefix = occupied.iter().copied().eq(0..occupied.len());
+    for row in &mut opening.opened_rows {
+        if row.len() != geometry.lanes() {
+            return Err(Error::Invalid("noncanonical initial source row"));
+        }
+        if occupied_prefix {
+            if row[occupied.len()..].iter().any(|&value| value != F::ZERO) {
+                return Err(Error::Invalid("noncanonical initial source row"));
+            }
+        } else {
+            if row
+                .iter()
+                .enumerate()
+                .any(|(lane, &value)| !occupied.contains(&lane) && value != F::ZERO)
+            {
+                return Err(Error::Invalid("noncanonical initial source row"));
+            }
+            for (destination, &lane) in occupied.iter().enumerate() {
+                row[destination] = row[lane];
+            }
+        }
+        row.truncate(occupied.len());
+    }
+    Ok(())
+}
+
+fn expand_initial_rows<const N: usize>(
+    geometry: &Geometry<N>,
+    opening: &RecursiveProof,
+    queries: usize,
+    log_inv_rate: usize,
+) -> Result<RecursiveProof, Error> {
+    let occupied = occupied_lanes(geometry);
+    let max_path_hashes = queries
+        .checked_mul(geometry.position_log + log_inv_rate)
+        .ok_or(Error::Invalid("initial source query shape"))?;
+    if opening.opened_rows.len() != queries
+        || opening.merkle_proof.len() > max_path_hashes
+        || opening
+            .opened_rows
+            .iter()
+            .any(|row| row.len() != occupied.len())
+    {
+        return Err(Error::Invalid("compact initial source opening shape"));
+    }
+    let opened_rows = opening
+        .opened_rows
+        .iter()
+        .map(|row| {
+            let mut full = vec![F::ZERO; geometry.lanes()];
+            for (&lane, &value) in occupied.iter().zip(row) {
+                full[lane] = value;
+            }
+            full
+        })
+        .collect();
+    Ok(RecursiveProof {
+        opened_rows,
+        merkle_proof: opening.merkle_proof.clone(),
+    })
 }
 
 /// RS-encode populated lanes and build one tree over full canonical virtual
@@ -1084,7 +1389,7 @@ pub(crate) fn prove_joint_sources_with_security<const N: usize>(
     {
         return Err(Error::Invalid("joint source opening shape"));
     }
-    prove_sources_initial_with_security(
+    let mut proof = prove_sources_initial_with_security(
         t,
         geometry,
         statement,
@@ -1094,7 +1399,9 @@ pub(crate) fn prove_joint_sources_with_security<const N: usize>(
         |positions, lanes, queries| data.open(positions, lanes, queries),
         point,
         security,
-    )
+    )?;
+    compact_initial_rows(geometry, &mut proof.ligerito.initial_proof)?;
+    Ok(proof)
 }
 
 fn authenticate_joint<const N: usize>(
@@ -1157,6 +1464,12 @@ pub(crate) fn verify_joint_with_security<const N: usize>(
         return Err(Error::Invalid("joint source opening point"));
     }
     let vc = resolved.verifier();
+    let initial = expand_initial_rows(
+        geometry,
+        &proof.ligerito.initial_proof,
+        vc.queries[0],
+        vc.log_inv_rates[0],
+    )?;
     verify_initial_with_security(
         t,
         geometry,
@@ -1167,6 +1480,7 @@ pub(crate) fn verify_joint_with_security<const N: usize>(
         resolved,
         &proof.ring,
         &proof.ligerito,
+        &initial,
         |positions, lanes, queries, opening| {
             positions == 1 << (geometry.position_log + vc.log_inv_rates[0])
                 && authenticate_joint(
@@ -1352,7 +1666,7 @@ pub(crate) fn prove_sources_with_security<const N: usize>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn prove_sources_initial_with_security<const N: usize>(
+fn prove_sources_initial_with_security<const N: usize, Final: OpeningEncoding>(
     t: &mut (impl Transcript + Send),
     geometry: &Geometry<N>,
     statement: &Hash,
@@ -1362,7 +1676,7 @@ fn prove_sources_initial_with_security<const N: usize>(
     open_initial: impl FnOnce(usize, usize, &[usize]) -> RecursiveProof,
     point: &[Gf],
     security: Option<&mut grinding::GrindingContext<'_>>,
-) -> Result<JointProof, Error> {
+) -> Result<JointProof<Final>, Error> {
     let ring_scope = tracing::info_span!("op:ring_switch").entered();
     let marginal = geometry.ring_marginal(sources, &point[7..]);
     let (ring, eq_r2, mut target) = ring_switch_prove_marginal(t, marginal);
@@ -1422,6 +1736,100 @@ enum PreparedInitial<'a> {
     Deferred(ligerito::DeferredInitial<'a>),
 }
 
+/// Static dispatch keeps the existing separate-source clients and the compact
+/// joint opening on one transcript implementation. Falcon accepts only the
+/// compact type; the proof cannot select an encoding.
+#[allow(clippy::too_many_arguments)]
+trait OpeningEncoding: Sized {
+    fn prove(
+        config: &ligerito::ProverConfig,
+        initial: PreparedInitial<'_>,
+        target: F,
+        statement: Hash,
+        open: impl FnOnce(usize, usize, &[usize]) -> RecursiveProof,
+        challenger: &mut impl Challenger,
+    ) -> LigeritoProof<Self>;
+
+    fn verify(
+        config: &ligerito::VerifierConfig,
+        proof: &LigeritoProof<Self>,
+        initial: &RecursiveProof,
+        log_n: usize,
+        target: F,
+        statement: &Hash,
+        eval: impl Fn(&[F], usize) -> Vec<F>,
+        authenticate: impl FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
+        challenger: &mut impl Challenger,
+    ) -> bool;
+}
+
+macro_rules! opening_encoding {
+    ($final:ty, $dense:ident, $precomputed:ident, $deferred:ident, $verify:ident, $initial:ident $(=> $expanded:ident)?) => {
+        impl OpeningEncoding for $final {
+            fn prove(
+                config: &ligerito::ProverConfig,
+                initial: PreparedInitial<'_>,
+                target: F,
+                statement: Hash,
+                open: impl FnOnce(usize, usize, &[usize]) -> RecursiveProof,
+                challenger: &mut impl Challenger,
+            ) -> LigeritoProof<Self> {
+                match initial {
+                    PreparedInitial::Deferred(initial) => ligerito::$deferred(
+                        config, initial, target, statement, open, challenger,
+                    ),
+                    PreparedInitial::Dense {
+                        packed,
+                        basis,
+                        precomputed: Some((message, lookahead)),
+                    } => ligerito::$precomputed(
+                        config, packed, basis, target, statement, open, message,
+                        Some(lookahead), challenger,
+                    ),
+                    PreparedInitial::Dense { packed, basis, precomputed: None } => {
+                        ligerito::$dense(config, packed, basis, target, statement, open, challenger)
+                    }
+                }
+            }
+
+            fn verify(
+                config: &ligerito::VerifierConfig,
+                proof: &LigeritoProof<Self>,
+                $initial: &RecursiveProof,
+                log_n: usize,
+                target: F,
+                statement: &Hash,
+                eval: impl Fn(&[F], usize) -> Vec<F>,
+                authenticate: impl FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
+                challenger: &mut impl Challenger,
+            ) -> bool {
+                let _ = $initial;
+                ligerito::$verify(
+                    config, proof, $( $expanded, )? log_n, target, statement,
+                    eval, authenticate, challenger,
+                )
+            }
+        }
+    };
+}
+
+opening_encoding!(
+    ligerito::FinalProof,
+    recursive_prover_with_basis_initial,
+    recursive_prover_with_basis_initial_precomputed_round0,
+    recursive_prover_with_basis_initial_deferred,
+    recursive_verifier_with_basis_initial,
+    initial
+);
+opening_encoding!(
+    Vec<F>,
+    recursive_prover_with_basis_initial_compact,
+    recursive_prover_with_basis_initial_precomputed_round0_compact,
+    recursive_prover_with_basis_initial_deferred_compact,
+    recursive_verifier_with_basis_initial_compact,
+    initial => initial
+);
+
 #[allow(clippy::too_many_arguments)]
 fn continue_prove<const N: usize>(
     t: &mut (impl Transcript + Send),
@@ -1480,7 +1888,7 @@ fn separate_initial<'a, const N: usize>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn continue_prove_with_initial(
+fn continue_prove_with_initial<Final: OpeningEncoding>(
     t: &mut (impl Transcript + Send),
     statement: &Hash,
     initial: PreparedInitial<'_>,
@@ -1490,52 +1898,11 @@ fn continue_prove_with_initial(
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     open_initial: impl FnOnce(usize, usize, &[usize]) -> RecursiveProof,
     security: Option<&mut grinding::GrindingContext<'_>>,
-) -> Result<JointProof, Error> {
+) -> Result<JointProof<Final>, Error> {
     let _lig_scope = tracing::info_span!("op:ligerito").entered();
     let pc = resolved.prover();
     macro_rules! run {
-        ($challenger:expr) => {{
-            match initial {
-                PreparedInitial::Deferred(initial) => {
-                    ligerito::recursive_prover_with_basis_initial_deferred(
-                        &pc,
-                        initial,
-                        target,
-                        *statement,
-                        open_initial,
-                        $challenger,
-                    )
-                }
-                PreparedInitial::Dense {
-                    packed,
-                    basis,
-                    precomputed: Some((message, lookahead)),
-                } => ligerito::recursive_prover_with_basis_initial_precomputed_round0(
-                    &pc,
-                    packed,
-                    basis,
-                    target,
-                    *statement,
-                    open_initial,
-                    message,
-                    Some(lookahead),
-                    $challenger,
-                ),
-                PreparedInitial::Dense {
-                    packed,
-                    basis,
-                    precomputed: None,
-                } => ligerito::recursive_prover_with_basis_initial(
-                    &pc,
-                    packed,
-                    basis,
-                    target,
-                    *statement,
-                    open_initial,
-                    $challenger,
-                ),
-            }
-        }};
+        ($challenger:expr) => {{ Final::prove(&pc, initial, target, *statement, open_initial, $challenger) }};
     }
     let proof = if let Some(security) = security {
         let mut challenger = grinding::GrindingChallenger::new(t, security, resolved.security())?;
@@ -1636,13 +2003,14 @@ pub(crate) fn verify_with_security<const N: usize>(
         resolved,
         &proof.ring,
         &proof.ligerito,
+        &proof.ligerito.initial_proof,
         authenticate_initial,
         security,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn verify_initial_with_security<const N: usize>(
+fn verify_initial_with_security<const N: usize, Final: OpeningEncoding>(
     t: &mut (impl Transcript + Send),
     geometry: &Geometry<N>,
     statement: &Hash,
@@ -1651,7 +2019,8 @@ fn verify_initial_with_security<const N: usize>(
     ood: Option<&OodVerifierClaim>,
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     ring: &RingSwitchProof,
-    proof: &LigeritoProof,
+    proof: &LigeritoProof<Final>,
+    initial: &RecursiveProof,
     authenticate_initial: impl FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
     security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<(), Error> {
@@ -1687,9 +2056,10 @@ fn verify_initial_with_security<const N: usize>(
     }
     macro_rules! run {
         ($challenger:expr) => {
-            ligerito::recursive_verifier_with_basis_initial(
+            Final::verify(
                 &vc,
                 proof,
+                initial,
                 geometry.packed_log(),
                 target,
                 statement,

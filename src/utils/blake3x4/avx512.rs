@@ -23,6 +23,24 @@ unsafe fn g(v: &mut [__m512i; 16], a: usize, b: usize, c: usize, d: usize, x: __
     }
 }
 
+/// A public, fixed BLAKE3 message schedule lets the compiler resolve every
+/// message index before entering the nonce scan.
+#[inline(always)]
+unsafe fn round<const ROUND: usize>(state: &mut [__m512i; 16], message: &[__m512i; 16]) {
+    let word = |i: usize| message[MSG_SCHEDULE[ROUND][i]];
+    // SAFETY: callers enable AVX512F; this is the existing BLAKE3 G map.
+    unsafe {
+        g(state, 0, 4, 8, 12, word(0), word(1));
+        g(state, 1, 5, 9, 13, word(2), word(3));
+        g(state, 2, 6, 10, 14, word(4), word(5));
+        g(state, 3, 7, 11, 15, word(6), word(7));
+        g(state, 0, 5, 10, 15, word(8), word(9));
+        g(state, 1, 6, 11, 12, word(10), word(11));
+        g(state, 2, 7, 8, 13, word(12), word(13));
+        g(state, 3, 4, 9, 14, word(14), word(15));
+    }
+}
+
 /// First hash words in nonce order. The caller supplies at most 14 prefix
 /// words and a base whose sixteen nonces fit in u64.
 #[inline(always)]
@@ -129,17 +147,11 @@ impl Prepared {
                 g(&mut state, 2, 7, 8, 13, message[12], message[13]);
                 g(&mut state, 3, 4, 9, 14, message[14], message[15]);
             }
-            for schedule in &MSG_SCHEDULE[1..6] {
-                let word = |i: usize| message[schedule[i]];
-                g(&mut state, 0, 4, 8, 12, word(0), word(1));
-                g(&mut state, 1, 5, 9, 13, word(2), word(3));
-                g(&mut state, 2, 6, 10, 14, word(4), word(5));
-                g(&mut state, 3, 7, 11, 15, word(6), word(7));
-                g(&mut state, 0, 5, 10, 15, word(8), word(9));
-                g(&mut state, 1, 6, 11, 12, word(10), word(11));
-                g(&mut state, 2, 7, 8, 13, word(12), word(13));
-                g(&mut state, 3, 4, 9, 14, word(14), word(15));
-            }
+            round::<1>(&mut state, &message);
+            round::<2>(&mut state, &message);
+            round::<3>(&mut state, &message);
+            round::<4>(&mut state, &message);
+            round::<5>(&mut state, &message);
             // The first digest word is state[0] XOR state[8]. Final-round
             // diagonals one and three affect neither word; unused outputs of
             // the other two diagonals are dead after inlining. A >32-bit
@@ -261,5 +273,30 @@ pub(super) unsafe fn first_pow_nonce_generic(
         scan(prefix, start, end, bits, |base| {
             compress_first_words(words, base)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn high_difficulty_candidates_use_the_complete_hash() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        for len in [16, 32] {
+            let prefix: Vec<_> = (0..len).map(|i| (i * 37 + 11) as u8).collect();
+            for bits in [33, 64, 128, 256, 257] {
+                for (start, end) in [(3, 52), (u64::MAX - 49, u64::MAX)] {
+                    let expected = (start..end).find(|&n| super::super::pow_ok(&prefix, n, bits));
+                    // Force every SIMD lane through the full-hash fallback.
+                    // SAFETY: AVX512F was checked and scan bounds each batch.
+                    let actual =
+                        unsafe { scan(&prefix, start, end, bits, |_| _mm512_setzero_si512()) };
+                    assert_eq!(actual, expected, "len {len} bits {bits} start {start}");
+                }
+            }
+        }
     }
 }

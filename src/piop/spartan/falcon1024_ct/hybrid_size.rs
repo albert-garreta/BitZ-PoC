@@ -175,9 +175,10 @@ impl FalconHybridProof {
     /// challenge points. Prime/binary fields use 16 bytes, extension elements
     /// use eleven canonical u16 coordinates, carries/nonces use eight bytes,
     /// and hashes use 32 bytes. Integer sums use 16 bytes for the lower sum
-    /// and four bytes for the upper sum when split. Keccak and Ligerito use
-    /// their existing bincode serialization sizes, including those components'
-    /// internal framing.
+    /// and four bytes for the upper sum when split. Keccak and compact Ligerito
+    /// use their bincode serialization sizes, including internal framing.
+    /// Ligerito stores only occupied initial lanes and the final pre-fold
+    /// message; reconstructed rows and final paths are not proof payload.
     ///
     /// This excludes the public statement and Falcon-level vector lengths,
     /// option tags, protocol headers, and transport framing. It is a payload
@@ -230,9 +231,7 @@ impl FalconHybridProof {
                 .iter()
                 .map(|proof| proof.merkle_proof.len())
                 .sum::<usize>();
-        let final_rows = rows_bytes(&pcs.final_proof.opened_rows);
-        let final_paths = HASH_BYTES * pcs.final_proof.merkle_proof.len();
-        let final_polynomial = FIELD_BYTES * pcs.final_proof.yr.len();
+        let final_message = FIELD_BYTES * pcs.final_proof.len();
         let roots = HASH_BYTES * (1 + pcs.recursive_roots.len());
         let sumchecks = 2 * FIELD_BYTES * pcs.sumcheck_transcript.len();
         let ood = FIELD_BYTES * pcs.ood_values.len();
@@ -241,9 +240,7 @@ impl FalconHybridProof {
             + initial_paths
             + recursive_rows
             + recursive_paths
-            + final_rows
-            + final_paths
-            + final_polynomial
+            + final_message
             + roots
             + sumchecks
             + ood
@@ -292,9 +289,7 @@ impl FalconHybridProof {
             ("pcs_initial_opened_rows", initial_rows),
             ("pcs_recursive_opened_rows", recursive_rows),
             ("pcs_recursive_authentication", recursive_paths),
-            ("pcs_final_opened_rows", final_rows),
-            ("pcs_final_authentication", final_paths),
-            ("pcs_final_polynomial", final_polynomial),
+            ("pcs_final_message", final_message),
             ("pcs_roots", roots),
             ("pcs_sumchecks", sumchecks),
             ("pcs_ood_values", ood),

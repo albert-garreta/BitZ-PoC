@@ -126,6 +126,24 @@ const fn component_grinding_bits(numerator: usize) -> u32 {
 /// Allocate one shared 2^-133 budget to cubic relations, weighted quadratic
 /// forest rounds, and root/line reductions. All arithmetic is exact.
 const fn compaction_grinding_bits(d: usize) -> (u32, u32, u32) {
+    COMPACTION_GRINDING_BITS[d]
+}
+
+// FalconSourceLayout accepts 1..=1024 signatures and pads capacity to a
+// power of two, so every constructible layout has capacity log in 0..=10.
+// Run the unchanged exact optimizer at compile time, preserving its tie order
+// and all security parameters without repeating its search during proofs.
+const COMPACTION_GRINDING_BITS: [(u32, u32, u32); 11] = {
+    let mut table = [(0, 0, 0); 11];
+    let mut d = 0;
+    while d < table.len() {
+        table[d] = solve_compaction_grinding_bits(d);
+        d += 1;
+    }
+    table
+};
+
+const fn solve_compaction_grinding_bits(d: usize) -> (u32, u32, u32) {
     let cubic_rounds = 2 * (11 + d);
     let forest_rounds = 55 + 11 * (d + 1);
     let claim_draws = 11 + if d == 0 { 0 } else { 1 };
@@ -1986,6 +2004,23 @@ mod tests {
                 let budget = &extension << (SCALE - target);
                 assert!(candidate <= budget, "batch {batch}, target {target}");
             }
+        }
+    }
+
+    #[test]
+    fn compile_time_compaction_schedule_matches_solver_for_every_capacity() {
+        let largest = FalconSourceLayout::new(1024).unwrap();
+        assert_eq!(
+            COMPACTION_GRINDING_BITS.len(),
+            largest.capacity().ilog2() as usize + 1
+        );
+        assert!(FalconSourceLayout::new(1025).is_err());
+        for d in 0..COMPACTION_GRINDING_BITS.len() {
+            assert_eq!(
+                compaction_grinding_bits(d),
+                solve_compaction_grinding_bits(std::hint::black_box(d)),
+                "capacity log {d}"
+            );
         }
     }
 

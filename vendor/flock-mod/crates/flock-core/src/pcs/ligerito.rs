@@ -38,6 +38,7 @@ use crate::merkle::{self, Hash, HashKind};
 use crate::ntt::additive_ntt_f128::AdditiveNttF128;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::sync::OnceLock;
 
 // ===================================================================
 // Config
@@ -1527,12 +1528,12 @@ pub struct FinalProof {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LigeritoProof {
+pub struct LigeritoProof<Final = FinalProof> {
     pub initial_root: Hash,
     pub initial_proof: RecursiveProof,
     pub recursive_roots: Vec<Hash>,
     pub recursive_proofs: Vec<RecursiveProof>,
-    pub final_proof: FinalProof,
+    pub final_proof: Final,
     pub sumcheck_transcript: Vec<SumcheckMessage>,
     /// Per-level PoW nonces (one entry per query phase). When all
     /// `grinding_bits` are 0 (the default config), each entry is just 0
@@ -1550,6 +1551,175 @@ pub struct LigeritoProof {
     /// when no level fold-grinds.
     #[serde(default)]
     pub fold_grinding_nonces: Vec<u64>,
+}
+
+/// The final pre-fold message replaces the final polynomial, queried rows and
+/// authentication paths. Reconstruction uses the same last commitment and
+/// transcript. Its encoded terminal table is bounded to 2^20 field elements
+/// (16 MiB); the prepared configuration fixes its exact smaller dimensions.
+pub type CompactLigeritoProof = LigeritoProof<Vec<Gf128>>;
+
+const MAX_COMPACT_LOG_CODEWORD_ELEMENTS: usize = 20;
+
+fn compact_terminal_ntt(log_domain_size: usize) -> Option<&'static AdditiveNttF128> {
+    // Public, dimension-only preparation is shared across verifications. Each
+    // dimension pays its setup cost on first use; encoded witness data is never cached.
+    static NTTS: [OnceLock<AdditiveNttF128>; MAX_COMPACT_LOG_CODEWORD_ELEMENTS + 1] =
+        [const { OnceLock::new() }; MAX_COMPACT_LOG_CODEWORD_ELEMENTS + 1];
+    NTTS.get(log_domain_size)
+        .map(|slot| slot.get_or_init(|| AdditiveNttF128::standard(log_domain_size)))
+}
+
+#[derive(Clone, Copy)]
+struct FinalShape {
+    log_msg_cols: usize,
+    log_num_interleaved: usize,
+    log_inv_rate: usize,
+    hash: HashKind,
+}
+
+impl FinalShape {
+    fn dimensions(self) -> Option<(usize, usize, usize)> {
+        let power = |log: usize| 1usize.checked_shl(u32::try_from(log).ok()?);
+        let columns = power(self.log_msg_cols)?;
+        let lanes = power(self.log_num_interleaved)?;
+        let rows = power(self.log_msg_cols.checked_add(self.log_inv_rate)?)?;
+        Some((columns, lanes, rows))
+    }
+
+    fn compact_message_len(self) -> Option<usize> {
+        let (columns, lanes, rows) = self.dimensions()?;
+        if rows.checked_mul(lanes)? > 1 << MAX_COMPACT_LOG_CODEWORD_ELEMENTS {
+            return None;
+        }
+        columns.checked_mul(lanes)
+    }
+}
+
+/// The encoding implementation determines the binding, never a proof flag.
+enum FinalBinding {
+    CompleteMessage,
+    QuerySum(Gf128),
+}
+
+/// Two concrete terminal encodings share the entire protocol implementation.
+/// No proof carries a selector that could choose a weaker verification path.
+trait FinalEncoding: Sized {
+    type Captured;
+
+    fn capture(message: &[Gf128]) -> Self::Captured;
+    fn finish(
+        captured: Self::Captured,
+        yr: Vec<Gf128>,
+        witness: &LigeroWitness,
+        queries: &[usize],
+    ) -> Self;
+    fn polynomial(&self, shape: FinalShape, folds: &[Gf128]) -> Option<Cow<'_, [Gf128]>>;
+    fn authenticate(
+        &self,
+        shape: FinalShape,
+        root: &Hash,
+        queries: &[usize],
+        folds: &[Gf128],
+        alpha: &[Gf128],
+    ) -> Option<FinalBinding>;
+}
+
+impl FinalEncoding for FinalProof {
+    type Captured = ();
+
+    fn capture(_: &[Gf128]) {}
+
+    fn finish(_: (), yr: Vec<Gf128>, witness: &LigeroWitness, queries: &[usize]) -> Self {
+        Self {
+            yr,
+            opened_rows: queries.iter().map(|&q| witness.row(q).to_vec()).collect(),
+            merkle_proof: merkle_multi_proof_for(&witness.tree, witness.block_len, queries),
+        }
+    }
+
+    fn polynomial(&self, shape: FinalShape, folds: &[Gf128]) -> Option<Cow<'_, [Gf128]>> {
+        let (columns, _, _) = shape.dimensions()?;
+        (self.yr.len() == columns && folds.len() == shape.log_num_interleaved)
+            .then(|| Cow::Borrowed(self.yr.as_slice()))
+    }
+
+    fn authenticate(
+        &self,
+        shape: FinalShape,
+        root: &Hash,
+        queries: &[usize],
+        folds: &[Gf128],
+        alpha: &[Gf128],
+    ) -> Option<FinalBinding> {
+        let (_, lanes, rows) = shape.dimensions()?;
+        verify_level_opens(
+            root,
+            rows,
+            queries,
+            &self.opened_rows,
+            lanes,
+            &self.merkle_proof,
+            shape.hash,
+        )
+        .then(|| {
+            FinalBinding::QuerySum(induce_sumcheck_enforced_sum(
+                &self.opened_rows,
+                folds,
+                queries,
+                alpha,
+            ))
+        })
+    }
+}
+
+impl FinalEncoding for Vec<Gf128> {
+    type Captured = Self;
+
+    fn capture(message: &[Gf128]) -> Self {
+        message.to_vec()
+    }
+
+    fn finish(captured: Self, _: Vec<Gf128>, _: &LigeroWitness, _: &[usize]) -> Self {
+        captured
+    }
+
+    fn polynomial(&self, shape: FinalShape, folds: &[Gf128]) -> Option<Cow<'_, [Gf128]>> {
+        if self.len() != shape.compact_message_len()? || folds.len() != shape.log_num_interleaved {
+            return None;
+        }
+        Some(Cow::Owned(partial_eval_lsb(self, folds)))
+    }
+
+    fn authenticate(
+        &self,
+        shape: FinalShape,
+        root: &Hash,
+        queries: &[usize],
+        _: &[Gf128],
+        _: &[Gf128],
+    ) -> Option<FinalBinding> {
+        if self.len() != shape.compact_message_len()? {
+            return None;
+        }
+        let (_, _, rows) = shape.dimensions()?;
+        if queries.iter().any(|&q| q >= rows) {
+            return None;
+        }
+        let ntt = compact_terminal_ntt(shape.log_msg_cols.checked_add(shape.log_inv_rate)?)?;
+        let witness = ligero_commit(
+            self,
+            shape.log_msg_cols,
+            shape.log_num_interleaved,
+            shape.log_inv_rate,
+            ntt,
+            shape.hash,
+        );
+        if witness.root() != *root {
+            return None;
+        }
+        Some(FinalBinding::CompleteMessage)
+    }
 }
 
 impl LigeritoProof {
@@ -3170,7 +3340,9 @@ fn try_sample_distinct_queries<Ch: Challenger>(
     block_len: usize,
     count: usize,
 ) -> Option<Vec<usize>> {
-    if count > block_len { return None; }
+    if count > block_len {
+        return None;
+    }
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::with_capacity(count);
     while out.len() < count {
@@ -3488,6 +3660,36 @@ where
     )
 }
 
+/// Compact-terminal counterpart of [`recursive_prover_with_basis_initial`].
+#[allow(clippy::too_many_arguments)]
+pub fn recursive_prover_with_basis_initial_compact<'a, Ch, O>(
+    config: &ProverConfig,
+    packed_witness: impl Into<Cow<'a, [Gf128]>>,
+    b_initial: Vec<Gf128>,
+    target: Gf128,
+    initial_root: Hash,
+    open_initial: O,
+    challenger: &mut Ch,
+) -> CompactLigeritoProof
+where
+    Ch: Challenger,
+    O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
+{
+    recursive_prover_with_basis_initial_impl(
+        config,
+        InitialBasis::Dense {
+            packed: packed_witness.into(),
+            basis: b_initial,
+            first_msg: None,
+            lookahead: None,
+        },
+        target,
+        initial_root,
+        open_initial,
+        challenger,
+    )
+}
+
 /// Continue an externally authenticated basis opening with the exact first
 /// sumcheck message and optional next-round coefficients computed while
 /// constructing the basis. This only skips redundant table passes; transcript
@@ -3504,6 +3706,38 @@ pub fn recursive_prover_with_basis_initial_precomputed_round0<'a, Ch, O>(
     round1_lookahead: Option<FoldLookahead>,
     challenger: &mut Ch,
 ) -> LigeritoProof
+where
+    Ch: Challenger,
+    O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
+{
+    recursive_prover_with_basis_initial_impl(
+        config,
+        InitialBasis::Dense {
+            packed: packed_witness.into(),
+            basis: b_initial,
+            first_msg: Some(first_msg),
+            lookahead: round1_lookahead,
+        },
+        target,
+        initial_root,
+        open_initial,
+        challenger,
+    )
+}
+
+/// Compact-terminal counterpart with a precomputed initial message.
+#[allow(clippy::too_many_arguments)]
+pub fn recursive_prover_with_basis_initial_precomputed_round0_compact<'a, Ch, O>(
+    config: &ProverConfig,
+    packed_witness: impl Into<Cow<'a, [Gf128]>>,
+    b_initial: Vec<Gf128>,
+    target: Gf128,
+    initial_root: Hash,
+    open_initial: O,
+    first_msg: SumcheckMessage,
+    round1_lookahead: Option<FoldLookahead>,
+    challenger: &mut Ch,
+) -> CompactLigeritoProof
 where
     Ch: Challenger,
     O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
@@ -3596,18 +3830,43 @@ where
     )
 }
 
+/// Compact-terminal counterpart with deferred initial tables.
 #[allow(clippy::too_many_arguments)]
-fn recursive_prover_with_basis_initial_impl<'a, Ch, O>(
+pub fn recursive_prover_with_basis_initial_deferred_compact<'a, Ch, O>(
+    config: &ProverConfig,
+    initial: DeferredInitial<'a>,
+    target: Gf128,
+    initial_root: Hash,
+    open_initial: O,
+    challenger: &mut Ch,
+) -> CompactLigeritoProof
+where
+    Ch: Challenger,
+    O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
+{
+    recursive_prover_with_basis_initial_impl(
+        config,
+        InitialBasis::Deferred(initial),
+        target,
+        initial_root,
+        open_initial,
+        challenger,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn recursive_prover_with_basis_initial_impl<'a, Ch, O, Final>(
     config: &ProverConfig,
     initial: InitialBasis<'a>,
     target: Gf128,
     initial_root: Hash,
     open_initial: O,
     challenger: &mut Ch,
-) -> LigeritoProof
+) -> LigeritoProof<Final>
 where
     Ch: Challenger,
     O: FnOnce(usize, usize, &[usize]) -> RecursiveProof,
+    Final: FinalEncoding,
 {
     let log_n = initial.log_n();
     let r = config.recursive_steps;
@@ -3872,6 +4131,7 @@ where
 
     for i in 0..r {
         let k_i = config.recursive_ks[i];
+        let final_message = (i == r - 1).then(|| Final::capture(sc_prover.f()));
         let mut level_rs = Vec::with_capacity(k_i);
         let _t = std::time::Instant::now();
         for j in 0..k_i {
@@ -3904,12 +4164,12 @@ where
             let queries_last =
                 sample_distinct_queries(challenger, wtns_prev.block_len, num_queries_last);
             let _t = std::time::Instant::now();
-            let opened_rows_last: Vec<Vec<Gf128>> = queries_last
-                .iter()
-                .map(|&q| wtns_prev.row(q).to_vec())
-                .collect();
-            let merkle_proof_last =
-                merkle_multi_proof_for(&wtns_prev.tree, wtns_prev.block_len, &queries_last);
+            let final_proof = Final::finish(
+                final_message.expect("last iteration captures its message"),
+                yr,
+                &wtns_prev,
+                &queries_last,
+            );
             if trace {
                 t_opens += _t.elapsed();
             }
@@ -3953,11 +4213,7 @@ where
                 initial_proof,
                 recursive_roots,
                 recursive_proofs,
-                final_proof: FinalProof {
-                    yr,
-                    opened_rows: opened_rows_last,
-                    merkle_proof: merkle_proof_last,
-                },
+                final_proof,
                 sumcheck_transcript,
                 grinding_nonces,
                 ood_values,
@@ -4127,9 +4383,105 @@ where
     F: Fn(&[Gf128], usize) -> Vec<Gf128>,
     A: FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
 {
+    recursive_verifier_with_basis_initial_impl(
+        config,
+        proof,
+        &proof.initial_proof,
+        log_n,
+        target,
+        expected_initial_root,
+        eval_b_residual,
+        authenticate_initial,
+        challenger,
+    )
+}
+
+/// Verify a compact terminal message using the unchanged succinct verifier.
+/// `initial_opening` contains the canonical full initial rows reconstructed by
+/// the caller's codec; the authentication callback must bind every entry.
+#[allow(clippy::too_many_arguments)]
+pub fn recursive_verifier_with_basis_initial_compact<Ch, F, A>(
+    config: &VerifierConfig,
+    proof: &CompactLigeritoProof,
+    initial_opening: &RecursiveProof,
+    log_n: usize,
+    target: Gf128,
+    expected_initial_root: &Hash,
+    eval_b_residual: F,
+    authenticate_initial: A,
+    challenger: &mut Ch,
+) -> bool
+where
+    Ch: Challenger,
+    F: Fn(&[Gf128], usize) -> Vec<Gf128>,
+    A: FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
+{
+    let r = config.recursive_steps;
+    if r == 0
+        || config.recursive_ks.len() != r
+        || config.log_inv_rates.len() != r + 1
+        || proof.recursive_roots.len() != r
+        || proof.recursive_proofs.len() != r - 1
+        || proof.grinding_nonces.len() != r + 1
+    {
+        return false;
+    }
+    let Some(after_initial) = log_n.checked_sub(config.initial_k) else {
+        return false;
+    };
+    let Some(remaining) = config
+        .recursive_ks
+        .iter()
+        .try_fold(after_initial, |n, &k| n.checked_sub(k))
+    else {
+        return false;
+    };
+    let shape = FinalShape {
+        log_msg_cols: remaining,
+        log_num_interleaved: config.recursive_ks[r - 1],
+        log_inv_rate: config.log_inv_rates[r],
+        hash: config.merkle_hash,
+    };
+    if shape.compact_message_len() != Some(proof.final_proof.len()) {
+        return false;
+    }
+    recursive_verifier_with_basis_initial_impl(
+        config,
+        proof,
+        initial_opening,
+        log_n,
+        target,
+        expected_initial_root,
+        eval_b_residual,
+        authenticate_initial,
+        challenger,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn recursive_verifier_with_basis_initial_impl<Ch, F, A, Final>(
+    config: &VerifierConfig,
+    proof: &LigeritoProof<Final>,
+    initial_opening: &RecursiveProof,
+    log_n: usize,
+    target: Gf128,
+    expected_initial_root: &Hash,
+    eval_b_residual: F,
+    authenticate_initial: A,
+    challenger: &mut Ch,
+) -> bool
+where
+    Ch: Challenger,
+    F: Fn(&[Gf128], usize) -> Vec<Gf128>,
+    A: FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
+    Final: FinalEncoding,
+{
     macro_rules! challenge {
         ($draw:expr) => {
-            match $draw { Some(value) => value, None => return false }
+            match $draw {
+                Some(value) => value,
+                None => return false,
+            }
         };
     }
     let trace = std::env::var("LIG_VERIFY_TRACE").is_ok();
@@ -4265,24 +4617,22 @@ where
 
     let num_queries_0 = config.queries[0];
     let _t = std::time::Instant::now();
-    let queries_0 = challenge!(try_sample_distinct_queries(challenger, block_len_0, num_queries_0));
+    let queries_0 = challenge!(try_sample_distinct_queries(
+        challenger,
+        block_len_0,
+        num_queries_0
+    ));
     if trace {
         t_sample_q += _t.elapsed();
     }
     let alpha_0 = challenge!(challenger.try_sample_f128_vec(ceil_log2(num_queries_0)));
     let _t = std::time::Instant::now();
-    if proof.initial_proof.opened_rows.len() != queries_0.len()
-        || proof
-            .initial_proof
+    if initial_opening.opened_rows.len() != queries_0.len()
+        || initial_opening
             .opened_rows
             .iter()
             .any(|row| row.len() != num_interleaved_0)
-        || !authenticate_initial(
-            block_len_0,
-            num_interleaved_0,
-            &queries_0,
-            &proof.initial_proof,
-        )
+        || !authenticate_initial(block_len_0, num_interleaved_0, &queries_0, initial_opening)
     {
         return false;
     }
@@ -4296,7 +4646,7 @@ where
     let n1 = log_n - initial_k;
     let _t = std::time::Instant::now();
     let enforced_sum_0 = induce_sumcheck_enforced_sum(
-        &proof.initial_proof.opened_rows,
+        &initial_opening.opened_rows,
         &r_lane_fold,
         &queries_0,
         &alpha_0,
@@ -4385,11 +4735,19 @@ where
             {
                 return false;
             }
-            let yr = &proof.final_proof.yr;
-            if yr.len() != 1 << n_current {
+            let shape = FinalShape {
+                log_msg_cols: prev_log_msg_cols,
+                log_num_interleaved: prev_log_num_interleaved,
+                log_inv_rate: prev_log_inv_rate,
+                hash: config.merkle_hash,
+            };
+            if shape.log_msg_cols != n_current {
                 return false;
             }
-            for v in yr {
+            let Some(yr) = proof.final_proof.polynomial(shape, &level_rs) else {
+                return false;
+            };
+            for v in yr.iter() {
                 challenger.observe_f128(*v);
             }
             // PoW grinding check for last level's query phase.
@@ -4405,63 +4763,52 @@ where
             // (last nonce — nonce_idx is not advanced past it)
 
             let prev_block_len = 1usize << (prev_log_msg_cols + prev_log_inv_rate);
-            let prev_num_interleaved = 1usize << prev_log_num_interleaved;
             let num_queries_last = config.queries[i + 1];
             let _t = std::time::Instant::now();
-            let queries_last =
-                challenge!(try_sample_distinct_queries(challenger, prev_block_len, num_queries_last));
+            let queries_last = challenge!(try_sample_distinct_queries(
+                challenger,
+                prev_block_len,
+                num_queries_last
+            ));
             // Basis-induction challenge for the LAST commitment. Sampled here —
             // after `yr` was observed (top of this branch) and the queries are
             // fixed — so a forged `yr` cannot be adapted to it. Mirrors `alpha_i`
             // at every non-final level (see ~line 3377).
-            let alpha_last = challenge!(challenger.try_sample_f128_vec(ceil_log2(num_queries_last)));
+            let alpha_last =
+                challenge!(challenger.try_sample_f128_vec(ceil_log2(num_queries_last)));
             if trace {
                 t_sample_q += _t.elapsed();
             }
             let _t = std::time::Instant::now();
-            if !verify_level_opens(
+            let Some(binding) = proof.final_proof.authenticate(
+                shape,
                 &prev_root,
-                prev_block_len,
                 &queries_last,
-                &proof.final_proof.opened_rows,
-                prev_num_interleaved,
-                &proof.final_proof.merkle_proof,
-                config.merkle_hash,
-            ) {
+                &level_rs,
+                &alpha_last,
+            ) else {
                 return false;
-            }
+            };
             if trace {
                 t_merkle += _t.elapsed();
             }
 
-            // Bind the LAST commitment to `yr`. Every non-final level folds its
-            // opened rows into the running sumcheck via induce_sumcheck; the
-            // final level used to only Merkle-check its opened rows, leaving `yr`
-            // (the claimed final message) constrained by a single scalar equation
-            // — so a malicious prover could solve for a `yr` that opens the
-            // commitment to an arbitrary value. We add the same proximity tie as
-            // the other levels: `enforced_sum_last` is the α-weighted lane-fold
-            // of the (Merkle-bound) opened rows, batched into `t_r` with a fresh
-            // `beta_last`; its induced basis is already at the residual dimension
-            // (zero further folds), so it joins `combined` below via this
-            // LevelCtx. With `alpha_last` drawn after `yr`, the batched check now
-            // forces `yr` to agree with the committed codeword at every queried
-            // column (multilinear Schwartz–Zippel), restoring binding.
-            let enforced_sum_last = induce_sumcheck_enforced_sum(
-                &proof.final_proof.opened_rows,
-                &level_rs,
-                &queries_last,
-                &alpha_last,
-            );
+            // Preserve the final batching draw for both encodings. For a complete
+            // authenticated message F, y = Fold_r(F) and E = RS(F), hence
+            // e_last = <y, B_last> identically by linearity of RS. Its beta term
+            // cancels from both sides of the residual check. Query openings alone
+            // still need the original final binding equation.
             let beta_last = challenge!(challenger.try_sample_f128());
-            t_r += beta_last * enforced_sum_last;
-            level_ctxs.push(LevelCtx {
-                log_msg_cols: n_current,
-                queries: queries_last.clone(),
-                alpha: alpha_last,
-                ris_start: ris.len(),
-                beta: beta_last,
-            });
+            if let FinalBinding::QuerySum(enforced_sum_last) = binding {
+                t_r += beta_last * enforced_sum_last;
+                level_ctxs.push(LevelCtx {
+                    log_msg_cols: n_current,
+                    queries: queries_last,
+                    alpha: alpha_last,
+                    ris_start: ris.len(),
+                    beta: beta_last,
+                });
+            }
 
             // Succinct residual check: per-level induced basis evaluations
             // via closed-form (no dense materialization).
@@ -4617,7 +4964,11 @@ where
         let prev_num_interleaved = 1usize << prev_log_num_interleaved;
         let num_queries_i = config.queries[i + 1];
         let _t = std::time::Instant::now();
-        let queries_i = challenge!(try_sample_distinct_queries(challenger, prev_block_len, num_queries_i));
+        let queries_i = challenge!(try_sample_distinct_queries(
+            challenger,
+            prev_block_len,
+            num_queries_i
+        ));
         if trace {
             t_sample_q += _t.elapsed();
         }
@@ -5658,6 +6009,450 @@ pub fn recursive_verifier<Ch: Challenger>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compact_terminal_codec_matches_dense_oracle_and_rejects_mutations() {
+        let mut rng = crate::challenger::RandomChallenger::new(0xC0DE_C0DE);
+        for hash in [HashKind::Sha256, HashKind::Blake3] {
+            for (log_msg_cols, log_num_interleaved) in [(4, 2), (5, 2), (5, 3)] {
+                let shape = FinalShape {
+                    log_msg_cols,
+                    log_num_interleaved,
+                    log_inv_rate: 6,
+                    hash,
+                };
+                let (columns, lanes, rows) = shape.dimensions().unwrap();
+                let message: Vec<_> = (0..columns * lanes).map(|_| rng.sample_f128()).collect();
+                let folds: Vec<_> = (0..log_num_interleaved)
+                    .map(|_| rng.sample_f128())
+                    .collect();
+                // Independent tensor definition of the lane projection; all challenges
+                // are non-Boolean and both lane and column axes contain distinct data.
+                let weights = build_eq_table(&folds);
+                let expected: Vec<_> = message
+                    .chunks_exact(lanes)
+                    .map(|row| {
+                        row.iter()
+                            .zip(&weights)
+                            .fold(Gf128::ZERO, |sum, (&v, &w)| sum + v * w)
+                    })
+                    .collect();
+                assert_eq!(
+                    message.polynomial(shape, &folds).unwrap().as_ref(),
+                    expected
+                );
+                let ntt = AdditiveNttF128::standard(log_msg_cols + shape.log_inv_rate);
+                let witness = ligero_commit(
+                    &message,
+                    log_msg_cols,
+                    log_num_interleaved,
+                    shape.log_inv_rate,
+                    &ntt,
+                    hash,
+                );
+                let queries = [0, 3, rows / 2, rows - 1];
+                let alpha = rng.sample_f128_vec(2);
+                let full = FinalProof::finish((), expected, &witness, &queries);
+                assert!(matches!(
+                    message.authenticate(shape, &witness.root(), &queries, &folds, &alpha),
+                    Some(FinalBinding::CompleteMessage)
+                ));
+                assert!(matches!(
+                    full.authenticate(shape, &witness.root(), &queries, &folds, &alpha),
+                    Some(FinalBinding::QuerySum(_))
+                ));
+
+                for wrong_len in [message.len() - 1, message.len() + 1] {
+                    let mut bad = message.clone();
+                    bad.resize(wrong_len, Gf128::ZERO);
+                    assert!(bad.polynomial(shape, &folds).is_none());
+                    assert!(
+                        bad.authenticate(shape, &witness.root(), &queries, &folds, &alpha)
+                            .is_none()
+                    );
+                }
+                let mut altered = message.clone();
+                altered[17] += Gf128::ONE;
+                assert!(
+                    altered
+                        .authenticate(shape, &witness.root(), &queries, &folds, &alpha)
+                        .is_none()
+                );
+                let mut permuted = message.clone();
+                for row in permuted.chunks_exact_mut(lanes) {
+                    row.swap(0, 1);
+                }
+                assert!(
+                    permuted
+                        .authenticate(shape, &witness.root(), &queries, &folds, &alpha)
+                        .is_none()
+                );
+                let mut wrong_root = witness.root();
+                wrong_root[0] ^= 1;
+                assert!(
+                    message
+                        .authenticate(shape, &wrong_root, &queries, &folds, &alpha)
+                        .is_none()
+                );
+                assert!(
+                    message
+                        .authenticate(shape, &witness.root(), &[rows], &folds, &alpha)
+                        .is_none()
+                );
+                assert!(
+                    message
+                        .polynomial(shape, &folds[..folds.len() - 1])
+                        .is_none()
+                );
+            }
+        }
+        for log in [21, usize::BITS as usize, usize::MAX] {
+            let shape = FinalShape {
+                log_msg_cols: log,
+                log_num_interleaved: 3,
+                log_inv_rate: 6,
+                hash: HashKind::Sha256,
+            };
+            assert!(shape.compact_message_len().is_none());
+            assert!(vec![Gf128::ZERO].polynomial(shape, &[]).is_none());
+            assert!(
+                vec![Gf128::ZERO]
+                    .authenticate(shape, &[0; 32], &[], &[], &[])
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn compact_terminal_query_binding_cancels_exactly() {
+        let mut rng = crate::challenger::RandomChallenger::new(0xE1DE_1717);
+        for (log_msg_cols, log_lanes) in [(4, 2), (5, 2), (5, 3)] {
+            let columns = 1 << log_msg_cols;
+            let lanes = 1 << log_lanes;
+            let message: Vec<_> = (0..columns * lanes).map(|_| rng.sample_f128()).collect();
+            let folds = rng.sample_f128_vec(log_lanes);
+            let lane_weights = build_eq_table(&folds);
+            // Derive the folded message from the mathematical tensor projection,
+            // independently of the compact verifier's partial_eval_lsb routine.
+            let y: Vec<_> = message
+                .chunks_exact(lanes)
+                .map(|row| {
+                    row.iter()
+                        .zip(&lane_weights)
+                        .fold(Gf128::ZERO, |s, (&v, &w)| s + v * w)
+                })
+                .collect();
+            let inner = |a: &[Gf128], b: &[Gf128]| {
+                a.iter().zip(b).fold(Gf128::ZERO, |s, (&a, &b)| s + a * b)
+            };
+            for log_inv_rate in [1, 6] {
+                let ntt = AdditiveNttF128::standard(log_msg_cols + log_inv_rate);
+                let witness = ligero_commit(
+                    &message,
+                    log_msg_cols,
+                    log_lanes,
+                    log_inv_rate,
+                    &ntt,
+                    HashKind::Sha256,
+                );
+                for query_count in [0, 1, 3, 11, 126] {
+                    let query_count = query_count.min(witness.block_len);
+                    let queries: Vec<_> = (0..query_count)
+                        .map(|i| i * witness.block_len / query_count)
+                        .collect();
+                    let alpha = rng.sample_f128_vec(ceil_log2(query_count));
+                    let rows: Vec<_> = queries.iter().map(|&q| witness.row(q).to_vec()).collect();
+                    let e = induce_sumcheck_enforced_sum(&rows, &folds, &queries, &alpha);
+                    let b = induce_sumcheck_evaluate_at_residual(
+                        log_msg_cols,
+                        &eval_sk_at_vks(log_msg_cols),
+                        &queries,
+                        &alpha,
+                        &[],
+                        log_msg_cols,
+                    );
+                    assert_eq!(
+                        e,
+                        inner(&y, &b),
+                        "shape={columns}x{lanes} rate={log_inv_rate} Q={query_count}"
+                    );
+                    let beta = rng.sample_f128();
+                    let prior_basis: Vec<_> = (0..columns).map(|_| rng.sample_f128()).collect();
+                    let prior_claim = rng.sample_f128();
+                    let combined: Vec<_> = prior_basis
+                        .iter()
+                        .zip(&b)
+                        .map(|(&a, &b)| a + beta * b)
+                        .collect();
+                    // Equality of the complete residuals proves equal acceptance,
+                    // including false claims, without relying on honest transcripts.
+                    assert_eq!(
+                        inner(&y, &combined) + prior_claim + beta * e,
+                        inner(&y, &prior_basis) + prior_claim
+                    );
+                    if let Some(j) = b.iter().position(|v| !v.is_zero()) {
+                        let mut forged_y = y.clone();
+                        forged_y[j] += Gf128::ONE;
+                        assert_ne!(
+                            inner(&forged_y, &b),
+                            e,
+                            "cancellation requires y to be derived from the authenticated message"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn compact_terminal_preserves_expanded_proof_and_fiat_shamir_transcript() {
+        // This reference keeps both the old authenticated terminal proof and its
+        // pre-fold message, allowing an exact expansion comparison with real FS.
+        struct ReferenceFinal {
+            message: Vec<Gf128>,
+            full: FinalProof,
+            queries: Vec<usize>,
+        }
+        impl FinalEncoding for ReferenceFinal {
+            type Captured = Vec<Gf128>;
+            fn capture(message: &[Gf128]) -> Self::Captured {
+                message.to_vec()
+            }
+            fn finish(
+                message: Self::Captured,
+                yr: Vec<Gf128>,
+                witness: &LigeroWitness,
+                queries: &[usize],
+            ) -> Self {
+                Self {
+                    message,
+                    full: FinalProof::finish((), yr, witness, queries),
+                    queries: queries.to_vec(),
+                }
+            }
+            fn polynomial(&self, shape: FinalShape, folds: &[Gf128]) -> Option<Cow<'_, [Gf128]>> {
+                self.full.polynomial(shape, folds)
+            }
+            fn authenticate(
+                &self,
+                shape: FinalShape,
+                root: &Hash,
+                queries: &[usize],
+                folds: &[Gf128],
+                alpha: &[Gf128],
+            ) -> Option<FinalBinding> {
+                self.full.authenticate(shape, root, queries, folds, alpha)
+            }
+        }
+        let mut rng = crate::challenger::RandomChallenger::new(0xC0DE_F1A7);
+        for hash in [HashKind::Sha256, HashKind::Blake3] {
+            for (log_n, ks) in [(10, vec![2, 3]), (12, vec![3, 2]), (13, vec![3, 3])] {
+                let initial_k = 2;
+                let mut remaining = log_n - initial_k;
+                let recursive_log_msg_cols: Vec<_> = ks
+                    .iter()
+                    .map(|&k| {
+                        remaining -= k;
+                        remaining
+                    })
+                    .collect();
+                let cfg = ProverConfig {
+                    log_inv_rates: vec![1, 2, 6],
+                    recursive_steps: 2,
+                    initial_log_msg_cols: log_n - initial_k,
+                    initial_log_num_interleaved: initial_k,
+                    initial_k,
+                    recursive_log_msg_cols: recursive_log_msg_cols.clone(),
+                    recursive_ks: ks.clone(),
+                    queries: vec![9, 7, 11],
+                    grinding_bits: vec![1; 3],
+                    fold_grinding_bits: vec![1; 3],
+                    ood_samples: vec![0, 1, 1],
+                    merkle_hash: hash,
+                };
+                let vcfg = VerifierConfig {
+                    log_inv_rates: cfg.log_inv_rates.clone(),
+                    recursive_steps: 2,
+                    initial_log_msg_cols: log_n - initial_k,
+                    initial_log_num_interleaved: initial_k,
+                    initial_k,
+                    recursive_log_msg_cols,
+                    recursive_ks: ks.clone(),
+                    queries: cfg.queries.clone(),
+                    grinding_bits: cfg.grinding_bits.clone(),
+                    fold_grinding_bits: cfg.fold_grinding_bits.clone(),
+                    ood_samples: cfg.ood_samples.clone(),
+                    merkle_hash: hash,
+                };
+                let message: Vec<_> = (0..1usize << log_n).map(|_| rng.sample_f128()).collect();
+                let basis: Vec<_> = (0..message.len()).map(|_| rng.sample_f128()).collect();
+                let target = message
+                    .iter()
+                    .zip(&basis)
+                    .fold(Gf128::ZERO, |s, (&a, &b)| s + a * b);
+                let ntt = AdditiveNttF128::standard(log_n - initial_k + 1);
+                let witness = ligero_commit(&message, log_n - initial_k, initial_k, 1, &ntt, hash);
+                let root = witness.root();
+                let open = |_: usize, _: usize, queries: &[usize]| RecursiveProof {
+                    opened_rows: queries.iter().map(|&q| witness.row(q).to_vec()).collect(),
+                    merkle_proof: merkle_multi_proof_for(&witness.tree, witness.block_len, queries),
+                };
+                let new_ch =
+                    || crate::challenger::FsChallenger::with_hash(b"compact-terminal-test", hash);
+                let mut full_ch = new_ch();
+                let full = recursive_prover_with_basis_initial(
+                    &cfg,
+                    message.as_slice(),
+                    basis.clone(),
+                    target,
+                    root,
+                    open,
+                    &mut full_ch,
+                );
+                let mut compact_ch = new_ch();
+                let compact = recursive_prover_with_basis_initial_compact(
+                    &cfg,
+                    message.as_slice(),
+                    basis.clone(),
+                    target,
+                    root,
+                    open,
+                    &mut compact_ch,
+                );
+                let mut reference_ch = new_ch();
+                let reference: LigeritoProof<ReferenceFinal> =
+                    recursive_prover_with_basis_initial_impl(
+                        &cfg,
+                        InitialBasis::Dense {
+                            packed: message.as_slice().into(),
+                            basis: basis.clone(),
+                            first_msg: None,
+                            lookahead: None,
+                        },
+                        target,
+                        root,
+                        open,
+                        &mut reference_ch,
+                    );
+                let next_challenge = full_ch.sample_f128();
+                assert_eq!(compact_ch.sample_f128(), next_challenge);
+                assert_eq!(reference_ch.sample_f128(), next_challenge);
+                assert_eq!(reference.final_proof.message, compact.final_proof);
+                let shape = FinalShape {
+                    log_msg_cols: remaining,
+                    log_num_interleaved: *ks.last().unwrap(),
+                    log_inv_rate: 6,
+                    hash,
+                };
+                assert_eq!(
+                    compact.final_proof.len(),
+                    shape.compact_message_len().unwrap()
+                );
+                let terminal_ntt =
+                    AdditiveNttF128::standard(shape.log_msg_cols + shape.log_inv_rate);
+                let terminal_witness = ligero_commit(
+                    &compact.final_proof,
+                    shape.log_msg_cols,
+                    shape.log_num_interleaved,
+                    shape.log_inv_rate,
+                    &terminal_ntt,
+                    hash,
+                );
+                assert_eq!(
+                    terminal_witness.root(),
+                    *compact.recursive_roots.last().unwrap()
+                );
+                let expanded_rows: Vec<_> = reference
+                    .final_proof
+                    .queries
+                    .iter()
+                    .map(|&q| terminal_witness.row(q).to_vec())
+                    .collect();
+                assert_eq!(expanded_rows, full.final_proof.opened_rows);
+                let expanded = LigeritoProof {
+                    initial_root: compact.initial_root,
+                    initial_proof: compact.initial_proof.clone(),
+                    recursive_roots: compact.recursive_roots.clone(),
+                    recursive_proofs: compact.recursive_proofs.clone(),
+                    final_proof: reference.final_proof.full,
+                    sumcheck_transcript: compact.sumcheck_transcript.clone(),
+                    grinding_nonces: compact.grinding_nonces.clone(),
+                    ood_values: compact.ood_values.clone(),
+                    fold_grinding_nonces: compact.fold_grinding_nonces.clone(),
+                };
+                assert_eq!(full, expanded);
+                assert_eq!(
+                    bincode::serialize(&full).unwrap(),
+                    bincode::serialize(&expanded).unwrap()
+                );
+                let encoded = bincode::serialize(&compact).unwrap();
+                assert_eq!(
+                    bincode::deserialize::<CompactLigeritoProof>(&encoded).unwrap(),
+                    compact
+                );
+                let authenticate = |rows, lanes, queries: &[usize], p: &RecursiveProof| {
+                    verify_level_opens(
+                        &root,
+                        rows,
+                        queries,
+                        &p.opened_rows,
+                        lanes,
+                        &p.merkle_proof,
+                        hash,
+                    )
+                };
+                let eval_basis = |rs: &[Gf128], _: usize| partial_eval_lsb(&basis, rs);
+                let mut full_verifier = new_ch();
+                assert!(recursive_verifier_with_basis_initial(
+                    &vcfg,
+                    &full,
+                    log_n,
+                    target,
+                    &root,
+                    eval_basis,
+                    authenticate,
+                    &mut full_verifier
+                ));
+                let verify_compact =
+                    |p: &CompactLigeritoProof, ch: &mut crate::challenger::FsChallenger| {
+                        recursive_verifier_with_basis_initial_compact(
+                            &vcfg,
+                            p,
+                            &p.initial_proof,
+                            log_n,
+                            target,
+                            &root,
+                            eval_basis,
+                            authenticate,
+                            ch,
+                        )
+                    };
+                let mut compact_verifier = new_ch();
+                assert!(verify_compact(&compact, &mut compact_verifier));
+                assert_eq!(full_verifier.sample_f128(), compact_verifier.sample_f128());
+                for mutation in 0..8 {
+                    let mut bad = compact.clone();
+                    match mutation {
+                        0 => {
+                            bad.final_proof.pop();
+                        }
+                        1 => bad.final_proof.push(Gf128::ZERO),
+                        2 => bad.final_proof[17] += Gf128::ONE,
+                        3 => bad.final_proof.swap(0, 1),
+                        4 => bad.recursive_roots.last_mut().unwrap()[0] ^= 1,
+                        5 => {
+                            let last_consumed = bad.sumcheck_transcript.len() - 2;
+                            bad.sumcheck_transcript[last_consumed].u_0 += Gf128::ONE;
+                        }
+                        6 => bad.grinding_nonces.push(0),
+                        7 => bad.recursive_roots.push(root),
+                        _ => unreachable!(),
+                    }
+                    assert!(!verify_compact(&bad, &mut new_ch()), "mutation {mutation}");
+                }
+            }
+        }
+    }
 
     /// Lookahead fold state machine vs the plain per-round fused folds:
     /// every round message AND the final arrays must be bit-identical

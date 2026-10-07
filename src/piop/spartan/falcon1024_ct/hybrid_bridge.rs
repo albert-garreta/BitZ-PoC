@@ -25,9 +25,15 @@ use crate::{
 use field::Uint;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
+use std::sync::OnceLock;
 
 type F = SpartanBitzField;
 type Cfg = <F as SpartanField>::Config;
+
+fn generator_comb() -> &'static FixedBasePow {
+    static COMB: OnceLock<FixedBasePow> = OnceLock::new();
+    COMB.get_or_init(|| FixedBasePow::new(crate::pcs::smallest_generator(), 128, WINDOW))
+}
 
 /// Selected by the prepared protocol and security target, never by proof data.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -268,9 +274,9 @@ pub(super) fn prove(
         }
     });
     drop(packing_span);
-    let comb = FixedBasePow::new(crate::pcs::smallest_generator(), 128, WINDOW);
+    let comb = generator_comb();
     let power_span = tracing::info_span!("falcon_bridge:power_tables").entered();
-    let images = row_images(&chunks, &comb);
+    let images = row_images(&chunks, comb);
     drop(power_span);
     let mut grinder = ProverBlockGrindingTranscript::<_, BridgeGrinding>::new(t, grinding_bits);
     let zeta = root_point(&mut grinder, &p);
@@ -344,7 +350,7 @@ pub(super) fn verify(
         return Err(err("bridge prime read-off"));
     }
     bind(t, sums);
-    let comb = FixedBasePow::new(crate::pcs::smallest_generator(), 128, WINDOW);
+    let comb = generator_comb();
     let mut grinder =
         VerifierBlockGrindingTranscript::<_, BridgeGrinding>::new(t, grinding_bits, &proof.nonces);
     let zeta = root_point(&mut grinder, &p);
@@ -367,7 +373,7 @@ pub(super) fn verify(
     if state.cursor != state.messages.len() {
         return Err(err("bridge forest trailing messages"));
     }
-    let images = row_images(&chunks, &comb);
+    let images = row_images(&chunks, comb);
     let claim = binary_claim(&p, &images, &point, value);
     grinder.finish().map_err(|_| err("bridge grinding"))?;
     Ok(vec![claim])
@@ -472,7 +478,7 @@ fn prove_unsplit(
     let packing_span = tracing::info_span!("falcon_bridge:column_packing").entered();
     let packed_cols = pack_columns_from_rows(&p, source.rows());
     drop(packing_span);
-    let comb = FixedBasePow::new(crate::pcs::smallest_generator(), 128, WINDOW);
+    let comb = generator_comb();
     let power_span = tracing::info_span!("falcon_bridge:power_tables").entered();
     let images: Vec<_> = row_weights.iter().map(|&weight| comb.pow(weight)).collect();
     drop(power_span);
@@ -537,7 +543,7 @@ fn verify_unsplit(
         return Err(err("bridge prime read-off"));
     }
     bind_unsplit(t, sums);
-    let comb = FixedBasePow::new(crate::pcs::smallest_generator(), 128, WINDOW);
+    let comb = generator_comb();
     let mut grinder = VerifierBlockGrindingTranscript::<_, UnsplitBridgeGrinding>::new(
         t,
         grinding_bits,
@@ -571,6 +577,16 @@ mod tests {
     use crate::transcript::Blake3Transcript;
 
     const UNSPLIT_PRIME_MAX: u128 = (1u128 << 115) - (1u128 << 102) - 1;
+
+    #[test]
+    fn cached_generator_comb_matches_fresh_preparation() {
+        let cached = generator_comb();
+        assert!(std::ptr::eq(cached, generator_comb()));
+        let fresh = FixedBasePow::new(crate::pcs::smallest_generator(), 128, WINDOW);
+        for exponent in [0, 1, (1 << 16) - 1, 1 << 64, (1 << 113) - 1, u128::MAX] {
+            assert_eq!(cached.pow(exponent), fresh.pow(exponent));
+        }
+    }
 
     fn unsplit_sums(proof: &mut Proof) -> &mut Vec<u128> {
         let ColumnSums::Unsplit(sums) = &mut proof.sums else {

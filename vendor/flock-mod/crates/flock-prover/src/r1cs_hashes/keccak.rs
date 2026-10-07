@@ -555,6 +555,46 @@ fn apply_phi_t_into(v: &[Gf128], out: &mut [Gf128]) {
     }
 }
 
+/// The same phi transpose in lane-contiguous order. Rho/pi permutes and rotates
+/// whole 64-element lanes; theta then adds the neighboring column parities.
+fn apply_phi_t_lanes_into(v: &[Gf128], out: &mut [Gf128]) {
+    debug_assert_eq!(v.len(), STATE_BITS);
+    debug_assert_eq!(out.len(), STATE_BITS);
+    for x in 0..5 {
+        for y in 0..5 {
+            let a = (x + 3 * y) % 5;
+            let b = x;
+            let rotation = RHO_OFFSETS[a][b] as usize;
+            let source = &v[LANE_BITS * (x + 5 * y)..][..LANE_BITS];
+            let destination = &mut out[LANE_BITS * (a + 5 * b)..][..LANE_BITS];
+            let split = LANE_BITS - rotation;
+            destination[..split].copy_from_slice(&source[rotation..]);
+            destination[split..].copy_from_slice(&source[..rotation]);
+        }
+    }
+    let mut parity = [[Gf128::ZERO; LANE_BITS]; 5];
+    for x in 0..5 {
+        for y in 0..5 {
+            let lane = &out[LANE_BITS * (x + 5 * y)..][..LANE_BITS];
+            for (p, &value) in parity[x].iter_mut().zip(lane) {
+                *p += value;
+            }
+        }
+    }
+    for x in 0..5 {
+        let mut column = [Gf128::ZERO; LANE_BITS];
+        for z in 0..LANE_BITS {
+            column[z] = parity[(x + 1) % 5][z] + parity[(x + 4) % 5][(z + 1) % LANE_BITS];
+        }
+        for y in 0..5 {
+            let lane = &mut out[LANE_BITS * (x + 5 * y)..][..LANE_BITS];
+            for (value, &delta) in lane.iter_mut().zip(&column) {
+                *value += delta;
+            }
+        }
+    }
+}
+
 /// Forward-apply φ on a `bool` state — tracks the round-constant accumulator
 /// `RC_r` (an F_2 state). `out[s_out] = XOR_{s_in ∈ preim(s_out)} in[s_in]`.
 pub(crate) fn apply_phi_bool(v: &[bool; STATE_BITS]) -> [bool; STATE_BITS] {
@@ -705,49 +745,50 @@ impl LincheckCircuit for KeccakLincheckCircuit {
         let mut comb = vec![Gf128::ZERO; K];
         let mut constant = (alpha + Gf128::ONE) * eq_inner[Z_CONST];
 
-        // Input self-loops have A = [row], B = [Z_CONST]. Output pin rows
-        // contribute alpha * L_24 on A and [Z_CONST] on B.
+        // Keep the reverse recurrence in the witness's lane-contiguous order:
+        // physical coordinate = 64 * (x + 5*y) + z. The external witness and
+        // coefficients retain their existing layout.
         let mut k = vec![Gf128::ZERO; STATE_BITS];
-        for s in 0..STATE_BITS {
-            let input = z_pos_state(0, s);
-            let output_weight = eq_inner[z_pos_state(24, s)];
-            comb[input] = alpha * eq_inner[input];
-            constant += eq_inner[input] + output_weight;
-            k[s] = alpha * output_weight;
+        for i in 0..STATE_BITS {
+            let input = eq_inner[STATE0_BIT_BASE + i];
+            let output = eq_inner[STATE24_BIT_BASE + i];
+            comb[STATE0_BIT_BASE + i] = alpha * input;
+            constant += input + output;
+            k[i] = alpha * output;
         }
 
-        // Reverse the *combined* linear form through
-        // L_(r+1) = phi(L_r) + t_r + RC_r * z_const.
-        // A chi row adds alpha * e to phi(L_r)[x+1] and e to
-        // phi(L_r)[x+2], plus alpha * e to the constant coefficient.
-        // Linearity lets A and B share one transpose recurrence; round
-        // constants are absorbed where they enter, without expanding RC_r.
+        // Reverse the combined alpha*A+B form through each affine transition.
         let mut scratch = vec![Gf128::ZERO; STATE_BITS];
         let mut sum_chi_weights = Gf128::ZERO;
         for r in (0..N_T).rev() {
-            for s in 0..STATE_BITS {
-                comb[z_pos_t(r, s)] = k[s];
-            }
+            let t_base = T_PACKED_BIT_BASE + r * STATE_SIZE_BITS;
+            comb[t_base..t_base + STATE_BITS].copy_from_slice(&k);
             let mut rc = ROUND_CONSTANTS[r];
             while rc != 0 {
-                constant += k[state_idx(0, 0, rc.trailing_zeros() as usize)];
+                constant += k[rc.trailing_zeros() as usize];
                 rc &= rc - 1;
             }
-            for z in 0..LANE_BITS {
-                for y in 0..5 {
-                    for x in 0..5 {
-                        let e = eq_inner[z_pos_t(r, state_idx(x, y, z))];
+            for y in 0..5 {
+                for x in 0..5 {
+                    let source = t_base + LANE_BITS * (x + 5 * y);
+                    let next = LANE_BITS * ((x + 1) % 5 + 5 * y);
+                    let after_next = LANE_BITS * ((x + 2) % 5 + 5 * y);
+                    for z in 0..LANE_BITS {
+                        let e = eq_inner[source + z];
                         sum_chi_weights += e;
-                        k[state_idx((x + 1) % 5, y, z)] += alpha * e;
-                        k[state_idx((x + 2) % 5, y, z)] += e;
+                        k[next + z] += alpha * e;
+                        k[after_next + z] += e;
                     }
                 }
             }
-            apply_phi_t_into(&k, &mut scratch);
+            apply_phi_t_lanes_into(&k, &mut scratch);
             std::mem::swap(&mut k, &mut scratch);
         }
-        for s in 0..STATE_BITS {
-            comb[z_pos_state(0, s)] += k[s];
+        for (c, &v) in comb[STATE0_BIT_BASE..STATE0_BIT_BASE + STATE_BITS]
+            .iter_mut()
+            .zip(&k)
+        {
+            *c += v;
         }
         comb[Z_CONST] = constant + alpha * sum_chi_weights;
         comb
@@ -1581,6 +1622,60 @@ mod tests {
         s
     }
 
+    // Previous production layout, retained as the direct performance baseline.
+    fn previous_layout_fold_alpha(alpha: Gf128, eq_inner: &[Gf128]) -> Vec<Gf128> {
+        assert_eq!(eq_inner.len(), K, "eq_inner length must equal n_cols = K");
+        let mut comb = vec![Gf128::ZERO; K];
+        let mut constant = (alpha + Gf128::ONE) * eq_inner[Z_CONST];
+
+        // Input self-loops have A = [row], B = [Z_CONST]. Output pin rows
+        // contribute alpha * L_24 on A and [Z_CONST] on B.
+        let mut k = vec![Gf128::ZERO; STATE_BITS];
+        for s in 0..STATE_BITS {
+            let input = z_pos_state(0, s);
+            let output_weight = eq_inner[z_pos_state(24, s)];
+            comb[input] = alpha * eq_inner[input];
+            constant += eq_inner[input] + output_weight;
+            k[s] = alpha * output_weight;
+        }
+
+        // Reverse the *combined* linear form through
+        // L_(r+1) = phi(L_r) + t_r + RC_r * z_const.
+        // A chi row adds alpha * e to phi(L_r)[x+1] and e to
+        // phi(L_r)[x+2], plus alpha * e to the constant coefficient.
+        // Linearity lets A and B share one transpose recurrence; round
+        // constants are absorbed where they enter, without expanding RC_r.
+        let mut scratch = vec![Gf128::ZERO; STATE_BITS];
+        let mut sum_chi_weights = Gf128::ZERO;
+        for r in (0..N_T).rev() {
+            for s in 0..STATE_BITS {
+                comb[z_pos_t(r, s)] = k[s];
+            }
+            let mut rc = ROUND_CONSTANTS[r];
+            while rc != 0 {
+                constant += k[state_idx(0, 0, rc.trailing_zeros() as usize)];
+                rc &= rc - 1;
+            }
+            for z in 0..LANE_BITS {
+                for y in 0..5 {
+                    for x in 0..5 {
+                        let e = eq_inner[z_pos_t(r, state_idx(x, y, z))];
+                        sum_chi_weights += e;
+                        k[state_idx((x + 1) % 5, y, z)] += alpha * e;
+                        k[state_idx((x + 2) % 5, y, z)] += e;
+                    }
+                }
+            }
+            apply_phi_t_into(&k, &mut scratch);
+            std::mem::swap(&mut k, &mut scratch);
+        }
+        for s in 0..STATE_BITS {
+            comb[z_pos_state(0, s)] += k[s];
+        }
+        comb[Z_CONST] = constant + alpha * sum_chi_weights;
+        comb
+    }
+
     // Frozen pre-factorization walker: separate A/B recurrences, explicit
     // eleven-preimage scatters, and forward-expanded round constants. Keep
     // this independent of apply_phi_t_into as an exact coefficient oracle.
@@ -1812,6 +1907,8 @@ mod tests {
     fn factored_phi_transpose_matches_preimages_on_every_basis_vector() {
         let mut basis = vec![Gf128::ZERO; STATE_BITS];
         let mut actual = vec![Gf128::ONE; STATE_BITS];
+        let mut lane_basis = vec![Gf128::ZERO; STATE_BITS];
+        let mut lane_actual = vec![Gf128::ONE; STATE_BITS];
         for s in 0..STATE_BITS {
             basis[s] = Gf128::ONE;
             apply_phi_t_into(&basis, &mut actual);
@@ -1820,6 +1917,16 @@ mod tests {
                 reference_apply_phi_t(&basis),
                 "basis coordinate {s}"
             );
+            lane_basis[within_lane_contiguous(s)] = Gf128::ONE;
+            apply_phi_t_lanes_into(&lane_basis, &mut lane_actual);
+            for j in 0..STATE_BITS {
+                assert_eq!(
+                    lane_actual[within_lane_contiguous(j)],
+                    actual[j],
+                    "lane basis coordinate {s}, output {j}"
+                );
+            }
+            lane_basis[within_lane_contiguous(s)] = Gf128::ZERO;
             basis[s] = Gf128::ZERO;
         }
     }
@@ -1847,6 +1954,10 @@ mod tests {
                 assert_eq!(
                     KeccakLincheckCircuit.fold_alpha_batched(alpha, &weights),
                     reference_fold_alpha_batched(alpha, &weights),
+                );
+                assert_eq!(
+                    KeccakLincheckCircuit.fold_alpha_batched(alpha, &weights),
+                    previous_layout_fold_alpha(alpha, &weights),
                 );
             }
         }
@@ -1904,6 +2015,68 @@ mod tests {
         eprintln!(
             "Keccak coefficient walker, 64 alternating pairs: old median {old_ms:.6} ms, factored median {new_ms:.6} ms, ratio {:.6}, saved {:.6} ms/call",
             new_ms / old_ms,
+            old_ms - new_ms
+        );
+    }
+
+    #[test]
+    #[ignore = "timing benchmark; run alone on an idle machine"]
+    fn lane_contiguous_walker_abba_microbenchmark() {
+        use std::{hint::black_box, time::Instant};
+        let mut rng = Rng::new(0x1A4E_ABBA_2026);
+        let weights: Vec<_> = (0..K)
+            .map(|_| Gf128 {
+                lo: rng.next_u64(),
+                hi: rng.next_u64(),
+            })
+            .collect();
+        let alpha = Gf128 {
+            lo: rng.next_u64(),
+            hi: rng.next_u64(),
+        };
+        assert_eq!(
+            KeccakLincheckCircuit.fold_alpha_batched(alpha, &weights),
+            previous_layout_fold_alpha(alpha, &weights)
+        );
+        let measure = |previous: bool| {
+            let start = Instant::now();
+            for _ in 0..4 {
+                let coefficients = if previous {
+                    previous_layout_fold_alpha(black_box(alpha), black_box(&weights))
+                } else {
+                    KeccakLincheckCircuit.fold_alpha_batched(black_box(alpha), black_box(&weights))
+                };
+                black_box(coefficients);
+            }
+            start.elapsed().as_secs_f64() / 4.0
+        };
+        for _ in 0..8 {
+            measure(true);
+            measure(false);
+        }
+        let mut previous = Vec::with_capacity(128);
+        let mut contiguous = Vec::with_capacity(128);
+        let mut paired_ratios = Vec::with_capacity(64);
+        for pair in 0..64 {
+            let (a1, b1, b2, a2) = if pair % 2 == 0 {
+                (measure(true), measure(false), measure(false), measure(true))
+            } else {
+                let (b1, a1, a2, b2) =
+                    (measure(false), measure(true), measure(true), measure(false));
+                (a1, b1, b2, a2)
+            };
+            previous.extend([a1, a2]);
+            contiguous.extend([b1, b2]);
+            paired_ratios.push((b1 + b2) / (a1 + a2));
+        }
+        previous.sort_by(f64::total_cmp);
+        contiguous.sort_by(f64::total_cmp);
+        paired_ratios.sort_by(f64::total_cmp);
+        let old_ms = 500.0 * (previous[63] + previous[64]);
+        let new_ms = 500.0 * (contiguous[63] + contiguous[64]);
+        let ratio = (paired_ratios[31] + paired_ratios[32]) * 0.5;
+        eprintln!(
+            "Keccak lane layout,64 ABBA blocks,4 calls/sample: previous_median_ms={old_ms:.6} contiguous_median_ms={new_ms:.6} paired_ratio_median={ratio:.6} saved_ms={:.6}",
             old_ms - new_ms
         );
     }

@@ -930,6 +930,144 @@ mod tests {
         committed.data = data;
     }
 
+    /// Exercise the compact transport through the complete Falcon verifier,
+    /// including its statement identifier and external grinding nonce frame.
+    fn assert_compact_opening_rejects_mutations(
+        prepared: &PreparedFalconHybrid,
+        statement: &FalconHybridStatement,
+        proof: &FalconHybridProof,
+    ) {
+        let config = prepared.ligerito.verifier();
+        let pcs = &proof.opening.ligerito;
+        let occupied: usize = prepared
+            .geometry
+            .lane_logs
+            .iter()
+            .map(|&log| 1 << log)
+            .sum();
+        assert_eq!(occupied, if prepared.batch() == 1 { 13 } else { 11 });
+        assert_eq!(pcs.initial_proof.opened_rows.len(), config.queries[0]);
+        assert!(
+            pcs.initial_proof
+                .opened_rows
+                .iter()
+                .all(|row| row.len() == occupied)
+        );
+        let last = config.recursive_steps - 1;
+        let final_columns = 1usize << config.recursive_log_msg_cols[last];
+        let final_lanes = 1usize << config.recursive_ks[last];
+        assert_eq!(final_columns, 32);
+        assert_eq!(pcs.final_proof.len(), final_columns * final_lanes);
+        assert_eq!(
+            pcs.final_proof.len(),
+            if prepared.batch() == 1 { 128 } else { 64 }
+        );
+        // Even before counting removed authentication hashes and row framing,
+        // the full committed message is smaller than the former final payload.
+        assert!(pcs.final_proof.len() < final_columns + config.queries[last + 1] * final_lanes);
+        assert_eq!(pcs.initial_root, prepared.transcript(statement).unwrap().1);
+        assert_eq!(pcs.recursive_roots.len(), config.recursive_steps);
+        assert_eq!(pcs.grinding_nonces.len(), config.recursive_steps + 1);
+        assert_eq!(
+            proof
+                .payload_size_breakdown()
+                .iter()
+                .map(|(_, bytes)| bytes)
+                .sum::<usize>(),
+            proof.payload_size_bytes()
+        );
+
+        let reject = |label: &str, altered: &FalconHybridProof| {
+            assert!(
+                prepared.verify(statement, altered).is_err(),
+                "accepted {label}: protocol={:?}, batch={}, target={}",
+                prepared.protocol(),
+                prepared.batch(),
+                prepared.target_bits,
+            );
+        };
+        for branch in 0..3 {
+            let mut altered = proof.clone();
+            altered.opening.ligerito.initial_proof.opened_rows[0]
+                [prepared.geometry.offset(branch)] += Gf::ONE;
+            reject("changed source lane", &altered);
+        }
+        let mutations: &[(&str, fn(&mut FalconHybridProof))] = &[
+            ("short initial row", |p| {
+                p.opening.ligerito.initial_proof.opened_rows[0].pop();
+            }),
+            ("extra initial field", |p| {
+                p.opening.ligerito.initial_proof.opened_rows[0].push(Gf::ZERO);
+            }),
+            ("legacy sixteen-lane row", |p| {
+                p.opening.ligerito.initial_proof.opened_rows[0].resize(16, Gf::ZERO);
+            }),
+            ("missing initial query", |p| {
+                p.opening.ligerito.initial_proof.opened_rows.pop();
+            }),
+            ("extra initial query", |p| {
+                let row = p.opening.ligerito.initial_proof.opened_rows[0].clone();
+                p.opening.ligerito.initial_proof.opened_rows.push(row);
+            }),
+            ("changed initial authentication", |p| {
+                p.opening.ligerito.initial_proof.merkle_proof[0][0] ^= 1;
+            }),
+            ("changed first final-message value", |p| {
+                p.opening.ligerito.final_proof[0] += Gf::ONE;
+            }),
+            ("changed last final-message value", |p| {
+                *p.opening.ligerito.final_proof.last_mut().unwrap() += Gf::ONE;
+            }),
+            ("empty final message", |p| {
+                p.opening.ligerito.final_proof.clear();
+            }),
+            ("short final message", |p| {
+                p.opening.ligerito.final_proof.pop();
+            }),
+            ("extra final-message value", |p| {
+                p.opening.ligerito.final_proof.push(Gf::ZERO);
+            }),
+            ("wrong last recursive root", |p| {
+                p.opening.ligerito.recursive_roots.last_mut().unwrap()[0] ^= 1;
+            }),
+            ("changed final consumed sumcheck", |p| {
+                let rounds = &mut p.opening.ligerito.sumcheck_transcript;
+                let last_consumed = rounds.len() - 2;
+                rounds[last_consumed].u_0 += Gf::ONE;
+            }),
+            ("wrong PCS statement identifier", |p| {
+                p.opening.ligerito.initial_root[0] ^= 1;
+            }),
+            ("missing query nonce", |p| {
+                p.opening.ligerito.grinding_nonces.pop();
+            }),
+            ("extra query nonce", |p| {
+                p.opening.ligerito.grinding_nonces.push(0);
+            }),
+            ("extra fold nonce", |p| {
+                p.opening.ligerito.fold_grinding_nonces.push(0);
+            }),
+            ("extra auxiliary PCS nonce", |p| {
+                p.pcs_nonces.push(0);
+            }),
+        ];
+        for &(label, mutate) in mutations {
+            let mut altered = proof.clone();
+            mutate(&mut altered);
+            reject(label, &altered);
+        }
+        if !pcs.fold_grinding_nonces.is_empty() {
+            let mut altered = proof.clone();
+            altered.opening.ligerito.fold_grinding_nonces.pop();
+            reject("missing fold nonce", &altered);
+        }
+        if !proof.pcs_nonces.is_empty() {
+            let mut altered = proof.clone();
+            altered.pcs_nonces.pop();
+            reject("missing auxiliary PCS nonce", &altered);
+        }
+    }
+
     #[test]
     fn hybrid_shake_matches_rustcrypto_samples_and_source_bits() {
         use rand::{RngExt, SeedableRng, rngs::StdRng};
@@ -1100,6 +1238,7 @@ mod tests {
         let statement = committed.statement.clone();
         let proof = prepared.prove(committed).unwrap();
         prepared.verify(&statement, &proof).unwrap();
+        assert_compact_opening_rejects_mutations(&prepared, &statement, &proof);
         let mut changed = statement.clone();
         changed.public.messages[0][0] ^= 1;
         assert!(prepared.verify(&changed, &proof).is_err());
@@ -1208,6 +1347,9 @@ mod tests {
             let statement = committed.statement.clone();
             let proof = prepared.prove(committed).unwrap();
             prepared.verify(&statement, &proof).unwrap();
+            if batch <= 3 {
+                assert_compact_opening_rejects_mutations(&prepared, &statement, &proof);
+            }
             assert!(native.verify(&statement, &proof).is_err());
             assert!(proof.payload_size_bytes() > 0);
             assert_eq!(
@@ -1280,6 +1422,7 @@ mod tests {
         let statement = committed.statement.clone();
         let proof = prepared.prove(committed).unwrap();
         prepared.verify(&statement, &proof).unwrap();
+        assert_compact_opening_rejects_mutations(&prepared, &statement, &proof);
 
         let prepared = PreparedFalconHybrid::new(1, 100).unwrap();
         let mut committed = prepared.commit(public(1)).unwrap();
@@ -1304,14 +1447,17 @@ mod tests {
 
     #[test]
     fn hybrid_falcon_128_roundtrip() {
-        let prepared = PreparedFalconHybrid::new(1, 128).unwrap();
-        let committed = prepared.commit(public(1)).unwrap();
-        let statement = committed.statement.clone();
-        let proof = prepared.prove(committed).unwrap();
-        prepared.verify(&statement, &proof).unwrap();
-        let mut changed = proof.clone();
-        changed.links_nonces.clear();
-        assert!(prepared.verify(&statement, &changed).is_err());
+        for batch in [1, 3] {
+            let prepared = PreparedFalconHybrid::new(batch, 128).unwrap();
+            let committed = prepared.commit(public(batch)).unwrap();
+            let statement = committed.statement.clone();
+            let proof = prepared.prove(committed).unwrap();
+            prepared.verify(&statement, &proof).unwrap();
+            assert_compact_opening_rejects_mutations(&prepared, &statement, &proof);
+            let mut changed = proof.clone();
+            changed.links_nonces.clear();
+            assert!(prepared.verify(&statement, &changed).is_err());
+        }
     }
 
     #[test]

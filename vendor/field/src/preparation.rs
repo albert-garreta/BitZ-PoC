@@ -243,23 +243,17 @@ impl<C: RingOps, const E: usize> FixedBasePow<C, E> {
             // The verifier's 128-bit public weights use byte windows. A
             // balanced product exposes independent field multiplications instead
             // of putting every table lookup on one long dependency chain.
-            // Keep the original factor order, including the identity at digit 0.
-            let mut products = [self.field.one(); 8];
-            for (i, product) in products.iter_mut().enumerate() {
-                let word = exponent.0[i / 4];
-                let shift = (i % 4) * 16;
-                let low = ((word >> shift) & 255) as usize;
-                let high = ((word >> (shift + 8)) & 255) as usize;
-                *product = self.field.mul(&rows[2 * i][low], &rows[2 * i + 1][high]);
-            }
-            let mut count = products.len();
-            while count > 1 {
-                for i in 0..count / 2 {
-                    products[i] = self.field.mul(&products[2 * i], &products[2 * i + 1]);
-                }
-                count /= 2;
-            }
-            return products[0];
+            // A public width chooses a balanced prefix, retaining factor order
+            // and dropping only high windows whose table entry is the identity.
+            return if exponent.0[1] != 0 {
+                self.pow_public_byte_pairs::<8>(rows, exponent)
+            } else if exponent.0[0] >> 32 != 0 {
+                self.pow_public_byte_pairs::<4>(rows, exponent)
+            } else if exponent.0[0] >> 16 != 0 {
+                self.pow_public_byte_pairs::<2>(rows, exponent)
+            } else {
+                self.pow_public_byte_pairs::<1>(rows, exponent)
+            };
         }
         let mut value = self.field.one();
         for (i, row) in rows.iter().enumerate() {
@@ -275,6 +269,30 @@ impl<C: RingOps, const E: usize> FixedBasePow<C, E> {
             }
         }
         value
+    }
+
+    #[inline]
+    fn pow_public_byte_pairs<const PAIRS: usize>(
+        &self,
+        rows: &[Vec<C::Elem>],
+        exponent: &Uint<E>,
+    ) -> C::Elem {
+        let mut products = [self.field.one(); PAIRS];
+        for (i, product) in products.iter_mut().enumerate() {
+            let word = exponent.0[i / 4];
+            let shift = (i % 4) * 16;
+            let low = ((word >> shift) & 255) as usize;
+            let high = ((word >> (shift + 8)) & 255) as usize;
+            *product = self.field.mul(&rows[2 * i][low], &rows[2 * i + 1][high]);
+        }
+        let mut count = products.len();
+        while count > 1 {
+            for i in 0..count / 2 {
+                products[i] = self.field.mul(&products[2 * i], &products[2 * i + 1]);
+            }
+            count /= 2;
+        }
+        products[0]
     }
 }
 
@@ -384,6 +402,221 @@ impl<C> PreparedIntegerProjection<C> {
         assert_eq!(input.len(), out.len());
         for (value, dst) in input.iter().zip(out) {
             *dst = self.field.from_integer(value);
+        }
+    }
+}
+
+#[cfg(test)]
+mod public_power_tests {
+    use super::*;
+
+    // Frozen pre-optimization 16-byte algorithm, independent of the new helper.
+    #[inline(never)]
+    fn previous_pow<C: RingOps>(table: &FixedBasePow<C, 2>, exponent: &Uint<2>) -> C::Elem {
+        let PowerTable::Public { rows, window, .. } = &table.table else {
+            panic!("public table required");
+        };
+        assert_eq!(*window, 8);
+        let mut products = [table.field.one(); 8];
+        for (i, product) in products.iter_mut().enumerate() {
+            let word = exponent.0[i / 4];
+            let shift = (i % 4) * 16;
+            let low = ((word >> shift) & 255) as usize;
+            let high = ((word >> (shift + 8)) & 255) as usize;
+            *product = table.field.mul(&rows[2 * i][low], &rows[2 * i + 1][high]);
+        }
+        let mut count = products.len();
+        while count > 1 {
+            for i in 0..count / 2 {
+                products[i] = table.field.mul(&products[2 * i], &products[2 * i + 1]);
+            }
+            count /= 2;
+        }
+        products[0]
+    }
+
+    fn binary_power<C: RingOps>(field: &C, mut base: C::Elem, mut exponent: u128) -> C::Elem {
+        let mut result = field.one();
+        while exponent != 0 {
+            if exponent & 1 != 0 {
+                result = field.mul(&result, &base);
+            }
+            base = field.square(&base);
+            exponent >>= 1;
+        }
+        result
+    }
+
+    fn generator() -> Gf128 {
+        const FACTORS: [u128; 9] = [3, 5, 17, 257, 641, 65537, 274177, 6700417, 67280421310721];
+        (2..)
+            .map(Gf128::from_polynomial_bits)
+            .find(|&base| {
+                FACTORS
+                    .iter()
+                    .all(|&factor| binary_power(&Gf128Ops, base, u128::MAX / factor) != Gf128::ONE)
+            })
+            .unwrap()
+    }
+
+    fn exponents() -> Vec<u128> {
+        let mut values = vec![0, 1, 2, u128::MAX];
+        for bit in [8, 16, 32, 64, 113, 127] {
+            let boundary = 1u128 << bit;
+            values.extend([boundary - 1, boundary, boundary + 1]);
+        }
+        let mut state = 0x437a_20d1_67ba_197fu128;
+        for _ in 0..64 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            values.push(state);
+        }
+        values
+    }
+
+    fn check<C: RingOps>(field: C, base: C::Elem)
+    where
+        C::Elem: std::fmt::Debug + PartialEq,
+    {
+        let table = FixedBasePow::<_, 2>::new_public(&field, base, 8);
+        for exponent in exponents() {
+            let words = Uint::from_words([exponent as u64, (exponent >> 64) as u64]);
+            let expected = binary_power(&field, base, exponent);
+            assert_eq!(table.pow_public(&words), expected, "exponent {exponent}");
+            assert_eq!(previous_pow(&table, &words), expected);
+            assert_eq!(table.pow_ct(&words), expected);
+        }
+    }
+
+    #[test]
+    fn public_byte_buckets_match_binary_power_and_previous_tree() {
+        for base in [
+            Gf128::ZERO,
+            Gf128::ONE,
+            generator(),
+            Gf128::new(0xfabc_3811_dea9_8037, 0x8ef7_920d_0065_ab13),
+        ] {
+            check(Gf128Ops, base);
+        }
+    }
+
+    #[test]
+    fn public_byte_buckets_support_composite_ring_and_prime_providers() {
+        let ring = ModRingCtx::new(Uint::from_words([18])).unwrap();
+        for base in [0u64, 1, 2, 7, 9, 17] {
+            check(&ring, ring.from_integer(&base));
+        }
+        let field = create_prime_field(Uint::from_words([17]));
+        for base in [0u64, 1, 3, 16] {
+            check(&field, field.from_integer(&base));
+        }
+    }
+
+    #[test]
+    fn public_fallback_windows_and_private_tables_match_binary_power() {
+        let base = generator();
+        for window in [1, 7, 9, 16] {
+            let table = FixedBasePow::<_, 2>::new_public(Gf128Ops, base, window);
+            for exponent in exponents() {
+                let words = Uint::from_words([exponent as u64, (exponent >> 64) as u64]);
+                assert_eq!(
+                    table.pow_public(&words),
+                    binary_power(&Gf128Ops, base, exponent)
+                );
+            }
+        }
+        let private = FixedBasePow::<_, 2>::new(Gf128Ops, base);
+        for exponent in exponents() {
+            let words = Uint::from_words([exponent as u64, (exponent >> 64) as u64]);
+            let expected = binary_power(&Gf128Ops, base, exponent);
+            assert_eq!(private.pow_ct(&words), expected);
+            assert_eq!(private.pow_public(&words), expected);
+        }
+    }
+
+    #[test]
+    #[ignore = "isolated public exponentiation timing; run on an otherwise idle pinned CPU"]
+    fn public_limb_power_abba_microbenchmark() {
+        use std::{hint::black_box, time::Instant};
+
+        #[inline(never)]
+        fn current_pow(table: &FixedBasePow<Gf128Ops, 2>, exponent: &Uint<2>) -> Gf128 {
+            table.pow_public(exponent)
+        }
+        fn timed(
+            table: &FixedBasePow<Gf128Ops, 2>,
+            exponents: &[Uint<2>],
+            f: fn(&FixedBasePow<Gf128Ops, 2>, &Uint<2>) -> Gf128,
+        ) -> f64 {
+            let start = Instant::now();
+            for _ in 0..16 {
+                for exponent in exponents {
+                    black_box(f(black_box(table), black_box(exponent)));
+                }
+            }
+            start.elapsed().as_secs_f64() * 1000.0 / 16.0
+        }
+
+        let table = FixedBasePow::<_, 2>::new_public(Gf128Ops, generator(), 8);
+        let mut random = 0x875b_2ad9_1ba6_3df1_46c2_1f83_9a07_68d3u128;
+        let mut next = || {
+            random ^= random << 13;
+            random ^= random >> 7;
+            random ^= random << 17;
+            random
+        };
+        // Prime equality weights exercise the same 13-coordinate construction
+        // as Falcon, then the same 113-bit integer split. Setup is not timed.
+        let prime = FpCtx::from_prime_u128(u128::MAX - 158);
+        let mut weights = vec![prime.one()];
+        for _ in 0..13 {
+            let r = prime.from_integer(&next());
+            let complement = prime.sub(&prime.one(), &r);
+            let old_len = weights.len();
+            for i in 0..old_len {
+                weights.push(prime.mul(&weights[i], &r));
+                weights[i] = prime.mul(&weights[i], &complement);
+            }
+        }
+        let full: Vec<_> = weights.iter().map(|w| prime.to_integer(w)).collect();
+        let split: Vec<_> = full
+            .iter()
+            .flat_map(|w| {
+                let value = u128::from(w.0[0]) | (u128::from(w.0[1]) << 64);
+                let low = value & ((1u128 << 113) - 1);
+                [
+                    Uint::from_words([low as u64, (low >> 64) as u64]),
+                    Uint::from_words([(value >> 113) as u64, 0]),
+                ]
+            })
+            .collect();
+        for (label, exponents) in [("8192_split_113_15", &split), ("8192_full_128", &full)] {
+            for exponent in exponents {
+                assert_eq!(
+                    current_pow(&table, exponent),
+                    previous_pow(&table, exponent)
+                );
+            }
+            for _ in 0..4 {
+                black_box(timed(&table, exponents, previous_pow));
+                black_box(timed(&table, exponents, current_pow));
+            }
+            let mut previous = 0.0;
+            let mut current = 0.0;
+            for _ in 0..48 {
+                previous += timed(&table, exponents, previous_pow);
+                current += timed(&table, exponents, current_pow);
+                current += timed(&table, exponents, current_pow);
+                previous += timed(&table, exponents, previous_pow);
+            }
+            previous /= 96.0;
+            current /= 96.0;
+            eprintln!(
+                "{label}: previous_ms={previous:.6} current_ms={current:.6} ratio={:.6} saved_ms={:.6}",
+                current / previous,
+                previous - current
+            );
         }
     }
 }

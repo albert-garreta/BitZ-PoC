@@ -8,6 +8,8 @@
 //! outside prover timing, and the same batch is reused across trials.
 #[path = "common/falcon_inputs.rs"]
 mod falcon_inputs;
+#[path = "common/falcon_affinity.rs"]
+mod falcon_affinity;
 use bitz::piop::spartan::falcon1024_ct::{
     FalconProtocol, FalconPublicStatement, PreparedFalconHybrid,
 };
@@ -115,14 +117,7 @@ impl Options {
 fn main() -> Result<(), Box<dyn Error>> {
     let options = Options::read()?;
     reject_fixture_overrides()?;
-    #[cfg(feature = "parallel")]
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(options.threads)
-        .build_global()?;
-    #[cfg(not(feature = "parallel"))]
-    if options.threads != 1 {
-        return Err("multiple threads require the parallel feature".into());
-    }
+    let mut cpu_affinity = falcon_affinity::build_global_pool(options.threads)?;
     if std::env::var_os("BITZ_FALCON_STAGE_TIMINGS").is_some() {
         use tracing_subscriber::prelude::*;
         tracing_subscriber::registry()
@@ -194,6 +189,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "algebraic_security_bits": security.algebraic_bits,
             "security_terms": security_terms,
             "threads": threads,
+            "cpu_affinity": cpu_affinity,
             "build_rustflags": option_env!("RUSTFLAGS"),
             "runtime_rustflags": std::env::var("RUSTFLAGS").ok(),
             "target_arch": std::env::consts::ARCH,
@@ -249,6 +245,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         prepared.verify(&statement, &proof)?;
         let verify_ms = ms(start);
         drop(phase);
+        let flock_verifier_affinity = falcon_affinity::verify_after_trial(&mut cpu_affinity)?;
         // An exact-build comparison aid, not a stable serialization or wire digest.
         // Stream the complete Debug representation to avoid allocating its string.
         let mut proof_hash = DebugHasher(blake3::Hasher::new());
@@ -287,6 +284,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "witness_commit_ms": witness_commit_ms,
                 "proof_prove_ms": prove_ms,
                 "proof_verify_ms": verify_ms,
+                "flock_verifier_affinity": flock_verifier_affinity,
                 "total_prover_ms": witness_commit_ms + prove_ms,
                 "end_to_end_ms": witness_commit_ms + prove_ms + verify_ms,
                 "process_peak_rss_kib": process_peak_rss_kib(),
