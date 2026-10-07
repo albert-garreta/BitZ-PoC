@@ -71,7 +71,11 @@ impl<const N: usize> Geometry<N> {
             return Err(Error::Invalid("too many shared opening sources"));
         }
         while N != 2
-            && logs.iter().map(|&l| 1usize << l.saturating_sub(position_log)).sum::<usize>() > 16
+            && logs
+                .iter()
+                .map(|&l| 1usize << l.saturating_sub(position_log))
+                .sum::<usize>()
+                > 16
         {
             position_log += 1;
         }
@@ -646,7 +650,6 @@ mod geometry_tests {
                 &geometry,
                 &statement,
                 borrowed,
-                None,
                 &resolved,
                 &data,
                 &point,
@@ -715,7 +718,6 @@ mod geometry_tests {
                 &root,
                 &point,
                 value,
-                None,
                 &resolved,
                 &compact,
                 None,
@@ -840,7 +842,6 @@ mod geometry_tests {
                 &geometry,
                 &statement,
                 borrowed,
-                None,
                 &resolved,
                 &data,
                 &point,
@@ -854,7 +855,6 @@ mod geometry_tests {
                 &root,
                 &point,
                 value,
-                None,
                 &resolved,
                 &proof,
                 None,
@@ -871,7 +871,6 @@ mod geometry_tests {
                         &root,
                         &point,
                         value,
-                        None,
                         &resolved,
                         &wrong,
                         None,
@@ -1187,7 +1186,6 @@ pub(crate) struct Proof<const N: usize = 2> {
 /// The logical source count is independent of this proof shape.
 #[derive(Clone, Debug)]
 pub(crate) struct JointProof<Final = Vec<F>> {
-    pub ood: Option<OodRound>,
     pub ring: RingSwitchProof,
     pub ligerito: LigeritoProof<Final>,
 }
@@ -1398,7 +1396,6 @@ pub(crate) fn prove_joint_sources_with_security<const N: usize>(
     geometry: &Geometry<N>,
     statement: &Hash,
     sources: [&[F]; N],
-    ood: Option<&OodProverClaim>,
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     data: &JointProverData<N>,
     point: &[Gf],
@@ -1416,7 +1413,7 @@ pub(crate) fn prove_joint_sources_with_security<const N: usize>(
         geometry,
         statement,
         sources,
-        ood,
+        None,
         resolved,
         |positions, lanes, queries| data.open(positions, lanes, queries),
         point,
@@ -1476,7 +1473,6 @@ pub(crate) fn verify_joint_with_security<const N: usize>(
     root: &Hash,
     point: &[Gf],
     value: F,
-    ood: Option<&OodVerifierClaim>,
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     proof: &JointProof,
     security: Option<&mut grinding::GrindingContext<'_>>,
@@ -1498,7 +1494,7 @@ pub(crate) fn verify_joint_with_security<const N: usize>(
         statement,
         point,
         value,
-        ood,
+        None,
         resolved,
         &proof.ring,
         &proof.ligerito,
@@ -1680,7 +1676,7 @@ pub(crate) fn prove_sources_with_security<const N: usize>(
         security,
     )?;
     Ok(Proof {
-        ood: proof.ood,
+        ood: ood.map(|claim| claim.round),
         ring: proof.ring,
         ligerito: proof.ligerito,
         paths,
@@ -1742,7 +1738,6 @@ fn prove_sources_initial_with_security<const N: usize, Final: OpeningEncoding>(
         initial,
         target,
         ring,
-        ood,
         resolved,
         open_initial,
         security,
@@ -1872,13 +1867,12 @@ fn continue_prove<const N: usize>(
         initial,
         target,
         ring,
-        ood,
         resolved,
         separate_initial(geometry, data, &mut paths),
         security,
     )?;
     Ok(Proof {
-        ood: proof.ood,
+        ood: ood.map(|claim| claim.round),
         ring: proof.ring,
         ligerito: proof.ligerito,
         paths,
@@ -1916,7 +1910,6 @@ fn continue_prove_with_initial<Final: OpeningEncoding>(
     initial: PreparedInitial<'_>,
     target: F,
     ring: RingSwitchProof,
-    ood: Option<&OodProverClaim>,
     resolved: &crate::ligerito_flock::ResolvedLigerito,
     open_initial: impl FnOnce(usize, usize, &[usize]) -> RecursiveProof,
     security: Option<&mut grinding::GrindingContext<'_>>,
@@ -1937,7 +1930,6 @@ fn continue_prove_with_initial<Final: OpeningEncoding>(
         run!(&mut ZincChallenger(t))
     };
     Ok(JointProof {
-        ood: ood.map(|claim| claim.round),
         ring,
         ligerito: proof,
     })

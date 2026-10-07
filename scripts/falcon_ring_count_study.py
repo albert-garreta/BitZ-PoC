@@ -85,7 +85,7 @@ def decode_words(payload, width, signed=False):
 
 
 def fixture_trace():
-    fixtures = ROOT / "src/piop/spartan/falcon1024_ct/fixtures"
+    fixtures = ROOT / "src/piop/spartan/falcon/fixtures"
     pk = (fixtures / "public_key.bin").read_bytes()
     sig = (fixtures / "signature_ct.bin").read_bytes()
     msg = (fixtures / "message.bin").read_bytes()
@@ -243,7 +243,7 @@ def main():
         "plus_public_canonical_slack": counts(uv_e+ranges+("s2_canonical_slack",), removed_linear+N, 2*M+N, M, 4, 3),
         "plus_20bit_ring_quotient": counts(uv_e+ranges+("s2_canonical_slack",), removed_linear+N, 2*M+N, M, 4, 3, 20),
     }
-    code = ROOT / "src/piop/spartan/falcon1024_ct/layout.rs"
+    code = ROOT / "src/piop/spartan/falcon/layout.rs"
     print(json.dumps({"scope": "Falcon1024 hybrid; one live signature; proposals only",
                       "layout_sha256": hashlib.sha256(code.read_bytes()).hexdigest(),
                       "source_components_values_bits": SOURCE, "linear_components": LINEAR,

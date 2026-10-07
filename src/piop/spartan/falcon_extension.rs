@@ -17,9 +17,7 @@ impl<const K: usize> FalconExtension<K> {
     pub fn canonical(self) -> bool {
         self.0.iter().all(|&x| u64::from(x) < Q)
     }
-    pub fn is_base_field(self) -> bool {
-        self.0[1..].iter().all(|&x| x == 0)
-    }
+
     pub fn add(self, rhs: Self) -> Self {
         Self(std::array::from_fn(|i| {
             ((u32::from(self.0[i]) + u32::from(rhs.0[i])) % Q as u32) as u16
@@ -48,7 +46,8 @@ impl<const K: usize> FalconExtension<K> {
             product[i].rem_euclid(Q as i64) as u16
         }))
     }
-    pub fn pow(mut self, mut exponent: u64) -> Self {
+    #[cfg(test)]
+    fn pow(mut self, mut exponent: u64) -> Self {
         let mut result = Self::ONE;
         while exponent != 0 {
             if exponent & 1 != 0 {
@@ -58,24 +57,6 @@ impl<const K: usize> FalconExtension<K> {
             exponent >>= 1;
         }
         result
-    }
-    /// Full extension degree, not multiplicative primitiveness.
-    pub fn generates_extension(self) -> bool {
-        let exponents: &[usize] = match K {
-            8 => &[4],
-            9 => &[3],
-            10 => &[5, 2],
-            11 => &[1],
-            _ => panic!("unregistered Falcon extension"),
-        };
-        let mut frobenius = self;
-        for i in 1..K {
-            frobenius = frobenius.pow(Q);
-            if exponents.contains(&i) && frobenius == self {
-                return false;
-            }
-        }
-        true
     }
 }
 
@@ -124,11 +105,7 @@ mod tests {
         let mut power = theta;
         for i in 1..=K {
             power = power.pow(Q);
-            if (K == 8 && i == 4)
-                || (K == 9 && i == 3)
-                || (K == 10 && (i == 2 || i == 5))
-                || (K == 11 && i == 1)
-            {
+            if (K == 9 && i == 3) || (K == 10 && (i == 2 || i == 5)) || (K == 11 && i == 1) {
                 let mut a = modulus.clone();
                 let mut b = power.sub(theta).0.map(Word::from).to_vec();
                 trim(&mut b);
@@ -142,9 +119,6 @@ mod tests {
             }
         }
         assert_eq!(power, theta, "Rabin final Frobenius condition");
-        assert!(theta.generates_extension());
-        assert!(!FalconExtension::<K>::ZERO.generates_extension());
-        assert!(!FalconExtension::<K>::ONE.generates_extension());
         for seed in 1..=24 {
             let a = FalconExtension::<K>(std::array::from_fn(|i| {
                 ((seed * 137 + i * 499) % Q as usize) as u16
@@ -162,24 +136,9 @@ mod tests {
             reference.resize(K, 0);
             assert_eq!(a.mul(b).0.map(Word::from).as_slice(), reference);
         }
-        // Trace to each maximal proper subfield produces a rejected element.
-        for d in 1..K {
-            if K % d == 0 && (2..K / d).all(|r| (K / d) % r != 0) {
-                let mut value = theta;
-                let mut trace = FalconExtension::<K>::ZERO;
-                for _ in 0..K / d {
-                    trace = trace.add(value);
-                    for _ in 0..d {
-                        value = value.pow(Q);
-                    }
-                }
-                assert!(!trace.generates_extension());
-            }
-        }
     }
     #[test]
     fn registered_fields() {
-        check::<8>();
         check::<9>();
         check::<10>();
         check::<11>();

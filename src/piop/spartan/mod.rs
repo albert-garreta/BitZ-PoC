@@ -16,12 +16,12 @@ pub mod cm;
 #[cfg(feature = "ecdsa")]
 pub mod ecdsa_sha256;
 #[cfg(feature = "falcon")]
-pub mod falcon1024_ct;
+pub mod falcon;
 #[cfg(feature = "falcon")]
 pub mod falcon_parameters;
 #[cfg(feature = "falcon")]
 pub mod falcon_extension;
-#[cfg(feature = "falcon-hybrid")]
+#[cfg(feature = "falcon")]
 pub mod falcon_profiles;
 pub mod grinding;
 pub mod matrix;

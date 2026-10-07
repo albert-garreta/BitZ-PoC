@@ -4,21 +4,22 @@
 //! --features falcon-hybrid --bench falcon_hybrid -- --batch 32 --iterations 2`.
 //! Security must be selected explicitly. Each trial commits a fresh batch and
 //! verifies the resulting full proof against its joint source root. fn-dsa 0.3.0
-//! generates distinct original Falcon-1024 keypairs/messages/signatures once,
+//! generates distinct original Falcon-512 or Falcon-1024 keypairs/messages/signatures once,
 //! outside prover timing, and the same batch is reused across trials.
-#[path = "common/falcon_inputs.rs"]
-mod falcon_inputs;
 #[path = "common/falcon_affinity.rs"]
 mod falcon_affinity;
-use bitz::piop::spartan::falcon1024_ct::{
-    FalconProtocol, FalconPublicStatement, PreparedFalconHybrid,
-};
-use falcon_inputs::{generate_cases, reject_fixture_overrides};
+#[path = "common/falcon_degree_inputs.rs"]
+mod falcon_degree_inputs;
+use bitz::piop::spartan::falcon_parameters::{auto_k, ring_budget_ok};
+use bitz::piop::spartan::falcon_profiles::{BackendSelection, FalconBackend};
+use falcon_degree_inputs::{generate_cases, reject_fixture_overrides};
 use serde_json::json;
 use std::{error::Error, fmt::Write, fs, time::Instant};
 
 struct Options {
-    protocol: FalconProtocol,
+    degree: usize,
+    extension: usize,
+    extension_selection: String,
     batch: usize,
     security: usize,
     iterations: usize,
@@ -29,7 +30,8 @@ struct Options {
 
 impl Options {
     fn read() -> Result<Self, Box<dyn Error>> {
-        let mut protocol = FalconProtocol::NativeCarry;
+        let mut degree = 1024;
+        let mut extension_selection = String::from("auto");
         let mut batch = env_usize("BITZ_FALCON_BATCH")?.unwrap_or(32);
         let mut security = env_usize("BITZ_BENCH_LAMBDA")?;
         let mut iterations = env_usize("BITZ_BENCH_REPS")?.unwrap_or(3);
@@ -47,16 +49,12 @@ impl Options {
             }
             if matches!(flag.as_str(), "--help" | "-h") {
                 println!(
-                    "falcon_hybrid --security 100|128 [--protocol native|shared-prime] [--batch 1..1024] [--seed U64] [--iterations N] [--warmup N] [--threads N]\nInputs: distinct fn-dsa 0.3.0 original Falcon-1024 keys and signatures; generation is outside prover timing. Defaults: protocol native, batch 32, seed 42.\nEnvironment defaults: BITZ_BENCH_LAMBDA, BITZ_FALCON_BATCH, BITZ_FALCON_SEED, BITZ_BENCH_REPS, RAYON_NUM_THREADS."
+                    "falcon_hybrid --security 100|128 [--degree 512|1024] [--k auto|9|10|11] [--batch 1..1024] [--seed U64] [--iterations N] [--warmup N] [--threads N]\nInputs: distinct fn-dsa 0.3.0 original Falcon-512 or Falcon-1024 keys and signatures; generation is outside prover timing. Defaults: degree 1024, K auto, max batch 1024, batch 32, seed 42.\nEnvironment defaults: BITZ_BENCH_LAMBDA, BITZ_FALCON_BATCH, BITZ_FALCON_SEED, BITZ_BENCH_REPS, RAYON_NUM_THREADS."
                 );
                 std::process::exit(0);
             }
-            if flag == "--protocol" {
-                protocol = match args.next().ok_or("missing protocol")?.as_str() {
-                    "native" => FalconProtocol::NativeCarry,
-                    "shared-prime" => FalconProtocol::SharedPrime,
-                    _ => return Err("protocol must be native or shared-prime".into()),
-                };
+            if flag == "--k" {
+                extension_selection = args.next().ok_or("missing K selection")?;
                 continue;
             }
             if flag == "--seed" {
@@ -65,13 +63,7 @@ impl Options {
             }
             if !matches!(
                 flag.as_str(),
-                "--batch"
-                    | "--security"
-                    | "--lambda"
-                    | "--iterations"
-                    | "--reps"
-                    | "--warmup"
-                    | "--threads"
+                "--batch" | "--degree" | "--security" | "--iterations" | "--warmup" | "--threads"
             ) {
                 return Err(format!("unknown argument {flag}").into());
             }
@@ -81,8 +73,9 @@ impl Options {
                 .parse()?;
             match flag.as_str() {
                 "--batch" => batch = value,
-                "--security" | "--lambda" => security = Some(value),
-                "--iterations" | "--reps" => iterations = value,
+                "--degree" => degree = value,
+                "--security" => security = Some(value),
+                "--iterations" => iterations = value,
                 "--warmup" => warmup = value,
                 "--threads" => threads = value,
                 _ => unreachable!(),
@@ -102,8 +95,27 @@ impl Options {
         if warmup.checked_add(iterations).is_none() {
             return Err("trial count overflow".into());
         }
+        if !matches!(degree, 512 | 1024) {
+            return Err("degree must be 512 or 1024".into());
+        }
+        let extension = if extension_selection.eq_ignore_ascii_case("auto") {
+            extension_selection = String::from("auto");
+            auto_k(degree, security, 1024)
+        } else {
+            let explicit = extension_selection.parse::<usize>()?;
+            if !(9..=11).contains(&explicit) {
+                return Err("explicit K must be in 9..=11".into());
+            }
+            extension_selection = format!("explicit({explicit})");
+            explicit
+        };
+        if !ring_budget_ok(degree, extension, security, 1024) {
+            return Err("explicit K misses the requested ring security budget".into());
+        }
         Ok(Self {
-            protocol,
+            degree,
+            extension,
+            extension_selection,
             batch,
             security,
             iterations,
@@ -114,25 +126,16 @@ impl Options {
     }
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let options = Options::read()?;
-    reject_fixture_overrides()?;
-    let mut cpu_affinity = falcon_affinity::build_global_pool(options.threads)?;
-    if std::env::var_os("BITZ_FALCON_STAGE_TIMINGS").is_some() {
-        use tracing_subscriber::prelude::*;
-        tracing_subscriber::registry()
-            .with(StageTimings)
-            .try_init()?;
-    } else {
-        bitz::observability::install().expect("install Perfetto subscriber");
-    }
-    #[cfg(feature = "parallel")]
-    let threads = rayon::current_num_threads();
-    #[cfg(not(feature = "parallel"))]
-    let threads = 1;
-
+macro_rules! backend_runner {
+    ($name:ident, $module:ident, $degree:expr, $extension:expr) => {
+        fn $name(
+            options: Options,
+            mut cpu_affinity: Option<falcon_affinity::AffinityReport>,
+            threads: usize,
+        ) -> Result<(), Box<dyn Error>> {
+            use bitz::piop::spartan::falcon_profiles::$module::FalconPublicStatement;
     let start = Instant::now();
-    let cases = generate_cases(options.batch, options.seed)?;
+    let cases = generate_cases(options.degree, options.batch, options.seed)?;
     let input_setup_ms = ms(start);
     let mut input_hash = blake3::Hasher::new();
     for case in &cases {
@@ -147,18 +150,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let signatures: Vec<_> = cases.iter().map(|case| case.signature.as_slice()).collect();
 
     let start = Instant::now();
-    let prepared = match options.protocol {
-        FalconProtocol::NativeCarry => PreparedFalconHybrid::new(options.batch, options.security)?,
-        FalconProtocol::SharedPrime => {
-            PreparedFalconHybrid::new_shared_prime(options.batch, options.security)?
-        }
-    };
-    let protocol = match prepared.protocol() {
-        FalconProtocol::NativeCarry => "bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6",
-        FalconProtocol::SharedPrime => "bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v5",
-    };
+    let prepared = <BackendSelection<$degree, $extension> as FalconBackend>::prepare(
+        options.batch, options.security, 1024,
+    )?;
+    let protocol = bitz::piop::spartan::falcon::PROTOCOL_ID;
     let prepare_ms = ms(start);
+    assert_eq!(prepared.capacity(), options.batch.next_power_of_two());
+    let pcs_query_shape = pcs_query_shape(&prepared.source_bits_per_signature(), prepared.capacity(), options.security)?;
     let security = prepared.security();
+    assert_eq!(security.target_bits, options.security);
+    assert!(security.algebraic_bits >= options.security as f64);
+    assert!(security.terms.iter().all(|(_, error)| error.is_finite() && *error >= 0.0));
     let (prime_min, prime_max) = prepared.prime_modulus_bounds();
     let security_terms: Vec<_> = security
         .terms
@@ -174,14 +176,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!(
         "{}",
         json!({
-            "schema": "bitz/falcon-hybrid/v3",
+            "schema": "bitz/falcon-hybrid/profile-v1",
+            "degree": options.degree,
+            "ring_extension": options.extension,
+            "ring_extension_selection": options.extension_selection,
+            "max_batch": 1024,
             "protocol": protocol,
             "integer_bridge": prepared.integer_bridge_name(),
             "arithmetic_prime_bits": u128::BITS - prime_max.leading_zeros(),
             "arithmetic_prime_min": prime_min.to_string(),
             "arithmetic_prime_max": prime_max.to_string(),
             "arithmetic_live_bits_per_signature": prepared.live_arithmetic_bits_per_signature(),
-            "arithmetic_auxiliary_values_per_signature": 8605,
             "event": "prepared",
             "batch": options.batch,
             "capacity": prepared.capacity(),
@@ -207,7 +212,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "prepare_ms": prepare_ms,
             "input_source": "pornin/rust-fn-dsa",
             "input_implementation_version": "0.3.0",
-            "input_mode": "original-falcon-1024",
+            "input_mode": format!("original-falcon-{}", options.degree),
             "input_seed": options.seed,
             "input_rng": "rand_chacha 0.3.1 ChaCha20Rng::seed_from_u64",
             "input_count": cases.len(),
@@ -216,6 +221,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "native_verify_includes_public_key_decode": true,
             "public_inputs": ["public_key", "message", "signature_nonce", "signature_s2"],
             "source_bits_per_signature": prepared.source_bits_per_signature(),
+            "pcs_query_shape": pcs_query_shape,
             "warmup_trials": options.warmup,
             "measured_trials": options.iterations,
         })
@@ -263,6 +269,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 })
             })
             .collect();
+        let payload_breakdown: std::collections::BTreeMap<_, _> =
+            proof.payload_size_breakdown().into_iter().collect();
+        assert_eq!(payload_breakdown.values().sum::<usize>(), proof.payload_size_bytes());
         let measured = trial >= options.warmup;
         if measured {
             samples.push(([witness_commit_ms, prove_ms, verify_ms], native_verify_ms));
@@ -270,7 +279,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!(
             "{}",
             json!({
-                "schema": "bitz/falcon-hybrid/v3",
+                "schema": "bitz/falcon-hybrid/profile-v1",
+            "degree": options.degree,
+            "ring_extension": options.extension,
+            "ring_extension_selection": options.extension_selection,
+            "max_batch": 1024,
                 "event": "trial",
                 "trial": if measured { "sample" } else { "warmup" },
                 "sample": if measured { Some(trial - options.warmup + 1) } else { None },
@@ -296,6 +309,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     "categories": grinding_diagnostics,
                 },
                 "proof_payload_bytes": proof.payload_size_bytes(),
+                "proof_payload_breakdown": payload_breakdown,
                 "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
                 "verified": true,
             })
@@ -314,7 +328,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!(
         "{}",
         json!({
-            "schema": "bitz/falcon-hybrid/v3",
+            "schema": "bitz/falcon-hybrid/profile-v1",
+            "degree": options.degree,
+            "ring_extension": options.extension,
+            "ring_extension_selection": options.extension_selection,
+            "max_batch": 1024,
             "event": "summary",
             "batch": options.batch,
             "capacity": prepared.capacity(),
@@ -336,6 +354,100 @@ fn main() -> Result<(), Box<dyn Error>> {
         })
     );
     Ok(())
+}
+    };
+}
+backend_runner!(run_512_9, n512_k9, 512, 9);
+backend_runner!(run_512_10, n512_k10, 512, 10);
+backend_runner!(run_512_11, n512_k11, 512, 11);
+backend_runner!(run_1024_9, n1024_k9, 1024, 9);
+backend_runner!(run_1024_10, n1024_k10, 1024, 10);
+backend_runner!(run_1024_11, n1024_k11, 1024, 11);
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let options = Options::read()?;
+    reject_fixture_overrides()?;
+    let cpu_affinity = falcon_affinity::build_global_pool(options.threads)?;
+    if std::env::var_os("BITZ_FALCON_STAGE_TIMINGS").is_some() {
+        use tracing_subscriber::prelude::*;
+        tracing_subscriber::registry()
+            .with(StageTimings)
+            .try_init()?;
+    } else {
+        bitz::observability::install().expect("install Perfetto subscriber");
+    }
+    #[cfg(feature = "parallel")]
+    let threads = rayon::current_num_threads();
+    #[cfg(not(feature = "parallel"))]
+    let threads = 1;
+
+    match (options.degree, options.extension) {
+        (512, 9) => run_512_9(options, cpu_affinity, threads),
+        (512, 10) => run_512_10(options, cpu_affinity, threads),
+        (512, 11) => run_512_11(options, cpu_affinity, threads),
+        (1024, 9) => run_1024_9(options, cpu_affinity, threads),
+        (1024, 10) => run_1024_10(options, cpu_affinity, threads),
+        (1024, 11) => run_1024_11(options, cpu_affinity, threads),
+        _ => Err("unsupported benchmark backend".into()),
+    }
+}
+
+/// Public-shape reconstruction for untimed accounting. This repeats the
+/// registered Geometry::new policy, which the source audit checks in each build.
+/// Only degrees 512/1024 (three/four sources) are exposed by this benchmark.
+fn pcs_query_shape(
+    source_bits: &[usize],
+    capacity: usize,
+    security: usize,
+) -> Result<serde_json::Value, Box<dyn Error>> {
+    assert!(source_bits.len() >= 3);
+    let logs: Vec<_> = source_bits
+        .iter()
+        .map(|&bits| {
+            let total = bits.checked_mul(capacity).expect("source size");
+            assert!(total.is_power_of_two());
+            total.ilog2() as usize - 7
+        })
+        .collect();
+    let mut position_log = logs.iter().copied().max().expect("sources") - 3;
+    while logs
+        .iter()
+        .map(|&log| 1usize << log.saturating_sub(position_log))
+        .sum::<usize>()
+        > 16
+    {
+        position_log += 1;
+    }
+    let lane_widths: Vec<_> = logs
+        .iter()
+        .map(|&log| 1usize << log.saturating_sub(position_log))
+        .collect();
+    let occupied_lanes: usize = lane_widths.iter().sum();
+    let resolved =
+        bitz::ligerito_flock::LigeritoSelection::MATCHED_UDR.resolve(position_log + 4, security)?;
+    let config = resolved.prover();
+    Ok(json!({
+        "source_packed_logs": logs,
+        "source_lane_widths": lane_widths,
+        "position_log": position_log,
+        "virtual_lane_log": 4,
+        "occupied_lanes": occupied_lanes,
+        "initial_opened_row_width": occupied_lanes,
+        "recursive_opened_row_widths": config.recursive_ks[..config.recursive_steps - 1].iter().map(|&k| 1usize << k).collect::<Vec<_>>(),
+        "queries": config.queries,
+        "log_inv_rates": config.log_inv_rates,
+        "initial_log_msg_cols": config.initial_log_msg_cols,
+        "initial_log_num_interleaved": config.initial_log_num_interleaved,
+        "initial_k": config.initial_k,
+        "recursive_steps": config.recursive_steps,
+        "recursive_log_msg_cols": config.recursive_log_msg_cols,
+        "recursive_ks": config.recursive_ks,
+        "query_grinding_bits": config.grinding_bits,
+        "fold_grinding_bits": config.fold_grinding_bits,
+        "ood_samples": config.ood_samples,
+        "merkle_hash": format!("{:?}", config.merkle_hash),
+        "configuration_fingerprint": resolved.digest().iter().map(|byte| format!("{byte:02x}")).collect::<String>(),
+    }))
 }
 
 /// Diagnostic wall times; kept out of the normal benchmark's subscriber so

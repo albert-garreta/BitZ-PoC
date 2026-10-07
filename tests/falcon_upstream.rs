@@ -1,17 +1,17 @@
 #![cfg(feature = "falcon-hybrid")]
 
-#[path = "../benches/common/falcon_inputs.rs"]
-mod falcon_inputs;
+#[path = "../benches/common/falcon_degree_inputs.rs"]
+mod falcon_degree_inputs;
 
-use bitz::piop::spartan::falcon1024_ct::{
-    FalconPublicStatement, PreparedFalconHybrid, decode_signature_ct, verify_falcon1024_ct,
-};
-use falcon_inputs::{compressed_to_ct, generate_cases};
+use bitz::piop::spartan::falcon_profiles::n1024_k11::{decode_signature_ct, verify_falcon_ct};
+use bitz::piop::spartan::falcon_profiles::{FalconPublicStatement, PreparedFalconHybrid};
+bitz::falcon_profile! { pub UpstreamProfile { n:1024, security_bits:100, max_batch:1024, ring_extension:Explicit(11), } }
+use falcon_degree_inputs::{compressed_to_ct, generate_cases};
 use std::{collections::HashSet, error::Error};
 
 #[test]
 fn benchmark_inputs_are_distinct_reproducible_and_interoperable() -> Result<(), Box<dyn Error>> {
-    let cases = generate_cases(32, 42)?;
+    let cases = generate_cases(1024, 32, 42)?;
     assert_eq!(cases.len(), 32);
     assert_eq!(
         cases
@@ -29,15 +29,13 @@ fn benchmark_inputs_are_distinct_reproducible_and_interoperable() -> Result<(), 
             .len(),
         32
     );
-    assert_eq!(&cases[..2], generate_cases(2, 42)?.as_slice());
+    assert_eq!(&cases[..2], generate_cases(1024, 2, 42)?.as_slice());
 
     // Both implementations must reject when the signed message changes.
     let mut altered = cases[0].clone();
     altered.message[0] ^= 1;
     assert!(altered.verify_upstream().is_err());
-    assert!(
-        verify_falcon1024_ct(&altered.public_key, &altered.message, &altered.signature).is_err()
-    );
+    assert!(verify_falcon_ct(&altered.public_key, &altered.message, &altered.signature).is_err());
 
     let mut digest = blake3::Hasher::new();
     cases[0].hash_into(&mut digest);
@@ -50,17 +48,17 @@ fn benchmark_inputs_are_distinct_reproducible_and_interoperable() -> Result<(), 
 
 #[test]
 fn conversion_rejects_noncanonical_compressed_encodings() -> Result<(), Box<dyn Error>> {
-    let cases = generate_cases(1, 7)?;
+    let cases = generate_cases(1024, 1, 7)?;
     let original = &cases[0].upstream_signature;
-    assert!(compressed_to_ct(&original[..original.len() - 1]).is_err());
+    assert!(compressed_to_ct(1024, &original[..original.len() - 1]).is_err());
     let mut changed = original.clone();
     changed[0] = 0x39; // Wrong degree.
-    assert!(compressed_to_ct(&changed).is_err());
+    assert!(compressed_to_ct(1024, &changed).is_err());
     let mut changed = original.clone();
     // A sign bit, zero low magnitude, and unary terminator encodes forbidden -0.
     changed[41] = 0x80;
     changed[42] |= 0x80;
-    assert!(compressed_to_ct(&changed).is_err());
+    assert!(compressed_to_ct(1024, &changed).is_err());
     Ok(())
 }
 
@@ -96,14 +94,18 @@ fn proof_binds_the_exact_public_upstream_signature() -> Result<(), Box<dyn Error
             &mut signature,
         );
         assert!(verifier.verify(&signature, &DOMAIN_NONE, &HASH_ID_ORIGINAL_FALCON, &message));
-        let ct = compressed_to_ct(&signature)?;
-        verify_falcon1024_ct(&public_key, &message, &ct)?;
+        let ct = compressed_to_ct(1024, &signature)?;
+        verify_falcon_ct(&public_key, &message, &ct)?;
         signatures.push(ct);
     }
     assert_ne!(signatures[0], signatures[1]);
 
-    let prepared = PreparedFalconHybrid::new(1, 100)?;
-    let public = FalconPublicStatement::from_bytes(&[&public_key], &[&message], &[&signatures[0]])?;
+    let prepared = PreparedFalconHybrid::<UpstreamProfile>::new(1)?;
+    let public = FalconPublicStatement::<UpstreamProfile>::from_bytes(
+        &[&public_key],
+        &[&message],
+        &[&signatures[0]],
+    )?;
     let committed = prepared.commit(public)?;
     let statement = committed.statement.clone();
     let proof = prepared.prove(committed)?;

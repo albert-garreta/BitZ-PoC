@@ -17,6 +17,8 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
+import subprocess
 import shlex
 import signal
 import sys
@@ -24,8 +26,58 @@ import time
 import tomllib
 
 import bench_support as support
-from compare_falcon_benchmarks import require
-from run_falcon_campaign import campaign_environment, compiler_version, execute, require_ignored, verify_revision
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def verify_revision(root, revision):
+    require(re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", revision), "revision must be a full commit SHA")
+    source = support.root_metadata(root)
+    require(source["revision"] == revision, "HEAD differs from the requested revision")
+    require(not source["git_dirty"], "checkout is dirty; no changes were discarded")
+
+
+def require_ignored(root, path):
+    if path.is_relative_to(root):
+        try:
+            support.git(root, "check-ignore", "-q", "--", str(path))
+        except subprocess.CalledProcessError as error:
+            raise ValueError(f"campaign artifact path must be Git-ignored: {path}") from error
+
+
+def compiler_version(root):
+    return subprocess.check_output(["rustc", "-Vv"], cwd=root, text=True)
+
+
+def campaign_environment(target_dir):
+    env = support.clean_environment(os.environ)
+    # Encoded flags override RUSTFLAGS in Cargo. Keep one explicit build policy.
+    env.pop("CARGO_ENCODED_RUSTFLAGS", None)
+    env.pop("RUST_LOG", None)
+    env.update(RUSTFLAGS="-C target-cpu=native", CARGO_TARGET_DIR=str(target_dir))
+    return env
+
+
+def execute(command, *, root, env, output, errors=None, timeout):
+    print(f"Running {shlex.join(map(str, command))}; log: {output}", flush=True)
+    started = time.monotonic()
+    with output.open("w") as stdout:
+        if errors is None:
+            code, timed_out = support.run_process(command, cwd=root, env=env, stdout=stdout,
+                                                 stderr=subprocess.STDOUT, timeout=timeout)
+        else:
+            with errors.open("w") as stderr:
+                code, timed_out = support.run_process(command, cwd=root, env=env, stdout=stdout,
+                                                     stderr=stderr, timeout=timeout)
+    if timed_out:
+        raise TimeoutError(f"command timed out after {timeout}s; inspect {output}")
+    if code:
+        raise RuntimeError(f"command exited {code}; inspect {output}" + (f" and {errors}" if errors else ""))
+    return time.monotonic() - started
+
 
 
 def check_packages(root_lock, isolated_lock):

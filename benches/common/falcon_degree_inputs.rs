@@ -1,12 +1,10 @@
 //! Independent original-Falcon inputs shared by benchmarks and integration tests.
 //! The deterministic seed is for reproducible benchmark keys only.
 
-use bitz::piop::spartan::falcon_profiles::n1024_k11::{
-    FalconSignatureCt, N, NONCE_BYTES, encode_signature_ct, verify_falcon_ct,
-};
+use bitz::piop::spartan::falcon_parameters::FalconParameters;
 use fn_dsa::{
-    DOMAIN_NONE, FN_DSA_LOGN_1024, HASH_ID_ORIGINAL_FALCON, KeyPairGenerator, KeyPairGenerator1024,
-    SigningKey, SigningKey1024, VerifyingKey, VerifyingKey1024, sign_key_size, signature_size,
+    DOMAIN_NONE, HASH_ID_ORIGINAL_FALCON, KeyPairGenerator, KeyPairGeneratorStandard, SigningKey,
+    SigningKeyStandard, VerifyingKey, VerifyingKeyStandard, sign_key_size, signature_size,
     vrfy_key_size,
 };
 use rand_chacha::{
@@ -36,15 +34,15 @@ impl FalconCase {
 
     /// Includes decoding the encoded public key, as in a detached native verifier.
     pub fn verify_upstream(&self) -> Result<(), Box<dyn Error>> {
-        let verifier = VerifyingKey1024::decode(&self.public_key)
-            .ok_or("fn-dsa rejected the Falcon-1024 public key")?;
+        let verifier = VerifyingKeyStandard::decode(&self.public_key)
+            .ok_or("fn-dsa rejected the Falcon public key")?;
         if !verifier.verify(
             &self.upstream_signature,
             &DOMAIN_NONE,
             &HASH_ID_ORIGINAL_FALCON,
             &self.message,
         ) {
-            return Err("fn-dsa rejected its generated Falcon-1024 signature".into());
+            return Err("fn-dsa rejected its generated Falcon signature".into());
         }
         Ok(())
     }
@@ -69,18 +67,23 @@ pub fn reject_fixture_overrides() -> Result<(), Box<dyn Error>> {
 
 /// Generate distinct keys and 32-byte messages, verify upstream immediately,
 /// convert the signature, and preflight the native BitZ verifier.
-pub fn generate_cases(count: usize, seed: u64) -> Result<Vec<FalconCase>, Box<dyn Error>> {
+pub fn generate_cases(
+    degree: usize,
+    count: usize,
+    seed: u64,
+) -> Result<Vec<FalconCase>, Box<dyn Error>> {
     if let Some(directory) = std::env::var_os("BITZ_FALCON_CASE_CACHE") {
-        return cached_cases(Path::new(&directory), count, seed);
+        return cached_cases(Path::new(&directory), degree, count, seed);
     }
-    generate_cases_uncached(count, seed)
+    generate_cases_uncached(degree, count, seed)
 }
 
-const CASE_CACHE_FORMAT: &str = "bitz/falcon-cases/v1;fn-dsa=0.3.0;original-falcon-1024";
+const CASE_CACHE_FORMAT: &str = "bitz/falcon-degree-cases/v1;fn-dsa=0.3.0;original-falcon";
 
 #[derive(Serialize, Deserialize)]
 struct CaseCache {
     format: String,
+    degree: usize,
     count: usize,
     seed: u64,
     input_digest: [u8; 32],
@@ -96,12 +99,14 @@ fn input_digest(cases: &[FalconCase]) -> [u8; 32] {
 }
 
 fn encode_cache(
+    degree: usize,
     count: usize,
     seed: u64,
     cases: Vec<FalconCase>,
 ) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut bytes = bincode::serialize(&CaseCache {
         format: CASE_CACHE_FORMAT.into(),
+        degree,
         count,
         seed,
         input_digest: input_digest(&cases),
@@ -112,7 +117,12 @@ fn encode_cache(
     Ok(bytes)
 }
 
-fn decode_cache(bytes: &[u8], count: usize, seed: u64) -> Result<Vec<FalconCase>, Box<dyn Error>> {
+fn decode_cache(
+    bytes: &[u8],
+    degree: usize,
+    count: usize,
+    seed: u64,
+) -> Result<Vec<FalconCase>, Box<dyn Error>> {
     use bincode::Options;
 
     let payload_len = bytes
@@ -128,6 +138,7 @@ fn decode_cache(bytes: &[u8], count: usize, seed: u64) -> Result<Vec<FalconCase>
         .reject_trailing_bytes()
         .deserialize(&bytes[..payload_len])?;
     if cache.format != CASE_CACHE_FORMAT
+        || cache.degree != degree
         || cache.count != count
         || cache.seed != seed
         || cache.cases.len() != count
@@ -136,17 +147,17 @@ fn decode_cache(bytes: &[u8], count: usize, seed: u64) -> Result<Vec<FalconCase>
         return Err("Falcon input cache metadata/digest mismatch".into());
     }
     for (index, case) in cache.cases.iter().enumerate() {
-        if case.public_key.len() != vrfy_key_size(FN_DSA_LOGN_1024)
+        if case.public_key.len() != vrfy_key_size(degree.ilog2())
             || case.message.len() != 32
             || case.message[..8] != (index as u64).to_le_bytes()
         {
             return Err("Falcon input cache case shape mismatch".into());
         }
         case.verify_upstream()?;
-        if compressed_to_ct(&case.upstream_signature)? != case.signature {
+        if compressed_to_ct(degree, &case.upstream_signature)? != case.signature {
             return Err("Falcon input cache CT signature mismatch".into());
         }
-        verify_falcon_ct(&case.public_key, &case.message, &case.signature)?;
+        verify_native(degree, case)?;
     }
     Ok(cache.cases)
 }
@@ -155,16 +166,17 @@ fn decode_cache(bytes: &[u8], count: usize, seed: u64) -> Result<Vec<FalconCase>
 /// preflight checks as generation. Cache I/O is outside all proof timings.
 fn cached_cases(
     directory: &Path,
+    degree: usize,
     count: usize,
     seed: u64,
 ) -> Result<Vec<FalconCase>, Box<dyn Error>> {
     fs::create_dir_all(directory)?;
-    let path = directory.join(format!("fn-dsa-0.3.0-b{count}-seed{seed}.bin"));
+    let path = directory.join(format!("fn-dsa-0.3.0-n{degree}-b{count}-seed{seed}.bin"));
     if path.exists() {
-        return decode_cache(&fs::read(path)?, count, seed);
+        return decode_cache(&fs::read(path)?, degree, count, seed);
     }
-    let cases = generate_cases_uncached(count, seed)?;
-    let bytes = encode_cache(count, seed, cases.clone())?;
+    let cases = generate_cases_uncached(degree, count, seed)?;
+    let bytes = encode_cache(degree, count, seed, cases.clone())?;
     let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
     let mut file = fs::OpenOptions::new()
         .write(true)
@@ -182,7 +194,7 @@ fn cached_cases(
         }
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
             fs::remove_file(temporary)?;
-            decode_cache(&fs::read(path)?, count, seed)
+            decode_cache(&fs::read(path)?, degree, count, seed)
         }
         Err(error) => {
             let _ = fs::remove_file(temporary);
@@ -191,20 +203,27 @@ fn cached_cases(
     }
 }
 
-fn generate_cases_uncached(count: usize, seed: u64) -> Result<Vec<FalconCase>, Box<dyn Error>> {
+fn generate_cases_uncached(
+    degree: usize,
+    count: usize,
+    seed: u64,
+) -> Result<Vec<FalconCase>, Box<dyn Error>> {
+    if !matches!(degree, 512 | 1024) {
+        return Err("degree must be 512 or 1024".into());
+    }
     let mut rng = ChaCha20Rng::seed_from_u64(seed);
-    let mut keygen = KeyPairGenerator1024::default();
+    let mut keygen = KeyPairGeneratorStandard::default();
     let mut cases = Vec::with_capacity(count);
     for index in 0..count {
-        let mut secret = vec![0u8; sign_key_size(FN_DSA_LOGN_1024)];
-        let mut public_key = vec![0u8; vrfy_key_size(FN_DSA_LOGN_1024)];
-        keygen.keygen(FN_DSA_LOGN_1024, &mut rng, &mut secret, &mut public_key);
+        let mut secret = vec![0u8; sign_key_size(degree.ilog2())];
+        let mut public_key = vec![0u8; vrfy_key_size(degree.ilog2())];
+        keygen.keygen(degree.ilog2(), &mut rng, &mut secret, &mut public_key);
         let mut message = vec![0u8; 32];
         rng.fill_bytes(&mut message);
         message[..8].copy_from_slice(&(index as u64).to_le_bytes());
-        let mut signer =
-            SigningKey1024::decode(&secret).ok_or("fn-dsa rejected its generated signing key")?;
-        let mut upstream_signature = vec![0u8; signature_size(FN_DSA_LOGN_1024)];
+        let mut signer = SigningKeyStandard::decode(&secret)
+            .ok_or("fn-dsa rejected its generated signing key")?;
+        let mut upstream_signature = vec![0u8; signature_size(degree.ilog2())];
         signer.sign(
             &mut rng,
             &DOMAIN_NONE,
@@ -219,46 +238,82 @@ fn generate_cases_uncached(count: usize, seed: u64) -> Result<Vec<FalconCase>, B
             upstream_signature,
         };
         case.verify_upstream()?;
-        case.signature = compressed_to_ct(&case.upstream_signature)?;
-        verify_falcon_ct(&case.public_key, &case.message, &case.signature)?;
+        case.signature = compressed_to_ct(degree, &case.upstream_signature)?;
+        verify_native(degree, &case)?;
         cases.push(case);
     }
     Ok(cases)
 }
 
-#[cfg(test)]
-mod cache_tests {
-    #[test]
-    fn cached_cases_preserve_generated_cases_and_reject_tampering() {
-        let cases = super::generate_cases_uncached(2, 42).unwrap();
-        let bytes = super::encode_cache(2, 42, cases.clone()).unwrap();
-        assert_eq!(super::decode_cache(&bytes, 2, 42).unwrap(), cases);
-        assert!(super::decode_cache(&bytes, 1, 42).is_err());
-        assert!(super::decode_cache(&bytes, 2, 43).is_err());
-        let mut corrupted = bytes.clone();
-        corrupted[100] ^= 1;
-        assert!(super::decode_cache(&corrupted, 2, 42).is_err());
-        let mut invalid = cases;
-        invalid[0].signature[20] ^= 1;
-        // A recomputed cache checksum cannot hide a mismatch between the
-        // upstream signature and its claimed CT encoding.
-        assert!(super::decode_cache(&super::encode_cache(2, 42, invalid).unwrap(), 2, 42).is_err());
+/// Convert original Falcon's compressed signature to the protocol's CT encoding.
+/// This is serialization only: preserve all signed coefficients and the nonce.
+pub fn compressed_to_ct(degree: usize, signature: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
+    let params = FalconParameters::for_degree(degree);
+    let log = degree.ilog2();
+    if signature.len() != signature_size(log) || signature[0] != 0x30 + log as u8 {
+        return Err("expected a padded original Falcon signature matching degree".into());
+    }
+    let mut coefficients = vec![0i16; degree];
+    if !fn_dsa_comm::codec::comp_decode(&signature[41..], &mut coefficients) {
+        return Err("noncanonical compressed Falcon signature".into());
+    }
+    let mut encoded = vec![0; params.signature_bytes()];
+    encoded[0] = 0x50 + log as u8;
+    encoded[1..41].copy_from_slice(&signature[1..41]);
+    for (index, coefficient) in coefficients.into_iter().enumerate() {
+        for bit in 0..params.signature_bits {
+            let offset = index * params.signature_bits + bit;
+            encoded[41 + offset / 8] |= (((coefficient as u16) >> (params.signature_bits - 1 - bit)
+                & 1) as u8)
+                << (7 - offset % 8);
+        }
+    }
+    Ok(encoded)
+}
+
+fn verify_native(degree: usize, case: &FalconCase) -> Result<(), Box<dyn Error>> {
+    match degree {
+        512 => bitz::piop::spartan::falcon_profiles::n512_k9::verify_falcon_ct(
+            &case.public_key,
+            &case.message,
+            &case.signature,
+        )
+        .map_err(Into::into),
+        1024 => bitz::piop::spartan::falcon_profiles::n1024_k9::verify_falcon_ct(
+            &case.public_key,
+            &case.message,
+            &case.signature,
+        )
+        .map_err(Into::into),
+        _ => Err("degree must be 512 or 1024".into()),
     }
 }
 
-/// Preserve the 40-byte nonce and all 1024 signed coefficients, changing only
-/// their serialization from upstream's compressed form to Falcon's CT format.
-pub fn compressed_to_ct(signature: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
-    if signature.len() != signature_size(FN_DSA_LOGN_1024) || signature[0] != 0x3a {
-        return Err("expected a padded original Falcon-1024 signature".into());
+#[cfg(test)]
+mod cache_tests {
+    #[test]
+    fn both_degrees_preserve_generated_cases_and_reject_tampering() {
+        for degree in [512, 1024] {
+            let cases = super::generate_cases_uncached(degree, 2, 42).unwrap();
+            let bytes = super::encode_cache(degree, 2, 42, cases.clone()).unwrap();
+            assert_eq!(super::decode_cache(&bytes, degree, 2, 42).unwrap(), cases);
+            assert!(super::decode_cache(&bytes, degree, 1, 42).is_err());
+            assert!(super::decode_cache(&bytes, degree, 2, 43).is_err());
+            assert!(super::decode_cache(&bytes, 1536 - degree, 2, 42).is_err());
+            let mut corrupted = bytes.clone();
+            corrupted[100] ^= 1;
+            assert!(super::decode_cache(&corrupted, degree, 2, 42).is_err());
+            let mut invalid = cases;
+            invalid[0].signature[20] ^= 1;
+            assert!(
+                super::decode_cache(
+                    &super::encode_cache(degree, 2, 42, invalid).unwrap(),
+                    degree,
+                    2,
+                    42
+                )
+                .is_err()
+            );
+        }
     }
-    let mut s2 = [0i16; N];
-    if !fn_dsa_comm::codec::comp_decode(&signature[1 + NONCE_BYTES..], &mut s2) {
-        return Err("noncanonical compressed Falcon signature".into());
-    }
-    Ok(encode_signature_ct(&FalconSignatureCt {
-        nonce: signature[1..1 + NONCE_BYTES].try_into()?,
-        s2: Box::new(s2),
-    })?
-    .to_vec())
 }
