@@ -1,0 +1,98 @@
+[
+  {
+    "mode": "baseline",
+    "degree": 512,
+    "stage": "prove",
+    "coordinates_ms": 57.800742,
+    "trials_ms": [
+      60.50031,
+      57.800742,
+      57.80027,
+      57.900321
+    ]
+  },
+  {
+    "mode": "baseline",
+    "degree": 512,
+    "stage": "verify",
+    "coordinates_ms": 57.900169999999996,
+    "trials_ms": [
+      57.800180999999995,
+      57.900169999999996,
+      59.000161,
+      57.90015
+    ]
+  },
+  {
+    "mode": "candidate",
+    "degree": 512,
+    "stage": "prove",
+    "coordinates_ms": 8.830251,
+    "trials_ms": [
+      11.20019,
+      8.830251,
+      8.780261,
+      8.83027
+    ]
+  },
+  {
+    "mode": "candidate",
+    "degree": 512,
+    "stage": "verify",
+    "coordinates_ms": 8.90013,
+    "trials_ms": [
+      8.840152,
+      8.90013,
+      9.94015,
+      8.88014
+    ]
+  },
+  {
+    "mode": "baseline",
+    "degree": 1024,
+    "stage": "prove",
+    "coordinates_ms": 120.00029,
+    "trials_ms": [
+      121.00025,
+      120.00029,
+      120.00021,
+      120.000301
+    ]
+  },
+  {
+    "mode": "baseline",
+    "degree": 1024,
+    "stage": "verify",
+    "coordinates_ms": 121.00017,
+    "trials_ms": [
+      120.00016,
+      120.00013,
+      121.000171,
+      121.00017
+    ]
+  },
+  {
+    "mode": "candidate",
+    "degree": 1024,
+    "stage": "prove",
+    "coordinates_ms": 22.20029,
+    "trials_ms": [
+      22.60021,
+      22.200331,
+      22.20029,
+      22.200250999999998
+    ]
+  },
+  {
+    "mode": "candidate",
+    "degree": 1024,
+    "stage": "verify",
+    "coordinates_ms": 22.50013,
+    "trials_ms": [
+      22.300121,
+      22.50013,
+      22.50013,
+      22.50013
+    ]
+  }
+]

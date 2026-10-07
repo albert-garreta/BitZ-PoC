@@ -1,0 +1,12 @@
+{"degree":512,"batch":1024,"trial":0,"fixed_ms":73.987944,"power_ms":9.387505,"setup_us":5.601}
+{"degree":512,"batch":1024,"trial":1,"fixed_ms":74.10420400000001,"power_ms":9.385331,"setup_us":3.968}
+{"degree":512,"batch":1024,"trial":2,"fixed_ms":74.11245,"power_ms":9.392453999999999,"setup_us":4.218}
+{"degree":512,"batch":1024,"trial":3,"fixed_ms":70.917643,"power_ms":8.021901,"setup_us":3.647}
+{"degree":512,"batch":1024,"trial":4,"fixed_ms":59.190360999999996,"power_ms":7.429209,"setup_us":2.996}
+{"degree":512,"batch":1024,"trial":5,"fixed_ms":58.695875,"power_ms":7.43508,"setup_us":2.916}
+{"degree":1024,"batch":1024,"trial":0,"fixed_ms":117.436335,"power_ms":14.8383,"setup_us":3.496}
+{"degree":1024,"batch":1024,"trial":1,"fixed_ms":117.450501,"power_ms":14.848869,"setup_us":3.266}
+{"degree":1024,"batch":1024,"trial":2,"fixed_ms":117.42074600000001,"power_ms":14.845583000000001,"setup_us":3.186}
+{"degree":1024,"batch":1024,"trial":3,"fixed_ms":117.372825,"power_ms":14.858368,"setup_us":3.196}
+{"degree":1024,"batch":1024,"trial":4,"fixed_ms":117.437066,"power_ms":14.850132,"setup_us":3.437}
+{"degree":1024,"batch":1024,"trial":5,"fixed_ms":117.408964,"power_ms":14.841155,"setup_us":3.176}

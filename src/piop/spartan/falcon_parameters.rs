@@ -1,6 +1,6 @@
 //! Original-Falcon parameters and exact compile-time ring security accounting.
 
-pub const Q: u64 = 12_289;
+pub use field::q12289::Q;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FalconParameters {
@@ -117,14 +117,7 @@ pub const fn field_cardinality(k: usize) -> Cardinality {
     value
 }
 
-pub const fn extension_constant(k: usize) -> u16 {
-    match k {
-        9 => 60,
-        10 => 4,
-        11 => 14,
-        _ => panic!("unregistered Falcon extension degree"),
-    }
-}
+pub use field::q12289::extension_constant;
 
 pub const fn ring_budget_ok(n: usize, k: usize, bits: usize, max_batch: usize) -> bool {
     if !matches!(n, 512 | 1024)

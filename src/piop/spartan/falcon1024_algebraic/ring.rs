@@ -3,7 +3,10 @@
 //! The returned linear claims are not authenticated until the caller binds both
 //! coefficient vectors to the same BitZ source used by the norm proof.
 
-use field::{FpLinearAcc, Reduce, RingOps, Uint};
+use field::{
+    FpLinearAcc, Reduce, RingOps, Uint,
+    q12289::{PowerBasis, PowerCoordinates},
+};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
@@ -21,7 +24,8 @@ use super::{Cfg, F, FalconAlgebraicStatement, FalconError, Layout, N, Q, Witness
 
 pub(super) const EXTENSION_DEGREE: usize = 11;
 pub(super) type Ext = FalconExtension<EXTENSION_DEGREE>;
-const DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/native-ring/v2";
+const DOMAIN: &[u8] = b"bitz/falcon-algebraic/native-ring/alpha-basis/v3";
+type CoordinatesInAlpha = PowerCoordinates<EXTENSION_DEGREE>;
 const COEFFICIENT_ABS_BOUND: u64 = 1 << 14;
 
 /// The quotient is fixed before alpha; the carries are fixed before xi.
@@ -49,9 +53,9 @@ pub(super) struct PreparedClaim {
 }
 
 struct Coordinates {
-    s1: Vec<Ext>,
-    s2: Vec<Ext>,
-    target: Ext,
+    s1: Vec<CoordinatesInAlpha>,
+    s2: Vec<CoordinatesInAlpha>,
+    target: CoordinatesInAlpha,
 }
 
 struct ProjectionGrinding;
@@ -77,7 +81,7 @@ pub(super) fn prove(
     absorb_extensions(transcript, &certificate);
     transcript.absorb_slice(b"polynomial-evaluation");
     let alpha = sample_extension(transcript, true)?;
-    let coordinates = coordinates(public, &lambda, &powers(alpha), &certificate);
+    let coordinates = coordinates(public, &lambda, alpha, &certificate)?;
     let carries = calculate_carries(&coordinates, data)?;
     check_carries(&carries, layout.batch())?;
     absorb_carries(transcript, &carries);
@@ -129,7 +133,7 @@ pub(super) fn verify(
     absorb_extensions(transcript, &proof.certificate);
     transcript.absorb_slice(b"polynomial-evaluation");
     let alpha = sample_extension(transcript, true)?;
-    let coordinates = coordinates(public, &lambda, &powers(alpha), &proof.certificate);
+    let coordinates = coordinates(public, &lambda, alpha, &proof.certificate)?;
     absorb_carries(transcript, &proof.carries);
     if let Some(nonce) = proof.projection_nonce {
         verify_and_absorb(
@@ -334,27 +338,39 @@ fn eval_public(polynomial: &[u16; N], powers: &[Ext]) -> Ext {
 fn coordinates(
     public: &FalconAlgebraicStatement,
     lambda: &[Ext],
-    powers: &[Ext],
+    alpha: Ext,
     certificate: &[Ext],
-) -> Coordinates {
+) -> Result<Coordinates, FalconError> {
+    // The transcript samples alpha outside F_q. Since 11 is prime, its powers
+    // form a basis. Still reject a singular basis rather than assuming invertibility.
+    let basis = PowerBasis::try_new(alpha)
+        .map_err(|e| error(format!("invalid algebraic ring power basis: {e:?}")))?;
+    let powers = powers(alpha);
     let batch = public.public_keys.len();
+    // Keep the public polynomial evaluations and certificate in the fixed basis.
+    // Their cached-power dot products already delay reduction over N terms.
     let d_at_alpha = certificate
         .iter()
-        .zip(powers)
+        .zip(&powers)
         .fold(Ext::ZERO, |sum, (&coefficient, &power)| {
             sum.add(coefficient.mul(power))
         });
-    let mut s1 = vec![Ext::ZERO; batch * N];
-    let mut s2 = vec![Ext::ZERO; batch * N];
+    let mut s1 = vec![CoordinatesInAlpha::ZERO; batch * N];
+    let mut s2 = vec![CoordinatesInAlpha::ZERO; batch * N];
     let mut targets = vec![Ext::ZERO; batch];
-    let fill = |(i, ((a, b), target)): (usize, ((&mut [Ext], &mut [Ext]), &mut Ext))| {
-        let lambda_h = lambda[i].mul(eval_public(&public.public_keys[i], powers));
-        *target = lambda[i].mul(eval_public(&public.targets[i], powers));
-        for ((a, b), &power) in a.iter_mut().zip(b).zip(powers) {
-            // These products must be performed in E before lifting coordinates.
-            *a = lambda[i].mul(power);
-            *b = lambda_h.mul(power);
-        }
+    let fill = |(i, ((a, b), target)): (
+        usize,
+        (
+            (&mut [CoordinatesInAlpha], &mut [CoordinatesInAlpha]),
+            &mut Ext,
+        ),
+    )| {
+        let lambda_h = lambda[i].mul(eval_public(&public.public_keys[i], &powers));
+        *target = lambda[i].mul(eval_public(&public.targets[i], &powers));
+        // Convert only the starts. Every stored weight remains in the alpha
+        // basis, canonically reduced before the exact signed integer lift.
+        basis.fill_powers(basis.encode(lambda[i]), a);
+        basis.fill_powers(basis.encode(lambda_h), b);
     };
     #[cfg(feature = "parallel")]
     s1.par_chunks_mut(N)
@@ -368,11 +384,13 @@ fn coordinates(
         .zip(targets.iter_mut())
         .enumerate()
         .for_each(fill);
-    let target = targets
-        .into_iter()
-        .fold(Ext::ZERO, Ext::add)
-        .sub(powers[N].add(Ext::ONE).mul(d_at_alpha));
-    Coordinates { s1, s2, target }
+    let target = basis.encode(
+        targets
+            .into_iter()
+            .fold(Ext::ZERO, Ext::add)
+            .sub(powers[N].add(Ext::ONE).mul(d_at_alpha)),
+    );
+    Ok(Coordinates { s1, s2, target })
 }
 
 fn calculate_carries(
@@ -385,14 +403,14 @@ fn calculate_carries(
         (&coordinates.s2, &data.witness.s2),
     ] {
         for (weight, &coefficient) in weights.iter().zip(witness.iter().flatten()) {
-            for (total, &coordinate) in totals.iter_mut().zip(&weight.0) {
+            for (total, &coordinate) in totals.iter_mut().zip(weight.coordinates()) {
                 *total += i64::from(coordinate) * i64::from(coefficient);
             }
         }
     }
     let mut carries = [0i64; EXTENSION_DEGREE];
     for k in 0..EXTENSION_DEGREE {
-        let difference = totals[k] - i64::from(coordinates.target.0[k]);
+        let difference = totals[k] - i64::from(coordinates.target.coordinates()[k]);
         if difference % Q != 0 {
             return Err(error("algebraic ring claim has no integer coordinate lift"));
         }
@@ -430,11 +448,11 @@ fn collapse_claim(
     for k in 1..EXTENSION_DEGREE {
         xi_powers[k] = field.mul(&xi_powers[k - 1], &xi);
     }
-    let weight = |value: &Ext| {
+    let weight = |value: &CoordinatesInAlpha| {
         // Eleven 126-bit field representatives times fourteen-bit coordinates
         // fit in the 192-bit linear accumulator, retaining Montgomery scale.
         let mut sum = FpLinearAcc::<2, 1>::default();
-        for (&coordinate, power) in value.0.iter().zip(&xi_powers) {
+        for (&coordinate, power) in value.coordinates().iter().zip(&xi_powers) {
             sum.accumulate(power, &Uint::from_words([u64::from(coordinate)]));
         }
         field.reduce(sum)
@@ -448,7 +466,8 @@ fn collapse_claim(
     #[cfg(not(feature = "parallel"))]
     let weights_s2 = coordinates.s2.iter().map(weight).collect();
     let target = (0..EXTENSION_DEGREE).fold(field.zero(), |sum, k| {
-        let value = i128::from(coordinates.target.0[k]) + i128::from(Q) * i128::from(carries[k]);
+        let value = i128::from(coordinates.target.coordinates()[k])
+            + i128::from(Q) * i128::from(carries[k]);
         let magnitude = F::from_with_cfg(value.unsigned_abs(), field);
         let value = if value < 0 {
             field.neg(&magnitude)
@@ -516,6 +535,48 @@ mod tests {
             }
         }
         sum
+    }
+
+    #[test]
+    fn alpha_coordinates_and_carries_match_independent_fixed_basis_reference() {
+        let (_, public, data) = fixture(3);
+        let alpha = Ext::new(std::array::from_fn(|k| (97 * k + 321) as u16));
+        let basis = PowerBasis::try_new(alpha).unwrap();
+        let lambda: Vec<_> = (0..3)
+            .map(|i| Ext::new(std::array::from_fn(|k| ((i + 1) * 123 + k * 17) as u16)))
+            .collect();
+        let certificate = certificate(&data.quotients, &lambda);
+        let actual = coordinates(&public, &lambda, alpha, &certificate).unwrap();
+        let mut reference = Coordinates {
+            s1: vec![],
+            s2: vec![],
+            target: CoordinatesInAlpha::ZERO,
+        };
+        let powers = powers(alpha);
+        let mut target = Ext::ZERO;
+        for i in 0..3 {
+            let lambda_h = lambda[i].mul(eval_public(&public.public_keys[i], &powers));
+            target = target.add(lambda[i].mul(eval_public(&public.targets[i], &powers)));
+            for &power in &powers[..N] {
+                reference.s1.push(basis.encode(lambda[i].mul(power)));
+                reference.s2.push(basis.encode(lambda_h.mul(power)));
+            }
+        }
+        // Independent Horner evaluation of the quotient certificate.
+        let quotient = certificate
+            .iter()
+            .rev()
+            .fold(Ext::ZERO, |v, &c| v.mul(alpha).add(c));
+        target = target.sub(powers[N].add(Ext::ONE).mul(quotient));
+        reference.target = basis.encode(target);
+        assert_eq!(actual.s1, reference.s1);
+        assert_eq!(actual.s2, reference.s2);
+        assert_eq!(actual.target, reference.target);
+        assert_eq!(
+            calculate_carries(&actual, &data).unwrap(),
+            calculate_carries(&reference, &data).unwrap()
+        );
+        assert!(coordinates(&public, &lambda, Ext::ONE, &certificate).is_err());
     }
 
     #[test]

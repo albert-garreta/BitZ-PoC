@@ -13,6 +13,7 @@ pub mod integer;
 pub mod modular;
 pub mod preparation;
 pub mod prime;
+pub mod q12289;
 pub use prime::PreparedSignedProjection;
 pub mod traits;
 

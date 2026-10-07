@@ -29,6 +29,8 @@ mod falcon_polynomial;
 mod falcon_bit_layout;
 #[cfg(feature = "falcon-hybrid")]
 pub mod falcon1024_algebraic;
+#[cfg(feature = "falcon-hybrid")]
+pub mod falcon512_algebraic;
 pub mod grinding;
 pub mod matrix;
 pub mod mul;

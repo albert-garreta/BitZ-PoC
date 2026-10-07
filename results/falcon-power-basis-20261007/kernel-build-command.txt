@@ -1,0 +1,3 @@
+rustc --edition 2024 -C opt-level=3 -C target-cpu=native -C lto=fat -C codegen-units=1 --extern field=/tmp/falcon-simplify-candidate-target/release/deps/libfield-c79c232b0047b701.rlib -L dependency=/tmp/falcon-simplify-candidate-target/release/deps vendor/field/examples/q12289_power_basis.rs -o /tmp/falcon-power-basis/field-kernel-benchmark
+taskset -c 0 /tmp/falcon-power-basis/field-kernel-benchmark
+The reported kernel run followed a complete extra warm-up pass; kernel-benchmark-initial.jsonl retains the initial timing drift.

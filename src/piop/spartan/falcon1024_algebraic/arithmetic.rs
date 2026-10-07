@@ -32,8 +32,8 @@ use super::ring::PreparedClaim;
 use super::{BETA_SQUARED, Cfg, F, FalconError, Layout, N, Schedule, Source, WitnessData};
 
 const COEFFICIENT_BITS: usize = 15;
-const COEFFICIENT_LOG: usize = 10;
-const SLACK_BITS: usize = 27;
+const COEFFICIENT_LOG: usize = super::COEFFICIENT_LOG;
+const SLACK_BITS: usize = super::SLACK_BITS;
 const NORM_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/norm/v2";
 const MERGE_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/merge/v2";
 const BINDING_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/binding/v2";
@@ -265,7 +265,7 @@ fn prove_norm(
             );
         }
         if data.slacks[i] >= 1u64 << SLACK_BITS {
-            return Err(failure("slack does not fit unsigned 27-bit encoding"));
+            return Err(failure("slack does not fit configured unsigned encoding"));
         }
         slack = field.add(
             &slack,
@@ -486,7 +486,7 @@ impl<'a> BindingForm<'a> {
             &self.field.mul(&slack_decoder, &slack_value),
         );
         // Every lane except lane 15 is live. Lane 15 is live only for the
-        // first 27 coefficients; the rest and all inactive signatures are zero.
+        // first SLACK_BITS coefficients; the rest and all inactive signatures are zero.
         let live_local = self.field.add(
             &self.field.sub(&self.field.one(), &lanes[15]),
             &self.field.mul(&lanes[15], &slack_positions),
@@ -905,7 +905,7 @@ mod tests {
             return form.padding;
         }
         if lane == 15 {
-            return if coefficient < 27 {
+            return if coefficient < SLACK_BITS {
                 form.field.mul(
                     &form.slacks[instance],
                     &unsigned(1u128 << coefficient, form.field),
@@ -1120,17 +1120,19 @@ mod tests {
     fn signatures_cannot_borrow_each_others_norm_budget() {
         let field = field();
         let layout = Layout::new(2).unwrap();
+        let excessive = (BETA_SQUARED.isqrt() + 1) as i16;
+        let excessive_norm = (excessive as u64).pow(2);
         let mut data = WitnessData {
             witness: FalconAlgebraicWitness {
                 s1: vec![[0; N]; 2],
                 s2: vec![[0; N]; 2],
             },
-            slacks: vec![0, 2 * BETA_SQUARED - 100_000_000],
+            slacks: vec![0, 2 * BETA_SQUARED - excessive_norm],
             quotients: vec![vec![0; N - 1]; 2],
         };
-        data.witness.s2[0][0] = 10_000;
+        data.witness.s2[0][0] = excessive;
         // The unweighted batch total is exactly 2B, despite the first
-        // signature having squared norm 100,000,000 > B.
+        // signature having squared norm above B.
         let source = Source::new(layout, &data);
         let ring = ring(&data, &field);
         assert!(

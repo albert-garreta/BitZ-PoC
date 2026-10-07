@@ -63,3 +63,16 @@ Polynomial-bit construction is explicit; it cannot masquerade as numeric integer
 use field::Gf128;
 let coefficient = Gf128::from(2u64);
 ```
+
+Power-basis coordinates cannot be used as fixed-basis extension elements. The
+caller retains the `PowerBasis` context; two runtime generators of the same
+degree are not distinct Rust types. Setup is intended for public challenges.
+
+```compile_fail
+use field::q12289::{PowerBasis, Q12289Extension};
+let mut alpha = Q12289Extension::<11>::ZERO;
+alpha.0[1] = 1;
+let basis = PowerBasis::try_new(alpha).unwrap();
+let coordinates = basis.encode(alpha);
+let invalid = alpha.mul(coordinates);
+```

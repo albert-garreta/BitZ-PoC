@@ -1,0 +1,1603 @@
+--- a/examples/falcon_algebraic.rs
++++ b/examples/falcon_algebraic.rs
+@@ -1,4 +1,5 @@
+-//! Algebraic Falcon-1024 benchmark with distinct original-Falcon inputs.
++#![recursion_limit = "256"]
++//! Algebraic Falcon-512/1024 benchmark with distinct original-Falcon inputs.
+ //! Run with --features falcon-hybrid; input hashing is outside prover timing.
+ //! witness_commit_ms covers checked witness derivation, packing, and commitment.
+ 
+@@ -12,16 +13,14 @@
+ 
+ #[cfg(feature = "falcon-hybrid")]
+ fn main() -> Result<(), Box<dyn std::error::Error>> {
+-    use bitz::piop::spartan::{
+-        falcon_profiles::n1024_k11::{decode_public_key, decode_signature_ct, hash_to_point_ct},
+-        falcon1024_algebraic::{FalconAlgebraicStatement, PreparedFalconAlgebraic},
+-    };
+     use clap::Parser;
+     use serde_json::json;
+     use std::time::Instant;
+ 
+     #[derive(Parser)]
+     struct Options {
++        #[arg(long, default_value_t = 1024)]
++        degree: usize,
+         #[arg(long, default_value_t = 32)]
+         batch: usize,
+         #[arg(long)]
+@@ -64,88 +63,105 @@
+             .init();
+     }
+     falcon_degree_inputs::reject_fixture_overrides()?;
+-    let start = Instant::now();
+-    let prepared = PreparedFalconAlgebraic::new(options.batch, options.security)?;
+-    let prepare_ms = start.elapsed().as_secs_f64() * 1000.0;
++    macro_rules! run {
++        ($algebraic:ident, $native:ident, $degree:literal) => {{
++            use bitz::piop::spartan::{
++                $algebraic::{FalconAlgebraicStatement, PreparedFalconAlgebraic, PROTOCOL_ID},
++                falcon_profiles::$native::{decode_public_key, decode_signature_ct, hash_to_point_ct},
++            };
++            let start = Instant::now();
++            let prepared = PreparedFalconAlgebraic::new(options.batch, options.security)?;
++            let prepare_ms = start.elapsed().as_secs_f64() * 1000.0;
+ 
+-    let start = Instant::now();
+-    let cases = falcon_degree_inputs::generate_cases(1024, options.batch, options.seed)?;
+-    let mut input_hasher = blake3::Hasher::new();
+-    for case in &cases {
+-        case.hash_into(&mut input_hasher);
++            let start = Instant::now();
++            let cases = falcon_degree_inputs::generate_cases($degree, options.batch, options.seed)?;
++            let mut input_hasher = blake3::Hasher::new();
++            for case in &cases {
++                case.hash_into(&mut input_hasher);
++            }
++            let input_digest = input_hasher.finalize().to_hex().to_string();
++            let mut public = FalconAlgebraicStatement {
++                public_keys: Vec::with_capacity(options.batch),
++                targets: Vec::with_capacity(options.batch),
++            };
++            let mut s2 = Vec::with_capacity(options.batch);
++            for case in &cases {
++                let key = decode_public_key(&case.public_key)?;
++                let signature = decode_signature_ct(&case.signature)?;
++                let target = hash_to_point_ct(&signature.nonce, &case.message)?;
++                public.public_keys.push(*key.h);
++                public.targets.push(*target.point);
++                s2.push(*signature.s2);
++            }
++            let external_input_ms = start.elapsed().as_secs_f64() * 1000.0;
++
++            for trial in 0..trials {
++                let statement = public.clone();
++                let coefficients = s2.clone();
++                let total = Instant::now();
++                let committed = prepared.commit_from_s2(statement, coefficients)?;
++                let witness_commit_ms = total.elapsed().as_secs_f64() * 1000.0;
++                let start = Instant::now();
++                let proof = prepared.prove(committed)?;
++                let prove_ms = start.elapsed().as_secs_f64() * 1000.0;
++                let total_prover_ms = total.elapsed().as_secs_f64() * 1000.0;
++                let start = Instant::now();
++                prepared.verify(&public, &proof)?;
++                let verify_ms = start.elapsed().as_secs_f64() * 1000.0;
++                let peak_rss_kib: Option<u64> =
++                    std::fs::read_to_string("/proc/self/status")
++                        .ok()
++                        .and_then(|status| {
++                            status.lines().find_map(|line| {
++                                line.strip_prefix("VmHWM:")?
++                                    .split_whitespace()
++                                    .next()?
++                                    .parse()
++                                    .ok()
++                            })
++                        });
++                println!(
++                    "{}",
++                    json!({
++                        "relation": concat!("falcon", stringify!($degree), "-algebraic-public-h-t-private-s1-s2"),
++                        "degree": $degree,
++                        "extension_degree": 11,
++                        "protocol_id": PROTOCOL_ID,
++                        "verified": true,
++                        "layout_version": 2,
++                        "source_layout": "aligned16-v2",
++                        "coefficient_stride": 16,
++                        "input_corpus": "distinct-fn-dsa-0.3.0-original-falcon",
++                        "input_digest": input_digest,
++                        "batch": options.batch, "security_bits": options.security,
++                        "trial": if trial < options.warmup { "warmup" } else { "sample" },
++                        "iteration": trial.checked_sub(options.warmup), "seed": options.seed,
++                        "threads": observed_threads, "auxiliary_pool_threads": auxiliary_threads,
++                        "cpu_affinity": affinity, "verification_thread_policy": "configured-global-pool",
++                        "build_rustflags": option_env!("RUSTFLAGS"),
++                        "prepare_ms": prepare_ms, "external_input_ms": external_input_ms,
++                        "preparation_mode": "combined", "witness_commit_ms": witness_commit_ms,
++                        "prove_ms": prove_ms, "total_prover_ms": total_prover_ms,
++                        "verify_ms": verify_ms, "proof_payload_bytes": proof.payload_size_bytes(),
++                        "proof_payload_breakdown": proof.payload_size_breakdown(),
++                        "live_bits_per_signature": prepared.live_bits_per_signature(),
++                        "source_bits_per_signature": prepared.source_bits_per_signature(),
++                        "capacity": prepared.capacity(),
++                        "source_bits": prepared.capacity() * prepared.source_bits_per_signature(),
++                        "source_packed_bytes": prepared.capacity() * prepared.source_bits_per_signature() / 8,
++                        "process_peak_rss_kib": peak_rss_kib,
++                        "algebraic_security_bits": prepared.security().algebraic_bits,
++                    })
++                );
++            }
++            Ok(())
++        }};
+     }
+-    let input_digest = input_hasher.finalize().to_hex().to_string();
+-    let mut public = FalconAlgebraicStatement {
+-        public_keys: Vec::with_capacity(options.batch),
+-        targets: Vec::with_capacity(options.batch),
+-    };
+-    let mut s2 = Vec::with_capacity(options.batch);
+-    for case in &cases {
+-        let key = decode_public_key(&case.public_key)?;
+-        let signature = decode_signature_ct(&case.signature)?;
+-        let target = hash_to_point_ct(&signature.nonce, &case.message)?;
+-        public.public_keys.push(*key.h);
+-        public.targets.push(*target.point);
+-        s2.push(*signature.s2);
++    match options.degree {
++        512 => run!(falcon512_algebraic, n512_k11, 512),
++        1024 => run!(falcon1024_algebraic, n1024_k11, 1024),
++        _ => Err("degree must be 512 or 1024".into()),
+     }
+-    let external_input_ms = start.elapsed().as_secs_f64() * 1000.0;
+-
+-    for trial in 0..trials {
+-        let statement = public.clone();
+-        let coefficients = s2.clone();
+-        let total = Instant::now();
+-        let committed = prepared.commit_from_s2(statement, coefficients)?;
+-        let witness_commit_ms = total.elapsed().as_secs_f64() * 1000.0;
+-        let start = Instant::now();
+-        let proof = prepared.prove(committed)?;
+-        let prove_ms = start.elapsed().as_secs_f64() * 1000.0;
+-        let total_prover_ms = total.elapsed().as_secs_f64() * 1000.0;
+-        let start = Instant::now();
+-        prepared.verify(&public, &proof)?;
+-        let verify_ms = start.elapsed().as_secs_f64() * 1000.0;
+-        let peak_rss_kib: Option<u64> =
+-            std::fs::read_to_string("/proc/self/status")
+-                .ok()
+-                .and_then(|status| {
+-                    status.lines().find_map(|line| {
+-                        line.strip_prefix("VmHWM:")?
+-                            .split_whitespace()
+-                            .next()?
+-                            .parse()
+-                            .ok()
+-                    })
+-                });
+-        println!(
+-            "{}",
+-            json!({
+-                "relation": "falcon1024-algebraic-public-h-t-private-s1-s2",
+-                "layout_version": 2,
+-                "source_layout": "aligned16-v2",
+-                "coefficient_stride": 16,
+-                "input_corpus": "distinct-fn-dsa-0.3.0-original-falcon",
+-                "input_digest": input_digest,
+-                "batch": options.batch, "security_bits": options.security,
+-                "trial": if trial < options.warmup { "warmup" } else { "sample" },
+-                "iteration": trial.checked_sub(options.warmup), "seed": options.seed,
+-                "threads": observed_threads, "auxiliary_pool_threads": auxiliary_threads,
+-                "cpu_affinity": affinity, "verification_thread_policy": "configured-global-pool",
+-                "build_rustflags": option_env!("RUSTFLAGS"),
+-                "prepare_ms": prepare_ms, "external_input_ms": external_input_ms,
+-                "preparation_mode": "combined", "witness_commit_ms": witness_commit_ms,
+-                "prove_ms": prove_ms, "total_prover_ms": total_prover_ms,
+-                "verify_ms": verify_ms, "proof_payload_bytes": proof.payload_size_bytes(),
+-                "proof_payload_breakdown": proof.payload_size_breakdown(),
+-                "live_bits_per_signature": prepared.live_bits_per_signature(),
+-                "source_bits_per_signature": prepared.source_bits_per_signature(),
+-                "capacity": prepared.capacity(),
+-                "source_bits": prepared.capacity() * prepared.source_bits_per_signature(),
+-                "source_packed_bytes": prepared.capacity() * prepared.source_bits_per_signature() / 8,
+-                "process_peak_rss_kib": peak_rss_kib,
+-                "algebraic_security_bits": prepared.security().algebraic_bits,
+-            })
+-        );
+-    }
+-    Ok(())
+ }
+ 
+ #[cfg(not(feature = "falcon-hybrid"))]
+--- /dev/null
++++ b/src/piop/spartan/falcon1024_algebraic/backend.rs
+@@ -0,0 +1,45 @@
++mod arithmetic;
++mod protocol;
++mod ring;
++mod source;
++
++pub use super::falcon::FalconError;
++pub use protocol::{
++    CommittedFalconAlgebraic, FalconAlgebraicProof, FalconAlgebraicSecurity,
++    PreparedFalconAlgebraic,
++};
++pub use source::{FalconAlgebraicStatement, FalconAlgebraicWitness, check_algebraic_statement};
++
++use super::{SpartanBitzField, SpartanField};
++use source::{Layout, Source, WitnessData};
++
++type F = SpartanBitzField;
++type Cfg = <F as SpartanField>::Config;
++
++pub const N: usize = DEGREE;
++pub const COEFFICIENT_LOG: usize = N.ilog2() as usize;
++pub const PARAMETERS: super::falcon_parameters::FalconParameters =
++    super::falcon_parameters::FalconParameters::for_degree(N);
++pub const SLACK_BITS: usize = PARAMETERS.norm_bits();
++pub const Q: i64 = 12_289;
++pub const BETA_SQUARED: u64 = PARAMETERS.norm_bound;
++pub const LIVE_BITS: usize = 2 * N * 15 + SLACK_BITS;
++pub const PROTOCOL_ID: &str = if N == 1024 {
++    "bitz/falcon1024-algebraic/non-zk/v3"
++} else {
++    "bitz/falcon512-algebraic/non-zk/v3"
++};
++const PRIME_MIN: u128 = 1 << 125;
++const PRIME_MAX: u128 = (1 << 126) - 1;
++
++#[derive(Clone, Copy, Debug)]
++struct Schedule {
++    norm_instance_bits: u32,
++    norm_round_bits: u32,
++    merge_bits: u32,
++    binding_bits: u32,
++}
++
++fn error(e: impl std::fmt::Display) -> FalconError {
++    FalconError::Piop(e.to_string())
++}
+--- a/src/piop/spartan/falcon1024_algebraic/mod.rs
++++ b/src/piop/spartan/falcon1024_algebraic/mod.rs
+@@ -5,40 +5,6 @@
+ //! witnesses, authenticated by one BitZ commitment; this module generates no
+ //! SHAKE or HashToPoint trace.
+ 
+-mod arithmetic;
+-mod protocol;
+-mod ring;
+-mod source;
+-
+-pub use super::falcon::FalconError;
+-pub use protocol::{
+-    CommittedFalconAlgebraic, FalconAlgebraicProof, FalconAlgebraicSecurity,
+-    PreparedFalconAlgebraic,
+-};
+-pub use source::{FalconAlgebraicStatement, FalconAlgebraicWitness, check_algebraic_statement};
+-
+-use super::{SpartanBitzField, SpartanField};
+-use source::{Layout, Source, WitnessData};
+-
+-type F = SpartanBitzField;
+-type Cfg = <F as SpartanField>::Config;
+-
+-pub const N: usize = 1024;
+-pub const Q: i64 = 12_289;
+-pub const BETA_SQUARED: u64 = 70_265_242;
+-pub const LIVE_BITS: usize = 2 * N * 15 + 27;
+-pub const PROTOCOL_ID: &str = "bitz/falcon1024-algebraic/non-zk/v2";
+-const PRIME_MIN: u128 = 1 << 125;
+-const PRIME_MAX: u128 = (1 << 126) - 1;
+-
+-#[derive(Clone, Copy, Debug)]
+-struct Schedule {
+-    norm_instance_bits: u32,
+-    norm_round_bits: u32,
+-    merge_bits: u32,
+-    binding_bits: u32,
+-}
+-
+-fn error(e: impl std::fmt::Display) -> FalconError {
+-    FalconError::Piop(e.to_string())
+-}
++const DEGREE: usize = 1024;
++macro_rules! algebraic_1024_tests { ($($item:item)*) => { $($item)* }; }
++include!("backend.rs");
+--- a/src/piop/spartan/falcon1024_algebraic/protocol.rs
++++ b/src/piop/spartan/falcon1024_algebraic/protocol.rs
+@@ -1,7 +1,7 @@
+ use super::{
+-    BETA_SQUARED, Cfg, FalconAlgebraicStatement, FalconAlgebraicWitness, FalconError, LIVE_BITS,
+-    Layout, N, PRIME_MAX, PRIME_MIN, PROTOCOL_ID, Q, Schedule, Source, WitnessData, arithmetic,
+-    error, ring,
++    BETA_SQUARED, COEFFICIENT_LOG, Cfg, FalconAlgebraicStatement, FalconAlgebraicWitness,
++    FalconError, LIVE_BITS, Layout, N, PRIME_MAX, PRIME_MIN, PROTOCOL_ID, Q, SLACK_BITS, Schedule,
++    Source, WitnessData, arithmetic, error, ring,
+ };
+ use crate::{
+     hybrid::{
+@@ -35,7 +35,7 @@
+     pub terms: Vec<(&'static str, f64)>,
+ }
+ 
+-/// Reusable configuration for 1..=1024 algebraic Falcon-1024 statements.
++/// Reusable configuration for 1..=1024 algebraic Falcon statements.
+ pub struct PreparedFalconAlgebraic {
+     layout: Layout,
+     target_bits: usize,
+@@ -129,11 +129,11 @@
+         let d = layout.capacity().ilog2() as usize;
+         let schedule = Schedule {
+             norm_instance_bits: grind(target_bits, d, 125),
+-            norm_round_bits: grind(target_bits, 4 * (10 + d), 125),
++            norm_round_bits: grind(target_bits, 4 * (COEFFICIENT_LOG + d), 125),
+             merge_bits: grind(target_bits, 6, 125),
+-            binding_bits: grind(target_bits, 2 * (15 + d), 125),
+-        };
+-        let geometry = shared::Geometry::new([8 + d]).map_err(error)?;
++            binding_bits: grind(target_bits, 2 * (COEFFICIENT_LOG + 5 + d), 125),
++        };
++        let geometry = shared::Geometry::new([COEFFICIENT_LOG - 2 + d]).map_err(error)?;
+         let ligerito = LigeritoSelection::MATCHED_UDR
+             .resolve(geometry.packed_log(), target_bits)
+             .map_err(error)?;
+@@ -183,8 +183,11 @@
+         let binary = |n: usize| n as f64 * 2f64.powi(-128 - self.binary_grinding(n) as i32);
+         let terms = vec![
+             ("prime sampling", 2f64.powi(-144)),
+-            // |E \ F_q| >= 2^149; includes instance batching and degree-2046 identity.
+-            ("native ring identity", (2046 + d) as f64 * 2f64.powi(-149)),
++            // |E \ F_q| >= 2^149; includes instance batching and degree-(2N-2) identity.
++            (
++                "native ring identity",
++                (2 * N - 2 + d) as f64 * 2f64.powi(-149),
++            ),
+             (
+                 "ring coordinate projection",
+                 prime(10, self.carry_grinding()),
+@@ -195,12 +198,12 @@
+             ),
+             (
+                 "norm sumchecks",
+-                prime(4 * (10 + d), self.schedule.norm_round_bits),
++                prime(4 * (COEFFICIENT_LOG + d), self.schedule.norm_round_bits),
+             ),
+             ("claim merge", prime(6, self.schedule.merge_bits)),
+             (
+                 "source binding sumcheck",
+-                prime(2 * (15 + d), self.schedule.binding_bits),
++                prime(2 * (COEFFICIENT_LOG + 5 + d), self.schedule.binding_bits),
+             ),
+             (
+                 "BitZ product GKR",
+@@ -320,7 +323,12 @@
+         public.validate(self.batch())?;
+         let mut h = blake3::Hasher::new();
+         h.update(PROTOCOL_ID.as_bytes());
+-        h.update(b"signed15-lanes16,slack27-lane15;native11;two-limbs;one-source;zero-padding/v2");
++        h.update(b"ring-coordinate-basis:alpha-powers/canonical/v1");
++        h.update(if SLACK_BITS == 27 {
++            b"signed15-lanes16,slack27-lane15;native11;two-limbs;one-source;zero-padding/v2"
++        } else {
++            b"signed15-lanes16,slack26-lane15;native11;two-limbs;one-source;zero-padding/v2"
++        });
+         for value in [
+             N,
+             Q as usize,
+@@ -608,9 +616,18 @@
+             for batch in 1..=1024 {
+                 // Resolve the PCS at power-of-two batch boundaries.
+                 let layout = Layout::new(batch).unwrap();
+-                assert_eq!(layout.capacity(), batch.next_power_of_two().max(16));
++                assert_eq!(
++                    layout.capacity(),
++                    batch.next_power_of_two().max((1 << 19) / (32 * N))
++                );
+                 let d = layout.capacity().ilog2() as usize;
+-                for numerator in [d, 4 * (10 + d), 6, 2 * (15 + d), 10] {
++                for numerator in [
++                    d,
++                    4 * (COEFFICIENT_LOG + d),
++                    6,
++                    2 * (COEFFICIENT_LOG + 5 + d),
++                    10,
++                ] {
+                     let g = grind(target, numerator, 125);
+                     assert!(
+                         (BigUint::from(numerator) << (target + 4))
+@@ -620,9 +637,9 @@
+                 if batch.is_power_of_two() {
+                     let p = PreparedFalconAlgebraic::new(batch, target).unwrap();
+                     assert!(p.security().algebraic_bits >= target as f64);
+-                    assert_eq!(p.live_bits_per_signature(), 30747);
+-                    assert_eq!(p.source_bits_per_signature(), 32768);
+-                    assert_eq!(p.geometry.physical_logs, [8 + d]);
++                    assert_eq!(p.live_bits_per_signature(), 2 * N * 15 + SLACK_BITS);
++                    assert_eq!(p.source_bits_per_signature(), 32 * N);
++                    assert_eq!(p.geometry.physical_logs, [COEFFICIENT_LOG - 2 + d]);
+                 }
+             }
+         }
+@@ -735,6 +752,7 @@
+         ));
+     }
+ 
++    algebraic_1024_tests! {
+     #[test]
+     fn supplied_noncentered_s1_still_requires_a_valid_relation() {
+         let prepared = PreparedFalconAlgebraic::new(1, 100).unwrap();
+@@ -757,13 +775,18 @@
+         witness.s1[0][0] += 1;
+         assert!(prepared.commit(public, witness).is_err());
+     }
++    }
+ 
+     #[test]
+     fn recommitted_invalid_assignments_are_rejected() {
+         let prepared = PreparedFalconAlgebraic::new(3, 100).unwrap();
+         let (public, witness) = fixture(3);
+         let data = WitnessData::new(&public, witness).unwrap();
+-        for index in [16 * 27 + 15, 3 * prepared.layout.signature_stride(), 16 * N] {
++        for index in [
++            16 * SLACK_BITS + 15,
++            3 * prepared.layout.signature_stride(),
++            16 * N,
++        ] {
+             let mut source = Source::new(prepared.layout, &data);
+             source.flip(index);
+             let committed = prepared
+@@ -773,6 +796,7 @@
+         }
+     }
+ 
++    algebraic_1024_tests! {
+     #[test]
+     fn original_falcon_fixture_uses_only_algebraic_inputs() {
+         use crate::piop::spartan::falcon_profiles::n1024_k11::verification_trace;
+@@ -802,6 +826,7 @@
+             prepared.verify(&public, &proof).unwrap();
+         }
+     }
++    }
+ 
+     #[test]
+     #[ignore = "large end-to-end qualification; run explicitly"]
+--- a/src/piop/spartan/falcon1024_algebraic/source.rs
++++ b/src/piop/spartan/falcon1024_algebraic/source.rs
+@@ -1,11 +1,11 @@
+-use super::{BETA_SQUARED, FalconError, N, Q, error};
++use super::{BETA_SQUARED, COEFFICIENT_LOG, FalconError, N, Q, SLACK_BITS, error};
+ use crate::pcs::IntegerMatrixLayout;
+ use crate::piop::spartan::falcon_bit_layout::{coefficient_bit, slack_bit};
+ use crate::piop::spartan::falcon_polynomial::integer_polynomial_product;
+ #[cfg(feature = "parallel")]
+ use rayon::prelude::*;
+ 
+-/// Public keys and externally computed targets, each in F_12289[X]/(X^1024+1).
++/// Public keys and externally computed targets, each in F_12289[X]/(X^N+1).
+ /// Coefficients are in ascending degree and must be canonical, in 0..12289.
+ #[derive(Clone, Debug, Eq, PartialEq)]
+ pub struct FalconAlgebraicStatement {
+@@ -78,8 +78,8 @@
+         Ok(Self {
+             batch,
+             // The shared opener doubles the source; Ligerito requires at least
+-            // 2^20 committed bits, so retain at least sixteen 2^15-bit slots.
+-            capacity: batch.next_power_of_two().max(16),
++            // 2^20 committed bits, so retain at least 2^19 source bits.
++            capacity: batch.next_power_of_two().max((1 << 19) / (32 * N)),
+         })
+     }
+     pub const fn batch(&self) -> usize {
+@@ -89,7 +89,7 @@
+         self.capacity
+     }
+     pub const fn signature_stride(&self) -> usize {
+-        1 << 15
++        32 * N
+     }
+     pub const fn source_bits(&self) -> usize {
+         self.signature_stride() * self.capacity
+@@ -100,13 +100,13 @@
+     pub const fn bitz_params(&self) -> IntegerMatrixLayout {
+         IntegerMatrixLayout {
+             row_vars: self.row_vars(),
+-            col_vars: 2 + self.capacity.ilog2() as usize,
++            col_vars: COEFFICIENT_LOG + 5 - self.row_vars() + self.capacity.ilog2() as usize,
+         }
+     }
+     #[cfg(test)]
+     pub fn is_live(&self, index: usize) -> bool {
+         let local = index % self.signature_stride();
+-        index / self.signature_stride() < self.batch && (local % 16 < 15 || local / 16 < 27)
++        index / self.signature_stride() < self.batch && (local % 16 < 15 || local / 16 < SLACK_BITS)
+     }
+ }
+ 
+@@ -267,7 +267,7 @@
+                     );
+                 }
+             }
+-            for bit in 0..27 {
++            for bit in 0..SLACK_BITS {
+                 source.put(base + slack_bit(bit), 1, (data.slacks[i] >> bit) & 1);
+             }
+         }
+@@ -371,7 +371,7 @@
+         let mut s2 = vec![[0; N]; 3];
+         s2[0][0] = 3000;
+         s2[1][8] = -4000;
+-        s2[2][N - 1] = 8000;
++        s2[2][N - 1] = if N == 1024 { 8000 } else { 5000 };
+         let witness = FalconAlgebraicWitness::from_s2(&public, s2.clone()).unwrap();
+         let data = WitnessData::new(&public, witness).unwrap();
+         let combined = WitnessData::from_s2(&public, s2.clone()).unwrap();
+@@ -390,7 +390,7 @@
+                 let decoded = low - i32::from(source.bit(offset + 14)) * (1 << 14);
+                 assert_eq!(decoded, i32::from(s2[i][j]));
+             }
+-            let slack = (0..27)
++            let slack = (0..SLACK_BITS)
+                 .map(|bit| {
+                     u64::from(source.bit(i * layout.signature_stride() + slack_bit(bit))) << bit
+                 })
+@@ -418,7 +418,7 @@
+                 s1: vec![[0; N]],
+                 s2: vec![[0; N]],
+             },
+-            slacks: vec![(1 << 27) - 1],
++            slacks: vec![(1 << SLACK_BITS) - 1],
+             quotients: vec![vec![0; N - 1]],
+         };
+         // Encoding boundaries are tested independently of the norm gate.
+@@ -441,12 +441,15 @@
+                 );
+             }
+         }
+-        for bit in 0..27 {
++        for bit in 0..SLACK_BITS {
+             let index = slack_bit(bit);
+             assert!(!std::mem::replace(&mut seen[index], true));
+             assert!(source.bit(index));
+         }
+-        assert_eq!(seen.iter().filter(|&&live| !live).count(), 2021);
++        assert_eq!(
++            seen.iter().filter(|&&live| !live).count(),
++            2 * N - SLACK_BITS
++        );
+         for (index, live) in seen.into_iter().enumerate() {
+             assert_eq!(live, layout.is_live(index));
+             if !live {
+@@ -467,7 +470,14 @@
+             targets: vec![[0; N]],
+         };
+         let mut s2 = [0; N];
+-        s2[..7].copy_from_slice(&[8382, 85, 9, 3, 1, 1, 1]);
++        let mut remaining = BETA_SQUARED;
++        let mut used = 0;
++        while remaining != 0 {
++            let coefficient = remaining.isqrt();
++            s2[used] = coefficient as i16;
++            remaining -= coefficient * coefficient;
++            used += 1;
++        }
+         let witness = FalconAlgebraicWitness {
+             s1: vec![[0; N]],
+             s2: vec![s2],
+@@ -478,7 +488,7 @@
+         assert_eq!(combined.witness, witness);
+         assert_eq!(combined.slacks, vec![0]);
+         let mut excessive = witness;
+-        excessive.s2[0][7] = 1;
++        excessive.s2[0][used] = 1;
+         assert!(
+             matches!(WitnessData::from_s2(&public, excessive.s2.clone()),
+             Err(FalconError::NormTooLarge { actual, bound }) if actual == bound + 1)
+@@ -499,19 +509,21 @@
+         }
+         // The algebraic relation also accepts non-centered s1 when its norm fits.
+         let mut public = public;
+-        public.targets[0][0] = 7000;
+-        let mut s1 = [0; N];
+-        s1[0] = 7000;
+-        check_algebraic_statement(
+-            &public,
+-            &FalconAlgebraicWitness {
+-                s1: vec![s1],
+-                s2: vec![[0; N]],
+-            },
+-        )
+-        .unwrap();
+-        public.targets[0][0] = Q as u16;
+-        assert!(public.validate(1).is_err());
++        if N == 1024 {
++            public.targets[0][0] = 7000;
++            let mut s1 = [0; N];
++            s1[0] = 7000;
++            check_algebraic_statement(
++                &public,
++                &FalconAlgebraicWitness {
++                    s1: vec![s1],
++                    s2: vec![[0; N]],
++                },
++            )
++            .unwrap();
++            public.targets[0][0] = Q as u16;
++            assert!(public.validate(1).is_err());
++        }
+     }
+ 
+     #[test]
+--- a/src/piop/spartan/falcon1024_algebraic/ring.rs
++++ b/src/piop/spartan/falcon1024_algebraic/ring.rs
+@@ -3,7 +3,10 @@
+ //! The returned linear claims are not authenticated until the caller binds both
+ //! coefficient vectors to the same BitZ source used by the norm proof.
+ 
+-use field::{FpLinearAcc, Reduce, RingOps, Uint};
++use field::{
++    FpLinearAcc, Reduce, RingOps, Uint,
++    q12289::{PowerBasis, PowerCoordinates},
++};
+ #[cfg(feature = "parallel")]
+ use rayon::prelude::*;
+ 
+@@ -21,7 +24,8 @@
+ 
+ pub(super) const EXTENSION_DEGREE: usize = 11;
+ pub(super) type Ext = FalconExtension<EXTENSION_DEGREE>;
+-const DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/native-ring/v2";
++const DOMAIN: &[u8] = b"bitz/falcon-algebraic/native-ring/alpha-basis/v3";
++type CoordinatesInAlpha = PowerCoordinates<EXTENSION_DEGREE>;
+ const COEFFICIENT_ABS_BOUND: u64 = 1 << 14;
+ 
+ /// The quotient is fixed before alpha; the carries are fixed before xi.
+@@ -49,9 +53,9 @@
+ }
+ 
+ struct Coordinates {
+-    s1: Vec<Ext>,
+-    s2: Vec<Ext>,
+-    target: Ext,
++    s1: Vec<CoordinatesInAlpha>,
++    s2: Vec<CoordinatesInAlpha>,
++    target: CoordinatesInAlpha,
+ }
+ 
+ struct ProjectionGrinding;
+@@ -77,7 +81,7 @@
+     absorb_extensions(transcript, &certificate);
+     transcript.absorb_slice(b"polynomial-evaluation");
+     let alpha = sample_extension(transcript, true)?;
+-    let coordinates = coordinates(public, &lambda, &powers(alpha), &certificate);
++    let coordinates = coordinates(public, &lambda, alpha, &certificate)?;
+     let carries = calculate_carries(&coordinates, data)?;
+     check_carries(&carries, layout.batch())?;
+     absorb_carries(transcript, &carries);
+@@ -129,7 +133,7 @@
+     absorb_extensions(transcript, &proof.certificate);
+     transcript.absorb_slice(b"polynomial-evaluation");
+     let alpha = sample_extension(transcript, true)?;
+-    let coordinates = coordinates(public, &lambda, &powers(alpha), &proof.certificate);
++    let coordinates = coordinates(public, &lambda, alpha, &proof.certificate)?;
+     absorb_carries(transcript, &proof.carries);
+     if let Some(nonce) = proof.projection_nonce {
+         verify_and_absorb(
+@@ -334,27 +338,39 @@
+ fn coordinates(
+     public: &FalconAlgebraicStatement,
+     lambda: &[Ext],
+-    powers: &[Ext],
++    alpha: Ext,
+     certificate: &[Ext],
+-) -> Coordinates {
++) -> Result<Coordinates, FalconError> {
++    // The transcript samples alpha outside F_q. Since 11 is prime, its powers
++    // form a basis. Still reject a singular basis rather than assuming invertibility.
++    let basis = PowerBasis::try_new(alpha)
++        .map_err(|e| error(format!("invalid algebraic ring power basis: {e:?}")))?;
++    let powers = powers(alpha);
+     let batch = public.public_keys.len();
++    // Keep the public polynomial evaluations and certificate in the fixed basis.
++    // Their cached-power dot products already delay reduction over N terms.
+     let d_at_alpha = certificate
+         .iter()
+-        .zip(powers)
++        .zip(&powers)
+         .fold(Ext::ZERO, |sum, (&coefficient, &power)| {
+             sum.add(coefficient.mul(power))
+         });
+-    let mut s1 = vec![Ext::ZERO; batch * N];
+-    let mut s2 = vec![Ext::ZERO; batch * N];
++    let mut s1 = vec![CoordinatesInAlpha::ZERO; batch * N];
++    let mut s2 = vec![CoordinatesInAlpha::ZERO; batch * N];
+     let mut targets = vec![Ext::ZERO; batch];
+-    let fill = |(i, ((a, b), target)): (usize, ((&mut [Ext], &mut [Ext]), &mut Ext))| {
+-        let lambda_h = lambda[i].mul(eval_public(&public.public_keys[i], powers));
+-        *target = lambda[i].mul(eval_public(&public.targets[i], powers));
+-        for ((a, b), &power) in a.iter_mut().zip(b).zip(powers) {
+-            // These products must be performed in E before lifting coordinates.
+-            *a = lambda[i].mul(power);
+-            *b = lambda_h.mul(power);
+-        }
++    let fill = |(i, ((a, b), target)): (
++        usize,
++        (
++            (&mut [CoordinatesInAlpha], &mut [CoordinatesInAlpha]),
++            &mut Ext,
++        ),
++    )| {
++        let lambda_h = lambda[i].mul(eval_public(&public.public_keys[i], &powers));
++        *target = lambda[i].mul(eval_public(&public.targets[i], &powers));
++        // Convert only the starts. Every stored weight remains in the alpha
++        // basis, canonically reduced before the exact signed integer lift.
++        basis.fill_powers(basis.encode(lambda[i]), a);
++        basis.fill_powers(basis.encode(lambda_h), b);
+     };
+     #[cfg(feature = "parallel")]
+     s1.par_chunks_mut(N)
+@@ -368,11 +384,13 @@
+         .zip(targets.iter_mut())
+         .enumerate()
+         .for_each(fill);
+-    let target = targets
+-        .into_iter()
+-        .fold(Ext::ZERO, Ext::add)
+-        .sub(powers[N].add(Ext::ONE).mul(d_at_alpha));
+-    Coordinates { s1, s2, target }
++    let target = basis.encode(
++        targets
++            .into_iter()
++            .fold(Ext::ZERO, Ext::add)
++            .sub(powers[N].add(Ext::ONE).mul(d_at_alpha)),
++    );
++    Ok(Coordinates { s1, s2, target })
+ }
+ 
+ fn calculate_carries(
+@@ -385,14 +403,14 @@
+         (&coordinates.s2, &data.witness.s2),
+     ] {
+         for (weight, &coefficient) in weights.iter().zip(witness.iter().flatten()) {
+-            for (total, &coordinate) in totals.iter_mut().zip(&weight.0) {
++            for (total, &coordinate) in totals.iter_mut().zip(weight.coordinates()) {
+                 *total += i64::from(coordinate) * i64::from(coefficient);
+             }
+         }
+     }
+     let mut carries = [0i64; EXTENSION_DEGREE];
+     for k in 0..EXTENSION_DEGREE {
+-        let difference = totals[k] - i64::from(coordinates.target.0[k]);
++        let difference = totals[k] - i64::from(coordinates.target.coordinates()[k]);
+         if difference % Q != 0 {
+             return Err(error("algebraic ring claim has no integer coordinate lift"));
+         }
+@@ -430,11 +448,11 @@
+     for k in 1..EXTENSION_DEGREE {
+         xi_powers[k] = field.mul(&xi_powers[k - 1], &xi);
+     }
+-    let weight = |value: &Ext| {
++    let weight = |value: &CoordinatesInAlpha| {
+         // Eleven 126-bit field representatives times fourteen-bit coordinates
+         // fit in the 192-bit linear accumulator, retaining Montgomery scale.
+         let mut sum = FpLinearAcc::<2, 1>::default();
+-        for (&coordinate, power) in value.0.iter().zip(&xi_powers) {
++        for (&coordinate, power) in value.coordinates().iter().zip(&xi_powers) {
+             sum.accumulate(power, &Uint::from_words([u64::from(coordinate)]));
+         }
+         field.reduce(sum)
+@@ -448,7 +466,8 @@
+     #[cfg(not(feature = "parallel"))]
+     let weights_s2 = coordinates.s2.iter().map(weight).collect();
+     let target = (0..EXTENSION_DEGREE).fold(field.zero(), |sum, k| {
+-        let value = i128::from(coordinates.target.0[k]) + i128::from(Q) * i128::from(carries[k]);
++        let value = i128::from(coordinates.target.coordinates()[k])
++            + i128::from(Q) * i128::from(carries[k]);
+         let magnitude = F::from_with_cfg(value.unsigned_abs(), field);
+         let value = if value < 0 {
+             field.neg(&magnitude)
+@@ -516,6 +535,48 @@
+             }
+         }
+         sum
++    }
++
++    #[test]
++    fn alpha_coordinates_and_carries_match_independent_fixed_basis_reference() {
++        let (_, public, data) = fixture(3);
++        let alpha = Ext::new(std::array::from_fn(|k| (97 * k + 321) as u16));
++        let basis = PowerBasis::try_new(alpha).unwrap();
++        let lambda: Vec<_> = (0..3)
++            .map(|i| Ext::new(std::array::from_fn(|k| ((i + 1) * 123 + k * 17) as u16)))
++            .collect();
++        let certificate = certificate(&data.quotients, &lambda);
++        let actual = coordinates(&public, &lambda, alpha, &certificate).unwrap();
++        let mut reference = Coordinates {
++            s1: vec![],
++            s2: vec![],
++            target: CoordinatesInAlpha::ZERO,
++        };
++        let powers = powers(alpha);
++        let mut target = Ext::ZERO;
++        for i in 0..3 {
++            let lambda_h = lambda[i].mul(eval_public(&public.public_keys[i], &powers));
++            target = target.add(lambda[i].mul(eval_public(&public.targets[i], &powers)));
++            for &power in &powers[..N] {
++                reference.s1.push(basis.encode(lambda[i].mul(power)));
++                reference.s2.push(basis.encode(lambda_h.mul(power)));
++            }
++        }
++        // Independent Horner evaluation of the quotient certificate.
++        let quotient = certificate
++            .iter()
++            .rev()
++            .fold(Ext::ZERO, |v, &c| v.mul(alpha).add(c));
++        target = target.sub(powers[N].add(Ext::ONE).mul(quotient));
++        reference.target = basis.encode(target);
++        assert_eq!(actual.s1, reference.s1);
++        assert_eq!(actual.s2, reference.s2);
++        assert_eq!(actual.target, reference.target);
++        assert_eq!(
++            calculate_carries(&actual, &data).unwrap(),
++            calculate_carries(&reference, &data).unwrap()
++        );
++        assert!(coordinates(&public, &lambda, Ext::ONE, &certificate).is_err());
+     }
+ 
+     #[test]
+--- a/src/piop/spartan/falcon1024_algebraic/arithmetic.rs
++++ b/src/piop/spartan/falcon1024_algebraic/arithmetic.rs
+@@ -32,8 +32,8 @@
+ use super::{BETA_SQUARED, Cfg, F, FalconError, Layout, N, Schedule, Source, WitnessData};
+ 
+ const COEFFICIENT_BITS: usize = 15;
+-const COEFFICIENT_LOG: usize = 10;
+-const SLACK_BITS: usize = 27;
++const COEFFICIENT_LOG: usize = super::COEFFICIENT_LOG;
++const SLACK_BITS: usize = super::SLACK_BITS;
+ const NORM_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/norm/v2";
+ const MERGE_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/merge/v2";
+ const BINDING_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/binding/v2";
+@@ -265,7 +265,7 @@
+             );
+         }
+         if data.slacks[i] >= 1u64 << SLACK_BITS {
+-            return Err(failure("slack does not fit unsigned 27-bit encoding"));
++            return Err(failure("slack does not fit configured unsigned encoding"));
+         }
+         slack = field.add(
+             &slack,
+@@ -486,7 +486,7 @@
+             &self.field.mul(&slack_decoder, &slack_value),
+         );
+         // Every lane except lane 15 is live. Lane 15 is live only for the
+-        // first 27 coefficients; the rest and all inactive signatures are zero.
++        // first SLACK_BITS coefficients; the rest and all inactive signatures are zero.
+         let live_local = self.field.add(
+             &self.field.sub(&self.field.one(), &lanes[15]),
+             &self.field.mul(&lanes[15], &slack_positions),
+@@ -905,7 +905,7 @@
+             return form.padding;
+         }
+         if lane == 15 {
+-            return if coefficient < 27 {
++            return if coefficient < SLACK_BITS {
+                 form.field.mul(
+                     &form.slacks[instance],
+                     &unsigned(1u128 << coefficient, form.field),
+@@ -1120,17 +1120,19 @@
+     fn signatures_cannot_borrow_each_others_norm_budget() {
+         let field = field();
+         let layout = Layout::new(2).unwrap();
++        let excessive = (BETA_SQUARED.isqrt() + 1) as i16;
++        let excessive_norm = (excessive as u64).pow(2);
+         let mut data = WitnessData {
+             witness: FalconAlgebraicWitness {
+                 s1: vec![[0; N]; 2],
+                 s2: vec![[0; N]; 2],
+             },
+-            slacks: vec![0, 2 * BETA_SQUARED - 100_000_000],
++            slacks: vec![0, 2 * BETA_SQUARED - excessive_norm],
+             quotients: vec![vec![0; N - 1]; 2],
+         };
+-        data.witness.s2[0][0] = 10_000;
++        data.witness.s2[0][0] = excessive;
+         // The unweighted batch total is exactly 2B, despite the first
+-        // signature having squared norm 100,000,000 > B.
++        // signature having squared norm above B.
+         let source = Source::new(layout, &data);
+         let ring = ring(&data, &field);
+         assert!(
+--- /dev/null
++++ b/src/piop/spartan/falcon512_algebraic.rs
+@@ -0,0 +1,7 @@
++//! Non-hiding proofs of the Falcon-512 ring equation and exact integer norm.
++//! Public h and t use externally computed targets; SHAKE is not proved here.
++const DEGREE: usize = 512;
++macro_rules! algebraic_1024_tests {
++    ($($item:item)*) => {};
++}
++include!("falcon1024_algebraic/backend.rs");
+--- a/src/piop/spartan/falcon_extension.rs
++++ b/src/piop/spartan/falcon_extension.rs
+@@ -1,146 +1,2 @@
+-//! Registered ring-challenge fields; independent of the BitZ sumcheck fields.
+-use super::falcon_parameters::{Q, extension_constant};
+-
+-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+-pub struct FalconExtension<const K: usize>(pub [u16; K]);
+-
+-impl<const K: usize> FalconExtension<K> {
+-    pub const ZERO: Self = Self([0; K]);
+-    pub const ONE: Self = {
+-        let mut coordinates = [0; K];
+-        coordinates[0] = 1;
+-        Self(coordinates)
+-    };
+-    pub const fn new(coordinates: [u16; K]) -> Self {
+-        Self(coordinates)
+-    }
+-    pub fn canonical(self) -> bool {
+-        self.0.iter().all(|&x| u64::from(x) < Q)
+-    }
+-
+-    pub fn add(self, rhs: Self) -> Self {
+-        Self(std::array::from_fn(|i| {
+-            ((u32::from(self.0[i]) + u32::from(rhs.0[i])) % Q as u32) as u16
+-        }))
+-    }
+-    pub fn sub(self, rhs: Self) -> Self {
+-        Self(std::array::from_fn(|i| {
+-            ((u32::from(self.0[i]) + Q as u32 - u32::from(rhs.0[i])) % Q as u32) as u16
+-        }))
+-    }
+-    pub fn mul(self, rhs: Self) -> Self {
+-        // The catalog's maximum product has 21 coefficients. A fixed stack buffer
+-        // avoids unstable generic-const expressions and heap allocation.
+-        let c = i64::from(extension_constant(K));
+-        let mut product = [0i64; 21];
+-        for i in 0..K {
+-            for j in 0..K {
+-                product[i + j] += i64::from(self.0[i]) * i64::from(rhs.0[j]);
+-            }
+-        }
+-        for j in (K..2 * K - 1).rev() {
+-            product[j - K] -= c * product[j];
+-            product[j - K + 1] -= product[j];
+-        }
+-        Self(std::array::from_fn(|i| {
+-            product[i].rem_euclid(Q as i64) as u16
+-        }))
+-    }
+-    #[cfg(test)]
+-    fn pow(mut self, mut exponent: u64) -> Self {
+-        let mut result = Self::ONE;
+-        while exponent != 0 {
+-            if exponent & 1 != 0 {
+-                result = result.mul(self);
+-            }
+-            self = self.mul(self);
+-            exponent >>= 1;
+-        }
+-        result
+-    }
+-}
+-
+-#[cfg(test)]
+-mod tests {
+-    use super::*;
+-    fn trim(p: &mut Vec<u64>) {
+-        while p.last() == Some(&0) {
+-            p.pop();
+-        }
+-    }
+-    fn remainder(mut a: Vec<u64>, b: &[u64]) -> Vec<u64> {
+-        let inverse = {
+-            let mut x = *b.last().unwrap();
+-            let mut r = 1;
+-            let mut e = Q - 2;
+-            while e != 0 {
+-                if e & 1 != 0 {
+-                    r = r * x % Q;
+-                }
+-                x = x * x % Q;
+-                e >>= 1;
+-            }
+-            r
+-        };
+-        trim(&mut a);
+-        while a.len() >= b.len() {
+-            let offset = a.len() - b.len();
+-            let factor = a[a.len() - 1] * inverse % Q;
+-            for (i, &v) in b.iter().enumerate() {
+-                a[offset + i] = (a[offset + i] + Q - factor * v % Q) % Q;
+-            }
+-            trim(&mut a);
+-        }
+-        a
+-    }
+-    fn check<const K: usize>() {
+-        type Word = u64;
+-        let c = Word::from(extension_constant(K));
+-        let mut modulus = vec![0; K + 1];
+-        modulus[0] = c;
+-        modulus[1] = 1;
+-        modulus[K] = 1;
+-        let mut theta = FalconExtension::<K>::ZERO;
+-        theta.0[1] = 1;
+-        let mut power = theta;
+-        for i in 1..=K {
+-            power = power.pow(Q);
+-            if (K == 9 && i == 3) || (K == 10 && (i == 2 || i == 5)) || (K == 11 && i == 1) {
+-                let mut a = modulus.clone();
+-                let mut b = power.sub(theta).0.map(Word::from).to_vec();
+-                trim(&mut b);
+-                while !b.is_empty() {
+-                    let r = remainder(a, &b);
+-                    a = b;
+-                    b = r;
+-                }
+-                assert_eq!(a.len(), 1, "Rabin proper-divisor gcd for degree {K}");
+-                assert!(!power.sub(theta).eq(&FalconExtension::ZERO));
+-            }
+-        }
+-        assert_eq!(power, theta, "Rabin final Frobenius condition");
+-        for seed in 1..=24 {
+-            let a = FalconExtension::<K>(std::array::from_fn(|i| {
+-                ((seed * 137 + i * 499) % Q as usize) as u16
+-            }));
+-            let b = FalconExtension::<K>(std::array::from_fn(|i| {
+-                ((seed * 23 + i * 733) % Q as usize) as u16
+-            }));
+-            let mut product = vec![0; 2 * K - 1];
+-            for i in 0..K {
+-                for j in 0..K {
+-                    product[i + j] = (product[i + j] + Word::from(a.0[i]) * Word::from(b.0[j])) % Q;
+-                }
+-            }
+-            let mut reference = remainder(product, &modulus);
+-            reference.resize(K, 0);
+-            assert_eq!(a.mul(b).0.map(Word::from).as_slice(), reference);
+-        }
+-    }
+-    #[test]
+-    fn registered_fields() {
+-        check::<9>();
+-        check::<10>();
+-        check::<11>();
+-    }
+-}
++//! Registered ring-challenge fields, implemented by the field backend.
++pub use field::q12289::Q12289Extension as FalconExtension;
+--- a/src/piop/spartan/falcon_parameters.rs
++++ b/src/piop/spartan/falcon_parameters.rs
+@@ -1,6 +1,6 @@
+ //! Original-Falcon parameters and exact compile-time ring security accounting.
+ 
+-pub const Q: u64 = 12_289;
++pub use field::q12289::Q;
+ 
+ #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+ pub struct FalconParameters {
+@@ -117,14 +117,7 @@
+     value
+ }
+ 
+-pub const fn extension_constant(k: usize) -> u16 {
+-    match k {
+-        9 => 60,
+-        10 => 4,
+-        11 => 14,
+-        _ => panic!("unregistered Falcon extension degree"),
+-    }
+-}
++pub use field::q12289::extension_constant;
+ 
+ pub const fn ring_budget_ok(n: usize, k: usize, bits: usize, max_batch: usize) -> bool {
+     if !matches!(n, 512 | 1024)
+--- a/src/piop/spartan/mod.rs
++++ b/src/piop/spartan/mod.rs
+@@ -29,6 +29,8 @@
+ mod falcon_bit_layout;
+ #[cfg(feature = "falcon-hybrid")]
+ pub mod falcon1024_algebraic;
++#[cfg(feature = "falcon-hybrid")]
++pub mod falcon512_algebraic;
+ pub mod grinding;
+ pub mod matrix;
+ pub mod mul;
+--- a/vendor/field/src/lib.rs
++++ b/vendor/field/src/lib.rs
+@@ -13,6 +13,7 @@
+ pub mod modular;
+ pub mod preparation;
+ pub mod prime;
++pub mod q12289;
+ pub use prime::PreparedSignedProjection;
+ pub mod traits;
+ 
+--- /dev/null
++++ b/vendor/field/src/q12289.rs
+@@ -0,0 +1,410 @@
++//! Small extensions of F_12289 and prepared public power-basis arithmetic.
++//!
++//! The registered moduli are Z^K + Z + c for K in {9, 10, 11}.
++//! Ordinary elements use this fixed Z-basis; [`PowerCoordinates`] use a
++//! runtime generator's basis. Their encodings must not be interchanged.
++
++pub const Q: u64 = 12_289;
++
++pub const fn extension_constant(k: usize) -> u16 {
++    match k {
++        9 => 60,
++        10 => 4,
++        11 => 14,
++        _ => panic!("unregistered F_12289 extension degree"),
++    }
++}
++
++/// Fixed-basis coordinates. Arithmetic requires canonical inputs (< 12289).
++/// The public tuple constructor preserves the protocol codec's existing API;
++/// check [`Self::canonical`] before operating on untrusted encodings.
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub struct Q12289Extension<const K: usize>(pub [u16; K]);
++
++impl<const K: usize> Q12289Extension<K> {
++    pub const ZERO: Self = Self([0; K]);
++    pub const ONE: Self = {
++        let mut coordinates = [0; K];
++        coordinates[0] = 1;
++        Self(coordinates)
++    };
++    pub const fn new(coordinates: [u16; K]) -> Self {
++        Self(coordinates)
++    }
++    pub fn canonical(self) -> bool {
++        self.0.iter().all(|&x| u64::from(x) < Q)
++    }
++
++    pub fn add(self, rhs: Self) -> Self {
++        Self(std::array::from_fn(|i| {
++            ((u32::from(self.0[i]) + u32::from(rhs.0[i])) % Q as u32) as u16
++        }))
++    }
++    pub fn sub(self, rhs: Self) -> Self {
++        Self(std::array::from_fn(|i| {
++            ((u32::from(self.0[i]) + Q as u32 - u32::from(rhs.0[i])) % Q as u32) as u16
++        }))
++    }
++    pub fn mul(self, rhs: Self) -> Self {
++        // The catalog's maximum product has 21 coefficients. A fixed stack buffer
++        // avoids unstable generic-const expressions and heap allocation.
++        let c = i64::from(extension_constant(K));
++        let mut product = [0i64; 21];
++        for i in 0..K {
++            for j in 0..K {
++                product[i + j] += i64::from(self.0[i]) * i64::from(rhs.0[j]);
++            }
++        }
++        for j in (K..2 * K - 1).rev() {
++            product[j - K] -= c * product[j];
++            product[j - K + 1] -= product[j];
++        }
++        Self(std::array::from_fn(|i| {
++            product[i].rem_euclid(Q as i64) as u16
++        }))
++    }
++    #[cfg(test)]
++    fn pow(mut self, mut exponent: u64) -> Self {
++        let mut result = Self::ONE;
++        while exponent != 0 {
++            if exponent & 1 != 0 {
++                result = result.mul(self);
++            }
++            self = self.mul(self);
++            exponent >>= 1;
++        }
++        result
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    fn trim(p: &mut Vec<u64>) {
++        while p.last() == Some(&0) {
++            p.pop();
++        }
++    }
++    fn remainder(mut a: Vec<u64>, b: &[u64]) -> Vec<u64> {
++        let inverse = {
++            let mut x = *b.last().unwrap();
++            let mut r = 1;
++            let mut e = Q - 2;
++            while e != 0 {
++                if e & 1 != 0 {
++                    r = r * x % Q;
++                }
++                x = x * x % Q;
++                e >>= 1;
++            }
++            r
++        };
++        trim(&mut a);
++        while a.len() >= b.len() {
++            let offset = a.len() - b.len();
++            let factor = a[a.len() - 1] * inverse % Q;
++            for (i, &v) in b.iter().enumerate() {
++                a[offset + i] = (a[offset + i] + Q - factor * v % Q) % Q;
++            }
++            trim(&mut a);
++        }
++        a
++    }
++    fn check<const K: usize>() {
++        type Word = u64;
++        let c = Word::from(extension_constant(K));
++        let mut modulus = vec![0; K + 1];
++        modulus[0] = c;
++        modulus[1] = 1;
++        modulus[K] = 1;
++        let mut theta = Q12289Extension::<K>::ZERO;
++        theta.0[1] = 1;
++        let mut power = theta;
++        for i in 1..=K {
++            power = power.pow(Q);
++            if (K == 9 && i == 3) || (K == 10 && (i == 2 || i == 5)) || (K == 11 && i == 1) {
++                let mut a = modulus.clone();
++                let mut b = power.sub(theta).0.map(Word::from).to_vec();
++                trim(&mut b);
++                while !b.is_empty() {
++                    let r = remainder(a, &b);
++                    a = b;
++                    b = r;
++                }
++                assert_eq!(a.len(), 1, "Rabin proper-divisor gcd for degree {K}");
++                assert!(!power.sub(theta).eq(&Q12289Extension::ZERO));
++            }
++        }
++        assert_eq!(power, theta, "Rabin final Frobenius condition");
++        for seed in 1..=24 {
++            let a = Q12289Extension::<K>(std::array::from_fn(|i| {
++                ((seed * 137 + i * 499) % Q as usize) as u16
++            }));
++            let b = Q12289Extension::<K>(std::array::from_fn(|i| {
++                ((seed * 23 + i * 733) % Q as usize) as u16
++            }));
++            let mut product = vec![0; 2 * K - 1];
++            for i in 0..K {
++                for j in 0..K {
++                    product[i + j] = (product[i + j] + Word::from(a.0[i]) * Word::from(b.0[j])) % Q;
++                }
++            }
++            let mut reference = remainder(product, &modulus);
++            reference.resize(K, 0);
++            assert_eq!(a.mul(b).0.map(Word::from).as_slice(), reference);
++        }
++    }
++    #[test]
++    fn registered_fields() {
++        check::<9>();
++        check::<10>();
++        check::<11>();
++    }
++}
++
++/// Canonical coefficients in a prepared generator's power basis.
++///
++/// Values from distinct `PowerBasis` contexts must not be mixed, even when K
++/// agrees. This is a coordinate vector, not a fixed-basis extension element.
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub struct PowerCoordinates<const K: usize>([u16; K]);
++
++impl<const K: usize> PowerCoordinates<K> {
++    pub const ZERO: Self = Self([0; K]);
++
++    pub const fn coordinates(&self) -> &[u16; K] {
++        &self.0
++    }
++}
++
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub enum PowerBasisError {
++    UnsupportedDegree,
++    NoncanonicalGenerator,
++    /// Includes the base field and all proper subfields.
++    NongeneratingElement,
++}
++
++/// Prepared basis 1, alpha, ..., alpha^(K-1) for a public generator alpha.
++///
++/// Setup uses variable-time Gaussian elimination on public field coordinates.
++/// It must not be used to conceal a secret generator. Once prepared, conversion
++/// costs K^2 base-field products; advancing costs K multiply-adds. All returned
++/// coordinates are reduced before they can enter an integer lift.
++#[derive(Clone, Debug)]
++pub struct PowerBasis<const K: usize> {
++    columns: [[u16; K]; K],
++    inverse: [[u16; K]; K],
++    // alpha^K = sum_k feedback[k] * alpha^k.
++    feedback: [u16; K],
++}
++
++impl<const K: usize> PowerBasis<K> {
++    pub fn try_new(alpha: Q12289Extension<K>) -> Result<Self, PowerBasisError> {
++        if !matches!(K, 9 | 10 | 11) {
++            return Err(PowerBasisError::UnsupportedDegree);
++        }
++        if !alpha.canonical() {
++            return Err(PowerBasisError::NoncanonicalGenerator);
++        }
++        let mut power = Q12289Extension::ZERO;
++        power.0[0] = 1;
++        let columns = std::array::from_fn(|_| {
++            let column = power.0;
++            power = power.mul(alpha);
++            column
++        });
++        // Column j is alpha^j in the fixed basis: fixed = M * power.
++        let mut matrix: [[u16; K]; K] =
++            std::array::from_fn(|i| std::array::from_fn(|j| columns[j][i]));
++        let mut inverse: [[u16; K]; K] =
++            std::array::from_fn(|i| std::array::from_fn(|j| u16::from(i == j)));
++        for column in 0..K {
++            let pivot = (column..K)
++                .find(|&row| matrix[row][column] != 0)
++                .ok_or(PowerBasisError::NongeneratingElement)?;
++            matrix.swap(column, pivot);
++            inverse.swap(column, pivot);
++            let scale = inverse_mod_q(matrix[column][column]);
++            for j in 0..K {
++                matrix[column][j] = reduce(u32::from(matrix[column][j]) * scale);
++                inverse[column][j] = reduce(u32::from(inverse[column][j]) * scale);
++            }
++            for row in 0..K {
++                if row == column {
++                    continue;
++                }
++                let factor = u32::from(matrix[row][column]);
++                for j in 0..K {
++                    matrix[row][j] = reduce(
++                        u32::from(matrix[row][j]) + Q as u32
++                            - u32::from(reduce(factor * u32::from(matrix[column][j]))),
++                    );
++                    inverse[row][j] = reduce(
++                        u32::from(inverse[row][j]) + Q as u32
++                            - u32::from(reduce(factor * u32::from(inverse[column][j]))),
++                    );
++                }
++            }
++        }
++        let feedback = inverse.map(|row| dot(&row, &power.0));
++        Ok(Self {
++            columns,
++            inverse,
++            feedback,
++        })
++    }
++
++    /// Convert canonical fixed-basis coordinates into this power basis.
++    pub fn encode(&self, value: Q12289Extension<K>) -> PowerCoordinates<K> {
++        assert!(value.canonical(), "noncanonical fixed-basis element");
++        PowerCoordinates(self.inverse.map(|row| dot(&row, &value.0)))
++    }
++
++    /// Convert back for cold paths or comparisons; avoid this in sequence loops.
++    pub fn decode(&self, value: PowerCoordinates<K>) -> Q12289Extension<K> {
++        Q12289Extension(std::array::from_fn(|i| {
++            let mut sum = 0u64;
++            for j in 0..K {
++                sum += u64::from(self.columns[j][i]) * u64::from(value.0[j]);
++            }
++            (sum % Q) as u16
++        }))
++    }
++
++    /// Multiply by the prepared generator and reduce into canonical coordinates.
++    #[inline]
++    pub fn advance(&self, value: &mut PowerCoordinates<K>) {
++        let top = u32::from(value.0[K - 1]);
++        for k in (1..K).rev() {
++            value.0[k] = reduce(u32::from(value.0[k - 1]) + u32::from(self.feedback[k]) * top);
++        }
++        value.0[0] = reduce(u32::from(self.feedback[0]) * top);
++    }
++
++    /// Emit start, alpha*start, ... without conversions or allocation per step.
++    pub fn fill_powers(&self, start: PowerCoordinates<K>, output: &mut [PowerCoordinates<K>]) {
++        let mut value = start;
++        for slot in output {
++            *slot = value;
++            self.advance(&mut value);
++        }
++    }
++}
++
++#[inline]
++fn reduce(value: u32) -> u16 {
++    (value % Q as u32) as u16
++}
++
++fn dot<const K: usize>(a: &[u16; K], b: &[u16; K]) -> u16 {
++    // K <= 11: sum <= 11*12288^2 = 1,660,944,384. Use u64 anyway.
++    let sum: u64 = a
++        .iter()
++        .zip(b)
++        .map(|(&a, &b)| u64::from(a) * u64::from(b))
++        .sum();
++    (sum % Q) as u16
++}
++
++fn inverse_mod_q(value: u16) -> u32 {
++    let mut base = u32::from(value);
++    let mut result = 1;
++    let mut exponent = Q - 2;
++    while exponent != 0 {
++        if exponent & 1 != 0 {
++            result = u32::from(reduce(result * base));
++        }
++        base = u32::from(reduce(base * base));
++        exponent >>= 1;
++    }
++    result
++}
++
++#[cfg(test)]
++mod power_basis_tests {
++    use super::*;
++
++    fn check<const K: usize>() {
++        for seed in 0..12 {
++            let alpha = Q12289Extension(std::array::from_fn(|i| {
++                if seed == 0 {
++                    u16::from(i == 1)
++                } else {
++                    ((seed * 1237 + i * 97) % Q as usize) as u16
++                }
++            }));
++            let basis = PowerBasis::try_new(alpha).unwrap();
++            for start in [
++                Q12289Extension::ZERO,
++                Q12289Extension::ONE,
++                Q12289Extension([12288; K]),
++                alpha,
++                Q12289Extension(std::array::from_fn(|i| {
++                    ((i * 931 + seed * 73) % Q as usize) as u16
++                })),
++            ] {
++                let mut expected = start;
++                let mut actual = vec![PowerCoordinates::ZERO; 1024];
++                basis.fill_powers(basis.encode(start), &mut actual);
++                for coordinates in actual {
++                    assert!(coordinates.0.iter().all(|&v| u64::from(v) < Q));
++                    assert_eq!(basis.decode(coordinates), expected);
++                    assert_eq!(coordinates, basis.encode(expected));
++                    expected = expected.mul(alpha);
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn recurrence_matches_extension_multiplication() {
++        check::<9>();
++        check::<10>();
++        check::<11>();
++    }
++
++    fn trace<const K: usize>(degree: usize) -> Q12289Extension<K> {
++        let mut conjugate = Q12289Extension::<K>::ZERO;
++        conjugate.0[1] = 1;
++        let mut result = Q12289Extension::ZERO;
++        for _ in 0..K / degree {
++            result = result.add(conjugate);
++            for _ in 0..degree {
++                conjugate = conjugate.pow(Q);
++            }
++        }
++        assert!(result.0[1..].iter().any(|&v| v != 0));
++        result
++    }
++
++    #[test]
++    fn rejects_noncanonical_and_nongenerating_elements() {
++        assert_eq!(
++            PowerBasis::<0>::try_new(Q12289Extension::ZERO).unwrap_err(),
++            PowerBasisError::UnsupportedDegree
++        );
++        assert_eq!(
++            PowerBasis::<11>::try_new(Q12289Extension([12289; 11])).unwrap_err(),
++            PowerBasisError::NoncanonicalGenerator
++        );
++        for value in [Q12289Extension::<11>::ZERO, Q12289Extension::<11>::ONE] {
++            assert_eq!(
++                PowerBasis::try_new(value).unwrap_err(),
++                PowerBasisError::NongeneratingElement
++            );
++        }
++        assert_eq!(
++            PowerBasis::try_new(trace::<9>(3)).unwrap_err(),
++            PowerBasisError::NongeneratingElement
++        );
++        assert_eq!(
++            PowerBasis::try_new(trace::<10>(5)).unwrap_err(),
++            PowerBasisError::NongeneratingElement
++        );
++        assert_eq!(
++            PowerBasis::<8>::try_new(Q12289Extension::ZERO).unwrap_err(),
++            PowerBasisError::UnsupportedDegree
++        );
++    }
++}
+--- a/vendor/field/src/type_contracts.md
++++ b/vendor/field/src/type_contracts.md
+@@ -63,3 +63,16 @@
+ use field::Gf128;
+ let coefficient = Gf128::from(2u64);
+ ```
++
++Power-basis coordinates cannot be used as fixed-basis extension elements. The
++caller retains the `PowerBasis` context; two runtime generators of the same
++degree are not distinct Rust types. Setup is intended for public challenges.
++
++```compile_fail
++use field::q12289::{PowerBasis, Q12289Extension};
++let mut alpha = Q12289Extension::<11>::ZERO;
++alpha.0[1] = 1;
++let basis = PowerBasis::try_new(alpha).unwrap();
++let coordinates = basis.encode(alpha);
++let invalid = alpha.mul(coordinates);
++```
+--- /dev/null
++++ b/vendor/field/examples/q12289_power_basis.rs
+@@ -0,0 +1,48 @@
++//! Compare canonical weight generation using general multiplication and a
++//! prepared power basis. Run in release mode; this is a public-data kernel.
++use field::q12289::{PowerBasis, PowerCoordinates, Q12289Extension};
++use std::{hint::black_box, time::Instant};
++
++type E = Q12289Extension<11>;
++
++fn main() {
++    let alpha = black_box(E::new(std::array::from_fn(|i| (i * 931 + 219) as u16)));
++    let starts: Vec<_> = (0..2048)
++        .map(|i| {
++            E::new(std::array::from_fn(|k| {
++                ((i * 127 + k * 599) % 12289) as u16
++            }))
++        })
++        .collect();
++    for n in [512, 1024] {
++        let mut fixed = vec![E::ZERO; starts.len() * n];
++        let mut power = vec![PowerCoordinates::ZERO; starts.len() * n];
++        for trial in 0..6 {
++            let start = Instant::now();
++            for (&seed, output) in starts.iter().zip(fixed.chunks_mut(n)) {
++                let mut value = seed;
++                for slot in output {
++                    *slot = value;
++                    value = value.mul(alpha);
++                }
++            }
++            black_box(&fixed);
++            let fixed_ms = start.elapsed().as_secs_f64() * 1000.0;
++            let start = Instant::now();
++            let basis = PowerBasis::try_new(black_box(alpha)).unwrap();
++            let setup_us = start.elapsed().as_secs_f64() * 1e6;
++            for (&seed, output) in starts.iter().zip(power.chunks_mut(n)) {
++                basis.fill_powers(basis.encode(seed), output);
++            }
++            black_box(&power);
++            let power_ms = start.elapsed().as_secs_f64() * 1000.0;
++            // Equality is checked outside the measured section.
++            for j in [0, n / 2, n - 1, power.len() - 1] {
++                assert_eq!(basis.decode(power[j]), fixed[j]);
++            }
++            println!(
++                "{{\"degree\":{n},\"batch\":1024,\"trial\":{trial},\"fixed_ms\":{fixed_ms},\"power_ms\":{power_ms},\"setup_us\":{setup_us}}}"
++            );
++        }
++    }
++}

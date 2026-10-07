@@ -1,0 +1,5 @@
+RAYON_NUM_THREADS=4 /tmp/falcon-simplify-candidate-target/release/deps/bitz-b0347a22deb10013 falcon --test-threads=1
+rustc --edition 2024 --test -O -C target-cpu=native vendor/field/src/q12289.rs -o /tmp/falcon-power-basis/field-tests-final
+/tmp/falcon-power-basis/field-tests-final
+
+port-tests.log records the earlier hard-coded Falcon-1024 padding expectation failure; candidate-tests.log confirms the generalized test passes for both degrees.

@@ -1,11 +1,11 @@
-use super::{BETA_SQUARED, FalconError, N, Q, error};
+use super::{BETA_SQUARED, COEFFICIENT_LOG, FalconError, N, Q, SLACK_BITS, error};
 use crate::pcs::IntegerMatrixLayout;
 use crate::piop::spartan::falcon_bit_layout::{coefficient_bit, slack_bit};
 use crate::piop::spartan::falcon_polynomial::integer_polynomial_product;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-/// Public keys and externally computed targets, each in F_12289[X]/(X^1024+1).
+/// Public keys and externally computed targets, each in F_12289[X]/(X^N+1).
 /// Coefficients are in ascending degree and must be canonical, in 0..12289.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FalconAlgebraicStatement {
@@ -78,8 +78,8 @@ impl Layout {
         Ok(Self {
             batch,
             // The shared opener doubles the source; Ligerito requires at least
-            // 2^20 committed bits, so retain at least sixteen 2^15-bit slots.
-            capacity: batch.next_power_of_two().max(16),
+            // 2^20 committed bits, so retain at least 2^19 source bits.
+            capacity: batch.next_power_of_two().max((1 << 19) / (32 * N)),
         })
     }
     pub const fn batch(&self) -> usize {
@@ -89,7 +89,7 @@ impl Layout {
         self.capacity
     }
     pub const fn signature_stride(&self) -> usize {
-        1 << 15
+        32 * N
     }
     pub const fn source_bits(&self) -> usize {
         self.signature_stride() * self.capacity
@@ -100,13 +100,13 @@ impl Layout {
     pub const fn bitz_params(&self) -> IntegerMatrixLayout {
         IntegerMatrixLayout {
             row_vars: self.row_vars(),
-            col_vars: 2 + self.capacity.ilog2() as usize,
+            col_vars: COEFFICIENT_LOG + 5 - self.row_vars() + self.capacity.ilog2() as usize,
         }
     }
     #[cfg(test)]
     pub fn is_live(&self, index: usize) -> bool {
         let local = index % self.signature_stride();
-        index / self.signature_stride() < self.batch && (local % 16 < 15 || local / 16 < 27)
+        index / self.signature_stride() < self.batch && (local % 16 < 15 || local / 16 < SLACK_BITS)
     }
 }
 
@@ -267,7 +267,7 @@ impl Source {
                     );
                 }
             }
-            for bit in 0..27 {
+            for bit in 0..SLACK_BITS {
                 source.put(base + slack_bit(bit), 1, (data.slacks[i] >> bit) & 1);
             }
         }
@@ -371,7 +371,7 @@ mod tests {
         let mut s2 = vec![[0; N]; 3];
         s2[0][0] = 3000;
         s2[1][8] = -4000;
-        s2[2][N - 1] = 8000;
+        s2[2][N - 1] = if N == 1024 { 8000 } else { 5000 };
         let witness = FalconAlgebraicWitness::from_s2(&public, s2.clone()).unwrap();
         let data = WitnessData::new(&public, witness).unwrap();
         let combined = WitnessData::from_s2(&public, s2.clone()).unwrap();
@@ -390,7 +390,7 @@ mod tests {
                 let decoded = low - i32::from(source.bit(offset + 14)) * (1 << 14);
                 assert_eq!(decoded, i32::from(s2[i][j]));
             }
-            let slack = (0..27)
+            let slack = (0..SLACK_BITS)
                 .map(|bit| {
                     u64::from(source.bit(i * layout.signature_stride() + slack_bit(bit))) << bit
                 })
@@ -418,7 +418,7 @@ mod tests {
                 s1: vec![[0; N]],
                 s2: vec![[0; N]],
             },
-            slacks: vec![(1 << 27) - 1],
+            slacks: vec![(1 << SLACK_BITS) - 1],
             quotients: vec![vec![0; N - 1]],
         };
         // Encoding boundaries are tested independently of the norm gate.
@@ -441,12 +441,15 @@ mod tests {
                 );
             }
         }
-        for bit in 0..27 {
+        for bit in 0..SLACK_BITS {
             let index = slack_bit(bit);
             assert!(!std::mem::replace(&mut seen[index], true));
             assert!(source.bit(index));
         }
-        assert_eq!(seen.iter().filter(|&&live| !live).count(), 2021);
+        assert_eq!(
+            seen.iter().filter(|&&live| !live).count(),
+            2 * N - SLACK_BITS
+        );
         for (index, live) in seen.into_iter().enumerate() {
             assert_eq!(live, layout.is_live(index));
             if !live {
@@ -467,7 +470,14 @@ mod tests {
             targets: vec![[0; N]],
         };
         let mut s2 = [0; N];
-        s2[..7].copy_from_slice(&[8382, 85, 9, 3, 1, 1, 1]);
+        let mut remaining = BETA_SQUARED;
+        let mut used = 0;
+        while remaining != 0 {
+            let coefficient = remaining.isqrt();
+            s2[used] = coefficient as i16;
+            remaining -= coefficient * coefficient;
+            used += 1;
+        }
         let witness = FalconAlgebraicWitness {
             s1: vec![[0; N]],
             s2: vec![s2],
@@ -478,7 +488,7 @@ mod tests {
         assert_eq!(combined.witness, witness);
         assert_eq!(combined.slacks, vec![0]);
         let mut excessive = witness;
-        excessive.s2[0][7] = 1;
+        excessive.s2[0][used] = 1;
         assert!(
             matches!(WitnessData::from_s2(&public, excessive.s2.clone()),
             Err(FalconError::NormTooLarge { actual, bound }) if actual == bound + 1)
@@ -499,19 +509,21 @@ mod tests {
         }
         // The algebraic relation also accepts non-centered s1 when its norm fits.
         let mut public = public;
-        public.targets[0][0] = 7000;
-        let mut s1 = [0; N];
-        s1[0] = 7000;
-        check_algebraic_statement(
-            &public,
-            &FalconAlgebraicWitness {
-                s1: vec![s1],
-                s2: vec![[0; N]],
-            },
-        )
-        .unwrap();
-        public.targets[0][0] = Q as u16;
-        assert!(public.validate(1).is_err());
+        if N == 1024 {
+            public.targets[0][0] = 7000;
+            let mut s1 = [0; N];
+            s1[0] = 7000;
+            check_algebraic_statement(
+                &public,
+                &FalconAlgebraicWitness {
+                    s1: vec![s1],
+                    s2: vec![[0; N]],
+                },
+            )
+            .unwrap();
+            public.targets[0][0] = Q as u16;
+            assert!(public.validate(1).is_err());
+        }
     }
 
     #[test]

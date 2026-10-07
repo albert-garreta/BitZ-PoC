@@ -1,0 +1,8 @@
+
+running 3 tests
+test power_basis_tests::rejects_noncanonical_and_nongenerating_elements ... ok
+test tests::registered_fields ... ok
+test power_basis_tests::recurrence_matches_extension_multiplication ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

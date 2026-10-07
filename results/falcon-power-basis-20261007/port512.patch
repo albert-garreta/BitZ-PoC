@@ -1,0 +1,566 @@
+--- a/examples/falcon_algebraic.rs
++++ b/examples/falcon_algebraic.rs
+@@ -1,4 +1,5 @@
+-//! Algebraic Falcon-1024 benchmark with distinct original-Falcon inputs.
++#![recursion_limit = "256"]
++//! Algebraic Falcon-512/1024 benchmark with distinct original-Falcon inputs.
+ //! Run with --features falcon-hybrid; input hashing is outside prover timing.
+ //! witness_commit_ms covers checked witness derivation, packing, and commitment.
+ 
+@@ -12,16 +13,14 @@
+ 
+ #[cfg(feature = "falcon-hybrid")]
+ fn main() -> Result<(), Box<dyn std::error::Error>> {
+-    use bitz::piop::spartan::{
+-        falcon_profiles::n1024_k11::{decode_public_key, decode_signature_ct, hash_to_point_ct},
+-        falcon1024_algebraic::{FalconAlgebraicStatement, PreparedFalconAlgebraic},
+-    };
+     use clap::Parser;
+     use serde_json::json;
+     use std::time::Instant;
+ 
+     #[derive(Parser)]
+     struct Options {
++        #[arg(long, default_value_t = 1024)]
++        degree: usize,
+         #[arg(long, default_value_t = 32)]
+         batch: usize,
+         #[arg(long)]
+@@ -64,12 +63,18 @@
+             .init();
+     }
+     falcon_degree_inputs::reject_fixture_overrides()?;
++    macro_rules! run {
++        ($algebraic:ident, $native:ident, $degree:literal) => {{
++            use bitz::piop::spartan::{
++                $algebraic::{FalconAlgebraicStatement, PreparedFalconAlgebraic},
++                falcon_profiles::$native::{decode_public_key, decode_signature_ct, hash_to_point_ct},
++            };
+     let start = Instant::now();
+     let prepared = PreparedFalconAlgebraic::new(options.batch, options.security)?;
+     let prepare_ms = start.elapsed().as_secs_f64() * 1000.0;
+ 
+     let start = Instant::now();
+-    let cases = falcon_degree_inputs::generate_cases(1024, options.batch, options.seed)?;
++    let cases = falcon_degree_inputs::generate_cases($degree, options.batch, options.seed)?;
+     let mut input_hasher = blake3::Hasher::new();
+     for case in &cases {
+         case.hash_into(&mut input_hasher);
+@@ -118,7 +123,9 @@
+         println!(
+             "{}",
+             json!({
+-                "relation": "falcon1024-algebraic-public-h-t-private-s1-s2",
++                "relation": concat!("falcon", stringify!($degree), "-algebraic-public-h-t-private-s1-s2"),
++                "degree": $degree,
++                "extension_degree": 11,
+                 "layout_version": 2,
+                 "source_layout": "aligned16-v2",
+                 "coefficient_stride": 16,
+@@ -146,6 +153,13 @@
+         );
+     }
+     Ok(())
++        }};
++    }
++    match options.degree {
++        512 => run!(falcon512_algebraic, n512_k11, 512),
++        1024 => run!(falcon1024_algebraic, n1024_k11, 1024),
++        _ => Err("degree must be 512 or 1024".into()),
++    }
+ }
+ 
+ #[cfg(not(feature = "falcon-hybrid"))]
+--- a/src/piop/spartan/falcon1024_algebraic/arithmetic.rs
++++ b/src/piop/spartan/falcon1024_algebraic/arithmetic.rs
+@@ -32,8 +32,8 @@
+ use super::{BETA_SQUARED, Cfg, F, FalconError, Layout, N, Schedule, Source, WitnessData};
+ 
+ const COEFFICIENT_BITS: usize = 15;
+-const COEFFICIENT_LOG: usize = 10;
+-const SLACK_BITS: usize = 27;
++const COEFFICIENT_LOG: usize = super::COEFFICIENT_LOG;
++const SLACK_BITS: usize = super::SLACK_BITS;
+ const NORM_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/norm/v2";
+ const MERGE_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/merge/v2";
+ const BINDING_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/binding/v2";
+@@ -265,7 +265,7 @@
+             );
+         }
+         if data.slacks[i] >= 1u64 << SLACK_BITS {
+-            return Err(failure("slack does not fit unsigned 27-bit encoding"));
++            return Err(failure("slack does not fit configured unsigned encoding"));
+         }
+         slack = field.add(
+             &slack,
+@@ -486,7 +486,7 @@
+             &self.field.mul(&slack_decoder, &slack_value),
+         );
+         // Every lane except lane 15 is live. Lane 15 is live only for the
+-        // first 27 coefficients; the rest and all inactive signatures are zero.
++        // first SLACK_BITS coefficients; the rest and all inactive signatures are zero.
+         let live_local = self.field.add(
+             &self.field.sub(&self.field.one(), &lanes[15]),
+             &self.field.mul(&lanes[15], &slack_positions),
+@@ -905,7 +905,7 @@
+             return form.padding;
+         }
+         if lane == 15 {
+-            return if coefficient < 27 {
++            return if coefficient < SLACK_BITS {
+                 form.field.mul(
+                     &form.slacks[instance],
+                     &unsigned(1u128 << coefficient, form.field),
+@@ -1120,17 +1120,19 @@
+     fn signatures_cannot_borrow_each_others_norm_budget() {
+         let field = field();
+         let layout = Layout::new(2).unwrap();
++        let excessive = (BETA_SQUARED.isqrt() + 1) as i16;
++        let excessive_norm = (excessive as u64).pow(2);
+         let mut data = WitnessData {
+             witness: FalconAlgebraicWitness {
+                 s1: vec![[0; N]; 2],
+                 s2: vec![[0; N]; 2],
+             },
+-            slacks: vec![0, 2 * BETA_SQUARED - 100_000_000],
++            slacks: vec![0, 2 * BETA_SQUARED - excessive_norm],
+             quotients: vec![vec![0; N - 1]; 2],
+         };
+-        data.witness.s2[0][0] = 10_000;
++        data.witness.s2[0][0] = excessive;
+         // The unweighted batch total is exactly 2B, despite the first
+-        // signature having squared norm 100,000,000 > B.
++        // signature having squared norm above B.
+         let source = Source::new(layout, &data);
+         let ring = ring(&data, &field);
+         assert!(
+--- /dev/null
++++ b/src/piop/spartan/falcon1024_algebraic/backend.rs
+@@ -0,0 +1,45 @@
++mod arithmetic;
++mod protocol;
++mod ring;
++mod source;
++
++pub use super::falcon::FalconError;
++pub use protocol::{
++    CommittedFalconAlgebraic, FalconAlgebraicProof, FalconAlgebraicSecurity,
++    PreparedFalconAlgebraic,
++};
++pub use source::{FalconAlgebraicStatement, FalconAlgebraicWitness, check_algebraic_statement};
++
++use super::{SpartanBitzField, SpartanField};
++use source::{Layout, Source, WitnessData};
++
++type F = SpartanBitzField;
++type Cfg = <F as SpartanField>::Config;
++
++pub const N: usize = DEGREE;
++pub const COEFFICIENT_LOG: usize = N.ilog2() as usize;
++pub const PARAMETERS: super::falcon_parameters::FalconParameters =
++    super::falcon_parameters::FalconParameters::for_degree(N);
++pub const SLACK_BITS: usize = PARAMETERS.norm_bits();
++pub const Q: i64 = 12_289;
++pub const BETA_SQUARED: u64 = PARAMETERS.norm_bound;
++pub const LIVE_BITS: usize = 2 * N * 15 + SLACK_BITS;
++pub const PROTOCOL_ID: &str = if N == 1024 {
++    "bitz/falcon1024-algebraic/non-zk/v2"
++} else {
++    "bitz/falcon512-algebraic/non-zk/v2"
++};
++const PRIME_MIN: u128 = 1 << 125;
++const PRIME_MAX: u128 = (1 << 126) - 1;
++
++#[derive(Clone, Copy, Debug)]
++struct Schedule {
++    norm_instance_bits: u32,
++    norm_round_bits: u32,
++    merge_bits: u32,
++    binding_bits: u32,
++}
++
++fn error(e: impl std::fmt::Display) -> FalconError {
++    FalconError::Piop(e.to_string())
++}
+--- a/src/piop/spartan/falcon1024_algebraic/mod.rs
++++ b/src/piop/spartan/falcon1024_algebraic/mod.rs
+@@ -5,40 +5,6 @@
+ //! witnesses, authenticated by one BitZ commitment; this module generates no
+ //! SHAKE or HashToPoint trace.
+ 
+-mod arithmetic;
+-mod protocol;
+-mod ring;
+-mod source;
+-
+-pub use super::falcon::FalconError;
+-pub use protocol::{
+-    CommittedFalconAlgebraic, FalconAlgebraicProof, FalconAlgebraicSecurity,
+-    PreparedFalconAlgebraic,
+-};
+-pub use source::{FalconAlgebraicStatement, FalconAlgebraicWitness, check_algebraic_statement};
+-
+-use super::{SpartanBitzField, SpartanField};
+-use source::{Layout, Source, WitnessData};
+-
+-type F = SpartanBitzField;
+-type Cfg = <F as SpartanField>::Config;
+-
+-pub const N: usize = 1024;
+-pub const Q: i64 = 12_289;
+-pub const BETA_SQUARED: u64 = 70_265_242;
+-pub const LIVE_BITS: usize = 2 * N * 15 + 27;
+-pub const PROTOCOL_ID: &str = "bitz/falcon1024-algebraic/non-zk/v2";
+-const PRIME_MIN: u128 = 1 << 125;
+-const PRIME_MAX: u128 = (1 << 126) - 1;
+-
+-#[derive(Clone, Copy, Debug)]
+-struct Schedule {
+-    norm_instance_bits: u32,
+-    norm_round_bits: u32,
+-    merge_bits: u32,
+-    binding_bits: u32,
+-}
+-
+-fn error(e: impl std::fmt::Display) -> FalconError {
+-    FalconError::Piop(e.to_string())
+-}
++const DEGREE: usize = 1024;
++macro_rules! algebraic_1024_tests { ($($item:item)*) => { $($item)* }; }
++include!("backend.rs");
+--- a/src/piop/spartan/falcon1024_algebraic/protocol.rs
++++ b/src/piop/spartan/falcon1024_algebraic/protocol.rs
+@@ -1,7 +1,7 @@
+ use super::{
+-    BETA_SQUARED, Cfg, FalconAlgebraicStatement, FalconAlgebraicWitness, FalconError, LIVE_BITS,
+-    Layout, N, PRIME_MAX, PRIME_MIN, PROTOCOL_ID, Q, Schedule, Source, WitnessData, arithmetic,
+-    error, ring,
++    BETA_SQUARED, COEFFICIENT_LOG, Cfg, FalconAlgebraicStatement, FalconAlgebraicWitness,
++    FalconError, LIVE_BITS, Layout, N, PRIME_MAX, PRIME_MIN, PROTOCOL_ID, Q, SLACK_BITS, Schedule,
++    Source, WitnessData, arithmetic, error, ring,
+ };
+ use crate::{
+     hybrid::{
+@@ -35,7 +35,7 @@
+     pub terms: Vec<(&'static str, f64)>,
+ }
+ 
+-/// Reusable configuration for 1..=1024 algebraic Falcon-1024 statements.
++/// Reusable configuration for 1..=1024 algebraic Falcon statements.
+ pub struct PreparedFalconAlgebraic {
+     layout: Layout,
+     target_bits: usize,
+@@ -129,11 +129,11 @@
+         let d = layout.capacity().ilog2() as usize;
+         let schedule = Schedule {
+             norm_instance_bits: grind(target_bits, d, 125),
+-            norm_round_bits: grind(target_bits, 4 * (10 + d), 125),
++            norm_round_bits: grind(target_bits, 4 * (COEFFICIENT_LOG + d), 125),
+             merge_bits: grind(target_bits, 6, 125),
+-            binding_bits: grind(target_bits, 2 * (15 + d), 125),
+-        };
+-        let geometry = shared::Geometry::new([8 + d]).map_err(error)?;
++            binding_bits: grind(target_bits, 2 * (COEFFICIENT_LOG + 5 + d), 125),
++        };
++        let geometry = shared::Geometry::new([COEFFICIENT_LOG - 2 + d]).map_err(error)?;
+         let ligerito = LigeritoSelection::MATCHED_UDR
+             .resolve(geometry.packed_log(), target_bits)
+             .map_err(error)?;
+@@ -183,8 +183,11 @@
+         let binary = |n: usize| n as f64 * 2f64.powi(-128 - self.binary_grinding(n) as i32);
+         let terms = vec![
+             ("prime sampling", 2f64.powi(-144)),
+-            // |E \ F_q| >= 2^149; includes instance batching and degree-2046 identity.
+-            ("native ring identity", (2046 + d) as f64 * 2f64.powi(-149)),
++            // |E \ F_q| >= 2^149; includes instance batching and degree-(2N-2) identity.
++            (
++                "native ring identity",
++                (2 * N - 2 + d) as f64 * 2f64.powi(-149),
++            ),
+             (
+                 "ring coordinate projection",
+                 prime(10, self.carry_grinding()),
+@@ -195,12 +198,12 @@
+             ),
+             (
+                 "norm sumchecks",
+-                prime(4 * (10 + d), self.schedule.norm_round_bits),
++                prime(4 * (COEFFICIENT_LOG + d), self.schedule.norm_round_bits),
+             ),
+             ("claim merge", prime(6, self.schedule.merge_bits)),
+             (
+                 "source binding sumcheck",
+-                prime(2 * (15 + d), self.schedule.binding_bits),
++                prime(2 * (COEFFICIENT_LOG + 5 + d), self.schedule.binding_bits),
+             ),
+             (
+                 "BitZ product GKR",
+@@ -320,7 +323,11 @@
+         public.validate(self.batch())?;
+         let mut h = blake3::Hasher::new();
+         h.update(PROTOCOL_ID.as_bytes());
+-        h.update(b"signed15-lanes16,slack27-lane15;native11;two-limbs;one-source;zero-padding/v2");
++        h.update(if SLACK_BITS == 27 {
++            b"signed15-lanes16,slack27-lane15;native11;two-limbs;one-source;zero-padding/v2"
++        } else {
++            b"signed15-lanes16,slack26-lane15;native11;two-limbs;one-source;zero-padding/v2"
++        });
+         for value in [
+             N,
+             Q as usize,
+@@ -608,9 +615,18 @@
+             for batch in 1..=1024 {
+                 // Resolve the PCS at power-of-two batch boundaries.
+                 let layout = Layout::new(batch).unwrap();
+-                assert_eq!(layout.capacity(), batch.next_power_of_two().max(16));
++                assert_eq!(
++                    layout.capacity(),
++                    batch.next_power_of_two().max((1 << 19) / (32 * N))
++                );
+                 let d = layout.capacity().ilog2() as usize;
+-                for numerator in [d, 4 * (10 + d), 6, 2 * (15 + d), 10] {
++                for numerator in [
++                    d,
++                    4 * (COEFFICIENT_LOG + d),
++                    6,
++                    2 * (COEFFICIENT_LOG + 5 + d),
++                    10,
++                ] {
+                     let g = grind(target, numerator, 125);
+                     assert!(
+                         (BigUint::from(numerator) << (target + 4))
+@@ -620,9 +636,9 @@
+                 if batch.is_power_of_two() {
+                     let p = PreparedFalconAlgebraic::new(batch, target).unwrap();
+                     assert!(p.security().algebraic_bits >= target as f64);
+-                    assert_eq!(p.live_bits_per_signature(), 30747);
+-                    assert_eq!(p.source_bits_per_signature(), 32768);
+-                    assert_eq!(p.geometry.physical_logs, [8 + d]);
++                    assert_eq!(p.live_bits_per_signature(), 2 * N * 15 + SLACK_BITS);
++                    assert_eq!(p.source_bits_per_signature(), 32 * N);
++                    assert_eq!(p.geometry.physical_logs, [COEFFICIENT_LOG - 2 + d]);
+                 }
+             }
+         }
+@@ -735,6 +751,7 @@
+         ));
+     }
+ 
++    algebraic_1024_tests! {
+     #[test]
+     fn supplied_noncentered_s1_still_requires_a_valid_relation() {
+         let prepared = PreparedFalconAlgebraic::new(1, 100).unwrap();
+@@ -757,13 +774,18 @@
+         witness.s1[0][0] += 1;
+         assert!(prepared.commit(public, witness).is_err());
+     }
++    }
+ 
+     #[test]
+     fn recommitted_invalid_assignments_are_rejected() {
+         let prepared = PreparedFalconAlgebraic::new(3, 100).unwrap();
+         let (public, witness) = fixture(3);
+         let data = WitnessData::new(&public, witness).unwrap();
+-        for index in [16 * 27 + 15, 3 * prepared.layout.signature_stride(), 16 * N] {
++        for index in [
++            16 * SLACK_BITS + 15,
++            3 * prepared.layout.signature_stride(),
++            16 * N,
++        ] {
+             let mut source = Source::new(prepared.layout, &data);
+             source.flip(index);
+             let committed = prepared
+@@ -773,6 +795,7 @@
+         }
+     }
+ 
++    algebraic_1024_tests! {
+     #[test]
+     fn original_falcon_fixture_uses_only_algebraic_inputs() {
+         use crate::piop::spartan::falcon_profiles::n1024_k11::verification_trace;
+@@ -802,6 +825,7 @@
+             prepared.verify(&public, &proof).unwrap();
+         }
+     }
++    }
+ 
+     #[test]
+     #[ignore = "large end-to-end qualification; run explicitly"]
+--- a/src/piop/spartan/falcon1024_algebraic/source.rs
++++ b/src/piop/spartan/falcon1024_algebraic/source.rs
+@@ -1,11 +1,11 @@
+-use super::{BETA_SQUARED, FalconError, N, Q, error};
++use super::{BETA_SQUARED, COEFFICIENT_LOG, FalconError, N, Q, SLACK_BITS, error};
+ use crate::pcs::IntegerMatrixLayout;
+ use crate::piop::spartan::falcon_bit_layout::{coefficient_bit, slack_bit};
+ use crate::piop::spartan::falcon_polynomial::integer_polynomial_product;
+ #[cfg(feature = "parallel")]
+ use rayon::prelude::*;
+ 
+-/// Public keys and externally computed targets, each in F_12289[X]/(X^1024+1).
++/// Public keys and externally computed targets, each in F_12289[X]/(X^N+1).
+ /// Coefficients are in ascending degree and must be canonical, in 0..12289.
+ #[derive(Clone, Debug, Eq, PartialEq)]
+ pub struct FalconAlgebraicStatement {
+@@ -78,8 +78,8 @@
+         Ok(Self {
+             batch,
+             // The shared opener doubles the source; Ligerito requires at least
+-            // 2^20 committed bits, so retain at least sixteen 2^15-bit slots.
+-            capacity: batch.next_power_of_two().max(16),
++            // 2^20 committed bits, so retain at least 2^19 source bits.
++            capacity: batch.next_power_of_two().max((1 << 19) / (32 * N)),
+         })
+     }
+     pub const fn batch(&self) -> usize {
+@@ -89,7 +89,7 @@
+         self.capacity
+     }
+     pub const fn signature_stride(&self) -> usize {
+-        1 << 15
++        32 * N
+     }
+     pub const fn source_bits(&self) -> usize {
+         self.signature_stride() * self.capacity
+@@ -100,13 +100,13 @@
+     pub const fn bitz_params(&self) -> IntegerMatrixLayout {
+         IntegerMatrixLayout {
+             row_vars: self.row_vars(),
+-            col_vars: 2 + self.capacity.ilog2() as usize,
++            col_vars: COEFFICIENT_LOG + 5 - self.row_vars() + self.capacity.ilog2() as usize,
+         }
+     }
+     #[cfg(test)]
+     pub fn is_live(&self, index: usize) -> bool {
+         let local = index % self.signature_stride();
+-        index / self.signature_stride() < self.batch && (local % 16 < 15 || local / 16 < 27)
++        index / self.signature_stride() < self.batch && (local % 16 < 15 || local / 16 < SLACK_BITS)
+     }
+ }
+ 
+@@ -267,7 +267,7 @@
+                     );
+                 }
+             }
+-            for bit in 0..27 {
++            for bit in 0..SLACK_BITS {
+                 source.put(base + slack_bit(bit), 1, (data.slacks[i] >> bit) & 1);
+             }
+         }
+@@ -371,7 +371,7 @@
+         let mut s2 = vec![[0; N]; 3];
+         s2[0][0] = 3000;
+         s2[1][8] = -4000;
+-        s2[2][N - 1] = 8000;
++        s2[2][N - 1] = if N == 1024 { 8000 } else { 5000 };
+         let witness = FalconAlgebraicWitness::from_s2(&public, s2.clone()).unwrap();
+         let data = WitnessData::new(&public, witness).unwrap();
+         let combined = WitnessData::from_s2(&public, s2.clone()).unwrap();
+@@ -390,7 +390,7 @@
+                 let decoded = low - i32::from(source.bit(offset + 14)) * (1 << 14);
+                 assert_eq!(decoded, i32::from(s2[i][j]));
+             }
+-            let slack = (0..27)
++            let slack = (0..SLACK_BITS)
+                 .map(|bit| {
+                     u64::from(source.bit(i * layout.signature_stride() + slack_bit(bit))) << bit
+                 })
+@@ -418,7 +418,7 @@
+                 s1: vec![[0; N]],
+                 s2: vec![[0; N]],
+             },
+-            slacks: vec![(1 << 27) - 1],
++            slacks: vec![(1 << SLACK_BITS) - 1],
+             quotients: vec![vec![0; N - 1]],
+         };
+         // Encoding boundaries are tested independently of the norm gate.
+@@ -441,7 +441,7 @@
+                 );
+             }
+         }
+-        for bit in 0..27 {
++        for bit in 0..SLACK_BITS {
+             let index = slack_bit(bit);
+             assert!(!std::mem::replace(&mut seen[index], true));
+             assert!(source.bit(index));
+@@ -467,7 +467,14 @@
+             targets: vec![[0; N]],
+         };
+         let mut s2 = [0; N];
+-        s2[..7].copy_from_slice(&[8382, 85, 9, 3, 1, 1, 1]);
++        let mut remaining = BETA_SQUARED;
++        let mut used = 0;
++        while remaining != 0 {
++            let coefficient = remaining.isqrt();
++            s2[used] = coefficient as i16;
++            remaining -= coefficient * coefficient;
++            used += 1;
++        }
+         let witness = FalconAlgebraicWitness {
+             s1: vec![[0; N]],
+             s2: vec![s2],
+@@ -478,7 +485,7 @@
+         assert_eq!(combined.witness, witness);
+         assert_eq!(combined.slacks, vec![0]);
+         let mut excessive = witness;
+-        excessive.s2[0][7] = 1;
++        excessive.s2[0][used] = 1;
+         assert!(
+             matches!(WitnessData::from_s2(&public, excessive.s2.clone()),
+             Err(FalconError::NormTooLarge { actual, bound }) if actual == bound + 1)
+@@ -499,19 +506,21 @@
+         }
+         // The algebraic relation also accepts non-centered s1 when its norm fits.
+         let mut public = public;
+-        public.targets[0][0] = 7000;
+-        let mut s1 = [0; N];
+-        s1[0] = 7000;
+-        check_algebraic_statement(
+-            &public,
+-            &FalconAlgebraicWitness {
+-                s1: vec![s1],
+-                s2: vec![[0; N]],
+-            },
+-        )
+-        .unwrap();
+-        public.targets[0][0] = Q as u16;
+-        assert!(public.validate(1).is_err());
++        if N == 1024 {
++            public.targets[0][0] = 7000;
++            let mut s1 = [0; N];
++            s1[0] = 7000;
++            check_algebraic_statement(
++                &public,
++                &FalconAlgebraicWitness {
++                    s1: vec![s1],
++                    s2: vec![[0; N]],
++                },
++            )
++            .unwrap();
++            public.targets[0][0] = Q as u16;
++            assert!(public.validate(1).is_err());
++        }
+     }
+ 
+     #[test]
+--- /dev/null
++++ b/src/piop/spartan/falcon512_algebraic.rs
+@@ -0,0 +1,7 @@
++//! Non-hiding proofs of the Falcon-512 ring equation and exact integer norm.
++//! Public h and t use externally computed targets; SHAKE is not proved here.
++const DEGREE: usize = 512;
++macro_rules! algebraic_1024_tests {
++    ($($item:item)*) => {};
++}
++include!("falcon1024_algebraic/backend.rs");
+--- a/src/piop/spartan/mod.rs
++++ b/src/piop/spartan/mod.rs
+@@ -29,6 +29,8 @@
+ mod falcon_bit_layout;
+ #[cfg(feature = "falcon-hybrid")]
+ pub mod falcon1024_algebraic;
++#[cfg(feature = "falcon-hybrid")]
++pub mod falcon512_algebraic;
+ pub mod grinding;
+ pub mod matrix;
+ pub mod mul;
