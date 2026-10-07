@@ -1,5 +1,5 @@
-//! Streaming sum of the projected ring tensor and the optimized integer binder.
-//! Public ring digit coefficients are arbitrary after canonical coordinate lifting.
+// Streaming sum of the projected ring tensor and the optimized integer binder.
+// Public ring digit coefficients are arbitrary after canonical coordinate lifting.
 use super::*;
 use crate::sumcheck::SumcheckError;
 

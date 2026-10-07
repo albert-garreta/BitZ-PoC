@@ -1,4 +1,7 @@
-//! Non-ZK Falcon composition with compact binary Keccak and one shared PCS opening.
+use super::native_ring::EXTENSION_DEGREE;
+use super::{COEFFICIENT_LOG, COMPACTION_LOG, PREFIX_BIAS, PREFIX_BITS, SIGNATURE_BITS};
+use super::{KECCAK_SLABS, N, PARAMETERS, SOURCE_COUNT};
+// Non-ZK Falcon composition with compact binary Keccak and one shared PCS opening.
 use super::{
     FalconError, FalconPublicStatement, FalconSourceLayout, FalconSourceWitness,
     FalconVerificationTrace, KeccakTrace, encode_signature_ct, hybrid_bridge,
@@ -58,19 +61,15 @@ pub struct FalconHybridSecurity {
     pub terms: Vec<(&'static str, f64)>,
 }
 
-/// Explicit protocol selection; the established native-carry prover remains default.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum FalconProtocol {
-    NativeCarry,
-    SharedPrime,
-}
+pub use crate::piop::spartan::falcon_parameters::FalconProtocol;
 
 /// Prepared public circuit, reusable across witnesses of the same batch size.
 pub struct PreparedFalconHybrid {
     layout: FalconSourceLayout,
-    keccak: [PreparedKeccak; 2],
-    geometry: shared::Geometry<3>,
+    keccak: [PreparedKeccak; KECCAK_SLABS],
+    geometry: shared::Geometry<SOURCE_COUNT>,
     target_bits: usize,
+    max_batch: usize,
     bridge_mode: hybrid_bridge::BridgeMode,
     ligerito: ResolvedLigerito,
     pcs_grinding: GrindingPlan,
@@ -83,16 +82,16 @@ pub struct CommittedFalconHybrid {
     pub statement: FalconHybridStatement,
     traces: Vec<FalconVerificationTrace>,
     arithmetic: FalconSourceWitness,
-    auxiliary: [KeccakAuxiliary; 2],
-    packed: [Vec<Gf>; 3],
-    data: shared::JointProverData<3>,
+    auxiliary: [KeccakAuxiliary; KECCAK_SLABS],
+    packed: [Vec<Gf>; SOURCE_COUNT],
+    data: shared::JointProverData<SOURCE_COUNT>,
 }
 
 #[derive(Clone, Debug)]
 pub struct FalconHybridProof {
     arithmetic: FalconBindingPrefixProof,
     bridge: hybrid_bridge::Proof,
-    keccak: [hybrid_keccak::PrefixProof; 2],
+    keccak: [hybrid_keccak::PrefixProof; KECCAK_SLABS],
     links_nonces: Vec<u64>,
     joint: joint::Proof,
     opening: shared::JointProof,
@@ -116,6 +115,18 @@ impl PreparedFalconHybrid {
         target_bits: usize,
         protocol: FalconProtocol,
     ) -> Result<Self, FalconError> {
+        Self::with_profile(batch, target_bits, protocol, 1024)
+    }
+
+    pub fn with_profile(
+        batch: usize,
+        target_bits: usize,
+        protocol: FalconProtocol,
+        max_batch: usize,
+    ) -> Result<Self, FalconError> {
+        if max_batch == 0 || max_batch > 1024 || batch > max_batch {
+            return Err(FalconError::InvalidBatchCapacity);
+        }
         if !matches!(target_bits, 100 | 128) {
             return Err(error("hybrid security must be 100 or 128 bits"));
         }
@@ -128,15 +139,22 @@ impl PreparedFalconHybrid {
         } else {
             hybrid_bridge::BridgeMode::TwoLimbs
         };
-        let keccak = [
-            PreparedKeccak::new_slab(batch, 0, 16).map_err(error)?,
-            PreparedKeccak::new_slab(batch, 16, 4).map_err(error)?,
-        ];
-        let geometry = shared::Geometry::new([
-            layout.source_bits().ilog2() as usize - 7,
-            keccak[0].packed_vars(),
-            keccak[1].packed_vars(),
-        ])
+        let keccak: [PreparedKeccak; KECCAK_SLABS] = (0..KECCAK_SLABS)
+            .map(|i| {
+                let (first, count) = PARAMETERS.slab(i);
+                PreparedKeccak::new_slab(batch, first, count).map_err(error)
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .try_into()
+            .ok()
+            .expect("profile slab count");
+        let geometry = shared::Geometry::new(std::array::from_fn(|i| {
+            if i == 0 {
+                layout.source_bits().ilog2() as usize - 7
+            } else {
+                keccak[i - 1].packed_vars()
+            }
+        }))
         .map_err(error)?;
         // Unique decoding avoids a level-zero list-selection obligation. The
         // exact Flock challenge-block plan raises the whole PCS budget above
@@ -156,6 +174,7 @@ impl PreparedFalconHybrid {
             keccak,
             geometry,
             target_bits,
+            max_batch,
             bridge_mode,
             ligerito,
             pcs_grinding,
@@ -210,12 +229,14 @@ impl PreparedFalconHybrid {
     pub fn live_arithmetic_bits_per_signature(&self) -> usize {
         self.layout.live_bits()
     }
-    pub fn source_bits_per_signature(&self) -> [usize; 3] {
-        [
-            self.layout.signature_stride(),
-            (1 << self.keccak[0].bit_vars()) / self.capacity(),
-            (1 << self.keccak[1].bit_vars()) / self.capacity(),
-        ]
+    pub fn source_bits_per_signature(&self) -> [usize; SOURCE_COUNT] {
+        std::array::from_fn(|i| {
+            if i == 0 {
+                self.layout.signature_stride()
+            } else {
+                (1 << self.keccak[i - 1].bit_vars()) / self.capacity()
+            }
+        })
     }
 
     pub fn security(&self) -> FalconHybridSecurity {
@@ -234,31 +255,34 @@ impl PreparedFalconHybrid {
             ),
             (
                 "norm sumchecks",
-                prime(4 * (10 + d), schedule.quadratic_round_bits),
+                prime(4 * (COEFFICIENT_LOG + d), schedule.quadratic_round_bits),
             ),
             (
                 "HashToPoint initial row point",
-                prime(11 + d, schedule.outer_point_bits),
+                prime(COMPACTION_LOG + d, schedule.outer_point_bits),
             ),
             (
                 "HashToPoint product sumcheck",
-                prime(3 * (11 + d), schedule.cubic_round_bits),
+                prime(3 * (COMPACTION_LOG + d), schedule.cubic_round_bits),
             ),
             (
                 "ordered compaction fingerprints",
-                prime(2048, schedule.fingerprint_bits),
+                prime(1 << COMPACTION_LOG, schedule.fingerprint_bits),
             ),
             (
                 "ordered compaction forest sumchecks",
-                prime(2 * (11 * (d + 1) + 55), schedule.forest_round_bits),
+                prime(
+                    2 * (COMPACTION_LOG * (d + 1) + COMPACTION_LOG * (COMPACTION_LOG - 1) / 2),
+                    schedule.forest_round_bits,
+                ),
             ),
             (
                 "ordered compaction forest claim reductions",
-                prime(d + 11, schedule.forest_claim_bits),
+                prime(d + COMPACTION_LOG, schedule.forest_claim_bits),
             ),
             (
                 "compaction leaf sumcheck",
-                prime(3 * (11 + d), schedule.cubic_round_bits),
+                prime(3 * (COMPACTION_LOG + d), schedule.cubic_round_bits),
             ),
             (
                 if self.layout.is_shared_prime() {
@@ -267,9 +291,17 @@ impl PreparedFalconHybrid {
                     "native ideal batching and projection"
                 },
                 if self.layout.is_shared_prime() {
-                    (4 * d + 2049) as f64 / (super::Q as f64).powi(11)
+                    (4 * d + 2 * N + 1) as f64
+                        / crate::piop::spartan::falcon_parameters::field_cardinality(
+                            EXTENSION_DEGREE,
+                        )
+                        .as_f64()
                 } else {
-                    (d + 2046) as f64 / ((super::Q as f64).powi(11) - super::Q as f64)
+                    (d + 2 * N - 2) as f64
+                        / crate::piop::spartan::falcon_parameters::generator_cardinality(
+                            EXTENSION_DEGREE,
+                        )
+                        .as_f64()
                 },
             ),
             (
@@ -280,20 +312,29 @@ impl PreparedFalconHybrid {
                 },
                 if self.layout.is_shared_prime() {
                     prime(
-                        20,
+                        2 * EXTENSION_DEGREE - 2,
                         super::shared_ring::projection_grinding_bits(self.target_bits),
                     )
                 } else {
-                    prime(10, if self.target_bits == 128 { 12 } else { 0 })
+                    prime(
+                        EXTENSION_DEGREE - 1,
+                        if self.target_bits == 128 { 12 } else { 0 },
+                    )
                 },
             ),
             (
                 "linear constraints and terminal batching",
-                prime(13 + d + b + 12, schedule.linear_point_bits),
+                prime(
+                    self.layout.linear_stride().ilog2() as usize + d + b + 12,
+                    schedule.linear_point_bits,
+                ),
             ),
             (
                 "prime source sumcheck",
-                prime(2 * (17 + d), schedule.binding_round_bits),
+                prime(
+                    2 * (self.layout.signature_stride().ilog2() as usize + d),
+                    schedule.binding_round_bits,
+                ),
             ),
             (
                 "batched integer-to-binary forest",
@@ -372,8 +413,12 @@ impl PreparedFalconHybrid {
             arithmetic_packed.extend(row.chunks_exact(2).map(|w| Gf { lo: w[0], hi: w[1] }));
         }
         arithmetic_packed.resize(1 << self.geometry.physical_logs[0], Gf::ZERO);
-        let [k16, k4] = keccak_packed;
-        let packed = [arithmetic_packed, k16, k4];
+        let packed: [Vec<Gf>; SOURCE_COUNT] = std::iter::once(arithmetic_packed)
+            .chain(keccak_packed)
+            .collect::<Vec<_>>()
+            .try_into()
+            .ok()
+            .expect("profile sources");
         let rate = self.ligerito.prover().log_inv_rates[0];
         let (source_root, data) =
             shared::commit_sources(&self.geometry, packed.each_ref().map(Vec::as_slice), rate)
@@ -398,37 +443,58 @@ impl PreparedFalconHybrid {
         messages: &[[u8; 32]],
     ) -> Result<
         (
-            [Vec<Gf>; 2],
-            [KeccakAuxiliary; 2],
+            [Vec<Gf>; KECCAK_SLABS],
+            [KeccakAuxiliary; KECCAK_SLABS],
             Vec<[u16; hybrid_keccak::SAMPLES]>,
         ),
         FalconError,
     > {
-        let initial: Vec<_> = nonces
+        let mut states: Vec<_> = nonces
             .iter()
             .zip(messages)
             .map(|(nonce, message)| hybrid_keccak::initial_state(nonce, message))
             .collect();
-        let (k16, a16, out16) = self.keccak[0].generate_chain(&initial).map_err(error)?;
-        let next: Vec<_> = out16[..self.batch()].iter().map(|out| out[15]).collect();
-        let (k4, a4, out4) = self.keccak[1].generate_chain(&next).map_err(error)?;
+        let mut packed = Vec::new();
+        let mut auxiliary = Vec::new();
+        let mut outputs = Vec::new();
+        for slab in &self.keccak {
+            let (source, aux, out) = slab.generate_chain(&states).map_err(error)?;
+            states = out[..self.batch()]
+                .iter()
+                .map(|chain| *chain.last().expect("nonempty slab"))
+                .collect();
+            packed.push(source);
+            auxiliary.push(aux);
+            outputs.push(out);
+        }
         let samples = crate::utils::cfg_into_iter!(0..self.batch())
             .map(|signature| {
                 std::array::from_fn(|sample| {
                     let byte = 2 * sample;
                     let permutation = byte / hybrid_keccak::RATE_BYTES;
+                    let slab = Self::slab_for(permutation);
+                    let local = permutation - PARAMETERS.slab(slab).0;
+                    let out = &outputs[slab][signature][local];
                     let offset = byte % hybrid_keccak::RATE_BYTES;
-                    let out = if permutation < 16 {
-                        &out16[signature][permutation]
-                    } else {
-                        &out4[signature][permutation - 16]
-                    };
-                    let byte_at = |i: usize| (out[i / 8] >> (8 * (i % 8))) as u8;
-                    u16::from_be_bytes([byte_at(offset), byte_at(offset + 1)])
+                    let at = |i: usize| (out[i / 8] >> (8 * (i % 8))) as u8;
+                    u16::from_be_bytes([at(offset), at(offset + 1)])
                 })
             })
             .collect();
-        Ok(([k16, k4], [a16, a4], samples))
+        Ok((
+            packed.try_into().ok().expect("profile slabs"),
+            auxiliary.try_into().ok().expect("profile slabs"),
+            samples,
+        ))
+    }
+
+    fn slab_for(permutation: usize) -> usize {
+        (0..KECCAK_SLABS)
+            .find(|&i| {
+                let (first, count) = PARAMETERS.slab(i);
+                (first..first + count).contains(&permutation)
+            })
+            .expect("profile permutation")
     }
 
     fn transcript(
@@ -438,23 +504,34 @@ impl PreparedFalconHybrid {
         statement.public.validate(self.batch())?;
         let mut h = blake3::Hasher::new();
         h.update(if self.layout.is_shared_prime() {
-            b"bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v5".as_slice()
+            b"bitz/falcon1024-ct/hybrid/shared-prime/non-zk/v6".as_slice()
         } else {
-            b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v6".as_slice()
+            b"bitz/falcon1024-ct/hybrid/native-ring/non-zk/v7".as_slice()
         });
         for n in [
             self.batch(),
             self.capacity(),
             self.target_bits,
-            self.geometry.logs[0],
-            self.geometry.logs[1],
-            self.geometry.logs[2],
+            self.max_batch,
+            N,
+            EXTENSION_DEGREE,
+            super::BETA_SQUARED as usize,
+            super::HASH_TO_POINT_SAMPLES,
+            SIGNATURE_BITS,
+            PREFIX_BIAS,
+            PREFIX_BITS,
+            crate::piop::spartan::falcon_parameters::extension_constant(EXTENSION_DEGREE) as usize,
         ] {
             h.update(&(n as u64).to_le_bytes());
         }
-        h.update(b"bounded14:low13+4097*top;native:Q12289,theta11+theta+14;Dlen1023;carry22528BN");
+        for log in self.geometry.logs {
+            h.update(&(log as u64).to_le_bytes());
+        }
+        h.update(
+            b"bounded14:low13+4097*top;native:Q12289,T^k+T+c;Dlen:N-1;carry22528BN;profile/v1",
+        );
         if self.layout.is_shared_prime() {
-            h.update(b"shared:all-E;C,H,S1,S2:1,l,l2,l3;direct-beta-decoder;Hunsigned14;S2encoded-alias;live-mask;P21-i128;target-selected-prime-and-bridge;merge-in-binder-block/v3");
+            h.update(b"shared:all-E;C,H,S1,S2:1,l,l2,l3;direct-beta-decoder;Hunsigned14;S2encoded-alias;live-mask;P(2k-1)-i128;target-selected-prime-and-bridge;merge-in-binder-block/v3");
             h.update(&(self.layout.live_bits() as u64).to_le_bytes());
             h.update(
                 &(self.layout.public_key_offset().expect("shared H slots") as u64).to_le_bytes(),
@@ -584,10 +661,10 @@ impl PreparedFalconHybrid {
             }));
             marginals.push(cached);
         }
-        let keccak = prefixes.try_into().expect("two Keccak slabs");
-        let k: [[BinaryClaim; 2]; 2] = k
+        let keccak = prefixes.try_into().expect("profile Keccak slabs");
+        let k: [[BinaryClaim; 2]; KECCAK_SLABS] = k
             .try_into()
-            .unwrap_or_else(|_| unreachable!("two Keccak slabs"));
+            .unwrap_or_else(|_| unreachable!("profile Keccak slabs"));
         drop(keccak_span);
         let links_span = tracing::info_span!("falcon_hybrid:link_coefficients").entered();
         let mut link_t = ProverBlockGrindingTranscript::<_, LinkGrinding>::new(
@@ -684,7 +761,7 @@ impl PreparedFalconHybrid {
             )),
         )?;
         let mut k = Vec::new();
-        for slab in 0..2 {
+        for slab in 0..KECCAK_SLABS {
             let claims = self.keccak[slab]
                 .verify_prefix(
                     &proof.keccak[slab],
@@ -700,9 +777,9 @@ impl PreparedFalconHybrid {
                 value: c.value,
             }));
         }
-        let k: [[BinaryClaim; 2]; 2] = k
+        let k: [[BinaryClaim; 2]; KECCAK_SLABS] = k
             .try_into()
-            .unwrap_or_else(|_| unreachable!("two Keccak slabs"));
+            .unwrap_or_else(|_| unreachable!("profile Keccak slabs"));
         let mut link_t = VerifierBlockGrindingTranscript::<_, LinkGrinding>::new(
             &mut t,
             self.binary_grinding(128),
@@ -752,10 +829,10 @@ impl PreparedFalconHybrid {
         t: &mut impl Transcript,
         public: &FalconPublicStatement,
         a: &[BinaryClaim],
-        k: &[[BinaryClaim; 2]; 2],
-    ) -> ([Coefficients; 3], Gf) {
+        k: &[[BinaryClaim; 2]; KECCAK_SLABS],
+    ) -> ([Coefficients; SOURCE_COUNT], Gf) {
         t.absorb_slice(b"bitz/falcon-hybrid/binary-claims-and-shake-wiring/v3");
-        for claims in [a, k[0].as_slice(), k[1].as_slice()] {
+        for claims in std::iter::once(a).chain(k.iter().map(|claims| claims.as_slice())) {
             t.absorb_slice(&(claims.len() as u64).to_le_bytes());
             for c in claims {
                 t.absorb_slice(&c.value.lo.to_le_bytes());
@@ -764,7 +841,8 @@ impl PreparedFalconHybrid {
         }
         let mut result = std::array::from_fn(|_| Coefficients::default());
         let mut target = Gf::ZERO;
-        for (branch, claims) in [a, k[0].as_slice(), k[1].as_slice()]
+        for (branch, claims) in std::iter::once(a)
+            .chain(k.iter().map(|claims| claims.as_slice()))
             .into_iter()
             .enumerate()
         {
@@ -778,14 +856,19 @@ impl PreparedFalconHybrid {
                 });
             }
         }
-        let local_point: Vec<Gf> = t.get_field_challenges(16, &());
+        let local_point: Vec<Gf> = t.get_field_challenges(
+            (1600 * hybrid_keccak::PERMUTATIONS + 16 * super::HASH_TO_POINT_SAMPLES)
+                .next_power_of_two()
+                .ilog2() as usize,
+            &(),
+        );
         let instance_point: Vec<Gf> = t.get_field_challenges(self.capacity().ilog2() as usize, &());
         let eta: Gf = t.get_field_challenge(&());
         let local = eq_table(&local_point);
         let instances = eq_table(&instance_point);
         let offsets = self.layout.offsets();
         let mut arithmetic = Vec::with_capacity(320 + 16 * super::HASH_TO_POINT_SAMPLES);
-        let mut binary: [Vec<(usize, Gf)>; 2] = std::array::from_fn(|_| Vec::new());
+        let mut binary: [Vec<(usize, Gf)>; KECCAK_SLABS] = std::array::from_fn(|_| Vec::new());
         // Slab addresses are [7 in-word | signature | permutation | chunk].
         // Remove the signature axis for the factored repeated gather.
         let local_index = |slab: usize, index: usize| {
@@ -817,8 +900,8 @@ impl PreparedFalconHybrid {
         for permutation in 1..hybrid_keccak::PERMUTATIONS {
             for bit in 0..1600 {
                 let w = eta * local[permutation * 1600 + bit];
-                let slab = usize::from(permutation >= 16);
-                let previous = usize::from(permutation > 16);
+                let slab = Self::slab_for(permutation);
+                let previous = Self::slab_for(permutation - 1);
                 binary[slab].push((
                     local_index(
                         slab,
@@ -837,8 +920,8 @@ impl PreparedFalconHybrid {
         }
         for sample in 0..super::HASH_TO_POINT_SAMPLES {
             for bit in 0..16 {
-                let w = eta * local[32000 + 16 * sample + bit];
-                let slab = usize::from((2 * sample) / hybrid_keccak::RATE_BYTES >= 16);
+                let w = eta * local[1600 * hybrid_keccak::PERMUTATIONS + 16 * sample + bit];
+                let slab = Self::slab_for((2 * sample) / hybrid_keccak::RATE_BYTES);
                 binary[slab].push((
                     local_index(slab, self.keccak[slab].sample_bit_index(0, sample, bit)),
                     w,
@@ -905,8 +988,7 @@ pub(super) fn live_subcubes(point: &[Gf], live: usize) -> Vec<(Vec<Gf>, Gf)> {
     }
     out
 }
-
-#[cfg(test)]
+falcon_tests! {
 mod tests {
     use super::super::decode_signature_ct;
     use super::*;
@@ -1537,4 +1619,6 @@ mod tests {
             assert!(prepared.verify(&statement, &proof).is_err());
         }
     }
+}
+
 }

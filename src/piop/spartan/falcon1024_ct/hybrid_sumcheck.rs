@@ -1,13 +1,13 @@
-//! A joint binary sumcheck for several committed, packed sources.
-//!
-//! Coefficients are sums of tensor products and sparse additive gathers. The
-//! first seven rounds operate on packed bits; only then are the coefficient
-//! and witness tables materialized, with one field element per packed word.
-//! The following lane rounds retain only occupied source lanes. Missing lanes
-//! are still zero operands of the same virtual polynomial, not a smaller
-//! sumcheck domain. Physical source padding remains in the witness table.
-//! The caller must bind all commitments and all claims defining the public
-//! coefficients, and sample any claim-batching scalars, before this reduction.
+// A joint binary sumcheck for several committed, packed sources.
+//
+// Coefficients are sums of tensor products and sparse additive gathers. The
+// first seven rounds operate on packed bits; only then are the coefficient
+// and witness tables materialized, with one field element per packed word.
+// The following lane rounds retain only occupied source lanes. Missing lanes
+// are still zero operands of the same virtual polynomial, not a smaller
+// sumcheck domain. Physical source padding remains in the witness table.
+// The caller must bind all commitments and all claims defining the public
+// coefficients, and sample any claim-batching scalars, before this reduction.
 use crate::hybrid::{
     Error,
     opening::Geometry,
@@ -946,8 +946,7 @@ pub(crate) fn verify<const N: usize>(
     observe(t, &[proof.value]);
     Ok(point)
 }
-
-#[cfg(test)]
+falcon_tests! {
 mod tests {
     use super::*;
 
@@ -1874,4 +1873,6 @@ mod tests {
             .is_err()
         );
     }
+}
+
 }

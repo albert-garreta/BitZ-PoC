@@ -73,8 +73,7 @@ pub(super) fn from_shake_bytes(
         point,
     })
 }
-
-#[cfg(test)]
+falcon_tests! {
 mod tests {
     use super::*;
 
@@ -145,4 +144,6 @@ mod tests {
             .collect();
         assert_eq!(trace.point.as_slice(), expected.as_slice());
     }
+}
+
 }

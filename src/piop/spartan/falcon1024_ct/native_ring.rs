@@ -1,6 +1,6 @@
-//! Native Falcon ideal check and bounded coordinate lift into the existing
-//! arithmetic binder. The returned claim is not authenticated until the caller
-//! binds its weights to the committed `c` and decoded `s1` source columns.
+// Native Falcon ideal check and bounded coordinate lift into the existing
+// arithmetic binder. The returned claim is not authenticated until the caller
+// binds its weights to the committed `c` and decoded `s1` source columns.
 
 use field::RingOps;
 #[cfg(feature = "parallel")]
@@ -22,76 +22,14 @@ use super::{
 type F = SpartanBitzField;
 type Cfg = <F as SpartanField>::Config;
 
-pub const EXTENSION_DEGREE: usize = 11;
+pub const EXTENSION_DEGREE: usize = super::EXTENSION;
 pub const CARRY_GRINDING_BITS: u32 = 12;
-const DOMAIN: &[u8] = b"bitz/falcon1024-ct/native-ring/v1";
-
-/// Canonical coordinates in F_12289[theta]/(theta^11 + theta + 14).
-/// Proof input is validated before arithmetic; coordinates are deliberately
-/// explicit so noncanonical proof encodings can be rejected.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Ext(pub [u16; EXTENSION_DEGREE]);
-
-impl Ext {
-    pub(super) const ZERO: Self = Self([0; EXTENSION_DEGREE]);
-    pub(super) const ONE: Self = Self([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-
-    pub(super) fn canonical(self) -> bool {
-        self.0.iter().all(|&x| i64::from(x) < Q)
-    }
-
-    fn is_base_field(self) -> bool {
-        self.0[1..].iter().all(|&x| x == 0)
-    }
-
-    #[inline]
-    pub(super) fn add(self, rhs: Self) -> Self {
-        Self(std::array::from_fn(|i| {
-            let sum = self.0[i] + rhs.0[i];
-            if sum >= Q as u16 { sum - Q as u16 } else { sum }
-        }))
-    }
-
-    #[inline]
-    pub(super) fn sub(self, rhs: Self) -> Self {
-        Self(std::array::from_fn(|i| {
-            let value = self.0[i] + Q as u16 - rhs.0[i];
-            if value >= Q as u16 {
-                value - Q as u16
-            } else {
-                value
-            }
-        }))
-    }
-
-    #[inline]
-    pub(super) fn mul(self, rhs: Self) -> Self {
-        let mut product = [0i64; 2 * EXTENSION_DEGREE - 1];
-        for (i, &a) in self.0.iter().enumerate() {
-            for (j, &b) in rhs.0.iter().enumerate() {
-                product[i + j] += i64::from(a) * i64::from(b);
-            }
-        }
-        // theta^(11+k) = -theta^(k+1) - 14 theta^k, k <= 9.
-        for j in EXTENSION_DEGREE..product.len() {
-            product[j - EXTENSION_DEGREE] -= 14 * product[j];
-            product[j - EXTENSION_DEGREE + 1] -= product[j];
-        }
-        Self(std::array::from_fn(|j| product[j].rem_euclid(Q) as u16))
-    }
-
-    #[cfg(test)]
-    fn pow(mut self, mut exponent: u64) -> Self {
-        let mut result = Self::ONE;
-        while exponent != 0 {
-            if exponent & 1 != 0 {
-                result = result.mul(self);
-            }
-            self = self.mul(self);
-            exponent >>= 1;
-        }
-        result
-    }
+const DOMAIN: &[u8] = b"bitz/falcon/native-ring/v2";
+pub type Ext = crate::piop::spartan::falcon_extension::FalconExtension<EXTENSION_DEGREE>;
+/// Retain the historical tuple-constructor spelling through the concrete alias.
+#[allow(non_snake_case)]
+pub const fn Ext(coordinates: [u16; EXTENSION_DEGREE]) -> Ext {
+    Ext::new(coordinates)
 }
 
 /// The quotient polynomial is fixed before `alpha`; carries are fixed before
@@ -246,8 +184,13 @@ fn bind_parameters(
 ) {
     transcript.absorb_slice(DOMAIN);
     transcript.absorb_slice(&(Q as u64).to_le_bytes());
-    // All coefficients of theta^11 + theta + 14, in ascending order.
-    let polynomial: [u16; 12] = [14, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+    // All coefficients of the registered extension polynomial, in ascending order.
+    let polynomial: [u16; EXTENSION_DEGREE + 1] = std::array::from_fn(|i| match i {
+        0 => crate::piop::spartan::falcon_parameters::extension_constant(EXTENSION_DEGREE),
+        1 => 1,
+        i if i == EXTENSION_DEGREE => 1,
+        _ => 0,
+    });
     for coefficient in polynomial {
         transcript.absorb_slice(&coefficient.to_le_bytes());
     }
@@ -270,7 +213,7 @@ fn sample_instance_point(
 }
 
 fn sample_generator(transcript: &mut impl Transcript) -> Result<Ext, FalconError> {
-    // Degree 11 is prime, so the base field is its only proper subfield.
+    // Reject every proper subfield, including composite extension degrees.
     sample_extension(transcript, true)
 }
 
@@ -297,8 +240,8 @@ pub(super) fn sample_extension(
                 return Err(error("native field sampling exhausted"));
             }
         }
-        let result = Ext(coordinates);
-        if !generator || !result.is_base_field() {
+        let result = Ext::new(coordinates);
+        if !generator || result.generates_extension() {
             absorb_extensions(transcript, &[result]);
             return Ok(result);
         }
@@ -348,7 +291,7 @@ pub(super) fn certificate(traces: &[FalconVerificationTrace], lambda: &[Ext]) ->
                 *total += scalar * u64::from(coordinate);
             }
         }
-        Ext(sum.map(|x| (x % Q as u64) as u16))
+        Ext::new(sum.map(|x| (x % Q as u64) as u16))
     };
     #[cfg(feature = "parallel")]
     if traces.len() >= 8 {
@@ -386,8 +329,8 @@ fn projection_target(
                 s2[k] += i64::from(statement.signatures[s].s2[j]) * i64::from(powers[j].0[k]);
             }
         }
-        let h = Ext(h.map(|x| x.rem_euclid(Q) as u16));
-        let s2 = Ext(s2.map(|x| x.rem_euclid(Q) as u16));
+        let h = Ext::new(h.map(|x| x.rem_euclid(Q) as u16));
+        let s2 = Ext::new(s2.map(|x| x.rem_euclid(Q) as u16));
         lambda[s].mul(h.mul(s2))
     };
     #[cfg(feature = "parallel")]
@@ -534,8 +477,7 @@ fn collapse_claim(
 fn error(message: impl Into<String>) -> FalconError {
     FalconError::Piop(message.into())
 }
-
-#[cfg(test)]
+falcon_tests! {
 mod tests {
     use super::*;
     use crate::transcript::Blake3Transcript;
@@ -580,7 +522,7 @@ mod tests {
 
     #[test]
     fn extension_polynomial_passes_rabin_irreducibility_test() {
-        let theta = Ext([0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        let theta = Ext::new([0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
         let theta_q = theta.pow(Q as u64);
         let gcd = polynomial_gcd(
             vec![14, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
@@ -599,7 +541,7 @@ mod tests {
     fn extension_algebra_and_equality_weights() {
         let mut state = 9u64;
         let mut random = || {
-            Ext(std::array::from_fn(|_| {
+            Ext::new(std::array::from_fn(|_| {
                 state ^= state << 13;
                 state ^= state >> 7;
                 state ^= state << 17;
@@ -631,7 +573,7 @@ mod tests {
         let xi = F::from_with_cfg((1u128 << 120) + 97, &field);
         let coordinates: Vec<_> = (0..Q as u16)
             .map(|x| {
-                Ext(std::array::from_fn(|k| {
+                Ext::new(std::array::from_fn(|k| {
                     ((u32::from(x) * (k as u32 + 1)) % Q as u32) as u16
                 }))
             })
@@ -864,4 +806,6 @@ mod tests {
         assert!(no_wrap_bound(1024) < 1u128 << 50);
         assert!(check_carries(&[carry_bound(1024) as i64 + 1; 11], 1024).is_err());
     }
+}
+
 }

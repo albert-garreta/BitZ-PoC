@@ -1,9 +1,10 @@
-//! Commitment-bound terminal reduction for the Falcon-1024 PIOP.
-//!
-//! All exact linear Falcon relations and all terminal values emitted by the
-//! nonlinear sumchecks are folded into one streamed linear form in the committed
-//! binary source.  One degree-two inner sumcheck reduces that form to one MLE
-//! evaluation authenticated by the shared hybrid opening.
+use super::{COEFFICIENT_LOG, COMPACTION_LOG, NORM_BITS, PREFIX_BIAS, PREFIX_BITS, SIGNATURE_BITS};
+// Commitment-bound terminal reduction for the Falcon-1024 PIOP.
+//
+// All exact linear Falcon relations and all terminal values emitted by the
+// nonlinear sumchecks are folded into one streamed linear form in the committed
+// binary source.  One degree-two inner sumcheck reduces that form to one MLE
+// evaluation authenticated by the shared hybrid opening.
 
 use std::{collections::HashMap, sync::OnceLock};
 
@@ -49,7 +50,7 @@ use joined::JoinedBinding;
 type F = SpartanBitzField;
 type Cfg = <F as SpartanField>::Config;
 
-const COMPACTION_LEAVES: usize = 1 << 11;
+const COMPACTION_LEAVES: usize = 1 << COMPACTION_LOG;
 
 struct LinearPointGrinding;
 impl GrindingDomain for LinearPointGrinding {
@@ -565,12 +566,12 @@ trait CoefficientSink {
         if !self.enabled() {
             return;
         }
-        for bit in 0..12 {
-            let stream = offset + 11 - bit;
+        for bit in 0..SIGNATURE_BITS {
+            let stream = offset + SIGNATURE_BITS - 1 - bit;
             let index = base + 8 * (stream / 8) + 7 - stream % 8;
             self.add(
                 index,
-                if bit == 11 {
+                if bit == SIGNATURE_BITS - 1 {
                     field.sub(&field.zero(), &scale)
                 } else {
                     scale
@@ -860,7 +861,7 @@ fn add_norm_claims_prepared(
         add_unsigned_scaled(
             coefficients,
             instance * layout.signature_stride() + offsets.norm_slack,
-            27,
+            NORM_BITS,
             field.mul(scale, &instance_weights[instance]),
             field,
         );
@@ -953,7 +954,7 @@ fn add_signed_source_scaled(
     scale: F,
     field: &Cfg,
 ) {
-    let stream = 12 * coefficient;
+    let stream = SIGNATURE_BITS * coefficient;
     values.add_encoded_word(
         base + offsets.encoded_signature + 8 * (1 + super::NONCE_BYTES + stream / 8),
         stream % 8,
@@ -1087,7 +1088,8 @@ fn source_rounds(layout: &FalconSourceLayout) -> usize {
 fn piop(message: impl Into<String>) -> FalconError {
     FalconError::Piop(message.into())
 }
-
-#[cfg(test)]
+falcon_tests! {
 #[path = "opening_binding_tests.rs"]
 mod binding_tests;
+
+}

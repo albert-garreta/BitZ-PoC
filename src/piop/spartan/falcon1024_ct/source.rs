@@ -2,6 +2,7 @@ use super::{
     BETA_SQUARED, FalconError, FalconSourceLayout, FalconVerificationTrace, HASH_TO_POINT_SAMPLES,
     N,
 };
+use super::{NORM_BITS, PREFIX_BIAS, PREFIX_BITS};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
@@ -162,9 +163,9 @@ impl FalconSourceWitness {
                     put_unsigned(
                         rows,
                         &p,
-                        offsets.hash_prefixes + 11 * i,
-                        u64::from(prefix),
-                        11,
+                        offsets.hash_prefixes + PREFIX_BITS * i,
+                        u64::from(prefix) + PREFIX_BIAS as u64,
+                        PREFIX_BITS,
                     );
                 }
 
@@ -186,7 +187,7 @@ impl FalconSourceWitness {
                     );
                 }
                 debug_assert_eq!(trace.norm + trace.norm_slack, BETA_SQUARED);
-                put_unsigned(rows, &p, offsets.norm_slack, trace.norm_slack, 27);
+                put_unsigned(rows, &p, offsets.norm_slack, trace.norm_slack, NORM_BITS);
                 if let Some(public_key) = offsets.public_key {
                     for (i, &coefficient) in trace.public_key.h.iter().enumerate() {
                         if i64::from(coefficient) >= super::Q {
@@ -265,8 +266,7 @@ fn put_unsigned(
         rows[next / words_per_column][next % words_per_column] |= value >> (64 - shift);
     }
 }
-
-#[cfg(test)]
+falcon_tests! {
 mod tests {
     use super::*;
     use crate::piop::spartan::falcon1024_ct::verification_trace;
@@ -409,4 +409,6 @@ mod tests {
         );
         assert!(old.check_public_key_bindings(&keys).is_err());
     }
+}
+
 }

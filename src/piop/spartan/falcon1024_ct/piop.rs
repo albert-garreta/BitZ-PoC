@@ -1,9 +1,10 @@
-//! Algebraic Falcon PIOP layers over the transcript-selected prime field.
-//!
-//! This file deliberately stops at terminal MLE claims.  Those claims are
-//! linearized into the one committed source witness by `opening.rs`; keeping
-//! that boundary explicit prevents a native trace check from being mistaken
-//! for a commitment-bound proof.
+use super::{COEFFICIENT_LOG, COMPACTION_LOG, PREFIX_BIAS, PREFIX_BITS};
+// Algebraic Falcon PIOP layers over the transcript-selected prime field.
+//
+// This file deliberately stops at terminal MLE claims.  Those claims are
+// linearized into the one committed source witness by `opening.rs`; keeping
+// that boundary explicit prevents a native trace check from being mistaken
+// for a commitment-bound proof.
 
 use field::RingOps;
 #[cfg(feature = "parallel")]
@@ -48,7 +49,7 @@ use shared::{LeafPayload, NormPayload, QuadraticPayload, verify_round_proofs};
 
 pub(super) const PRIME_MIN: u128 = 1u128 << 125;
 pub(super) const PRIME_MAX: u128 = (1u128 << 126) - 1;
-const COMPACTION_LEAVES: usize = 1 << 11;
+const COMPACTION_LEAVES: usize = 1 << COMPACTION_LOG;
 
 /// Proof-of-work schedule for the selected projection field and requested
 /// computational soundness target.
@@ -98,16 +99,20 @@ impl FalconSecuritySchedule {
             } else {
                 component_grinding_bits(d)
             },
-            quadratic_round_bits: component_grinding_bits(4 * (10 + d)),
-            outer_point_bits: component_grinding_bits(11 + d),
+            quadratic_round_bits: component_grinding_bits(4 * (COEFFICIENT_LOG + d)),
+            outer_point_bits: component_grinding_bits(COMPACTION_LOG + d),
             cubic_round_bits,
             forest_round_bits,
             forest_claim_bits,
             // Fix one incorrect signature before the fingerprint challenge.
             // Root batching and forest losses are accounted separately.
-            fingerprint_bits: component_grinding_bits(2048),
-            linear_point_bits: component_grinding_bits(13 + d + layout.batch() + 12),
-            binding_round_bits: component_grinding_bits(2 * (17 + d)),
+            fingerprint_bits: component_grinding_bits(COMPACTION_LEAVES),
+            linear_point_bits: component_grinding_bits(
+                layout.linear_stride().ilog2() as usize + d + layout.batch() + 12,
+            ),
+            binding_round_bits: component_grinding_bits(
+                2 * (layout.signature_stride().ilog2() as usize + d),
+            ),
         })
     }
 }
@@ -144,12 +149,12 @@ const COMPACTION_GRINDING_BITS: [(u32, u32, u32); 11] = {
 };
 
 const fn solve_compaction_grinding_bits(d: usize) -> (u32, u32, u32) {
-    let cubic_rounds = 2 * (11 + d);
-    let forest_rounds = 55 + 11 * (d + 1);
-    let claim_draws = 11 + if d == 0 { 0 } else { 1 };
+    let cubic_rounds = 2 * (COMPACTION_LOG + d);
+    let forest_rounds = COMPACTION_LOG * (COMPACTION_LOG - 1) / 2 + COMPACTION_LOG * (d + 1);
+    let claim_draws = COMPACTION_LOG + if d == 0 { 0 } else { 1 };
     let cubic_degree = (3 * cubic_rounds) as u128;
     let forest_degree = (2 * forest_rounds) as u128;
-    let claim_degree = (d + 11) as u128;
+    let claim_degree = (d + COMPACTION_LOG) as u128;
     let uniform = component_grinding_bits((cubic_degree + forest_degree + claim_degree) as usize);
     // Every group has >=11 draws and all groups together have <=230. A
     // difficulty >=uniform+5 cannot improve on the feasible uniform choice.
@@ -745,7 +750,7 @@ fn verify_norm_payload(
         &[proof.claims[0], proof.claims[1], slack],
         field,
     );
-    let rounds = 10 + layout.capacity().trailing_zeros() as usize;
+    let rounds = COEFFICIENT_LOG + layout.capacity().trailing_zeros() as usize;
     let (point, final_claims) = if target_bits == 128 {
         let mut boundary = VerifierGrindingRoundBoundary::<QuadraticGrinding>::new(
             security_schedule(layout, target_bits)?.quadratic_round_bits,
@@ -1030,7 +1035,8 @@ fn compaction_leaves_with_ranks(
     let mut candidate = vec![one; COMPACTION_LEAVES];
     let mut output = vec![one; COMPACTION_LEAVES];
     for i in 0..HASH_TO_POINT_SAMPLES {
-        let selected = trace.hash_to_point.accepted[i] && trace.hash_to_point.prefix[i] < 1024;
+        let selected =
+            trace.hash_to_point.accepted[i] && usize::from(trace.hash_to_point.prefix[i]) < N;
         if selected {
             candidate[i] = field.add(
                 &ranks[usize::from(trace.hash_to_point.prefix[i])],
@@ -1059,7 +1065,7 @@ fn prove_product_forest(
     field: &Cfg,
 ) -> Result<(PrimeProductForestProof, CompactionProof), FalconError> {
     if leaves.is_empty()
-        || leaves.len() > 2048
+        || leaves.len() > COMPACTION_LEAVES
         || leaves.len() % 2 != 0
         || leaves.iter().any(|tree| tree.len() != COMPACTION_LEAVES)
     {
@@ -1100,9 +1106,9 @@ fn prove_product_forest(
     tree_weights.push(ForestWeight::Difference);
     let mut local_point = Vec::new();
     let mut claim = field.zero();
-    let mut layers = Vec::with_capacity(11);
+    let mut layers = Vec::with_capacity(COMPACTION_LOG);
     let mut endpoints = [field.zero(); 2];
-    for level in 0..11 {
+    for level in 0..COMPACTION_LOG {
         transcript.absorb_slice(&(level as u64).to_le_bytes());
         let mut groups: Vec<[Vec<F>; 2]> = crate::utils::cfg_iter_mut!(trees)
             .map(|tree| {
@@ -1429,7 +1435,10 @@ fn verify_product_forest_payload(
     security: FalconSecuritySchedule,
     field: &Cfg,
 ) -> Result<CompactionProof, FalconError> {
-    if !(1..=1024).contains(&batch) || layers.len() != 11 || !matches!(target_bits, 100 | 128) {
+    if !(1..=1024).contains(&batch)
+        || layers.len() != COMPACTION_LOG
+        || !matches!(target_bits, 100 | 128)
+    {
         return Err(piop("invalid compaction forest shape"));
     }
     validate_field_elements(&endpoints, field).map_err(|error| piop(error.to_string()))?;
@@ -1575,7 +1584,11 @@ fn prove_compaction_leaf(
             );
             values[i] = [
                 unsigned(u128::from(hash.accepted[i]), field),
-                unsigned(u128::from(1 - ((hash.prefix[i] >> 10) & 1)), field),
+                unsigned(
+                    (1 - (((usize::from(hash.prefix[i]) + PREFIX_BIAS) >> (PREFIX_BITS - 1)) & 1))
+                        as u128,
+                    field,
+                ),
                 field.mul(
                     &field.mul(&weights[instance], &forest_weights[i]),
                     &fingerprint,
@@ -1592,7 +1605,7 @@ fn prove_compaction_leaf(
         },
         0,
     );
-    let rounds = 11 + instance_rounds;
+    let rounds = COMPACTION_LOG + instance_rounds;
     let mut point = Vec::with_capacity(rounds);
     let mut round_polynomials = Vec::with_capacity(rounds);
     for _ in 0..rounds {
@@ -1710,7 +1723,7 @@ fn verify_compaction_leaf_payload(
         [proof.sumcheck],
         transcript,
         &[initial],
-        11 + instance_rounds,
+        COMPACTION_LOG + instance_rounds,
         field,
         &mut boundary,
     )
@@ -1758,7 +1771,7 @@ fn affine(left: F, right: F, point: F, field: &Cfg) -> F {
 }
 
 fn compaction_product_rounds(layout: &FalconSourceLayout) -> usize {
-    11 + layout.capacity().trailing_zeros() as usize
+    COMPACTION_LOG + layout.capacity().trailing_zeros() as usize
 }
 
 pub(super) fn security_schedule(
@@ -1772,8 +1785,7 @@ pub(super) fn security_schedule(
 fn piop(message: impl Into<String>) -> FalconError {
     FalconError::Piop(message.into())
 }
-
-#[cfg(test)]
+falcon_tests! {
 mod tests {
     use super::*;
     use crate::sumcheck::outer::OuterInputs;
@@ -2886,4 +2898,6 @@ mod tests {
             }
         }
     }
+}
+
 }

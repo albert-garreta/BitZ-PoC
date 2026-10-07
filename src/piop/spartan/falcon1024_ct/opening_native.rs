@@ -1,4 +1,4 @@
-//! Affine authentication of native-ring projections and compaction leaves.
+// Affine authentication of native-ring projections and compaction leaves.
 use super::*;
 
 pub(super) struct LeafWeights {
@@ -16,19 +16,21 @@ impl LeafWeights {
     ) -> Result<Self, FalconError> {
         let leaf = &proof.compaction_leaf;
         let d = layout.capacity().ilog2() as usize;
-        if leaf.point.len() != 11 + d || leaf.instance_point.len() != d {
+        if leaf.point.len() != COMPACTION_LOG + d || leaf.instance_point.len() != d {
             return Err(piop("compaction leaf binding dimensions"));
         }
         let point = &proof.compaction.terminal_point;
-        if point.len() != 11
+        if point.len() != COMPACTION_LOG
             || proof.compaction.instance_point.len() != d
             || leaf.instance_point != proof.compaction.instance_point
         {
             return Err(piop("compaction forest endpoint mismatch"));
         }
         Ok(Self {
-            local: eq_table(&leaf.point[..11], field).map_err(|e| piop(e.to_string()))?,
-            instances: eq_table(&leaf.point[11..], field).map_err(|e| piop(e.to_string()))?,
+            local: eq_table(&leaf.point[..COMPACTION_LOG], field)
+                .map_err(|e| piop(e.to_string()))?,
+            instances: eq_table(&leaf.point[COMPACTION_LOG..], field)
+                .map_err(|e| piop(e.to_string()))?,
             beta: eq_table(&leaf.instance_point, field).map_err(|e| piop(e.to_string()))?,
             forest: eq_table(point, field).map_err(|e| piop(e.to_string()))?,
         })
@@ -73,7 +75,7 @@ pub(super) fn add_leaf_claims_prepared(
                     let index = if coordinate == 0 {
                         offsets.hash_accept_ands + i
                     } else {
-                        offsets.hash_prefixes + 11 * i + 10
+                        offsets.hash_prefixes + PREFIX_BITS * i + PREFIX_BITS - 1
                     };
                     sink.add(base + index, field.neg(&weight));
                     if sink.needs_constants() {
@@ -85,8 +87,8 @@ pub(super) fn add_leaf_claims_prepared(
                         &field.mul(&weights.local[i], &weights.forest[i]),
                     );
                     sink.add_word(
-                        base + offsets.hash_prefixes + 11 * i,
-                        11,
+                        base + offsets.hash_prefixes + PREFIX_BITS * i,
+                        PREFIX_BITS,
                         field.mul(&weight, &proof.compaction_rank_scale),
                         field,
                     );
@@ -94,7 +96,13 @@ pub(super) fn add_leaf_claims_prepared(
                     if sink.needs_constants() {
                         constant = field.add(
                             &constant,
-                            &field.mul(&weight, &field.sub(&proof.compaction_gamma, &field.one())),
+                            &field.mul(
+                                &weight,
+                                &field.sub(
+                                    &field.sub(&proof.compaction_gamma, &field.one()),
+                                    &mul_i(proof.compaction_rank_scale, PREFIX_BIAS as i128, field),
+                                ),
+                            ),
                         );
                     }
                 }

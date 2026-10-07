@@ -12,7 +12,7 @@ pub struct FalconVerificationTrace {
     pub hash_to_point: HashToPointTrace,
     /// Centered short lift `S1 = C - H*S2 (mod q)`.
     pub s1: Box<[i16; N]>,
-    /// Quotient of the native residual by `X^1024 + 1` over F_12289.
+    /// Quotient of the native residual by `X^N + 1` over F_12289.
     /// These are the reduced negatives of the high coefficients of `H*S2`.
     pub native_quotient: Box<[u16; N - 1]>,
     pub norm: u64,
@@ -129,8 +129,7 @@ pub fn verify_falcon1024_ct(
 ) -> Result<(), FalconError> {
     verification_trace(public_key, message, signature).map(drop)
 }
-
-#[cfg(test)]
+falcon_tests! {
 mod tests {
     use super::*;
 
@@ -201,4 +200,6 @@ mod tests {
             Err(FalconError::NormTooLarge { .. })
         ));
     }
+}
+
 }

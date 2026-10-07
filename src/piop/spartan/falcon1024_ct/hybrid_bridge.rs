@@ -1,8 +1,8 @@
-//! Prime-field source evaluation reduced through the BitZ PCS's product GKR.
-//!
-//! Native and 128-bit shared proofs use two bounded limbs with an unmultiplied
-//! limb coordinate. 100-bit shared proofs use one unsplit exponent per row.
-//! Both terminal claims are authenticated by the shared binary PCS.
+// Prime-field source evaluation reduced through the BitZ PCS's product GKR.
+//
+// Native and 128-bit shared proofs use two bounded limbs with an unmultiplied
+// limb coordinate. 100-bit shared proofs use one unsplit exponent per row.
+// Both terminal claims are authenticated by the shared binary PCS.
 use super::hybrid_keccak::grinding::{
     ProverBlockGrindingTranscript, VerifierBlockGrindingTranscript,
 };
@@ -569,8 +569,7 @@ fn verify_unsplit(
     grinder.finish().map_err(|_| err("bridge grinding"))?;
     Ok(vec![claim])
 }
-
-#[cfg(test)]
+falcon_tests! {
 mod tests {
     use super::super::{FalconSourceLayout, verification_trace};
     use super::*;
@@ -1406,4 +1405,6 @@ mod tests {
         changed.forest.push([Gf::one(); 2]);
         reject(&changed);
     }
+}
+
 }

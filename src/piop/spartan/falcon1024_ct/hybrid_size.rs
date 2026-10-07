@@ -1,5 +1,5 @@
-//! Accounting for the stored proof payload; Falcon does not yet define a
-//! transport codec. Scalar widths are canonical, not Rust allocation sizes.
+// Accounting for the stored proof payload; Falcon does not yet define a
+// transport codec. Scalar widths are canonical, not Rust allocation sizes.
 use super::super::{
     native_ring::{EXTENSION_DEGREE, NativeRingProof},
     opening::FalconBindingPrefixProof,
@@ -571,8 +571,7 @@ fn opening_bytes(proof: &shared::JointProof) -> usize {
         + FIELD_BYTES * s_v.len()
         + serialized_bytes(ligerito)
 }
-
-#[cfg(test)]
+falcon_tests! {
 mod tests {
     use super::super::super::native_ring::Ext;
     use super::*;
@@ -590,9 +589,9 @@ mod tests {
     #[test]
     fn native_payload_counts_canonical_certificate_carries_and_challenges() {
         let mut proof = NativeRingProof {
-            certificate: vec![Ext([7; EXTENSION_DEGREE]); 1023],
-            instance_point: vec![Ext([9; EXTENSION_DEGREE]); 10],
-            alpha: Ext([3; EXTENSION_DEGREE]),
+            certificate: vec![Ext::new([7; EXTENSION_DEGREE]); 1023],
+            instance_point: vec![Ext::new([9; EXTENSION_DEGREE]); 10],
+            alpha: Ext::new([3; EXTENSION_DEGREE]),
             carries: [-17; EXTENSION_DEGREE],
             carry_nonce: Some(29),
         };
@@ -615,9 +614,9 @@ mod tests {
         bytes.extend_from_slice(&proof.carry_nonce.unwrap().to_le_bytes());
         assert_eq!(native_bytes(&proof), bytes.len());
         let baseline = native_bytes(&proof);
-        proof.certificate.push(Ext([0; EXTENSION_DEGREE]));
+        proof.certificate.push(Ext::new([0; EXTENSION_DEGREE]));
         assert_eq!(native_bytes(&proof) - baseline, 22);
-        proof.instance_point.push(Ext([0; EXTENSION_DEGREE]));
+        proof.instance_point.push(Ext::new([0; EXTENSION_DEGREE]));
         assert_eq!(native_bytes(&proof) - baseline, 44);
         proof.carry_nonce = None;
         assert_eq!(native_bytes(&proof) - baseline, 36);
@@ -721,4 +720,6 @@ mod tests {
             752 + 42 * FIELD_BYTES
         );
     }
+}
+
 }

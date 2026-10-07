@@ -436,3 +436,8 @@ required-features = ["native-mul-compare", "bench-internals"]
 [[test]]
 name = "mul_bench"
 required-features = ["span-metrics", "bench-internals"]
+
+[[bench]]
+name = "falcon_profiles"
+harness = false
+required-features = ["falcon-hybrid"]

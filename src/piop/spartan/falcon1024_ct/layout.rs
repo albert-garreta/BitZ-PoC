@@ -1,4 +1,5 @@
 use super::{FalconError, HASH_TO_POINT_SAMPLES, N};
+use super::{NORM_BITS, PREFIX_BITS};
 use crate::pcs::IntegerMatrixLayout;
 
 /// Fixed-width committed arithmetic columns for one Falcon signature.
@@ -43,7 +44,11 @@ pub struct FalconSourceLayout {
 }
 
 impl FalconSourceLayout {
-    pub const SIGNATURE_STRIDE: usize = 1 << 17;
+    pub const SIGNATURE_STRIDE: usize = {
+        let bits = (Self::counts().total() + 14 * N).next_power_of_two();
+        // The shared PCS needs at least 2^9 packed GF(2^128) words.
+        if bits < (1 << 16) { 1 << 16 } else { bits }
+    };
 
     /// Supports 1..=1024 signatures, padded to the next power of two.
     pub fn new(batch: usize) -> Result<Self, FalconError> {
@@ -98,7 +103,7 @@ impl FalconSourceLayout {
         super::FalconConstraintCounts::for_layout(self).linear_rows()
     }
     pub const fn linear_stride(&self) -> usize {
-        1 << 13
+        self.linear_rows().next_power_of_two()
     }
     pub const fn batch(&self) -> usize {
         self.batch
@@ -113,7 +118,7 @@ impl FalconSourceLayout {
         13
     }
     pub const fn col_vars(&self) -> usize {
-        4 + self.capacity.trailing_zeros() as usize
+        Self::SIGNATURE_STRIDE.ilog2() as usize - 13 + self.capacity.trailing_zeros() as usize
     }
 
     /// Flat source index i is stored at row i mod 2^13, column floor(i/2^13).
@@ -135,16 +140,15 @@ impl FalconSourceLayout {
             // bounded14 decodes every bit string into 0..=12288.
             hash_remainders: HASH_TO_POINT_SAMPLES * 14,
             hash_accept_ands: HASH_TO_POINT_SAMPLES,
-            hash_prefixes: (HASH_TO_POINT_SAMPLES + 1) * 11,
+            hash_prefixes: (HASH_TO_POINT_SAMPLES + 1) * PREFIX_BITS,
             hash_point: N * 14,
             // bounded14 value minus 6144, shared by norms and the native ideal.
             s1: N * 14,
-            norm_slack: 27,
+            norm_slack: NORM_BITS,
         }
     }
 }
-
-#[cfg(test)]
+falcon_tests! {
 mod tests {
     use super::*;
 
@@ -213,4 +217,6 @@ mod tests {
         assert!(FalconSourceLayout::new(0).is_err());
         assert!(FalconSourceLayout::new(1025).is_err());
     }
+}
+
 }

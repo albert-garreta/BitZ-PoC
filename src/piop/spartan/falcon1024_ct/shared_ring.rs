@@ -1,9 +1,10 @@
-//! Four committed Falcon operands reduced to one tensor query over the shared
-//! arithmetic prime. The returned query still requires the source-bit binder.
-//!
-//! The ring certificate is encoded by its unique degree-1022 quotient D, so
-//! e(Y)=(Y^1024+1)D(Y) has the required degree and ideal membership by construction.
-//! The later 21-coefficient polynomial is an unreduced integer lift, not D.
+use super::{COEFFICIENT_LOG, PREFIX_BIAS, PREFIX_BITS, SIGNATURE_BITS};
+// Four committed Falcon operands reduced to one tensor query over the shared
+// arithmetic prime. The returned query still requires the source-bit binder.
+//
+// The ring certificate is encoded by its unique quotient D of degree at most N-2, so
+// e(Y)=(Y^N+1)D(Y) has the required degree and ideal membership by construction.
+// The later (2k-1)-coefficient polynomial is an unreduced integer lift, not D.
 
 use field::{FpLinearAcc, Reduce, RingOps, Uint};
 #[cfg(feature = "parallel")]
@@ -30,9 +31,8 @@ use super::{
 type F = SpartanBitzField;
 type Cfg = <F as SpartanField>::Config;
 
-const COEFFICIENT_LOG: usize = N.ilog2() as usize;
 const LIFT_COEFFICIENTS: usize = 2 * EXTENSION_DEGREE - 1;
-const DOMAIN: &[u8] = b"bitz/falcon1024-ct/shared-ring/v3";
+const DOMAIN: &[u8] = b"bitz/falcon1024-ct/shared-ring/v4";
 
 /// Target 100 uses one unsplit bounded exponent. Target 128 retains the
 /// native prime family and its two bounded bridge limbs.
@@ -304,6 +304,10 @@ fn bind_parameters(
         Q as usize,
         N,
         EXTENSION_DEGREE,
+        crate::piop::spartan::falcon_parameters::extension_constant(EXTENSION_DEGREE) as usize,
+        SIGNATURE_BITS,
+        PREFIX_BITS,
+        PREFIX_BIAS,
         layout.batch(),
         layout.capacity(),
         layout.signature_stride(),
@@ -315,7 +319,7 @@ fn bind_parameters(
         t.absorb_slice(&(value as u64).to_le_bytes());
     }
     t.absorb_slice(
-        b"f:T11+T+14;D:1023;direct-beta-decoder;P:i128le21;live-mask;C:u14;H:u14;S1:bounded14-6144;S2:encoded-signed12;aliases:sum-in-E",
+        b"f:T^k+T+c;D:N-1;direct-beta-decoder;P:i128le(2k-1);live-mask;C:u14;H:u14;S1:bounded14-6144;S2:encoded-signed;aliases:sum-in-E",
     );
     t.absorb_slice(&lift_bound(layout).to_le_bytes());
     t.absorb_slice(&SOURCE_RESIDUAL_BOUND.to_le_bytes());
@@ -343,7 +347,7 @@ fn sample_point(
 
 fn scale(value: Ext, scalar: i64) -> Ext {
     let scalar = scalar.rem_euclid(Q) as u64;
-    Ext(value.0.map(|c| (u64::from(c) * scalar % Q as u64) as u16))
+    Ext::new(value.0.map(|c| (u64::from(c) * scalar % Q as u64) as u16))
 }
 
 fn eval_ext(coefficients: &[Ext], point: Ext) -> Ext {
@@ -412,7 +416,7 @@ fn evaluation_tables(
                 }
             }
         }
-        sums.map(|sum| Ext(sum.map(|c| (c % Q as u64) as u16)))
+        sums.map(|sum| Ext::new(sum.map(|c| (c % Q as u64) as u16)))
     };
     #[cfg(feature = "parallel")]
     let values: Vec<_> = traces.par_iter().map(evaluate).collect();
@@ -587,7 +591,7 @@ fn visit_bit_query(
     let ranges = [
         offsets.hash_point..offsets.hash_point + 14 * N,
         key..key + 14 * N,
-        s2..s2 + 12 * N,
+        s2..s2 + SIGNATURE_BITS * N,
         offsets.s1..offsets.s1 + 14 * N,
     ];
     visit_decoder_query(layout.signature_stride(), &ranges, positions, omega, visit)
@@ -603,9 +607,12 @@ fn visit_decoder_query(
     mut visit: impl FnMut(usize, Ext),
 ) -> Result<(), FalconError> {
     if positions.len() != N
-        || ranges.iter().zip([14, 14, 12, 14]).any(|(range, width)| {
-            range.end > domain_len || range.end.checked_sub(range.start) != Some(width * N)
-        })
+        || ranges
+            .iter()
+            .zip([14, 14, SIGNATURE_BITS, 14])
+            .any(|(range, width)| {
+                range.end > domain_len || range.end.checked_sub(range.start) != Some(width * N)
+            })
     {
         return Err(error("shared ring decoder query dimensions"));
     }
@@ -649,10 +656,20 @@ fn visit_decoder_terms(
                 scale(s1, if bit == 13 { 4097 } else { 1 << bit }),
             );
         }
-        for bit in 0..12 {
-            let stream = 12 * j + 11 - bit;
+        for bit in 0..SIGNATURE_BITS {
+            let stream = SIGNATURE_BITS * j + SIGNATURE_BITS - 1 - bit;
             let slot = ranges[2].start + 8 * (stream / 8) + 7 - stream % 8;
-            emit(slot, scale(s2, if bit == 11 { -2048 } else { 1 << bit }));
+            emit(
+                slot,
+                scale(
+                    s2,
+                    if bit == SIGNATURE_BITS - 1 {
+                        -(1 << (SIGNATURE_BITS - 1))
+                    } else {
+                        1 << bit
+                    },
+                ),
+            );
         }
     }
 }
@@ -752,10 +769,12 @@ fn check_lift(
     }
     let mut reduced = lift.map(|value| value.rem_euclid(i128::from(Q)) as i64);
     for j in EXTENSION_DEGREE..LIFT_COEFFICIENTS {
-        reduced[j - EXTENSION_DEGREE] -= 14 * reduced[j];
+        reduced[j - EXTENSION_DEGREE] -= i64::from(
+            crate::piop::spartan::falcon_parameters::extension_constant(EXTENSION_DEGREE),
+        ) * reduced[j];
         reduced[j - EXTENSION_DEGREE + 1] -= reduced[j];
     }
-    let actual = Ext(std::array::from_fn(|j| reduced[j].rem_euclid(Q) as u16));
+    let actual = Ext::new(std::array::from_fn(|j| reduced[j].rem_euclid(Q) as u16));
     if actual != target {
         return Err(error("shared ring integer lift extension read-off"));
     }
@@ -839,8 +858,7 @@ fn project_lift(lift: &[i128; LIFT_COEFFICIENTS], alpha: F, field: &Cfg) -> F {
 fn error(message: impl Into<String>) -> FalconError {
     FalconError::Piop(message.into())
 }
-
-#[cfg(test)]
+falcon_tests! {
 mod tests {
     use super::*;
     use crate::transcript::Blake3Transcript;
@@ -873,7 +891,7 @@ mod tests {
     }
 
     fn element(seed: usize) -> Ext {
-        Ext(std::array::from_fn(|i| {
+        Ext::new(std::array::from_fn(|i| {
             ((133 * seed + 733 * i + 19 * seed * i) % Q as usize) as u16
         }))
     }
@@ -1367,7 +1385,7 @@ mod tests {
             element(3),
             element(4),
             Ext::ZERO,
-            Ext([(Q - 1) as u16; EXTENSION_DEGREE]),
+            Ext::new([(Q - 1) as u16; EXTENSION_DEGREE]),
         ];
         let lift = std::array::from_fn(|i| {
             if i % 2 == 0 {
@@ -1648,4 +1666,6 @@ mod tests {
             );
         }
     }
+}
+
 }

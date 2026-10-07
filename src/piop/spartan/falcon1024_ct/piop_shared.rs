@@ -1,8 +1,8 @@
-//! Shared-prime integer messages with derived metadata omitted.
-//!
-//! The verifier reconstructs each full round before absorption, preserving the
-//! prover transcript. Weighted forest rounds already store two coefficients.
-//! Only the checked endpoint claims survive verification.
+// Shared-prime integer messages with derived metadata omitted.
+//
+// The verifier reconstructs each full round before absorption, preserving the
+// prover transcript. Weighted forest rounds already store two coefficients.
+// Only the checked endpoint claims survive verification.
 
 use super::*;
 use crate::sumcheck::{
@@ -599,8 +599,7 @@ pub(in super::super) fn verify_shared_falcon_piop_in_field(
         compaction_leaf,
     })
 }
-
-#[cfg(test)]
+falcon_tests! {
 mod tests {
     use super::*;
     use crate::{piop::spartan::falcon1024_ct::verification_trace, transcript::Blake3Transcript};
@@ -850,4 +849,6 @@ mod tests {
                 .is_err()
         );
     }
+}
+
 }

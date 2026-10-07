@@ -1,5 +1,5 @@
-//! Word-sized storage for the hybrid binder. The public operator is compiled
-//! once and replayed in source order; no dense field table of source bits is kept.
+// Word-sized storage for the hybrid binder. The public operator is compiled
+// once and replayed in source order; no dense field table of source bits is kept.
 
 use super::*;
 
@@ -117,8 +117,11 @@ impl Word {
         match self.kind {
             WordKind::Unsigned => (self.base + bit, false),
             WordKind::Encoded { offset } => {
-                let stream = usize::from(offset) + 11 - bit;
-                (self.base + 8 * (stream / 8) + 7 - stream % 8, bit == 11)
+                let stream = usize::from(offset) + SIGNATURE_BITS - 1 - bit;
+                (
+                    self.base + 8 * (stream / 8) + 7 - stream % 8,
+                    bit == SIGNATURE_BITS - 1,
+                )
             }
         }
     }
@@ -314,7 +317,7 @@ impl<A: WordAccumulator> CoefficientSink for WordSink<'_, A> {
     fn add_encoded_word(&mut self, base: usize, offset: usize, scale: F, _: &Cfg) {
         self.word(
             base,
-            12,
+            SIGNATURE_BITS,
             WordKind::Encoded {
                 offset: offset as u8,
             },
@@ -656,7 +659,9 @@ impl BindingForm<'_> {
                 common.add_word(
                     offset + 14 * j,
                     14,
-                    self.local_linear_weights.at(4458 + j),
+                    self.local_linear_weights.at(
+                        super::super::FalconConstraintCounts::per_signature().linear_rows() + j,
+                    ),
                     field,
                 );
             }
@@ -809,11 +814,11 @@ impl BindingForm<'_> {
         let field = self.field;
         let proof = self.proof;
         let batch_vars = self.layout.capacity().ilog2() as usize;
-        if proof.norm.point.len() != 10 + batch_vars
+        if proof.norm.point.len() != COEFFICIENT_LOG + batch_vars
             || proof.norm.instance_point.len() != batch_vars
-            || proof.compact_products.point.len() != 11 + batch_vars
+            || proof.compact_products.point.len() != COMPACTION_LOG + batch_vars
             || proof.compaction.instance_point.len() != batch_vars
-            || proof.compaction.terminal_point.len() != 11
+            || proof.compaction.terminal_point.len() != COMPACTION_LOG
         {
             return Err(piop("hybrid binding terminal dimensions mismatch"));
         }
@@ -852,7 +857,11 @@ impl BindingForm<'_> {
                             signature_bytes = field.add(
                                 &signature_bytes,
                                 &mul_i(
-                                    self.local_linear_weights.at(4458 + j),
+                                    self.local_linear_weights.at(
+                                        super::super::FalconConstraintCounts::per_signature()
+                                            .linear_rows()
+                                            + j,
+                                    ),
                                     i128::from(value),
                                     field,
                                 ),
@@ -866,8 +875,8 @@ impl BindingForm<'_> {
             constant = field.sub(&constant, &contribution);
         }
         let mut target = field.sub(&field.zero(), &constant);
-        let norm_instances =
-            eq_table(&proof.norm.point[10..], field).map_err(|error| piop(error.to_string()))?;
+        let norm_instances = eq_table(&proof.norm.point[COEFFICIENT_LOG..], field)
+            .map_err(|error| piop(error.to_string()))?;
         let norm_outer =
             eq_table(&proof.norm.instance_point, field).map_err(|error| piop(error.to_string()))?;
         let mut norm_sum = field.zero();
@@ -931,7 +940,10 @@ impl BindingForm<'_> {
             .fold(field.zero(), |s, (a, b)| field.add(&s, &field.mul(a, b)));
         let third_constant = field.mul(
             &field.mul(&local_weighted, &instance_weighted),
-            &field.sub(&proof.compaction_gamma, &field.one()),
+            &field.sub(
+                &field.sub(&proof.compaction_gamma, &field.one()),
+                &mul_i(proof.compaction_rank_scale, PREFIX_BIAS as i128, field),
+            ),
         );
         for (claim, c) in
             leaf.terminal
@@ -942,7 +954,7 @@ impl BindingForm<'_> {
             scale = field.mul(&scale, &self.eta);
         }
         let point = &proof.compaction.terminal_point;
-        let rank = point[..10]
+        let rank = point[..COEFFICIENT_LOG]
             .iter()
             .enumerate()
             .fold(field.zero(), |sum, (bit, &v)| {
@@ -963,7 +975,12 @@ impl BindingForm<'_> {
                 &field.one(),
                 &field.mul(
                     &live_weight,
-                    &field.mul(&field.sub(&field.one(), &point[10]), &lower_correction),
+                    &field.mul(
+                        &point[COEFFICIENT_LOG..].iter().fold(field.one(), |acc, x| {
+                            field.mul(&acc, &field.sub(&field.one(), x))
+                        }),
+                        &lower_correction,
+                    ),
                 ),
             ),
         );
@@ -995,12 +1012,24 @@ fn linear_constant(point: &[F], field: &Cfg) -> F {
     let mut constant = field.neg(&interval_sum(point, 0, 1, field));
     constant = field.sub(
         &constant,
-        &mul_i(interval_sum(point, 257, 1, field), 0x5a, field),
+        &mul_i(
+            interval_sum(point, 257, 1, field),
+            (0x50 + COEFFICIENT_LOG) as i128,
+            field,
+        ),
     );
     let start = 1 + 256 + super::super::CT_SIGNATURE_BYTES;
     for i in 0..HASH_TO_POINT_SAMPLES {
         constant = field.sub(&constant, &interval_sum(point, start + 2 * i + 1, 1, field));
     }
+    constant = field.sub(
+        &constant,
+        &mul_i(
+            interval_sum(point, start + 2 * HASH_TO_POINT_SAMPLES, 1, field),
+            PREFIX_BIAS as i128,
+            field,
+        ),
+    );
     field.sub(
         &constant,
         &interval_sum(point, start + 2 * HASH_TO_POINT_SAMPLES + 1, 1, field),
@@ -1042,24 +1071,31 @@ fn emit_linear_template(
             field,
         );
         let weight = next();
-        sink.add_word(offsets.hash_prefixes + 11 * (i + 1), 11, weight, field);
         sink.add_word(
-            offsets.hash_prefixes + 11 * i,
-            11,
+            offsets.hash_prefixes + PREFIX_BITS * (i + 1),
+            PREFIX_BITS,
+            weight,
+            field,
+        );
+        sink.add_word(
+            offsets.hash_prefixes + PREFIX_BITS * i,
+            PREFIX_BITS,
             field.neg(&weight),
             field,
         );
         sink.add(offsets.hash_accept_ands + i, weight);
     }
-    sink.add_word(offsets.hash_prefixes, 11, next(), field);
+    sink.add_word(offsets.hash_prefixes, PREFIX_BITS, next(), field);
     sink.add(
-        offsets.hash_prefixes + 11 * HASH_TO_POINT_SAMPLES + 10,
+        offsets.hash_prefixes + PREFIX_BITS * HASH_TO_POINT_SAMPLES + PREFIX_BITS - 1,
         next(),
     );
-    debug_assert_eq!(row, 4458);
+    debug_assert_eq!(
+        row,
+        super::super::FalconConstraintCounts::per_signature().linear_rows()
+    );
 }
-
-#[cfg(test)]
+falcon_tests! {
 mod tests {
     use super::*;
 
@@ -1400,4 +1436,6 @@ mod tests {
             );
         }
     }
+}
+
 }

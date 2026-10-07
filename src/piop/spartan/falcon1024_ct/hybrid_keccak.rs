@@ -1,10 +1,10 @@
-//! Compact binary Keccak prefix for the Falcon hybrid composition.
-//!
-//! This proves independent Keccak permutations and returns two linear claims
-//! on an already committed binary witness. The caller must prove SHAKE input,
-//! chaining, and extraction constraints and authenticate all claims through
-//! its shared opening. Neither the nonce nor a public digest is absorbed here.
-//! This prefix alone is not a SHAKE proof and does not provide zero knowledge.
+// Compact binary Keccak prefix for the Falcon hybrid composition.
+//
+// This proves independent Keccak permutations and returns two linear claims
+// on an already committed binary witness. The caller must prove SHAKE input,
+// chaining, and extraction constraints and authenticate all claims through
+// its shared opening. Neither the nonce nor a public digest is absorbed here.
+// This prefix alone is not a SHAKE proof and does not provide zero knowledge.
 
 pub(crate) mod grinding;
 
@@ -24,9 +24,9 @@ use crate::{
 };
 use grinding::{ProverBlockGrindingTranscript, VerifierBlockGrindingTranscript};
 
-pub(crate) const PERMUTATIONS: usize = 20;
+pub(crate) const PERMUTATIONS: usize = super::PARAMETERS.permutations();
 pub(crate) const RATE_BYTES: usize = 136;
-pub(crate) const SAMPLES: usize = 1_311;
+pub(crate) const SAMPLES: usize = super::HASH_TO_POINT_SAMPLES;
 pub(crate) const MAX_CAPACITY: usize = 8_192;
 const LOG_PACKING: usize = 7;
 
@@ -152,7 +152,7 @@ impl PreparedKeccak {
         permutations: usize,
     ) -> Result<Self, KeccakError> {
         if !(1..=MAX_CAPACITY).contains(&batch_len)
-            || !matches!((first, permutations), (0, 16) | (16, 4))
+            || !(0..super::KECCAK_SLABS).any(|i| super::PARAMETERS.slab(i) == (first, permutations))
         {
             return Err(KeccakError::Invalid("invalid SHAKE permutation slab"));
         }
@@ -470,8 +470,7 @@ fn normalize_claim(claim: &ZClaim, bit_vars: usize) -> Result<BinaryLinearClaim,
         value: claim.value,
     })
 }
-
-#[cfg(test)]
+falcon_tests! {
 mod tests {
     use super::*;
     use crate::transcript::Blake3Transcript;
@@ -1047,4 +1046,6 @@ mod tests {
                 .is_err()
         );
     }
+}
+
 }

@@ -63,7 +63,18 @@ impl<const N: usize> Geometry<N> {
         if N == 0 || logs.iter().any(|&n| !(9..=27).contains(&n)) {
             return Err(Error::Invalid("packed witness logarithm outside 9..=27"));
         }
-        let position_log = *logs.iter().max().expect("nonempty geometry") - 3;
+        let mut position_log = *logs.iter().max().expect("nonempty geometry") - 3;
+        // Additional sources can require a taller common row domain. Keep the
+        // established sixteen virtual lanes, shrinking each branch's lane slice
+        // until all sources fit. Two-source layouts retain their exact geometry.
+        if N > 16 {
+            return Err(Error::Invalid("too many shared opening sources"));
+        }
+        while N != 2
+            && logs.iter().map(|&l| 1usize << l.saturating_sub(position_log)).sum::<usize>() > 16
+        {
+            position_log += 1;
+        }
         let physical_logs = logs.map(|l| l.max(position_log));
         let lane_logs = physical_logs.map(|l| l - position_log);
         let virtual_lane_log = 4;
@@ -900,7 +911,8 @@ mod geometry_tests {
                 assert_eq!(actual, if live { F::ZERO } else { scale * expected });
             }
         }
-        assert!(Geometry::new([13, 13, 13]).is_err());
+        assert!(Geometry::new([13, 13, 13]).is_ok());
+        assert!(Geometry::new([13; 17]).is_err());
         assert!(Geometry::<0>::new([]).is_err());
     }
 
@@ -1017,6 +1029,16 @@ mod geometry_tests {
             streamed.drain_pending_fold();
             assert_eq!(streamed.f(), reference.f());
         }
+    }
+
+    #[test]
+    fn falcon_three_keccak_slabs_fit_and_preserve_openings() {
+        let geometry = Geometry::new([9, 12, 12, 12]).unwrap();
+        assert_eq!(geometry.position_log, 10);
+        assert_eq!(geometry.lane_logs, [0, 2, 2, 2]);
+        assert_eq!(geometry.virtual_lane_log, 4);
+        check_streamed_tables([9, 12, 12, 12]);
+        check_streamed_proof([9, 12, 12, 12], false);
     }
 
     #[test]

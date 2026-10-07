@@ -66,12 +66,12 @@ pub struct KeccakTrace {
 
 impl KeccakTrace {
     pub(super) fn validate_falcon_shape(&self) -> Result<(), super::FalconError> {
-        if self.permutations != 20
-            || self.permutation_inputs.len() != 20
-            || self.chi_inputs.len() != 20 * ROUNDS * 25
+        if self.permutations != super::PARAMETERS.permutations()
+            || self.permutation_inputs.len() != super::PARAMETERS.permutations()
+            || self.chi_inputs.len() != super::PARAMETERS.permutations() * ROUNDS * 25
             || self.chi_ands.len() != self.chi_inputs.len()
             || self.round_states.len() != self.chi_inputs.len()
-            || self.column_parities.len() != 20 * ROUNDS * 5
+            || self.column_parities.len() != super::PARAMETERS.permutations() * ROUNDS * 5
             || self.column_parity_quotients.len() != self.column_parities.len() * 64
             || self.parity_quotients.len() != self.chi_inputs.len() * 64
         {
@@ -239,8 +239,7 @@ fn xor_block(state: &mut [u64; 25], block: &[u8]) {
 fn xor_byte(state: &mut [u64; 25], offset: usize, byte: u8) {
     state[offset / 8] ^= u64::from(byte) << (8 * (offset % 8));
 }
-
-#[cfg(test)]
+falcon_tests! {
 mod tests {
     use super::*;
 
@@ -319,4 +318,6 @@ mod tests {
     fn hex(bytes: &[u8]) -> String {
         bytes.iter().map(|byte| format!("{byte:02x}")).collect()
     }
+}
+
 }

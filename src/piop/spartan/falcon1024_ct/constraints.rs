@@ -2,12 +2,15 @@ use super::{
     BETA_SQUARED, FalconError, FalconPublicKey, FalconSourceLayout, FalconSourceWitness,
     FalconVerificationTrace, HASH_TO_POINT_SAMPLES, N, Q,
 };
+use super::{NORM_BITS, SIGNATURE_BITS};
 
 /// Maximum absolute exact source residual, before relying on any other
 /// constraint. Raw signed-12 S2 bits may decode to -2048. The norm dominates
 /// division, prefix, public-input, and rejection-bit residuals in both layouts.
-pub(super) const SOURCE_RESIDUAL_BOUND: u128 =
-    N as u128 * (6_144u128.pow(2) + 2_048u128.pow(2)) + ((1u128 << 27) - 1) - BETA_SQUARED as u128;
+pub(super) const SOURCE_RESIDUAL_BOUND: u128 = N as u128
+    * (6_144u128.pow(2) + (1u128 << (SIGNATURE_BITS - 1)).pow(2))
+    + ((1u128 << NORM_BITS) - 1)
+    - BETA_SQUARED as u128;
 
 /// Logical constraint inventory per Falcon signature. These are exact linear
 /// or low-degree relation rows, not generic bit-blasted R1CS rows.
@@ -115,7 +118,7 @@ pub fn check_exact_constraints(trace: &FalconVerificationTrace) -> Result<(), Fa
     // Recompute the product from the public key and signature so this checker
     // remains independent of the prover's cached native-ring witness.
     for (i, &s2) in trace.signature.s2.iter().enumerate() {
-        if !(-2047..=2047).contains(&s2) {
+        if s2 <= -(1 << (SIGNATURE_BITS - 1)) || s2 >= 1 << (SIGNATURE_BITS - 1) {
             return violation("s2-canonical", i);
         }
     }
@@ -220,7 +223,7 @@ fn check_keccak_constraints(trace: &FalconVerificationTrace) -> Result<(), Falco
         [27, 20, 39, 8, 14],
     ];
     let bit = |word: u64, index: usize| ((word >> index) & 1) as u16;
-    for permutation in 0..20 {
+    for permutation in 0..super::PARAMETERS.permutations() {
         if permutation > 0
             && shake.permutation_inputs[permutation]
                 != shake.round_states[(permutation * 24 - 1) * 25..permutation * 24 * 25]
@@ -299,8 +302,7 @@ fn check_keccak_constraints(trace: &FalconVerificationTrace) -> Result<(), Falco
 fn violation<T>(family: &'static str, index: usize) -> Result<T, FalconError> {
     Err(FalconError::ConstraintViolation { family, index })
 }
-
-#[cfg(test)]
+falcon_tests! {
 mod tests {
     use super::*;
     use crate::piop::spartan::falcon1024_ct::verification_trace;
@@ -469,4 +471,6 @@ mod tests {
             })
         ));
     }
+}
+
 }
