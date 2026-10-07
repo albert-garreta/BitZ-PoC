@@ -1,6 +1,6 @@
 //! Shared implementation and errors for Falcon-512 and Falcon-1024.
 
-/// Domain identifier for the sole Falcon proving protocol.
+/// Domain identifier for the full Falcon verification protocol.
 pub const PROTOCOL_ID: &str = "bitz/falcon/shared-prime/non-zk/v1";
 
 /// A malformed encoding or failed Falcon verification.

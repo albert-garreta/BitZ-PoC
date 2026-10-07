@@ -883,33 +883,7 @@ impl PreparedFalconHybrid {
 }
 
 #[cfg(test)]
-pub(super) fn live_subcubes(point: &[Gf], live: usize) -> Vec<(Vec<Gf>, Gf)> {
-    let mut out = Vec::new();
-    let mut start = 0usize;
-    while start < live {
-        let size = 1usize
-            << ((live - start).ilog2().min(if start == 0 {
-                point.len() as u32
-            } else {
-                start.trailing_zeros()
-            }));
-        let free = size.ilog2() as usize;
-        let mut pinned = point.to_vec();
-        let mut scale = Gf::ONE;
-        for j in free..point.len() {
-            let bit = start >> j & 1;
-            scale *= if bit == 1 {
-                point[j]
-            } else {
-                Gf::ONE + point[j]
-            };
-            pinned[j] = if bit == 1 { Gf::ONE } else { Gf::ZERO };
-        }
-        out.push((pinned, scale));
-        start += size;
-    }
-    out
-}
+pub(super) use crate::hybrid::joint_sumcheck::live_subcubes;
 falcon_tests! {
 mod tests {
     use super::super::decode_signature_ct;

@@ -23,6 +23,10 @@ pub mod falcon_parameters;
 pub mod falcon_extension;
 #[cfg(feature = "falcon")]
 pub mod falcon_profiles;
+#[cfg(feature = "falcon")]
+mod falcon_polynomial;
+#[cfg(feature = "falcon-hybrid")]
+pub mod falcon1024_algebraic;
 pub mod grinding;
 pub mod matrix;
 pub mod mul;

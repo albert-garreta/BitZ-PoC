@@ -1,0 +1,32 @@
+{
+  "build": "CARGO_TARGET_DIR=/tmp/falcon-simplify-candidate-target CARGO_BUILD_JOBS=4 RUSTFLAGS=\"-C target-cpu=native\" cargo build --offline --locked --release --features falcon-hybrid --example falcon_algebraic",
+  "algebraic_tests": {
+    "command": "CARGO_TARGET_DIR=/tmp/falcon-simplify-candidate-target CARGO_BUILD_JOBS=4 RUSTFLAGS=\"-C target-cpu=native\" RAYON_NUM_THREADS={1,16} FLOCK_NO_PREFAULT=1 cargo test --offline --locked --release --features falcon-hybrid --lib falcon1024_algebraic -- --test-threads=1",
+    "each_configuration": {
+      "passed": 23,
+      "failed": 0,
+      "ignored": 1
+    },
+    "ignored": "large_batches_at_both_security_targets; large combined-path coverage supplied by the benchmark matrix"
+  },
+  "feature_limitation": "falcon-hybrid requires parallel, so the supported checks use one and sixteen Rayon workers rather than a no-parallel build",
+  "smoke": {
+    "batch": 1,
+    "security_bits": 128,
+    "threads": 1,
+    "verified": true,
+    "proof_payload_bytes": 123226
+  },
+  "review": "Independent read-only review found no actionable issues.",
+  "checks": [
+    "Independent schoolbook polynomial identity and quotient",
+    "Exact norm boundary and boundary plus one",
+    "Signed15 range and canonical public coefficients",
+    "Prepared batch and input-length mismatches",
+    "Witness/slack/quotient/packed source/root equality",
+    "Both APIs verify at batch1 and batch3, security100 and128",
+    "Real Falcon fixture through both APIs",
+    "Supplied non-centered s1 acceptance and invalid relation rejection",
+    "Existing tampering tests"
+  ]
+}

@@ -1,0 +1,745 @@
+warning: function `square_n` is never used
+   --> vendor/field/src/gf128/portable.rs:104:8
+    |
+104 | pub fn square_n(a: [u64; 2], k: u32) -> [u64; 2] {
+    |        ^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `wide_words` is never used
+   --> vendor/field/src/gf128/portable.rs:116:15
+    |
+116 | pub(crate) fn wide_words(value: Wide) -> [u64; 4] {
+    |               ^^^^^^^^^^
+
+warning: function `wide_zero` is never used
+   --> vendor/field/src/gf128/portable.rs:137:8
+    |
+137 | pub fn wide_zero() -> Wide {
+    |        ^^^^^^^^^
+
+warning: function `wide_of` is never used
+   --> vendor/field/src/gf128/portable.rs:141:8
+    |
+141 | pub fn wide_of(a: [u64; 2]) -> Wide {
+    |        ^^^^^^^
+
+warning: function `wide_add` is never used
+   --> vendor/field/src/gf128/portable.rs:149:8
+    |
+149 | pub fn wide_add(x: Wide, y: Wide) -> Wide {
+    |        ^^^^^^^^
+
+warning: function `wide_add_low` is never used
+   --> vendor/field/src/gf128/portable.rs:155:8
+    |
+155 | pub fn wide_add_low(x: Wide, a: [u64; 2]) -> Wide {
+    |        ^^^^^^^^^^^^
+
+warning: function `wide_reduce` is never used
+   --> vendor/field/src/gf128/portable.rs:159:8
+    |
+159 | pub fn wide_reduce(w: Wide) -> [u64; 2] {
+    |        ^^^^^^^^^^^
+
+warning: function `wide_from_words` is never used
+   --> vendor/field/src/gf128/portable.rs:321:8
+    |
+321 | pub fn wide_from_words(words: [u64; 4]) -> Wide {
+    |        ^^^^^^^^^^^^^^^
+
+warning: `field` (lib) generated 8 warnings
+warning: unused import: `Zero`
+ --> crates/circuit/src/witgen.rs:3:23
+  |
+3 | use num_traits::{One, Zero};
+  |                       ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `One`
+ --> crates/circuit/src/witgen.rs:3:18
+  |
+3 | use num_traits::{One, Zero};
+  |                  ^^^
+
+warning: method `sum_terms` is never used
+   --> crates/circuit/src/linear_map/builder.rs:203:19
+    |
+ 59 | impl<S: CoefficientStore> WengertBuilder<S> {
+    | ------------------------------------------- method in this implementation
+...
+203 |     pub(super) fn sum_terms(&mut self, terms: Vec<(NodeId, u32)>) -> NodeId {
+    |                   ^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `adjoint_map_segments` is never used
+   --> crates/circuit/src/linear_map/evaluate.rs:318:19
+    |
+210 | impl<'a, F: RingOps + Sync> PreparedWengert<'a, F> {
+    | -------------------------------------------------- method in this implementation
+...
+318 |     pub(super) fn adjoint_map_segments(
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `integer_from_bits` is never used
+  --> crates/circuit/src/witgen.rs:14:15
+   |
+14 | pub(crate) fn integer_from_bits<const L: usize>(bits: &[bool]) -> Z<L> {
+   |               ^^^^^^^^^^^^^^^^^
+
+warning: `circuit` (lib) generated 5 warnings
+   Compiling bitz v0.1.0 (/home/john-wu/code/BitZ-pcs)
+warning: unnecessary parentheses around function argument
+    --> src/binius_ligerito/mod.rs:1152:17
+     |
+1152 |                 (target),
+     |                 ^      ^
+     |
+     = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+     |
+1152 -                 (target),
+1152 +                 target,
+     |
+
+warning: unnecessary parentheses around method argument
+   --> src/hybrid/sumcheck.rs:686:38
+    |
+686 |                 reference_point.push((r));
+    |                                      ^ ^
+    |
+help: remove these parentheses
+    |
+686 -                 reference_point.push((r));
+686 +                 reference_point.push(r);
+    |
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/baby_bear_bitz.rs:23:5
+   |
+23 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `crate::transcript::traits::Transcript`
+   --> src/piop/spartan/baby_bear_bitz.rs:410:9
+    |
+410 |     use crate::transcript::traits::Transcript;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `FQ_BITS`
+   --> src/piop/spartan/baby_bear_bitz.rs:414:15
+    |
+414 |         pcs::{FQ_BITS, Q100Element, eq_le_table_fq, fq_sub},
+    |               ^^^^^^^
+
+warning: unused import: `FQ_BITS`
+   --> src/piop/spartan/u32_mul_relation.rs:275:15
+    |
+275 |         pcs::{FQ_BITS, eq_le_table_fq, fq_sub},
+    |               ^^^^^^^
+
+warning: unused import: `crate::hybrid::joint_sumcheck::live_subcubes`
+   --> src/piop/spartan/falcon/hybrid.rs:886:16
+    |
+886 | pub(super) use crate::hybrid::joint_sumcheck::live_subcubes;
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/grinding.rs:20:5
+   |
+20 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/multiswap/proof.rs:39:5
+   |
+39 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/profile.rs:57:5
+   |
+57 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `RingOps`
+  --> src/piop/spartan/protocol/mod.rs:24:13
+   |
+24 | use field::{RingOps, Uint};
+   |             ^^^^^^^
+
+warning: unused import: `field::RingOps`
+ --> src/piop/spartan/sha256/constraints.rs:9:5
+  |
+9 | use field::RingOps;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::sumcheck::boundary::*`
+ --> src/piop/spartan/sumcheck.rs:3:16
+  |
+3 | pub(crate) use crate::sumcheck::boundary::*;
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/u128_bitz.rs:15:5
+   |
+15 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::transcript::traits::Transcript`
+   --> src/piop/spartan/u128_bitz.rs:200:9
+    |
+200 |     use crate::transcript::traits::Transcript;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/u32_mul.rs:14:5
+   |
+14 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/u64_bitz.rs:19:5
+   |
+19 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::transcript::traits::Transcript`
+   --> src/piop/spartan/u64_bitz.rs:213:9
+    |
+213 |     use crate::transcript::traits::Transcript;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `clmul_64x64`
+   --> src/poly/univariate/binary_gf128.rs:196:33
+    |
+196 |     use field::gf128::kernels::{clmul_64x64, reduce_256_to_128};
+    |                                 ^^^^^^^^^^^
+
+warning: unused import: `u64_mul::U64MulCoefficient`
+  --> src/sumcheck/inner/native.rs:31:5
+   |
+31 |     u64_mul::U64MulCoefficient,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::Uint`
+  --> src/sumcheck/inner/packed.rs:10:5
+   |
+10 | use field::Uint;
+   |     ^^^^^^^^^^^
+
+warning: unused import: `MergeAccumulator`
+  --> src/sumcheck/outer/univariate.rs:13:30
+   |
+13 | use field::{BatchMulAcc, Fp, MergeAccumulator, Reduce, Uint};
+   |                              ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/u128_mul.rs:16:5
+   |
+16 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `MergeAccumulator`
+  --> src/sumcheck/outer/univariate_api.rs:15:26
+   |
+15 | use field::{BatchMulAcc, MergeAccumulator, Reduce};
+   |                          ^^^^^^^^^^^^^^^^
+
+warning: unused import: `ConstZero`
+  --> src/poly/univariate/dense.rs:21:76
+   |
+21 | use num_traits::{CheckedAdd, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One, Zero};
+   |                                                                            ^^^^^^^^^
+
+warning: unused import: `num_traits::ConstOne`
+   --> src/piop/spartan/mod.rs:154:5
+    |
+154 | use num_traits::ConstOne;
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `ConstOne`
+  --> src/poly/univariate/dense.rs:21:66
+   |
+21 | use num_traits::{CheckedAdd, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One, Zero};
+   |                                                                  ^^^^^^^^
+
+warning: unused import: `MergeAccumulator`
+ --> src/sumcheck/outer/api.rs:8:26
+  |
+8 | use field::{BatchMulAcc, MergeAccumulator, Reduce};
+  |                          ^^^^^^^^^^^^^^^^
+
+warning: unused import: `Zero`
+  --> src/poly/univariate/binary_gf128.rs:38:23
+   |
+38 | use num_traits::{One, Zero};
+   |                       ^^^^
+
+warning: unused import: `One`
+  --> src/bitz/virt.rs:27:18
+   |
+27 | use num_traits::{One, Zero};
+   |                  ^^^
+
+warning: unused import: `Zero`
+  --> src/bitz/virt.rs:27:23
+   |
+27 | use num_traits::{One, Zero};
+   |                       ^^^^
+
+warning: unused import: `One`
+  --> src/poly/univariate/binary_b127.rs:75:18
+   |
+75 | use num_traits::{One, Zero};
+   |                  ^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/multiswap/proof.rs:36:5
+   |
+36 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/protocol/bitify.rs:13:5
+   |
+13 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/protocol/mod.rs:23:5
+   |
+23 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/sha256/chain.rs:23:5
+   |
+23 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `ConstZero`
+  --> src/poly/univariate/binary_ref.rs:18:54
+   |
+18 | use num_traits::{CheckedAdd, CheckedMul, CheckedSub, ConstZero, One, Zero};
+   |                                                      ^^^^^^^^^
+
+warning: unused import: `SpartanField`
+  --> src/piop/spartan/sha256/constraints.rs:32:5
+   |
+32 |     SpartanField, SpartanMatrixError,
+   |     ^^^^^^^^^^^^
+
+warning: unused variable: `other_config`
+    --> src/piop/spartan/matrix.rs:2556:13
+     |
+2556 |         let other_config =
+     |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_other_config`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `other_config`
+    --> src/piop/spartan/matrix.rs:2739:13
+     |
+2739 |         let other_config = Fp::<2>::make_cfg(&Uint::from(OTHER_TEST_MODULUS)).unwrap();
+     |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_other_config`
+
+warning: unused variable: `other_config`
+    --> src/piop/spartan/matrix.rs:3214:13
+     |
+3214 |         let other_config = Fp::<2>::make_cfg(&Uint::from(OTHER_TEST_MODULUS)).unwrap();
+     |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_other_config`
+
+warning: unused variable: `other_config`
+    --> src/piop/spartan/piop.rs:1988:13
+     |
+1988 |         let other_config = config((1_u128 << 127) - 1);
+     |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_other_config`
+
+warning: unused variable: `foreign_config`
+    --> src/piop/spartan/piop.rs:2184:13
+     |
+2184 |         let foreign_config = self::config((1_u128 << 127) - 1);
+     |             ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_foreign_config`
+
+warning: unused variable: `foreign_config`
+    --> src/piop/spartan/piop.rs:2398:13
+     |
+2398 |         let foreign_config = self::config((1_u128 << 127) - 1);
+     |             ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_foreign_config`
+
+warning: unused variable: `ctx`
+   --> src/sumcheck/inner/native/native_witness.rs:697:17
+    |
+697 |             let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
+    |                 ^^^ help: if this is intentional, prefix it with an underscore: `_ctx`
+
+warning: unused variable: `ctx`
+   --> src/sumcheck/inner/native.rs:835:17
+    |
+835 |             let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
+    |                 ^^^ help: if this is intentional, prefix it with an underscore: `_ctx`
+
+warning: unused variable: `generic_reducer`
+    --> src/sumcheck/inner/native.rs:1083:17
+     |
+1083 |             let generic_reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
+     |                 ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_generic_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/native.rs:1141:17
+     |
+1141 |             let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
+     |                 ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/native.rs:1231:17
+     |
+1231 |             let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
+     |                 ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/native.rs:1438:17
+     |
+1438 |             let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
+     |                 ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+   --> src/sumcheck/inner/packed/composite.rs:752:13
+    |
+752 |         let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
+    |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+   --> src/sumcheck/inner/packed/composite.rs:829:13
+    |
+829 |         let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
+    |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/packed.rs:2275:13
+     |
+2275 |         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/packed.rs:2406:17
+     |
+2406 |             let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
+     |                 ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/packed.rs:2518:13
+     |
+2518 |         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/packed.rs:2658:13
+     |
+2658 |         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/packed.rs:2961:13
+     |
+2961 |         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/packed.rs:3195:13
+     |
+3195 |         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/packed.rs:3233:13
+     |
+3233 |         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/packed.rs:3284:13
+     |
+3284 |         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `other_cfg`
+   --> src/sumcheck/inner/reference.rs:951:13
+    |
+951 |         let other_cfg = Fp::<2>::make_cfg(&Uint::from((1_u128 << 127) - 1)).unwrap();
+    |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_other_cfg`
+
+warning: unused variable: `reducer`
+   --> src/sumcheck/outer/native_skip/reference.rs:991:48
+    |
+991 | fn product_accumulators<const LANES: usize, R>(reducer: &R) -> [ProductAccumulator<R>; LANES]
+    |                                                ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/outer/native_skip/reference.rs:1003:5
+     |
+1003 |     reducer: &R,
+     |     ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `other_cfg`
+    --> src/sumcheck/outer/univariate.rs:1281:13
+     |
+1281 |         let other_cfg = Fp::<2>::make_cfg(&Uint::from((1_u128 << 127) - 1)).unwrap();
+     |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_other_cfg`
+
+warning: unused variable: `config`
+  --> src/sumcheck/arithmetic.rs:50:9
+   |
+50 |         config: &field::FpCtx<2>,
+   |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_config`
+
+warning: unused variable: `zero`
+   --> src/sumcheck/arithmetic.rs:339:5
+    |
+339 |     zero: &Fp<2>,
+    |     ^^^^ help: if this is intentional, prefix it with an underscore: `_zero`
+
+warning: trait `ligerito::PackedBits` is more private than the item `ring_switch_prove`
+   --> src/ligerito.rs:474:1
+    |
+474 | / pub fn ring_switch_prove<T: PackedBits>(
+475 | |     transcript: &mut impl Transcript,
+476 | |     p_msg: &[T],
+477 | |     r_hi: &[Gf],
+478 | | ) -> (RingSwitchProof, Vec<Gf>, Gf) {
+    | |___________________________________^ function `ring_switch_prove` is reachable at visibility `pub`
+    |
+note: but trait `ligerito::PackedBits` is only usable at visibility `pub(crate)`
+   --> src/ligerito.rs:255:1
+    |
+255 | pub(crate) trait PackedBits: Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_bounds)]` on by default
+
+warning: trait `ligerito::PackedBits` is more private than the item `ligerito::ring_switch_prove_with`
+   --> src/ligerito.rs:486:1
+    |
+486 | / pub fn ring_switch_prove_with<T: PackedBits, O: Send>(
+487 | |     transcript: &mut impl Transcript,
+488 | |     p_msg: &[T],
+489 | |     r_hi: &[Gf],
+490 | |     convert: impl Fn(Gf) -> O + Sync + Send,
+491 | | ) -> (RingSwitchProof, Vec<O>, Gf) {
+    | |__________________________________^ function `ligerito::ring_switch_prove_with` is reachable at visibility `pub`
+    |
+note: but trait `ligerito::PackedBits` is only usable at visibility `pub(crate)`
+   --> src/ligerito.rs:255:1
+    |
+255 | pub(crate) trait PackedBits: Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `ASSIGNMENT_BINDING_DOMAIN` is never used
+  --> src/piop/spartan/baby_bear_bitz.rs:54:7
+   |
+54 | const ASSIGNMENT_BINDING_DOMAIN: &[u8] = b"bitz/spartan-baby-bear-bitz/assignment/v1";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `fixed_q_assignment_binding` is never used
+   --> src/piop/spartan/baby_bear_bitz.rs:133:4
+    |
+133 | fn fixed_q_assignment_binding(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `linear_weights` is never read
+   --> src/piop/spartan/falcon/opening.rs:417:5
+    |
+411 | struct BindingForm<'a> {
+    |        ----------- field in this struct
+...
+417 |     linear_weights: crate::poly::mle::EqualityWeights<F>,
+    |     ^^^^^^^^^^^^^^
+
+warning: method `evaluate` is never used
+   --> src/piop/spartan/falcon/opening.rs:519:8
+    |
+513 | impl BindingForm<'_> {
+    | -------------------- method in this implementation
+...
+519 |     fn evaluate(&self, point: &[F]) -> Result<F, FalconError> {
+    |        ^^^^^^^^
+
+warning: function `dot_packed_source` is never used
+   --> src/piop/spartan/falcon/opening.rs:804:4
+    |
+804 | fn dot_packed_source(coefficients: &[F], source: &FalconSourceWitness, field: &Cfg) -> F {
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: function `evaluate_mle_in_place` is never used
+   --> src/piop/spartan/falcon/opening.rs:825:4
+    |
+825 | fn evaluate_mle_in_place(values: &mut Vec<F>, point: &[F], field: &Cfg) -> Result<F, FalconError> {
+    |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `field_from_modulus` is never used
+   --> src/piop/spartan/falcon/opening.rs:871:4
+    |
+871 | fn field_from_modulus(modulus: u128) -> Result<Cfg, FalconError> {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: method `evaluate_compact` is never used
+   --> src/piop/spartan/falcon/opening_compact.rs:778:19
+    |
+634 | impl BindingForm<'_> {
+    | -------------------- method in this implementation
+...
+778 |     pub(super) fn evaluate_compact(&self, point: &[F]) -> Result<F, FalconError> {
+    |                   ^^^^^^^^^^^^^^^^
+
+warning: function `add_leaf_claims` is never used
+  --> src/piop/spartan/falcon/opening_leaf.rs:41:15
+   |
+41 | pub(super) fn add_leaf_claims(
+   |               ^^^^^^^^^^^^^^^
+
+warning: function `compaction_leaves` is never used
+   --> src/piop/spartan/falcon/piop.rs:792:4
+    |
+792 | fn compaction_leaves(
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: function `weighted_sum` is never used
+   --> src/piop/spartan/falcon/piop.rs:990:4
+    |
+990 | fn weighted_sum(values: &[F], scales: &[F], field: &Cfg) -> F {
+    |    ^^^^^^^^^^^^
+
+warning: function `verify_product_forest` is never used
+    --> src/piop/spartan/falcon/piop.rs:1185:4
+     |
+1185 | fn verify_product_forest(
+     |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `prime_floor_bits` is never used
+  --> src/piop/spartan/falcon/shared_ring.rs:48:15
+   |
+48 | pub(super) fn prime_floor_bits(target_bits: usize) -> Result<usize, FalconError> {
+   |               ^^^^^^^^^^^^^^^^
+
+warning: function `bounded14_decode` is never used
+   --> src/piop/spartan/falcon/source.rs:249:21
+    |
+249 | pub(super) const fn bounded14_decode(encoded: u16) -> u16 {
+    |                     ^^^^^^^^^^^^^^^^
+
+warning: variant `Unsatisfied` is never constructed
+   --> src/piop/spartan/multiswap/circuit_reference.rs:192:5
+    |
+174 | pub enum MultiswapCircuitError {
+    |          --------------------- variant in this enum
+...
+192 |     Unsatisfied { row: usize },
+    |     ^^^^^^^^^^^
+    |
+    = note: `MultiswapCircuitError` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: methods `batch_count`, `dims`, `const_col`, `is_sat_integer`, and `with_quotients_for_tests` are never used
+   --> src/piop/spartan/multiswap/circuit_reference.rs:675:18
+    |
+395 | impl MultiswapCircuit {
+    | --------------------- methods in this implementation
+...
+675 |     pub const fn batch_count(&self) -> usize {
+    |                  ^^^^^^^^^^^
+...
+733 |     pub const fn dims(&self) -> &MultiswapDims {
+    |                  ^^^^
+...
+753 |     pub const fn const_col(&self) -> usize {
+    |                  ^^^^^^^^^
+...
+789 |     pub fn is_sat_integer(&self) -> Result<(), MultiswapCircuitError> {
+    |            ^^^^^^^^^^^^^^
+...
+815 |     pub(crate) fn with_quotients_for_tests(mut self, quos: Vec<BigUint>) -> Self {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `initial_grinding_bits`, `inner_round_grinding_bits`, and `terminal_grinding_bits` are never used
+   --> src/piop/spartan/sha256/prime.rs:145:18
+    |
+ 87 | impl Sha256PrimeProfile {
+    | ----------------------- methods in this implementation
+...
+145 |     pub const fn initial_grinding_bits(self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^
+...
+150 |     pub const fn inner_round_grinding_bits(self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+155 |     pub const fn terminal_grinding_bits(self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `low` and `high` are never used
+   --> src/poly/mle/structured.rs:299:19
+    |
+282 | impl<F: SpartanField> EqualityWeights<F> {
+    | ---------------------------------------- methods in this implementation
+...
+299 |     pub(crate) fn low(&self) -> &[F] {
+    |                   ^^^
+...
+302 |     pub(crate) fn high(&self) -> &[F] {
+    |                   ^^^^
+
+warning: method `policy` is never used
+   --> src/bitz/grinding.rs:144:19
+    |
+143 | impl Schedule {
+    | ------------- method in this implementation
+144 |     pub(crate) fn policy(self) -> Policy { self.policy }
+    |                   ^^^^^^
+
+warning: variant `Residues` is never constructed
+  --> src/sumcheck/outer/arithmetic/native.rs:48:5
+   |
+46 | pub(crate) enum NativeInput<'a> {
+   |                 ----------- variant in this enum
+47 |     U32(NativeProducts<'a>),
+48 |     Residues(&'a RawProducts),
+   |     ^^^^^^^^
+   |
+   = note: `NativeInput` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: `bitz` (lib test) generated 88 warnings (run `cargo fix --lib -p bitz --tests` to apply 50 suggestions)
+    Finished `release` profile [optimized] target(s) in 4m 50s
+     Running unittests src/lib.rs (/tmp/falcon-simplify-candidate-target/release/deps/bitz-b0347a22deb10013)
+
+running 24 tests
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::altered_bits_and_both_kinds_of_padding_are_rejected ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::grinded_messages_roundtrip_and_require_all_nonces ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::invalid_slack_and_cross_witness_binding_are_rejected ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::malformed_messages_and_nonces_are_rejected ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::signatures_cannot_borrow_each_others_norm_budget ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::singleton_and_padded_batch_open_the_same_bits ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::combined_commit_matches_separate_preparation ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::combined_commit_rejects_batch_mismatches ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::configuration_bounds_cover_all_supported_batches ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::end_to_end_and_tampering ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::large_batches_at_both_security_targets ... ignored, large end-to-end qualification; run explicitly
+test piop::spartan::falcon1024_algebraic::protocol::tests::original_falcon_fixture_uses_only_algebraic_inputs ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::recommitted_invalid_assignments_are_rejected ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::supplied_noncentered_s1_still_requires_a_valid_relation ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::an_invalid_ring_witness_has_no_coordinate_lift ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::coordinate_bound_covers_the_entire_encoded_witness_range ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::extension_sampler_rejects_biased_tail_and_base_field_evaluations ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::malformed_quotients_carries_and_nonce_shapes_are_rejected ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::ring_claim_matches_negacyclic_witness_for_padded_batches ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::tampering_changes_the_authenticated_claim_or_is_rejected ... ok
+test piop::spartan::falcon1024_algebraic::source::tests::combined_preparation_rejects_invalid_shapes_and_public_coefficients ... ok
+test piop::spartan::falcon1024_algebraic::source::tests::exact_norm_boundary_and_coefficient_limits ... ok
+test piop::spartan::falcon1024_algebraic::source::tests::exact_ring_and_norm_match_independent_schoolbook ... ok
+test piop::spartan::falcon1024_algebraic::source::tests::signed15_source_decodes_and_padding_is_zero ... ok
+
+test result: ok. 23 passed; 0 failed; 1 ignored; 0 measured; 690 filtered out; finished in 0.67s
+

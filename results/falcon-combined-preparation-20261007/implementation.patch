@@ -1,0 +1,430 @@
+--- a/src/piop/spartan/falcon1024_algebraic/source.rs
++++ b/src/piop/spartan/falcon1024_algebraic/source.rs
+@@ -46,16 +46,7 @@
+         let s1 = crate::utils::cfg_into_iter!(0..s2.len())
+             .map(|i| {
+                 let product = product(&statement.public_keys[i], &s2[i]);
+-                std::array::from_fn(|j| {
+-                    let residue = (i64::from(statement.targets[i][j]) - product[j]
+-                        + product[N + j])
+-                        .rem_euclid(Q);
+-                    (if residue > Q / 2 {
+-                        residue - Q
+-                    } else {
+-                        residue
+-                    }) as i16
+-                })
++                centered_s1(&statement.targets[i], &product)
+             })
+             .collect();
+         let witness = Self { s1, s2 };
+@@ -121,6 +112,36 @@
+ }
+ 
+ impl WitnessData {
++    pub fn from_s2(
++        public: &FalconAlgebraicStatement,
++        s2: Vec<[i16; N]>,
++    ) -> Result<Self, FalconError> {
++        let layout = Layout::new(s2.len())?;
++        public.validate(layout.batch())?;
++        check_coefficients(&s2)?;
++        let signatures = crate::utils::cfg_into_iter!(0..layout.batch())
++            .map(|i| {
++                let product = product(&public.public_keys[i], &s2[i]);
++                let s1 = centered_s1(&public.targets[i], &product);
++                let slack = norm_slack(&s1, &s2[i])?;
++                Ok((s1, slack, quotient(&product)))
++            })
++            .collect::<Result<Vec<_>, FalconError>>()?;
++        let mut s1 = Vec::with_capacity(layout.batch());
++        let mut slacks = Vec::with_capacity(layout.batch());
++        let mut quotients = Vec::with_capacity(layout.batch());
++        for (signature_s1, slack, quotient) in signatures {
++            s1.push(signature_s1);
++            slacks.push(slack);
++            quotients.push(quotient);
++        }
++        Ok(Self {
++            witness: FalconAlgebraicWitness { s1, s2 },
++            slacks,
++            quotients,
++        })
++    }
++
+     pub fn new(
+         public: &FalconAlgebraicStatement,
+         witness: FalconAlgebraicWitness,
+@@ -143,11 +164,7 @@
+                         return Err(error("invalid algebraic ring witness"));
+                     }
+                 }
+-                // The residual t-h*s2-s1 has high coefficients -product[N..].
+-                Ok(product[N..2 * N - 1]
+-                    .iter()
+-                    .map(|&v| (-v).rem_euclid(Q) as u16)
+-                    .collect())
++                Ok(quotient(&product))
+             })
+             .collect::<Result<Vec<_>, FalconError>>()?;
+         Ok(Self {
+@@ -164,6 +181,25 @@
+     integer_polynomial_product(&left, &right)
+ }
+ 
++fn centered_s1(target: &[u16; N], product: &[i64]) -> [i16; N] {
++    std::array::from_fn(|j| {
++        let residue = (i64::from(target[j]) - product[j] + product[N + j]).rem_euclid(Q);
++        (if residue > Q / 2 {
++            residue - Q
++        } else {
++            residue
++        }) as i16
++    })
++}
++
++fn quotient(product: &[i64]) -> Vec<u16> {
++    // t-h*s2-s1 = (X^N+1)D modulo q, with D = -high(h*s2).
++    product[N..2 * N - 1]
++        .iter()
++        .map(|&v| (-v).rem_euclid(Q) as u16)
++        .collect()
++}
++
+ fn check_coefficients(vectors: &[[i16; N]]) -> Result<(), FalconError> {
+     if vectors
+         .iter()
+@@ -180,21 +216,23 @@
+         .s1
+         .iter()
+         .zip(&witness.s2)
+-        .map(|(s1, s2)| {
+-            let norm: u64 = s1
+-                .iter()
+-                .chain(s2)
+-                .map(|&x| i64::from(x).unsigned_abs().pow(2))
+-                .sum();
+-            if norm > BETA_SQUARED {
+-                return Err(FalconError::NormTooLarge {
+-                    actual: norm,
+-                    bound: BETA_SQUARED,
+-                });
+-            }
+-            Ok(BETA_SQUARED - norm)
+-        })
++        .map(|(s1, s2)| norm_slack(s1, s2))
+         .collect()
++}
++
++fn norm_slack(s1: &[i16; N], s2: &[i16; N]) -> Result<u64, FalconError> {
++    let norm: u64 = s1
++        .iter()
++        .chain(s2)
++        .map(|&x| i64::from(x).unsigned_abs().pow(2))
++        .sum();
++    if norm > BETA_SQUARED {
++        return Err(FalconError::NormTooLarge {
++            actual: norm,
++            bound: BETA_SQUARED,
++        });
++    }
++    Ok(BETA_SQUARED - norm)
+ }
+ 
+ #[derive(Clone, Debug)]
+@@ -260,10 +298,13 @@
+         let s1 = std::array::from_fn(|j| j as i16 % 23 - 11);
+         let s2 = std::array::from_fn(|j| j as i16 % 17 - 8);
+         let mut t = s1.map(i64::from);
++        let mut ordinary = [0_i64; 2 * N];
+         for i in 0..N {
+             for j in 0..N {
+                 let k = i + j;
+-                t[k % N] += if k < N { 1 } else { -1 } * i64::from(h[i]) * i64::from(s2[j]);
++                let term = i64::from(h[i]) * i64::from(s2[j]);
++                ordinary[k] += term;
++                t[k % N] += if k < N { term } else { -term };
+             }
+         }
+         let public = FalconAlgebraicStatement {
+@@ -276,6 +317,30 @@
+         };
+         check_algebraic_statement(&public, &witness).unwrap();
+         let data = WitnessData::new(&public, witness.clone()).unwrap();
++        let combined = WitnessData::from_s2(&public, witness.s2.clone()).unwrap();
++        assert_eq!(combined.witness, witness);
++        assert_eq!(combined.slacks, data.slacks);
++        assert_eq!(combined.quotients, data.quotients);
++        assert_eq!(combined.quotients[0].len(), N - 1);
++        for j in 0..N - 1 {
++            assert_eq!(
++                combined.quotients[0][j],
++                (-ordinary[N + j]).rem_euclid(Q) as u16
++            );
++        }
++        for j in 0..2 * N {
++            let residual = if j < N {
++                i64::from(public.targets[0][j]) - i64::from(s1[j]) - ordinary[j]
++            } else {
++                -ordinary[j]
++            };
++            let expected = if j % N < N - 1 {
++                i64::from(combined.quotients[0][j % N])
++            } else {
++                0
++            };
++            assert_eq!(residual.rem_euclid(Q), expected);
++        }
+         assert_eq!(
+             data.slacks[0],
+             BETA_SQUARED
+@@ -301,8 +366,13 @@
+         s2[2][N - 1] = 8000;
+         let witness = FalconAlgebraicWitness::from_s2(&public, s2.clone()).unwrap();
+         let data = WitnessData::new(&public, witness).unwrap();
++        let combined = WitnessData::from_s2(&public, s2.clone()).unwrap();
++        assert_eq!(combined.witness, data.witness);
++        assert_eq!(combined.slacks, data.slacks);
++        assert_eq!(combined.quotients, data.quotients);
+         let layout = Layout::new(3).unwrap();
+         let source = Source::new(layout, &data);
++        assert_eq!(Source::new(layout, &combined).rows(), source.rows());
+         for i in 0..3 {
+             for j in 0..N {
+                 let offset = i * 65536 + 15 * N + 15 * j;
+@@ -330,8 +400,13 @@
+         let witness = FalconAlgebraicWitness { s1: vec![[0; N]], s2: vec![s2] };
+         let data = WitnessData::new(&public, witness.clone()).unwrap();
+         assert_eq!(data.slacks, vec![0]);
++        let combined = WitnessData::from_s2(&public, witness.s2.clone()).unwrap();
++        assert_eq!(combined.witness, witness);
++        assert_eq!(combined.slacks, vec![0]);
+         let mut excessive = witness;
+         excessive.s2[0][7] = 1;
++        assert!(matches!(WitnessData::from_s2(&public, excessive.s2.clone()),
++            Err(FalconError::NormTooLarge { actual, bound }) if actual == bound + 1));
+         assert!(matches!(WitnessData::new(&public, excessive),
+             Err(FalconError::NormTooLarge { actual, bound }) if actual == bound + 1));
+ 
+@@ -344,6 +419,7 @@
+             let mut values = [0; N];
+             values[0] = coefficient;
+             assert!(check_coefficients(&[values]).is_err());
++            assert!(WitnessData::from_s2(&public, vec![values]).is_err());
+         }
+         // The algebraic relation also accepts non-centered s1 when its norm fits.
+         let mut public = public;
+@@ -354,4 +430,42 @@
+         public.targets[0][0] = Q as u16;
+         assert!(public.validate(1).is_err());
+     }
+-}
++
++    #[test]
++    fn combined_preparation_rejects_invalid_shapes_and_public_coefficients() {
++        for batch in [0, 1025] {
++            let public = FalconAlgebraicStatement {
++                public_keys: vec![[0; N]; batch],
++                targets: vec![[0; N]; batch],
++            };
++            assert!(matches!(
++                WitnessData::from_s2(&public, vec![[0; N]; batch]),
++                Err(FalconError::InvalidBatchCapacity)
++            ));
++        }
++
++        for (keys, targets) in [(0, 1), (2, 1), (1, 0), (1, 2)] {
++            let public = FalconAlgebraicStatement {
++                public_keys: vec![[0; N]; keys],
++                targets: vec![[0; N]; targets],
++            };
++            assert!(matches!(
++                WitnessData::from_s2(&public, vec![[0; N]]),
++                Err(FalconError::InvalidBatchCapacity)
++            ));
++        }
++
++        for noncanonical_key in [false, true] {
++            let mut public = FalconAlgebraicStatement {
++                public_keys: vec![[0; N]],
++                targets: vec![[0; N]],
++            };
++            if noncanonical_key {
++                public.public_keys[0][N - 1] = Q as u16;
++            } else {
++                public.targets[0][N - 1] = Q as u16;
++            }
++            assert!(WitnessData::from_s2(&public, vec![[0; N]]).is_err());
++        }
++    }
++}
+--- a/src/piop/spartan/falcon1024_algebraic/protocol.rs
++++ b/src/piop/spartan/falcon1024_algebraic/protocol.rs
+@@ -249,6 +249,33 @@
+             let _span = tracing::info_span!("falcon_algebraic:witness").entered();
+             WitnessData::new(&statement, witness)?
+         };
++        self.commit_data(statement, data)
++    }
++
++    /// Derive centered s1, check its norm, and commit using one product per signature.
++    /// Targets must already be computed; no message hashing or decoding is performed.
++    #[tracing::instrument(skip_all, name = "falcon_algebraic:commit")]
++    pub fn commit_from_s2(
++        &self,
++        statement: FalconAlgebraicStatement,
++        s2: Vec<[i16; N]>,
++    ) -> Result<CommittedFalconAlgebraic, FalconError> {
++        statement.validate(self.batch())?;
++        if s2.len() != self.batch() {
++            return Err(FalconError::InvalidBatchCapacity);
++        }
++        let data = {
++            let _span = tracing::info_span!("falcon_algebraic:witness").entered();
++            WitnessData::from_s2(&statement, s2)?
++        };
++        self.commit_data(statement, data)
++    }
++
++    fn commit_data(
++        &self,
++        statement: FalconAlgebraicStatement,
++        data: WitnessData,
++    ) -> Result<CommittedFalconAlgebraic, FalconError> {
+         let source = Source::new(self.layout, &data);
+         self.commit_source(statement, data, source)
+     }
+@@ -656,6 +683,74 @@
+     }
+ 
+     #[test]
++    fn combined_commit_matches_separate_preparation() {
++        for target in [100, 128] {
++            for batch in [1, 3] {
++                let prepared = PreparedFalconAlgebraic::new(batch, target).unwrap();
++                let (public, witness) = fixture(batch);
++                let separate_witness =
++                    FalconAlgebraicWitness::from_s2(&public, witness.s2.clone()).unwrap();
++                let separate = prepared.commit(public.clone(), separate_witness).unwrap();
++                let combined = prepared.commit_from_s2(public.clone(), witness.s2).unwrap();
++                assert_eq!(combined.witness.witness, separate.witness.witness);
++                assert_eq!(combined.witness.slacks, separate.witness.slacks);
++                assert_eq!(combined.witness.quotients, separate.witness.quotients);
++                assert_eq!(combined.source.rows(), separate.source.rows());
++                assert_eq!(combined.packed, separate.packed);
++                assert_eq!(combined.source_root(), separate.source_root());
++                let separate_proof = prepared.prove(separate).unwrap();
++                let combined_proof = prepared.prove(combined).unwrap();
++                prepared.verify(&public, &separate_proof).unwrap();
++                prepared.verify(&public, &combined_proof).unwrap();
++                assert_eq!(
++                    combined_proof.payload_size_breakdown(),
++                    separate_proof.payload_size_breakdown()
++                );
++            }
++        }
++    }
++
++    #[test]
++    fn combined_commit_rejects_batch_mismatches() {
++        let prepared = PreparedFalconAlgebraic::new(1, 100).unwrap();
++        let (public, witness) = fixture(1);
++        for s2 in [vec![], vec![witness.s2[0]; 2], vec![witness.s2[0]; 1025]] {
++            assert!(matches!(
++                prepared.commit_from_s2(public.clone(), s2),
++                Err(FalconError::InvalidBatchCapacity)
++            ));
++        }
++        let (wrong_public, wrong_witness) = fixture(2);
++        assert!(matches!(
++            prepared.commit_from_s2(wrong_public, wrong_witness.s2),
++            Err(FalconError::InvalidBatchCapacity)
++        ));
++    }
++
++    #[test]
++    fn supplied_noncentered_s1_still_requires_a_valid_relation() {
++        let prepared = PreparedFalconAlgebraic::new(1, 100).unwrap();
++        let mut target = [0; N];
++        target[0] = 7000;
++        let public = FalconAlgebraicStatement {
++            public_keys: vec![[0; N]],
++            targets: vec![target],
++        };
++        let mut s1 = [0; N];
++        s1[0] = 7000;
++        let mut witness = FalconAlgebraicWitness {
++            s1: vec![s1],
++            s2: vec![[0; N]],
++        };
++        let committed = prepared.commit(public.clone(), witness.clone()).unwrap();
++        assert_eq!(committed.witness.witness.s1[0][0], 7000);
++        let proof = prepared.prove(committed).unwrap();
++        prepared.verify(&public, &proof).unwrap();
++        witness.s1[0][0] += 1;
++        assert!(prepared.commit(public, witness).is_err());
++    }
++
++    #[test]
+     fn recommitted_invalid_assignments_are_rejected() {
+         let prepared = PreparedFalconAlgebraic::new(3, 100).unwrap();
+         let (public, witness) = fixture(3);
+@@ -688,9 +783,15 @@
+             s2: vec![*trace.signature.s2],
+         };
+         let prepared = PreparedFalconAlgebraic::new(1, 100).unwrap();
++        let combined = prepared
++            .commit_from_s2(public.clone(), witness.s2.clone())
++            .unwrap();
+         let committed = prepared.commit(public.clone(), witness).unwrap();
+-        let proof = prepared.prove(committed).unwrap();
+-        prepared.verify(&public, &proof).unwrap();
++        assert_eq!(combined.source_root(), committed.source_root());
++        for committed in [combined, committed] {
++            let proof = prepared.prove(committed).unwrap();
++            prepared.verify(&public, &proof).unwrap();
++        }
+     }
+ 
+     #[test]
+--- a/examples/falcon_algebraic.rs
++++ b/examples/falcon_algebraic.rs
+@@ -1,5 +1,6 @@
+ //! Algebraic Falcon-1024 benchmark with distinct original-Falcon inputs.
+ //! Run with --features falcon-hybrid; input hashing is outside prover timing.
++//! witness_commit_ms covers checked witness derivation, packing, and commitment.
+ 
+ #[cfg(feature = "falcon-hybrid")]
+ #[path = "../benches/common/falcon_degree_inputs.rs"]
+@@ -14,7 +15,7 @@
+     use bitz::piop::spartan::{
+         falcon_profiles::n1024_k11::{decode_public_key, decode_signature_ct, hash_to_point_ct},
+         falcon1024_algebraic::{
+-            FalconAlgebraicStatement, FalconAlgebraicWitness, PreparedFalconAlgebraic,
++            FalconAlgebraicStatement, PreparedFalconAlgebraic,
+         },
+     };
+     use clap::Parser;
+@@ -95,11 +96,8 @@
+         let statement = public.clone();
+         let coefficients = s2.clone();
+         let total = Instant::now();
+-        let witness = FalconAlgebraicWitness::from_s2(&statement, coefficients)?;
+-        let witness_ms = total.elapsed().as_secs_f64() * 1000.0;
+-        let start = Instant::now();
+-        let committed = prepared.commit(statement, witness)?;
+-        let commit_ms = start.elapsed().as_secs_f64() * 1000.0;
++        let committed = prepared.commit_from_s2(statement, coefficients)?;
++        let witness_commit_ms = total.elapsed().as_secs_f64() * 1000.0;
+         let start = Instant::now();
+         let proof = prepared.prove(committed)?;
+         let prove_ms = start.elapsed().as_secs_f64() * 1000.0;
+@@ -132,7 +130,7 @@
+                 "cpu_affinity": affinity, "verification_thread_policy": "configured-global-pool",
+                 "build_rustflags": option_env!("RUSTFLAGS"),
+                 "prepare_ms": prepare_ms, "external_input_ms": external_input_ms,
+-                "witness_ms": witness_ms, "commit_ms": commit_ms,
++                "preparation_mode": "combined", "witness_commit_ms": witness_commit_ms,
+                 "prove_ms": prove_ms, "total_prover_ms": total_prover_ms,
+                 "verify_ms": verify_ms, "proof_payload_bytes": proof.payload_size_bytes(),
+                 "proof_payload_breakdown": proof.payload_size_breakdown(),

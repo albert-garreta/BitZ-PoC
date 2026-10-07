@@ -1,0 +1,25 @@
+{
+  "batch": 1024,
+  "degree": 1024,
+  "seed": 42,
+  "binary_path": "/tmp/falcon-simplify-candidate-target/release/deps/falcon_hybrid-0d2856552ca243a9",
+  "binary_sha256": "e6d418f649b121def612cb4917151f4a24e6f82a8dece824fe8f70367f2cbb7c",
+  "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+  "size100_command": "--degree 1024 --k auto --batch 1024 --security 100 --seed 42 --warmup 0 --iterations 1 --threads 16",
+  "rows": [
+    {
+      "security_bits": 100,
+      "ring_extension": 9,
+      "raw_payload_bytes": 652622,
+      "with_source_root_bytes": 652654,
+      "with_source_root_kib": 637.357421875
+    },
+    {
+      "security_bits": 128,
+      "ring_extension": 11,
+      "raw_payload_bytes": 814554,
+      "with_source_root_bytes": 814586,
+      "with_source_root_kib": 795.494140625
+    }
+  ]
+}

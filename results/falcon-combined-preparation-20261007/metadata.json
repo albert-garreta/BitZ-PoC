@@ -1,0 +1,1292 @@
+{
+  "started_utc": "2026-10-07T17:08:44.610272+00:00",
+  "binaries": {
+    "baseline": {
+      "path": "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+      "sha256": "21107dc244838f2d0aae8059329c8e5dee908b376c137413edd567e411456397"
+    },
+    "candidate": {
+      "path": "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+      "sha256": "e909e0d33af93a98d0ed1668ce6eeb1b0f9d93274755d2ace2f2c05c0a4b29dd"
+    }
+  },
+  "batches": [
+    32,
+    1024
+  ],
+  "security_bits": [
+    100,
+    128
+  ],
+  "threads": [
+    1,
+    2,
+    4,
+    8,
+    16
+  ],
+  "execution_order": [
+    1,
+    16,
+    2,
+    8,
+    4
+  ],
+  "warmup": 1,
+  "measured_trials": 5,
+  "seed": 42,
+  "variant_order": "Adjacent baseline/candidate runs; first variant alternates per configuration",
+  "preparation_normalization": "Baseline witness_ms + commit_ms per sample; candidate witness_commit_ms",
+  "verification": "Each emitted trial follows successful proof verification; every process must exit zero",
+  "cpu_policy": "Workers on physical CPUs 0..N-1; main and auxiliary workers on CPU 0; no SMT",
+  "build": "release, default parallel feature + falcon-hybrid, -C target-cpu=native, fat LTO, one codegen unit",
+  "preflight_loadavg": "0.45 0.71 0.43 1/1855 3",
+  "governor": "powersave",
+  "cpu_topology": "CPU CORE SOCKET NODE ONLINE\n  0    0      0    0    yes\n  1    1      0    0    yes\n  2    2      0    0    yes\n  3    3      0    0    yes\n  4    4      0    0    yes\n  5    5      0    0    yes\n  6    6      0    0    yes\n  7    7      0    0    yes\n  8    8      0    0    yes\n  9    9      0    0    yes\n 10   10      0    0    yes\n 11   11      0    0    yes\n 12   12      0    0    yes\n 13   13      0    0    yes\n 14   14      0    0    yes\n 15   15      0    0    yes\n 16    0      0    0    yes\n 17    1      0    0    yes\n 18    2      0    0    yes\n 19    3      0    0    yes\n 20    4      0    0    yes\n 21    5      0    0    yes\n 22    6      0    0    yes\n 23    7      0    0    yes\n 24    8      0    0    yes\n 25    9      0    0    yes\n 26   10      0    0    yes\n 27   11      0    0    yes\n 28   12      0    0    yes\n 29   13      0    0    yes\n 30   14      0    0    yes\n 31   15      0    0    yes\n",
+  "commands": [
+    {
+      "name": "batch-32-security-100-threads-1-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "32",
+        "--security",
+        "100",
+        "--threads",
+        "1",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "1"
+      }
+    },
+    {
+      "name": "batch-32-security-100-threads-1-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "32",
+        "--security",
+        "100",
+        "--threads",
+        "1",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "1"
+      }
+    },
+    {
+      "name": "batch-32-security-100-threads-16-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "32",
+        "--security",
+        "100",
+        "--threads",
+        "16",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "16"
+      }
+    },
+    {
+      "name": "batch-32-security-100-threads-16-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "32",
+        "--security",
+        "100",
+        "--threads",
+        "16",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "16"
+      }
+    },
+    {
+      "name": "batch-32-security-100-threads-2-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "32",
+        "--security",
+        "100",
+        "--threads",
+        "2",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "2"
+      }
+    },
+    {
+      "name": "batch-32-security-100-threads-2-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "32",
+        "--security",
+        "100",
+        "--threads",
+        "2",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "2"
+      }
+    },
+    {
+      "name": "batch-32-security-100-threads-8-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "32",
+        "--security",
+        "100",
+        "--threads",
+        "8",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "8"
+      }
+    },
+    {
+      "name": "batch-32-security-100-threads-8-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "32",
+        "--security",
+        "100",
+        "--threads",
+        "8",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "8"
+      }
+    },
+    {
+      "name": "batch-32-security-100-threads-4-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "32",
+        "--security",
+        "100",
+        "--threads",
+        "4",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "4"
+      }
+    },
+    {
+      "name": "batch-32-security-100-threads-4-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "32",
+        "--security",
+        "100",
+        "--threads",
+        "4",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "4"
+      }
+    },
+    {
+      "name": "batch-32-security-128-threads-1-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "32",
+        "--security",
+        "128",
+        "--threads",
+        "1",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "1"
+      }
+    },
+    {
+      "name": "batch-32-security-128-threads-1-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "32",
+        "--security",
+        "128",
+        "--threads",
+        "1",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "1"
+      }
+    },
+    {
+      "name": "batch-32-security-128-threads-16-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "32",
+        "--security",
+        "128",
+        "--threads",
+        "16",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "16"
+      }
+    },
+    {
+      "name": "batch-32-security-128-threads-16-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "32",
+        "--security",
+        "128",
+        "--threads",
+        "16",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "16"
+      }
+    },
+    {
+      "name": "batch-32-security-128-threads-2-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "32",
+        "--security",
+        "128",
+        "--threads",
+        "2",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "2"
+      }
+    },
+    {
+      "name": "batch-32-security-128-threads-2-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "32",
+        "--security",
+        "128",
+        "--threads",
+        "2",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "2"
+      }
+    },
+    {
+      "name": "batch-32-security-128-threads-8-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "32",
+        "--security",
+        "128",
+        "--threads",
+        "8",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "8"
+      }
+    },
+    {
+      "name": "batch-32-security-128-threads-8-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "32",
+        "--security",
+        "128",
+        "--threads",
+        "8",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "8"
+      }
+    },
+    {
+      "name": "batch-32-security-128-threads-4-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "32",
+        "--security",
+        "128",
+        "--threads",
+        "4",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "4"
+      }
+    },
+    {
+      "name": "batch-32-security-128-threads-4-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "32",
+        "--security",
+        "128",
+        "--threads",
+        "4",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "4"
+      }
+    },
+    {
+      "name": "batch-1024-security-100-threads-1-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "1024",
+        "--security",
+        "100",
+        "--threads",
+        "1",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "1"
+      }
+    },
+    {
+      "name": "batch-1024-security-100-threads-1-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "1024",
+        "--security",
+        "100",
+        "--threads",
+        "1",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "1"
+      }
+    },
+    {
+      "name": "batch-1024-security-100-threads-16-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "1024",
+        "--security",
+        "100",
+        "--threads",
+        "16",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "16"
+      }
+    },
+    {
+      "name": "batch-1024-security-100-threads-16-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "1024",
+        "--security",
+        "100",
+        "--threads",
+        "16",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "16"
+      }
+    },
+    {
+      "name": "batch-1024-security-100-threads-2-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "1024",
+        "--security",
+        "100",
+        "--threads",
+        "2",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "2"
+      }
+    },
+    {
+      "name": "batch-1024-security-100-threads-2-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "1024",
+        "--security",
+        "100",
+        "--threads",
+        "2",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "2"
+      }
+    },
+    {
+      "name": "batch-1024-security-100-threads-8-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "1024",
+        "--security",
+        "100",
+        "--threads",
+        "8",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "8"
+      }
+    },
+    {
+      "name": "batch-1024-security-100-threads-8-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "1024",
+        "--security",
+        "100",
+        "--threads",
+        "8",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "8"
+      }
+    },
+    {
+      "name": "batch-1024-security-100-threads-4-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "1024",
+        "--security",
+        "100",
+        "--threads",
+        "4",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "4"
+      }
+    },
+    {
+      "name": "batch-1024-security-100-threads-4-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "1024",
+        "--security",
+        "100",
+        "--threads",
+        "4",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "4"
+      }
+    },
+    {
+      "name": "batch-1024-security-128-threads-1-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "1024",
+        "--security",
+        "128",
+        "--threads",
+        "1",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "1"
+      }
+    },
+    {
+      "name": "batch-1024-security-128-threads-1-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "1024",
+        "--security",
+        "128",
+        "--threads",
+        "1",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "1"
+      }
+    },
+    {
+      "name": "batch-1024-security-128-threads-16-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "1024",
+        "--security",
+        "128",
+        "--threads",
+        "16",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "16"
+      }
+    },
+    {
+      "name": "batch-1024-security-128-threads-16-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "1024",
+        "--security",
+        "128",
+        "--threads",
+        "16",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "16"
+      }
+    },
+    {
+      "name": "batch-1024-security-128-threads-2-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "1024",
+        "--security",
+        "128",
+        "--threads",
+        "2",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "2"
+      }
+    },
+    {
+      "name": "batch-1024-security-128-threads-2-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "1024",
+        "--security",
+        "128",
+        "--threads",
+        "2",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "2"
+      }
+    },
+    {
+      "name": "batch-1024-security-128-threads-8-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "1024",
+        "--security",
+        "128",
+        "--threads",
+        "8",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "8"
+      }
+    },
+    {
+      "name": "batch-1024-security-128-threads-8-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "1024",
+        "--security",
+        "128",
+        "--threads",
+        "8",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "8"
+      }
+    },
+    {
+      "name": "batch-1024-security-128-threads-4-candidate",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3",
+        "/tmp/falcon-simplify-candidate-target/release/examples/falcon_algebraic",
+        "--batch",
+        "1024",
+        "--security",
+        "128",
+        "--threads",
+        "4",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "4"
+      }
+    },
+    {
+      "name": "batch-1024-security-128-threads-4-baseline",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3",
+        "/tmp/falcon-combined-benchmark/falcon_algebraic_baseline",
+        "--batch",
+        "1024",
+        "--security",
+        "128",
+        "--threads",
+        "4",
+        "--warmup",
+        "1",
+        "--iterations",
+        "5",
+        "--seed",
+        "42"
+      ],
+      "environment": {
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3",
+        "FLOCK_NO_PREFAULT": "1",
+        "RAYON_NUM_THREADS": "4"
+      }
+    }
+  ],
+  "finished_utc": "2026-10-07T17:12:03.466328+00:00",
+  "verified_proofs": 240,
+  "input_digests": {
+    "32": "8e13abdaab7d13f141273f898c38b9eb8f9841f3efba64d329b8b4970ad18745",
+    "1024": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39"
+  },
+  "proof_payloads": {
+    "32-100": [
+      134586,
+      [
+        [
+          "commitment",
+          32
+        ],
+        [
+          "ring",
+          22594
+        ],
+        [
+          "norm_and_binding",
+          2576
+        ],
+        [
+          "bitz_bridge",
+          11776
+        ],
+        [
+          "binary_sumcheck",
+          720
+        ],
+        [
+          "pcs",
+          96888
+        ]
+      ]
+    ],
+    "32-128": [
+      156410,
+      [
+        [
+          "commitment",
+          32
+        ],
+        [
+          "ring",
+          22602
+        ],
+        [
+          "norm_and_binding",
+          2880
+        ],
+        [
+          "bitz_bridge",
+          13448
+        ],
+        [
+          "binary_sumcheck",
+          896
+        ],
+        [
+          "pcs",
+          116552
+        ]
+      ]
+    ],
+    "1024-100": [
+      418970,
+      [
+        [
+          "commitment",
+          32
+        ],
+        [
+          "ring",
+          22594
+        ],
+        [
+          "norm_and_binding",
+          3296
+        ],
+        [
+          "bitz_bridge",
+          172576
+        ],
+        [
+          "binary_sumcheck",
+          880
+        ],
+        [
+          "pcs",
+          219592
+        ]
+      ]
+    ],
+    "1024-128": [
+      472890,
+      [
+        [
+          "commitment",
+          32
+        ],
+        [
+          "ring",
+          22602
+        ],
+        [
+          "norm_and_binding",
+          3680
+        ],
+        [
+          "bitz_bridge",
+          174768
+        ],
+        [
+          "binary_sumcheck",
+          1096
+        ],
+        [
+          "pcs",
+          270712
+        ]
+      ]
+    ]
+  }
+}

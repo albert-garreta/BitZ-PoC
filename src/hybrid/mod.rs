@@ -13,8 +13,14 @@ use crate::piop::spartan::mul::{MulError, MulLayout, MulWitness};
 use crate::piop::spartan::protocol::PreparedRelationPrefix;
 use crate::piop::spartan::protocol::ProtocolError;
 
+#[cfg(feature = "falcon-hybrid")]
+pub(crate) mod block_grinding;
 mod channel;
 mod codec;
+#[cfg(feature = "falcon-hybrid")]
+pub(crate) mod integer_bridge;
+#[cfg(feature = "falcon-hybrid")]
+pub(crate) mod joint_sumcheck;
 pub mod mod32_binius;
 mod mul;
 pub(crate) mod opening;

@@ -1,0 +1,6 @@
+
+running 1 test
+test piop::spartan::falcon_profiles::n1024_k11::hybrid::tests::hybrid_falcon_roundtrip_and_tampering ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 709 filtered out; finished in 0.30s
+
