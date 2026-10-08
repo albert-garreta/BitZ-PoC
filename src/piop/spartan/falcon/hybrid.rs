@@ -344,7 +344,7 @@ impl PreparedFalconHybrid {
                             Box::new(words),
                             KeccakTrace::default(),
                         )?;
-                        super::verify::trace_from_parts_with_workspace(
+                        super::verify::trace_from_parts(
                             public.public_keys[i].clone(),
                             public.signatures[i].clone(),
                             htp,
