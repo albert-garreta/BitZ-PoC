@@ -78,12 +78,15 @@ impl ByteRuns {
 /// once, then replay whole-word contributions instead of expanding every bit.
 struct FoldedWords {
     weights: Vec<F>,
+    optimized: bool,
+    output_indices: Vec<usize>,
+    max_terms: usize,
     starts: Vec<usize>,
     terms: Vec<(usize, F)>,
 }
 
 impl FoldedWords {
-    fn new(words: &[Word], weights: &[F], field: &Cfg) -> Self {
+    fn new(words: &[Word], weights: &[F], field: &Cfg, options: BindingOptions) -> Self {
         let vars = weights.len().ilog2() as usize;
         let width = words
             .iter()
@@ -135,8 +138,34 @@ impl FoldedWords {
             terms.extend(shape.iter().map(|&(offset, value)| (base + offset, value)));
         }
         starts.push(terms.len());
+        let optimized = options.optimized;
+        let mut max_terms = 0;
+        let mut output_indices = Vec::new();
+        if optimized {
+            let mut rows = Vec::with_capacity(terms.len());
+            for word in 0..words.len() {
+                for &(index, weight) in &terms[starts[word]..starts[word + 1]] {
+                    rows.push((index, word, weight));
+                }
+            }
+            rows.sort_unstable_by_key(|&(index, word, _)| (index, word));
+            starts.clear();
+            terms.clear();
+            for (index, word, weight) in rows {
+                if output_indices.last() != Some(&index) {
+                    output_indices.push(index);
+                    starts.push(terms.len());
+                }
+                terms.push((word, weight));
+            }
+            starts.push(terms.len());
+            max_terms = starts.windows(2).map(|r| r[1] - r[0]).max().unwrap_or(0);
+        }
         Self {
             weights: weights.to_vec(),
+            optimized,
+            output_indices,
+            max_terms,
             starts,
             terms,
         }
@@ -449,6 +478,122 @@ impl<A: WordAccumulator> CoefficientSink for WordSink<'_, A> {
     }
 }
 
+pub(super) struct WordBuckets<const TABLES: usize> {
+    differences: Vec<field::FpLinearAcc<2, 1>>,
+    occupied: Vec<bool>,
+    products: u128,
+}
+
+impl<const TABLES: usize> WordBuckets<TABLES> {
+    pub(super) fn new() -> Self {
+        Self {
+            differences: vec![field::FpLinearAcc::<2, 1>::zero(); TABLES * 256 * 8],
+            occupied: vec![false; TABLES * 256],
+            products: 0,
+        }
+    }
+
+    pub(super) fn accumulate(
+        &mut self,
+        coefficients: &CompiledCoefficients,
+        base: usize,
+        field: &Cfg,
+        read: &mut impl FnMut(usize, usize) -> Result<u16, crate::sumcheck::SumcheckError>,
+    ) -> Result<(), crate::sumcheck::SumcheckError> {
+        use crate::sumcheck::SumcheckError;
+        use field::CtOrd;
+        let width = if TABLES == 3 { 16 } else { 8 };
+        if base % width != 0 {
+            return Err(SumcheckError::InvalidProductDimensions);
+        }
+        let compiled = coefficients
+            .byte_runs
+            .get_or_init(|| ByteRuns::new(&coefficients.words));
+        // Each accumulator receives fewer than 2^64 field-by-u64 products;
+        // native coefficient widths are at most 27 bits. The extra accumulator
+        // limb therefore preserves exact sums for every supported batch.
+        // At most four native products per run, including both K4 destinations.
+        self.products += 4 * compiled.runs.len() as u128;
+        if self.products >= 1u128 << 64 {
+            return Err(SumcheckError::InvalidProductDimensions);
+        }
+        for (word, &scale) in coefficients.coefficients.iter().enumerate() {
+            if !scale
+                .as_montgomery_integer()
+                .ct_lt(field.modulus())
+                .declassify()
+            {
+                return Err(SumcheckError::NonCanonicalFieldElement);
+            }
+            if scale == field.zero() {
+                continue;
+            }
+            let negative = field.neg(&scale);
+            for run in &compiled.runs[compiled.starts[word]..compiled.starts[word + 1]] {
+                let side = if TABLES == 3 { (run.base % 16) / 8 } else { 0 };
+                let word = read(
+                    base + (run.base & !(width - 1)),
+                    8 * side + usize::from(run.lane + run.len),
+                )?;
+                let destinations = if TABLES == 3 {
+                    [
+                        (side, (word >> (8 * side)) as u8),
+                        (2, (word >> (8 * (1 - side))) as u8),
+                    ]
+                } else {
+                    [(0, word as u8), (0, 0)]
+                };
+                let lane = usize::from(run.lane);
+                let len = usize::from(run.len);
+                let (positive, negative) = if run.negative {
+                    (&negative, &scale)
+                } else {
+                    (&scale, &negative)
+                };
+                for (table, byte) in destinations {
+                    if byte == 0 {
+                        continue;
+                    }
+                    let bucket = table * 256 + usize::from(byte);
+                    self.occupied[bucket] = true;
+                    let values = &mut self.differences[8 * bucket..][..8];
+                    field.mul_acc(&mut values[lane], positive, &(1u64 << run.shift));
+                    if lane + len < 8 {
+                        field.mul_acc(
+                            &mut values[lane + len],
+                            negative,
+                            &(1u64 << (usize::from(run.shift) + len)),
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn finish(
+        self,
+        field: &Cfg,
+        emit: &mut impl FnMut(usize, u8, &[F; 8]) -> Result<(), crate::sumcheck::SumcheckError>,
+    ) -> Result<(), crate::sumcheck::SumcheckError> {
+        for (pattern, used) in self.occupied.into_iter().enumerate() {
+            if used {
+                let mut values = [field.zero(); 8];
+                let mut previous = field.zero();
+                for (value, &difference) in
+                    values.iter_mut().zip(&self.differences[8 * pattern..][..8])
+                {
+                    let difference = field.reduce(difference);
+                    previous = field.add(&field.add(&previous, &previous), &difference);
+                    *value = previous;
+                }
+                emit(pattern / 256, (pattern % 256) as u8, &values)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 impl CompiledCoefficients {
     /// Group word contributions directly by witness byte, without expanding
     /// every coefficient bit. A geometric run starting at lane i contributes
@@ -487,91 +632,38 @@ impl CompiledCoefficients {
         read: &mut impl FnMut(usize, usize) -> Result<u16, crate::sumcheck::SumcheckError>,
         emit: &mut impl FnMut(usize, u8, &[F; 8]) -> Result<(), crate::sumcheck::SumcheckError>,
     ) -> Result<(), crate::sumcheck::SumcheckError> {
-        use crate::sumcheck::SumcheckError;
-        use field::{CtOrd, Reduce};
-        let width = if TABLES == 3 { 16 } else { 8 };
-        if base % width != 0 {
-            return Err(SumcheckError::InvalidProductDimensions);
-        }
-        let compiled = self.byte_runs.get_or_init(|| ByteRuns::new(&self.words));
-        // Each accumulator receives fewer than 2^64 field-by-u64 products;
-        // native coefficient widths are at most 27 bits. The extra accumulator
-        // limb therefore preserves exact sums for every supported batch.
-        let mut differences = vec![field::FpLinearAcc::<2, 1>::zero(); TABLES * 256 * 8];
-        let mut occupied = vec![false; TABLES * 256];
-        for (word, &scale) in self.coefficients.iter().enumerate() {
-            if !scale
-                .as_montgomery_integer()
-                .ct_lt(field.modulus())
-                .declassify()
-            {
-                return Err(SumcheckError::NonCanonicalFieldElement);
-            }
-            if scale == field.zero() {
-                continue;
-            }
-            let negative = field.neg(&scale);
-            for run in &compiled.runs[compiled.starts[word]..compiled.starts[word + 1]] {
-                let side = if TABLES == 3 { (run.base % 16) / 8 } else { 0 };
-                let word = read(
-                    base + (run.base & !(width - 1)),
-                    8 * side + usize::from(run.lane + run.len),
-                )?;
-                let destinations = if TABLES == 3 {
-                    [
-                        (side, (word >> (8 * side)) as u8),
-                        (2, (word >> (8 * (1 - side))) as u8),
-                    ]
-                } else {
-                    [(0, word as u8), (0, 0)]
-                };
-                let lane = usize::from(run.lane);
-                let len = usize::from(run.len);
-                let (positive, negative) = if run.negative {
-                    (&negative, &scale)
-                } else {
-                    (&scale, &negative)
-                };
-                for (table, byte) in destinations {
-                    if byte == 0 {
-                        continue;
-                    }
-                    let bucket = table * 256 + usize::from(byte);
-                    occupied[bucket] = true;
-                    let values = &mut differences[8 * bucket..][..8];
-                    field.mul_acc(&mut values[lane], positive, &(1u64 << run.shift));
-                    if lane + len < 8 {
-                        field.mul_acc(
-                            &mut values[lane + len],
-                            negative,
-                            &(1u64 << (usize::from(run.shift) + len)),
-                        );
-                    }
-                }
-            }
-        }
-        for (pattern, used) in occupied.into_iter().enumerate() {
-            if used {
-                let mut values = [field.zero(); 8];
-                let mut previous = field.zero();
-                for (value, &difference) in values.iter_mut().zip(&differences[8 * pattern..][..8])
-                {
-                    let difference = field.reduce(difference);
-                    previous = field.add(&field.add(&previous, &previous), &difference);
-                    *value = previous;
-                }
-                emit(pattern / 256, (pattern % 256) as u8, &values)?;
-            }
-        }
-        Ok(())
+        let mut buckets = WordBuckets::<TABLES>::new();
+        buckets.accumulate(self, base, field, read)?;
+        buckets.finish(field, emit)
     }
 
     /// Emit each folded coefficient's final sum once in increasing index order.
+    #[cfg(test)]
     pub(super) fn emit_folded(
         &self,
         base: usize,
         weights: &[F],
         field: &Cfg,
+        emit: &mut impl FnMut(usize, F) -> Result<(), crate::sumcheck::SumcheckError>,
+    ) -> Result<(), crate::sumcheck::SumcheckError> {
+        self.emit_folded_with_options(
+            base,
+            weights,
+            field,
+            BindingOptions {
+                optimized: true,
+                group_cap: 8,
+            },
+            emit,
+        )
+    }
+
+    pub(super) fn emit_folded_with_options(
+        &self,
+        base: usize,
+        weights: &[F],
+        field: &Cfg,
+        options: BindingOptions,
         emit: &mut impl FnMut(usize, F) -> Result<(), crate::sumcheck::SumcheckError>,
     ) -> Result<(), crate::sumcheck::SumcheckError> {
         if !weights.len().is_power_of_two()
@@ -584,18 +676,37 @@ impl CompiledCoefficients {
         // map without nested parallel initialization or per-instance copies.
         let cached = self
             .folded
-            .get_or_init(|| FoldedWords::new(&self.words, weights, field));
+            .get_or_init(|| FoldedWords::new(&self.words, weights, field, options));
         let alternative;
-        let folded = if cached.weights == weights {
+        let folded = if cached.weights == weights && cached.optimized == options.optimized {
             cached
         } else {
             // Reference tests may reuse a source with another prefix. A source
             // belongs to one proving invocation in the production binder.
-            alternative = FoldedWords::new(&self.words, weights, field);
+            alternative = FoldedWords::new(&self.words, weights, field, options);
             &alternative
         };
         type Accumulator = <Cfg as BatchMulAcc<F>>::Accumulator;
         let base = base / weights.len();
+        if folded.optimized {
+            let reducer = field.prepare_product_reduction(folded.max_terms);
+            for (row, &index) in folded.output_indices.iter().enumerate() {
+                let mut sum = Accumulator::zero();
+                let mut occupied = false;
+                for &(word, weight) in &folded.terms[folded.starts[row]..folded.starts[row + 1]] {
+                    let scale = self.coefficients[word];
+                    if scale != field.zero() {
+                        field.mul_acc(&mut sum, &scale, &weight);
+                        occupied = true;
+                    }
+                }
+                // A cancellation is still a completed final coefficient.
+                if occupied {
+                    emit(base + index, reducer.reduce(sum))?;
+                }
+            }
+            return Ok(());
+        }
         let vars = weights.len().ilog2() as usize;
         let mut pending = std::array::from_fn(|_| Accumulator::zero());
         let mut occupied = [false; 32];
@@ -690,7 +801,6 @@ impl CompiledCoefficients {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn flush_folded(
     cursor: &mut usize,
     end: usize,
@@ -1101,8 +1211,7 @@ impl BindingForm<'_> {
                         field.mul_acc(
                             &mut public_words,
                             &self.local_linear_weights.at(
-                                super::super::FalconConstraintCounts::per_signature()
-                                    .linear_rows()
+                                super::super::FalconConstraintCounts::per_signature().linear_rows()
                                     - N
                                     + j,
                             ),
@@ -1641,6 +1750,113 @@ mod tests {
             );
         }
     }
-}
 
+    #[test]
+    fn folded_strategies_preserve_emission_and_cache_switches() {
+        for field in [
+            crate::piop::spartan::spartan_bitz_field_config(),
+            F::make_cfg(&field::Uint::<2>::from((1u128 << 127) - 1)).unwrap(),
+        ] {
+            let mut sink = WordSink::new(0, 0, &field);
+            overlapping_words(&mut sink, 0, &field);
+            let mut compact = sink.finish();
+            for (i, value) in compact.coefficients.iter_mut().enumerate() {
+                if i % 3 == 0 {
+                    *value = field.zero();
+                }
+            }
+            for width in [1usize, 2, 4, 8, 16] {
+                for point in [field.zero(), field.one(), unsigned(19, &field)] {
+                    let weights = eq_table(&vec![point; width.ilog2() as usize], &field).unwrap();
+                    let mut expected = None;
+                    for optimized in [false, true, false] {
+                        let mut values = Vec::new();
+                        compact
+                            .emit_folded_with_options(
+                                0,
+                                &weights,
+                                &field,
+                                BindingOptions {
+                                    optimized,
+                                    group_cap: 8,
+                                },
+                                &mut |index, value| {
+                                    values.push((index, value));
+                                    Ok(())
+                                },
+                            )
+                            .unwrap();
+                        if let Some(expected) = &expected {
+                            assert_eq!(&values, expected);
+                        } else {
+                            expected = Some(values);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn grouped_native_buckets_match_separate_reductions_and_enforce_bound() {
+        let field = crate::piop::spartan::spartan_bitz_field_config();
+        for count in [1, 3, 8, 16, 19] {
+            let mut grouped = WordBuckets::<3>::new();
+            let mut expected = vec![[field.zero(); 8]; 3 * 256];
+            for instance in 0..count {
+                let mut sink = WordSink::new(0, 0, &field);
+                overlapping_words(&mut sink, 0, &field);
+                let mut compact = sink.finish();
+                for (i, v) in compact.coefficients.iter_mut().enumerate() {
+                    *v = if instance % 3 == 1 {
+                        field.zero()
+                    } else {
+                        field.mul(v, &unsigned((instance + i + 1) as u128, &field))
+                    };
+                }
+                let read =
+                    |base: usize, _: usize| Ok(((base * 71 + instance * 131) ^ 0xad5f) as u16);
+                compact
+                    .emit_byte_pair_buckets(
+                        0,
+                        &field,
+                        &mut read.clone(),
+                        &mut |table, byte, values| {
+                            for (dst, value) in expected[256 * table + usize::from(byte)]
+                                .iter_mut()
+                                .zip(values)
+                            {
+                                *dst = field.add(dst, value);
+                            }
+                            Ok(())
+                        },
+                    )
+                    .unwrap();
+                grouped
+                    .accumulate(&compact, 0, &field, &mut read.clone())
+                    .unwrap();
+            }
+            let mut actual = vec![[field.zero(); 8]; 3 * 256];
+            grouped
+                .finish(&field, &mut |table, byte, values| {
+                    actual[256 * table + usize::from(byte)] = *values;
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(actual, expected);
+        }
+        let mut sink = WordSink::new(0, 0, &field);
+        sink.add_word(0, 8, field.one(), &field);
+        let compact = sink.finish();
+        let mut buckets = WordBuckets::<3>::new();
+        buckets.products = (1u128 << 64) - 4;
+        assert!(
+            buckets
+                .accumulate(&compact, 0, &field, &mut |_, _| panic!(
+                    "bound must be checked first"
+                ))
+                .is_err()
+        );
+    }
+}
 }

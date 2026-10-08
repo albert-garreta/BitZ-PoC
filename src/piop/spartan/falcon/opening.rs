@@ -24,7 +24,10 @@ use crate::{
         SumcheckProof,
         boundary::{ProverGrindingRoundBoundary, VerifierGrindingRoundBoundary},
         inner::{
-            packed::{ColumnMajorPackedBits, FactoredOverlayInput, StreamingCoefficientSource},
+            packed::{
+                BindingOptions, ColumnMajorPackedBits, FactoredOverlayInput,
+                StreamingCoefficientSource,
+            },
             prove_inner_sumcheck,
         },
     },
@@ -181,7 +184,7 @@ pub(super) fn prove_binding_prefix(
         super::piop::prove_falcon_piop_in_field(transcript, layout, traces, target_bits, &field)?;
     let linear_point_nonce = grind_linear_point(transcript, layout, target_bits, None)?;
     let linear_point = sample_point(transcript, linear_rounds(layout), &field)?;
-    let integer = prepare_binding_form(
+    let mut integer = prepare_binding_form(
         transcript,
         layout,
         statement,
@@ -190,6 +193,12 @@ pub(super) fn prove_binding_prefix(
         &linear_point,
         &field,
     )?;
+    integer.options = BindingOptions::for_full(
+        layout.batch(),
+        N,
+        target_bits,
+        super::ring_field::EXTENSION_DEGREE,
+    );
     transcript.absorb_slice(b"bitz/falcon1024-ct/shared-prime/merge/v1");
     let merge = squeeze(transcript, &field)?;
     if projected.row.len() != layout.capacity()
@@ -432,6 +441,7 @@ fn grind_linear_point(
 }
 
 struct BindingForm<'a> {
+    options: BindingOptions,
     layout: &'a FalconSourceLayout,
     statement: &'a FalconPublicStatement,
     selection: &'a Selection,
@@ -536,6 +546,7 @@ fn prepare_binding_form<'a>(
         .map_err(|error| piop(error.to_string()))?;
     linear_instance_weights.truncate(layout.batch());
     Ok(BindingForm {
+        options: BindingOptions::default(),
         layout,
         statement,
         selection,
@@ -567,6 +578,42 @@ impl BindingForm<'_> {
 }
 
 impl StreamingCoefficientSource for BindingForm<'_> {
+    fn binding_options(&self) -> BindingOptions {
+        self.options
+    }
+
+    fn for_each_partition_range_byte_pair_bucket(
+        &self,
+        partitions: std::ops::Range<usize>,
+        read: &mut impl FnMut(usize, usize, usize) -> Result<u16, crate::sumcheck::SumcheckError>,
+        emit: &mut impl FnMut(usize, u8, &[F; 8]) -> Result<(), crate::sumcheck::SumcheckError>,
+    ) -> Option<Result<(), crate::sumcheck::SumcheckError>> {
+        if !self.options.optimized {
+            return None;
+        }
+        Some((|| {
+            use crate::sumcheck::SumcheckError;
+            if partitions.start > partitions.end || partitions.end > self.layout.capacity() {
+                return Err(SumcheckError::InvalidProductDimensions);
+            }
+            let mut buckets = compact::WordBuckets::<3>::new();
+            for partition in partitions {
+                if partition >= self.layout.batch() {
+                    continue;
+                }
+                let coefficients = self
+                    .compact_instance(partition)
+                    .map_err(|_| SumcheckError::InvalidProductDimensions)?;
+                buckets.accumulate(
+                    coefficients,
+                    partition * self.layout.signature_stride(),
+                    self.field,
+                    &mut |base, occupied| read(partition, base, occupied),
+                )?;
+            }
+            buckets.finish(self.field, emit)
+        })())
+    }
     fn num_vars(&self) -> usize {
         source_rounds(self.layout)
     }
@@ -635,10 +682,11 @@ impl StreamingCoefficientSource for BindingForm<'_> {
             }
             self.compact_instance(partition)
                 .map_err(|_| crate::sumcheck::SumcheckError::InvalidProductDimensions)?
-                .emit_folded(
+                .emit_folded_with_options(
                     partition * self.layout.signature_stride(),
                     weights,
                     self.field,
+                    self.options,
                     emit,
                 )
         })())
