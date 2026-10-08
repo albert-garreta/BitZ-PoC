@@ -1755,6 +1755,13 @@ mod tests {
     fn folded_strategies_preserve_emission_and_cache_switches() {
         for field in [
             crate::piop::spartan::spartan_bitz_field_config(),
+            crate::prime_sampling::sample_prime_context(
+                &mut crate::transcript::Blake3Transcript::new(),
+                1u128 << 125,
+                (1u128 << 126) - 1,
+                128,
+            )
+            .unwrap(),
             F::make_cfg(&field::Uint::<2>::from((1u128 << 127) - 1)).unwrap(),
         ] {
             let mut sink = WordSink::new(0, 0, &field);
@@ -1800,6 +1807,18 @@ mod tests {
     #[test]
     fn grouped_native_buckets_match_separate_reductions_and_enforce_bound() {
         let field = crate::piop::spartan::spartan_bitz_field_config();
+        check_grouped_native_buckets(&field);
+        let field = crate::prime_sampling::sample_prime_context(
+            &mut crate::transcript::Blake3Transcript::new(),
+            1u128 << 125,
+            (1u128 << 126) - 1,
+            128,
+        )
+        .unwrap();
+        check_grouped_native_buckets(&field);
+    }
+
+    fn check_grouped_native_buckets(field: &Cfg) {
         for count in [1, 3, 8, 16, 19] {
             let mut grouped = WordBuckets::<3>::new();
             let mut expected = vec![[field.zero(); 8]; 3 * 256];

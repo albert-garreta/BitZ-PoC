@@ -810,22 +810,6 @@ fn add_claim_target(target: &mut F, scale: F, claimed: F, constant: F, field: &C
     *target = field.add(target, &field.sub(&field.mul(&scale, &claimed), &constant));
 }
 
-fn add_signed_source_scaled(
-    values: &mut impl CoefficientSink,
-    base: usize,
-    layout: &FalconSourceLayout,
-    coefficient: usize,
-    scale: F,
-    field: &Cfg,
-) {
-    values.add_signed_word(
-        base + layout.s2_bit(coefficient, 0),
-        SIGNATURE_BITS,
-        scale,
-        field,
-    );
-}
-
 #[cfg(test)]
 fn dot_packed_source(coefficients: &[F], source: &FalconSourceWitness, field: &Cfg) -> F {
     let row_vars = source.layout().row_vars();

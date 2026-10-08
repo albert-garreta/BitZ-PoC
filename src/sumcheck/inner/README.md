@@ -94,9 +94,6 @@ Fresh results are recorded separately in `bench_results/inner-entry-unification-
 The generic fully-field vector first pass still uses the mixed-input three-product
 formula; production specialized field kernels retain their two-product formula.
 
-`skipped_experiment` is test-only. Production prefixes prepare ordinary messages;
-they do not introduce a univariate-skip proof or change the opening claim.
-
 Current entry-point removal validation: 491 release unit tests, 69 focused
 inner/hybrid tests, and 21 release transcript pins passed. The performance
 campaign stopped at the requested commit checkpoint after 13/24 cases.

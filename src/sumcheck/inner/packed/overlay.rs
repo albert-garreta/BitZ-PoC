@@ -144,17 +144,6 @@ impl<'a, S: StreamingCoefficientSource + ?Sized, H: Sha256InnerBitSource + ?Size
         let (zero, one) = (f.zero(), f.one());
         self.prefix_weights =
             PreparedPrefixWeights::new(equality_weights_lsb(&self.point[..K], &zero, &one, f), f);
-        let mut table = {
-            let _span = tracing::info_span!("inner_overlay:folded_coefficients").entered();
-            StreamingMle::new(self.input.integer).fold_prefix_table::<K>(
-                self.input.num_vars,
-                self.input.live_len,
-                &self.point[..K],
-                f,
-                &zero,
-                &one,
-            )?
-        };
         self.row = self.input.row.to_vec();
         self.column = self
             .input
@@ -168,46 +157,106 @@ impl<'a, S: StreamingCoefficientSource + ?Sized, H: Sha256InnerBitSource + ?Size
                 product_reduce(acc, f)
             })
             .collect::<Result<_, _>>()?;
-        if self.input.num_vars > K {
-            let _span = tracing::info_span!("inner_overlay:first_tail_round").entered();
-            let (fast, slow) = ring_axes(&self.row, &self.column);
-            self.next = sum_pairs(
-                &mut table.values,
-                2,
-                fast,
-                slow,
-                &self.input.integer_scale,
+        // A complete folded partition is one tensor row. Consume its pairs
+        // before replaying the next row, keeping the integer coefficients in
+        // cache instead of scanning the entire suffix table a second time.
+        let separate_scan = self.column.len() == 1 || self.input.num_vars == K;
+        #[cfg(feature = "parallel")]
+        let separate_scan = separate_scan
+            || ((self.input.live_len >> (K + 1)) >= 1 << 10
+                && rayon::current_num_threads() > self.row.len());
+        let source = StreamingMle::new(self.input.integer);
+        let table = if separate_scan {
+            let mut table = {
+                let _span = tracing::info_span!("inner_overlay:folded_coefficients").entered();
+                source.fold_prefix_table::<K>(
+                    self.input.num_vars,
+                    self.input.live_len,
+                    &self.point[..K],
+                    f,
+                    &zero,
+                    &one,
+                )?
+            };
+            if self.input.num_vars > K {
+                let _span = tracing::info_span!("inner_overlay:first_tail_round").entered();
+                let (fast, slow) = ring_axes(&self.row, &self.column);
+                self.next = self.first_tail_round(&mut table.values, 0, fast, slow, f)?;
+            }
+            table
+        } else {
+            let _span =
+                tracing::info_span!("inner_overlay:folded_coefficients_and_first_tail").entered();
+            let (table, partials) = source.fold_prefix_table_with::<K, _>(
+                self.input.num_vars,
+                self.input.live_len,
+                &self.point[..K],
                 f,
-                |pair, values| {
-                    // Every input partition is complete, so both suffixes
-                    // exist whenever a tail round remains.
-                    let h0 = folded_packed_h::<K, _>(
-                        pair * 2,
-                        self.input.live_len,
-                        self.input.bits,
-                        &self.prefix_weights,
+                &zero,
+                &one,
+                |partition, values| {
+                    self.first_tail_round(
+                        values,
+                        partition * self.column.len() / 2,
+                        &self.column,
+                        &self.row[partition..partition + 1],
                         f,
-                        &zero,
-                        &one,
-                    )?;
-                    let h1 = folded_packed_h::<K, _>(
-                        pair * 2 + 1,
-                        self.input.live_len,
-                        self.input.bits,
-                        &self.prefix_weights,
-                        f,
-                        &zero,
-                        &one,
-                    )?;
-                    Ok([
-                        [field_from_raw(&values[0], f), h0],
-                        [field_from_raw(&values[1], f), h1],
-                    ])
+                    )
                 },
             )?;
-        }
+            self.next = partials.into_iter().fold([zero; 2], |sum, part| {
+                std::array::from_fn(|i| f.add(&sum[i], &part[i]))
+            });
+            table
+        };
         self.table = Some(table);
         Ok(())
+    }
+
+    fn first_tail_round(
+        &self,
+        values: &mut [RawMontgomery],
+        pair_offset: usize,
+        fast: &[Field],
+        slow: &[Field],
+        f: &FieldConfig,
+    ) -> Result<[Field; 2], SumcheckError> {
+        let (zero, one) = (f.zero(), f.one());
+        sum_pairs(
+            values,
+            2,
+            fast,
+            slow,
+            &self.input.integer_scale,
+            f,
+            |pair, values| {
+                // Omitted integer coefficients still have a ring contribution,
+                // so visit every pair, including zero-filled source padding.
+                let suffix = (pair_offset + pair) * 2;
+                let h0 = folded_packed_h::<K, _>(
+                    suffix,
+                    self.input.live_len,
+                    self.input.bits,
+                    &self.prefix_weights,
+                    f,
+                    &zero,
+                    &one,
+                )?;
+                let h1 = folded_packed_h::<K, _>(
+                    suffix + 1,
+                    self.input.live_len,
+                    self.input.bits,
+                    &self.prefix_weights,
+                    f,
+                    &zero,
+                    &one,
+                )?;
+                Ok([
+                    [field_from_raw(&values[0], f), h0],
+                    [field_from_raw(&values[1], f), h1],
+                ])
+            },
+        )
     }
 
     fn coefficients(&self, f: &FieldConfig) -> Result<[Field; 2], SumcheckError> {

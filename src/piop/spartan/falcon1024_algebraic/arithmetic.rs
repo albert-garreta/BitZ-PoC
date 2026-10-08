@@ -8,9 +8,12 @@ use field::{BatchMulAcc, FpLinearAcc, Reduce, RingOps, WideMul};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
+#[cfg(test)]
+use crate::piop::spartan::SpartanField;
+
 use crate::{
     piop::spartan::{
-        SpartanField, absorb_field_elements,
+        absorb_field_elements,
         falcon_bit_layout::{COEFFICIENT_STRIDE, coefficient_bit},
         falcon_integer,
         grinding::{GrindingDomain, GrindingRound, grind_and_absorb, verify_and_absorb},
@@ -142,7 +145,7 @@ pub(super) fn prove(
             &bits,
             source_rounds(layout),
             layout.source_bits(),
-            binding_prefix_variables()?,
+            binding_prefix_variables(layout.batch()),
         ),
         (),
         &mut boundary,
@@ -402,47 +405,22 @@ fn binding_workers() -> usize {
 
 /// Keep unqualified worker counts and small batches on the original path.
 /// Eight-worker measurements qualify the large-batch range for both degrees;
-/// benchmark controls below still allow independent crossover measurements.
+/// one-core measurements additionally qualify the full 1024-signature batch.
 pub(super) fn optimized_binding(batch: usize) -> bool {
-    binding_workers() == 8 && (256..=1024).contains(&batch)
+    (binding_workers() == 8 && (256..=1024).contains(&batch))
+        || (binding_workers() == 1 && batch == 1024)
 }
 
-fn binding_strategy(
-    name: &str,
-    optimized: &str,
-    batch: usize,
-) -> Result<BindingStrategy, FalconError> {
-    #[cfg(feature = "bench-internals")]
-    match std::env::var(name) {
-        Ok(value) if value == "legacy" => return Ok(BindingStrategy::Legacy),
-        Ok(value) if value == optimized => return Ok(BindingStrategy::Optimized),
-        Err(std::env::VarError::NotPresent) => {}
-        _ => return Err(failure(format!("{name} must be legacy or {optimized}"))),
-    }
-    #[cfg(not(feature = "bench-internals"))]
-    let _ = (name, optimized);
-    Ok(if optimized_binding(batch) {
+fn binding_strategy(batch: usize) -> BindingStrategy {
+    if optimized_binding(batch) {
         BindingStrategy::Optimized
     } else {
         BindingStrategy::Legacy
-    })
+    }
 }
 
-fn binding_parallel(batch: usize) -> Result<bool, FalconError> {
-    #[cfg(feature = "bench-internals")]
-    match std::env::var("BITZ_FALCON_BINDING_PARALLEL") {
-        Ok(value) if value == "serial" => return Ok(false),
-        Ok(value) if value == "auto" => {
-            return Ok(2 * N * batch >= 8192 && binding_workers() > 1);
-        }
-        Err(std::env::VarError::NotPresent) => {}
-        _ => {
-            return Err(failure(
-                "BITZ_FALCON_BINDING_PARALLEL must be serial or auto",
-            ));
-        }
-    }
-    Ok(optimized_binding(batch))
+fn binding_parallel(batch: usize) -> bool {
+    optimized_binding(batch) && binding_workers() > 1
 }
 
 impl<'a> BindingForm<'a> {
@@ -460,12 +438,8 @@ impl<'a> BindingForm<'a> {
             norm,
             eta,
             field,
-            binding_strategy(
-                "BITZ_FALCON_BINDING_CONSTRUCTION",
-                "factored",
-                layout.batch(),
-            )?,
-            binding_parallel(layout.batch())?,
+            binding_strategy(layout.batch()),
+            binding_parallel(layout.batch()),
         )
     }
 
@@ -586,12 +560,8 @@ impl<'a> BindingForm<'a> {
         let _span = tracing::info_span!("falcon_algebraic:binding_evaluation").entered();
         self.evaluate_with_strategy(
             point,
-            binding_strategy(
-                "BITZ_FALCON_BINDING_EVALUATION",
-                "batched",
-                self.layout.batch(),
-            )?,
-            binding_parallel(self.layout.batch())?,
+            binding_strategy(self.layout.batch()),
+            binding_parallel(self.layout.batch()),
         )
     }
 
@@ -1163,17 +1133,10 @@ fn verify_nonce<D: GrindingDomain>(
 }
 
 /// Prefix width affects only the prover's representation, never the transcript.
-fn binding_prefix_variables() -> Result<usize, FalconError> {
-    #[cfg(feature = "bench-internals")]
-    match std::env::var("BITZ_FALCON_BINDING_PREFIX") {
-        Ok(value) if value == "3" => return Ok(3),
-        Ok(value) if value == "4" => return Ok(4),
-        Ok(_) | Err(std::env::VarError::NotUnicode(_)) => {
-            return Err(failure("BITZ_FALCON_BINDING_PREFIX must be 3 or 4"));
-        }
-        Err(std::env::VarError::NotPresent) => {}
-    }
-    Ok(3)
+fn binding_prefix_variables(batch: usize) -> usize {
+    // One-core batch-1024 measurements favor the aligned four-variable
+    // prefix, which halves the dense suffix while keeping ordinary messages.
+    if batch == 1024 && binding_workers() == 1 { 4 } else { 3 }
 }
 
 fn source_rounds(layout: &Layout) -> usize {

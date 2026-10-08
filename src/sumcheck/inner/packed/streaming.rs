@@ -257,6 +257,95 @@ impl<'a, S: StreamingCoefficientSource + ?Sized> StreamingMle<'a, S> {
                 emit(index, value)
             })
     }
+
+    /// Consume each folded partition while its coefficient table is still hot.
+    /// The callback sees zero-filled omitted entries and any even-length padding.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn fold_prefix_table_with<const K: usize, T: Send>(
+        &self,
+        num_vars: usize,
+        live_len: usize,
+        challenges: &[Field],
+        cfg: &FieldConfig,
+        zero: &Field,
+        one: &Field,
+        finish: impl Fn(usize, &mut [RawMontgomery]) -> Result<T, SumcheckError> + Sync,
+    ) -> Result<(CompactPrefixVTable, Vec<T>), SumcheckError> {
+        self.validate_dimensions::<K>(num_vars, live_len)?;
+        if challenges.len() != K {
+            return Err(SumcheckError::InvalidProductDimensions);
+        }
+        validate_field_values(challenges, cfg)?;
+        let weights = equality_weights_lsb(challenges, zero, one, cfg);
+        let suffix_count = live_len.div_ceil(1usize << K);
+        let mut table = CompactPrefixVTable {
+            values: vec![raw_montgomery(zero); (suffix_count + 1) & !1],
+            suffix_count,
+        };
+        let width = self.source.partition_len() >> K;
+        let partials: Result<Vec<T>, SumcheckError> =
+            crate::utils::cfg_chunks_mut!(table.values, width)
+                .enumerate()
+                .map(|(partition, values)| {
+                    let mut replay = || {
+                        // The final even-length padding slot has no source coefficient.
+                        if partition * width >= suffix_count {
+                            return Ok(());
+                        }
+                        if let Some(result) = self.visit_folded_final_checked::<K>(
+                            partition,
+                            &weights,
+                            cfg,
+                            |index, value| {
+                                values[index - partition * width] = raw_montgomery(&value);
+                                Ok(())
+                            },
+                        ) {
+                            return result;
+                        }
+                        if let Some(result) = self.visit_folded_checked::<K>(
+                            partition,
+                            &weights,
+                            cfg,
+                            |index, value| {
+                                let slot = &mut values[index - partition * width];
+                                *slot =
+                                    raw_montgomery(&cfg.add(&field_from_raw(slot, cfg), &value));
+                                Ok(())
+                            },
+                        ) {
+                            return result;
+                        }
+                        if let Some(result) =
+                            self.visit_blocks_checked::<K>(partition, cfg, |base, block| {
+                                let value = if K == 0 {
+                                    block[0]
+                                } else {
+                                    let mut sum = product_accumulator_zero();
+                                    for (weight, value) in weights.iter().zip(block) {
+                                        product_multiply_accumulate(cfg, &mut sum, weight, value);
+                                    }
+                                    product_reduce(sum, cfg)?
+                                };
+                                values[(base >> K) - partition * width] = raw_montgomery(&value);
+                                Ok(())
+                            })
+                        {
+                            return result;
+                        }
+                        self.visit_checked(partition, cfg, |index, delta| {
+                            let slot = &mut values[(index >> K) - partition * width];
+                            let term = cfg.mul(&delta, &weights[index & ((1usize << K) - 1)]);
+                            *slot = raw_montgomery(&cfg.add(&field_from_raw(slot, cfg), &term));
+                            Ok(())
+                        })
+                    };
+                    replay()?;
+                    finish(partition, values)
+                })
+                .collect();
+        Ok((table, partials?))
+    }
 }
 
 impl<S: StreamingCoefficientSource + ?Sized> InnerSumcheckMleSource for StreamingMle<'_, S> {
@@ -345,70 +434,16 @@ impl<S: StreamingCoefficientSource + ?Sized> InnerSumcheckMleSource for Streamin
         zero: &Field,
         one: &Field,
     ) -> Result<CompactPrefixVTable, SumcheckError> {
-        self.validate_dimensions::<K>(num_vars, live_len)?;
-        if challenges.len() != K {
-            return Err(SumcheckError::InvalidProductDimensions);
-        }
-        validate_field_values(challenges, cfg)?;
-        let weights = equality_weights_lsb(challenges, zero, one, cfg);
-        let suffix_count = live_len.div_ceil(1usize << K);
-        let mut table = CompactPrefixVTable {
-            values: vec![raw_montgomery(zero); (suffix_count + 1) & !1],
-            suffix_count,
-        };
-        let width = self.source.partition_len() >> K;
-        crate::utils::cfg_chunks_mut!(table.values, width)
-            .enumerate()
-            .try_for_each(|(partition, values)| {
-                // The final even-length padding slot has no source coefficient.
-                if partition * width >= suffix_count {
-                    return Ok(());
-                }
-                if let Some(result) = self.visit_folded_final_checked::<K>(
-                    partition,
-                    &weights,
-                    cfg,
-                    |index, value| {
-                        values[index - partition * width] = raw_montgomery(&value);
-                        Ok(())
-                    },
-                ) {
-                    return result;
-                }
-                if let Some(result) =
-                    self.visit_folded_checked::<K>(partition, &weights, cfg, |index, value| {
-                        let slot = &mut values[index - partition * width];
-                        *slot = raw_montgomery(&cfg.add(&field_from_raw(slot, cfg), &value));
-                        Ok(())
-                    })
-                {
-                    return result;
-                }
-                if let Some(result) =
-                    self.visit_blocks_checked::<K>(partition, cfg, |base, block| {
-                        let value = if K == 0 {
-                            block[0]
-                        } else {
-                            let mut sum = product_accumulator_zero();
-                            for (weight, value) in weights.iter().zip(block) {
-                                product_multiply_accumulate(cfg, &mut sum, weight, value);
-                            }
-                            product_reduce(sum, cfg)?
-                        };
-                        values[(base >> K) - partition * width] = raw_montgomery(&value);
-                        Ok(())
-                    })
-                {
-                    return result;
-                }
-                self.visit_checked(partition, cfg, |index, delta| {
-                    let slot = &mut values[(index >> K) - partition * width];
-                    let term = cfg.mul(&delta, &weights[index & ((1usize << K) - 1)]);
-                    *slot = raw_montgomery(&cfg.add(&field_from_raw(slot, cfg), &term));
-                    Ok(())
-                })
-            })?;
-        Ok(table)
+        self.fold_prefix_table_with::<K, ()>(
+            num_vars,
+            live_len,
+            challenges,
+            cfg,
+            zero,
+            one,
+            |_, _| Ok(()),
+        )
+        .map(|(table, _)| table)
     }
 
     #[allow(clippy::too_many_arguments)]

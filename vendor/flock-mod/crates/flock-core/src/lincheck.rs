@@ -117,7 +117,7 @@
 //!   per byte.
 
 use crate::challenger::Challenger;
-use crate::field::Gf128;
+use crate::field::{Gf128, Gf128Product};
 use crate::genus95_curve_code::{EvaluationPoint, base_evaluation_functional};
 use crate::r1cs::SparseBinaryMatrix;
 use crate::zerocheck::multilinear::lagrange_weights_naive;
@@ -125,6 +125,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicBool;
 
 mod kernels;
+mod product;
 
 #[cfg(target_arch = "x86_64")]
 pub use kernels::partial_fold_packed_z_x86_tiled_padded;
@@ -1020,11 +1021,11 @@ pub fn build_quirky_eq_table(z_skip: Gf128, x_inner_rest: &[Gf128], k_skip: usiz
 /// Dot product of two equal-length Gf128 slices.
 fn inner_product(a: &[Gf128], b: &[Gf128]) -> Gf128 {
     assert_eq!(a.len(), b.len());
-    let mut acc = Gf128::ZERO;
+    let mut acc = Gf128Product::zero();
     for (x, y) in a.iter().zip(b.iter()) {
-        acc += *x * *y;
+        acc ^= x.mul_unreduced(*y);
     }
-    acc
+    acc.reduce()
 }
 
 /// Length above which the inner product / element-wise kernels split via
@@ -1121,22 +1122,14 @@ fn sumcheck_round_eval_par(c: &[Gf128], z: &[Gf128]) -> (Gf128, Gf128) {
     debug_assert_eq!(z.len(), c.len());
     let (clo, chi) = c.split_at(half);
     let (zlo, zhi) = z.split_at(half);
-    if half < SUMCHECK_PAR_THRESHOLD {
-        let mut e1 = Gf128::ZERO;
-        let mut einf = Gf128::ZERO;
-        for i in 0..half {
-            e1 += chi[i] * zhi[i];
-            einf += (chi[i] + clo[i]) * (zhi[i] + zlo[i]);
-        }
-        return (e1, einf);
+    if half < SUMCHECK_PAR_THRESHOLD || rayon::current_num_threads() == 1 {
+        return product::message([clo, chi], [zlo, zhi]);
     }
-    (0..half)
-        .into_par_iter()
-        .map(|i| {
-            let e1_i = chi[i] * zhi[i];
-            let einf_i = (chi[i] + clo[i]) * (zhi[i] + zlo[i]);
-            (e1_i, einf_i)
-        })
+    clo.par_chunks(SUMCHECK_PAR_THRESHOLD)
+        .zip(chi.par_chunks(SUMCHECK_PAR_THRESHOLD))
+        .zip(zlo.par_chunks(SUMCHECK_PAR_THRESHOLD))
+        .zip(zhi.par_chunks(SUMCHECK_PAR_THRESHOLD))
+        .map(|(((c0, c1), z0), z1)| product::message([c0, c1], [z0, z1]))
         .reduce(|| (Gf128::ZERO, Gf128::ZERO), |a, b| (a.0 + b.0, a.1 + b.1))
 }
 
@@ -1206,41 +1199,19 @@ fn sumcheck_bind_both_and_eval_next(
     let (zq0, zq1) = z_lo.split_at_mut(half2);
     let (zq2, zq3) = z_hi.split_at(half2);
 
-    let (e1, einf) = if half2 < SUMCHECK_PAR_THRESHOLD {
-        let mut e1 = Gf128::ZERO;
-        let mut einf = Gf128::ZERO;
-        for i in 0..half2 {
-            let lo = cq0[i] + r * (cq2[i] + cq0[i]);
-            let hi = cq1[i] + r * (cq3[i] + cq1[i]);
-            let zlo = zq0[i] + r * (zq2[i] + zq0[i]);
-            let zhi = zq1[i] + r * (zq3[i] + zq1[i]);
-            cq0[i] = lo;
-            cq1[i] = hi;
-            zq0[i] = zlo;
-            zq1[i] = zhi;
-            e1 += hi * zhi;
-            einf += (hi + lo) * (zhi + zlo);
-        }
-        (e1, einf)
+    let (e1, einf) = if half2 < SUMCHECK_PAR_THRESHOLD || rayon::current_num_threads() == 1 {
+        product::fold_and_message([cq0, cq1], [cq2, cq3], [zq0, zq1], [zq2, zq3], r)
     } else {
-        cq0.par_iter_mut()
-            .zip(cq1.par_iter_mut())
-            .zip(cq2.par_iter())
-            .zip(cq3.par_iter())
-            .zip(zq0.par_iter_mut())
-            .zip(zq1.par_iter_mut())
-            .zip(zq2.par_iter())
-            .zip(zq3.par_iter())
+        cq0.par_chunks_mut(SUMCHECK_PAR_THRESHOLD)
+            .zip(cq1.par_chunks_mut(SUMCHECK_PAR_THRESHOLD))
+            .zip(cq2.par_chunks(SUMCHECK_PAR_THRESHOLD))
+            .zip(cq3.par_chunks(SUMCHECK_PAR_THRESHOLD))
+            .zip(zq0.par_chunks_mut(SUMCHECK_PAR_THRESHOLD))
+            .zip(zq1.par_chunks_mut(SUMCHECK_PAR_THRESHOLD))
+            .zip(zq2.par_chunks(SUMCHECK_PAR_THRESHOLD))
+            .zip(zq3.par_chunks(SUMCHECK_PAR_THRESHOLD))
             .map(|(((((((c0, c1), c2), c3), z0), z1), z2), z3)| {
-                let lo = *c0 + r * (*c2 + *c0);
-                let hi = *c1 + r * (*c3 + *c1);
-                let zlo = *z0 + r * (*z2 + *z0);
-                let zhi = *z1 + r * (*z3 + *z1);
-                *c0 = lo;
-                *c1 = hi;
-                *z0 = zlo;
-                *z1 = zhi;
-                (hi * zhi, (hi + lo) * (zhi + zlo))
+                product::fold_and_message([c0, c1], [c2, c3], [z0, z1], [z2, z3], r)
             })
             .reduce(|| (Gf128::ZERO, Gf128::ZERO), |a, b| (a.0 + b.0, a.1 + b.1))
     };
@@ -1728,6 +1699,105 @@ mod tests {
         }
         fn bits(&mut self, n: usize) -> Vec<bool> {
             (0..n).map(|_| self.next_u64() & 1 == 1).collect()
+        }
+    }
+
+    #[test]
+    fn product_sumcheck_matches_reduced_reference_through_every_round() {
+        fn reference(c: &[Gf128], z: &[Gf128]) -> (Gf128, Gf128) {
+            let half = c.len() / 2;
+            (0..half).fold((Gf128::ZERO, Gf128::ZERO), |(one, inf), i| {
+                (
+                    one + c[i + half] * z[i + half],
+                    inf + (c[i] + c[i + half]) * (z[i] + z[i + half]),
+                )
+            })
+        }
+        for threads in [1, 2] {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .unwrap()
+                .install(|| {
+                    let mut rng = Rng::new(0x1cde_fe22);
+                    for log in [1, 2, 3, 5, 9, 13, 15] {
+                        let mut c = rng.f128_vec(1 << log);
+                        let mut z = rng.f128_vec(1 << log);
+                        // Include zero, one and all-one polynomial words.
+                        c[0] = Gf128::ZERO;
+                        z[0] = Gf128::ONE;
+                        c[1] = Gf128::new(u64::MAX, u64::MAX);
+                        assert_eq!(sumcheck_round_eval_par(&c, &z), reference(&c, &z));
+                        assert_eq!(
+                            inner_product(&c, &z),
+                            c.iter()
+                                .zip(&z)
+                                .fold(Gf128::ZERO, |sum, (&x, &y)| sum + x * y)
+                        );
+                        let mut round = 0;
+                        while c.len() >= 4 {
+                            let r = match round % 3 {
+                                0 => Gf128::ZERO,
+                                1 => Gf128::ONE,
+                                _ => rng.f128(),
+                            };
+                            let half = c.len() / 2;
+                            let expected_c: Vec<_> =
+                                (0..half).map(|i| c[i] + r * (c[i] + c[i + half])).collect();
+                            let expected_z: Vec<_> =
+                                (0..half).map(|i| z[i] + r * (z[i] + z[i + half])).collect();
+                            let message = sumcheck_bind_both_and_eval_next(&mut c, &mut z, r);
+                            assert_eq!(c, expected_c);
+                            assert_eq!(z, expected_z);
+                            assert_eq!(message, reference(&expected_c, &expected_z));
+                            round += 1;
+                        }
+                    }
+                    assert_eq!(inner_product(&[], &[]), Gf128::ZERO);
+                });
+        }
+    }
+
+    #[test]
+    fn product_sumcheck_vector_tails_match_reduced_reference() {
+        let mut rng = Rng::new(0x21aa_102a);
+        for n in [0, 1, 2, 3, 4, 5, 7, 9, 17] {
+            let mut c0 = rng.f128_vec(n);
+            let mut c1 = rng.f128_vec(n);
+            let mut z0 = rng.f128_vec(n);
+            let mut z1 = rng.f128_vec(n);
+            let c2 = rng.f128_vec(n);
+            let c3 = rng.f128_vec(n);
+            let z2 = rng.f128_vec(n);
+            let z3 = rng.f128_vec(n);
+            let r = rng.f128();
+            let expected: Vec<_> = (0..n)
+                .map(|i| {
+                    [
+                        c0[i] + r * (c0[i] + c2[i]),
+                        c1[i] + r * (c1[i] + c3[i]),
+                        z0[i] + r * (z0[i] + z2[i]),
+                        z1[i] + r * (z1[i] + z3[i]),
+                    ]
+                })
+                .collect();
+            let message = product::fold_and_message(
+                [&mut c0, &mut c1],
+                [&c2, &c3],
+                [&mut z0, &mut z1],
+                [&z2, &z3],
+                r,
+            );
+            for (i, &[a, b, c, d]) in expected.iter().enumerate() {
+                assert_eq!([c0[i], c1[i], z0[i], z1[i]], [a, b, c, d]);
+            }
+            let reference = expected
+                .iter()
+                .fold((Gf128::ZERO, Gf128::ZERO), |sum, &[a, b, c, d]| {
+                    (sum.0 + b * d, sum.1 + (a + b) * (c + d))
+                });
+            assert_eq!(message, reference);
+            assert_eq!(product::message([&c0, &c1], [&z0, &z1]), reference);
         }
     }
 

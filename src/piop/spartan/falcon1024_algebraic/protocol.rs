@@ -824,7 +824,7 @@ mod tests {
     #[test]
     fn serial_and_optimized_binding_preserve_complete_proof_contents() {
         const BATCH: usize = 1024;
-        let pools = [1, 8].map(|threads| {
+        let pools = [1, 2, 8].map(|threads| {
             rayon::ThreadPoolBuilder::new()
                 .num_threads(threads)
                 .stack_size(8 << 20)
@@ -850,7 +850,7 @@ mod tests {
             let run = |pool: &rayon::ThreadPool, threads| {
                 pool.install(|| {
                     assert_eq!(rayon::current_num_threads(), threads);
-                    assert_eq!(arithmetic::optimized_binding(BATCH), threads == 8);
+                    assert_eq!(arithmetic::optimized_binding(BATCH), matches!(threads, 1 | 8));
                     let prepared = PreparedFalconAlgebraic::new(BATCH, target).unwrap();
                     let committed = prepared.commit(public.clone(), witness.clone()).unwrap();
                     let root = *committed.source_root();
@@ -863,10 +863,12 @@ mod tests {
                     (root, format!("{proof:?}"))
                 })
             };
-            let serial = run(&pools[0], 1);
-            let optimized = run(&pools[1], 8);
-            assert_eq!(serial.0, optimized.0, "degree={N}, security={target}");
-            assert_eq!(serial.1, optimized.1, "degree={N}, security={target}");
+            let reference = run(&pools[1], 2);
+            for (index, threads) in [(0, 1), (2, 8)] {
+                let optimized = run(&pools[index], threads);
+                assert_eq!(reference.0, optimized.0, "degree={N}, security={target}");
+                assert_eq!(reference.1, optimized.1, "degree={N}, security={target}");
+            }
         }
     }
 

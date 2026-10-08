@@ -412,6 +412,23 @@ impl GatherState {
             return;
         }
         let start = self.word_axis;
+        if start == 0 {
+            // A local word occupies one contiguous repeat interval. Search
+            // the sparse support once for the tile, rather than twice for
+            // every repeated signature in the interval.
+            let repeat_log = self.high.len().ilog2() as usize;
+            let first = self.words.partition_point(|&word| word < (range.start >> repeat_log));
+            let end = self.words.partition_point(|&word| word <= ((range.end - 1) >> repeat_log));
+            for (&word, &coefficient) in self.words[first..end].iter().zip(&self.low[first..end]) {
+                let base = word << repeat_log;
+                let first_repeat = range.start.saturating_sub(base);
+                let end_repeat = (range.end - base).min(self.high.len());
+                for repeat in first_repeat..end_repeat {
+                    emit(base + repeat, coefficient * self.high[repeat]);
+                }
+            }
+            return;
+        }
         let outer_shift = start + self.high.len().ilog2() as usize;
         for outer in range.start >> outer_shift..=((range.end - 1) >> outer_shift) {
             let base = outer << outer_shift;

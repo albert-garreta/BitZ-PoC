@@ -107,9 +107,31 @@ fn fixture(
 
 fn dense_oracle(row_vars: usize, column_vars: usize, prefix: usize, scale: Field, f: &FieldConfig) {
     let (source, row, column, bits) = fixture(row_vars, column_vars, f);
-    let n = row_vars + column_vars;
-    let coefficients = source
-        .values
+    assert_dense_oracle(
+        &source,
+        &source.values,
+        &row,
+        &column,
+        &bits,
+        prefix,
+        scale,
+        f,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn assert_dense_oracle(
+    source: &impl StreamingCoefficientSource,
+    integer_values: &[Field],
+    row: &[Field],
+    column: &[Field],
+    bits: &[u64],
+    prefix: usize,
+    scale: Field,
+    f: &FieldConfig,
+) {
+    let n = source.num_vars();
+    let coefficients = integer_values
         .iter()
         .enumerate()
         .map(|(i, z)| {
@@ -119,7 +141,7 @@ fn dense_oracle(row_vars: usize, column_vars: usize, prefix: usize, scale: Field
             )
         })
         .collect::<Vec<_>>();
-    let h = (0..source.values.len())
+    let h = (0..integer_values.len())
         .map(|i| {
             if bits[i / 64] >> (i % 64) & 1 == 1 {
                 f.one()
@@ -138,13 +160,13 @@ fn dense_oracle(row_vars: usize, column_vars: usize, prefix: usize, scale: Field
         &mut actual_transcript,
         claim,
         FactoredOverlayInput::new(
-            &source,
-            &bits,
-            &row,
-            &column,
+            source,
+            bits,
+            row,
+            column,
             scale,
             n,
-            source.values.len(),
+            integer_values.len(),
             prefix,
         ),
         (),
@@ -162,8 +184,11 @@ fn dense_oracle(row_vars: usize, column_vars: usize, prefix: usize, scale: Field
     )
     .unwrap();
     assert_eq!(
-        actual, expected,
-        "rows={row_vars}, columns={column_vars}, prefix={prefix}"
+        actual,
+        expected,
+        "rows={}, columns={}, prefix={prefix}",
+        row.len(),
+        column.len()
     );
     assert_eq!(
         actual_transcript.get_challenge::<u128>(),
@@ -268,4 +293,132 @@ fn factored_overlay_rejects_invalid_shape_and_claim() {
         )
         .is_err()
     );
+}
+
+/// Exercise the source adapters used by the Falcon integer binder, including
+/// sparse final coefficients and overlapping, out-of-order additive updates.
+struct FoldedSource<'a> {
+    source: &'a IntegerSource,
+    f: &'a FieldConfig,
+    additive: bool,
+}
+
+impl FoldedSource<'_> {
+    fn replay(
+        &self,
+        partition: usize,
+        weights: &[Field],
+        emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+    ) -> Result<(), SumcheckError> {
+        let start = partition * self.source.partition;
+        let mut entries = Vec::new();
+        for (i, block) in self.source.values[start..start + self.source.partition]
+            .chunks_exact(weights.len())
+            .enumerate()
+        {
+            let value = block
+                .iter()
+                .zip(weights)
+                .fold(self.f.zero(), |sum, (a, b)| {
+                    self.f.add(&sum, &self.f.mul(a, b))
+                });
+            if value != self.f.zero() {
+                entries.push((start / weights.len() + i, value));
+            }
+        }
+        if self.additive {
+            // Each final value is 2*z + (-z), in reverse index order.
+            for (index, value) in entries.into_iter().rev() {
+                emit(index, self.f.add(&value, &value))?;
+                emit(index, self.f.neg(&value))?;
+            }
+        } else {
+            for (index, value) in entries {
+                emit(index, value)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl StreamingCoefficientSource for FoldedSource<'_> {
+    fn num_vars(&self) -> usize {
+        self.source.num_vars()
+    }
+    fn live_len(&self) -> usize {
+        self.source.live_len()
+    }
+    fn partition_len(&self) -> usize {
+        self.source.partition_len()
+    }
+    fn for_each_coefficient(
+        &self,
+        emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+    ) -> Result<(), SumcheckError> {
+        self.source.for_each_coefficient(emit)
+    }
+    fn for_each_partition(
+        &self,
+        partition: usize,
+        emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+    ) -> Result<(), SumcheckError> {
+        self.source.for_each_partition(partition, emit)
+    }
+    fn for_each_partition_folded(
+        &self,
+        partition: usize,
+        weights: &[Field],
+        emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+    ) -> Option<Result<(), SumcheckError>> {
+        self.additive.then(|| self.replay(partition, weights, emit))
+    }
+    fn for_each_partition_folded_final(
+        &self,
+        partition: usize,
+        weights: &[Field],
+        emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+    ) -> Option<Result<(), SumcheckError>> {
+        (!self.additive).then(|| self.replay(partition, weights, emit))
+    }
+}
+
+#[test]
+fn factored_overlay_folded_replays_preserve_sparse_ring_proof_and_transcript() {
+    let f = crate::prime_sampling::sample_prime_context(
+        &mut Blake3Transcript::new(),
+        1u128 << 125,
+        (1u128 << 126) - 1,
+        128,
+    )
+    .unwrap();
+    let (mut source, row, column, bits) = fixture(2, 8, &f);
+    for (index, value) in source.values.iter_mut().enumerate() {
+        // Missing coefficient pairs must retain their nonzero ring terms.
+        if (index / 32) % 3 == 0 {
+            *value = f.zero();
+        } else if index % 2 == 0 {
+            *value = f.neg(value);
+        }
+    }
+    for additive in [false, true] {
+        let folded = FoldedSource {
+            source: &source,
+            f: &f,
+            additive,
+        };
+        for prefix in [0, 3, 4] {
+            for scale in [f.zero(), f.one(), f.neg(&Field::from_with_cfg(137u64, &f))] {
+                assert_dense_oracle(
+                    &folded,
+                    &source.values,
+                    &row,
+                    &column,
+                    &bits,
+                    prefix,
+                    scale,
+                    &f,
+                );
+            }
+        }
+    }
 }

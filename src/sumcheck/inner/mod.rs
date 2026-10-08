@@ -171,6 +171,3 @@ pub struct DynamicBatchedInnerSumcheckOutput<E> {
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-mod skipped_experiment;

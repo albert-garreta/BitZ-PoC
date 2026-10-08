@@ -287,6 +287,7 @@ impl Source {
     pub fn rows(&self) -> &[Vec<u64>] {
         &self.rows
     }
+    #[cfg(test)]
     pub fn bit(&self, index: usize) -> bool {
         self.rows[index >> 13][(index & 8191) >> 6] >> (index & 63) & 1 != 0
     }
