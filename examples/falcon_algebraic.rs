@@ -12,6 +12,10 @@ mod falcon_degree_inputs;
 mod falcon_affinity;
 
 #[cfg(feature = "falcon-hybrid")]
+#[path = "../benches/common/falcon_stage_timings.rs"]
+mod falcon_stage_timings;
+
+#[cfg(feature = "falcon-hybrid")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use clap::Parser;
     use serde_json::json;
@@ -56,11 +60,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("set RAYON_NUM_THREADS to match --threads for the auxiliary Flock pool".into());
     }
     if options.trace {
-        tracing_subscriber::fmt()
-            .with_writer(std::io::stderr)
-            .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
-            .with_max_level(tracing::Level::INFO)
-            .init();
+        use tracing_subscriber::prelude::*;
+        tracing_subscriber::registry()
+            .with(falcon_stage_timings::StageTimings)
+            .try_init()?;
     }
     falcon_degree_inputs::reject_fixture_overrides()?;
     macro_rules! run {
@@ -108,6 +111,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let start = Instant::now();
                 prepared.verify(&public, &proof)?;
                 let verify_ms = start.elapsed().as_secs_f64() * 1000.0;
+                // Exact-build comparison only; hashing is outside every timed phase.
+                use std::fmt::Write;
+                let mut proof_hash = DebugHasher(blake3::Hasher::new());
+                write!(&mut proof_hash, "{proof:?}")?;
+                let proof_debug_digest = proof_hash.0.finalize().to_hex().to_string();
                 let peak_rss_kib: Option<u64> =
                     std::fs::read_to_string("/proc/self/status")
                         .ok()
@@ -143,6 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "preparation_mode": "combined", "witness_commit_ms": witness_commit_ms,
                         "prove_ms": prove_ms, "total_prover_ms": total_prover_ms,
                         "verify_ms": verify_ms, "proof_payload_bytes": proof.payload_size_bytes(),
+                        "proof_debug_digest": proof_debug_digest,
                         "proof_payload_breakdown": proof.payload_size_breakdown(),
                         "live_bits_per_signature": prepared.live_bits_per_signature(),
                         "source_bits_per_signature": prepared.source_bits_per_signature(),
@@ -168,4 +177,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn main() {
     eprintln!("falcon_algebraic requires --features falcon-hybrid");
     std::process::exit(2);
+}
+
+#[cfg(feature = "falcon-hybrid")]
+struct DebugHasher(blake3::Hasher);
+#[cfg(feature = "falcon-hybrid")]
+impl std::fmt::Write for DebugHasher {
+    fn write_str(&mut self, value: &str) -> std::fmt::Result {
+        self.0.update(value.as_bytes());
+        Ok(())
+    }
 }
