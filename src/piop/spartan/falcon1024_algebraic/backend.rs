@@ -3,6 +3,10 @@ mod protocol;
 mod ring;
 mod source;
 
+#[cfg(feature = "bench-internals")]
+#[doc(hidden)]
+pub mod packing_bench;
+
 pub use super::falcon::FalconError;
 pub use protocol::{
     CommittedFalconAlgebraic, FalconAlgebraicProof, FalconAlgebraicSecurity,

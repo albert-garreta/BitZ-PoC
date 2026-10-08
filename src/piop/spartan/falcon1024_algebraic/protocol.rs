@@ -279,7 +279,11 @@ impl PreparedFalconAlgebraic {
         statement: FalconAlgebraicStatement,
         data: WitnessData,
     ) -> Result<CommittedFalconAlgebraic, FalconError> {
-        let source = Source::new(self.layout, &data);
+        #[cfg(feature = "bench-internals")]
+        let pack = super::packing_bench::constructor()?;
+        #[cfg(not(feature = "bench-internals"))]
+        let pack = Source::new;
+        let source = pack(self.layout, &data);
         self.commit_source(statement, data, source)
     }
 
@@ -383,6 +387,14 @@ impl PreparedFalconAlgebraic {
         &self,
         committed: CommittedFalconAlgebraic,
     ) -> Result<FalconAlgebraicProof, FalconError> {
+        self.prove_observed(committed, |_| {})
+    }
+
+    fn prove_observed(
+        &self,
+        committed: CommittedFalconAlgebraic,
+        observe: impl FnOnce(&mut Blake3Transcript),
+    ) -> Result<FalconAlgebraicProof, FalconError> {
         if committed.source.layout() != &self.layout || committed.target_bits != self.target_bits {
             return Err(error("algebraic commitment configuration mismatch"));
         }
@@ -471,6 +483,7 @@ impl PreparedFalconAlgebraic {
         )
         .map_err(error)?;
         let opening_nonces = opening_t.finish();
+        observe(&mut t);
         Ok(FalconAlgebraicProof {
             source_root: committed.source_root,
             ring,
@@ -488,6 +501,15 @@ impl PreparedFalconAlgebraic {
         &self,
         public: &FalconAlgebraicStatement,
         proof: &FalconAlgebraicProof,
+    ) -> Result<(), FalconError> {
+        self.verify_observed(public, proof, |_| {})
+    }
+
+    fn verify_observed(
+        &self,
+        public: &FalconAlgebraicStatement,
+        proof: &FalconAlgebraicProof,
+        observe: impl FnOnce(&mut Blake3Transcript),
     ) -> Result<(), FalconError> {
         let (mut t, digest) = self.transcript(public, &proof.source_root)?;
         let field = sample_field(&mut t)?;
@@ -561,7 +583,9 @@ impl PreparedFalconAlgebraic {
             Some(&mut pcs),
         )
         .map_err(error)?;
-        opening_t.finish().map_err(error)
+        opening_t.finish().map_err(error)?;
+        observe(&mut t);
+        Ok(())
     }
 }
 
@@ -732,6 +756,67 @@ mod tests {
                     separate_proof.payload_size_breakdown()
                 );
             }
+        }
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn packing_preserves_complete_proofs_and_transcript_continuation() {
+        for workers in [1, 2, 4, 8] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .stack_size(8 << 20)
+                .build()
+                .unwrap();
+            pool.install(|| {
+                for target in [100, 128] {
+                    for batch in [1, 3, 17, 33, 1024] {
+                        let prepared = PreparedFalconAlgebraic::new(batch, target).unwrap();
+                        let (public, witness) = fixture(batch);
+                        let data = WitnessData::new(&public, witness).unwrap();
+                        let mut reference = None;
+                        for (name, pack) in [
+                            ("serial", Source::new as fn(Layout, &WitnessData) -> Source),
+                            ("parallel", Source::new_parallel),
+                        ] {
+                            let source = pack(prepared.layout, &data);
+                            let committed = prepared
+                                .commit_source(public.clone(), data.clone(), source)
+                                .unwrap();
+                            let root = *committed.source_root();
+                            let mut prover_next = [0_u64; 4];
+                            let proof = prepared
+                                .prove_observed(committed, |t| {
+                                    prover_next = std::array::from_fn(|_| t.get_challenge());
+                                })
+                                .unwrap();
+                            let mut verifier_next = [0_u64; 4];
+                            prepared
+                                .verify_observed(&public, &proof, |t| {
+                                    verifier_next = std::array::from_fn(|_| t.get_challenge());
+                                })
+                                .unwrap();
+                            assert_eq!(prover_next, verifier_next);
+                            // Every nested proof derives Debug, including all
+                            // projection, binding, opening, and PCS nonces.
+                            let contents = (
+                                root,
+                                format!("{proof:?}"),
+                                prover_next,
+                                proof.payload_size_breakdown(),
+                            );
+                            if let Some(expected) = &reference {
+                                assert_eq!(
+                                    &contents, expected,
+                                    "degree={N}, batch={batch}, target={target}, workers={workers}, packing={name}"
+                                );
+                            } else {
+                                reference = Some(contents);
+                            }
+                        }
+                    }
+                }
+            });
         }
     }
 

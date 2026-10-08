@@ -40,6 +40,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         /// Print tracing span timings (ring, norm, binding, BitZ, and PCS).
         #[arg(long)]
         trace: bool,
+        /// Measure packing on a prederived witness (requires bench-internals).
+        #[cfg(feature = "bench-internals")]
+        #[arg(long)]
+        packing_only: bool,
+        #[cfg(feature = "bench-internals")]
+        #[arg(long, default_value_t = 32)]
+        packing_repetitions: usize,
     }
 
     let options = Options::parse();
@@ -98,6 +105,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             let external_input_ms = start.elapsed().as_secs_f64() * 1000.0;
 
+            #[cfg(feature = "bench-internals")]
+            if options.packing_only {
+                for trial in 0..trials {
+                    let (packing_ms, packed_digest) = bitz::piop::spartan::$algebraic::packing_bench::measure(
+                        &public, s2.clone(), options.packing_repetitions,
+                    )?;
+                    println!("{}", json!({
+                        "degree": $degree, "batch": options.batch, "security_bits": options.security,
+                        "threads": observed_threads, "auxiliary_pool_threads": auxiliary_threads,
+                        "cpu_affinity": affinity, "seed": options.seed, "input_digest": input_digest,
+                        "trial": if trial < options.warmup { "warmup" } else { "sample" },
+                        "iteration": trial.checked_sub(options.warmup), "packing_ms": packing_ms,
+                        "packing_repetitions": options.packing_repetitions, "packed_digest": packed_digest,
+                        "packing_strategy": bitz::piop::spartan::$algebraic::packing_bench::selected(options.batch)?,
+                    }));
+                }
+                return Ok(());
+            }
+
             for trial in 0..trials {
                 let statement = public.clone();
                 let coefficients = s2.clone();
@@ -111,10 +137,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let start = Instant::now();
                 prepared.verify(&public, &proof)?;
                 let verify_ms = start.elapsed().as_secs_f64() * 1000.0;
+                #[cfg(feature = "bench-internals")]
+                let packing_strategy = bitz::piop::spartan::$algebraic::packing_bench::selected(options.batch)?;
+                #[cfg(not(feature = "bench-internals"))]
+                let packing_strategy = "serial-word";
                 // Exact-build comparison only; hashing is outside every timed phase.
-                use std::fmt::Write;
                 let mut proof_hash = DebugHasher(blake3::Hasher::new());
-                write!(&mut proof_hash, "{proof:?}")?;
+                std::fmt::write(&mut proof_hash, format_args!("{proof:?}"))?;
                 let proof_debug_digest = proof_hash.0.finalize().to_hex().to_string();
                 let peak_rss_kib: Option<u64> =
                     std::fs::read_to_string("/proc/self/status")
@@ -136,6 +165,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "extension_degree": 11,
                         "protocol_id": PROTOCOL_ID,
                         "verified": true,
+                        "packing_strategy": packing_strategy,
+                        "source_root": proof.source_root(),
                         "layout_version": 2,
                         "source_layout": "aligned16-v2",
                         "coefficient_stride": 16,

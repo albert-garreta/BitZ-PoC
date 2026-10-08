@@ -1,5 +1,6 @@
 use super::{BETA_SQUARED, COEFFICIENT_LOG, FalconError, N, Q, SLACK_BITS, error};
 use crate::pcs::IntegerMatrixLayout;
+#[cfg(test)]
 use crate::piop::spartan::falcon_bit_layout::{coefficient_bit, slack_bit};
 use crate::piop::spartan::falcon_polynomial::integer_polynomial_product;
 #[cfg(feature = "parallel")]
@@ -249,38 +250,37 @@ pub(super) struct Source {
 
 impl Source {
     pub fn new(layout: Layout, data: &WitnessData) -> Self {
+        Self::pack(layout, data, false)
+    }
+
+    #[cfg(any(test, feature = "bench-internals"))]
+    pub fn new_parallel(layout: Layout, data: &WitnessData) -> Self {
+        Self::pack(layout, data, true)
+    }
+
+    fn pack(layout: Layout, data: &WitnessData, parallel: bool) -> Self {
         let p = layout.bitz_params();
         let mut source = Self {
             layout,
             rows: vec![vec![0; p.rows() / 64]; p.cols()],
         };
-        for i in 0..layout.batch() {
-            let base = i * layout.signature_stride();
-            for j in 0..N {
-                for (polynomial, coefficient) in
-                    [(0, data.witness.s1[i][j]), (1, data.witness.s2[i][j])]
-                {
-                    source.put(
-                        base + coefficient_bit(N, polynomial, j, 0),
-                        15,
-                        (i32::from(coefficient) & 0x7fff) as u64,
-                    );
-                }
+        let columns_per_signature = layout.signature_stride() / p.rows();
+        let live = &mut source.rows[..layout.batch() * columns_per_signature];
+        if parallel {
+            #[cfg(feature = "parallel")]
+            if rayon::current_num_threads() > 1 {
+                live.par_chunks_mut(columns_per_signature)
+                    .enumerate()
+                    .for_each(|(i, columns)| pack_signature(columns, data, i));
+                return source;
             }
-            for bit in 0..SLACK_BITS {
-                source.put(base + slack_bit(bit), 1, (data.slacks[i] >> bit) & 1);
-            }
+        }
+        for (i, columns) in live.chunks_mut(columns_per_signature).enumerate() {
+            pack_signature(columns, data, i);
         }
         source
     }
-    fn put(&mut self, offset: usize, width: usize, value: u64) {
-        for b in 0..width {
-            if value >> b & 1 != 0 {
-                let index = offset + b;
-                self.rows[index >> 13][(index & 8191) >> 6] |= 1 << (index & 63);
-            }
-        }
-    }
+
     pub fn layout(&self) -> &Layout {
         &self.layout
     }
@@ -296,9 +296,113 @@ impl Source {
     }
 }
 
+fn pack_signature(columns: &mut [Vec<u64>], data: &WitnessData, signature: usize) {
+    // A column contains 512 aligned signed15 lanes, in polynomial-major order.
+    let coefficients = data.witness.s1[signature]
+        .chunks_exact(512)
+        .chain(data.witness.s2[signature].chunks_exact(512));
+    for (column, coefficients) in columns.iter_mut().zip(coefficients) {
+        for (word, lanes) in column.iter_mut().zip(coefficients.chunks_exact(4)) {
+            *word = (u64::from(lanes[0] as u16) & 0x7fff)
+                | ((u64::from(lanes[1] as u16) & 0x7fff) << 16)
+                | ((u64::from(lanes[2] as u16) & 0x7fff) << 32)
+                | ((u64::from(lanes[3] as u16) & 0x7fff) << 48);
+        }
+    }
+    // Coefficient stores leave the high lane bits clear. Insert slack afterward.
+    for bit in 0..SLACK_BITS {
+        columns[0][bit / 4] |= ((data.slacks[signature] >> bit) & 1) << (16 * (bit % 4) + 15);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn assert_encoding(source: &Source, data: &WitnessData) {
+        let layout = source.layout();
+        for signature in 0..layout.batch() {
+            let base = signature * layout.signature_stride();
+            for (polynomial, coefficients) in
+                [&data.witness.s1[signature], &data.witness.s2[signature]]
+                    .into_iter()
+                    .enumerate()
+            {
+                for (j, &coefficient) in coefficients.iter().enumerate() {
+                    let decoded = (0..15).fold(0_u16, |value, bit| {
+                        value
+                            | (u16::from(source.bit(base + coefficient_bit(N, polynomial, j, bit)))
+                                << bit)
+                    });
+                    assert_eq!(decoded, coefficient as u16 & 0x7fff);
+                }
+            }
+            let slack = (0..SLACK_BITS).fold(0_u64, |value, bit| {
+                value | (u64::from(source.bit(base + slack_bit(bit))) << bit)
+            });
+            assert_eq!(slack, data.slacks[signature]);
+        }
+        for index in 0..layout.source_bits() {
+            if !layout.is_live(index) {
+                assert!(!source.bit(index));
+            }
+        }
+    }
+
+    #[test]
+    fn packing_strategies_match_every_word() {
+        let mut random = 0x5eeda11ce_u64;
+        for batch in [
+            1, 3, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256, 257, 511, 512,
+            513, 1024,
+        ] {
+            let layout = Layout::new(batch).unwrap();
+            let mut data = WitnessData {
+                witness: FalconAlgebraicWitness {
+                    s1: vec![[0; N]; batch],
+                    s2: vec![[0; N]; batch],
+                },
+                slacks: (0..batch)
+                    .map(|i| match i % 4 {
+                        0 => 0,
+                        1 => (1 << SLACK_BITS) - 1,
+                        2 => 1 << (SLACK_BITS - 1),
+                        _ => 0x2aaaaaa & ((1 << SLACK_BITS) - 1),
+                    })
+                    .collect(),
+                quotients: Vec::new(),
+            };
+            for polynomial in data.witness.s1.iter_mut().chain(&mut data.witness.s2) {
+                for (j, coefficient) in polynomial.iter_mut().enumerate() {
+                    random ^= random << 13;
+                    random ^= random >> 7;
+                    random ^= random << 17;
+                    *coefficient = match j % 17 {
+                        0 => -16384,
+                        1 => -1,
+                        2 => 0,
+                        3 => 16383,
+                        _ => (random as i16) >> 1,
+                    };
+                }
+            }
+            let reference = Source::new(layout, &data);
+            assert_encoding(&reference, &data);
+            #[cfg(feature = "parallel")]
+            for workers in [1, 2, 4, 8] {
+                let pool = rayon::ThreadPoolBuilder::new()
+                    .num_threads(workers)
+                    .build()
+                    .unwrap();
+                let actual = pool.install(|| Source::new_parallel(layout, &data));
+                assert_eq!(
+                    reference.rows(),
+                    actual.rows(),
+                    "degree={N}, batch={batch}, workers={workers}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn exact_ring_and_norm_match_independent_schoolbook() {
