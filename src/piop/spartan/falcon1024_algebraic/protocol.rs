@@ -735,6 +735,56 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn serial_and_optimized_binding_preserve_complete_proof_contents() {
+        const BATCH: usize = 1024;
+        let pools = [1, 8].map(|threads| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .stack_size(8 << 20)
+                .build()
+                .unwrap()
+        });
+        let (mut public, mut witness) = fixture(BATCH);
+        for instance in 0..BATCH {
+            let k = 7 + (instance % 11) as i64;
+            let a = 1000 + (17 * instance % 2000) as i64;
+            let b = -(13 + (instance % 61) as i64);
+            let c = (instance % 23) as i64 - 11;
+            public.public_keys[instance][N - 1] = k as u16;
+            witness.s1[instance][0] = c as i16;
+            witness.s2[instance][1] = a as i16;
+            witness.s2[instance][17] = b as i16;
+            // c + (1 + k*x^(N-1))*(a*x + b*x^17), with x^N = -1.
+            for (coefficient, value) in [(0, c - k * a), (1, a), (16, -k * b), (17, b)] {
+                public.targets[instance][coefficient] = value.rem_euclid(Q) as u16;
+            }
+        }
+        for target in [100, 128] {
+            let run = |pool: &rayon::ThreadPool, threads| {
+                pool.install(|| {
+                    assert_eq!(rayon::current_num_threads(), threads);
+                    assert_eq!(arithmetic::optimized_binding(BATCH), threads == 8);
+                    let prepared = PreparedFalconAlgebraic::new(BATCH, target).unwrap();
+                    let committed = prepared.commit(public.clone(), witness.clone()).unwrap();
+                    let root = *committed.source_root();
+                    let proof = prepared.prove(committed).unwrap();
+                    assert_eq!(proof.source_root(), &root);
+                    prepared.verify(&public, &proof).unwrap();
+                    // Derived Debug includes every proof field, including all
+                    // ring, arithmetic, bridge, joint, opening and PCS nonces.
+                    // This compares contents within one build, not a wire codec.
+                    (root, format!("{proof:?}"))
+                })
+            };
+            let serial = run(&pools[0], 1);
+            let optimized = run(&pools[1], 8);
+            assert_eq!(serial.0, optimized.0, "degree={N}, security={target}");
+            assert_eq!(serial.1, optimized.1, "degree={N}, security={target}");
+        }
+    }
+
     #[test]
     fn combined_commit_rejects_batch_mismatches() {
         let prepared = PreparedFalconAlgebraic::new(1, 100).unwrap();

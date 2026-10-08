@@ -4,7 +4,9 @@
 //! their claimed values are fixed. The resulting linear form is streamed into
 //! a degree-two sumcheck; its final bit evaluation must be opened by BitZ.
 
-use field::RingOps;
+use field::{BatchMulAcc, RingOps};
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 use crate::{
     piop::spartan::{
@@ -141,7 +143,7 @@ pub(super) fn prove(
             &bits,
             source_rounds(layout),
             layout.source_bits(),
-            3,
+            binding_prefix_variables()?,
         ),
         (),
         &mut boundary,
@@ -371,6 +373,64 @@ struct BindingForm<'a> {
     padding: F,
 }
 
+#[derive(Clone, Copy)]
+enum BindingStrategy {
+    Optimized,
+    Legacy,
+}
+
+fn binding_workers() -> usize {
+    #[cfg(feature = "parallel")]
+    return rayon::current_num_threads();
+    #[cfg(not(feature = "parallel"))]
+    1
+}
+
+/// Keep unqualified worker counts and small batches on the original path.
+/// Eight-worker measurements qualify the large-batch range for both degrees;
+/// benchmark controls below still allow independent crossover measurements.
+pub(super) fn optimized_binding(batch: usize) -> bool {
+    binding_workers() == 8 && (256..=1024).contains(&batch)
+}
+
+fn binding_strategy(
+    name: &str,
+    optimized: &str,
+    batch: usize,
+) -> Result<BindingStrategy, FalconError> {
+    #[cfg(feature = "bench-internals")]
+    match std::env::var(name) {
+        Ok(value) if value == "legacy" => return Ok(BindingStrategy::Legacy),
+        Ok(value) if value == optimized => return Ok(BindingStrategy::Optimized),
+        Err(std::env::VarError::NotPresent) => {}
+        _ => return Err(failure(format!("{name} must be legacy or {optimized}"))),
+    }
+    #[cfg(not(feature = "bench-internals"))]
+    let _ = (name, optimized);
+    Ok(if optimized_binding(batch) {
+        BindingStrategy::Optimized
+    } else {
+        BindingStrategy::Legacy
+    })
+}
+
+fn binding_parallel(batch: usize) -> Result<bool, FalconError> {
+    #[cfg(feature = "bench-internals")]
+    match std::env::var("BITZ_FALCON_BINDING_PARALLEL") {
+        Ok(value) if value == "serial" => return Ok(false),
+        Ok(value) if value == "auto" => {
+            return Ok(2 * N * batch >= 8192 && binding_workers() > 1);
+        }
+        Err(std::env::VarError::NotPresent) => {}
+        _ => {
+            return Err(failure(
+                "BITZ_FALCON_BINDING_PARALLEL must be serial or auto",
+            ));
+        }
+    }
+    Ok(optimized_binding(batch))
+}
+
 impl<'a> BindingForm<'a> {
     fn new(
         layout: &'a Layout,
@@ -378,6 +438,31 @@ impl<'a> BindingForm<'a> {
         norm: &NormClaims,
         eta: F,
         field: &'a Cfg,
+    ) -> Result<(Self, F), FalconError> {
+        let _span = tracing::info_span!("falcon_algebraic:binding_construction").entered();
+        Self::new_with_strategy(
+            layout,
+            ring,
+            norm,
+            eta,
+            field,
+            binding_strategy(
+                "BITZ_FALCON_BINDING_CONSTRUCTION",
+                "factored",
+                layout.batch(),
+            )?,
+            binding_parallel(layout.batch())?,
+        )
+    }
+
+    fn new_with_strategy(
+        layout: &'a Layout,
+        ring: &PreparedClaim,
+        norm: &NormClaims,
+        eta: F,
+        field: &'a Cfg,
+        strategy: BindingStrategy,
+        parallel: bool,
     ) -> Result<(Self, F), FalconError> {
         let len = layout.batch() * N;
         if ring.weights_s1.len() != len
@@ -394,9 +479,7 @@ impl<'a> BindingForm<'a> {
         for i in 1..scales.len() {
             scales[i] = field.mul(&scales[i - 1], &eta);
         }
-        let weights = eq_table(&norm.point, field).map_err(failure)?;
         let instance_weights = eq_table(&norm.instance_point, field).map_err(failure)?;
-        let mut coefficients = [ring.weights_s1.clone(), ring.weights_s2.clone()];
         let mut target = ring.target;
         for side in 0..2 {
             let weighted_scale = scales[1 + 2 * side];
@@ -406,14 +489,70 @@ impl<'a> BindingForm<'a> {
                 &field.mul(&weighted_scale, &norm.terminal[side][0]),
             );
             target = field.add(&target, &field.mul(&plain_scale, &norm.terminal[side][1]));
-            for (instance, weight) in instance_weights.iter().take(layout.batch()).enumerate() {
-                let scale = field.add(&field.mul(&weighted_scale, weight), &plain_scale);
-                for j in 0..N {
-                    let index = instance * N + j;
-                    coefficients[side][index] = field.add(
-                        &coefficients[side][index],
-                        &field.mul(&scale, &weights[index]),
-                    );
+        }
+        let mut coefficients = [ring.weights_s1.clone(), ring.weights_s2.clone()];
+        match strategy {
+            BindingStrategy::Optimized => {
+                let coefficient_weights =
+                    eq_table(&norm.point[..COEFFICIENT_LOG], field).map_err(failure)?;
+                let norm_instances =
+                    eq_table(&norm.point[COEFFICIENT_LOG..], field).map_err(failure)?;
+                // eq(j, i; r) factors into coefficient and instance weights.
+                // Combine the instance factors before touching either N-word slice.
+                let fill = |(instance, (s1, s2)): (usize, (&mut [F], &mut [F]))| {
+                    for (side, values) in [s1, s2].into_iter().enumerate() {
+                        let scale = field.mul(
+                            &field.add(
+                                &field.mul(&scales[1 + 2 * side], &instance_weights[instance]),
+                                &scales[2 + 2 * side],
+                            ),
+                            &norm_instances[instance],
+                        );
+                        for (value, weight) in values.iter_mut().zip(&coefficient_weights) {
+                            *value = field.add(value, &field.mul(&scale, weight));
+                        }
+                    }
+                };
+                let [s1, s2] = &mut coefficients;
+                #[cfg(feature = "parallel")]
+                if parallel {
+                    s1.par_chunks_mut(N)
+                        .zip(s2.par_chunks_mut(N))
+                        .enumerate()
+                        .for_each(fill);
+                } else {
+                    s1.chunks_mut(N)
+                        .zip(s2.chunks_mut(N))
+                        .enumerate()
+                        .for_each(fill);
+                }
+                #[cfg(not(feature = "parallel"))]
+                {
+                    let _ = parallel;
+                    s1.chunks_mut(N)
+                        .zip(s2.chunks_mut(N))
+                        .enumerate()
+                        .for_each(fill);
+                }
+            }
+            BindingStrategy::Legacy => {
+                let weights = eq_table(&norm.point, field).map_err(failure)?;
+                for side in 0..2 {
+                    for (instance, weight) in
+                        instance_weights.iter().take(layout.batch()).enumerate()
+                    {
+                        let scale = field.add(
+                            &field.mul(&scales[1 + 2 * side], weight),
+                            &scales[2 + 2 * side],
+                        );
+                        for j in 0..N {
+                            let index = instance * N + j;
+                            coefficients[side][index] = field.add(
+                                &coefficients[side][index],
+                                &field.mul(&scale, &weights[index]),
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -437,6 +576,24 @@ impl<'a> BindingForm<'a> {
     /// Split bit-lane, coefficient and instance variables. The signed decoder
     /// is evaluated once, rather than once per coefficient or per signature.
     fn evaluate(&self, point: &[F]) -> Result<F, FalconError> {
+        let _span = tracing::info_span!("falcon_algebraic:binding_evaluation").entered();
+        self.evaluate_with_strategy(
+            point,
+            binding_strategy(
+                "BITZ_FALCON_BINDING_EVALUATION",
+                "batched",
+                self.layout.batch(),
+            )?,
+            binding_parallel(self.layout.batch())?,
+        )
+    }
+
+    fn evaluate_with_strategy(
+        &self,
+        point: &[F],
+        strategy: BindingStrategy,
+        parallel: bool,
+    ) -> Result<F, FalconError> {
         if point.len() != source_rounds(self.layout) {
             return Err(failure("algebraic source opening dimension mismatch"));
         }
@@ -456,23 +613,73 @@ impl<'a> BindingForm<'a> {
             power = self.field.add(&power, &power);
         }
         let slack_decoder = self.field.mul(&slack_decoder, &lanes[15]);
+        // Each exact accumulator holds 2*N products, independently of the
+        // batch size. The prepared reducer chooses from the public modulus
+        // and this bound; arbitrary field values need no magnitude checks.
+        enum Evaluation<'f> {
+            Batched(field::PreparedProductReduction<'f, 2>),
+            Legacy,
+        }
+        let evaluation = match strategy {
+            BindingStrategy::Optimized => {
+                Evaluation::Batched(self.field.prepare_product_reduction(2 * N))
+            }
+            BindingStrategy::Legacy => Evaluation::Legacy,
+        };
+        let evaluate_instance = |instance: usize| match &evaluation {
+            Evaluation::Batched(reduce) => {
+                let mut value = field::FpProductAcc::<2>::default();
+                for side in 0..2 {
+                    for (coefficient, weight) in self.coefficients[side]
+                        [instance * N..(instance + 1) * N]
+                        .iter()
+                        .zip(&coefficients[side * N..(side + 1) * N])
+                    {
+                        self.field.mul_acc(&mut value, coefficient, weight);
+                    }
+                }
+                reduce.reduce(value)
+            }
+            Evaluation::Legacy => {
+                let mut value = self.field.zero();
+                for side in 0..2 {
+                    for (j, coefficient_weight) in
+                        coefficients[side * N..(side + 1) * N].iter().enumerate()
+                    {
+                        value = self.field.add(
+                            &value,
+                            &self.field.mul(
+                                &self.coefficients[side][instance * N + j],
+                                coefficient_weight,
+                            ),
+                        );
+                    }
+                }
+                value
+            }
+        };
+        #[cfg(feature = "parallel")]
+        let values: Option<Vec<_>> = if parallel {
+            Some(
+                (0..self.layout.batch())
+                    .into_par_iter()
+                    .map(evaluate_instance)
+                    .collect(),
+            )
+        } else {
+            None
+        };
+        #[cfg(not(feature = "parallel"))]
+        let values: Option<Vec<F>> = {
+            let _ = parallel;
+            None
+        };
         let mut coefficient_value = self.field.zero();
         let mut slack_value = self.field.zero();
         for (instance, weight) in instances.iter().take(self.layout.batch()).enumerate() {
-            let mut value = self.field.zero();
-            for side in 0..2 {
-                for (j, coefficient_weight) in
-                    coefficients[side * N..(side + 1) * N].iter().enumerate()
-                {
-                    value = self.field.add(
-                        &value,
-                        &self.field.mul(
-                            &self.coefficients[side][instance * N + j],
-                            coefficient_weight,
-                        ),
-                    );
-                }
-            }
+            let value = values
+                .as_ref()
+                .map_or_else(|| evaluate_instance(instance), |values| values[instance]);
             coefficient_value = self
                 .field
                 .add(&coefficient_value, &self.field.mul(weight, &value));
@@ -651,6 +858,103 @@ impl StreamingCoefficientSource for BindingForm<'_> {
         })())
     }
 
+    /// A four-variable prefix keeps each signed15 coefficient and its spare
+    /// lane together. Group the two halves and their cross terms by witness
+    /// byte before expanding the shared signed decoder.
+    fn for_each_partition_byte_pair_bucket(
+        &self,
+        instance: usize,
+        read_pair: &mut impl FnMut(usize, usize) -> Result<u16, SumcheckError>,
+        emit: &mut impl FnMut(usize, u8, &[F; 8]) -> Result<(), SumcheckError>,
+    ) -> Option<Result<(), SumcheckError>> {
+        Some((|| {
+            if instance >= self.layout.capacity() {
+                return Err(SumcheckError::InvalidProductDimensions);
+            }
+            let base = instance * self.layout.signature_stride();
+            let zero = self.field.zero();
+            if instance >= self.layout.batch() {
+                let mut counts = [[0u64; 256]; 2];
+                for offset in (0..self.layout.signature_stride()).step_by(16) {
+                    let pair = read_pair(base + offset, 16)?;
+                    counts[0][usize::from(pair & 255)] += 1;
+                    counts[1][usize::from(pair >> 8)] += 1;
+                }
+                for table in 0..3 {
+                    for byte in 1..256 {
+                        let count = match table {
+                            0 | 1 => counts[table][byte],
+                            _ => counts[0][byte] + counts[1][byte],
+                        };
+                        if count != 0 {
+                            let value = self
+                                .field
+                                .mul(&self.padding, &unsigned(count as u128, self.field));
+                            emit(table, byte as u8, &[value; 8])?;
+                        }
+                    }
+                }
+                return Ok(());
+            }
+            let mut low = [zero; 256];
+            let mut high = [zero; 256];
+            let mut low_spare = [zero; 256];
+            let mut high_spare = [zero; 256];
+            let mut slack = self.slacks[instance];
+            for side in 0..2 {
+                for j in 0..N {
+                    let pair = read_pair(base + coefficient_bit(N, side, j, 0), 16)?;
+                    let low_byte = usize::from(pair & 255);
+                    let high_byte = usize::from(pair >> 8);
+                    let coefficient = self.coefficients[side][instance * N + j];
+                    let spare = if side == 0 && j < SLACK_BITS {
+                        let value = slack;
+                        slack = self.field.add(&slack, &slack);
+                        value
+                    } else {
+                        self.padding
+                    };
+                    if low_byte != 0 {
+                        low[low_byte] = self.field.add(&low[low_byte], &coefficient);
+                        low_spare[low_byte] = self.field.add(&low_spare[low_byte], &spare);
+                    }
+                    if high_byte != 0 {
+                        high[high_byte] = self.field.add(&high[high_byte], &coefficient);
+                        high_spare[high_byte] = self.field.add(&high_spare[high_byte], &spare);
+                    }
+                }
+            }
+            let high_scale = unsigned(1 << 8, self.field);
+            for table in 0..3 {
+                for byte in 1..256 {
+                    // Tables are C0 by h0, C1 by h1, and C0 by h1 + C1 by h0.
+                    let (mut lo, hi, spare) = match table {
+                        0 => (low[byte], zero, zero),
+                        1 => (zero, high[byte], high_spare[byte]),
+                        _ => (high[byte], low[byte], low_spare[byte]),
+                    };
+                    if lo == zero && hi == zero && spare == zero {
+                        continue;
+                    }
+                    let mut hi = self.field.mul(&hi, &high_scale);
+                    let mut values = [zero; 8];
+                    for lane in 0..7 {
+                        values[lane] = if lane == 6 {
+                            self.field.sub(&lo, &hi)
+                        } else {
+                            self.field.add(&lo, &hi)
+                        };
+                        lo = self.field.add(&lo, &lo);
+                        hi = self.field.add(&hi, &hi);
+                    }
+                    values[7] = self.field.add(&lo, &spare);
+                    emit(table, byte as u8, &values)?;
+                }
+            }
+            Ok(())
+        })())
+    }
+
     /// Bind up to the four lane variables once for each decoder. The replay
     /// then needs one multiplication per surviving coefficient group.
     fn for_each_partition_folded_final(
@@ -788,6 +1092,20 @@ fn verify_nonce<D: GrindingDomain>(
     }
 }
 
+/// Prefix width affects only the prover's representation, never the transcript.
+fn binding_prefix_variables() -> Result<usize, FalconError> {
+    #[cfg(feature = "bench-internals")]
+    match std::env::var("BITZ_FALCON_BINDING_PREFIX") {
+        Ok(value) if value == "3" => return Ok(3),
+        Ok(value) if value == "4" => return Ok(4),
+        Ok(_) | Err(std::env::VarError::NotUnicode(_)) => {
+            return Err(failure("BITZ_FALCON_BINDING_PREFIX must be 3 or 4"));
+        }
+        Err(std::env::VarError::NotPresent) => {}
+    }
+    Ok(3)
+}
+
 fn source_rounds(layout: &Layout) -> usize {
     layout.source_bits().ilog2() as usize
 }
@@ -821,7 +1139,6 @@ mod tests {
     use super::super::FalconAlgebraicWitness;
     use super::*;
     use crate::piop::spartan::falcon_bit_layout::slack_bit;
-    use crate::sumcheck::boundary::UngrindedRoundBoundary;
     use crate::transcript::Blake3Transcript;
     use field::Uint;
 
@@ -924,6 +1241,106 @@ mod tests {
     }
 
     #[test]
+    fn factored_construction_and_batched_evaluation_match_legacy() {
+        #[cfg(feature = "parallel")]
+        let pools: Vec<_> = [1, 8]
+            .into_iter()
+            .map(|threads| {
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(threads)
+                    .build()
+                    .unwrap()
+            })
+            .collect();
+        // Cover both prepared reduction schedules, including products close
+        // to the modulus where a short Montgomery reduction would be invalid.
+        for modulus in [(1u128 << 61) - 1, (1u128 << 127) - 1] {
+            let field = F::make_cfg(&Uint::from(modulus)).unwrap();
+            for batch in [1, 3, 8, 9, 16] {
+                let layout = Layout::new(batch).unwrap();
+                let ring = PreparedClaim {
+                    weights_s1: (0..batch * N)
+                        .map(|j| signed(j as i128 % 53 - 37, &field))
+                        .collect(),
+                    weights_s2: (0..batch * N)
+                        .map(|j| signed(j as i128 % 71 - 59, &field))
+                        .collect(),
+                    target: signed(-103, &field),
+                };
+                let instance_vars = layout.capacity().ilog2() as usize;
+                let norm = NormClaims {
+                    instance_point: (0..instance_vars)
+                        .map(|j| signed(3 * j as i128 - 7, &field))
+                        .collect(),
+                    point: (0..COEFFICIENT_LOG + instance_vars)
+                        .map(|j| signed(7 * j as i128 - 19, &field))
+                        .collect(),
+                    terminal: [
+                        [signed(-13, &field), unsigned(17, &field)],
+                        [unsigned(23, &field), signed(-29, &field)],
+                    ],
+                    slack: signed(-31, &field),
+                };
+                for eta in [field.zero(), field.one(), signed(-37, &field)] {
+                    let (legacy, target) = BindingForm::new_with_strategy(
+                        &layout,
+                        &ring,
+                        &norm,
+                        eta,
+                        &field,
+                        BindingStrategy::Legacy,
+                        false,
+                    )
+                    .unwrap();
+                    let check = |parallel| {
+                        let (actual, actual_target) = BindingForm::new_with_strategy(
+                            &layout,
+                            &ring,
+                            &norm,
+                            eta,
+                            &field,
+                            BindingStrategy::Optimized,
+                            parallel,
+                        )
+                        .unwrap();
+                        assert_eq!(actual_target, target);
+                        assert_eq!(actual.coefficients, legacy.coefficients);
+                        assert_eq!(actual.slacks, legacy.slacks);
+                        assert_eq!(actual.padding, legacy.padding);
+                        let rounds = source_rounds(&layout);
+                        for point in [
+                            vec![field.zero(); rounds],
+                            vec![field.one(); rounds],
+                            (0..rounds)
+                                .map(|j| signed(5 * j as i128 - 41, &field))
+                                .collect(),
+                        ] {
+                            assert_eq!(
+                                actual
+                                    .evaluate_with_strategy(
+                                        &point,
+                                        BindingStrategy::Optimized,
+                                        parallel,
+                                    )
+                                    .unwrap(),
+                                legacy
+                                    .evaluate_with_strategy(&point, BindingStrategy::Legacy, false,)
+                                    .unwrap(),
+                                "modulus={modulus}, batch={batch}, parallel={parallel}"
+                            );
+                        }
+                    };
+                    check(false);
+                    #[cfg(feature = "parallel")]
+                    for pool in &pools {
+                        pool.install(|| check(true));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn aligned_binding_matches_dense_evaluation_folds_and_sumcheck() {
         let field = field();
         let layout = Layout::new(3).unwrap();
@@ -994,54 +1411,130 @@ mod tests {
         // transcript rounds, not only evaluations on honest zero padding.
         let bits: Vec<_> = (0..layout.source_bits() / 64)
             .map(|j| {
-                (j as u64)
-                    .wrapping_mul(0x9e37_79b9_7f4a_7c15)
-                    .rotate_left(17)
-                    ^ 0xa591_f027_c37b_40de
+                (0..4).fold(0u64, |word, lane| {
+                    let pair = 4 * j + lane;
+                    let low = (pair % 256) as u64;
+                    let high = match (pair / 256) % 4 {
+                        0 => 0,
+                        1 => low,
+                        2 => low ^ 255,
+                        _ => (low * 73 + 19) & 255,
+                    };
+                    word | (low | high << 8) << (16 * lane)
+                })
             })
             .collect();
+        for instance in 0..layout.capacity() {
+            let start = instance * layout.signature_stride();
+            let end = start + layout.signature_stride();
+            let mut expected = vec![[field.zero(); 8]; 3 * 256];
+            for base in (start..end).step_by(16) {
+                let pair = (bits[base / 64] >> (base % 64)) as u16;
+                let low = usize::from(pair & 255);
+                let high = usize::from(pair >> 8);
+                for lane in 0..8 {
+                    let c0 = reference_coefficient(&form, base + lane);
+                    let c1 = reference_coefficient(&form, base + lane + 8);
+                    for (table, byte, coefficient) in
+                        [(0, low, c0), (1, high, c1), (2, high, c0), (2, low, c1)]
+                    {
+                        if byte != 0 {
+                            let value = &mut expected[table * 256 + byte][lane];
+                            *value = field.add(value, &coefficient);
+                        }
+                    }
+                }
+            }
+            let mut actual = vec![[field.zero(); 8]; 3 * 256];
+            let mut next_bucket = 0;
+            form.for_each_partition_byte_pair_bucket(
+                instance,
+                &mut |base, lanes| {
+                    assert_eq!(lanes, 16);
+                    assert_eq!(base % 16, 0);
+                    assert!((start..end).contains(&base));
+                    Ok((bits[base / 64] >> (base % 64)) as u16)
+                },
+                &mut |table, byte, values| {
+                    let bucket = table * 256 + usize::from(byte);
+                    assert!(bucket >= next_bucket);
+                    next_bucket = bucket + 1;
+                    actual[bucket] = *values;
+                    Ok(())
+                },
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(actual, expected, "instance={instance}");
+        }
         let claim = (0..layout.source_bits())
             .filter(|&index| bits[index / 64] >> (index % 64) & 1 != 0)
             .fold(field.zero(), |sum, index| {
                 field.add(&sum, &reference_coefficient(&form, index))
             });
-        let mut actual_transcript = Blake3Transcript::new();
-        let actual = prove_inner_sumcheck(
-            &field,
-            &mut actual_transcript,
-            claim,
-            PackedInput::new(
-                &StreamingMle::new(&form),
-                &bits,
-                form.num_vars(),
-                form.live_len(),
-                3,
-            ),
-            (),
-            &mut UngrindedRoundBoundary,
-        )
-        .unwrap();
-        let mut reference_transcript = Blake3Transcript::new();
-        let reference = prove_inner_sumcheck(
-            &field,
-            &mut reference_transcript,
-            claim,
-            PackedInput::new(
-                &|index| Ok(reference_coefficient(&form, index)),
-                &bits,
-                form.num_vars(),
-                form.live_len(),
-                3,
-            ),
-            (),
-            &mut UngrindedRoundBoundary,
-        )
-        .unwrap();
-        assert_eq!(actual, reference);
-        assert_eq!(
-            actual_transcript.get_challenge::<u128>(),
-            reference_transcript.get_challenge::<u128>()
-        );
+        for grinding_bits in [0, 2] {
+            let mut reference_transcript = Blake3Transcript::new();
+            let mut reference_boundary =
+                ProverGrindingRoundBoundary::<BindingRound>::with_round_offset(grinding_bits, 0);
+            let reference = prove_inner_sumcheck(
+                &field,
+                &mut reference_transcript,
+                claim,
+                PackedInput::new(
+                    &|index| Ok(reference_coefficient(&form, index)),
+                    &bits,
+                    form.num_vars(),
+                    form.live_len(),
+                    3,
+                ),
+                (),
+                &mut reference_boundary,
+            )
+            .unwrap();
+            let reference_nonces = reference_boundary.into_nonces();
+            let continuation = reference_transcript.get_challenge::<u128>();
+            for prefix in [3, 4] {
+                let mut actual_transcript = Blake3Transcript::new();
+                let mut boundary = ProverGrindingRoundBoundary::<BindingRound>::with_round_offset(
+                    grinding_bits,
+                    0,
+                );
+                let actual = prove_inner_sumcheck(
+                    &field,
+                    &mut actual_transcript,
+                    claim,
+                    PackedInput::new(
+                        &StreamingMle::new(&form),
+                        &bits,
+                        form.num_vars(),
+                        form.live_len(),
+                        prefix,
+                    ),
+                    (),
+                    &mut boundary,
+                )
+                .unwrap();
+                let nonces = boundary.into_nonces();
+                assert_eq!(actual, reference, "K={prefix}, grinding={grinding_bits}");
+                assert_eq!(nonces, reference_nonces);
+                assert_eq!(actual_transcript.get_challenge::<u128>(), continuation);
+                let mut verifier_transcript = Blake3Transcript::new();
+                let mut verifier_boundary =
+                    VerifierGrindingRoundBoundary::<BindingRound>::new(grinding_bits, &nonces);
+                let verified = actual
+                    .proof
+                    .verify_with_round_boundary(
+                        &mut verifier_transcript,
+                        claim,
+                        form.num_vars(),
+                        &field,
+                        &mut verifier_boundary,
+                    )
+                    .unwrap();
+                assert_eq!(verified, (actual.point, actual.final_claim));
+                assert_eq!(verifier_transcript.get_challenge::<u128>(), continuation);
+            }
+        }
     }
 
     #[test]
