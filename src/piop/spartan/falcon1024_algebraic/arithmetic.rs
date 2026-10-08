@@ -22,7 +22,8 @@ use crate::{
         boundary::{ProverGrindingRoundBoundary, VerifierGrindingRoundBoundary},
         inner::{
             packed::{
-                ColumnMajorPackedBits, PackedInput, StreamingCoefficientSource, StreamingMle,
+                BindingOptions, ColumnMajorPackedBits, PackedInput, StreamingCoefficientSource,
+                StreamingMle,
             },
             prove_inner_sumcheck,
         },
@@ -124,7 +125,8 @@ pub(super) fn prove(
     transcript.absorb_slice(MERGE_DOMAIN);
     let merge_nonce = prove_nonce::<Merge>(transcript, schedule.merge_bits)?;
     let eta = sample(transcript, field)?;
-    let (form, target) = BindingForm::new(layout, ring, &norm_claims, eta, field)?;
+    let (mut form, target) = BindingForm::new(layout, ring, &norm_claims, eta, field)?;
+    form.options = BindingOptions::for_arithmetic(layout.batch(), N, schedule.binding_bits == 0);
 
     transcript.absorb_slice(BINDING_DOMAIN);
     let stream = StreamingMle::new(&form);
@@ -355,6 +357,34 @@ struct BindingForm<'a> {
     coefficients: [Vec<F>; 2],
     slacks: Vec<F>,
     padding: F,
+    options: BindingOptions,
+    folded_decoder: std::sync::OnceLock<FoldedDecoder>,
+}
+
+struct FoldedDecoder {
+    weights: Vec<F>,
+    decoder: [F; COEFFICIENT_STRIDE],
+    padding: F,
+}
+
+impl FoldedDecoder {
+    fn new(weights: &[F], padding: F, field: &Cfg) -> Self {
+        let mut sums = [FpLinearAcc::<2, 1>::default(); COEFFICIENT_STRIDE];
+        for lane in 0..COEFFICIENT_BITS {
+            let weight = weights[lane % weights.len()];
+            let weight = if lane + 1 == COEFFICIENT_BITS {
+                field.neg(&weight)
+            } else {
+                weight
+            };
+            field.mul_acc(&mut sums[lane / weights.len()], &weight, &(1u64 << lane));
+        }
+        Self {
+            weights: weights.to_vec(),
+            decoder: sums.map(|sum| field.reduce(sum)),
+            padding: field.mul(&padding, weights.last().unwrap()),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -543,6 +573,8 @@ impl<'a> BindingForm<'a> {
                 coefficients,
                 slacks,
                 padding: scales[3],
+                options: BindingOptions::default(),
+                folded_decoder: Default::default(),
             },
             target,
         ))
@@ -689,6 +721,9 @@ impl<'a> BindingForm<'a> {
 }
 
 impl StreamingCoefficientSource for BindingForm<'_> {
+    fn binding_options(&self) -> BindingOptions {
+        self.options
+    }
     fn num_vars(&self) -> usize {
         source_rounds(self.layout)
     }
@@ -772,7 +807,9 @@ impl StreamingCoefficientSource for BindingForm<'_> {
                 }
                 for (byte, &count) in counts.iter().enumerate().skip(1) {
                     if count != 0 {
-                        let value = self.field.reduce(self.field.mul_wide(&self.padding, &count));
+                        let value = self
+                            .field
+                            .reduce(self.field.mul_wide(&self.padding, &count));
                         emit(byte as u8, &[value; 8])?;
                     }
                 }
@@ -859,7 +896,9 @@ impl StreamingCoefficientSource for BindingForm<'_> {
                             _ => counts[0][byte] + counts[1][byte],
                         };
                         if count != 0 {
-                            let value = self.field.reduce(self.field.mul_wide(&self.padding, &count));
+                            let value = self
+                                .field
+                                .reduce(self.field.mul_wide(&self.padding, &count));
                             emit(table, byte as u8, &[value; 8])?;
                         }
                     }
@@ -935,6 +974,9 @@ impl StreamingCoefficientSource for BindingForm<'_> {
         if !weights.len().is_power_of_two() || weights.len() > COEFFICIENT_STRIDE {
             return None;
         }
+        if self.options.optimized {
+            return Some(self.emit_prepared_fold(instance, weights, emit));
+        }
         Some((|| {
             if instance >= self.layout.capacity() {
                 return Err(SumcheckError::InvalidProductDimensions);
@@ -990,6 +1032,65 @@ impl StreamingCoefficientSource for BindingForm<'_> {
             }
             Ok(())
         })())
+    }
+}
+
+impl BindingForm<'_> {
+    fn emit_prepared_fold(
+        &self,
+        instance: usize,
+        weights: &[F],
+        emit: &mut impl FnMut(usize, F) -> Result<(), SumcheckError>,
+    ) -> Result<(), SumcheckError> {
+        if instance >= self.layout.capacity() {
+            return Err(SumcheckError::InvalidProductDimensions);
+        }
+        let width = weights.len();
+        let base = instance * self.layout.signature_stride() / width;
+        if instance >= self.layout.batch() {
+            let sum = weights
+                .iter()
+                .fold(self.field.zero(), |sum, w| self.field.add(&sum, w));
+            let value = self.field.mul(&self.padding, &sum);
+            for offset in 0..self.layout.signature_stride() / width {
+                emit(base + offset, value)?;
+            }
+            return Ok(());
+        }
+        let cached = self
+            .folded_decoder
+            .get_or_init(|| FoldedDecoder::new(weights, self.padding, self.field));
+        let alternative;
+        let prepared = if cached.weights == weights {
+            cached
+        } else {
+            alternative = FoldedDecoder::new(weights, self.padding, self.field);
+            &alternative
+        };
+        let groups = COEFFICIENT_STRIDE / width;
+        let mut slack = self
+            .field
+            .mul(&self.slacks[instance], weights.last().unwrap());
+        for side in 0..2 {
+            for j in 0..N {
+                let coefficient = self.coefficients[side][instance * N + j];
+                let spare = if side == 0 && j < SLACK_BITS {
+                    let value = slack;
+                    slack = self.field.add(&slack, &slack);
+                    value
+                } else {
+                    prepared.padding
+                };
+                for (group, decode) in prepared.decoder[..groups].iter().enumerate() {
+                    let mut value = self.field.mul(&coefficient, decode);
+                    if group + 1 == groups {
+                        value = self.field.add(&value, &spare);
+                    }
+                    emit(base + (side * N + j) * groups + group, value)?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1335,9 +1436,18 @@ mod tests {
             }
             for strategy in [BindingStrategy::Legacy, BindingStrategy::Optimized] {
                 for parallel in [false, true] {
-                    assert!(BindingForm::new_with_strategy(
-                        &layout, &ring, &norm, field.one(), &field, strategy, parallel,
-                    ).is_err());
+                    assert!(
+                        BindingForm::new_with_strategy(
+                            &layout,
+                            &ring,
+                            &norm,
+                            field.one(),
+                            &field,
+                            strategy,
+                            parallel,
+                        )
+                        .is_err()
+                    );
                 }
             }
         }
@@ -1361,6 +1471,8 @@ mod tests {
                 unsigned(23, &field),
             ],
             padding: unsigned(29, &field),
+            options: BindingOptions::default(),
+            folded_decoder: Default::default(),
         };
         let point: Vec<_> = (0..form.num_vars())
             .map(|j| unsigned((j + 2) as u128, &field))
