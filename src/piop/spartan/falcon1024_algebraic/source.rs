@@ -1,5 +1,6 @@
 use super::{BETA_SQUARED, COEFFICIENT_LOG, FalconError, N, Q, SLACK_BITS, error};
 use crate::pcs::IntegerMatrixLayout;
+#[cfg(test)]
 use crate::piop::spartan::falcon_bit_layout::{coefficient_bit, slack_bit};
 use crate::piop::spartan::falcon_polynomial::integer_polynomial_product;
 #[cfg(feature = "parallel")]
@@ -248,7 +249,53 @@ pub(super) struct Source {
 }
 
 impl Source {
+    /// Writes each signature's sixteen-bit coefficient lanes as whole words.
+    /// A signature fills `2N` consecutive lanes of `signature_stride / rows`
+    /// whole columns, four lanes per little-endian word, so signatures pack
+    /// independently. Equal to [`Self::new_reference`] bit for bit.
     pub fn new(layout: Layout, data: &WitnessData) -> Self {
+        let p = layout.bitz_params();
+        let words = p.rows() / 64;
+        let columns_per_signature = layout.signature_stride() / p.rows();
+        let mut rows = vec![vec![0u64; words]; p.cols()];
+        let lane = |i: usize, lane: usize| -> u64 {
+            let (polynomial, j) = (lane / N, lane % N);
+            let coefficient = if polynomial == 0 {
+                data.witness.s1[i][j]
+            } else {
+                data.witness.s2[i][j]
+            };
+            let mut value = (i32::from(coefficient) & 0x7fff) as u64;
+            if polynomial == 0 && j < SLACK_BITS {
+                value |= ((data.slacks[i] >> j) & 1) << 15;
+            }
+            value
+        };
+        let fill = |(i, columns): (usize, &mut [Vec<u64>])| {
+            for (c, column) in columns.iter_mut().enumerate() {
+                for (w, word) in column.iter_mut().enumerate() {
+                    let first = 4 * (c * words + w);
+                    *word = (0..4).fold(0, |acc, k| acc | lane(i, first + k) << (16 * k));
+                }
+            }
+        };
+        let live = layout.batch() * columns_per_signature;
+        #[cfg(feature = "parallel")]
+        rows[..live]
+            .par_chunks_mut(columns_per_signature)
+            .enumerate()
+            .for_each(fill);
+        #[cfg(not(feature = "parallel"))]
+        rows[..live]
+            .chunks_mut(columns_per_signature)
+            .enumerate()
+            .for_each(fill);
+        Self { layout, rows }
+    }
+
+    /// Bit-by-bit construction from the address map; the test oracle.
+    #[cfg(test)]
+    pub(super) fn new_reference(layout: Layout, data: &WitnessData) -> Self {
         let p = layout.bitz_params();
         let mut source = Self {
             layout,
@@ -273,6 +320,7 @@ impl Source {
         }
         source
     }
+    #[cfg(test)]
     fn put(&mut self, offset: usize, width: usize, value: u64) {
         for b in 0..width {
             if value >> b & 1 != 0 {
@@ -299,6 +347,35 @@ impl Source {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn word_packing_matches_the_bit_address_map() {
+        for batch in [1, 3, 16, 33] {
+            let layout = Layout::new(batch).unwrap();
+            let h: [u16; N] = std::array::from_fn(|j| ((j * 97 + 5) % Q as usize) as u16);
+            let s2: Vec<[i16; N]> = (0..batch)
+                .map(|i| std::array::from_fn(|j| ((j * 31 + i * 7) % 61) as i16 - 30))
+                .collect();
+            let mut public = FalconAlgebraicStatement {
+                public_keys: vec![h; batch],
+                targets: vec![[0; N]; batch],
+            };
+            for i in 0..batch {
+                let product = product(&public.public_keys[i], &s2[i]);
+                // Pick t so that centered s1 = (j % 9) - 4 and the norm stays small.
+                for j in 0..N {
+                    let s1 = (j % 9) as i64 - 4;
+                    public.targets[i][j] =
+                        (s1 + product[j] - product[N + j]).rem_euclid(Q) as u16;
+                }
+            }
+            let data = WitnessData::from_s2(&public, s2).unwrap();
+            assert!(data.slacks.iter().any(|&s| s != 0));
+            let fast = Source::new(layout, &data);
+            let reference = Source::new_reference(layout, &data);
+            assert_eq!(fast.rows, reference.rows, "batch {batch}");
+        }
+    }
 
     #[test]
     fn exact_ring_and_norm_match_independent_schoolbook() {

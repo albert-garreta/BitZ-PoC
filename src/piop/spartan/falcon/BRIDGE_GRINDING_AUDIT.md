@@ -10,7 +10,7 @@ masks reduce HashToPoint
 to linear selection/output checks and quadratic rejection rows; this
 integer-to-binary BitZ forest remains part of the protocol.
 
-The enclosing protocol is `bitz/falcon/shared-prime/non-zk/v4`. The statement
+The enclosing protocol is `bitz/falcon/shared-prime/non-zk/v5`. The statement
 digest binds the derived bridge numerator and grinding difficulty.
 
 ## Scope and model
@@ -204,8 +204,10 @@ The following table is for Falcon-1024 with the two-limb bridge at target 128.
 | 512 | 14 | 260 | 274 | 807 | 18 |
 | 1024 | 15 | 273 | 287 | 847 | 18 |
 
-The numerator is derived from the validated layout. The unchanged category
-allocator uses
+The numerator is derived from the validated layout. Since `…/v5` the
+difficulty comes from the work-optimal allocation in
+[OPTIMIZATION_SECURITY.md](OPTIMIZATION_SECURITY.md), and the last column above
+records the earlier uniform rule. That earlier category allocator used
 
 ```
 g = max(0, target + 8 + ceil(log2(numerator)) - 128).

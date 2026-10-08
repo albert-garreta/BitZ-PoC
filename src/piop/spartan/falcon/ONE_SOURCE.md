@@ -4,7 +4,7 @@ SharedPrime authenticates the arithmetic and Keccak slab witnesses
 through one initial Merkle tree. The logical source dimensions, arithmetic
 bridge, ring switch, and recursive Ligerito commitments remain separate
 concepts. There is no compatibility path for the preceding Falcon proofs.
-The protocol identifier is `bitz/falcon/shared-prime/non-zk/v4`. `FalconHybridStatement::source_root` is the one
+The protocol identifier is `bitz/falcon/shared-prime/non-zk/v5`. `FalconHybridStatement::source_root` is the one
 source root. Ligerito's `initial_root` field is still the statement identifier,
 not that Merkle root; its authentication callback checks `source_root`.
 

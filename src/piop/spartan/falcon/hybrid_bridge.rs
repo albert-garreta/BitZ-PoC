@@ -12,6 +12,11 @@ pub(super) fn error_numerator(layout: &FalconSourceLayout, mode: BridgeMode) -> 
     integer_bridge::error_numerator(&layout.bitz_params(), mode)
 }
 
+/// Grinding boundaries of the bridge; a work weight for the allocation.
+pub(super) fn grinding_sites(layout: &FalconSourceLayout) -> usize {
+    integer_bridge::message_count(&layout.bitz_params())
+}
+
 pub(super) fn prove(
     t: &mut impl Transcript,
     source: &FalconSourceWitness,

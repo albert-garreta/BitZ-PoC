@@ -30,7 +30,7 @@ witness so large buffers can be folded without cloning. The four presets are
 The `falcon` feature retains direct signature verification and reference helpers.
 
 There is one proving protocol and no NativeCarry or old-proof verifier. The
-protocol identifier is `bitz/falcon/shared-prime/non-zk/v4`. Proofs must be
+protocol identifier is `bitz/falcon/shared-prime/non-zk/v5`. Proofs must be
 regenerated. Falcon currently exposes in-memory proofs without a full transport
 codec. `payload_size_bytes()` counts stored messages, excluding the public
 statement and transport framing; `payload_size_breakdown()` reports disjoint

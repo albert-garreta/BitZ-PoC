@@ -194,6 +194,22 @@ impl PreparedKeccak {
         self.r1cs.m - LOG_PACKING
     }
 
+    /// Union numerator of the prefix's raw challenge errors over GF(2^128);
+    /// see [`Self::security`].
+    pub(crate) fn raw_error_numerator(&self) -> usize {
+        4 * self.bit_vars() + 256
+    }
+
+    /// Challenge blocks ground at the prefix difficulty.
+    pub(crate) fn challenge_blocks(&self) -> usize {
+        self.bit_vars() + 8
+    }
+
+    /// Component target whose derived grinding difficulty is `bits`.
+    pub(crate) fn component_for_bits(&self, bits: u32) -> u32 {
+        bits + 128 - self.raw_error_numerator().next_power_of_two().ilog2()
+    }
+
     /// Component targets include the caller's margin for the full union bound
     /// (e.g. requested security + 8 bits). No proof chooses its own difficulty.
     pub(crate) fn security(&self, component_bits: u32) -> Result<PrefixSecurity, KeccakError> {
@@ -209,7 +225,7 @@ impl PreparedKeccak {
         // Total <=5m+166 <4m+256 for every supported m<=34.
         // The seven fixed inner weights encode Boolean residuals in distinct
         // extension-field basis positions; they are not independent draws.
-        let raw_error_numerator = 4 * self.bit_vars() + 256;
+        let raw_error_numerator = self.raw_error_numerator();
         let log_error = raw_error_numerator.next_power_of_two().ilog2();
         let grinding_bits = (component_bits + log_error).saturating_sub(128);
         if grinding_bits > 32 {
@@ -223,7 +239,7 @@ impl PreparedKeccak {
             component_bits,
             grinding_bits,
             raw_error_numerator,
-            challenge_blocks: self.bit_vars() + 8,
+            challenge_blocks: self.challenge_blocks(),
         })
     }
 

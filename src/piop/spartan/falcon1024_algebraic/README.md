@@ -77,10 +77,10 @@ There is no Orthus-style public-input preprocessing in this interface.
 
 ## Security accounting
 
-The aligned layout is bound into the v2 transcript domain; commitments and
-proofs from the preceding layout cannot be reused. Eight arithmetic and
-binary error groups each receive at most `2^(-target-4)`, totaling at most half
-the budget. Their degree numerators are:
+The aligned layout is bound into the v4 transcript domain; commitments and
+proofs from preceding layouts or grinding schedules cannot be reused. The five
+prime-field groups each receive at most `2^(-target-4)`. Their degree
+numerators are:
 
 | Group | Numerator | Domain lower bound |
 |---|---:|---:|
@@ -93,13 +93,18 @@ the budget. Their degree numerators are:
 | Binary source sumcheck | 2(16+d) | `2^128` |
 | Ring switch | 256 | `2^128` |
 
-Here `d = log2(capacity)`. Each adaptive challenge boundary uses the derived
-grinding requirement of its group. The native ring identity has error at most
-`(2046+d)/2^149`; prime sampling requests a 144-bit composite-acceptance budget.
-These fixed terms fit a quarter of the requested budget. Ligerito's existing
-challenge-block resolver receives the remaining quarter. `security()` exposes
-the composed ledger under the repository's computational grinding model, with
-BLAKE3 collision security stated separately. No zero-knowledge guarantee is made.
+Here `d = log2(capacity)`. The native ring identity has error at most
+`(2046+d)/2^149`, and prime sampling requests a 144-bit composite-acceptance
+budget.
+
+The three binary groups and every Ligerito challenge block share the remaining
+budget `(15/16)*2^-target - fixed`. It is split work-optimally by
+`crate::hybrid::grinding_allocation`, so groups with larger raw errors receive
+proportionally more of it. The composition stays at least
+`target + log2(16/15)` bits. Each adaptive challenge boundary uses its group's
+allocated difficulty. `security()` exposes the composed ledger under the
+repository's computational grinding model, with BLAKE3 collision security
+stated separately. No zero-knowledge guarantee is made.
 
 ## Validation and benchmarking
 

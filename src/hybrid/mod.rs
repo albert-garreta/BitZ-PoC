@@ -15,6 +15,8 @@ use crate::piop::spartan::protocol::ProtocolError;
 
 #[cfg(feature = "falcon-hybrid")]
 pub(crate) mod block_grinding;
+#[cfg(feature = "falcon-hybrid")]
+pub(crate) mod grinding_allocation;
 mod channel;
 mod codec;
 #[cfg(feature = "falcon-hybrid")]

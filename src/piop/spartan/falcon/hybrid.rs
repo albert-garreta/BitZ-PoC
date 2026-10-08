@@ -36,6 +36,179 @@ mod size;
 fn error(e: impl std::fmt::Display) -> FalconError {
     FalconError::Piop(e.to_string())
 }
+
+/// Ledger terms whose difficulties the prime-field schedule fixes.
+fn fixed_terms(layout: &FalconSourceLayout, target_bits: usize) -> Vec<(&'static str, f64)> {
+    let d = layout.capacity().ilog2() as usize;
+    let schedule =
+        super::FalconSecuritySchedule::for_layout(target_bits, layout).expect("prepared target");
+    let numerators = super::piop::FalconSecurityNumerators::for_layout(layout);
+    let prime_bits = super::shared_ring::prime_bounds(target_bits)
+        .expect("prepared shared target")
+        .0
+        .ilog2() as i32;
+    let prime = |n: usize, g: u32| n as f64 * 2f64.powi(-prime_bits - g as i32);
+    vec![
+        ("prime sampling", 2f64.powi(-144)),
+        (
+            "per-signature norm identity",
+            prime(numerators.norm_instances, schedule.norm_instance_bits),
+        ),
+        (
+            "norm sumchecks",
+            prime(numerators.norm_rounds, schedule.quadratic_round_bits),
+        ),
+        (
+            "HashToPoint initial row point",
+            prime(numerators.outer_point, schedule.outer_point_bits),
+        ),
+        (
+            "HashToPoint rejection sumcheck",
+            prime(numerators.cubic_rounds, schedule.cubic_round_bits),
+        ),
+        (
+            "shared ring outer and endpoint batch",
+            (4 * d + 2 * N + 1) as f64
+                / crate::piop::spartan::falcon_parameters::field_cardinality(EXTENSION_DEGREE)
+                    .as_f64(),
+        ),
+        (
+            "integer polynomial projection",
+            prime(
+                2 * EXTENSION_DEGREE - 2,
+                super::shared_ring::projection_grinding_bits(target_bits),
+            ),
+        ),
+        (
+            "linear constraints and terminal batching",
+            prime(numerators.linear, schedule.linear_point_bits),
+        ),
+        (
+            "prime source sumcheck",
+            prime(numerators.binding, schedule.binding_round_bits),
+        ),
+    ]
+}
+
+/// Ledger terms of the binary groups and Ligerito, at their allocated work.
+fn allocated_terms(
+    layout: &FalconSourceLayout,
+    bridge_mode: hybrid_bridge::BridgeMode,
+    keccak: &[PreparedKeccak; KECCAK_SLABS],
+    geometry: &shared::Geometry<SOURCE_COUNT>,
+    grinding: &BinaryGrinding,
+    pcs: &GrindingPlan,
+) -> Vec<(&'static str, f64)> {
+    let binary = |n: usize, bits: u32| n as f64 * 2f64.powi(-128 - bits as i32);
+    vec![
+        (
+            "batched integer-to-binary forest",
+            binary(
+                hybrid_bridge::error_numerator(layout, bridge_mode),
+                grinding.bridge,
+            ),
+        ),
+        (
+            "binary Keccak PIOP",
+            keccak
+                .iter()
+                .zip(grinding.keccak)
+                .map(|(slab, bits)| {
+                    slab.security(slab.component_for_bits(bits))
+                        .expect("prepared profile")
+                        .error_bound()
+                })
+                .sum(),
+        ),
+        (
+            "SHAKE wiring, source padding and binary claim batching",
+            binary(LINK_ERROR_NUMERATOR, grinding.links),
+        ),
+        (
+            "joint binary sumcheck",
+            binary(2 * geometry.bit_log(), grinding.joint),
+        ),
+        ("ring switch and support padding", binary(256, grinding.opening)),
+        (
+            "shared Ligerito",
+            pcs.blocks
+                .iter()
+                .map(|block| block.raw_error * 2f64.powi(-(block.bits as i32)))
+                .sum(),
+        ),
+    ]
+}
+
+/// Work-optimal difficulties for the binary groups and every Ligerito block,
+/// under the budget left by the fixed terms (see [`ALLOCATION_BUDGET`]).
+fn allocate_grinding(
+    layout: &FalconSourceLayout,
+    bridge_mode: hybrid_bridge::BridgeMode,
+    keccak: &[PreparedKeccak; KECCAK_SLABS],
+    geometry: &shared::Geometry<SOURCE_COUNT>,
+    ligerito: &ResolvedLigerito,
+    target_bits: usize,
+) -> Result<(BinaryGrinding, GrindingPlan), FalconError> {
+    use crate::hybrid::grinding_allocation::{GrindingGroup, allocate};
+    // Block structure, raw errors and native Flock work do not depend on the
+    // plan's target; its difficulties are replaced below.
+    let mut pcs = GrindingPlan::resolve(ligerito.security(), target_bits as u32).map_err(error)?;
+    let gf = |numerator: usize| numerator as f64 * 2f64.powi(-128);
+    let bit_log = geometry.bit_log();
+    let mut groups = vec![
+        GrindingGroup {
+            raw_error: gf(hybrid_bridge::error_numerator(layout, bridge_mode)),
+            sites: hybrid_bridge::grinding_sites(layout) as f64,
+            min_bits: 0,
+        },
+        GrindingGroup {
+            raw_error: gf(LINK_ERROR_NUMERATOR),
+            sites: 1.0,
+            min_bits: 0,
+        },
+        GrindingGroup {
+            raw_error: gf(2 * bit_log),
+            sites: bit_log as f64,
+            min_bits: 0,
+        },
+        // One boundary per ring-switch and support draw; a work weight only.
+        GrindingGroup {
+            raw_error: gf(256),
+            sites: (geometry.packed_log() + 8) as f64,
+            min_bits: 0,
+        },
+    ];
+    groups.extend(keccak.iter().map(|slab| GrindingGroup {
+        raw_error: gf(slab.raw_error_numerator()),
+        sites: slab.challenge_blocks() as f64,
+        min_bits: 0,
+    }));
+    groups.extend(pcs.blocks.iter().map(|block| GrindingGroup {
+        raw_error: block.raw_error,
+        sites: 1.0,
+        min_bits: block.native_bits.unwrap_or(0),
+    }));
+    let fixed: f64 = fixed_terms(layout, target_bits)
+        .iter()
+        .map(|(_, error)| error)
+        .sum();
+    let budget = ALLOCATION_BUDGET * 2f64.powi(-(target_bits as i32)) - fixed;
+    let bits = allocate(&groups, budget).map_err(error)?;
+    let (head, blocks) = bits.split_at(4 + KECCAK_SLABS);
+    for (block, &b) in pcs.blocks.iter_mut().zip(blocks) {
+        block.bits = b;
+    }
+    Ok((
+        BinaryGrinding {
+            bridge: head[0],
+            links: head[1],
+            joint: head[2],
+            opening: head[3],
+            keccak: std::array::from_fn(|i| head[4 + i]),
+        },
+        pcs,
+    ))
+}
 struct LinkGrinding;
 // The existing binary claims/SHAKE wiring budget is 128. The additional
 // padding polynomial has degree at most 17 + 10 + 1 (local, instance, merge),
@@ -48,6 +221,23 @@ struct OpeningGrinding;
 impl GrindingDomain for OpeningGrinding {
     const DOMAIN: &'static [u8] = b"bitz/falcon-hybrid/opening-grinding/v1";
 }
+
+/// Difficulties of the binary-field grinding groups. They and the shared
+/// Ligerito blocks split one composed budget work-optimally (see
+/// [`crate::hybrid::grinding_allocation`]); the prime-field stages keep their
+/// fixed schedule.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BinaryGrinding {
+    bridge: u32,
+    links: u32,
+    joint: u32,
+    opening: u32,
+    keccak: [u32; KECCAK_SLABS],
+}
+
+/// The composed error stays at most `ALLOCATION_BUDGET * 2^-target`, i.e. at
+/// least `target + log2(16/15)` bits. The factor is exact in binary.
+const ALLOCATION_BUDGET: f64 = 0.9375;
 
 /// Public keys, messages, signatures, and the joint binary source commitment.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -75,6 +265,7 @@ pub struct PreparedFalconHybrid {
     bridge_mode: hybrid_bridge::BridgeMode,
     ligerito: ResolvedLigerito,
     pcs_grinding: GrindingPlan,
+    grinding: BinaryGrinding,
     scratch: Mutex<Scratch>,
 }
 
@@ -142,13 +333,16 @@ impl PreparedFalconHybrid {
         let ligerito = LigeritoSelection::MATCHED_UDR
             .resolve(geometry.packed_log(), target_bits)
             .map_err(error)?;
-        let first =
-            GrindingPlan::resolve(ligerito.security(), target_bits as u32).map_err(error)?;
-        // Allocate one quarter of the total error budget to the whole PCS,
-        // then divide that budget among its challenge blocks.
-        let pcs_target = target_bits + 2 + first.blocks.len().next_power_of_two().ilog2() as usize;
-        let pcs_grinding =
-            GrindingPlan::resolve(ligerito.security(), pcs_target as u32).map_err(error)?;
+        // The binary groups and every Ligerito challenge block share the
+        // budget left by the fixed prime-field schedule, split work-optimally.
+        let (grinding, pcs_grinding) = allocate_grinding(
+            &layout,
+            bridge_mode,
+            &keccak,
+            &geometry,
+            &ligerito,
+            target_bits,
+        )?;
         let prepared = Self {
             layout,
             keccak,
@@ -158,6 +352,7 @@ impl PreparedFalconHybrid {
             bridge_mode,
             ligerito,
             pcs_grinding,
+            grinding,
             scratch: Mutex::default(),
         };
         hybrid_bridge::validate_layout(
@@ -210,95 +405,21 @@ impl PreparedFalconHybrid {
     }
 
     pub fn security(&self) -> FalconHybridSecurity {
-        let d = self.capacity().ilog2() as usize;
-        let schedule = super::FalconSecuritySchedule::for_layout(self.target_bits, &self.layout)
-            .expect("prepared target");
-        let numerators = super::piop::FalconSecurityNumerators::for_layout(&self.layout);
-        let prime_bits = self.prime_modulus_bounds().0.ilog2() as i32;
-        let prime = |n: usize, g: u32| n as f64 * 2f64.powi(-prime_bits - g as i32);
-        let binary = |n: usize| n as f64 * 2f64.powi(-128 - self.binary_grinding(n) as i32);
-        let terms = vec![
-            ("prime sampling", 2f64.powi(-144)),
-            (
-                "per-signature norm identity",
-                prime(numerators.norm_instances, schedule.norm_instance_bits),
-            ),
-            (
-                "norm sumchecks",
-                prime(numerators.norm_rounds, schedule.quadratic_round_bits),
-            ),
-            (
-                "HashToPoint initial row point",
-                prime(numerators.outer_point, schedule.outer_point_bits),
-            ),
-            (
-                "HashToPoint rejection sumcheck",
-                prime(numerators.cubic_rounds, schedule.cubic_round_bits),
-            ),
-            (
-                "shared ring outer and endpoint batch",
-                (4 * d + 2 * N + 1) as f64
-                    / crate::piop::spartan::falcon_parameters::field_cardinality(EXTENSION_DEGREE)
-                        .as_f64(),
-            ),
-            (
-                "integer polynomial projection",
-                prime(
-                    2 * EXTENSION_DEGREE - 2,
-                    super::shared_ring::projection_grinding_bits(self.target_bits),
-                ),
-            ),
-            (
-                "linear constraints and terminal batching",
-                prime(numerators.linear, schedule.linear_point_bits),
-            ),
-            (
-                "prime source sumcheck",
-                prime(numerators.binding, schedule.binding_round_bits),
-            ),
-            (
-                "batched integer-to-binary forest",
-                binary(hybrid_bridge::error_numerator(
-                    &self.layout,
-                    self.bridge_mode,
-                )),
-            ),
-            (
-                "binary Keccak PIOP",
-                self.keccak
-                    .iter()
-                    .map(|slab| {
-                        slab.security((self.target_bits + 8) as u32)
-                            .expect("prepared profile")
-                            .error_bound()
-                    })
-                    .sum(),
-            ),
-            (
-                "SHAKE wiring, source padding and binary claim batching",
-                binary(LINK_ERROR_NUMERATOR),
-            ),
-            ("joint binary sumcheck", binary(2 * self.geometry.bit_log())),
-            ("ring switch and support padding", binary(256)),
-            (
-                "shared Ligerito",
-                self.pcs_grinding
-                    .blocks
-                    .iter()
-                    .map(|block| block.raw_error * 2f64.powi(-(block.bits as i32)))
-                    .sum(),
-            ),
-        ];
+        let mut terms = fixed_terms(&self.layout, self.target_bits);
+        terms.extend(allocated_terms(
+            &self.layout,
+            self.bridge_mode,
+            &self.keccak,
+            &self.geometry,
+            &self.grinding,
+            &self.pcs_grinding,
+        ));
         let algebraic_bits = -terms.iter().map(|(_, error)| error).sum::<f64>().log2();
         FalconHybridSecurity {
             target_bits: self.target_bits,
             algebraic_bits,
             terms,
         }
-    }
-
-    fn binary_grinding(&self, numerator: usize) -> u32 {
-        (self.target_bits as u32 + 8 + numerator.next_power_of_two().ilog2()).saturating_sub(128)
     }
 
     /// Generate and commit the full witness, including SHAKE and HashToPoint.
@@ -448,7 +569,7 @@ impl PreparedFalconHybrid {
         h.update(b"source-layout:aligned16;polynomials:S1,S2,C,H;slack:S1-lane15;signature:header-nonce-and-mapped-signed-payload/v2");
         h.update(b"arithmetic-padding:random-local-and-instance-equality;active-holes;all-inactive;zero-target/v1");
         h.update(&(LINK_ERROR_NUMERATOR as u64).to_le_bytes());
-        h.update(&self.binary_grinding(LINK_ERROR_NUMERATOR).to_le_bytes());
+        h.update(&self.grinding.links.to_le_bytes());
         h.update(&(self.layout.occupied_bits() as u64).to_le_bytes());
 
         h.update(b"shared:all-E;C,H,S1,S2:1,l,l2,l3;direct-beta-decoder;Hunsigned14;S2encoded-alias;live-mask;P(2k-1)-i128;target-selected-prime-and-bridge;merge-in-binder-block/v3");
@@ -481,7 +602,14 @@ impl PreparedFalconHybrid {
         // so proofs cannot be replayed under a different bridge error budget.
         let bridge_numerator = hybrid_bridge::error_numerator(&self.layout, self.bridge_mode);
         h.update(&(bridge_numerator as u64).to_le_bytes());
-        h.update(&self.binary_grinding(bridge_numerator).to_le_bytes());
+        h.update(&self.grinding.bridge.to_le_bytes());
+        h.update(b"grinding:work-optimal-binary-and-pcs-allocation;budget=15/16/v1");
+        for bits in [self.grinding.joint, self.grinding.opening]
+            .into_iter()
+            .chain(self.grinding.keccak)
+        {
+            h.update(&bits.to_le_bytes());
+        }
         h.update(
             b"source:joint-rs-row,canonical-16-lanes;keccak:constant-prefix-mask,zero-inactive/v1",
         );
@@ -541,10 +669,7 @@ impl PreparedFalconHybrid {
             self.bridge_mode,
             &bridge_claim.point,
             bridge_claim.modulus,
-            self.binary_grinding(hybrid_bridge::error_numerator(
-                &self.layout,
-                self.bridge_mode,
-            )),
+            self.grinding.bridge,
             &row_weights,
         )?;
         drop(row_weights);
@@ -561,7 +686,7 @@ impl PreparedFalconHybrid {
                     &committed.statement.source_root,
                     &digest,
                     &mut t,
-                    (self.target_bits + 8) as u32,
+                    self.keccak[slab].component_for_bits(self.grinding.keccak[slab]),
                 )
                 .map_err(error)?;
             prefixes.push(proof);
@@ -580,7 +705,7 @@ impl PreparedFalconHybrid {
         let links_span = tracing::info_span!("falcon_hybrid:link_coefficients").entered();
         let mut link_t = ProverBlockGrindingTranscript::<_, LinkGrinding>::new(
             &mut t,
-            self.binary_grinding(LINK_ERROR_NUMERATOR),
+            self.grinding.links,
         );
         let (mut coefficients, target) =
             self.coefficients(&mut link_t, &committed.statement.public, &a, &k);
@@ -598,7 +723,7 @@ impl PreparedFalconHybrid {
             committed.packed.each_ref().map(Vec::as_slice),
             coefficients.each_ref(),
             target,
-            self.binary_grinding(2 * self.geometry.bit_log()),
+            self.grinding.joint,
             &mut *self
                 .scratch
                 .lock()
@@ -614,7 +739,7 @@ impl PreparedFalconHybrid {
         };
         let mut opening_t = ProverBlockGrindingTranscript::<_, OpeningGrinding>::new(
             &mut t,
-            self.binary_grinding(256),
+            self.grinding.opening,
         );
         let opening = shared::prove_joint_sources_with_security(
             &mut opening_t,
@@ -662,10 +787,7 @@ impl PreparedFalconHybrid {
             proof.arithmetic.binding_terminal[1],
             bridge_claim.modulus,
             &proof.bridge,
-            self.binary_grinding(hybrid_bridge::error_numerator(
-                &self.layout,
-                self.bridge_mode,
-            )),
+            self.grinding.bridge,
         )?;
         let mut k = Vec::new();
         for slab in 0..KECCAK_SLABS {
@@ -675,7 +797,7 @@ impl PreparedFalconHybrid {
                     &statement.source_root,
                     &digest,
                     &mut t,
-                    (self.target_bits + 8) as u32,
+                    self.keccak[slab].component_for_bits(self.grinding.keccak[slab]),
                 )
                 .map_err(error)?;
             k.push(claims.map(|c| BinaryClaim {
@@ -689,7 +811,7 @@ impl PreparedFalconHybrid {
             .unwrap_or_else(|_| unreachable!("profile Keccak slabs"));
         let mut link_t = VerifierBlockGrindingTranscript::<_, LinkGrinding>::new(
             &mut t,
-            self.binary_grinding(LINK_ERROR_NUMERATOR),
+            self.grinding.links,
             &proof.links_nonces,
         );
         let (coefficients, target) = self.coefficients(&mut link_t, &statement.public, &a, &k);
@@ -699,7 +821,7 @@ impl PreparedFalconHybrid {
             &self.geometry,
             coefficients.each_ref(),
             target,
-            self.binary_grinding(2 * self.geometry.bit_log()),
+            self.grinding.joint,
             &proof.joint,
         )
         .map_err(error)?;
@@ -712,7 +834,7 @@ impl PreparedFalconHybrid {
         };
         let mut opening_t = VerifierBlockGrindingTranscript::<_, OpeningGrinding>::new(
             &mut t,
-            self.binary_grinding(256),
+            self.grinding.opening,
             &proof.opening_nonces,
         );
         shared::verify_joint_with_security(
@@ -1147,24 +1269,15 @@ mod tests {
 
     #[test]
     fn hybrid_security_covers_supported_batch_sizes() {
+        let margin = (16f64 / 15.0).log2();
         for target in [100, 128] {
             for batch in 1..=1024 {
                 let prepared = PreparedFalconHybrid::prepare(batch, target, 1024).unwrap();
                 let security = prepared.security();
-                assert!(security.algebraic_bits >= target as f64);
+                assert!(security.algebraic_bits >= target as f64 + margin - 1e-9);
                 let numerator =
                     hybrid_bridge::error_numerator(&prepared.layout, prepared.bridge_mode);
-                let bits = prepared.binary_grinding(numerator);
-                assert_eq!(
-                    bits,
-                    if target == 100 {
-                        0
-                    } else if numerator <= 512 {
-                        17
-                    } else {
-                        18
-                    }
-                );
+                let bits = prepared.grinding.bridge;
                 let bridge_error = security
                     .terms
                     .iter()
@@ -1175,28 +1288,52 @@ mod tests {
                     bridge_error,
                     (numerator as f64) * 2f64.powi(-128 - bits as i32)
                 );
-                assert!(bridge_error <= 2f64.powi(-(target as i32) - 8));
+                // Flock's native fold work stays a floor for every block.
+                for block in &prepared.pcs_grinding.blocks {
+                    assert!(block.bits >= block.native_bits.unwrap_or(0));
+                }
                 assert_eq!(FalconSourceLayout::counts().total(), 100_482);
             }
         }
         assert!(PreparedFalconHybrid::prepare(1025, 128, 1024).is_err());
     }
 
+    /// Exact dyadic upper bound of a nonnegative f64 at `2^-scale` resolution.
+    fn dyadic_ceil(x: f64, scale: usize) -> num_bigint::BigUint {
+        use num_bigint::BigUint;
+        assert!(x.is_finite() && x >= 0.0);
+        if x == 0.0 {
+            return BigUint::from(0u8);
+        }
+        let bits = x.to_bits();
+        let raw_exponent = ((bits >> 52) & 0x7ff) as i64;
+        let (mantissa, exponent) = if raw_exponent == 0 {
+            (bits & ((1 << 52) - 1), -1074)
+        } else {
+            ((bits & ((1 << 52) - 1)) | (1 << 52), raw_exponent - 1075)
+        };
+        let shift = exponent + scale as i64;
+        if shift >= 0 {
+            BigUint::from(mantissa) << shift as usize
+        } else {
+            let divisor = BigUint::from(1u8) << (-shift) as usize;
+            (BigUint::from(mantissa) + &divisor - 1u8) / divisor
+        }
+    }
+
     #[test]
     fn composition_meets_both_targets_with_exact_rational_bounds() {
         use num_bigint::BigUint;
-        const SCALE: usize = 160;
+        const SCALE: usize = 300;
         let ring_denominator = BigUint::from(super::super::Q as u64).pow(EXTENSION_DEGREE as u32);
         for batch in 1usize..=1024 {
-            let layout = FalconSourceLayout::new(batch).unwrap();
-            let d = layout.capacity().ilog2() as usize;
             for target in [100, 128] {
+                let prepared = PreparedFalconHybrid::prepare(batch, target, 1024).unwrap();
+                let layout = prepared.layout;
+                let d = layout.capacity().ilog2() as usize;
                 let schedule = super::super::FalconSecuritySchedule::for_layout(target, &layout).unwrap();
                 let n = super::super::piop::FalconSecurityNumerators::for_layout(&layout);
-                // Sampler, complete PCS, and six binary components use disjoint budgets.
-                let mut dyadic = (BigUint::from(1u8) << (SCALE - 144))
-                    + (BigUint::from(1u8) << (SCALE - target - 2))
-                    + (BigUint::from(6u8) << (SCALE - target - 8));
+                let mut dyadic = BigUint::from(1u8) << (SCALE - 144);
                 let prime_bits = if target == 100 { 114 } else { 125 };
                 for (numerator, bits) in [
                     (n.norm_instances, schedule.norm_instance_bits),
@@ -1208,6 +1345,24 @@ mod tests {
                     (2 * EXTENSION_DEGREE - 2, super::super::shared_ring::projection_grinding_bits(target)),
                 ] {
                     dyadic += BigUint::from(numerator) << (SCALE - prime_bits - bits as usize);
+                }
+                let g = prepared.grinding;
+                let mut binary = vec![
+                    (hybrid_bridge::error_numerator(&layout, prepared.bridge_mode), g.bridge),
+                    (LINK_ERROR_NUMERATOR, g.links),
+                    (2 * prepared.geometry.bit_log(), g.joint),
+                    (256, g.opening),
+                ];
+                for (slab, bits) in prepared.keccak.iter().zip(g.keccak) {
+                    let security = slab.security(slab.component_for_bits(bits)).unwrap();
+                    assert_eq!(security.grinding_bits, bits);
+                    binary.push((slab.raw_error_numerator(), bits));
+                }
+                for (numerator, bits) in binary {
+                    dyadic += BigUint::from(numerator) << (SCALE - 128 - bits as usize);
+                }
+                for block in &prepared.pcs_grinding.blocks {
+                    dyadic += dyadic_ceil(block.raw_error, SCALE - block.bits as usize);
                 }
                 let error = dyadic * &ring_denominator + (BigUint::from(4 * d + 2 * N + 1) << SCALE);
                 let budget = &ring_denominator << (SCALE - target);
