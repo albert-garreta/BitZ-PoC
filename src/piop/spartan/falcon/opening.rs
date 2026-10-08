@@ -10,7 +10,7 @@ use std::{collections::HashMap, sync::OnceLock};
 
 #[cfg(test)]
 use field::Uint;
-use field::{BatchMulAcc, MergeAccumulator, RingOps};
+use field::{BatchMulAcc, MergeAccumulator, Reduce, RingOps, WideMul};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
@@ -312,6 +312,7 @@ pub(super) fn verify_binding_prefix(
     let algebraic = super::piop::verify_falcon_piop_in_field(
         transcript,
         layout,
+        &statement.signatures,
         &proof.piop,
         target_bits,
         &field,
@@ -720,62 +721,23 @@ fn add_norm_claims_prepared(
     instance_weights: &[F],
 ) -> Result<(), FalconError> {
     if instance_weights.len() != layout.capacity()
-        || (1usize << proof.norm.point.len()) != N * layout.capacity()
+        || (1usize << proof.norm.point.len()) != 2 * N * layout.capacity()
     {
         return Err(piop("norm binding point dimension mismatch"));
     }
-    for side in 0..2 {
-        let mut constant = field.zero();
-        for instance in coefficients.instances(layout.batch()) {
-            let base = instance * layout.signature_stride();
-            for i in 0..N {
-                let weight = field.mul(
-                    &field.mul(scale, &instance_weights[instance]),
-                    &weights.at(instance * N + i),
-                );
-                if side == 0 {
-                    add_value_scaled(coefficients, base + layout.s1_bit(i, 0), weight, field);
-                    if coefficients.needs_constants() {
-                        constant = field.add(&constant, &mul_i(weight, -6_144, field));
-                    }
-                } else {
-                    add_signed_source_scaled(coefficients, base, layout, i, weight, field);
-                }
+    let mut constant = field.zero();
+    for instance in coefficients.instances(layout.batch()) {
+        let base = instance * layout.signature_stride();
+        for i in 0..N {
+            let weight = field.mul(scale, &weights.at(instance * 2 * N + i));
+            add_value_scaled(coefficients, base + layout.s1_bit(i, 0), weight, field);
+            if coefficients.needs_constants() {
+                constant = field.add(&constant, &mul_i(weight, -6_144, field));
             }
         }
-        add_claim_target(
-            target,
-            *scale,
-            proof.norm.terminal[side][0],
-            constant,
-            field,
-        );
-        *scale = field.mul(scale, &eta);
-        let mut constant = field.zero();
-        for instance in coefficients.instances(layout.batch()) {
-            let base = instance * layout.signature_stride();
-            for i in 0..N {
-                let weight = field.mul(scale, &weights.at(instance * N + i));
-                if side == 0 {
-                    add_value_scaled(coefficients, base + layout.s1_bit(i, 0), weight, field);
-                    if coefficients.needs_constants() {
-                        constant = field.add(&constant, &mul_i(weight, -6_144, field));
-                    }
-                } else {
-                    add_signed_source_scaled(coefficients, base, layout, i, weight, field);
-                }
-            }
-        }
-        add_claim_target(
-            target,
-            *scale,
-            proof.norm.terminal[side][1],
-            constant,
-            field,
-        );
-        *scale = field.mul(scale, &eta);
     }
-    let constant = field.zero();
+    add_claim_target(target, *scale, proof.norm.terminal, constant, field);
+    *scale = field.mul(scale, &eta);
     for instance in coefficients.instances(layout.batch()) {
         let mut weight = field.mul(scale, &instance_weights[instance]);
         for bit in 0..NORM_BITS {
@@ -786,7 +748,7 @@ fn add_norm_claims_prepared(
             weight = field.add(&weight, &weight);
         }
     }
-    add_claim_target(target, *scale, proof.norm.slack, constant, field);
+    add_claim_target(target, *scale, proof.norm.slack, field.zero(), field);
     *scale = field.mul(scale, &eta);
     Ok(())
 }
@@ -899,10 +861,12 @@ fn canonical_eq_weights(point: &[F], field: &Cfg) -> Result<Vec<u128>, FalconErr
         })
 }
 
+#[cfg(test)]
 fn unsigned(value: u128, field: &Cfg) -> F {
     F::from_with_cfg(value, field)
 }
 
+#[cfg(test)]
 fn signed(value: i128, field: &Cfg) -> F {
     let magnitude = unsigned(value.unsigned_abs(), field);
     if value.is_negative() {
@@ -927,7 +891,7 @@ fn mul_i(mut value: F, coefficient: i128, field: &Cfg) -> F {
             value
         }
     } else {
-        field.mul(&value, &signed(coefficient, field))
+        field.reduce(field.mul_wide(&value, &coefficient))
     }
 }
 

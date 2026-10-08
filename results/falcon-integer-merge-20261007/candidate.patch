@@ -1,0 +1,3764 @@
+diff --git a/src/piop/spartan/falcon/BRIDGE_GRINDING_AUDIT.md b/src/piop/spartan/falcon/BRIDGE_GRINDING_AUDIT.md
+index 86d9bdba..7a058536 100644
+--- a/src/piop/spartan/falcon/BRIDGE_GRINDING_AUDIT.md
++++ b/src/piop/spartan/falcon/BRIDGE_GRINDING_AUDIT.md
+@@ -10,7 +10,7 @@ masks reduce HashToPoint
+ to linear selection/output checks and quadratic rejection rows; this
+ integer-to-binary BitZ forest remains part of the protocol.
+ 
+-The enclosing protocol is `bitz/falcon/shared-prime/non-zk/v4`. The statement
++The enclosing protocol is `bitz/falcon/shared-prime/non-zk/v5`. The statement
+ digest binds the derived bridge numerator and grinding difficulty.
+ 
+ ## Scope and model
+diff --git a/src/piop/spartan/falcon/COMPACTION_SOUNDNESS.md b/src/piop/spartan/falcon/COMPACTION_SOUNDNESS.md
+index fa606e31..64e83c91 100644
+--- a/src/piop/spartan/falcon/COMPACTION_SOUNDNESS.md
++++ b/src/piop/spartan/falcon/COMPACTION_SOUNDNESS.md
+@@ -63,22 +63,30 @@ intermediate U/V polynomials and proves no affine-composition tree. This
+ linear construction relies on making routing public and validating it. It
+ does not justify an unchecked witness-dependent decoder for a private mask.
+ 
+-The native ring proof and norm consume the same committed C,S1,S2 bits.
++The native ring proof consumes the committed C,S1,S2 bits. The norm consumes
++the same S1 bits and the public signature's S2 coefficients; public-input
++rows bind the committed S2 encoding to those coefficients.
+ SHAKE consumes the same output bits linked to t. Linear routing never casts
+ an extension-field element into the arithmetic prime field.
+ 
+ ## Reduction to BitZ
+ 
+-There are D quadratic rejection rows, padded to 1,024 / 2,048. Prove
++There are D quadratic rejection rows, padded to 1,024 / 2,048. On this same
++row domain let S contain S1 followed by N zeros, and let i index signatures.
++One combined outer sumcheck proves
+ 
+-    sum(r in {0,1}^ell, eq(tau,r)*(A(r)*B(r)-C(r))) = 0
++    sum(i,j, eq(rho,i)*S(i,j)^2
++             + lambda*eq(tau,(j,i))*(A(i,j)*B(i,j)-C(i,j)))
++      = sum(i, eq(rho,i)*(BETA_SQUARED - sum_j(public_S2[i,j]^2))) - slack.
+ 
+-with a degree-three sumcheck, where A=u2, B=u0, C=e. The three endpoint MLEs
+-are linear functions of committed bits. Padded rows and inactive signatures
+-are zero. The norm contributes five additional endpoint claims. Bind all
+-endpoints before their random batching coefficients are sampled.
++Here A=u2, B=u0, C=e, and slack is the rho-weighted slack evaluation.
++The source is fixed before rho and tau; slack is absorbed before the fresh
++family-batching challenge lambda. The polynomial has degree at most three
++per variable. Padded rejection rows and inactive signatures are zero.
++The four terminal MLEs S,A,B,C and slack are linear functions of committed
++bits. Bind these five claims before their random binder coefficients are sampled.
+ 
+-Merge these eight endpoints, the native ring projection, public-input rows,
++Merge these five claims, the native ring projection, public-input rows,
+ candidate divisions, mask-validity rows, routing rows, and padding checks
+ into one arithmetic-source sumcheck. Its source evaluation is authenticated
+ by the existing BitZ bridge. SHAKE, its output links, and the bridge join the
+@@ -87,8 +95,9 @@ final binary opening against the single source root.
+ Division residuals are bounded by 98,311 on arbitrary source bits; selection
+ residuals by 1; routing residuals by 16,383. These are below either supported
+ prime family, so a zero residual in Fp is the intended integer equality.
+-Norm bounds remain the dominant exact-source bound. The rejection sumcheck
+-needs its row-point and cubic-round error allocations; there is no extra
++Norm bounds remain the dominant exact-source bound. The combined sumcheck
++needs norm-instance, rejection-row-point, family-batching, and cubic-round
++error allocations; there is no extra
+ HashToPoint polynomial-evaluation challenge or projection error.
+ 
+ ## Witness and payload
+diff --git a/src/piop/spartan/falcon/ONE_SOURCE.md b/src/piop/spartan/falcon/ONE_SOURCE.md
+index 49f5a9b5..6d7e5148 100644
+--- a/src/piop/spartan/falcon/ONE_SOURCE.md
++++ b/src/piop/spartan/falcon/ONE_SOURCE.md
+@@ -4,7 +4,7 @@ SharedPrime authenticates the arithmetic and Keccak slab witnesses
+ through one initial Merkle tree. The logical source dimensions, arithmetic
+ bridge, ring switch, and recursive Ligerito commitments remain separate
+ concepts. There is no compatibility path for the preceding Falcon proofs.
+-The protocol identifier is `bitz/falcon/shared-prime/non-zk/v4`. `FalconHybridStatement::source_root` is the one
++The protocol identifier is `bitz/falcon/shared-prime/non-zk/v5`. `FalconHybridStatement::source_root` is the one
+ source root. Ligerito's `initial_root` field is still the statement identifier,
+ not that Merkle root; its authentication callback checks `source_root`.
+ 
+diff --git a/src/piop/spartan/falcon/OPTIMIZATION_SECURITY.md b/src/piop/spartan/falcon/OPTIMIZATION_SECURITY.md
+index c360bb48..2f00c94e 100644
+--- a/src/piop/spartan/falcon/OPTIMIZATION_SECURITY.md
++++ b/src/piop/spartan/falcon/OPTIMIZATION_SECURITY.md
+@@ -4,7 +4,7 @@ SharedPrime combines the native Falcon ring proof, integer norm and HashToPoint
+ reductions, binary Keccak, and one joint source PCS opening. Supported Falcon
+ degrees are 512 and 1024; validated profiles select ring extension degree
+ `k` from 9, 10, and 11. The protocol identifier is
+-`bitz/falcon/shared-prime/non-zk/v4`.
++`bitz/falcon/shared-prime/non-zk/v5`.
+ 
+ ## Model and fields
+ 
+@@ -50,9 +50,11 @@ replaces committed prefix/cutoff/count witnesses. No polynomial-tree,
+ prefix-count, cutoff, or selected-bit source columns remain.
+ 
+ The only nonlinear HashToPoint rows are the `D` rejection products. They are
+-padded to `next_power_of_two(D)` and proved by one equality-weighted
+-sumcheck of degree three. Its three unweighted terminal row MLEs `A,B,C`
+-are authenticated by the existing source binder. Inactive signatures and
++padded to `next_power_of_two(D)` and batched with the norm into one
++degree-three integer outer sumcheck. The norm uses S1 followed by N zeros
++on that domain; the public S2 squared norm is subtracted from its target.
++Its terminal S1 evaluation, slack, and the three unweighted rejection row
++MLEs `A,B,C` are authenticated by the existing source binder. Inactive signatures and
+ candidate padding have zero `A`, `B`, and `C`. There is no H2P projection
+ challenge, fingerprint, grand product, or GKR stage. The native ring proof,
+ integer-to-binary BitZ GKR, and SHAKE/Keccak proof remain.
+@@ -82,14 +84,14 @@ Let `B` be the live batch, `d=log2(next_power_of_two(B))`,
+ | Reduction | Error numerator | Schedule field |
+ | --- | ---: | --- |
+ | Norm instance batching | `d` | `norm_instance_bits` |
+-| Norm sumchecks | `4*(log2(N)+d)` | `quadratic_round_bits` |
++| Integer relation batching | `1` | `relation_batching_bits` |
+ | HashToPoint initial row point | `r+d` | `outer_point_bits` |
+-| HashToPoint rejection R1CS sumcheck | `3*(r+d)` | `cubic_round_bits` |
+-| Linear constraints and endpoint batching | `m+d+B+8` | `linear_point_bits` |
++| Combined integer outer sumcheck | `3*(r+d)` | `integer_round_bits` |
++| Linear constraints and endpoint batching | `m+d+B+5` | `linear_point_bits` |
+ | Arithmetic-source sumcheck | `2*(a+d)` | `binding_round_bits` |
+ | Native-ring integer-lift projection | `2k-2` | Separate ring schedule |
+ 
+-The eight binder endpoints are five norm claims and the three rejection row
++The five binder claims are one norm endpoint, slack, and the three rejection row
+ claims. No H2P polynomial projection, fingerprint, candidate-leaf, or
+ compaction-forest error category remains. For each of the first six categories,
+ the implementation uses
+@@ -116,6 +118,18 @@ complete composition.
+ 
+ ## Binary obligations and PCS
+ 
++At target 128, the original equal-per-block PCS allocation supplies the total PCS error
++budget. A deterministic greedy allocation buys error reduction per expected
++hash, starting at each block's native minimum. It is adopted only when it
++reduces expected work and its upward-rounded summed error is no greater than
++the original downward-rounded sum. All difficulties remain at most 32 bits.
++Exact dyadic-integer tests compare the represented raw bounds independently
++of this floating-point interval check. The allocation depends only on public
++configuration, never on statement or nonce values. Every final difficulty
++is already included in the statement digest and replayed by the verifier.
++Target 100 retains its original allocation, where dispatch overhead dominates
++the already small nonce searches.
++
+ The ledger retains the bounded integer-to-binary BitZ forest/GKR, every
+ Keccak slab, public SHAKE wiring and source padding, binary claim batching,
+ the joint binary sumcheck, ring switching, and support padding. Their
+@@ -135,8 +149,9 @@ geometry, message counts, and limb-injectivity argument.
+ The initial oracle is one vector-valued RS codeword with complete canonical
+ rows. Apply the unique-decoding continuation to that joint oracle; separate
+ proximity guarantees for logical sources do not establish joint proximity.
+-For `h` PCS challenge blocks, each targets
+-`target+2+ceil(log2(h))`, so their sum is at most `2^-(target+2)`.
++For `h` PCS challenge blocks, the original allocation targets
++`target+2+ceil(log2(h))` per block. The rebalanced allocation preserves or
++reduces that summed error, so the PCS total remains at most `2^-(target+2)`.
+ Canonical zero-lane expansion and full final-message authentication change
+ stored encodings, not these obligations.
+ 
+@@ -148,15 +163,16 @@ policy, and derived schedule fields. The native-ring certificate and its
+ integer lift precede their respective challenges; the actual prime is
+ sampled after the lift is bound. Public selection masks precede the native-ring
+ challenges and all arithmetic challenges. The rejection row point nonce
+-precedes its equality point, and every round message precedes its sumcheck
++precedes its equality point. The weighted slack is fixed before the relation
++batching nonce and challenge, and every round message precedes its sumcheck
+ challenge. Nonces bind their domain, round, and difficulty;
+ verifiers consume all messages and nonces.
+ 
+ The implementation tests exact integer stage allocations, exact rational
+ composition, both prime families, native-ring profile selection, source
+-layouts, and padded batches. Rejection tests compare packed prover rows with
+-the committed-bit decoder and an independent dense proof, exercise all
+-quotient bit patterns, reject malformed proof messages, and compare
++layouts, and padded batches. Integer-outer tests compare every round with
++an independent dense polynomial, cover nonzero rejection residuals, reject
++malformed proof messages and cross-signature norm-budget transfers, and compare
+ prover/verifier transcripts. Mask and source-binding tests reject malformed
+ or changed selection metadata, changed rejection bits, compact outputs,
+ and unauthenticated terminal claims. Runtime qualification cannot weaken
+diff --git a/src/piop/spartan/falcon/README.md b/src/piop/spartan/falcon/README.md
+index 9d22e35c..431d375f 100644
+--- a/src/piop/spartan/falcon/README.md
++++ b/src/piop/spartan/falcon/README.md
+@@ -30,7 +30,7 @@ witness so large buffers can be folded without cloning. The four presets are
+ The `falcon` feature retains direct signature verification and reference helpers.
+ 
+ There is one proving protocol and no NativeCarry or old-proof verifier. The
+-protocol identifier is `bitz/falcon/shared-prime/non-zk/v4`. Proofs must be
++protocol identifier is `bitz/falcon/shared-prime/non-zk/v5`. Proofs must be
+ regenerated. Falcon currently exposes in-memory proofs without a full transport
+ codec. `payload_size_bytes()` counts stored messages, excluding the public
+ statement and transport framing; `payload_size_breakdown()` reports disjoint
+@@ -57,7 +57,9 @@ components. Column sums have their own canonical encoding.
+    polynomial against the projected committed bits. The inclusive prime
+    intervals are `[2^114, 2^115−2^102−1]` at 100 bits and `[2^125, 2^126−1]`
+    at 128 bits. Coefficient and source-residual bounds prevent wraparound.
+-4. Run the norm proof and one quadratic R1CS sumcheck for rejection bits.
++4. Run one cubic integer outer sumcheck combining the norm and quadratic
++   rejection rows. Compute the public S2 norm directly; project the S1
++   endpoint, slack, and three rejection endpoints to the committed source.
+    Public-mask validity and selected coefficient routing are linear constraints
+    on existing committed bits. There are no intermediate HashToPoint polynomial
+    witnesses, and no HashToPoint grand-product/GKR proof.
+@@ -104,8 +106,10 @@ and 327,680 bytes at 128 bits. It remains a substantial proof-size cost.
+ 
+ The implementation preserves packed source buffers, factored ring coefficients,
+ compiled binder templates, compact zero-lane and final-message encodings, and
+-SIMD Keccak/grinding kernels. Simplification does not change security targets,
+-code rates, query counts, or grinding requirements.
++SIMD Keccak/grinding kernels. Security targets, code rates, and query counts
++are unchanged. At target 128, PCS grinding is reallocated using only public error bounds:
++the new summed error cannot exceed the previous allocation, every native
++minimum remains enforced, and the schedule is bound into the statement.
+ 
+ HashToPoint qualification uses the full Falcon archive at
+ `results/falcon-power-basis-20261007/results-candidate`, for both degrees,
+diff --git a/src/piop/spartan/falcon/constraints.rs b/src/piop/spartan/falcon/constraints.rs
+index 715a5568..63863718 100644
+--- a/src/piop/spartan/falcon/constraints.rs
++++ b/src/piop/spartan/falcon/constraints.rs
+@@ -20,7 +20,7 @@ pub struct FalconConstraintCounts {
+     pub public_input_bindings: usize,
+     /// Candidate divisions, public-mask acceptance, and selected-coefficient rows.
+     pub hash_to_point_linear: usize,
+-    /// Terms in the degree-2 norm sumcheck.
++    /// Private square terms in the combined integer outer (S2 is public).
+     pub norm_terms: usize,
+     /// Rejection bits as products of the two quotient bits.
+     pub hash_to_point_quadratic: usize,
+@@ -33,7 +33,7 @@ impl FalconConstraintCounts {
+         Self {
+             public_input_bindings: 1 + 32 * 8 + super::CT_SIGNATURE_BYTES + N,
+             hash_to_point_linear: 2 * HASH_TO_POINT_SAMPLES + N,
+-            norm_terms: 2 * N,
++            norm_terms: N,
+             hash_to_point_quadratic: HASH_TO_POINT_SAMPLES,
+         }
+     }
+@@ -48,9 +48,9 @@ impl FalconConstraintCounts {
+         N.trailing_zeros() as usize + layout.capacity().trailing_zeros() as usize
+     }
+ 
+-    /// The norm polynomial has degree two in every variable.
++    /// The factored instance equality times the square has individual degree three.
+     pub const fn norm_round_degree(self) -> usize {
+-        2
++        3
+     }
+ 
+     /// Quadratic row sumchecks have degree three (`eq * (A * B - C)`).
+@@ -304,8 +304,8 @@ mod tests {
+         assert_eq!(counts.hash_to_point_linear, 3_646);
+         assert_eq!(counts.linear_rows(), 6_504);
+         assert_eq!(counts.hash_to_point_quadratic, 1_311);
+-        assert_eq!(counts.norm_terms, 2_048);
+-        assert_eq!(counts.norm_round_degree(), 2);
++        assert_eq!(counts.norm_terms, 1_024);
++        assert_eq!(counts.norm_round_degree(), 3);
+         assert_eq!(counts.product_round_degree(), 3);
+ 
+     }
+diff --git a/src/piop/spartan/falcon/hybrid.rs b/src/piop/spartan/falcon/hybrid.rs
+index 12f07614..69931adb 100644
+--- a/src/piop/spartan/falcon/hybrid.rs
++++ b/src/piop/spartan/falcon/hybrid.rs
+@@ -32,6 +32,8 @@ use std::sync::Mutex;
+ 
+ #[path = "hybrid_size.rs"]
+ mod size;
++#[path = "hybrid_grinding.rs"]
++mod grinding;
+ 
+ fn error(e: impl std::fmt::Display) -> FalconError {
+     FalconError::Piop(e.to_string())
+@@ -149,6 +151,13 @@ impl PreparedFalconHybrid {
+         let pcs_target = target_bits + 2 + first.blocks.len().next_power_of_two().ilog2() as usize;
+         let pcs_grinding =
+             GrindingPlan::resolve(ligerito.security(), pcs_target as u32).map_err(error)?;
++        // At target 100 the search work is already tiny; additional positive
++        // boundaries can cost more in dispatch than they save in hashes.
++        let pcs_grinding = if target_bits == 128 {
++            grinding::rebalance(pcs_grinding)
++        } else {
++            pcs_grinding
++        };
+         let prepared = Self {
+             layout,
+             keccak,
+@@ -224,16 +233,19 @@ impl PreparedFalconHybrid {
+                 prime(numerators.norm_instances, schedule.norm_instance_bits),
+             ),
+             (
+-                "norm sumchecks",
+-                prime(numerators.norm_rounds, schedule.quadratic_round_bits),
++                "integer relation batching",
++                prime(
++                    numerators.relation_batching,
++                    schedule.relation_batching_bits,
++                ),
+             ),
+             (
+                 "HashToPoint initial row point",
+                 prime(numerators.outer_point, schedule.outer_point_bits),
+             ),
+             (
+-                "HashToPoint rejection sumcheck",
+-                prime(numerators.cubic_rounds, schedule.cubic_round_bits),
++                "combined integer outer sumcheck",
++                prime(numerators.integer_rounds, schedule.integer_round_bits),
+             ),
+             (
+                 "shared ring outer and endpoint batch",
+@@ -470,8 +482,8 @@ impl PreparedFalconHybrid {
+         for bits in [
+             schedule.norm_instance_bits,
+             schedule.outer_point_bits,
+-            schedule.quadratic_round_bits,
+-            schedule.cubic_round_bits,
++            schedule.relation_batching_bits,
++            schedule.integer_round_bits,
+             schedule.linear_point_bits,
+             schedule.binding_round_bits,
+         ] {
+@@ -1200,9 +1212,9 @@ mod tests {
+                 let prime_bits = if target == 100 { 114 } else { 125 };
+                 for (numerator, bits) in [
+                     (n.norm_instances, schedule.norm_instance_bits),
+-                    (n.norm_rounds, schedule.quadratic_round_bits),
++                    (n.relation_batching, schedule.relation_batching_bits),
+                     (n.outer_point, schedule.outer_point_bits),
+-                    (n.cubic_rounds, schedule.cubic_round_bits),
++                    (n.integer_rounds, schedule.integer_round_bits),
+                     (n.linear, schedule.linear_point_bits),
+                     (n.binding, schedule.binding_round_bits),
+                     (2 * EXTENSION_DEGREE - 2, super::super::shared_ring::projection_grinding_bits(target)),
+diff --git a/src/piop/spartan/falcon/hybrid_size.rs b/src/piop/spartan/falcon/hybrid_size.rs
+index 8025a549..0c765388 100644
+--- a/src/piop/spartan/falcon/hybrid_size.rs
++++ b/src/piop/spartan/falcon/hybrid_size.rs
+@@ -35,6 +35,7 @@ impl FalconHybridProof {
+             ("ring_projection", (0, 0)),
+             ("prime_norm", (0, 0)),
+             ("prime_h2p_rows", (0, 0)),
++            ("prime_integer_outer", (0, 0)),
+             ("prime_binder", (0, 0)),
+             ("binary_bridge", (0, 0)),
+             ("binary_keccak", (0, 0)),
+@@ -378,19 +379,17 @@ mod tests {
+         .unwrap();
+         // Distinct synthetic nonces exercise every stored arithmetic boundary.
+         let mut audited = stored.clone();
+-        audited.norm.instance_nonce = Some(0);
+-        audited.norm.grinding_nonces = vec![1, 2];
+-        audited.h2p_rejection.rows.point_nonce = Some(3);
+-        audited.h2p_rejection.rows.grinding_nonces = vec![4];
++        audited.instance_nonce = Some(0);
++        audited.point_nonce = Some(3);
++        audited.merge_nonce = Some(4);
++        audited.grinding_nonces = vec![1, 2];
+         let mut counts = std::collections::BTreeMap::new();
+         audited.visit_grinding_nonces(|category, nonce| add_nonce(&mut counts, category, nonce));
+-        assert_eq!(counts["prime_norm"], (3, 6));
+-        assert_eq!(counts["prime_h2p_rows"], (2, 9));
+-        // One signature: two 10-round norms and one 11-round rejection relation.
+-        // At target 100 none of these arithmetic messages has a stored nonce.
+-        let norm = (2 + 4 + 2 * 10 * 2) * FIELD_BYTES;
+-        let rejection = (3 + 11 * 3) * FIELD_BYTES;
+-        assert_eq!(stored.payload_size_bytes(), norm + rejection);
++        assert_eq!(counts["prime_norm"], (1, 1));
++        assert_eq!(counts["prime_h2p_rows"], (1, 4));
++        assert_eq!(counts["prime_integer_outer"], (3, 10));
++        // One signature: one 11-round combined cubic, four endpoints and slack.
++        assert_eq!(stored.payload_size_bytes(), (5 + 11 * 3) * FIELD_BYTES);
+     }
+ }
+ 
+diff --git a/src/piop/spartan/falcon/mod.rs b/src/piop/spartan/falcon/mod.rs
+index 9d784592..256ca559 100644
+--- a/src/piop/spartan/falcon/mod.rs
++++ b/src/piop/spartan/falcon/mod.rs
+@@ -1,7 +1,7 @@
+ //! Shared implementation and errors for Falcon-512 and Falcon-1024.
+ 
+ /// Domain identifier for the full Falcon verification protocol.
+-pub const PROTOCOL_ID: &str = "bitz/falcon/shared-prime/non-zk/v4";
++pub const PROTOCOL_ID: &str = "bitz/falcon/shared-prime/non-zk/v5";
+ 
+ /// A malformed encoding or failed Falcon verification.
+ #[derive(Clone, Debug, thiserror::Error, Eq, PartialEq)]
+diff --git a/src/piop/spartan/falcon/opening.rs b/src/piop/spartan/falcon/opening.rs
+index 8bc04b2a..91e1dd23 100644
+--- a/src/piop/spartan/falcon/opening.rs
++++ b/src/piop/spartan/falcon/opening.rs
+@@ -10,7 +10,7 @@ use std::{collections::HashMap, sync::OnceLock};
+ 
+ #[cfg(test)]
+ use field::Uint;
+-use field::{BatchMulAcc, MergeAccumulator, RingOps};
++use field::{BatchMulAcc, MergeAccumulator, Reduce, RingOps, WideMul};
+ #[cfg(feature = "parallel")]
+ use rayon::prelude::*;
+ 
+@@ -312,6 +312,7 @@ pub(super) fn verify_binding_prefix(
+     let algebraic = super::piop::verify_falcon_piop_in_field(
+         transcript,
+         layout,
++        &statement.signatures,
+         &proof.piop,
+         target_bits,
+         &field,
+@@ -720,62 +721,23 @@ fn add_norm_claims_prepared(
+     instance_weights: &[F],
+ ) -> Result<(), FalconError> {
+     if instance_weights.len() != layout.capacity()
+-        || (1usize << proof.norm.point.len()) != N * layout.capacity()
++        || (1usize << proof.norm.point.len()) != 2 * N * layout.capacity()
+     {
+         return Err(piop("norm binding point dimension mismatch"));
+     }
+-    for side in 0..2 {
+-        let mut constant = field.zero();
+-        for instance in coefficients.instances(layout.batch()) {
+-            let base = instance * layout.signature_stride();
+-            for i in 0..N {
+-                let weight = field.mul(
+-                    &field.mul(scale, &instance_weights[instance]),
+-                    &weights.at(instance * N + i),
+-                );
+-                if side == 0 {
+-                    add_value_scaled(coefficients, base + layout.s1_bit(i, 0), weight, field);
+-                    if coefficients.needs_constants() {
+-                        constant = field.add(&constant, &mul_i(weight, -6_144, field));
+-                    }
+-                } else {
+-                    add_signed_source_scaled(coefficients, base, layout, i, weight, field);
+-                }
+-            }
+-        }
+-        add_claim_target(
+-            target,
+-            *scale,
+-            proof.norm.terminal[side][0],
+-            constant,
+-            field,
+-        );
+-        *scale = field.mul(scale, &eta);
+-        let mut constant = field.zero();
+-        for instance in coefficients.instances(layout.batch()) {
+-            let base = instance * layout.signature_stride();
+-            for i in 0..N {
+-                let weight = field.mul(scale, &weights.at(instance * N + i));
+-                if side == 0 {
+-                    add_value_scaled(coefficients, base + layout.s1_bit(i, 0), weight, field);
+-                    if coefficients.needs_constants() {
+-                        constant = field.add(&constant, &mul_i(weight, -6_144, field));
+-                    }
+-                } else {
+-                    add_signed_source_scaled(coefficients, base, layout, i, weight, field);
+-                }
++    let mut constant = field.zero();
++    for instance in coefficients.instances(layout.batch()) {
++        let base = instance * layout.signature_stride();
++        for i in 0..N {
++            let weight = field.mul(scale, &weights.at(instance * 2 * N + i));
++            add_value_scaled(coefficients, base + layout.s1_bit(i, 0), weight, field);
++            if coefficients.needs_constants() {
++                constant = field.add(&constant, &mul_i(weight, -6_144, field));
+             }
+         }
+-        add_claim_target(
+-            target,
+-            *scale,
+-            proof.norm.terminal[side][1],
+-            constant,
+-            field,
+-        );
+-        *scale = field.mul(scale, &eta);
+     }
+-    let constant = field.zero();
++    add_claim_target(target, *scale, proof.norm.terminal, constant, field);
++    *scale = field.mul(scale, &eta);
+     for instance in coefficients.instances(layout.batch()) {
+         let mut weight = field.mul(scale, &instance_weights[instance]);
+         for bit in 0..NORM_BITS {
+@@ -786,7 +748,7 @@ fn add_norm_claims_prepared(
+             weight = field.add(&weight, &weight);
+         }
+     }
+-    add_claim_target(target, *scale, proof.norm.slack, constant, field);
++    add_claim_target(target, *scale, proof.norm.slack, field.zero(), field);
+     *scale = field.mul(scale, &eta);
+     Ok(())
+ }
+@@ -899,10 +861,12 @@ fn canonical_eq_weights(point: &[F], field: &Cfg) -> Result<Vec<u128>, FalconErr
+         })
+ }
+ 
++#[cfg(test)]
+ fn unsigned(value: u128, field: &Cfg) -> F {
+     F::from_with_cfg(value, field)
+ }
+ 
++#[cfg(test)]
+ fn signed(value: i128, field: &Cfg) -> F {
+     let magnitude = unsigned(value.unsigned_abs(), field);
+     if value.is_negative() {
+@@ -927,7 +891,7 @@ fn mul_i(mut value: F, coefficient: i128, field: &Cfg) -> F {
+             value
+         }
+     } else {
+-        field.mul(&value, &signed(coefficient, field))
++        field.reduce(field.mul_wide(&value, &coefficient))
+     }
+ }
+ 
+diff --git a/src/piop/spartan/falcon/opening_binding_tests.rs b/src/piop/spartan/falcon/opening_binding_tests.rs
+index 12cc0c49..20612014 100644
+--- a/src/piop/spartan/falcon/opening_binding_tests.rs
++++ b/src/piop/spartan/falcon/opening_binding_tests.rs
+@@ -23,6 +23,19 @@ fn point(rounds: usize, field: &Cfg) -> Vec<F> {
+         .collect()
+ }
+ 
++#[test]
++fn mixed_integer_scaling_matches_field_embedding() {
++    let field = config();
++    for value in [field.zero(), field.one(), field.neg(&field.one()), unsigned(12345, &field)] {
++        for coefficient in [i128::MIN, -12289, -6144, -1, 0, 1, 256, 12288, i128::MAX] {
++            assert_eq!(
++                mul_i(value, coefficient, &field),
++                field.mul(&value, &signed(coefficient, &field)),
++            );
++        }
++    }
++}
++
+ struct DenseSink<'a> {
+     values: Vec<F>,
+     field: &'a Cfg,
+@@ -271,7 +284,7 @@ fn terminal_fixture(field: &Cfg) -> FalconPiopClaims {
+         modulus: field.modulus_u128(),
+         norm: NormClaims {
+             instance_point: Vec::new(),
+-            terminal: [[field.zero(); 2]; 2],
++            terminal: field.zero(),
+             slack: field.zero(),
+             point: Vec::new(),
+         },
+@@ -285,12 +298,9 @@ fn terminal_fixture(field: &Cfg) -> FalconPiopClaims {
+ fn complete_claim_fixture(layout: &FalconSourceLayout, field: &Cfg) -> FalconPiopClaims {
+     let batch_vars = layout.capacity().ilog2() as usize;
+     let mut claims = terminal_fixture(field);
+-    claims.norm.point = point(COEFFICIENT_LOG + batch_vars, field);
++    claims.norm.point = point(COEFFICIENT_LOG + 1 + batch_vars, field);
+     claims.norm.instance_point = point(batch_vars, field);
+-    claims.norm.terminal = [
+-        [unsigned(3, field), unsigned(5, field)],
+-        [unsigned(7, field), unsigned(11, field)],
+-    ];
++    claims.norm.terminal = unsigned(3, field);
+     claims.norm.slack = unsigned(41, field);
+     claims.h2p_rejection = HashToPointRejectionClaims {
+         terminal: [
+@@ -1183,13 +1193,13 @@ fn compact_prefix_binds_word_products_and_weighted_norm_to_source() {
+         verify_binding_prefix(&mut fresh_transcript(), &layout, &statement, &bad, 100).is_err()
+     );
+     let mut bad = proof.clone();
+-    bad.piop.norm.terminal[0][0] = field.add(&bad.piop.norm.terminal[0][0], &field.one());
++    bad.piop.terminal[0] = field.add(&bad.piop.terminal[0], &field.one());
+     assert!(
+         verify_binding_prefix(&mut fresh_transcript(), &layout, &statement, &bad, 100).is_err()
+     );
+     let mut bad = proof;
+-    bad.piop.h2p_rejection.rows.terminal.cx =
+-        field.add(&bad.piop.h2p_rejection.rows.terminal.cx, &field.one());
++    bad.piop.terminal[3] =
++        field.add(&bad.piop.terminal[3], &field.one());
+     assert!(
+         verify_binding_prefix(&mut fresh_transcript(), &layout, &statement, &bad, 100).is_err()
+     );
+@@ -1315,23 +1325,14 @@ fn check_norm_binding(layout: FalconSourceLayout) {
+     .unwrap();
+     let mut proof = terminal_fixture(&field);
+     proof.norm.instance_point = point(2, &field);
+-    proof.norm.point = point(COEFFICIENT_LOG + 2, &field);
++    proof.norm.point = point(COEFFICIENT_LOG + 3, &field);
+     let instance_weights = eq_table(&proof.norm.instance_point, &field).unwrap();
+     let weights = eq_table(&proof.norm.point, &field).unwrap();
+     for (instance, trace) in traces.iter().enumerate() {
+         for i in 0..N {
+-            for (side, word) in [trace.s1[i] as i128, trace.signature.s2[i] as i128]
+-                .into_iter()
+-                .enumerate()
+-            {
+-                let unweighted = field.mul(&weights[instance * N + i], &signed(word, &field));
+-                proof.norm.terminal[side][0] = field.add(
+-                    &proof.norm.terminal[side][0],
+-                    &field.mul(&instance_weights[instance], &unweighted),
+-                );
+-                proof.norm.terminal[side][1] =
+-                    field.add(&proof.norm.terminal[side][1], &unweighted);
+-            }
++            let word = signed(trace.s1[i] as i128, &field);
++            let weighted = field.mul(&weights[instance * 2 * N + i], &word);
++            proof.norm.terminal = field.add(&proof.norm.terminal, &weighted);
+         }
+         proof.norm.slack = field.add(
+             &proof.norm.slack,
+@@ -1380,7 +1381,7 @@ fn check_norm_binding(layout: FalconSourceLayout) {
+     let (actual, target) = evaluate(&proof);
+     assert_eq!(actual, target);
+     let mut bad = proof.clone();
+-    bad.norm.terminal[0][0] = bad.norm.terminal[0][1];
++    bad.norm.terminal = field.add(&bad.norm.terminal, &field.one());
+     let (actual, target) = evaluate(&bad);
+     assert_ne!(actual, target);
+     let mut bad = proof;
+diff --git a/src/piop/spartan/falcon/opening_compact.rs b/src/piop/spartan/falcon/opening_compact.rs
+index 084fd6aa..6d05c98b 100644
+--- a/src/piop/spartan/falcon/opening_compact.rs
++++ b/src/piop/spartan/falcon/opening_compact.rs
+@@ -958,20 +958,18 @@ impl BindingForm<'_> {
+         let linear = local_dot(&template.common);
+         let rejection = local_dot(&template.rejection);
+ 
+-        // Five repeated forms cover common linear rows, rejection, S1, S2 and
++        // Four repeated forms cover common linear rows, rejection, S1 and
+         // slack. Public selection contributes an additional sparse routing
+         // form evaluated directly from the same local coefficient endpoints.
+         // In particular the verifier never prepares per-signature word tables.
+         let norm_local = eq_table(&self.proof.norm.point[..COEFFICIENT_LOG], field)
+             .map_err(|error| piop(error.to_string()))?;
+-        let norm_instances = eq_table(&self.proof.norm.point[COEFFICIENT_LOG..], field)
++        let norm_instances = eq_table(&self.proof.norm.point[COEFFICIENT_LOG + 1..], field)
+             .map_err(|error| piop(error.to_string()))?;
+         let mut s1 = LocalEvaluation::new(local, field);
+-        let mut s2 = LocalEvaluation::new(local, field);
+         let mut slack = LocalEvaluation::new(local, field);
+         for (i, &weight) in norm_local.iter().enumerate() {
+             add_value_scaled(&mut s1, self.layout.s1_bit(i, 0), weight, field);
+-            add_signed_source_scaled(&mut s2, 0, self.layout, i, weight, field);
+         }
+         let mut power = field.one();
+         for bit in 0..NORM_BITS {
+@@ -981,7 +979,6 @@ impl BindingForm<'_> {
+         let mut linear_weight = field.zero();
+         let mut rejection_weight = field.zero();
+         let mut norm_weight = field.zero();
+-        let mut weighted_norm = field.zero();
+         let mut slack_weight = field.zero();
+         let offsets = self.layout.offsets();
+         let mut mask_prefix = vec![field.zero(); HASH_TO_POINT_SAMPLES + 1];
+@@ -1025,34 +1022,20 @@ impl BindingForm<'_> {
+             );
+             let norm = field.mul(&instance, &norm_instances[s]);
+             norm_weight = field.add(&norm_weight, &norm);
+-            weighted_norm = field.add(
+-                &weighted_norm,
+-                &field.mul(&norm, &prepared.norm_instances[s]),
+-            );
+             slack_weight = field.add(
+                 &slack_weight,
+                 &field.mul(&instance, &prepared.norm_instances[s]),
+             );
+         }
+         let eta2 = field.mul(&self.eta, &self.eta);
+-        let eta3 = field.mul(&eta2, &self.eta);
+-        let eta4 = field.mul(&eta3, &self.eta);
+-        let eta5 = field.mul(&eta4, &self.eta);
+-        let s1_weight = field.add(
+-            &field.mul(&self.eta, &weighted_norm),
+-            &field.mul(&eta2, &norm_weight),
+-        );
+-        let s2_weight = field.add(
+-            &field.mul(&eta3, &weighted_norm),
+-            &field.mul(&eta4, &norm_weight),
+-        );
++        let side_zero = field.sub(&field.one(), &self.proof.norm.point[COEFFICIENT_LOG]);
++        let s1_weight = field.mul(&self.eta, &field.mul(&side_zero, &norm_weight));
+         let mut sum = <Cfg as BatchMulAcc<F>>::Accumulator::zero();
+         for (value, weight) in [
+             (linear, linear_weight),
+             (rejection, rejection_weight),
+             (s1.sum, s1_weight),
+-            (s2.sum, s2_weight),
+-            (slack.sum, field.mul(&eta5, &slack_weight)),
++            (slack.sum, field.mul(&eta2, &slack_weight)),
+         ] {
+             field.mul_acc(&mut sum, &value, &weight);
+         }
+@@ -1063,7 +1046,7 @@ impl BindingForm<'_> {
+         let field = self.field;
+         let proof = self.proof;
+         let batch_vars = self.layout.capacity().ilog2() as usize;
+-        if proof.norm.point.len() != COEFFICIENT_LOG + batch_vars
++        if proof.norm.point.len() != COEFFICIENT_LOG + 1 + batch_vars
+             || proof.norm.instance_point.len() != batch_vars
+         {
+             return Err(piop("hybrid binding terminal dimensions mismatch"));
+@@ -1093,16 +1076,15 @@ impl BindingForm<'_> {
+                         }
+                     }
+                     let encoded = super::super::encode_signature_ct(&self.statement.signatures[s])?;
+-                    let mut signature_bytes = field.zero();
++                    // Fewer than 2^12 public byte/key terms, each below 2^14,
++                    // fit the mixed accumulator before one final reduction.
++                    let mut public_words = field::FpLinearAcc::<2, 1>::zero();
+                     // The common header constant is already in linear_constant().
+                     for (byte, &value) in encoded.iter().enumerate().skip(1) {
+-                        signature_bytes = field.add(
+-                            &signature_bytes,
+-                            &mul_i(
+-                                self.local_linear_weights.at(1 + 256 + byte),
+-                                i128::from(value),
+-                                field,
+-                            ),
++                        field.mul_acc(
++                            &mut public_words,
++                            &self.local_linear_weights.at(1 + 256 + byte),
++                            &u64::from(value),
+                         );
+                     }
+ 
+@@ -1115,23 +1097,19 @@ impl BindingForm<'_> {
+                                 .at(selection_mask_row() + usize::from(index)),
+                         );
+                     }
+-                    signature_bytes = field.add(&signature_bytes, &expected_mask);
+                     for (j, &value) in self.statement.public_keys[s].h.iter().enumerate() {
+-                        signature_bytes = field.add(
+-                            &signature_bytes,
+-                            &mul_i(
+-                                self.local_linear_weights.at(
+-                                    super::super::FalconConstraintCounts::per_signature()
+-                                        .linear_rows()
+-                                        - N
+-                                        + j,
+-                                ),
+-                                i128::from(value),
+-                                field,
++                        field.mul_acc(
++                            &mut public_words,
++                            &self.local_linear_weights.at(
++                                super::super::FalconConstraintCounts::per_signature()
++                                    .linear_rows()
++                                    - N
++                                    + j,
+                             ),
++                            &u64::from(value),
+                         );
+                     }
+-
++                    let signature_bytes = field.add(&field.reduce(public_words), &expected_mask);
+                     Ok(field.mul(alpha, &field.add(&bits, &signature_bytes)))
+                 })
+                 .collect();
+@@ -1139,39 +1117,26 @@ impl BindingForm<'_> {
+             constant = field.sub(&constant, &contribution);
+         }
+         let mut target = field.sub(&field.zero(), &constant);
+-        let norm_instances = eq_table(&proof.norm.point[COEFFICIENT_LOG..], field)
++        let norm_instances = eq_table(&proof.norm.point[COEFFICIENT_LOG + 1..], field)
+             .map_err(|error| piop(error.to_string()))?;
+-        let norm_outer =
+-            eq_table(proof.norm.instance_point, field).map_err(|error| piop(error.to_string()))?;
+-        let mut norm_sum = field.zero();
+-        let mut weighted_norm_sum = field.zero();
+-        for (left, right) in norm_instances
++        let norm_sum = norm_instances
+             .iter()
+-            .zip(&norm_outer)
+             .take(self.layout.batch())
+-        {
+-            norm_sum = field.add(&norm_sum, left);
+-            weighted_norm_sum = field.add(&weighted_norm_sum, &field.mul(left, right));
+-        }
+-        let mut scale = self.eta;
+-        for side in 0..2 {
+-            for (coordinate, sum) in [weighted_norm_sum, norm_sum].into_iter().enumerate() {
+-                let constant = if side == 0 {
+-                    mul_i(field.mul(&scale, &sum), -6_144, field)
+-                } else {
+-                    field.zero()
+-                };
+-                add_claim_target(
+-                    &mut target,
+-                    scale,
+-                    proof.norm.terminal[side][coordinate],
+-                    constant,
+-                    field,
+-                );
+-                scale = field.mul(&scale, &self.eta);
+-            }
+-        }
+-        add_claim_target(&mut target, scale, proof.norm.slack, field.zero(), field);
++            .fold(field.zero(), |s, v| field.add(&s, v));
++        let side_zero = field.sub(&field.one(), &proof.norm.point[COEFFICIENT_LOG]);
++        let constant = mul_i(
++            field.mul(&self.eta, &field.mul(&norm_sum, &side_zero)),
++            -6_144,
++            field,
++        );
++        add_claim_target(&mut target, self.eta, proof.norm.terminal, constant, field);
++        add_claim_target(
++            &mut target,
++            field.mul(&self.eta, &self.eta),
++            proof.norm.slack,
++            field.zero(),
++            field,
++        );
+         Ok(field.add(
+             &target,
+             &self.prepared_compact_weights()?.rejection.target(),
+diff --git a/src/piop/spartan/falcon/opening_rejection.rs b/src/piop/spartan/falcon/opening_rejection.rs
+index a78ef95a..a80c11f6 100644
+--- a/src/piop/spartan/falcon/opening_rejection.rs
++++ b/src/piop/spartan/falcon/opening_rejection.rs
+@@ -27,7 +27,7 @@ impl RejectionWeights {
+         let instances = eq_table(&claim.point[REJECTION_ROW_LOG..], field)
+             .map_err(|error| piop(error.to_string()))?;
+         let mut scale = eta;
+-        for _ in 0..5 {
++        for _ in 0..2 {
+             scale = field.mul(&scale, &eta);
+         }
+         let scales = [
+diff --git a/src/piop/spartan/falcon/piop.rs b/src/piop/spartan/falcon/piop.rs
+index 90a8f9db..ac54a486 100644
+--- a/src/piop/spartan/falcon/piop.rs
++++ b/src/piop/spartan/falcon/piop.rs
+@@ -1,51 +1,40 @@
+-// Integer Falcon reductions over the prime already selected by the native ring proof.
+-// Every terminal claim is authenticated against the original bit source by opening.rs.
+-use super::COEFFICIENT_LOG;
+-use field::RingOps;
+-#[cfg(feature = "parallel")]
+-use rayon::prelude::*;
+-
++// One combined integer outer for norm and HashToPoint rejection. Endpoint
++// authentication reuses the original digit projections in opening.rs.
+ use super::{
+-    BETA_SQUARED, FalconError, FalconSourceLayout, FalconVerificationTrace, N,
++    BETA_SQUARED, FalconError, FalconSignatureCt, FalconSourceLayout, FalconVerificationTrace, N,
+     hash_to_point_selection::{REJECTION_ROW_LOG, REJECTION_ROWS, REJECTION_STRIDE},
+ };
+ use crate::{
+     piop::spartan::{
+-        SpartanBitzField, SpartanField, absorb_field_elements,
++        SpartanBitzField, SpartanField, absorb_field_elements, falcon_integer,
+         grinding::{GrindingDomain, GrindingRound, grind_and_absorb, verify_and_absorb},
+-        matrix::{eq_eval, eq_table},
++        matrix::eq_table,
+         squeeze_field,
+     },
+     sumcheck::{
+         SumcheckProof,
+         boundary::{ProverGrindingRoundBoundary, VerifierGrindingRoundBoundary},
+-        inner::{InitialClaims, prove_batched_inner_sumcheck},
+-        outer::{OuterClaim, OuterEvaluations, OuterRows, prove_outer_sumcheck},
+         proof::validate_field_elements,
+     },
+     transcript::traits::Transcript,
+ };
+-
++use field::{BatchMulAcc, FpLinearAcc, FpSignedLinearAcc, Reduce, RingOps};
+ type F = SpartanBitzField;
+ type Cfg = <F as SpartanField>::Config;
+-
+ #[path = "piop_shared.rs"]
+ mod shared;
+ use shared::{CompactSumcheck, verify_round_proofs};
+ pub(super) use shared::{
+-    FalconPiopClaimRef, FalconPiopClaims, FalconPiopProof, HashToPointRejectionClaims,
+-    HashToPointRejectionProof, NormClaims, NormProof, QuadraticClaims, QuadraticRelationProof,
+-    verify_falcon_piop_in_field,
++    FalconPiopClaimRef, FalconPiopClaims, FalconPiopProof, HashToPointRejectionClaims, NormClaims,
+ };
+-
+ /// Prime-field numerators, excluding the native ring and binary-field stages.
+-/// The eight binder endpoints are five norm claims and three rejection row claims.
++/// The five binder endpoints are S1, slack, and three rejection row claims.
+ #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+ pub struct FalconSecurityNumerators {
+     pub norm_instances: usize,
+-    pub norm_rounds: usize,
++    pub relation_batching: usize,
+     pub outer_point: usize,
+-    pub cubic_rounds: usize,
++    pub integer_rounds: usize,
+     pub linear: usize,
+     pub binding: usize,
+ }
+@@ -56,10 +45,10 @@ impl FalconSecurityNumerators {
+         let rounds = REJECTION_ROW_LOG + d;
+         Self {
+             norm_instances: d,
+-            norm_rounds: 4 * (COEFFICIENT_LOG + d),
++            relation_batching: 1,
+             outer_point: rounds,
+-            cubic_rounds: 3 * rounds,
+-            linear: layout.linear_stride().ilog2() as usize + d + layout.batch() + 8,
++            integer_rounds: 3 * rounds,
++            linear: layout.linear_stride().ilog2() as usize + d + layout.batch() + 5,
+             binding: 2 * (layout.signature_stride().ilog2() as usize + d),
+         }
+     }
+@@ -70,8 +59,8 @@ impl FalconSecurityNumerators {
+ pub struct FalconSecuritySchedule {
+     pub norm_instance_bits: u32,
+     pub outer_point_bits: u32,
+-    pub quadratic_round_bits: u32,
+-    pub cubic_round_bits: u32,
++    pub relation_batching_bits: u32,
++    pub integer_round_bits: u32,
+     pub linear_point_bits: u32,
+     pub binding_round_bits: u32,
+ }
+@@ -86,9 +75,9 @@ impl FalconSecuritySchedule {
+         let n = FalconSecurityNumerators::for_layout(layout);
+         Some(Self {
+             norm_instance_bits: stage_grinding_bits(n.norm_instances, target_bits, floor),
+-            quadratic_round_bits: stage_grinding_bits(n.norm_rounds, target_bits, floor),
++            relation_batching_bits: stage_grinding_bits(n.relation_batching, target_bits, floor),
+             outer_point_bits: stage_grinding_bits(n.outer_point, target_bits, floor),
+-            cubic_round_bits: stage_grinding_bits(n.cubic_rounds, target_bits, floor),
++            integer_round_bits: stage_grinding_bits(n.integer_rounds, target_bits, floor),
+             linear_point_bits: stage_grinding_bits(n.linear, target_bits, floor),
+             binding_round_bits: stage_grinding_bits(n.binding, target_bits, floor),
+         })
+@@ -105,533 +94,239 @@ const fn stage_grinding_bits(numerator: usize, target_bits: usize, prime_floor_b
+ 
+ struct NormInstanceGrinding;
+ impl GrindingDomain for NormInstanceGrinding {
+-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/grinding/norm-instances/v3";
+-}
+-struct QuadraticGrinding;
+-impl GrindingDomain for QuadraticGrinding {
+-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/grinding/degree2/v1";
++    const DOMAIN: &'static [u8] = b"bitz/falcon/integer/norm-instances/v1";
+ }
+ struct OuterPointGrinding;
+ impl GrindingDomain for OuterPointGrinding {
+-    const DOMAIN: &'static [u8] = b"bitz/falcon/h2p-rejection/grinding/row-point/v1";
++    const DOMAIN: &'static [u8] = b"bitz/falcon/integer/rejection-point/v1";
+ }
+-struct CubicGrinding;
+-impl GrindingDomain for CubicGrinding {
+-    const DOMAIN: &'static [u8] = b"bitz/falcon/h2p-rejection/grinding/row-round/v1";
++struct MergeGrinding;
++impl GrindingDomain for MergeGrinding {
++    const DOMAIN: &'static [u8] = b"bitz/falcon/integer/family-merge/v1";
+ }
+-
+-/// The caller fixes the source commitment before the existing ring proof samples p.
+-pub(super) fn prove_falcon_piop_in_field(
+-    transcript: &mut impl Transcript,
+-    layout: &FalconSourceLayout,
+-    traces: &[FalconVerificationTrace],
+-    target_bits: usize,
+-    field: &Cfg,
+-) -> Result<(FalconPiopProof, FalconPiopClaims), FalconError> {
+-    validate_inputs(layout, traces, target_bits)?;
+-    validate_shared_field(target_bits, field)?;
+-    bind_shared_header(transcript, layout, target_bits, field);
+-    let (norm, norm_claims) = prove_norm(transcript, layout, traces, target_bits, field)?;
+-    let (h2p_rejection, rejection_claims) =
+-        prove_rejection(transcript, layout, traces, target_bits, field)?;
+-    Ok((
+-        FalconPiopProof {
+-            norm,
+-            h2p_rejection,
+-        },
+-        FalconPiopClaims {
+-            modulus: field.modulus_u128(),
+-            norm: norm_claims,
+-            h2p_rejection: rejection_claims,
+-        },
+-    ))
++struct IntegerRoundGrinding;
++impl GrindingDomain for IntegerRoundGrinding {
++    const DOMAIN: &'static [u8] = b"bitz/falcon/integer/round/v1";
+ }
+-fn validate_inputs(
+-    layout: &FalconSourceLayout,
+-    traces: &[FalconVerificationTrace],
+-    target_bits: usize,
++fn nonce<D: GrindingDomain>(
++    t: &mut impl Transcript,
++    bits: u32,
++) -> Result<Option<u64>, FalconError> {
++    if bits == 0 {
++        Ok(None)
++    } else {
++        grind_and_absorb(t, GrindingRound::<D>::new(0), bits)
++            .map(Some)
++            .map_err(|e| piop(e.to_string()))
++    }
++}
++fn check_nonce<D: GrindingDomain>(
++    t: &mut impl Transcript,
++    bits: u32,
++    n: Option<u64>,
+ ) -> Result<(), FalconError> {
+-    if traces.len() != layout.batch() || !matches!(target_bits, 100 | 128) {
+-        return Err(piop("invalid batch or security target"));
++    match (bits, n) {
++        (0, None) => Ok(()),
++        (1.., Some(n)) => verify_and_absorb(t, GrindingRound::<D>::new(0), bits, n)
++            .map_err(|e| piop(e.to_string())),
++        _ => Err(piop("integer outer nonce shape mismatch")),
+     }
+-    Ok(())
+ }
+-
+-fn validate_shared_field(target_bits: usize, field: &Cfg) -> Result<(), FalconError> {
+-    let (prime_min, prime_max) = super::shared_ring::prime_bounds(target_bits)?;
+-    let modulus = field.modulus_u128();
+-    if !(prime_min..=prime_max).contains(&modulus)
+-        || modulus <= super::constraints::SOURCE_RESIDUAL_BOUND
++fn validate_shared_field(target: usize, field: &Cfg) -> Result<(), FalconError> {
++    let (min, max) = super::shared_ring::prime_bounds(target)?;
++    if !(min..=max).contains(&field.modulus_u128())
++        || field.modulus_u128() <= super::constraints::SOURCE_RESIDUAL_BOUND
+     {
+         return Err(piop("invalid shared-prime integer context"));
+     }
+     Ok(())
+ }
+-
+-fn bind_shared_header(
+-    transcript: &mut impl Transcript,
++fn header(
++    t: &mut impl Transcript,
+     layout: &FalconSourceLayout,
+-    target_bits: usize,
++    target: usize,
+     field: &Cfg,
+-) {
+-    transcript.absorb_slice(b"bitz/falcon/piop/shared-prime/public-selection/v7");
+-    transcript.absorb_slice(&(layout.batch() as u64).to_le_bytes());
+-    transcript.absorb_slice(&(layout.capacity() as u64).to_le_bytes());
+-    transcript.absorb_slice(&(target_bits as u64).to_le_bytes());
+-    transcript.absorb_slice(&field.modulus_u128().to_le_bytes());
+-    transcript.absorb_slice(&(layout.live_bits() as u64).to_le_bytes());
+-    transcript.absorb_slice(&(layout.occupied_bits() as u64).to_le_bytes());
++) -> Result<(), FalconError> {
++    validate_shared_field(target, field)?;
++    t.absorb_slice(b"bitz/falcon/piop/combined-integer/v1");
++    for v in [
++        layout.batch(),
++        layout.capacity(),
++        target,
++        layout.live_bits(),
++        layout.occupied_bits(),
++    ] {
++        t.absorb_slice(&(v as u64).to_le_bytes());
++    }
++    t.absorb_slice(&field.modulus_u128().to_le_bytes());
++    Ok(())
+ }
+-
+-#[tracing::instrument(skip_all, name = "falcon_arithmetic:norm")]
+-fn prove_norm(
+-    transcript: &mut impl Transcript,
+-    layout: &FalconSourceLayout,
+-    traces: &[FalconVerificationTrace],
+-    target_bits: usize,
++fn target<'a>(
++    signatures: impl Iterator<Item = &'a FalconSignatureCt>,
++    weights: &[F],
+     field: &Cfg,
+-) -> Result<(NormProof, NormClaims), FalconError> {
+-    transcript.absorb_slice(b"bitz/falcon1024-ct/norm/v3");
+-    let instance_nonce = if target_bits == 128 && layout.capacity() > 1 {
+-        Some(
+-            grind_and_absorb(
+-                transcript,
+-                GrindingRound::<NormInstanceGrinding>::new(0),
+-                security_schedule(layout, target_bits)?.norm_instance_bits,
+-            )
+-            .map_err(|error| piop(error.to_string()))?,
+-        )
+-    } else {
+-        None
+-    };
+-    let instance_point = sample_point(
+-        transcript,
+-        layout.capacity().trailing_zeros() as usize,
+-        field,
+-    )?;
+-    let instance_weights =
+-        eq_table(&instance_point, field).map_err(|error| piop(error.to_string()))?;
+-    let len = N * layout.capacity();
+-    let zero = field.zero();
+-    let mut s1 = vec![zero; len];
+-    let mut s2 = vec![zero; len];
+-    let mut weighted_s1 = vec![zero; len];
+-    let mut weighted_s2 = vec![zero; len];
+-    let contributions: Vec<[F; 3]> = crate::utils::cfg_chunks_mut!(s1, N)
+-        .zip(crate::utils::cfg_chunks_mut!(s2, N))
+-        .zip(crate::utils::cfg_chunks_mut!(weighted_s1, N))
+-        .zip(crate::utils::cfg_chunks_mut!(weighted_s2, N))
+-        .zip(crate::utils::cfg_iter!(traces))
+-        .zip(crate::utils::cfg_iter!(&instance_weights[..layout.batch()]))
+-        .map(
+-            |(((((s1, s2), weighted_s1), weighted_s2), trace), weight)| {
+-                let mut sums = [0u64; 2];
+-                for i in 0..N {
+-                    let a = i64::from(trace.s1[i]);
+-                    let b = i64::from(trace.signature.s2[i]);
+-                    s1[i] = signed(i128::from(a), field);
+-                    s2[i] = signed(i128::from(b), field);
+-                    weighted_s1[i] = field.mul(weight, &s1[i]);
+-                    weighted_s2[i] = field.mul(weight, &s2[i]);
+-                    // Both coefficients are i16, so each integer sum is <=2^40.
+-                    // Apply the common signature weight once after summation.
+-                    sums[0] += (a * a) as u64;
+-                    sums[1] += (b * b) as u64;
+-                }
+-                [sums[0], sums[1], trace.norm_slack]
+-                    .map(|value| field.mul(weight, &unsigned(u128::from(value), field)))
+-            },
+-        )
+-        .collect();
+-    let [claim1, claim2, slack] = contributions.into_iter().fold([zero; 3], |sum, value| {
+-        std::array::from_fn(|i| field.add(&sum[i], &value[i]))
+-    });
+-    let claims = [claim1, claim2];
+-    let beta = unsigned(BETA_SQUARED as u128, field);
+-    let instance_sum = instance_weights[..layout.batch()]
+-        .iter()
+-        .fold(zero, |sum, weight| field.add(&sum, weight));
+-    let expected = field.mul(&instance_sum, &beta);
+-    if field.add(&field.add(&claims[0], &claims[1]), &slack) != expected {
+-        return Err(piop("invalid norm witness"));
++) -> F {
++    let mut sum = FpSignedLinearAcc::<2, 2>::default();
++    for (signature, weight) in signatures.zip(weights) {
++        let norm: i128 = signature.s2.iter().map(|&s| i128::from(s).pow(2)).sum();
++        field.mul_acc(&mut sum, weight, &(i128::from(BETA_SQUARED) - norm));
+     }
+-
+-    absorb_field_elements(transcript, &[claims[0], claims[1], slack], field);
+-    let output = if target_bits == 128 {
+-        let mut boundary = ProverGrindingRoundBoundary::<QuadraticGrinding>::with_round_offset(
+-            security_schedule(layout, target_bits)?.quadratic_round_bits,
+-            0,
+-        );
+-        let out = prove_batched_inner_sumcheck(
+-            field,
+-            transcript,
+-            &claims,
+-            [s1, s2],
+-            [weighted_s1, weighted_s2],
+-            &mut boundary,
+-        )
+-        .map_err(|error| piop(error.to_string()))?;
+-        (out, boundary.into_nonces())
+-    } else {
+-        let mut boundary = crate::sumcheck::UngrindedRoundBoundary;
+-        let out = prove_batched_inner_sumcheck(
+-            field,
+-            transcript,
+-            InitialClaims::Known(&claims),
+-            [s1, s2],
+-            [weighted_s1, weighted_s2],
+-            &mut boundary,
+-        )
+-        .map_err(|error| piop(error.to_string()))?;
+-        (out, Vec::new())
+-    };
+-    let (output, grinding_nonces) = output;
+-    absorb_field_elements(transcript, &output.terminal_evaluations.concat(), field);
+-    let terminal = output.terminal_evaluations;
+-    Ok((
+-        NormProof {
+-            instance_nonce,
+-            claims,
+-            terminal,
+-            grinding_nonces,
+-            sumchecks: output.proofs.map(CompactSumcheck::from_full),
+-        },
+-        NormClaims {
+-            instance_point,
+-            terminal,
++    field.reduce(sum)
++}
++fn claims(field: &Cfg, rho: Vec<F>, point: Vec<F>, terminal: [F; 4], slack: F) -> FalconPiopClaims {
++    FalconPiopClaims {
++        modulus: field.modulus_u128(),
++        norm: NormClaims {
++            instance_point: rho,
++            point: point.clone(),
++            terminal: terminal[0],
+             slack,
+-            point: output.point,
+         },
+-    ))
+-}
+-
+-fn verify_norm(
+-    transcript: &mut impl Transcript,
+-    layout: &FalconSourceLayout,
+-    proof: &NormProof,
+-    target_bits: usize,
+-    field: &Cfg,
+-) -> Result<NormClaims, FalconError> {
+-    transcript.absorb_slice(b"bitz/falcon1024-ct/norm/v3");
+-    match (
+-        target_bits == 128 && layout.capacity() > 1,
+-        proof.instance_nonce,
+-    ) {
+-        (true, Some(nonce)) => verify_and_absorb(
+-            transcript,
+-            GrindingRound::<NormInstanceGrinding>::new(0),
+-            security_schedule(layout, target_bits)?.norm_instance_bits,
+-            nonce,
+-        )
+-        .map_err(|error| piop(error.to_string()))?,
+-        (false, None) => {}
+-        _ => return Err(piop("invalid norm-instance grinding nonce")),
+-    }
+-    let instance_point = sample_point(
+-        transcript,
+-        layout.capacity().trailing_zeros() as usize,
+-        field,
+-    )?;
+-    validate_field_elements(&proof.claims, field).map_err(|error| piop(error.to_string()))?;
+-    validate_field_elements(&proof.terminal.concat(), field)
+-        .map_err(|error| piop(error.to_string()))?;
+-    if target_bits == 100 && !proof.grinding_nonces.is_empty() {
+-        return Err(piop("unexpected norm grinding nonces"));
+-    }
+-    let instance_weights =
+-        eq_table(&instance_point, field).map_err(|error| piop(error.to_string()))?;
+-    let instance_sum = instance_weights[..layout.batch()]
+-        .iter()
+-        .fold(field.zero(), |sum, weight| field.add(&sum, weight));
+-    let beta = unsigned(BETA_SQUARED as u128, field);
+-    let expected = field.mul(&instance_sum, &beta);
+-    let slack = field.sub(&expected, &field.add(&proof.claims[0], &proof.claims[1]));
+-    absorb_field_elements(
+-        transcript,
+-        &[proof.claims[0], proof.claims[1], slack],
+-        field,
+-    );
+-    let rounds = COEFFICIENT_LOG + layout.capacity().trailing_zeros() as usize;
+-    let (point, final_claims) = if target_bits == 128 {
+-        let mut boundary = VerifierGrindingRoundBoundary::<QuadraticGrinding>::new(
+-            security_schedule(layout, target_bits)?.quadratic_round_bits,
+-            &proof.grinding_nonces,
+-        );
+-        verify_round_proofs::<3, 2, 2>(
+-            proof.sumchecks.each_ref(),
+-            transcript,
+-            &proof.claims,
+-            rounds,
+-            field,
+-            &mut boundary,
+-        )
+-    } else {
+-        let mut boundary = crate::sumcheck::UngrindedRoundBoundary;
+-        verify_round_proofs::<3, 2, 2>(
+-            proof.sumchecks.each_ref(),
+-            transcript,
+-            &proof.claims,
+-            rounds,
+-            field,
+-            &mut boundary,
+-        )
+-    }
+-    .map_err(|error| piop(error.to_string()))?;
+-    for (claim, terminal) in final_claims.iter().zip(proof.terminal.iter()) {
+-        if *claim != field.mul(&terminal[0], &terminal[1]) {
+-            return Err(piop("norm terminal identity failed"));
+-        }
++        h2p_rejection: HashToPointRejectionClaims {
++            point,
++            terminal: [terminal[1], terminal[2], terminal[3]],
++        },
+     }
+-    absorb_field_elements(transcript, &proof.terminal.concat(), field);
+-    Ok(NormClaims {
+-        instance_point,
+-        point,
+-        slack,
+-        terminal: proof.terminal,
+-    })
+ }
+-
+-#[tracing::instrument(skip_all, name = "falcon_arithmetic:hash_to_point_rejection")]
+-fn prove_rejection(
++#[tracing::instrument(skip_all, name = "falcon_arithmetic:integer_outer")]
++pub(super) fn prove_falcon_piop_in_field(
+     transcript: &mut impl Transcript,
+     layout: &FalconSourceLayout,
+     traces: &[FalconVerificationTrace],
+     target_bits: usize,
+     field: &Cfg,
+-) -> Result<(HashToPointRejectionProof, HashToPointRejectionClaims), FalconError> {
+-    transcript.absorb_slice(b"bitz/falcon/h2p-rejection/rows/v1");
+-    let rows = RejectionRows {
+-        layout,
+-        traces,
++) -> Result<(FalconPiopProof, FalconPiopClaims), FalconError> {
++    if traces.len() != layout.batch() {
++        return Err(piop("invalid integer witness batch"));
++    }
++    header(transcript, layout, target_bits, field)?;
++    let schedule = security_schedule(layout, target_bits)?;
++    let instance_nonce = nonce::<NormInstanceGrinding>(transcript, schedule.norm_instance_bits)?;
++    let rho = sample_point(transcript, layout.capacity().ilog2() as usize, field)?;
++    let weights = eq_table(&rho, field).map_err(|e| piop(e.to_string()))?;
++    let point_nonce = nonce::<OuterPointGrinding>(transcript, schedule.outer_point_bits)?;
++    let tau = sample_point(transcript, rejection_row_rounds(layout), field)?;
++    let mut slack = FpLinearAcc::<2, 1>::default();
++    for (trace, weight) in traces.iter().zip(&weights) {
++        field.mul_acc(&mut slack, weight, &trace.norm_slack);
++    }
++    let slack = field.reduce(slack);
++    let initial = field.sub(
++        &target(traces.iter().map(|t| &t.signature), &weights, field),
++        &slack,
++    );
++    absorb_field_elements(transcript, &[slack], field);
++    let merge_nonce = nonce::<MergeGrinding>(transcript, schedule.relation_batching_bits)?;
++    let mix = squeeze(transcript, field)?;
++    let mut boundary = ProverGrindingRoundBoundary::<IntegerRoundGrinding>::with_round_offset(
++        schedule.integer_round_bits,
++        0,
++    );
++    let output = falcon_integer::prove(
+         field,
+-    };
+-    let (rows, claims) = prove_quadratic(
+         transcript,
+-        rows,
+-        rejection_row_rounds(layout),
+-        security_schedule(layout, target_bits)?,
+-        field,
+-    )?;
++        REJECTION_ROW_LOG,
++        &rho,
++        Some(&tau),
++        mix,
++        initial,
++        |row| {
++            let instance = row / REJECTION_STRIDE;
++            let j = row % REJECTION_STRIDE;
++            let Some(trace) = traces.get(instance) else {
++                return [0; 4];
++            };
++            let s = if j < N { trace.s1[j] } else { 0 };
++            let q = if j < REJECTION_ROWS {
++                trace.hash_to_point.quotients[j]
++            } else {
++                0
++            };
++            [
++                s,
++                i16::from((q >> 2) & 1),
++                i16::from(q & 1),
++                i16::from(((q >> 2) & 1) & (q & 1)),
++            ]
++        },
++        &mut boundary,
++    )
++    .map_err(|e| piop(e.to_string()))?;
++    let claims = claims(field, rho, output.point, output.terminal, slack);
+     Ok((
+-        HashToPointRejectionProof { rows },
+-        HashToPointRejectionClaims {
+-            point: claims.point,
+-            terminal: [claims.terminal.ax, claims.terminal.bx, claims.terminal.cx],
++        FalconPiopProof {
++            instance_nonce,
++            point_nonce,
++            merge_nonce,
++            slack,
++            terminal: output.terminal,
++            sumcheck: CompactSumcheck::from_full(output.proof),
++            grinding_nonces: boundary.into_nonces(),
+         },
++        claims,
+     ))
+ }
+-
+-fn verify_rejection(
++pub(super) fn verify_falcon_piop_in_field(
+     transcript: &mut impl Transcript,
+     layout: &FalconSourceLayout,
+-    proof: &HashToPointRejectionProof,
++    signatures: &[FalconSignatureCt],
++    proof: &FalconPiopProof,
+     target_bits: usize,
+     field: &Cfg,
+-) -> Result<HashToPointRejectionClaims, FalconError> {
+-    transcript.absorb_slice(b"bitz/falcon/h2p-rejection/rows/v1");
+-    let claims = verify_quadratic(
++) -> Result<FalconPiopClaims, FalconError> {
++    if signatures.len() != layout.batch() {
++        return Err(piop("invalid public signature batch"));
++    }
++    header(transcript, layout, target_bits, field)?;
++    validate_field_elements(&[proof.slack], field).map_err(|e| piop(e.to_string()))?;
++    validate_field_elements(&proof.terminal, field).map_err(|e| piop(e.to_string()))?;
++    let schedule = security_schedule(layout, target_bits)?;
++    check_nonce::<NormInstanceGrinding>(
+         transcript,
+-        rejection_row_rounds(layout),
+-        &proof.rows,
+-        security_schedule(layout, target_bits)?,
+-        field,
++        schedule.norm_instance_bits,
++        proof.instance_nonce,
+     )?;
+-    Ok(HashToPointRejectionClaims {
+-        point: claims.point,
+-        terminal: [claims.terminal.ax, claims.terminal.bx, claims.terminal.cx],
+-    })
+-}
+-
+-/// The only nonlinear HashToPoint relation is q_bit2*q_bit0=e. Each operand
+-/// reads the same bit that source packing commits; all padded rows are zero.
+-struct RejectionRows<'a> {
+-    layout: &'a FalconSourceLayout,
+-    traces: &'a [FalconVerificationTrace],
+-    field: &'a Cfg,
+-}
+-
+-impl RejectionRows<'_> {
+-    #[inline(always)]
+-    fn quotient(&self, row: usize) -> Option<u8> {
+-        let candidate = row % REJECTION_STRIDE;
+-        if candidate >= REJECTION_ROWS {
+-            return None;
+-        }
+-        self.traces
+-            .get(row / REJECTION_STRIDE)
+-            .map(|trace| trace.hash_to_point.quotients[candidate])
+-    }
+-
+-    #[inline(always)]
+-    fn bit(&self, value: bool) -> F {
+-        if value {
+-            self.field.one()
+-        } else {
+-            self.field.zero()
+-        }
+-    }
+-}
+-
+-impl OuterRows for RejectionRows<'_> {
+-    type AB = F;
+-    type C = F;
+-    fn dimensions(&self) -> (usize, usize, usize) {
+-        let len = REJECTION_STRIDE * self.layout.capacity();
+-        (len, len, len)
+-    }
+-    #[inline(always)]
+-    fn a(&self, row: usize) -> F {
+-        self.bit(self.quotient(row).is_some_and(|q| q & 4 != 0))
+-    }
+-    #[inline(always)]
+-    fn b(&self, row: usize) -> F {
+-        self.bit(self.quotient(row).is_some_and(|q| q & 1 != 0))
+-    }
+-    #[inline(always)]
+-    fn c(&self, row: usize) -> F {
+-        self.bit(self.quotient(row).is_some_and(|q| q & 5 == 5))
+-    }
+-}
+-
+-#[tracing::instrument(skip_all, name = "falcon_arithmetic:rejection_sumcheck")]
+-fn prove_quadratic(
+-    transcript: &mut impl Transcript,
+-    rows: impl OuterRows<AB = F, C = F>,
+-    rounds: usize,
+-    security: FalconSecuritySchedule,
+-    field: &Cfg,
+-) -> Result<(QuadraticRelationProof, QuadraticClaims), FalconError> {
+-    let point_nonce = if security.outer_point_bits != 0 {
+-        Some(
+-            grind_and_absorb(
+-                transcript,
+-                GrindingRound::<OuterPointGrinding>::new(0),
+-                security.outer_point_bits,
+-            )
+-            .map_err(|error| piop(error.to_string()))?,
+-        )
+-    } else {
+-        None
+-    };
+-    let tau = sample_point(transcript, rounds, field)?;
+-    let output = if security.cubic_round_bits != 0 {
+-        let mut boundary = ProverGrindingRoundBoundary::<CubicGrinding>::with_round_offset(
+-            security.cubic_round_bits,
+-            0,
+-        );
+-        let out = prove_outer_sumcheck(
+-            field,
+-            transcript,
+-            OuterClaim::RowwiseZero,
+-            &tau,
+-            rows,
+-            None,
+-            &mut boundary,
+-        )
+-        .map_err(|error| piop(error.to_string()))?;
+-        (out, boundary.into_nonces())
+-    } else {
+-        let mut boundary = crate::sumcheck::UngrindedRoundBoundary;
+-        let out = prove_outer_sumcheck(
+-            field,
+-            transcript,
+-            OuterClaim::RowwiseZero,
+-            &tau,
+-            rows,
+-            None,
+-            &mut boundary,
+-        )
+-        .map_err(|error| piop(error.to_string()))?;
+-        (out, Vec::new())
+-    };
+-    let (output, grinding_nonces) = output;
+-    let terminal = output.evaluations;
+-    Ok((
+-        QuadraticRelationProof {
+-            point_nonce,
+-            sumcheck: CompactSumcheck::from_full(output.proof),
+-            terminal,
+-            grinding_nonces,
+-        },
+-        QuadraticClaims {
+-            terminal,
+-            point: output.point,
+-        },
+-    ))
+-}
+-
+-fn verify_quadratic(
+-    transcript: &mut impl Transcript,
+-    rounds: usize,
+-    proof: &QuadraticRelationProof,
+-    security: FalconSecuritySchedule,
+-    field: &Cfg,
+-) -> Result<QuadraticClaims, FalconError> {
+-    if security.cubic_round_bits == 0 && !proof.grinding_nonces.is_empty() {
+-        return Err(piop("unexpected rejection-row grinding nonces"));
+-    }
+-    match (security.outer_point_bits != 0, proof.point_nonce) {
+-        (true, Some(nonce)) => verify_and_absorb(
+-            transcript,
+-            GrindingRound::<OuterPointGrinding>::new(0),
+-            security.outer_point_bits,
+-            nonce,
+-        )
+-        .map_err(|error| piop(error.to_string()))?,
+-        (false, None) => {}
+-        _ => return Err(piop("invalid outer-point grinding nonce")),
+-    }
+-    let tau = sample_point(transcript, rounds, field)?;
+-    let zero = field.zero();
+-    validate_field_elements(
+-        &[proof.terminal.ax, proof.terminal.bx, proof.terminal.cx],
++    let rho = sample_point(transcript, layout.capacity().ilog2() as usize, field)?;
++    let weights = eq_table(&rho, field).map_err(|e| piop(e.to_string()))?;
++    check_nonce::<OuterPointGrinding>(transcript, schedule.outer_point_bits, proof.point_nonce)?;
++    let tau = sample_point(transcript, rejection_row_rounds(layout), field)?;
++    let initial = field.sub(&target(signatures.iter(), &weights, field), &proof.slack);
++    absorb_field_elements(transcript, &[proof.slack], field);
++    check_nonce::<MergeGrinding>(
++        transcript,
++        schedule.relation_batching_bits,
++        proof.merge_nonce,
++    )?;
++    let mix = squeeze(transcript, field)?;
++    let mut boundary = VerifierGrindingRoundBoundary::<IntegerRoundGrinding>::new(
++        schedule.integer_round_bits,
++        &proof.grinding_nonces,
++    );
++    let (point, [claim]) = verify_round_proofs::<4, 3, 1>(
++        [&proof.sumcheck],
++        transcript,
++        &[initial],
++        tau.len(),
+         field,
++        &mut boundary,
+     )
+-    .map_err(|error| piop(error.to_string()))?;
+-    let (point, [final_claim]) = if security.cubic_round_bits != 0 {
+-        let mut boundary = VerifierGrindingRoundBoundary::<CubicGrinding>::new(
+-            security.cubic_round_bits,
+-            &proof.grinding_nonces,
+-        );
+-        verify_round_proofs::<4, 3, 1>(
+-            [&proof.sumcheck],
+-            transcript,
+-            &[zero],
+-            rounds,
+-            field,
+-            &mut boundary,
+-        )
+-    } else {
+-        let mut boundary = crate::sumcheck::UngrindedRoundBoundary;
+-        verify_round_proofs::<4, 3, 1>(
+-            [&proof.sumcheck],
+-            transcript,
+-            &[zero],
+-            rounds,
++    .map_err(|e| piop(e.to_string()))?;
++    if claim
++        != falcon_integer::terminal(
+             field,
+-            &mut boundary,
++            REJECTION_ROW_LOG,
++            &rho,
++            Some(&tau),
++            mix,
++            &point,
++            &proof.terminal,
+         )
++    {
++        return Err(piop("combined integer outer terminal mismatch"));
+     }
+-    .map_err(|error| piop(error.to_string()))?;
+-    let equality = eq_eval(&tau, &point, field).map_err(|error| piop(error.to_string()))?;
+-    let residual = field.sub(
+-        &field.mul(&proof.terminal.ax, &proof.terminal.bx),
+-        &proof.terminal.cx,
+-    );
+-    if final_claim != field.mul(&equality, &residual) {
+-        return Err(piop("quadratic terminal identity failed"));
+-    }
+-    absorb_field_elements(
+-        transcript,
+-        &[proof.terminal.ax, proof.terminal.bx, proof.terminal.cx],
+-        field,
+-    );
+-    Ok(QuadraticClaims {
+-        terminal: proof.terminal,
+-        point,
+-    })
++    absorb_field_elements(transcript, &proof.terminal, field);
++    Ok(claims(field, rho, point, proof.terminal, proof.slack))
+ }
+-
+ fn sample_point(
+     transcript: &mut impl Transcript,
+     rounds: usize,
+@@ -644,19 +339,11 @@ fn squeeze(transcript: &mut impl Transcript, field: &Cfg) -> Result<F, FalconErr
+     squeeze_field(transcript, field).map_err(|error| piop(error.to_string()))
+ }
+ 
++#[cfg(test)]
+ fn unsigned(value: u128, field: &Cfg) -> F {
+     F::from_with_cfg(value, field)
+ }
+ 
+-fn signed(value: i128, field: &Cfg) -> F {
+-    let magnitude = unsigned(value.unsigned_abs(), field);
+-    if value.is_negative() {
+-        field.sub(&field.zero(), &magnitude)
+-    } else {
+-        magnitude
+-    }
+-}
+-
+ pub(super) fn rejection_row_rounds(layout: &FalconSourceLayout) -> usize {
+     REJECTION_ROW_LOG + layout.capacity().trailing_zeros() as usize
+ }
+@@ -672,10 +359,10 @@ fn piop(message: impl Into<String>) -> FalconError {
+     FalconError::Piop(message.into())
+ }
+ falcon_tests! {
+-mod tests {
+-    use super::super::verification_trace;
++#[cfg(test)] mod tests {
+     use super::*;
+     use crate::transcript::Blake3Transcript;
++    use super::super::verification_trace;
+     const PUBLIC_KEY: &[u8; super::super::PUBLIC_KEY_BYTES] = include_bytes!("fixtures/public_key.bin");
+     const MESSAGE: &[u8; 32] = include_bytes!("fixtures/message.bin");
+     const SIGNATURE: &[u8; super::super::CT_SIGNATURE_BYTES] = include_bytes!("fixtures/signature_ct.bin");
+@@ -729,333 +416,20 @@ mod tests {
+         }
+     }
+     #[test]
+-    fn norm_verifier_rejects_budget_transfer_between_instances() {
+-        let field = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
+-        let layout = FalconSourceLayout::new(2).unwrap();
+-        // Both coefficients are individually in range, but signature zero
+-        // exceeds the norm bound. Signature one's slack makes the old global
+-        // sum exactly 2*B, despite the two nonzero per-signature residuals.
+-        let over_norm = 2 * 6_144u64.pow(2);
+-        let slack_words = [0, 2 * BETA_SQUARED - over_norm];
+-        assert!(over_norm > BETA_SQUARED);
+-        assert!(slack_words[1] < 1 << 27);
+-        assert_eq!(
+-            over_norm + slack_words.iter().sum::<u64>(),
+-            2 * BETA_SQUARED
+-        );
+-        let mut source = vec![0u8; 2 * N * 2];
+-        source[..2].copy_from_slice(&6_144u16.to_le_bytes());
+-        source[2..4].copy_from_slice(&6_144u16.to_le_bytes());
+-        source.extend(slack_words.into_iter().flat_map(u64::to_le_bytes));
+-        let commitment = blake3::hash(&source);
+-        let fresh_transcript = || {
+-            let mut transcript = Blake3Transcript::new();
+-            transcript.absorb_slice(commitment.as_bytes());
+-            transcript
+-        };
+-        let mut prover = fresh_transcript();
+-        prover.absorb_slice(b"bitz/falcon1024-ct/norm/v3");
+-        let instance_point = sample_point(&mut prover, 1, &field).unwrap();
+-        let weights = eq_table(&instance_point, &field).unwrap();
+-        assert_ne!(weights[0], weights[1]);
+-        let mut s1 = vec![field.zero(); 2 * N];
+-        s1[..2].fill(unsigned(6_144, &field));
+-        let weighted: Vec<_> = s1
+-            .iter()
+-            .enumerate()
+-            .map(|(i, value)| field.mul(&weights[i / N], value))
+-            .collect();
+-        let claims = [
+-            field.mul(&weights[0], &unsigned(over_norm.into(), &field)),
+-            field.zero(),
+-        ];
+-        let slack = field.mul(&weights[1], &unsigned(slack_words[1].into(), &field));
+-        let derived_slack = field.sub(
+-            &field.mul(
+-                &field.add(&weights[0], &weights[1]),
+-                &unsigned(BETA_SQUARED.into(), &field),
+-            ),
+-            &field.add(&claims[0], &claims[1]),
+-        );
+-        assert_ne!(slack, derived_slack);
+-        absorb_field_elements(&mut prover, &[claims[0], claims[1], slack], &field);
+-        // Construct actual valid sumchecks, bypassing only the honest prover's
+-        // early norm-budget check. Rejection below is by the protocol verifier.
+-        let mut boundary = crate::sumcheck::UngrindedRoundBoundary;
+-        let output = prove_batched_inner_sumcheck(
+-            &field,
+-            &mut prover,
+-            &claims,
+-            [s1, vec![field.zero(); 2 * N]],
+-            [weighted, vec![field.zero(); 2 * N]],
+-            &mut boundary,
+-        )
+-        .unwrap();
+-        let proof = NormProof {
+-            instance_nonce: None,
+-            claims,
+-            sumchecks: output.proofs.map(CompactSumcheck::from_full),
+-            terminal: output.terminal_evaluations,
+-            grinding_nonces: Vec::new(),
+-        };
+-        assert!(verify_norm(&mut fresh_transcript(), &layout, &proof, 100, &field).is_err());
+-    }
+-    #[test]
+-    fn norm_roundtrips_padded_batch_and_binds_instance_challenge() {
+-        let field = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
+-        let mut traces = vec![verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap(); 3];
+-        // Distinct norm tables make weighted and unweighted endpoints differ.
+-        let old = i64::from(traces[1].s1[0]);
+-        traces[1].s1[0] = 0;
+-        traces[1].norm_slack += (old * old) as u64;
+-        let layout = FalconSourceLayout::new(3).unwrap();
+-        for target in [100, 128] {
+-            let (proof, claims) = prove_norm(
+-                &mut Blake3Transcript::new(),
+-                &layout,
+-                &traces,
+-                target,
+-                &field,
+-            )
+-            .unwrap();
+-            assert_eq!(proof.instance_nonce.is_some(), target == 128);
+-            assert_ne!(proof.terminal[0][0], proof.terminal[0][1]);
+-            let weights = eq_table(&claims.instance_point, &field).unwrap();
+-            let mut reference = [field.zero(); 3];
+-            for (trace, weight) in traces.iter().zip(&weights) {
+-                for j in 0..N {
+-                    for (a, value) in [trace.s1[j], trace.signature.s2[j]].into_iter().enumerate() {
+-                        let value = signed(value.into(), &field);
+-                        reference[a] = field.add(
+-                            &reference[a],
+-                            &field.mul(weight, &field.mul(&value, &value)),
+-                        );
+-                    }
+-                }
+-                reference[2] = field.add(
+-                    &reference[2],
+-                    &field.mul(weight, &unsigned(trace.norm_slack.into(), &field)),
+-                );
+-            }
+-            assert_eq!(reference, [proof.claims[0], proof.claims[1], claims.slack]);
+-            let restored = verify_norm(
+-                &mut Blake3Transcript::new(),
+-                &layout,
+-                &proof,
+-                target,
+-                &field,
+-            )
+-            .unwrap();
+-            assert_eq!(claims, restored);
+-            let mut bad = proof.clone();
+-            bad.terminal[0][0] = bad.terminal[0][1];
+-            assert!(
+-                verify_norm(&mut Blake3Transcript::new(), &layout, &bad, target, &field).is_err()
+-            );
+-            let mut bad = proof;
+-            bad.instance_nonce = if target == 128 { None } else { Some(0) };
+-            assert!(
+-                verify_norm(&mut Blake3Transcript::new(), &layout, &bad, target, &field).is_err()
+-            );
+-        }
+-    }
+-    struct RecordingTranscript {
+-        inner: Blake3Transcript,
+-        absorbed: Vec<Vec<u8>>,
+-    }
+-
+-    impl RecordingTranscript {
+-        fn new() -> Self { Self { inner: Blake3Transcript::new(), absorbed: Vec::new() } }
+-    }
+-
+-    impl Transcript for RecordingTranscript {
+-        fn get_challenge<T: crate::transcript::traits::ConstTranscribable>(&mut self) -> T {
+-            self.inner.get_challenge()
+-        }
+-        fn begin_sampling(&mut self) { self.inner.begin_sampling(); }
+-        fn fill_sampling_bytes(&mut self, output: &mut [u8]) { self.inner.fill_sampling_bytes(output); }
+-        fn absorb_inner(&mut self, bytes: &[u8]) {
+-            self.absorbed.push(bytes.to_vec());
+-            self.inner.absorb_inner(bytes);
+-        }
+-    }
+-
+-    #[test]
+-    fn rejection_piop_matches_transcripts_and_uses_the_supplied_prime() {
+-        for (batch, target) in [(1, 100), (3, 100), (1, 128)] {
+-            let layout = FalconSourceLayout::new(batch).unwrap();
+-            let traces = vec![verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap(); batch];
+-            let field = test_field(target);
+-            let mut prover = RecordingTranscript::new();
+-            let (proof, claims) = prove_falcon_piop_in_field(&mut prover, &layout, &traces, target, &field).unwrap();
+-            let mut verifier = RecordingTranscript::new();
+-            let restored = verify_falcon_piop_in_field(&mut verifier, &layout, &proof, target, &field).unwrap();
+-            assert_eq!(claims, restored);
+-            assert_eq!(prover.absorbed, verifier.absorbed);
+-            assert_eq!(prover.get_challenge::<u128>(), verifier.get_challenge::<u128>());
+-            assert!(!prover.absorbed.iter().any(|bytes| bytes == b"bitz/shared-prime-sampling/v1"));
+-            assert_eq!(prover.absorbed.iter().filter(|bytes| bytes.as_slice() == b"bitz/falcon/piop/shared-prime/public-selection/v7").count(), 1);
+-            let d = layout.capacity().ilog2() as usize;
+-            assert_eq!(proof.h2p_rejection.rows.sumcheck.round_polynomials.len(), REJECTION_ROW_LOG + d);
+-            assert_eq!(proof.norm.sumchecks[0].round_polynomials.len(), COEFFICIENT_LOG + d);
+-            let mut nonces = 0;
+-            proof.visit_grinding_nonces(|category, _| {
+-                assert!(matches!(category, "prime_norm" | "prime_h2p_rows"));
+-                nonces += 1;
+-            });
+-            let fields = 9 + 4 * (COEFFICIENT_LOG + d) + 3 * (REJECTION_ROW_LOG + d);
+-            assert_eq!(proof.payload_size_bytes(), 16 * fields + 8 * nonces);
+-        }
+-        let small = field::FpCtx::from_prime_u128(7);
+-        assert!(validate_shared_field(100, &small).is_err());
+-        let field = test_field(100);
+-        assert!(validate_shared_field(128, &field).is_err());
+-        assert!(validate_shared_field(127, &field).is_err());
+-    }
+-
+-    #[test]
+-    fn rejection_rows_match_packed_source_and_zero_padding() {
+-        let layout = FalconSourceLayout::new(3).unwrap();
+-        let traces = vec![verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap(); 3];
+-        let mut source = super::super::FalconSourceWitness::from_traces(
+-            layout, &vec![MESSAGE.as_slice(); 3], &vec![SIGNATURE.as_slice(); 3], &traces,
+-        ).unwrap();
+-        let field = test_field(100);
+-        let rows = RejectionRows { layout: &layout, traces: &traces, field: &field };
+-        let offsets = layout.offsets();
+-        let decode = |bit| if source.bit(bit) { field.one() } else { field.zero() };
+-        for instance in 0..layout.capacity() {
+-            for j in 0..REJECTION_STRIDE {
+-                let row = instance * REJECTION_STRIDE + j;
+-                let expected = if instance < layout.batch() && j < REJECTION_ROWS {
+-                    let base = instance * layout.signature_stride();
+-                    [decode(base + offsets.hash_quotients + 3*j + 2), decode(base + offsets.hash_quotients + 3*j), decode(base + offsets.hash_accept_ands + j)]
+-                } else { [field.zero(); 3] };
+-                assert_eq!([rows.a(row), rows.b(row), rows.c(row)], expected);
+-                assert_eq!(field.mul(&expected[0], &expected[1]), expected[2]);
+-            }
+-        }
+-        // A changed committed e bit violates the independently decoded row.
+-        for j in [0, REJECTION_ROWS / 2, REJECTION_ROWS - 1] {
+-            source.flip_bit(offsets.hash_accept_ands + j);
+-            let c = if source.bit(offsets.hash_accept_ands + j) { field.one() } else { field.zero() };
+-            assert_ne!(field.mul(&rows.a(j), &rows.b(j)), c);
+-            source.flip_bit(offsets.hash_accept_ands + j);
+-        }
+-    }
+-
+-    #[test]
+-    fn rejection_rows_cover_all_quotient_bits_without_trusting_acceptance_flags() {
+-        let layout = FalconSourceLayout::new(1).unwrap();
+-        let mut trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+-        let field = test_field(100);
+-        for quotient in 0..8 {
+-            trace.hash_to_point.quotients.fill(quotient);
+-            for accepted in [false, true] {
+-                trace.hash_to_point.accepted.fill(accepted);
+-                let rows = RejectionRows { layout: &layout, traces: std::slice::from_ref(&trace), field: &field };
+-                let bit = |value| if value { field.one() } else { field.zero() };
+-                let expected = [bit(quotient & 4 != 0), bit(quotient & 1 != 0), bit(quotient & 5 == 5)];
+-                for j in 0..REJECTION_ROWS {
+-                    assert_eq!([rows.a(j), rows.b(j), rows.c(j)], expected);
+-                }
+-            }
+-        }
+-    }
+-
+-    #[test]
+-    fn rejection_rows_preserve_dense_proof_messages_and_transcript() {
+-        let layout = FalconSourceLayout::new(3).unwrap();
+-        let traces = vec![verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap(); 3];
+-        for target in [100, 128] {
+-            let field = test_field(target);
+-            let rows = RejectionRows { layout: &layout, traces: &traces, field: &field };
+-            let len = REJECTION_STRIDE * layout.capacity();
+-            let mut dense: [Vec<F>; 3] = std::array::from_fn(|_| vec![field.zero(); len]);
+-            for (instance, trace) in traces.iter().enumerate() {
+-                for (j, &q) in trace.hash_to_point.quotients.iter().enumerate() {
+-                    let row = instance * REJECTION_STRIDE + j;
+-                    dense[0][row] = unsigned(u128::from((q >> 2) & 1), &field);
+-                    dense[1][row] = unsigned(u128::from(q & 1), &field);
+-                    dense[2][row] = field.mul(&dense[0][row], &dense[1][row]);
+-                }
+-            }
+-            let security = security_schedule(&layout, target).unwrap();
+-            let mut packed_transcript = RecordingTranscript::new();
+-            let packed = prove_quadratic(&mut packed_transcript, rows, rejection_row_rounds(&layout), security, &field).unwrap();
+-            let mut dense_transcript = RecordingTranscript::new();
+-            let reference = prove_quadratic(
+-                &mut dense_transcript,
+-                crate::sumcheck::outer::OuterSlices { ax: &dense[0], bx: &dense[1], cx: &dense[2] },
+-                rejection_row_rounds(&layout), security, &field,
+-            ).unwrap();
+-            assert_eq!(packed, reference);
+-            assert_eq!(packed_transcript.absorbed, dense_transcript.absorbed);
+-            assert_eq!(packed_transcript.get_challenge::<u128>(), dense_transcript.get_challenge::<u128>());
+-        }
+-    }
+-
+-    #[test]
+-    fn rejection_piop_rejects_changed_messages_shapes_and_nonce_schedules() {
+-        let layout = FalconSourceLayout::new(1).unwrap();
+-        let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+-        for target in [100, 128] {
+-            let field = test_field(target);
+-            let (proof, _) = prove_falcon_piop_in_field(&mut Blake3Transcript::new(), &layout, std::slice::from_ref(&trace), target, &field).unwrap();
+-            let reject = |bad: &FalconPiopProof| assert!(verify_falcon_piop_in_field(&mut Blake3Transcript::new(), &layout, bad, target, &field).is_err());
+-            for endpoint in 0..3 {
+-                let mut bad = proof.clone();
+-                let terminal = &mut bad.h2p_rejection.rows.terminal;
+-                let value = match endpoint { 0 => &mut terminal.ax, 1 => &mut terminal.bx, _ => &mut terminal.cx };
+-                *value = field.add(value, &field.one());
+-                reject(&bad);
+-            }
+-            let mut bad = proof.clone();
+-            bad.h2p_rejection.rows.point_nonce = if bad.h2p_rejection.rows.point_nonce.is_some() { None } else { Some(0) };
+-            reject(&bad);
+-            let mut bad = proof.clone();
+-            bad.h2p_rejection.rows.grinding_nonces.push(0);
+-            reject(&bad);
+-            let mut bad = proof.clone();
+-            bad.h2p_rejection.rows.sumcheck.round_polynomials.pop();
+-            reject(&bad);
+-            let mut bad = proof.clone();
+-            bad.h2p_rejection.rows.sumcheck.round_polynomials.push([field.zero(); 3]);
+-            reject(&bad);
+-            let mut bad = proof.clone();
+-            bad.h2p_rejection.rows.sumcheck.round_polynomials[0][1] = field.add(&bad.h2p_rejection.rows.sumcheck.round_polynomials[0][1], &field.one());
+-            reject(&bad);
+-            let wider = field::FpCtx::from_prime_u128((1u128 << 127) - 1);
+-            let noncanonical = unsigned(field.modulus_u128(), &wider);
+-            let mut bad = proof.clone();
+-            bad.h2p_rejection.rows.sumcheck.round_polynomials[0][0] = noncanonical;
+-            reject(&bad);
+-            let mut bad = proof.clone();
+-            bad.h2p_rejection.rows.terminal.cx = noncanonical;
+-            reject(&bad);
+-            let mut bad = proof.clone();
+-            bad.norm.claims[0] = field.add(&bad.norm.claims[0], &field.one());
+-            reject(&bad);
+-            let mut bad = proof;
+-            bad.norm.sumchecks[0].round_polynomials.pop();
+-            reject(&bad);
+-        }
+-    }
+-    #[test]
+     fn security_schedule_budgets_every_rejection_stage_for_both_targets() {
+         for batch in 1..=1024 {
+             let layout = FalconSourceLayout::new(batch).unwrap();
+             let n = FalconSecurityNumerators::for_layout(&layout);
+             assert_eq!(n.outer_point, REJECTION_ROW_LOG + layout.capacity().ilog2() as usize);
+-            assert_eq!(n.cubic_rounds, 3 * n.outer_point);
+-            assert_eq!(n.linear, layout.linear_stride().ilog2() as usize + layout.capacity().ilog2() as usize + batch + 8);
++            assert_eq!(n.integer_rounds, 3 * n.outer_point);
++            assert_eq!(n.linear, layout.linear_stride().ilog2() as usize + layout.capacity().ilog2() as usize + batch + 5);
+             for (target, floor) in [(100, 114), (128, 125)] {
+                 let s = security_schedule(&layout, target).unwrap();
+                 for (numerator, bits) in [
+                     (n.norm_instances, s.norm_instance_bits),
+-                    (n.norm_rounds, s.quadratic_round_bits),
++                    (n.relation_batching, s.relation_batching_bits),
+                     (n.outer_point, s.outer_point_bits),
+-                    (n.cubic_rounds, s.cubic_round_bits),
++                    (n.integer_rounds, s.integer_round_bits),
+                     (n.linear, s.linear_point_bits),
+                     (n.binding, s.binding_round_bits),
+                 ] {
+@@ -1068,9 +442,9 @@ mod tests {
+                 }
+                 if target == 100 {
+                     assert_eq!(s.norm_instance_bits, 0);
+-                    assert_eq!(s.quadratic_round_bits, 0);
++                    assert_eq!(s.relation_batching_bits, 0);
+                     assert_eq!(s.outer_point_bits, 0);
+-                    assert_eq!(s.cubic_round_bits, 0);
++                    assert_eq!(s.integer_round_bits, 0);
+                 }
+             }
+         }
+@@ -1078,5 +452,60 @@ mod tests {
+         assert!(security_schedule(&FalconSourceLayout::new(1024).unwrap(), 100).unwrap().linear_point_bits > 0);
+     }
+ 
++    #[test]
++    fn combined_outer_roundtrips_and_rejects_tampering() {
++        for target in [100, 128] {
++            let field = test_field(target);
++            for batch in [1, 3] {
++                let layout = FalconSourceLayout::new(batch).unwrap();
++                let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
++                let traces = vec![trace; batch];
++                let signatures: Vec<_> = traces.iter().map(|t| t.signature.clone()).collect();
++                let mut prover = Blake3Transcript::new();
++                let (proof, claims) = prove_falcon_piop_in_field(&mut prover, &layout, &traces, target, &field).unwrap();
++                let mut verifier = Blake3Transcript::new();
++                let actual = verify_falcon_piop_in_field(&mut verifier, &layout, &signatures, &proof, target, &field).unwrap();
++                assert_eq!(claims, actual);
++                assert_eq!(prover.get_challenge::<field::Gf128>(), verifier.get_challenge::<field::Gf128>());
++                assert_eq!(proof.sumcheck.round_polynomials.len(), REJECTION_ROW_LOG + layout.capacity().ilog2() as usize);
++                let verify = |proof: &FalconPiopProof| verify_falcon_piop_in_field(&mut Blake3Transcript::new(), &layout, &signatures, proof, target, &field);
++                for index in 0..4 {
++                    let mut bad = proof.clone(); bad.terminal[index] = field.add(&bad.terminal[index], &field.one());
++                    assert!(verify(&bad).is_err());
++                }
++                let mut bad = proof.clone(); bad.slack = field.add(&bad.slack, &field.one()); assert!(verify(&bad).is_err());
++                let mut bad = proof.clone(); bad.sumcheck.round_polynomials.pop(); assert!(verify(&bad).is_err());
++                let mut bad = proof.clone(); bad.sumcheck.round_polynomials[0][1] = field.add(&bad.sumcheck.round_polynomials[0][1], &field.one()); assert!(verify(&bad).is_err());
++                let mut bad = proof.clone(); bad.grinding_nonces.push(0); assert!(verify(&bad).is_err());
++                let mut bad = proof.clone(); bad.merge_nonce = if bad.merge_nonce.is_some() { None } else { Some(0) }; assert!(verify(&bad).is_err());
++                let mut bad = proof.clone(); bad.instance_nonce = if bad.instance_nonce.is_some() { None } else { Some(0) }; assert!(verify(&bad).is_err());
++                let mut bad = proof.clone(); bad.point_nonce = if bad.point_nonce.is_some() { None } else { Some(0) }; assert!(verify(&bad).is_err());
++                let mut bad = proof.clone(); bad.sumcheck.round_polynomials.push([field.zero(); 3]); assert!(verify(&bad).is_err());
++                let wider = Cfg::from_prime_u128((1u128 << 127) - 1);
++                let noncanonical = unsigned(field.modulus_u128(), &wider);
++                let mut bad = proof.clone(); bad.slack = noncanonical; assert!(verify(&bad).is_err());
++                let mut bad = proof.clone(); bad.terminal[0] = noncanonical; assert!(verify(&bad).is_err());
++                let mut bad = proof.clone(); bad.sumcheck.round_polynomials[0][0] = noncanonical; assert!(verify(&bad).is_err());
++                let mut changed = signatures.clone(); changed[0].s2[0] += 1;
++                assert!(verify_falcon_piop_in_field(&mut Blake3Transcript::new(), &layout, &changed, &proof, target, &field).is_err());
++            }
++        }
++    }
++    #[test]
++    fn combined_norm_rejects_budget_transfer_between_signatures() {
++        let field = test_field(100);
++        let layout = FalconSourceLayout::new(2).unwrap();
++        let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
++        let mut traces = vec![trace; 2];
++        for trace in &mut traces { trace.s1.fill(0); trace.signature.s2.fill(0); }
++        let count = (BETA_SQUARED / 6144u64.pow(2) + 1) as usize;
++        traces[0].s1[..count].fill(6144);
++        let over = count as u64 * 6144u64.pow(2);
++        traces[0].norm_slack = 0;
++        traces[1].norm_slack = 2 * BETA_SQUARED - over;
++        assert_eq!(over + traces[1].norm_slack, 2 * BETA_SQUARED);
++        assert!(prove_falcon_piop_in_field(&mut Blake3Transcript::new(), &layout, &traces, 100, &field).is_err());
++    }
++
+ }
+ }
+diff --git a/src/piop/spartan/falcon/piop_shared.rs b/src/piop/spartan/falcon/piop_shared.rs
+index f5fde7aa..ba66646f 100644
+--- a/src/piop/spartan/falcon/piop_shared.rs
++++ b/src/piop/spartan/falcon/piop_shared.rs
+@@ -85,7 +85,7 @@ pub(super) fn verify_round_proofs<const FULL: usize, const COMPACT: usize, const
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ pub(in super::super) struct NormClaimRef<'a> {
+     pub instance_point: &'a [F],
+-    pub terminal: &'a [[F; 2]; 2],
++    pub terminal: F,
+     pub slack: F,
+     pub point: &'a [F],
+ }
+@@ -96,8 +96,6 @@ pub(in super::super) struct HashToPointRejectionClaimRef<'a> {
+     pub terminal: &'a [F; 3],
+ }
+ 
+-/// Endpoints derived by the prover or verifier for authentication against the
+-/// original source commitment. Rejection terminals are unweighted row MLEs A,B,C.
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ pub(in super::super) struct FalconPiopClaimRef<'a> {
+     pub modulus: u128,
+@@ -107,38 +105,32 @@ pub(in super::super) struct FalconPiopClaimRef<'a> {
+ 
+ #[derive(Clone, Debug, PartialEq, Eq)]
+ pub(in super::super) struct NormClaims {
+-    pub(in super::super) instance_point: Vec<F>,
+-    pub(in super::super) terminal: [[F; 2]; 2],
+-    pub(in super::super) slack: F,
+-    pub(in super::super) point: Vec<F>,
+-}
+-
+-#[derive(Clone, Debug, PartialEq, Eq)]
+-pub(in super::super) struct QuadraticClaims {
+-    pub(in super::super) terminal: OuterEvaluations<F>,
+-    pub(in super::super) point: Vec<F>,
++    pub instance_point: Vec<F>,
++    pub terminal: F,
++    pub slack: F,
++    pub point: Vec<F>,
+ }
+ 
+ #[derive(Clone, Debug, PartialEq, Eq)]
+ pub(in super::super) struct HashToPointRejectionClaims {
+-    pub(in super::super) point: Vec<F>,
+-    pub(in super::super) terminal: [F; 3],
++    pub point: Vec<F>,
++    pub terminal: [F; 3],
+ }
+ 
+ #[derive(Clone, Debug, PartialEq, Eq)]
+ pub(in super::super) struct FalconPiopClaims {
+-    pub(in super::super) modulus: u128,
+-    pub(in super::super) norm: NormClaims,
+-    pub(in super::super) h2p_rejection: HashToPointRejectionClaims,
++    pub modulus: u128,
++    pub norm: NormClaims,
++    pub h2p_rejection: HashToPointRejectionClaims,
+ }
+ 
+ impl FalconPiopClaims {
+-    pub(in super::super) fn as_claim_ref(&self) -> FalconPiopClaimRef<'_> {
++    pub fn as_claim_ref(&self) -> FalconPiopClaimRef<'_> {
+         FalconPiopClaimRef {
+             modulus: self.modulus,
+             norm: NormClaimRef {
+                 instance_point: &self.norm.instance_point,
+-                terminal: &self.norm.terminal,
++                terminal: self.norm.terminal,
+                 slack: self.norm.slack,
+                 point: &self.norm.point,
+             },
+@@ -150,90 +142,34 @@ impl FalconPiopClaims {
+     }
+ }
+ 
+-#[derive(Clone, Debug, PartialEq, Eq)]
+-pub(in super::super) struct NormProof {
+-    pub(in super::super) instance_nonce: Option<u64>,
+-    pub(in super::super) claims: [F; 2],
+-    pub(in super::super) sumchecks: [CompactSumcheck<2>; 2],
+-    pub(in super::super) terminal: [[F; 2]; 2],
+-    pub(in super::super) grinding_nonces: Vec<u64>,
+-}
+-
+-#[derive(Clone, Debug, PartialEq, Eq)]
+-pub(in super::super) struct QuadraticRelationProof {
+-    pub(in super::super) point_nonce: Option<u64>,
+-    pub(in super::super) sumcheck: CompactSumcheck<3>,
+-    pub(in super::super) terminal: OuterEvaluations<F>,
+-    pub(in super::super) grinding_nonces: Vec<u64>,
+-}
+-
+-#[derive(Clone, Debug, PartialEq, Eq)]
+-pub(in super::super) struct HashToPointRejectionProof {
+-    pub(in super::super) rows: QuadraticRelationProof,
+-}
+-
+-/// Only messages and grinding nonces are stored; challenges are reconstructed.
++/// A single cubic integer outer proof. The public S2 norm is part of the target;
++/// S is S1 followed by N zero rows. All four endpoints and slack are projected.
+ #[derive(Clone, Debug, PartialEq, Eq)]
+ pub(in super::super) struct FalconPiopProof {
+-    pub(in super::super) norm: NormProof,
+-    pub(in super::super) h2p_rejection: HashToPointRejectionProof,
++    pub instance_nonce: Option<u64>,
++    pub point_nonce: Option<u64>,
++    pub merge_nonce: Option<u64>,
++    pub slack: F,
++    pub terminal: [F; 4],
++    pub sumcheck: CompactSumcheck<3>,
++    pub grinding_nonces: Vec<u64>,
+ }
+ 
+ impl FalconPiopProof {
+-    pub(in super::super) fn visit_grinding_nonces(&self, mut visit: impl FnMut(&'static str, u64)) {
+-        for &nonce in self
+-            .norm
+-            .instance_nonce
+-            .iter()
+-            .chain(&self.norm.grinding_nonces)
+-        {
++    pub fn visit_grinding_nonces(&self, mut visit: impl FnMut(&'static str, u64)) {
++        for &nonce in self.instance_nonce.iter() {
+             visit("prime_norm", nonce);
+         }
+-        for &nonce in self
+-            .h2p_rejection
+-            .rows
+-            .point_nonce
+-            .iter()
+-            .chain(&self.h2p_rejection.rows.grinding_nonces)
+-        {
++        for &nonce in self.point_nonce.iter() {
+             visit("prime_h2p_rows", nonce);
+         }
++        for &nonce in self.merge_nonce.iter().chain(&self.grinding_nonces) {
++            visit("prime_integer_outer", nonce);
++        }
+     }
+-
+-    /// Canonical scalar payload, excluding container framing.
+-    pub(in super::super) fn payload_size_bytes(&self) -> usize {
+-        let norm_rounds: usize = self
+-            .norm
+-            .sumchecks
+-            .iter()
+-            .map(|p| p.round_polynomials.len())
+-            .sum();
+-        let rejection_rounds = self.h2p_rejection.rows.sumcheck.round_polynomials.len();
+-        let mut nonce_count = 0;
+-        self.visit_grinding_nonces(|_, _| nonce_count += 1);
+-        // Norm: two initial claims and four terminals. Rejection: three terminals.
+-        16 * (9 + 2 * norm_rounds + 3 * rejection_rounds) + 8 * nonce_count
+-    }
+-}
+-
+-pub(in super::super) fn verify_falcon_piop_in_field(
+-    transcript: &mut impl Transcript,
+-    layout: &FalconSourceLayout,
+-    proof: &FalconPiopProof,
+-    target_bits: usize,
+-    field: &Cfg,
+-) -> Result<FalconPiopClaims, FalconError> {
+-    if !matches!(target_bits, 100 | 128) {
+-        return Err(piop("invalid shared PIOP security target"));
++    pub fn payload_size_bytes(&self) -> usize {
++        let mut nonces = 0;
++        self.visit_grinding_nonces(|_, _| nonces += 1);
++        16 * (5 + 3 * self.sumcheck.round_polynomials.len()) + 8 * nonces
+     }
+-    validate_shared_field(target_bits, field)?;
+-    bind_shared_header(transcript, layout, target_bits, field);
+-    let norm = verify_norm(transcript, layout, &proof.norm, target_bits, field)?;
+-    let h2p_rejection =
+-        verify_rejection(transcript, layout, &proof.h2p_rejection, target_bits, field)?;
+-    Ok(FalconPiopClaims {
+-        modulus: field.modulus_u128(),
+-        norm,
+-        h2p_rejection,
+-    })
+ }
+diff --git a/src/piop/spartan/falcon/shared_ring.rs b/src/piop/spartan/falcon/shared_ring.rs
+index 830fd982..4e835a01 100644
+--- a/src/piop/spartan/falcon/shared_ring.rs
++++ b/src/piop/spartan/falcon/shared_ring.rs
+@@ -6,7 +6,7 @@ use super::{COEFFICIENT_LOG, SIGNATURE_BITS};
+ // e(Y)=(Y^N+1)D(Y) has the required degree and ideal membership by construction.
+ // The later (2k-1)-coefficient polynomial is an unreduced integer lift, not D.
+ 
+-use field::{FpLinearAcc, Reduce, RingOps, Uint};
++use field::{BatchMulAcc, FpLinearAcc, FpSignedLinearAcc, Reduce, RingOps, Uint};
+ #[cfg(feature = "parallel")]
+ use rayon::prelude::*;
+ 
+@@ -837,15 +837,15 @@ fn project(
+ }
+ 
+ fn project_lift(lift: &[i128; LIFT_COEFFICIENTS], alpha: F, field: &Cfg) -> F {
+-    lift.iter().rev().fold(field.zero(), |sum, &value| {
+-        let magnitude = F::from_with_cfg(value.unsigned_abs(), field);
+-        let coefficient = if value < 0 {
+-            field.neg(&magnitude)
+-        } else {
+-            magnitude
+-        };
+-        field.add(&field.mul(&sum, &alpha), &coefficient)
+-    })
++    // At most 21 field × i128 terms fit the signed linear accumulator.
++    // Its Montgomery scale is R, so only the final remainder is needed.
++    let mut sum = FpSignedLinearAcc::<2, 2>::default();
++    let mut power = field.one();
++    for value in lift {
++        field.mul_acc(&mut sum, &power, value);
++        power = field.mul(&power, &alpha);
++    }
++    field.reduce(sum)
+ }
+ 
+ fn error(message: impl Into<String>) -> FalconError {
+@@ -1407,6 +1407,22 @@ mod tests {
+             power = field.mul(&power, &alpha);
+         }
+         assert_eq!(projected.target, expected);
++        // Exercise signed accumulator carries and cancellation independently
++        // of the tighter protocol bound, including the asymmetric i128 minimum.
++        let extremes = std::array::from_fn(|i| match i % 4 {
++            0 => i128::MIN,
++            1 => i128::MAX,
++            2 => -1,
++            _ => 0,
++        });
++        for alpha in [field.zero(), field.one(), field.neg(&field.one()), alpha] {
++            let expected = extremes.iter().rev().fold(field.zero(), |sum, value| {
++                let magnitude = F::from_with_cfg(value.unsigned_abs(), &field);
++                let coefficient = if *value < 0 { field.neg(&magnitude) } else { magnitude };
++                field.add(&field.mul(&sum, &alpha), &coefficient)
++            });
++            assert_eq!(project_lift(&extremes, alpha, &field), expected);
++        }
+     }
+ 
+     #[cfg(feature = "parallel")]
+diff --git a/src/piop/spartan/falcon1024_algebraic/README.md b/src/piop/spartan/falcon1024_algebraic/README.md
+index bebe4bd6..984ca6e8 100644
+--- a/src/piop/spartan/falcon1024_algebraic/README.md
++++ b/src/piop/spartan/falcon1024_algebraic/README.md
+@@ -58,13 +58,19 @@ Because `h,t` are public, the evaluated equation is linear in both signature
+ components. Eleven bounded integer coordinate carries reduce this claim to
+ `F_p`; extension products are completed before lifting canonical coordinates.
+ 
+-The norm proof uses independent instance weights and two quadratic sumchecks.
++The integer outer uses independent instance weights and one cubic sumcheck
++of `eq(rho,instance)*S(instance,j)^2`, where S concatenates S1 and S2.
++Its target is the weighted bound minus the weighted nonnegative slack.
++Row coordinates precede instance coordinates. The first round accumulates
++squares in native integers and uses the field library's mixed products and
++prepared signed folds; subsequent rounds fold one field table, with
++equality weights kept factored. There are no square-output witness columns.
+ Every raw signed15/slack27 norm residual has absolute value below `2^40`, so
+ the prime-field equations represent exact integer equations. Ring conversion
+ residuals are below `2^50` for every supported batch. These bounds apply to each
+ equation before random batching.
+ 
+-A fresh seven-claim merge combines the ring claim, four norm endpoints, slack,
++A fresh four-claim merge combines the ring claim, the single norm endpoint, slack,
+ and padding. Coefficient index and bit-lane variables are separate: the binder
+ evaluates the signed decoder once, aggregates its prefix by witness byte, and
+ folds the common decoder before replaying coefficient weights. A streamed sumcheck binds them to one multilinear evaluation of
+@@ -77,8 +83,8 @@ There is no Orthus-style public-input preprocessing in this interface.
+ 
+ ## Security accounting
+ 
+-The aligned layout is bound into the v2 transcript domain; commitments and
+-proofs from the preceding layout cannot be reused. Eight arithmetic and
++The layout and combined integer outer are bound into the v4 protocol domain;
++proofs from preceding versions cannot be reused. Eight arithmetic and
+ binary error groups each receive at most `2^(-target-4)`, totaling at most half
+ the budget. Their degree numerators are:
+ 
+@@ -86,8 +92,8 @@ the budget. Their degree numerators are:
+ |---|---:|---:|
+ | Ring coordinate projection | 10 | `2^125` |
+ | Norm instance batching | d | `2^125` |
+-| Two norm sumchecks | 4(10+d) | `2^125` |
+-| Seven-claim merge | 6 | `2^125` |
++| Integer outer sumcheck | 3(11+d) | `2^125` |
++| Four-claim merge | 3 | `2^125` |
+ | Bit-source binder | 2(15+d) | `2^125` |
+ | BitZ product GKR | 367+40d | `2^128` |
+ | Binary source sumcheck | 2(16+d) | `2^128` |
+diff --git a/src/piop/spartan/falcon1024_algebraic/arithmetic.rs b/src/piop/spartan/falcon1024_algebraic/arithmetic.rs
+index fa4305cf..29e336fe 100644
+--- a/src/piop/spartan/falcon1024_algebraic/arithmetic.rs
++++ b/src/piop/spartan/falcon1024_algebraic/arithmetic.rs
+@@ -1,10 +1,10 @@
+ //! Exact integer norms and authentication against the one committed bit source.
+ //!
+-//! The native ring reduction and both norm operands are joined only after all
++//! The native ring reduction, norm endpoint, and slack are joined only after all
+ //! their claimed values are fixed. The resulting linear form is streamed into
+ //! a degree-two sumcheck; its final bit evaluation must be opened by BitZ.
+ 
+-use field::{BatchMulAcc, RingOps};
++use field::{BatchMulAcc, FpLinearAcc, Reduce, RingOps, WideMul};
+ #[cfg(feature = "parallel")]
+ use rayon::prelude::*;
+ 
+@@ -12,6 +12,7 @@ use crate::{
+     piop::spartan::{
+         SpartanField, absorb_field_elements,
+         falcon_bit_layout::{COEFFICIENT_STRIDE, coefficient_bit},
++        falcon_integer,
+         grinding::{GrindingDomain, GrindingRound, grind_and_absorb, verify_and_absorb},
+         matrix::eq_table,
+         squeeze_field,
+@@ -23,7 +24,7 @@ use crate::{
+             packed::{
+                 ColumnMajorPackedBits, PackedInput, StreamingCoefficientSource, StreamingMle,
+             },
+-            prove_batched_inner_sumcheck, prove_inner_sumcheck,
++            prove_inner_sumcheck,
+         },
+         proof::validate_field_elements,
+     },
+@@ -36,8 +37,8 @@ use super::{BETA_SQUARED, Cfg, F, FalconError, Layout, N, Schedule, Source, Witn
+ const COEFFICIENT_BITS: usize = 15;
+ const COEFFICIENT_LOG: usize = super::COEFFICIENT_LOG;
+ const SLACK_BITS: usize = super::SLACK_BITS;
+-const NORM_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/norm/v2";
+-const MERGE_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/merge/v2";
++const NORM_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/integer-outer/v1";
++const MERGE_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/merge/v3";
+ const BINDING_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/binding/v2";
+ 
+ struct NormInstance;
+@@ -60,10 +61,9 @@ impl GrindingDomain for BindingRound {
+ #[derive(Clone, Debug, PartialEq, Eq)]
+ pub(super) struct NormProof {
+     pub instance_nonce: Option<u64>,
+-    pub claims: [F; 2],
+-    pub sumchecks: [SumcheckProof<F, 3>; 2],
+-    /// Each pair is [weighted operand MLE, unweighted operand MLE].
+-    pub terminal: [[F; 2]; 2],
++    pub slack: F,
++    pub sumcheck: SumcheckProof<F, 4>,
++    pub terminal: F,
+     pub grinding_nonces: Vec<u64>,
+ }
+ 
+@@ -80,13 +80,10 @@ impl Proof {
+     pub(super) fn payload_size_bytes(&self) -> usize {
+         // Canonical field words, round coefficients, terminal messages and
+         // present nonces. Container framing is excluded from this payload size.
+-        let norm_rounds: usize = self
+-            .norm
+-            .sumchecks
+-            .iter()
+-            .map(|p| p.round_polynomials.len())
+-            .sum();
+-        16 * (2 + 4 + 3 * norm_rounds + 3 * self.binding.round_polynomials.len() + 2)
++        16 * (2
++            + 4 * self.norm.sumcheck.round_polynomials.len()
++            + 3 * self.binding.round_polynomials.len()
++            + 2)
+             + 8 * (usize::from(self.norm.instance_nonce.is_some())
+                 + self.norm.grinding_nonces.len()
+                 + usize::from(self.merge_nonce.is_some())
+@@ -105,7 +102,7 @@ pub(super) struct BridgeClaim {
+ struct NormClaims {
+     instance_point: Vec<F>,
+     point: Vec<F>,
+-    terminal: [[F; 2]; 2],
++    terminal: F,
+     slack: F,
+ }
+ 
+@@ -222,7 +219,7 @@ pub(super) fn verify(
+     ))
+ }
+ 
+-#[tracing::instrument(skip_all, name = "falcon_algebraic:norm")]
++#[tracing::instrument(skip_all, name = "falcon_algebraic:integer_outer")]
+ fn prove_norm(
+     transcript: &mut impl Transcript,
+     layout: &Layout,
+@@ -234,63 +231,49 @@ fn prove_norm(
+         || data.witness.s2.len() != layout.batch()
+         || data.slacks.len() != layout.batch()
+     {
+-        return Err(failure("algebraic norm witness shape mismatch"));
++        return Err(failure("integer witness shape mismatch"));
+     }
+     transcript.absorb_slice(NORM_DOMAIN);
+     let instance_nonce = prove_nonce::<NormInstance>(transcript, schedule.norm_instance_bits)?;
+     let instance_point = sample_point(transcript, layout.capacity().ilog2() as usize, field)?;
+-    let instance_weights = eq_table(&instance_point, field).map_err(failure)?;
+-    let len = N * layout.capacity();
+-    let mut values = [vec![field.zero(); len], vec![field.zero(); len]];
+-    let mut weighted = [vec![field.zero(); len], vec![field.zero(); len]];
+-    let mut claims = [field.zero(); 2];
+-    let mut slack = field.zero();
+-    for (i, weight) in instance_weights.iter().take(layout.batch()).enumerate() {
+-        for (side, coefficients) in [&data.witness.s1[i], &data.witness.s2[i]]
+-            .into_iter()
+-            .enumerate()
+-        {
+-            let mut norm = 0u64;
+-            for (j, &coefficient) in coefficients.iter().enumerate() {
+-                if !(-16384..16384).contains(&coefficient) {
+-                    return Err(failure("coefficient does not fit signed 15-bit encoding"));
+-                }
+-                let integer = i64::from(coefficient);
+-                norm += (integer * integer) as u64;
+-                let value = signed(integer as i128, field);
+-                values[side][i * N + j] = value;
+-                weighted[side][i * N + j] = field.mul(weight, &value);
+-            }
+-            claims[side] = field.add(
+-                &claims[side],
+-                &field.mul(weight, &unsigned(norm as u128, field)),
+-            );
+-        }
+-        if data.slacks[i] >= 1u64 << SLACK_BITS {
+-            return Err(failure("slack does not fit configured unsigned encoding"));
+-        }
+-        slack = field.add(
+-            &slack,
+-            &field.mul(weight, &unsigned(data.slacks[i] as u128, field)),
+-        );
+-    }
+-    let expected = norm_target(layout, &instance_weights, field);
+-    if field.add(&field.add(&claims[0], &claims[1]), &slack) != expected {
+-        return Err(failure("invalid algebraic integer norm witness"));
++    let weights = eq_table(&instance_point, field).map_err(failure)?;
++    let mut slack = FpLinearAcc::<2, 1>::default();
++    for (value, weight) in data.slacks.iter().zip(&weights) {
++        field.mul_acc(&mut slack, weight, value);
+     }
+-    absorb_field_elements(transcript, &[claims[0], claims[1], slack], field);
++    let slack = field.reduce(slack);
++    absorb_field_elements(transcript, &[slack], field);
++    let initial = field.sub(&norm_target(layout, &weights, field), &slack);
+     let mut boundary =
+         ProverGrindingRoundBoundary::<NormRound>::with_round_offset(schedule.norm_round_bits, 0);
+-    let output =
+-        prove_batched_inner_sumcheck(field, transcript, &claims, values, weighted, &mut boundary)
+-            .map_err(failure)?;
+-    absorb_field_elements(transcript, &output.terminal_evaluations.concat(), field);
+-    let terminal = output.terminal_evaluations;
++    let output = falcon_integer::prove(
++        field,
++        transcript,
++        COEFFICIENT_LOG + 1,
++        &instance_point,
++        None,
++        field.zero(),
++        initial,
++        |row| {
++            let instance = row / (2 * N);
++            let j = row % (2 * N);
++            if instance >= layout.batch() {
++                [0]
++            } else if j < N {
++                [data.witness.s1[instance][j]]
++            } else {
++                [data.witness.s2[instance][j - N]]
++            }
++        },
++        &mut boundary,
++    )
++    .map_err(failure)?;
++    let terminal = output.terminal[0];
+     Ok((
+         NormProof {
+             instance_nonce,
+-            claims,
+-            sumchecks: output.proofs,
++            slack,
++            sumcheck: output.proof,
+             terminal,
+             grinding_nonces: boundary.into_nonces(),
+         },
+@@ -318,41 +301,42 @@ fn verify_norm(
+     )?;
+     let instance_point = sample_point(transcript, layout.capacity().ilog2() as usize, field)?;
+     let weights = eq_table(&instance_point, field).map_err(failure)?;
+-    validate_field_elements(&proof.claims, field).map_err(failure)?;
+-    validate_field_elements(&proof.terminal.concat(), field).map_err(failure)?;
+-    let slack = field.sub(
+-        &norm_target(layout, &weights, field),
+-        &field.add(&proof.claims[0], &proof.claims[1]),
+-    );
+-    absorb_field_elements(
+-        transcript,
+-        &[proof.claims[0], proof.claims[1], slack],
+-        field,
+-    );
++    validate_field_elements(&[proof.slack, proof.terminal], field).map_err(failure)?;
++    absorb_field_elements(transcript, &[proof.slack], field);
++    let initial = field.sub(&norm_target(layout, &weights, field), &proof.slack);
+     let mut boundary = VerifierGrindingRoundBoundary::<NormRound>::new(
+         schedule.norm_round_bits,
+         &proof.grinding_nonces,
+     );
+-    let (point, claims) = SumcheckProof::verify_batch_with_round_boundary(
+-        proof.sumchecks.each_ref(),
+-        transcript,
+-        &proof.claims,
+-        COEFFICIENT_LOG + layout.capacity().ilog2() as usize,
+-        field,
+-        &mut boundary,
+-    )
+-    .map_err(failure)?;
+-    for (claim, terminal) in claims.iter().zip(&proof.terminal) {
+-        if *claim != field.mul(&terminal[0], &terminal[1]) {
+-            return Err(failure("algebraic norm terminal mismatch"));
+-        }
++    let (point, claim) = proof
++        .sumcheck
++        .verify_with_round_boundary(
++            transcript,
++            initial,
++            COEFFICIENT_LOG + 1 + layout.capacity().ilog2() as usize,
++            field,
++            &mut boundary,
++        )
++        .map_err(failure)?;
++    if claim
++        != falcon_integer::terminal(
++            field,
++            COEFFICIENT_LOG + 1,
++            &instance_point,
++            None,
++            field.zero(),
++            &point,
++            &[proof.terminal],
++        )
++    {
++        return Err(failure("integer norm terminal mismatch"));
+     }
+-    absorb_field_elements(transcript, &proof.terminal.concat(), field);
++    absorb_field_elements(transcript, &[proof.terminal], field);
+     Ok(NormClaims {
+         instance_point,
+         point,
+         terminal: proof.terminal,
+-        slack,
++        slack: proof.slack,
+     })
+ }
+ 
+@@ -360,7 +344,7 @@ fn norm_target(layout: &Layout, weights: &[F], field: &Cfg) -> F {
+     let sum = weights[..layout.batch()]
+         .iter()
+         .fold(field.zero(), |sum, weight| field.add(&sum, weight));
+-    field.mul(&sum, &unsigned(BETA_SQUARED as u128, field))
++    field.reduce(field.mul_wide(&sum, &BETA_SQUARED))
+ }
+ 
+ /// At most two field elements per signature coefficient, not per source bit.
+@@ -467,51 +451,47 @@ impl<'a> BindingForm<'a> {
+         let len = layout.batch() * N;
+         if ring.weights_s1.len() != len
+             || ring.weights_s2.len() != len
+-            || norm.point.len() != COEFFICIENT_LOG + layout.capacity().ilog2() as usize
++            || norm.point.len() != COEFFICIENT_LOG + 1 + layout.capacity().ilog2() as usize
+             || norm.instance_point.len() != layout.capacity().ilog2() as usize
+         {
+             return Err(failure("algebraic binder claim dimension mismatch"));
+         }
+-        validate_field_elements(&ring.weights_s1, field).map_err(failure)?;
+-        validate_field_elements(&ring.weights_s2, field).map_err(failure)?;
+         validate_field_elements(&[ring.target], field).map_err(failure)?;
+-        let mut scales = [field.one(); 7];
++        let mut scales = [field.one(); 4];
+         for i in 1..scales.len() {
+             scales[i] = field.mul(&scales[i - 1], &eta);
+         }
+         let instance_weights = eq_table(&norm.instance_point, field).map_err(failure)?;
+-        let mut target = ring.target;
+-        for side in 0..2 {
+-            let weighted_scale = scales[1 + 2 * side];
+-            let plain_scale = scales[2 + 2 * side];
+-            target = field.add(
+-                &target,
+-                &field.mul(&weighted_scale, &norm.terminal[side][0]),
+-            );
+-            target = field.add(&target, &field.mul(&plain_scale, &norm.terminal[side][1]));
+-        }
++        let mut target = field.add(&ring.target, &field.mul(&scales[1], &norm.terminal));
++        let side_weights = [
++            field.sub(&field.one(), &norm.point[COEFFICIENT_LOG]),
++            norm.point[COEFFICIENT_LOG],
++        ];
+         let mut coefficients = [ring.weights_s1.clone(), ring.weights_s2.clone()];
+         match strategy {
+             BindingStrategy::Optimized => {
+                 let coefficient_weights =
+                     eq_table(&norm.point[..COEFFICIENT_LOG], field).map_err(failure)?;
+                 let norm_instances =
+-                    eq_table(&norm.point[COEFFICIENT_LOG..], field).map_err(failure)?;
++                    eq_table(&norm.point[COEFFICIENT_LOG + 1..], field).map_err(failure)?;
+                 // eq(j, i; r) factors into coefficient and instance weights.
+                 // Combine the instance factors before touching either N-word slice.
+-                let fill = |(instance, (s1, s2)): (usize, (&mut [F], &mut [F]))| {
++                let fill = |(instance, (s1, s2)): (usize, (&mut [F], &mut [F]))|
++                 -> Result<(), FalconError> {
++                    // Validate the original ring projections in the same
++                    // partition pass, before adding the norm coefficients.
++                    validate_field_elements(s1, field).map_err(failure)?;
++                    validate_field_elements(s2, field).map_err(failure)?;
+                     for (side, values) in [s1, s2].into_iter().enumerate() {
+                         let scale = field.mul(
+-                            &field.add(
+-                                &field.mul(&scales[1 + 2 * side], &instance_weights[instance]),
+-                                &scales[2 + 2 * side],
+-                            ),
++                            &field.mul(&scales[1], &side_weights[side]),
+                             &norm_instances[instance],
+                         );
+                         for (value, weight) in values.iter_mut().zip(&coefficient_weights) {
+                             *value = field.add(value, &field.mul(&scale, weight));
+                         }
+                     }
++                    Ok(())
+                 };
+                 let [s1, s2] = &mut coefficients;
+                 #[cfg(feature = "parallel")]
+@@ -519,12 +499,12 @@ impl<'a> BindingForm<'a> {
+                     s1.par_chunks_mut(N)
+                         .zip(s2.par_chunks_mut(N))
+                         .enumerate()
+-                        .for_each(fill);
++                        .try_for_each(fill)?;
+                 } else {
+                     s1.chunks_mut(N)
+                         .zip(s2.chunks_mut(N))
+                         .enumerate()
+-                        .for_each(fill);
++                        .try_for_each(fill)?;
+                 }
+                 #[cfg(not(feature = "parallel"))]
+                 {
+@@ -532,34 +512,29 @@ impl<'a> BindingForm<'a> {
+                     s1.chunks_mut(N)
+                         .zip(s2.chunks_mut(N))
+                         .enumerate()
+-                        .for_each(fill);
++                        .try_for_each(fill)?;
+                 }
+             }
+             BindingStrategy::Legacy => {
++                validate_field_elements(&ring.weights_s1, field).map_err(failure)?;
++                validate_field_elements(&ring.weights_s2, field).map_err(failure)?;
+                 let weights = eq_table(&norm.point, field).map_err(failure)?;
+                 for side in 0..2 {
+-                    for (instance, weight) in
+-                        instance_weights.iter().take(layout.batch()).enumerate()
+-                    {
+-                        let scale = field.add(
+-                            &field.mul(&scales[1 + 2 * side], weight),
+-                            &scales[2 + 2 * side],
+-                        );
++                    for instance in 0..layout.batch() {
+                         for j in 0..N {
+                             let index = instance * N + j;
+-                            coefficients[side][index] = field.add(
+-                                &coefficients[side][index],
+-                                &field.mul(&scale, &weights[index]),
+-                            );
++                            let weight = weights[instance * 2 * N + side * N + j];
++                            coefficients[side][index] = field
++                                .add(&coefficients[side][index], &field.mul(&scales[1], &weight));
+                         }
+                     }
+                 }
+             }
+         }
+-        target = field.add(&target, &field.mul(&scales[5], &norm.slack));
++        target = field.add(&target, &field.mul(&scales[2], &norm.slack));
+         let slacks = instance_weights[..layout.batch()]
+             .iter()
+-            .map(|weight| field.mul(&scales[5], weight))
++            .map(|weight| field.mul(&scales[2], weight))
+             .collect();
+         Ok((
+             Self {
+@@ -567,7 +542,7 @@ impl<'a> BindingForm<'a> {
+                 field,
+                 coefficients,
+                 slacks,
+-                padding: scales[6],
++                padding: scales[3],
+             },
+             target,
+         ))
+@@ -797,9 +772,7 @@ impl StreamingCoefficientSource for BindingForm<'_> {
+                 }
+                 for (byte, &count) in counts.iter().enumerate().skip(1) {
+                     if count != 0 {
+-                        let value = self
+-                            .field
+-                            .mul(&self.padding, &unsigned(count as u128, self.field));
++                        let value = self.field.reduce(self.field.mul_wide(&self.padding, &count));
+                         emit(byte as u8, &[value; 8])?;
+                     }
+                 }
+@@ -834,13 +807,12 @@ impl StreamingCoefficientSource for BindingForm<'_> {
+                     }
+                 }
+             }
+-            let high_scale = unsigned(1 << 8, self.field);
+             for byte in 1..256 {
+                 if !occupied[byte] {
+                     continue;
+                 }
+                 let mut lo = low[byte];
+-                let mut hi = self.field.mul(&high[byte], &high_scale);
++                let mut hi = self.field.reduce(self.field.mul_wide(&high[byte], &256u64));
+                 let mut values = [zero; 8];
+                 for lane in 0..7 {
+                     values[lane] = if lane == 6 {
+@@ -887,9 +859,7 @@ impl StreamingCoefficientSource for BindingForm<'_> {
+                             _ => counts[0][byte] + counts[1][byte],
+                         };
+                         if count != 0 {
+-                            let value = self
+-                                .field
+-                                .mul(&self.padding, &unsigned(count as u128, self.field));
++                            let value = self.field.reduce(self.field.mul_wide(&self.padding, &count));
+                             emit(table, byte as u8, &[value; 8])?;
+                         }
+                     }
+@@ -924,7 +894,6 @@ impl StreamingCoefficientSource for BindingForm<'_> {
+                     }
+                 }
+             }
+-            let high_scale = unsigned(1 << 8, self.field);
+             for table in 0..3 {
+                 for byte in 1..256 {
+                     // Tables are C0 by h0, C1 by h1, and C0 by h1 + C1 by h0.
+@@ -936,7 +905,7 @@ impl StreamingCoefficientSource for BindingForm<'_> {
+                     if lo == zero && hi == zero && spare == zero {
+                         continue;
+                     }
+-                    let mut hi = self.field.mul(&hi, &high_scale);
++                    let mut hi = self.field.reduce(self.field.mul_wide(&hi, &256u64));
+                     let mut values = [zero; 8];
+                     for lane in 0..7 {
+                         values[lane] = if lane == 6 {
+@@ -1119,9 +1088,11 @@ fn sample_point(
+ ) -> Result<Vec<F>, FalconError> {
+     (0..count).map(|_| sample(transcript, field)).collect()
+ }
++#[cfg(test)]
+ fn unsigned(value: u128, field: &Cfg) -> F {
+     F::from_with_cfg(value, field)
+ }
++#[cfg(test)]
+ fn signed(value: i128, field: &Cfg) -> F {
+     let value_field = unsigned(value.unsigned_abs(), field);
+     if value < 0 {
+@@ -1272,13 +1243,10 @@ mod tests {
+                     instance_point: (0..instance_vars)
+                         .map(|j| signed(3 * j as i128 - 7, &field))
+                         .collect(),
+-                    point: (0..COEFFICIENT_LOG + instance_vars)
++                    point: (0..COEFFICIENT_LOG + 1 + instance_vars)
+                         .map(|j| signed(7 * j as i128 - 19, &field))
+                         .collect(),
+-                    terminal: [
+-                        [signed(-13, &field), unsigned(17, &field)],
+-                        [unsigned(23, &field), signed(-29, &field)],
+-                    ],
++                    terminal: signed(-13, &field),
+                     slack: signed(-31, &field),
+                 };
+                 for eta in [field.zero(), field.one(), signed(-37, &field)] {
+@@ -1340,6 +1308,41 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn parallel_binding_rejects_noncanonical_ring_coefficients() {
++        let field = F::make_cfg(&Uint::from((1u128 << 61) - 1)).unwrap();
++        let wider = F::make_cfg(&Uint::from((1u128 << 127) - 1)).unwrap();
++        let invalid = wider.neg(&wider.one());
++        assert!(validate_field_elements(&[invalid], &field).is_err());
++        let layout = Layout::new(3).unwrap();
++        let instances = layout.capacity().ilog2() as usize;
++        let norm = NormClaims {
++            instance_point: vec![field.one(); instances],
++            point: vec![field.one(); COEFFICIENT_LOG + 1 + instances],
++            terminal: field.zero(),
++            slack: field.zero(),
++        };
++        for side in 0..2 {
++            let mut ring = PreparedClaim {
++                weights_s1: vec![field.one(); 3 * N],
++                weights_s2: vec![field.one(); 3 * N],
++                target: field.zero(),
++            };
++            if side == 0 {
++                ring.weights_s1[N + 7] = invalid;
++            } else {
++                ring.weights_s2[N + 7] = invalid;
++            }
++            for strategy in [BindingStrategy::Legacy, BindingStrategy::Optimized] {
++                for parallel in [false, true] {
++                    assert!(BindingForm::new_with_strategy(
++                        &layout, &ring, &norm, field.one(), &field, strategy, parallel,
++                    ).is_err());
++                }
++            }
++        }
++    }
++
+     #[test]
+     fn aligned_binding_matches_dense_evaluation_folds_and_sumcheck() {
+         let field = field();
+@@ -1705,13 +1708,13 @@ mod tests {
+             )
+         };
+         let mut altered = proof.clone();
+-        altered.norm.terminal[0][0] = field.add(&altered.norm.terminal[0][0], &field.one());
++        altered.norm.terminal = field.add(&altered.norm.terminal, &field.one());
+         rejects(&altered);
+         let mut altered = proof.clone();
+-        altered.norm.claims[0] = field.add(&altered.norm.claims[0], &field.one());
++        altered.norm.slack = field.add(&altered.norm.slack, &field.one());
+         rejects(&altered);
+         let mut altered = proof.clone();
+-        altered.norm.sumchecks[1].round_polynomials.pop();
++        altered.norm.sumcheck.round_polynomials.pop();
+         rejects(&altered);
+         let mut altered = proof.clone();
+         altered.binding.round_polynomials.pop();
+diff --git a/src/piop/spartan/falcon1024_algebraic/backend.rs b/src/piop/spartan/falcon1024_algebraic/backend.rs
+index b71b228a..8399b98d 100644
+--- a/src/piop/spartan/falcon1024_algebraic/backend.rs
++++ b/src/piop/spartan/falcon1024_algebraic/backend.rs
+@@ -25,9 +25,9 @@ pub const Q: i64 = 12_289;
+ pub const BETA_SQUARED: u64 = PARAMETERS.norm_bound;
+ pub const LIVE_BITS: usize = 2 * N * 15 + SLACK_BITS;
+ pub const PROTOCOL_ID: &str = if N == 1024 {
+-    "bitz/falcon1024-algebraic/non-zk/v3"
++    "bitz/falcon1024-algebraic/non-zk/v4"
+ } else {
+-    "bitz/falcon512-algebraic/non-zk/v3"
++    "bitz/falcon512-algebraic/non-zk/v4"
+ };
+ const PRIME_MIN: u128 = 1 << 125;
+ const PRIME_MAX: u128 = (1 << 126) - 1;
+diff --git a/src/piop/spartan/falcon1024_algebraic/protocol.rs b/src/piop/spartan/falcon1024_algebraic/protocol.rs
+index 4d31d38a..59eb9cc5 100644
+--- a/src/piop/spartan/falcon1024_algebraic/protocol.rs
++++ b/src/piop/spartan/falcon1024_algebraic/protocol.rs
+@@ -129,8 +129,8 @@ impl PreparedFalconAlgebraic {
+         let d = layout.capacity().ilog2() as usize;
+         let schedule = Schedule {
+             norm_instance_bits: grind(target_bits, d, 125),
+-            norm_round_bits: grind(target_bits, 4 * (COEFFICIENT_LOG + d), 125),
+-            merge_bits: grind(target_bits, 6, 125),
++            norm_round_bits: grind(target_bits, 3 * (COEFFICIENT_LOG + 1 + d), 125),
++            merge_bits: grind(target_bits, 3, 125),
+             binding_bits: grind(target_bits, 2 * (COEFFICIENT_LOG + 5 + d), 125),
+         };
+         let geometry = shared::Geometry::new([COEFFICIENT_LOG - 2 + d]).map_err(error)?;
+@@ -197,10 +197,10 @@ impl PreparedFalconAlgebraic {
+                 prime(d, self.schedule.norm_instance_bits),
+             ),
+             (
+-                "norm sumchecks",
+-                prime(4 * (COEFFICIENT_LOG + d), self.schedule.norm_round_bits),
++                "integer outer sumcheck",
++                prime(3 * (COEFFICIENT_LOG + 1 + d), self.schedule.norm_round_bits),
+             ),
+-            ("claim merge", prime(6, self.schedule.merge_bits)),
++            ("claim merge", prime(3, self.schedule.merge_bits)),
+             (
+                 "source binding sumcheck",
+                 prime(2 * (COEFFICIENT_LOG + 5 + d), self.schedule.binding_bits),
+@@ -623,8 +623,8 @@ mod tests {
+                 let d = layout.capacity().ilog2() as usize;
+                 for numerator in [
+                     d,
+-                    4 * (COEFFICIENT_LOG + d),
+-                    6,
++                    3 * (COEFFICIENT_LOG + 1 + d),
++                    3,
+                     2 * (COEFFICIENT_LOG + 5 + d),
+                     10,
+                 ] {
+diff --git a/src/piop/spartan/falcon1024_algebraic/ring.rs b/src/piop/spartan/falcon1024_algebraic/ring.rs
+index d85f88fc..67ba7591 100644
+--- a/src/piop/spartan/falcon1024_algebraic/ring.rs
++++ b/src/piop/spartan/falcon1024_algebraic/ring.rs
+@@ -4,7 +4,7 @@
+ //! coefficient vectors to the same BitZ source used by the norm proof.
+ 
+ use field::{
+-    FpLinearAcc, Reduce, RingOps, Uint,
++    BatchMulAcc, FpLinearAcc, FpSignedLinearAcc, Reduce, RingOps, Uint,
+     q12289::{PowerBasis, PowerCoordinates},
+ };
+ #[cfg(feature = "parallel")]
+@@ -464,21 +464,18 @@ fn collapse_claim(
+     let weights_s2 = coordinates.s2.par_iter().map(weight).collect();
+     #[cfg(not(feature = "parallel"))]
+     let weights_s2 = coordinates.s2.iter().map(weight).collect();
+-    let target = (0..EXTENSION_DEGREE).fold(field.zero(), |sum, k| {
++    // Eleven bounded signed coordinates share one mixed reduction; carries
++    // remain native integers throughout this dot product.
++    let mut target = FpSignedLinearAcc::<2, 2>::default();
++    for k in 0..EXTENSION_DEGREE {
+         let value = i128::from(coordinates.target.coordinates()[k])
+             + i128::from(Q) * i128::from(carries[k]);
+-        let magnitude = F::from_with_cfg(value.unsigned_abs(), field);
+-        let value = if value < 0 {
+-            field.neg(&magnitude)
+-        } else {
+-            magnitude
+-        };
+-        field.add(&sum, &field.mul(&xi_powers[k], &value))
+-    });
++        field.mul_acc(&mut target, &xi_powers[k], &value);
++    }
+     PreparedClaim {
+         weights_s1,
+         weights_s2,
+-        target,
++        target: field.reduce(target),
+     }
+ }
+ 
+diff --git a/src/piop/spartan/mod.rs b/src/piop/spartan/mod.rs
+index 373c9e9d..d195fd4d 100644
+--- a/src/piop/spartan/mod.rs
++++ b/src/piop/spartan/mod.rs
+@@ -18,6 +18,8 @@ pub mod ecdsa_sha256;
+ #[cfg(feature = "falcon")]
+ pub mod falcon;
+ #[cfg(feature = "falcon")]
++mod falcon_integer;
++#[cfg(feature = "falcon")]
+ pub mod falcon_parameters;
+ #[cfg(feature = "falcon")]
+ pub mod falcon_extension;
+diff --git a/src/piop/spartan/falcon_integer.rs b/src/piop/spartan/falcon_integer.rs
+new file mode 100644
+index 00000000..ebe6a397
+--- /dev/null
++++ b/src/piop/spartan/falcon_integer.rs
+@@ -0,0 +1,510 @@
++//! One integer outer reduction for a weighted square sum and optional rejection rows.
++//!
++//! Row variables precede instance variables. Equality weights stay factored;
++//! the first round reads signed machine integers and allocates only the folded
++//! tables. Every returned endpoint still requires the caller's source projection.
++
++use super::{
++    SpartanBitzField as F, SpartanField, absorb_field_elements, matrix::eq_table, squeeze_field,
++};
++use crate::{
++    sumcheck::{RoundBoundaryPolicy, SumcheckError, SumcheckProof},
++    transcript::traits::Transcript,
++};
++use field::{FpProductAcc, PreparedLinearCombination, Reduce, RingOps, WideMul, Z};
++#[cfg(feature = "parallel")]
++use rayon::prelude::*;
++
++type Cfg = <F as SpartanField>::Config;
++
++pub(super) struct Output<const K: usize> {
++    pub proof: SumcheckProof<F, 4>,
++    pub point: Vec<F>,
++    pub terminal: [F; K],
++}
++
++#[cfg(test)]
++fn signed(value: i64, field: &Cfg) -> F {
++    let x = F::from_with_cfg(value.unsigned_abs() as u128, field);
++    if value < 0 { field.neg(&x) } else { x }
++}
++
++fn add(field: &Cfg, a: [F; 3], b: [F; 3]) -> [F; 3] {
++    std::array::from_fn(|i| field.add(&a[i], &b[i]))
++}
++
++fn product(field: &Cfg, a: [F; 3], b: [F; 3]) -> [F; 3] {
++    let d: [F; 3] = std::array::from_fn(|i| field.sub(&b[i], &a[i]));
++    [
++        field.sub(&field.mul(&a[0], &a[1]), &a[2]),
++        field.sub(
++            &field.add(&field.mul(&a[0], &d[1]), &field.mul(&a[1], &d[0])),
++            &d[2],
++        ),
++        field.mul(&d[0], &d[1]),
++    ]
++}
++
++fn linear_times(field: &Cfg, q: [F; 3], a: F, b: F, scale: F) -> [F; 4] {
++    let a = field.mul(&a, &scale);
++    let b = field.mul(&b, &scale);
++    [
++        field.mul(&a, &q[0]),
++        field.add(&field.mul(&a, &q[1]), &field.mul(&b, &q[0])),
++        field.add(&field.mul(&a, &q[2]), &field.mul(&b, &q[1])),
++        field.mul(&b, &q[2]),
++    ]
++}
++
++fn equality_line(field: &Cfg, t: F) -> [F; 2] {
++    [
++        field.sub(&field.one(), &t),
++        field.sub(&field.add(&t, &t), &field.one()),
++    ]
++}
++
++fn eq(field: &Cfg, a: &[F], b: &[F]) -> F {
++    a.iter().zip(b).fold(field.one(), |v, (&a, b)| {
++        let [c0, c1] = equality_line(field, a);
++        field.mul(&v, &field.add(&c0, &field.mul(&c1, b)))
++    })
++}
++
++pub(super) fn terminal<const K: usize>(
++    field: &Cfg,
++    row_vars: usize,
++    rho: &[F],
++    tau: Option<&[F]>,
++    mix: F,
++    point: &[F],
++    values: &[F; K],
++) -> F {
++    let norm = field.mul(
++        &eq(field, rho, &point[row_vars..]),
++        &field.mul(&values[0], &values[0]),
++    );
++    if let Some(tau) = tau {
++        let residual = field.sub(&field.mul(&values[1], &values[2]), &values[3]);
++        field.add(
++            &norm,
++            &field.mul(&field.mul(&mix, &eq(field, tau, point)), &residual),
++        )
++    } else {
++        norm
++    }
++}
++
++/// K=1 proves the square sum; K=4 also proves equality-weighted A*B-C rows.
++#[allow(clippy::too_many_arguments)]
++pub(super) fn prove<const K: usize>(
++    field: &Cfg,
++    transcript: &mut impl Transcript,
++    row_vars: usize,
++    rho: &[F],
++    tau: Option<&[F]>,
++    mix: F,
++    initial: F,
++    read: impl Fn(usize) -> [i16; K] + Sync,
++    boundary: &mut impl RoundBoundaryPolicy,
++) -> Result<Output<K>, SumcheckError> {
++    let rounds = row_vars + rho.len();
++    // At most 2^19 native pairs per instance keep all i16 quadratic sums
++    // below 2^52 before mixed multiplication by the instance weight.
++    if row_vars == 0
++        || row_vars > 20
++        || rounds >= usize::BITS as usize
++        || !matches!(K, 1 | 4)
++        || (K == 4) != tau.is_some()
++        || tau.is_some_and(|t| t.len() != rounds)
++    {
++        return Err(SumcheckError::InvalidProductDimensions);
++    }
++    boundary.validate(rounds)?;
++    let zero = field.zero();
++    let mut norm_scale = field.one();
++    let mut rejection_scale = mix;
++    let norm_instances = eq_table(rho, field)?;
++    let rejection_instances = tau.map(|t| eq_table(&t[row_vars..], field)).transpose()?;
++    let mut tables: [Vec<F>; K] = std::array::from_fn(|_| Vec::new());
++    let mut scratch: [Vec<F>; K] = std::array::from_fn(|_| Vec::new());
++    let mut proof = SumcheckProof {
++        round_polynomials: Vec::with_capacity(rounds),
++    };
++    let mut point = Vec::with_capacity(rounds);
++    let mut claim = initial;
++    for round in 0..rounds {
++        let coefficient_span = tracing::info_span!(
++            "falcon_integer:coefficients",
++            component = "falcon_integer_coefficients",
++            tag_sumcheck = true,
++            tag_constraint_proof = true,
++            round_index = round as u64
++        )
++        .entered();
++        let pairs = 1usize << (rounds - round - 1);
++        let local_pairs = if round < row_vars {
++            1usize << (row_vars - round - 1)
++        } else {
++            1
++        };
++        let norm_tail = if round >= row_vars {
++            eq_table(&rho[round - row_vars + 1..], field)?
++        } else {
++            Vec::new()
++        };
++        let rejection_tail = tau
++            .map(|t| {
++                eq_table(
++                    &t[round + 1..if round < row_vars { row_vars } else { rounds }],
++                    field,
++                )
++            })
++            .transpose()?;
++        let groups = pairs / local_pairs;
++        let group = |i: usize| {
++            let mut native_n = [0i64; 3];
++            // Each accumulator contains at most 2^19 products. Keep their
++            // Montgomery R^2 scale until the complete row subtotal is ready.
++            let mut norm_products = [FpProductAcc::<2>::default(); 3];
++            let mut rejection_products = [FpProductAcc::<2>::default(); 3];
++            let mut r = [zero; 3];
++            for j in 0..local_pairs {
++                let index = 2 * (i * local_pairs + j);
++                if round == 0 {
++                    let a = read(index);
++                    let b = read(index + 1);
++                    let x = i64::from(a[0]);
++                    let d = i64::from(b[0]) - x;
++                    native_n[0] += x * x;
++                    native_n[1] += 2 * x * d;
++                    native_n[2] += d * d;
++                    if K == 4 {
++                        let a: [i64; 3] = std::array::from_fn(|k| i64::from(a[k + 1]));
++                        let d: [i64; 3] = std::array::from_fn(|k| i64::from(b[k + 1]) - a[k]);
++                        let q = [
++                            a[0] * a[1] - a[2],
++                            a[0] * d[1] + a[1] * d[0] - d[2],
++                            d[0] * d[1],
++                        ];
++                        let w = rejection_tail.as_ref().unwrap()[j];
++                        for k in 0..3 {
++                            // Native rejection residual coefficients are tiny.
++                            let term = match q[k] {
++                                0 => zero,
++                                1 => w,
++                                -1 => field.neg(&w),
++                                v => field.reduce(field.mul_wide(&w, &v)),
++                            };
++                            r[k] = field.add(&r[k], &term);
++                        }
++                    }
++                } else {
++                    let x = tables[0][index];
++                    let d = field.sub(&tables[0][index + 1], &x);
++                    // Full Falcon pads S1 with zero rows. Their folded square
++                    // is identically zero until the high row variable is bound.
++                    if K != 4 || x != zero || d != zero {
++                        norm_products[0].accumulate(&x, &x);
++                        norm_products[1].accumulate(&x, &d);
++                        norm_products[2].accumulate(&d, &d);
++                    }
++                    if K == 4 {
++                        let a = std::array::from_fn(|k| tables[k + 1][index]);
++                        let b = std::array::from_fn(|k| tables[k + 1][index + 1]);
++                        // A=C=0 at both endpoints makes A(t)B(t)-C(t)
++                        // identically zero, regardless of B or the challenge.
++                        if a[0] == zero && b[0] == zero && a[2] == zero && b[2] == zero {
++                            continue;
++                        }
++                        let q = product(field, a, b);
++                        let w =
++                            rejection_tail.as_ref().unwrap()[if round < row_vars { j } else { i }];
++                        for k in 0..3 {
++                            rejection_products[k].accumulate(&w, &q[k]);
++                        }
++                    }
++                }
++            }
++            let nw = if round < row_vars {
++                norm_instances[i]
++            } else {
++                norm_tail[i]
++            };
++            let n = if round == 0 {
++                native_n.map(|v| field.reduce(field.mul_wide(&nw, &v)))
++            } else {
++                let mut n = norm_products.map(|sum| field.reduce(sum));
++                n[1] = field.add(&n[1], &n[1]);
++                if K == 4 {
++                    r = rejection_products.map(|sum| field.reduce(sum));
++                }
++                n.map(|v| field.mul(&nw, &v))
++            };
++            if round < row_vars {
++                if let Some(weights) = &rejection_instances {
++                    r = r.map(|v| field.mul(&weights[i], &v));
++                }
++            }
++            [n, r]
++        };
++        let combine =
++            |a: [[F; 3]; 2], b: [[F; 3]; 2]| [add(field, a[0], b[0]), add(field, a[1], b[1])];
++        #[cfg(feature = "parallel")]
++        let sums = if pairs >= 4096 && groups > 1 {
++            (0..groups)
++                .into_par_iter()
++                .map(group)
++                .reduce(|| [[zero; 3]; 2], combine)
++        } else {
++            (0..groups).map(group).fold([[zero; 3]; 2], combine)
++        };
++        #[cfg(not(feature = "parallel"))]
++        let sums = (0..groups).map(group).fold([[zero; 3]; 2], combine);
++        let nl = if round < row_vars {
++            [field.one(), zero]
++        } else {
++            equality_line(field, rho[round - row_vars])
++        };
++        let mut coefficients = linear_times(field, sums[0], nl[0], nl[1], norm_scale);
++        let rl = tau.map(|t| equality_line(field, t[round]));
++        if let Some([a, b]) = rl {
++            let rejection = linear_times(field, sums[1], a, b, rejection_scale);
++            coefficients = std::array::from_fn(|k| field.add(&coefficients[k], &rejection[k]));
++        }
++        let sum = coefficients
++            .iter()
++            .fold(coefficients[0], |s, v| field.add(&s, v));
++        if sum != claim {
++            return Err(SumcheckError::InvalidRoundClaim { round });
++        }
++        drop(coefficient_span);
++        absorb_field_elements(transcript, &coefficients, field);
++        boundary.after_round(transcript, round)?;
++        let challenge = squeeze_field(transcript, field)?;
++        claim = coefficients
++            .iter()
++            .rev()
++            .fold(zero, |s, v| field.add(&field.mul(&s, &challenge), v));
++        norm_scale = field.mul(
++            &norm_scale,
++            &field.add(&nl[0], &field.mul(&nl[1], &challenge)),
++        );
++        if let Some([a, b]) = rl {
++            rejection_scale =
++                field.mul(&rejection_scale, &field.add(&a, &field.mul(&b, &challenge)));
++        }
++        let fold_span = tracing::info_span!(
++            "falcon_integer:fold",
++            component = "falcon_integer_fold",
++            tag_sumcheck = true,
++            tag_constraint_proof = true,
++            round_index = round as u64
++        )
++        .entered();
++        let one = field.one();
++        let complement = field.sub(&one, &challenge);
++        // A native signed fold needs one mixed reduction, not two integer
++        // embeddings followed by a field multiplication. Boolean row operands
++        // (and zero padding) select their four possible results directly.
++        let native_fold = (round == 0).then(|| {
++            <Cfg as PreparedLinearCombination<Z<1>>>::prepare_linear_combination(
++                field,
++                [complement, challenge],
++            )
++        });
++        for k in 0..K {
++            let fold = |i: usize| {
++                if round == 0 {
++                    let pair = [read(2 * i)[k], read(2 * i + 1)[k]];
++                    match pair {
++                        [0, 0] => zero,
++                        [1, 1] => one,
++                        [0, 1] => challenge,
++                        [1, 0] => complement,
++                        _ => <Cfg as PreparedLinearCombination<Z<1>>>::linear_combination(
++                            native_fold.as_ref().unwrap(),
++                            |j| Z::from(pair[j]),
++                        ),
++                    }
++                } else {
++                    field.add(
++                        &tables[k][2 * i],
++                        &field.mul(
++                            &challenge,
++                            &field.sub(&tables[k][2 * i + 1], &tables[k][2 * i]),
++                        ),
++                    )
++                }
++            };
++            // Initialize each output with its folded value. Zero-filling these
++            // large buffers first adds a serial write and page-fault pass.
++            #[cfg(feature = "parallel")]
++            if pairs >= 4096 {
++                (0..pairs)
++                    .into_par_iter()
++                    .map(fold)
++                    .collect_into_vec(&mut scratch[k]);
++            } else {
++                scratch[k].clear();
++                scratch[k].extend((0..pairs).map(fold));
++            }
++            #[cfg(not(feature = "parallel"))]
++            {
++                scratch[k].clear();
++                scratch[k].extend((0..pairs).map(fold));
++            }
++        }
++        std::mem::swap(&mut tables, &mut scratch);
++        drop(fold_span);
++        point.push(challenge);
++        proof.round_polynomials.push(coefficients);
++    }
++    let values = std::array::from_fn(|k| tables[k][0]);
++    if claim != terminal(field, row_vars, rho, tau, mix, &point, &values) {
++        return Err(SumcheckError::InvalidTerminalClaim);
++    }
++    absorb_field_elements(transcript, &values, field);
++    Ok(Output {
++        proof,
++        point,
++        terminal: values,
++    })
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::{sumcheck::UngrindedRoundBoundary, transcript::Blake3Transcript};
++
++    // Evaluate the defining polynomial from the original integer table, independently
++    // of the prover's native first round, factored weights, and folded buffers.
++    fn direct<const K: usize>(
++        field: &Cfg,
++        rows: &[[i16; K]],
++        row_vars: usize,
++        rho: &[F],
++        tau: Option<&[F]>,
++        mix: F,
++        point: &[F],
++    ) -> F {
++        let weights = eq_table(point, field).unwrap();
++        let values: [F; K] = std::array::from_fn(|k| {
++            rows.iter().zip(&weights).fold(field.zero(), |s, (row, w)| {
++                field.add(&s, &field.mul(w, &signed(i64::from(row[k]), field)))
++            })
++        });
++        let equal = |a: &[F], b: &[F]| {
++            a.iter().zip(b).fold(field.one(), |v, (a, b)| {
++                let both_one = field.mul(a, b);
++                let both_zero = field.mul(&field.sub(&field.one(), a), &field.sub(&field.one(), b));
++                field.mul(&v, &field.add(&both_one, &both_zero))
++            })
++        };
++        let mut result = field.mul(
++            &equal(rho, &point[row_vars..]),
++            &field.mul(&values[0], &values[0]),
++        );
++        if let Some(tau) = tau {
++            result = field.add(
++                &result,
++                &field.mul(
++                    &field.mul(&mix, &equal(tau, point)),
++                    &field.sub(&field.mul(&values[1], &values[2]), &values[3]),
++                ),
++            );
++        }
++        result
++    }
++
++    fn check<const K: usize>() {
++        let field = Cfg::from_prime_u128((1u128 << 127) - 1);
++        let rho = [signed(3, &field), signed(5, &field)];
++        let tau: Vec<_> = [7, 11, 13, 17, 19]
++            .into_iter()
++            .map(|v| signed(v, &field))
++            .collect();
++        let tau = (K == 4).then_some(tau.as_slice());
++        let mix = signed(23, &field);
++        let rows: Vec<[i16; K]> = (0..32)
++            .map(|i| {
++                std::array::from_fn(|k| match k {
++                    0 => {
++                        if i < 8 {
++                            [i16::MIN, i16::MAX, -1, 0, 0, 1, 1, 0][i]
++                        } else if i < 24 {
++                            i as i16 * 37 - 509
++                        } else {
++                            0
++                        }
++                    }
++                    1 => (i % 2) as i16,
++                    2 => ((i / 2) % 2) as i16,
++                    // Include nonzero rejection residuals: test the full aggregate identity.
++                    _ => ((i / 3) % 2) as i16,
++                })
++            })
++            .collect();
++        let boolean = |index: usize, n| {
++            (0..n)
++                .map(|k| signed(((index >> k) & 1) as i64, &field))
++                .collect::<Vec<_>>()
++        };
++        let initial = (0..32).fold(field.zero(), |s, i| {
++            field.add(
++                &s,
++                &direct(&field, &rows, 3, &rho, tau, mix, &boolean(i, 5)),
++            )
++        });
++        let mut prover = Blake3Transcript::new();
++        let out = prove(
++            &field,
++            &mut prover,
++            3,
++            &rho,
++            tau,
++            mix,
++            initial,
++            |i| rows[i],
++            &mut UngrindedRoundBoundary,
++        )
++        .unwrap();
++        for round in 0..5 {
++            for t in [0, 1, 2, 3] {
++                let t = signed(t, &field);
++                let expected = (0..1usize << (4 - round)).fold(field.zero(), |s, tail| {
++                    let mut x = out.point[..round].to_vec();
++                    x.push(t);
++                    x.extend(boolean(tail, 4 - round));
++                    field.add(&s, &direct(&field, &rows, 3, &rho, tau, mix, &x))
++                });
++                let actual = out.proof.round_polynomials[round]
++                    .iter()
++                    .rev()
++                    .fold(field.zero(), |s, c| field.add(&field.mul(&s, &t), c));
++                assert_eq!(actual, expected, "round {round}");
++            }
++        }
++        let mut verifier = Blake3Transcript::new();
++        let (point, claim) = out.proof.verify(&mut verifier, initial, 5, &field).unwrap();
++        assert_eq!(claim, direct(&field, &rows, 3, &rho, tau, mix, &point));
++        absorb_field_elements(&mut verifier, &out.terminal, &field);
++        assert_eq!(
++            prover.get_challenge::<field::Gf128>(),
++            verifier.get_challenge::<field::Gf128>()
++        );
++        let mut bad = out.proof.clone();
++        bad.round_polynomials[2][3] = field.add(&bad.round_polynomials[2][3], &field.one());
++        assert!(
++            bad.verify(&mut Blake3Transcript::new(), initial, 5, &field)
++                .is_err()
++        );
++    }
++    #[test]
++    fn square_sum_matches_dense_polynomial() {
++        check::<1>();
++    }
++    #[test]
++    fn combined_sum_matches_dense_polynomial() {
++        check::<4>();
++    }
++}
+diff --git a/src/piop/spartan/falcon/hybrid_grinding.rs b/src/piop/spartan/falcon/hybrid_grinding.rs
+new file mode 100644
+index 00000000..74e6d137
+--- /dev/null
++++ b/src/piop/spartan/falcon/hybrid_grinding.rs
+@@ -0,0 +1,197 @@
++//! Reduce expected PCS work without increasing its existing summed error.
++use crate::ligerito_flock::grinding_plan::GrindingPlan;
++
++/// The old equal-per-block allocation supplies the budget. Greedily buy the
++/// largest error reduction per extra expected hash, starting at native minima.
++/// Accept only a strictly cheaper plan whose upward-rounded error sum is below
++/// the old plan's downward-rounded sum. The choice depends only on public
++/// geometry/error bounds, never on a statement, nonce, or transcript seed.
++pub(super) fn rebalance(mut plan: GrindingPlan) -> GrindingPlan {
++    let original: Vec<_> = plan.blocks.iter().map(|b| b.bits).collect();
++    let mut bits: Vec<_> = plan
++        .blocks
++        .iter()
++        .map(|b| b.native_bits.unwrap_or(0))
++        .collect();
++    if bits == original {
++        return plan;
++    }
++    let budget = error_bound(&plan, &original, false);
++    if budget <= 0. || !budget.is_finite() {
++        return plan;
++    }
++    while error_bound(&plan, &bits, true) > budget {
++        let mut best = None;
++        let mut best_gain = -1.;
++        for (index, (block, &g)) in plan.blocks.iter().zip(&bits).enumerate() {
++            if g < 32 {
++                // A zero-bit boundary performs no nonce search: enabling it
++                // costs two expected hashes. Later increments cost 2^g.
++                let exponent = if g == 0 { -2 } else { -2 * g as i32 - 1 };
++                let gain = block.raw_error * 2f64.powi(exponent);
++                if gain > best_gain {
++                    best = Some(index);
++                    best_gain = gain;
++                }
++            }
++        }
++        let Some(index) = best else { return plan };
++        bits[index] += 1;
++    }
++    if expected_work(&bits) < expected_work(&original) {
++        for (block, bits) in plan.blocks.iter_mut().zip(bits) {
++            block.bits = bits;
++        }
++    }
++    plan
++}
++
++fn expected_work(bits: &[u32]) -> u128 {
++    bits.iter()
++        .map(|&g| if g == 0 { 0 } else { 1u128 << g })
++        .sum()
++}
++
++fn error_bound(plan: &GrindingPlan, bits: &[u32], upper: bool) -> f64 {
++    plan.blocks.iter().zip(bits).fold(0., |sum, (block, &g)| {
++        let term = block.raw_error * 2f64.powi(-(g as i32));
++        if upper {
++            (sum + term.next_up()).next_up()
++        } else {
++            (sum + term.next_down().max(0.)).next_down().max(0.)
++        }
++    })
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::ligerito_flock::{LigeritoSelection, grinding_plan::ChallengeBlock};
++    use num_bigint::BigUint;
++
++    // Exact dyadic interpretation of the existing f64 raw bounds, independent
++    // of the optimizer's directed-rounding test. SCALE also covers subnormals.
++    fn exact_error(plan: &GrindingPlan) -> BigUint {
++        plan.blocks
++            .iter()
++            .map(|block| {
++                let raw = block.raw_error.to_bits();
++                let exponent = ((raw >> 52) & 0x7ff) as i32;
++                let fraction = raw & ((1u64 << 52) - 1);
++                let (mantissa, power) = if exponent == 0 {
++                    (fraction, -1074)
++                } else {
++                    ((1u64 << 52) | fraction, exponent - 1023 - 52)
++                };
++                BigUint::from(mantissa) << (1106 + power - block.bits as i32) as usize
++            })
++            .sum()
++    }
++
++    fn check(plan: GrindingPlan) -> bool {
++        let optimized = rebalance(plan.clone());
++        assert_eq!(optimized.blocks.len(), plan.blocks.len());
++        for (a, b) in plan.blocks.iter().zip(&optimized.blocks) {
++            assert_eq!(
++                (&a.label, a.native_bits, a.raw_error),
++                (&b.label, b.native_bits, b.raw_error)
++            );
++            assert!(b.bits >= b.native_bits.unwrap_or(0) && b.bits <= 32);
++        }
++        assert!(exact_error(&optimized) <= exact_error(&plan));
++        let old: Vec<_> = plan.blocks.iter().map(|b| b.bits).collect();
++        let new: Vec<_> = optimized.blocks.iter().map(|b| b.bits).collect();
++        assert!(expected_work(&new) <= expected_work(&old));
++        let repeated = rebalance(plan);
++        assert_eq!(
++            new,
++            repeated.blocks.iter().map(|b| b.bits).collect::<Vec<_>>()
++        );
++        expected_work(&new) < expected_work(&old)
++    }
++
++    #[test]
++    fn public_pcs_shapes_preserve_exact_error_and_native_minima() {
++        let mut improved = 0;
++        for log in 13..=28 {
++            for target in [100, 128] {
++                let resolved = LigeritoSelection::MATCHED_UDR.resolve(log, target).unwrap();
++                let initial = GrindingPlan::resolve(resolved.security(), target as u32).unwrap();
++                let target = target + 2 + initial.blocks.len().next_power_of_two().ilog2() as usize;
++                // Larger general-purpose PCS shapes can exceed the existing
++                // 32-bit work cap; no Falcon configuration uses such a plan.
++                let Ok(plan) = GrindingPlan::resolve(resolved.security(), target as u32) else {
++                    continue;
++                };
++                assert!(rebalance(plan.clone()).matches(resolved.security()));
++                improved += usize::from(check(plan));
++            }
++        }
++        assert!(improved > 0);
++    }
++
++    #[test]
++    fn heterogeneous_bounds_and_saturated_minima_preserve_exact_error() {
++        for seed in 0..64u32 {
++            let blocks = (0..32u32)
++                .map(|i| {
++                    let exponent = 105 + (i * 13 + seed * 7) % 24;
++                    let native = (i + seed) % 8;
++                    ChallengeBlock {
++                        label: format!("test/{i}"),
++                        native_bits: Some(native),
++                        raw_error: 2f64.powi(-(exponent as i32)) + 2f64.powi(-128),
++                        bits: (136 - exponent).max(native),
++                    }
++                })
++                .collect();
++            assert!(check(GrindingPlan::scripted(blocks)));
++        }
++        for bits in [0, 32] {
++            let plan = GrindingPlan::scripted(vec![ChallengeBlock {
++                label: "fixed".into(),
++                native_bits: Some(bits),
++                raw_error: 2f64.powi(-128),
++                bits,
++            }]);
++            assert!(!check(plan));
++        }
++    }
++
++    #[test]
++    fn prepared_falcon_keeps_its_full_security_bound() {
++        use super::super::{N, PreparedFalconHybrid};
++        for batch in [1, 3, 16, 1024] {
++            for target in [100, 128] {
++                // Not every ring-extension profile supports both targets.
++                let Ok(prepared) = PreparedFalconHybrid::prepare(batch, target, 1024) else {
++                    continue;
++                };
++                let config = prepared.ligerito.security();
++                let initial = GrindingPlan::resolve(config, target as u32).unwrap();
++                let pcs_target =
++                    target + 2 + initial.blocks.len().next_power_of_two().ilog2() as usize;
++                let original = GrindingPlan::resolve(config, pcs_target as u32).unwrap();
++                let old: Vec<_> = original.blocks.iter().map(|b| b.bits).collect();
++                let new: Vec<_> = prepared
++                    .pcs_grinding
++                    .blocks
++                    .iter()
++                    .map(|b| b.bits)
++                    .collect();
++                assert!(exact_error(&prepared.pcs_grinding) <= exact_error(&original));
++                assert!(prepared.security().algebraic_bits >= target as f64);
++                if target == 100 {
++                    assert_eq!(new, old);
++                }
++                if batch == 1024 {
++                    eprintln!(
++                        "PCS expected work: N={N} target={target} old={} new={}",
++                        expected_work(&old),
++                        expected_work(&new)
++                    );
++                }
++            }
++        }
++    }
++}

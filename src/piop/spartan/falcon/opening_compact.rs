@@ -958,20 +958,18 @@ impl BindingForm<'_> {
         let linear = local_dot(&template.common);
         let rejection = local_dot(&template.rejection);
 
-        // Five repeated forms cover common linear rows, rejection, S1, S2 and
+        // Four repeated forms cover common linear rows, rejection, S1 and
         // slack. Public selection contributes an additional sparse routing
         // form evaluated directly from the same local coefficient endpoints.
         // In particular the verifier never prepares per-signature word tables.
         let norm_local = eq_table(&self.proof.norm.point[..COEFFICIENT_LOG], field)
             .map_err(|error| piop(error.to_string()))?;
-        let norm_instances = eq_table(&self.proof.norm.point[COEFFICIENT_LOG..], field)
+        let norm_instances = eq_table(&self.proof.norm.point[COEFFICIENT_LOG + 1..], field)
             .map_err(|error| piop(error.to_string()))?;
         let mut s1 = LocalEvaluation::new(local, field);
-        let mut s2 = LocalEvaluation::new(local, field);
         let mut slack = LocalEvaluation::new(local, field);
         for (i, &weight) in norm_local.iter().enumerate() {
             add_value_scaled(&mut s1, self.layout.s1_bit(i, 0), weight, field);
-            add_signed_source_scaled(&mut s2, 0, self.layout, i, weight, field);
         }
         let mut power = field.one();
         for bit in 0..NORM_BITS {
@@ -981,7 +979,6 @@ impl BindingForm<'_> {
         let mut linear_weight = field.zero();
         let mut rejection_weight = field.zero();
         let mut norm_weight = field.zero();
-        let mut weighted_norm = field.zero();
         let mut slack_weight = field.zero();
         let offsets = self.layout.offsets();
         let mut mask_prefix = vec![field.zero(); HASH_TO_POINT_SAMPLES + 1];
@@ -1025,34 +1022,20 @@ impl BindingForm<'_> {
             );
             let norm = field.mul(&instance, &norm_instances[s]);
             norm_weight = field.add(&norm_weight, &norm);
-            weighted_norm = field.add(
-                &weighted_norm,
-                &field.mul(&norm, &prepared.norm_instances[s]),
-            );
             slack_weight = field.add(
                 &slack_weight,
                 &field.mul(&instance, &prepared.norm_instances[s]),
             );
         }
         let eta2 = field.mul(&self.eta, &self.eta);
-        let eta3 = field.mul(&eta2, &self.eta);
-        let eta4 = field.mul(&eta3, &self.eta);
-        let eta5 = field.mul(&eta4, &self.eta);
-        let s1_weight = field.add(
-            &field.mul(&self.eta, &weighted_norm),
-            &field.mul(&eta2, &norm_weight),
-        );
-        let s2_weight = field.add(
-            &field.mul(&eta3, &weighted_norm),
-            &field.mul(&eta4, &norm_weight),
-        );
+        let side_zero = field.sub(&field.one(), &self.proof.norm.point[COEFFICIENT_LOG]);
+        let s1_weight = field.mul(&self.eta, &field.mul(&side_zero, &norm_weight));
         let mut sum = <Cfg as BatchMulAcc<F>>::Accumulator::zero();
         for (value, weight) in [
             (linear, linear_weight),
             (rejection, rejection_weight),
             (s1.sum, s1_weight),
-            (s2.sum, s2_weight),
-            (slack.sum, field.mul(&eta5, &slack_weight)),
+            (slack.sum, field.mul(&eta2, &slack_weight)),
         ] {
             field.mul_acc(&mut sum, &value, &weight);
         }
@@ -1063,7 +1046,7 @@ impl BindingForm<'_> {
         let field = self.field;
         let proof = self.proof;
         let batch_vars = self.layout.capacity().ilog2() as usize;
-        if proof.norm.point.len() != COEFFICIENT_LOG + batch_vars
+        if proof.norm.point.len() != COEFFICIENT_LOG + 1 + batch_vars
             || proof.norm.instance_point.len() != batch_vars
         {
             return Err(piop("hybrid binding terminal dimensions mismatch"));
@@ -1093,16 +1076,15 @@ impl BindingForm<'_> {
                         }
                     }
                     let encoded = super::super::encode_signature_ct(&self.statement.signatures[s])?;
-                    let mut signature_bytes = field.zero();
+                    // Fewer than 2^12 public byte/key terms, each below 2^14,
+                    // fit the mixed accumulator before one final reduction.
+                    let mut public_words = field::FpLinearAcc::<2, 1>::zero();
                     // The common header constant is already in linear_constant().
                     for (byte, &value) in encoded.iter().enumerate().skip(1) {
-                        signature_bytes = field.add(
-                            &signature_bytes,
-                            &mul_i(
-                                self.local_linear_weights.at(1 + 256 + byte),
-                                i128::from(value),
-                                field,
-                            ),
+                        field.mul_acc(
+                            &mut public_words,
+                            &self.local_linear_weights.at(1 + 256 + byte),
+                            &u64::from(value),
                         );
                     }
 
@@ -1115,23 +1097,19 @@ impl BindingForm<'_> {
                                 .at(selection_mask_row() + usize::from(index)),
                         );
                     }
-                    signature_bytes = field.add(&signature_bytes, &expected_mask);
                     for (j, &value) in self.statement.public_keys[s].h.iter().enumerate() {
-                        signature_bytes = field.add(
-                            &signature_bytes,
-                            &mul_i(
-                                self.local_linear_weights.at(
-                                    super::super::FalconConstraintCounts::per_signature()
-                                        .linear_rows()
-                                        - N
-                                        + j,
-                                ),
-                                i128::from(value),
-                                field,
+                        field.mul_acc(
+                            &mut public_words,
+                            &self.local_linear_weights.at(
+                                super::super::FalconConstraintCounts::per_signature()
+                                    .linear_rows()
+                                    - N
+                                    + j,
                             ),
+                            &u64::from(value),
                         );
                     }
-
+                    let signature_bytes = field.add(&field.reduce(public_words), &expected_mask);
                     Ok(field.mul(alpha, &field.add(&bits, &signature_bytes)))
                 })
                 .collect();
@@ -1139,39 +1117,26 @@ impl BindingForm<'_> {
             constant = field.sub(&constant, &contribution);
         }
         let mut target = field.sub(&field.zero(), &constant);
-        let norm_instances = eq_table(&proof.norm.point[COEFFICIENT_LOG..], field)
+        let norm_instances = eq_table(&proof.norm.point[COEFFICIENT_LOG + 1..], field)
             .map_err(|error| piop(error.to_string()))?;
-        let norm_outer =
-            eq_table(proof.norm.instance_point, field).map_err(|error| piop(error.to_string()))?;
-        let mut norm_sum = field.zero();
-        let mut weighted_norm_sum = field.zero();
-        for (left, right) in norm_instances
+        let norm_sum = norm_instances
             .iter()
-            .zip(&norm_outer)
             .take(self.layout.batch())
-        {
-            norm_sum = field.add(&norm_sum, left);
-            weighted_norm_sum = field.add(&weighted_norm_sum, &field.mul(left, right));
-        }
-        let mut scale = self.eta;
-        for side in 0..2 {
-            for (coordinate, sum) in [weighted_norm_sum, norm_sum].into_iter().enumerate() {
-                let constant = if side == 0 {
-                    mul_i(field.mul(&scale, &sum), -6_144, field)
-                } else {
-                    field.zero()
-                };
-                add_claim_target(
-                    &mut target,
-                    scale,
-                    proof.norm.terminal[side][coordinate],
-                    constant,
-                    field,
-                );
-                scale = field.mul(&scale, &self.eta);
-            }
-        }
-        add_claim_target(&mut target, scale, proof.norm.slack, field.zero(), field);
+            .fold(field.zero(), |s, v| field.add(&s, v));
+        let side_zero = field.sub(&field.one(), &proof.norm.point[COEFFICIENT_LOG]);
+        let constant = mul_i(
+            field.mul(&self.eta, &field.mul(&norm_sum, &side_zero)),
+            -6_144,
+            field,
+        );
+        add_claim_target(&mut target, self.eta, proof.norm.terminal, constant, field);
+        add_claim_target(
+            &mut target,
+            field.mul(&self.eta, &self.eta),
+            proof.norm.slack,
+            field.zero(),
+            field,
+        );
         Ok(field.add(
             &target,
             &self.prepared_compact_weights()?.rejection.target(),

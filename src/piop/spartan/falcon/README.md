@@ -30,7 +30,7 @@ witness so large buffers can be folded without cloning. The four presets are
 The `falcon` feature retains direct signature verification and reference helpers.
 
 There is one proving protocol and no NativeCarry or old-proof verifier. The
-protocol identifier is `bitz/falcon/shared-prime/non-zk/v4`. Proofs must be
+protocol identifier is `bitz/falcon/shared-prime/non-zk/v5`. Proofs must be
 regenerated. Falcon currently exposes in-memory proofs without a full transport
 codec. `payload_size_bytes()` counts stored messages, excluding the public
 statement and transport framing; `payload_size_breakdown()` reports disjoint
@@ -57,7 +57,9 @@ components. Column sums have their own canonical encoding.
    polynomial against the projected committed bits. The inclusive prime
    intervals are `[2^114, 2^115−2^102−1]` at 100 bits and `[2^125, 2^126−1]`
    at 128 bits. Coefficient and source-residual bounds prevent wraparound.
-4. Run the norm proof and one quadratic R1CS sumcheck for rejection bits.
+4. Run one cubic integer outer sumcheck combining the norm and quadratic
+   rejection rows. Compute the public S2 norm directly; project the S1
+   endpoint, slack, and three rejection endpoints to the committed source.
    Public-mask validity and selected coefficient routing are linear constraints
    on existing committed bits. There are no intermediate HashToPoint polynomial
    witnesses, and no HashToPoint grand-product/GKR proof.
@@ -104,8 +106,10 @@ and 327,680 bytes at 128 bits. It remains a substantial proof-size cost.
 
 The implementation preserves packed source buffers, factored ring coefficients,
 compiled binder templates, compact zero-lane and final-message encodings, and
-SIMD Keccak/grinding kernels. Simplification does not change security targets,
-code rates, query counts, or grinding requirements.
+SIMD Keccak/grinding kernels. Security targets, code rates, and query counts
+are unchanged. At target 128, PCS grinding is reallocated using only public error bounds:
+the new summed error cannot exceed the previous allocation, every native
+minimum remains enforced, and the schedule is bound into the statement.
 
 HashToPoint qualification uses the full Falcon archive at
 `results/falcon-power-basis-20261007/results-candidate`, for both degrees,

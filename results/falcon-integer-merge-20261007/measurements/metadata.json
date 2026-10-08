@@ -1,0 +1,47 @@
+{
+  "baseline_commit": "95b79124f1958e3efb9ca9078e330542665cb1c3",
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "threads": 8,
+  "security": 100,
+  "batch": 1024,
+  "seed": 42,
+  "warmups": 1,
+  "rustflags": "-C target-cpu=native",
+  "features": "falcon-hybrid",
+  "integer_kernel_sha256": "7759d6412af19b486f92ea5f1b1a73c7acfada5032093436f0fb8707c7895256",
+  "grinding_policy_sha256": "74896b865320c21e776be9f58a56aa1d10c4110754dc90ab9508aa958670b907",
+  "executables": {
+    "baseline": {
+      "full": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/target/falcon-integer-baseline/release/deps/falcon_hybrid-b6576df5559c7ecb",
+        "sha256": "e16bcc3f9e23e3f7857d7f1deb5ac12af8dbc49a63d7d95e189733ac77c545e2"
+      },
+      "arithmetic": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/target/falcon-integer-baseline/release/examples/falcon_algebraic",
+        "sha256": "7cb7de18c67d6ef4d5f40c56738d20852f084cd248f087b035d8077081d6287e"
+      }
+    },
+    "candidate": {
+      "full": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/target/falcon-integer-candidate/release/deps/falcon_hybrid-b6576df5559c7ecb",
+        "sha256": "d363894f23d219f05206969aceaf793a8db6208abc8cf35c688248f4099cc5ba"
+      },
+      "arithmetic": {
+        "path": "/Users/johnwu/code/zk/f2z-pcs/target/falcon-integer-candidate/release/examples/falcon_algebraic",
+        "sha256": "74ffed9a7f4355fe170e2728041b53b5aa26b0a81c88b6c160b460cc98f9bb65"
+      }
+    }
+  },
+  "samples_by_case": {
+    "full-512": 21,
+    "full-1024": 21,
+    "arithmetic-512": 21,
+    "arithmetic-1024": 21
+  },
+  "candidate_patch_sha256_by_family": {
+    "full": "5ef915ff76b3301dca757ada31e18ad4a25305d8daaa23d31ba8e037a80bc287",
+    "arithmetic": "598b85821e7aadd85642c4588c9ada1482add85f1d8903036860b1343b0312c3"
+  },
+  "component_build_note": "Only the algebraic arithmetic module changed after the full-Falcon benchmark. The qualified full-Falcon executable is unchanged."
+}

@@ -1,0 +1,102 @@
+[
+  {
+    "family": "full",
+    "degree": 512,
+    "baseline": {
+      "end_to_end_ms": 697.817583,
+      "input_setup_ms": 5481.645542,
+      "native_verify_ms": 26.305875,
+      "prepare_ms": 3.981542,
+      "proof_payload_bytes": 580326,
+      "proof_prove_ms": 506.68658300000004,
+      "proof_verify_ms": 75.21820799999999,
+      "total_prover_ms": 622.568583,
+      "witness_commit_ms": 117.884583
+    },
+    "candidate": {
+      "end_to_end_ms": 650.5099580000001,
+      "input_setup_ms": 5512.526,
+      "native_verify_ms": 26.323625,
+      "prepare_ms": 4.184334,
+      "proof_payload_bytes": 578374,
+      "proof_prove_ms": 463.931417,
+      "proof_verify_ms": 69.53049999999999,
+      "total_prover_ms": 580.5471660000001,
+      "witness_commit_ms": 116.693958
+    }
+  },
+  {
+    "family": "full",
+    "degree": 1024,
+    "candidate": {
+      "end_to_end_ms": 1162.094083,
+      "input_setup_ms": 21996.948792000003,
+      "native_verify_ms": 52.414834,
+      "prepare_ms": 3.306875,
+      "proof_payload_bytes": 813942,
+      "proof_prove_ms": 807.6455,
+      "proof_verify_ms": 128.075208,
+      "total_prover_ms": 1034.018875,
+      "witness_commit_ms": 223.212625
+    },
+    "baseline": {
+      "end_to_end_ms": 1223.583458,
+      "input_setup_ms": 22099.774666999998,
+      "native_verify_ms": 52.513999999999996,
+      "prepare_ms": 2.490042,
+      "proof_payload_bytes": 815222,
+      "proof_prove_ms": 858.475292,
+      "proof_verify_ms": 139.017958,
+      "total_prover_ms": 1084.089625,
+      "witness_commit_ms": 224.82666700000001
+    }
+  },
+  {
+    "family": "arithmetic",
+    "degree": 512,
+    "baseline": {
+      "external_input_ms": 6295.12975,
+      "prepare_ms": 1.210084,
+      "proof_payload_bytes": 227066,
+      "prove_ms": 142.89416699999998,
+      "source_packed_bytes": 2097152,
+      "total_prover_ms": 193.892208,
+      "verify_ms": 25.573833,
+      "witness_commit_ms": 50.962333
+    },
+    "candidate": {
+      "external_input_ms": 6339.605708,
+      "prepare_ms": 0.331416,
+      "proof_payload_bytes": 225626,
+      "prove_ms": 102.148875,
+      "source_packed_bytes": 2097152,
+      "total_prover_ms": 154.428542,
+      "verify_ms": 25.204458,
+      "witness_commit_ms": 51.595
+    }
+  },
+  {
+    "family": "arithmetic",
+    "degree": 1024,
+    "candidate": {
+      "external_input_ms": 23774.453042,
+      "prepare_ms": 0.154917,
+      "proof_payload_bytes": 314674,
+      "prove_ms": 179.35654200000002,
+      "source_packed_bytes": 4194304,
+      "total_prover_ms": 293.22150000000005,
+      "verify_ms": 47.497375,
+      "witness_commit_ms": 112.81325000000001
+    },
+    "baseline": {
+      "external_input_ms": 23436.613666,
+      "prepare_ms": 0.421375,
+      "proof_payload_bytes": 314770,
+      "prove_ms": 241.379333,
+      "source_packed_bytes": 4194304,
+      "total_prover_ms": 350.58379099999996,
+      "verify_ms": 47.661,
+      "witness_commit_ms": 108.919792
+    }
+  }
+]

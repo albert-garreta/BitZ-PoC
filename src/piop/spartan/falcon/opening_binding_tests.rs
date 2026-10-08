@@ -23,6 +23,19 @@ fn point(rounds: usize, field: &Cfg) -> Vec<F> {
         .collect()
 }
 
+#[test]
+fn mixed_integer_scaling_matches_field_embedding() {
+    let field = config();
+    for value in [field.zero(), field.one(), field.neg(&field.one()), unsigned(12345, &field)] {
+        for coefficient in [i128::MIN, -12289, -6144, -1, 0, 1, 256, 12288, i128::MAX] {
+            assert_eq!(
+                mul_i(value, coefficient, &field),
+                field.mul(&value, &signed(coefficient, &field)),
+            );
+        }
+    }
+}
+
 struct DenseSink<'a> {
     values: Vec<F>,
     field: &'a Cfg,
@@ -271,7 +284,7 @@ fn terminal_fixture(field: &Cfg) -> FalconPiopClaims {
         modulus: field.modulus_u128(),
         norm: NormClaims {
             instance_point: Vec::new(),
-            terminal: [[field.zero(); 2]; 2],
+            terminal: field.zero(),
             slack: field.zero(),
             point: Vec::new(),
         },
@@ -285,12 +298,9 @@ fn terminal_fixture(field: &Cfg) -> FalconPiopClaims {
 fn complete_claim_fixture(layout: &FalconSourceLayout, field: &Cfg) -> FalconPiopClaims {
     let batch_vars = layout.capacity().ilog2() as usize;
     let mut claims = terminal_fixture(field);
-    claims.norm.point = point(COEFFICIENT_LOG + batch_vars, field);
+    claims.norm.point = point(COEFFICIENT_LOG + 1 + batch_vars, field);
     claims.norm.instance_point = point(batch_vars, field);
-    claims.norm.terminal = [
-        [unsigned(3, field), unsigned(5, field)],
-        [unsigned(7, field), unsigned(11, field)],
-    ];
+    claims.norm.terminal = unsigned(3, field);
     claims.norm.slack = unsigned(41, field);
     claims.h2p_rejection = HashToPointRejectionClaims {
         terminal: [
@@ -1183,13 +1193,13 @@ fn compact_prefix_binds_word_products_and_weighted_norm_to_source() {
         verify_binding_prefix(&mut fresh_transcript(), &layout, &statement, &bad, 100).is_err()
     );
     let mut bad = proof.clone();
-    bad.piop.norm.terminal[0][0] = field.add(&bad.piop.norm.terminal[0][0], &field.one());
+    bad.piop.terminal[0] = field.add(&bad.piop.terminal[0], &field.one());
     assert!(
         verify_binding_prefix(&mut fresh_transcript(), &layout, &statement, &bad, 100).is_err()
     );
     let mut bad = proof;
-    bad.piop.h2p_rejection.rows.terminal.cx =
-        field.add(&bad.piop.h2p_rejection.rows.terminal.cx, &field.one());
+    bad.piop.terminal[3] =
+        field.add(&bad.piop.terminal[3], &field.one());
     assert!(
         verify_binding_prefix(&mut fresh_transcript(), &layout, &statement, &bad, 100).is_err()
     );
@@ -1315,23 +1325,14 @@ fn check_norm_binding(layout: FalconSourceLayout) {
     .unwrap();
     let mut proof = terminal_fixture(&field);
     proof.norm.instance_point = point(2, &field);
-    proof.norm.point = point(COEFFICIENT_LOG + 2, &field);
+    proof.norm.point = point(COEFFICIENT_LOG + 3, &field);
     let instance_weights = eq_table(&proof.norm.instance_point, &field).unwrap();
     let weights = eq_table(&proof.norm.point, &field).unwrap();
     for (instance, trace) in traces.iter().enumerate() {
         for i in 0..N {
-            for (side, word) in [trace.s1[i] as i128, trace.signature.s2[i] as i128]
-                .into_iter()
-                .enumerate()
-            {
-                let unweighted = field.mul(&weights[instance * N + i], &signed(word, &field));
-                proof.norm.terminal[side][0] = field.add(
-                    &proof.norm.terminal[side][0],
-                    &field.mul(&instance_weights[instance], &unweighted),
-                );
-                proof.norm.terminal[side][1] =
-                    field.add(&proof.norm.terminal[side][1], &unweighted);
-            }
+            let word = signed(trace.s1[i] as i128, &field);
+            let weighted = field.mul(&weights[instance * 2 * N + i], &word);
+            proof.norm.terminal = field.add(&proof.norm.terminal, &weighted);
         }
         proof.norm.slack = field.add(
             &proof.norm.slack,
@@ -1380,7 +1381,7 @@ fn check_norm_binding(layout: FalconSourceLayout) {
     let (actual, target) = evaluate(&proof);
     assert_eq!(actual, target);
     let mut bad = proof.clone();
-    bad.norm.terminal[0][0] = bad.norm.terminal[0][1];
+    bad.norm.terminal = field.add(&bad.norm.terminal, &field.one());
     let (actual, target) = evaluate(&bad);
     assert_ne!(actual, target);
     let mut bad = proof;

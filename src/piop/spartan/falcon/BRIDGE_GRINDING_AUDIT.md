@@ -10,7 +10,7 @@ masks reduce HashToPoint
 to linear selection/output checks and quadratic rejection rows; this
 integer-to-binary BitZ forest remains part of the protocol.
 
-The enclosing protocol is `bitz/falcon/shared-prime/non-zk/v4`. The statement
+The enclosing protocol is `bitz/falcon/shared-prime/non-zk/v5`. The statement
 digest binds the derived bridge numerator and grinding difficulty.
 
 ## Scope and model

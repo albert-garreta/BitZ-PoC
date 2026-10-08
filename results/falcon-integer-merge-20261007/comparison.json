@@ -1,0 +1,303 @@
+{
+  "scope": "1024 signatures, 8 threads, seed 42, Mac M1 Max; one warmup per case",
+  "baseline_commit": "95b79124f1958e3efb9ca9078e330542665cb1c3",
+  "timing_definition": "total_prover_ms includes witness commitment and proving; excludes input setup, preparation and verification",
+  "confidence_scope": "independent resampling of timing samples on a fixed input; not a multi-seed grinding comparison",
+  "full_gate_passed": true,
+  "arithmetic_gate_passed": false,
+  "native_optimization_proof_identity": [
+    {
+      "family": "full",
+      "degree": 512,
+      "security": 100,
+      "unchanged_keys": [
+        "input_digest",
+        "proof_debug_digest",
+        "source_root"
+      ],
+      "proof_digest_available": true
+    },
+    {
+      "family": "full",
+      "degree": 1024,
+      "security": 100,
+      "unchanged_keys": [
+        "input_digest",
+        "proof_debug_digest",
+        "source_root"
+      ],
+      "proof_digest_available": true
+    },
+    {
+      "family": "arithmetic",
+      "degree": 512,
+      "security": 100,
+      "unchanged_keys": [
+        "input_digest"
+      ],
+      "proof_digest_available": false
+    },
+    {
+      "family": "arithmetic",
+      "degree": 1024,
+      "security": 100,
+      "unchanged_keys": [
+        "input_digest"
+      ],
+      "proof_digest_available": false
+    },
+    {
+      "family": "full",
+      "degree": 512,
+      "security": 128,
+      "unchanged_keys": [
+        "input_digest",
+        "proof_debug_digest",
+        "source_root"
+      ],
+      "proof_digest_available": true
+    },
+    {
+      "family": "full",
+      "degree": 1024,
+      "security": 128,
+      "unchanged_keys": [
+        "input_digest",
+        "proof_debug_digest",
+        "source_root"
+      ],
+      "proof_digest_available": true
+    }
+  ],
+  "cases": [
+    {
+      "family": "full",
+      "degree": 512,
+      "security": 100,
+      "samples": 21,
+      "timings": {
+        "total_prover_ms": {
+          "baseline_median_ms": 622.568583,
+          "candidate_median_ms": 580.5471660000001,
+          "median_ratio": 0.9325031520262244,
+          "mean_ratio": 0.9045315597179956,
+          "independent_bootstrap_upper_95": 0.9373430861744346,
+          "pass": true
+        },
+        "proof_prove_ms": {
+          "baseline_median_ms": 506.68658300000004,
+          "candidate_median_ms": 463.931417,
+          "median_ratio": 0.915618120876905,
+          "mean_ratio": 0.8852355374919493,
+          "independent_bootstrap_upper_95": 0.9249055378643514,
+          "pass": true
+        },
+        "proof_verify_ms": {
+          "baseline_median_ms": 75.21820799999999,
+          "candidate_median_ms": 69.53049999999999,
+          "median_ratio": 0.9243838938571894,
+          "mean_ratio": 0.9252010780145286,
+          "independent_bootstrap_upper_95": 0.9275306625879552,
+          "pass": true
+        }
+      },
+      "baseline_payload_bytes": 580326,
+      "candidate_payload_bytes": 578374
+    },
+    {
+      "family": "full",
+      "degree": 1024,
+      "security": 100,
+      "samples": 21,
+      "timings": {
+        "total_prover_ms": {
+          "baseline_median_ms": 1084.089625,
+          "candidate_median_ms": 1034.018875,
+          "median_ratio": 0.9538130899463224,
+          "mean_ratio": 0.9510180783148439,
+          "independent_bootstrap_upper_95": 0.9638949777786011,
+          "pass": true
+        },
+        "proof_prove_ms": {
+          "baseline_median_ms": 858.475292,
+          "candidate_median_ms": 807.6455,
+          "median_ratio": 0.9407906174194236,
+          "mean_ratio": 0.937832959447655,
+          "independent_bootstrap_upper_95": 0.9530907402482187,
+          "pass": true
+        },
+        "proof_verify_ms": {
+          "baseline_median_ms": 139.017958,
+          "candidate_median_ms": 128.075208,
+          "median_ratio": 0.921285349335947,
+          "mean_ratio": 0.9208227671246881,
+          "independent_bootstrap_upper_95": 0.9236448875682959,
+          "pass": true
+        }
+      },
+      "baseline_payload_bytes": 815222,
+      "candidate_payload_bytes": 813942
+    },
+    {
+      "family": "arithmetic",
+      "degree": 512,
+      "security": 100,
+      "samples": 21,
+      "timings": {
+        "total_prover_ms": {
+          "baseline_median_ms": 193.892208,
+          "candidate_median_ms": 154.428542,
+          "median_ratio": 0.7964659518447487,
+          "mean_ratio": 0.8023998354038973,
+          "independent_bootstrap_upper_95": 0.8221769102229305,
+          "pass": true
+        },
+        "prove_ms": {
+          "baseline_median_ms": 142.89416699999998,
+          "candidate_median_ms": 102.148875,
+          "median_ratio": 0.7148568562634192,
+          "mean_ratio": 0.7285730805702656,
+          "independent_bootstrap_upper_95": 0.7545671149592739,
+          "pass": true
+        },
+        "verify_ms": {
+          "baseline_median_ms": 25.573833,
+          "candidate_median_ms": 25.204458,
+          "median_ratio": 0.9855565256877996,
+          "mean_ratio": 0.985316278423856,
+          "independent_bootstrap_upper_95": 1.0165489325292796,
+          "pass": false
+        }
+      },
+      "baseline_payload_bytes": 227066,
+      "candidate_payload_bytes": 225626
+    },
+    {
+      "family": "arithmetic",
+      "degree": 1024,
+      "security": 100,
+      "samples": 21,
+      "timings": {
+        "total_prover_ms": {
+          "baseline_median_ms": 350.58379099999996,
+          "candidate_median_ms": 293.22150000000005,
+          "median_ratio": 0.836380652863669,
+          "mean_ratio": 0.8362125619385083,
+          "independent_bootstrap_upper_95": 0.910229093740211,
+          "pass": true
+        },
+        "prove_ms": {
+          "baseline_median_ms": 241.379333,
+          "candidate_median_ms": 179.35654200000002,
+          "median_ratio": 0.7430484614024516,
+          "mean_ratio": 0.7522954546257384,
+          "independent_bootstrap_upper_95": 0.8537923892071115,
+          "pass": true
+        },
+        "verify_ms": {
+          "baseline_median_ms": 47.661,
+          "candidate_median_ms": 47.497375,
+          "median_ratio": 0.9965668995614863,
+          "mean_ratio": 0.9985091758123532,
+          "independent_bootstrap_upper_95": 1.013979498708842,
+          "pass": false
+        }
+      },
+      "baseline_payload_bytes": 314770,
+      "candidate_payload_bytes": 314674
+    },
+    {
+      "family": "full",
+      "degree": 512,
+      "security": 128,
+      "samples": 21,
+      "timings": {
+        "total_prover_ms": {
+          "baseline_median_ms": 1410.1672079999998,
+          "candidate_median_ms": 1101.761666,
+          "median_ratio": 0.7812986004422819,
+          "mean_ratio": 0.7888228559700761,
+          "independent_bootstrap_upper_95": 0.8038493055878856,
+          "pass": true
+        },
+        "proof_prove_ms": {
+          "baseline_median_ms": 1285.7845829999999,
+          "candidate_median_ms": 977.668708,
+          "median_ratio": 0.7603674215154282,
+          "mean_ratio": 0.7675612450055329,
+          "independent_bootstrap_upper_95": 0.7839953293987927,
+          "pass": true
+        },
+        "proof_verify_ms": {
+          "baseline_median_ms": 78.13974999999999,
+          "candidate_median_ms": 72.421458,
+          "median_ratio": 0.9268196788446342,
+          "mean_ratio": 0.9269692841649779,
+          "independent_bootstrap_upper_95": 0.9288796943000184,
+          "pass": true
+        }
+      },
+      "baseline_payload_bytes": 697818,
+      "candidate_payload_bytes": 698314
+    },
+    {
+      "family": "full",
+      "degree": 1024,
+      "security": 128,
+      "samples": 21,
+      "timings": {
+        "total_prover_ms": {
+          "baseline_median_ms": 2457.966042,
+          "candidate_median_ms": 1921.155417,
+          "median_ratio": 0.7816037260778398,
+          "mean_ratio": 0.7863351187463795,
+          "independent_bootstrap_upper_95": 0.7990354783676611,
+          "pass": true
+        },
+        "proof_prove_ms": {
+          "baseline_median_ms": 2231.535542,
+          "candidate_median_ms": 1688.336458,
+          "median_ratio": 0.756580581498083,
+          "mean_ratio": 0.7637238952045009,
+          "independent_bootstrap_upper_95": 0.7771648020694502,
+          "pass": true
+        },
+        "proof_verify_ms": {
+          "baseline_median_ms": 144.159625,
+          "candidate_median_ms": 132.55425000000002,
+          "median_ratio": 0.9194963569029818,
+          "mean_ratio": 0.9181169240845535,
+          "independent_bootstrap_upper_95": 0.9240228199882696,
+          "pass": true
+        }
+      },
+      "baseline_payload_bytes": 973162,
+      "candidate_payload_bytes": 972178
+    }
+  ],
+  "checks": {
+    "targeted_regression_tests_passed": 39,
+    "pcs_allocation_tests_passed": 18,
+    "supported_batch_security_sweep_passed": true,
+    "exact_composition_bound_test_passed": true,
+    "nonparallel_falcon_check_passed": true,
+    "diff_check_passed": true
+  },
+  "interpretation": "All six cases improve median prover and verifier time. Full-Falcon passes the strict one-sided 95% timing gate for both metrics. Arithmetic prover confidence bounds improve; arithmetic verifier intervals overlap baseline, so a strict zero-regression confidence claim is not established for arithmetic verification.",
+  "implementation": [
+    "One combined integer outer sumcheck for full Falcon norm and rejection rows; one square-sum integer outer for algebraic Falcon.",
+    "Native coefficients, norm/slack values and signed ring lifts use mixed accumulators; field-product reductions are batched by row group.",
+    "Identically zero polynomials and redundant buffer initialization are skipped.",
+    "At security 128, PCS grinding is reallocated while preserving the original summed error bound and every native minimum.",
+    "Arithmetic canonicality checks are fused into the existing parallel coefficient pass."
+  ],
+  "raw_log_directories": {
+    "full_security_100": "measurements",
+    "full_security_128": "full-validation",
+    "arithmetic_security_100": "arithmetic-validation"
+  },
+  "protocol_compatibility": "Full Falcon v5 and algebraic Falcon v4; regenerate older proofs.",
+  "arithmetic_security_128": "Not performance-benchmarked in this campaign.",
+  "source_manifest": "source-manifest.json",
+  "source_patch": "candidate.patch"
+}

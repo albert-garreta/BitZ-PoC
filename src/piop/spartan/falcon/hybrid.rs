@@ -32,6 +32,8 @@ use std::sync::Mutex;
 
 #[path = "hybrid_size.rs"]
 mod size;
+#[path = "hybrid_grinding.rs"]
+mod grinding;
 
 fn error(e: impl std::fmt::Display) -> FalconError {
     FalconError::Piop(e.to_string())
@@ -149,6 +151,13 @@ impl PreparedFalconHybrid {
         let pcs_target = target_bits + 2 + first.blocks.len().next_power_of_two().ilog2() as usize;
         let pcs_grinding =
             GrindingPlan::resolve(ligerito.security(), pcs_target as u32).map_err(error)?;
+        // At target 100 the search work is already tiny; additional positive
+        // boundaries can cost more in dispatch than they save in hashes.
+        let pcs_grinding = if target_bits == 128 {
+            grinding::rebalance(pcs_grinding)
+        } else {
+            pcs_grinding
+        };
         let prepared = Self {
             layout,
             keccak,
@@ -224,16 +233,19 @@ impl PreparedFalconHybrid {
                 prime(numerators.norm_instances, schedule.norm_instance_bits),
             ),
             (
-                "norm sumchecks",
-                prime(numerators.norm_rounds, schedule.quadratic_round_bits),
+                "integer relation batching",
+                prime(
+                    numerators.relation_batching,
+                    schedule.relation_batching_bits,
+                ),
             ),
             (
                 "HashToPoint initial row point",
                 prime(numerators.outer_point, schedule.outer_point_bits),
             ),
             (
-                "HashToPoint rejection sumcheck",
-                prime(numerators.cubic_rounds, schedule.cubic_round_bits),
+                "combined integer outer sumcheck",
+                prime(numerators.integer_rounds, schedule.integer_round_bits),
             ),
             (
                 "shared ring outer and endpoint batch",
@@ -470,8 +482,8 @@ impl PreparedFalconHybrid {
         for bits in [
             schedule.norm_instance_bits,
             schedule.outer_point_bits,
-            schedule.quadratic_round_bits,
-            schedule.cubic_round_bits,
+            schedule.relation_batching_bits,
+            schedule.integer_round_bits,
             schedule.linear_point_bits,
             schedule.binding_round_bits,
         ] {
@@ -1200,9 +1212,9 @@ mod tests {
                 let prime_bits = if target == 100 { 114 } else { 125 };
                 for (numerator, bits) in [
                     (n.norm_instances, schedule.norm_instance_bits),
-                    (n.norm_rounds, schedule.quadratic_round_bits),
+                    (n.relation_batching, schedule.relation_batching_bits),
                     (n.outer_point, schedule.outer_point_bits),
-                    (n.cubic_rounds, schedule.cubic_round_bits),
+                    (n.integer_rounds, schedule.integer_round_bits),
                     (n.linear, schedule.linear_point_bits),
                     (n.binding, schedule.binding_round_bits),
                     (2 * EXTENSION_DEGREE - 2, super::super::shared_ring::projection_grinding_bits(target)),

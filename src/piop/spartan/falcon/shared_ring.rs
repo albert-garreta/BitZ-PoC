@@ -6,7 +6,7 @@ use super::{COEFFICIENT_LOG, SIGNATURE_BITS};
 // e(Y)=(Y^N+1)D(Y) has the required degree and ideal membership by construction.
 // The later (2k-1)-coefficient polynomial is an unreduced integer lift, not D.
 
-use field::{FpLinearAcc, Reduce, RingOps, Uint};
+use field::{BatchMulAcc, FpLinearAcc, FpSignedLinearAcc, Reduce, RingOps, Uint};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
@@ -837,15 +837,15 @@ fn project(
 }
 
 fn project_lift(lift: &[i128; LIFT_COEFFICIENTS], alpha: F, field: &Cfg) -> F {
-    lift.iter().rev().fold(field.zero(), |sum, &value| {
-        let magnitude = F::from_with_cfg(value.unsigned_abs(), field);
-        let coefficient = if value < 0 {
-            field.neg(&magnitude)
-        } else {
-            magnitude
-        };
-        field.add(&field.mul(&sum, &alpha), &coefficient)
-    })
+    // At most 21 field × i128 terms fit the signed linear accumulator.
+    // Its Montgomery scale is R, so only the final remainder is needed.
+    let mut sum = FpSignedLinearAcc::<2, 2>::default();
+    let mut power = field.one();
+    for value in lift {
+        field.mul_acc(&mut sum, &power, value);
+        power = field.mul(&power, &alpha);
+    }
+    field.reduce(sum)
 }
 
 fn error(message: impl Into<String>) -> FalconError {
@@ -1407,6 +1407,22 @@ mod tests {
             power = field.mul(&power, &alpha);
         }
         assert_eq!(projected.target, expected);
+        // Exercise signed accumulator carries and cancellation independently
+        // of the tighter protocol bound, including the asymmetric i128 minimum.
+        let extremes = std::array::from_fn(|i| match i % 4 {
+            0 => i128::MIN,
+            1 => i128::MAX,
+            2 => -1,
+            _ => 0,
+        });
+        for alpha in [field.zero(), field.one(), field.neg(&field.one()), alpha] {
+            let expected = extremes.iter().rev().fold(field.zero(), |sum, value| {
+                let magnitude = F::from_with_cfg(value.unsigned_abs(), &field);
+                let coefficient = if *value < 0 { field.neg(&magnitude) } else { magnitude };
+                field.add(&field.mul(&sum, &alpha), &coefficient)
+            });
+            assert_eq!(project_lift(&extremes, alpha, &field), expected);
+        }
     }
 
     #[cfg(feature = "parallel")]

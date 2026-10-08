@@ -129,8 +129,8 @@ impl PreparedFalconAlgebraic {
         let d = layout.capacity().ilog2() as usize;
         let schedule = Schedule {
             norm_instance_bits: grind(target_bits, d, 125),
-            norm_round_bits: grind(target_bits, 4 * (COEFFICIENT_LOG + d), 125),
-            merge_bits: grind(target_bits, 6, 125),
+            norm_round_bits: grind(target_bits, 3 * (COEFFICIENT_LOG + 1 + d), 125),
+            merge_bits: grind(target_bits, 3, 125),
             binding_bits: grind(target_bits, 2 * (COEFFICIENT_LOG + 5 + d), 125),
         };
         let geometry = shared::Geometry::new([COEFFICIENT_LOG - 2 + d]).map_err(error)?;
@@ -197,10 +197,10 @@ impl PreparedFalconAlgebraic {
                 prime(d, self.schedule.norm_instance_bits),
             ),
             (
-                "norm sumchecks",
-                prime(4 * (COEFFICIENT_LOG + d), self.schedule.norm_round_bits),
+                "integer outer sumcheck",
+                prime(3 * (COEFFICIENT_LOG + 1 + d), self.schedule.norm_round_bits),
             ),
-            ("claim merge", prime(6, self.schedule.merge_bits)),
+            ("claim merge", prime(3, self.schedule.merge_bits)),
             (
                 "source binding sumcheck",
                 prime(2 * (COEFFICIENT_LOG + 5 + d), self.schedule.binding_bits),
@@ -623,8 +623,8 @@ mod tests {
                 let d = layout.capacity().ilog2() as usize;
                 for numerator in [
                     d,
-                    4 * (COEFFICIENT_LOG + d),
-                    6,
+                    3 * (COEFFICIENT_LOG + 1 + d),
+                    3,
                     2 * (COEFFICIENT_LOG + 5 + d),
                     10,
                 ] {

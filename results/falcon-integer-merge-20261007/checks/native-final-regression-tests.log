@@ -1,0 +1,66 @@
+FILTER algebraic::arithmetic::tests
+
+running 18 tests
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::signatures_cannot_borrow_each_others_norm_budget ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::grinded_messages_roundtrip_and_require_all_nonces ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::invalid_slack_and_cross_witness_binding_are_rejected ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::preceding_transcript_domains_cannot_be_replayed ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::malformed_messages_and_nonces_are_rejected ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::invalid_slack_and_cross_witness_binding_are_rejected ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::grinded_messages_roundtrip_and_require_all_nonces ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::malformed_messages_and_nonces_are_rejected ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::signatures_cannot_borrow_each_others_norm_budget ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::preceding_transcript_domains_cannot_be_replayed ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::singleton_and_padded_batch_open_the_same_bits ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::altered_bits_and_both_kinds_of_padding_are_rejected ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::singleton_and_padded_batch_open_the_same_bits ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::altered_bits_and_both_kinds_of_padding_are_rejected ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::aligned_binding_matches_dense_evaluation_folds_and_sumcheck ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::factored_construction_and_batched_evaluation_match_legacy ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::aligned_binding_matches_dense_evaluation_folds_and_sumcheck ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::factored_construction_and_batched_evaluation_match_legacy ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 758 filtered out; finished in 2.28s
+
+FILTER algebraic::ring::tests
+
+running 14 tests
+test piop::spartan::falcon1024_algebraic::ring::tests::extension_sampler_rejects_biased_tail_and_base_field_evaluations ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::extension_sampler_rejects_biased_tail_and_base_field_evaluations ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::an_invalid_ring_witness_has_no_coordinate_lift ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::coordinate_bound_covers_the_entire_encoded_witness_range ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::coordinate_bound_covers_the_entire_encoded_witness_range ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::an_invalid_ring_witness_has_no_coordinate_lift ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::malformed_quotients_carries_and_nonce_shapes_are_rejected ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::malformed_quotients_carries_and_nonce_shapes_are_rejected ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::alpha_coordinates_and_carries_match_independent_fixed_basis_reference ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::alpha_coordinates_and_carries_match_independent_fixed_basis_reference ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::tampering_changes_the_authenticated_claim_or_is_rejected ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::ring_claim_matches_negacyclic_witness_for_padded_batches ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::tampering_changes_the_authenticated_claim_or_is_rejected ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::ring_claim_matches_negacyclic_witness_for_padded_batches ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 762 filtered out; finished in 0.11s
+
+FILTER coordinate_projection_matches_integer_horner
+
+running 1 test
+test piop::spartan::falcon_profiles::n1024_k11::shared_ring::tests::coordinate_projection_matches_integer_horner ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 775 filtered out; finished in 0.00s
+
+FILTER combined_norm_rejects_budget_transfer_between_signatures
+
+running 1 test
+test piop::spartan::falcon_profiles::n1024_k11::piop::tests::combined_norm_rejects_budget_transfer_between_signatures ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 775 filtered out; finished in 0.05s
+
+FILTER shared_prime_hybrid_complete_proofs_and_protocol_binding
+
+running 1 test
+test piop::spartan::falcon_profiles::n1024_k11::hybrid::tests::shared_prime_hybrid_complete_proofs_and_protocol_binding has been running for over 60 seconds
+test piop::spartan::falcon_profiles::n1024_k11::hybrid::tests::shared_prime_hybrid_complete_proofs_and_protocol_binding ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 775 filtered out; finished in 105.44s
+

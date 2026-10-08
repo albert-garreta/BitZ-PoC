@@ -35,6 +35,7 @@ impl FalconHybridProof {
             ("ring_projection", (0, 0)),
             ("prime_norm", (0, 0)),
             ("prime_h2p_rows", (0, 0)),
+            ("prime_integer_outer", (0, 0)),
             ("prime_binder", (0, 0)),
             ("binary_bridge", (0, 0)),
             ("binary_keccak", (0, 0)),
@@ -378,19 +379,17 @@ mod tests {
         .unwrap();
         // Distinct synthetic nonces exercise every stored arithmetic boundary.
         let mut audited = stored.clone();
-        audited.norm.instance_nonce = Some(0);
-        audited.norm.grinding_nonces = vec![1, 2];
-        audited.h2p_rejection.rows.point_nonce = Some(3);
-        audited.h2p_rejection.rows.grinding_nonces = vec![4];
+        audited.instance_nonce = Some(0);
+        audited.point_nonce = Some(3);
+        audited.merge_nonce = Some(4);
+        audited.grinding_nonces = vec![1, 2];
         let mut counts = std::collections::BTreeMap::new();
         audited.visit_grinding_nonces(|category, nonce| add_nonce(&mut counts, category, nonce));
-        assert_eq!(counts["prime_norm"], (3, 6));
-        assert_eq!(counts["prime_h2p_rows"], (2, 9));
-        // One signature: two 10-round norms and one 11-round rejection relation.
-        // At target 100 none of these arithmetic messages has a stored nonce.
-        let norm = (2 + 4 + 2 * 10 * 2) * FIELD_BYTES;
-        let rejection = (3 + 11 * 3) * FIELD_BYTES;
-        assert_eq!(stored.payload_size_bytes(), norm + rejection);
+        assert_eq!(counts["prime_norm"], (1, 1));
+        assert_eq!(counts["prime_h2p_rows"], (1, 4));
+        assert_eq!(counts["prime_integer_outer"], (3, 10));
+        // One signature: one 11-round combined cubic, four endpoints and slack.
+        assert_eq!(stored.payload_size_bytes(), (5 + 11 * 3) * FIELD_BYTES);
     }
 }
 

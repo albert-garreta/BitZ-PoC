@@ -18,6 +18,8 @@ pub mod ecdsa_sha256;
 #[cfg(feature = "falcon")]
 pub mod falcon;
 #[cfg(feature = "falcon")]
+mod falcon_integer;
+#[cfg(feature = "falcon")]
 pub mod falcon_parameters;
 #[cfg(feature = "falcon")]
 pub mod falcon_extension;

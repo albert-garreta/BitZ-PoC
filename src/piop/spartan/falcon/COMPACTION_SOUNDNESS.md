@@ -63,22 +63,30 @@ intermediate U/V polynomials and proves no affine-composition tree. This
 linear construction relies on making routing public and validating it. It
 does not justify an unchecked witness-dependent decoder for a private mask.
 
-The native ring proof and norm consume the same committed C,S1,S2 bits.
+The native ring proof consumes the committed C,S1,S2 bits. The norm consumes
+the same S1 bits and the public signature's S2 coefficients; public-input
+rows bind the committed S2 encoding to those coefficients.
 SHAKE consumes the same output bits linked to t. Linear routing never casts
 an extension-field element into the arithmetic prime field.
 
 ## Reduction to BitZ
 
-There are D quadratic rejection rows, padded to 1,024 / 2,048. Prove
+There are D quadratic rejection rows, padded to 1,024 / 2,048. On this same
+row domain let S contain S1 followed by N zeros, and let i index signatures.
+One combined outer sumcheck proves
 
-    sum(r in {0,1}^ell, eq(tau,r)*(A(r)*B(r)-C(r))) = 0
+    sum(i,j, eq(rho,i)*S(i,j)^2
+             + lambda*eq(tau,(j,i))*(A(i,j)*B(i,j)-C(i,j)))
+      = sum(i, eq(rho,i)*(BETA_SQUARED - sum_j(public_S2[i,j]^2))) - slack.
 
-with a degree-three sumcheck, where A=u2, B=u0, C=e. The three endpoint MLEs
-are linear functions of committed bits. Padded rows and inactive signatures
-are zero. The norm contributes five additional endpoint claims. Bind all
-endpoints before their random batching coefficients are sampled.
+Here A=u2, B=u0, C=e, and slack is the rho-weighted slack evaluation.
+The source is fixed before rho and tau; slack is absorbed before the fresh
+family-batching challenge lambda. The polynomial has degree at most three
+per variable. Padded rejection rows and inactive signatures are zero.
+The four terminal MLEs S,A,B,C and slack are linear functions of committed
+bits. Bind these five claims before their random binder coefficients are sampled.
 
-Merge these eight endpoints, the native ring projection, public-input rows,
+Merge these five claims, the native ring projection, public-input rows,
 candidate divisions, mask-validity rows, routing rows, and padding checks
 into one arithmetic-source sumcheck. Its source evaluation is authenticated
 by the existing BitZ bridge. SHAKE, its output links, and the bridge join the
@@ -87,8 +95,9 @@ final binary opening against the single source root.
 Division residuals are bounded by 98,311 on arbitrary source bits; selection
 residuals by 1; routing residuals by 16,383. These are below either supported
 prime family, so a zero residual in Fp is the intended integer equality.
-Norm bounds remain the dominant exact-source bound. The rejection sumcheck
-needs its row-point and cubic-round error allocations; there is no extra
+Norm bounds remain the dominant exact-source bound. The combined sumcheck
+needs norm-instance, rejection-row-point, family-batching, and cubic-round
+error allocations; there is no extra
 HashToPoint polynomial-evaluation challenge or projection error.
 
 ## Witness and payload

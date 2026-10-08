@@ -4,7 +4,7 @@ SharedPrime combines the native Falcon ring proof, integer norm and HashToPoint
 reductions, binary Keccak, and one joint source PCS opening. Supported Falcon
 degrees are 512 and 1024; validated profiles select ring extension degree
 `k` from 9, 10, and 11. The protocol identifier is
-`bitz/falcon/shared-prime/non-zk/v4`.
+`bitz/falcon/shared-prime/non-zk/v5`.
 
 ## Model and fields
 
@@ -50,9 +50,11 @@ replaces committed prefix/cutoff/count witnesses. No polynomial-tree,
 prefix-count, cutoff, or selected-bit source columns remain.
 
 The only nonlinear HashToPoint rows are the `D` rejection products. They are
-padded to `next_power_of_two(D)` and proved by one equality-weighted
-sumcheck of degree three. Its three unweighted terminal row MLEs `A,B,C`
-are authenticated by the existing source binder. Inactive signatures and
+padded to `next_power_of_two(D)` and batched with the norm into one
+degree-three integer outer sumcheck. The norm uses S1 followed by N zeros
+on that domain; the public S2 squared norm is subtracted from its target.
+Its terminal S1 evaluation, slack, and the three unweighted rejection row
+MLEs `A,B,C` are authenticated by the existing source binder. Inactive signatures and
 candidate padding have zero `A`, `B`, and `C`. There is no H2P projection
 challenge, fingerprint, grand product, or GKR stage. The native ring proof,
 integer-to-binary BitZ GKR, and SHAKE/Keccak proof remain.
@@ -82,14 +84,14 @@ Let `B` be the live batch, `d=log2(next_power_of_two(B))`,
 | Reduction | Error numerator | Schedule field |
 | --- | ---: | --- |
 | Norm instance batching | `d` | `norm_instance_bits` |
-| Norm sumchecks | `4*(log2(N)+d)` | `quadratic_round_bits` |
+| Integer relation batching | `1` | `relation_batching_bits` |
 | HashToPoint initial row point | `r+d` | `outer_point_bits` |
-| HashToPoint rejection R1CS sumcheck | `3*(r+d)` | `cubic_round_bits` |
-| Linear constraints and endpoint batching | `m+d+B+8` | `linear_point_bits` |
+| Combined integer outer sumcheck | `3*(r+d)` | `integer_round_bits` |
+| Linear constraints and endpoint batching | `m+d+B+5` | `linear_point_bits` |
 | Arithmetic-source sumcheck | `2*(a+d)` | `binding_round_bits` |
 | Native-ring integer-lift projection | `2k-2` | Separate ring schedule |
 
-The eight binder endpoints are five norm claims and the three rejection row
+The five binder claims are one norm endpoint, slack, and the three rejection row
 claims. No H2P polynomial projection, fingerprint, candidate-leaf, or
 compaction-forest error category remains. For each of the first six categories,
 the implementation uses
@@ -116,6 +118,18 @@ complete composition.
 
 ## Binary obligations and PCS
 
+At target 128, the original equal-per-block PCS allocation supplies the total PCS error
+budget. A deterministic greedy allocation buys error reduction per expected
+hash, starting at each block's native minimum. It is adopted only when it
+reduces expected work and its upward-rounded summed error is no greater than
+the original downward-rounded sum. All difficulties remain at most 32 bits.
+Exact dyadic-integer tests compare the represented raw bounds independently
+of this floating-point interval check. The allocation depends only on public
+configuration, never on statement or nonce values. Every final difficulty
+is already included in the statement digest and replayed by the verifier.
+Target 100 retains its original allocation, where dispatch overhead dominates
+the already small nonce searches.
+
 The ledger retains the bounded integer-to-binary BitZ forest/GKR, every
 Keccak slab, public SHAKE wiring and source padding, binary claim batching,
 the joint binary sumcheck, ring switching, and support padding. Their
@@ -135,8 +149,9 @@ geometry, message counts, and limb-injectivity argument.
 The initial oracle is one vector-valued RS codeword with complete canonical
 rows. Apply the unique-decoding continuation to that joint oracle; separate
 proximity guarantees for logical sources do not establish joint proximity.
-For `h` PCS challenge blocks, each targets
-`target+2+ceil(log2(h))`, so their sum is at most `2^-(target+2)`.
+For `h` PCS challenge blocks, the original allocation targets
+`target+2+ceil(log2(h))` per block. The rebalanced allocation preserves or
+reduces that summed error, so the PCS total remains at most `2^-(target+2)`.
 Canonical zero-lane expansion and full final-message authentication change
 stored encodings, not these obligations.
 
@@ -148,15 +163,16 @@ policy, and derived schedule fields. The native-ring certificate and its
 integer lift precede their respective challenges; the actual prime is
 sampled after the lift is bound. Public selection masks precede the native-ring
 challenges and all arithmetic challenges. The rejection row point nonce
-precedes its equality point, and every round message precedes its sumcheck
+precedes its equality point. The weighted slack is fixed before the relation
+batching nonce and challenge, and every round message precedes its sumcheck
 challenge. Nonces bind their domain, round, and difficulty;
 verifiers consume all messages and nonces.
 
 The implementation tests exact integer stage allocations, exact rational
 composition, both prime families, native-ring profile selection, source
-layouts, and padded batches. Rejection tests compare packed prover rows with
-the committed-bit decoder and an independent dense proof, exercise all
-quotient bit patterns, reject malformed proof messages, and compare
+layouts, and padded batches. Integer-outer tests compare every round with
+an independent dense polynomial, cover nonzero rejection residuals, reject
+malformed proof messages and cross-signature norm-budget transfers, and compare
 prover/verifier transcripts. Mask and source-binding tests reject malformed
 or changed selection metadata, changed rejection bits, compact outputs,
 and unauthenticated terminal claims. Runtime qualification cannot weaken

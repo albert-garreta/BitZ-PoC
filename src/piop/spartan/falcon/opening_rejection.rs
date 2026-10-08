@@ -27,7 +27,7 @@ impl RejectionWeights {
         let instances = eq_table(&claim.point[REJECTION_ROW_LOG..], field)
             .map_err(|error| piop(error.to_string()))?;
         let mut scale = eta;
-        for _ in 0..5 {
+        for _ in 0..2 {
             scale = field.mul(&scale, &eta);
         }
         let scales = [

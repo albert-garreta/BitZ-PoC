@@ -58,13 +58,19 @@ Because `h,t` are public, the evaluated equation is linear in both signature
 components. Eleven bounded integer coordinate carries reduce this claim to
 `F_p`; extension products are completed before lifting canonical coordinates.
 
-The norm proof uses independent instance weights and two quadratic sumchecks.
+The integer outer uses independent instance weights and one cubic sumcheck
+of `eq(rho,instance)*S(instance,j)^2`, where S concatenates S1 and S2.
+Its target is the weighted bound minus the weighted nonnegative slack.
+Row coordinates precede instance coordinates. The first round accumulates
+squares in native integers and uses the field library's mixed products and
+prepared signed folds; subsequent rounds fold one field table, with
+equality weights kept factored. There are no square-output witness columns.
 Every raw signed15/slack27 norm residual has absolute value below `2^40`, so
 the prime-field equations represent exact integer equations. Ring conversion
 residuals are below `2^50` for every supported batch. These bounds apply to each
 equation before random batching.
 
-A fresh seven-claim merge combines the ring claim, four norm endpoints, slack,
+A fresh four-claim merge combines the ring claim, the single norm endpoint, slack,
 and padding. Coefficient index and bit-lane variables are separate: the binder
 evaluates the signed decoder once, aggregates its prefix by witness byte, and
 folds the common decoder before replaying coefficient weights. A streamed sumcheck binds them to one multilinear evaluation of
@@ -77,8 +83,8 @@ There is no Orthus-style public-input preprocessing in this interface.
 
 ## Security accounting
 
-The aligned layout is bound into the v2 transcript domain; commitments and
-proofs from the preceding layout cannot be reused. Eight arithmetic and
+The layout and combined integer outer are bound into the v4 protocol domain;
+proofs from preceding versions cannot be reused. Eight arithmetic and
 binary error groups each receive at most `2^(-target-4)`, totaling at most half
 the budget. Their degree numerators are:
 
@@ -86,8 +92,8 @@ the budget. Their degree numerators are:
 |---|---:|---:|
 | Ring coordinate projection | 10 | `2^125` |
 | Norm instance batching | d | `2^125` |
-| Two norm sumchecks | 4(10+d) | `2^125` |
-| Seven-claim merge | 6 | `2^125` |
+| Integer outer sumcheck | 3(11+d) | `2^125` |
+| Four-claim merge | 3 | `2^125` |
 | Bit-source binder | 2(15+d) | `2^125` |
 | BitZ product GKR | 367+40d | `2^128` |
 | Binary source sumcheck | 2(16+d) | `2^128` |

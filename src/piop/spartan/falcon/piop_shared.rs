@@ -85,7 +85,7 @@ pub(super) fn verify_round_proofs<const FULL: usize, const COMPACT: usize, const
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in super::super) struct NormClaimRef<'a> {
     pub instance_point: &'a [F],
-    pub terminal: &'a [[F; 2]; 2],
+    pub terminal: F,
     pub slack: F,
     pub point: &'a [F],
 }
@@ -96,8 +96,6 @@ pub(in super::super) struct HashToPointRejectionClaimRef<'a> {
     pub terminal: &'a [F; 3],
 }
 
-/// Endpoints derived by the prover or verifier for authentication against the
-/// original source commitment. Rejection terminals are unweighted row MLEs A,B,C.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in super::super) struct FalconPiopClaimRef<'a> {
     pub modulus: u128,
@@ -107,38 +105,32 @@ pub(in super::super) struct FalconPiopClaimRef<'a> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in super::super) struct NormClaims {
-    pub(in super::super) instance_point: Vec<F>,
-    pub(in super::super) terminal: [[F; 2]; 2],
-    pub(in super::super) slack: F,
-    pub(in super::super) point: Vec<F>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(in super::super) struct QuadraticClaims {
-    pub(in super::super) terminal: OuterEvaluations<F>,
-    pub(in super::super) point: Vec<F>,
+    pub instance_point: Vec<F>,
+    pub terminal: F,
+    pub slack: F,
+    pub point: Vec<F>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in super::super) struct HashToPointRejectionClaims {
-    pub(in super::super) point: Vec<F>,
-    pub(in super::super) terminal: [F; 3],
+    pub point: Vec<F>,
+    pub terminal: [F; 3],
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in super::super) struct FalconPiopClaims {
-    pub(in super::super) modulus: u128,
-    pub(in super::super) norm: NormClaims,
-    pub(in super::super) h2p_rejection: HashToPointRejectionClaims,
+    pub modulus: u128,
+    pub norm: NormClaims,
+    pub h2p_rejection: HashToPointRejectionClaims,
 }
 
 impl FalconPiopClaims {
-    pub(in super::super) fn as_claim_ref(&self) -> FalconPiopClaimRef<'_> {
+    pub fn as_claim_ref(&self) -> FalconPiopClaimRef<'_> {
         FalconPiopClaimRef {
             modulus: self.modulus,
             norm: NormClaimRef {
                 instance_point: &self.norm.instance_point,
-                terminal: &self.norm.terminal,
+                terminal: self.norm.terminal,
                 slack: self.norm.slack,
                 point: &self.norm.point,
             },
@@ -150,90 +142,34 @@ impl FalconPiopClaims {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(in super::super) struct NormProof {
-    pub(in super::super) instance_nonce: Option<u64>,
-    pub(in super::super) claims: [F; 2],
-    pub(in super::super) sumchecks: [CompactSumcheck<2>; 2],
-    pub(in super::super) terminal: [[F; 2]; 2],
-    pub(in super::super) grinding_nonces: Vec<u64>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(in super::super) struct QuadraticRelationProof {
-    pub(in super::super) point_nonce: Option<u64>,
-    pub(in super::super) sumcheck: CompactSumcheck<3>,
-    pub(in super::super) terminal: OuterEvaluations<F>,
-    pub(in super::super) grinding_nonces: Vec<u64>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(in super::super) struct HashToPointRejectionProof {
-    pub(in super::super) rows: QuadraticRelationProof,
-}
-
-/// Only messages and grinding nonces are stored; challenges are reconstructed.
+/// A single cubic integer outer proof. The public S2 norm is part of the target;
+/// S is S1 followed by N zero rows. All four endpoints and slack are projected.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in super::super) struct FalconPiopProof {
-    pub(in super::super) norm: NormProof,
-    pub(in super::super) h2p_rejection: HashToPointRejectionProof,
+    pub instance_nonce: Option<u64>,
+    pub point_nonce: Option<u64>,
+    pub merge_nonce: Option<u64>,
+    pub slack: F,
+    pub terminal: [F; 4],
+    pub sumcheck: CompactSumcheck<3>,
+    pub grinding_nonces: Vec<u64>,
 }
 
 impl FalconPiopProof {
-    pub(in super::super) fn visit_grinding_nonces(&self, mut visit: impl FnMut(&'static str, u64)) {
-        for &nonce in self
-            .norm
-            .instance_nonce
-            .iter()
-            .chain(&self.norm.grinding_nonces)
-        {
+    pub fn visit_grinding_nonces(&self, mut visit: impl FnMut(&'static str, u64)) {
+        for &nonce in self.instance_nonce.iter() {
             visit("prime_norm", nonce);
         }
-        for &nonce in self
-            .h2p_rejection
-            .rows
-            .point_nonce
-            .iter()
-            .chain(&self.h2p_rejection.rows.grinding_nonces)
-        {
+        for &nonce in self.point_nonce.iter() {
             visit("prime_h2p_rows", nonce);
         }
+        for &nonce in self.merge_nonce.iter().chain(&self.grinding_nonces) {
+            visit("prime_integer_outer", nonce);
+        }
     }
-
-    /// Canonical scalar payload, excluding container framing.
-    pub(in super::super) fn payload_size_bytes(&self) -> usize {
-        let norm_rounds: usize = self
-            .norm
-            .sumchecks
-            .iter()
-            .map(|p| p.round_polynomials.len())
-            .sum();
-        let rejection_rounds = self.h2p_rejection.rows.sumcheck.round_polynomials.len();
-        let mut nonce_count = 0;
-        self.visit_grinding_nonces(|_, _| nonce_count += 1);
-        // Norm: two initial claims and four terminals. Rejection: three terminals.
-        16 * (9 + 2 * norm_rounds + 3 * rejection_rounds) + 8 * nonce_count
+    pub fn payload_size_bytes(&self) -> usize {
+        let mut nonces = 0;
+        self.visit_grinding_nonces(|_, _| nonces += 1);
+        16 * (5 + 3 * self.sumcheck.round_polynomials.len()) + 8 * nonces
     }
-}
-
-pub(in super::super) fn verify_falcon_piop_in_field(
-    transcript: &mut impl Transcript,
-    layout: &FalconSourceLayout,
-    proof: &FalconPiopProof,
-    target_bits: usize,
-    field: &Cfg,
-) -> Result<FalconPiopClaims, FalconError> {
-    if !matches!(target_bits, 100 | 128) {
-        return Err(piop("invalid shared PIOP security target"));
-    }
-    validate_shared_field(target_bits, field)?;
-    bind_shared_header(transcript, layout, target_bits, field);
-    let norm = verify_norm(transcript, layout, &proof.norm, target_bits, field)?;
-    let h2p_rejection =
-        verify_rejection(transcript, layout, &proof.h2p_rejection, target_bits, field)?;
-    Ok(FalconPiopClaims {
-        modulus: field.modulus_u128(),
-        norm,
-        h2p_rejection,
-    })
 }

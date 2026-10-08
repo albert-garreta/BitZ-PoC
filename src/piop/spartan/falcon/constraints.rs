@@ -20,7 +20,7 @@ pub struct FalconConstraintCounts {
     pub public_input_bindings: usize,
     /// Candidate divisions, public-mask acceptance, and selected-coefficient rows.
     pub hash_to_point_linear: usize,
-    /// Terms in the degree-2 norm sumcheck.
+    /// Private square terms in the combined integer outer (S2 is public).
     pub norm_terms: usize,
     /// Rejection bits as products of the two quotient bits.
     pub hash_to_point_quadratic: usize,
@@ -33,7 +33,7 @@ impl FalconConstraintCounts {
         Self {
             public_input_bindings: 1 + 32 * 8 + super::CT_SIGNATURE_BYTES + N,
             hash_to_point_linear: 2 * HASH_TO_POINT_SAMPLES + N,
-            norm_terms: 2 * N,
+            norm_terms: N,
             hash_to_point_quadratic: HASH_TO_POINT_SAMPLES,
         }
     }
@@ -48,9 +48,9 @@ impl FalconConstraintCounts {
         N.trailing_zeros() as usize + layout.capacity().trailing_zeros() as usize
     }
 
-    /// The norm polynomial has degree two in every variable.
+    /// The factored instance equality times the square has individual degree three.
     pub const fn norm_round_degree(self) -> usize {
-        2
+        3
     }
 
     /// Quadratic row sumchecks have degree three (`eq * (A * B - C)`).
@@ -304,8 +304,8 @@ mod tests {
         assert_eq!(counts.hash_to_point_linear, 3_646);
         assert_eq!(counts.linear_rows(), 6_504);
         assert_eq!(counts.hash_to_point_quadratic, 1_311);
-        assert_eq!(counts.norm_terms, 2_048);
-        assert_eq!(counts.norm_round_degree(), 2);
+        assert_eq!(counts.norm_terms, 1_024);
+        assert_eq!(counts.norm_round_degree(), 3);
         assert_eq!(counts.product_round_degree(), 3);
 
     }

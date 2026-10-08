@@ -4,7 +4,7 @@
 //! coefficient vectors to the same BitZ source used by the norm proof.
 
 use field::{
-    FpLinearAcc, Reduce, RingOps, Uint,
+    BatchMulAcc, FpLinearAcc, FpSignedLinearAcc, Reduce, RingOps, Uint,
     q12289::{PowerBasis, PowerCoordinates},
 };
 #[cfg(feature = "parallel")]
@@ -464,21 +464,18 @@ fn collapse_claim(
     let weights_s2 = coordinates.s2.par_iter().map(weight).collect();
     #[cfg(not(feature = "parallel"))]
     let weights_s2 = coordinates.s2.iter().map(weight).collect();
-    let target = (0..EXTENSION_DEGREE).fold(field.zero(), |sum, k| {
+    // Eleven bounded signed coordinates share one mixed reduction; carries
+    // remain native integers throughout this dot product.
+    let mut target = FpSignedLinearAcc::<2, 2>::default();
+    for k in 0..EXTENSION_DEGREE {
         let value = i128::from(coordinates.target.coordinates()[k])
             + i128::from(Q) * i128::from(carries[k]);
-        let magnitude = F::from_with_cfg(value.unsigned_abs(), field);
-        let value = if value < 0 {
-            field.neg(&magnitude)
-        } else {
-            magnitude
-        };
-        field.add(&sum, &field.mul(&xi_powers[k], &value))
-    });
+        field.mul_acc(&mut target, &xi_powers[k], &value);
+    }
     PreparedClaim {
         weights_s1,
         weights_s2,
-        target,
+        target: field.reduce(target),
     }
 }
 
