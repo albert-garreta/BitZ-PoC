@@ -37,10 +37,13 @@ use crate::{
 use super::{
     FalconError, FalconPiopProof, FalconPublicKey, FalconSignatureCt, FalconSourceLayout,
     FalconSourceWitness, FalconVerificationTrace, HASH_TO_POINT_SAMPLES, N, Q, decode_public_key,
-    decode_signature_ct, encode_signature_ct,
+    decode_signature_ct,
     hash_to_point_selection::Selection,
     piop::{FalconPiopClaimRef, security_schedule},
 };
+
+#[cfg(test)]
+use super::encode_signature_ct;
 
 #[path = "opening_compact.rs"]
 mod compact;
@@ -116,7 +119,7 @@ impl FalconPublicStatement {
             }
         }
         for signature in &self.signatures {
-            encode_signature_ct(signature)?;
+            super::format::validate_signature_ct(signature)?;
         }
         Ok(())
     }

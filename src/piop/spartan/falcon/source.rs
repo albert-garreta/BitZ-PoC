@@ -76,45 +76,20 @@ impl FalconSourceWitness {
         signatures: &[&[u8]],
         traces: &[FalconVerificationTrace],
     ) -> Result<Self, FalconError> {
-        if messages.len() != layout.batch()
-            || signatures.len() != layout.batch()
-            || traces.len() != layout.batch()
-        {
-            return Err(FalconError::InvalidBatchCapacity);
-        }
         let p = layout.bitz_params();
-        let mut rows = vec![vec![0u64; p.rows() / 64]; p.cols()];
         let offsets = layout.offsets();
-        debug_assert_eq!(offsets.occupied_end, layout.occupied_bits());
-
-        crate::utils::cfg_chunks_mut!(rows, layout.signature_stride() >> p.row_vars)
-            .enumerate()
-            .take(layout.batch())
-            .try_for_each(|(instance, rows)| -> Result<(), FalconError> {
+        Self::from_traces_with_signature(
+            layout,
+            messages,
+            signatures.len(),
+            traces,
+            |instance, rows| {
                 let signature = signatures[instance];
-                let message = messages[instance];
-                let trace = &traces[instance];
-
                 if signature.len() != super::CT_SIGNATURE_BYTES {
                     return Err(FalconError::SignatureLength {
                         expected: super::CT_SIGNATURE_BYTES,
                     });
                 }
-                if message.len() != 32 {
-                    return Err(FalconError::InvalidBatchCapacity);
-                }
-
-                put_unsigned(rows, &p, offsets.shared_one, 1, 1);
-                for (byte_index, &byte) in message.iter().enumerate() {
-                    put_unsigned(
-                        rows,
-                        &p,
-                        offsets.message + 8 * byte_index,
-                        u64::from(byte),
-                        8,
-                    );
-                }
-
                 for (byte_index, &byte) in signature[..1 + super::NONCE_BYTES].iter().enumerate() {
                     put_unsigned(
                         rows,
@@ -147,6 +122,100 @@ impl FalconSourceWitness {
                 }
                 debug_assert_eq!(acc_len, 0);
                 debug_assert!(payload.next().is_none());
+                Ok(())
+            },
+        )
+    }
+
+    /// Packs the supplied typed signatures without a serialization round trip.
+    #[cfg(any(feature = "falcon-hybrid", test))]
+    pub(super) fn from_decoded_traces(
+        layout: FalconSourceLayout,
+        messages: &[&[u8]],
+        signatures: &[super::FalconSignatureCt],
+        traces: &[FalconVerificationTrace],
+    ) -> Result<Self, FalconError> {
+        let p = layout.bitz_params();
+        let offsets = layout.offsets();
+        Self::from_traces_with_signature(
+            layout,
+            messages,
+            signatures.len(),
+            traces,
+            |instance, rows| {
+                let signature = &signatures[instance];
+                super::format::validate_signature_ct(signature)?;
+                put_unsigned(
+                    rows,
+                    &p,
+                    offsets.signature_header_nonce,
+                    u64::from(0x50 + super::COEFFICIENT_LOG as u8),
+                    8,
+                );
+                for (index, &byte) in signature.nonce.iter().enumerate() {
+                    put_unsigned(
+                        rows,
+                        &p,
+                        offsets.signature_header_nonce + 8 * (index + 1),
+                        u64::from(byte),
+                        8,
+                    );
+                }
+                for (index, &coefficient) in signature.s2.iter().enumerate() {
+                    let word = (coefficient as u16) & ((1 << super::SIGNATURE_BITS) - 1);
+                    put_unsigned(
+                        rows,
+                        &p,
+                        layout.s2_bit(index, 0),
+                        u64::from(word),
+                        super::SIGNATURE_BITS,
+                    );
+                }
+                Ok(())
+            },
+        )
+    }
+
+    fn from_traces_with_signature(
+        layout: FalconSourceLayout,
+        messages: &[&[u8]],
+        signature_count: usize,
+        traces: &[FalconVerificationTrace],
+        pack_signature: impl Fn(usize, &mut [Vec<u64>]) -> Result<(), FalconError> + Sync,
+    ) -> Result<Self, FalconError> {
+        if messages.len() != layout.batch()
+            || signature_count != layout.batch()
+            || traces.len() != layout.batch()
+        {
+            return Err(FalconError::InvalidBatchCapacity);
+        }
+        let p = layout.bitz_params();
+        let mut rows = vec![vec![0u64; p.rows() / 64]; p.cols()];
+        let offsets = layout.offsets();
+        debug_assert_eq!(offsets.occupied_end, layout.occupied_bits());
+
+        crate::utils::cfg_chunks_mut!(rows, layout.signature_stride() >> p.row_vars)
+            .enumerate()
+            .take(layout.batch())
+            .try_for_each(|(instance, rows)| -> Result<(), FalconError> {
+                let message = messages[instance];
+                let trace = &traces[instance];
+
+                pack_signature(instance, rows)?;
+                if message.len() != 32 {
+                    return Err(FalconError::InvalidBatchCapacity);
+                }
+
+                put_unsigned(rows, &p, offsets.shared_one, 1, 1);
+                for (byte_index, &byte) in message.iter().enumerate() {
+                    put_unsigned(
+                        rows,
+                        &p,
+                        offsets.message + 8 * byte_index,
+                        u64::from(byte),
+                        8,
+                    );
+                }
 
                 for i in 0..HASH_TO_POINT_SAMPLES {
                     put_unsigned(
@@ -299,6 +368,85 @@ fn put_unsigned(
         rows[next / words_per_column][next % words_per_column] |= value >> (64 - shift);
     }
 }
+#[cfg(test)]
+mod typed_source_tests {
+    use super::super::{FalconPublicKey, FalconSignatureCt, KeccakTrace, encode_signature_ct};
+    use super::*;
+
+    fn trace() -> FalconVerificationTrace {
+        FalconVerificationTrace {
+            public_key: FalconPublicKey {
+                h: Box::new([0; N]),
+            },
+            signature: FalconSignatureCt {
+                nonce: [0; super::super::NONCE_BYTES],
+                s2: Box::new([0; N]),
+            },
+            hash_to_point: super::super::hash_to_point::from_shake_words(
+                Box::new([0; HASH_TO_POINT_SAMPLES]),
+                KeccakTrace::default(),
+            )
+            .unwrap(),
+            s1: Box::new([0; N]),
+            ring_quotient: Box::new([0; N - 1]),
+            norm: 0,
+            norm_slack: BETA_SQUARED,
+        }
+    }
+
+    #[test]
+    fn typed_signature_packing_matches_encoded_source_and_padding() {
+        let limit = 1i16 << (super::super::SIGNATURE_BITS - 1);
+        let coefficients = [-limit + 1, -1, 0, 1, limit - 1];
+        for batch in [1, 3] {
+            let layout = FalconSourceLayout::new(batch).unwrap();
+            let traces = vec![trace(); batch];
+            let signatures: Vec<_> = (0..batch)
+                .map(|instance| FalconSignatureCt {
+                    nonce: std::array::from_fn(|i| (i * 73 + instance * 19) as u8),
+                    s2: Box::new(std::array::from_fn(|i| {
+                        coefficients[(i + instance) % coefficients.len()]
+                    })),
+                })
+                .collect();
+            let encoded: Vec<_> = signatures
+                .iter()
+                .map(|s| encode_signature_ct(s).unwrap())
+                .collect();
+            let bytes: Vec<&[u8]> = encoded.iter().map(|s| s.as_slice()).collect();
+            let messages = vec![[0x5au8; 32]; batch];
+            let messages: Vec<&[u8]> = messages.iter().map(|m| m.as_slice()).collect();
+            let expected =
+                FalconSourceWitness::from_traces(layout, &messages, &bytes, &traces).unwrap();
+            let actual =
+                FalconSourceWitness::from_decoded_traces(layout, &messages, &signatures, &traces)
+                    .unwrap();
+            // Supplied signatures deliberately differ from the trace copies.
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn typed_signature_packing_rejects_noncanonical_coefficients() {
+        let layout = FalconSourceLayout::new(1).unwrap();
+        let trace = trace();
+        let limit = 1i16 << (super::super::SIGNATURE_BITS - 1);
+        for coefficient in [-limit, limit, i16::MIN, i16::MAX] {
+            let mut signature = trace.signature.clone();
+            signature.s2[17] = coefficient;
+            assert_eq!(
+                FalconSourceWitness::from_decoded_traces(
+                    layout,
+                    &[&[0u8; 32]],
+                    &[signature],
+                    std::slice::from_ref(&trace),
+                ),
+                Err(FalconError::SignatureCoefficientOutOfRange { index: 17 }),
+            );
+        }
+    }
+}
+
 falcon_tests! {
 mod tests {
     use super::*;

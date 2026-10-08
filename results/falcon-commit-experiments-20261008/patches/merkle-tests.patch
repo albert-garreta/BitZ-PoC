@@ -1,0 +1,32 @@
+--- a/src/hybrid/opening.rs
++++ b/src/hybrid/opening.rs
+@@ -505,6 +505,29 @@
+                     opening.merkle_proof,
+                     merkle::merkle_multi_proof(&reference.merkle_tree, positions, &queries)
+                 );
++            }
++        }
++    }
++
++    #[test]
++    fn two_source_commitment_matches_dense_with_interior_and_trailing_holes() {
++        use flock_core::pcs::commit::commit;
++        for logs in [[9, 12], [12, 9], [12, 12]] {
++            let geometry = Geometry::new(logs).unwrap();
++            let sources = sources(&geometry);
++            let borrowed = sources.each_ref().map(Vec::as_slice);
++            for rate in [1, 3] {
++                let (root, data) = commit_sources(&geometry, borrowed, rate).unwrap();
++                let params = PcsParams {
++                    m: geometry.bit_log(),
++                    log_inv_rate: rate,
++                    log_batch_size: geometry.virtual_lane_log,
++                    profile: ligerito::LigeritoProfile::Secure,
++                    merkle_hash: merkle::HashKind::Blake3,
++                };
++                let (dense, reference) = commit(&geometry.virtual_packed(borrowed), &params);
++                assert_eq!(root, dense.root, "logs={logs:?}, rate={rate}");
++                assert_eq!(data.merkle_tree, reference.merkle_tree);
+             }
+         }
+     }

@@ -1,0 +1,60 @@
+[bench_gate] falcon-witness: idle 99% (streak 1/1)
+{"completed": "n512-b1024-t1-s128-r00-baseline", "medians": {"witness_commit_ms": 9.53661, "total_prover_ms": 301.19957000000005, "prove_ms": 291.644556, "verify_ms": 55.397513000000004, "peak_rss_bytes": 135028736}}
+{"completed": "n512-b1024-t1-s128-r00-candidate", "medians": {"witness_commit_ms": 9.491004, "total_prover_ms": 302.367321, "prove_ms": 292.851079, "verify_ms": 55.509164, "peak_rss_bytes": 134860800}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t1-s128-r01-candidate", "medians": {"witness_commit_ms": 9.502296000000001, "total_prover_ms": 301.023768, "prove_ms": 291.59911999999997, "verify_ms": 55.551464, "peak_rss_bytes": 134545408}}
+{"completed": "n512-b1024-t1-s128-r01-baseline", "medians": {"witness_commit_ms": 9.474653, "total_prover_ms": 300.316559, "prove_ms": 290.84137599999997, "verify_ms": 55.133252, "peak_rss_bytes": 134639616}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t1-s128-r02-baseline", "medians": {"witness_commit_ms": 9.459693999999999, "total_prover_ms": 300.27068299999996, "prove_ms": 290.750904, "verify_ms": 55.069983, "peak_rss_bytes": 134795264}}
+{"completed": "n512-b1024-t1-s128-r02-candidate", "medians": {"witness_commit_ms": 9.542522, "total_prover_ms": 301.892272, "prove_ms": 292.281281, "verify_ms": 55.566162000000006, "peak_rss_bytes": 134852608}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t1-s128-r03-candidate", "medians": {"witness_commit_ms": 9.532331999999998, "total_prover_ms": 301.37403, "prove_ms": 291.87284800000003, "verify_ms": 55.331297, "peak_rss_bytes": 134602752}}
+{"completed": "n512-b1024-t1-s128-r03-baseline", "medians": {"witness_commit_ms": 9.517104, "total_prover_ms": 300.947534, "prove_ms": 291.42516, "verify_ms": 54.970454000000004, "peak_rss_bytes": 134651904}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t1-s128-r04-baseline", "medians": {"witness_commit_ms": 9.487727, "total_prover_ms": 300.643017, "prove_ms": 291.154989, "verify_ms": 55.277806, "peak_rss_bytes": 134590464}}
+{"completed": "n512-b1024-t1-s128-r04-candidate", "medians": {"witness_commit_ms": 9.487097, "total_prover_ms": 300.969265, "prove_ms": 291.476968, "verify_ms": 55.233201, "peak_rss_bytes": 134631424}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t8-s128-r00-baseline", "medians": {"witness_commit_ms": 2.394762, "total_prover_ms": 58.868292000000004, "prove_ms": 56.528453999999996, "verify_ms": 19.927808000000002, "peak_rss_bytes": 122302464}}
+{"completed": "n512-b1024-t8-s128-r00-candidate", "medians": {"witness_commit_ms": 2.390384, "total_prover_ms": 58.659347000000004, "prove_ms": 56.530696999999996, "verify_ms": 20.327364, "peak_rss_bytes": 122437632}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t8-s128-r01-candidate", "medians": {"witness_commit_ms": 2.466489, "total_prover_ms": 58.782399, "prove_ms": 56.273701, "verify_ms": 20.34609, "peak_rss_bytes": 122593280}}
+{"completed": "n512-b1024-t8-s128-r01-baseline", "medians": {"witness_commit_ms": 2.475856, "total_prover_ms": 58.688962999999994, "prove_ms": 56.256739, "verify_ms": 20.305291999999998, "peak_rss_bytes": 121872384}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t8-s128-r02-baseline", "medians": {"witness_commit_ms": 2.437824, "total_prover_ms": 58.738626000000004, "prove_ms": 56.300731999999996, "verify_ms": 20.224791, "peak_rss_bytes": 122753024}}
+{"completed": "n512-b1024-t8-s128-r02-candidate", "medians": {"witness_commit_ms": 2.426994, "total_prover_ms": 58.623859, "prove_ms": 56.437521, "verify_ms": 20.112929, "peak_rss_bytes": 122208256}}
+[bench_gate] falcon-witness: idle 98% (streak 1/1)
+{"completed": "n512-b1024-t8-s128-r03-candidate", "medians": {"witness_commit_ms": 2.428397, "total_prover_ms": 58.501968, "prove_ms": 56.005363, "verify_ms": 20.063996, "peak_rss_bytes": 121683968}}
+{"completed": "n512-b1024-t8-s128-r03-baseline", "medians": {"witness_commit_ms": 2.427675, "total_prover_ms": 58.5449, "prove_ms": 56.222535, "verify_ms": 20.320973, "peak_rss_bytes": 122327040}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t8-s128-r04-baseline", "medians": {"witness_commit_ms": 2.420641, "total_prover_ms": 58.637395000000005, "prove_ms": 56.183932, "verify_ms": 20.083533, "peak_rss_bytes": 122290176}}
+{"completed": "n512-b1024-t8-s128-r04-candidate", "medians": {"witness_commit_ms": 2.5263109999999998, "total_prover_ms": 58.829688999999995, "prove_ms": 56.47907, "verify_ms": 20.373241, "peak_rss_bytes": 121896960}}
+[bench_gate] falcon-witness: idle 99% (streak 1/1)
+{"completed": "n1024-b1024-t1-s128-r00-baseline", "medians": {"witness_commit_ms": 19.502653, "total_prover_ms": 560.995004, "prove_ms": 541.4922009999999, "verify_ms": 110.72232799999999, "peak_rss_bytes": 232333312}}
+{"completed": "n1024-b1024-t1-s128-r00-candidate", "medians": {"witness_commit_ms": 19.409367, "total_prover_ms": 559.3145539999999, "prove_ms": 539.905127, "verify_ms": 109.34503099999999, "peak_rss_bytes": 232407040}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n1024-b1024-t1-s128-r01-candidate", "medians": {"witness_commit_ms": 19.500148, "total_prover_ms": 566.45557, "prove_ms": 546.950783, "verify_ms": 109.385408, "peak_rss_bytes": 232407040}}
+{"completed": "n1024-b1024-t1-s128-r01-baseline", "medians": {"witness_commit_ms": 19.493475999999998, "total_prover_ms": 559.92556, "prove_ms": 540.432014, "verify_ms": 109.475898, "peak_rss_bytes": 232161280}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n1024-b1024-t1-s128-r02-baseline", "medians": {"witness_commit_ms": 19.510117, "total_prover_ms": 560.1699329999999, "prove_ms": 540.659746, "verify_ms": 109.268827, "peak_rss_bytes": 232353792}}
+{"completed": "n1024-b1024-t1-s128-r02-candidate", "medians": {"witness_commit_ms": 19.4959, "total_prover_ms": 559.667822, "prove_ms": 540.1337990000001, "verify_ms": 110.19673300000001, "peak_rss_bytes": 232165376}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n1024-b1024-t1-s128-r03-candidate", "medians": {"witness_commit_ms": 19.535406000000002, "total_prover_ms": 561.544064, "prove_ms": 542.0085270000001, "verify_ms": 110.527689, "peak_rss_bytes": 232140800}}
+{"completed": "n1024-b1024-t1-s128-r03-baseline", "medians": {"witness_commit_ms": 19.399468, "total_prover_ms": 561.267159, "prove_ms": 541.867611, "verify_ms": 109.367845, "peak_rss_bytes": 232374272}}
+[bench_gate] falcon-witness: idle 99% (streak 1/1)
+{"completed": "n1024-b1024-t1-s128-r04-baseline", "medians": {"witness_commit_ms": 19.472555999999997, "total_prover_ms": 563.974904, "prove_ms": 544.502268, "verify_ms": 109.843505, "peak_rss_bytes": 232374272}}
+{"completed": "n1024-b1024-t1-s128-r04-candidate", "medians": {"witness_commit_ms": 19.529003, "total_prover_ms": 565.2739829999999, "prove_ms": 545.703221, "verify_ms": 109.599553, "peak_rss_bytes": 232423424}}
+[bench_gate] falcon-witness: idle 99% (streak 1/1)
+{"completed": "n1024-b1024-t8-s128-r00-baseline", "medians": {"witness_commit_ms": 4.639481, "total_prover_ms": 110.17929, "prove_ms": 105.539739, "verify_ms": 38.366698, "peak_rss_bytes": 239071232}}
+{"completed": "n1024-b1024-t8-s128-r00-candidate", "medians": {"witness_commit_ms": 4.657826, "total_prover_ms": 110.233062, "prove_ms": 105.544618, "verify_ms": 38.111915, "peak_rss_bytes": 238501888}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n1024-b1024-t8-s128-r01-candidate", "medians": {"witness_commit_ms": 4.809584, "total_prover_ms": 109.741361, "prove_ms": 104.92286100000001, "verify_ms": 38.021745, "peak_rss_bytes": 237441024}}
+{"completed": "n1024-b1024-t8-s128-r01-baseline", "medians": {"witness_commit_ms": 4.567435, "total_prover_ms": 110.072919, "prove_ms": 105.505313, "verify_ms": 38.384912, "peak_rss_bytes": 238317568}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n1024-b1024-t8-s128-r02-baseline", "medians": {"witness_commit_ms": 4.737076, "total_prover_ms": 109.600504, "prove_ms": 105.006119, "verify_ms": 37.668715999999996, "peak_rss_bytes": 238313472}}
+{"completed": "n1024-b1024-t8-s128-r02-candidate", "medians": {"witness_commit_ms": 4.615977, "total_prover_ms": 109.334381, "prove_ms": 104.718324, "verify_ms": 37.712029, "peak_rss_bytes": 238600192}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n1024-b1024-t8-s128-r03-candidate", "medians": {"witness_commit_ms": 4.60203, "total_prover_ms": 109.580697, "prove_ms": 104.85768800000001, "verify_ms": 37.49068, "peak_rss_bytes": 237989888}}
+{"completed": "n1024-b1024-t8-s128-r03-baseline", "medians": {"witness_commit_ms": 4.776752, "total_prover_ms": 109.31856099999999, "prove_ms": 104.43082, "verify_ms": 37.518032, "peak_rss_bytes": 237678592}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n1024-b1024-t8-s128-r04-baseline", "medians": {"witness_commit_ms": 4.569538, "total_prover_ms": 110.138964, "prove_ms": 105.7362, "verify_ms": 38.726028, "peak_rss_bytes": 237621248}}
+{"completed": "n1024-b1024-t8-s128-r04-candidate", "medians": {"witness_commit_ms": 4.748177, "total_prover_ms": 110.00844699999999, "prove_ms": 105.374375, "verify_ms": 38.48945, "peak_rss_bytes": 237645824}}

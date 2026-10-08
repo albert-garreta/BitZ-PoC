@@ -320,12 +320,6 @@ impl PreparedFalconHybrid {
     ) -> Result<CommittedFalconHybrid, FalconError> {
         let _span = tracing::info_span!("falcon_hybrid:witness_commit").entered();
         public.validate(self.batch())?;
-        let encoded = public
-            .signatures
-            .iter()
-            .map(encode_signature_ct)
-            .collect::<Result<Vec<_>, _>>()?;
-        let signatures: Vec<&[u8]> = encoded.iter().map(|s| s.as_slice()).collect();
         let nonces: Vec<_> = public.signatures.iter().map(|s| s.nonce).collect();
         let (keccak_packed, auxiliary, samples) = {
             let _span = tracing::info_span!("falcon_hybrid:shake_witness").entered();
@@ -355,13 +349,22 @@ impl PreparedFalconHybrid {
                 .collect::<Result<Vec<_>, FalconError>>()?
         };
         let messages: Vec<&[u8]> = public.messages.iter().map(|m| m.as_slice()).collect();
-        let arithmetic =
-            FalconSourceWitness::from_traces(self.layout, &messages, &signatures, &traces)?;
+        let arithmetic = {
+            let _span = tracing::info_span!("falcon_hybrid:source_construction").entered();
+            FalconSourceWitness::from_decoded_traces(
+                self.layout,
+                &messages,
+                &public.signatures,
+                &traces,
+            )?
+        };
+        let packing_span = tracing::info_span!("falcon_hybrid:source_packing").entered();
         let mut arithmetic_packed = Vec::with_capacity(1 << self.geometry.physical_logs[0]);
         for row in arithmetic.rows() {
             arithmetic_packed.extend(row.chunks_exact(2).map(|w| Gf { lo: w[0], hi: w[1] }));
         }
         arithmetic_packed.resize(1 << self.geometry.physical_logs[0], Gf::ZERO);
+        drop(packing_span);
         let packed: [Vec<Gf>; SOURCE_COUNT] = std::iter::once(arithmetic_packed)
             .chain(keccak_packed)
             .collect::<Vec<_>>()
