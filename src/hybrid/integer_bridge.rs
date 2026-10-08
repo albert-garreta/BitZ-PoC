@@ -48,7 +48,7 @@ pub(crate) fn error_numerator(p: &IntegerMatrixLayout, mode: BridgeMode) -> usiz
     s + 3 * (d * (d - 1) / 2 + d * s) + d
 }
 
-fn message_count(p: &IntegerMatrixLayout) -> usize {
+pub(crate) fn message_count(p: &IntegerMatrixLayout) -> usize {
     p.row_vars * (p.row_vars - 1) / 2 + p.row_vars * (p.col_vars + 1) + p.row_vars
 }
 

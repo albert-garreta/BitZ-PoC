@@ -158,3 +158,56 @@ impl GrindingPlan {
         Ok(Self { blocks, source })
     }
 }
+
+#[cfg(test)]
+mod falcon_survey {
+    use super::*;
+    use crate::ligerito_flock::LigeritoSelection;
+
+    /// Diagnostic dump of the PCS challenge blocks at the Falcon geometries.
+    #[test]
+    #[ignore = "diagnostic survey; run explicitly with --nocapture"]
+    fn falcon_pcs_grinding_survey() {
+        let selections = [
+            ("udrg:1:4", LigeritoSelection::MATCHED_UDR),
+            ("custom:1:4", LigeritoSelection::JOHNSON),
+            ("udrg:2:4", LigeritoSelection::parse("udrg:2:4", 128).unwrap()),
+            ("udrg:1:5", LigeritoSelection::parse("udrg:1:5", 128).unwrap()),
+            ("udrg:1:6", LigeritoSelection::parse("udrg:1:6", 128).unwrap()),
+        ];
+        for (name, packed_log) in [("alg512", 18), ("alg1024", 19), ("full512", 23), ("full1024", 24)] {
+            for target in [100usize, 128] {
+                for (sel_name, selection) in selections {
+                    let Ok(resolved) = selection.resolve(packed_log, target) else {
+                        println!("SKIP {name} {target} {sel_name}");
+                        continue;
+                    };
+                    let first = GrindingPlan::resolve(resolved.security(), target as u32).unwrap();
+                    let pcs_target =
+                        target + 2 + first.blocks.len().next_power_of_two().ilog2() as usize;
+                    let plan = GrindingPlan::resolve(resolved.security(), pcs_target as u32).unwrap();
+                    let work: f64 = plan.blocks.iter().map(|b| 2f64.powi(b.bits as i32)).sum();
+                    let err: f64 = plan.blocks.iter().map(|b| b.raw_error * 2f64.powi(-(b.bits as i32))).sum();
+                    let queries: Vec<usize> = resolved.security().levels.iter().map(|l| l.queries).collect();
+                    println!(
+                        "PLAN {name} target={target} sel={sel_name} pcs_target={pcs_target} blocks={} work_log2={:.2} err_log2={:.2} queries={queries:?}",
+                        plan.blocks.len(),
+                        work.log2(),
+                        err.log2()
+                    );
+                    if sel_name == "udrg:1:4" {
+                        for b in &plan.blocks {
+                            println!(
+                                "BLOCK {name} {target} {} raw_log2={:.3} bits={} native={:?}",
+                                b.label,
+                                b.raw_error.log2(),
+                                b.bits,
+                                b.native_bits
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
