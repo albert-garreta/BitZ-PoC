@@ -89,14 +89,26 @@ impl<'a, S: StreamingCoefficientSource + ?Sized, H: Sha256InnerBitSource + ?Size
             None
         } else {
             let _span = tracing::info_span!("inner_overlay:prefix_accumulators").entered();
-            let mut integer = source.build_prefix_accumulators::<K, _>(
-                input.num_vars,
-                input.live_len,
-                input.bits,
-                f,
-                &zero,
-            )?;
-            let ring = ring_prefix::<K, _>(input.row, input.column, input.bits, f)?;
+            let mut integer = {
+                let _span = tracing::info_span!("inner_overlay:integer_prefix").entered();
+                source.build_prefix_accumulators::<K, _>(
+                    input.num_vars,
+                    input.live_len,
+                    input.bits,
+                    f,
+                    &zero,
+                )?
+            };
+            let ring = {
+                let _span = tracing::info_span!("inner_overlay:ring_prefix").entered();
+                ring_prefix::<K, _>(
+                    input.row,
+                    input.column,
+                    input.bits,
+                    f,
+                    input.integer.binding_options(),
+                )?
+            };
             for (integer, ring) in integer.rounds.iter_mut().zip(ring.rounds) {
                 for (integer, ring) in integer.iter_mut().zip(ring) {
                     for (integer, ring) in integer.iter_mut().zip(ring) {
@@ -132,14 +144,17 @@ impl<'a, S: StreamingCoefficientSource + ?Sized, H: Sha256InnerBitSource + ?Size
         let (zero, one) = (f.zero(), f.one());
         self.prefix_weights =
             PreparedPrefixWeights::new(equality_weights_lsb(&self.point[..K], &zero, &one, f), f);
-        let mut table = StreamingMle::new(self.input.integer).fold_prefix_table::<K>(
-            self.input.num_vars,
-            self.input.live_len,
-            &self.point[..K],
-            f,
-            &zero,
-            &one,
-        )?;
+        let mut table = {
+            let _span = tracing::info_span!("inner_overlay:folded_coefficients").entered();
+            StreamingMle::new(self.input.integer).fold_prefix_table::<K>(
+                self.input.num_vars,
+                self.input.live_len,
+                &self.point[..K],
+                f,
+                &zero,
+                &one,
+            )?
+        };
         self.row = self.input.row.to_vec();
         self.column = self
             .input
@@ -154,6 +169,7 @@ impl<'a, S: StreamingCoefficientSource + ?Sized, H: Sha256InnerBitSource + ?Size
             })
             .collect::<Result<_, _>>()?;
         if self.input.num_vars > K {
+            let _span = tracing::info_span!("inner_overlay:first_tail_round").entered();
             let (fast, slow) = ring_axes(&self.row, &self.column);
             self.next = sum_pairs(
                 &mut table.values,
@@ -439,6 +455,7 @@ fn ring_prefix<const K: usize, H: Sha256InnerBitSource + ?Sized>(
     column: &[Field],
     bits: &H,
     f: &FieldConfig,
+    options: BindingOptions,
 ) -> Result<PrefixAccumulators, SumcheckError> {
     let zero = f.zero();
     let width = 1 << K;
@@ -452,6 +469,7 @@ fn ring_prefix<const K: usize, H: Sha256InnerBitSource + ?Sized>(
         blocks: &blocks,
         width,
         f,
+        options,
     };
     let parts: Vec<_> = crate::utils::cfg_iter!(row)
         .enumerate()
@@ -508,8 +526,52 @@ struct ColumnSource<'a> {
     blocks: &'a [usize],
     width: usize,
     f: &'a FieldConfig,
+    options: BindingOptions,
 }
 impl StreamingCoefficientSource for ColumnSource<'_> {
+    fn binding_options(&self) -> BindingOptions {
+        self.options
+    }
+
+    fn for_each_partition_byte_pair_bucket(
+        &self,
+        partition: usize,
+        read: &mut impl FnMut(usize, usize) -> Result<u16, SumcheckError>,
+        emit: &mut impl FnMut(usize, u8, &[Field; 8]) -> Result<(), SumcheckError>,
+    ) -> Option<Result<(), SumcheckError>> {
+        if !self.options.optimized || partition != 0 || self.width != 16 {
+            return None;
+        }
+        Some((|| {
+            let mut buckets = vec![[self.f.zero(); 8]; 3 * 256];
+            let mut occupied = [false; 3 * 256];
+            for &base in self.blocks {
+                let word = read(base, 16)?;
+                let bytes = [usize::from(word & 255), usize::from(word >> 8)];
+                for side in 0..2 {
+                    for (table, byte) in [(side, bytes[side]), (2, bytes[1 - side])] {
+                        if byte == 0 {
+                            continue;
+                        }
+                        let index = table * 256 + byte;
+                        occupied[index] = true;
+                        for (dst, value) in buckets[index]
+                            .iter_mut()
+                            .zip(&self.values[base + 8 * side..][..8])
+                        {
+                            *dst = self.f.add(dst, value);
+                        }
+                    }
+                }
+            }
+            for (index, values) in buckets.iter().enumerate() {
+                if occupied[index] {
+                    emit(index / 256, (index % 256) as u8, values)?;
+                }
+            }
+            Ok(())
+        })())
+    }
     fn num_vars(&self) -> usize {
         self.values.len().ilog2() as usize
     }

@@ -193,7 +193,9 @@ fn factored_overlay_byte_buckets_and_task_boundaries_match_dense() {
     )
     .unwrap();
     // Activates byte buckets (column >= 4096) and multiple tail tasks per row.
-    dense_oracle(2, 12, 3, f.neg(&Field::from_with_cfg(97u64, &f)), &f);
+    for prefix in [3, 4] {
+        dense_oracle(2, 12, prefix, f.neg(&Field::from_with_cfg(97u64, &f)), &f);
+    }
 }
 
 #[test]
