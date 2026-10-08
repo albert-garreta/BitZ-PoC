@@ -29,6 +29,9 @@ type LinearAccumulator = field::FpLinearAcc<2, 1>;
 type ProductAccumulator = <field::FpCtx<2> as BatchMulAcc<Field>>::Accumulator;
 type RawMontgomery = [u64; 2];
 
+mod binding_options;
+pub(crate) use binding_options::BindingOptions;
+
 /// Equality weights fixed after the packed prefix challenges. At K=3 or K=4,
 /// prepare each byte's 256 weighted sums once and reuse them in tail preparation
 /// and the first tail fold. This adds 4 or 8 KiB instead of retaining one field

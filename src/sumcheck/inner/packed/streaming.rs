@@ -7,6 +7,24 @@ use super::*;
 /// Replays must emit the same sum at every index. Entries can overlap and arrive
 /// in any order; omitted entries, including domain padding, have coefficient zero.
 pub(crate) trait StreamingCoefficientSource: Sync {
+    fn binding_options(&self) -> BindingOptions {
+        BindingOptions {
+            optimized: cfg!(test),
+            group_cap: 1,
+        }
+    }
+
+    /// A range adapter must return None before invoking either callback.
+    /// Each read retains its original partition's bounds, even when buckets
+    /// combine several partitions. Errors after a callback never fall back.
+    fn for_each_partition_range_byte_pair_bucket(
+        &self,
+        _partitions: std::ops::Range<usize>,
+        _read: &mut impl FnMut(usize, usize, usize) -> Result<u16, SumcheckError>,
+        _emit: &mut impl FnMut(usize, u8, &[Field; 8]) -> Result<(), SumcheckError>,
+    ) -> Option<Result<(), SumcheckError>> {
+        None
+    }
     fn num_vars(&self) -> usize;
     fn live_len(&self) -> usize;
     fn for_each_coefficient(
@@ -217,12 +235,24 @@ impl<'a, S: StreamingCoefficientSource + ?Sized> StreamingMle<'a, S> {
         let end = (start + self.source.partition_len()).min(self.source.live_len());
         let mut next = start >> K;
         let end = end.div_ceil(1 << K);
+        let direct = self.source.binding_options().optimized;
         self.source
             .for_each_partition_folded_final(partition, weights, &mut |index, value| {
                 if index < next || index >= end {
                     return Err(SumcheckError::InvalidProductDimensions);
                 }
-                validate_field_values(std::slice::from_ref(&value), cfg)?;
+                if direct {
+                    use field::CtOrd;
+                    if !value
+                        .as_montgomery_integer()
+                        .ct_lt(cfg.modulus())
+                        .declassify()
+                    {
+                        return Err(SumcheckError::NonCanonicalFieldElement);
+                    }
+                } else {
+                    validate_field_values(std::slice::from_ref(&value), cfg)?;
+                }
                 next = index + 1;
                 emit(index, value)
             })
@@ -255,8 +285,43 @@ impl<S: StreamingCoefficientSource + ?Sized> InnerSumcheckMleSource for Streamin
             return Ok(PrefixAccumulators::new::<K>(zero));
         }
         let count = live_len.div_ceil(self.source.partition_len());
-        let partials: Vec<_> = crate::utils::cfg_into_iter!(0..count)
-            .map(|partition| self.build_partition::<K, _>(partition, live_len, bits, cfg, zero))
+        #[cfg(feature = "parallel")]
+        let workers = rayon::current_num_threads();
+        #[cfg(not(feature = "parallel"))]
+        let workers = 1;
+        let options = self.source.binding_options();
+        let group = if K == 4 && self.source.partition_len() >= 1 << 12 && options.optimized {
+            options.group_cap.max(1).min((count / (4 * workers)).max(1))
+        } else {
+            1
+        };
+        let partials: Vec<_> = crate::utils::cfg_into_iter!(0..count.div_ceil(group))
+            .map(|i| {
+                let range = i * group..((i + 1) * group).min(count);
+                if group == 1 {
+                    return self.build_partition::<K, _>(range.start, live_len, bits, cfg, zero);
+                }
+                if let Some(result) =
+                    self.build_four_variable_group(range.clone(), live_len, bits, cfg, zero)
+                {
+                    return result;
+                }
+                let mut result = PrefixAccumulators::new::<K>(zero);
+                for partition in range {
+                    let part =
+                        self.build_partition::<K, _>(partition, live_len, bits, cfg, zero)?;
+                    for (out, input) in result
+                        .rounds
+                        .iter_mut()
+                        .flatten()
+                        .flatten()
+                        .zip(part.rounds.into_iter().flatten().flatten())
+                    {
+                        *out = cfg.add(out, &input);
+                    }
+                }
+                Ok(result)
+            })
             .collect();
         let mut result = PrefixAccumulators::new::<K>(zero);
         for partial in partials {
@@ -527,6 +592,65 @@ impl<S: StreamingCoefficientSource + ?Sized> InnerSumcheckMleSource for Streamin
 }
 
 impl<S: StreamingCoefficientSource + ?Sized> StreamingMle<'_, S> {
+    fn build_four_variable_group<H: Sha256InnerBitSource + ?Sized>(
+        &self,
+        range: std::ops::Range<usize>,
+        live_len: usize,
+        bits: &H,
+        cfg: &FieldConfig,
+        zero: &Field,
+    ) -> Option<Result<PrefixAccumulators, SumcheckError>> {
+        let mut states = std::array::from_fn(|_| PrefixBuildState::new::<3>(zero));
+        let mut next_bucket = 0;
+        self.source
+            .for_each_partition_range_byte_pair_bucket(
+                range.clone(),
+                &mut |partition, base, occupied| {
+                    if !range.contains(&partition) {
+                        return Err(SumcheckError::InvalidProductDimensions);
+                    }
+                    let start = partition * self.source.partition_len();
+                    let end = (start + self.source.partition_len()).min(live_len);
+                    if base % 16 != 0
+                        || !(start..end).contains(&base)
+                        || occupied == 0
+                        || occupied > 16
+                        || occupied > end - base
+                    {
+                        return Err(SumcheckError::InvalidProductDimensions);
+                    }
+                    let active = 16.min(end - base);
+                    let word = bits.bits_at(base, active)?;
+                    if word & !low_bits_mask(active) != 0 {
+                        return Err(SumcheckError::InvalidProductDimensions);
+                    }
+                    Ok(word as u16)
+                },
+                &mut |table, byte, values| {
+                    if table >= 3 {
+                        return Err(SumcheckError::InvalidProductDimensions);
+                    }
+                    let bucket = table * 256 + usize::from(byte);
+                    if bucket < next_bucket {
+                        return Err(SumcheckError::InvalidProductDimensions);
+                    }
+                    next_bucket = bucket + 1;
+                    validate_field_values(values, cfg)?;
+                    if byte != 0 {
+                        accumulate_three_variable_block(
+                            &mut states[table],
+                            values,
+                            usize::from(byte),
+                            cfg,
+                            zero,
+                        );
+                    }
+                    Ok(())
+                },
+            )
+            .map(|result| result.and_then(|()| finish_four_variable_partition(states, cfg, zero)))
+    }
+
     fn build_partition<const K: usize, H: Sha256InnerBitSource + ?Sized>(
         &self,
         partition: usize,
@@ -2100,6 +2224,74 @@ mod tests {
     }
 
     #[test]
+    fn folded_validation_matches_reference_at_canonical_boundaries() {
+        struct Boundary {
+            value: Field,
+            index: usize,
+            optimized: bool,
+        }
+        impl StreamingCoefficientSource for Boundary {
+            fn num_vars(&self) -> usize {
+                4
+            }
+            fn live_len(&self) -> usize {
+                16
+            }
+            fn partition_len(&self) -> usize {
+                16
+            }
+            fn binding_options(&self) -> BindingOptions {
+                BindingOptions {
+                    optimized: self.optimized,
+                    group_cap: 1,
+                }
+            }
+            fn for_each_coefficient(
+                &self,
+                _: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+            ) -> Result<(), SumcheckError> {
+                unreachable!()
+            }
+            fn for_each_partition_folded_final(
+                &self,
+                _: usize,
+                _: &[Field],
+                emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+            ) -> Option<Result<(), SumcheckError>> {
+                Some(emit(self.index, self.value))
+            }
+        }
+        let cfg = spartan_bitz_field_config();
+        let p = cfg.modulus_u128();
+        let large = field::FpCtx::from_prime_u128(u128::MAX - 158);
+        for raw in [0, p - 1, p, p + 1] {
+            let value = large
+                .from_montgomery_integer(FieldUint::from_words([raw as u64, (raw >> 64) as u64]));
+            for index in [0, 2, usize::MAX] {
+                let mut outcomes = Vec::new();
+                for optimized in [false, true] {
+                    let source = Boundary {
+                        value,
+                        index,
+                        optimized,
+                    };
+                    let mut visited = false;
+                    let result = StreamingMle::new(&source)
+                        .visit_folded_final_checked::<3>(0, &[cfg.one(); 8], &cfg, |_, actual| {
+                            assert_eq!(actual, value);
+                            visited = true;
+                            Ok(())
+                        })
+                        .unwrap();
+                    assert_eq!(visited, raw < p && index == 0);
+                    outcomes.push(result);
+                }
+                assert_eq!(outcomes[0], outcomes[1]);
+            }
+        }
+    }
+
+    #[test]
     fn ordered_final_folded_replays_reject_bad_order_bounds_and_residues() {
         struct InvalidFinal<'a> {
             cfg: &'a FieldConfig,
@@ -2296,7 +2488,9 @@ mod tests {
                 for base in (start..end).step_by(16) {
                     let active = 16.min(end - base);
                     let occupied = self.blocks.values[base..base + active]
-                        .iter().rposition(|value| *value != self.cfg.zero()).map_or(1, |lane| lane + 1);
+                        .iter()
+                        .rposition(|value| *value != self.cfg.zero())
+                        .map_or(1, |lane| lane + 1);
                     // The callback must still return both live witness bytes when
                     // only the low coefficient half is occupied: cross terms use it.
                     let word = read_pair(base, occupied)?;
@@ -2681,5 +2875,201 @@ mod tests {
             transcript.get_challenge::<u128>(),
             Blake3Transcript::new().get_challenge::<u128>()
         );
+    }
+    #[test]
+    fn grouped_prefix_partial_groups_and_padding_match_scalar_reference() {
+        struct Grouped<'a> {
+            cfg: &'a FieldConfig,
+            cap: usize,
+            supported: bool,
+        }
+        impl StreamingCoefficientSource for Grouped<'_> {
+            fn num_vars(&self) -> usize {
+                18
+            }
+            fn live_len(&self) -> usize {
+                43 * 4096 - 7
+            }
+            fn partition_len(&self) -> usize {
+                4096
+            }
+            fn binding_options(&self) -> BindingOptions {
+                BindingOptions {
+                    optimized: true,
+                    group_cap: self.cap,
+                }
+            }
+            fn for_each_coefficient(
+                &self,
+                emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+            ) -> Result<(), SumcheckError> {
+                for partition in 0..43 {
+                    self.for_each_partition(partition, emit)?;
+                }
+                Ok(())
+            }
+            fn for_each_partition(
+                &self,
+                partition: usize,
+                emit: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+            ) -> Result<(), SumcheckError> {
+                if partition < 39 {
+                    for lane in 0..16 {
+                        emit(
+                            partition * 4096 + lane,
+                            Field::from_with_cfg((partition * 19 + lane + 1) as u64, self.cfg),
+                        )?;
+                    }
+                }
+                Ok(())
+            }
+            fn for_each_partition_range_byte_pair_bucket(
+                &self,
+                range: std::ops::Range<usize>,
+                read: &mut impl FnMut(usize, usize, usize) -> Result<u16, SumcheckError>,
+                emit: &mut impl FnMut(usize, u8, &[Field; 8]) -> Result<(), SumcheckError>,
+            ) -> Option<Result<(), SumcheckError>> {
+                if !self.supported {
+                    return None;
+                }
+                Some((|| {
+                    let mut buckets = vec![[self.cfg.zero(); 8]; 3 * 256];
+                    for partition in range.filter(|p| *p < 39) {
+                        let word = read(partition, partition * 4096, 16)?;
+                        let bytes = [word as u8, (word >> 8) as u8];
+                        for side in 0..2 {
+                            for lane in 0..8 {
+                                let value = Field::from_with_cfg(
+                                    (partition * 19 + 8 * side + lane + 1) as u64,
+                                    self.cfg,
+                                );
+                                for (table, byte) in [(side, bytes[side]), (2, bytes[1 - side])] {
+                                    let slot = &mut buckets[table * 256 + usize::from(byte)][lane];
+                                    *slot = self.cfg.add(slot, &value);
+                                }
+                            }
+                        }
+                    }
+                    for (index, values) in buckets.iter().enumerate() {
+                        emit(index / 256, index as u8, values)?;
+                    }
+                    Ok(())
+                })())
+            }
+        }
+        let cfg = spartan_bitz_field_config();
+        let bits = (0..(43 * 4096usize).div_ceil(64))
+            .map(|i| (i as u64).wrapping_mul(0x9e3779b97f4a7c15))
+            .collect::<Vec<_>>();
+        for workers in [1, 2] {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .build()
+                .unwrap()
+                .install(|| {
+                    let reference = StreamingMle::new(&Grouped {
+                        cfg: &cfg,
+                        cap: 1,
+                        supported: false,
+                    })
+                    .build_prefix_accumulators::<4, _>(18, 43 * 4096 - 7, &bits, &cfg, &cfg.zero())
+                    .unwrap();
+                    for cap in [8, 16] {
+                        for supported in [false, true] {
+                            let actual = StreamingMle::new(&Grouped {
+                                cfg: &cfg,
+                                cap,
+                                supported,
+                            })
+                            .build_prefix_accumulators::<4, _>(
+                                18,
+                                43 * 4096 - 7,
+                                &bits,
+                                &cfg,
+                                &cfg.zero(),
+                            )
+                            .unwrap();
+                            assert_eq!(
+                                actual.rounds, reference.rounds,
+                                "workers={workers}, cap={cap}, supported={supported}"
+                            );
+                        }
+                    }
+                });
+        }
+    }
+
+    #[test]
+    fn grouped_prefix_checks_original_partitions_and_bucket_order() {
+        struct Grouped<'a> {
+            cfg: &'a FieldConfig,
+            fault: usize,
+        }
+        impl StreamingCoefficientSource for Grouped<'_> {
+            fn num_vars(&self) -> usize {
+                16
+            }
+            fn live_len(&self) -> usize {
+                13 * 4096 - 7
+            }
+            fn partition_len(&self) -> usize {
+                4096
+            }
+            fn for_each_coefficient(
+                &self,
+                _: &mut impl FnMut(usize, Field) -> Result<(), SumcheckError>,
+            ) -> Result<(), SumcheckError> {
+                panic!("range errors cannot fall back")
+            }
+            fn for_each_partition_range_byte_pair_bucket(
+                &self,
+                range: std::ops::Range<usize>,
+                read: &mut impl FnMut(usize, usize, usize) -> Result<u16, SumcheckError>,
+                emit: &mut impl FnMut(usize, u8, &[Field; 8]) -> Result<(), SumcheckError>,
+            ) -> Option<Result<(), SumcheckError>> {
+                Some((|| {
+                    let p = range.start;
+                    match self.fault {
+                        1 => {
+                            read(range.end, range.end * 4096, 16)?;
+                        }
+                        2 => {
+                            read(p, (p + 1) * 4096, 16)?;
+                        }
+                        3 => {
+                            read(p, p * 4096 + 1, 16)?;
+                        }
+                        4 => {
+                            read(p, p * 4096, 0)?;
+                        }
+                        5 => {
+                            read(12, 13 * 4096 - 16, 16)?;
+                        }
+                        _ => {}
+                    }
+                    for partition in range.clone() {
+                        read(partition, partition * 4096, 16)?;
+                    }
+                    let mut values = [self.cfg.one(); 8];
+                    if self.fault == 8 {
+                        values[0] = crate::piop::spartan::noncanonical_test_value(self.cfg);
+                    }
+                    emit(if self.fault == 7 { 3 } else { 0 }, 19, &values)?;
+                    if self.fault == 6 {
+                        emit(0, 19, &values)?;
+                    }
+                    Ok(())
+                })())
+            }
+        }
+        let cfg = spartan_bitz_field_config();
+        let bits = vec![0xababababababababu64; 1024];
+        for fault in 0..=8 {
+            let source = Grouped { cfg: &cfg, fault };
+            let result = StreamingMle::new(&source)
+                .build_four_variable_group(3..13, source.live_len(), &bits, &cfg, &cfg.zero())
+                .unwrap();
+            assert_eq!(result.is_ok(), fault == 0, "fault {fault}");
+        }
     }
 }
