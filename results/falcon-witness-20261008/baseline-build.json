@@ -1,0 +1,535 @@
+{
+  "commit": "ac2b42feae0cfcfd86eda449a42edb4942cfa15f",
+  "binaries": {
+    "arithmetic": {
+      "path": "/home/john-wu/code/BitZ-pcs/target/falcon-witness-ac2b42f/release/examples/falcon_algebraic",
+      "sha256": "3515192027be488abe6213bfcaac43a7801e9b22e556d7968829a57fa5d13d01"
+    },
+    "full": {
+      "path": "/home/john-wu/code/BitZ-pcs/target/falcon-witness-ac2b42f/release/deps/falcon_hybrid-0d2856552ca243a9",
+      "sha256": "7fc5eb78cb35c3879a309613191d7bf1abb583356b1bb8ef59596fe4d5d76331"
+    }
+  },
+  "runs": [
+    {
+      "name": "arithmetic-n512-b1024-t16",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "/home/john-wu/code/BitZ-pcs/target/falcon-witness-ac2b42f/release/examples/falcon_algebraic",
+        "--degree",
+        "512",
+        "--batch",
+        "1024",
+        "--security",
+        "100",
+        "--threads",
+        "16",
+        "--warmup",
+        "2",
+        "--iterations",
+        "7",
+        "--seed",
+        "42",
+        "--trace"
+      ],
+      "environment": {
+        "RAYON_NUM_THREADS": "16",
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "RUSTFLAGS": "-C target-cpu=native"
+      },
+      "input_digest": "52510a9cce14b112945b494cc9e1cf156cf0069b89a9d1decf09e85eb068ba8e",
+      "verified_trials": 9,
+      "metrics": {
+        "witness_commit_ms": {
+          "samples": [
+            4.288205,
+            4.21643,
+            4.206581,
+            4.323633,
+            4.242789999999999,
+            4.325977,
+            3.9392050000000003
+          ],
+          "median": 4.242789999999999,
+          "minimum": 3.9392050000000003,
+          "maximum": 4.325977
+        },
+        "prove_ms": {
+          "samples": [
+            68.033525,
+            68.82170699999999,
+            69.755083,
+            68.616408,
+            68.626637,
+            68.471103,
+            68.08823799999999
+          ],
+          "median": 68.616408,
+          "minimum": 68.033525,
+          "maximum": 69.755083
+        },
+        "total_prover_ms": {
+          "samples": [
+            72.32184,
+            73.038267,
+            73.961724,
+            72.94012099999999,
+            72.869507,
+            72.79714,
+            72.027513
+          ],
+          "median": 72.869507,
+          "minimum": 72.027513,
+          "maximum": 73.961724
+        },
+        "witness_only_ms": {
+          "samples": [
+            2.867807,
+            2.801451,
+            2.723665,
+            2.813866,
+            2.790231,
+            2.818705,
+            2.6244169999999998
+          ],
+          "median": 2.801451,
+          "minimum": 2.6244169999999998,
+          "maximum": 2.867807
+        }
+      }
+    },
+    {
+      "name": "arithmetic-n1024-b1024-t16",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "/home/john-wu/code/BitZ-pcs/target/falcon-witness-ac2b42f/release/examples/falcon_algebraic",
+        "--degree",
+        "1024",
+        "--batch",
+        "1024",
+        "--security",
+        "100",
+        "--threads",
+        "16",
+        "--warmup",
+        "2",
+        "--iterations",
+        "7",
+        "--seed",
+        "42",
+        "--trace"
+      ],
+      "environment": {
+        "RAYON_NUM_THREADS": "16",
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "RUSTFLAGS": "-C target-cpu=native"
+      },
+      "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+      "verified_trials": 9,
+      "metrics": {
+        "witness_commit_ms": {
+          "samples": [
+            9.496191,
+            9.160898000000001,
+            9.038144999999998,
+            9.191845,
+            9.385933000000001,
+            9.52722,
+            9.480693
+          ],
+          "median": 9.385933000000001,
+          "minimum": 9.038144999999998,
+          "maximum": 9.52722
+        },
+        "prove_ms": {
+          "samples": [
+            125.19587600000001,
+            126.83953600000001,
+            130.77257,
+            124.661254,
+            125.119331,
+            126.08506899999999,
+            124.742628
+          ],
+          "median": 125.19587600000001,
+          "minimum": 124.661254,
+          "maximum": 130.77257
+        },
+        "total_prover_ms": {
+          "samples": [
+            134.692187,
+            136.000544,
+            139.810775,
+            133.853229,
+            134.505384,
+            135.612349,
+            134.22345099999998
+          ],
+          "median": 134.692187,
+          "minimum": 133.853229,
+          "maximum": 139.810775
+        },
+        "witness_only_ms": {
+          "samples": [
+            7.120696000000001,
+            6.892044,
+            6.750735,
+            6.798366,
+            6.9353549999999995,
+            7.196149,
+            7.139311
+          ],
+          "median": 6.9353549999999995,
+          "minimum": 6.750735,
+          "maximum": 7.196149
+        }
+      }
+    },
+    {
+      "name": "arithmetic-n512-b1024-t1",
+      "command": [
+        "taskset",
+        "-c",
+        "0",
+        "/home/john-wu/code/BitZ-pcs/target/falcon-witness-ac2b42f/release/examples/falcon_algebraic",
+        "--degree",
+        "512",
+        "--batch",
+        "1024",
+        "--security",
+        "100",
+        "--threads",
+        "1",
+        "--warmup",
+        "2",
+        "--iterations",
+        "7",
+        "--seed",
+        "42",
+        "--trace"
+      ],
+      "environment": {
+        "RAYON_NUM_THREADS": "1",
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_WORKER_CPUS": "0",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "RUSTFLAGS": "-C target-cpu=native"
+      },
+      "input_digest": "52510a9cce14b112945b494cc9e1cf156cf0069b89a9d1decf09e85eb068ba8e",
+      "verified_trials": 9,
+      "metrics": {
+        "witness_commit_ms": {
+          "samples": [
+            35.021117999999994,
+            34.837861999999994,
+            34.729687000000006,
+            34.744064,
+            35.862531000000004,
+            34.974489999999996,
+            35.835208
+          ],
+          "median": 34.974489999999996,
+          "minimum": 34.729687000000006,
+          "maximum": 35.862531000000004
+        },
+        "prove_ms": {
+          "samples": [
+            248.305303,
+            249.611755,
+            248.20782799999998,
+            248.070439,
+            247.829252,
+            248.59993,
+            251.71106799999998
+          ],
+          "median": 248.305303,
+          "minimum": 247.829252,
+          "maximum": 251.71106799999998
+        },
+        "total_prover_ms": {
+          "samples": [
+            283.326471,
+            284.449677,
+            282.937565,
+            282.81455300000005,
+            283.69183300000003,
+            283.574481,
+            287.546357
+          ],
+          "median": 283.574481,
+          "minimum": 282.81455300000005,
+          "maximum": 287.546357
+        },
+        "witness_only_ms": {
+          "samples": [
+            32.108246,
+            31.910069999999997,
+            31.799822,
+            31.817565,
+            32.949488,
+            32.039455000000004,
+            32.841103000000004
+          ],
+          "median": 32.039455000000004,
+          "minimum": 31.799822,
+          "maximum": 32.949488
+        }
+      }
+    },
+    {
+      "name": "arithmetic-n1024-b1024-t1",
+      "command": [
+        "taskset",
+        "-c",
+        "0",
+        "/home/john-wu/code/BitZ-pcs/target/falcon-witness-ac2b42f/release/examples/falcon_algebraic",
+        "--degree",
+        "1024",
+        "--batch",
+        "1024",
+        "--security",
+        "100",
+        "--threads",
+        "1",
+        "--warmup",
+        "2",
+        "--iterations",
+        "7",
+        "--seed",
+        "42",
+        "--trace"
+      ],
+      "environment": {
+        "RAYON_NUM_THREADS": "1",
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_WORKER_CPUS": "0",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "RUSTFLAGS": "-C target-cpu=native"
+      },
+      "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+      "verified_trials": 9,
+      "metrics": {
+        "witness_commit_ms": {
+          "samples": [
+            101.746648,
+            102.08178099999999,
+            102.27483699999999,
+            103.146467,
+            102.31602500000001,
+            101.64088699999999,
+            101.49606399999999
+          ],
+          "median": 102.08178099999999,
+          "minimum": 101.49606399999999,
+          "maximum": 103.146467
+        },
+        "prove_ms": {
+          "samples": [
+            460.89061399999997,
+            464.281963,
+            462.4843,
+            463.087682,
+            462.44701,
+            460.729911,
+            460.701476
+          ],
+          "median": 462.44701,
+          "minimum": 460.701476,
+          "maximum": 464.281963
+        },
+        "total_prover_ms": {
+          "samples": [
+            562.637322,
+            566.363895,
+            564.759197,
+            566.2341990000001,
+            564.763095,
+            562.371058,
+            562.1976
+          ],
+          "median": 564.759197,
+          "minimum": 562.1976,
+          "maximum": 566.363895
+        },
+        "witness_only_ms": {
+          "samples": [
+            95.626194,
+            96.022184,
+            96.156258,
+            97.104021,
+            96.191204,
+            95.5919,
+            95.435514
+          ],
+          "median": 96.022184,
+          "minimum": 95.435514,
+          "maximum": 97.104021
+        }
+      }
+    },
+    {
+      "name": "full-n512-b1024-t16",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "/home/john-wu/code/BitZ-pcs/target/falcon-witness-ac2b42f/release/deps/falcon_hybrid-0d2856552ca243a9",
+        "--degree",
+        "512",
+        "--batch",
+        "1024",
+        "--security",
+        "100",
+        "--threads",
+        "16",
+        "--warmup",
+        "2",
+        "--iterations",
+        "7",
+        "--seed",
+        "42",
+        "--k",
+        "auto"
+      ],
+      "environment": {
+        "RAYON_NUM_THREADS": "16",
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "RUSTFLAGS": "-C target-cpu=native"
+      },
+      "input_digest": "52510a9cce14b112945b494cc9e1cf156cf0069b89a9d1decf09e85eb068ba8e",
+      "verified_trials": 9,
+      "metrics": {
+        "witness_commit_ms": {
+          "samples": [
+            65.326832,
+            62.202039,
+            61.686752999999996,
+            62.242545,
+            62.045573,
+            61.212154999999996,
+            61.762226000000005
+          ],
+          "median": 62.045573,
+          "minimum": 61.212154999999996,
+          "maximum": 65.326832
+        },
+        "prove_ms": {
+          "samples": [
+            223.816617,
+            221.999789,
+            221.794521,
+            227.777614,
+            222.669186,
+            226.44431,
+            222.829509
+          ],
+          "median": 222.829509,
+          "minimum": 221.794521,
+          "maximum": 227.777614
+        },
+        "total_prover_ms": {
+          "samples": [
+            289.14344900000003,
+            284.201828,
+            283.481274,
+            290.020159,
+            284.714759,
+            287.656465,
+            284.591735
+          ],
+          "median": 284.714759,
+          "minimum": 283.481274,
+          "maximum": 290.020159
+        }
+      }
+    },
+    {
+      "name": "full-n1024-b1024-t16",
+      "command": [
+        "taskset",
+        "-c",
+        "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "/home/john-wu/code/BitZ-pcs/target/falcon-witness-ac2b42f/release/deps/falcon_hybrid-0d2856552ca243a9",
+        "--degree",
+        "1024",
+        "--batch",
+        "1024",
+        "--security",
+        "100",
+        "--threads",
+        "16",
+        "--warmup",
+        "2",
+        "--iterations",
+        "7",
+        "--seed",
+        "42",
+        "--k",
+        "auto"
+      ],
+      "environment": {
+        "RAYON_NUM_THREADS": "16",
+        "BITZ_FALCON_CASE_CACHE": "/tmp/falcon-algebraic-cases-20261007",
+        "BITZ_FALCON_WORKER_CPUS": "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+        "BITZ_FALCON_MAIN_CPU": "0",
+        "RUSTFLAGS": "-C target-cpu=native"
+      },
+      "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+      "verified_trials": 9,
+      "metrics": {
+        "witness_commit_ms": {
+          "samples": [
+            118.479234,
+            114.845928,
+            118.30779,
+            115.05543399999999,
+            116.737649,
+            117.676034,
+            117.358163
+          ],
+          "median": 117.358163,
+          "minimum": 114.845928,
+          "maximum": 118.479234
+        },
+        "prove_ms": {
+          "samples": [
+            424.58786100000003,
+            414.96039,
+            425.67826399999996,
+            424.485697,
+            424.64053,
+            424.091591,
+            425.872742
+          ],
+          "median": 424.58786100000003,
+          "minimum": 414.96039,
+          "maximum": 425.872742
+        },
+        "total_prover_ms": {
+          "samples": [
+            543.067095,
+            529.806318,
+            543.986054,
+            539.541131,
+            541.378179,
+            541.767625,
+            543.230905
+          ],
+          "median": 541.767625,
+          "minimum": 529.806318,
+          "maximum": 543.986054
+        }
+      }
+    }
+  ]
+}
