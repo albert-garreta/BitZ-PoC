@@ -327,19 +327,33 @@ impl PreparedFalconHybrid {
             .collect::<Result<Vec<_>, _>>()?;
         let signatures: Vec<&[u8]> = encoded.iter().map(|s| s.as_slice()).collect();
         let nonces: Vec<_> = public.signatures.iter().map(|s| s.nonce).collect();
-        let (keccak_packed, auxiliary, samples) = self.generate_shake(&nonces, &public.messages)?;
-        let traces = crate::utils::cfg_into_iter!(0..self.batch())
-            .map(|i| {
-                let bytes: Vec<_> = samples[i].iter().flat_map(|w| w.to_be_bytes()).collect();
-                let htp = super::hash_to_point::from_shake_bytes(&bytes, KeccakTrace::default())?;
-                super::verify::trace_from_parts(
-                    public.public_keys[i].clone(),
-                    public.signatures[i].clone(),
-                    htp,
-                    true,
+        let (keccak_packed, auxiliary, samples) = {
+            let _span = tracing::info_span!("falcon_hybrid:shake_witness").entered();
+            self.generate_shake(&nonces, &public.messages)?
+        };
+        let traces = {
+            use crate::piop::spartan::falcon_polynomial::PolynomialWorkspace;
+            let _span = tracing::info_span!("falcon_hybrid:arithmetic_witness").entered();
+            samples
+                .into_par_iter()
+                .enumerate()
+                .map_init(
+                    || PolynomialWorkspace::new(N),
+                    |workspace, (i, words)| {
+                        let htp = super::hash_to_point::from_shake_words(
+                            Box::new(words),
+                            KeccakTrace::default(),
+                        )?;
+                        super::verify::trace_from_parts_with_workspace(
+                            public.public_keys[i].clone(),
+                            public.signatures[i].clone(),
+                            htp,
+                            workspace,
+                        )
+                    },
                 )
-            })
-            .collect::<Result<Vec<_>, FalconError>>()?;
+                .collect::<Result<Vec<_>, FalconError>>()?
+        };
         let messages: Vec<&[u8]> = public.messages.iter().map(|m| m.as_slice()).collect();
         let arithmetic =
             FalconSourceWitness::from_traces(self.layout, &messages, &signatures, &traces)?;

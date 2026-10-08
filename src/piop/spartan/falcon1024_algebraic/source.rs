@@ -2,7 +2,7 @@ use super::{BETA_SQUARED, COEFFICIENT_LOG, FalconError, N, Q, SLACK_BITS, error}
 use crate::pcs::IntegerMatrixLayout;
 #[cfg(test)]
 use crate::piop::spartan::falcon_bit_layout::{coefficient_bit, slack_bit};
-use crate::piop::spartan::falcon_polynomial::integer_polynomial_product;
+use crate::piop::spartan::falcon_polynomial::PolynomialWorkspace;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
@@ -45,12 +45,9 @@ impl FalconAlgebraicWitness {
         Layout::new(s2.len())?;
         statement.validate(s2.len())?;
         check_coefficients(&s2)?;
-        let s1 = crate::utils::cfg_into_iter!(0..s2.len())
-            .map(|i| {
-                let product = product(&statement.public_keys[i], &s2[i]);
-                centered_s1(&statement.targets[i], &product)
-            })
-            .collect();
+        let s1 = map_products(statement, &s2, |i, product| {
+            Ok(centered_s1(&statement.targets[i], product))
+        })?;
         let witness = Self { s1, s2 };
         check_norms(&witness)?;
         Ok(witness)
@@ -126,14 +123,22 @@ impl WitnessData {
         let layout = Layout::new(s2.len())?;
         public.validate(layout.batch())?;
         check_coefficients(&s2)?;
-        let signatures = crate::utils::cfg_into_iter!(0..layout.batch())
-            .map(|i| {
-                let product = product(&public.public_keys[i], &s2[i]);
-                let s1 = centered_s1(&public.targets[i], &product);
-                let slack = norm_slack(&s1, &s2[i])?;
-                Ok((s1, slack, quotient(&product)))
-            })
-            .collect::<Result<Vec<_>, FalconError>>()?;
+        let signatures = map_products(public, &s2, |i, product| {
+            let mut s1 = [0; N];
+            let mut norm = 0;
+            let mut quotient = vec![0; N - 1];
+            for j in 0..N {
+                let high = product[N + j];
+                let centered = center(i64::from(public.targets[i][j]) - product[j] + high);
+                s1[j] = centered;
+                norm += i64::from(centered).unsigned_abs().pow(2);
+                norm += i64::from(s2[i][j]).unsigned_abs().pow(2);
+                if j < N - 1 {
+                    quotient[j] = (-high).rem_euclid(Q) as u16;
+                }
+            }
+            Ok((s1, checked_slack(norm)?, quotient))
+        })?;
         let mut s1 = Vec::with_capacity(layout.batch());
         let mut slacks = Vec::with_capacity(layout.batch());
         let mut quotients = Vec::with_capacity(layout.batch());
@@ -161,19 +166,21 @@ impl WitnessData {
         check_coefficients(&witness.s1)?;
         check_coefficients(&witness.s2)?;
         let slacks = check_norms(&witness)?;
-        let quotients = crate::utils::cfg_into_iter!(0..layout.batch())
-            .map(|i| {
-                let product = product(&public.public_keys[i], &witness.s2[i]);
-                for j in 0..N {
-                    let residual = i64::from(public.targets[i][j]) - product[j] + product[N + j]
-                        - i64::from(witness.s1[i][j]);
-                    if residual.rem_euclid(Q) != 0 {
-                        return Err(error("invalid algebraic ring witness"));
-                    }
+        let quotients = map_products(public, &witness.s2, |i, product| {
+            let mut quotient = vec![0; N - 1];
+            for j in 0..N {
+                let high = product[N + j];
+                let residual = i64::from(public.targets[i][j]) - product[j] + high
+                    - i64::from(witness.s1[i][j]);
+                if residual.rem_euclid(Q) != 0 {
+                    return Err(error("invalid algebraic ring witness"));
                 }
-                Ok(quotient(&product))
-            })
-            .collect::<Result<Vec<_>, FalconError>>()?;
+                if j < N - 1 {
+                    quotient[j] = (-high).rem_euclid(Q) as u16;
+                }
+            }
+            Ok(quotient)
+        })?;
         Ok(Self {
             witness,
             slacks,
@@ -182,29 +189,37 @@ impl WitnessData {
     }
 }
 
-fn product(h: &[u16; N], s2: &[i16; N]) -> Vec<i64> {
-    let left: Vec<_> = h.iter().map(|&x| i64::from(x)).collect();
-    let right: Vec<_> = s2.iter().map(|&x| i64::from(x)).collect();
-    integer_polynomial_product(&left, &right)
+fn map_products<T: Send>(
+    public: &FalconAlgebraicStatement,
+    s2: &[[i16; N]],
+    f: impl Fn(usize, &[i64]) -> Result<T, FalconError> + Send + Sync,
+) -> Result<Vec<T>, FalconError> {
+    #[cfg(feature = "parallel")]
+    {
+        (0..s2.len())
+            .into_par_iter()
+            .map_init(
+                || PolynomialWorkspace::new(N),
+                |workspace, i| f(i, workspace.product(&public.public_keys[i], &s2[i])),
+            )
+            .collect()
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        let mut workspace = PolynomialWorkspace::new(N);
+        (0..s2.len())
+            .map(|i| f(i, workspace.product(&public.public_keys[i], &s2[i])))
+            .collect()
+    }
 }
 
 fn centered_s1(target: &[u16; N], product: &[i64]) -> [i16; N] {
-    std::array::from_fn(|j| {
-        let residue = (i64::from(target[j]) - product[j] + product[N + j]).rem_euclid(Q);
-        (if residue > Q / 2 {
-            residue - Q
-        } else {
-            residue
-        }) as i16
-    })
+    std::array::from_fn(|j| center(i64::from(target[j]) - product[j] + product[N + j]))
 }
 
-fn quotient(product: &[i64]) -> Vec<u16> {
-    // t-h*s2-s1 = (X^N+1)D modulo q, with D = -high(h*s2).
-    product[N..2 * N - 1]
-        .iter()
-        .map(|&v| (-v).rem_euclid(Q) as u16)
-        .collect()
+fn center(value: i64) -> i16 {
+    let residue = value.rem_euclid(Q);
+    (if residue > Q / 2 { residue - Q } else { residue }) as i16
 }
 
 fn check_coefficients(vectors: &[[i16; N]]) -> Result<(), FalconError> {
@@ -233,6 +248,10 @@ fn norm_slack(s1: &[i16; N], s2: &[i16; N]) -> Result<u64, FalconError> {
         .chain(s2)
         .map(|&x| i64::from(x).unsigned_abs().pow(2))
         .sum();
+    checked_slack(norm)
+}
+
+fn checked_slack(norm: u64) -> Result<u64, FalconError> {
     if norm > BETA_SQUARED {
         return Err(FalconError::NormTooLarge {
             actual: norm,
@@ -464,6 +483,54 @@ mod tests {
         let mut cyclic = public.clone();
         cyclic.targets[0][0] = ((u32::from(cyclic.targets[0][0]) + 1) % Q as u32) as u16;
         assert!(check_algebraic_statement(&cyclic, &witness).is_err());
+    }
+
+    #[test]
+    fn batch_derivation_matches_distinct_schoolbook_witnesses() {
+        let batch = 9;
+        let mut public = FalconAlgebraicStatement {
+            public_keys: Vec::new(),
+            targets: Vec::new(),
+        };
+        let mut expected = FalconAlgebraicWitness {
+            s1: Vec::new(),
+            s2: Vec::new(),
+        };
+        let mut quotients = Vec::new();
+        for instance in 0..batch {
+            let h = std::array::from_fn(|j| ((j * 71 + instance * 311) % Q as usize) as u16);
+            let s1 = std::array::from_fn(|j| ((j + instance * 3) % 23) as i16 - 11);
+            let s2 = std::array::from_fn(|j| ((j * 7 + instance * 5) % 17) as i16 - 8);
+            let mut product = vec![0_i64; 2 * N];
+            for i in 0..N {
+                for j in 0..N {
+                    product[i + j] += i64::from(h[i]) * i64::from(s2[j]);
+                }
+            }
+            public.public_keys.push(h);
+            public.targets.push(std::array::from_fn(|j| {
+                (i64::from(s1[j]) + product[j] - product[N + j]).rem_euclid(Q) as u16
+            }));
+            quotients.push(
+                product[N..2 * N - 1]
+                    .iter()
+                    .map(|&x| (-x).rem_euclid(Q) as u16)
+                    .collect::<Vec<_>>(),
+            );
+            expected.s1.push(s1);
+            expected.s2.push(s2);
+        }
+        let derived = WitnessData::from_s2(&public, expected.s2.clone()).unwrap();
+        assert_eq!(derived.witness, expected);
+        assert_eq!(derived.quotients, quotients);
+        assert_eq!(derived.slacks, check_norms(&expected).unwrap());
+        let checked = WitnessData::new(&public, expected.clone()).unwrap();
+        assert_eq!(checked.quotients, quotients);
+        assert_eq!(checked.slacks, derived.slacks);
+        assert_eq!(
+            FalconAlgebraicWitness::from_s2(&public, expected.s2.clone()).unwrap(),
+            expected
+        );
     }
 
     #[test]

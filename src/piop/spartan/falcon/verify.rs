@@ -1,4 +1,4 @@
-use crate::piop::spartan::falcon_polynomial::integer_polynomial_product;
+use crate::piop::spartan::falcon_polynomial::PolynomialWorkspace;
 use super::{
     BETA_SQUARED, FalconError, FalconPublicKey, FalconSignatureCt, N, Q, decode_public_key,
     decode_signature_ct,
@@ -38,27 +38,25 @@ pub(super) fn trace_from_parts(
     hash_to_point: HashToPointTrace,
     fast_convolution: bool,
 ) -> Result<FalconVerificationTrace, FalconError> {
+    if fast_convolution {
+        return trace_from_parts_with_workspace(
+            public_key,
+            signature,
+            hash_to_point,
+            &mut PolynomialWorkspace::new(N),
+        );
+    }
     let mut convolution = Box::new([0i64; N]);
     let mut high_product = Box::new([0i64; N - 1]);
-    if fast_convolution {
-        let left: Vec<_> = public_key.h.iter().map(|&h| i64::from(h)).collect();
-        let right: Vec<_> = signature.s2.iter().map(|&s| i64::from(s)).collect();
-        let product = integer_polynomial_product(&left, &right);
-        for i in 0..N {
-            convolution[i] = product[i] - product[i + N];
-        }
-        high_product.copy_from_slice(&product[N..2 * N - 1]);
-    } else {
-        for (i, &h) in public_key.h.iter().enumerate() {
-            for (j, &s) in signature.s2.iter().enumerate() {
-                let product = i64::from(h) * i64::from(s);
-                let index = i + j;
-                if index < N {
-                    convolution[index] += product;
-                } else {
-                    convolution[index - N] -= product;
-                    high_product[index - N] += product;
-                }
+    for (i, &h) in public_key.h.iter().enumerate() {
+        for (j, &s) in signature.s2.iter().enumerate() {
+            let product = i64::from(h) * i64::from(s);
+            let index = i + j;
+            if index < N {
+                convolution[index] += product;
+            } else {
+                convolution[index - N] -= product;
+                high_product[index - N] += product;
             }
         }
     }
@@ -97,6 +95,48 @@ pub(super) fn trace_from_parts(
     })
 }
 
+pub(super) fn trace_from_parts_with_workspace(
+    public_key: FalconPublicKey,
+    signature: FalconSignatureCt,
+    hash_to_point: HashToPointTrace,
+    workspace: &mut PolynomialWorkspace,
+) -> Result<FalconVerificationTrace, FalconError> {
+    let product = workspace.product(public_key.h.as_slice(), signature.s2.as_slice());
+    let mut s1 = Box::new([0i16; N]);
+    let mut ring_quotient = Box::new([0u16; N - 1]);
+    let mut norm = 0u64;
+    for i in 0..N {
+        let difference = i64::from(hash_to_point.point[i]) - product[i] + product[i + N];
+        let residue = difference.rem_euclid(Q);
+        let centered = if residue > Q / 2 {
+            residue - Q
+        } else {
+            residue
+        };
+        s1[i] = centered as i16;
+        norm += centered.unsigned_abs().pow(2);
+        norm += i64::from(signature.s2[i]).unsigned_abs().pow(2);
+        if i < N - 1 {
+            ring_quotient[i] = (-product[i + N]).rem_euclid(Q) as u16;
+        }
+    }
+    if norm > BETA_SQUARED {
+        return Err(FalconError::NormTooLarge {
+            actual: norm,
+            bound: BETA_SQUARED,
+        });
+    }
+    Ok(FalconVerificationTrace {
+        public_key,
+        signature,
+        hash_to_point,
+        s1,
+        ring_quotient,
+        norm,
+        norm_slack: BETA_SQUARED - norm,
+    })
+}
+
 /// Verifies a Falcon-1024 CT signature.
 pub fn verify_falcon_ct(
     public_key: &[u8],
@@ -105,6 +145,92 @@ pub fn verify_falcon_ct(
 ) -> Result<(), FalconError> {
     verification_trace(public_key, message, signature).map(drop)
 }
+
+#[cfg(test)]
+mod workspace_tests {
+    use super::super::{KeccakTrace, hash_to_point::from_shake_words};
+    use super::*;
+
+    #[test]
+    fn reused_workspace_matches_schoolbook_trace() {
+        let mut workspace = PolynomialWorkspace::new(N);
+        for seed in 0..4 {
+            let public_key = FalconPublicKey {
+                h: Box::new(std::array::from_fn(|i| {
+                    ((i * 7_919 + seed * 97) % Q as usize) as u16
+                })),
+            };
+            let mut signature = FalconSignatureCt {
+                nonce: [seed as u8; 40],
+                s2: Box::new([0; N]),
+            };
+            signature.s2[0] = 2_047;
+            signature.s2[N / 2] = seed as i16 - 2;
+            signature.s2[N - 1] = -2_047;
+            let mut hash = from_shake_words(
+                Box::new([0; super::super::HASH_TO_POINT_SAMPLES]),
+                KeccakTrace::default(),
+            )
+            .unwrap();
+            // Construct small centered residuals independently from the three
+            // nonzero signature coefficients, including the negacyclic wrap.
+            let mut convolution = [0i64; N];
+            for (i, &h) in public_key.h.iter().enumerate() {
+                for j in [0, N / 2, N - 1] {
+                    let term = i64::from(h) * i64::from(signature.s2[j]);
+                    if i + j < N {
+                        convolution[i + j] += term;
+                    } else {
+                        convolution[i + j - N] -= term;
+                    }
+                }
+            }
+            for i in 0..N {
+                hash.point[i] = (convolution[i] + (i % 7) as i64 - 3).rem_euclid(Q) as u16;
+            }
+            let slow = trace_from_parts(public_key.clone(), signature.clone(), hash.clone(), false)
+                .unwrap();
+            let fast = trace_from_parts_with_workspace(public_key, signature, hash, &mut workspace)
+                .unwrap();
+            assert_eq!(fast, slow);
+        }
+    }
+
+    #[test]
+    fn fused_trace_preserves_excessive_norm_error() {
+        let public_key = FalconPublicKey {
+            h: Box::new([0; N]),
+        };
+        let signature = FalconSignatureCt {
+            nonce: [0; 40],
+            s2: Box::new([0; N]),
+        };
+        let mut hash = from_shake_words(
+            Box::new([0; super::super::HASH_TO_POINT_SAMPLES]),
+            KeccakTrace::default(),
+        )
+        .unwrap();
+        hash.point.fill((Q / 2) as u16);
+        let expected = Err(FalconError::NormTooLarge {
+            actual: N as u64 * (Q as u64 / 2).pow(2),
+            bound: BETA_SQUARED,
+        });
+        assert_eq!(
+            trace_from_parts(public_key.clone(), signature.clone(), hash.clone(), false),
+            expected
+        );
+        assert_eq!(
+            trace_from_parts_with_workspace(
+                public_key,
+                signature,
+                hash,
+                &mut PolynomialWorkspace::new(N)
+            ),
+            expected
+        );
+    }
+}
+
 falcon_tests! {
 mod tests {
     use super::*;
