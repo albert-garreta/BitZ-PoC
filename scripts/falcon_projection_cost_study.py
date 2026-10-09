@@ -8,7 +8,7 @@ This is an algebra/geometry study, not a prover or a timing benchmark.
 import json
 from random import Random
 
-from falcon_ring_count_study import FP, M, N, ROOT, decrease, fixture_trace, pad
+from falcon_ring_count_study import FP, M, N, decrease, fixture_trace, pad
 
 
 def evaluate(coefficients, point, modulus=FP):
@@ -210,20 +210,6 @@ def main():
     trace = fixture_trace()
     old = 198935
     samples = 16 * M
-    profile_path = ROOT / "bench_results/falcon-prime-inner-20260926/goal-profile-b1024-summary.json"
-    profile_summary = None
-    if profile_path.is_file():
-        profile = json.loads(profile_path.read_text())
-        stages, grinding = profile["stages"], profile["grinding"]
-        h2p = stages["falcon_arithmetic:hash_to_point_products"]
-        profile_summary = {
-            "h2p_products_including_grinding": h2p,
-            "h2p_products_excluding_nested_grinding": h2p - grinding["falcon_arithmetic:hash_to_point_products"],
-            "arithmetic_binding_including_ring_adjoint": stages["falcon_arithmetic:binding_inner"],
-            "prime_to_binary_bridge": stages["falcon_hybrid:binary_bridge"],
-            "joint_sumcheck": stages["falcon_hybrid:joint_sumcheck"],
-            "note": "Existing diagnostic profile only; no proposed protocol timed",
-        }
     per_signatures = []
     for bits in (old, 121058):
         per_signatures.append({"before_live_bits": bits, "after_live_bits": bits - samples,
@@ -258,7 +244,6 @@ def main():
             "schoolbook_coefficient_products_2048": 4*2048*2048,
             "degree_2047_operand_coefficient_bytes_nine_views": 9*2048*16,
             "note": "Schoolbook dense direct-backend model, not a lower bound or a timing prediction"},
-        "profile_ms_per_signature": profile_summary,
     }, indent=2))
 
 

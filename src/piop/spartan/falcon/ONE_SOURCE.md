@@ -182,14 +182,3 @@ challenge blocks. The activity-mask change adds no degree beyond the old
 constant-column identity test. Exact ledger tests cover every batch 1..1024
 at both targets. This is the repository's computational grinding model,
 separate from BLAKE3 collision security; the protocol does not provide ZK.
-
-## Qualification
-
-Full Falcon HashToPoint qualification against the archived baseline, including
-its timing, witness-size, and process-memory accounting, is described in
-[README.md](README.md).
-It uses both degrees, both security targets, batch 1,024, and threads 1/2/4/8/16.
-The fixed archived seed and five measured trials qualify only this input and
-sampling schedule. Source roots change with the new layout; protocol version
-and mask binding also change transcript challenges. Historical campaigns
-remain evidence for their own revisions; they do not qualify a new build.

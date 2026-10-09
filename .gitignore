@@ -72,3 +72,6 @@ __pycache__/
 /paper/*.run.xml
 /paper/*.synctex.gz
 /paper/*.toc
+
+# Falcon measurements are local output, not source.
+/results/falcon-*/
