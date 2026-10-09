@@ -3,7 +3,6 @@ use crate::pcs::IntegerMatrixLayout;
 #[cfg(test)]
 use crate::piop::spartan::falcon_bit_layout::{coefficient_bit, slack_bit};
 use crate::piop::spartan::falcon_polynomial::integer_polynomial_product;
-#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 /// Public keys and externally computed targets, each in F_12289[X]/(X^N+1).
@@ -266,14 +265,11 @@ impl Source {
         };
         let columns_per_signature = layout.signature_stride() / p.rows();
         let live = &mut source.rows[..layout.batch() * columns_per_signature];
-        if parallel {
-            #[cfg(feature = "parallel")]
-            if rayon::current_num_threads() > 1 {
-                live.par_chunks_mut(columns_per_signature)
-                    .enumerate()
-                    .for_each(|(i, columns)| pack_signature(columns, data, i));
-                return source;
-            }
+        if parallel && rayon::current_num_threads() > 1 {
+            live.par_chunks_mut(columns_per_signature)
+                .enumerate()
+                .for_each(|(i, columns)| pack_signature(columns, data, i));
+            return source;
         }
         for (i, columns) in live.chunks_mut(columns_per_signature).enumerate() {
             pack_signature(columns, data, i);
@@ -389,7 +385,6 @@ mod tests {
             }
             let reference = Source::new(layout, &data);
             assert_encoding(&reference, &data);
-            #[cfg(feature = "parallel")]
             for workers in [1, 2, 4, 8] {
                 let pool = rayon::ThreadPoolBuilder::new()
                     .num_threads(workers)

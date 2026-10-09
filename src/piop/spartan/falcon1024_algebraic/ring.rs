@@ -7,13 +7,12 @@ use field::{
     BatchMulAcc, FpLinearAcc, FpSignedLinearAcc, Reduce, RingOps, Uint,
     q12289::{PowerBasis, PowerCoordinates},
 };
-#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 use crate::{
     piop::spartan::{
         SpartanField,
-        falcon_extension::FalconExtension,
+        falcon_extension::{FalconExtension, absorb_extensions, equality_weights, sample_coordinates},
         grinding::{GrindingDomain, GrindingRound, grind_and_absorb, verify_and_absorb},
         squeeze_field,
     },
@@ -239,23 +238,8 @@ fn instance_weights(
 fn sample_extension(transcript: &mut impl Transcript, non_base: bool) -> Result<Ext, FalconError> {
     transcript.begin_sampling();
     for _ in 0..128 {
-        let mut coordinates = [0u16; EXTENSION_DEGREE];
-        for coordinate in &mut coordinates {
-            let mut accepted = false;
-            for _ in 0..128 {
-                let mut bytes = [0u8; 2];
-                transcript.fill_sampling_bytes(&mut bytes);
-                let candidate = u16::from_le_bytes(bytes);
-                if candidate < 5 * Q as u16 {
-                    *coordinate = candidate % Q as u16;
-                    accepted = true;
-                    break;
-                }
-            }
-            if !accepted {
-                return Err(error("algebraic ring field sampling exhausted"));
-            }
-        }
+        let coordinates = sample_coordinates::<EXTENSION_DEGREE>(transcript)
+            .ok_or_else(|| error("algebraic ring field sampling exhausted"))?;
         if !non_base || coordinates[1..].iter().any(|&coordinate| coordinate != 0) {
             let result = Ext::new(coordinates);
             absorb_extensions(transcript, &[result]);
@@ -265,17 +249,6 @@ fn sample_extension(transcript: &mut impl Transcript, non_base: bool) -> Result<
     Err(error("algebraic ring non-base sampling exhausted"))
 }
 
-fn absorb_extensions(transcript: &mut impl Transcript, values: &[Ext]) {
-    let mut bytes = Vec::with_capacity(8 + values.len() * EXTENSION_DEGREE * 2);
-    bytes.extend_from_slice(&(values.len() as u64).to_le_bytes());
-    for value in values {
-        for coordinate in value.0 {
-            bytes.extend_from_slice(&coordinate.to_le_bytes());
-        }
-    }
-    transcript.absorb_slice(&bytes);
-}
-
 fn absorb_carries(transcript: &mut impl Transcript, carries: &[i64; EXTENSION_DEGREE]) {
     transcript.absorb_slice(b"integer-coordinate-carries");
     let mut bytes = [0u8; 8 * EXTENSION_DEGREE];
@@ -283,19 +256,6 @@ fn absorb_carries(transcript: &mut impl Transcript, carries: &[i64; EXTENSION_DE
         chunk.copy_from_slice(&carry.to_le_bytes());
     }
     transcript.absorb_slice(&bytes);
-}
-
-fn equality_weights(point: &[Ext]) -> Vec<Ext> {
-    let mut weights = vec![Ext::ONE];
-    for &r in point.iter().rev() {
-        let mut next = Vec::with_capacity(2 * weights.len());
-        for weight in weights {
-            next.push(weight.mul(Ext::ONE.sub(r)));
-            next.push(weight.mul(r));
-        }
-        weights = next;
-    }
-    weights
 }
 
 fn certificate(quotients: &[Vec<u16>], lambda: &[Ext]) -> Vec<Ext> {
@@ -308,7 +268,6 @@ fn certificate(quotients: &[Vec<u16>], lambda: &[Ext]) -> Vec<Ext> {
         }
         Ext::new(sum.map(|x| (x % Q as u64) as u16))
     };
-    #[cfg(feature = "parallel")]
     if quotients.len() >= 8 {
         return (0..N - 1).into_par_iter().map(coefficient).collect();
     }
@@ -371,16 +330,9 @@ fn coordinates(
         // basis, canonically reduced before the exact signed integer lift.
         basis.fill_powers_pair([basis.encode(lambda[i]), basis.encode(lambda_h)], [a, b]);
     };
-    #[cfg(feature = "parallel")]
     s1.par_chunks_mut(N)
         .zip(s2.par_chunks_mut(N))
         .zip(targets.par_iter_mut())
-        .enumerate()
-        .for_each(fill);
-    #[cfg(not(feature = "parallel"))]
-    s1.chunks_mut(N)
-        .zip(s2.chunks_mut(N))
-        .zip(targets.iter_mut())
         .enumerate()
         .for_each(fill);
     let target = basis.encode(
@@ -456,14 +408,8 @@ fn collapse_claim(
         }
         field.reduce(sum)
     };
-    #[cfg(feature = "parallel")]
     let weights_s1 = coordinates.s1.par_iter().map(weight).collect();
-    #[cfg(not(feature = "parallel"))]
-    let weights_s1 = coordinates.s1.iter().map(weight).collect();
-    #[cfg(feature = "parallel")]
     let weights_s2 = coordinates.s2.par_iter().map(weight).collect();
-    #[cfg(not(feature = "parallel"))]
-    let weights_s2 = coordinates.s2.iter().map(weight).collect();
     // Eleven bounded signed coordinates share one mixed reduction; carries
     // remain native integers throughout this dot product.
     let mut target = FpSignedLinearAcc::<2, 2>::default();

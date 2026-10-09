@@ -5,7 +5,6 @@
 //! a degree-two sumcheck; its final bit evaluation must be opened by BitZ.
 
 use field::{BatchMulAcc, FpLinearAcc, Reduce, RingOps, WideMul};
-#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 #[cfg(test)]
@@ -397,10 +396,7 @@ enum BindingStrategy {
 }
 
 fn binding_workers() -> usize {
-    #[cfg(feature = "parallel")]
-    return rayon::current_num_threads();
-    #[cfg(not(feature = "parallel"))]
-    1
+    rayon::current_num_threads()
 }
 
 /// Keep unqualified worker counts and small batches on the original path.
@@ -498,21 +494,12 @@ impl<'a> BindingForm<'a> {
                     Ok(())
                 };
                 let [s1, s2] = &mut coefficients;
-                #[cfg(feature = "parallel")]
                 if parallel {
                     s1.par_chunks_mut(N)
                         .zip(s2.par_chunks_mut(N))
                         .enumerate()
                         .try_for_each(fill)?;
                 } else {
-                    s1.chunks_mut(N)
-                        .zip(s2.chunks_mut(N))
-                        .enumerate()
-                        .try_for_each(fill)?;
-                }
-                #[cfg(not(feature = "parallel"))]
-                {
-                    let _ = parallel;
                     s1.chunks_mut(N)
                         .zip(s2.chunks_mut(N))
                         .enumerate()
@@ -635,7 +622,6 @@ impl<'a> BindingForm<'a> {
                 value
             }
         };
-        #[cfg(feature = "parallel")]
         let values: Option<Vec<_>> = if parallel {
             Some(
                 (0..self.layout.batch())
@@ -644,11 +630,6 @@ impl<'a> BindingForm<'a> {
                     .collect(),
             )
         } else {
-            None
-        };
-        #[cfg(not(feature = "parallel"))]
-        let values: Option<Vec<F>> = {
-            let _ = parallel;
             None
         };
         let mut coefficient_value = self.field.zero();
@@ -818,19 +799,7 @@ impl StreamingCoefficientSource for BindingForm<'_> {
                 if !occupied[byte] {
                     continue;
                 }
-                let mut lo = low[byte];
-                let mut hi = self.field.reduce(self.field.mul_wide(&high[byte], &256u64));
-                let mut values = [zero; 8];
-                for lane in 0..7 {
-                    values[lane] = if lane == 6 {
-                        self.field.sub(&lo, &hi)
-                    } else {
-                        self.field.add(&lo, &hi)
-                    };
-                    lo = self.field.add(&lo, &lo);
-                    hi = self.field.add(&hi, &hi);
-                }
-                values[7] = self.field.add(&lo, &spare[byte]);
+                let values = signed15_byte_weights(low[byte], high[byte], spare[byte], self.field);
                 emit(byte as u8, &values)?;
             }
             Ok(())
@@ -906,7 +875,7 @@ impl StreamingCoefficientSource for BindingForm<'_> {
             for table in 0..3 {
                 for byte in 1..256 {
                     // Tables are C0 by h0, C1 by h1, and C0 by h1 + C1 by h0.
-                    let (mut lo, hi, spare) = match table {
+                    let (lo, hi, spare) = match table {
                         0 => (low[byte], zero, zero),
                         1 => (zero, high[byte], high_spare[byte]),
                         _ => (high[byte], low[byte], low_spare[byte]),
@@ -914,18 +883,7 @@ impl StreamingCoefficientSource for BindingForm<'_> {
                     if lo == zero && hi == zero && spare == zero {
                         continue;
                     }
-                    let mut hi = self.field.reduce(self.field.mul_wide(&hi, &256u64));
-                    let mut values = [zero; 8];
-                    for lane in 0..7 {
-                        values[lane] = if lane == 6 {
-                            self.field.sub(&lo, &hi)
-                        } else {
-                            self.field.add(&lo, &hi)
-                        };
-                        lo = self.field.add(&lo, &lo);
-                        hi = self.field.add(&hi, &hi);
-                    }
-                    values[7] = self.field.add(&lo, &spare);
+                    let values = signed15_byte_weights(lo, hi, spare, self.field);
                     emit(table, byte as u8, &values)?;
                 }
             }
@@ -1062,6 +1020,23 @@ impl BindingForm<'_> {
         }
         Ok(())
     }
+}
+
+#[inline]
+fn signed15_byte_weights(mut lo: F, hi: F, spare: F, field: &Cfg) -> [F; 8] {
+    let mut hi = field.reduce(field.mul_wide(&hi, &256u64));
+    let mut values = [field.zero(); 8];
+    for lane in 0..7 {
+        values[lane] = if lane == 6 {
+            field.sub(&lo, &hi)
+        } else {
+            field.add(&lo, &hi)
+        };
+        lo = field.add(&lo, &lo);
+        hi = field.add(&hi, &hi);
+    }
+    values[7] = field.add(&lo, &spare);
+    values
 }
 
 fn signed_decoder(weights: &[F], field: &Cfg) -> F {
@@ -1277,7 +1252,6 @@ mod tests {
 
     #[test]
     fn factored_construction_and_batched_evaluation_match_legacy() {
-        #[cfg(feature = "parallel")]
         let pools: Vec<_> = [1, 8]
             .into_iter()
             .map(|threads| {
@@ -1363,7 +1337,6 @@ mod tests {
                         }
                     };
                     check(false);
-                    #[cfg(feature = "parallel")]
                     for pool in &pools {
                         pool.install(|| check(true));
                     }

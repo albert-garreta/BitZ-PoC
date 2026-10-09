@@ -1,5 +1,7 @@
 //! Ring certificate and transcript operations shared by the Falcon reduction.
 use super::{FalconError, FalconVerificationTrace, N, Q};
+pub(super) use crate::piop::spartan::falcon_extension::{absorb_extensions, equality_weights};
+use crate::piop::spartan::falcon_extension::sample_coordinates;
 use crate::transcript::traits::Transcript;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -9,50 +11,11 @@ pub(super) type Ext = crate::piop::spartan::falcon_extension::FalconExtension<EX
 
 pub(super) fn sample_extension(transcript: &mut impl Transcript) -> Result<Ext, FalconError> {
     transcript.begin_sampling();
-    let mut coordinates = [0u16; EXTENSION_DEGREE];
-    for coordinate in &mut coordinates {
-        let mut accepted = false;
-        for _ in 0..128 {
-            let mut bytes = [0u8; 2];
-            transcript.fill_sampling_bytes(&mut bytes);
-            let candidate = u16::from_le_bytes(bytes);
-            if candidate < 5 * Q as u16 {
-                *coordinate = candidate % Q as u16;
-                accepted = true;
-                break;
-            }
-        }
-        if !accepted {
-            return Err(FalconError::Piop("ring field sampling exhausted".into()));
-        }
-    }
+    let coordinates = sample_coordinates::<EXTENSION_DEGREE>(transcript)
+        .ok_or_else(|| FalconError::Piop("ring field sampling exhausted".into()))?;
     let result = Ext::new(coordinates);
     absorb_extensions(transcript, &[result]);
     Ok(result)
-}
-
-pub(super) fn absorb_extensions(transcript: &mut impl Transcript, values: &[Ext]) {
-    let mut bytes = Vec::with_capacity(8 + values.len() * EXTENSION_DEGREE * 2);
-    bytes.extend_from_slice(&(values.len() as u64).to_le_bytes());
-    for value in values {
-        for coordinate in value.0 {
-            bytes.extend_from_slice(&coordinate.to_le_bytes());
-        }
-    }
-    transcript.absorb_slice(&bytes);
-}
-
-pub(super) fn equality_weights(point: &[Ext]) -> Vec<Ext> {
-    let mut weights = vec![Ext::ONE];
-    for &r in point.iter().rev() {
-        let mut next = Vec::with_capacity(2 * weights.len());
-        for weight in weights {
-            next.push(weight.mul(Ext::ONE.sub(r)));
-            next.push(weight.mul(r));
-        }
-        weights = next;
-    }
-    weights
 }
 
 pub(super) fn certificate(traces: &[FalconVerificationTrace], lambda: &[Ext]) -> Vec<Ext> {

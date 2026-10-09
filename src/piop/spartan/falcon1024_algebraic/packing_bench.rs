@@ -12,10 +12,7 @@ fn parallel() -> Result<bool, FalconError> {
         Err(std::env::VarError::NotPresent) => false,
         Err(e) => return Err(super::error(e)),
     };
-    #[cfg(feature = "parallel")]
     let workers = rayon::current_num_threads();
-    #[cfg(not(feature = "parallel"))]
-    let workers = 1;
     Ok(requested && workers > 1)
 }
 
