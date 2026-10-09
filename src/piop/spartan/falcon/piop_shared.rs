@@ -82,27 +82,6 @@ pub(super) fn verify_round_proofs<const FULL: usize, const COMPACT: usize, const
     Ok((point, claims))
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in super::super) struct NormClaimRef<'a> {
-    pub instance_point: &'a [F],
-    pub terminal: F,
-    pub slack: F,
-    pub point: &'a [F],
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in super::super) struct HashToPointRejectionClaimRef<'a> {
-    pub point: &'a [F],
-    pub terminal: &'a [F; 3],
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in super::super) struct FalconPiopClaimRef<'a> {
-    pub modulus: u128,
-    pub norm: NormClaimRef<'a>,
-    pub h2p_rejection: HashToPointRejectionClaimRef<'a>,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in super::super) struct NormClaims {
     pub instance_point: Vec<F>,
@@ -122,24 +101,6 @@ pub(in super::super) struct FalconPiopClaims {
     pub modulus: u128,
     pub norm: NormClaims,
     pub h2p_rejection: HashToPointRejectionClaims,
-}
-
-impl FalconPiopClaims {
-    pub fn as_claim_ref(&self) -> FalconPiopClaimRef<'_> {
-        FalconPiopClaimRef {
-            modulus: self.modulus,
-            norm: NormClaimRef {
-                instance_point: &self.norm.instance_point,
-                terminal: self.norm.terminal,
-                slack: self.norm.slack,
-                point: &self.norm.point,
-            },
-            h2p_rejection: HashToPointRejectionClaimRef {
-                point: &self.h2p_rejection.point,
-                terminal: &self.h2p_rejection.terminal,
-            },
-        }
-    }
 }
 
 /// A single cubic integer outer proof. The public S2 norm is part of the target;

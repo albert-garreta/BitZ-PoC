@@ -15,8 +15,8 @@ digest binds the derived bridge numerator and grinding difficulty.
 
 ## Scope and model
 
-This calculation applies to the adapter in `hybrid_bridge::{prove, verify}`
-and the arity-two BitZ forest/GKR it invokes. It uses the repository's
+This calculation applies to the shared `integer_bridge::{prove, verify}`
+implementation and the arity-two BitZ forest/GKR it invokes. It uses the repository's
 existing computational grinding model: a challenge block with raw error `e`
 and difficulty `g` contributes `e * 2^-g` per unit of adversarial work. It does
 not claim that grinding improves unconditional interactive soundness, nor add
@@ -260,7 +260,6 @@ independent cryptographic audit of the global Fiat-Shamir model.
 
 ## Code paths
 
-- [`hybrid_bridge.rs`](hybrid_bridge.rs): Falcon layout/source adapter.
 - [`src/hybrid/integer_bridge.rs`](../../../hybrid/integer_bridge.rs):
   `limb_width`, `weight_limbs`, magnitude/read-off checks, root derivation,
   interleaved source/images, forest adapter, endpoint contraction, shape

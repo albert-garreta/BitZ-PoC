@@ -39,7 +39,7 @@ use super::{
     FalconSourceWitness, FalconVerificationTrace, HASH_TO_POINT_SAMPLES, N, Q, decode_public_key,
     decode_signature_ct, encode_signature_ct,
     hash_to_point_selection::Selection,
-    piop::{FalconPiopClaimRef, security_schedule},
+    piop::{FalconPiopClaims, security_schedule},
 };
 
 #[path = "opening_compact.rs"]
@@ -189,7 +189,7 @@ pub(super) fn prove_binding_prefix(
         layout,
         statement,
         &selection,
-        algebraic.as_claim_ref(),
+        &algebraic,
         &linear_point,
         &field,
     )?;
@@ -333,7 +333,7 @@ pub(super) fn verify_binding_prefix(
         layout,
         statement,
         &selection,
-        algebraic.as_claim_ref(),
+        &algebraic,
         &linear_point,
         &field,
     )?;
@@ -445,7 +445,7 @@ struct BindingForm<'a> {
     layout: &'a FalconSourceLayout,
     statement: &'a FalconPublicStatement,
     selection: &'a Selection,
-    proof: FalconPiopClaimRef<'a>,
+    proof: &'a FalconPiopClaims,
     field: &'a Cfg,
     #[cfg(test)]
     linear_weights: crate::poly::mle::EqualityWeights<F>,
@@ -527,7 +527,7 @@ fn prepare_binding_form<'a>(
     layout: &'a FalconSourceLayout,
     statement: &'a FalconPublicStatement,
     selection: &'a Selection,
-    proof: FalconPiopClaimRef<'a>,
+    proof: &'a FalconPiopClaims,
     linear_point: &[F],
     field: &'a Cfg,
 ) -> Result<BindingForm<'a>, FalconError> {
@@ -763,7 +763,7 @@ fn add_norm_claims_prepared(
     scale: &mut F,
     eta: F,
     layout: &FalconSourceLayout,
-    proof: FalconPiopClaimRef<'_>,
+    proof: &FalconPiopClaims,
     field: &Cfg,
     weights: &crate::poly::mle::EqualityWeights<F>,
     instance_weights: &[F],

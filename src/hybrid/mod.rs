@@ -97,6 +97,9 @@ pub struct HybridProof {
     opening: opening::Proof,
 }
 
+/// One normalized linear claim in packed-address order:
+/// `sum_i z[i] * low[i % 128] * eq(high_point, i / 128) = value`.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct BinaryClaim {
     pub low: Vec<Gf128>,
     pub high_point: Vec<Gf128>,

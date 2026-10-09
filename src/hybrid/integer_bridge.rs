@@ -239,7 +239,7 @@ pub(crate) fn prove(
     grinding_bits: u32,
     row_weights: &[u128],
 ) -> Result<(Proof, BinaryClaim), FalconError> {
-    Shape::new(p.row_vars, p.col_vars).map_err(|_| err("bridge fold shape"))?;
+    let shape = Shape::new(p.row_vars, p.col_vars).map_err(|_| err("bridge fold shape"))?;
     if rows.len() != p.cols() || rows.iter().any(|column| column.len() != p.rows() / 64) {
         return Err(err("bridge source shape"));
     }
@@ -257,7 +257,6 @@ pub(crate) fn prove(
     let chunks = weight_limbs(row_weights, limb_width(p))?;
     checked_split_weight_sum(&chunks)?;
     let fold_span = tracing::info_span!("falcon_bridge:integer_folds").entered();
-    let shape = Shape::new(p.row_vars, p.col_vars).map_err(|_| err("bridge fold shape"))?;
     let sums = fold_columns(&shape, rows, &chunks);
     drop(fold_span);
     bind(t, &sums);

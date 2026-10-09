@@ -61,7 +61,7 @@ impl FalconHybridProof {
         for &nonce in linear_point_nonce.iter().chain(binding_nonces) {
             visit("prime_binder", nonce);
         }
-        let hybrid_bridge::Proof {
+        let integer_bridge::Proof {
             sums: _,
             forest: _,
             nonces,
@@ -294,8 +294,8 @@ fn arithmetic_bytes(proof: &FalconBindingPrefixProof) -> usize {
         + NONCE_BYTES * binding_nonces.len()
 }
 
-fn bridge_bytes(proof: &hybrid_bridge::Proof) -> usize {
-    let hybrid_bridge::Proof {
+fn bridge_bytes(proof: &integer_bridge::Proof) -> usize {
+    let integer_bridge::Proof {
         sums,
         forest,
         nonces,
@@ -333,7 +333,7 @@ mod tests {
 
     #[test]
     fn bridge_payload_counts_each_integer_sum_and_binary_pair() {
-        let proof = hybrid_bridge::Proof {
+        let proof = integer_bridge::Proof {
             sums: crate::bitz::column_sums::ColumnSums::Split(vec![
                 crate::bitz::column_sums::LargeNumber { lower: 1, upper: 4 },
                 crate::bitz::column_sums::LargeNumber { lower: 2, upper: 5 },

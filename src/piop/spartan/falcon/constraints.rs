@@ -43,11 +43,6 @@ impl FalconConstraintCounts {
         self.public_input_bindings + self.hash_to_point_linear
     }
 
-    /// Number of variables in the batched coefficient domain.
-    pub fn coefficient_vars(layout: &FalconSourceLayout) -> usize {
-        N.trailing_zeros() as usize + layout.capacity().trailing_zeros() as usize
-    }
-
     /// The factored instance equality times the square has individual degree three.
     pub const fn norm_round_degree(self) -> usize {
         3

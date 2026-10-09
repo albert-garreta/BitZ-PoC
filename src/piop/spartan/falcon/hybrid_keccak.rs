@@ -6,8 +6,6 @@
 // its shared opening. Neither the nonce nor a public digest is absorbed here.
 // This prefix alone is not a SHAKE proof and does not provide zero knowledge.
 
-pub(crate) mod grinding;
-
 use flock_core::{
     field::Gf128,
     lincheck::{LincheckCircuit, LincheckProof},
@@ -18,11 +16,14 @@ use flock_core::{
 use flock_prover::r1cs_hashes::keccak as compact;
 
 use crate::{
+    hybrid::{
+        BinaryClaim,
+        block_grinding::{ProverBlockGrindingTranscript, VerifierBlockGrindingTranscript},
+    },
     ligerito_flock::ZincChallenger,
     piop::spartan::grinding::{GrindingDomain, GrindingError},
     transcript::traits::Transcript,
 };
-use grinding::{ProverBlockGrindingTranscript, VerifierBlockGrindingTranscript};
 
 pub(crate) const PERMUTATIONS: usize = super::PARAMETERS.permutations();
 pub(crate) const RATE_BYTES: usize = 136;
@@ -38,15 +39,6 @@ pub(crate) enum KeccakError {
     Verification(String),
     #[error(transparent)]
     Grinding(#[from] GrindingError),
-}
-
-/// One normalized linear claim in packed-address order:
-/// `sum_i z[i] * low[i % 128] * eq(high_point, i / 128) = value`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct BinaryLinearClaim {
-    pub(crate) low: Vec<Gf128>,
-    pub(crate) high_point: Vec<Gf128>,
-    pub(crate) value: Gf128,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -337,7 +329,7 @@ impl PreparedKeccak {
         statement_digest: &[u8; 32],
         transcript: &mut T,
         component_bits: u32,
-    ) -> Result<(PrefixProof, [BinaryLinearClaim; 2], [Vec<Gf128>; 2]), KeccakError> {
+    ) -> Result<(PrefixProof, [BinaryClaim; 2], [Vec<Gf128>; 2]), KeccakError> {
         let n = 1usize << self.packed_vars();
         if packed.len() != n
             || auxiliary.a.len() != n
@@ -401,7 +393,7 @@ impl PreparedKeccak {
         statement_digest: &[u8; 32],
         transcript: &mut T,
         component_bits: u32,
-    ) -> Result<[BinaryLinearClaim; 2], KeccakError> {
+    ) -> Result<[BinaryClaim; 2], KeccakError> {
         let security = self.security(component_bits)?;
         let expected_nonces = if security.grinding_bits == 0 {
             0
@@ -462,7 +454,7 @@ pub(crate) fn initial_state(nonce: &[u8; 40], message: &[u8; 32]) -> [u64; 25] {
 /// Both Flock layouts expose ZClaim suffixes in physical address order.
 /// The first suffix coordinate is address bit 6; combining it with the
 /// arbitrary 64 skip weights gives exactly one 128-entry packed-word form.
-fn normalize_claim(claim: &ZClaim, bit_vars: usize) -> Result<BinaryLinearClaim, KeccakError> {
+fn normalize_claim(claim: &ZClaim, bit_vars: usize) -> Result<BinaryClaim, KeccakError> {
     let suffix = claim
         .point
         .x_inner_rest
@@ -480,7 +472,7 @@ fn normalize_claim(claim: &ZClaim, bit_vars: usize) -> Result<BinaryLinearClaim,
         low[index] = weight * (Gf128::ONE + bit6);
         low[index + 64] = weight * bit6;
     }
-    Ok(BinaryLinearClaim {
+    Ok(BinaryClaim {
         low,
         high_point: suffix[1..].to_vec(),
         value: claim.value,
@@ -515,7 +507,7 @@ mod tests {
         })
     }
 
-    fn evaluate(packed: &[Gf128], claim: &BinaryLinearClaim) -> Gf128 {
+    fn evaluate(packed: &[Gf128], claim: &BinaryClaim) -> Gf128 {
         let high = flock_core::lincheck::build_eq_table(&claim.high_point);
         packed
             .iter()

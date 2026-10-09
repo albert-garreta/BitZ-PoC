@@ -12,11 +12,7 @@ mod hash_to_point_selection;
 #[cfg(feature = "falcon-hybrid")]
 mod hybrid;
 #[cfg(feature = "falcon-hybrid")]
-mod hybrid_bridge;
-#[cfg(feature = "falcon-hybrid")]
 mod hybrid_keccak;
-#[cfg(feature = "falcon-hybrid")]
-mod hybrid_sumcheck;
 mod keccak;
 mod layout;
 #[cfg(feature = "falcon-hybrid")]

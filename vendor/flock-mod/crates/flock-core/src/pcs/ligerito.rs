@@ -3283,12 +3283,6 @@ impl<'a> SumcheckProver<'a> {
         &self.f
     }
 
-    /// Current (materialized) array length; a pending lookahead fold is not
-    /// yet applied to it.
-    pub fn f_len(&self) -> usize {
-        self.f.len()
-    }
-
     pub fn has_pending_fold(&self) -> bool {
         self.pending_fold.is_some()
     }

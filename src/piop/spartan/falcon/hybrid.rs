@@ -4,17 +4,16 @@ use super::{KECCAK_SLABS, N, PARAMETERS, SOURCE_COUNT};
 // Non-ZK Falcon composition with compact binary Keccak and one shared PCS opening.
 use super::{
     FalconError, FalconPublicStatement, FalconSourceLayout, FalconSourceWitness,
-    FalconVerificationTrace, KeccakTrace, encode_signature_ct, hybrid_bridge,
-    hybrid_keccak::{
-        self, KeccakAuxiliary, PreparedKeccak,
-        grinding::{ProverBlockGrindingTranscript, VerifierBlockGrindingTranscript},
-    },
-    hybrid_sumcheck::{self as joint, Coefficients, Gather, Tensor},
+    FalconVerificationTrace, KeccakTrace, encode_signature_ct,
+    hybrid_keccak::{self, KeccakAuxiliary, PreparedKeccak},
     opening::{FalconBindingPrefixProof, prove_binding_prefix, verify_binding_prefix},
 };
 use crate::{
     hybrid::{
         BinaryClaim,
+        block_grinding::{ProverBlockGrindingTranscript, VerifierBlockGrindingTranscript},
+        integer_bridge,
+        joint_sumcheck::{self as joint, Coefficients, Gather, Tensor},
         opening::{
             self as shared,
             grinding::{GrindingContext, GrindingNonces},
@@ -93,7 +92,7 @@ fn fixed_terms(layout: &FalconSourceLayout, target_bits: usize) -> Vec<(&'static
 /// Ledger terms of the binary groups and Ligerito, at their allocated work.
 fn allocated_terms(
     layout: &FalconSourceLayout,
-    bridge_mode: hybrid_bridge::BridgeMode,
+    bridge_mode: integer_bridge::BridgeMode,
     keccak: &[PreparedKeccak; KECCAK_SLABS],
     geometry: &shared::Geometry<SOURCE_COUNT>,
     grinding: &BinaryGrinding,
@@ -104,7 +103,7 @@ fn allocated_terms(
         (
             "batched integer-to-binary forest",
             binary(
-                hybrid_bridge::error_numerator(layout, bridge_mode),
+                integer_bridge::error_numerator(&layout.bitz_params(), bridge_mode),
                 grinding.bridge,
             ),
         ),
@@ -143,7 +142,7 @@ fn allocated_terms(
 /// under the budget left by the fixed terms (see [`ALLOCATION_BUDGET`]).
 fn allocate_grinding(
     layout: &FalconSourceLayout,
-    bridge_mode: hybrid_bridge::BridgeMode,
+    bridge_mode: integer_bridge::BridgeMode,
     keccak: &[PreparedKeccak; KECCAK_SLABS],
     geometry: &shared::Geometry<SOURCE_COUNT>,
     ligerito: &ResolvedLigerito,
@@ -157,8 +156,11 @@ fn allocate_grinding(
     let bit_log = geometry.bit_log();
     let mut groups = vec![
         GrindingGroup {
-            raw_error: gf(hybrid_bridge::error_numerator(layout, bridge_mode)),
-            sites: hybrid_bridge::grinding_sites(layout) as f64,
+            raw_error: gf(integer_bridge::error_numerator(
+                &layout.bitz_params(),
+                bridge_mode,
+            )),
+            sites: integer_bridge::message_count(&layout.bitz_params()) as f64,
             min_bits: 0,
         },
         GrindingGroup {
@@ -262,7 +264,7 @@ pub struct PreparedFalconHybrid {
     geometry: shared::Geometry<SOURCE_COUNT>,
     target_bits: usize,
     max_batch: usize,
-    bridge_mode: hybrid_bridge::BridgeMode,
+    bridge_mode: integer_bridge::BridgeMode,
     ligerito: ResolvedLigerito,
     pcs_grinding: GrindingPlan,
     grinding: BinaryGrinding,
@@ -283,7 +285,7 @@ pub struct CommittedFalconHybrid {
 #[derive(Clone, Debug)]
 pub struct FalconHybridProof {
     arithmetic: FalconBindingPrefixProof,
-    bridge: hybrid_bridge::Proof,
+    bridge: integer_bridge::Proof,
     keccak: [hybrid_keccak::PrefixProof; KECCAK_SLABS],
     links_nonces: Vec<u64>,
     joint: joint::Proof,
@@ -306,9 +308,9 @@ impl PreparedFalconHybrid {
         }
         let layout = FalconSourceLayout::new(batch)?;
         let bridge_mode = if target_bits == 100 {
-            hybrid_bridge::BridgeMode::Unsplit
+            integer_bridge::BridgeMode::Unsplit
         } else {
-            hybrid_bridge::BridgeMode::TwoLimbs
+            integer_bridge::BridgeMode::TwoLimbs
         };
         let keccak: [PreparedKeccak; KECCAK_SLABS] = (0..KECCAK_SLABS)
             .map(|i| {
@@ -355,7 +357,7 @@ impl PreparedFalconHybrid {
             grinding,
             scratch: Mutex::default(),
         };
-        hybrid_bridge::validate_layout(
+        integer_bridge::validate_layout(
             &prepared.layout.bitz_params(),
             bridge_mode,
             prepared.prime_modulus_bounds().1,
@@ -381,8 +383,8 @@ impl PreparedFalconHybrid {
     /// The bridge is selected from validated public parameters, never proof shape.
     pub fn integer_bridge_name(&self) -> &'static str {
         match self.bridge_mode {
-            hybrid_bridge::BridgeMode::Unsplit => "wfbitz-unsplit",
-            hybrid_bridge::BridgeMode::TwoLimbs => "wfbitz-joint-limbs",
+            integer_bridge::BridgeMode::Unsplit => "wfbitz-unsplit",
+            integer_bridge::BridgeMode::TwoLimbs => "wfbitz-joint-limbs",
         }
     }
 
@@ -600,7 +602,8 @@ impl PreparedFalconHybrid {
         }
         // The bridge schedule is public and deterministic, but bind it explicitly
         // so proofs cannot be replayed under a different bridge error budget.
-        let bridge_numerator = hybrid_bridge::error_numerator(&self.layout, self.bridge_mode);
+        let bridge_numerator =
+            integer_bridge::error_numerator(&self.layout.bitz_params(), self.bridge_mode);
         h.update(&(bridge_numerator as u64).to_le_bytes());
         h.update(&self.grinding.bridge.to_le_bytes());
         h.update(b"grinding:work-optimal-binary-and-pcs-allocation;budget=15/16/v1");
@@ -663,9 +666,10 @@ impl PreparedFalconHybrid {
         )?;
         drop(arithmetic_span);
         let bridge_span = tracing::info_span!("falcon_hybrid:binary_bridge").entered();
-        let (bridge, a) = hybrid_bridge::prove(
+        let (bridge, a) = integer_bridge::prove(
             &mut t,
-            &committed.arithmetic,
+            &committed.arithmetic.layout().bitz_params(),
+            committed.arithmetic.rows(),
             self.bridge_mode,
             &bridge_claim.point,
             bridge_claim.modulus,
@@ -690,11 +694,7 @@ impl PreparedFalconHybrid {
                 )
                 .map_err(error)?;
             prefixes.push(proof);
-            k.push(claims.map(|c| BinaryClaim {
-                low: c.low,
-                high_point: c.high_point,
-                value: c.value,
-            }));
+            k.push(claims);
             marginals.push(cached);
         }
         let keccak = prefixes.try_into().expect("profile Keccak slabs");
@@ -779,9 +779,9 @@ impl PreparedFalconHybrid {
             &proof.arithmetic,
             self.target_bits,
         )?;
-        let a = hybrid_bridge::verify(
+        let a = integer_bridge::verify(
             &mut t,
-            &self.layout,
+            &self.layout.bitz_params(),
             self.bridge_mode,
             &bridge_claim.point,
             proof.arithmetic.binding_terminal[1],
@@ -800,11 +800,7 @@ impl PreparedFalconHybrid {
                     self.keccak[slab].component_for_bits(self.grinding.keccak[slab]),
                 )
                 .map_err(error)?;
-            k.push(claims.map(|c| BinaryClaim {
-                low: c.low,
-                high_point: c.high_point,
-                value: c.value,
-            }));
+            k.push(claims);
         }
         let k: [[BinaryClaim; 2]; KECCAK_SLABS] = k
             .try_into()
@@ -1275,8 +1271,10 @@ mod tests {
                 let prepared = PreparedFalconHybrid::prepare(batch, target, 1024).unwrap();
                 let security = prepared.security();
                 assert!(security.algebraic_bits >= target as f64 + margin - 1e-9);
-                let numerator =
-                    hybrid_bridge::error_numerator(&prepared.layout, prepared.bridge_mode);
+                let numerator = integer_bridge::error_numerator(
+                    &prepared.layout.bitz_params(),
+                    prepared.bridge_mode,
+                );
                 let bits = prepared.grinding.bridge;
                 let bridge_error = security
                     .terms
@@ -1348,7 +1346,10 @@ mod tests {
                 }
                 let g = prepared.grinding;
                 let mut binary = vec![
-                    (hybrid_bridge::error_numerator(&layout, prepared.bridge_mode), g.bridge),
+                    (
+                        integer_bridge::error_numerator(&layout.bitz_params(), prepared.bridge_mode),
+                        g.bridge,
+                    ),
                     (LINK_ERROR_NUMERATOR, g.links),
                     (2 * prepared.geometry.bit_log(), g.joint),
                     (256, g.opening),

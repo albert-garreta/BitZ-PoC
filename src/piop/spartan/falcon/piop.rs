@@ -25,7 +25,7 @@ type Cfg = <F as SpartanField>::Config;
 mod shared;
 use shared::{CompactSumcheck, verify_round_proofs};
 pub(super) use shared::{
-    FalconPiopClaimRef, FalconPiopClaims, FalconPiopProof, HashToPointRejectionClaims, NormClaims,
+    FalconPiopClaims, FalconPiopProof, HashToPointRejectionClaims, NormClaims,
 };
 /// Prime-field numerators, excluding the native ring and binary-field stages.
 /// The five binder endpoints are S1, slack, and three rejection row claims.

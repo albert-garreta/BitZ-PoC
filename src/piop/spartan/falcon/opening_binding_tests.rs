@@ -185,7 +185,7 @@ fn add_norm_claims(
     scale: &mut F,
     eta: F,
     layout: &FalconSourceLayout,
-    proof: FalconPiopClaimRef<'_>,
+    proof: &FalconPiopClaims,
     field: &Cfg,
 ) -> Result<(), FalconError> {
     let weights = factored_weights(&proof.norm.point, field)?;
@@ -212,10 +212,10 @@ fn add_rejection_claims(
     scale: &mut F,
     eta: F,
     layout: &FalconSourceLayout,
-    proof: FalconPiopClaimRef<'_>,
+    proof: &FalconPiopClaims,
     field: &Cfg,
 ) -> Result<(), FalconError> {
-    let weights = factored_weights(proof.h2p_rejection.point, field)?;
+    let weights = factored_weights(&proof.h2p_rejection.point, field)?;
     let offsets = layout.offsets();
     for coordinate in 0..3 {
         for instance in coefficients.instances(layout.batch()) {
@@ -359,7 +359,7 @@ fn streaming_binding_forms_match_independent_bit_oracle() {
         &layout,
         &statement,
         &selection,
-        claims.as_claim_ref(),
+        &claims,
         &linear_point,
         &field,
     )
@@ -476,7 +476,7 @@ fn five_factored_local_forms_match_dense_padded_batch_without_instance_caches() 
             &layout,
             &statement,
             &selection,
-            proof.as_claim_ref(),
+            &proof,
             &point(linear_rounds(&layout), &field),
             &field,
         )
@@ -523,7 +523,7 @@ fn factored_overlay_matches_dense_sumcheck_and_endpoint() {
         &layout,
         &statement,
         &selection,
-        claims.as_claim_ref(),
+        &claims,
         &point(linear_rounds(&layout), &field),
         &field,
     )
@@ -677,7 +677,7 @@ fn binding_matches_dense_reference_at_degenerate_points() {
                 &layout,
                 &statement,
                 &selection,
-                proof.as_claim_ref(),
+                &proof,
                 &linear_point,
                 &field,
             )
@@ -771,7 +771,7 @@ fn compact_binding_targets_match_constants_oracle_at_boolean_points() {
                     &layout,
                     &statement,
                     &selection,
-                    proof.as_claim_ref(),
+                    &proof,
                     &linear_point,
                     &field,
                 )
@@ -800,7 +800,7 @@ fn binding_preserves_inner_sumcheck_transcript() {
         &layout,
         &statement,
         &selection,
-        proof.as_claim_ref(),
+        &proof,
         &linear_point,
         &field,
     )
@@ -976,7 +976,7 @@ fn public_signature_bytes_are_constrained_to_the_committed_source() {
                 &layout,
                 public,
                 &selection,
-                proof.as_claim_ref(),
+                &proof,
                 &linear_point,
                 &field,
             )
@@ -1258,7 +1258,7 @@ fn public_selection_enforces_first_accepted_and_distinct_remainder_decoders() {
             &layout,
             &statement,
             selection,
-            claims.as_claim_ref(),
+            &claims,
             &linear_point,
             &field,
         )
@@ -1372,7 +1372,7 @@ fn check_norm_binding(layout: FalconSourceLayout) {
             &mut scale,
             eta,
             &layout,
-            proof.as_claim_ref(),
+            &proof,
             &field,
         )
         .unwrap();
@@ -1421,8 +1421,7 @@ fn rejection_transpose_authenticates_raw_bits_and_each_terminal() {
         }
     }
     let eta = unsigned(19, &field);
-    let prepared =
-        rejection::RejectionWeights::new(&layout, proof.as_claim_ref(), eta, &field).unwrap();
+    let prepared = rejection::RejectionWeights::new(&layout, &proof, eta, &field).unwrap();
     let mut dense = DenseSink::new(layout.source_bits(), &field);
     prepared.emit(&mut dense, &layout, &field);
     let dot = dense
@@ -1443,7 +1442,7 @@ fn rejection_transpose_authenticates_raw_bits_and_each_terminal() {
             field.add(&bad.h2p_rejection.terminal[coordinate], &field.one());
         assert_ne!(
             dot,
-            rejection::RejectionWeights::new(&layout, bad.as_claim_ref(), eta, &field)
+            rejection::RejectionWeights::new(&layout, &bad, eta, &field)
                 .unwrap()
                 .target()
         );
@@ -1456,7 +1455,7 @@ fn rejection_weights_require_exact_row_point_dimensions() {
     let layout = FalconSourceLayout::new(3).unwrap();
     let proof = complete_claim_fixture(&layout, &field);
     let eta = unsigned(19, &field);
-    assert!(rejection::RejectionWeights::new(&layout, proof.as_claim_ref(), eta, &field).is_ok());
+    assert!(rejection::RejectionWeights::new(&layout, &proof, eta, &field).is_ok());
     for mutation in 0..3 {
         let mut bad = proof.clone();
         match mutation {
@@ -1471,8 +1470,6 @@ fn rejection_weights_require_exact_row_point_dimensions() {
             }
             _ => unreachable!(),
         }
-        assert!(
-            rejection::RejectionWeights::new(&layout, bad.as_claim_ref(), eta, &field).is_err()
-        );
+        assert!(rejection::RejectionWeights::new(&layout, &bad, eta, &field).is_err());
     }
 }

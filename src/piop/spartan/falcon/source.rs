@@ -244,10 +244,6 @@ impl FalconSourceWitness {
         super::constraints::check_public_key_bindings(self, public_keys)
     }
 
-    pub fn into_rows(self) -> Vec<Vec<u64>> {
-        self.rows
-    }
-
     pub fn bit(&self, flat: usize) -> bool {
         let p = self.layout.bitz_params();
         let b = flat & (p.rows() - 1);

@@ -12,7 +12,7 @@ pub(super) struct RejectionWeights {
 impl RejectionWeights {
     pub(super) fn new(
         layout: &FalconSourceLayout,
-        proof: FalconPiopClaimRef<'_>,
+        proof: &FalconPiopClaims,
         eta: F,
         field: &Cfg,
     ) -> Result<Self, FalconError> {

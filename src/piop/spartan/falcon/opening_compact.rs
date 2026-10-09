@@ -893,8 +893,8 @@ impl BindingForm<'_> {
         }
         let field = self.field;
         let weights = PreparedWeights {
-            norm: factored_weights(self.proof.norm.point, field)?,
-            norm_instances: eq_table(self.proof.norm.instance_point, field)
+            norm: factored_weights(&self.proof.norm.point, field)?,
+            norm_instances: eq_table(&self.proof.norm.instance_point, field)
                 .map_err(|error| piop(error.to_string()))?,
             rejection: rejection::RejectionWeights::new(self.layout, self.proof, self.eta, field)?,
         };
