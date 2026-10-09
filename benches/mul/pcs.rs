@@ -180,7 +180,7 @@ fn loop_trials(
         run.begin_memory();
         let recording = run
             .latency()
-            .then(|| ::bitz::observability::Recording::start(Vec::new()))
+            .then(|| ::bitz::observability::Recording::start())
             .transpose()?;
         let sizes = trial(mix_seed(seed ^ tag ^ (i as u64).rotate_left(17)))?;
         run.end_memory();

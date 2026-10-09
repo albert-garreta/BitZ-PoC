@@ -129,7 +129,7 @@ fn run_once(
     vc: &flock_core::pcs::ligerito::VerifierConfig,
 ) -> RepTiming {
     let recording =
-        bitz::observability::Recording::start(Vec::new()).expect("start SHA chain trial");
+        bitz::observability::Recording::start().expect("start SHA chain trial");
 
     let e2e = tracing::info_span!("chain:witness_to_proof").entered();
     // Witness synthesis (the native chain, the per-compression circuit
@@ -208,7 +208,7 @@ fn bench_shape<P: IopSecurityProfile>(
     let slug = format!("chain-2p{exponent}");
 
     let setup_started_recording =
-        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+        bitz::observability::Recording::start().expect("start operation capture");
     let setup_started = tracing::info_span!("sha256_chain:setup_started").entered();
     let prepared = match prepare_sha256_chain_batch_with_profile::<P>(exponent)
         .and_then(|p| p.with_ligerito(common::ligerito_selection(P::LIGERITO_TARGET_BITS)))
@@ -362,7 +362,7 @@ fn main() {
     let profile = selected.unwrap_or(common::SecurityProfile::Lambda100);
 
     let shapes = shapes();
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     let threads = common::init();
 
     println!(

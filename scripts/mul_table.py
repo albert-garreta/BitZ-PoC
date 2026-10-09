@@ -106,6 +106,7 @@ def probe(cmd, default):
 def load_rows(run_dirs, workload):
     """Measured proof-mode rows of `workload`, keyed by (scheme, log_n, threads)."""
     rows, skipped = {}, []
+    timings = set()
     for run_dir in run_dirs:
         for row in aggregate(load(run_dir)):
             case = row["case"]
@@ -114,6 +115,9 @@ def load_rows(run_dirs, workload):
             if row["status"] != "measured":
                 skipped.append((run_dir, case, row["reason"]))
                 continue
+            timings.add(row["provenance"].get("timing", "legacy"))
+            if "spans" in timings and len(timings) > 1:
+                raise ValueError("cannot mix span timing with historical timing backends; select matching campaigns")
             key = (scheme_key(case), case["log_n"], case["threads"])
             if key in rows:
                 raise ValueError(f"{key} measured in both {rows[key]['source']} and {row['source']}; choose one directory per case")

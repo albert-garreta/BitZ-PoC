@@ -60,7 +60,7 @@ fn main() {
         for rep in 0..=reps {
             let _ = memory.take();
             let start_recording =
-                bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+                bitz::observability::Recording::start().expect("start operation capture");
             let start = tracing::info_span!("hybrid_probe:start").entered();
             let rows: Vec<_> = inputs
                 .iter()
@@ -85,7 +85,7 @@ fn main() {
             };
             bitz::observability::write_profile(std::io::stderr().lock(), &header, &intervals, Some(&growth)).expect("write profile");
             if verify {
-                let t2_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+                let t2_recording = bitz::observability::Recording::start().expect("start operation capture");
                 let t2 = tracing::info_span!("hybrid_probe:t2").entered();
                 let decoded = prepared.proof_from_bytes(committed.statement(), &bytes).expect("decode");
                 prepared.verify(committed.statement(), &decoded).expect("verify");

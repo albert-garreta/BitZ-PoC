@@ -80,14 +80,15 @@ and compiler flags are inherited; `RUSTFLAGS` defaults to `-C target-cpu=native`
 Selecting `binius64` additionally builds its isolated worker; the root comparison feature
 does not enable the root Binius or Limber adapters.
 
-For BitZ or Spartan results without Perfetto or `trace_processor_shell`, select
-`--timing wall-clock`:
+Default `--timing spans` collects durations and internal phase breakdowns in Rust,
+including in the isolated Binius64 worker. No external timing tool is required.
+For top-level measurements without internal span capture, select `--timing wall-clock`:
 
 ```sh
 env -u BITZ_LIG_PROFILE RUSTFLAGS="-C target-cpu=native" \
   python3 scripts/run_sha256_ecdsa_compare.py \
   --output bench_results/sha256-p256-wall-clock \
-  --methods bitz-split --exponents 7 --targets 100 --threads 10 \
+  --curve p256 --methods bitz-split --exponents 7 --targets 100 --threads 10 \
   --seeds 0 --reps 5 --bitz-profiles custom:1:4 --timing wall-clock
 ```
 
@@ -96,8 +97,8 @@ protocol, end-to-end proving, serialization, and verification. Proofs are still
 serialized and verified. Internal phase breakdowns (outer, inner, opening,
 folding, and the derived PIOP/IOP split) are unavailable and remain null in JSON
 and blank in CSV. It supports `bitz-split`, `bitz-all`, and `spartan-mc`.
-The default `--timing perfetto` retains phase breakdowns and requires the native
-processor on `PATH` or at `PERFETTO_TRACE_PROCESSOR`.
+Historical Perfetto results remain readable, but new runs accept only `spans` or
+`wall-clock`. A changed timing backend requires a new campaign directory.
 
 The runner prints median timings and `Peak RSS MiB` for every method after each
 campaign, with full results in `summary.csv` and individual trials in
@@ -146,7 +147,7 @@ sha256_ecdsa_compare --method bitz-split|bitz-all|spartan-mc|binius64|binius64-l
                     --r R --c C
                     [--target 100|128] [--log-inv-rate 1|3] [--threads N] [--reps N] [--seed N]
                     [--fixture FILE] [--binius64-worker PATH]
-                    [--timing perfetto|wall-clock]
+                    [--timing spans|wall-clock]
 ```
 
 `--log-inv-rate` selects the Binius-family commitment rate (1 = rate 1/2,

@@ -27,7 +27,7 @@ fn env_usize(name: &str, default: usize) -> usize {
 }
 
 fn main() {
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     let shapes: Vec<(u32, u32)> = std::env::var("PROBE_SHAPES")
         .map(|v| {
             v.split_whitespace()
@@ -44,7 +44,7 @@ fn main() {
     for (mul_log, sha_log) in shapes {
         let multiplications = 1usize << mul_log;
         let compressions = 1usize << sha_log;
-        let t0_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+        let t0_recording = bitz::observability::Recording::start().expect("start operation capture");
         let t0 = tracing::info_span!("binius_probe:t0").entered();
         // The `all-binius` circuit of the bench runner.
         let builder = CircuitBuilder::new();
@@ -83,7 +83,7 @@ fn main() {
             .collect();
         for rep in 0..=reps {
             let start_recording =
-                bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+                bitz::observability::Recording::start().expect("start operation capture");
             let start = tracing::info_span!("binius_probe:start").entered();
             let rows: Vec<_> = inputs
                 .iter()
@@ -106,7 +106,7 @@ fn main() {
             circuit.populate_wire_witness(&mut filler).expect("witness");
             let witness = filler.into_value_vec();
             let witness_ms = { drop(start); bitz::observability::duration(&start_recording.intervals().expect("complete operation capture"), "binius_probe:start").expect("query completed operation") }.as_secs_f64() * 1e3;
-            let t1_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t1_recording = bitz::observability::Recording::start().expect("start operation capture");
             let t1 = tracing::info_span!("binius_probe:t1").entered();
             let label = if rep == 0 { "warmup (discard)".to_string() } else { format!("rep {rep}") };
             eprintln!("--- {mul_log}:{sha_log} {label}: prove spans follow");
@@ -119,7 +119,7 @@ fn main() {
                 .expect("query completed prove").as_secs_f64() * 1e3;
             bitz::observability::write_profile(std::io::stderr().lock(), &label, &prove_intervals, None)
                 .expect("write prove profile");
-            let t2_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+            let t2_recording = bitz::observability::Recording::start().expect("start operation capture");
             let t2 = tracing::info_span!("binius_probe:t2").entered();
             let mut vt = VerifierTranscript::new(Challenger::default(), bytes.clone());
             verifier.verify(witness.inout(), &mut vt).expect("verify");

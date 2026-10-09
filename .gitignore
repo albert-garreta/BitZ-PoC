@@ -54,3 +54,21 @@ __pycache__/
 /vendor/limber/
 /vendor/binius64/
 /vendor/plonky3/
+
+# Local tooling / OS junk
+.claude/
+.vscode/
+.DS_Store
+/.tools/
+
+# Paper build intermediates (main.pdf stays tracked)
+/paper/*.aux
+/paper/*.bbl
+/paper/*.bcf
+/paper/*.blg
+/paper/*.fls
+/paper/*.log
+/paper/*.out
+/paper/*.run.xml
+/paper/*.synctex.gz
+/paper/*.toc

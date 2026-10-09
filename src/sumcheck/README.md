@@ -131,7 +131,6 @@ and `/tmp/bitz-outer-before.log` during development. The current outer-kernel en
 toolchain, features, thread count, and Perfetto processor:
 
 ```sh
-PERFETTO_TRACE_PROCESSOR=/path/to/trace_processor_shell \
   cargo bench --bench mul_bitz --features span-metrics,bench-internals -- \
   outer --workload u32-full --log-n 15,17 --reps 5
 ```

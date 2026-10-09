@@ -22,15 +22,11 @@ its `--build-info` before trusting its numbers).
 ## Setup
 
 ```bash
-set -euo pipefail
-
 rustup toolchain install 1.98.1
 rustup toolchain install nightly-2026-07-01
 [ -f scripts/materialize_vendors.py ] && python3 scripts/materialize_vendors.py --check
-bash scripts/install_trace_processor.sh
 
 export RUSTFLAGS="-C target-cpu=native"
-export PERFETTO_TRACE_PROCESSOR="$PWD/.tools/perfetto/trace_processor_shell"
 unset BITZ_LIG_PROFILE CARGO_ENCODED_RUSTFLAGS CARGO_TARGET_DIR
 
 mkdir -p bench_results
@@ -62,7 +58,7 @@ gate sha-ecdsa-secp256k1 12 python3 scripts/run_sha256_ecdsa_compare.py \
   --reps 5 \
   --bitz-profiles custom:1:4 custom:3:4 \
   --binius-rates 1 3 \
-  --timing perfetto \
+  --timing spans \
   2>&1 | tee "$RUN_DIR/sha256-ecdsa-secp256k1.log"
 ```
 
@@ -83,7 +79,7 @@ gate sha-ecdsa-p256 12 python3 scripts/run_sha256_ecdsa_compare.py \
   --threads 1 10 \
   --reps 5 \
   --bitz-profiles custom:1:4 custom:3:4 \
-  --timing perfetto \
+  --timing spans \
   2>&1 | tee "$RUN_DIR/sha256-ecdsa-p256.log"
 ```
 

@@ -1,137 +1,97 @@
 # Shared span measurements
 
-Core operations use ordinary `tracing` spans. The default library does not
-install a subscriber or require Perfetto. Benchmark/diagnostic executables opt
-into `span-metrics`, install one subscriber, and query the Perfetto SDK's completed
-intervals through `src/observability.rs`. Isolated workers import that same source;
-they do not maintain a second clock or collector. `src/utils/prof.rs` is retired.
+Benchmark and diagnostic executables enable `span-metrics`, install
+`bitz::observability::layer()`, and read completed intervals entirely in Rust.
+No Perfetto installation, processor, shell setup, or external query is required.
+The default library does not install a subscriber. Isolated Binius64 workers
+use this same collector.
 
-## Runtime requirements
-
-Install the native Perfetto trace processor into this checkout:
-
-```bash
-bash scripts/install_trace_processor.sh
-export PERFETTO_TRACE_PROCESSOR="$PWD/.tools/perfetto/trace_processor_shell"
+```rust,ignore
+bitz::observability::install()?; // Once, at the executable boundary.
+let recording = bitz::observability::Recording::start()?;
+let result = tracing::info_span!("prove").in_scope(|| prove())?;
+let intervals = recording.intervals()?;
+let duration = bitz::observability::duration(&intervals, "prove")?;
+bitz::observability::write_profile(std::io::stdout().lock(), "proof", &intervals, None)?;
 ```
 
-Run these commands from the repository root. The installer pins Perfetto v58.2,
-verifies its SHA-256 checksum, and reuses a matching installation. Alternatively,
-set `PERFETTO_TRACE_PROCESSOR` to another native processor or put
-`trace_processor_shell` on `PATH`. Queries run locally, in Rust, through the native processor;
-there is no Python step or automatic download. In-memory querying currently uses
-Unix `/dev/stdin`. Build profiling examples and the `bitz` CLI with
-`--features span-metrics`; add their backend features as usual.
+For one standalone operation, `measure(span, closure)` returns its value and
+duration. It rejects a disabled span or missing collector before executing work.
+Install one layer per subscriber; it can compose with unrelated subscriber layers.
 
-## Measurement contract
+## What the durations mean
 
-- Start a `Recording` outside the operation, enter normal spans around the work,
-  exit them, then query `recording.intervals()`. For one standalone operation,
-  `measure(span, closure)` returns its value and duration. It rejects disabled
-  spans instead of executing the operation with a fake zero duration.
-- `duration(intervals, label)` requires exactly one matching completed span.
-  `totals` unions repeated/parallel occurrences of each label; parents include
-  children. `phase_totals` selects intervals inside one uniquely named phase in
-  a bounded single-trial recording. These totals are not additive across labels.
-- SDK timestamps and durations remain exact integer nanoseconds until existing
-  report projections convert them to milliseconds. CSV/JSON fields, trial
-  numbering, warmup exclusion, and aggregation formulas are unchanged.
-- Native processing happens after the measured operation. Candidate recordings
-  are queryable before tuning proceeds to the next candidate; the campaign span
-  includes orchestration and query overhead, as an overall tuning duration should.
-- Each recording has a 64 MiB discard buffer. Lost, malformed, unfinished, or
-  ambiguous measurements are errors, never silently truncated metrics. Keep
-  recordings bounded; especially large tuning campaigns may require a larger
-  explicitly configured capture budget in future.
-- A subscriber is configured at executable boundaries, not implicitly by library
-  functions. Tests provide an explicit scoped subscriber. Ordinary proof bodies
-  still run with `NoSubscriber`.
+- The collector timestamps span **entry and exit**, not creation and destruction.
+  Each entry has a unique ID. Re-entry, recursion, and the same span on multiple
+  threads produce separate intervals. Names and the optional `component` field
+  are captured at entry; field updates apply to subsequent entries.
+- `duration(intervals, label)` requires exactly one occurrence. `totals` unions
+  overlapping intervals of each label across threads; it does not sum parallel
+  work twice. Parent durations include children. Totals of different labels
+  must not be added to infer end-to-end time.
+- `phase_totals` selects intervals temporally contained in a unique phase of a
+  bounded trial. Execution parents describe the active stack on the same thread;
+  explicit logical parents across threads do not turn into execution nesting.
+- The implementation uses a monotonic `Instant` clock inside the subscriber.
+  Functions need only tracing spans, with no manual timers. Both `spans` and
+  `wall-clock` measure elapsed wall time, not CPU usage. Nanosecond representation
+  does not imply nanosecond accuracy. Scheduling, preemption, clock resolution,
+  and instrumentation overhead affect results.
+- For async code use `.instrument`, never retain an entered guard across `.await`.
+  The resulting intervals measure entered/poll time, excluding time suspended.
+  Use an enclosing synchronous phase when the desired metric is total latency.
+- Close measured spans and join worker tasks before querying. Use a global
+  subscriber at an executable boundary or propagate its dispatch to worker threads.
+  Tracing cannot measure work on threads without the subscriber.
 
-## Memory is separate
+## Recording boundaries and errors
 
-`observability::memory::MemoryLayer` only observes a supplied process-peak-RSS
-probe on span entry/exit. It has no clock and is enabled only by the hybrid
-diagnostic probe. Its inclusive growth values can overlap; they are not current
-live allocations and must not be summed across nested/parallel regions.
+Each subscriber owns an independent collector. Per-thread buffers avoid a shared
+lock on every event; recording boundaries synchronize buffer resets and snapshots.
+Nested recordings share events and can be queried while an enclosing span remains
+open. Only entries begun inside the recording are returned. Repeated independent
+trials clear completed events. Dropping a recording cancels its query.
 
-Existing Rust-heap probes remain separate from RSS. Hybrid rows snapshot process
-peak RSS before extracting that trial's trace. Whole-process RSS still includes
-instrumentation, setup, and any earlier report-processing allocations; it is not
-an uninstrumented prover-only measurement. Native multiplication retains its
-fresh-process, untraced memory pass and separate latency trials. Do not mix these
-different memory boundaries in comparisons.
-Hybrid CSV RSS remains Linux-only; its existing unavailable sentinel is retained
-on macOS. The diagnostic hybrid probe uses `getrusage` on macOS and Linux.
+Missing layers, empty recordings, unfinished spans, invalid nesting, and capacity
+overflow return errors rather than fabricated or truncated timings. The default
+retained interval payload budget is 64 MiB, shared by overlapping recordings.
+`SpanMetricsLayer::with_capacity(bytes)` sets another budget. This bounds interval
+payloads, not total process RSS or allocator capacity. An overflowing trial is
+invalid; the next independent trial resets the budget. Keep captures bounded.
 
-## Inventory and checks
+## Modes and optional export
 
-The shared path covers core BitZ annotations; native multiplication and SHA;
-SHA/ECDSA (including the Spartan2 `d3e686e` phase spans); PCS comparisons;
-setup/witness audits; tuning; hybrid runs; CLI summaries; diagnostic examples;
-isolated Binius64/zkPassport workers; and the standalone field microbenchmark.
-`benches/common/trace_capture.rs` now contains pure interval projections, not a
-collector. Historical `PerfRuns/` sources and unrelated unit-test microbenchmarks
-are not part of this migration.
+SHA/ECDSA defaults to `--timing spans`, including its isolated Binius64 worker.
+`--timing wall-clock` remains available for `bitz-split`, `bitz-all`, and
+`spartan-mc`; it measures top-level phases without internal span breakdowns.
+New results identify the span backend as `timing: "spans"`. Some specialized
+multiplication microbenchmarks and auxiliary setup timers retain their existing
+wall-clock boundaries; this refactor does not change those experiments.
+Readers retain historical Perfetto results,
+and campaign resumption rejects a changed timing backend. There is no automatic
+fallback between backends. Historical measurements should not be treated as a
+performance baseline without accounting for the instrumentation change.
 
-Executable regression coverage includes `benchmark_perfetto` (native SDK/query
-behavior, repeated/parallel spans, nested candidate recordings, failures, profile
-projection, and RSS observations), `benchmark_reporting` (output contracts), and
-backend integration tests. Dedicated native processor smoke tests are ignored in
-the ordinary suite; run them with `--include-ignored`. Configure the processor
-for backend integration suites too: their benchmark setup and audit paths now
-query spans, even when the assertion is about a proof or its output:
+`bench-perfetto` additionally compiles the native SDK and requires a C++ toolchain.
+Use `observability::perfetto::TraceRecording::start(writer)` and `finish()` to
+export `.pftrace` bytes for the Perfetto UI. It initializes the native SDK only
+when an export starts. Numeric timings still come from the Rust collector;
+no trace processor is invoked, even when exporting. Export overhead can affect
+measurements, so compare equivalent build and export configurations.
+
+## Memory and verification
+
+`observability::memory::MemoryLayer` separately observes process peak RSS on
+span entry/exit. Its inclusive growth can overlap and is not live allocation
+usage. Hybrid measurements retain their existing platform availability; native
+multiplication retains its fresh-process, untraced memory pass. Whole-process
+RSS includes setup, instrumentation, and earlier report allocations.
 
 ```sh
-cargo test --features bench-perfetto --test benchmark_perfetto -- --include-ignored --test-threads=1
-cargo test --features bench-internals,native-mul-compare --test native_mul_compare -- --include-ignored --test-threads=1
+cargo test --locked --features span-metrics --test benchmark_spans
+cargo test --locked --features bench-perfetto --test benchmark_perfetto
 ```
 
-The zkPassport managed runtime requires its supported Linux/x86_64 environment,
-circuit artifacts, and SRS. A successful macOS `cargo check` alone is not a
-zkPassport runtime test. The pure-Rust Binius64 worker can also run on macOS.
-
-## Migration validation (2026-09-12, macOS ARM64)
-
-These are bounded correctness checks in development builds, not performance
-comparisons. The native processor was Perfetto 58.2; proof smoke runs used two
-Rayon threads.
-
-- Default and no-default-feature libraries compile, as do minimal/full timing
-  feature sets, integration tests, heap-instrumented benches, CLI binaries,
-  diagnostic examples, both workers, and the standalone field benchmark.
-- Shared Perfetto tests: 11 pass. Native SHA: 28 pass. After the metadata
-  follow-up, reporting contracts pass 51 tests and native multiplication passes
-  all 44 tests, including the formerly failing configuration assertion.
-- The new Spartan2 pin passes six verified SHA/ECDSA trials with its internal
-  phase intervals. Canonical PCS validation passes 18 runs / 9,702 spans across
-  BitZ, Binius64 BaseFold, and BitZ-Ligerito binary adapters.
-- All four hybrid modes produce one warmup plus five verified samples. The CLI
-  multiplication run, the hybrid RSS diagnostic (six verified trials), and the
-  native multiplication untraced memory child also pass.
-- Standalone Binius64: one warmup plus five verified SHA/ECDSA samples pass the
-  unchanged Python consumer, including all four original phase keys. Its phase
-  projection regression and four shared-observability unit tests also pass.
-- Python reporting-consumer tests pass all 51 tests after correcting the rate
-  fields in the Ligerito caption fixtures. Production caption behavior is unchanged.
-
-Metadata compatibility follow-up:
-
-- The native multiplication test now validates the versioned identity and reads
-  ladder fields under `configuration`, matching the producer's actual schema.
-- Binius-Ligerito now emits `LIGERITO_CONFIG` using the typed
-  `bitz/binius-ligerito-pcs/v1` identity. It records the whole-protocol target (100),
-  the selected opener component target, and every oracle's actual ladder and
-  Round-0 grinding settings. This is a PCS configuration identity, not a new
-  security theorem or an alternative soundness analysis.
-- The sweep validates each mode's own schema: binary ladders are re-derived from
-  their packed sizes and component target; the existing single-opener identities
-  retain their 106-bit hybrid / 112-bit separate budgets. Missing, duplicated,
-  altered, and wrong-mode identities remain errors. CSV columns are unchanged.
-- A fresh `--sweep --mode all --shapes 15:1 --iterations 1` completes all four
-  verified samples (after each mode's warmup). Its 25-column combined CSV carries
-  identities matching the emitted per-mode JSON files.
-
-The zkPassport managed runtime was not exercised on this host: its pinned native
-toolchain is Linux/x86_64-only. Its Rust worker passes `cargo check --locked
---offline`. Unit-test-only kernel microbenchmarks retain their own `Instant`
-measurements; live benchmark, worker, example, and CLI reporting paths do not.
+These check numeric queries, nested and parallel entries, repeated trials,
+subscriber isolation, overflow and incomplete captures, profile projections,
+and optional export writer errors without an external processor.

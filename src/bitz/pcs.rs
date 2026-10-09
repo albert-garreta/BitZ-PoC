@@ -89,7 +89,8 @@ pub enum VerifyError {
 pub enum StatementBinding {
     /// Binds the PCS parameters, commitment, query and target.
     Bind,
-    /// Uses a statement the caller already bound.
+    /// The caller already bound this query, or bound the statement and proof
+    /// messages from which the query is uniquely derived, before PCS challenges.
     AlreadyBound,
 }
 

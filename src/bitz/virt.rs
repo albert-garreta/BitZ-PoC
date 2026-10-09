@@ -35,11 +35,12 @@ use super::{
     params::{ClaimError, LinearClaimGf, Root, ShapeError},
     pcs::{OpeningQuery, StatementBinding},
     reduce,
+    transcript::PublicTranscript,
 };
 use crate::{cfg_into_iter, ligerito_flock::FlockCommitHint, pcs::IntegerMatrixLayout};
 
 /// The frame separating a virtual proof from a direct one.
-const VIRTUAL_STATEMENT_LABEL: &[u8] = b"bitz/virtual-statement/v1";
+const VIRTUAL_STATEMENT_LABEL: &[u8] = b"bitz/virtual-statement/v2";
 
 /// A statement or map the virtual opening cannot take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,7 +63,12 @@ pub enum VirtualError {
 /// opened against and the map between them.
 ///
 /// Both roles bind the label, the root, the claim parameters, the committed
-/// shape, the map's digest and the claim before the first fold challenge.
+/// shape, the map's digest, the PCS parameter frame and the claim before the
+/// first fold challenge. The later inner-product claim is determined by the
+/// absorbed fold and GKR messages and the bound map, so it needs no dense
+/// re-encoding. The map's digest must commit to every value returned by
+/// `column_rows`; callers with additional PCS configuration must bind it in
+/// their outer statement.
 pub struct VirtualStatement<'a, M: VirtualMap> {
     claim_params: BitZParams,
     committed: Shape,
@@ -130,6 +136,14 @@ impl<'a, M: VirtualMap> VirtualStatement<'a, M> {
         frame.extend_from_slice(&(self.committed.log_columns() as u64).to_le_bytes());
         frame.extend_from_slice(&self.map.digest());
         frame
+    }
+
+    fn bind(&self, root: Root, pcs: &Pcs, transcript: &mut impl PublicTranscript) {
+        transcript.public_message(VIRTUAL_STATEMENT_LABEL);
+        transcript.public_message(&root.0);
+        transcript.public_message(self.frame().as_slice());
+        transcript.public_message(pcs);
+        transcript.public_message(self.claim);
     }
 
     /// Rewrites the GKR's factored claim on the derived grid into the
@@ -214,10 +228,7 @@ impl BitZProver {
             return Err(ProveError::Witness);
         }
         let root = Root(*hint.root());
-        transcript.public_message(VIRTUAL_STATEMENT_LABEL);
-        transcript.public_message(&root.0);
-        transcript.public_message(statement.frame().as_slice());
-        transcript.public_message(statement.claim);
+        statement.bind(root, pcs, transcript);
 
         super::trace_start();
         let started = std::time::Instant::now();
@@ -256,8 +267,14 @@ impl BitZProver {
 
         let started = std::time::Instant::now();
         let result = if statement.is_direct() {
-            pcs.prove_lin(hint, &query, StatementBinding::Bind, transcript, ood)
-                .map_err(ProveError::Opening)
+            pcs.prove_lin(
+                hint,
+                &query,
+                StatementBinding::AlreadyBound,
+                transcript,
+                ood,
+            )
+            .map_err(ProveError::Opening)
         } else {
             let flat = flatten_rows(hint.rows());
             pcs.prove_lin_rows(
@@ -265,7 +282,7 @@ impl BitZProver {
                 core::slice::from_ref(&flat),
                 &[],
                 &query,
-                StatementBinding::Bind,
+                StatementBinding::AlreadyBound,
                 transcript,
                 ood,
             )
@@ -291,10 +308,7 @@ impl BitZVerifier {
         {
             return Err(VerifyError::Virtual(VirtualError::ParameterMismatch));
         }
-        transcript.public_message(VIRTUAL_STATEMENT_LABEL);
-        transcript.public_message(&com.0);
-        transcript.public_message(statement.frame().as_slice());
-        transcript.public_message(statement.claim);
+        statement.bind(com, pcs, &mut transcript);
 
         let started = std::time::Instant::now();
         let shape = *self.params.shape();
@@ -323,8 +337,14 @@ impl BitZVerifier {
             .map_err(VerifyError::Virtual)?;
         super::trace("v: transpose", started);
         let started = std::time::Instant::now();
-        pcs.verify_lin(&com, &query, StatementBinding::Bind, &mut transcript, ood)
-            .map_err(VerifyError::Opening)?;
+        pcs.verify_lin(
+            &com,
+            &query,
+            StatementBinding::AlreadyBound,
+            &mut transcript,
+            ood,
+        )
+        .map_err(VerifyError::Opening)?;
         super::trace("v: opening", started);
         transcript
             .check_eof()
@@ -559,6 +579,20 @@ mod tests {
                 )
                 .is_err()
         );
+    }
+
+    #[test]
+    fn virtual_statement_binds_pcs_parameter_frame() {
+        let (committed, _, params, _, _, map, claim) = setup();
+        let statement = VirtualStatement::new(params, committed, &map, &claim).unwrap();
+        let root = Root([0; 32]);
+        let challenge = |hash| {
+            let pcs = Pcs::new(&committed, hash).unwrap();
+            let mut transcript = build_prover("virt-test", "pcs-frame");
+            statement.bind(root, &pcs, &mut transcript);
+            transcript.verifier_message::<Gf>()
+        };
+        assert_ne!(challenge(HashKind::Blake3), challenge(HashKind::Sha256));
     }
 
     #[test]

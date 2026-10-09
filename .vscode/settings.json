@@ -1,8 +1,0 @@
-{
-    "rust-analyzer.trace.server": "verbose",
-    "rust-analyzer.cargo.features": [
-        "ecdsa",
-        "hybrid",
-        "sha256-ecdsa-compare"
-    ]
-}

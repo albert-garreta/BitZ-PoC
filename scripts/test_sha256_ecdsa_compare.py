@@ -11,6 +11,17 @@ from test_ligerito_results import report as ligerito_report
 
 
 class CampaignTests(unittest.TestCase):
+    def test_span_rows_are_accepted_without_relabelling_legacy_measurements(self):
+        case = dict(self.case, timing="spans")
+        rows = [dict(row, timing="spans") for row in self.rows]
+        self.assertTrue(campaign.validate_rows(rows, case, 1))
+        self.assertFalse(campaign.validate_rows(self.rows, case, 1))
+        for timing in ("perfetto", "wall-clock", "unknown"):
+            self.assertFalse(campaign.validate_rows([dict(row, timing=timing) for row in rows], case, 1))
+        self.assertTrue(campaign.validate_rows(self.rows, self.case, 1))
+        old = dict(binary_sha256="native", runner_sha256="runner", timing="perfetto")
+        self.assertFalse(campaign.compatible_manifest(old, dict(old, timing="spans")))
+
     def test_address_space_limit_only_applies_on_linux(self):
         for platform in ["darwin", "win32"]:
             with patch.object(campaign.sys, "platform", platform):

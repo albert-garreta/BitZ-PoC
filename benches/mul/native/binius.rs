@@ -83,9 +83,9 @@ impl Context {
                 "zero":cs.n_zero_constraints(),"bmul":cs.n_bmul_constraints()}})
     }
     pub(super) fn run(&self) -> Timing {
-        let recording = Recording::start(Vec::new()).expect("start Perfetto trial");
+        let recording = Recording::start().expect("start span trial");
         let proof_bytes = self.prove_and_verify();
-        let raw = recording.intervals().expect("query Perfetto trial");
+        let raw = recording.intervals().expect("query span trial");
         let trial = TrialScopes::from_spans(&raw, "benchmark");
         let wend = trial.witness.end_ns;
         let ready = trial.witness_to_proof.end_ns;

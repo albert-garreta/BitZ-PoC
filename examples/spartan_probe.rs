@@ -25,7 +25,7 @@ fn env_usize(name: &str, default: usize) -> usize {
 }
 
 fn main() {
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     let _ = flock_core::init_perf_thread_pool();
     let exponent = env_usize("PROBE_EXP", 20);
     let reps = env_usize("PROBE_REPS", 1);
@@ -46,7 +46,7 @@ fn main() {
                 PreparedRelation::<MulLayout<u32>>::new(*witness.layout()).expect("relation");
             for rep in 0..=reps {
                 let profile =
-                    bitz::observability::Recording::start(Vec::new()).expect("capture profile");
+                    bitz::observability::Recording::start().expect("capture profile");
                 let (hint, started) =
                     bitz::observability::measure(tracing::info_span!("spartan_probe:hint"), || {
                         protocol::commit(&relation, witness.bitz_bit_rows()).expect("commit")
@@ -87,7 +87,7 @@ fn main() {
             let prepared = PreparedRelation::<BabyBearMulLayout>::new(layout).expect("relation");
             for rep in 0..=reps {
                 let profile =
-                    bitz::observability::Recording::start(Vec::new()).expect("capture profile");
+                    bitz::observability::Recording::start().expect("capture profile");
                 let (hint, started) =
                     bitz::observability::measure(tracing::info_span!("spartan_probe:hint"), || {
                         protocol::commit(&prepared, witness.bitz_bit_rows()).expect("commit")

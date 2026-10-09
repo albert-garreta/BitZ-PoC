@@ -84,9 +84,6 @@ def environment():
     env = {k: v for k, v in os.environ.items()
            if not k.startswith(("BITZ_", "F2_FOREST", "OBLONG_", "RAYON_")) and k != "CARGO_ENCODED_RUSTFLAGS"}
     env.setdefault("RUSTFLAGS", "-C target-cpu=native")
-    local = ROOT / ".tools/perfetto/trace_processor_shell"
-    if "PERFETTO_TRACE_PROCESSOR" not in env and local.is_file():
-        env["PERFETTO_TRACE_PROCESSOR"] = str(local)
     return env
 
 
@@ -124,7 +121,7 @@ def validate_rows(rows, case, reps, fixture):
             raise ValueError("public chain fixture mismatch")
         if (row.get("verified") is not True or row.get("zk") is not False
                 or row.get("sample") != i or row.get("trial") != ("warmup" if i == 0 else "sample")
-                or row.get("security_target") != 100 or row.get("timing") != "perfetto"):
+                or row.get("security_target") != 100 or row.get("timing") != "spans"):
             raise ValueError("missing verified sample or incorrect measurement policy")
         if any(type(row.get(k)) not in (float, int) or not math.isfinite(row[k]) or row[k] < 0 for k in METRICS):
             raise ValueError("missing, negative or nonfinite metric")
@@ -223,15 +220,15 @@ def run_case(args, binary, case, fixture, env):
 
 
 def summarize(directory, results):
-    fields = [*CASE_FIELDS, "status", "samples", "peak_rss_bytes", "fixture_id", "proof_size_kind", *METRICS]
+    fields = [*CASE_FIELDS, "timing", "status", "samples", "peak_rss_bytes", "fixture_id", "proof_size_kind", *METRICS]
     with (directory / "summary.csv").open("w", newline="") as stream, \
             (directory / "samples.csv").open("w", newline="") as sample_stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
-        sample_writer = csv.DictWriter(sample_stream, fieldnames=[*CASE_FIELDS, "trial", "sample", "verified", "fixture_id", *METRICS])
+        sample_writer = csv.DictWriter(sample_stream, fieldnames=[*CASE_FIELDS, "timing", "trial", "sample", "verified", "fixture_id", *METRICS])
         writer.writeheader()
         sample_writer.writeheader()
         for result in results:
-            row = dict(result["case"], status=result["status"], samples=0, peak_rss_bytes=result["peak_rss_bytes"])
+            row = dict(result["case"], timing="spans", status=result["status"], samples=0, peak_rss_bytes=result["peak_rss_bytes"])
             for sample in result["rows"]:
                 sample_writer.writerow({k:sample.get(k) for k in sample_writer.fieldnames})
             if result["status"] == "complete":
@@ -255,7 +252,7 @@ def main(argv=None):
                     platform=platform.platform(), cpu=cpu_name(), rustflags=env["RUSTFLAGS"],
                     rustc=command_text("rustc", "-Vv"), cargo=command_text("cargo", "-V"),
                     features=["unchecked", "span-metrics", "binius64-bench"],
-                    trace_processor=env.get("PERFETTO_TRACE_PROCESSOR", "trace_processor_shell"),
+                    timing="spans",
                     security_note="100-bit BitZ economic, Binius FRI query, and Binius-Ligerito per-round targets use different accounting; inspect each row.",
                     memory_note="Whole-worker peak RSS includes fixture construction, setup, warmup, proofs and verification; excludes compilation.",
                     timing_note="Prove includes commitment. E2E runs from witness generation through proof completion, excluding reusable setup and verification. Both Binius backends attribute witness packing to witness_ms.",

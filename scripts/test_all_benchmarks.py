@@ -60,7 +60,6 @@ elif name == 'hybrid':
             path = self.bin / name
             path.write_text(f"#!{sys.executable}\n" + driver)
             path.chmod(0o755)
-        (self.root / "scripts/install_trace_processor.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
 
     def run_wrapper(self, *args, **environment):
         return subprocess.run(["bash", str(self.root / "scripts/run_all_benchmarks.sh"),
@@ -87,6 +86,8 @@ elif name == 'hybrid':
         multiplication = next(c['args'] for c in scripts if c['args'][0].endswith('run_multiplication_benchmarks.py'))
         self.assertIn('--no-gate', multiplication)
         self.assertNotIn('--exponents', multiplication)
+        ecdsa = next(c['args'] for c in scripts if c['args'][0].endswith('run_sha256_ecdsa_compare.py'))
+        self.assertEqual(ecdsa[ecdsa.index('--timing')+1], 'spans')
         hybrid = [c for c in commands if c['name'] == 'hybrid']
         self.assertEqual(len(hybrid), 12)
         for c in hybrid:
@@ -121,6 +122,8 @@ elif name == 'hybrid':
         result = self.run_wrapper('--smoke', '--dry-run')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(self.trace.exists())
+        self.assertNotIn('install_trace_processor', result.stdout)
+        self.assertNotIn('PERFETTO_TRACE_PROCESSOR', result.stdout)
         self.assertFalse(self.output.exists())
         self.assertIn('Outer lock:', result.stdout)
         self.assertIn('Dry-run complete; no campaigns were executed.', result.stdout)

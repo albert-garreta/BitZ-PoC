@@ -310,7 +310,7 @@ impl TraceWriter {
                 "id": clock_id,
                 "kind": "monotonic",
                 "unit": "ns",
-                "source": "Perfetto SDK",
+                "source": "Rust span metrics",
             },
             "status": "ok",
             "trace_complete": true,
@@ -902,7 +902,7 @@ fn run_once(
     pc: &flock_core::pcs::ligerito::ProverConfig,
     vc: &flock_core::pcs::ligerito::VerifierConfig,
 ) -> (RepTiming, Vec<Interval>) {
-    let recording = bitz::observability::Recording::start(Vec::new()).expect("start SHA trial");
+    let recording = bitz::observability::Recording::start().expect("start SHA trial");
     #[cfg(feature = "bench-peak-memory")]
     common::peak_memory::reset_peak();
     let verified_trial_scope = tracing::info_span!("sha256-trace:verified_trial").entered();
@@ -1022,7 +1022,7 @@ fn bench_shape<P: IopSecurityProfile>(
         };
 
     let setup_started_recording =
-        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+        bitz::observability::Recording::start().expect("start operation capture");
     let setup_started = tracing::info_span!("sha256_compressions:setup_started").entered();
     let prepared = match shape.prepare::<P>(layout) {
         Ok(prepared) => prepared,
@@ -1310,7 +1310,7 @@ pub(crate) fn run(env: Env) {
                 Sha256OpeningLayout::InnerSumcheck { row_vars }
             }
         });
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     let threads = common::init();
     let mut trace_writer = TraceWriter::new(&env, threads);
     let mut result_writer = env.result_path.as_deref().map(|path| {

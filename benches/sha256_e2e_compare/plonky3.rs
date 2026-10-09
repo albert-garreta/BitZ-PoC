@@ -245,7 +245,7 @@ macro_rules! degree_backend {
 
             impl Context {
                 pub fn setup(corpus: &Corpus, params: Params) -> Result<Self, String> {
-                    let started_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+                    let started_recording = bitz::observability::Recording::start().expect("start operation capture");
                     let started = tracing::info_span!("sha256_e2e_compare/plonky3:started").entered();
                     let stacked_num_variables =
                         log2_ceil_usize(corpus.cases.len() * NUM_SHA256_COLS);
@@ -279,8 +279,8 @@ macro_rules! degree_backend {
                 }
 
                 pub fn run(&self) -> (TrialMetrics, Vec<SemanticSpan>) {
-                    let recording = common::perfetto::Recording::start(Vec::new())
-                        .expect("start Perfetto trial");
+                    let recording = common::metrics::Recording::start()
+                        .expect("start span trial");
                     let trial = tracing::info_span!(
                         "Verified trial",
                         component = "benchmark.verified-trial",
@@ -342,7 +342,7 @@ macro_rules! degree_backend {
                     .expect("Plonky3 full SHA AIR proof verifies");
                     drop(verification);
                     drop(trial);
-                    let raw = recording.intervals().expect("query Perfetto trial");
+                    let raw = recording.intervals().expect("query span trial");
                     black_box(&proof);
                     let spans = semantic_spans(&raw);
                     (TrialMetrics::from_spans(&spans, proof_bytes), spans)

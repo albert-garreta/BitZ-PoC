@@ -34,7 +34,7 @@ fn seed_for(bits: u32, sample: usize) -> GrindingSeed {
 }
 
 fn main() {
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     let bits_list = env_list::<u32>("GRIND_BITS", &[18, 19, 20, 21, 22, 23, 24, 25]);
     let threads_list = env_list::<usize>("GRIND_THREADS", &[1, 10]);
     let samples: usize = std::env::var("GRIND_SAMPLES").ok().and_then(|v| v.parse().ok()).unwrap_or(200);

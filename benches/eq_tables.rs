@@ -164,7 +164,7 @@ fn main() {
     let samples = common::cli::env::<usize>("BITZ_EQ_TABLE_SAMPLES")
         .unwrap_or(DEFAULT_SAMPLES)
         .max(DEFAULT_SAMPLES);
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     common::enforce_known_env();
     let _ = flock_core::init_perf_thread_pool();
     println!(

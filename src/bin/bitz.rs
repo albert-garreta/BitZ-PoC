@@ -13,7 +13,8 @@
 //! Usage: `bitz <n> [<t> <s>] [options]`
 //!
 //! - `n` — committed bit-index variables, `n = t + s`. Without `t s`,
-//!   use `t = ceil(0.6n)`, clamped to the seven-bit packing width.
+//!   use `t = ceil(0.6n) - 1` (the scheme's default split, as
+//!   `Shape::reference`), clamped to the seven-bit packing width.
 //! - `--threads N` / `-j N` — rayon pool size; `1` = single-threaded.
 //!   Default: all cores (or `RAYON_NUM_THREADS`).
 //! - `--reps R` — timing repetitions (median reported; default 3).
@@ -41,7 +42,7 @@
 //!   `outputs/tables/raw-performance-table.tex` in the crate; the file records the
 //!   exact command, machine, date, commit, and every RESULT line, so it is
 //!   its own provenance). `t s` positionals do not apply (each `n` uses the
-//!   reference split). `--cooldown <s>` idles between children so the OS
+//!   default split). `--cooldown <s>` idles between children so the OS
 //!   reclaims the previous shape's memory and the fanless chip cools — the
 //!   n ≥ 29 rows (3–7 GB peaks) swing ±30 % on a busy 16 GB box otherwise.
 //!   Example (the paper's raw-performance table):
@@ -72,9 +73,9 @@
 //!
 //! The single-claim path always prints a per-step breakdown of the prover
 //! and the verifier under the `prove:`/`verify:` lines — medians over the
-//! timed reps, combining completed Perfetto intervals with native BitZ
-//! phase timers. Build with `span-metrics` and set `PERFETTO_TRACE_PROCESSOR`
-//! to the native trace processor.
+//! timed reps, combining completed span intervals with native BitZ
+//! phase timers. Build with `span-metrics` to collect and query span intervals
+//! entirely in Rust.
 //!
 //! The prover buckets are integer folds plus GKR, sumcheck plus ring switch,
 //! and Ligerito. A `security:` line reports the
@@ -183,7 +184,7 @@ fn median(mut v: Vec<f64>) -> f64 {
 struct StepTable(Vec<(String, Vec<f64>)>);
 
 impl StepTable {
-    /// Fold one rep's drained completed Perfetto intervals (label, seconds) in.
+    /// Fold one rep's drained completed span intervals (label, seconds) in.
     fn absorb(&mut self, rep: usize, totals: Vec<(String, f64)>) {
         for (label, secs) in totals {
             let idx = match self.0.iter().position(|(l, _)| *l == label) {
@@ -541,10 +542,11 @@ fn parse_sweep_spec(spec: &str) -> Result<Vec<usize>, String> {
     Ok(out)
 }
 
-/// The reference split `t ≈ 0.6n`, clamped to the packing constraint
-/// (`t ≥ 7`) and `s ≥ 1`.
+/// The scheme's default split `t = ⌈0.6n⌉ − 1` (`reference_log_rows`, as
+/// `Shape::reference` and the relations use), clamped to the packing
+/// constraint (`t ≥ 7`) and `s ≥ 1`.
 fn default_split(n: usize) -> (usize, usize) {
-    let t = ((3 * n).div_ceil(5)).max(7).min(n - 1);
+    let t = bitz::bitz::params::reference_log_rows(n);
     (t, n - t)
 }
 
@@ -680,7 +682,7 @@ fn resolve_configs(
 }
 
 fn main() {
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     let o = parse_args();
 
     // Paper-table modes: the parent only orchestrates child processes.
@@ -876,7 +878,7 @@ fn main() {
         if rep > 0 && o.rep_cooldown_s > 0 {
             std::thread::sleep(std::time::Duration::from_secs(o.rep_cooldown_s));
         }
-        let recording = bitz::observability::Recording::start(Vec::new()).expect("start CLI trial");
+        let recording = bitz::observability::Recording::start().expect("start CLI trial");
         bitz::bitz::record_phases(true);
         let proving = tracing::info_span!("cli:proving").entered();
         let proof = prove_once(&hint);
@@ -1889,7 +1891,7 @@ fn write_latex_table(path: &Path, rows: &[CliResult], o: &Opts, spec: &str) -> s
     let _ = writeln!(out, "  \\end{{tabular}}");
     let _ = writeln!(
         out,
-        "  \\caption{{Cost of \\ftwoz\\ (\\cref{{c:core_iop}}) for committing to $\\codedim = 2^{{n}}$ bits, $n = {n_lo}, \\ldots, {n_hi}$, and proving one claim $\\langle \\vv, \\bff\\rangle = \\mu$ over $\\FF_q$ for {q_tex}, $\\vv = \\eq(\\cdot, \\rr_1) \\otimes \\eq(\\cdot, \\rr_2)$ with $(\\rr_1, \\rr_2)$ sampled after $q$, and the tensor split $\\codedim_1 = 2^{{\\lceil 0.6\\, n\\rceil}}$, $\\codedim_1 \\cdot \\codedim_2 = \\codedim$ (\\cref{{s:instantiation}}). The commitment is opened with ring switching and Ligerito~\\cite{{ligerito}} {lig_geometry}, {security}; {round0_tex}; every other round (the GKR, the sumcheck reducing to MLE evaluation claims, the ring switch) has error at most $7 \\cdot 2^{{-128}}$. Prover columns: \\emph{{commit}} is the commitment to the $\\codedim$ bits; \\emph{{grand products}} is computing the integers $\\mu_j$ and the batched GKR for the $\\codedim_2$ grand products in the exponent (\\cref{{s:gkr_low_entropy}}); \\emph{{ring switch}} is the sumcheck reducing the GKR output claims to MLE evaluation claims together with the ring-switching step; \\emph{{Ligerito}} is the Ligerito opening; \\emph{{total}} is the commitment plus the end-to-end proving time (each entry is a median, so the parts need not add up exactly). \\emph{{Non-Ligerito}} proof bytes are the $\\mu_j$, the GKR and sumcheck messages, and the ring-switch message; KB $= 1000$ bytes.{split_note} {cpu} ({cores}), {mem_gb}\\,GB, {threads} threads; medians of {reps} runs after one warm-up.}}"
+        "  \\caption{{Cost of \\ftwoz\\ (\\cref{{c:core_iop}}) for committing to $\\codedim = 2^{{n}}$ bits, $n = {n_lo}, \\ldots, {n_hi}$, and proving one claim $\\langle \\vv, \\bff\\rangle = \\mu$ over $\\FF_q$ for {q_tex}, $\\vv = \\eq(\\cdot, \\rr_1) \\otimes \\eq(\\cdot, \\rr_2)$ with $(\\rr_1, \\rr_2)$ sampled after $q$, and the tensor split $\\codedim_1 = 2^{{\\lceil 0.6\\, n\\rceil - 1}}$, $\\codedim_1 \\cdot \\codedim_2 = \\codedim$ (\\cref{{s:instantiation}}). The commitment is opened with ring switching and Ligerito~\\cite{{ligerito}} {lig_geometry}, {security}; {round0_tex}; every other round (the GKR, the sumcheck reducing to MLE evaluation claims, the ring switch) has error at most $7 \\cdot 2^{{-128}}$. Prover columns: \\emph{{commit}} is the commitment to the $\\codedim$ bits; \\emph{{grand products}} is computing the integers $\\mu_j$ and the batched GKR for the $\\codedim_2$ grand products in the exponent (\\cref{{s:gkr_low_entropy}}); \\emph{{ring switch}} is the sumcheck reducing the GKR output claims to MLE evaluation claims together with the ring-switching step; \\emph{{Ligerito}} is the Ligerito opening; \\emph{{total}} is the commitment plus the end-to-end proving time (each entry is a median, so the parts need not add up exactly). \\emph{{Non-Ligerito}} proof bytes are the $\\mu_j$, the GKR and sumcheck messages, and the ring-switch message; KB $= 1000$ bytes.{split_note} {cpu} ({cores}), {mem_gb}\\,GB, {threads} threads; medians of {reps} runs after one warm-up.}}"
     );
     let _ = writeln!(out, "  \\label{{tab:bitz-raw-performance}}");
     let _ = writeln!(out, "\\end{{table}}");
@@ -2194,7 +2196,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let mut witness = None;
     for _ in 0..o.reps.max(1) {
         let t0_recording =
-            bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+            bitz::observability::Recording::start().expect("start operation capture");
         let t0 = tracing::info_span!("bitz:t0").entered();
         let w = gen_witness();
         drop(t0);
@@ -2226,8 +2228,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let lig_tag = lig.name();
 
     // One-time public preprocessing (excluded from prove).
-    let t0_recording =
-        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let t0_recording = bitz::observability::Recording::start().expect("start operation capture");
     let t0 = tracing::info_span!("bitz:t0").entered();
     let relation =
         PreparedRelation::<MulLayout<u32>>::new_with_profile_and_ligerito::<P>(layout, lig)
@@ -2312,8 +2313,7 @@ fn mul_shape<P: IopSecurityProfile>(o: &Opts, e: usize) {
     let mut vsteps = StepTable::default();
     let mut last: Option<(Proof, usize, usize, String)> = None;
     for rep in 0..o.reps {
-        let recording =
-            bitz::observability::Recording::start(Vec::new()).expect("start CLI mul trial");
+        let recording = bitz::observability::Recording::start().expect("start CLI mul trial");
         bitz::bitz::record_phases(true);
         let (proof, hint) = mul_prove_e2e(&relation, &witness);
         let native_prove = take_native_phases();

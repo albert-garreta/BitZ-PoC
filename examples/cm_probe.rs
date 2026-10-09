@@ -24,7 +24,7 @@ fn splitmix(x: u64) -> u64 {
 }
 
 fn main() {
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     let _ = flock_core::init_perf_thread_pool();
     let log2_gates: usize = std::env::args()
         .nth(1)
@@ -43,7 +43,7 @@ fn main() {
     let hint = commit_cm_and_witness(&layout, witness.f_bit_rows()).unwrap();
 
     // Warm-up (excluded), also the correctness check.
-    let profile = bitz::observability::Recording::start(Vec::new()).expect("capture warmup");
+    let profile = bitz::observability::Recording::start().expect("capture warmup");
     let mut pt = Blake3Transcript::new();
     let proof = prove_cm_and_bitz(&mut pt, &relation, &witness, &hint).unwrap();
     let mut vt = Blake3Transcript::new();
@@ -51,10 +51,10 @@ fn main() {
     bitz::observability::write_profile(std::io::stderr().lock(), "cm_probe warmup", &profile.intervals().expect("warmup intervals"), None).expect("write profile");
     drop(proof);
 
-    let profile = bitz::observability::Recording::start(Vec::new()).expect("capture prove");
+    let profile = bitz::observability::Recording::start().expect("capture prove");
     let mut pt = Blake3Transcript::new();
     let started_recording =
-        bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+        bitz::observability::Recording::start().expect("start operation capture");
     let started = tracing::info_span!("cm_probe:started").entered();
     let proof = prove_cm_and_bitz(&mut pt, &relation, &witness, &hint).unwrap();
     eprintln!(
@@ -63,9 +63,9 @@ fn main() {
     );
     bitz::observability::write_profile(std::io::stderr().lock(), "cm_probe prove", &profile.intervals().expect("prover intervals"), None).expect("write profile");
 
-    let profile = bitz::observability::Recording::start(Vec::new()).expect("capture verify");
+    let profile = bitz::observability::Recording::start().expect("capture verify");
     let mut vt = Blake3Transcript::new();
-    let started_recording = bitz::observability::Recording::start(Vec::new()).expect("start operation capture");
+    let started_recording = bitz::observability::Recording::start().expect("start operation capture");
     let started = tracing::info_span!("cm_probe:started").entered();
     verify_cm_and_bitz(&mut vt, &relation, &hint.commitment, &proof).unwrap();
     eprintln!(

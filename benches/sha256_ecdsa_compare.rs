@@ -16,7 +16,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum Timing {
-    Perfetto,
+    Spans,
     WallClock,
 }
 
@@ -51,7 +51,8 @@ struct Args {
     binius64_worker: Option<std::path::PathBuf>,
     #[arg(long = "log-inv-rate", alias = "binius-log-inv-rate", default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=3))]
     log_inv_rate: u8,
-    #[arg(long, value_enum, default_value = "perfetto")]
+    /// Span timings by default; wall-clock omits internal phase breakdowns.
+    #[arg(long, value_enum, default_value = "spans")]
     timing: Timing,
 }
 
@@ -148,18 +149,18 @@ fn setup<T, E: Into<Box<dyn Error>>>(
     Ok((value.map_err(Into::into)?, duration.as_secs_f64() * 1000.))
 }
 
-/// Both backends use the same operation boundaries. Only Perfetto captures
+/// Both backends use the same operation boundaries. Span timing captures
 /// nested protocol phases; wall-clock measurements stay in this harness.
 struct TrialTiming {
-    recording: Option<bitz::observability::Recording<Vec<u8>>>,
+    recording: Option<bitz::observability::Recording>,
     wall_ms: RefCell<HashMap<&'static str, f64>>,
 }
 
 impl TrialTiming {
     fn start(timing: Timing) -> Result<Self> {
         Ok(Self {
-            recording: if timing == Timing::Perfetto {
-                Some(bitz::observability::Recording::start(Vec::new())?)
+            recording: if timing == Timing::Spans {
+                Some(bitz::observability::Recording::start()?)
             } else {
                 None
             },
@@ -634,7 +635,7 @@ fn main() -> Result<()> {
         }
         return dispatch_binius(&args);
     }
-    if args.timing == Timing::Perfetto {
+    if args.timing == Timing::Spans {
         bitz::observability::install()?;
     }
     rayon::ThreadPoolBuilder::new()
@@ -703,7 +704,7 @@ mod reporting_tests {
             export_fixture: None,
             binius64_worker: None,
             log_inv_rate: 1,
-            timing: Timing::Perfetto,
+            timing: Timing::Spans,
         };
         let fixture = Fixture::generate(shared_fixture::Curve::P256, 3, 0).unwrap();
         let row = || Measurements {

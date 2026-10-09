@@ -316,39 +316,36 @@ where
         run.begin_memory();
         let recording = run
             .latency()
-            .then(|| bitz::observability::Recording::start(Vec::new()))
+            .then(|| bitz::observability::Recording::start())
             .transpose()?;
-        let start = Instant::now();
+        let trial = tracing::info_span!("mul:verified-trial").entered();
+        let total = tracing::info_span!("mul:witness-to-proof").entered();
         let generated = if generate_each {
-            Some(witness()?)
+            Some(tracing::info_span!("mul:witness").in_scope(&witness)?)
         } else {
             None
         };
-        let witness_ms = if generate_each {
-            start.elapsed().as_secs_f64() * 1000.
-        } else {
-            0.
-        };
-        let w = generated
-            .as_ref()
-            .or(baseline.as_ref())
-            .expect("trial witness");
+        let w = generated.as_ref().or(baseline.as_ref()).expect("trial witness");
         let proving = tracing::info_span!("mul:proving").entered();
-        let online = Instant::now();
-        let hint = commit(pack(w))?;
-        let commit_ms = online.elapsed().as_secs_f64() * 1000.;
+        let hint = tracing::info_span!("mul:commit").in_scope(|| commit(pack(w)))?;
         let mut transcript = Blake3Transcript::new();
         let proof = prove(w, &hint, &mut transcript)?;
-        let online_ms = online.elapsed().as_secs_f64() * 1000.;
         drop(proving);
-        let total_ms = start.elapsed().as_secs_f64() * 1000.;
-        let verification = tracing::info_span!("mul:verification").entered();
-        let verify_start = Instant::now();
-        verify(&hint, &proof)?;
-        let verify_ms = verify_start.elapsed().as_secs_f64() * 1000.;
-        drop(verification);
-        let verified_ms = start.elapsed().as_secs_f64() * 1000.;
+        drop(total);
+        tracing::info_span!("mul:verification").in_scope(|| verify(&hint, &proof))?;
+        drop(trial);
         run.end_memory();
+        let intervals = recording.map(|r| r.intervals()).transpose()?;
+        // Memory-only trials do not collect or publish timing measurements.
+        let millis = |label| -> Result<f64> {
+            Ok(match &intervals {
+                Some(spans) => bitz::observability::duration(spans, label)?.as_secs_f64() * 1000.,
+                None => 0.,
+            })
+        };
+        let commit_ms = millis("mul:commit")?;
+        let online_ms = millis("mul:proving")?;
+        let verify_ms = millis("mul:verification")?;
         let mut metrics = Metrics::from([
             ("setup_ms".into(), setup_ms),
             ("commit_ms".into(), commit_ms),
@@ -360,12 +357,11 @@ where
             ),
         ]);
         if generate_each {
-            metrics.insert("verified_trial_ms".into(), verified_ms);
-            metrics.insert("witness_ms".into(), witness_ms);
-            metrics.insert("witness_to_proof_ms".into(), total_ms);
+            metrics.insert("verified_trial_ms".into(), millis("mul:verified-trial")?);
+            metrics.insert("witness_ms".into(), millis("mul:witness")?);
+            metrics.insert("witness_to_proof_ms".into(), millis("mul:witness-to-proof")?);
         }
-        if let Some(recording) = recording {
-            let intervals = recording.intervals()?;
+        if let Some(intervals) = intervals {
             let phases = super::phase_milliseconds(&intervals, "mul:proving")?;
             let phase = |label: &str| {
                 phases

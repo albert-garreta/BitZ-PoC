@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let Args { exponent, security: lambda, reps, .. } = args;
     let exponent = exponent as usize;
     let mode = if args.mode == "split" { OuterMode::Split } else { OuterMode::AllRows };
-    bitz::observability::install().expect("install Perfetto subscriber");
+    bitz::observability::install().expect("install span metrics subscriber");
     let threads = common::init();
     let (prepared, setup) = bitz::observability::measure(tracing::info_span!("ecdsa:setup"), || {
         prepare_sha256_ecdsa(exponent, lambda, mode)
@@ -60,7 +60,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         s: s.into(),
     };
     for trial in 0..=reps {
-        let recording = bitz::observability::Recording::start(Vec::new())?;
+        let recording = bitz::observability::Recording::start()?;
         let start = tracing::info_span!("benchmark:witness").entered();
         let witness = generate_sha256_ecdsa_witness(&prepared, &statement, &message)?;
         drop(start);

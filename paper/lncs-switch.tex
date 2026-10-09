@@ -13,7 +13,8 @@
 %%      verbatim, in the supplementary material at \lncsappendixspine, in
 %%      order of appearance.  The optional [Heading] emits \section{Heading}
 %%      in front of the block (for blocks that do not start with their own
-%%      \section).  The \begin and \end lines must stand alone on their line.
+%%      \section).  The \begin and \end lines must stand alone on their line
+%%      (a trailing % comment is allowed after a \begin line only).
 %%
 %%   \begin{lncsstatement}{Name}
 %%      \begin{theorem}[Title]\label{t:...} ... \end{theorem}
@@ -34,16 +35,29 @@
 %%   \lncsplace[setup]{Name}   LNCS: typeset the block Name here (inside a
 %%                         group, after running the optional setup code, e.g.
 %%                         \renewcommand's the block relies on).  Full: nothing.
-%%   \lncsappendixspine    LNCS: emit all lncsappendix blocks (put it after
-%%                         \appendix).  Full: nothing.
+%%   \lncsappendixspine    LNCS: emit all lncsappendix blocks in order of appearance
+%%                         (put it after \appendix).  \lncsappendixspine[a,b,c]
+%%                         emits them in the given order instead; every block must
+%%                         be listed exactly once.  Full: nothing.
+%%   \lncsappendixtoc      LNCS: a table of contents of the sections that follow it
+%%   \lncsbreak            LNCS: \allowbreak (a break opportunity inside math); nothing in the full version
+%%                         (put it after \appendix, before the spine).  Full: nothing.
+%%   \lncsmath{formula}    displayed ($$...$$) in the full version, inline ($...$) in
+%%                         the LNCS build; for unnumbered one-line displays.
+%%   \lncsfloattables      setup code for \lncsplace: the tables of the block float
+%%                         ([tbp]) instead of obeying their [H].
 %%   \lncsfittables        setup code for \lncsplace: every tabular of the block
 %%                         is scaled down to the text width when it is wider
 %%                         (adjustbox), e.g. \lncsplace[\lncsfittables]{TabX}.
+%%   \lncsnote{text}       a note (RedViolet, prefixed "LNCS:") typeset ONLY in the
+%%                         LNCS build; nothing in the full version.  \lncsnotesfalse
+%%                         (in main.tex) hides them, e.g. for the submission PDF.
 %%   \iflncs ... \else ... \fi      for anything else (front matter etc.).
 %%
 %% How it works (LNCS build only): before \begin{document} the source file is
 %% read once, line by line, and every marked block is copied verbatim into
-%% \jobname-lncs-app-<name>.tex / \jobname-lncs-stmt-<Name>.tex (regenerated
+%% lncs-blocks/\jobname-lncs-app-<name>.tex / lncs-blocks/\jobname-lncs-stmt-<Name>.tex
+%% (the folder must exist; a tracked README keeps it in git; regenerated
 %% at every run; safe to delete).  In the main pass the marked blocks are
 %% skipped in place (line based, like the comment package) and the generated
 %% files are \input where requested.  Nothing is captured as macro arguments,
@@ -76,6 +90,12 @@
 %%    the LNCS build unless \lncsshownotestrue is set in main.tex.
 %% ---------------------------------------------------------------------------
 \newif\iflncsshownotes
+\newif\iflncsnotes \lncsnotestrue
+\iflncs
+  \newcommand{\lncsnote}[1]{\iflncsnotes\textcolor{RedViolet}{LNCS: #1}\fi}
+\else
+  \newcommand{\lncsnote}[1]{}
+\fi
 \AtBeginDocument{%
   \iflncs\iflncsshownotes\else
     \@for\lncs@e:=albert,albertimportant,albertforkai,john,ulrich,remco,Albert,kai,xander,psiv,osdnk,Aru\do{%
@@ -152,14 +172,14 @@
   \cs_new_protected:Npn \__lncs_line:n #1
     {
       \regex_extract_once:nnNTF
-        { \A \\begin\{lncsappendix\} (?: \[ ([^\]]*) \] )? \{ ([^\}]*) \} \s* \Z } {#1} \l__lncs_m_seq
+        { \A \\begin\{lncsappendix\} (?: \[ ([^\]]*) \] )? \{ ([^\}]*) \} \s* (?:\x{25}.*)? \Z } {#1} \l__lncs_m_seq
         { \__lncs_region_begin:xx { \seq_item:Nn \l__lncs_m_seq {2} } { \seq_item:Nn \l__lncs_m_seq {3} } }
         {
           \regex_match:nnTF { \A \\end\{lncsappendix\} \s* \Z } {#1}
             { \__lncs_region_end: }
             {
               \regex_extract_once:nnNTF
-                { \A \\begin\{(lncsstatement|lncstable|lncsmove)\} \{ ([^\}]*) \} \s* \Z } {#1} \l__lncs_m_seq
+                { \A \\begin\{(lncsstatement|lncstable|lncsmove)\} \{ ([^\}]*) \} \s* (?:\x{25}.*)? \Z } {#1} \l__lncs_m_seq
                 { \__lncs_block_begin:xx { \seq_item:Nn \l__lncs_m_seq {2} } { \seq_item:Nn \l__lncs_m_seq {3} } }
                 {
                   \regex_match:nnTF { \A \\end\{(lncsstatement|lncstable|lncsmove)\} \s* \Z } {#1}
@@ -190,7 +210,7 @@
       \seq_if_in:NnT \g__lncs_regions_seq {#2} { \msg_error:nnx {lncs} {duplicate} {#2} { \int_use:N \l__lncs_line_int } }
       \bool_set_true:N \l__lncs_in_region_bool
       \seq_gput_right:Nn \g__lncs_regions_seq {#2}
-      \iow_open:Nn \l__lncs_app_iow { \c_sys_jobname_str -lncs-app- #2 .tex }
+      \iow_open:Nn \l__lncs_app_iow { lncs-blocks/ \c_sys_jobname_str -lncs-app- #2 .tex }
       \iow_now:Nx \l__lncs_app_iow
         { \c_percent_str ~ lncsappendix~block~'#2',~copied~from~\l__lncs_src_str \c_space_tl line~ \int_use:N \l__lncs_line_int ~ (generated~file,~do~not~edit) }
       \tl_if_empty:nF {#1}
@@ -214,7 +234,7 @@
       \str_set:Nn \l__lncs_block_kind_str {#1}
       \str_set:Nn \l__lncs_block_name_str {#2}
       \seq_gput_right:Nn \g__lncs_blocks_seq {#2}
-      \iow_open:Nn \l__lncs_blk_iow { \c_sys_jobname_str -lncs-stmt- #2 .tex }
+      \iow_open:Nn \l__lncs_blk_iow { lncs-blocks/ \c_sys_jobname_str -lncs-stmt- #2 .tex }
       \iow_now:Nx \l__lncs_blk_iow
         { \c_percent_str ~ #1~block~'#2',~copied~from~\l__lncs_src_str \c_space_tl line~ \int_use:N \l__lncs_line_int ~ (generated~file,~do~not~edit) }
     }
@@ -237,7 +257,7 @@
   \cs_new_protected:Npn \lncs_place:n #1
     {
       \seq_if_in:NxTF \g__lncs_blocks_seq { \tl_to_str:n {#1} }
-        { \exp_args:Nx \file_input:n { \c_sys_jobname_str -lncs-stmt- #1 .tex } }
+        { \exp_args:Nx \file_input:n { lncs-blocks/ \c_sys_jobname_str -lncs-stmt- #1 .tex } }
         { \msg_error:nnn {lncs} {no-block} {#1} }
     }
   \cs_new_protected:Npn \lncs_restate:n #1
@@ -249,7 +269,7 @@
             \tl_set_eq:NN \lncs@restated@label \l__lncs_label_tl
             \cs_set_eq:NN \label \use_none:n
             \lncs@restated@envs
-            \exp_args:Nx \file_input:n { \c_sys_jobname_str -lncs-stmt- #1 .tex }
+            \exp_args:Nx \file_input:n { lncs-blocks/ \c_sys_jobname_str -lncs-stmt- #1 .tex }
           \group_end:
         }
         { \msg_error:nnn {lncs} {no-block} {#1} }
@@ -257,16 +277,79 @@
   \cs_new_protected:Npn \lncs_spine:
     {
       \seq_map_inline:Nn \g__lncs_regions_seq
-        { \exp_args:Nx \file_input:n { \c_sys_jobname_str -lncs-app- ##1 .tex } }
+        { \exp_args:Nx \file_input:n { lncs-blocks/ \c_sys_jobname_str -lncs-app- ##1 .tex } }
+    }
+  \msg_new:nnn {lncs} {spine-unknown} {\iow_char:N\\lncsappendixspine:~no~lncsappendix~block~named~'#1'.}
+  \msg_new:nnn {lncs} {spine-missing} {\iow_char:N\\lncsappendixspine:~the~block~'#1'~is~not~listed~and~would~be~lost.}
+  \seq_new:N \l__lncs_spine_seq
+  \cs_new_protected:Npn \lncs_spine:n #1
+    {
+      \exp_args:NNx \seq_set_from_clist:Nn \l__lncs_spine_seq { \tl_to_str:n {#1} }   % string items, like the region names
+      \seq_map_inline:Nn \l__lncs_spine_seq
+        {
+          \seq_if_in:NnTF \g__lncs_regions_seq {##1}
+            { \exp_args:Nx \file_input:n { lncs-blocks/ \c_sys_jobname_str -lncs-app- ##1 .tex } }
+            { \msg_error:nnn {lncs} {spine-unknown} {##1} }
+        }
+      \seq_map_inline:Nn \g__lncs_regions_seq
+        { \seq_if_in:NnF \l__lncs_spine_seq {##1} { \msg_error:nnn {lncs} {spine-missing} {##1} } }
     }
   \NewDocumentCommand \lncsplace { O{} m } { \group_begin: #1 \lncs_place:n {#2} \group_end: }
   \ExplSyntaxOff
   \newcommand\lncsfittables{%
     \let\lncs@tabular\tabular \let\lncs@endtabular\endtabular
-    \renewenvironment{tabular}{\begin{adjustbox}{max width=\textwidth}\lncs@tabular}{\lncs@endtabular\end{adjustbox}}}
+    \renewenvironment{tabular}{\begin{adjustbox}{max width=\textwidth,max totalheight=0.9\textheight}\lncs@tabular}{\lncs@endtabular\end{adjustbox}}}
+  \newcommand\lncsfloattables{%
+    \let\lncs@table\table \let\lncs@endtable\endtable
+    \renewenvironment{table}[1][tbp]{\lncs@table[tbp]}{\lncs@endtable}}
+  \newcommand{\lncsmath}[1]{$#1$}
+  \newcommand\lncsbreak{\allowbreak}% LNCS: a permitted line break inside math (no-op in the full version)
+  \setlength\emergencystretch{3em}% LNCS: third line-breaking pass before an overfull line is accepted
+  % \lncsappendixtoc: the contents of the supplementary material only.  From this
+  % point on, the entries that sectioning commands write to the toc go to
+  % \jobname.apx instead (hyperref's bookmarks are unaffected), and the list is
+  % read from there.  llncs' \tableofcontents would start a chapter and list the
+  % body too.
+  \def\lncs@tocext{toc}
+  \newcommand\lncsappendixtoc{%
+    \global\let\lncs@addtocontents\addtocontents
+    \long\gdef\addtocontents##1{%
+      \def\lncs@tmp{##1}%
+      \ifx\lncs@tmp\lncs@tocext\expandafter\@firstoftwo\else\expandafter\@secondoftwo\fi
+        {\lncs@addtocontents{apx}}{\lncs@addtocontents{##1}}}%
+    \par\@starttoc{apx}\par}
+  % Citations and the reference list with a bibtex style that produces alphabetic
+  % labels (the paper uses alpha.bst): llncs typesets "[KPS18,BFK+24]" with no break
+  % point and no space after the commas, and labels the entries "KPS18." instead of
+  % "[KPS18]" (its list is designed for the numeric splncs04 style).  We use the
+  % article-class conventions instead: ", " (breakable) between citations, "[label]"
+  % in the list.  The environment is llncs' own (without its unused openbib
+  % variant: \if@openbib does not exist in the article build, and an unknown
+  % conditional inside this skipped branch would unbalance it), with \@biblabel changed.
+  \RequirePackage{etoolbox}
+  \AtBeginDocument{%
+    \patchcmd{\@citex}{\def\@citea{,}}{\def\@citea{,\penalty\@m\ }}{\typeout{lncs: citation lists get a breakable space after commas}}{\typeout{lncs: could not patch \string\@citex}}%
+    \patchcmd{\@citex}{\def\@citea{,}}{\def\@citea{,\penalty\@m\ }}{}{}}
+  \renewenvironment{thebibliography}[1]
+       {\section*{\refname}
+        \def\@biblabel##1{[##1]}
+        \small
+        \list{\@biblabel{\@arabic\c@enumiv}}%
+             {\settowidth\labelwidth{\@biblabel{#1}}%
+              \leftmargin\labelwidth
+              \advance\leftmargin\labelsep
+              \usecounter{enumiv}%
+              \let\p@enumiv\@empty
+              \renewcommand\theenumiv{\@arabic\c@enumiv}}%
+        \renewcommand\newblock{\hskip .11em \@plus.33em \@minus.07em}%
+        \sloppy\clubpenalty4000\widowpenalty4000%
+        \sfcode`\.=\@m}
+       {\def\@noitemerr
+         {\@latex@warning{Empty `thebibliography' environment}}%
+        \endlist}
   \ExplSyntaxOn
   \NewDocumentCommand \lncsrestate { m } { \lncs_restate:n {#1} }
-  \NewDocumentCommand \lncsappendixspine { } { \lncs_spine: }
+  \NewDocumentCommand \lncsappendixspine { o } { \IfNoValueTF {#1} { \lncs_spine: } { \lncs_spine:n {#1} } }
 
   % Run the pre-scan now.  \lncssourcefile may be predefined (e.g. by a wrapper
   % file with a different \jobname); it defaults to main.tex.
@@ -286,7 +369,7 @@
   \theoremstyle{plain}
   \def\lncs@restated@note#1{\ifx\@empty#1\@empty restated\else#1, restated\fi}
   \def\lncs@redirect#1#2#3{% env name, printed name, style (skipped if the env does not exist)
-    \ifcsname #1\endcsname
+    \expandafter\ifx\csname #1\endcsname\relax\else
       \expandafter\renewenvironment\expandafter{#1}[1][]{\def\lncs@restated@name{#2}\begin{lncs@restated@#3}[\lncs@restated@note{##1}]}{\end{lncs@restated@#3}}%
     \fi}
   \def\lncs@restated@envs{%
@@ -318,8 +401,12 @@
   \def\endlncsmove{\begingroup\def\@currenvir{lncsmove}}
   \newcommand\lncsplace[2][]{}
   \newcommand\lncsfittables{}
+  \newcommand\lncsfloattables{}
+  \newcommand{\lncsmath}[1]{$$#1$$}
+  \newcommand\lncsbreak{}
   \newcommand\lncsrestate[1]{}
-  \newcommand\lncsappendixspine{}
+  \newcommand\lncsappendixspine[1][]{}
+  \newcommand\lncsappendixtoc{}
 \fi
 
 \makeatother

@@ -39,8 +39,8 @@ record. Native grinding and Flock's work are independently checked; see
 The raw PCS default is `t = ceil(3n/5) - 1`, clamped to the packing width.
 `MulLayout::new` uses this split, with at least 64 gates per packed lane.
 `with_split_shift` adjusts it explicitly. SHA's relation-specific layouts and
-prime rules remain. The standalone `bitz` CLI retains its published
-`ceil(3n/5)` default. Relation cells are bits.
+prime rules remain. The standalone `bitz` CLI (and its `--sweep` table) uses
+the same default. Relation cells are bits.
 
 ## Running
 

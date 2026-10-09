@@ -112,12 +112,14 @@ $\mathbb{B}\text{it}\ZZ$: proofs and commitments in arbitrary rings through bina
 \author[2]{Albert Garreta}
 \author[3]{Marcin Kostrzewa}
 \author[4]{Shreyas Londhe}
+\author[5]{Lev Soukhanov}
 \author[2]{John Wu}
 
 \affil[1]{World Foundation, \texttt{remco@world.org}}
 \affil[2]{Nethermind Research, \texttt{albert@nethermind.io}, \texttt{john.wu@nethermind.io}}
 \affil[3]{Reilabs, \texttt{marcin.kostrzewa@reilabs.io}}
 \affil[4]{Ivy Research, \texttt{shreyas@zk.email}}
+\affil[5]{[[alloc] init], \texttt{0xdeadfae@gmail.com}}
 
 \date{\today}
 \fi
@@ -129,7 +131,7 @@ $\mathbb{B}\text{it}\ZZ$: proofs and commitments in arbitrary rings through bina
 
 
 \begin{abstract}
-We introduce \ftwoz, a hash-based Polynomial Commitment Scheme (PCS) for committing to multilinear polynomials $\bff$ with coefficients in an arbitrary finitely generated ring $S$, e.g.\ a finite field $\FF$, the integers $\ZZ$, a cyclotomic ring, etc. Given another arbitrary ring $R$ and a ring homomorphism $\psi:S\to R$, \ftwoz\ then proves evaluation claims over $R$ for the polynomial $\psi(\bff)$.   \ftwoz's costs depend almost exclusively on the number of bits in the coefficients of $\bff$, and not on $S$, $R$ or $\psi$. Moreover, \ftwoz\ provides range checks (or more generally, bit-size checks) essentially for free. 
+We introduce \ftwoz\footnote{Pronounced ``beet-zee'', with ``beet'' as the vegetable beet \includegraphics[height=1em]{beet.png}}, a hash-based Polynomial Commitment Scheme (PCS) for committing to multilinear polynomials $\bff$ with coefficients in an arbitrary finitely generated ring $S$, e.g.\ a finite field $\FF$, the integers $\ZZ$, a cyclotomic ring, etc. Given another arbitrary ring $R$ and a ring homomorphism $\psi:S\to R$, \ftwoz\ then proves evaluation claims over $R$ for the polynomial $\psi(\bff)$.   \ftwoz's costs depend almost exclusively on the number of bits in the coefficients of $\bff$, and not on $S$, $R$ or $\psi$. Moreover, \ftwoz\ provides range checks (or more generally, bit-size checks) essentially for free. 
 
 
 
@@ -142,7 +144,7 @@ To commit to $\bff$, \ftwoz\ first decomposes $\bff$ into a string of bits, and 
 
 To commit to $\bff$, \ftwoz\ first decomposes $\bff$ into a string of bits, and then commits to it over a binary field $\comfield$, in packed form. The scheme then  proves the linear claim on $\psi(\bff)$ over the arbitrary ring $R$, even though it committed to the bits forming $\bff$ over a binary field.
 
- We implement \ftwoz-SNARK and use it to prove, among others, SHA-256 hashing followed by ECDSA signature verification; RSA modular exponentiation and Poseidon hashing;  integer multiplication; and SHA-256 hashing followed by multiplication modulo $2^{32}$, consistently obtaining better performance than prior approaches on most tasks. As an example, we achieve a throughput of $5$ million proved 32-bit integer multiplications per second on a  MacBook Air M5 24\,GB (10 threads, CPU-only) with proof sizes under $150$\,kB. We prove a SHA-256 hash of a $2$\,kB ($2^5$ compressions) message followed by a P-256 ECDSA signature verification with $50$\,ms and $3.3$\,ms prover and verifier time, respectively, and with a proof of $76$\,kB, single-threaded. With $10$ threads the times are $20$\,ms and $3.4$\,ms. 
+ We implement \ftwoz-SNARK and use it to prove, among others, SHA-256 hashing followed by ECDSA signature verification; RSA modular exponentiation and Poseidon hashing;  integer multiplication; and SHA-256 hashing followed by multiplication modulo $2^{32}$, consistently obtaining better performance than prior approaches on most tasks. As an example, we achieve a throughput of $9$ million proved 32-bit integer multiplications per second on a  MacBook Air M5 24\,GB (10 threads, CPU-only) with proof sizes under $200$\,kB. We prove a SHA-256 hash of a $2$\,kB ($2^5$ compressions) message followed by a P-256 ECDSA signature verification with $32$\,ms and $3.1$\,ms prover and verifier time, respectively, and with a proof of $65$\,kB, single-threaded. With $10$ threads the times are $17$\,ms and $3.7$\,ms. 
  
 
 \end{abstract}
@@ -227,24 +229,27 @@ We emphasize that \ftwoz\ can also be used  to prove more exotic constraints, su
          \cmidrule(lr){3-4} \cmidrule(lr){5-6}
          Computation & Scheme & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
          \midrule
-         $2^{19}$ multiplications & \ftwoz-SNARK, rate $1/2$ & \textbf{364} & \textbf{102} & 4.33 & \textbf{3.08} & 189 & \textbf{0.487} \\
-         of $32$-bit integers & \ftwoz-SNARK, rate $1/8$ & 429 & 115 & \textbf{4.24} & 3.15 & \textbf{116} & 0.543 \\
+         $2^{19}$ multiplications & \ftwoz-SNARK, rate $1/2$ & \textbf{181} & \textbf{56.2} & 2.79 & 3.16 & 212 & \textbf{0.250} \\
+         of $32$-bit integers & \ftwoz-SNARK, rate $1/8$ & 236 & 65.8 & \textbf{2.68} & \textbf{3.08} & \textbf{139} & 0.315 \\
           & Binius64~\cite{binius64}, rate $1/2$ & 867 & 272 & 20.5 & 8.96 & 472 & 3.67 \\
           & Binius64, rate $1/8$ & 1062 & 313 & 20.2 & 8.77 & 330 & 3.93 \\
           & Limber~\cite{limber} & 4436 & 1359 & 268 & 221 & 12278 & 3.66 \\
           & Zinc+~\cite{zincplus} & 2833 & 809 & 30.9 & 14.5 & 1791 & 1.23 \\
          \addlinespace
-         SHA-256 + ECDSA & \ftwoz-SNARK, rate $1/2$ & \textbf{42.2} & \textbf{18.1} & 3.33 & 3.32 & 118 & 0.799 \\
-         \quad ($2$\,KB message) & \ftwoz-SNARK, rate $1/8$ & 43.4 & 19.0 & \textbf{3.20} & \textbf{3.20} & \textbf{75} & 0.799 \\
-         \quad  ($2^5$ compressions) & Binius64, rate $1/2$ & 76.7 & 37.0 & 5.01 & 3.52 & 331 & \textbf{0.409} \\
-         \quad  (secp256k1) & Binius64, rate $1/8$ & 90.0 & 40.5 & 4.86 & 3.37 & 250 & 0.416 \\
+         $2^{23}$ multiplications & \ftwoz-SNARK, rate $1/2$ & \textbf{2585} & \textbf{678} & 8.44 & 8.26 & 375 & \textbf{3.68} \\
+         of $32$-bit integers & \ftwoz-SNARK, rate $1/8$ & 3611 & 865 & \textbf{8.32} & \textbf{8.09} & \textbf{276} & 4.75 \\
          \addlinespace
-         RSA and & \ftwoz-SNARK, rate $1/8$ & \textbf{226} & \textbf{76.6} & \textbf{7.8} & \textbf{10.0} & \textbf{268} & -- \\
+         SHA-256 + ECDSA & \ftwoz-SNARK, rate $1/2$ & 36.0 & \textbf{17.4} & 3.03 & 3.60 & 108 & 0.782 \\
+         \quad ($2$\,KB message) & \ftwoz-SNARK, rate $1/8$ & \textbf{33.8} & 17.9 & \textbf{3.01} & 3.54 & \textbf{65} & 0.786 \\
+         \quad  ($2^5$ compressions) & Binius64, rate $1/2$ & 76.7 & 37.0 & 5.01 & 3.52 & 331 & \textbf{0.409} \\
+         \quad  (secp256k1) & Binius64, rate $1/8$ & 90.0 & 40.5 & 4.86 & \textbf{3.37} & 250 & 0.416 \\
+         \addlinespace
+         RSA and & \ftwoz-SNARK, rate $1/8$ & \textbf{129} & \textbf{42.0} & \textbf{7.5} & \textbf{8.7} & \textbf{269} & -- \\
          Poseidon \cite{limber} & Limber & 1051 & 548 & 38.7 & 37.9 & 5769 & -- \\
           & Zinc+ & 1874 & 545 & 16.1 & 12.0 & 1272 & -- \\
          \addlinespace
-         $2^{20}$ mult.\ mod $2^{32}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{1120} & \textbf{297} & 50.7 & 16.3 & 303 & \textbf{5.29} \\
-         and $2^{12}$ SHA-256 & \ftwoz-SNARK, rate $1/8$ & 1444 & 349 & \textbf{50.5} & \textbf{15.3} & \textbf{176} & 5.46 \\
+         $2^{20}$ mult.\ mod $2^{32}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{794} & \textbf{208} & 48.9 & 15.5 & 314 & \textbf{4.87} \\
+         and $2^{12}$ SHA-256 & \ftwoz-SNARK, rate $1/8$ & 1040 & 258 & \textbf{48.6} & \textbf{15.1} & \textbf{188} & 5.09 \\
           & Binius64, rate $1/2$ & 1980 & 632 & 85.2 & 26.5 & 519 & 11.1 \\
           & Binius64, rate $1/8$ & 2405 & 714 & 86.5 & 25.1 & 356 & 11.9 \\
 
@@ -271,7 +276,7 @@ We emphasize that \ftwoz\ can also be used  to prove more exotic constraints, su
  \medskip
      \begin{enumerate}[leftmargin=*,nosep]
          \item  \textbf{Bitification.} First, the prover and verifier transform the  initial claim into a claim of the form  $\langle \psi(\bitstext(\bff)),\lncsbreak \uu \rangle = \mu$ over $R$, for some $\uu$, and where $\bitstext(\bff)$ denotes a vector  with entries in $\{0,1\}$. Intuitively, $\bitstext(\bff)$ is simply the result of  bit-decomposing the entries of $\bff$ in a natural way. This decomposition is linear, and so an inner product on $\bff$ equals an inner product on $\bitstext(\bff)$, for a different weight vector. For example, if $\bff$ is filled with $B$ bit nonnegative elements, then $\uu=  \vv\otimes(1,2,\ldots, 2^{B-1})$.
-         \item \textbf{Commitment.} The prover commits to $\bitstext(\bff)$ over a binary field $\comfield$. To do so, it first packs every $\comfieldexp$ entries of $\bitstext(\bff)$ into a single element from $\comfield$, obtaining a packed vector $\pack(\bff)$ of dimension $|\bitstext(\bff)|/\comfieldexp$. Then the prover commits to $\pack(\bff)$ using a hash-based  commitment scheme  over $\comfield$, e.g.\ WHIR \cite{whir}.  Using the ring-switching techniques from \cite{binius,binius2}, we can later ptove linear claims for $\bitstext(\bff)$ using only the commitment to the packed vector. 
+         \item \textbf{Commitment.} The prover commits to $\bitstext(\bff)$ over a binary field $\comfield$. To do so, it first packs every $\comfieldexp$ entries of $\bitstext(\bff)$ into a single element from $\comfield$, obtaining a packed vector $\pack(\bff)$ of dimension $|\bitstext(\bff)|/\comfieldexp$. Then the prover commits to $\pack(\bff)$ using a hash-based  commitment scheme  over $\comfield$, e.g.\ WHIR \cite{whir}.  Using the ring-switching techniques from \cite{binius,binius2}, we can later prove linear claims for $\bitstext(\bff)$ using only the commitment to the packed vector. 
          \item \textbf{Lift to integers.} The prover computes and sends $\mu'\in \ZZ$ such that $\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle = \mu'$ in $\ZZ$, where $\pi_q^{-1}$ is the natural lift of elements from $\FF_q$ to $\ZZ$.
          \item \textbf{Proof in the exponent of $\comfield$.} Let $g$ be a generator of the multiplicative subgroup $\comfield^*$. Inspired by \cite{binius64}, we have prover and verifier  prove that $g^{\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle} = g^{\mu'}$ in $\comfield$. Precisely, we have
          \begin{equation}\label{e:intro}
@@ -291,9 +296,9 @@ We emphasize that \ftwoz\ can also be used  to prove more exotic constraints, su
 \medskip
 \begin{itemize}[leftmargin=*,nosep]
     \item \textbf{How to lift from general rings?} First, $R$ may not be a prime field, in which case there is no natural lift to integers in Step 3; rather, there is a lift to integer polynomials $\ZZ[X_1, \ldots, X_k]$. 
-    \item \textbf{How to lift large values?} Second, even if $R=\FF_q$ is a prime field,  $q=|\FF|$ may be large and the linear expression $\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle$ may overflow the order of $g\in \comfield^{*}$, which is $2^{\comfieldexp}-1$. In this case, proving  $\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle = \mu'$  ``in the exponent of $g$'' is unsound, because proofs in the exponent are effectively proofs modulo $2^{\comfieldexp}-1$. 
-    \item \textbf{Expensive grand product.} Third, even if neither of these problems hold, \eqref{e:intro} is, in principle, an expensive constraint to prove: indeed, it is a length $|\bitstext(\bff)|$ grand product of, essentially, arbitrary elements from $\comfield$ (which in our instantiation are of $128$ bits, i.e.\ not small).  Grand products can be expensive, and furthermore the fact that the factors are large prevents us from using known sumcheck optimizations such as univariate skips \cite{gruen} and others from \cite{flock,sumcheck_opt_1,sumcheck_opt_2}.
-    \item \textbf{Non-succinct verifier.} Fourth, when proving \eqref{e:intro}, typically one ends up with an MLE evaluation claim on the vector $(g^{\pi_q^{-1}(\uu)_i})_{i\in[\codedim]}$ (and another on $\bitstext(\bff)$). If the verifier checks the claim itself, then it pays a linear cost. If otherwise the prover has to prove this claim, then it is essentially back to square one.
+    \item \textbf{How to lift large values?} Second, even if $R=\FF_q$ is a prime field,  $q$ may be large and the linear expression $\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle$ may overflow the order of $g\in \comfield^{*}$, which is $2^{\comfieldexp}-1$. In this case, proving  $\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle = \mu'$  ``in the exponent of $g$'' is unsound, because proofs in the exponent are effectively proofs modulo $2^{\comfieldexp}-1$. 
+    \item \textbf{Expensive grand product.} Third, even if neither of these problems hold, \eqref{e:intro} is, in principle, an expensive constraint to prove: indeed, it is a length $|\bitstext(\bff)|$ grand product of, essentially, arbitrary elements from $\comfield$ (which in our instantiation are of $128$ bits, i.e.\ not small).  Grand products can be expensive, and furthermore the fact that the factors are large prevents us from using known sumcheck optimizations such as univariate skips \cite{gruen} and others from \cite{flock,sumcheck_opt_2}.
+    \item \textbf{Non-succinct verifier.} Fourth, when proving \eqref{e:intro}, typically one ends up with an MLE evaluation claim on the vector $(g^{\pi_q^{-1}(\uu)_i})_{i\in[|\bitstext(\bff)|]}$ (and another on $\bitstext(\bff)$). If the verifier checks the claim itself, then it pays a linear cost. If otherwise the prover has to prove this claim, then it is essentially back to square one.
 \end{itemize}
 
 \bigskip
@@ -319,17 +324,17 @@ We emphasize that \ftwoz\ can also be used  to prove more exotic constraints, su
 This technique allows us  to instantiate \ftwoz\ with 128 bits of security, using $\comfield=\FF_{2^{128}}$, while having essentially no limitation on the size of the ring $R$ we start with, see \cref{s:instantiation}.
 \fi
 
-\paragraph{Issue 3: low entropy grand products.} We split  \eqref{e:intro} into $\approx\sqrt{|\bitstext(\bff)|}$ grand products of the same form as \eqref{e:intro}, so that, even though in total there are $|\bitstext(\bff)|$ factors among all of them, these factors can only take $\sqrt{|\bitstext(\bff)|}$ values. More concretely, we assume $\uu=\uu^{(1)} \otimes \uu^{(2)}$ tensor-decomposes into $\approx \sqrt{|\bitstext(\bff)|}$ sized factors $\uu^{(1)}, \uu^{(2)}$. This is typically the case since $\vv$ is usually an ``eq'' vector, and $\uu=L^{\mathsf{T}}\cdot \vv$ for a highly structured matrix $L$\footnote{For example, in our previous example, $\uu= \vv \otimes (1,2,\ldots, 2^{B-1})$. Then, if $\vv$ is an ``eq'' vector, then $\uu$ admits highly customizable tensor decompositions.}. This allows to split the integer claim $\langle \pi_q^{-1}(\uu), \bitstext(\bff)\rangle = \mu'$ in $\ZZ$ into $\approx \sqrt{|\bitstext(\bff)|}$ integer claims as follows: the prover computes and sends integers $\mu_j'$, for $j\in |\uu^{(2)}|$m such that $\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle = \mu_j'$ in $\ZZ$, and $\sum_{j} \pi_q(\mu_j') \cdot \uu_j^{(2)} = \mu$, where we index   $\bitstext(\bff)$ with indices $i\in [|\uu^{(1)}|], j\in [|\uu^{(2)}|]$. The verifier checks the latter equality, and then the prover and verifier set up a grand product for each of the new inner product claims, obtaining 
+\paragraph{Issue 3: low entropy grand products.} We split  \eqref{e:intro} into $\approx\sqrt{|\bitstext(\bff)|}$ grand products of the same form as \eqref{e:intro}, so that, even though in total there are $|\bitstext(\bff)|$ factors among all of them, these factors can only take $\sqrt{|\bitstext(\bff)|}$ values. More concretely, we assume $\uu=\uu^{(1)} \otimes \uu^{(2)}$ tensor-decomposes into $\approx \sqrt{|\bitstext(\bff)|}$ sized factors $\uu^{(1)}, \uu^{(2)}$. This is typically the case since $\vv$ is usually an ``eq'' vector, and $\uu=L^{\mathsf{T}}\cdot \vv$ for a highly structured matrix $L$\footnote{For example, in our previous example, $\uu= \vv \otimes (1,2,\ldots, 2^{B-1})$. Then, if $\vv$ is an ``eq'' vector, then $\uu$ admits highly customizable tensor decompositions.}. This allows to split the claim $\langle \psi(\bitstext(\bff)), \uu \rangle = \mu$ over $\FF_q$ into $\approx \sqrt{|\bitstext(\bff)|}$ integer claims as follows: the prover computes and sends integers $\mu_j'$, for $j\in [|\uu^{(2)}|]$, such that $\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle = \mu_j'$ in $\ZZ$, and $\sum_{j} \pi_q(\mu_j') \cdot \uu_j^{(2)} = \mu$, where we index   $\bitstext(\bff)$ with indices $i\in [|\uu^{(1)}|], j\in [|\uu^{(2)}|]$. The verifier checks the latter equality, and then the prover and verifier set up a grand product for each of the new inner product claims, obtaining 
   \begin{equation}\label{e:intro_2}
          g^{\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle} = \prod_{i} \left((g^{\pi_q^{-1}(\uu_i^{(1)})} -1) \cdot \bitstext(\bff)_{ij} + 1\right) = g^{\mu_j'} \qquad \text{for all } j.
          \end{equation}
 There are $|\bitstext(\bff)|$ factors in total, but only $\approx \sqrt{|\bitstext(\bff)|}$ different values these factors can take. We say \eqref{e:intro_2} is a \emph{low entropy batched grand product}. 
 
-To prove \eqref{e:intro_2} we use a batched GKR protocol with the following  optimization, among others: because of the low-entropy phenomenon, we build several small lookup tables of size $O(\sqrt{|\bitstext(\bff)|})$ (for example, of less than 1 MB for $|\uu^{(1)}|=2^{16}$, see \cref{tab:gkr_tables}) which are used during several of the most expensive sumcheck rounds of the GKR protocol. \iflncs \else Concretely, the last sumcheck (the most expensive one) uses  lookup tables to compute the first three messages of the prover; the second last sumcheck does the same for the first two prover messages (with two tables); and the third last sumcheck does the same for the first prover message (with one table).\fi
+To prove \eqref{e:intro_2} we use a batched GKR protocol with the following  optimization, among others: because of the low-entropy phenomenon, we build several small lookup tables of size $O(\sqrt{|\bitstext(\bff)|})$ which are used during several of the most expensive sumcheck rounds of the GKR protocol. \iflncs \else Concretely, the last sumcheck (the most expensive one) uses  lookup tables to compute the first five messages of the prover,  the second last sumcheck does the same for the first four prover messages, and the third and fourth last sumchecks do the same with the first three and two messages, respectively (see \cref{s:gkr_buckets,s:indices}).\fi
 
 \bigskip
 
-\noindent \emph{\underline{A key point}:} The key is that these square-root sized tables can be used in each of the grand products from \eqref{e:intro_2}, producing a large amortization, and allowing us to build several tables for different sumcheck rounds, while keeping them in cache, where table reads are cheaper than field multiplications. 
+\noindent \emph{\underline{A key point}:} The key is that these square-root sized tables can be used in each of the grand products from \eqref{e:intro_2}, producing a large amortization, and allowing us to build several tables for different sumcheck rounds, while accessing them in a cache-friendly order (only a small part of each table needs to be in cache at any time), where table reads are cheaper than field multiplications. 
 
 The reason this is possible is that  we only seek to prove witness MLE evaluations (or inner products) in the exponent. In this specific setting, we can   decompose  the initial claim into the subclaims $\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle = \mu_j'$. The reason we only need to address this simple setting is that our scheme starts off in a ring $R$, with its \emph{non-linear} constraints arithmetized over $R$. Then the constraints are reduced via a PIOP to a \emph{linear} integer claim on the witness,  which we then prove ``in the exponent''. 
 
@@ -340,7 +345,7 @@ See \cref{r:comparison_grand_product_binius_lev} for discussion on this and othe
 
 
 
-\paragraph{Issue 4.} The above solution also takes care of Issue 4: the batched GKR protocol outputs MLE evaluation claims on $(g^{\pi_q^{-1}(\uu^{(1)})_i})_{i\in[\codedim]}$ (and $\bitstext(\bff)$, which is dealt with by the PCS over $\comfield$). This is an $O(\sqrt{|\bitstext(\bff)|})$ vector, and the verifier can check this claim by itself cheaply.
+\paragraph{Issue 4.} The above solution also takes care of Issue 4: the batched GKR protocol outputs MLE evaluation claims on $(g^{\pi_q^{-1}(\uu^{(1)})_i})_{i\in[|\uu^{(1)}|]}$ (and $\bitstext(\bff)$, which is dealt with by the PCS over $\comfield$). This is an $O(\sqrt{|\bitstext(\bff)|})$ vector, and the verifier can check this claim by itself cheaply.
 
 
 \subsubsection{Using \ftwoz\ to prove constraints with hybrid arithmetics}\label{s:intro_hybrid_proofs}
@@ -451,13 +456,13 @@ Compared to all prior work, \ftwoz\ proposes a new  concrete PCS over rings, and
 %Remarkably, the Galois approach is present in prior work \cite[Appendix F]{stark}, although not explicitly framed in full generality.
 %}
 
-At the time of writing, two further works push the performance envelope of binary proof systems. Bünz, Rothblum, and Wang~\cite{flock} combine \cite{binius64} with the batched R1CS strategy inspired by~\cite{linearSizedIOPs}, achieving a striking proving throughput of several hundred thousand hashes per second on an M4 Max CPU. BinarySpartan~\cite{binaryspartan}, in turn, incorporates the optimizations of \cite{binius64}-Flock into Spartan, resulting in a proof system with again high hash-proving throughput.
+At the time of writing, two further works push the performance envelope of binary proof systems. Bünz, Rothblum, and Wang~\cite{flock} combine \cite{binius64} with the batched R1CS strategy inspired by~\cite{linearSizedIOPs}, achieving a striking proving throughput of several hundred thousand hashes per second on an M4 Max CPU. BinarySpartan~\cite{binaryspartan}, in turn, adapts and incorporates optimizations from prime fields and elliptic curves to  Spartan over binary fields, resulting in a proof system with again high hash-proving throughput.
 % \ulrich{Not sure about Flock and Binary Spartan, since nothing conceptually new is happening there.
 % The main improvement over binius64 stems from batching R1CS instances as in \cite{linearSizedIOPs}, and to be frank I do not know what Spartan is about, since binius64 and Flock are essentially Spartan.
 % I have the impression that naming them requires also to provide a more complete list of binary provers.
 % }
 
-\paragraph{Commitments in binary fields with openings in rings $R$ of characteristic different than $2$.} To our knowledge this primitive is studied only in Soukhanov's note \cite{lev} and in the present work. The note \cite{lev}  proposes a scheme, called \emph{Fields-Witch} for committing over the binary field $\FF_{2^{127}}$ and then executing a PCS opening over $\FF_{2^{127}-1}$ (a prime field), by running the PCS in the exponent of a generator of   $\FF_{2^{127}}^*$. The approach, substantially different to ours, is limited to $R=\FF_{2^{127}-1}$ (or analogous configurations where $2^n-1$ is prime) and does not seem to be able to leverage our aforementioned ``low-entropy'' based optimizations.  We discuss this further in \cref{r:comparison_grand_product_binius_lev} and compare \ftwoz\ with \cite{lev} in \cref{s:exp_fields_witch}. %Soukhanov has since released an implementation of the note (\texttt{fields-witch}, \url{https://github.com/morgana-proofs/fields-witch}); we compare against it in \cref{s:exp_fields_witch} and discuss the approach further in \cref{r:comparison_grand_product_binius_lev}
+\paragraph{Commitments in binary fields with openings in rings $R$ of characteristic different than $2$.} To our knowledge this primitive is studied only in Soukhanov's note \cite{lev} and in the present work. The note \cite{lev}  proposes a scheme, called \emph{Fields-Witch} for committing over the binary field $\FF_{2^{127}}$ and then executing a PCS opening over $\FF_{2^{127}-1}$ (a prime field), by running a logarithmic recursive procedure in  the exponent of a generator of   $\FF_{2^{127}}^*$. The approach, substantially different to ours, is limited to $R=\FF_{2^{127}-1}$ (or analogous configurations where $2^n-1$ is prime) and does not seem to be able to leverage our aforementioned ``low-entropy'' based optimizations.  We discuss this further in \cref{r:comparison_grand_product_binius_lev} and compare \ftwoz\ with \cite{lev} in \cref{s:exp_fields_witch}. %Soukhanov has since released an implementation of the note (\texttt{fields-witch}, \url{https://github.com/morgana-proofs/fields-witch}); we compare against it in \cref{s:exp_fields_witch} and discuss the approach further in \cref{r:comparison_grand_product_binius_lev}
 
 %$\QQ$aren and Limber \cite{qaren,limber} provide a related primitive when $R=\ZZ$, but can only support commitments over fields of relatively large characteristic (compared to $2$). 
 
@@ -488,11 +493,16 @@ We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful an
 %\bigskip
 
 
-\paragraph{Usage and non-usage of AI.}  \emph{Implementation:} We crucially used AI in our implementation and experiments, in the way explained in \cref{s:experiments}.
+\paragraph{Usage and non-usage of AI.} 
+
+
+
+
+\emph{Implementation and optimizations:} We  used AI in our implementation, optimization, and experiments, in the way explained in \cref{s:experiments}. In particular, the use of lookup tables (\cref{s:tables}) was initially suggested by an AI when working with it on optimizing the  low entropy batched grand products. The optimizations in \cref{s:gkr_buckets} were found by an AI.
 
 \bigskip
 
-\noindent \emph{Document preparation:} This document was  written with relatively limited assistance of AI. It was  used to:  identify typos and incoherences; make refactorings and stylistic improvements; \iflncs\else and \fi for  cost accounting in \cref{s:gkr_low_entropy,s:core_iop,s:general_LinBitsDual}\iflncs; for preparing the benchmark tables; for reformatting into LNCS format, sometimes summarizing some proof outlines; and for organizing benchmark results into tables\else\fi. The soundness proof of the Out Of Domain (OOD) step (\cref{a:OOD}), as well as \cref{r:johnson_instantiation} about making the OOD sampling error attain the target security, was initially drafted with AI, and edited by us subsequently (such proof is a simple adaptation of well-known arguments to our notation and context).    \iflncs\else The soundness proof   in the technical overview  \cref{s:to_soundness}  was initially drafted with AI and was elaborated upon by us subsequently. \fi
+\noindent \emph{Document preparation:} This document was  written with relatively limited assistance of AI. It was  used to:  identify typos and incoherences; make refactorings and stylistic improvements; \iflncs\else and \fi for  cost accounting in \cref{s:gkr_low_entropy,s:core_iop,s:general_LinBitsDual}\iflncs; for preparing the benchmark tables; for reformatting into LNCS format, sometimes summarizing some proof outlines; and for organizing benchmark results into tables\else\fi. The soundness proof of the Out Of Domain (OOD) step (\cref{a:OOD}), as well as \cref{r:johnson_instantiation} about making the OOD sampling error attain the target security, was initially drafted with AI, and edited by us subsequently (such proof is a simple adaptation of well-known arguments to our notation and context).  \cref{s:gkr_buckets,s:indices}, which explain some of our GKR optimizations, were drafted  with AI and edited by us subsequently. \iflncs\else The soundness proof   in the technical overview  \cref{s:to_soundness}  was initially drafted with AI and was elaborated upon by us subsequently. \fi
 
 
 \iflncs
@@ -500,6 +510,7 @@ We also thank Giacomo Fenzi, Ulrich Haböck, and Lev Soukhanov for insightful an
 
 \noindent \emph{Models:} We used a combination of Claude Fable 5 and Opus 5, and of ChatGPT Sol and Astra.
 \else\fi
+
 \end{lncsmove}
 
 \begin{lncsmove}{PrimeField}
@@ -600,6 +611,7 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
         for some $\zz\in \comfield^{\codedim_1}$ and $c_j\in \comfield$. 
 
 
+
         This is by far the most expensive step of \ftwoz. Our grand product PIOP is a simple GKR protocol for batched grand products, for which we design prover optimizations, which do not modify the GKR  transcripts, i.e.\ they only optimize the GKR prover's algorithm, without changing the standard GKR protocol, see \cref{s:to_low_entropy_gkr} below and \cref{s:gkr_low_entropy}. These optimizations exploit the ``low entropy'' of the factors $(g^{\pi_q^{-1}(\uu^{(1)}_i)}-1)\cdot \pi_2(\bitstext(\bff)_{ij}) +1$ across $(i,j)\in [\codedim_1]\times [\codedim_2]$, in the sense that among $\codedim=\codedim_1\cdot \codedim_2$ factors, there are only $\codedim_1+1=O(\sqrt{\codedim})$ possible values taken by these factors.  This, among others, is why it is important to have the vector $\uu$ admit a tensor split into $\approx$square-root sized factors (see \cref{s:why_the_tensor_split} for more reasons). % See \cref{?,s:gkr_low_entropy} for more details.
 \begin{comment}
 \begin{remark}[Other usages of the ``prove-in-the-exponent'' approach]
@@ -607,7 +619,7 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
       \end{remark}  
       \end{comment}
 
- The  $\codedim_2$ claims from \cref{e:intro_eq_5} can optionally be batched into  a single claim \begin{equation} \label{e:intro_eq_5_batched}\langle \zz', \pi_2(\bitstext(\bff)) \rangle = c \ \text{in  } \comfield, \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)),\end{equation} for  $\zz'\in \comfield^{\codedim}, c\in \comfield$ with, for example, $\zz'=(\alpha_1,\ldots, \alpha_{\codedim_2}) \otimes \zz$ for $\alpha_1, \ldots, \alpha_{\codedim_2}$ verifier's randomness, and $c=\sum_{j\in [\codedim_2]} \alpha_j\cdot c_j$. 
+ The  $\codedim_2$ claims from \cref{e:intro_eq_5} can optionally be batched into  a single claim \begin{equation} \label{e:intro_eq_5_batched}\langle \zz', \pi_2(\bitstext(\bff)) \rangle = c \ \text{in  } \comfield, \qquad f = \Enc_\cC\circ \pack \circ \pi_2(\bitstext(\bff)),\end{equation} for  $\zz'\in \comfield^{\codedim}, c\in \comfield$ with, for example, $\zz'=\zz\otimes(\alpha_1,\ldots, \alpha_{\codedim_2})$ for $\alpha_1, \ldots, \alpha_{\codedim_2}$ verifier's randomness, and $c=\sum_{j\in [\codedim_2]} \alpha_j\cdot c_j$. 
         However, in some instantiations this step may not be necessary, especially if using an interleaved code to commit to $\bitstext(\bff)$. 
  \paragraph{Step 6: Proving linear claims on $\bitstext(\bff)$ over $\comfield$.} At this point, since $\bitstext(\bff)$ was committed over $\comfield$ (in packed form), one can prove \eqref{e:intro_eq_5} (or the batched version of it \eqref{e:intro_eq_5_batched}) via known methods such as those in \cite{binius,binius2,flock}. Concretely, we use the so-called ring switch from \cite{binius,binius2} to turn \eqref{e:intro_eq_5} into linear claims about the packed binary field elements $\pack\circ\pi_2(\bitstext(\bff))$ we encoded, and then use WHIR or Ligerito \cite{whir,Ligerito} over $\comfield$ to prove these claims. 
 
@@ -637,6 +649,13 @@ If $\vv$ is an ``eq vector'' or a vector admitting flexible tensor decomposition
 Throughout the above construction, the verifier handles only vectors of size $\codedim_1$ and $\codedim_2$, hence, by setting $\codedim_1$ and $\codedim_2$ approximately of size $\sqrt{\codedim}$, we manage to keep the verifier and proof size succinct. We leave as an open problem making these asymptotically polylogarithmic, instead of square root sized. 
 \end{remark}
 %\paragraph{Costs.} Concrete costs are provided in \cref{?}. In short, the prover operations are comprised of: encoding  the vector $\pack\circ \pi_2(\bitstext(\bff))\in \comfield^{\codedim/\comfieldexp}$, and computing a Merkle tree for the resulting word (Step 1); the operations required in the GKR grand product protocol and its subsequent possible batching steps (which we optimize in \cref{s:gkr_low_entropy}) (half Step 5); the operations used by the ring-switch \cite{binius2} and the PCS, WHIR or Ligerito in our instantiation (Step 6); and the operations from Steps 2 to half of Step 5. The latter involve a linear amount of operations over $\ZZ$ and over $\comfield$.
+
+
+\begin{remark}
+    Modifying \ftwoz-PCS so that the verifier and the proof sizes are logarithmic. 
+
+    
+\end{remark}
 
 \end{lncsmove}
 \begin{lncsmove}{WhyTensor}
@@ -794,21 +813,21 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
 \begin{lncsmove}{GKR}
 \subsection{GKR for low-entropy batched grand products}\label{s:to_low_entropy_gkr}
   In \iflncs Phase 3 of \cref{c:core_iop}\else Step 5 of \ftwoz \ (\cref{s:to_simple_bitz})\fi{} the prover must prove that \iflncs, for all $j\in [\codedim_2]$,\fi
-                    \begin{equation}\label{e:intro_eq_4_repeated}\iflncs\else g^{\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle} =\fi \prod_{i\in [\codedim_1]} \left(\left(g^{\pi^{-1}(\uu^{(1)}_i)} -1\right)\cdot \pi_2(\bitstext(\bff))_{ij}  +1\right) =g^{\mu_j} \qquad \text{in  } \comfield \iflncs\else\qquad \text{for all } j\in [\codedim_2].\fi
+                    \begin{equation}\label{e:intro_eq_4_repeated}\iflncs\else g^{\langle \pi_q^{-1}(\uu^{(1)}), \bitstext(\bff)_{*j}\rangle} =\fi \prod_{i\in [\codedim_1]} \left(\left(g^{\pi_q^{-1}(\uu^{(1)}_i)} -1\right)\cdot \pi_2(\bitstext(\bff))_{ij}  +1\right) =g^{\mu_j} \quad \text{in  } \comfield \iflncs\else\quad \forall j\in [\codedim_2].\fi
         \end{equation} 
         %
         As we mentioned, this is by far the most expensive step in \ftwoz. We next explain how we prove \eqref{e:intro_eq_4_repeated} in an efficient manner. We make the crucial  assumption that  both $\codedim_1$ and $\codedim_2$ are $O(\sqrt{\codedim})$ (see \cref{s:instantiation} for exact parameter instantiations). This assumption is relatively simple to attain, as we have discussed throughout \cref{s:intro,s:tech_overview}. At a protocol level, we simply prove \eqref{e:intro_eq_4_repeated} with a standard GKR protocol for batched grand products \cite{thaler13}. Assume $\codedim_1=2^{r_1}$ and $\codedim_2=2^{r_2}$ are powers of two. We set up multilinear polynomials $L_{0}, L_1,\ldots, L_{r_1}$ on $r_2 + i$ variables for $i\in \range{0}{r_1}$, respectively, such that 
         %
 \iflncs\begingroup\small\fi
                 $$
-        L_{r_1}(\bb,\cc) = \left(g^{\pi^{-1}(\uu^{(1)}_{\mathsf{int}(\bb)})} -1\right)\cdot \pi_2(\bitstext(\bff))_{\mathsf{int}(\bb),\mathsf{int}(\cc)}  +1  \quad  \text{ for all } (\bb,\cc) \in \bits^{r_1} \times \bits^{r_2},
+        L_{r_1}(\bb,\cc) = \left(g^{\pi_q^{-1}(\uu^{(1)}_{\mathsf{int}(\bb)})} -1\right)\cdot \pi_2(\bitstext(\bff))_{\mathsf{int}(\bb),\mathsf{int}(\cc)}  +1  \quad  \text{ for all } (\bb,\cc) \in \bits^{r_1} \times \bits^{r_2},
         $$
 \iflncs\endgroup\fi
-        and, for $i=0,\ldots, r_1-1$
+        where $\mathsf{int}(\bb)$ denotes the integer whose bit decomposition is $\bb$, and, for $i=0,\ldots, r_1-1$
       \begin{equation}\label{e:to_gkr_polys}
-  L_{i}(\bb,\cc)  =  L_{i+1}(\bb,0,\cc) \cdot L_{i+1}(\bb,1, \cc)  \quad \text{for all } (\bb,\cc)\in \bits^{i} \times \bits^{r_2}.
+  L_{i}(\bb,\cc)  =  L_{i+1}(0,\bb,\cc) \cdot L_{i+1}(1,\bb, \cc)  \quad \text{for all } (\bb,\cc)\in \bits^{i} \times \bits^{r_2}.
     \end{equation}
-    We then use a series of sumchecks to certify \cref{e:to_gkr_polys} for all $i=0,\ldots, r_1-1$, and $L_{0}(\cc) = g^{\mu_{\mathsf{int}(\cc)}}$ for all $\cc\in \bits^{r_2}$.  At the end of the $i$-th sumcheck we are left with two evaluation claims for $L_{r_1-i}$ on different points. These two claims are transformed into a single claim via a ($1$-round) sumcheck.
+    We then use a series of sumchecks to certify \cref{e:to_gkr_polys} for all $i=0,\ldots, r_1-1$, and $L_{0}(\cc) = g^{\mu_{\mathsf{int}(\cc)}}$ for all $\cc\in \bits^{r_2}$.  At the end of the $i$-th sumcheck we are left with two evaluation claims for $L_{i+1}$ on different points. These two claims are transformed into a single claim via a ($1$-round) unification step (see \cref{c:gkr_grand_product}).
 
 
     We emphasize again that, at a protocol level, this GKR scheme is completely standard. It is described in full detail in  \cref{s:gkr_low_entropy}. 
@@ -819,43 +838,68 @@ Now the prover and verifier set out to prove \eqref{e:new_to_projected_lifted_po
     \begin{equation}\label{e:intro_grand_product_eq_1}
     \mle{g^{\pi_q^{-1}(\uu^{(1)})}}(\rr) = a,\qquad \mle{\pi_2(\bitstext(\bff)_{*j})}(\rr)=a_j \qquad \text{for all } j \in [\codedim_2] \quad \text{over } \comfield,
     \end{equation}
-    for some $\rr\in \comfield^{r_1}$, where $\mle{*}$ denotes MLE, and $g^{\pi_q^{-1}(\uu^{(1)})}$ is the vector with entries $g^{\pi_q^{-1}(\uu^{(1)}_i)}$. 
-    
-    Since $\uu$ is public, the verifier checks the first claim of \eqref{e:intro_grand_product_eq_1} on its own in time $O(\sqrt{\codedim})$, leveraging its tensor decomposition. \iflncs\else \fi
+    for some $\rr\in \comfield^{r_1}$, where $\mle{*}$ denotes MLE, and $g^{\pi_q^{-1}(\uu^{(1)})}$ is the vector with entries $g^{\pi_q^{-1}(\uu^{(1)}_i)}$.   Since $\uu$ is public, the verifier checks the first claim of \eqref{e:intro_grand_product_eq_1} on its own in time $O(\sqrt{\codedim})$, leveraging its tensor decomposition. \iflncs\else \fi
 
 
     
-    We design prover optimizations for the GKR grand product (without altering the protocol itself), see \cref{s:gkr_low_entropy} for details. These adapt known techniques (fixed-base windowed exponentiation, and sumcheck optimizations from \cite{sumcheck_opt_1,sumcheck_opt_2}) to the following property, which is enabled, again, by the tensor split of $\uu=\uu^{(1)} \otimes \uu^{(2)}$ and splitting the original claim into a batch of $\codedim_2$ claims:
+        
+    We design novel (to our knowledge) prover optimizations for the GKR grand product (without altering the protocol itself) by exploiting the following key property:
     \medskip
 
-    \begin{quote}\emph{\textbf{Low entropy grand products:}} There are at most $\codedim_1=O(\sqrt{\codedim})$ values that $L_{r_1}(\bb,\cc)$ can take on the hypercube of size $\codedim_1\cdot \codedim_2 = \codedim$. \end{quote}
+    \begin{quote}\emph{\textbf{Low entropy grand products:}} There are at most $\codedim_1+1=O(\sqrt{\codedim})$ values that $L_{r_1}(\bb,\cc)$ can take on the hypercube of size $\codedim_1\cdot \codedim_2 = \codedim$. \end{quote}
 
      
 
     This property trickles down to different stages of the GKR protocol. For example, the above property implies that $L_{r_1-1}(\bb',\cc)$ as well can take only an $O(\sqrt{\codedim})$ amount of values (with worse constants now) across all $(\bb',\cc)\in \bits^{r_1-1}\times \bits^{r_2}$. Similarly, the coefficients of the first messages sent by the prover at the last stages of the GKR protocol (which involve the most expensive sumchecks), also benefit from a low entropy property. 
 
 
-            This allows the prover to compute small lookup tables that are kept in cache and reused across all values of $\cc\in [\codedim_2]$. We build different lookup tables, which are used at different stages of the GKR protocol.  For example, in the last sumcheck of GKR (the most expensive one, involving $r_1-1+r_2$ variables) the prover uses $4$ lookup tables to compute its first message, $5$ more tables to compute its second message, and one last table to compute its third message (see \cref{tab:gkr_tables}). Similarly, we build lookup tables for the first rounds of the second and third last sumchecks of the GKR protocol. This  configuration was found through an optimization process that was run with AI.
+            This allows the prover to compute small lookup tables that are reused across all values of $\cc\in [\codedim_2]$. We build different lookup tables, which are used at different stages of the GKR protocol.  For example, in the last sumcheck of GKR (the most expensive one, involving $r_1-1+r_2$ variables) the prover uses tables with at most $2^8$ entries per index to compute its first five messages, and it does the same for the first four, three and two messages of the three sumchecks before it.  See \cref{s:gkr_low_entropy} for more details. We note that the size of these tables grows doubly exponentially as one moves further into the rounds of sumchecks and the layers of GKR, hence eventually one has to resort to running standard sumcheck rounds.
 
-\paragraph{Example.} To give an idea of the type of optimizations we use, we explain how the prover computes its first message in the last sumcheck of the GKR protocol (the most expensive one). Further details are in \cref{s:gkr_low_entropy}. This sumcheck certifies a claim of the form
+ Besides the above, we also use or adapt known techniques from \cite{sumcheck_opt_1,sumcheck_opt_2,gruen} to our context.
+
+\paragraph{Example.} To give an idea of the type of optimizations we use, we explain how the prover computes its first message in the last sumcheck of the GKR protocol (i.e.\ the ``biggest'' sumcheck, which is the most expensive one).  This sumcheck certifies a claim of the form
 \[
-C=\sum_{(\bb,\cc)\in \bits^{r_1-1}\times \bits^{r_2}} L_{r_1}(\bb,0,\cc)\cdot L_{r_1}(\bb,1,\cc)\cdot \eq(\bb,\cc;\bm{\alpha}),
+C=\sum_{(\bb,\cc)\in \bits^{r_1-1}\times \bits^{r_2}} L_{r_1}(0,\bb,\cc)\cdot L_{r_1}(1,\bb,\cc)\cdot \eq(\bb,\cc;\bm{\alpha}),
 \]
-where $\bm{\alpha}\in \comfield^{r_1-1+r_2}$ contains verifier challenges. 
+where $\bm{\alpha}\in \comfield^{r_1-1+r_2}$ contains verifier challenges and $C\in \comfield$ is some value. 
 %
 The first prover message is the degree-$3$ polynomial
 $
-h_1(X)=\sum_{\cc\in \bits^{r_2}} h_{1,\cc}(X)\cdot \eq(X,\cc;\bm{\alpha}_2)$ where  \[h_{1,\cc}(X)\defeq \sum_{\bb\in \bits^{r_1-2}} L_{r_1}(X,\bb,0,\cc)\cdot L_{r_1}(X,\bb,1,\cc)\cdot \eq(\bb;\bm{\alpha}_1),
+h_1(X)= \sum_{\cc\in \bits^{r_2}} h_{1,\cc}(X)\cdot \eq(X,\cc;\bm{\alpha}_2)$, where  \[h_{1,\cc}(X)\defeq \sum_{\bb\in \bits^{r_1-2}} L_{r_1}(0,X,\bb,\cc)\cdot L_{r_1}(1,X,\bb,\cc)\cdot \eq(\bb;\bm{\alpha}_1),
 \]
-for some split of the verifier challenges $\bm{\alpha}=(\bm{\alpha}_1,\bm{\alpha}_2)\in \comfield^{r_1-2} \times \comfield^{r_2+1}$. Now we explain how the prover computes the constant coefficient of $h_{1,\cc}(X)$ (the other coefficients are computed similarly). This coefficient is
+for some split of the verifier challenges $\bm{\alpha}=(\bm{\alpha}_1,\bm{\alpha}_2)\in \comfield^{r_1-2} \times \comfield^{r_2+1}$. Following \cite{gruen} we write $\eq(X,\cc;\bm{\alpha}_2) = \eq(\cc;\bm{\alpha}')\cdot \eq(X;\alpha)$ for  $\bm{\alpha}_2=(\alpha,\bm{\alpha}')$. Then $h_1(X)= \eq(X;\alpha) \cdot t_1(X)$ where $t_1(X)\defeq \sum_{\cc\in \bits^{r_2}} \eq(\cc;\bm{\alpha}') \cdot h_{1,\cc}(X)$. It suffices for the prover to provide  the quadratic polynomial $t_1(X)$, instead of the cubic $h_1(X)$. Now we explain how the prover computes the constant  coefficient $t_1(0)$ of $t_{1}(X)$ (the leading coefficient is computed similarly, and the linear coefficient can be derived by the verifier from the equality $C=h_1(0)+h_1(1)$). We have that $t_1(0)$  satisfies
+\begin{equation}\label{e:t_1_0_to}
+\begin{aligned}
+t_1(0)&=\sum_{(\bb,\cc)\in \bits^{r_1-2}\times\bits^{r_2}} \eq(\cc;\bm{\alpha}')\cdot A_0[\bb,\cc], \quad \text{where}\\
+A_0[\bb,\cc]&\defeq L_{r_1}(0,0,\bb,\cc)\cdot L_{r_1}(1,0,\bb,\cc)\cdot \eq(\bb;\bm{\alpha}_1).
+\end{aligned}
+\end{equation}
+Now, write $y_{\bb'}\defeq g^{\pi_q^{-1}(\uu^{(1)}_{\mathsf{int}(\bb')})}$ for $\bb'\in \bits^{r_1}$. Since $\bitstext(\bff)$ is full of bits, each factor $L_{r_1}(\eps,0,\bb,\cc)$ is either $y_{(\eps,0,\bb)}$ (if the bit $\bitstext(\bff)_{\mathsf{int}(\eps,0,\bb),\mathsf{int}(\cc)}$ is $1$) or simply $1$ (if the bit is $0$). This means that, for a fixed $\bb\in \bits^{r_1-2}$, $A_0[\bb,\cc]$ takes only $4$ different values as $\cc$ ranges over $\bits^{r_2}$, one for each combination of the two bits $x_{\bb,\cc}=\bitstext(\bff)_{\mathsf{int}(0,0,\bb),\mathsf{int}(\cc)}$ and $x_{\bb,\cc}'=\bitstext(\bff)_{\mathsf{int}(1,0,\bb),\mathsf{int}(\cc)}$. Because of this, the prover can precompute a small table $T_{A_0}\in (\comfield^{4})^{2^{r_1-2}}$ with these $4$ values for each $\bb$, namely
 \[
-h_{1,\cc}(0)=\sum_{\bb\in \bits^{r_1-2}} A_0[\bb,\cc], \quad \text{where} \quad A_0[\bb,\cc]\defeq L_{r_1}(0,\bb,0,\cc)\cdot L_{r_1}(0,\bb,1,\cc)\cdot \eq(\bb;\bm{\alpha}_1).
+T_{A_0}[\bb]\defeq \Big( y_{(0,0,\bb)}^{\,x}\cdot y_{(1,0,\bb)}^{\,x'}\cdot \eq(\bb;\bm{\alpha}_1)\Big)_{(x,x')\in \bits^2} \in \comfield^4 \qquad \text{for } \bb\in \bits^{r_1-2},
 \]
-Now, write $y_{\bb'}\defeq g^{\pi_q^{-1}(\uu^{(1)}_{\mathsf{int}(\bb')})}$ for $\bb'\in \bits^{r_1}$. Since $\bitstext(\bff)$ is full of bits, each factor $L_{r_1}(0,\bb,\eps,\cc)$ is either $y_{(0,\bb,\eps)}$ (if the bit $\bitstext(\bff)_{\mathsf{int}(0,\bb,\eps),\mathsf{int}(\cc)}$ is $1$) or simply $1$ (if the bit is $0$). This means that, for a fixed $\bb\in \bits^{r_1-2}$, $A_0[\bb,\cc]$ takes only $4$ different values as $\cc$ ranges over $\bits^{r_2}$, one for each combination of the two bits $x=\bitstext(\bff)_{\mathsf{int}(0,\bb,0),\mathsf{int}(\cc)}$ and $x'=\bitstext(\bff)_{\mathsf{int}(0,\bb,1),\mathsf{int}(\cc)}$. Because of this, the prover can precompute a small table $T_{A_0}\in (\comfield^{4})^{2^{r_1-2}}$ with these $4$ values for each $\bb$, namely
-\[
-T_{A_0}[\bb]\defeq \Big( y_{(0,\bb,0)}^{\,x}\cdot y_{(0,\bb,1)}^{\,x'}\cdot \eq(\bb;\bm{\alpha}_1)\Big)_{(x,x')\in \bits^2} \in \comfield^4 \qquad \text{for } \bb\in \bits^{r_1-2},
-\]
-so that $A_0[\bb,\cc]$ is simply the entry $T_{A_0}[\bb][x,x']$. Building $T_{A_0}$ takes $\approx \codedim_1 \approx O(\sqrt{\codedim})$ multiplications in $\comfield$, once for all $\cc$. After that, the prover obtains the constant coefficients of all the $h_{1,\cc}(X)$ with $\codedim/4$ table reads and $\codedim/4$ additions in $\comfield$, and no multiplications at all. See \cref{t:gkr_step1_costs} for the cost of the rest of coefficients of $h_1(X)$. The rest of prover messages in this sumcheck, and the first messages of the second and third last sumchecks, are computed similarly with larger tables (cf.\ \cref{s:gkr_low_entropy}).
+so that $A_0[\bb,\cc]$ is simply the entry $T_{A_0}[\bb][x_{\bb,\cc},x_{\bb,\cc}']$. Building $T_{A_0}$ takes $\approx \codedim_1 = 2^{r_1} \approx O(\sqrt{\codedim})$ multiplications in $\comfield$. After that, the prover obtains the constant coefficients of all the $h_{1,\cc}(X)$ with $O(\codedim)$ table reads and  additions in $\comfield$, and no multiplications at all. Then it obtains $t_1(0)$ with $O(\codedim_2)$  more multiplications and additions. 
+
+In \cref{s:gkr_buckets} we go one step further and use ``bucketing'' when computing the constant and leading coefficients of $t_1(X)$ (and of other prover messages during the GKR protocol). Concretely, recall that $A_0[\bb,\cc]= T_{A_0}[\bb][x_{\bb,\cc},x_{\bb,\cc}']$ where  $x_{\bb,\cc}=\bitstext(\bff)_{\mathsf{int}(0,0,\bb),\mathsf{int}(\cc)}$ and $x_{\bb,\cc}'=\bitstext(\bff)_{\mathsf{int}(1,0,\bb),\mathsf{int}(\cc)}$. We can now, for a fixed index $\bb$, organize the tuples $(\bb,\cc)$ (with varying $\cc$) by the value in $\{0,1\}^2$ that $(x_{\bb,\cc},x_{\bb,\cc}')$ takes. Rewriting \eqref{e:t_1_0_to} accordingly, we have 
+%
+\begin{align*}
+t_1(0)=& \sum_{\bb\in \bits^{r_1-2}} \sum_{(x,x')\in \bits^2} \sum_{\substack{
+    \cc\in \bits^{r_2}\ :\\ 
+    x_{\bb,\cc} = x,x\ 
+    x_{\bb,\cc}'=x'
+    }
+    } \eq(\cc;\bm{\alpha}') \cdot  T_{A_0}[\bb][x,x']\\ =& \sum_{\substack{\bb\in \bits^{r_1-2}\\(x,x')\in \bits^2}}  T_{A_0}[\bb][x,x']  \cdot H_\bb[x,x']
+\end{align*}
+where $H_\bb[x,x']\defeq \sum_{\cc} \eq(\cc;\bm{\alpha}')$, and where the sum runs over the same set of column indices $\cc$ as in the right hand side of the first equality. The prover can compute all the values $H_\bb[x,x']$ with $O(\codedim)$ field additions and no multiplications, and then obtain $t_1(0)$ by performing $O(\sqrt{\codedim})$ multiplications, additions, and reads into the table $T_{A_0}$ (note that, in the previous approach, the prover performed $O(\codedim)$ reads into $T_{A_0}$). 
+
+Additionally and importantly, with this method each entry in $T_{A_0}$ is read exactly once. Hence there is no need to store $T_{A_0}$ in cache in full, and instead its values can be computed only when they are needed, and discarded afterward (note that if each value in $T_{A_0}$ was used in several occassions, as in our prior approach, then this would wasteful). This optimization  is not particularly beneficial for the table $T_{A_0}$ specifically, because $T_{A_0}$ is small, but is very useful in other sumcheck rounds where tables become larger and do not fit in cache. Without it, we would not be able to exploit the low entropy of the batched grand product as much as we do now.
+
+
+The next four prover messages in this sumcheck are computed similarly with larger tables, and with further optimizations on top (cf.\ \cref{s:gkr_buckets}). Other sumchecks in the GKR undergo a similar approach.
+
+
+
+
 \lncsplace[\lncsfittables\lncsfloattables]{GkrRound1Costs}
 %\fi
       
@@ -908,14 +952,14 @@ We next discuss other existing approaches to proving foreign field statements in
 
 
         
-        \paragraph{The Fields-Witch note \cite{lev}.} In the note \cite{lev}, Soukhanov proposes a scheme, called Fields-Witch, for committing to a vector of bits $\bff$ over the binary field $\FF_{2^{127}}$ (in packed form), and proving MLE evaluation claims over the prime field  $\FF_{2^{127}-1}$, for a vector of elements from   $\FF_{2^{127}-1}$ obtained by packing bits from $\bff$ into elements from $\FF_{2^{127}-1}$. To do so, at a high level, the MLE evaluation claims are proved ``in the exponent'' in the binary field $\FF_{2^{127}}$, leveraging that  the multiplicative subgroup of  $\FF_{2^{127}}$ has prime order $|\FF_{2^{127}}^*| = 2^{127}-1$. The proposed approach is substantially different from ours: \cite{lev} essentially takes a polylogarithmic PCS over the prime field $\FF_{2^{127}-1}$, such as Basefold \cite{basefold}, WHIR \cite{whir}, etc.,  and executes it ``in the exponent of $\FF_{2^{127}}$''. To do so, it relies on similar tools as Binius64, namely the lookup argument LogUp* \cite{logupstar}, grand product arguments (for small products), the Frobenius trick, and additional commitments, for each of the $\log\ell$ rounds.  
+        \paragraph{The Fields-Witch note \cite{lev}.} In the note \cite{lev}, Soukhanov proposes a scheme, called Fields-Witch, for committing to a vector of (limbs of) elements from the prime field $\FF_{2^{127}-1}$, and proving MLE evaluations of it over $\FF_{2^{127}-1}$. The commitment is done over   the binary field $\FF_{2^{127}}$. As with \ftwoz, the  MLE evaluation claims are proved ``in the exponent'' over a binary field, in this case $\FF_{2^{127}}$. Fields-Witch leverages that  the multiplicative subgroup of  $\FF_{2^{127}}$ has prime order $|\FF_{2^{127}}^*| = 2^{127}-1$, and hence the ``arithmetic in the exponent of $\FF_{2^{127}}$'' coincides with that of  $\FF_{2^{127}-1}$. The proposed approach is substantially different from ours: \cite{lev}  runs a polylogarithmic folding process over the prime field $\FF_{2^{127}-1}$, executed in the exponent of $\FF_{2^{127}}$. To do so, it relies on  the lookup argument LogUp* \cite{logupstar}, grand product arguments (for small products), the Frobenius trick, and additional commitments, for each of the $\log\ell$ rounds. Binius64 uses a similar set of tools. 
         
         %In its execution,  \cite{lev} and Binius64 \cite{binius64} seem to us to be more similar than any of these two to \ftwoz. Indeed, they both use, mostly, the same collection of subprotocols, in a similar manner. 
-        In \cref{tab:fields-witch} we compare \cite{lev} with \ftwoz. In \cref{s:experiments} we perform extensive comparisons between \ftwoz\ and Binius64.  % Because of this we expect both approaches to have comparable performance profiles, though we do not validate this hypothesis due to \cite{lev} not reporting performance nor providing an implementation.
+         % Because of this we expect both approaches to have comparable performance profiles, though we do not validate this hypothesis due to \cite{lev} not reporting performance nor providing an implementation.
         
-        Conceptually, Fields-Witch \cite{lev} shares with \ftwoz \ the aim of committing to bits in a binary field, while proving MLE claims of those bits in some other structure $R$.  \cite{lev} is limited to $R=\FF_{2^{127}-1}$, while \ftwoz \ can handle arbitrary finitely generated rings. Even with this greater generality capacity,  we observe in \cref{s:exp_fields_witch}  that \ftwoz\ performs  better overall   than \cite{lev} on the latter's native operation, i.e.\ proving MLE openings over the prime field $\FF_{2^{127}-1}$. However it is unclear to us whether the two implementations are at a comparable level of optimization. 
-       %It is not clear to us how or if \cite{lev} can leverage  our low-entropy oriented optimizations without substantially modifying the approach, i.e.\ without running Basefold ``in-the-exponent''. 
-
+        Conceptually, Fields-Witch \cite{lev} shares with \ftwoz \ the aim of committing to bits in a binary field, while proving MLE claims of those bits in some other structure $R$.  \cite{lev} is limited to $R=\FF_{2^{127}-1}$, while \ftwoz \ can handle arbitrary finitely generated rings. %Even with this greater generality capacity,  we observe in \cref{s:exp_fields_witch}  that \ftwoz\ performs  better overall   than \cite{lev} on the latter's native operation, i.e.\ proving MLE openings over the prime field $\FF_{2^{127}-1}$. However it is unclear to us whether the two implementations are at a comparable level of optimization. 
+     
+ In \cref{tab:fields-witch} we compare \cite{lev} with \ftwoz.
         
 \end{lncsappendix}
 \begin{lncsappendix}{virtual}
@@ -2505,19 +2549,23 @@ We briefly outline how to handle the case when $S$ is an arbitrary finitely gene
 
 We now describe our instantiation of the GKR protocol for proving batched grand products, and our prover optimizations when these have ``low entropy''.
 
+\begin{remark}[Implementation and this paper]
+    Our goal in this section is to explain the most important optimizations used in our GKR grand product, and not to provide a detailed account of the exact algorithm our implementation uses (which at this point may undergo further optimization). Our implementation may not match 100\% the optimizations described in this section.
+\end{remark}
+
 
 
 The bulk of the work in \ftwoz \ (\cref{c:core_iop,c:LinModFieldBin}) is to reduce the claim over the binary field $\comfield$
 \begin{equation}\label{e:main_grand_product}
 \prod_{i \in [\codedim_1]} \left(\left(g^{\bm{\gamma}_i}-1\right)\cdot \pi_2(\bff_{ij}) +1\right)= g^{\mu_j}  \quad  \in \comfield, \qquad \text{for all } j\in [\codedim_2]
 \end{equation}
-to an inner product claim  of the form $\langle \vv, \pi_2(\bff)\rangle =\mu$ over $\comfield$, for some $\vv\in \comfield^{\codedim}$, where here $\bff\in \bits^\codedim \subseteq \ZZ^\codedim$.  Recall that $$\codedim=\codedim_1\cdot \codedim_2.$$ To fix intuition,  in our instantiation (cf.\ \cref{s:instantiation}) we set $\codedim_1 \approx \codedim^{0.6}, \codedim_2=\codedim^{0.4}$. %For the purposes of this reduction, it is irrelevant that $\bff$ is defined over the integers: we will only consider the vector $\pi_2(\bff)$.
+to an inner product claim  of the form $\langle \vv, \pi_2(\bff)\rangle =\mu$ over $\comfield$, for some $\vv\in \comfield^{\codedim}$, where here $\bff\in \bits^\codedim \subseteq \ZZ^\codedim$.  Recall that $$\codedim=\codedim_1\cdot \codedim_2.$$ To fix intuition,  in our instantiation (cf.\ \cref{s:instantiation}) we set $\codedim_1 \approx \codedim^{0.6}, \codedim_2\approx\codedim^{0.4}$. %For the purposes of this reduction, it is irrelevant that $\bff$ is defined over the integers: we will only consider the vector $\pi_2(\bff)$.
 
 
 \renewcommand{\comfield}{\KK}
 
 
-Cryptographically speaking, our protocol is simply a standard batched version of the GKR protocol applied to grand products from \cite{thaler13}. However, our implementation uses lookup tables (i.e.\ preprocessed data) to optimize the prover time of such protocol. In particular, our techniques leverage the fact that the factors in \eqref{e:main_grand_product} have \emph{low entropy}, in the sense that for every $i\in [\codedim_1]$ and $j\in [\codedim_2]$, the $i$-th factor in the $j$-th grand product of \eqref{e:main_grand_product} can take only two values, depending on whether $\bff_{ij}=1$ or $\bff_{ij}=0$.  
+Cryptographically speaking, our protocol is simply a standard batched version of the GKR protocol applied to grand products from \cite{thaler13}. However, our implementation uses lookup tables (i.e.\ preprocessed data), among other optimizations, to optimize the prover time of such protocol. In particular, our techniques leverage the fact that the factors in \eqref{e:main_grand_product} have \emph{low entropy}, in the sense that for every $i\in [\codedim_1]$ and $j\in [\codedim_2]$, the $i$-th factor in the $j$-th grand product of \eqref{e:main_grand_product} can take only two values, depending on whether $\bff_{ij}=1$ or $\bff_{ij}=0$.  
 
 
 
@@ -2545,11 +2593,13 @@ $$
 &\langle \uu, \bfg\rangle = \mu  \end{aligned}\right\}.
 $$
 %
-One can additionally add an encoding $f=\Enc_\cC(\bfg)$ as an oracle  in the above relations (matching the context in which we use the IOR), but our IOR does not make any use of it whatsoever, hence we omit it. 
+One can additionally add an encoding $f=\Enc_\cC\circ\pack(\bfg)$ as an oracle  in the above relations (matching the context in which we use the IOR), but our IOR does not make any use of it whatsoever, hence we omit it. 
+
+
 
 In our instantiation, $\yy_i=g^{\bm{\gamma}_i}$ and $\bm{\mu}_j=g^{\mu_j}$, where $\bm{\gamma}_i$ and $\mu_j$ are the integers in \eqref{e:main_grand_product}.
 
-We  describe $\Pi_{\red}$ now. We will describe our implementation-level optimizations afterwards. We assume $\codedim_1,\codedim_2$ are powers of two:
+We  describe $\Pi_{\red}$ now, and we explain our optimizations in \cref{s:tables,s:gkr_buckets,s:indices}. We assume $\codedim_1,\codedim_2$ are powers of two:
 %
 $$
 \codedim_1 = 2^{r_1}, \quad \codedim_2 = 2^{r_2}.
@@ -2563,7 +2613,7 @@ We index $[\codedim_1],[\codedim_2]$ via elements of the hypercubes $\bits^{r_1}
 Let $L_{r_1}$ be a  \emph{multilinear} polynomial over $\comfield$ on $r_1 + r_2$ variables such that $$L_{r_1}(\bb,\cc)= \gkrpol(\yy_{\bb}, \bfg_{\bb,\cc}) \quad  \text{ for all } (\bb,\cc) \in \bits^{r_1} \times \bits^{r_2}.$$ (Note that $\gkrpol$ may not be multilinear.)  
      For $i=0,\ldots, r_1-1$, let $L_i$ be a multilinear polynomial on $r_2 + i$ variables  such that 
       $$
-  L_{i}(\bb,\cc)  =  L_{i+1}(\bb,0,\cc) \cdot L_{i+1}(\bb,1, \cc)  \quad \text{for all } (\bb,\cc)\in \bits^{i} \times \bits^{r_2}.
+  L_{i}(\bb,\cc)  =  L_{i+1}(0,\bb,\cc) \cdot L_{i+1}(1,\bb, \cc)  \quad \text{for all } (\bb,\cc)\in \bits^{i} \times \bits^{r_2}.
     $$
 \begin{enumerate}[leftmargin=*]
     \item The verifier sends $\bm{\alpha}^{(0)}\in \comfield^{r_2}$. Both prover and verifier compute $C^{(0)}\defeq 
@@ -2573,13 +2623,13 @@ Let $L_{r_1}$ be a  \emph{multilinear} polynomial over $\comfield$ on $r_1 + r_2
         \item \textbf{$i$-th sumcheck.} The prover and verifier run the sumcheck protocol for the following claim: %\john{FYI: The current implementation constructs two sumchecks. One for b variables. A subsequent one for the c variables. It might be good to explore the difference between the two}
     %
     $$
-    C^{(i)} =  \sum_{(\bb,\cc)\in \bits^i \times \bits^{r_2}}  L_{i+1}(\bb,0,\cc) \cdot L_{i+1}(\bb,1,\cc) \cdot \eq(\bb, \cc; \bm{\alpha}^{(i)}). 
+    C^{(i)} =  \sum_{(\bb,\cc)\in \bits^i \times \bits^{r_2}}  L_{i+1}(0,\bb,\cc) \cdot L_{i+1}(1,\bb,\cc) \cdot \eq(\bb, \cc; \bm{\alpha}^{(i)}). 
     $$
     %
     At the end of the sumcheck protocol, the prover and verifier are left with a claim of the form
     %
     \begin{equation}\label{e:gkr_intermediate}
-    L_{i+1}(\rr_\bb^{(i)},0,\rr_{\cc}^{(i)}) = a_{0}^{(i)}, \qquad L_{i+1}(\rr_\bb^{(i)},1,\rr_{\cc}^{(i)}) = a_{1}^{(i)}
+    L_{i+1}(0,\rr_\bb^{(i)},\rr_{\cc}^{(i)}) = a_{0}^{(i)}, \qquad L_{i+1}(1,\rr_\bb^{(i)},\rr_{\cc}^{(i)}) = a_{1}^{(i)}
     \end{equation}
     %
     for some $\rr_\bb^{(i)}\in \comfield^{i}$, $\rr_\cc^{(i)}\in \comfield^{r_2}$ and $a_{0}^{(i)},a_{1}^{(i)}\in \comfield$.
@@ -2590,11 +2640,11 @@ Let $L_{r_1}$ be a  \emph{multilinear} polynomial over $\comfield$ on $r_1 + r_2
         \item The claim \eqref{e:gkr_intermediate} is replaced by
         %
         $$
-        L_{i+1}(\rr_\bb^{(i)},\beta^{(i)},\rr_{\cc}^{(i)}) = C^{(i+1)} \defeq a_0^{(i)} \cdot (1-\beta^{(i)}) + a_1^{(i)} \cdot \beta^{(i)}.
+        L_{i+1}(\beta^{(i)},\rr_\bb^{(i)},\rr_{\cc}^{(i)}) = C^{(i+1)} \defeq a_0^{(i)} \cdot (1-\beta^{(i)}) + a_1^{(i)} \cdot \beta^{(i)}.
         $$
         Let 
         $$
-        \bm{\alpha}^{(i+1)} \defeq (\rr_\bb^{(i)},\beta^{(i)},\rr_{\cc}^{(i)}).
+        \bm{\alpha}^{(i+1)} \defeq (\beta^{(i)},\rr_\bb^{(i)},\rr_{\cc}^{(i)}).
         $$
     \end{enumerate}
     %
@@ -2607,7 +2657,7 @@ Let $L_{r_1}$ be a  \emph{multilinear} polynomial over $\comfield$ on $r_1 + r_2
     This claim is equivalent to
     %
     \begin{equation}\label{e:gkr_leaf_claim}
-    \sum_{(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}} \gkrpol(\yy_{\bb},\bfg_{\bb,\cc}) \cdot \eq((\bb,\cc), \bm{\alpha}^{(r_1)}) = C^{(r_1)}.
+    \sum_{(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}} \gkrpol(\yy_{\bb},\bfg_{\bb,\cc}) \cdot \eq(\bb,\cc;\bm{\alpha}^{(r_1)}) = C^{(r_1)}.
     \end{equation}
     If $\gkrpol(Y,X)$ is linear in $X$, then \eqref{e:gkr_leaf_claim} is a linear claim on $\bfg$. Namely, it is equivalent to
     %
@@ -2633,7 +2683,7 @@ Let $L_{r_1}$ be a  \emph{multilinear} polynomial over $\comfield$ on $r_1 + r_2
 If $\gkrpol(\yy_\bb, \bfg_{\bb,\cc}) = (\yy_\bb-1)\cdot \bfg_{\bb,\cc} +1$ as in \cref{c:core_iop,c:LinModFieldBin}, then $$\uu=((\yy_\bb - 1)\cdot \eq(\bb;\bm\alpha^{(r_1,1)}))_{\bb\in \bits^{r_1}} \otimes (\eq(\cc;\bm\alpha^{(r_1,2)}))_{\cc\in \bits^{r_2}}, \quad C^{(r_1)} + c =  C^{(r_1)} -1,$$  where $\bm{\alpha}^{(r_1)} = (\bm{\alpha}^{(r_1,1)}, \bm{\alpha}^{(r_1,2)})$.
     In this case, to avoid having the verifier pay a linear cost, the verifier constructs $\uu^{(1)}\defeq ((\yy_\bb - 1)\cdot\eq(\bb;\bm\alpha^{(r_1,1)}))_{\bb\in \bits^{r_1}} $ and $\uu^{(2)}\defeq (\eq(\cc;\bm\alpha^{(r_1,2)}))_{\cc\in \bits^{r_2}}$ separately, and outputs these two vectors instead of $\uu$.
     
-     When used as a subprotocol of \cref{c:core_iop,c:LinModFieldBin}, after executing the GKR protocol above (\cref{c:gkr_grand_product}), we use an IOP $\Pi_\iopp$ to prove the linear claim $\langle \uu, \bfg\rangle= C^{(r_1)}-1$, with $\bfg=\pi_2(\bitstext(\bff))$ and  the verifier having oracle access to $f=\Enc_\cC \circ \pack \circ \pi_2(\bff)$. As we mentioned (\cref{s:instantiation}), in our instantiation $\Pi_{\iopp}$ first runs a   sumcheck, reducing the claim $\langle \uu, \pi_2(\bitstext(\bff))\rangle= C^{(r_1)}-1$  to an MLE evaluation claim  of the vector $\pi_2(\bitstext(\bff))$ and of $\uu$. For the latter, we have, letting $\bm{\theta}=(\bm{\theta}^{(1)}, \bm{\theta}^{(2)})\in \KK^{r_1+r_2}$ be the MLE evaluation point,   \begin{align*}\mle{\uu}(\bm{\theta})&=\mle{\uu^{(1)} \otimes \uu^{(2)}}(\bm{\theta}^{(1)}, \bm{\theta}^{(2)}) = \mle{\uu^{(1)}}(\bm{\theta}^{(1)}) \cdot \mle{\uu^{(2)}}(\bm{\theta}^{(2)}),\\  
+     When used as a subprotocol of \cref{c:core_iop,c:LinModFieldBin}, after executing the GKR protocol above (\cref{c:gkr_grand_product}), we use an IOP $\Pi_\iopp$ to prove the linear claim $\langle \uu, \bfg\rangle= C^{(r_1)}-1$, with $\bfg=\pi_2(\bitstext(\bff))$ and  the verifier having oracle access to $f=\Enc_\cC \circ \pack \circ \pi_2(\bitstext(\bff))$. As we mentioned (\cref{s:instantiation}), in our instantiation $\Pi_{\iopp}$ first runs a   sumcheck, reducing the claim $\langle \uu, \pi_2(\bitstext(\bff))\rangle= C^{(r_1)}-1$  to an MLE evaluation claim  of the vector $\pi_2(\bitstext(\bff))$ and of $\uu$. For the latter, we have, letting $\bm{\theta}=(\bm{\theta}^{(1)}, \bm{\theta}^{(2)})\in \KK^{r_1+r_2}$ be the MLE evaluation point,   \begin{align*}\mle{\uu}(\bm{\theta})&=\mle{\uu^{(1)} \otimes \uu^{(2)}}(\bm{\theta}^{(1)}, \bm{\theta}^{(2)}) = \mle{\uu^{(1)}}(\bm{\theta}^{(1)}) \cdot \mle{\uu^{(2)}}(\bm{\theta}^{(2)}),\\  
      \mle{\uu^{(1)}}(\bm{\theta}^{(1)})&=     \sum_{\bb\in\bits^{r_1}} (\yy_\bb-1)\cdot\eq(\bb;\bm\alpha^{(r_1,1)})\cdot\eq(\bb;\bm{\theta}^{(1)}),\\
      \mle{\uu^{(2)}}(\bm{\theta}^{(2)})& =  \eq(\bm{\theta}^{(2)};\bm\alpha^{(r_1,2)}),
      \end{align*} and so the verifier can compute $\mle{\uu}(\bm{\theta})$ by itself in time $O(\codedim_1 +\codedim_2)$. For the MLE claim on $\pi_2(\bitstext(\bff))$, we first use ring-switching \cite{binius2} to reduce the claim to a batch of linear claims for $\pack\circ \pi_2(\bitstext(\bff))$, and then prove these with, e.g.\  WHIR or Ligerito.   
@@ -2654,7 +2704,7 @@ If $\gkrpol(\yy_\bb, \bfg_{\bb,\cc}) = (\yy_\bb-1)\cdot \bfg_{\bb,\cc} +1$ as in
     \hline
     Step 2, $i$-th  unification & $1$ & $2$ & $O(1)\cdot \comfield$ \\
     \hline
-    Computing $\uu$ & --    & -- & $O(\codedim_1 + \codedim_2)\cdot \comfield$ (only $\uu^{(1)}, \uu^{(2)}$)\\
+    Computing $\uu^{(1)}, \uu^{(2)}$ & --    & -- & $O(\codedim_1 + \codedim_2)\cdot \comfield$\\
     \hline
     \textbf{Total} & $t_\red = 1 + r_1\cdot r_2 + \binom{r_1+1}{2}$ & $3\cdot t_\red - r_1 - 3$ & $O(\codedim_1 + \codedim_2 + \log^2 \codedim)\cdot \comfield$ \\
     \bottomrule
@@ -2670,16 +2720,18 @@ The soundness errors of \cref{c:gkr_grand_product} are as follows.
  Assume $\gkrpol(Y,X)$ is linear in $X$\footnote{We focus on this case since it is the one in our instantiation. A generalization to arbitrary polynomials $\gkrpol(Y,X)$ would  add rounds  and error terms corresponding to the sumcheck protocol mentioned at the end of \cref{c:gkr_grand_product}.}. Then \cref{c:gkr_grand_product} is a perfectly complete
 $(1 + r_1 r_2 + r_1(r_1+1)/2)$-round IOR from $\PESAT(\comfield,\gkrpol)$ to $\LIN(\comfield)$. In it, the verifier makes no oracle queries, and the prover outputs the same witness $\bfg$ that it received as input.
 
-Additionally, \cref{c:gkr_grand_product} extends in a natural way to an IOR from $\PESAT(\comfield,\gkrpol, \cC,\pack)$ to $\LIN(\comfield, \cC,\pack)$ (see \cref{s:prelims_codes} for these relations). For every $\delta$ within the unique decoding radius of $\cC$, this IOR has round-by-round knowledge soundness with relaxation $(\PESAT(\comfield,\gkrpol,\cC,\pack)^\delta,\LIN(\comfield,\cC,\pack)^{\delta})$, with error $r_2/|\comfield|$ in the first round, $3/|\comfield|$ in every sumcheck round, and $1/|\comfield|$ in every unification step.
+Additionally, \cref{c:gkr_grand_product} extends in a natural way to an IOR from $\PESAT(\comfield,\gkrpol, \cC,\pack)$ to $\LIN(\comfield, \cC,\pack)$ (see \cref{s:prelims_codes} for these relations). For every $\delta$ within the unique decoding radius of $\cC$, this IOR has round-by-round knowledge soundness with relaxation $(\PESAT(\comfield,\gkrpol,\cC,\pack)^\delta,\allowbreak\LIN(\comfield,\cC,\pack)^{\delta})$, with error $r_2/|\comfield|$ in the first round, $3/|\comfield|$ in every sumcheck round, and $1/|\comfield|$ in every unification step.
 
 Beyond the unique decoding radius, the same errors hold for the relations extended by an out-of-domain evaluation claim as in \cref{a:OOD}.
 %so given $\yy$ the verifier performs $O(\codedim_1+\codedim_2+r_1 r_2)$ field operations.
 \end{lemma}
 
-We omit the  proof of \cref{l:gkr_grand_product}, since \cref{c:gkr_grand_product} is a well-known variation of the GKR protocol. Round-by-round soundness of GKR is proved in \cite{CCHLRRW19}, and the knowledge version with relaxation follows as in \cite[proof of Lemma 6.6]{BCFW25}.
+We omit the  proof of \cref{l:gkr_grand_product}, since \cref{c:gkr_grand_product} is a simple variation of the GKR protocol. Round-by-round soundness of GKR is proved in \cite{CCHLRRW19}, and the knowledge version with relaxation follows as in \cite[proof of Lemma 6.6]{BCFW25}.
 
-\subsection{Prover optimization via lookup tables}%  
-We optimize \cref{c:gkr_grand_product} as follows, when $\bfg$ consists entirely of bits. Alternatively, the techniques discussed here would also apply if the entries of $\bfg$ belong to a small subset of $\KK$.
+\subsection{A first prover optimization via lookup tables}\label{s:tables}% 
+We describe an initial optimization for  \cref{c:gkr_grand_product}. In \cref{s:gkr_buckets,s:indices} we build upon it further. We assume  $\bfg$ consists entirely of bits. Alternatively, the techniques discussed here would also apply if the entries of $\bfg$ belong to a small subset of $\KK$.
+
+
 
 %\john{Typing is a bit inconsistent here for $c$ and $f_{b,c}$. Namely, we say c seems to be a boolean vector but $f_{b,c}$ is not } 
 \paragraph{Setup.} We start with the following observation: for every $(\bb,\cc)\in \bits^{r_1} \times \bits^{r_2}$, we have $\bfg_{\bb,\cc}\in \bits$, and so 
@@ -2701,25 +2753,13 @@ $$
 L_{r_1}(\bb,\cc)=T_{r_1}[\bb][\bfg_{\bb,\cc}] \quad \text{for all } (\bb,\cc)\in \bits^{r_1}\times \bits^{r_2}.
 $$
 %Since $\yy$ is part of the input, this is essentially a no-op 
-In our instantiation, $\yy_{\bb}^{(1)}=g^{\bm{\gamma}_{\bb}}$ and $\yy_\bb^{(0)}=1$ (cf.\ \eqref{e:main_grand_product}). Hence additionally the prover precomputes the elements $g^{\bm{\gamma}_{\bb}}$ at the beginning of the protocol, before computing $T_{r_1}$.
+In our instantiation, $\yy_{\bb}^{(1)}=g^{\bm{\gamma}_{\bb}}$ and $\yy_\bb^{(0)}=1$ (cf.\ \eqref{e:main_grand_product}). Hence additionally the prover precomputes the elements $g^{\bm{\gamma}_{\bb}}$ at the beginning of the protocol, before computing $T_{r_1}$. 
+
+The prover computes analogous tables for some of the other sumchecks executed during the GKR protocol, as explained at the end of the present \cref{s:tables}.  During each such sumcheck, the prover further uses extra tables, as we will explain next. Importantly, all these tables have size independent of $\codedim_2$.  This (among others, cf.\ \cref{s:why_the_tensor_split}) is one of the reasons why we use the tensor decomposition structure, i.e.\ the split given by $\codedim=\codedim_1\cdot \codedim_2$, in \cref{c:core_iop}.
+
+As we will see, the size of the tables grows doubly exponentially on the round number of sumcheck. It also grows doubly exponentially as one moves up the GKR layers (i.e.\ the tables in the sumcheck corresponding to the $i$-th GKR layer have entries that are square the size of the entries in the tables in the $(i+1)$-th GKR  layer). 
 
 
-
-As we will explain later, the prover will also precompute similar tables for the values $L_{r_1-j}(\bb,\cc)$ of the levels close to the leaves (i.e.\ for small $j$),
-\begin{equation}\label{e:size_T_r1_i}T_{r_1-j}\in \left(\comfield^{2^{2^j}}\right)^{\bits^{r_1-j}},\end{equation}
-as well as other tables relevant for the different sumcheck rounds of \cref{c:gkr_grand_product}, constructed from the tables $T_{r_1-j}$ themselves. The superscript $\bits^{r_1-j}$ in \eqref{e:size_T_r1_i} indicates that the table $T_{r_1-j}$ has one entry per element in the hypercube  $\bits^{r_1-j}$; and this entry is a vector of $2^{2^j}$ field elements. Concretely, for $\bb\in \bits^{r_1-j}$, $T_{r_1-j}[\bb]$ consists of all possible products of  $2^j$ consecutive factors of the grand product, namely the factors indexed by $(\bb, \bb')$ with $\bb$ fixed and $\bb'$ ranging over $\bits^{j}$.  Each factor can take two values, depending on whether $\bfg_{\bb,\bb', \cc}$ is $1$ or $0$. Hence $T_{r_1-j}[\bb]$ consists of $2^{2^j}$ elements. Hence the size of $T_{r_1-j}$ in \eqref{e:size_T_r1_i}.
-
-Because $|T_{r_1-j}|$   grows doubly-exponentially in $j$, these tables are viable only for the bottom few levels of the tree ($j=0,1,2$ in our implementation). In higher levels we use standard sumchecks.
-
-
-
-%Indeed, a node $i$ levels above the leaves is the product of the $2^i$ leaves below it, so its value is one of $2^{2^i}$ position-indexed constants, selected by $2^i$ entries of $\bfg_{*j}$ and independent of $j\in [\codedim_2]$. 
-
-Importantly, all these tables have size independent of $\codedim_2$.  This (among others, cf.\ \cref{s:why_the_tensor_split}) is one of the reasons why we use the tensor decomposition structure, i.e.\ the split given by $\codedim=\codedim_1\cdot \codedim_2$, in \cref{c:core_iop}.
-
-\begin{remark}
-    All precomputed data in this section depends on the input vector $\yy$ of $\PESAT(\comfield,\gkrpol)$, and possibly on further verifier challenges. Since, in a wider context where \cref{c:gkr_grand_product} is a subprocess of a larger proof system, $\yy$ typically depends on verifier's challenges, these precomputations must be done at \emph{runtime}. 
-\end{remark}
 
 
 
@@ -2729,7 +2769,7 @@ Importantly, all these tables have size independent of $\codedim_2$.  This (amon
 We start by analyzing Step 2 with $i=r_1-1$. In this step prover and verifier run a sumcheck for the claim
 %
 $$
-C^{(r_1-1)}= \sum_{(\bb,\cc)\in \bits^{r_1-1}\times \bits^{r_2}} L_{r_1}(\bb,0,\cc) \cdot L_{r_1}(\bb,1,\cc) \cdot \eq(\bb,\cc;\bm{\alpha}^{(i)}).
+C^{(r_1-1)}= \sum_{(\bb,\cc)\in \bits^{r_1-1}\times \bits^{r_2}} L_{r_1}(0,\bb,\cc) \cdot L_{r_1}(1,\bb,\cc) \cdot \eq(\bb,\cc;\bm{\alpha}^{(i)}).
 $$
 %
 This is the most expensive sumcheck of \cref{c:gkr_grand_product} for the prover (if done naively), since it is the sumcheck over the largest number of variables throughout \cref{c:gkr_grand_product}. 
@@ -2738,99 +2778,94 @@ For $1\leq j\leq r_1-1$, the $j$-th prover message in this sumcheck is, if $\bm{
 %
 \iflncs\begingroup\scriptsize\fi
 \begin{align*}
-h_j(X)&\defeq \sum_{(\bb,\cc)\in \bits^{r_1-1-j}\times \bits^{r_2}} L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc) \cdot L_{r_1}(\bm{\rho}^{(j)}, X, \bb,1,\cc)\cdot \eq(\bm{\rho}^{(j)}, X, \bb,\cc;\bm{\alpha}^{(i)})\\
+h_j(X)&\defeq \sum_{(\bb,\cc)\in \bits^{r_1-1-j}\times \bits^{r_2}} L_{r_1}(0,\bm{\rho}^{(j)}, X, \bb,\cc) \cdot L_{r_1}(1,\bm{\rho}^{(j)}, X, \bb,\cc)\cdot \eq(\bm{\rho}^{(j)}, X, \bb,\cc;\bm{\alpha}^{(i)})\\
 \iflncs
-&= \sum_{\cc\in \bits^{r_2}}\Big( \underbrace{\sum_{\bb\in \bits^{r_1-1-j}}L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc) \cdot L_{r_1}(\bm{\rho}^{(j)}, X, \bb,1,\cc) \cdot \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)})}_{\defeq h_{j,\cc}(X)}\Big)\\
+&= \sum_{\cc\in \bits^{r_2}}\Big( \underbrace{\sum_{\bb\in \bits^{r_1-1-j}}L_{r_1}(0,\bm{\rho}^{(j)}, X, \bb,\cc) \cdot L_{r_1}(1,\bm{\rho}^{(j)}, X, \bb,\cc) \cdot \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)})}_{\defeq h_{j,\cc}(X)}\Big)\\
 &\qquad \cdot   \eq(X,\cc;\bm{\alpha}^{(i,2)}) \\
 \else
-&= \sum_{\cc\in \bits^{r_2}}\left( \underbrace{\sum_{\bb\in \bits^{r_1-1-j}}L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc) \cdot L_{r_1}(\bm{\rho}^{(j)}, X, \bb,1,\cc) \cdot \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)})}_{\defeq h_{j,\cc}(X)}\right)\cdot   \eq(X,\cc;\bm{\alpha}^{(i,2)}) \\
+&= \sum_{\cc\in \bits^{r_2}}\left( \underbrace{\sum_{\bb\in \bits^{r_1-1-j}}L_{r_1}(0,\bm{\rho}^{(j)}, X, \bb,\cc) \cdot L_{r_1}(1,\bm{\rho}^{(j)}, X, \bb,\cc) \cdot \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)})}_{\defeq h_{j,\cc}(X)}\right)\cdot   \eq(X,\cc;\bm{\alpha}^{(i,2)}) \\
 \fi
 &= \sum_{\cc\in \bits^{r_2}}h_{j,\cc}(X)\cdot   \eq(X,\cc;\bm{\alpha}^{(i,2)}),
 \end{align*}
 \iflncs\endgroup\fi
 where $\bm{\alpha}^{(i)} = (\bm{\alpha}^{(i,1)}, \bm{\alpha}^{(i,2)})\in \KK^{r_1-2}\times \KK^{r_2+1}$.
 %
-We claim that
+%
+Observe that
 %
 \iflncs\begingroup\small\fi
 \begin{equation}\label{e:grand_product_Lr1}
-L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc) = \left(L_{r_1}(\bm{\rho}^{(j)}, 1, \bb,0,\cc) -  L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,0,\cc)\right)\cdot X + L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,0,\cc).
+L_{r_1}(0,\bm{\rho}^{(j)}, X, \bb,\cc) = \left(L_{r_1}(0,\bm{\rho}^{(j)}, 1, \bb,\cc) -  L_{r_1}(0,\bm{\rho}^{(j)}, 0, \bb,\cc)\right)\cdot X + L_{r_1}(0,\bm{\rho}^{(j)}, 0, \bb,\cc),
 \end{equation}
 \iflncs\endgroup\fi
-Indeed, $L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc)$ is a linear polynomial, and the right-hand side in the above expression is the line passing through the two evaluations of  $L_{r_1}(\bm{\rho}^{(j)}, X, \bb,0,\cc)$ at $X=0$ and $X=1$. An analogous expression holds for $L_{r_1}(\bm{\rho}^{(j)}, X, \bb, 1, \cc)$:
+because $L_{r_1}(0,\bm{\rho}^{(j)}, X, \bb,\cc)$ is a linear polynomial, and the right-hand side in the above expression is the line passing through the two evaluations of  $L_{r_1}(0,\bm{\rho}^{(j)}, X, \bb,\cc)$ at $X=0$ and $X=1$. An analogous expression holds for $L_{r_1}(1,\bm{\rho}^{(j)}, X, \bb,\cc)$:
 \iflncs\begingroup\small\fi
 \begin{equation}\label{e:grand_product_Lr2}
-L_{r_1}(\bm{\rho}^{(j)}, X, \bb,1,\cc) = \left(L_{r_1}(\bm{\rho}^{(j)}, 1, \bb,1,\cc) -  L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,1,\cc)\right)\cdot X + L_{r_1}(\bm{\rho}^{(j)}, 0, \bb,1,\cc).
+L_{r_1}(1,\bm{\rho}^{(j)}, X, \bb,\cc) = \left(L_{r_1}(1,\bm{\rho}^{(j)}, 1, \bb,\cc) -  L_{r_1}(1,\bm{\rho}^{(j)}, 0, \bb,\cc)\right)\cdot X + L_{r_1}(1,\bm{\rho}^{(j)}, 0, \bb,\cc).
 \end{equation}
 \iflncs\endgroup\fi
 %
-Renaming
+Writing $\omega[\bb]\defeq \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)})$, we obtain
 %
 $$
-E_{\eps_1\eps_2}^{(j)}[\bb,\cc] \defeq L_{r_1}(\bm{\rho}^{(j)}, \eps_1, \bb, \eps_2,\cc) \qquad \eps_1,\eps_2\in \bits, \qquad \omega[\bb]\defeq \eq(\bm{\rho}^{(j)}, \bb;\bm{\alpha}^{(i,1)}),
-$$
-we obtain
-%
-$$
-h_{j,\cc}(X) =\sum_{\bb\in \bits^{r_1-1-j}} X^2 \cdot A_2^{(j)}[\bb,\cc] + X\cdot A_1^{(j)}[\bb,\cc] + A_0^{(j)}[\bb,\cc]
+h_{j,\cc}(X) =\sum_{\bb\in \bits^{r_1-1-j}} \big(X^2 \cdot A_2^{(j)}[\bb,\cc] + X\cdot A_1^{(j)}[\bb,\cc] + A_0^{(j)}[\bb,\cc]\big)
 $$
  where,
 \iflncs\begingroup\scriptsize\fi
-$$
+\begin{equation}\label{e:coeffs}
 \begin{aligned}
-A_0^{(j)}[\bb,\cc] &\defeq E_{00}^{(j)}[\bb,\cc]\cdot E_{01}^{(j)} [\bb,\cc]\cdot \omega[\bb],\\ 
-A_1^{(j)}[\bb,\cc] &\defeq  \left((E_{10}^{(j)}[\bb,\cc]-E_{00}^{(j)}[\bb,\cc])\cdot E_{01}^{(j)}[\bb,\cc] + (E_{11}^{(j)}[\bb,\cc]-E_{01}^{(j)}[\bb,\cc])\cdot E_{00}^{(j)}[\bb,\cc]\right)\cdot \omega[\bb]\\
-A_2^{(j)}[\bb,\cc] &\defeq (E_{10}^{(j)}[\bb,\cc]-E_{00}^{(j)}[\bb,\cc])\cdot (E_{11}^{(j)}[\bb,\cc]-E_{01}^{(j)}[\bb,\cc])\cdot \omega[\bb].
+A_0^{(j)}[\bb,\cc] &\defeq L_{r_1}(0,\bm{\rho}^{(j)},0,\bb,\cc)\cdot L_{r_1}(1,\bm{\rho}^{(j)},0,\bb,\cc)\cdot \omega[\bb],\\
+%A_1^{(j)}[\bb,\cc] &\defeq  \left((E_{10}^{(j)}[\bb,\cc]-E_{00}^{(j)}[\bb,\cc])\cdot E_{01}^{(j)}[\bb,\cc] + (E_{11}^{(j)}[\bb,\cc]-E_{01}^{(j)}[\bb,\cc])\cdot E_{00}^{(j)}[\bb,\cc]\right)\cdot \omega[\bb]\\
+A_2^{(j)}[\bb,\cc] &\defeq \big(L_{r_1}(0,\bm{\rho}^{(j)},1,\bb,\cc)-L_{r_1}(0,\bm{\rho}^{(j)},0,\bb,\cc)\big)\\ &\qquad \cdot \big(L_{r_1}(1,\bm{\rho}^{(j)},1,\bb,\cc)-L_{r_1}(1,\bm{\rho}^{(j)},0,\bb,\cc)\big)\cdot \omega[\bb].
 \end{aligned}
-$$
+\end{equation}
 \iflncs\endgroup\fi
+We do not describe $A_1^{(j)}[\bb,\cc]$ because the prover does not need to compute it, as we explain later. 
 %
-Now, for $j=1$, we have $\bm{\rho}^{(j)}= \bot$, and hence each value $E_{\eps_1\eps_2}^{(1)}[\bb,\cc]$ can be obtained, whenever needed, by querying $T_{r_1}[\bb]$ and selecting $T_{r_1}[\bb][1]$ or $T_{r_1}[\bb][0]$  depending on whether $\bfg_{\bb,\cc} = 1$ or $0$. A consequence  is that  the coefficients themselves $A_k^{(1)}[\bb,\cc]$ ($k\in \{0,1,2\}$) can be obtained through lookup tables, as follows:
+Now, for $j=1$, we have $\bm{\rho}^{(j)}= \bot$, and hence each value $L_{r_1}(\eps_2,\eps_1,\bb,\cc)$ can be obtained, whenever needed, by querying $T_{r_1}[\eps_2,\eps_1,\bb]$ and selecting $T_{r_1}[\eps_2,\eps_1,\bb][1]$ or $T_{r_1}[\eps_2,\eps_1,\bb][0]$  depending on whether $\bfg_{(\eps_2,\eps_1,\bb),\cc} = 1$ or $0$. A consequence  is that  the coefficients themselves $A_k^{(1)}[\bb,\cc]$ ($k\in \{0,2\}$) can be obtained through lookup tables, as follows:
 %
  we have $$A_0^{(1)}[\bb,\cc] = 
-    T_{r_1}[0,\bb,0][\bfg_{(0,\bb,0),\cc}] \cdot    T_{r_1}[0,\bb, 1][\bfg_{(0,\bb,1),\cc}] \cdot \omega[\bb].
+    T_{r_1}[0,0,\bb][\bfg_{(0,0,\bb),\cc}] \cdot    T_{r_1}[1,0,\bb][\bfg_{(1,0,\bb),\cc}] \cdot \omega[\bb].
 $$
 Hence
 %
 $$
 A_0^{(1)}[\bb,\cc] = \begin{cases}
-    \yy_{0,\bb,0}^{(1)} \cdot  \yy_{0,\bb,1}^{(1)} \cdot \omega[\bb]&\text{if } \bfg_{(0,\bb,0),\cc}=1,\ \bfg_{(0,\bb,1),\cc}=1 \\  
-    \yy_{0,\bb,0}^{(1)} \cdot  \yy_{0,\bb,1}^{(0)}\cdot \omega[\bb]&\text{if } \bfg_{(0,\bb,0),\cc}=1,\ \bfg_{(0,\bb,1),\cc}=0\\
-     \yy_{0,\bb,0}^{(0)} \cdot  \yy_{0,\bb,1}^{(1)}\cdot \omega[\bb]& \text{if } \bfg_{(0,\bb,0),\cc}=0,\ \bfg_{(0,\bb,1),\cc}=1 \\
-    \yy_{0,\bb,0}^{(0)} \cdot  \yy_{0,\bb,1}^{(0)} \cdot  \omega[\bb] &\text{if } \bfg_{(0,\bb,0),\cc}= 0,\  \bfg_{(0,\bb,1),\cc}=0
+    \yy_{0,0,\bb}^{(1)} \cdot  \yy_{1,0,\bb}^{(1)} \cdot \omega[\bb]&\text{if } \bfg_{(0,0,\bb),\cc}=1,\ \bfg_{(1,0,\bb),\cc}=1 \\  
+    \yy_{0,0,\bb}^{(1)} \cdot  \yy_{1,0,\bb}^{(0)}\cdot \omega[\bb]&\text{if } \bfg_{(0,0,\bb),\cc}=1,\ \bfg_{(1,0,\bb),\cc}=0\\
+     \yy_{0,0,\bb}^{(0)} \cdot  \yy_{1,0,\bb}^{(1)}\cdot \omega[\bb]& \text{if } \bfg_{(0,0,\bb),\cc}=0,\ \bfg_{(1,0,\bb),\cc}=1 \\
+    \yy_{0,0,\bb}^{(0)} \cdot  \yy_{1,0,\bb}^{(0)} \cdot  \omega[\bb] &\text{if } \bfg_{(0,0,\bb),\cc}= 0,\  \bfg_{(1,0,\bb),\cc}=0
 \end{cases}
 $$
 %
-Thus the prover can precompute the table $$T_{A_0} \in (\comfield^{4})^{\bits^{r_1-2}}=\comfield^{\codedim_1}$$ given by $$T_{A_0}[\bb]=(\yy_{0,\bb,0}^{(1)} \cdot  \yy_{0,\bb,1}^{(1)} \cdot \omega[\bb],  \ \
-    \yy_{0,\bb,0}^{(1)} \cdot  \yy_{0,\bb,1}^{(0)}\cdot \omega[\bb],   \ \ \yy_{0,\bb,0}^{(0)} \cdot  \yy_{0,\bb,1}^{(1)}\cdot \omega[\bb],   \ \ \yy_{0,\bb,0}^{(0)} \cdot  \yy_{0,\bb,1}^{(0)} \cdot  \omega[\bb])$$
+Thus the prover can precompute the table $$T_{A_0} \in (\comfield^{4})^{\bits^{r_1-2}}=\comfield^{\codedim_1}$$ given by $$T_{A_0}[\bb]=(\yy_{0,0,\bb}^{(1)} \cdot  \yy_{1,0,\bb}^{(1)} \cdot \omega[\bb],  \ \
+    \yy_{0,0,\bb}^{(1)} \cdot  \yy_{1,0,\bb}^{(0)}\cdot \omega[\bb],   \ \ \yy_{0,0,\bb}^{(0)} \cdot  \yy_{1,0,\bb}^{(1)}\cdot \omega[\bb],   \ \ \yy_{0,0,\bb}^{(0)} \cdot  \yy_{1,0,\bb}^{(0)} \cdot  \omega[\bb])$$
 and use it to obtain any value $A_{0}^{(1)}[\bb,\cc]$ for $(\bb,\cc)\in \bits^{r_1-2}\times \bits^{r_2}$ via a single read into $T_{A_0}$. %\begin{equation}\label{e: A0_factor_T0}A_0[\bb,\cc] = T_{A_0}[\bb,\cc] \cdot \eq(\cc;\bm{\alpha}^{(i,2)}).\end{equation} 
 %
 The size of $T_{A_0}$, again, does not depend on $\codedim_2=2^{r_2}$. Building $T_{A_0}$ requires at most $8\cdot 2^{r_1-2} = 2^{r_1+1}$ multiplications and no additions. 
 
-We now explain how to obtain the values $A_1^{(1)}[\bb,\cc]$ and $A_2^{(1)}[\bb,\cc]$, again via the construction of a lookup table. Note that these depend on the \emph{four} bits $\bfg_{(\eps_1,\bb,\eps_2),\cc}$, $\eps_1,\eps_2\in \bits$, so our tables will need $2^4=16$ entries (as opposed to $4$ as in $T_{A_0}$) per  index $\bb$.
-The prover  proceeds as follows:
-\begin{itemize}[leftmargin=*]
-    \item It computes a table $T_{S_1}\in (\comfield^4)^{\bits^{r_1-2}}$ analogous to $T_{A_0}$, which allows to obtain the values 
-    $$S_1^{(1)}[\bb,\cc] \defeq E_{10}^{(1)}[\bb,\cc]\cdot E_{11}^{(1)}[\bb,\cc]\cdot \omega[\bb],$$
-    (observe that $T_{A_0}$ allows to obtain the values $E_{00}^{(1)}[\bb,\cc]\cdot E_{01}^{(1)}[\bb,\cc]\cdot \omega[\bb]$).
-    \item It computes the table $T_{A_2}\in (\comfield^{16})^{\bits^{r_1-2}}$ given by
-    \begin{equation}\label{e:TA2}T_{A_2}[\bb]=\Big( \big(\yy_{1,\bb,0}^{(x_1)}-\yy_{0,\bb,0}^{(x_0)}\big)\cdot \big(\yy_{1,\bb,1}^{(x_1')}-\yy_{0,\bb,1}^{(x_0')}\big)\cdot \omega[\bb] \Big)_{(x_0,x_1,x_0',x_1')\in \bits^4},\end{equation}
-    so that $A_2^{(1)}[\bb,\cc]$ is the element  $$A_2^{(1)}[\bb,\cc]=T_{A_2}[\bb][\bfg_{(0,\bb,0),\cc},\bfg_{(1,\bb,0),\cc},\bfg_{(0,\bb,1),\cc},\bfg_{(1,\bb,1),\cc}].$$ Building $T_{A_2}$ takes at most $20$ multiplications and $8$ additions per index $\bb$\footnote{For the multiplications, there are $4$ multiplications to compute the $4$ elements $t_{x_0',x_1',\bb}\defeq \big(\yy_{1,\bb,1}^{(x_1')}-\yy_{0,\bb,1}^{(x_0')}\big)\cdot \omega[\bb]$, and then $16$ more multiplications to compute $\big(\yy_{1,\bb,0}^{(x_1)}-\yy_{0,\bb,0}^{(x_0)}\big)\cdot t_{x_0',x_1',\bb}$.}. I.e.\ at most $5\cdot 2^{r_1}$ multiplications and $2^{r_1+1}$ additions in total.
-    \item It obtains the values $A_1^{(1)}[\bb,\cc]$ via the identity \iflncs\begingroup\small\fi$$S_1^{(1)}[\bb,\cc] = A_0^{(1)}[\bb,\cc]+A_1^{(1)}[\bb,\cc]+A_2^{(1)}[\bb,\cc] \qquad \text{for all } (\bb,\cc)\in \bits^{r_1-2}\times \bits^{r_2}.$$\iflncs\endgroup\fi{} %so the prover accumulates the three sums $\sum_\bb A_0^{(1)}, \sum_\bb S_1^{(1)}, \sum_\bb A_2^{(1)}$ over the slots and recovers $\sum_\bb A_1^{(1)}$ with two additions per $\cc$.
-\end{itemize}
- Once the tables have been computed,  obtaining $h_{1,\cc}(X)$ for one $\cc\in \bits^{r_2}$ costs $3\cdot 2^{r_1-2}$ table reads (one read per table $T_{A_0}, T_{S_1}, T_{A_2}$ per index $\bb\in \bits^{r_1-2}$) and $3\cdot 2^{r_1-2} +2$ additions: this is the cost of adding together the values read at each table, providing $\sum_\bb A_0[\bb,\cc]$,  $\sum_\bb S_1[\bb,\cc]$,  $\sum_\bb A_2[\bb,\cc]$, and then doing two additions to obtain $\sum_\bb A_1[\bb,\cc] = \sum_\bb S_1[\bb,\cc] -\sum_\bb A_0[\bb,\cc] - \sum_\bb A_2[\bb,\cc]$. In total, this amounts to at most  
- $3\codedim/4$ table reads and $\approx 3\codedim/4 +2\cdot \codedim_2$ additions to compute $h_{1,\cc}$ for all $\cc$, and no multiplications (in our instantiation, additions in $\comfield$ are $128$-bit XORs). 
- 
- Finally, the prover computes $h_1(X)$ from the polynomials $h_{1,\cc}(X)$ with at most $5\cdot 2^{r_2}$ additions and $3\cdot 2^{r_2}$ multiplications (plus $2^{r_2}$ multiplications to precompute the values $\eq(\cc;\bm{\alpha}^{(i,2)})$, shared by all rounds of this sumcheck, and $2^{r_1-2}$ multiplications for the weights $\omega[\bb]$).
+We now explain how to obtain the values $A_2^{(1)}[\bb,\cc]$, again via the construction of a lookup table. Note that $A_2^{(1)}[\bb,\cc]$ depends on the \emph{four} bits $\bfg_{(\eps_2,\eps_1,\bb),\cc}$, $\eps_1,\eps_2\in \bits$, so our table  needs $2^4=16$ entries  per  index $\bb$ (as opposed to $4$ as in $T_{A_0}$).
+The prover  computes the table $T_{A_2}\in (\comfield^{16})^{\bits^{r_1-2}}$ given by
+    \begin{equation}\label{e:TA2}T_{A_2}[\bb]=\Big( \big(\yy_{0,1,\bb}^{(x_1)}-\yy_{0,0,\bb}^{(x_0)}\big)\cdot \big(\yy_{1,1,\bb}^{(x_1')}-\yy_{1,0,\bb}^{(x_0')}\big)\cdot \omega[\bb] \Big)_{(x_0,x_1,x_0',x_1')\in \bits^4},\end{equation}
+    so that $A_2^{(1)}[\bb,\cc]$ is the element  $$A_2^{(1)}[\bb,\cc]=T_{A_2}[\bb][\bfg_{(0,0,\bb),\cc},\bfg_{(0,1,\bb),\cc},\bfg_{(1,0,\bb),\cc},\bfg_{(1,1,\bb),\cc}].$$ 
+    %
+    Building $T_{A_2}$ takes at most $20$ multiplications and $8$ additions per index $\bb$\footnote{For the multiplications, there are $4$ multiplications to compute the $4$ elements $t_{x_0',x_1',\bb}\defeq \big(\yy_{1,1,\bb}^{(x_1')}-\yy_{1,0,\bb}^{(x_0')}\big)\cdot \omega[\bb]$, and then $16$ more multiplications to compute $\big(\yy_{0,1,\bb}^{(x_1)}-\yy_{0,0,\bb}^{(x_0)}\big)\cdot t_{x_0',x_1',\bb}$.}. I.e.\ at most $5\cdot 2^{r_1}$ multiplications and $2^{r_1+1}$ additions in total.
+ Once the tables have been computed, obtaining the constant and the leading coefficients of $h_{1,\cc}(X)$, i.e.\ $\sum_\bb A_0^{(1)}[\bb,\cc]$ and $\sum_\bb A_2^{(1)}[\bb,\cc]$,  costs $2\cdot 2^{r_1-2}$ table reads (one read per table $T_{A_0}, T_{A_2}$ per index $\bb\in \bits^{r_1-2}$) and $2\cdot 2^{r_1-2}$ additions, for each $\cc\in \bits^{r_2}$. In total, (passing over all $\cc\in \bits^{r_2}$) this amounts  to at most  
+ $\codedim/2$ table reads and $\codedim/2$ additions for all $\cc$, and no multiplications. At this point, the prover has computed the constant and leading terms of  the polynomials $h_{1,\cc}(X)$. 
+
+
+
+Using the ``eq factorization'' technique from \cite{gruen}, write   $\eq(X,\cc;\bm{\alpha}^{(i,2)})=\eq(X;\alpha)\cdot \eq(\cc;\bm{\alpha}')$, where $\bm{\alpha}^{(i,2)}=(\alpha,\bm{\alpha}')$. Then 
+$$h_1(X)=\eq(X;\alpha)\cdot t_1(X) \quad  \text{where} \quad t_1(X)\defeq\sum_{\cc}\eq(\cc;\bm{\alpha}')\cdot h_{1,\cc}(X).$$ 
+Instead of sending $h_1(X)$, the prover sends $t_1(X)$. With the constant and leading terms of $h_{1,\cc}(X)$ computed for all $\cc$,  the constant and leading coefficients of $t_1(X)$ can be computed by the prover with $2\cdot\codedim_2$ multiplications and additions (plus the $O(\codedim_2)$ cost of computing $\eq(\cc;\bm{\alpha}')$). Additionally we have $C^{(r_1-1)} = h_1(0)+h_1(1)=(1-\alpha)\cdot t_1(0)+\alpha\cdot t_1(1)$, and so the verifier can obtain $t_1(1)$ by itself, which in turn allows it to obtain the linear coefficient of $t_1(X)$. 
+
+
+
  
 \bigskip
 
-In \cref{t:gkr_step1_costs} we record the total upper bound costs for computing $h_1(X)$. In our application we obtain lower numbers since $\yy_\bb^{(0)}=1$ and we work in characteristic two, and so in \cref{e:TA2} some elements collapse to $0$. 
-
-
-
- On the other hand, a standard generic approach to compute $h_{1}(X)$ would require $O(\codedim)=O(\codedim_1\cdot \codedim_2)$ multiplications and additions, even if using the few  sumcheck optimizations that apply in our settings (to our knowledge) %\albert{which ones, exactly?}. 
- Crucially, we note that our sumcheck features summands of full field bit size $\log|\KK|$, which prevents us from using some known powerful optimizations when the summands are small, e.g.\ the univariate skip \cite{gruen} and some optimizations from \cite{sumcheck_opt_1,sumcheck_opt_2}. From \cite{sumcheck_opt_1,sumcheck_opt_2} we can use the square-root split of the $\eq$ factor, and, in a similar way as in \cite{sumcheck_opt_2}, we use  precomputed tables in the first sumcheck rounds, applied here to summands which are not small, but are selected by witness bits among few values. The prover message degree reduction through factoring the ``eq factor'' from \cite{gruen} does apply to our setting, and our implementation uses it: we send $2$ elements instead of the $3$ in each sumcheck round. 
+In \cref{t:gkr_step1_costs} we record the total upper bound costs for computing $h_1(X)$.  On the other hand, a standard generic approach to compute $h_{1}(X)$ would require $O(\codedim)=O(\codedim_1\cdot \codedim_2)$ multiplications and additions, even if using the few  sumcheck optimizations that apply in our settings. %\albert{which ones, exactly?}. 
+ Crucially, we note that our sumcheck features factors of full field bit size $\log|\KK|$, which prevents us from using some known powerful optimizations when the factors are small, e.g.\ the univariate skip \cite{gruen} and some optimizations from \cite{sumcheck_opt_2}. %From \cite{sumcheck_opt_1,sumcheck_opt_2} we can use the square-root split of the $\eq$ factor, and we use  precomputed tables in the first sumcheck rounds, applied to summands which are not small, but are selected by witness bits among few values. 
 
  
 
@@ -2847,13 +2882,13 @@ In \cref{t:gkr_step1_costs} we record the total upper bound costs for computing 
     \begin{tabular}{c|c|c}
          & Our approach & Standard/generic \\
          \hline
-        Multiplications & $\leq   10\cdot \codedim_1 +  4\cdot \codedim_2 $ &$\Theta(\codedim_1\cdot \codedim_2)$\\
+        Multiplications & $\leq   8\cdot \codedim_1 +  3\cdot \codedim_2 $ &$\Theta(\codedim_1\cdot \codedim_2)$\\
         \hline
-        Additions & $\leq 3\cdot \codedim_1\cdot \codedim_2/4 + 2\cdot\codedim_1 +  5\cdot \codedim_2$  & $\Theta(\codedim_1\cdot \codedim_2)$\\
+        Additions & $\leq \codedim_1\cdot \codedim_2/2 + 3\cdot\codedim_1 +  3\cdot \codedim_2$  & $\Theta(\codedim_1\cdot \codedim_2)$\\
         \hline
-        Table reads & $3\cdot \codedim_1\cdot \codedim_2/4$, into tables of $6\cdot\codedim_1$ field elements & --
+        Table reads & $\codedim_1\cdot \codedim_2/2$, into tables of $5\cdot\codedim_1$ field elements & --
     \end{tabular}
-    \caption{The cost in field operations of the first sumcheck round of the last sumcheck in our GKR protocol for batched grand products, cf.\ \cref{c:gkr_grand_product}, where $\codedim=\codedim_1\cdot \codedim_2 = 2^{r_1}\cdot 2^{r_2}$ is the witness size. In our instantiation $\codedim_1\approx \codedim^{0.6}\iflncs\else = 2^{r_1}\fi$ and $\codedim_2\approx \codedim^{0.4}\iflncs\else =2^{r_2}\fi$ (\cref{s:instantiation}). %The $\Theta(\codedim)$ additions and table reads are unavoidable --- every bit of the witness must be touched --- but additions in $\comfield$ are $128$-bit XORs; the gain over the generic prover is that only $O(\codedim_1+\codedim_2)$ \emph{multiplications} are performed instead of $\Theta(\codedim)$.
+    \caption{The cost in field operations of the first sumcheck round of the last sumcheck (the most expensive one) in our GKR protocol for batched grand products, cf.\ \cref{c:gkr_grand_product}, where $\codedim=\codedim_1\cdot \codedim_2 = 2^{r_1}\cdot 2^{r_2}$ is the witness size. In our instantiation $\codedim_1\iflncs\else = 2^{r_1}\fi\approx \codedim^{0.6}$ and $\codedim_2\iflncs\else =2^{r_2}\fi\approx \codedim^{0.4}$ (\cref{s:instantiation}), and $\codedim$ is the witness size. %The $\Theta(\codedim)$ additions and table reads are unavoidable --- every bit of the witness must be touched --- but additions in $\comfield$ are $128$-bit XORs; the gain over the generic prover is that only $O(\codedim_1+\codedim_2)$ \emph{multiplications} are performed instead of $\Theta(\codedim)$.
     }
 \label{t:gkr_step1_costs}
 \end{table}
@@ -2863,15 +2898,15 @@ In \cref{t:gkr_step1_costs} we record the total upper bound costs for computing 
 
 
 
-\paragraph{Subsequent prover messages in the last sumcheck in Step 2 of \cref{c:gkr_grand_product}.} Next we focus on computing $h_2(X)$. Substituting $X$ by the verifier's first sumcheck challenge $\rho_1$ in \cref{e:grand_product_Lr1,e:grand_product_Lr2}, we have, for every $\bb\in \bits^{r_1-1}, \cc\in \bits^{r_2}$, 
+\paragraph{Subsequent prover messages in the last sumcheck in Step 2 of \cref{c:gkr_grand_product}.} Next we focus on computing $h_2(X)$. Substituting $X$ by the verifier's first sumcheck challenge $\rho_1$ in \cref{e:grand_product_Lr1,e:grand_product_Lr2}, we have, for every $\eps\in \bits$, $\bb\in \bits^{r_1-2}$ and $\cc\in \bits^{r_2}$, 
 %
 \begin{align*}
-L_{r_1}(\rho_1,\bb, \cc) &   =\left(L_{r_1}( 1, \bb,\cc) -  L_{r_1}( 0, \bb,\cc)\right)\cdot \rho_1 + L_{r_1}( 0, \bb,\cc)\\ &= \begin{cases}
-\yy_{\bb}^{(11)}\defeq \left(\yy_{1,\bb}^{(1)} - \yy_{0,\bb}^{(1)}\right)\cdot \rho_1 + \yy_{0,\bb}^{(1)} &\text{if } \bfg_{(0,\bb),\cc}=1,\ \bfg_{(1,\bb),\cc}=1 \\  
-\yy_{\bb}^{(10)}\defeq \left(\yy_{1,\bb}^{(0)} - \yy_{0,\bb}^{(1)}\right)\cdot \rho_1 + \yy_{0,\bb}^{(1)}&\text{if } \bfg_{(0,\bb),\cc}=1,\ \bfg_{(1,\bb),\cc}=0\\
-\yy_{\bb}^{(01)}\defeq 
-\left(\yy_{1,\bb}^{(1)} - \yy_{0,\bb}^{(0)}\right)\cdot \rho_1 + \yy_{0,\bb}^{(0)} & \text{if } \bfg_{(0,\bb),\cc}=0,\ \bfg_{(1,\bb),\cc}=1 \\
-    \yy_{\bb}^{(00)}\defeq \left(\yy_{1,\bb}^{(0)} - \yy_{0,\bb}^{(0)}\right)\cdot \rho_1 + \yy_{0,\bb}^{(0)} &\text{if } \bfg_{(0,\bb),\cc}=0,\  \bfg_{(1,\bb),\cc}=0
+L_{r_1}(\eps,\rho_1,\bb, \cc) &   =\left(L_{r_1}(\eps, 1, \bb,\cc) -  L_{r_1}(\eps, 0, \bb,\cc)\right)\cdot \rho_1 + L_{r_1}(\eps, 0, \bb,\cc)\\ &= \begin{cases}
+\yy_{\eps,\bb}^{(11)}\defeq \left(\yy_{\eps,1,\bb}^{(1)} - \yy_{\eps,0,\bb}^{(1)}\right)\cdot \rho_1 + \yy_{\eps,0,\bb}^{(1)} &\text{if } \bfg_{(\eps,0,\bb),\cc}=1,\ \bfg_{(\eps,1,\bb),\cc}=1 \\  
+\yy_{\eps,\bb}^{(10)}\defeq \left(\yy_{\eps,1,\bb}^{(0)} - \yy_{\eps,0,\bb}^{(1)}\right)\cdot \rho_1 + \yy_{\eps,0,\bb}^{(1)}&\text{if } \bfg_{(\eps,0,\bb),\cc}=1,\ \bfg_{(\eps,1,\bb),\cc}=0\\
+\yy_{\eps,\bb}^{(01)}\defeq 
+\left(\yy_{\eps,1,\bb}^{(1)} - \yy_{\eps,0,\bb}^{(0)}\right)\cdot \rho_1 + \yy_{\eps,0,\bb}^{(0)} & \text{if } \bfg_{(\eps,0,\bb),\cc}=0,\ \bfg_{(\eps,1,\bb),\cc}=1 \\
+    \yy_{\eps,\bb}^{(00)}\defeq \left(\yy_{\eps,1,\bb}^{(0)} - \yy_{\eps,0,\bb}^{(0)}\right)\cdot \rho_1 + \yy_{\eps,0,\bb}^{(0)} &\text{if } \bfg_{(\eps,0,\bb),\cc}=0,\  \bfg_{(\eps,1,\bb),\cc}=0
 \end{cases}
 \end{align*}
 %®
@@ -2880,19 +2915,19 @@ it starts with the table
 %
 \iflncs\begingroup\small\fi
 $$
-T_{r_1}^{(2)} \in (\comfield^4)^{\bits^{r_1-1}} \quad \text{such that } T_{r_1}^{(2)}[\bb] = ( \yy_{\bb}^{(11)}, \yy_{\bb}^{(10)},  \yy_{\bb}^{(01)},\yy_{\bb}^{(00)}) \quad \text{for } \bb\in \bits^{r_1-1}
+T_{r_1}^{(2)} \in (\comfield^4)^{\bits^{r_1-1}} \quad \text{such that } T_{r_1}^{(2)}[\eps,\bb] = ( \yy_{\eps,\bb}^{(11)}, \yy_{\eps,\bb}^{(10)},  \yy_{\eps,\bb}^{(01)},\yy_{\eps,\bb}^{(00)}) \quad \text{for } (\eps,\bb)\in \bits\times\bits^{r_1-2}
 $$
 \iflncs\endgroup\fi
-for which we have, indexing the  entries of  $T_{r_1}^{(2)}[\bb]$ with the $4$ values $(1,1),\lncsbreak (1,0),\lncsbreak (0,1),\lncsbreak (0,0)$,
+for which we have, indexing the  entries of  $T_{r_1}^{(2)}[\eps,\bb]$ with the $4$ values $(1,1),\lncsbreak (1,0),\lncsbreak (0,1),\lncsbreak (0,0)$,
 %
 $$
-L_{r_1}(\rho_1, \bb,\cc) = T_{r_1}^{(2)}[\bb][(\bfg_{(0,\bb),\cc},\bfg_{(1,\bb),\cc})].
+L_{r_1}(\eps,\rho_1, \bb,\cc) = T_{r_1}^{(2)}[\eps,\bb][(\bfg_{(\eps,0,\bb),\cc},\bfg_{(\eps,1,\bb),\cc})].
 $$
-This allows the prover, when needed, to obtain $L_{r_1}(\rho_1,\bb,\cc)$ for any $(\bb,\cc)\in \bits^{r_1-1}\times \bits^{r_2}$ with a simple read in $T_{r_1}^{(2)}$.  
+This allows the prover, when needed, to obtain $L_{r_1}(\eps,\rho_1,\bb,\cc)$ for any $\eps\in \bits$ and $(\bb,\cc)\in \bits^{r_1-2}\times \bits^{r_2}$ with a simple read in $T_{r_1}^{(2)}$.  
 
 We now have, for $(\bb,\cc)\in \bits^{r_1-3}\times \bits^{r_2}$, 
- \iflncs\begingroup\footnotesize\fi\begin{align*}A_0^{(2)}[\bb,\cc] &= L_{r_1}(\rho_1,0,\bb,0,\cc)\cdot L_{r_1}(\rho_1,0,\bb,1,\cc)\cdot\omega[\bb]\\ &= 
-    T_{r_1}^{(2)}[0,\bb,0][(\bfg_{(0,0,\bb,0),\cc},\bfg_{(1,0,\bb,0),\cc})] \cdot    T_{r_1}^{(2)}[0,\bb, 1][(\bfg_{(0,0,\bb,1),\cc}, \bfg_{(1,0,\bb,1),\cc})] \cdot \omega[\bb]
+ \iflncs\begingroup\footnotesize\fi\begin{align*}A_0^{(2)}[\bb,\cc] &= L_{r_1}(0,\rho_1,0,\bb,\cc)\cdot L_{r_1}(1,\rho_1,0,\bb,\cc)\cdot\omega[\bb]\\ &= 
+    T_{r_1}^{(2)}[0,0,\bb][(\bfg_{(0,0,0,\bb),\cc},\bfg_{(0,1,0,\bb),\cc})] \cdot    T_{r_1}^{(2)}[1,0,\bb][(\bfg_{(1,0,0,\bb),\cc}, \bfg_{(1,1,0,\bb),\cc})] \cdot \omega[\bb]
 \end{align*}
 \iflncs\endgroup\fi
 %
@@ -2908,14 +2943,41 @@ where $\omega[\bb]=\eq(\rho_1, \bb;\bm{\alpha}^{(i,1)})$ is the weight defined a
 %
 Hence the elements $A_0^{(2)}[\bb,\cc]$ can be obtained by querying a table $$T_{A_0}^{(2)}\in (\KK^{16})^{\bits^{r_1-3}}$$ with
 %
-$$T_{A_0}^{(2)}[\bb]= (T_{r_1}^{(2)}[0,\bb,0][\xx]\cdot T_{r_1}^{(2)}[0,\bb,1][\xx']\cdot \omega[\bb])_{\xx,\xx'\in \bits^{2}}.$$
+$$T_{A_0}^{(2)}[\bb]= (T_{r_1}^{(2)}[0,0,\bb][\xx]\cdot T_{r_1}^{(2)}[1,0,\bb][\xx']\cdot \omega[\bb])_{\xx,\xx'\in \bits^{2}}.$$
+Similarly, $A_2^{(2)}[\bb,\cc]$ depends on $8$ bits of the column $\cc$, and it can be read from the table $T_{A_2}^{(2)}\in(\KK^{2^8})^{\bits^{r_1-3}}$ given by
+$$
+\begin{aligned}T_{A_2}^{(2)}[\bb]=\Big(&\big(T_{r_1}^{(2)}[0,1,\bb][\xx_1]-T_{r_1}^{(2)}[0,0,\bb][\xx_0]\big)\\ &\cdot\big(T_{r_1}^{(2)}[1,1,\bb][\xx_1']-T_{r_1}^{(2)}[1,0,\bb][\xx_0']\big)\cdot\omega[\bb]\Big)_{\xx_0,\xx_1,\xx_0',\xx_1'\in\bits^2}.\end{aligned}
+$$
+In general, we denote by $T_{A_k}^{(j)}$ the table from which the values $A_k^{(j)}[\bb,\cc]$ are read (so $T_{A_k}^{(1)}= T_{A_k}$).
 %
-A  table $T_{S_1}^{(2)}$ is computed analogously to $T_{S_1}$. The value $A_2^{(2)}[\bb,\cc]$, however, now depends on the value taken by \emph{eight} witness bits, this being because for $\eps\in \bits$, the value $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ depends on  four bits. Hence computing a table for the values $A_2^{(2)}[\bb,\cc]$ analogous to $T_{A_2}$  would have $2^8=256$-sized vectors as entries. Instead of computing $T_{A_2}^{(2)}$, we compute two tables for the values $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ (one table for each $\eps\in\bits$, with one of the tables also including multiplication by $\omega[\bb]$). Then the value $A_2^{(2)}[\bb,\cc]$ can be obtained by performing a lookup into each table, followed by  a single multiplication.
+\begin{comment}The value $A_2^{(2)}[\bb,\cc]$, however, now depends on the value taken by \emph{eight} witness bits, this being because for $\eps\in \bits$, the value $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ depends on  four bits. Hence computing a table for the values $A_2^{(2)}[\bb,\cc]$ analogous to $T_{A_2}$  would have $2^8=256$-sized vectors as entries. Instead of computing $T_{A_2}^{(2)}$, we compute two tables for the values $E_{1\eps}^{(2)}-E_{0\eps}^{(2)}$ (one table for each $\eps\in\bits$, with one of the tables also including multiplication by $\omega[\bb]$). Then the value $A_2^{(2)}[\bb,\cc]$ can be obtained by performing a lookup into each table, followed by  a single multiplication.
+\end{comment}
 
 \bigskip
 
-This can be iterated in further sumcheck rounds, for computing $h_3(X), h_4(X),$ etc. The limitation is that the entries in the tables are vectors whose dimension is squared at each round. More precisely, each further round squares the number of cases per index of every table, but it only halves the number of indices.
-Hence, in practice we stop using lookup tables after a few rounds of each sumcheck and GKR, and after that we execute the sumcheck protocol normally. Concretely, in our implementation we never compute a table with more than $16$ elements per index. This is done so that the tables can be kept in cache, since we observe that, when this is not the case, table lookups become more and more expensive compared to  multiplications in $\FF_{2^{128}}$.     \cref{tab:gkr_tables} displays the different tables built or not built in our simplest implementation, the arithmetic cost of doing so, and their size at $\codedim_1=2^{r_1}=2^{16}$ (corresponding to a total witness size of $\approx 2^{26},2^{27}$ bits in our implementation). In our final implementation we do not explicitly compute all of the tables, similarly as done with the table $T_{A_2}^{(2)}$ above.
+This can be iterated in further sumcheck rounds, for computing $h_3(X), h_4(X),$ etc. Concretely, in the $j$-th round the prover uses the table $T_{r_1}^{(j)}\in \big(\comfield^{2^{2^{j-1}}}\big)^{\bits^{r_1-j+1}}$ such that
+%
+\begin{equation}\label{e:T_r1_rounds}
+L_{r_1}(\eps,\bm{\rho}^{(j)},\bb,\cc)=T_{r_1}^{(j)}[\eps,\bb]\big[(\bfg_{(\eps,\ww,\bb),\cc})_{\ww\in\bits^{j-1}}\big] \qquad \text{for all } (\eps,\bb,\cc)\in \bits\times\bits^{r_1-j}\times\bits^{r_2},
+\end{equation}
+%
+\noindent i.e.\ $T_{r_1}^{(j)}[\eps,\bb]$ contains the $2^{2^{j-1}}$ possible values of $L_{r_1}(\eps,\bm{\rho}^{(j)},\bb,\cc)$, one for each value of the $2^{j-1}$ bits $(\bfg_{(\eps,\ww,\bb),\cc})_{\ww\in\bits^{j-1}}$ that it depends on. The prover obtains $T_{r_1}^{(j)}$ from $T_{r_1}^{(j-1)}$ in the same way as we obtained $T_{r_1}^{(2)}$ from $T_{r_1}$. Precisely, each entry of $T_{r_1}^{(j)}[\eps,\bb]$ is $(1-\rho_{j-1})\cdot v_0+\rho_{j-1}\cdot v_1$, for an entry $v_0$ of $T_{r_1}^{(j-1)}[\eps,0,\bb]$ and an entry $v_1$ of $T_{r_1}^{(j-1)}[\eps,1,\bb]$. 
+
+The limitation is that the entries in the tables are vectors whose dimension is squared at each round. More precisely, each further round squares the number of cases per index of every table, but it only halves the number of indices.
+Hence, in practice we use lookup tables only in the first few rounds of each of the last few sumchecks of the GKR protocol, and after that we execute the sumcheck protocol normally.  
+
+%In \cref{s:gkr_buckets} we describe optimizations that allow to not store the tables of the form $T_{A_k}^{(j)}$ in fully in cache, enabling using tables of larger dimension than we otherwise would.
+
+%We describe how our implementation uses these tables in \cref{s:gkr_buckets,s:indices}, once we have introduced some extra optimizations. 
+ 
+
+
+\begin{comment}
+Concretely, in our simplest implementation we never compute a table with more than $16$ elements per index. 
+
+
+
+This is done so that the tables can be kept in cache, since we observe that, when this is not the case, table lookups become more and more expensive compared to  multiplications in $\FF_{2^{128}}$.     \cref{tab:gkr_tables} displays the different tables built or not built in our simplest implementation, the arithmetic cost of doing so, and their size at $\codedim_1=2^{r_1}=2^{16}$ (corresponding to a total witness size of $\approx 2^{27},2^{28}$ bits in our implementation). The implementation that we measure in \cref{s:experiments} uses tables with up to $2^8$ elements per index, but it reads them in an order that only needs a few of their indices in cache at a time (see \cref{s:indices}).
 
 
 \begin{table}[H]
@@ -2929,16 +2991,12 @@ Hence, in practice we stop using lookup tables after a few rounds of each sumche
         \hline
         $T_{A_0}^{(1)}$ & $(\KK^{2^{2}})^{2^{r_1-2}}$  &  $0$ / $2^{r_1 +1}$ & $1.0$ & yes \\
         \hline
-        $T_{S_1}^{(1)}$ & $(\KK^{2^{2}})^{2^{r_1-2}}$  &  $0$ / $2^{r_1 +1}$ & $1.0$ & yes \\
-        \hline
         $T_{A_2}^{(1)}$ & $(\KK^{2^{4}})^{2^{r_1-2}}$  &  $2^{r_1+1}$ / $5\cdot 2^{r_1}$ & $4.2$ & yes \\
         \hline
         \hline
         $T_{r_1}^{(2)}$ & $(\KK^{2^2})^{2^{r_1-1}}$ & $2^{r_1+2}$ / $2^{r_1+1}$ & $2.1$ & yes \\
         \hline
         $T_{A_0}^{(2)}$ & $(\KK^{2^{4}})^{2^{r_1-3}}$  &  $0$ / $2^{r_1 +2}$ & $2.1$ & yes \\
-        \hline
-        $T_{S_1}^{(2)}$ & $(\KK^{2^{4}})^{2^{r_1-3}}$  &  $0$ / $2^{r_1 +2}$ & $2.1$ & yes \\
         \hline
         $T_{A_2}^{(2)}$ & $(\KK^{2^{8}})^{2^{r_1-3}}$  &  --- & $33.6$ & no  \\
         \hline
@@ -2949,29 +3007,31 @@ Hence, in practice we stop using lookup tables after a few rounds of each sumche
         \hline
         $T_{A_0}^{(3)}$ & $(\KK^{2^{8}})^{2^{r_1-4}}$  &  --- & $16.8$ & no \\
         \hline
-        $T_{S_1}^{(3)}$ & $(\KK^{2^{8}})^{2^{r_1-4}}$  &  --- & $16.8$ & no  \\
-        \hline
         $T_{A_2}^{(3)}$ & $(\KK^{2^{16}})^{2^{r_1-4}}$  &  --- & $4295$ & no
     \end{tabular}
-    \caption{Dimensions, build costs, and sizes of the tables for computing $h_1(X), h_2(X), h_3(X)$ in the last sumcheck of \cref{c:gkr_grand_product}, with $\log|\KK|\approx 128$. We use the example size $\codedim_1=2^{r_1}=2^{16}$, which, following our instantiation ($\codedim_1\approx \codedim^{0.6}$, \cref{s:instantiation}), corresponds to a total witness size $\codedim  \approx 2^{26},2^{27}$.}
+    \caption{Dimensions, build costs, and sizes of the tables for computing $h_1(X), h_2(X), h_3(X)$ in the last sumcheck of \cref{c:gkr_grand_product}, with $\log|\KK|\approx 128$. We use the example size $\codedim_1=2^{r_1}=2^{16}$, which, following our instantiation ($\codedim_1\approx \codedim^{0.6}$, \cref{s:instantiation}), corresponds to a total witness size $\codedim  \approx 2^{27},2^{28}$.}
 \label{tab:gkr_tables}
 \end{table}
-
+\end{comment}
 
 
 
 \paragraph{The rest of the sumchecks in Step 2 of \cref{c:gkr_grand_product}.} So far we have discussed the last sumcheck from Step 2 of \cref{c:gkr_grand_product}, corresponding to the lower layer of the binary tree of products of our GKR circuit for the grand products. 
 
-The sumchecks run for $i=r_1-2, r_1-3,\ldots$ can be optimized in the exact same way as we did for the last sumcheck $(i=r_1-1)$. In this case, instead of starting with the table $T_{r_1}^{(1)}$, which at each index contains the two values $(\yy_\bb^{(0)}, \yy_\bb^{(1)})$, one starts with the table
+The sumchecks run for $i=r_1-2, r_1-3,\ldots$ can be optimized in the exact same way as we did for the last sumcheck $(i=r_1-1)$. In this case, instead of starting with the table $T_{r_1}^{(1)}$, which at each index contains the two values $(\yy_\bb^{(0)}, \yy_\bb^{(1)})$, one starts, for $j\defeq r_1-1-i$, with a table
 %
 $$
 T_{r_1-j} \in (\KK^{2^{2^{j}}})^{\bits^{r_1-j}}
 $$
-described in \cref{e:size_T_r1_i}. Since $T_{r_1-j}$ has, per index, the square of the number of entries of $T_{r_1-j+1}$, all subsequent tables also have, per index, the square of the number of entries of the analogous tables from the $(i+1)$-th sumcheck, and they require correspondingly more operations to compute.
+%
+where, for each $\bb \in \bits^{r_1-j}$, the entry $T_{r_1-j}[\bb]\in \KK^{2^{2^{j}}}$ is a vector of $2^{2^j}$, containing all possible values for the product of $2^j$ factors (at positions specified by $\bb$)  in the $\codedim_2$ grand products. Precisely,
+$$T_{r_1-j}[\bb]=\left(\left.\prod_{\bb' \in \bits^j}\yy_{(\bb',\bb)}^{\eps_{\bb'}} \ \right| \ \eps_{\bb'}\in \{0,1\} \ \forall \bb'\in \bits^j\right).$$
+ Since $T_{r_1-j}$ has, per index, the square of the number of entries of $T_{r_1-j+1}$, all subsequent tables also have, per index, the square of the number of entries of the analogous tables from the $(i+1)$-th sumcheck, and they require correspondingly more operations to compute, and possibly further optimizations on top, as we describe in \cref{s:gkr_buckets}.
 
 
-In our implementation we want to keep all tables in cache (otherwise we observe that multiplication in $\FF_{2^{128}}$ is cheaper than a table lookup). Because of this, the smaller $i$ is (i.e.\ the further we get from the last sumcheck in the GKR protocol), the fewer sumcheck rounds we use tables in. Concretely, for $i=r_1-2$ ($j=1$) we build and use the table $T_{r_1-1}^{(1)}$, the analogues of $T_{A_0}^{(1)}$ and $T_{S_1}^{(1)}$ (now with $16$ entries per index), and $T_{r_1-1}^{(2)}$. Similarly as done for $A_2^{(2)}$, the analogue of $T_{A_2}^{(1)}$ (which would have $2^8$ entries per index) is replaced by two tables of $16$ entries per index and one multiplication per read. For $i=r_1-3$ $(j=2)$ we only use the table $T_{r_1-2}^{(1)}$.
-
+\begin{comment}
+In our simplest implementation we want to keep all tables in cache (otherwise we observe that multiplication in $\FF_{2^{128}}$ is cheaper than a table lookup). Because of this, the smaller $i$ is (i.e.\ the further we get from the last sumcheck in the GKR protocol), the fewer sumcheck rounds we use tables in. Concretely, for $i=r_1-2$ ($j=1$) we build and use the table $T_{r_1-1}^{(1)}$, the analogue of $T_{A_0}^{(1)}$ (now with $16$ entries per index), and $T_{r_1-1}^{(2)}$. Similarly as done for $A_2^{(2)}$, the analogue of $T_{A_2}^{(1)}$ (which would have $2^8$ entries per index) is replaced by two tables of $16$ entries per index and one multiplication per read. For $i=r_1-3$ $(j=2)$ we only use the table $T_{r_1-2}^{(1)}$.
+\end{comment}
 \begin{comment}
 \begin{remark}[Factored tables]\label{r:factored_tables}
 The tables and operation counts in \cref{t:gkr_step1_costs,tab:gkr_tables} describe the algorithm as presented above. In our implementation, the four $16$-entry tables of the second round of the last sumcheck (namely $T_{A_0}^{(2)}$, $T_{S_1}^{(2)}$ and the two tables for the values $E^{(2)}_{1\eps}-E^{(2)}_{0\eps}$), their analogues in the first round of the sumcheck for $i=r_1-2$, and the table $T_{r_1-2}^{(1)}$ are not built explicitly. Instead, the prover builds smaller $4$-entry tables and recomputes each required value from two of their entries with one multiplication.%: the prover keeps only the $4$-entry tables they are products of, and recomputes the required values from their entries with one multiplication per read. This costs $\Theta(\codedim)$ additional multiplications (between $\codedim/4$ and $\codedim/2$ per sumcheck round concerned), and in exchange it saves the $O(\codedim_1)$ multiplications needed to build the tables and reduces their footprint by a factor between $2$ and $8$. As observed above, this is a net win at the sizes we target ($\codedim\geq 2^{28}$), since the prover is memory-bound and a multiplication in $\KK$ is cheaper than a data-dependent load from a table that does not fit in the L2 cache. The proofs are unaffected. We omit the details for brevity.
@@ -2997,6 +3057,119 @@ In Round 2 of \cref{c:core_iop}, the prover computes the elements $\mu_1,\ldots,
 \end{comment}
 
 
+\subsection{Reducing table reads and avoiding some table precomputations via bucketing}\label{s:gkr_buckets}
+
+Note that in \cref{s:tables} the prover performs $O(\codedim)$ table reads, and keeps  full tables in cache for every sumcheck round where  a table is used. We now describe an optimization that reduces the  number of table reads to $O(\codedim_1)$, and  allows to compute some table entries ``on-the-go'', meaning that we do not need to precompute the full table and store it in cache.  These optimizations were found by an AI when optimizing our prover and are reminiscent of Pippenger's MSM algorithm \cite{pipp}.
+
+%In the first rounds of each sumcheck, the prover can read the tables from the previous subsection much less often, and use fewer operations. We describe this optimization for the first message of the last sumcheck, i.e.\ the message analyzed in \cref{t:gkr_step1_costs}. Our implementation uses it (see also \cref{s:indices}).
+
+\paragraph{The polynomial $h_1(X)$.} We start by discussing how the prover computes the first message $h_1(X)$ of the ``biggest'' sumcheck of the GKR protocol. Recall that, instead of sending $h_1(X)$ it suffices  that the prover send $t_1(X)$. To do so,  it only needs to compute the constant and the leading coefficients of $t_1(X)$, i.e.\ it only needs the elements \begin{equation}\label{e:naive_coeff_compute}t_1(0)=\sum_{(\bb,\cc)\in \bits^{r_1-2}\times \bits^{r_2}}\eq(\cc;\bm{\alpha}')\cdot A_0^{(1)}[\bb,\cc],\qquad t_1(\infty)\defeq\sum_{(\bb,\cc)\in \bits^{r_1-2}\times \bits^{r_2}}\eq(\cc;\bm{\alpha}')\cdot  A_2^{(1)}[\bb,\cc],\end{equation} where $t_1(\infty)$ is a convention notation for the leading coefficient of $t_1(X)$.  Recall also that, in \cref{s:tables}, the values $A_0^{(1)}[\bb,\cc]$ and $A_2^{(1)}[\bb,\cc]$ are read from the vectors $T_{A_0}[\bb]$ and $T_{A_2}[\bb]$, at the entries selected by (some of) the four bits
+%
+$$
+\xx_{\bb,\cc}\defeq \left(\bfg_{(0,0,\bb),\cc},\bfg_{(0,1,\bb),\cc},\bfg_{(1,0,\bb),\cc},\bfg_{(1,1,\bb),\cc}\right)\in \bits^4.
+$$
+%
+\noindent For readability, we write these entries as $T_{A_0}[\bb][\xx_{\bb,\cc}]$ and $T_{A_2}[\bb][\xx_{\bb,\cc}]$, even though $T_{A_0}[\bb]$ only depends on the first and third bits of $\xx_{\bb,\cc}$.
+
+Instead of computing $t_1(0)$ and $t_1(\infty)$ by going through all indices $(\bb,\cc)$ and computing the terms in  \eqref{e:naive_coeff_compute} for each index, we rewrite \eqref{e:naive_coeff_compute} as follows (we focus on $t_1(\infty)$ only, with $t_1(0)$ being analogous):
+%
+\begin{align*}
+t_1(\infty)=& \sum_{\bb\in \bits^{r_1-2}} \sum_{\xx\in \bits^4} \sum_{\cc\in\bits^{r_2} : \ \xx_{\bb,\cc}=\xx} \eq(\cc;\bm{\alpha}')\cdot A_2^{(1)}[\bb,\cc]\\ =&  \sum_{\bb\in \bits^{r_1-2}} \sum_{\xx\in \bits^4} \sum_{\cc\in\bits^{r_2} : \ \xx_{\bb,\cc}=\xx} \eq(\cc;\bm{\alpha}')\cdot T_{A_2}[\bb][\xx]  = \sum_{\bb\in \bits^{r_1-2}} \sum_{\xx\in \bits^4}  T_{A_2}[\bb][\xx] \cdot H_{\bb}[\xx],
+\end{align*}
+where $H_{\bb}[\xx]\defeq \sum_{\cc\in\bits^{r_2} : \ \xx_{\bb,\cc}=\xx} \eq(\cc;\bm{\alpha}')$. We call the values $H_{\bb}[\xx]$ ``buckets''.
+The values $H_{\bb}[\xx]$ can be precomputed and cost $\codedim/4$ additions in total, and no multiplications. 
+
+Hence $t_1(\infty)$ can be computed by making $2^{r_1 -2} \cdot 2^{4} = 4 \cdot \codedim_1$ reads into the table $T_{A_2}$, and performing the same amount of multiplications and additions. Even more, with this strategy, each entry $T_{A_2}[\bb][\xx]$ of the table $T_{A_2}$ needs to be accessed at most once. Hence the values $T_{A_2}[\bb][\xx]$ can be computed ``on-the-go'' when they are needed, and discarded afterward, rather than precomputed and kept in cache. In contrast, in \cref{s:tables}, each entry $T_{A_2}[\bb][\xx]$ of $T_{A_2}$ is read once for every  $\cc\in \bits^{r_2}$ with $\xx_{\bb,\cc}=\xx$. Hence in \cref{s:tables} the values $T_{A_2}[\bb][\xx]$ are used, in general, more than once, and thus   computing and discarding them right away is wasteful. 
+
+
+
+\paragraph{Subsequent sumcheck rounds and GKR layers.} The same idea applies to the next messages of sumcheck. For example, in the second round of the ``biggest'' sumcheck (i.e.\ after the round discussed above) the entries in the tables $T_{A_0}^{(2)}$ and $T_{A_2}^{(2)}$ are  each one a vector of $2^4$ and $2^8$ elements, respectively. These vectors are indexed by elements from $\bits^4$ and $\bits^8$. We can now apply the same strategy as above, except that now we have $\xx$ range over $\bits^8$ instead of $\bits^4$. 
+
+
+This optimization is beneficial as long as we can index $\xx$ over $\bits^{t}$ with $2^t< \codedim_2=2^{r_2}$, i.e.\  as long as the corresponding table has entries that are vectors of dimension $2^t<2^{r_2}$. This is because the amount of multiplications, table reads, and additions performed is a multiple of $2^t$. In practice this constrains us to $t\in \{2,4,8\}$.
+
+
+
+
+
+For coefficients where the corresponding table would have entries of dimension $2^{16}$ ($t=16$), and thus $\xx$ would be indexed over $\bits^{16}$, we use the following approach, which we illustrate with an example. We focus on  the third round of the last sumcheck (i.e.\ the  ``biggest'' sumcheck). In that round, the prover must compute the constant and the leading coefficient of $t_3(X)$. Computing the leading coefficient $t_3(\infty)$  of $t_3(X)$ as done above  would require using the table $T_{A_2}^{(3)}$, whose entries have dimension $2^{16}$, and we would compute it as 
+%
+$$
+ t_3(\infty)=\sum_{\bb\in \bits^{r_1-4}} \sum_{\xx\in \bits^{16}}  T_{A_2}^{(3)}[\bb][\xx] \cdot H_{\bb}[\xx]. 
+$$
+Instead, we proceed as follows. Using that $ A_{2}^{(3)}[\bb,\cc] = \big(L_{r_1}(0,\bm{\rho}^{(3)},1,\bb,\cc) - L_{r_1}(0,\bm{\rho}^{(3)},0,\bb,\cc)\big)  \cdot \big(L_{r_1}(1,\bm{\rho}^{(3)},1,\bb,\cc) - L_{r_1}(1,\bm{\rho}^{(3)},0,\bb,\cc)\big)\cdot \omega[\bb]$ (see \cref{e:coeffs}), we have
+%
+\begin{equation}\label{e:t_3_infty}
+\begin{aligned}
+t_3(\infty) =& \sum_{(\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}}  \eq(\cc;\bm{\alpha}') \cdot A_{2}^{(3)}[\bb,\cc]\\ 
+=& \sum_{(\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}} \omega[\bb]\cdot \eq(\cc;\bm{\alpha}') \cdot \sum_{\eps,\eps'\in \bits} (-1)^{\eps+\eps'} \cdot L_{r_1}(0,\bm{\rho}^{(3)},\eps,\bb,\cc) \cdot L_{r_1}(1,\bm{\rho}^{(3)},\eps',\bb,\cc), 
+\end{aligned}
+\end{equation}
+where $\omega[\bb]$ is the weight defined in \cref{s:tables}, for $j=3$.  Now, for each $\eps,k\in \bits$,
+%
+$$
+L_{r_1}(k, \bm{\rho}^{(3)}, \eps, \bb, \cc) = T_{r_1}^{(3)}[k,\eps,\bb][\xx_{k,\eps,\bb,\cc}], \qquad \text{where} \quad \xx_{k,\eps,\bb,\cc}\defeq (\bfg_{(k,\ww,\eps,\bb),\cc})_{\ww\in\bits^2}\in \bits^4,
+$$
+%
+and $T_{r_1}^{(3)}$ is as in \eqref{e:T_r1_rounds} taking $j=3$. Hence, for each $\eps,\eps'\in \bits$, the product $L_{r_1}(0,\bm{\rho}^{(3)},\eps,\bb,\cc)\cdot L_{r_1}(1,\bm{\rho}^{(3)},\eps',\bb,\cc)$ is determined by the $8$ bits $(\xx_{0,\eps,\bb, \cc}, \xx_{1,\eps',\bb,\cc})$.
+%
+Now we rewrite \eqref{e:t_3_infty}  as follows. For brevity we write $\omega[\bb] = \omega_\bb$ and $ \eq(\cc; \bm{\alpha}') = \eq_{\cc}$. 
+%
+\begin{align*}
+ t_3(\infty)&= \sum_{(\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}} \omega_\bb\cdot \eq_{\cc}\cdot \sum_{\eps,\eps'\in \bits} (-1)^{\eps+\eps'}\cdot T_{r_1}^{(3)}[0,\eps,\bb][\xx_{0,\eps,\bb,\cc}] \cdot T_{r_1}^{(3)}[1,\eps',\bb][\xx_{1,\eps',\bb,\cc}]\\ 
+ &=\sum_{\bb\in \bits^{r_1-4}} \omega_\bb\cdot \sum_{\eps,\eps'\in \bits}(-1)^{\eps+\eps'} \sum_{\xx,\xx'\in \bits^{4}} \sum_{\substack{\cc\in \bits^{r_2} \ : \ \\ \xx_{0,\eps,\bb,\cc}=\xx\\ \xx_{1,\eps',\bb,\cc}=\xx'} } T_{r_1}^{(3)}[0,\eps,\bb][\xx] \cdot  T_{r_1}^{(3)}[1,\eps',\bb][\xx'] \cdot\eq_\cc\\
+ &=\sum_{\bb\in \bits^{r_1-4}} \omega_\bb\cdot \sum_{\eps,\eps'\in \bits}(-1)^{\eps+\eps'} \sum_{\xx,\xx'\in \bits^{4}}  T_{r_1}^{(3)}[0,\eps,\bb][\xx] \cdot  T_{r_1}^{(3)}[1,\eps',\bb][\xx'] \cdot H^{\eps\eps'}_{\bb}[\xx, \xx']
+\end{align*}
+%
+where
+%
+$$
+H^{\eps\eps'}_{\bb}[\xx,\xx']\defeq \sum_{\substack{\cc\in \bits^{r_2} \ : \ \\ \xx_{0,\eps,\bb,\cc}=\xx\\ \xx_{1,\eps',\bb,\cc}=\xx'} }\eq(\cc;\bm{\alpha}').
+$$
+Now the prover computes all the values $H^{\eps\eps'}_{\bb}[\xx,\xx']$, and then obtains $t_3(\infty)$ using the expression of $t_3(\infty)$ given above. With this approach we avoid using the table $T_{A_2}^{(3)}$, whose entries have  dimension $2^{16}$. %The cost is only an extra  $O(\codedim_1)$ multiplications and table reads, and the costs brought from having four elements $H_{\bb}^{\eps \eps'}[\xx,\xx']$ per $(\bb,\xx,\xx')$, instead of one. 
+
+
+\paragraph{Overview of  optimizations and tables used at each round and sumcheck of GKR.} In the biggest sumcheck, we use the bucketing optimization in Rounds 1, 2 and 3. In Rounds 4 and 5  bucketing becomes too expensive, and then we  use an approach similar to the one in \cref{s:tables}, where we do compute and store tables in full (since their entries are used several times during the rounds). Concretely, in Round 4 we store the table $T_{r_1}^{(4)}$ of \eqref{e:T_r1_rounds}, whose entries have dimension $2^8$. The rest of tables in Rounds 4 and 5 would be too large (they would have entries of dimension $\geq 2^{16}$), and because of it their entries are computed from entries from  $T_{r_1}^{(4)}$ (we omit the details). The rest of rounds are proved via standard methods.
+
+
+The scenario is analogous for the second last, third last and fourth last sumchecks. The main difference is that we use bucketing only in the first $2$, $1$ and $0$ rounds, respectively, and we use the tabular approach mentioned above for the next $2$ rounds. The rest of rounds, and all other sumchecks, are proved via standard methods.
+
+Our implementation uses further optimizations, which we do not discuss in detail. For example, we adapt \cite[Algorithm 3]{sumcheck_opt_2} to our setting.
+\begin{comment}
+\paragraph{Further optimizations.}
+In all the rounds where we use buckets, the prover computes the entries of the tablesthat it needs ``on-the-go'', in the sense explained above for $T_{A_2}$ when computing $t_1(\infty)$, i.e.\ each entry is computed right when it is needed and discarded afterward. Because of this, we never store these tables, nor keep them in cache. The tables $T_{r_1}^{(j)}$, $T_{r_1-1}^{(j)}$, $T_{r_1-2}^{(j)}$ and $T_{r_1-3}^{(j)}$ that have at most $2^8$ entries per index are computed in full.  Since the prover processes one index $\bb$ at a time, we keep only a small part of these tables  in cache at a time.
+
+In contrast, the tables whose entries have dimension $2^8$, i.e.\ $T_{r_1}^{(4)}$, $T_{r_1-1}^{(3)}$, $T_{r_1-2}^{(2)}$ and $T_{r_1-3}$, are computed in full, since they are used in the rounds where we use tables but not buckets. In each such round, each of their entries, say $T_{r_1}^{(4)}[\eps,\bb]$, is read once for every $\cc\in\bits^{r_2}$, and so each of its $2^8$ elements is read $\codedim_2/2^8$ times on average (e.g.\ $16$ times if $\codedim_2=2^{12}$).
+
+
+\end{comment}
+
+
+\subsection{Reducing transpositions when forming table indices}\label{s:indices}
+
+
+In all our techniques discussed so far, for each coefficient of each prover message where our optimizations are used, the prover has to compute a string of $\leq 8$ bits $\xx_{\bb,\cc}$  (or $\xx_{k,\eps,\bb,\cc}$) for each $\bb,\cc$ ranging in a set of the form $\bits^{r_1 - t} \times \bits^{r_2}$, for some $t$ (with $t$ depending on the specific coefficient being computed). If done naively, as we explain below, computing these strings is a costly procedure. Indeed, prior to optimizing it, computing these strings amounted to at least $25\%$ of the GKR prover time at $\codedim=2^{28}$, and more for larger witnesses.  In this section we explain a method for  reducing this cost by a factor of around $5$.
+
+%(by more than an order of magnitude) the number of transpositions (see below) needed to compute the strings $\xx_{\bb,\cc}$ throughout the entire GKR protocol. %This optimization was found by an AI after we identified that computing all the strings $\xx_{\bb,\cc}$ naively is significantly expensive. 
+
+\paragraph{The naive approach to computing $\xx_{\bb,\cc}$.}  In our implementation, we look at $\bfg\in \bits^{\codedim_1\times \codedim_2}$ as a $2^{r_1}\times 2^{r_2}$ matrix of bits.  We store $\bfg$ using $64$-bit ``horizontal'' words, i.e.\ in our memory layout, we arrange $\bfg$ as a collection of $64$-bit words obtained by splitting each row of $\bfg$ into $64$-bit consecutive words.  On the other hand, each string $\xx_{\bb,\cc}$ consists of at most $8$ bits placed on the $\cc$-th column of $\bfg$, e.g.\ in our example in \cref{s:gkr_buckets} we had $$\xx_{\bb,\cc}\defeq \left(\bfg_{(0,0,\bb),\cc},\bfg_{(0,1,\bb),\cc},\bfg_{(1,0,\bb),\cc},\bfg_{(1,1,\bb),\cc}\right)\in \bits^4.$$ Hence, to construct $\xx_{\bb,\cc}$, one needs to access $\leq 8$ of the $64$-bit words, transpose them (a costly step), and select a row of the resulting transposed data.  
+
+This needs to be done for the majority of indices  $\bb,\cc$, and for all coefficients of prover messages where we seek to use our optimizations. Concretely,  Rounds 1, 2 and 3 of the last sumcheck require computing $6$ polynomial coefficients in total. Rounds 1 and 2 of the second last sumcheck require  $4$, and Round 1 of the third last sumcheck requires $2$. This amounts to computing $21$ batches of strings $\xx_{\bb,\cc}$ (one per coefficient, except for the leading coefficients of Round 3 of the last sumcheck, Round 2 of the second last sumcheck and Round 1 of the third last sumcheck, which need four batches each, one per pair $(\eps,\eps')$), with $(\bb,\cc)$ running over a set of size between $\codedim/16$ and $\codedim/4$. 
+
+
+\paragraph{Optimization.} Continuing with the example $\xx_{\bb,\cc}=(\bfg_{(0,0,\bb),\cc},\bfg_{(0,1,\bb),\cc},\bfg_{(1,0,\bb),\cc},\bfg_{(1,1,\bb),\cc})$ above, observe that  for  every $(\bb,\cc)\in\bits^{r_1-2}\times \bits^{r_2}$, the string $\xx_{\bb,\cc}$ depends exclusively on the entries of $\bfg$ placed in the column $\cc$ and on rows that differ  in the first two coordinates. Similarly, all other strings  $\xx_{\bb,\cc}$ (and $\xx_{k,\eps,\bb,\cc}$)   depend only on the bits placed on the $\cc$-th column of $\bfg$ and on rows that differ exclusively in the first $4$ coordinates.
+
+
+
+With the above observation in mind, the optimization has  the prover  precompute  the $16$-bit words  
+$$N[\bb,\cc]\defeq \left(\bfg_{(\ww,\bb),\cc}\right)_{\ww\in \bits^4}\in \bits^{16} \qquad \text{for all } (\bb,\cc)\in \bits^{r_1-4}\times \bits^{r_2}.$$
+Now, every time a string $\xx_{\bb,\cc}$ or $\xx_{k,\eps,\bb,\cc}$ needs to be formed, it suffices to take the word $N[\bb'',\cc]$, where $\bb''\in\bits^{r_1-4}$ consists of the last $r_1-4$ coordinates of $\bb$ (or $(k,\eps,\bb)$, respectively), and select an appropriate subset of bits from it.  
+
+
+
+
+ Building $N$ has roughly the same costs as computing one single batch of strings $\xx_{\bb,\cc}$ naively. In practice we observe that this optimization speeds up the cost of forming the indices $\xx_{\bb,\cc}$ by $4$--$6.5$ times, leading to a speedup of the \ftwoz-PCS prover of between $20\%$ and $30\%$ depending on the witness size ($\codedim=2^{28}$ and $\codedim=2^{30}$, respectively).
+
 \renewcommand{\comfield}{\FF_{2^{\comfieldexp}}}
 
 
@@ -3015,7 +3188,7 @@ We implement the \ftwoz\ PCS (\cref{c:LinModFieldBin}) and an end-to-end proof s
 
 
 
-Our \ftwoz-PCS is instantiated with Reed-Solomon codes over $\comfield=\FF_{2^{128}}$ of rate $1/2$ or $1/8$. As  backend of \ftwoz \ we use the Ligerito implementation from Flock \cite{flock} (commit \texttt{e636760}, with local modifications) with folding arity $4$. We set our experiments to 100 bits of round-by-round knowledge soundness\footnote{This means  that the largest round-by-round knowledge soundness error of the protocols is at most $2^{-100}$. Our own figure is a round-by-round bound that includes grinding ($16$ query bits and up to $9$ fold bits per level). For the schemes we compare against, we use each implementation\'s own $100$-bit setting, under its own soundness analysis (e.g.\ Binius64\'s $100$-bit target for the query phase of its Basefold opening).}, except in the Limber \cite{limber} comparison, cf.\  \cref{s:multiswap}, where we target 114 bits to match Limber's implementation. %We do not run experiments at $128$ bits of security, since several of the implementations we compare against (e.g.\ Binius64, Limber and Flock) cannot be configured at that level 
+Our \ftwoz-PCS is instantiated with Reed-Solomon codes over $\comfield=\FF_{2^{128}}$ of rate $1/2$ or $1/8$. As  backend of \ftwoz \ we use the Ligerito implementation from Flock \cite{flock} (commit \texttt{e636760}, with local modifications) with folding arity $4$. We set our experiments to 100 bits of round-by-round knowledge soundness\footnote{This means  that the largest round-by-round knowledge soundness error of the protocols is at most $2^{-100}$.}, except in the Limber \cite{limber} comparison, cf.\  \cref{s:multiswap}, where we target 114 bits to match Limber's implementation. %We do not run experiments at $128$ bits of security, since several of the implementations we compare against (e.g.\ Binius64, Limber and Flock) cannot be configured at that level 
 
 When targeting 100 bits of round-by-round soundness we use the Johnson bound as proximity parameter, and perform out of domain sampling. When targeting more security (in \cref{s:multiswap}) we use the unique decoding radius. Further instantiation details are given in \cref{s:instantiation}.
 
@@ -3050,22 +3223,22 @@ The remaining experiments, including those summarized in \cref{tab:intro_table,t
     \cmidrule(lr){4-5} \cmidrule(lr){6-7}
     Bits & $N$ & Scheme & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-    $32$ & $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{364} & \textbf{102} & 4.33 & \textbf{3.08} & 189 & \textbf{0.487} \\
-     &  & \ftwoz-SNARK, rate $1/8$ & 429 & 115 & \textbf{4.24} & 3.15 & \textbf{116} & 0.543 \\
+    $32$ & $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{181} & \textbf{56.2} & 2.79 & 3.16 & 212 & \textbf{0.250} \\
+     &  & \ftwoz-SNARK, rate $1/8$ & 236 & 65.8 & \textbf{2.68} & \textbf{3.08} & \textbf{139} & 0.315 \\
      &  & Binius (UDR), rate $1/2$ & 867 & 272 & 20.5 & 8.96 & 472 & 3.67 \\
      &  & Binius (UDR), rate $1/8$ & 1062 & 313 & 20.2 & 8.77 & 330 & 3.93 \\
      &  & Limber (Brakedown) & 4436 & 1359 & 268 & 221 & 12278 & 3.66 \\
      &  & Zinc+, rate $1/4$ & 2833 & 809 & 30.9 & 14.5 & 1791 & 1.23 \\
     \addlinespace
-    $64$ & $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{732} & \textbf{204} & 7.58 & 4.55 & 202 & \textbf{0.869} \\
-     &  & \ftwoz-SNARK, rate $1/8$ & 867 & 223 & \textbf{7.38} & \textbf{4.15} & \textbf{124} & 0.986 \\
+    $64$ & $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{346} & \textbf{99.9} & 4.53 & 4.86 & 227 & \textbf{0.450} \\
+     &  & \ftwoz-SNARK, rate $1/8$ & 452 & 122 & \textbf{4.14} & \textbf{4.41} & \textbf{147} & 0.586 \\
      &  & Binius (UDR), rate $1/2$ & 871 & 272 & 15.8 & 7.24 & 472 & 3.17 \\
      &  & Binius (UDR), rate $1/8$ & 1063 & 313 & 15.4 & 7.13 & 330 & 3.41 \\
      &  & Limber (Brakedown) & 7510 & 2062 & 334 & 247 & 19011 & 4.91 \\
      &  & Zinc+, rate $1/4$ & 5716 & 1414 & 32.5 & 14.8 & 3088 & 2.55 \\
     \addlinespace
-    $128$ & $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{1701} & \textbf{448} & 14.2 & 6.59 & 217 & \textbf{1.56} \\
-     &  & \ftwoz-SNARK, rate $1/8$ & 1979 & 555 & \textbf{13.9} & \textbf{6.27} & \textbf{133} & 1.80 \\
+    $128$ & $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{600} & \textbf{169} & 4.89 & 5.24 & 273 & \textbf{0.726} \\
+     &  & \ftwoz-SNARK, rate $1/8$ & 843 & 221 & \textbf{4.63} & \textbf{4.86} & \textbf{188} & 0.993 \\
      &  & Binius (UDR), rate $1/2$ & 3748 & 1171 & 123 & 34.0 & 559 & 15.7 \\
      &  & Binius (UDR), rate $1/8$ & 4519 & 1342 & 122 & 34.9 & 383 & 16.0 \\
      &  & Limber (Brakedown) & 17144 & 4530 & 414 & 324 & 36678 & 9.47 \\
@@ -3102,14 +3275,9 @@ Our PoC repository can be found in \url{https://github.com/albert-garreta/BitZ-P
 \fi
 
 \begin{lncsmove}{ExpAI}
-\paragraph{Usage of AI.} The scheme was initially implemented with AI. After that we thoroughly reviewed the verifier and, following the approach of Flock \cite{flock} and other usages of AI \cite{zkgolf} to optimize against verified specs, we  used AI extensively to optimize the prover while keeping the verifier unchanged. Subsequently we manually reviewed, refactored and further optimized both the prover and verifier. The reported benchmark results correspond to this PoC implementation, which is the one provided \iflncs in the anonymous repository \url{https://github.com/bitzcodes/BitZ.git}.\else \url{https://github.com/albert-garreta/BitZ-PoC}.\fi
+\paragraph{Usage of AI.} There are two implementations of Iftwoz, a PoC one (\url{https://github.com/albert-garreta/BitZ-PoC}), and a production-grade one (\url{https://github.com/worldfnd/BitZ}). The benchmark results correspond to the PoC implementaion. In its current state, the PoC implementation was obtained from the production-grade one, after adding a few missing steps (grinding, out of domain sampling, machinery around random primes), and then asking an AI to optimize the prover without changing the verifier. We then reviewed and refactored the results. The production-grade version is being implemented via traditional methods, with mild and controlled usage of AI, and is not optimized as of now.
 
-Additionally, we are currently developing a parallel production-grade  handcrafted implementation,  using more conventional methods. The repository is available at \url{https://github.com/worldfnd/BitZ}. 
-
-As an experiment, we asked an AI to take the \ftwoz-PCS prover of the production-grade implementation and optimize it (keeping the verifier unchanged). The resulting optimized prover reproduced or even significantly improved the performance of the \ftwoz-PCS in the PoC implementation discussed above.  This suggests that the published benchmark numbers still have room for improvement.
-
-%(and) The AI optimized implementation of \ftwoz\ from \cref{c:core_iop} produces the same transcripts as our handcrafted implementation of the same protocol. 
-
+We heavily used Al in early stages of the project, to gauge the practical feasibility of our protocol and various optimizations. The corresponding code is preserved in the PoC repository, but for the most part is no long part of the main branch.
 
 \iflncs\else
 
@@ -3124,7 +3292,7 @@ Additionally, AI was used to prepare the benchmarks in other repositories, which
 
 In \cref{tab:f2z-raw-performance} we measure the performance of \cref{c:core_iop} for proving the Core LinBitsRings relation $\LinBitsDual(\bits, \pi, \FF_q,\cC)$\iflncs\else\fi. Namely, we prove that $\langle \vv, \bff \rangle=\mu$ over $\FF_q$ for a vector of $\codedim$ bits $\bff$, and $\vv\in \FF_q^{\codedim}, \mu\in \FF_q$. We choose  $|\FF_q|  < (2^{128}-1)/\codedim_1$, so that Round 1 of \cref{c:core_iop} does not trigger. The proximity parameter is set at the Johnson bound, so Round 0 (OOD sampling) is executed.  In later experiments, Round 1 also triggers. 
 
- We set $\codedim_1 = 2^{\lceil 0.6\, n\rceil}$ and $\codedim_1 \cdot \codedim_2 = \codedim$ (\cref{s:instantiation}). 
+ We set $\codedim_1 = 2^{\lceil 0.6\, n\rceil -1}$ and $\codedim_1 \cdot \codedim_2 = \codedim$ (\cref{s:instantiation}).
 
 
 
@@ -3138,20 +3306,21 @@ In \cref{tab:f2z-raw-performance} we measure the performance of \cref{c:core_iop
     \cmidrule(lr){2-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9} \cmidrule(lr){10-12}
     $\codedim$ & Commit & Grand prod. & Ring s. & Lig. & 1 thr & 10 thr & 1 thr & 10 thr & Non-Lig. & Lig. & Total & (GB) \\
     \midrule
-    $2^{20}$ & 0.23 & 9.49 & 1.26 & 2.54 & 29.8 & 15.5 & 2.15 & 2.28 & 16.7 & 81.2 & 97.9 & 0.023 \\
-    $2^{21}$ & 0.37 & 11.4 & 1.69 & 2.52 & 42.1 & 17.0 & 2.06 & 2.85 & 17.5 & 91.1 & 109 & 0.035 \\
-    $2^{22}$ & 0.59 & 16.7 & 2.42 & 1.86 & 52.2 & 25.3 & 2.58 & 3.60 & 18.4 & 100 & 119 & 0.061 \\
-    $2^{23}$ & 1.09 & 27.8 & 3.59 & 3.64 & 79.0 & 39.1 & 1.96 & 3.15 & 23.4 & 117 & 140 & 0.103 \\
-    $2^{24}$ & 1.57 & 35.0 & 5.82 & 3.75 & 120 & 49.1 & 2.42 & 3.23 & 24.4 & 129 & 154 & 0.205 \\
-    $2^{25}$ & 2.56 & 48.7 & 8.19 & 3.63 & 197 & 65.2 & 2.83 & 3.10 & 33.1 & 141 & 174 & 0.380 \\
-    $2^{26}$ & 4.32 & 83.6 & 9.76 & 5.56 & 338 & 109 & 3.76 & 3.91 & 34.5 & 160 & 195 & 0.558 \\
-    $2^{27}$ & 8.08 & 149 & 15.5 & 8.57 & 667 & 189 & 6.54 & 6.33 & 35.6 & 173 & 208 & 0.963 \\
-    $2^{28}$ & 14.7 & 279 & 24.6 & 10.8 & 1275 & 336 & 6.96 & 6.99 & 52.6 & 186 & 238 & 1.87 \\
-    $2^{29}$ & 31.8 & 596 & 34.6 & 18.3 & 2583 & 695 & 12.1 & 10.1 & 54.0 & 207 & 261 & 3.52 \\
-    $2^{30}$ & 61.7 & 1202 & 56.9 & 28.6 & 5156 & 1363 & 12.6 & 10.7 & 87.4 & 223 & 310 & 6.96 \\
+    $2^{20}$ & 0.40 & 2.61 & 0.47 & 1.08 & 7.31 & 4.96 & 0.82 & 0.93 & 17.3 & 84.1 & 102 & 0.013 \\
+    $2^{21}$ & 0.54 & 3.57 & 0.58 & 1.42 & 12.0 & 6.63 & 1.08 & 1.21 & 18.2 & 92.8 & 111 & 0.019 \\
+    $2^{22}$ & 0.68 & 5.24 & 0.80 & 1.39 & 17.1 & 8.90 & 1.46 & 1.72 & 19.2 & 103 & 122 & 0.029 \\
+    $2^{23}$ & 1.21 & 6.83 & 1.02 & 2.43 & 24.3 & 12.4 & 1.51 & 1.86 & 27.7 & 120 & 148 & 0.046 \\
+    $2^{24}$ & 1.76 & 10.9 & 1.54 & 3.69 & 47.3 & 19.3 & 2.22 & 2.68 & 28.7 & 133 & 162 & 0.082 \\
+    $2^{25}$ & 2.59 & 17.3 & 2.20 & 4.78 & 79.9 & 28.3 & 2.42 & 2.90 & 45.8 & 144 & 190 & 0.145 \\
+    $2^{26}$ & 4.70 & 31.8 & 3.66 & 5.88 & 151 & 48.6 & 3.38 & 3.86 & 46.6 & 162 & 209 & 0.277 \\
+    $2^{27}$ & 7.96 & 60.8 & 6.00 & 8.09 & 298 & 87.2 & 5.72 & 6.24 & 47.6 & 176 & 224 & 0.547 \\
+    $2^{28}$ & 14.8 & 112 & 9.37 & 12.5 & 537 & 153 & 6.02 & 6.64 & 81.2 & 190 & 271 & 1.001 \\
+    $2^{29}$ & 32.7 & 221 & 18.0 & 22.2 & 1094 & 302 & 9.95 & 10.3 & 82.0 & 210 & 292 & 1.994 \\
+    $2^{30}$ & 61.3 & 412 & 39.7 & 38.2 & 2121 & 561 & 11.1 & 11.3 & 148 & 225 & 373 & 4.034 \\
+    $2^{31}$ & 133 & 829 & 74.6 & 72.8 & 4271 & 1128 & 21.0 & 20.9 & 150 & 238 & 388 & 8.051 \\
     \bottomrule
   \end{tabular}
-  \caption{ Cost of \ftwoz\ (\cref{c:core_iop}) for committing to $\codedim = 2^{n}$ bits, $n = 20, \ldots, 30$, and proving one claim $\langle \vv, \bff\rangle = \mu$ over $\FF_q$. Configured for $100$ bits of round-by-round knowledge soundness. The \emph{grand product} column comprises Phase 3 of \cref{c:core_iop}. The \emph{ring switch} and \emph{Ligerito} columns comprise Phase 4. The \emph{Non-Ligerito} proof size is comprised of the $\mu_j$ values in Round 2 of \cref{c:core_iop}, the GKR and sumcheck messages, and the ring-switch messages. The ring switch step includes an initial sumcheck that transforms inner product claims to MLE evaluation claims. ``Lig.'' stands for Ligerito, ``Mem.'' stands for peak memory, and ``Ring s.'' for ring switch.  Measured on a MacBook Air M5, 24\,GB, CPU only.}
+  \caption{ Cost of \ftwoz\ (\cref{c:core_iop}) for committing to $\codedim = 2^{n}$ bits, $n = 20, \ldots, 31$, and proving one claim $\langle \vv, \bff\rangle = \mu$ over $\FF_q$. Configured for $100$ bits of round-by-round knowledge soundness. The \emph{grand product} column comprises Phase 3 of \cref{c:core_iop}. The \emph{ring switch} and \emph{Ligerito} columns comprise Phase 4. The \emph{Non-Ligerito} proof size is comprised of the $\mu_j$ values in Round 2 of \cref{c:core_iop}, the GKR and sumcheck messages, and the ring-switch messages. The ring switch step includes an initial sumcheck that transforms inner product claims to MLE evaluation claims. ``Lig.'' stands for Ligerito, ``Mem.'' stands for peak memory, and ``Ring s.'' for ring switch.  Measured on a MacBook Air M5, 24\,GB, CPU only.}
   \label{tab:f2z-raw-performance}
 \end{table}
 
@@ -3176,7 +3345,7 @@ We set \ftwoz \ at $114$ bits of security, matching Limber\footnote{Limber state
     \cmidrule(lr){2-3} \cmidrule(lr){4-5}
       & 1 thr & 10 thr & 1 thr & 10 thr & (KB) \\
     \midrule
-    \ftwoz-SNARK                     & \textbf{226} & \textbf{76.6} & \textbf{7.8} & \textbf{10.0} & 268 \\
+    \ftwoz-SNARK                     & \textbf{129} & \textbf{42.0} & \textbf{7.5} & \textbf{8.7} & 269 \\
     Zinc+                & 1874 & 545 & 16.1 & 12.0 & 1272 \\
     Limber (Brakedown)                   & 1051 & 548 & 38.7 & 37.9 & 5769 \\
     Limber (Hyrax)                        & 1108 & 354 & 33.8 & 20.3 & \textbf{175} \\
@@ -3227,17 +3396,17 @@ We emphasize that, as done in the next experiment, when seeking to prove a large
     \cmidrule(lr){4-5} \cmidrule(lr){6-7}
     Message & Scheme & (ms) & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-    960\,B & \ftwoz-SNARK, rate $1/2$ & \textbf{2.38} & \textbf{46.1} & \textbf{19.1} & 3.52 & 3.61 & 117 & \textbf{0.791} \\
-    $2^{4}$ comp. & \ftwoz-SNARK, rate $1/8$ & 2.45 & 48.6 & 19.7 & \textbf{3.37} & \textbf{3.48} & \textbf{74} & 0.796 \\
+    960\,B & \ftwoz-SNARK, rate $1/2$ & 2.35 & 33.0 & \textbf{16.8} & 3.25 & 3.77 & 108 & \textbf{0.770} \\
+    $2^{4}$ comp. & \ftwoz-SNARK, rate $1/8$ & \textbf{2.33} & \textbf{31.4} & \textbf{16.8} & \textbf{3.09} & \textbf{3.59} & \textbf{64} & 0.792 \\
     \addlinespace
-    1984\,B & \ftwoz-SNARK, rate $1/2$ & 2.52 & 50.9 & \textbf{20.3} & 3.53 & 3.57 & 119 & \textbf{0.794} \\
-    $2^{5}$ comp. & \ftwoz-SNARK, rate $1/8$ & \textbf{2.51} & \textbf{50.0} & 20.4 & \textbf{3.33} & \textbf{3.37} & \textbf{76} & 0.797 \\
+    1984\,B & \ftwoz-SNARK, rate $1/2$ & 2.45 & \textbf{30.2} & \textbf{16.4} & 3.17 & 3.72 & 108 & \textbf{0.787} \\
+    $2^{5}$ comp. & \ftwoz-SNARK, rate $1/8$ & \textbf{2.42} & 32.0 & 17.0 & \textbf{3.10} & \textbf{3.71} & \textbf{65} & 0.791 \\
     \addlinespace
-    4032\,B & \ftwoz-SNARK, rate $1/2$ & \textbf{2.38} & \textbf{54.9} & \textbf{22.2} & 3.94 & 3.82 & 126 & \textbf{0.787} \\
-    $2^{6}$ comp. & \ftwoz-SNARK, rate $1/8$ & 2.40 & 57.8 & 23.0 & \textbf{3.58} & \textbf{3.53} & \textbf{82} & 0.788 \\
+    4032\,B & \ftwoz-SNARK, rate $1/2$ & \textbf{2.22} & \textbf{42.6} & \textbf{19.9} & 3.42 & 3.93 & 121 & \textbf{0.792} \\
+    $2^{6}$ comp. & \ftwoz-SNARK, rate $1/8$ & 2.24 & 42.8 & 20.4 & \textbf{3.25} & \textbf{3.76} & \textbf{72} & \textbf{0.792} \\
     \addlinespace
-    8128\,B & \ftwoz-SNARK, rate $1/2$ & \textbf{2.42} & \textbf{69.1} & \textbf{25.8} & 4.16 & 3.89 & 135 & \textbf{0.791} \\
-    $2^{7}$ comp. & \ftwoz-SNARK, rate $1/8$ & 2.43 & 73.6 & 26.8 & \textbf{3.94} & \textbf{3.53} & \textbf{92} & 0.796 \\
+    8128\,B & \ftwoz-SNARK, rate $1/2$ & 2.32 & \textbf{47.7} & \textbf{22.1} & 3.34 & 3.84 & 121 & \textbf{0.775} \\
+    $2^{7}$ comp. & \ftwoz-SNARK, rate $1/8$ & \textbf{2.30} & 52.0 & 23.2 & \textbf{3.22} & \textbf{3.75} & \textbf{72} & 0.793 \\
     \bottomrule
   \end{tabular}
    \caption{Costs of proving a SHA-256 hash of a message $m$, and then proving correct verification of a  P-256  ECDSA signature on the resulting digest. Below  message sizes  we record the corresponding number of SHA-256 compressions (comp.). Set at $\lambda = 100$ bits of round-by-round knowledge soundness. Ran on a MacBook Air  M5, 24\,GB.}
@@ -3257,29 +3426,29 @@ We emphasize that, as done in the next experiment, when seeking to prove a large
     \cmidrule(lr){4-5} \cmidrule(lr){6-7}
     Message & Scheme & (ms) & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-    960\,B & \ftwoz-SNARK, rate $1/2$ & 2.07 & \textbf{38.9} & \textbf{17.0} & 3.23 & 3.49 & 116 & 0.796 \\
-    $2^{4}$ comp. & \ftwoz-SNARK, rate $1/8$ & \textbf{2.04} & 44.5 & 18.2 & \textbf{3.12} & 3.30 & \textbf{72} & 0.798 \\
+    960\,B & \ftwoz-SNARK, rate $1/2$ & 1.99 & 33.3 & \textbf{16.7} & 2.98 & 3.54 & 109 & 0.783 \\
+    $2^{4}$ comp. & \ftwoz-SNARK, rate $1/8$ & \textbf{1.96} & \textbf{32.1} & 17.1 & \textbf{2.85} & 3.34 & \textbf{65} & 0.801 \\
      & Binius (UDR), rate $1/2$ & 6.32 & 76.0 & 38.0 & 4.82 & 3.41 & 331 & \textbf{0.382} \\
      & Binius (UDR), rate $1/8$ & 6.22 & 89.4 & 40.7 & 4.71 & \textbf{3.28} & 250 & \textbf{0.382} \\
      & Binius (Johnson), rate $1/2$ & 6.19 & 81.2 & 40.3 & 5.73 & 4.48 & 353 & 0.398 \\
      & Binius (Johnson), rate $1/8$ & 6.25 & 102 & 44.1 & 5.35 & 3.95 & 187 & 0.407 \\
     \addlinespace
-    1984\,B & \ftwoz-SNARK, rate $1/2$ & \textbf{2.12} & \textbf{42.2} & \textbf{18.1} & 3.33 & 3.32 & 118 & 0.799 \\
-    $2^{5}$ comp. & \ftwoz-SNARK, rate $1/8$ & 2.16 & 43.4 & 19.0 & \textbf{3.20} & \textbf{3.20} & \textbf{75} & 0.799 \\
+    1984\,B & \ftwoz-SNARK, rate $1/2$ & 2.11 & 36.0 & \textbf{17.4} & 3.03 & 3.60 & 108 & 0.782 \\
+    $2^{5}$ comp. & \ftwoz-SNARK, rate $1/8$ & \textbf{2.05} & \textbf{33.8} & 17.9 & \textbf{3.01} & 3.54 & \textbf{65} & 0.786 \\
      & Binius (UDR), rate $1/2$ & 6.24 & 76.7 & 37.0 & 5.01 & 3.52 & 331 & \textbf{0.409} \\
-     & Binius (UDR), rate $1/8$ & 6.53 & 90.0 & 40.5 & 4.86 & 3.37 & 250 & 0.416 \\
+     & Binius (UDR), rate $1/8$ & 6.53 & 90.0 & 40.5 & 4.86 & \textbf{3.37} & 250 & 0.416 \\
      & Binius (Johnson), rate $1/2$ & 6.21 & 82.6 & 39.7 & 5.89 & 4.47 & 352 & 0.433 \\
      & Binius (Johnson), rate $1/8$ & 6.36 & 102 & 43.8 & 5.50 & 4.05 & 189 & 0.441 \\
     \addlinespace
-    4032\,B & \ftwoz-SNARK, rate $1/2$ & \textbf{1.96} & \textbf{50.5} & \textbf{20.8} & 3.59 & 3.55 & 124 & 0.795 \\
-    $2^{6}$ comp. & \ftwoz-SNARK, rate $1/8$ & 1.99 & 51.1 & 21.3 & \textbf{3.48} & \textbf{3.45} & \textbf{81} & 0.795 \\
+    4032\,B & \ftwoz-SNARK, rate $1/2$ & 1.91 & \textbf{38.8} & \textbf{19.0} & 3.20 & 3.72 & 120 & 0.802 \\
+    $2^{6}$ comp. & \ftwoz-SNARK, rate $1/8$ & \textbf{1.86} & 46.1 & 20.8 & \textbf{3.00} & \textbf{3.49} & \textbf{72} & 0.802 \\
      & Binius (UDR), rate $1/2$ & 6.35 & 79.3 & 38.2 & 5.46 & 3.75 & 331 & \textbf{0.390} \\
      & Binius (UDR), rate $1/8$ & 6.46 & 92.6 & 41.1 & 5.28 & 3.59 & 250 & 0.410 \\
      & Binius (Johnson), rate $1/2$ & 6.24 & 87.2 & 40.5 & 6.37 & 4.78 & 353 & 0.413 \\
      & Binius (Johnson), rate $1/8$ & 6.43 & 99.3 & 43.9 & 5.97 & 4.27 & 187 & 0.434 \\
     \addlinespace
-    8128\,B & \ftwoz-SNARK, rate $1/2$ & 2.06 & \textbf{63.4} & \textbf{24.4} & 3.85 & 3.65 & 134 & 0.798 \\
-    $2^{7}$ comp. & \ftwoz-SNARK, rate $1/8$ & \textbf{2.05} & 64.7 & 24.6 & \textbf{3.71} & \textbf{3.32} & \textbf{91} & 0.801 \\
+    8128\,B & \ftwoz-SNARK, rate $1/2$ & \textbf{1.93} & \textbf{47.0} & \textbf{21.7} & 3.12 & 3.71 & 120 & 0.803 \\
+    $2^{7}$ comp. & \ftwoz-SNARK, rate $1/8$ & 1.96 & 50.5 & 22.4 & \textbf{2.95} & \textbf{3.46} & \textbf{72} & 0.787 \\
      & Binius (UDR), rate $1/2$ & 6.53 & 83.2 & 39.0 & 6.12 & 4.29 & 331 & \textbf{0.447} \\
      & Binius (UDR), rate $1/8$ & 6.54 & 96.5 & 42.9 & 5.99 & 3.97 & 250 & 0.463 \\
      & Binius (Johnson), rate $1/2$ & 6.51 & 92.5 & 42.8 & 6.99 & 5.16 & 353 & 0.470 \\
@@ -3313,47 +3482,54 @@ We measure computations where the witness bits are evenly split between  SHA has
     \cmidrule(lr){4-5} \cmidrule(lr){6-7}
     $N$ & $M$ & Scheme & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-    $2^{15}$ & $2^{7}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{41.6} & \textbf{24.2} & 3.59 & 3.90 & 179 & \textbf{0.152} \\
-     & & \ftwoz-SNARK, rate $1/8$ & 50.4 & 25.4 & 3.25 & 3.42 & \textbf{107} & 0.159 \\
+    $2^{15}$ & $2^{7}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{35.4} & \textbf{19.3} & 2.97 & 3.36 & 181 & \textbf{0.178} \\
+     & & \ftwoz-SNARK, rate $1/8$ & 46.3 & 20.5 & \textbf{2.75} & 3.19 & \textbf{110} & 0.186 \\
      & & Binius (UDR), rate $1/2$ & 70.9 & 37.4 & 3.34 & 3.25 & 324 & 0.407 \\
-     & & Binius (UDR), rate $1/8$ & 85.1 & 40.6 & \textbf{3.14} & \textbf{3.05} & 243 & 0.414 \\
+     & & Binius (UDR), rate $1/8$ & 85.1 & 40.6 & 3.14 & \textbf{3.05} & 243 & 0.414 \\
      & & Binius (Johnson), rate $1/2$ & 74.8 & 39.4 & 4.04 & 4.00 & 345 & 0.424 \\
      & & Binius (Johnson), rate $1/8$ & 92.0 & 42.2 & 3.58 & 3.49 & 181 & 0.432 \\
     \addlinespace
-    $2^{16}$ & $2^{8}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{87.8} & \textbf{36.4} & \textbf{5.01} & 4.61 & 200 & \textbf{0.353} \\
-     & & \ftwoz-SNARK, rate $1/8$ & 103 & 37.8 & 5.07 & 4.27 & \textbf{118} & 0.365 \\
+    $2^{16}$ & $2^{8}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{57.1} & \textbf{26.0} & 4.59 & 4.50 & 208 & \textbf{0.308} \\
+     & & \ftwoz-SNARK, rate $1/8$ & 69.6 & 28.4 & \textbf{4.46} & 4.28 & \textbf{126} & 0.317 \\
      & & Binius (UDR), rate $1/2$ & 130 & 56.3 & 5.88 & 3.92 & 356 & 0.627 \\
      & & Binius (UDR), rate $1/8$ & 160 & 62.2 & 5.70 & \textbf{3.67} & 260 & 0.673 \\
      & & Binius (Johnson), rate $1/2$ & 139 & 59.4 & 6.70 & 4.94 & 358 & 0.813 \\
      & & Binius (Johnson), rate $1/8$ & 165 & 64.8 & 6.24 & 4.24 & 185 & 0.698 \\
     \addlinespace
-    $2^{17}$ & $2^{9}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{157} & \textbf{54.7} & \textbf{9.13} & 5.76 & 219 & \textbf{0.689} \\
-     & & \ftwoz-SNARK, rate $1/8$ & 204 & 59.9 & 9.63 & 5.51 & \textbf{127} & 0.706 \\
-     & & Binius (UDR), rate $1/2$ & 254 & 95.4 & 10.9 & \textbf{5.20} & 388 & 1.60 \\
+    $2^{17}$ & $2^{9}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{108} & \textbf{38.4} & 7.92 & 5.50 & 229 & \textbf{0.598} \\
+     & & \ftwoz-SNARK, rate $1/8$ & 133 & 43.5 & \textbf{7.57} & \textbf{4.94} & \textbf{137} & 0.624 \\
+     & & Binius (UDR), rate $1/2$ & 254 & 95.4 & 10.9 & 5.20 & 388 & 1.60 \\
      & & Binius (UDR), rate $1/8$ & 315 & 109 & 10.7 & 5.21 & 284 & 1.63 \\
      & & Binius (Johnson), rate $1/2$ & 258 & 103 & 11.9 & 7.18 & 369 & 1.72 \\
      & & Binius (Johnson), rate $1/8$ & 321 & 108 & 11.5 & 5.78 & 194 & 1.72 \\
     \addlinespace
-    $2^{18}$ & $2^{10}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{315} & \textbf{91.9} & 15.2 & 6.61 & 253 & \textbf{1.02} \\
-     & & \ftwoz-SNARK, rate $1/8$ & 377 & 105 & \textbf{14.7} & \textbf{6.52} & \textbf{149} & 1.08 \\
+    $2^{18}$ & $2^{10}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{199} & \textbf{62.9} & 13.5 & 6.35 & 271 & \textbf{1.12} \\
+     & & \ftwoz-SNARK, rate $1/8$ & 263 & 75.4 & \textbf{13.3} & \textbf{6.12} & \textbf{169} & 1.18 \\
      & & Binius (UDR), rate $1/2$ & 507 & 173 & 20.8 & 7.42 & 432 & 3.20 \\
      & & Binius (UDR), rate $1/8$ & 627 & 200 & 20.6 & 6.83 & 306 & 3.27 \\
      & & Binius (Johnson), rate $1/2$ & 507 & 174 & 21.5 & 8.04 & 392 & 3.48 \\
      & & Binius (Johnson), rate $1/8$ & 616 & 198 & 21.1 & 7.65 & 208 & 3.50 \\
     \addlinespace
-    $2^{19}$ & $2^{11}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{584} & \textbf{163} & \textbf{27.9} & 10.4 & 274 & \textbf{2.66} \\
-     & & \ftwoz-SNARK, rate $1/8$ & 871 & 205 & 28.1 & \textbf{10.0} & \textbf{160} & 2.75 \\
+    $2^{19}$ & $2^{11}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{390} & \textbf{108} & 25.4 & 9.66 & 293 & \textbf{2.44} \\
+     & & \ftwoz-SNARK, rate $1/8$ & 529 & 135 & \textbf{25.2} & \textbf{9.37} & \textbf{180} & 2.54 \\
      & & Binius (UDR), rate $1/2$ & 1017 & 322 & 43.6 & 14.9 & 472 & 5.25 \\
      & & Binius (UDR), rate $1/8$ & 1227 & 375 & 44.3 & 15.1 & 331 & 6.34 \\
      & & Binius (Johnson), rate $1/2$ & 1017 & 338 & 44.2 & 16.2 & 406 & 6.00 \\
      & & Binius (Johnson), rate $1/8$ & 1225 & 377 & 44.0 & 15.6 & 215 & 6.07 \\
     \addlinespace
-    $2^{20}$ & $2^{12}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{1120} & \textbf{297} & 50.7 & 16.3 & 303 & \textbf{5.29} \\
-     & & \ftwoz-SNARK, rate $1/8$ & 1444 & 349 & \textbf{50.5} & \textbf{15.3} & \textbf{176} & 5.46 \\
+    $2^{20}$ & $2^{12}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{794} & \textbf{208} & 48.9 & 15.5 & 314 & \textbf{4.87} \\
+     & & \ftwoz-SNARK, rate $1/8$ & 1040 & 258 & \textbf{48.6} & \textbf{15.1} & \textbf{188} & 5.09 \\
      & & Binius (UDR), rate $1/2$ & 1980 & 632 & 85.2 & 26.5 & 519 & 11.1 \\
      & & Binius (UDR), rate $1/8$ & 2405 & 714 & 86.5 & 25.1 & 356 & 11.9 \\
      & & Binius (Johnson), rate $1/2$ & 2011 & 643 & 85.5 & 26.7 & 419 & 11.6 \\
      & & Binius (Johnson), rate $1/8$ & 2429 & 721 & 87.2 & 27.2 & 222 & 12.5 \\
+              \addlinespace
+    $2^{21}$ & $2^{13}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{1509} & \textbf{398} & \textbf{94.5} & 26.2 & 377 & \textbf{9.64} \\
+     & & \ftwoz-SNARK, rate $1/8$ & 2109 & 514 & \textbf{94.5} & \textbf{25.4} & \textbf{239} & 10.1 \\
+     & & Binius (UDR), rate $1/2$ & -- & -- & -- & -- & -- & -- \\
+     & & Binius (UDR), rate $1/8$ & -- & -- & -- & -- & -- & -- \\
+     & & Binius (Johnson), rate $1/2$ & -- & -- & -- & -- & -- & -- \\
+     & & Binius (Johnson), rate $1/8$ & -- & -- & -- & -- & -- & -- \\
     \bottomrule
   \end{tabular}
   \caption{Cost of proving $N$ multiplications modulo $2^{32}$ and $M=N/256$  chained SHA-256 compressions.  The choice of $N$ and $M$ is done so that both types of workloads (modular multiplication and SHA-256) amount to roughly the same number of witness bits. Configured at $\lambda = 100$ bits of round-by-round knowledge soundness.  Ran on a MacBook Air M5, 24\,GB, CPU only.}
@@ -3423,26 +3599,26 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
     \cmidrule(lr){4-5} \cmidrule(lr){6-7}
     $N$ & Scheme & (ms) & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-    $2^{15}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.01} & \textbf{28.9} & \textbf{15.1} & 2.06 & 2.12 & 120 & \textbf{0.055} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.01} & 32.0 & 16.0 & 1.86 & 1.91 & \textbf{70.6} & 0.064 \\
+    $2^{15}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.01} & 23.0 & \textbf{11.0} & 1.48 & 1.73 & 124 & \textbf{0.028} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.01} & \textbf{20.2} & 11.4 & \textbf{1.28} & 1.58 & \textbf{76.4} & 0.032 \\
      & Binius (UDR), rate $1/2$ & 0.59 & 63.9 & 32.8 & 1.68 & 1.63 & 324 & 0.287 \\
-     & Binius (UDR), rate $1/8$ & 0.59 & 76.2 & 36.1 & \textbf{1.52} & \textbf{1.50} & 243 & 0.287 \\
+     & Binius (UDR), rate $1/8$ & 0.59 & 76.2 & 36.1 & 1.52 & \textbf{1.50} & 243 & 0.287 \\
      & Binius (Johnson), rate $1/2$ & 0.55 & 71.6 & 35.9 & 2.68 & 2.76 & 345 & 0.290 \\
      & Binius (Johnson), rate $1/8$ & 0.55 & 83.0 & 38.4 & 2.18 & 2.24 & 180 & 0.289 \\
      & Limber (Brakedown) & 0.44 & 240 & 142 & 38.5 & 37.6 & 3364 & 0.340 \\
      & Zinc+, rate $1/4$ & 1.24 & 192 & 114 & 29.2 & 13.5 & 632 & 0.101 \\
     \addlinespace
-    $2^{17}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.04} & \textbf{96.2} & \textbf{34.7} & 2.77 & \textbf{2.53} & 152 & \textbf{0.149} \\
-     & \ftwoz-SNARK, rate $1/8$ & 0.05 & 122 & 43.3 & \textbf{2.76} & 2.54 & \textbf{91.3} & 0.169 \\
+    $2^{17}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.04} & \textbf{54.1} & \textbf{22.1} & 1.87 & 2.25 & 162 & \textbf{0.073} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.04} & 64.3 & 23.9 & \textbf{1.70} & \textbf{2.08} & \textbf{103} & 0.090 \\
      & Binius (UDR), rate $1/2$ & 2.47 & 223 & 82.7 & 4.83 & 2.72 & 388 & 0.922 \\
-     & Binius (UDR), rate $1/8$ & 2.46 & 274 & 92.0 & 4.76 & \textbf{2.53} & 283 & 1.000 \\
+     & Binius (UDR), rate $1/8$ & 2.46 & 274 & 92.0 & 4.76 & 2.53 & 283 & 1.000 \\
      & Binius (Johnson), rate $1/2$ & 2.28 & 232 & 85.2 & 6.25 & 4.29 & 370 & 0.945 \\
      & Binius (Johnson), rate $1/8$ & 2.29 & 285 & 94.8 & 5.70 & 3.60 & 195 & 1.01 \\
      & Limber (Brakedown) & 1.68 & 1148 & 416 & 85.8 & 76.0 & 5493 & 1.04 \\
      & Zinc+, rate $1/4$ & 1.85 & 735 & 254 & 30.0 & 14.0 & 866 & 0.322 \\
     \addlinespace
-    $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.17} & \textbf{364} & \textbf{102} & 4.33 & \textbf{3.08} & 189 & \textbf{0.487} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.17} & 429 & 115 & \textbf{4.24} & 3.15 & \textbf{116} & 0.543 \\
+    $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.15} & \textbf{181} & \textbf{56.2} & 2.79 & 3.16 & 212 & \textbf{0.250} \\
+     & \ftwoz-SNARK, rate $1/8$ & 0.16 & 236 & 65.8 & \textbf{2.68} & \textbf{3.08} & \textbf{139} & 0.315 \\
      & Binius (UDR), rate $1/2$ & 9.69 & 867 & 272 & 20.5 & 8.96 & 472 & 3.67 \\
      & Binius (UDR), rate $1/8$ & 9.74 & 1062 & 313 & 20.2 & 8.77 & 330 & 3.93 \\
      & Binius (Johnson), rate $1/2$ & 9.15 & 892 & 286 & 21.3 & 10.2 & 404 & 3.75 \\
@@ -3450,8 +3626,8 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Limber (Brakedown) & 6.48 & 4436 & 1359 & 268 & 221 & 12278 & 3.66 \\
      & Zinc+, rate $1/4$ & 7.20 & 2833 & 809 & 30.9 & 14.5 & 1791 & 1.23 \\
     \addlinespace
-    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.65} & \textbf{1492} & \textbf{392} & 8.02 & 4.89 & 225 & \textbf{1.77} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.65} & 1700 & 423 & \textbf{7.61} & \textbf{4.80} & \textbf{140} & 2.09 \\
+    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.61} & \textbf{651} & \textbf{179} & 4.86 & 5.22 & 273 & \textbf{0.926} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.61} & 893 & 225 & \textbf{4.57} & \textbf{4.90} & \textbf{187} & 1.19 \\
      & Binius (UDR), rate $1/2$ & 33.9 & 3466 & -- & 79.2 & -- & 559 & 14.7 \\
      & Binius (UDR), rate $1/8$ & -- & -- & -- & -- & -- & -- & -- \\
      & Binius (Johnson), rate $1/2$ & -- & -- & -- & -- & -- & -- & -- \\
@@ -3459,8 +3635,8 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Limber (Brakedown) & 24.5 & 18155 & 5471 & 990 & 815 & 36499 & 13.8 \\
      & Zinc+, rate $1/4$ & 28.8 & 11446 & 2951 & 35.7 & 16.1 & 5552 & 4.89 \\
     \addlinespace
-    $2^{23}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{2.71} & \textbf{6853} & \textbf{1939} & 14.2 & 7.12 & 279 & \textbf{6.95} \\
-     & \ftwoz-SNARK, rate $1/8$ & 2.73 & 7826 & 2198 & \textbf{13.9} & \textbf{6.90} & \textbf{179} & 7.75 \\
+    $2^{23}$ & \ftwoz-SNARK, rate $1/2$ & 2.71 & \textbf{2585} & \textbf{678} & 8.44 & 8.26 & 375 & \textbf{3.68} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{2.69} & 3611 & 865 & \textbf{8.32} & \textbf{8.09} & \textbf{276} & 4.75 \\
      & Binius (UDR), rate $1/2$ & -- & -- & -- & -- & -- & -- & -- \\
      & Zinc+, rate $1/4$ & 112 & 50498 & 15120 & 51.5 & 19.3 & 20325 & 15.3 \\
     \bottomrule
@@ -3490,8 +3666,8 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
     \cmidrule(lr){4-5} \cmidrule(lr){6-7}
     $N$ & Scheme & (ms) & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-    $2^{15}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.02} & \textbf{53.7} & 23.8 & 2.49 & 2.25 & 137 & \textbf{0.086} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.02} & 55.1 & \textbf{23.7} & 2.36 & 2.03 & \textbf{84.1} & 0.093 \\
+    $2^{15}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.02} & \textbf{31.6} & \textbf{15.6} & 1.67 & 1.95 & 142 & \textbf{0.044} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.02} & 37.0 & 16.5 & 1.63 & 1.98 & \textbf{88.0} & 0.051 \\
      & Binius (UDR), rate $1/2$ & 0.42 & 66.4 & 34.8 & 1.41 & 1.28 & 324 & 0.224 \\
      & Binius (UDR), rate $1/8$ & 0.42 & 76.7 & 36.8 & \textbf{1.23} & \textbf{1.17} & 242 & 0.242 \\
      & Binius (Johnson), rate $1/2$ & 0.38 & 68.4 & 35.7 & 2.37 & 2.41 & 345 & 0.234 \\
@@ -3499,17 +3675,17 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Limber (Brakedown) & 0.43 & 388 & 189 & 39.8 & 39.0 & 4064 & 0.477 \\
      & Zinc+, rate $1/4$ & 4.04 & 367 & 160 & 29.3 & 13.7 & 711 & 0.179 \\
     \addlinespace
-    $2^{17}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.09} & \textbf{186} & \textbf{59.6} & 4.52 & 3.54 & 164 & \textbf{0.251} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.09} & 213 & 64.9 & 4.34 & 3.13 & \textbf{98.5} & 0.278 \\
+    $2^{17}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.09} & \textbf{87.6} & \textbf{31.8} & 2.24 & 2.77 & 193 & \textbf{0.118} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.09} & 116 & 37.4 & \textbf{2.03} & 2.48 & \textbf{127} & 0.150 \\
      & Binius (UDR), rate $1/2$ & 1.78 & 222 & 82.1 & 3.68 & 2.04 & 387 & 0.836 \\
-     & Binius (UDR), rate $1/8$ & 1.79 & 272 & 91.7 & \textbf{3.57} & \textbf{1.95} & 283 & 0.912 \\
+     & Binius (UDR), rate $1/8$ & 1.79 & 272 & 91.7 & 3.57 & \textbf{1.95} & 283 & 0.912 \\
      & Binius (Johnson), rate $1/2$ & 1.59 & 234 & 85.9 & 5.14 & 3.78 & 370 & 0.869 \\
      & Binius (Johnson), rate $1/8$ & 1.59 & 283 & 94.9 & 4.54 & 3.06 & 192 & 0.928 \\
      & Limber (Brakedown) & 1.66 & 1850 & 592 & 91.3 & 82.3 & 7277 & 1.42 \\
      & Zinc+, rate $1/4$ & 9.28 & 1400 & 410 & 30.2 & 14.1 & 1175 & 0.657 \\
     \addlinespace
-    $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.38} & \textbf{732} & \textbf{204} & 7.58 & 4.55 & 202 & \textbf{0.869} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.38} & 867 & 223 & \textbf{7.38} & \textbf{4.15} & \textbf{124} & 0.986 \\
+    $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & 0.36 & \textbf{346} & \textbf{99.9} & 4.53 & 4.86 & 227 & \textbf{0.450} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.35} & 452 & 122 & \textbf{4.14} & \textbf{4.41} & \textbf{147} & 0.586 \\
      & Binius (UDR), rate $1/2$ & 7.07 & 871 & 272 & 15.8 & 7.24 & 472 & 3.17 \\
      & Binius (UDR), rate $1/8$ & 6.97 & 1063 & 313 & 15.4 & 7.13 & 330 & 3.41 \\
      & Binius (Johnson), rate $1/2$ & 6.39 & 891 & 282 & 16.9 & 9.07 & 404 & 3.28 \\
@@ -3517,8 +3693,8 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Limber (Brakedown) & 6.59 & 7510 & 2062 & 334 & 247 & 19011 & 4.91 \\
      & Zinc+, rate $1/4$ & 37.0 & 5716 & 1414 & 32.5 & 14.8 & 3088 & 2.55 \\
     \addlinespace
-    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{1.46} & \textbf{2884} & \textbf{754} & 7.95 & 4.90 & 264 & \textbf{3.42} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{1.46} & 3337 & 810 & \textbf{7.76} & \textbf{4.66} & \textbf{171} & 3.85 \\
+    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{1.37} & \textbf{1275} & \textbf{341} & 7.78 & 7.54 & 293 & \textbf{1.64} \\
+     & \ftwoz-SNARK, rate $1/8$ & 1.38 & 1773 & 456 & \textbf{7.65} & \textbf{7.30} & \textbf{203} & 2.21 \\
      & Binius (UDR), rate $1/2$ & 29.1 & 3430 & 1072 & 61.0 & 22.1 & 559 & 12.6 \\
      & Binius (UDR), rate $1/8$ & 31.4 & 4195 & 1294 & 59.4 & 20.4 & 383 & 13.7 \\
      & Binius (Johnson), rate $1/2$ & 28.9 & 3498 & 1115 & 61.0 & 22.9 & 440 & 12.6 \\
@@ -3542,8 +3718,8 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
     \cmidrule(lr){4-5} \cmidrule(lr){6-7}
     $N$ & Scheme & (ms) & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-    $2^{15}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.05} & \textbf{97.0} & \textbf{36.6} & 4.17 & 3.01 & 149 & \textbf{0.141} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.05} & 108 & 38.5 & \textbf{3.95} & \textbf{2.68} & \textbf{90.7} & 0.159 \\
+    $2^{15}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.04} & \textbf{59.3} & \textbf{22.8} & 2.57 & 2.83 & 155 & \textbf{0.070} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.04} & 69.6 & 25.0 & \textbf{2.44} & \textbf{2.63} & \textbf{95.8} & 0.088 \\
      & Binius (UDR), rate $1/2$ & 1.68 & 252 & 88.2 & 8.05 & 3.73 & 388 & 1.02 \\
      & Binius (UDR), rate $1/8$ & 1.69 & 294 & 98.5 & 7.47 & 3.61 & 283 & 1.09 \\
      & Binius (Johnson), rate $1/2$ & 1.46 & 256 & 91.8 & 9.03 & 5.39 & 370 & 1.05 \\
@@ -3551,8 +3727,8 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Limber (Brakedown) & 0.97 & 1059 & 374 & 48.4 & 46.4 & 5491 & 0.787 \\
      & Zinc+, rate $1/4$ & 5.23 & 728 & 246 & 29.8 & 13.9 & 867 & 0.347 \\
     \addlinespace
-    $2^{17}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.18} & \textbf{382} & \textbf{111} & 7.46 & 4.14 & 186 & \textbf{0.449} \\
-     & \ftwoz-SNARK, rate $1/8$ & 0.19 & 426 & 121 & \textbf{7.20} & \textbf{3.93} & \textbf{112} & 0.509 \\
+    $2^{17}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.17} & \textbf{167} & \textbf{52.9} & 2.83 & 3.15 & 213 & \textbf{0.202} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.17} & 222 & 63.1 & \textbf{2.63} & \textbf{2.98} & \textbf{139} & 0.266 \\
      & Binius (UDR), rate $1/2$ & 6.39 & 950 & 290 & 31.4 & 11.6 & 472 & 3.94 \\
      & Binius (UDR), rate $1/8$ & 6.41 & 1144 & 330 & 30.9 & 11.3 & 331 & 4.18 \\
      & Binius (Johnson), rate $1/2$ & 6.07 & 983 & 302 & 33.2 & 13.3 & 404 & 4.06 \\
@@ -3560,8 +3736,8 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Limber (Brakedown) & 3.79 & 4053 & 1202 & 116 & 103 & 12045 & 2.56 \\
      & Zinc+, rate $1/4$ & 20.8 & 2854 & 739 & 31.1 & 14.2 & 1792 & 1.32 \\
     \addlinespace
-    $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.73} & \textbf{1701} & \textbf{448} & 14.2 & 6.59 & 217 & \textbf{1.56} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.73} & 1979 & 555 & \textbf{13.9} & \textbf{6.27} & \textbf{133} & 1.80 \\
+    $2^{19}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{0.70} & \textbf{600} & \textbf{169} & 4.89 & 5.24 & 273 & \textbf{0.726} \\
+     & \ftwoz-SNARK, rate $1/8$ & \textbf{0.70} & 843 & 221 & \textbf{4.63} & \textbf{4.86} & \textbf{188} & 0.993 \\
      & Binius (UDR), rate $1/2$ & 27.4 & 3748 & 1171 & 123 & 34.0 & 559 & 15.7 \\
      & Binius (UDR), rate $1/8$ & 28.5 & 4519 & 1342 & 122 & 34.9 & 383 & 16.0 \\
      & Binius (Johnson), rate $1/2$ & 25.0 & 3892 & 1182 & 123 & 34.9 & 441 & 15.5 \\
@@ -3569,8 +3745,8 @@ We measure the cost of proving $N$ integer multiplications of the form $x\cdot  
      & Limber (Brakedown) & 15.4 & 17144 & 4530 & 414 & 324 & 36678 & 9.47 \\
      & Zinc+, rate $1/4$ & 76.4 & 11384 & 2704 & 35.4 & 15.9 & 5548 & 4.51 \\
     \addlinespace
-    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & 2.85 & \textbf{7171} & \textbf{2257} & 26.5 & 10.8 & 263 & \textbf{6.02} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{2.80} & 8225 & 2541 & \textbf{26.0} & \textbf{10.5} & \textbf{163} & 7.02 \\
+    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{2.79} & \textbf{2372} & \textbf{624} & 8.43 & 8.29 & 375 & \textbf{2.88} \\
+     & \ftwoz-SNARK, rate $1/8$ & 2.83 & 3397 & 826 & \textbf{8.31} & \textbf{8.03} & \textbf{276} & 3.94 \\
      & Binius (UDR), rate $1/2$ & -- & -- & -- & -- & -- & -- & -- \\
      & Binius (Johnson), rate $1/2$ & -- & -- & -- & -- & -- & -- & -- \\
      & Limber (Brakedown) & -- & -- & -- & -- & -- & -- & -- \\
@@ -3602,28 +3778,28 @@ We compare experimentally \ftwoz\ with Fields-Witch \cite{lev}, a PCS over the p
     \cmidrule(lr){3-4} \cmidrule(lr){5-6}
     Bits & Scheme & 1 thr & 10 thr & 1 thr & 10 thr & (KB) & (GB) \\
     \midrule
-    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & 17.2 & \textbf{9.31} & 1.32 & 1.57 & 109 & \textbf{0.04} \\
-     & \ftwoz-SNARK, rate $1/8$ & \textbf{16.6} & 9.62 & \textbf{1.11} & \textbf{1.37} & \textbf{65} & \textbf{0.04} \\
+    $2^{21}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{12.0} & \textbf{6.63} & 1.08 & 1.21 & 111 & \textbf{0.02} \\
+     & \ftwoz-SNARK, rate $1/8$ & 12.8 & 7.37 & \textbf{1.03} & \textbf{1.18} & \textbf{69} & \textbf{0.02} \\
      & Fields-Witch, rate $1/2$ & 23.6 & 18.9 & 6.14 & 6.80 & 430 & 0.08 \\
      & Fields-Witch, rate $1/8$ & 25.6 & 19.1 & 5.63 & 6.23 & 370 & 0.09 \\
     \addlinespace
-    $2^{23}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{46.5} & \textbf{20.5} & 1.77 & 2.24 & 140 & \textbf{0.11} \\
-     & \ftwoz-SNARK, rate $1/8$ & 53.2 & 21.9 & \textbf{1.51} & \textbf{1.87} & \textbf{86} & 0.12 \\
+    $2^{23}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{24.3} & \textbf{12.4} & 1.51 & 1.86 & 148 & \textbf{0.05} \\
+     & \ftwoz-SNARK, rate $1/8$ & 32.6 & 13.9 & \textbf{1.32} & \textbf{1.63} & \textbf{95} & 0.06 \\
      & Fields-Witch, rate $1/2$ & 72.6 & 40.5 & 6.99 & 7.75 & 574 & 0.26 \\
      & Fields-Witch, rate $1/8$ & 83.2 & 42.3 & 6.61 & 7.33 & 482 & 0.27 \\
     \addlinespace
-    $2^{25}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{166} & \textbf{56.4} & 2.82 & 3.47 & 174 & \textbf{0.42} \\
-     & \ftwoz-SNARK, rate $1/8$ & 184 & 57.3 & \textbf{2.54} & \textbf{2.98} & \textbf{108} & 0.46 \\
+    $2^{25}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{79.9} & \textbf{28.3} & 2.42 & 2.90 & 190 & \textbf{0.14} \\
+     & \ftwoz-SNARK, rate $1/8$ & 107 & 33.2 & \textbf{2.18} & \textbf{2.59} & \textbf{124} & 0.20 \\
      & Fields-Witch, rate $1/2$ & 284 & 103 & 9.11 & 8.51 & 710 & 0.91 \\
      & Fields-Witch, rate $1/8$ & 303 & 116 & 7.01 & 8.10 & 575 & 0.97 \\
     \addlinespace
-    $2^{27}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{637} & \textbf{170} & 6.47 & 6.33 & 208 & \textbf{1.43} \\
-     & \ftwoz-SNARK, rate $1/8$ & 663 & 191 & \textbf{6.43} & \textbf{6.07} & \textbf{129} & 1.65 \\
+    $2^{27}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{298} & \textbf{87.2} & 5.72 & 6.24 & 224 & \textbf{0.55} \\
+     & \ftwoz-SNARK, rate $1/8$ & 413 & 110 & \textbf{5.27} & \textbf{5.79} & \textbf{144} & 0.78 \\
      & Fields-Witch, rate $1/2$ & 853 & 257 & 7.07 & 8.49 & 852 & 3.02 \\
      & Fields-Witch, rate $1/8$ & 1050 & 292 & 6.63 & 7.86 & 687 & 3.28 \\
     \addlinespace
-    $2^{29}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{2569} & \textbf{701} & 12.1 & 10.3 & 261 & \textbf{5.58} \\
-     & \ftwoz-SNARK, rate $1/8$ & 2722 & 773 & 12.1 & 9.70 & \textbf{168} & 6.52 \\
+    $2^{29}$ & \ftwoz-SNARK, rate $1/2$ & \textbf{1094} & \textbf{302} & 9.95 & 10.3 & 292 & \textbf{1.99} \\
+     & \ftwoz-SNARK, rate $1/8$ & 1581 & 402 & 9.91 & 10.2 & \textbf{200} & 2.93 \\
      & Fields-Witch, rate $1/2$ & 3251 & 897 & 8.19 & 9.61 & 1004 & 11.2 \\
      & Fields-Witch, rate $1/8$ & 4096 & 1092 & \textbf{7.78} & \textbf{9.21} & 808 & 12.3 \\
     \bottomrule
