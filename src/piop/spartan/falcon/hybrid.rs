@@ -1389,28 +1389,17 @@ mod tests {
         }
     }
 
-    #[test]
-    fn hybrid_falcon_roundtrip_and_tampering() {
-        let prepared = PreparedFalconHybrid::prepare(1, 100, 1024).unwrap();
-        let committed = prepared.commit(public(1)).unwrap();
-        let native = super::super::verification_trace(PK, MSG, SIG).unwrap();
-        assert_eq!(committed.traces[0].s1, native.s1);
-        assert_eq!(committed.traces[0].ring_quotient, native.ring_quotient);
-        assert_eq!(
-            committed.traces[0].hash_to_point.words,
-            native.hash_to_point.words
-        );
-        assert_eq!(committed.traces[0].norm, native.norm);
-        let statement = committed.statement.clone();
-        let proof = prepared.prove(committed).unwrap();
-        prepared.verify(&statement, &proof).unwrap();
-        assert_compact_opening_rejects_mutations(&prepared, &statement, &proof);
+    fn assert_public_and_proof_mutations(
+        prepared: &PreparedFalconHybrid,
+        statement: &FalconHybridStatement,
+        proof: &FalconHybridProof,
+    ) {
         let mut changed = statement.clone();
         changed.public.messages[0][0] ^= 1;
-        assert!(prepared.verify(&changed, &proof).is_err());
+        assert!(prepared.verify(&changed, proof).is_err());
         let mut changed = statement.clone();
         changed.public.signatures[0].nonce[0] ^= 1;
-        assert!(prepared.verify(&changed, &proof).is_err());
+        assert!(prepared.verify(&changed, proof).is_err());
         let mut changed = statement.clone();
         changed.public.signatures[0].s2[0] = if changed.public.signatures[0].s2[0] == 0 {
             1
@@ -1418,54 +1407,28 @@ mod tests {
             0
         };
         assert_ne!(changed.public.signatures, statement.public.signatures);
-        assert!(prepared.verify(&changed, &proof).is_err());
+        assert!(prepared.verify(&changed, proof).is_err());
         let mut changed = statement.clone();
         changed.public.signatures.clear();
-        assert!(prepared.verify(&changed, &proof).is_err());
+        assert!(prepared.verify(&changed, proof).is_err());
         let mut changed = statement.clone();
         changed.public.signatures[0].s2[0] = -2048;
-        assert!(prepared.verify(&changed, &proof).is_err());
+        assert!(prepared.verify(&changed, proof).is_err());
         let mut changed = statement.clone();
         changed.source_root[0] ^= 1;
-        assert!(prepared.verify(&changed, &proof).is_err());
+        assert!(prepared.verify(&changed, proof).is_err());
         let mut changed = proof.clone();
         match &mut changed.bridge.sums {
             crate::bitz::column_sums::ColumnSums::Unsplit(sums) => sums[0] ^= 1,
             crate::bitz::column_sums::ColumnSums::Split(sums) => sums[0].lower ^= 1,
         }
-        assert!(prepared.verify(&statement, &changed).is_err());
+        assert!(prepared.verify(statement, &changed).is_err());
         let mut changed = proof.clone();
         changed.joint.value += Gf::ONE;
-        assert!(prepared.verify(&statement, &changed).is_err());
+        assert!(prepared.verify(statement, &changed).is_err());
         let mut changed = proof.clone();
         changed.pcs_nonces.push(0);
-        assert!(prepared.verify(&statement, &changed).is_err());
-    }
-
-    #[test]
-    #[ignore = "full profile matrix includes batch 1024; run serially for qualification"]
-    fn joint_source_supported_profiles_roundtrip() {
-
-            for target in [100, 128] {
-                for batch in [1, 2, 3, 7, 8, 9, 1024] {
-                    let prepared =
-                        PreparedFalconHybrid::prepare(batch, target, 1024).unwrap();
-                    let committed = prepared.commit(public(batch)).unwrap();
-                    let statement = committed.statement.clone();
-                    let proof = prepared.prove(committed).unwrap();
-                    prepared.verify(&statement, &proof).unwrap();
-                    assert!(prepared.security().algebraic_bits >= target as f64);
-                    assert_eq!(
-                        proof
-                            .payload_size_breakdown()
-                            .iter()
-                            .map(|(_, n)| n)
-                            .sum::<usize>(),
-                        proof.payload_size_bytes(),
-                    );
-                }
-            }
-
+        assert!(prepared.verify(statement, &changed).is_err());
     }
 
     #[test]
@@ -1497,11 +1460,26 @@ mod tests {
             let prepared = PreparedFalconHybrid::prepare(batch, target, 1024).unwrap();
             assert_eq!(prepared.live_arithmetic_bits_per_signature(), 100_482);
             let committed = prepared.commit(public(batch)).unwrap();
+            if batch == 1 && target == 100 {
+                let native = super::super::verification_trace(PK, MSG, SIG).unwrap();
+                assert_eq!(committed.traces[0].s1, native.s1);
+                assert_eq!(committed.traces[0].ring_quotient, native.ring_quotient);
+                assert_eq!(committed.traces[0].hash_to_point.words, native.hash_to_point.words);
+                assert_eq!(committed.traces[0].norm, native.norm);
+            }
             let statement = committed.statement.clone();
             let proof = prepared.prove(committed).unwrap();
             prepared.verify(&statement, &proof).unwrap();
             if batch <= 3 {
                 assert_compact_opening_rejects_mutations(&prepared, &statement, &proof);
+            }
+            if batch == 1 && target == 100 {
+                assert_public_and_proof_mutations(&prepared, &statement, &proof);
+            }
+            if target == 128 {
+                let mut changed = proof.clone();
+                changed.links_nonces.clear();
+                assert!(prepared.verify(&statement, &changed).is_err());
             }
             assert!(proof.payload_size_bytes() > 0);
             assert_eq!(
@@ -1669,14 +1647,7 @@ mod tests {
     }
 
     #[test]
-    fn hybrid_falcon_padding_and_wrong_nonce_branch() {
-        let prepared = PreparedFalconHybrid::prepare(3, 100, 1024).unwrap();
-        let committed = prepared.commit(public(3)).unwrap();
-        let statement = committed.statement.clone();
-        let proof = prepared.prove(committed).unwrap();
-        prepared.verify(&statement, &proof).unwrap();
-        assert_compact_opening_rejects_mutations(&prepared, &statement, &proof);
-
+    fn hybrid_falcon_wrong_nonce_branch() {
         let prepared = PreparedFalconHybrid::prepare(1, 100, 1024).unwrap();
         let mut committed = prepared.commit(public(1)).unwrap();
         let mut nonce = decode_signature_ct(SIG).unwrap().nonce;
@@ -1695,21 +1666,6 @@ mod tests {
         let statement = committed.statement.clone();
         if let Ok(proof) = prepared.prove(committed) {
             assert!(prepared.verify(&statement, &proof).is_err());
-        }
-    }
-
-    #[test]
-    fn hybrid_falcon_128_roundtrip() {
-        for batch in [1, 3] {
-            let prepared = PreparedFalconHybrid::prepare(batch, 128, 1024).unwrap();
-            let committed = prepared.commit(public(batch)).unwrap();
-            let statement = committed.statement.clone();
-            let proof = prepared.prove(committed).unwrap();
-            prepared.verify(&statement, &proof).unwrap();
-            assert_compact_opening_rejects_mutations(&prepared, &statement, &proof);
-            let mut changed = proof.clone();
-            changed.links_nonces.clear();
-            assert!(prepared.verify(&statement, &changed).is_err());
         }
     }
 
