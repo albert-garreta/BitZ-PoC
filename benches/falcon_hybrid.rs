@@ -15,118 +15,72 @@ mod falcon_degree_inputs;
 mod falcon_stage_timings;
 use bitz::piop::spartan::falcon_parameters::{auto_k, ring_budget_ok};
 use bitz::piop::spartan::falcon_profiles::{BackendSelection, FalconBackend};
+use clap::Parser;
 use falcon_degree_inputs::{generate_cases, reject_fixture_overrides};
 use falcon_stage_timings::StageTimings;
 use serde_json::json;
 use std::{error::Error, fmt::Write, fs, time::Instant};
 
+#[path = "common/cli.rs"]
+mod cli;
+
+#[derive(Parser)]
+#[command(
+    about = "Full Falcon proofs with distinct original-Falcon inputs; input generation is outside proof timing"
+)]
 struct Options {
+    #[command(flatten)]
+    cargo: cli::CargoArgs,
+    #[arg(long, default_value_t = 1024)]
     degree: usize,
+    #[arg(skip)]
     extension: usize,
+    #[arg(long = "k", default_value = "auto")]
     extension_selection: String,
+    #[arg(long, env = "BITZ_FALCON_BATCH", default_value_t = 32)]
     batch: usize,
+    #[arg(long, env = "BITZ_BENCH_LAMBDA")]
     security: usize,
+    #[arg(long, env = "BITZ_BENCH_REPS", default_value_t = 3, value_parser = cli::positive)]
     iterations: usize,
+    #[arg(long, default_value_t = 1)]
     warmup: usize,
+    #[arg(long, env = "RAYON_NUM_THREADS", default_value_t = 1, value_parser = cli::positive)]
     threads: usize,
+    #[arg(long, env = "BITZ_FALCON_SEED", default_value_t = 42)]
     seed: u64,
 }
 
 impl Options {
     fn read() -> Result<Self, Box<dyn Error>> {
-        let mut degree = 1024;
-        let mut extension_selection = String::from("auto");
-        let mut batch = env_usize("BITZ_FALCON_BATCH")?.unwrap_or(32);
-        let mut security = env_usize("BITZ_BENCH_LAMBDA")?;
-        let mut iterations = env_usize("BITZ_BENCH_REPS")?.unwrap_or(3);
-        let mut warmup = 1;
-        let mut threads = env_usize("RAYON_NUM_THREADS")?.unwrap_or(1);
-        let mut seed = std::env::var("BITZ_FALCON_SEED")
-            .ok()
-            .map(|value| value.parse::<u64>())
-            .transpose()?
-            .unwrap_or(42);
-        let mut args = std::env::args().skip(1);
-        while let Some(flag) = args.next() {
-            if flag == "--bench" {
-                continue;
-            }
-            if matches!(flag.as_str(), "--help" | "-h") {
-                println!(
-                    "falcon_hybrid --security 100|128 [--degree 512|1024] [--k auto|9|10|11] [--batch 1..1024] [--seed U64] [--iterations N] [--warmup N] [--threads N]\nInputs: distinct fn-dsa 0.3.0 original Falcon-512 or Falcon-1024 keys and signatures; generation is outside prover timing. Defaults: degree 1024, K auto, max batch 1024, batch 32, seed 42.\nEnvironment defaults: BITZ_BENCH_LAMBDA, BITZ_FALCON_BATCH, BITZ_FALCON_SEED, BITZ_BENCH_REPS, RAYON_NUM_THREADS."
-                );
-                std::process::exit(0);
-            }
-            if flag == "--k" {
-                extension_selection = args.next().ok_or("missing K selection")?;
-                continue;
-            }
-            if flag == "--seed" {
-                seed = args.next().ok_or("missing seed")?.parse()?;
-                continue;
-            }
-            if !matches!(
-                flag.as_str(),
-                "--batch" | "--degree" | "--security" | "--iterations" | "--warmup" | "--threads"
-            ) {
-                return Err(format!("unknown argument {flag}").into());
-            }
-            let value: usize = args
-                .next()
-                .ok_or_else(|| format!("missing value for {flag}"))?
-                .parse()?;
-            match flag.as_str() {
-                "--batch" => batch = value,
-                "--degree" => degree = value,
-                "--security" => security = Some(value),
-                "--iterations" => iterations = value,
-                "--warmup" => warmup = value,
-                "--threads" => threads = value,
-                _ => unreachable!(),
-            }
-        }
-        let security =
-            security.ok_or("select --security 100|128 or BITZ_BENCH_LAMBDA explicitly")?;
-        if !matches!(security, 100 | 128) {
+        let mut options = Self::parse();
+        if !matches!(options.security, 100 | 128) {
             return Err("security must be 100 or 128".into());
         }
-        if !(1..=1024).contains(&batch) {
+        if !(1..=1024).contains(&options.batch) {
             return Err("batch must be in 1..=1024".into());
         }
-        if iterations == 0 || threads == 0 {
-            return Err("iterations and threads must be positive".into());
-        }
-        if warmup.checked_add(iterations).is_none() {
+        if options.warmup.checked_add(options.iterations).is_none() {
             return Err("trial count overflow".into());
         }
-        if !matches!(degree, 512 | 1024) {
+        if !matches!(options.degree, 512 | 1024) {
             return Err("degree must be 512 or 1024".into());
         }
-        let extension = if extension_selection.eq_ignore_ascii_case("auto") {
-            extension_selection = String::from("auto");
-            auto_k(degree, security, 1024)
+        options.extension = if options.extension_selection.eq_ignore_ascii_case("auto") {
+            options.extension_selection = String::from("auto");
+            auto_k(options.degree, options.security, 1024)
         } else {
-            let explicit = extension_selection.parse::<usize>()?;
+            let explicit = options.extension_selection.parse::<usize>()?;
             if !(9..=11).contains(&explicit) {
                 return Err("explicit K must be in 9..=11".into());
             }
-            extension_selection = format!("explicit({explicit})");
+            options.extension_selection = format!("explicit({explicit})");
             explicit
         };
-        if !ring_budget_ok(degree, extension, security, 1024) {
+        if !ring_budget_ok(options.degree, options.extension, options.security, 1024) {
             return Err("explicit K misses the requested ring security budget".into());
         }
-        Ok(Self {
-            degree,
-            extension,
-            extension_selection,
-            batch,
-            security,
-            iterations,
-            warmup,
-            threads,
-            seed,
-        })
+        Ok(options)
     }
 }
 
@@ -160,7 +114,11 @@ macro_rules! backend_runner {
     let protocol = bitz::piop::spartan::falcon::PROTOCOL_ID;
     let prepare_ms = ms(start);
     assert_eq!(prepared.capacity(), options.batch.next_power_of_two());
-    let pcs_query_shape = pcs_query_shape(&prepared.source_bits_per_signature(), prepared.capacity(), options.security)?;
+    let pcs_query_shape = pcs_query_shape(
+        &prepared.pcs_source_packed_logs(), &prepared.pcs_source_lane_widths(),
+        prepared.pcs_position_log(), prepared.pcs_virtual_lane_log(),
+        prepared.ligerito_configuration(),
+    );
     let security = prepared.security();
     assert_eq!(security.target_bits, options.security);
     assert!(security.algebraic_bits >= options.security as f64);
@@ -399,45 +357,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
-/// Public-shape reconstruction for untimed accounting. This repeats the
-/// registered Geometry::new policy, which the source audit checks in each build.
-/// Only degrees 512/1024 (three/four sources) are exposed by this benchmark.
 fn pcs_query_shape(
-    source_bits: &[usize],
-    capacity: usize,
-    security: usize,
-) -> Result<serde_json::Value, Box<dyn Error>> {
-    assert!(source_bits.len() >= 3);
-    let logs: Vec<_> = source_bits
-        .iter()
-        .map(|&bits| {
-            let total = bits.checked_mul(capacity).expect("source size");
-            assert!(total.is_power_of_two());
-            total.ilog2() as usize - 7
-        })
-        .collect();
-    let mut position_log = logs.iter().copied().max().expect("sources") - 3;
-    while logs
-        .iter()
-        .map(|&log| 1usize << log.saturating_sub(position_log))
-        .sum::<usize>()
-        > 16
-    {
-        position_log += 1;
-    }
-    let lane_widths: Vec<_> = logs
-        .iter()
-        .map(|&log| 1usize << log.saturating_sub(position_log))
-        .collect();
+    logs: &[usize],
+    lane_widths: &[usize],
+    position_log: usize,
+    virtual_lane_log: usize,
+    resolved: &bitz::ligerito_flock::ResolvedLigerito,
+) -> serde_json::Value {
     let occupied_lanes: usize = lane_widths.iter().sum();
-    let resolved =
-        bitz::ligerito_flock::LigeritoSelection::MATCHED_UDR.resolve(position_log + 4, security)?;
     let config = resolved.prover();
-    Ok(json!({
+    json!({
         "source_packed_logs": logs,
         "source_lane_widths": lane_widths,
         "position_log": position_log,
-        "virtual_lane_log": 4,
+        "virtual_lane_log": virtual_lane_log,
         "occupied_lanes": occupied_lanes,
         "initial_opened_row_width": occupied_lanes,
         "recursive_opened_row_widths": config.recursive_ks[..config.recursive_steps - 1].iter().map(|&k| 1usize << k).collect::<Vec<_>>(),
@@ -454,7 +387,7 @@ fn pcs_query_shape(
         "ood_samples": config.ood_samples,
         "merkle_hash": format!("{:?}", config.merkle_hash),
         "configuration_fingerprint": resolved.digest().iter().map(|byte| format!("{byte:02x}")).collect::<String>(),
-    }))
+    })
 }
 
 /// Hashing Debug is useful for paired builds of the same source revision. It is
@@ -464,14 +397,6 @@ impl std::fmt::Write for DebugHasher {
     fn write_str(&mut self, value: &str) -> std::fmt::Result {
         self.0.update(value.as_bytes());
         Ok(())
-    }
-}
-
-fn env_usize(name: &str) -> Result<Option<usize>, Box<dyn Error>> {
-    match std::env::var(name) {
-        Ok(value) => Ok(Some(value.parse()?)),
-        Err(std::env::VarError::NotPresent) => Ok(None),
-        Err(error) => Err(error.into()),
     }
 }
 

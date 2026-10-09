@@ -118,19 +118,19 @@ Unit tests cover exact norm boundaries, non-centered and signed coefficients,
 independent schoolbook negacyclic multiplication, ring carries/certificates,
 norm budget borrowing, inconsistent source bits, padding, malformed proofs,
 public input changes, configuration replay and original Falcon interoperability.
-Large end-to-end cases for batches 32 and 1024 are explicitly ignored by default.
+Large batches 32 and 1024 can be checked directly with the benchmark at both
+degrees and security targets 100 and 128; every generated proof is verified.
 
 Validation and benchmark commands:
 
 ```sh
 cargo test --features falcon-hybrid --lib falcon1024_algebraic
-cargo test --release --features falcon-hybrid --lib large_batches_at_both_security_targets -- --ignored
 cargo test --features falcon-hybrid --lib hybrid::integer_bridge
 cargo test --features falcon-hybrid --lib hybrid::joint_sumcheck
-RAYON_NUM_THREADS=4 cargo run --release --features falcon-hybrid --example falcon_algebraic -- --batch 32 --security 128 --threads 4 --warmup 1 --iterations 5
+RAYON_NUM_THREADS=4 cargo bench --profile release --features falcon-hybrid --bench falcon_algebraic -- --batch 32 --security 128 --threads 4 --warmup 1 --iterations 5
 ```
 
-The example generates distinct original-Falcon cases using the existing fn-dsa
+The benchmark generates distinct original-Falcon cases using the existing fn-dsa
 benchmark helper. External generation, decoding, and hashing are reported
 separately. Total prover time includes centered-witness reconstruction,
 slack/quotient preparation, commitment and proving. `--trace` exposes component

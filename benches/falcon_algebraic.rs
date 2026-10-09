@@ -3,19 +3,18 @@
 //! Run with --features falcon-hybrid; input hashing is outside prover timing.
 //! witness_commit_ms covers checked witness derivation, packing, and commitment.
 
-#[cfg(feature = "falcon-hybrid")]
-#[path = "../benches/common/falcon_degree_inputs.rs"]
+#[path = "common/falcon_degree_inputs.rs"]
 mod falcon_degree_inputs;
 
-#[cfg(feature = "falcon-hybrid")]
-#[path = "../benches/common/falcon_affinity.rs"]
+#[path = "common/falcon_affinity.rs"]
 mod falcon_affinity;
 
-#[cfg(feature = "falcon-hybrid")]
-#[path = "../benches/common/falcon_stage_timings.rs"]
+#[path = "common/falcon_stage_timings.rs"]
 mod falcon_stage_timings;
 
-#[cfg(feature = "falcon-hybrid")]
+#[path = "common/cli.rs"]
+mod cli;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use clap::Parser;
     use serde_json::json;
@@ -23,6 +22,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     #[derive(Parser)]
     struct Options {
+        #[command(flatten)]
+        cargo: cli::CargoArgs,
         #[arg(long, default_value_t = 1024)]
         degree: usize,
         #[arg(long, default_value_t = 32)]
@@ -204,15 +205,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-#[cfg(not(feature = "falcon-hybrid"))]
-fn main() {
-    eprintln!("falcon_algebraic requires --features falcon-hybrid");
-    std::process::exit(2);
-}
-
-#[cfg(feature = "falcon-hybrid")]
 struct DebugHasher(blake3::Hasher);
-#[cfg(feature = "falcon-hybrid")]
 impl std::fmt::Write for DebugHasher {
     fn write_str(&mut self, value: &str) -> std::fmt::Result {
         self.0.update(value.as_bytes());

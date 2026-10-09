@@ -111,14 +111,22 @@ are unchanged. At target 128, PCS grinding is reallocated using only public erro
 the new summed error cannot exceed the previous allocation, every native
 minimum remains enforced, and the schedule is bound into the statement.
 
-HashToPoint qualification uses the full Falcon archive at
-`results/falcon-power-basis-20261007/results-candidate`, for both degrees,
-both targets, batch 1,024, seed 42, and 1/2/4/8/16 threads. Preserve its build,
-affinity, one-warmup/five-sample schedule, and input digests. Total prover time
-and verification time must not increase. Process peak RSS and payload are
-reported separately, following the user's timing-first qualification. The comparison
-script `scripts/compare_falcon_h2p.py` also requires independent-bootstrap
-one-sided 95% upper timing ratios at most 1.00. This estimates timing variation
-on the archived fixed input, not multi-seed grinding variation. Partial
-measurements never qualify. Algebraic Falcon
-is outside this performance campaign.
+## Benchmarks
+
+Full and arithmetic-only proofs have direct Cargo benchmark targets:
+
+```sh
+RAYON_NUM_THREADS=1 RUSTFLAGS='-C target-cpu=native' cargo bench --profile release --features falcon-hybrid --bench falcon_hybrid -- --degree 512 --security 128 --batch 1024 --threads 1 --warmup 1 --iterations 5
+RAYON_NUM_THREADS=1 RUSTFLAGS='-C target-cpu=native' cargo bench --profile release --features falcon-hybrid --bench falcon_algebraic -- --degree 512 --security 128 --batch 1024 --threads 1 --warmup 1 --iterations 5
+```
+
+Use `--degree 1024` for Falcon-1024. Both runners generate original-Falcon
+inputs outside proof timing, verify every proof, and print JSON metrics to stdout.
+The full runner accepts environment defaults; explicit arguments take precedence.
+The optional `falcon_field` target compares public field power-generation kernels.
+
+For measurements on an unused Linux CPU, check that its SMT sibling is idle,
+set both `BITZ_FALCON_MAIN_CPU` and `BITZ_FALCON_WORKER_CPUS` to that CPU ID,
+and launch with `taskset -c <cpu>`. Keep `RAYON_NUM_THREADS` and `--threads` at 1.
+The runners report observed main, worker, and auxiliary pool affinity. Build
+before measuring and run the benchmark processes sequentially.

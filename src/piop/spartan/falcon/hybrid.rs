@@ -380,6 +380,23 @@ impl PreparedFalconHybrid {
         self.target_bits
     }
 
+    /// Logical source sizes before padding to the shared PCS row domain.
+    pub fn pcs_source_packed_logs(&self) -> [usize; SOURCE_COUNT] {
+        self.geometry.logs
+    }
+    pub fn pcs_source_lane_widths(&self) -> [usize; SOURCE_COUNT] {
+        self.geometry.lane_logs.map(|log| 1 << log)
+    }
+    pub fn pcs_position_log(&self) -> usize {
+        self.geometry.position_log
+    }
+    pub fn pcs_virtual_lane_log(&self) -> usize {
+        self.geometry.virtual_lane_log
+    }
+    pub fn ligerito_configuration(&self) -> &ResolvedLigerito {
+        &self.ligerito
+    }
+
     /// The bridge is selected from validated public parameters, never proof shape.
     pub fn integer_bridge_name(&self) -> &'static str {
         match self.bridge_mode {

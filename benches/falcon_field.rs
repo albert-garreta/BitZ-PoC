@@ -1,7 +1,6 @@
-//! Compare individual and paired public power-sequence generation.
+//! Public Falcon field power-generation comparisons.
 use field::q12289::{PowerBasis, PowerCoordinates, Q12289Extension};
 use std::{hint::black_box, time::Instant};
-
 type E = Q12289Extension<11>;
 
 fn main() {
@@ -13,6 +12,45 @@ fn main() {
             }))
         })
         .collect();
+    power_basis(alpha, &starts);
+    power_pair(alpha, &starts);
+}
+
+fn power_basis(alpha: E, starts: &[E]) {
+    for n in [512, 1024] {
+        let mut fixed = vec![E::ZERO; starts.len() * n];
+        let mut power = vec![PowerCoordinates::ZERO; starts.len() * n];
+        for trial in 0..6 {
+            let start = Instant::now();
+            for (&seed, output) in starts.iter().zip(fixed.chunks_mut(n)) {
+                let mut value = seed;
+                for slot in output {
+                    *slot = value;
+                    value = value.mul(alpha);
+                }
+            }
+            black_box(&fixed);
+            let fixed_ms = start.elapsed().as_secs_f64() * 1000.0;
+            let start = Instant::now();
+            let basis = PowerBasis::try_new(black_box(alpha)).unwrap();
+            let setup_us = start.elapsed().as_secs_f64() * 1e6;
+            for (&seed, output) in starts.iter().zip(power.chunks_mut(n)) {
+                basis.fill_powers(basis.encode(seed), output);
+            }
+            black_box(&power);
+            let power_ms = start.elapsed().as_secs_f64() * 1000.0;
+            // Equality is checked outside the measured section.
+            for j in [0, n / 2, n - 1, power.len() - 1] {
+                assert_eq!(basis.decode(power[j]), fixed[j]);
+            }
+            println!(
+                "{{\"case\":\"power_basis\",\"degree\":{n},\"batch\":1024,\"trial\":{trial},\"fixed_ms\":{fixed_ms},\"power_ms\":{power_ms},\"setup_us\":{setup_us}}}"
+            );
+        }
+    }
+}
+
+fn power_pair(alpha: E, starts: &[E]) {
     for n in [512, 1024] {
         let mut individual = vec![PowerCoordinates::ZERO; starts.len() * n];
         let mut paired = individual.clone();
@@ -42,7 +80,7 @@ fn main() {
             }
             assert_eq!(individual, paired);
             println!(
-                "{{\"degree\":{n},\"batch\":1024,\"trial\":\"{}\",\"iteration\":{trial},\"individual_ms\":{},\"paired_ms\":{}}}",
+                "{{\"case\":\"power_pair\",\"degree\":{n},\"batch\":1024,\"trial\":\"{}\",\"iteration\":{trial},\"individual_ms\":{},\"paired_ms\":{}}}",
                 if trial < 2 { "warmup" } else { "sample" },
                 times[0],
                 times[1]

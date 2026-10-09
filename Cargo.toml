@@ -115,6 +115,15 @@ harness = false
 required-features = ["falcon-hybrid"]
 
 [[bench]]
+name = "falcon_algebraic"
+harness = false
+required-features = ["falcon-hybrid"]
+
+[[bench]]
+name = "falcon_field"
+harness = false
+
+[[bench]]
 name = "sha256_ecdsa_compare"
 harness = false
 required-features = ["span-metrics", "sha256-ecdsa-compare"]
