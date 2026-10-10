@@ -30,7 +30,7 @@ witness so large buffers can be folded without cloning. The four presets are
 The `falcon` feature retains direct signature verification and reference helpers.
 
 There is one proving protocol and no NativeCarry or old-proof verifier. The
-protocol identifier is `bitz/falcon/shared-prime/non-zk/v5`. Proofs must be
+protocol identifier is `bitz/falcon/shared-prime/non-zk/v6`. Proofs must be
 regenerated. Falcon currently exposes in-memory proofs without a full transport
 codec. `payload_size_bytes()` counts stored messages, excluding the public
 statement and transport framing; `payload_size_breakdown()` reports disjoint
@@ -107,9 +107,11 @@ and 327,680 bytes at 128 bits. It remains a substantial proof-size cost.
 The implementation preserves packed source buffers, factored ring coefficients,
 compiled binder templates, compact zero-lane and final-message encodings, and
 SIMD Keccak/grinding kernels. Security targets, code rates, and query counts
-are unchanged. At target 128, PCS grinding is reallocated using only public error bounds:
-the new summed error cannot exceed the previous allocation, every native
-minimum remains enforced, and the schedule is bound into the statement.
+are unchanged. Grinding difficulties come from one work-optimal split of the
+composed budget across the binary groups and every PCS block (see
+[OPTIMIZATION_SECURITY.md](OPTIMIZATION_SECURITY.md)). The split uses only
+public error bounds, every native minimum remains enforced, and the schedule
+is bound into the statement.
 
 HashToPoint qualification uses the full Falcon archive at
 `results/falcon-power-basis-20261007/results-candidate`, for both degrees,

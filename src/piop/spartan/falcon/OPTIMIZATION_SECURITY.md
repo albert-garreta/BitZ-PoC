@@ -4,7 +4,7 @@ SharedPrime combines the native Falcon ring proof, integer norm and HashToPoint
 reductions, binary Keccak, and one joint source PCS opening. Supported Falcon
 degrees are 512 and 1024; validated profiles select ring extension degree
 `k` from 9, 10, and 11. The protocol identifier is
-`bitz/falcon/shared-prime/non-zk/v5`.
+`bitz/falcon/shared-prime/non-zk/v6`.
 
 ## Model and fields
 
@@ -118,22 +118,10 @@ complete composition.
 
 ## Binary obligations and PCS
 
-At target 128, the original equal-per-block PCS allocation supplies the total PCS error
-budget. A deterministic greedy allocation buys error reduction per expected
-hash, starting at each block's native minimum. It is adopted only when it
-reduces expected work and its upward-rounded summed error is no greater than
-the original downward-rounded sum. All difficulties remain at most 32 bits.
-Exact dyadic-integer tests compare the represented raw bounds independently
-of this floating-point interval check. The allocation depends only on public
-configuration, never on statement or nonce values. Every final difficulty
-is already included in the statement digest and replayed by the verifier.
-Target 100 retains its original allocation, where dispatch overhead dominates
-the already small nonce searches.
-
 The ledger retains the bounded integer-to-binary BitZ forest/GKR, every
 Keccak slab, public SHAKE wiring and source padding, binary claim batching,
 the joint binary sumcheck, ring switching, and support padding. Their
-allocations include an eight-bit margin above the requested target. The
+difficulties come from the work-optimal allocation below. The
 activity-mask constant-column identity is multilinear within the existing
 Keccak outer dimension and introduces no additional unbound endpoint.
 
@@ -141,19 +129,41 @@ The source matrix has 8192 rows; the column count follows the compact source
 stride.
 With `r_b=13`, `c=a-13+d`, and `s=c` for the unsplit bridge or `s=c+1` for
 two limbs, its error numerator is
-`s+3*(r_b*(r_b-1)/2+r_b*s)+r_b`. Bridge difficulty is
-`max(0,target+8+ceil(log2(numerator))-128)`.
+`s+3*(r_b*(r_b-1)/2+r_b*s)+r_b`. Its difficulty comes from the allocation
+below.
 See [BRIDGE_GRINDING_AUDIT.md](BRIDGE_GRINDING_AUDIT.md) for the current
 geometry, message counts, and limb-injectivity argument.
 
 The initial oracle is one vector-valued RS codeword with complete canonical
 rows. Apply the unique-decoding continuation to that joint oracle; separate
 proximity guarantees for logical sources do not establish joint proximity.
-For `h` PCS challenge blocks, the original allocation targets
-`target+2+ceil(log2(h))` per block. The rebalanced allocation preserves or
-reduces that summed error, so the PCS total remains at most `2^-(target+2)`.
+Each PCS challenge block's difficulty comes from the allocation below.
 Canonical zero-lane expansion and full final-message authentication change
 stored encodings, not these obligations.
+
+## Work-optimal grinding allocation
+
+The prime-field schedule above is fixed. Every other ground group shares
+the budget `(15/16)*2^-target` minus the fixed terms (prime sampling, the
+ring error, and the prime-field ledger). These groups are the bridge GKR,
+each Keccak slab, SHAKE wiring and padding, the joint binary sumcheck,
+ring switching, and each Ligerito challenge block. A group with raw union
+error `e` over `s` grinding sites contributes `e*2^-g` at difficulty `g`
+and costs `s*2^g` expected hashes.
+`crate::hybrid::grinding_allocation::allocate` minimizes the total work
+under the budget by marginal analysis, and keeps every Ligerito block at
+or above Flock's native fold work. The composed ledger therefore stays at
+least `target+log2(16/15)` bits. `prepare` still rejects any configuration
+below target. The exact-rational composition test checks every batch at
+both targets for the Falcon-1024, `k=11` instantiation, which compiles the
+unit tests.
+
+The v5 split gave every binary group `2^-(target+8)` and the whole PCS
+`2^-(target+2)`, either as `2^-(target+2+ceil(log2(h)))` per block or, at
+target 128, rebalanced within that PCS total. Groups with many grinding
+sites paid that margin at every site: at Falcon-1024 batch 1,024 the bridge
+GKR ground 287 challenge blocks at 18 bits. Only the composed sum enters the
+target, so the per-group margins are not needed by any proof obligation.
 
 ## Enforcement and validation
 

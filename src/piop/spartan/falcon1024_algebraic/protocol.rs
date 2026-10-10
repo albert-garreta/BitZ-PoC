@@ -26,6 +26,20 @@ impl GrindingDomain for OpeningGrinding {
     const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/opening-grinding/v2";
 }
 
+/// Difficulties of the binary-field grinding groups. They and the Ligerito
+/// blocks split one composed budget work-optimally (see
+/// [`crate::hybrid::grinding_allocation`]); the prime-field schedule is fixed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BinaryGrinding {
+    bridge: u32,
+    joint: u32,
+    opening: u32,
+}
+
+/// The composed error stays at most `ALLOCATION_BUDGET * 2^-target`, i.e. at
+/// least `target + log2(16/15)` bits. The factor is exact in binary.
+const ALLOCATION_BUDGET: f64 = 0.9375;
+
 /// Accounting under the repository's computational grinding model, excluding
 /// the separate 128-bit collision-security assumption for BLAKE3.
 #[derive(Clone, Debug)]
@@ -43,6 +57,7 @@ pub struct PreparedFalconAlgebraic {
     schedule: Schedule,
     ligerito: ResolvedLigerito,
     pcs_grinding: GrindingPlan,
+    grinding: BinaryGrinding,
     scratch: Mutex<Scratch>,
 }
 
@@ -137,11 +152,8 @@ impl PreparedFalconAlgebraic {
         let ligerito = LigeritoSelection::MATCHED_UDR
             .resolve(geometry.packed_log(), target_bits)
             .map_err(error)?;
-        let first =
-            GrindingPlan::resolve(ligerito.security(), target_bits as u32).map_err(error)?;
-        let pcs_target = target_bits + 2 + first.blocks.len().next_power_of_two().ilog2() as usize;
-        let pcs_grinding =
-            GrindingPlan::resolve(ligerito.security(), pcs_target as u32).map_err(error)?;
+        let (grinding, pcs_grinding) =
+            allocate_grinding(&layout, &geometry, &ligerito, &schedule, target_bits)?;
         bridge::validate_layout(&layout.bitz_params(), BridgeMode::TwoLimbs, PRIME_MAX)?;
         let prepared = Self {
             layout,
@@ -150,6 +162,7 @@ impl PreparedFalconAlgebraic {
             schedule,
             ligerito,
             pcs_grinding,
+            grinding,
             scratch: Mutex::default(),
         };
         if prepared.security().algebraic_bits < target_bits as f64 {
@@ -178,45 +191,21 @@ impl PreparedFalconAlgebraic {
     }
 
     pub fn security(&self) -> FalconAlgebraicSecurity {
-        let d = self.capacity().ilog2() as usize;
-        let prime = |n: usize, bits: u32| n as f64 * 2f64.powi(-125 - bits as i32);
-        let binary = |n: usize| n as f64 * 2f64.powi(-128 - self.binary_grinding(n) as i32);
-        let terms = vec![
-            ("prime sampling", 2f64.powi(-144)),
-            // |E \ F_q| >= 2^149; includes instance batching and degree-(2N-2) identity.
-            (
-                "native ring identity",
-                (2 * N - 2 + d) as f64 * 2f64.powi(-149),
-            ),
-            (
-                "ring coordinate projection",
-                prime(10, self.carry_grinding()),
-            ),
-            (
-                "per-signature norm identity",
-                prime(d, self.schedule.norm_instance_bits),
-            ),
-            (
-                "integer outer sumcheck",
-                prime(3 * (COEFFICIENT_LOG + 1 + d), self.schedule.norm_round_bits),
-            ),
-            ("claim merge", prime(3, self.schedule.merge_bits)),
-            (
-                "source binding sumcheck",
-                prime(2 * (COEFFICIENT_LOG + 5 + d), self.schedule.binding_bits),
-            ),
+        let mut terms = fixed_terms(&self.layout, self.target_bits, &self.schedule);
+        let binary = |n: usize, bits: u32| n as f64 * 2f64.powi(-128 - bits as i32);
+        terms.extend([
             (
                 "BitZ product GKR",
-                binary(bridge::error_numerator(
-                    &self.layout.bitz_params(),
-                    BridgeMode::TwoLimbs,
-                )),
+                binary(
+                    bridge::error_numerator(&self.layout.bitz_params(), BridgeMode::TwoLimbs),
+                    self.grinding.bridge,
+                ),
             ),
             (
                 "binary source sumcheck",
-                binary(2 * self.geometry.bit_log()),
+                binary(2 * self.geometry.bit_log(), self.grinding.joint),
             ),
-            ("ring switch", binary(256)),
+            ("ring switch", binary(256, self.grinding.opening)),
             (
                 "Ligerito",
                 self.pcs_grinding
@@ -225,7 +214,7 @@ impl PreparedFalconAlgebraic {
                     .map(|block| block.raw_error * 2f64.powi(-(block.bits as i32)))
                     .sum(),
             ),
-        ];
+        ]);
         FalconAlgebraicSecurity {
             target_bits: self.target_bits,
             algebraic_bits: -terms.iter().map(|(_, p)| p).sum::<f64>().log2(),
@@ -234,10 +223,7 @@ impl PreparedFalconAlgebraic {
     }
 
     fn carry_grinding(&self) -> u32 {
-        grind(self.target_bits, 10, 125)
-    }
-    fn binary_grinding(&self, numerator: usize) -> u32 {
-        grind(self.target_bits, numerator, 128)
+        carry_grinding(self.target_bits)
     }
 
     /// Validate, pack and commit the algebraic witness. No signature hashing.
@@ -355,15 +341,13 @@ impl PreparedFalconAlgebraic {
             self.schedule.merge_bits,
             self.schedule.binding_bits,
             self.carry_grinding(),
-            self.binary_grinding(bridge::error_numerator(
-                &self.layout.bitz_params(),
-                BridgeMode::TwoLimbs,
-            )),
-            self.binary_grinding(2 * self.geometry.bit_log()),
-            self.binary_grinding(256),
+            self.grinding.bridge,
+            self.grinding.joint,
+            self.grinding.opening,
         ] {
             h.update(&bits.to_le_bytes());
         }
+        h.update(b"grinding:work-optimal-binary-and-pcs-allocation;budget=15/16/v1");
         for (key, target) in public.public_keys.iter().zip(&public.targets) {
             for coefficient in key.iter().chain(target) {
                 h.update(&coefficient.to_le_bytes());
@@ -432,10 +416,7 @@ impl PreparedFalconAlgebraic {
                 BridgeMode::TwoLimbs,
                 &claim.point,
                 claim.modulus,
-                self.binary_grinding(bridge::error_numerator(
-                    &self.layout.bitz_params(),
-                    BridgeMode::TwoLimbs,
-                )),
+                self.grinding.bridge,
                 &row_weights,
             )?
         };
@@ -454,7 +435,7 @@ impl PreparedFalconAlgebraic {
             [committed.packed.as_slice()],
             [&coefficients],
             a.value,
-            self.binary_grinding(2 * self.geometry.bit_log()),
+            self.grinding.joint,
             &mut *self
                 .scratch
                 .lock()
@@ -467,10 +448,8 @@ impl PreparedFalconAlgebraic {
             plan: &self.pcs_grinding,
             nonces: GrindingNonces::Prove(&mut pcs_nonces),
         };
-        let mut opening_t = ProverBlockGrindingTranscript::<_, OpeningGrinding>::new(
-            &mut t,
-            self.binary_grinding(256),
-        );
+        let mut opening_t =
+            ProverBlockGrindingTranscript::<_, OpeningGrinding>::new(&mut t, self.grinding.opening);
         let opening = shared::prove_joint_sources_with_security(
             &mut opening_t,
             &self.geometry,
@@ -537,10 +516,7 @@ impl PreparedFalconAlgebraic {
             claim.value,
             claim.modulus,
             &proof.bridge,
-            self.binary_grinding(bridge::error_numerator(
-                &self.layout.bitz_params(),
-                BridgeMode::TwoLimbs,
-            )),
+            self.grinding.bridge,
         )?;
         let coefficients = Coefficients {
             tensors: vec![Tensor {
@@ -555,7 +531,7 @@ impl PreparedFalconAlgebraic {
             &self.geometry,
             [&coefficients],
             a.value,
-            self.binary_grinding(2 * self.geometry.bit_log()),
+            self.grinding.joint,
             &proof.joint,
         )
         .map_err(error)?;
@@ -568,7 +544,7 @@ impl PreparedFalconAlgebraic {
         };
         let mut opening_t = VerifierBlockGrindingTranscript::<_, OpeningGrinding>::new(
             &mut t,
-            self.binary_grinding(256),
+            self.grinding.opening,
             &proof.opening_nonces,
         );
         shared::verify_joint_with_security(
@@ -597,6 +573,103 @@ fn grind(target: usize, numerator: usize, domain_bits: u32) -> u32 {
         return 0;
     }
     (target as u32 + 4 + numerator.next_power_of_two().ilog2()).saturating_sub(domain_bits)
+}
+
+fn carry_grinding(target_bits: usize) -> u32 {
+    grind(target_bits, 10, 125)
+}
+
+/// Ledger terms whose difficulties the prime-field schedule fixes.
+fn fixed_terms(
+    layout: &Layout,
+    target_bits: usize,
+    schedule: &Schedule,
+) -> Vec<(&'static str, f64)> {
+    let d = layout.capacity().ilog2() as usize;
+    let prime = |n: usize, bits: u32| n as f64 * 2f64.powi(-125 - bits as i32);
+    vec![
+        ("prime sampling", 2f64.powi(-144)),
+        // |E \ F_q| >= 2^149; includes instance batching and degree-(2N-2) identity.
+        (
+            "native ring identity",
+            (2 * N - 2 + d) as f64 * 2f64.powi(-149),
+        ),
+        (
+            "ring coordinate projection",
+            prime(10, carry_grinding(target_bits)),
+        ),
+        (
+            "per-signature norm identity",
+            prime(d, schedule.norm_instance_bits),
+        ),
+        (
+            "integer outer sumcheck",
+            prime(3 * (COEFFICIENT_LOG + 1 + d), schedule.norm_round_bits),
+        ),
+        ("claim merge", prime(3, schedule.merge_bits)),
+        (
+            "source binding sumcheck",
+            prime(2 * (COEFFICIENT_LOG + 5 + d), schedule.binding_bits),
+        ),
+    ]
+}
+
+/// Work-optimal difficulties for the binary groups and every Ligerito block,
+/// under the budget left by the fixed terms (see [`ALLOCATION_BUDGET`]).
+fn allocate_grinding(
+    layout: &Layout,
+    geometry: &shared::Geometry<1>,
+    ligerito: &ResolvedLigerito,
+    schedule: &Schedule,
+    target_bits: usize,
+) -> Result<(BinaryGrinding, GrindingPlan), FalconError> {
+    use crate::hybrid::grinding_allocation::{GrindingGroup, allocate};
+    // Block structure, raw errors and native Flock work do not depend on the
+    // plan's target; its difficulties are replaced below.
+    let mut pcs = GrindingPlan::resolve(ligerito.security(), target_bits as u32).map_err(error)?;
+    let gf = |numerator: usize| numerator as f64 * 2f64.powi(-128);
+    let bit_log = geometry.bit_log();
+    let params = layout.bitz_params();
+    let mut groups = vec![
+        GrindingGroup {
+            raw_error: gf(bridge::error_numerator(&params, BridgeMode::TwoLimbs)),
+            sites: bridge::message_count(&params) as f64,
+            min_bits: 0,
+        },
+        GrindingGroup {
+            raw_error: gf(2 * bit_log),
+            sites: bit_log as f64,
+            min_bits: 0,
+        },
+        // One boundary per ring-switch and support draw; a work weight only.
+        GrindingGroup {
+            raw_error: gf(256),
+            sites: (geometry.packed_log() + 8) as f64,
+            min_bits: 0,
+        },
+    ];
+    groups.extend(pcs.blocks.iter().map(|block| GrindingGroup {
+        raw_error: block.raw_error,
+        sites: 1.0,
+        min_bits: block.native_bits.unwrap_or(0),
+    }));
+    let fixed: f64 = fixed_terms(layout, target_bits, schedule)
+        .iter()
+        .map(|(_, error)| error)
+        .sum();
+    let budget = ALLOCATION_BUDGET * 2f64.powi(-(target_bits as i32)) - fixed;
+    let bits = allocate(&groups, budget).map_err(error)?;
+    for (block, &b) in pcs.blocks.iter_mut().zip(&bits[3..]) {
+        block.bits = b;
+    }
+    Ok((
+        BinaryGrinding {
+            bridge: bits[0],
+            joint: bits[1],
+            opening: bits[2],
+        },
+        pcs,
+    ))
 }
 
 fn sample_field(t: &mut impl Transcript) -> Result<Cfg, FalconError> {
@@ -630,6 +703,60 @@ mod tests {
             s2: vec![s2; batch],
         };
         (public, witness)
+    }
+
+    /// Diagnostic dump of the allocated difficulties and their expected work.
+    #[test]
+    #[ignore = "diagnostic survey; run explicitly with --nocapture"]
+    fn grinding_allocation_survey() {
+        for target in [100, 128] {
+            for batch in [1, 16, 1024] {
+                let p = PreparedFalconAlgebraic::new(batch, target).unwrap();
+                let params = p.layout.bitz_params();
+                let gf = |n: usize| (n as f64).log2() - 128.0;
+                let mut rows = vec![
+                    (
+                        "bridge".to_string(),
+                        gf(bridge::error_numerator(&params, BridgeMode::TwoLimbs)),
+                        bridge::message_count(&params),
+                        p.grinding.bridge,
+                    ),
+                    (
+                        "joint".into(),
+                        gf(2 * p.geometry.bit_log()),
+                        p.geometry.bit_log(),
+                        p.grinding.joint,
+                    ),
+                    (
+                        "opening".into(),
+                        gf(256),
+                        p.geometry.packed_log() + 8,
+                        p.grinding.opening,
+                    ),
+                ];
+                for block in &p.pcs_grinding.blocks {
+                    rows.push((block.label.clone(), block.raw_error.log2(), 1, block.bits));
+                }
+                let mut work = 0f64;
+                for (name, raw, sites, bits) in &rows {
+                    let w = if *bits == 0 {
+                        0.0
+                    } else {
+                        *sites as f64 * 2f64.powi(*bits as i32)
+                    };
+                    work += w;
+                    println!(
+                        "alg N={N} t={target} B={batch} {name}: raw=2^{raw:.2} sites={sites} bits={bits} work=2^{:.2}",
+                        w.log2()
+                    );
+                }
+                println!(
+                    "alg N={N} t={target} B={batch} TOTAL binary+PCS work=2^{:.2} composed={:.3} bits",
+                    work.log2(),
+                    p.security().algebraic_bits
+                );
+            }
+        }
     }
 
     #[test]
