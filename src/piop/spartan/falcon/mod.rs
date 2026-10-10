@@ -33,3 +33,14 @@ pub enum FalconError {
     #[error("Falcon PIOP failure: {0}")]
     Piop(String),
 }
+
+/// Hashes a public byte string in one call. The digest equals that of the
+/// same bytes fed through smaller updates, without the per-call cost of
+/// hashing coefficient by coefficient; large inputs use blake3's Rayon splitter.
+pub(crate) fn hash_statement_bytes(h: &mut blake3::Hasher, bytes: &[u8]) {
+    if bytes.len() >= 1 << 17 {
+        h.update_rayon(bytes);
+    } else {
+        h.update(bytes);
+    }
+}

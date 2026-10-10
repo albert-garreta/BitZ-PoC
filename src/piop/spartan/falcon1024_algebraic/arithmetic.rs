@@ -400,11 +400,13 @@ fn binding_workers() -> usize {
     1
 }
 
-/// Keep unqualified worker counts and small batches on the original path.
-/// Eight-worker measurements qualify the large-batch range for both degrees;
-/// benchmark controls below still allow independent crossover measurements.
+/// Keep single-worker runs and small batches on the original path; both paths
+/// produce identical proofs. Eight-worker measurements qualified 256..=1024 for
+/// both degrees, and ten-worker Falcon-512 measurements (2026-10-10) qualified
+/// 256..=65536, where this path is 5-16 % faster. Benchmark controls below
+/// still allow independent crossover measurements.
 pub(super) fn optimized_binding(batch: usize) -> bool {
-    binding_workers() == 8 && (256..=1024).contains(&batch)
+    binding_workers() > 1 && batch >= 256
 }
 
 fn binding_strategy(

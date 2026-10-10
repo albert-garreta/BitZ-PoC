@@ -348,11 +348,15 @@ impl PreparedFalconAlgebraic {
             h.update(&bits.to_le_bytes());
         }
         h.update(b"grinding:work-optimal-binary-and-pcs-allocation;budget=15/16/v1");
+        // One update over the concatenated little-endian coefficients: the same
+        // byte stream as one update per coefficient, without the per-call cost.
+        let mut coefficients = Vec::with_capacity(4 * N * public.public_keys.len());
         for (key, target) in public.public_keys.iter().zip(&public.targets) {
             for coefficient in key.iter().chain(target) {
-                h.update(&coefficient.to_le_bytes());
+                coefficients.extend_from_slice(&coefficient.to_le_bytes());
             }
         }
+        crate::piop::spartan::falcon::hash_statement_bytes(&mut h, &coefficients);
         h.update(root);
         h.update(&self.ligerito.digest());
         for block in &self.pcs_grinding.blocks {
@@ -977,7 +981,7 @@ mod tests {
             let run = |pool: &rayon::ThreadPool, threads| {
                 pool.install(|| {
                     assert_eq!(rayon::current_num_threads(), threads);
-                    assert_eq!(arithmetic::optimized_binding(BATCH), threads == 8);
+                    assert_eq!(arithmetic::optimized_binding(BATCH), threads > 1);
                     let prepared = PreparedFalconAlgebraic::new(BATCH, target).unwrap();
                     let committed = prepared.commit(public.clone(), witness.clone()).unwrap();
                     let root = *committed.source_root();

@@ -645,6 +645,7 @@ impl PreparedFalconHybrid {
             h.update(&(n as u64).to_le_bytes());
         }
         h.update(&statement.source_root);
+        let mut public = Vec::new();
         for ((pk, msg), signature) in statement
             .public
             .public_keys
@@ -652,12 +653,14 @@ impl PreparedFalconHybrid {
             .zip(&statement.public.messages)
             .zip(&statement.public.signatures)
         {
+            // Same byte stream as one update per field, hashed in one call below.
             for &coefficient in pk.h.iter() {
-                h.update(&coefficient.to_le_bytes());
+                public.extend_from_slice(&coefficient.to_le_bytes());
             }
-            h.update(msg);
-            h.update(&encode_signature_ct(signature)?);
+            public.extend_from_slice(msg);
+            public.extend_from_slice(&encode_signature_ct(signature)?);
         }
+        crate::piop::spartan::falcon::hash_statement_bytes(&mut h, &public);
         h.update(&self.ligerito.digest());
         for block in &self.pcs_grinding.blocks {
             h.update(&block.bits.to_le_bytes());
