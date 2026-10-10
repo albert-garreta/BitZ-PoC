@@ -13,7 +13,7 @@ mod falcon_affinity;
 mod falcon_degree_inputs;
 #[path = "common/falcon_stage_timings.rs"]
 mod falcon_stage_timings;
-use bitz::piop::spartan::falcon_parameters::{auto_k, ring_budget_ok};
+use bitz::piop::spartan::falcon_parameters::{MAX_BATCH, auto_k, ring_budget_ok};
 use bitz::piop::spartan::falcon_profiles::{BackendSelection, FalconBackend};
 use falcon_degree_inputs::{generate_cases, reject_fixture_overrides};
 use falcon_stage_timings::StageTimings;
@@ -25,6 +25,7 @@ struct Options {
     extension: usize,
     extension_selection: String,
     batch: usize,
+    max_batch: usize,
     security: usize,
     iterations: usize,
     warmup: usize,
@@ -53,7 +54,7 @@ impl Options {
             }
             if matches!(flag.as_str(), "--help" | "-h") {
                 println!(
-                    "falcon_hybrid --security 100|128 [--degree 512|1024] [--k auto|9|10|11] [--batch 1..1024] [--seed U64] [--iterations N] [--warmup N] [--threads N]\nInputs: distinct fn-dsa 0.3.0 original Falcon-512 or Falcon-1024 keys and signatures; generation is outside prover timing. Defaults: degree 1024, K auto, max batch 1024, batch 32, seed 42.\nEnvironment defaults: BITZ_BENCH_LAMBDA, BITZ_FALCON_BATCH, BITZ_FALCON_SEED, BITZ_BENCH_REPS, RAYON_NUM_THREADS."
+                    "falcon_hybrid --security 100|128 [--degree 512|1024] [--k auto|9|10|11] [--batch 1..65536] [--seed U64] [--iterations N] [--warmup N] [--threads N]\nInputs: distinct fn-dsa 0.3.0 original Falcon-512 or Falcon-1024 keys and signatures; generation is outside prover timing. Defaults: degree 1024, K auto, max batch max(batch, 1024), batch 32, seed 42.\nEnvironment defaults: BITZ_BENCH_LAMBDA, BITZ_FALCON_BATCH, BITZ_FALCON_SEED, BITZ_BENCH_REPS, RAYON_NUM_THREADS."
                 );
                 std::process::exit(0);
             }
@@ -90,9 +91,11 @@ impl Options {
         if !matches!(security, 100 | 128) {
             return Err("security must be 100 or 128".into());
         }
-        if !(1..=1024).contains(&batch) {
-            return Err("batch must be in 1..=1024".into());
+        if !(1..=MAX_BATCH).contains(&batch) {
+            return Err("batch must be in 1..=65536".into());
         }
+        // Batches up to 1024 keep the qualified capacity, so their proofs are unchanged.
+        let max_batch = batch.max(1024);
         if iterations == 0 || threads == 0 {
             return Err("iterations and threads must be positive".into());
         }
@@ -104,7 +107,7 @@ impl Options {
         }
         let extension = if extension_selection.eq_ignore_ascii_case("auto") {
             extension_selection = String::from("auto");
-            auto_k(degree, security, 1024)
+            auto_k(degree, security, max_batch)
         } else {
             let explicit = extension_selection.parse::<usize>()?;
             if !(9..=11).contains(&explicit) {
@@ -113,7 +116,7 @@ impl Options {
             extension_selection = format!("explicit({explicit})");
             explicit
         };
-        if !ring_budget_ok(degree, extension, security, 1024) {
+        if !ring_budget_ok(degree, extension, security, max_batch) {
             return Err("explicit K misses the requested ring security budget".into());
         }
         Ok(Self {
@@ -121,6 +124,7 @@ impl Options {
             extension,
             extension_selection,
             batch,
+            max_batch,
             security,
             iterations,
             warmup,
@@ -155,7 +159,7 @@ macro_rules! backend_runner {
 
     let start = Instant::now();
     let prepared = <BackendSelection<$degree, $extension> as FalconBackend>::prepare(
-        options.batch, options.security, 1024,
+        options.batch, options.security, options.max_batch,
     )?;
     let protocol = bitz::piop::spartan::falcon::PROTOCOL_ID;
     let prepare_ms = ms(start);
@@ -185,7 +189,7 @@ macro_rules! backend_runner {
             "degree": options.degree,
             "ring_extension": options.extension,
             "ring_extension_selection": options.extension_selection,
-            "max_batch": 1024,
+            "max_batch": options.max_batch,
             "protocol": protocol,
             "integer_bridge": prepared.integer_bridge_name(),
             "arithmetic_prime_bits": u128::BITS - prime_max.leading_zeros(),
@@ -289,7 +293,7 @@ macro_rules! backend_runner {
             "degree": options.degree,
             "ring_extension": options.extension,
             "ring_extension_selection": options.extension_selection,
-            "max_batch": 1024,
+            "max_batch": options.max_batch,
                 "event": "trial",
                 "trial": if measured { "sample" } else { "warmup" },
                 "sample": if measured { Some(trial - options.warmup + 1) } else { None },
@@ -339,7 +343,7 @@ macro_rules! backend_runner {
             "degree": options.degree,
             "ring_extension": options.extension,
             "ring_extension_selection": options.extension_selection,
-            "max_batch": 1024,
+            "max_batch": options.max_batch,
             "event": "summary",
             "batch": options.batch,
             "capacity": prepared.capacity(),

@@ -24,7 +24,7 @@ pub enum FalconError {
     HashToPointUnderflow { accepted: usize },
     #[error("Falcon squared norm {actual} exceeds {bound}")]
     NormTooLarge { actual: u64, bound: u64 },
-    #[error("unsupported Falcon batch size (expected 1..=1024)")]
+    #[error("unsupported Falcon batch size (expected 1..=65536)")]
     InvalidBatchCapacity,
     #[error("the Falcon source layout or opening exceeds its configured capacity")]
     SourceStrideOverflow,

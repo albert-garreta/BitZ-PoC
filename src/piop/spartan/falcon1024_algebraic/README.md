@@ -35,7 +35,8 @@ prepared.verify(&public, &proof)?;
 
 `FalconAlgebraicWitness::from_s2(&public, s2)` derives centered `s1` and checks
 the norm without hashing. `check_algebraic_statement` checks the relation
-natively. Prepared configurations accept batches `1..=1024` and security targets
+natively. Prepared configurations accept batches `1..=65536` (batches above 1024
+are an unqualified benchmarking extension) and security targets
 100 or 128. The existing full-verification Falcon profiles remain available.
 
 ## Reduction and shared witness

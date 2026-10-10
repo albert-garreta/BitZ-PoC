@@ -52,9 +52,9 @@ impl FalconSourceLayout {
         if bits < (1 << 16) { 1 << 16 } else { bits }
     };
 
-    /// Supports 1..=1024 signatures, padded to the next power of two.
+    /// Supports 1..=MAX_BATCH signatures, padded to the next power of two.
     pub fn new(batch: usize) -> Result<Self, FalconError> {
-        if !(1..=1024).contains(&batch) {
+        if !(1..=crate::piop::spartan::falcon_parameters::MAX_BATCH).contains(&batch) {
             return Err(FalconError::InvalidBatchCapacity);
         }
         if super::FalconSourceOffsets::new().occupied_end > Self::SIGNATURE_STRIDE {
@@ -299,7 +299,7 @@ mod tests {
             assert_eq!(counts.hash_accept_ands, HASH_TO_POINT_SAMPLES);
         }
         assert!(FalconSourceLayout::new(0).is_err());
-        assert!(FalconSourceLayout::new(1025).is_err());
+        assert!(FalconSourceLayout::new(crate::piop::spartan::falcon_parameters::MAX_BATCH + 1).is_err());
     }
 }
 

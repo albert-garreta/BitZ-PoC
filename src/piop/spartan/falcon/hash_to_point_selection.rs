@@ -21,7 +21,9 @@ pub(super) struct Selection {
 
 impl Selection {
     pub fn from_masks(masks: Vec<Vec<u8>>, batch: usize) -> Result<Self, FalconError> {
-        if !(1..=1024).contains(&batch) || masks.len() != batch {
+        if !(1..=crate::piop::spartan::falcon_parameters::MAX_BATCH).contains(&batch)
+            || masks.len() != batch
+        {
             return Err(FalconError::InvalidBatchCapacity);
         }
         let mut indices = Vec::with_capacity(batch);

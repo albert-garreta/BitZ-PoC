@@ -1,6 +1,6 @@
 # Falcon proofs
 
-The `falcon-hybrid` feature proves batches of 1–1024 Falcon-512 or Falcon-1024
+The `falcon-hybrid` feature proves batches of 1–65536 (1–1024 qualified) Falcon-512 or Falcon-1024
 signatures using SharedPrime. The proof checks SHAKE256, HashToPoint rejection
 and ordered compaction, the Falcon ring equation, and each signature's norm.
 It is not zero knowledge. Public inputs include each public key, 32-byte message,

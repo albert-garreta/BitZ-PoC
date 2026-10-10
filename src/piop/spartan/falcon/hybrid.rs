@@ -304,7 +304,10 @@ impl PreparedFalconHybrid {
         target_bits: usize,
         max_batch: usize,
     ) -> Result<Self, FalconError> {
-        if max_batch == 0 || max_batch > 1024 || batch > max_batch {
+        if max_batch == 0
+            || max_batch > crate::piop::spartan::falcon_parameters::MAX_BATCH
+            || batch > max_batch
+        {
             return Err(FalconError::InvalidBatchCapacity);
         }
         if !matches!(target_bits, 100 | 128) {

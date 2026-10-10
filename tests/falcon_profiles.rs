@@ -46,7 +46,7 @@ fn manual_profiles_cannot_bypass_validation() {
     invalid!(WrongField, 512, 11, 100, 1024);
     invalid!(InsufficientField, 512, 9, 128, 1024);
     invalid!(WrongSecurity, 512, 9, 127, 1024);
-    invalid!(OversizedBatch, 512, 9, 100, 1025);
+    invalid!(OversizedBatch, 512, 9, 100, 65537);
     invalid!(EmptyBatch, 512, 9, 100, 0);
 }
 

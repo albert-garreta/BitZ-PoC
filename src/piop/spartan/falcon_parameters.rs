@@ -2,6 +2,10 @@
 
 pub use field::q12289::Q;
 
+/// Largest batch one Falcon proof accepts. Batches above 1024 are an unqualified
+/// benchmarking extension; every security term is still derived from the batch.
+pub const MAX_BATCH: usize = 1 << 16;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FalconParameters {
     pub n: usize,
@@ -117,7 +121,7 @@ pub const fn ring_budget_ok(n: usize, k: usize, bits: usize, max_batch: usize) -
     if !matches!(n, 512 | 1024)
         || !matches!(bits, 100 | 128)
         || max_batch == 0
-        || max_batch > 1024
+        || max_batch > MAX_BATCH
         || k < 9
         || k > 11
     {

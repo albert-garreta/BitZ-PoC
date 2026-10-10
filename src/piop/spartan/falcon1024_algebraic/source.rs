@@ -70,7 +70,7 @@ pub(super) struct Layout {
 
 impl Layout {
     pub fn new(batch: usize) -> Result<Self, FalconError> {
-        if !(1..=1024).contains(&batch) {
+        if !(1..=crate::piop::spartan::falcon_parameters::MAX_BATCH).contains(&batch) {
             return Err(FalconError::InvalidBatchCapacity);
         }
         Ok(Self {
@@ -699,7 +699,7 @@ mod tests {
 
     #[test]
     fn combined_preparation_rejects_invalid_shapes_and_public_coefficients() {
-        for batch in [0, 1025] {
+        for batch in [0, crate::piop::spartan::falcon_parameters::MAX_BATCH + 1] {
             let public = FalconAlgebraicStatement {
                 public_keys: vec![[0; N]; batch],
                 targets: vec![[0; N]; batch],

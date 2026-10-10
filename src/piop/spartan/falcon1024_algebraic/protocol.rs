@@ -798,7 +798,11 @@ mod tests {
                 }
             }
         }
-        for batch in [0, 1025, usize::MAX] {
+        for batch in [
+            0,
+            crate::piop::spartan::falcon_parameters::MAX_BATCH + 1,
+            usize::MAX,
+        ] {
             assert!(PreparedFalconAlgebraic::new(batch, 100).is_err());
         }
         assert!(PreparedFalconAlgebraic::new(1, 127).is_err());
