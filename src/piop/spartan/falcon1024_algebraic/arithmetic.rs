@@ -108,10 +108,10 @@ impl Proof {
 /// This is a pending PCS obligation, not a standalone proof of the relation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct BridgeClaim {
-    pub point: Vec<F>,
+    pub column_point: Vec<F>,
+    pub row_weights: Vec<u128>,
     pub modulus: u128,
     pub value: F,
-    pub row_weights: Option<Vec<u128>>,
 }
 
 struct NormClaims {
@@ -129,7 +129,7 @@ pub(super) fn prove(
     field: &Cfg,
     ring: &PreparedClaim,
     schedule: &Schedule,
-) -> Result<(Proof, Vec<u128>, BridgeClaim), FalconError> {
+) -> Result<(Proof, BridgeClaim), FalconError> {
     if source.layout() != layout {
         return Err(failure("algebraic source layout mismatch"));
     }
@@ -142,7 +142,6 @@ pub(super) fn prove(
     let (mut form, target) = BindingForm::new(layout, ring, &norm_claims, eta, field)?;
     if schedule.word_binding {
         let output = word_binding::prove(transcript, form, target, source, schedule)?;
-        let row_weights = output.claim.row_weights.clone().unwrap();
         return Ok((
             Proof {
                 norm,
@@ -152,7 +151,6 @@ pub(super) fn prove(
                 binding_nonces: output.nonces,
                 terminal_merge_nonce: output.merge_nonce,
             },
-            row_weights,
             output.claim,
         ));
     }
@@ -188,12 +186,7 @@ pub(super) fn prove(
         return Err(failure("algebraic binding terminal mismatch"));
     }
     absorb_field_elements(transcript, &binding_terminal, field);
-    let claim = bind_opening(transcript, output.point, binding_terminal[1], field);
-    let row_weights = eq_table(&claim.point[..layout.bitz_params().row_vars], field)
-        .map_err(failure)?
-        .into_iter()
-        .map(|value| u128::from(field.to_integer(&value)))
-        .collect();
+    let claim = bind_opening(transcript, layout, output.point, binding_terminal[1], field)?;
     Ok((
         Proof {
             norm,
@@ -203,7 +196,6 @@ pub(super) fn prove(
             binding_nonces,
             terminal_merge_nonce: None,
         },
-        row_weights,
         claim,
     ))
 }
@@ -250,12 +242,13 @@ pub(super) fn verify(
         return Err(failure("algebraic binding terminal mismatch"));
     }
     absorb_field_elements(transcript, &proof.binding_terminal, field);
-    Ok(bind_opening(
+    bind_opening(
         transcript,
+        layout,
         point,
         proof.binding_terminal[1],
         field,
-    ))
+    )
 }
 
 #[tracing::instrument(skip_all, name = "falcon_algebraic:integer_outer")]
@@ -1091,20 +1084,27 @@ fn signed_decoder(weights: &[F], field: &Cfg) -> F {
 
 fn bind_opening(
     transcript: &mut impl Transcript,
-    point: Vec<F>,
+    layout: &Layout,
+    mut point: Vec<F>,
     value: F,
     field: &Cfg,
-) -> BridgeClaim {
+) -> Result<BridgeClaim, FalconError> {
     transcript.absorb_slice(b"bitz/falcon1024-algebraic/source-opening/v2");
     transcript.absorb_slice(&field.modulus_u128().to_le_bytes());
     absorb_field_elements(transcript, &point, field);
     absorb_field_elements(transcript, &[value], field);
-    BridgeClaim {
-        point,
+    let row_weights = eq_table(&point[..layout.row_vars()], field)
+        .map_err(failure)?
+        .into_iter()
+        .map(|weight| u128::from(field.to_integer(&weight)))
+        .collect();
+    point.drain(..layout.row_vars());
+    Ok(BridgeClaim {
+        column_point: point,
+        row_weights,
         modulus: field.modulus_u128(),
         value,
-        row_weights: None,
-    }
+    })
 }
 
 fn validate_field(layout: &Layout, field: &Cfg) -> Result<(), FalconError> {
@@ -1164,7 +1164,7 @@ mod tests {
     use super::*;
     use crate::piop::spartan::falcon_bit_layout::slack_bit;
     use crate::transcript::Blake3Transcript;
-    use field::Uint;
+    use field::{IntegerEmbedding, Uint};
 
     fn field() -> Cfg {
         F::make_cfg(&Uint::from((1u128 << 127) - 1)).unwrap()
@@ -1231,10 +1231,15 @@ mod tests {
         }
     }
 
-    fn open_source(source: &Source, point: &[F], field: &Cfg) -> F {
-        eq_table(point, field)
+    fn open_source(source: &Source, claim: &BridgeClaim, field: &Cfg) -> F {
+        eq_table(&claim.column_point, field)
             .unwrap()
             .into_iter()
+            .flat_map(|column| {
+                claim.row_weights.iter().map(move |row| {
+                    field.mul(&column, &field.from_integer(row))
+                })
+            })
             .enumerate()
             .filter(|(i, _)| source.bit(*i))
             .fold(field.zero(), |sum, (_, weight)| field.add(&sum, &weight))
@@ -1612,7 +1617,7 @@ mod tests {
             let data = data(batch);
             let source = Source::new(layout, &data);
             let ring = ring(&data, &field);
-            let (proof, rows, claim) = prove(
+            let (proof, claim) = prove(
                 &mut Blake3Transcript::new(),
                 &layout,
                 &data,
@@ -1632,8 +1637,8 @@ mod tests {
             )
             .unwrap();
             assert_eq!(claim, verified);
-            assert_eq!(claim.value, open_source(&source, &claim.point, &field));
-            assert_eq!(rows.len(), 1 << layout.row_vars());
+            assert_eq!(claim.value, open_source(&source, &claim, &field));
+            assert_eq!(claim.row_weights.len(), 1 << layout.row_vars());
         }
     }
 
@@ -1748,7 +1753,7 @@ mod tests {
         let data = data(1);
         let source = Source::new(layout, &data);
         let ring = ring(&data, &field);
-        let (proof, _, _) = prove(
+        let (proof, _) = prove(
             &mut Blake3Transcript::new(),
             &layout,
             &data,
@@ -1823,7 +1828,7 @@ mod tests {
         let source = Source::new(layout, &data);
         let ring = ring(&data, &field);
         // Keep the new geometry here to isolate domain separation itself.
-        let (proof, _, claim) = prove(
+        let (proof, claim) = prove(
             &mut LegacyDomains(Blake3Transcript::new()),
             &layout,
             &data,
@@ -1873,7 +1878,7 @@ mod tests {
             word_binding: false,
             terminal_merge_bits: 0,
         };
-        let (mut proof, _, claim) = prove(
+        let (mut proof, claim) = prove(
             &mut Blake3Transcript::new(),
             &layout,
             &data,

@@ -153,14 +153,7 @@ impl PreparedFalconAlgebraic {
         target_bits: usize,
         binding: FalconAlgebraicBinding,
     ) -> Result<Self, FalconError> {
-        Self::new_config(batch, target_bits, binding == FalconAlgebraicBinding::Words)
-    }
-
-    fn new_config(
-        batch: usize,
-        target_bits: usize,
-        word_binding: bool,
-    ) -> Result<Self, FalconError> {
+        let word_binding = binding == FalconAlgebraicBinding::Words;
         let layout = Layout::new(batch)?;
         if word_binding && layout.batch() != layout.capacity() {
             return Err(error("word binder requires a full-capacity batch"));
@@ -441,7 +434,7 @@ impl PreparedFalconAlgebraic {
                 self.carry_grinding(),
             )?
         };
-        let (arithmetic, row_weights, claim) = {
+        let (arithmetic, claim) = {
             let _span = tracing::info_span!("falcon_algebraic:arithmetic").entered();
             arithmetic::prove(
                 &mut t,
@@ -455,31 +448,18 @@ impl PreparedFalconAlgebraic {
         };
         let (bridge, a) = {
             let _span = tracing::info_span!("falcon_algebraic:bitz").entered();
-            if self.schedule.word_binding {
-                bridge::prove_weighted(
-                    &mut t,
-                    &self.layout.bitz_params(),
-                    committed.source.rows(),
-                    BridgeMode::TwoLimbs,
-                    &claim.point,
-                    claim.modulus,
-                    self.grinding.bridge,
-                    &row_weights,
-                )?
-            } else {
-                bridge::prove(
-                    &mut t,
-                    &self.layout.bitz_params(),
-                    committed.source.rows(),
-                    BridgeMode::TwoLimbs,
-                    &claim.point,
-                    claim.modulus,
-                    self.grinding.bridge,
-                    &row_weights,
-                )?
-            }
+            bridge::prove_weighted(
+                &mut t,
+                &self.layout.bitz_params(),
+                committed.source.rows(),
+                BridgeMode::TwoLimbs,
+                &claim.column_point,
+                claim.modulus,
+                self.grinding.bridge,
+                &claim.row_weights,
+            )?
         };
-        drop(row_weights);
+        drop(claim);
         let coefficients = Coefficients {
             tensors: vec![Tensor {
                 low: a.low,
@@ -567,33 +547,18 @@ impl PreparedFalconAlgebraic {
             &proof.arithmetic,
             &self.schedule,
         )?;
-        let a = if self.schedule.word_binding {
-            bridge::verify_weighted(
-                &mut t,
-                &self.layout.bitz_params(),
-                BridgeMode::TwoLimbs,
-                &claim.point,
-                claim.value,
-                claim.modulus,
-                &proof.bridge,
-                self.grinding.bridge,
-                claim
-                    .row_weights
-                    .as_deref()
-                    .ok_or_else(|| error("missing word binder weights"))?,
-            )?
-        } else {
-            bridge::verify(
-                &mut t,
-                &self.layout.bitz_params(),
-                BridgeMode::TwoLimbs,
-                &claim.point,
-                claim.value,
-                claim.modulus,
-                &proof.bridge,
-                self.grinding.bridge,
-            )?
-        };
+        let a = bridge::verify_weighted(
+            &mut t,
+            &self.layout.bitz_params(),
+            BridgeMode::TwoLimbs,
+            &claim.column_point,
+            claim.value,
+            claim.modulus,
+            &proof.bridge,
+            self.grinding.bridge,
+            &claim.row_weights,
+        )?;
+        drop(claim);
         let coefficients = Coefficients {
             tensors: vec![Tensor {
                 low: a.low,

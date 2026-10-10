@@ -507,10 +507,10 @@ fn opening(
     absorb_field_elements(transcript, &column_point, field);
     absorb_field_elements(transcript, &[value], field);
     Ok(BridgeClaim {
-        point: column_point,
+        column_point,
         modulus: field.modulus_u128(),
         value,
-        row_weights: Some(row_weights),
+        row_weights,
     })
 }
 
@@ -661,8 +661,8 @@ mod tests {
             output.claim
         );
 
-        let column_weights = eq_table(&output.claim.point, &field).unwrap();
-        let row_weights = output.claim.row_weights.as_ref().unwrap();
+        let column_weights = eq_table(&output.claim.column_point, &field).unwrap();
+        let row_weights = &output.claim.row_weights;
         let mut opening = field.zero();
         for (column, column_weight) in column_weights.iter().enumerate() {
             let mut sum = field.zero();
