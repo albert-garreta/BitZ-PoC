@@ -41,27 +41,6 @@ impl BindingKernel {
     }
 }
 
-#[cfg(feature = "bench-internals")]
-fn benchmark_group_cap(baseline: usize) -> usize {
-    use std::sync::OnceLock;
-
-    static OVERRIDE: OnceLock<Option<usize>> = OnceLock::new();
-    OVERRIDE
-        .get_or_init(|| match std::env::var("BITZ_BENCH_BINDER_GROUP_CAP") {
-            Err(std::env::VarError::NotPresent) => None,
-            Ok(value) if value == "auto" => None,
-            Ok(value) => Some(
-                value
-                    .parse::<usize>()
-                    .ok()
-                    .filter(|cap| *cap > 0)
-                    .expect("BITZ_BENCH_BINDER_GROUP_CAP must be auto or a positive integer"),
-            ),
-            Err(_) => panic!("BITZ_BENCH_BINDER_GROUP_CAP must be auto or a positive integer"),
-        })
-        .unwrap_or(baseline)
-}
-
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct BindingOptions {
     pub optimized: bool,
@@ -111,8 +90,6 @@ impl BindingOptions {
             } else {
                 8
             };
-            #[cfg(feature = "bench-internals")]
-            let group_cap = benchmark_group_cap(group_cap);
             Self {
                 optimized: true,
                 // Arithmetic has no grouped adapter and keeps one task per signature.

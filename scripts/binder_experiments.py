@@ -65,11 +65,10 @@ def configurations(args):
         if selected is None and not args.config_file and raw["name"] == "word":
             continue
         allowed = {"name", "variant", "binary", "replay", "construction", "evaluation",
-                   "word", "group_cap", "threads"}
+                   "word", "threads"}
         if raw.keys() - allowed:
             raise ValueError(f"unknown configuration keys: {raw.keys() - allowed}")
-        config = dict(replay="auto", construction="auto", evaluation="auto", word="off",
-                      group_cap="auto")
+        config = dict(replay="auto", construction="auto", evaluation="auto", word="off")
         config.update(raw)
         if not config["name"] or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789-_" for c in config["name"]):
             raise ValueError("configuration names must contain lowercase letters, digits, - or _")
@@ -84,8 +83,6 @@ def configurations(args):
             raise ValueError("baseline configurations must retain their original kernel policy")
         if config["binary"] == "baseline" and config["word"] != "off":
             raise ValueError("baseline configurations cannot select the word binder")
-        if config["group_cap"] != "auto" and (type(config["group_cap"]) is not int or config["group_cap"] <= 0):
-            raise ValueError("group_cap must be auto or a positive integer")
         if "threads" in config and (not config["threads"] or any(type(t) is not int or t <= 0 for t in config["threads"])):
             raise ValueError("configuration threads must be a nonempty positive integer list")
         output.append(config)
@@ -265,7 +262,6 @@ def execute_job(output, manifest, job):
         "BITZ_FALCON_MAIN_CPU": str(manifest["main_cpu"]),
         "BITZ_FALCON_CASE_CACHE": manifest["case_cache"],
         "BITZ_BENCH_WORD_BINDER": config["word"],
-        "BITZ_BENCH_BINDER_GROUP_CAP": str(config["group_cap"]),
     }
     for key in ["replay", "construction", "evaluation"]:
         overrides[f"BITZ_BENCH_BINDER_{key.upper()}"] = config[key]

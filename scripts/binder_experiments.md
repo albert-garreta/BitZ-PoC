@@ -59,7 +59,7 @@ For arbitrary selections, `--config-file configs.json` replaces the built-in
 configuration list. Each object has `name`, `variant` (`arithmetic` or `full`),
 and `binary` (`baseline` or `candidate`). Optional fields are `replay`,
 `construction`, `evaluation` (`auto`, `on`, `off`; default `auto`), `word`
-(`auto`, `off`, `on`; default `off`), `group_cap` (`auto` or positive integer), and
+(`auto`, `off`, `on`; default `off`), and
 `threads` (worker counts where that configuration should run). Names must be
 unique within a variant. Include a configuration named `baseline` for matched
 ratios. Example:
@@ -70,8 +70,8 @@ ratios. Example:
   {"name":"selected","variant":"arithmetic","binary":"candidate",
    "replay":"on","construction":"on","evaluation":"off","threads":[4,16]},
   {"name":"baseline","variant":"full","binary":"baseline"},
-  {"name":"group-eight","variant":"full","binary":"candidate",
-   "replay":"on","group_cap":8}
+  {"name":"replay-on","variant":"full","binary":"candidate",
+   "replay":"on"}
 ]
 ```
 
