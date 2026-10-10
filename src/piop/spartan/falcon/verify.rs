@@ -1,15 +1,17 @@
-use crate::piop::spartan::falcon_polynomial::integer_polynomial_product;
 use super::{
-    BETA_SQUARED, FalconError, FalconPublicKey, FalconSignatureCt, N, Q, decode_public_key,
-    decode_signature_ct,
+    BETA_SQUARED, FalconError, N, Q,
     hash_to_point::{HashToPointTrace, hash_to_point_ct},
 };
+use crate::piop::spartan::falcon::{
+    FalconPublicKey, FalconSignatureCt, decode_public_key, decode_signature_ct,
+};
+use crate::piop::spartan::falcon_polynomial::public_signature_product;
 
 /// Native/circuit-mirror witness for one Falcon verification.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FalconVerificationTrace {
-    pub public_key: FalconPublicKey,
-    pub signature: FalconSignatureCt,
+    pub public_key: FalconPublicKey<N>,
+    pub signature: FalconSignatureCt<N>,
     pub hash_to_point: HashToPointTrace,
     /// Centered short lift `S1 = C - H*S2 (mod q)`.
     pub s1: Box<[i16; N]>,
@@ -26,28 +28,26 @@ pub fn verification_trace(
     message: &[u8],
     signature: &[u8],
 ) -> Result<FalconVerificationTrace, FalconError> {
-    let public_key = decode_public_key(public_key)?;
-    let signature = decode_signature_ct(signature)?;
+    let public_key = decode_public_key::<N>(public_key)?;
+    let signature = decode_signature_ct::<N>(signature)?;
     let hash_to_point = hash_to_point_ct(&signature.nonce, message)?;
     trace_from_parts(public_key, signature, hash_to_point, false)
 }
 
 pub(super) fn trace_from_parts(
-    public_key: FalconPublicKey,
-    signature: FalconSignatureCt,
+    public_key: FalconPublicKey<N>,
+    signature: FalconSignatureCt<N>,
     hash_to_point: HashToPointTrace,
     fast_convolution: bool,
 ) -> Result<FalconVerificationTrace, FalconError> {
     let mut convolution = Box::new([0i64; N]);
     let mut high_product = Box::new([0i64; N - 1]);
     if fast_convolution {
-        let left: Vec<_> = public_key.h.iter().map(|&h| i64::from(h)).collect();
-        let right: Vec<_> = signature.s2.iter().map(|&s| i64::from(s)).collect();
-        let product = integer_polynomial_product(&left, &right);
+        let product = public_signature_product(&public_key.h, &signature.s2);
         for i in 0..N {
-            convolution[i] = product[i] - product[i + N];
+            convolution[i] = product[0][i] - product[1][i];
         }
-        high_product.copy_from_slice(&product[N..2 * N - 1]);
+        high_product.copy_from_slice(&product[1][..N - 1]);
     } else {
         for (i, &h) in public_key.h.iter().enumerate() {
             for (j, &s) in signature.s2.iter().enumerate() {

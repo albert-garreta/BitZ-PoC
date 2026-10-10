@@ -239,7 +239,7 @@ impl FalconSourceWitness {
     /// public statement. Proof verification additionally binds these rows.
     pub fn check_public_key_bindings(
         &self,
-        public_keys: &[super::FalconPublicKey],
+        public_keys: &[crate::piop::spartan::falcon::FalconPublicKey<N>],
     ) -> Result<(), FalconError> {
         super::constraints::check_public_key_bindings(self, public_keys)
     }
@@ -544,7 +544,7 @@ mod tests {
         trace.signature.s2[..s2.len()].copy_from_slice(&s2);
         trace.public_key.h[..unsigned.len()].copy_from_slice(&unsigned);
         trace.hash_to_point.point[..unsigned.len()].copy_from_slice(&unsigned);
-        let signature = super::super::encode_signature_ct(&trace.signature).unwrap();
+        let signature = trace.signature.encode_ct().unwrap();
         let layout = FalconSourceLayout::new(1).unwrap();
         let source = FalconSourceWitness::from_traces(
             layout,

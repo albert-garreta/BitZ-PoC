@@ -15,15 +15,13 @@ use crate::{
         sumcheck::Scratch,
     },
     ligerito_flock::{LigeritoSelection, ResolvedLigerito, grinding_plan::GrindingPlan},
-    piop::spartan::grinding::GrindingDomain,
     transcript::{Blake3Transcript, traits::Transcript},
 };
 use flock_core::field::Gf128 as Gf;
 use std::sync::Mutex;
 
-struct OpeningGrinding;
-impl GrindingDomain for OpeningGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/opening-grinding/v2";
+crate::piop::spartan::grinding::grinding_domains! {
+    OpeningGrinding => b"bitz/falcon1024-algebraic/opening-grinding/v2";
 }
 
 /// Difficulties of the binary-field grinding groups. They and the Ligerito
@@ -448,10 +446,8 @@ impl PreparedFalconAlgebraic {
             plan: &self.pcs_grinding,
             nonces: GrindingNonces::Prove(&mut pcs_nonces),
         };
-        let mut opening_t = ProverBlockGrindingTranscript::<_, OpeningGrinding>::new(
-            &mut t,
-            self.grinding.opening,
-        );
+        let mut opening_t =
+            ProverBlockGrindingTranscript::<_, OpeningGrinding>::new(&mut t, self.grinding.opening);
         let opening = shared::prove_joint_sources_with_security(
             &mut opening_t,
             &self.geometry,
@@ -736,8 +732,7 @@ mod tests {
                 if batch.is_power_of_two() {
                     let p = PreparedFalconAlgebraic::new(batch, target).unwrap();
                     assert!(
-                        p.security().algebraic_bits
-                            >= target as f64 + (16f64 / 15.0).log2() - 1e-9
+                        p.security().algebraic_bits >= target as f64 + (16f64 / 15.0).log2() - 1e-9
                     );
                     for block in &p.pcs_grinding.blocks {
                         assert!(block.bits >= block.native_bits.unwrap_or(0));
@@ -771,7 +766,7 @@ mod tests {
             bad_public = public.clone();
             bad_public.public_keys[0][0] ^= 1;
             assert!(prepared.verify(&bad_public, &proof).is_err());
-            for mutation in 0..8 {
+            for mutation in 0..7 {
                 let mut bad = proof.clone();
                 match mutation {
                     0 => bad.source_root[0] ^= 1,
@@ -780,13 +775,10 @@ mod tests {
                     }
                     2 => bad.ring.carries[0] += 1,
                     3 => {
-                        bad.ring.certificate.pop();
-                    }
-                    4 => {
                         bad.joint.rounds.pop();
                     }
-                    5 => bad.joint.value += Gf::ONE,
-                    6 => {
+                    4 => bad.joint.value += Gf::ONE,
+                    5 => {
                         bad.opening_nonces.push(0);
                     }
                     _ => {
@@ -915,7 +907,10 @@ mod tests {
             let run = |pool: &rayon::ThreadPool, threads| {
                 pool.install(|| {
                     assert_eq!(rayon::current_num_threads(), threads);
-                    assert_eq!(arithmetic::optimized_binding(BATCH), matches!(threads, 1 | 8));
+                    assert_eq!(
+                        arithmetic::optimized_binding(BATCH),
+                        matches!(threads, 1 | 8)
+                    );
                     let prepared = PreparedFalconAlgebraic::new(BATCH, target).unwrap();
                     let committed = prepared.commit(public.clone(), witness.clone()).unwrap();
                     let root = *committed.source_root();
@@ -1029,5 +1024,4 @@ mod tests {
         }
     }
     }
-
 }

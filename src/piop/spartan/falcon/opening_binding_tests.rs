@@ -26,7 +26,12 @@ fn point(rounds: usize, field: &Cfg) -> Vec<F> {
 #[test]
 fn mixed_integer_scaling_matches_field_embedding() {
     let field = config();
-    for value in [field.zero(), field.one(), field.neg(&field.one()), unsigned(12345, &field)] {
+    for value in [
+        field.zero(),
+        field.one(),
+        field.neg(&field.one()),
+        unsigned(12345, &field),
+    ] {
         for coefficient in [i128::MIN, -12289, -6144, -1, 0, 1, 256, 12288, i128::MAX] {
             assert_eq!(
                 mul_i(value, coefficient, &field),
@@ -105,7 +110,8 @@ fn add_linear_constraints(
             let expected = (statement.messages[instance][bit / 8] >> (bit % 8)) & 1;
             residual(&[(offsets.message + bit, 1)], -i128::from(expected));
         }
-        for (byte, expected) in encode_signature_ct(&statement.signatures[instance])?
+        for (byte, expected) in statement.signatures[instance]
+            .encode_ct()?
             .into_iter()
             .enumerate()
         {
@@ -932,7 +938,7 @@ fn public_signature_bytes_are_constrained_to_the_committed_source() {
             let value = &mut changed.signatures[instance].s2[index];
             *value += if *value == 2047 { -1 } else { 1 };
         }
-        let encoded = super::super::encode_signature_ct(&changed.signatures[instance]).unwrap();
+        let encoded = changed.signatures[instance].encode_ct().unwrap();
         let byte = encoded
             .iter()
             .zip(SIGNATURE)
@@ -1198,8 +1204,7 @@ fn compact_prefix_binds_word_products_and_weighted_norm_to_source() {
         verify_binding_prefix(&mut fresh_transcript(), &layout, &statement, &bad, 100).is_err()
     );
     let mut bad = proof;
-    bad.piop.terminal[3] =
-        field.add(&bad.piop.terminal[3], &field.one());
+    bad.piop.terminal[3] = field.add(&bad.piop.terminal[3], &field.one());
     assert!(
         verify_binding_prefix(&mut fresh_transcript(), &layout, &statement, &bad, 100).is_err()
     );

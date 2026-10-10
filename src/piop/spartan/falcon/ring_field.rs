@@ -1,10 +1,8 @@
 //! Ring certificate and transcript operations shared by the Falcon reduction.
-use super::{FalconError, FalconVerificationTrace, N, Q};
-pub(super) use crate::piop::spartan::falcon_extension::{absorb_extensions, equality_weights};
+use super::{FalconError, FalconVerificationTrace, N};
 use crate::piop::spartan::falcon_extension::sample_coordinates;
+pub(super) use crate::piop::spartan::falcon_extension::{absorb_extensions, equality_weights};
 use crate::transcript::traits::Transcript;
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
 
 pub(super) const EXTENSION_DEGREE: usize = super::EXTENSION;
 pub(super) type Ext = crate::piop::spartan::falcon_extension::FalconExtension<EXTENSION_DEGREE>;
@@ -18,27 +16,16 @@ pub(super) fn sample_extension(transcript: &mut impl Transcript) -> Result<Ext, 
     Ok(result)
 }
 
-pub(super) fn certificate(traces: &[FalconVerificationTrace], lambda: &[Ext]) -> Vec<Ext> {
-    let coefficient = |j: usize| {
-        let mut sum = [0u64; EXTENSION_DEGREE];
-        for (trace, weight) in traces.iter().zip(lambda) {
-            let scalar = u64::from(trace.ring_quotient[j]);
-            for (total, &coordinate) in sum.iter_mut().zip(&weight.0) {
-                *total += scalar * u64::from(coordinate);
-            }
-        }
-        Ext::new(sum.map(|x| (x % Q as u64) as u16))
-    };
-    #[cfg(feature = "parallel")]
-    if traces.len() >= 8 {
-        return (0..N - 1).into_par_iter().map(coefficient).collect();
-    }
-    (0..N - 1).map(coefficient).collect()
+pub(super) fn certificate(traces: &[FalconVerificationTrace], lambda: &[Ext]) -> Box<[Ext; N - 1]> {
+    crate::piop::spartan::falcon_extension::certificate(traces, lambda, |trace, j| {
+        trace.ring_quotient[j]
+    })
 }
 
 falcon_tests! {
 mod tests {
     use super::*;
+    use super::super::Q;
     use crate::transcript::traits::ConstTranscribable;
     use std::collections::VecDeque;
 

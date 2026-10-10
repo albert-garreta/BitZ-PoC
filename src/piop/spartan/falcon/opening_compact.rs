@@ -1185,7 +1185,7 @@ impl BindingForm<'_> {
                             bits = field.add(&bits, &self.local_linear_weights.at(1 + bit));
                         }
                     }
-                    let encoded = super::super::encode_signature_ct(&self.statement.signatures[s])?;
+                    let encoded = self.statement.signatures[s].encode_ct()?;
                     // Fewer than 2^12 public byte/key terms, each below 2^14,
                     // fit the mixed accumulator before one final reduction.
                     let mut public_words = field::FpLinearAcc::<2, 1>::zero();

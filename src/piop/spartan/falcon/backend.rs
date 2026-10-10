@@ -6,14 +6,12 @@
 // Keccak sources and the arithmetic source share the final opening.
 
 mod constraints;
-mod format;
 mod hash_to_point;
 mod hash_to_point_selection;
 #[cfg(feature = "falcon-hybrid")]
 mod hybrid;
 #[cfg(feature = "falcon-hybrid")]
 mod hybrid_keccak;
-mod keccak;
 mod layout;
 #[cfg(feature = "falcon-hybrid")]
 mod opening;
@@ -31,11 +29,7 @@ pub use hybrid::{
     PreparedFalconHybrid,
 };
 
-pub use format::{
-    FalconPublicKey, FalconSignatureCt, decode_public_key, decode_signature_ct, encode_signature_ct,
-};
 pub use hash_to_point::{HashToPointTrace, hash_to_point_ct};
-pub use keccak::{KeccakTrace, shake256_with_trace};
 pub use layout::{FalconSourceLayout, FalconTraceCounts};
 #[cfg(feature = "falcon-hybrid")]
 pub use opening::FalconPublicStatement;
@@ -53,7 +47,7 @@ pub const Q: i64 = 12_289;
 pub const BETA_SQUARED: u64 = PARAMETERS.norm_bound;
 pub const PUBLIC_KEY_BYTES: usize = PARAMETERS.public_key_bytes();
 pub const CT_SIGNATURE_BYTES: usize = PARAMETERS.signature_bytes();
-pub const NONCE_BYTES: usize = 40;
+use crate::piop::spartan::falcon::NONCE_BYTES;
 pub const HASH_TO_POINT_SAMPLES: usize = PARAMETERS.samples();
 pub const SIGNATURE_BITS: usize = PARAMETERS.signature_bits;
 pub const NORM_BITS: usize = PARAMETERS.norm_bits();

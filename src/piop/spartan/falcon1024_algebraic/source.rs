@@ -2,7 +2,7 @@ use super::{BETA_SQUARED, COEFFICIENT_LOG, FalconError, N, Q, SLACK_BITS, error}
 use crate::pcs::IntegerMatrixLayout;
 #[cfg(test)]
 use crate::piop::spartan::falcon_bit_layout::{coefficient_bit, slack_bit};
-use crate::piop::spartan::falcon_polynomial::integer_polynomial_product;
+use crate::piop::spartan::falcon_polynomial::public_signature_product as product;
 use rayon::prelude::*;
 
 /// Public keys and externally computed targets, each in F_12289[X]/(X^N+1).
@@ -114,7 +114,7 @@ impl Layout {
 pub(super) struct WitnessData {
     pub witness: FalconAlgebraicWitness,
     pub slacks: Vec<u64>,
-    pub quotients: Vec<Vec<u16>>,
+    pub quotients: Vec<Box<[u16; N - 1]>>,
 }
 
 impl WitnessData {
@@ -164,7 +164,7 @@ impl WitnessData {
             .map(|i| {
                 let product = product(&public.public_keys[i], &witness.s2[i]);
                 for j in 0..N {
-                    let residual = i64::from(public.targets[i][j]) - product[j] + product[N + j]
+                    let residual = i64::from(public.targets[i][j]) - product[0][j] + product[1][j]
                         - i64::from(witness.s1[i][j]);
                     if residual.rem_euclid(Q) != 0 {
                         return Err(error("invalid algebraic ring witness"));
@@ -181,15 +181,9 @@ impl WitnessData {
     }
 }
 
-fn product(h: &[u16; N], s2: &[i16; N]) -> Vec<i64> {
-    let left: Vec<_> = h.iter().map(|&x| i64::from(x)).collect();
-    let right: Vec<_> = s2.iter().map(|&x| i64::from(x)).collect();
-    integer_polynomial_product(&left, &right)
-}
-
-fn centered_s1(target: &[u16; N], product: &[i64]) -> [i16; N] {
+fn centered_s1(target: &[u16; N], product: &[[i64; N]; 2]) -> [i16; N] {
     std::array::from_fn(|j| {
-        let residue = (i64::from(target[j]) - product[j] + product[N + j]).rem_euclid(Q);
+        let residue = (i64::from(target[j]) - product[0][j] + product[1][j]).rem_euclid(Q);
         (if residue > Q / 2 {
             residue - Q
         } else {
@@ -198,12 +192,11 @@ fn centered_s1(target: &[u16; N], product: &[i64]) -> [i16; N] {
     })
 }
 
-fn quotient(product: &[i64]) -> Vec<u16> {
+fn quotient(product: &[[i64; N]; 2]) -> Box<[u16; N - 1]> {
     // t-h*s2-s1 = (X^N+1)D modulo q, with D = -high(h*s2).
-    product[N..2 * N - 1]
-        .iter()
-        .map(|&v| (-v).rem_euclid(Q) as u16)
-        .collect()
+    Box::new(std::array::from_fn(|j| {
+        (-product[1][j]).rem_euclid(Q) as u16
+    }))
 }
 
 fn check_coefficients(vectors: &[[i16; N]]) -> Result<(), FalconError> {
@@ -519,7 +512,7 @@ mod tests {
                 s2: vec![[0; N]],
             },
             slacks: vec![(1 << SLACK_BITS) - 1],
-            quotients: vec![vec![0; N - 1]],
+            quotients: vec![Box::new([0; N - 1])],
         };
         // Encoding boundaries are tested independently of the norm gate.
         data.witness.s1[0][..4].copy_from_slice(&[-16384, -1, 0, 16383]);

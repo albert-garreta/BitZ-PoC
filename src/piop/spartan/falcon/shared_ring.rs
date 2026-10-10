@@ -13,7 +13,7 @@ use rayon::prelude::*;
 use crate::{
     piop::spartan::{
         SpartanBitzField, SpartanField,
-        grinding::{GrindingDomain, GrindingRound, grind_and_absorb, verify_and_absorb},
+        grinding::{GrindingRound, grind_and_absorb, verify_and_absorb},
         squeeze_field,
     },
     transcript::traits::Transcript,
@@ -51,7 +51,7 @@ pub(super) fn prime_floor_bits(target_bits: usize) -> Result<usize, FalconError>
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct Proof {
-    pub certificate: Vec<Ext>,
+    pub certificate: Box<[Ext; N - 1]>,
     pub outer: Vec<[Ext; 4]>,
     /// Transcript order: C, H, S2, S1. Batching powers are 0, 1, 3, 2.
     pub evaluations: [Ext; 4],
@@ -101,7 +101,7 @@ impl VerifierProjectedClaim {
         // happen separately for every public bit coefficient before accumulation.
         let mut column = [FpLinearAcc::<2, 1>::default(); EXTENSION_DEGREE];
         let positions = powers(self.beta);
-        visit_bit_query(layout, &positions, &self.omega, |slot, value| {
+        visit_bit_query(layout, positions.as_slice(), &self.omega, |slot, value| {
             for (sum, coordinate) in column.iter_mut().zip(value.0) {
                 sum.accumulate(&local[slot], &Uint::from_words([u64::from(coordinate)]));
             }
@@ -130,9 +130,8 @@ pub(super) const fn projection_grinding_bits(target_bits: usize) -> u32 {
     if target_bits == 128 { 14 } else { 2 }
 }
 
-struct ProjectionGrinding;
-impl GrindingDomain for ProjectionGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/shared-ring/projection-grinding/v3";
+crate::piop::spartan::grinding::grinding_domains! {
+    ProjectionGrinding => b"bitz/falcon1024-ct/shared-ring/projection-grinding/v3";
 }
 
 #[tracing::instrument(skip_all, name = "falcon_shared_ring:prove")]
@@ -161,11 +160,11 @@ pub(super) fn prove(
     let lambda = equality_weights(&r);
     let certificate = certificate(traces, &lambda);
     transcript.absorb_slice(b"quotient-certificate");
-    absorb_extensions(transcript, &certificate);
+    absorb_extensions(transcript, certificate.as_slice());
     let beta = challenge(transcript, b"polynomial-evaluation")?;
     let powers = powers(beta);
-    let initial = quotient_evaluation(&certificate, beta, &powers);
-    let tables = evaluation_tables(layout, traces, &powers);
+    let initial = quotient_evaluation(certificate.as_slice(), beta, powers.as_slice());
+    let tables = evaluation_tables(layout, traces, powers.as_slice());
     let (outer, t, evaluations) = prove_outer(transcript, lambda, tables, initial)?;
     check_outer_terminal(
         initial_after_rounds(&outer, &t, initial),
@@ -182,7 +181,7 @@ pub(super) fn prove(
     row[layout.batch()..].fill(Ext::ZERO);
     // Transpose the coefficient decoder directly onto the committed bits.
     // The shared prime-field binder authenticates this tensor query later.
-    let (column, offset) = bit_query(layout, &row, &powers, &omega)?;
+    let (column, offset) = bit_query(layout, &row, powers.as_slice(), &omega)?;
     let target = tau.sub(offset);
     let lift = grouped_lift(source, &row, &column);
     check_lift(layout, &lift, target)?;
@@ -223,8 +222,7 @@ pub(super) fn verify(
 ) -> Result<(Cfg, VerifierProjectedClaim), FalconError> {
     validate_context(layout, statement, target_bits)?;
     let rounds = layout.capacity().ilog2() as usize;
-    if proof.certificate.len() != N - 1
-        || proof.outer.len() != rounds
+    if proof.outer.len() != rounds
         || !proof.certificate.iter().all(|x| x.canonical())
         || !proof.outer.iter().flatten().all(|x| x.canonical())
         || !proof.evaluations.iter().all(|x| x.canonical())
@@ -234,12 +232,12 @@ pub(super) fn verify(
     bind_parameters(transcript, layout, target_bits)?;
     let r = sample_point(transcript, b"instances", rounds)?;
     transcript.absorb_slice(b"quotient-certificate");
-    absorb_extensions(transcript, &proof.certificate);
+    absorb_extensions(transcript, proof.certificate.as_slice());
     let beta = challenge(transcript, b"polynomial-evaluation")?;
     // Only the polynomial power and its geometric sum are needed before the
     // deferred source endpoint. Doubling also covers beta = 0, 1, and -1.
     let (beta_n, position_sum) = polynomial_weights_summary(beta);
-    let initial = eval_ext(&proof.certificate, beta).mul(Ext::ONE.add(beta_n));
+    let initial = eval_ext(proof.certificate.as_slice(), beta).mul(Ext::ONE.add(beta_n));
     let (t, outer_claim) = verify_sumcheck(transcript, b"outer-cubic", &proof.outer, initial)?;
     transcript.absorb_slice(b"outer-evaluations-C-H-S2-S1");
     absorb_extensions(transcript, &proof.evaluations);
@@ -365,12 +363,8 @@ fn dot_ext(a: &[Ext], b: &[Ext]) -> Ext {
 }
 
 #[tracing::instrument(skip_all, name = "falcon_shared_ring:beta_powers")]
-fn powers(beta: Ext) -> Vec<Ext> {
-    let mut powers = vec![Ext::ONE; N];
-    for j in 1..N {
-        powers[j] = powers[j - 1].mul(beta);
-    }
-    powers
+fn powers(beta: Ext) -> Box<[Ext; N]> {
+    crate::piop::spartan::falcon_extension::powers(beta)
 }
 
 /// Return beta^N and sum_{j=0}^{N-1} beta^j without division.
@@ -819,7 +813,7 @@ fn project(
         // u14 terms fit the accumulator and retain Montgomery scale R; reduce
         // once with the linear accumulator's remainder operation (not REDC).
         let mut sum = FpLinearAcc::<2, 1>::default();
-        for (&coordinate, power) in value.0.iter().zip(&powers) {
+        for (&coordinate, power) in value.0.iter().zip(powers.as_slice()) {
             sum.accumulate(power, &Uint::from_words([u64::from(coordinate)]));
         }
         field.reduce(sum)
@@ -965,7 +959,7 @@ mod tests {
         let beta = element(213);
         let positions = powers(beta);
         let omega = [element(7), element(8), element(9), element(10)];
-        let (column, _) = bit_query(&layout, &row, &positions, &omega).unwrap();
+        let (column, _) = bit_query(&layout, &row, positions.as_slice(), &omega).unwrap();
         let dot = |a: &[F], b: &[F]| {
             a.iter()
                 .zip(b)
@@ -1051,9 +1045,6 @@ mod tests {
         let reject = |bad: &Proof| {
             assert!(verify(&mut Blake3Transcript::new(), &layout, &statement, bad, 100).is_err());
         };
-        let mut bad = proof.clone();
-        bad.certificate.pop();
-        reject(&bad);
         let mut bad = proof.clone();
         bad.certificate[0].0[0] = Q as u16;
         reject(&bad);
@@ -1213,7 +1204,7 @@ mod tests {
                     })
             });
             for omega in &mixtures {
-                let (column, offset) = bit_query(&layout, &row, &positions, omega).unwrap();
+                let (column, offset) = bit_query(&layout, &row, positions.as_slice(), omega).unwrap();
                 let slots: Vec<_> = column
                     .iter()
                     .enumerate()
@@ -1246,7 +1237,7 @@ mod tests {
         let positions = powers(element(31));
         let omega = operand_weights(element(13));
         let mut expected = vec![Ext::ZERO; domain];
-        visit_decoder_query(64 * N, &disjoint, &positions, &omega, |slot, value| {
+        visit_decoder_query(64 * N, &disjoint, positions.as_slice(), &omega, |slot, value| {
             let operand = disjoint
                 .iter()
                 .position(|range| range.contains(&slot))
@@ -1257,7 +1248,7 @@ mod tests {
         .unwrap();
         let mut actual = vec![Ext::ZERO; domain];
         let mut seen = vec![false; domain];
-        visit_decoder_query(domain, &aliases, &positions, &omega, |slot, value| {
+        visit_decoder_query(domain, &aliases, positions.as_slice(), &omega, |slot, value| {
             assert!(
                 !seen[slot],
                 "a source slot must be projected only after all aliases are added"
@@ -1294,10 +1285,10 @@ mod tests {
         );
 
         assert!(visit_decoder_query(domain, &aliases, &positions[1..], &omega, |_, _| {}).is_err());
-        assert!(visit_decoder_query(domain - 1, &aliases, &positions, &omega, |_, _| {}).is_err());
+        assert!(visit_decoder_query(domain - 1, &aliases, positions.as_slice(), &omega, |_, _| {}).is_err());
         let mut reversed = aliases;
         reversed[0] = 1..0;
-        assert!(visit_decoder_query(domain, &reversed, &positions, &omega, |_, _| {}).is_err());
+        assert!(visit_decoder_query(domain, &reversed, positions.as_slice(), &omega, |_, _| {}).is_err());
     }
 
     #[test]
@@ -1307,7 +1298,7 @@ mod tests {
         let beta = element(44);
         let positions = powers(beta);
         let omega = operand_weights(element(31));
-        let (column, offset) = bit_query(&layout, &row, &positions, &omega).unwrap();
+        let (column, offset) = bit_query(&layout, &row, positions.as_slice(), &omega).unwrap();
         // Independently evaluate the four ordinary coefficient polynomials by
         // Horner, then interpolate signatures; no coefficient-domain MLE.
         let expected = traces
@@ -1445,7 +1436,7 @@ mod tests {
         row[batch..].fill(Ext::ZERO);
         let positions = powers(element(44));
         let (column, _) =
-            bit_query(&layout, &row, &positions, &operand_weights(element(31))).unwrap();
+            bit_query(&layout, &row, positions.as_slice(), &operand_weights(element(31))).unwrap();
         let run = |threads| {
             rayon::ThreadPoolBuilder::new()
                 .num_threads(threads)

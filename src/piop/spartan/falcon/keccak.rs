@@ -65,13 +65,16 @@ pub struct KeccakTrace {
 }
 
 impl KeccakTrace {
-    pub(super) fn validate_falcon_shape(&self) -> Result<(), super::FalconError> {
-        if self.permutations != super::PARAMETERS.permutations()
-            || self.permutation_inputs.len() != super::PARAMETERS.permutations()
-            || self.chi_inputs.len() != super::PARAMETERS.permutations() * ROUNDS * 25
+    pub(crate) fn validate_falcon_shape(
+        &self,
+        expected_permutations: usize,
+    ) -> Result<(), super::FalconError> {
+        if self.permutations != expected_permutations
+            || self.permutation_inputs.len() != expected_permutations
+            || self.chi_inputs.len() != expected_permutations * ROUNDS * 25
             || self.chi_ands.len() != self.chi_inputs.len()
             || self.round_states.len() != self.chi_inputs.len()
-            || self.column_parities.len() != super::PARAMETERS.permutations() * ROUNDS * 5
+            || self.column_parities.len() != expected_permutations * ROUNDS * 5
             || self.column_parity_quotients.len() != self.column_parities.len() * 64
             || self.parity_quotients.len() != self.chi_inputs.len() * 64
         {
@@ -239,7 +242,7 @@ fn xor_block(state: &mut [u64; 25], block: &[u8]) {
 fn xor_byte(state: &mut [u64; 25], offset: usize, byte: u8) {
     state[offset / 8] ^= u64::from(byte) << (8 * (offset % 8));
 }
-falcon_tests! {
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -293,16 +296,45 @@ mod tests {
     }
 
     #[test]
-    fn falcon_shape_has_twenty_permutations() {
-        let (_, trace) = shake256_with_trace(&[0u8; 72], 2 * 1_311);
-        assert_eq!(trace.permutations, 20);
-        assert_eq!(trace.chi_ands.len(), 12_000);
-        assert_eq!(trace.chi_inputs.len(), 12_000);
-        assert_eq!(trace.round_states.len(), 12_000);
-        assert_eq!(trace.permutation_inputs.len(), 20);
-        assert_eq!(trace.column_parities.len(), 2_400);
-        assert_eq!(trace.column_parity_quotients.len(), 153_600);
-        assert_eq!(trace.parity_quotients.len(), 768_000);
+    fn falcon_shapes_and_quotient_ranges_are_checked() {
+        use crate::piop::spartan::falcon_parameters::FalconParameters;
+        for (degree, permutations, words) in [(512, 11, 6_600), (1024, 20, 12_000)] {
+            let parameters = FalconParameters::for_degree(degree);
+            let (_, mut trace) = shake256_with_trace(&[0u8; 72], 2 * parameters.samples());
+            assert_eq!(trace.permutations, permutations);
+            assert_eq!(trace.chi_ands.len(), words);
+            assert_eq!(trace.chi_inputs.len(), words);
+            assert_eq!(trace.round_states.len(), words);
+            assert_eq!(trace.permutation_inputs.len(), permutations);
+            assert_eq!(trace.column_parities.len(), permutations * 24 * 5);
+            assert_eq!(
+                trace.column_parity_quotients.len(),
+                permutations * 24 * 5 * 64
+            );
+            assert_eq!(trace.parity_quotients.len(), words * 64);
+            trace
+                .validate_falcon_shape(parameters.permutations())
+                .unwrap();
+            assert!(trace.validate_falcon_shape(permutations + 1).is_err());
+            let quotient = trace.column_parity_quotients[0];
+            trace.column_parity_quotients[0] = 3;
+            assert_eq!(
+                trace.validate_falcon_shape(permutations),
+                Err(super::super::FalconError::ConstraintViolation {
+                    family: "keccak-column-quotient-range",
+                    index: 0,
+                })
+            );
+            trace.column_parity_quotients[0] = quotient;
+            trace.parity_quotients[0] = 2;
+            assert_eq!(
+                trace.validate_falcon_shape(permutations),
+                Err(super::super::FalconError::ConstraintViolation {
+                    family: "keccak-theta-quotient-range",
+                    index: 0,
+                })
+            );
+        }
     }
 
     #[test]
@@ -318,6 +350,4 @@ mod tests {
     fn hex(bytes: &[u8]) -> String {
         bytes.iter().map(|byte| format!("{byte:02x}")).collect()
     }
-}
-
 }

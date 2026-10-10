@@ -1,8 +1,9 @@
 use super::{
-    BETA_SQUARED, FalconError, FalconPublicKey, FalconSourceLayout, FalconSourceWitness,
-    FalconVerificationTrace, HASH_TO_POINT_SAMPLES, N, Q,
+    BETA_SQUARED, FalconError, FalconSourceLayout, FalconSourceWitness, FalconVerificationTrace,
+    HASH_TO_POINT_SAMPLES, N, Q,
 };
 use super::{NORM_BITS, SIGNATURE_BITS};
+use crate::piop::spartan::falcon::FalconPublicKey;
 
 /// Maximum absolute exact source residual, before relying on any other
 /// constraint. Raw signed-12 S2 bits may decode to -2048. The norm dominates
@@ -146,7 +147,7 @@ pub fn check_exact_constraints(trace: &FalconVerificationTrace) -> Result<(), Fa
 /// source bits; the proof still authenticates these rows through its binder.
 pub(super) fn check_public_key_bindings(
     source: &FalconSourceWitness,
-    public_keys: &[FalconPublicKey],
+    public_keys: &[FalconPublicKey<N>],
 ) -> Result<(), FalconError> {
     let layout = source.layout();
     if public_keys.len() != layout.batch() {
@@ -171,7 +172,7 @@ pub(super) fn check_public_key_bindings(
 
 fn check_keccak_constraints(trace: &FalconVerificationTrace) -> Result<(), FalconError> {
     let shake = &trace.hash_to_point.shake;
-    shake.validate_falcon_shape()?;
+    shake.validate_falcon_shape(super::PARAMETERS.permutations())?;
     // The 32 message bytes are statement-bound by the commitment adapter.
     for byte in 0..200 {
         if (40..72).contains(&byte) {
@@ -247,7 +248,8 @@ fn check_keccak_constraints(trace: &FalconVerificationTrace) -> Result<(), Falco
                     }
                     let mut expected_state = shake.chi_inputs[index] ^ shake.chi_ands[index];
                     if x == 0 && y == 0 {
-                        expected_state ^= super::keccak::ROUND_CONSTANTS[round];
+                        expected_state ^=
+                            crate::piop::spartan::falcon::keccak::ROUND_CONSTANTS[round];
                     }
                     if shake.round_states[index] != expected_state {
                         return violation("keccak-round-state", index);

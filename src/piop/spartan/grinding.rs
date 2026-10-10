@@ -45,6 +45,20 @@ pub trait GrindingDomain {
     const DOMAIN: &'static [u8];
 }
 
+#[cfg(feature = "falcon-hybrid")]
+macro_rules! grinding_domains {
+    ($($name:ident => $domain:literal;)+) => {
+        $(
+            struct $name;
+            impl $crate::piop::spartan::grinding::GrindingDomain for $name {
+                const DOMAIN: &'static [u8] = $domain;
+            }
+        )+
+    };
+}
+#[cfg(feature = "falcon-hybrid")]
+pub(crate) use grinding_domains;
+
 /// One indexed grinding boundary in a [`GrindingDomain`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct GrindingRound<D> {

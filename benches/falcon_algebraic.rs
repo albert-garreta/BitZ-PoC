@@ -12,6 +12,9 @@ mod falcon_affinity;
 #[path = "common/falcon_stage_timings.rs"]
 mod falcon_stage_timings;
 
+#[path = "common/falcon_metrics.rs"]
+mod falcon_metrics;
+
 #[path = "common/cli.rs"]
 mod cli;
 
@@ -78,7 +81,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ($algebraic:ident, $native:ident, $degree:literal) => {{
             use bitz::piop::spartan::{
                 $algebraic::{FalconAlgebraicStatement, PreparedFalconAlgebraic, PROTOCOL_ID},
-                falcon_profiles::$native::{decode_public_key, decode_signature_ct, hash_to_point_ct},
+                falcon::{decode_public_key, decode_signature_ct},
+                falcon_profiles::$native::hash_to_point_ct,
             };
             let start = Instant::now();
             let prepared = PreparedFalconAlgebraic::new(options.batch, options.security)?;
@@ -97,8 +101,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             let mut s2 = Vec::with_capacity(options.batch);
             for case in &cases {
-                let key = decode_public_key(&case.public_key)?;
-                let signature = decode_signature_ct(&case.signature)?;
+                let key = decode_public_key::<$degree>(&case.public_key)?;
+                let signature = decode_signature_ct::<$degree>(&case.signature)?;
                 let target = hash_to_point_ct(&signature.nonce, &case.message)?;
                 public.public_keys.push(*key.h);
                 public.targets.push(*target.point);
@@ -142,22 +146,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let packing_strategy = bitz::piop::spartan::$algebraic::packing_bench::selected(options.batch)?;
                 #[cfg(not(feature = "bench-internals"))]
                 let packing_strategy = "serial-word";
-                // Exact-build comparison only; hashing is outside every timed phase.
-                let mut proof_hash = DebugHasher(blake3::Hasher::new());
-                std::fmt::write(&mut proof_hash, format_args!("{proof:?}"))?;
-                let proof_debug_digest = proof_hash.0.finalize().to_hex().to_string();
-                let peak_rss_kib: Option<u64> =
-                    std::fs::read_to_string("/proc/self/status")
-                        .ok()
-                        .and_then(|status| {
-                            status.lines().find_map(|line| {
-                                line.strip_prefix("VmHWM:")?
-                                    .split_whitespace()
-                                    .next()?
-                                    .parse()
-                                    .ok()
-                            })
-                        });
+                let proof_debug_digest = falcon_metrics::debug_digest(&proof)?;
+                let peak_rss_kib = falcon_metrics::process_peak_rss_kib();
                 println!(
                     "{}",
                     json!({
@@ -202,13 +192,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         512 => run!(falcon512_algebraic, n512_k11, 512),
         1024 => run!(falcon1024_algebraic, n1024_k11, 1024),
         _ => Err("degree must be 512 or 1024".into()),
-    }
-}
-
-struct DebugHasher(blake3::Hasher);
-impl std::fmt::Write for DebugHasher {
-    fn write_str(&mut self, value: &str) -> std::fmt::Result {
-        self.0.update(value.as_bytes());
-        Ok(())
     }
 }

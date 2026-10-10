@@ -1,13 +1,15 @@
+use crate::piop::spartan::falcon::FalconSignatureCt;
 // One combined integer outer for norm and HashToPoint rejection. Endpoint
 // authentication reuses the original digit projections in opening.rs.
 use super::{
-    BETA_SQUARED, FalconError, FalconSignatureCt, FalconSourceLayout, FalconVerificationTrace, N,
+    BETA_SQUARED, FalconError, FalconSourceLayout, FalconVerificationTrace, N,
     hash_to_point_selection::{REJECTION_ROW_LOG, REJECTION_ROWS, REJECTION_STRIDE},
 };
 use crate::{
     piop::spartan::{
-        SpartanBitzField, SpartanField, absorb_field_elements, falcon_integer,
-        grinding::{GrindingDomain, GrindingRound, grind_and_absorb, verify_and_absorb},
+        SpartanBitzField, SpartanField, absorb_field_elements,
+        falcon::grinding::{prove_nonce as nonce, verify_nonce as check_nonce},
+        falcon_integer,
         matrix::eq_table,
         squeeze_field,
     },
@@ -92,46 +94,13 @@ const fn stage_grinding_bits(numerator: usize, target_bits: usize, prime_floor_b
     (ceil_log + target_bits as u32 + 5).saturating_sub(prime_floor_bits)
 }
 
-struct NormInstanceGrinding;
-impl GrindingDomain for NormInstanceGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/falcon/integer/norm-instances/v1";
+crate::piop::spartan::grinding::grinding_domains! {
+    NormInstanceGrinding => b"bitz/falcon/integer/norm-instances/v1";
+    OuterPointGrinding => b"bitz/falcon/integer/rejection-point/v1";
+    MergeGrinding => b"bitz/falcon/integer/family-merge/v1";
+    IntegerRoundGrinding => b"bitz/falcon/integer/round/v1";
 }
-struct OuterPointGrinding;
-impl GrindingDomain for OuterPointGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/falcon/integer/rejection-point/v1";
-}
-struct MergeGrinding;
-impl GrindingDomain for MergeGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/falcon/integer/family-merge/v1";
-}
-struct IntegerRoundGrinding;
-impl GrindingDomain for IntegerRoundGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/falcon/integer/round/v1";
-}
-fn nonce<D: GrindingDomain>(
-    t: &mut impl Transcript,
-    bits: u32,
-) -> Result<Option<u64>, FalconError> {
-    if bits == 0 {
-        Ok(None)
-    } else {
-        grind_and_absorb(t, GrindingRound::<D>::new(0), bits)
-            .map(Some)
-            .map_err(|e| piop(e.to_string()))
-    }
-}
-fn check_nonce<D: GrindingDomain>(
-    t: &mut impl Transcript,
-    bits: u32,
-    n: Option<u64>,
-) -> Result<(), FalconError> {
-    match (bits, n) {
-        (0, None) => Ok(()),
-        (1.., Some(n)) => verify_and_absorb(t, GrindingRound::<D>::new(0), bits, n)
-            .map_err(|e| piop(e.to_string())),
-        _ => Err(piop("integer outer nonce shape mismatch")),
-    }
-}
+
 fn validate_shared_field(target: usize, field: &Cfg) -> Result<(), FalconError> {
     let (min, max) = super::shared_ring::prime_bounds(target)?;
     if !(min..=max).contains(&field.modulus_u128())
@@ -162,7 +131,7 @@ fn header(
     Ok(())
 }
 fn target<'a>(
-    signatures: impl Iterator<Item = &'a FalconSignatureCt>,
+    signatures: impl Iterator<Item = &'a FalconSignatureCt<N>>,
     weights: &[F],
     field: &Cfg,
 ) -> F {
@@ -269,7 +238,7 @@ pub(super) fn prove_falcon_piop_in_field(
 pub(super) fn verify_falcon_piop_in_field(
     transcript: &mut impl Transcript,
     layout: &FalconSourceLayout,
-    signatures: &[FalconSignatureCt],
+    signatures: &[FalconSignatureCt<N>],
     proof: &FalconPiopProof,
     target_bits: usize,
     field: &Cfg,

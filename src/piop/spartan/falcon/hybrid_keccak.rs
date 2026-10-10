@@ -21,7 +21,7 @@ use crate::{
         block_grinding::{ProverBlockGrindingTranscript, VerifierBlockGrindingTranscript},
     },
     ligerito_flock::ZincChallenger,
-    piop::spartan::grinding::{GrindingDomain, GrindingError},
+    piop::spartan::grinding::GrindingError,
     transcript::traits::Transcript,
 };
 
@@ -74,9 +74,8 @@ impl PrefixSecurity {
     }
 }
 
-enum PrefixGrinding {}
-impl GrindingDomain for PrefixGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/hybrid-keccak-block/v1";
+crate::piop::spartan::grinding::grinding_domains! {
+    PrefixGrinding => b"bitz/falcon1024-ct/hybrid-keccak-block/v1";
 }
 
 /// Prepared public circuit. No witness-sized tables or commitments are built
@@ -722,7 +721,7 @@ mod tests {
             }
             for signature in 0..batch {
                 let input = [nonces[signature].as_slice(), messages[signature].as_slice()].concat();
-                let (expected, trace) = super::super::shake256_with_trace(&input, 2 * SAMPLES);
+                let (expected, trace) = crate::piop::spartan::falcon::shake256_with_trace(&input, 2 * SAMPLES);
                 for sample in 0..SAMPLES {
                     let slab = usize::from(2 * sample / RATE_BYTES >= 16);
                     let word = u16::from_be_bytes([expected[2 * sample], expected[2 * sample + 1]]);

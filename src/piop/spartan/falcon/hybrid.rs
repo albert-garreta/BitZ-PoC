@@ -1,10 +1,11 @@
 use super::SIGNATURE_BITS;
 use super::ring_field::EXTENSION_DEGREE;
 use super::{KECCAK_SLABS, N, PARAMETERS, SOURCE_COUNT};
+use crate::piop::spartan::falcon::KeccakTrace;
 // Non-ZK Falcon composition with compact binary Keccak and one shared PCS opening.
 use super::{
     FalconError, FalconPublicStatement, FalconSourceLayout, FalconSourceWitness,
-    FalconVerificationTrace, KeccakTrace, encode_signature_ct,
+    FalconVerificationTrace,
     hybrid_keccak::{self, KeccakAuxiliary, PreparedKeccak},
     opening::{FalconBindingPrefixProof, prove_binding_prefix, verify_binding_prefix},
 };
@@ -21,7 +22,6 @@ use crate::{
         sumcheck::{Scratch, eq_table},
     },
     ligerito_flock::{LigeritoSelection, ResolvedLigerito, grinding_plan::GrindingPlan},
-    piop::spartan::grinding::GrindingDomain,
     transcript::{Blake3Transcript, traits::Transcript},
 };
 use flock_core::field::Gf128 as Gf;
@@ -55,7 +55,10 @@ fn fixed_terms(layout: &FalconSourceLayout, target_bits: usize) -> Vec<(&'static
         ),
         (
             "integer relation batching",
-            prime(numerators.relation_batching, schedule.relation_batching_bits),
+            prime(
+                numerators.relation_batching,
+                schedule.relation_batching_bits,
+            ),
         ),
         (
             "HashToPoint initial row point",
@@ -127,7 +130,10 @@ fn allocated_terms(
             "joint binary sumcheck",
             binary(2 * geometry.bit_log(), grinding.joint),
         ),
-        ("ring switch and support padding", binary(256, grinding.opening)),
+        (
+            "ring switch and support padding",
+            binary(256, grinding.opening),
+        ),
         (
             "shared Ligerito",
             pcs.blocks
@@ -211,17 +217,13 @@ fn allocate_grinding(
         pcs,
     ))
 }
-struct LinkGrinding;
 // The existing binary claims/SHAKE wiring budget is 128. The additional
 // padding polynomial has degree at most 17 + 10 + 1 (local, instance, merge),
 // so 256 conservatively covers their union for every supported profile.
 const LINK_ERROR_NUMERATOR: usize = 256;
-impl GrindingDomain for LinkGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/falcon-hybrid/link-grinding/v1";
-}
-struct OpeningGrinding;
-impl GrindingDomain for OpeningGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/falcon-hybrid/opening-grinding/v1";
+crate::piop::spartan::grinding::grinding_domains! {
+    LinkGrinding => b"bitz/falcon-hybrid/link-grinding/v1";
+    OpeningGrinding => b"bitz/falcon-hybrid/opening-grinding/v1";
 }
 
 /// Difficulties of the binary-field grinding groups. They and the shared
@@ -451,7 +453,7 @@ impl PreparedFalconHybrid {
         let encoded = public
             .signatures
             .iter()
-            .map(encode_signature_ct)
+            .map(|signature| signature.encode_ct())
             .collect::<Result<Vec<_>, _>>()?;
         let signatures: Vec<&[u8]> = encoded.iter().map(|s| s.as_slice()).collect();
         let nonces: Vec<_> = public.signatures.iter().map(|s| s.nonce).collect();
@@ -653,7 +655,7 @@ impl PreparedFalconHybrid {
                 h.update(&coefficient.to_le_bytes());
             }
             h.update(msg);
-            h.update(&encode_signature_ct(signature)?);
+            h.update(&signature.encode_ct()?);
         }
         h.update(&self.ligerito.digest());
         for block in &self.pcs_grinding.blocks {
@@ -720,10 +722,8 @@ impl PreparedFalconHybrid {
             .unwrap_or_else(|_| unreachable!("profile Keccak slabs"));
         drop(keccak_span);
         let links_span = tracing::info_span!("falcon_hybrid:link_coefficients").entered();
-        let mut link_t = ProverBlockGrindingTranscript::<_, LinkGrinding>::new(
-            &mut t,
-            self.grinding.links,
-        );
+        let mut link_t =
+            ProverBlockGrindingTranscript::<_, LinkGrinding>::new(&mut t, self.grinding.links);
         let (mut coefficients, target) =
             self.coefficients(&mut link_t, &committed.statement.public, &a, &k);
         let links_nonces = link_t.finish();
@@ -754,10 +754,8 @@ impl PreparedFalconHybrid {
             plan: &self.pcs_grinding,
             nonces: GrindingNonces::Prove(&mut pcs_nonces),
         };
-        let mut opening_t = ProverBlockGrindingTranscript::<_, OpeningGrinding>::new(
-            &mut t,
-            self.grinding.opening,
-        );
+        let mut opening_t =
+            ProverBlockGrindingTranscript::<_, OpeningGrinding>::new(&mut t, self.grinding.opening);
         let opening = shared::prove_joint_sources_with_security(
             &mut opening_t,
             &self.geometry,
@@ -1042,7 +1040,8 @@ impl PreparedFalconHybrid {
 pub(super) use crate::hybrid::joint_sumcheck::live_subcubes;
 falcon_tests! {
 mod tests {
-    use super::super::{decode_signature_ct, HASH_TO_POINT_SAMPLES};
+    use super::super::HASH_TO_POINT_SAMPLES;
+    use crate::piop::spartan::falcon::decode_signature_ct;
     use super::*;
     const PK: &[u8] = include_bytes!("fixtures/public_key.bin");
     const MSG: &[u8] = include_bytes!("fixtures/message.bin");
@@ -1650,7 +1649,7 @@ mod tests {
     fn hybrid_falcon_wrong_nonce_branch() {
         let prepared = PreparedFalconHybrid::prepare(1, 100, 1024).unwrap();
         let mut committed = prepared.commit(public(1)).unwrap();
-        let mut nonce = decode_signature_ct(SIG).unwrap().nonce;
+        let mut nonce = decode_signature_ct::<N>(SIG).unwrap().nonce;
         nonce[0] ^= 1;
         // Both branches separately satisfy their PIOPs. Only the authenticated
         // SHAKE/nonce/sample links distinguish this from a valid composition.

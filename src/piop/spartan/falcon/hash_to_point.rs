@@ -1,4 +1,5 @@
-use super::{FalconError, HASH_TO_POINT_SAMPLES, N, Q, keccak::KeccakTrace, shake256_with_trace};
+use super::{FalconError, HASH_TO_POINT_SAMPLES, N, Q};
+use crate::piop::spartan::falcon::{KeccakTrace, shake256_with_trace};
 
 /// Exact-integer witness for Falcon's constant-time HashToPoint reduction.
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -1,5 +1,13 @@
 //! Shared implementation and errors for Falcon-512 and Falcon-1024.
 
+mod format;
+pub(crate) mod keccak;
+
+pub use format::{FalconPublicKey, FalconSignatureCt, decode_public_key, decode_signature_ct};
+pub use keccak::{KeccakTrace, shake256_with_trace};
+
+pub const NONCE_BYTES: usize = 40;
+
 /// Domain identifier for the full Falcon verification protocol.
 pub const PROTOCOL_ID: &str = "bitz/falcon/shared-prime/non-zk/v6";
 
@@ -33,3 +41,6 @@ pub enum FalconError {
     #[error("Falcon PIOP failure: {0}")]
     Piop(String),
 }
+
+#[cfg(feature = "falcon-hybrid")]
+pub(crate) mod grinding;

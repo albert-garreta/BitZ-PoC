@@ -13,9 +13,9 @@ use crate::piop::spartan::SpartanField;
 use crate::{
     piop::spartan::{
         absorb_field_elements,
+        falcon::grinding::{prove_nonce, verify_nonce},
         falcon_bit_layout::{COEFFICIENT_STRIDE, coefficient_bit},
         falcon_integer,
-        grinding::{GrindingDomain, GrindingRound, grind_and_absorb, verify_and_absorb},
         matrix::eq_table,
         squeeze_field,
     },
@@ -44,21 +44,11 @@ const NORM_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/integer-outer/v1";
 const MERGE_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/merge/v3";
 const BINDING_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/binding/v2";
 
-struct NormInstance;
-impl GrindingDomain for NormInstance {
-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/norm-instance/v2";
-}
-struct NormRound;
-impl GrindingDomain for NormRound {
-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/norm-round/v2";
-}
-struct Merge;
-impl GrindingDomain for Merge {
-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/merge/v2";
-}
-struct BindingRound;
-impl GrindingDomain for BindingRound {
-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/grinding/binding-round/v2";
+crate::piop::spartan::grinding::grinding_domains! {
+    NormInstance => b"bitz/falcon1024-algebraic/grinding/norm-instance/v2";
+    NormRound => b"bitz/falcon1024-algebraic/grinding/norm-round/v2";
+    Merge => b"bitz/falcon1024-algebraic/grinding/merge/v2";
+    BindingRound => b"bitz/falcon1024-algebraic/grinding/binding-round/v2";
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1081,37 +1071,15 @@ fn validate_field(layout: &Layout, field: &Cfg) -> Result<(), FalconError> {
     Ok(())
 }
 
-fn prove_nonce<D: GrindingDomain>(
-    transcript: &mut impl Transcript,
-    bits: u32,
-) -> Result<Option<u64>, FalconError> {
-    if bits == 0 {
-        return Ok(None);
-    }
-    grind_and_absorb(transcript, GrindingRound::<D>::new(0), bits)
-        .map(Some)
-        .map_err(failure)
-}
-
-fn verify_nonce<D: GrindingDomain>(
-    transcript: &mut impl Transcript,
-    bits: u32,
-    nonce: Option<u64>,
-) -> Result<(), FalconError> {
-    match (bits, nonce) {
-        (0, None) => Ok(()),
-        (0, Some(_)) | (_, None) => Err(failure("invalid algebraic grinding nonce shape")),
-        (_, Some(nonce)) => {
-            verify_and_absorb(transcript, GrindingRound::<D>::new(0), bits, nonce).map_err(failure)
-        }
-    }
-}
-
 /// Prefix width affects only the prover's representation, never the transcript.
 fn binding_prefix_variables(batch: usize) -> usize {
     // One-core batch-1024 measurements favor the aligned four-variable
     // prefix, which halves the dense suffix while keeping ordinary messages.
-    if batch == 1024 && binding_workers() == 1 { 4 } else { 3 }
+    if batch == 1024 && binding_workers() == 1 {
+        4
+    } else {
+        3
+    }
 }
 
 fn source_rounds(layout: &Layout) -> usize {
@@ -1184,7 +1152,7 @@ mod tests {
         WitnessData {
             witness,
             slacks,
-            quotients: vec![vec![0; N - 1]; batch],
+            quotients: vec![Box::new([0; N - 1]); batch],
         }
     }
 
@@ -1672,7 +1640,7 @@ mod tests {
                 s2: vec![[0; N]; 2],
             },
             slacks: vec![0, 2 * BETA_SQUARED - excessive_norm],
-            quotients: vec![vec![0; N - 1]; 2],
+            quotients: vec![Box::new([0; N - 1]); 2],
         };
         data.witness.s2[0][0] = excessive;
         // The unweighted batch total is exactly 2B, despite the first

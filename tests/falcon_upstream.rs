@@ -3,7 +3,8 @@
 #[path = "../benches/common/falcon_degree_inputs.rs"]
 mod falcon_degree_inputs;
 
-use bitz::piop::spartan::falcon_profiles::n1024_k11::{decode_signature_ct, verify_falcon_ct};
+use bitz::piop::spartan::falcon::decode_signature_ct;
+use bitz::piop::spartan::falcon_profiles::n1024_k11::verify_falcon_ct;
 use bitz::piop::spartan::falcon_profiles::{FalconPublicStatement, PreparedFalconHybrid};
 bitz::falcon_profile! { pub UpstreamProfile { n:1024, security_bits:100, max_batch:1024, ring_extension:Explicit(11), } }
 use falcon_degree_inputs::{compressed_to_ct, generate_cases};
@@ -114,7 +115,7 @@ fn proof_binds_the_exact_public_upstream_signature() -> Result<(), Box<dyn Error
     // The replacement is valid for the same key and message, but is not the
     // exact public signature authenticated by this proof.
     let mut changed = statement.clone();
-    changed.public.signatures[0] = decode_signature_ct(&signatures[1])?;
+    changed.public.signatures[0] = decode_signature_ct::<1024>(&signatures[1])?;
     assert!(prepared.verify(&changed, &proof).is_err());
     Ok(())
 }

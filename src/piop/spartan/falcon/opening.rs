@@ -1,4 +1,7 @@
 use super::{COEFFICIENT_LOG, NORM_BITS, SIGNATURE_BITS};
+use crate::piop::spartan::falcon::{
+    FalconPublicKey, FalconSignatureCt, decode_public_key, decode_signature_ct,
+};
 // Commitment-bound terminal reduction for the Falcon-1024 PIOP.
 //
 // All exact linear Falcon relations and all terminal values emitted by the
@@ -17,7 +20,7 @@ use rayon::prelude::*;
 use crate::{
     piop::spartan::{
         SpartanBitzField, SpartanField, absorb_field_elements,
-        grinding::{GrindingDomain, GrindingRound, grind_and_absorb, verify_and_absorb},
+        grinding::{GrindingRound, grind_and_absorb, verify_and_absorb},
         matrix::eq_table,
     },
     sumcheck::{
@@ -35,9 +38,8 @@ use crate::{
 };
 
 use super::{
-    FalconError, FalconPiopProof, FalconPublicKey, FalconSignatureCt, FalconSourceLayout,
-    FalconSourceWitness, FalconVerificationTrace, HASH_TO_POINT_SAMPLES, N, Q, decode_public_key,
-    decode_signature_ct, encode_signature_ct,
+    FalconError, FalconPiopProof, FalconSourceLayout, FalconSourceWitness, FalconVerificationTrace,
+    HASH_TO_POINT_SAMPLES, N, Q,
     hash_to_point_selection::Selection,
     piop::{FalconPiopClaims, security_schedule},
 };
@@ -50,23 +52,18 @@ mod rejection;
 type F = SpartanBitzField;
 type Cfg = <F as SpartanField>::Config;
 
-struct LinearPointGrinding;
-impl GrindingDomain for LinearPointGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/grinding/linear-point/v1";
-}
-
-struct BindingGrinding;
-impl GrindingDomain for BindingGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-ct/grinding/binding/v1";
+crate::piop::spartan::grinding::grinding_domains! {
+    LinearPointGrinding => b"bitz/falcon1024-ct/grinding/linear-point/v1";
+    BindingGrinding => b"bitz/falcon1024-ct/grinding/binding/v1";
 }
 
 /// Public keys, 32-byte messages, and exact signatures verified by the proof.
 /// Their witness copies are authenticated by the terminal linear binder.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FalconPublicStatement {
-    pub public_keys: Vec<FalconPublicKey>,
+    pub public_keys: Vec<FalconPublicKey<N>>,
     pub messages: Vec<[u8; 32]>,
-    pub signatures: Vec<FalconSignatureCt>,
+    pub signatures: Vec<FalconSignatureCt<N>>,
 }
 
 impl FalconPublicStatement {
@@ -116,7 +113,7 @@ impl FalconPublicStatement {
             }
         }
         for signature in &self.signatures {
-            encode_signature_ct(signature)?;
+            signature.encode_ct()?;
         }
         Ok(())
     }

@@ -11,15 +11,18 @@
 mod falcon_affinity;
 #[path = "common/falcon_degree_inputs.rs"]
 mod falcon_degree_inputs;
+#[path = "common/falcon_metrics.rs"]
+mod falcon_metrics;
 #[path = "common/falcon_stage_timings.rs"]
 mod falcon_stage_timings;
 use bitz::piop::spartan::falcon_parameters::{auto_k, ring_budget_ok};
 use bitz::piop::spartan::falcon_profiles::{BackendSelection, FalconBackend};
 use clap::Parser;
 use falcon_degree_inputs::{generate_cases, reject_fixture_overrides};
+use falcon_metrics::{debug_digest, process_peak_rss_kib};
 use falcon_stage_timings::StageTimings;
 use serde_json::json;
-use std::{error::Error, fmt::Write, fs, time::Instant};
+use std::{error::Error, time::Instant};
 
 #[path = "common/cli.rs"]
 mod cli;
@@ -215,11 +218,7 @@ macro_rules! backend_runner {
         let verify_ms = ms(start);
         drop(phase);
         let flock_verifier_affinity = falcon_affinity::verify_after_trial(&mut cpu_affinity)?;
-        // An exact-build comparison aid, not a stable serialization or wire digest.
-        // Stream the complete Debug representation to avoid allocating its string.
-        let mut proof_hash = DebugHasher(blake3::Hasher::new());
-        write!(&mut proof_hash, "{proof:?}")?;
-        let proof_debug_digest = proof_hash.0.finalize().to_hex().to_string();
+        let proof_debug_digest = debug_digest(&proof)?;
         // Stored nonce accounting is deliberately outside all timed sections.
         let grinding_diagnostics: Vec<_> = proof
             .grinding_diagnostics()
@@ -322,12 +321,31 @@ macro_rules! backend_runner {
 }
     };
 }
-backend_runner!(run_512_9, n512_k9, 512, 9);
-backend_runner!(run_512_10, n512_k10, 512, 10);
-backend_runner!(run_512_11, n512_k11, 512, 11);
-backend_runner!(run_1024_9, n1024_k9, 1024, 9);
-backend_runner!(run_1024_10, n1024_k10, 1024, 10);
-backend_runner!(run_1024_11, n1024_k11, 1024, 11);
+macro_rules! backend_runners {
+    ($(($name:ident, $module:ident, $degree:literal, $extension:literal)),+ $(,)?) => {
+        $(backend_runner!($name, $module, $degree, $extension);)+
+
+        fn run_selected_backend(
+            options: Options,
+            cpu_affinity: Option<falcon_affinity::AffinityReport>,
+            threads: usize,
+        ) -> Result<(), Box<dyn Error>> {
+            match (options.degree, options.extension) {
+                $(($degree, $extension) => $name(options, cpu_affinity, threads),)+
+                _ => Err("unsupported benchmark backend".into()),
+            }
+        }
+    };
+}
+
+backend_runners!(
+    (run_512_9, n512_k9, 512, 9),
+    (run_512_10, n512_k10, 512, 10),
+    (run_512_11, n512_k11, 512, 11),
+    (run_1024_9, n1024_k9, 1024, 9),
+    (run_1024_10, n1024_k10, 1024, 10),
+    (run_1024_11, n1024_k11, 1024, 11),
+);
 
 fn main() -> Result<(), Box<dyn Error>> {
     let options = Options::read()?;
@@ -346,15 +364,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     #[cfg(not(feature = "parallel"))]
     let threads = 1;
 
-    match (options.degree, options.extension) {
-        (512, 9) => run_512_9(options, cpu_affinity, threads),
-        (512, 10) => run_512_10(options, cpu_affinity, threads),
-        (512, 11) => run_512_11(options, cpu_affinity, threads),
-        (1024, 9) => run_1024_9(options, cpu_affinity, threads),
-        (1024, 10) => run_1024_10(options, cpu_affinity, threads),
-        (1024, 11) => run_1024_11(options, cpu_affinity, threads),
-        _ => Err("unsupported benchmark backend".into()),
-    }
+    run_selected_backend(options, cpu_affinity, threads)
 }
 
 fn pcs_query_shape(
@@ -390,16 +400,6 @@ fn pcs_query_shape(
     })
 }
 
-/// Hashing Debug is useful for paired builds of the same source revision. It is
-/// deliberately not advertised as a canonical proof encoding.
-struct DebugHasher(blake3::Hasher);
-impl std::fmt::Write for DebugHasher {
-    fn write_str(&mut self, value: &str) -> std::fmt::Result {
-        self.0.update(value.as_bytes());
-        Ok(())
-    }
-}
-
 fn ms(start: Instant) -> f64 {
     start.elapsed().as_secs_f64() * 1000.0
 }
@@ -412,18 +412,4 @@ fn median(mut values: Vec<f64>) -> f64 {
     } else {
         values[middle]
     }
-}
-
-/// Linux's process-lifetime high-water mark; this is not a per-trial delta.
-fn process_peak_rss_kib() -> Option<u64> {
-    fs::read_to_string("/proc/self/status")
-        .ok()?
-        .lines()
-        .find_map(|line| {
-            line.strip_prefix("VmHWM:")?
-                .split_whitespace()
-                .next()?
-                .parse()
-                .ok()
-        })
 }

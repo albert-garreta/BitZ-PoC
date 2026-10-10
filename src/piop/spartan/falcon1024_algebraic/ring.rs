@@ -12,8 +12,10 @@ use rayon::prelude::*;
 use crate::{
     piop::spartan::{
         SpartanField,
-        falcon_extension::{FalconExtension, absorb_extensions, equality_weights, sample_coordinates},
-        grinding::{GrindingDomain, GrindingRound, grind_and_absorb, verify_and_absorb},
+        falcon_extension::{
+            FalconExtension, absorb_extensions, equality_weights, sample_coordinates,
+        },
+        grinding::{GrindingRound, grind_and_absorb, verify_and_absorb},
         squeeze_field,
     },
     transcript::traits::Transcript,
@@ -30,7 +32,7 @@ const COEFFICIENT_ABS_BOUND: u64 = 1 << 14;
 /// The quotient is fixed before alpha; the carries are fixed before xi.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct Proof {
-    pub certificate: Vec<Ext>,
+    pub certificate: Box<[Ext; N - 1]>,
     pub carries: [i64; EXTENSION_DEGREE],
     pub projection_nonce: Option<u64>,
 }
@@ -57,9 +59,8 @@ struct Coordinates {
     target: CoordinatesInAlpha,
 }
 
-struct ProjectionGrinding;
-impl GrindingDomain for ProjectionGrinding {
-    const DOMAIN: &'static [u8] = b"bitz/falcon1024-algebraic/native-ring/projection-grinding/v2";
+crate::piop::spartan::grinding::grinding_domains! {
+    ProjectionGrinding => b"bitz/falcon1024-algebraic/native-ring/projection-grinding/v2";
 }
 
 #[tracing::instrument(skip_all, name = "falcon_algebraic_ring:prove")]
@@ -77,10 +78,10 @@ pub(super) fn prove(
     let lambda = instance_weights(transcript, layout)?;
     let certificate = certificate(&data.quotients, &lambda);
     transcript.absorb_slice(b"quotient-certificate");
-    absorb_extensions(transcript, &certificate);
+    absorb_extensions(transcript, certificate.as_slice());
     transcript.absorb_slice(b"polynomial-evaluation");
     let alpha = sample_extension(transcript, true)?;
-    let coordinates = coordinates(public, &lambda, alpha, &certificate)?;
+    let coordinates = coordinates(public, &lambda, alpha, certificate.as_slice())?;
     let carries = calculate_carries(&coordinates, data)?;
     check_carries(&carries, layout.batch())?;
     absorb_carries(transcript, &carries);
@@ -119,8 +120,7 @@ pub(super) fn verify(
     grinding_bits: u32,
 ) -> Result<PreparedClaim, FalconError> {
     validate_context(layout, public, field, grinding_bits)?;
-    if proof.certificate.len() != N - 1
-        || !proof.certificate.iter().all(|x| x.canonical())
+    if !proof.certificate.iter().all(|x| x.canonical())
         || proof.projection_nonce.is_some() != (grinding_bits != 0)
     {
         return Err(error("invalid algebraic ring proof encoding"));
@@ -129,10 +129,10 @@ pub(super) fn verify(
     bind_parameters(transcript, layout, field, grinding_bits);
     let lambda = instance_weights(transcript, layout)?;
     transcript.absorb_slice(b"quotient-certificate");
-    absorb_extensions(transcript, &proof.certificate);
+    absorb_extensions(transcript, proof.certificate.as_slice());
     transcript.absorb_slice(b"polynomial-evaluation");
     let alpha = sample_extension(transcript, true)?;
-    let coordinates = coordinates(public, &lambda, alpha, &proof.certificate)?;
+    let coordinates = coordinates(public, &lambda, alpha, proof.certificate.as_slice())?;
     absorb_carries(transcript, &proof.carries);
     if let Some(nonce) = proof.projection_nonce {
         verify_and_absorb(
@@ -179,9 +179,10 @@ fn validate_witness(layout: &Layout, data: &WitnessData) -> Result<(), FalconErr
     if data.witness.s1.len() != layout.batch()
         || data.witness.s2.len() != layout.batch()
         || data.quotients.len() != layout.batch()
-        || data.quotients.iter().any(|row| {
-            row.len() != N - 1 || row.iter().any(|&coefficient| i64::from(coefficient) >= Q)
-        })
+        || data
+            .quotients
+            .iter()
+            .any(|row| row.iter().any(|&coefficient| i64::from(coefficient) >= Q))
     {
         return Err(error(
             "algebraic ring witness dimensions or quotient encoding",
@@ -258,29 +259,12 @@ fn absorb_carries(transcript: &mut impl Transcript, carries: &[i64; EXTENSION_DE
     transcript.absorb_slice(&bytes);
 }
 
-fn certificate(quotients: &[Vec<u16>], lambda: &[Ext]) -> Vec<Ext> {
-    let coefficient = |j: usize| {
-        let mut sum = [0u64; EXTENSION_DEGREE];
-        for (quotient, weight) in quotients.iter().zip(lambda) {
-            for (total, &coordinate) in sum.iter_mut().zip(&weight.0) {
-                *total += u64::from(quotient[j]) * u64::from(coordinate);
-            }
-        }
-        Ext::new(sum.map(|x| (x % Q as u64) as u16))
-    };
-    if quotients.len() >= 8 {
-        return (0..N - 1).into_par_iter().map(coefficient).collect();
-    }
-    (0..N - 1).map(coefficient).collect()
+fn certificate(quotients: &[Box<[u16; N - 1]>], lambda: &[Ext]) -> Box<[Ext; N - 1]> {
+    crate::piop::spartan::falcon_extension::certificate(quotients, lambda, |row, j| row[j])
 }
 
-fn powers(alpha: Ext) -> Vec<Ext> {
-    let mut result = Vec::with_capacity(N + 1);
-    result.push(Ext::ONE);
-    for j in 1..=N {
-        result.push(result[j - 1].mul(alpha));
-    }
-    result
+fn powers(alpha: Ext) -> Box<[Ext; N + 1]> {
+    crate::piop::spartan::falcon_extension::powers(alpha)
 }
 
 fn eval_public(polynomial: &[u16; N], powers: &[Ext]) -> Ext {
@@ -310,7 +294,7 @@ fn coordinates(
     // Their cached-power dot products already delay reduction over N terms.
     let d_at_alpha = certificate
         .iter()
-        .zip(&powers)
+        .zip(powers.as_slice())
         .fold(Ext::ZERO, |sum, (&coefficient, &power)| {
             sum.add(coefficient.mul(power))
         });
@@ -324,8 +308,8 @@ fn coordinates(
             &mut Ext,
         ),
     )| {
-        let lambda_h = lambda[i].mul(eval_public(&public.public_keys[i], &powers));
-        *target = lambda[i].mul(eval_public(&public.targets[i], &powers));
+        let lambda_h = lambda[i].mul(eval_public(&public.public_keys[i], powers.as_slice()));
+        *target = lambda[i].mul(eval_public(&public.targets[i], powers.as_slice()));
         // Convert only the starts. Every stored weight remains in the alpha
         // basis, canonically reduced before the exact signed integer lift.
         basis.fill_powers_pair([basis.encode(lambda[i]), basis.encode(lambda_h)], [a, b]);
@@ -488,7 +472,7 @@ mod tests {
             .map(|i| Ext::new(std::array::from_fn(|k| ((i + 1) * 123 + k * 17) as u16)))
             .collect();
         let certificate = certificate(&data.quotients, &lambda);
-        let actual = coordinates(&public, &lambda, alpha, &certificate).unwrap();
+        let actual = coordinates(&public, &lambda, alpha, certificate.as_slice()).unwrap();
         let mut reference = Coordinates {
             s1: vec![],
             s2: vec![],
@@ -497,8 +481,8 @@ mod tests {
         let powers = powers(alpha);
         let mut target = Ext::ZERO;
         for i in 0..3 {
-            let lambda_h = lambda[i].mul(eval_public(&public.public_keys[i], &powers));
-            target = target.add(lambda[i].mul(eval_public(&public.targets[i], &powers)));
+            let lambda_h = lambda[i].mul(eval_public(&public.public_keys[i], powers.as_slice()));
+            target = target.add(lambda[i].mul(eval_public(&public.targets[i], powers.as_slice())));
             for &power in &powers[..N] {
                 reference.s1.push(basis.encode(lambda[i].mul(power)));
                 reference.s2.push(basis.encode(lambda_h.mul(power)));
@@ -518,7 +502,7 @@ mod tests {
             calculate_carries(&actual, &data).unwrap(),
             calculate_carries(&reference, &data).unwrap()
         );
-        assert!(coordinates(&public, &lambda, Ext::ONE, &certificate).is_err());
+        assert!(coordinates(&public, &lambda, Ext::ONE, certificate.as_slice()).is_err());
     }
 
     #[test]
@@ -620,10 +604,6 @@ mod tests {
             0,
         )
         .unwrap();
-        let mut short = proof.clone();
-        short.certificate.pop();
-        let mut long = proof.clone();
-        long.certificate.push(Ext::ZERO);
         let mut noncanonical = proof.clone();
         noncanonical.certificate[0].0[1] = Q as u16;
         let mut out_of_bound = proof.clone();
@@ -632,14 +612,7 @@ mod tests {
         signed_minimum.carries[0] = i64::MIN;
         let mut nonce = proof.clone();
         nonce.projection_nonce = Some(0);
-        for altered in [
-            short,
-            long,
-            noncanonical,
-            out_of_bound,
-            signed_minimum,
-            nonce,
-        ] {
+        for altered in [noncanonical, out_of_bound, signed_minimum, nonce] {
             assert!(
                 verify(
                     &mut Blake3Transcript::new(),
@@ -702,16 +675,44 @@ mod tests {
         );
     }
 
-    struct ScriptedTranscript(VecDeque<u16>);
+    struct ScriptedTranscript {
+        candidates: VecDeque<u16>,
+        boundaries: usize,
+        absorbed: Vec<Vec<u8>>,
+    }
+    impl ScriptedTranscript {
+        fn new(candidates: impl IntoIterator<Item = u16>) -> Self {
+            Self {
+                candidates: candidates.into_iter().collect(),
+                boundaries: 0,
+                absorbed: Vec::new(),
+            }
+        }
+    }
     impl Transcript for ScriptedTranscript {
         fn get_challenge<T: ConstTranscribable>(&mut self) -> T {
             panic!("extension sampling uses the rejection stream")
         }
-        fn begin_sampling(&mut self) {}
-        fn fill_sampling_bytes(&mut self, output: &mut [u8]) {
-            output.copy_from_slice(&self.0.pop_front().expect("script exhausted").to_le_bytes());
+        fn begin_sampling(&mut self) {
+            self.boundaries += 1;
         }
-        fn absorb_inner(&mut self, _: &[u8]) {}
+        fn fill_sampling_bytes(&mut self, output: &mut [u8]) {
+            assert_eq!(self.boundaries, 1);
+            assert!(
+                self.absorbed.is_empty(),
+                "rejected candidates must not be absorbed"
+            );
+            output.copy_from_slice(
+                &self
+                    .candidates
+                    .pop_front()
+                    .expect("script exhausted")
+                    .to_le_bytes(),
+            );
+        }
+        fn absorb_inner(&mut self, bytes: &[u8]) {
+            self.absorbed.push(bytes.to_vec());
+        }
     }
 
     #[test]
@@ -721,13 +722,29 @@ mod tests {
         let mut expected = [0; EXTENSION_DEGREE];
         expected[1] = 1;
         candidates.extend(expected);
-        let mut transcript = ScriptedTranscript(candidates.into());
+        let mut transcript = ScriptedTranscript::new(candidates);
         assert_eq!(
             sample_extension(&mut transcript, true).unwrap(),
             Ext::new(expected)
         );
-        assert!(transcript.0.is_empty());
-        let mut transcript = ScriptedTranscript(vec![u16::MAX; 128].into());
+        assert!(transcript.candidates.is_empty());
+        assert_eq!(transcript.boundaries, 1);
+        let mut payload = 1u64.to_le_bytes().to_vec();
+        for coordinate in expected {
+            payload.extend_from_slice(&coordinate.to_le_bytes());
+        }
+        assert_eq!(
+            transcript.absorbed,
+            vec![
+                vec![0x6],
+                (payload.len() as u64).to_le_bytes().to_vec(),
+                payload,
+                vec![0x7]
+            ]
+        );
+        let mut transcript = ScriptedTranscript::new([u16::MAX; 128]);
         assert!(sample_extension(&mut transcript, false).is_err());
+        assert_eq!(transcript.boundaries, 1);
+        assert!(transcript.absorbed.is_empty());
     }
 }

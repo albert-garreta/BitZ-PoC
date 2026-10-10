@@ -52,3 +52,46 @@ pub(crate) fn equality_weights<const K: usize>(
     }
     weights
 }
+
+/// Combine live witness rows; padded equality weights contribute zero.
+#[cfg(feature = "falcon-hybrid")]
+pub(crate) fn certificate<const K: usize, const COEFFICIENTS: usize, W: Sync>(
+    witnesses: &[W],
+    lambda: &[FalconExtension<K>],
+    read: impl Fn(&W, usize) -> u16 + Sync,
+) -> Box<[FalconExtension<K>; COEFFICIENTS]> {
+    let coefficient = |j: usize| {
+        let mut sum = [0u64; K];
+        for (witness, weight) in witnesses.iter().zip(lambda) {
+            let scalar = u64::from(read(witness, j));
+            for (total, &coordinate) in sum.iter_mut().zip(&weight.0) {
+                *total += scalar * u64::from(coordinate);
+            }
+        }
+        FalconExtension::new(sum.map(|x| (x % field::q12289::Q as u64) as u16))
+    };
+    let mut result = Box::new([FalconExtension::ZERO; COEFFICIENTS]);
+    if witnesses.len() >= 8 {
+        use rayon::prelude::*;
+        result
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(j, value)| *value = coefficient(j));
+    } else {
+        for (j, value) in result.iter_mut().enumerate() {
+            *value = coefficient(j);
+        }
+    }
+    result
+}
+
+#[cfg(feature = "falcon-hybrid")]
+pub(crate) fn powers<const K: usize, const LEN: usize>(
+    base: FalconExtension<K>,
+) -> Box<[FalconExtension<K>; LEN]> {
+    let mut result = Box::new([FalconExtension::ONE; LEN]);
+    for j in 1..LEN {
+        result[j] = result[j - 1].mul(base);
+    }
+    result
+}
