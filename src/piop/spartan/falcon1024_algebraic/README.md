@@ -78,6 +78,32 @@ the original bits. The existing two-limb BitZ bridge, binary product GKR, binary
 source sumcheck, ring switch, and Ligerito opening authenticate that evaluation.
 SHAKE and HashToPoint proof components are absent; BitZ's own product GKR remains.
 
+`PreparedFalconAlgebraic::new_with_binding(batch, security,
+FalconAlgebraicBinding::Words)` selects the full-capacity word binder. It uses two
+word tables: the signed15 decode of every coefficient and lane 15 of every
+word. All slack and padding selectors remain in the public weights. Its
+quadratic sumcheck has four fewer rounds; the commitment and source geometry
+are unchanged. After binding both terminal evaluations, a separate ground
+challenge merges them. The bridge verifies the resulting public row pattern
+`eq(low_coefficient_point) * (signed15_decoder + zeta * lane15)` at the
+remaining column point. It validates each integer row weight is canonical
+and below the sampled prime. Partially filled capacities continue to use the
+bit binder; explicitly requesting the word binder for one is an error.
+
+The full Falcon signature profiles retain their existing bit binder. See
+[the word-binder relation and security note](../../../../docs/falcon-word-binder.md)
+for the exact public weights and transcript order.
+
+The default constructor selects the word binder only for Falcon-512 batches
+of 1024 at 128-bit security. Every other configuration retains the bit binder.
+This relation choice depends only on the public configuration, never the
+platform or worker count. Use `protocol_id()` on a prepared configuration to
+identify its selected relation: the word binder has its own `word-binder/v6`
+domain, while bit proofs retain v5. Select `FalconAlgebraicBinding::Bits`
+explicitly to verify an existing v5 proof, including the Falcon-512
+configuration whose default has changed. Prover and verifier must select the
+same relation.
+
 The verifier reads the public polynomials and does linear work in their size.
 There is no Orthus-style public-input preprocessing in this interface.
 
@@ -102,6 +128,15 @@ numerators of the prime and binary groups are:
 Here `d = log2(capacity)`. The native ring identity has error at most
 `(2046+d)/2^149`, and prime sampling requests a 144-bit composite-acceptance
 budget.
+
+For the word binder, the source-binding numerator is
+`2(11+d)` and a sixth prime-field group accounts for the degree-one terminal
+merge with numerator 1. Each receives its own `2^(-target-4)` budget. The
+terminal evaluations are absorbed before the merge nonce and challenge;
+its difficulty and the selected binder relation are bound into the v6
+configuration digest. The BitZ product-GKR numerator is unchanged. At degree
+512, subtract one from the parenthesized round counts for the norm, binder,
+and binary source sumchecks.
 
 The three binary groups and every Ligerito challenge block share the remaining
 budget `(15/16)*2^-target - fixed`. It is split work-optimally by

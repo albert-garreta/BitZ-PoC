@@ -24,8 +24,8 @@ use crate::{
         boundary::{ProverGrindingRoundBoundary, VerifierGrindingRoundBoundary},
         inner::{
             packed::{
-                BindingOptions, ColumnMajorPackedBits, PackedInput, StreamingCoefficientSource,
-                StreamingMle,
+                BindingKernel, BindingOptions, ColumnMajorPackedBits, PackedInput,
+                StreamingCoefficientSource, StreamingMle,
             },
             prove_inner_sumcheck,
         },
@@ -33,6 +33,9 @@ use crate::{
     },
     transcript::traits::Transcript,
 };
+
+#[path = "word_binding.rs"]
+mod word_binding;
 
 use super::ring::PreparedClaim;
 use super::{BETA_SQUARED, Cfg, F, FalconError, Layout, N, Schedule, Source, WitnessData};
@@ -60,13 +63,30 @@ pub(super) struct NormProof {
     pub grinding_nonces: Vec<u64>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(super) struct Proof {
     pub norm: NormProof,
     pub merge_nonce: Option<u64>,
     pub binding: SumcheckProof<F, 3>,
     pub binding_terminal: [F; 2],
     pub binding_nonces: Vec<u64>,
+    pub terminal_merge_nonce: Option<u64>,
+}
+
+impl std::fmt::Debug for Proof {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug = f.debug_struct("Proof");
+        debug
+            .field("norm", &self.norm)
+            .field("merge_nonce", &self.merge_nonce)
+            .field("binding", &self.binding)
+            .field("binding_terminal", &self.binding_terminal)
+            .field("binding_nonces", &self.binding_nonces);
+        if self.terminal_merge_nonce.is_some() {
+            debug.field("terminal_merge_nonce", &self.terminal_merge_nonce);
+        }
+        debug.finish()
+    }
 }
 
 impl Proof {
@@ -80,7 +100,8 @@ impl Proof {
             + 8 * (usize::from(self.norm.instance_nonce.is_some())
                 + self.norm.grinding_nonces.len()
                 + usize::from(self.merge_nonce.is_some())
-                + self.binding_nonces.len())
+                + self.binding_nonces.len()
+                + usize::from(self.terminal_merge_nonce.is_some()))
     }
 }
 
@@ -90,6 +111,7 @@ pub(super) struct BridgeClaim {
     pub point: Vec<F>,
     pub modulus: u128,
     pub value: F,
+    pub row_weights: Option<Vec<u128>>,
 }
 
 struct NormClaims {
@@ -118,6 +140,22 @@ pub(super) fn prove(
     let merge_nonce = prove_nonce::<Merge>(transcript, schedule.merge_bits)?;
     let eta = sample(transcript, field)?;
     let (mut form, target) = BindingForm::new(layout, ring, &norm_claims, eta, field)?;
+    if schedule.word_binding {
+        let output = word_binding::prove(transcript, form, target, source, schedule)?;
+        let row_weights = output.claim.row_weights.clone().unwrap();
+        return Ok((
+            Proof {
+                norm,
+                merge_nonce,
+                binding: output.proof,
+                binding_terminal: output.terminal,
+                binding_nonces: output.nonces,
+                terminal_merge_nonce: output.merge_nonce,
+            },
+            row_weights,
+            output.claim,
+        ));
+    }
     form.options = BindingOptions::for_arithmetic(layout.batch(), N, schedule.binding_bits == 0);
 
     transcript.absorb_slice(BINDING_DOMAIN);
@@ -163,6 +201,7 @@ pub(super) fn prove(
             binding: output.proof,
             binding_terminal,
             binding_nonces,
+            terminal_merge_nonce: None,
         },
         row_weights,
         claim,
@@ -183,6 +222,12 @@ pub(super) fn verify(
     verify_nonce::<Merge>(transcript, schedule.merge_bits, proof.merge_nonce)?;
     let eta = sample(transcript, field)?;
     let (form, target) = BindingForm::new(layout, ring, &norm, eta, field)?;
+    if schedule.word_binding {
+        return word_binding::verify(transcript, &form, target, proof, schedule);
+    }
+    if proof.terminal_merge_nonce.is_some() {
+        return Err(failure("unexpected bit binding terminal merge nonce"));
+    }
     transcript.absorb_slice(BINDING_DOMAIN);
     let mut boundary = VerifierGrindingRoundBoundary::<BindingRound>::new(
         schedule.binding_bits,
@@ -392,21 +437,23 @@ fn binding_workers() -> usize {
 /// Keep unqualified worker counts and small batches on the original path.
 /// Eight-worker measurements qualify the large-batch range for both degrees;
 /// one-core measurements additionally qualify the full 1024-signature batch.
+/// Falcon-512 also qualifies that full batch with two, four, or sixteen workers.
 pub(super) fn optimized_binding(batch: usize) -> bool {
-    (binding_workers() == 8 && (256..=1024).contains(&batch))
-        || (binding_workers() == 1 && batch == 1024)
+    let workers = binding_workers();
+    (workers == 8 && (256..=1024).contains(&batch))
+        || (batch == 1024 && (workers == 1 || (N == 512 && matches!(workers, 2 | 4 | 16))))
 }
 
-fn binding_strategy(batch: usize) -> BindingStrategy {
-    if optimized_binding(batch) {
+fn binding_strategy(batch: usize, kernel: BindingKernel) -> BindingStrategy {
+    if kernel.enabled(optimized_binding(batch)) {
         BindingStrategy::Optimized
     } else {
         BindingStrategy::Legacy
     }
 }
 
-fn binding_parallel(batch: usize) -> bool {
-    optimized_binding(batch) && binding_workers() > 1
+fn binding_parallel(strategy: BindingStrategy) -> bool {
+    matches!(strategy, BindingStrategy::Optimized) && binding_workers() > 1
 }
 
 impl<'a> BindingForm<'a> {
@@ -418,14 +465,15 @@ impl<'a> BindingForm<'a> {
         field: &'a Cfg,
     ) -> Result<(Self, F), FalconError> {
         let _span = tracing::info_span!("falcon_algebraic:binding_construction").entered();
+        let strategy = binding_strategy(layout.batch(), BindingKernel::Construction);
         Self::new_with_strategy(
             layout,
             ring,
             norm,
             eta,
             field,
-            binding_strategy(layout.batch()),
-            binding_parallel(layout.batch()),
+            strategy,
+            binding_parallel(strategy),
         )
     }
 
@@ -535,11 +583,8 @@ impl<'a> BindingForm<'a> {
     /// is evaluated once, rather than once per coefficient or per signature.
     fn evaluate(&self, point: &[F]) -> Result<F, FalconError> {
         let _span = tracing::info_span!("falcon_algebraic:binding_evaluation").entered();
-        self.evaluate_with_strategy(
-            point,
-            binding_strategy(self.layout.batch()),
-            binding_parallel(self.layout.batch()),
-        )
+        let strategy = binding_strategy(self.layout.batch(), BindingKernel::Evaluation);
+        self.evaluate_with_strategy(point, strategy, binding_parallel(strategy))
     }
 
     fn evaluate_with_strategy(
@@ -1058,6 +1103,7 @@ fn bind_opening(
         point,
         modulus: field.modulus_u128(),
         value,
+        row_weights: None,
     }
 }
 
@@ -1130,6 +1176,8 @@ mod tests {
             norm_round_bits: 0,
             merge_bits: 0,
             binding_bits: 0,
+            word_binding: false,
+            terminal_merge_bits: 0,
         }
     }
 
@@ -1220,7 +1268,7 @@ mod tests {
 
     #[test]
     fn factored_construction_and_batched_evaluation_match_legacy() {
-        let pools: Vec<_> = [1, 8]
+        let pools: Vec<_> = [1, 4, 8, 16]
             .into_iter()
             .map(|threads| {
                 rayon::ThreadPoolBuilder::new()
@@ -1822,6 +1870,8 @@ mod tests {
             norm_round_bits: 2,
             merge_bits: 2,
             binding_bits: 2,
+            word_binding: false,
+            terminal_merge_bits: 0,
         };
         let (mut proof, _, claim) = prove(
             &mut Blake3Transcript::new(),

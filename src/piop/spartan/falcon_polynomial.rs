@@ -20,8 +20,10 @@ fn integer_polynomial_product(a: &[i64], b: &[i64], out: &mut [i64]) {
     debug_assert_eq!(out.len(), 2 * n);
     if n <= 32 {
         for (i, &x) in a.iter().enumerate() {
-            for (j, &y) in b.iter().enumerate() {
-                out[i + j] += x * y;
+            // Check the output window once so the fixed-size leaf can be
+            // vectorized without a bounds check in its multiply-add loop.
+            for (value, &y) in out[i..i + b.len()].iter_mut().zip(b) {
+                *value += x * y;
             }
         }
         return;

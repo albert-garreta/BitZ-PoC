@@ -93,6 +93,26 @@ impl Transcript for Blake3Transcript {
             self.hasher.update(v);
         }
     }
+
+    fn absorb_slice(&mut self, buf: &[u8]) {
+        // Most protocol messages are one field element or a short domain tag.
+        // Coalesce their framing so BLAKE3 receives one update, preserving the
+        // exact byte stream produced by Transcript's four-update default.
+        const SMALL_SLICE: usize = 32;
+        if buf.len() <= SMALL_SLICE {
+            let mut framed = [0u8; SMALL_SLICE + 10];
+            framed[0] = 0x6;
+            framed[1..9].copy_from_slice(&(buf.len() as u64).to_le_bytes());
+            framed[9..9 + buf.len()].copy_from_slice(buf);
+            framed[9 + buf.len()] = 0x7;
+            self.hasher.update(&framed[..10 + buf.len()]);
+        } else {
+            self.absorb_inner(&[0x6]);
+            self.absorb_inner(&(buf.len() as u64).to_le_bytes());
+            self.absorb_inner(buf);
+            self.absorb_inner(&[0x7]);
+        }
+    }
 }
 
 pub fn read_field_cfg<F>(bytes: &[u8]) -> F::Config
@@ -154,6 +174,43 @@ pub(crate) use crate::impl_plain_binius_ip_channel;
 #[cfg(test)]
 mod framing_tests {
     use super::*;
+    #[test]
+    fn small_slice_coalescing_preserves_transcript_bytes_and_challenges() {
+        fn reference_absorb(transcript: &mut Blake3Transcript, bytes: &[u8]) {
+            transcript.absorb_inner(&[0x6]);
+            transcript.absorb_inner(&(bytes.len() as u64).to_le_bytes());
+            transcript.absorb_inner(bytes);
+            transcript.absorb_inner(&[0x7]);
+        }
+        // Exercise both sides of the coalescing cutoff and BLAKE3 block/chunk
+        // boundaries, including a large payload that takes the Rayon path.
+        let lengths = [
+            0, 1, 8, 16, 31, 32, 33, 63, 64, 65, 1023, 1024, 1025, 262144,
+        ];
+        for prefix_len in [0, 1, 54, 55, 63, 64, 65, 1000, 1023, 1024, 1025] {
+            let mut actual = Blake3Transcript::new();
+            let mut expected = Blake3Transcript::new();
+            let prefix: Vec<_> = (0..prefix_len).map(|i| i as u8).collect();
+            actual.absorb_inner(&prefix);
+            expected.absorb_inner(&prefix);
+            for length in lengths {
+                let bytes: Vec<_> = (0..length).map(|i| (i * 31 + length) as u8).collect();
+                actual.absorb_slice(&bytes);
+                reference_absorb(&mut expected, &bytes);
+                assert_eq!(actual.state_digest(), expected.state_digest());
+                assert_eq!(
+                    actual.get_challenge::<u128>(),
+                    expected.get_challenge::<u128>()
+                );
+                let mut a = [0; 17];
+                let mut b = [0; 17];
+                actual.fill_sampling_bytes(&mut a);
+                expected.fill_sampling_bytes(&mut b);
+                assert_eq!(a, b);
+                assert_eq!(actual.state_digest(), expected.state_digest());
+            }
+        }
+    }
     #[test]
     fn bit_sampling_masks_padding_but_canonical_decoding_rejects_it() {
         use crate::transcript::traits::GenTranscribable;

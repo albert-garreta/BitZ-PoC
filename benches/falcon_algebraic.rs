@@ -80,11 +80,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     macro_rules! run {
         ($algebraic:ident, $native:ident, $degree:literal) => {{
             use bitz::piop::spartan::{
-                $algebraic::{FalconAlgebraicStatement, PreparedFalconAlgebraic, PROTOCOL_ID},
+                $algebraic::{FalconAlgebraicStatement, PreparedFalconAlgebraic},
                 falcon::{decode_public_key, decode_signature_ct},
                 falcon_profiles::$native::hash_to_point_ct,
             };
+            #[cfg(feature = "bench-internals")]
+            use bitz::piop::spartan::$algebraic::FalconAlgebraicBinding;
             let start = Instant::now();
+            #[cfg(feature = "bench-internals")]
+            let prepared = match std::env::var("BITZ_BENCH_WORD_BINDER").as_deref() {
+                Err(std::env::VarError::NotPresent) | Ok("auto") => {
+                    PreparedFalconAlgebraic::new(options.batch, options.security)?
+                }
+                Ok("on") => PreparedFalconAlgebraic::new_with_binding(
+                    options.batch, options.security, FalconAlgebraicBinding::Words,
+                )?,
+                Ok("off") => PreparedFalconAlgebraic::new_with_binding(
+                    options.batch, options.security, FalconAlgebraicBinding::Bits,
+                )?,
+                _ => return Err("BITZ_BENCH_WORD_BINDER must be auto, on, or off".into()),
+            };
+            #[cfg(not(feature = "bench-internals"))]
             let prepared = PreparedFalconAlgebraic::new(options.batch, options.security)?;
             let prepare_ms = start.elapsed().as_secs_f64() * 1000.0;
 
@@ -154,7 +170,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "relation": concat!("falcon", stringify!($degree), "-algebraic-public-h-t-private-s1-s2"),
                         "degree": $degree,
                         "extension_degree": 11,
-                        "protocol_id": PROTOCOL_ID,
+                        "protocol_id": prepared.protocol_id(),
                         "verified": true,
                         "packing_strategy": packing_strategy,
                         "source_root": proof.source_root(),

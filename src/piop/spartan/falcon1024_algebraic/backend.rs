@@ -28,10 +28,26 @@ pub const SLACK_BITS: usize = PARAMETERS.norm_bits();
 pub const Q: i64 = 12_289;
 pub const BETA_SQUARED: u64 = PARAMETERS.norm_bound;
 pub const LIVE_BITS: usize = 2 * N * 15 + SLACK_BITS;
+/// Public choice of proof relation, shared by prover and verifier.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FalconAlgebraicBinding {
+    /// Original v5 bit-domain binder, including partial batches.
+    Bits,
+    /// Word-domain binder with a merged source opening; requires full capacity.
+    Words,
+}
+
+/// Identifier of the legacy bit relation. Use `prepared.protocol_id()` for the
+/// relation selected by a prepared prover or verifier.
 pub const PROTOCOL_ID: &str = if N == 1024 {
     "bitz/falcon1024-algebraic/non-zk/v5"
 } else {
     "bitz/falcon512-algebraic/non-zk/v5"
+};
+const WORD_PROTOCOL_ID: &str = if N == 1024 {
+    "bitz/falcon1024-algebraic/non-zk/word-binder/v6"
+} else {
+    "bitz/falcon512-algebraic/non-zk/word-binder/v6"
 };
 const PRIME_MIN: u128 = 1 << 125;
 const PRIME_MAX: u128 = (1 << 126) - 1;
@@ -42,6 +58,8 @@ struct Schedule {
     norm_round_bits: u32,
     merge_bits: u32,
     binding_bits: u32,
+    word_binding: bool,
+    terminal_merge_bits: u32,
 }
 
 fn error(e: impl std::fmt::Display) -> FalconError {
