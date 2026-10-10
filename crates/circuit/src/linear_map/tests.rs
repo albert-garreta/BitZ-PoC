@@ -81,7 +81,7 @@ fn mixed_widths_and_nested_labels_do_not_wrap() {
             &f.from_integer(&wide),
         );
         let mut out = [f.zero()];
-        tape.prepare(&f)
+        tape.prepare_projected(&f, |words| f.from_twos_complement_words(words))
             .mul_left_into(&[f.one()], &mut out)
             .unwrap();
         assert_eq!(out, [expected]);
@@ -446,8 +446,8 @@ fn shared_mixed_width_preparation_and_native_inputs_match_expanded_fields() {
     let csr =
         CsrMatrix::<_, u32>::try_from_parts(3, vec![0, 2, 3], vec![0, 2, 1], coefficients).unwrap();
     let csc = csr.clone().into_csc().unwrap();
-    let mut right = PreparedRows::projected(&f, &csr, |c| f.from_integer(&c));
-    let mut left = PreparedColumns::projected(&f, &csc, |c| f.from_integer(&c));
+    let mut right = PreparedRows::projected(&f, &csr, |c| f.from_twos_complement_words(c));
+    let mut left = PreparedColumns::projected(&f, &csc, |c| f.from_twos_complement_words(c));
     assert_eq!(right.prepared_coefficient_count(), 2);
     assert_eq!(left.prepared_coefficient_count(), 2);
     let native = [u128::MAX, 1u128 << 100, 5];

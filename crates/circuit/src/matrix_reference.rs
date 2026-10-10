@@ -201,7 +201,7 @@ impl MaterializedAbc {
             .into_par_iter()
             .map(|index| {
                 *field
-                    .from_integer(&field::ZRef::from_twos_complement_words(&view[index]))
+                    .from_twos_complement_words(&view[index])
                     .as_montgomery_integer()
                     .as_words()
             })

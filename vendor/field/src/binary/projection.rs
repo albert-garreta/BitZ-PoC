@@ -1,21 +1,26 @@
 //! Polynomial projection with fixed public bounds and four independent lanes.
-use crate::{Gf128, Gf128Ops, RingOps};
+use crate::Gf128;
+use crate::integer::LIMB_BITS;
 
 /// Powers of a public point, reused across private polynomial inputs.
 #[derive(Clone, Debug)]
-pub struct PreparedGf128Projection {
-    powers: Vec<Gf128>,
+pub struct PreparedGf128Projection<const D: usize> {
+    powers: [Gf128; D],
 }
-impl PreparedGf128Projection {
-    pub fn new(point: Gf128, bits: usize) -> Self {
-        assert!(bits <= 64, "packed projection is limited to one word");
-        let mut powers = Vec::with_capacity(bits);
-        let mut power = Gf128::ONE;
-        for _ in 0..bits {
-            powers.push(power);
-            power = Gf128Ops.mul(&power, &point);
+impl<const D: usize> PreparedGf128Projection<D> {
+    pub fn new(point: Gf128) -> Self {
+        const {
+            assert!(D <= LIMB_BITS, "packed projection is limited to one word");
         }
-        Self { powers }
+        let mut power = Gf128::ONE;
+        Self {
+            powers: core::array::from_fn(|i| {
+                if i > 0 {
+                    power *= point;
+                }
+                power
+            }),
+        }
     }
     pub fn project(&self, bits: u64) -> Gf128 {
         let mut out = [0u64; 2];
@@ -27,8 +32,7 @@ impl PreparedGf128Projection {
         Gf128::from_polynomial_words(out)
     }
     /// All buffers have equal length; every input uses exactly `D` low bits.
-    pub fn project_into<const D: usize>(&self, input: &[u64], out: &mut [Gf128]) {
-        assert_eq!(self.powers.len(), D, "projection width mismatch");
+    pub fn project_into(&self, input: &[u64], out: &mut [Gf128]) {
         assert_eq!(input.len(), out.len(), "projection shape mismatch");
         let mut chunks = input.chunks_exact(4);
         let mut output = out.chunks_exact_mut(4);
@@ -43,14 +47,7 @@ impl PreparedGf128Projection {
 
 /// Retained ARM NEON four-lane kernel and scalar fallback.
 #[inline]
-fn project_four<const D: usize>(cells: [u64; 4], alpha_powers: &[Gf128]) -> [Gf128; 4] {
-    debug_assert!(
-        alpha_powers.len() >= D,
-        "project_four: powers slice ({}) shorter than D ({D})",
-        alpha_powers.len(),
-    );
-    debug_assert!(D <= 64, "project_four: D ({D}) must be ≤ 64");
-
+fn project_four<const D: usize>(cells: [u64; 4], alpha_powers: &[Gf128; D]) -> [Gf128; 4] {
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     {
         use core::arch::aarch64::{vandq_u64, vdupq_n_u64, veorq_u64, vld1q_u64, vst1q_u64};

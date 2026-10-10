@@ -14,7 +14,16 @@ use spongefish::{
     ByteArray, Decoding, Encoding, NargDeserialize, VerificationError, VerificationResult,
 };
 
+use crate::integer::LIMB_BYTES;
 use crate::{CanonicalCodec, Gf128, PrimeSpec, StaticFp, StaticFpOps};
+
+struct EncodedPrime<const L: usize>([[u8; LIMB_BYTES]; L]);
+
+impl<const L: usize> AsRef<[u8]> for EncodedPrime<L> {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_flattened()
+    }
+}
 
 impl Encoding<[u8]> for Gf128 {
     fn encode(&self) -> impl AsRef<[u8]> {
@@ -38,8 +47,8 @@ impl NargDeserialize for Gf128 {
 
 impl<P: PrimeSpec<L>, const L: usize> Encoding<[u8]> for StaticFp<P, L> {
     fn encode(&self) -> impl AsRef<[u8]> {
-        let mut bytes = vec![0; L * 8];
-        StaticFpOps::<P, L>::new().encode_into(self, &mut bytes);
+        let mut bytes = EncodedPrime([[0; LIMB_BYTES]; L]);
+        StaticFpOps::<P, L>::new().encode_into(self, bytes.0.as_flattened_mut());
         bytes
     }
 }
@@ -48,7 +57,9 @@ impl<P: PrimeSpec<L>, const L: usize> NargDeserialize for StaticFp<P, L> {
     fn deserialize_from_narg(buf: &mut &[u8]) -> VerificationResult<Self> {
         // Stage the cursor: the contract requires `buf` untouched on failure,
         // and the range check can still fail after the read succeeds.
-        let (bytes, rest) = buf.split_at_checked(L * 8).ok_or(VerificationError)?;
+        let (bytes, rest) = buf
+            .split_at_checked(L * LIMB_BYTES)
+            .ok_or(VerificationError)?;
         let value = StaticFpOps::<P, L>::new()
             .decode_public(bytes)
             .map_err(|_| VerificationError)?;

@@ -7,6 +7,9 @@ mod operators;
 pub(crate) mod product;
 pub use product::{IntegerOps, UintAccumulator, UintProduct, ZAccumulator, ZProduct};
 
+pub(crate) const LIMB_BITS: usize = u64::BITS as usize;
+pub(crate) const LIMB_BYTES: usize = core::mem::size_of::<u64>();
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Uint<const L: usize>(pub(crate) [u64; L]);
@@ -88,8 +91,8 @@ impl<const L: usize> Uint<L> {
         CtValue::new(Z(*self), !CtMask::from_lsb(self.0[L - 1] >> 63))
     }
     pub fn bit(&self, public_index: usize) -> Bit {
-        assert!(public_index < L * 64, "bit index out of range");
-        Bit::from_lsb(self.0[public_index / 64] >> (public_index % 64))
+        assert!(public_index < L * LIMB_BITS, "bit index out of range");
+        Bit::from_lsb(self.0[public_index / LIMB_BITS] >> (public_index % LIMB_BITS))
     }
     pub(crate) fn adc(&self, rhs: &Self) -> (Self, u64) {
         let mut out = Self::ZERO;
@@ -279,6 +282,13 @@ impl<const L: usize> Z<L> {
     pub const fn from_twos_complement_words(words: [u64; L]) -> Self {
         Self(Uint::from_words(words))
     }
+    /// Copy nonempty little-endian limbs to this width, extending the sign and
+    /// reporting overflow if discarded bits cannot be recovered by sign extension.
+    /// The input length is public; the limb values do not affect the work.
+    pub fn checked_from_twos_complement_words_ct(words: &[u64]) -> CtValue<Self> {
+        assert!(!words.is_empty());
+        product::extract_signed(words)
+    }
     pub const fn as_words(&self) -> &[u64; L] {
         self.0.as_words()
     }
@@ -451,33 +461,6 @@ impl<const L: usize> Z<L> {
 }
 bitwise!(Uint);
 bitwise!(Z);
-
-#[derive(Clone, Copy, Debug)]
-pub struct UintRef<'a>(&'a [u64]);
-impl<'a> UintRef<'a> {
-    pub fn new(words: &'a [u64]) -> Self {
-        assert!(!words.is_empty());
-        Self(words)
-    }
-    pub fn as_words(&self) -> &'a [u64] {
-        self.0
-    }
-}
-#[derive(Clone, Copy, Debug)]
-pub struct ZRef<'a>(&'a [u64]);
-impl<'a> ZRef<'a> {
-    pub fn from_twos_complement_words(words: &'a [u64]) -> Self {
-        assert!(!words.is_empty());
-        Self(words)
-    }
-    /// Copy to a declared width, preserving sign and reporting discarded bits.
-    pub fn checked_resize_ct<const L: usize>(&self) -> CtValue<Z<L>> {
-        product::extract_signed(self.0)
-    }
-    pub fn as_words(&self) -> &'a [u64] {
-        self.0
-    }
-}
 
 /// Explicit arithmetic modulo the integer storage width.
 #[derive(Clone, Copy, Debug, Default)]

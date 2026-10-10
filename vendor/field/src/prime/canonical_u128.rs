@@ -88,15 +88,13 @@ impl FpCtx<2> {
     pub fn mul_u128(&self, a: u128, b: u128) -> u128 {
         self.mul_prepared_u128(a, &self.prepare_multiplier_u128(b))
     }
-    pub fn powers_u128(&self, base: u128, len: usize) -> Vec<u128> {
+    pub fn powers_u128<const N: usize>(&self, base: u128) -> [u128; N] {
         let factor = self.prepare_multiplier_u128(base);
         let mut current = 1;
-        (0..len)
-            .map(|_| {
-                let value = current;
-                current = self.mul_canonical_u128(current, &factor);
-                value
-            })
-            .collect()
+        core::array::from_fn(|_| {
+            let value = current;
+            current = self.mul_canonical_u128(current, &factor);
+            value
+        })
     }
 }

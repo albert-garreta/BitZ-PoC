@@ -30,8 +30,8 @@ use {
 
 use super::super::{
     SpartanField, SpartanMatrixError,
-    u32_mul_relation::SpartanBitzField,
     profile::{IopSecurityParams, IopSecurityProfile, Lambda100, ProfileError},
+    u32_mul_relation::SpartanBitzField,
 };
 use super::prime::{
     SHA256_MAX_LOG_COMPRESSIONS, SHA256_MIN_LOG_COMPRESSIONS, Sha256PrimeError, Sha256PrimeProfile,
@@ -228,11 +228,8 @@ impl PreparedSha256CompressionBatch {
             )
             .map_err(Sha256ConstraintError::LigeritoConfig)?;
         self.security.adopt_ood_round(resolved.ood_bits())?;
-        let geometry = crate::bitz::grinding::Geometry::opening(
-            self.opening_params(),
-            &self.f_layout,
-            false,
-        );
+        let geometry =
+            crate::bitz::grinding::Geometry::opening(self.opening_params(), &self.f_layout, false);
         self.security.adopt_native_opening(geometry)?;
         self.ligerito = Some(resolved);
         Ok(self)
@@ -1038,7 +1035,6 @@ pub(super) fn convert_native_integer_rows(
                 .row(row)
                 .unwrap()
                 .iter()
-                .map(|(column, coefficient)| (column, coefficient.as_words()))
                 .map(|(column, words)| {
                     let value = words[0] as i64;
                     let extension = if value < 0 { u64::MAX } else { 0 };

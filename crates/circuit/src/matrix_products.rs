@@ -7,7 +7,7 @@
 //! small batches stay sequential to avoid scheduling overhead.
 
 use crate::integer_storage::IntegerTable;
-use field::{IntegerEmbedding, ModRingCtx, ZRef};
+use field::ModRingCtx;
 #[cfg(test)]
 use std::array;
 
@@ -23,7 +23,7 @@ use crate::witgen::Z as Integer;
 /// The caller supplies the declared width; this never trims sign limbs.
 pub fn project_signed<const L: usize>(modulus: &ModRingCtx<L>, words: &[u64]) -> [u64; L] {
     *modulus
-        .to_integer(&modulus.from_integer(&ZRef::from_twos_complement_words(words)))
+        .to_integer(&modulus.from_twos_complement_words(words))
         .as_words()
 }
 
@@ -152,7 +152,6 @@ mod tests {
             .row(row)
             .unwrap()
             .iter()
-            .map(|(column, coefficient)| (column, coefficient.as_words()))
             .filter(|(column, _)| integer_witness.bit(*column))
             .map(|(_, coefficient)| stored_bigint(coefficient))
             .sum()

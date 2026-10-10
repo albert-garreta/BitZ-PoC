@@ -36,7 +36,7 @@ use field::RingOps;
 use rayon::prelude::*;
 
 use circuit::integer_storage::UnsignedIntegerTable;
-use field::{Fp, FpCtx, IntegerEmbedding, Uint, UintRef};
+use field::{Fp, FpCtx, Uint};
 #[cfg(test)]
 use num_bigint::BigUint;
 #[cfg(test)]
@@ -531,7 +531,7 @@ impl MultiswapAssignment {
 
 // Public coefficients retain their source's declared width through preparation.
 fn public_coefficient(field: &FpCtx<2>, value: &[u64]) -> Fp<2> {
-    field.from_integer(&UintRef::new(value))
+    field.from_unsigned_words(value)
 }
 /// Canonical `u128` runtime modulus recovered from its field encoding.
 #[cfg(test)]
@@ -597,6 +597,7 @@ fn test_biguint(words: &[u64]) -> BigUint {
 
 #[cfg(test)]
 mod tests {
+    use field::IntegerEmbedding;
 
     use super::super::circuit::MultiswapDims;
     use super::*;

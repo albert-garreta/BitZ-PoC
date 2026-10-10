@@ -26,8 +26,7 @@ pub use ct::{Bit, CtEq, CtMask, CtOrd, CtSelect, CtValue};
 pub use encoding::{CanonicalCodec, DecodeError};
 pub use gf128::{Gf128, Wide256};
 pub use integer::{
-    IntegerOps, Uint, UintAccumulator, UintProduct, UintRef, WrappingOps, Z, ZAccumulator,
-    ZProduct, ZRef,
+    IntegerOps, Uint, UintAccumulator, UintProduct, WrappingOps, Z, ZAccumulator, ZProduct,
 };
 pub use modular::{ContextError, ModRingCtx, Residue};
 pub use preparation::{

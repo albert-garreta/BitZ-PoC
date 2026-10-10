@@ -278,6 +278,22 @@ impl<Id, const L: usize, const N: usize> PrimeSignedLinearAcc<Id, L, N> {
 macro_rules! impl_prime {
     ([$($generic:tt)*] $provider:ty, $id:ty) => {
         impl<$($generic)*> $provider {
+            /// Reduce nonempty unsigned little-endian limbs. The public length
+            /// fixes the work; no temporary integer allocation is required.
+            #[inline]
+            pub fn from_unsigned_words(&self, words: &[u64]) -> PrimeValue<$id, L> {
+                assert!(!words.is_empty());
+                PrimeValue::new(self.params().from_canonical(&self.params().remainder(words)))
+            }
+            /// Reduce nonempty two's-complement little-endian limbs. The public
+            /// length fixes the work, including masked sign handling.
+            #[inline]
+            pub fn from_twos_complement_words(&self, words: &[u64]) -> PrimeValue<$id, L> {
+                assert!(!words.is_empty());
+                let input = crate::integer::product::SignedMagnitude::new(words);
+                let magnitude = PrimeValue::new(self.params().from_canonical(&self.params().remainder(&input)));
+                PrimeValue::ct_select(&magnitude, &self.neg(&magnitude), input.negative())
+            }
             /// Two prepared Montgomery coefficients times exact integers,
             /// with canonical integer output. No input projection is needed.
             #[inline]
@@ -392,7 +408,7 @@ macro_rules! impl_prime {
             }
         }
         impl<$($generic)*> crate::encoding::CanonicalCodec<PrimeValue<$id,L>> for $provider {
-            fn encoded_len(&self)->usize {L*8}
+            fn encoded_len(&self)->usize {L*crate::integer::LIMB_BYTES}
             fn encode_into(&self,value:&PrimeValue<$id,L>,out:&mut[u8]) {crate::encoding::encode_words(&self.to_integer(value),out);}
             fn decode_ct(&self,input:&[u8])->Result<CtValue<PrimeValue<$id,L>>,crate::encoding::DecodeError> {
                 Ok(self.from_canonical_ct(&crate::encoding::decode_words(input)?))
@@ -439,18 +455,6 @@ macro_rules! impl_prime {
             fn from_integer(&self, value: &Z<N>) -> Self::Elem {
                 let magnitude = self.from_integer(&value.unsigned_abs());
                 Self::Elem::ct_select(&magnitude, &self.neg(&magnitude), value.is_negative_ct())
-            }
-        }
-        impl<$($generic)*> IntegerEmbedding<crate::UintRef<'_>> for $provider {
-            fn from_integer(&self, value: &crate::UintRef<'_>) -> Self::Elem {
-                PrimeValue::new(self.params().from_canonical(&self.params().remainder(value.as_words())))
-            }
-        }
-        impl<$($generic)*> IntegerEmbedding<crate::ZRef<'_>> for $provider {
-            fn from_integer(&self, value: &crate::ZRef<'_>) -> Self::Elem {
-                let input = crate::integer::product::SignedMagnitude::new(value.as_words());
-                let magnitude = PrimeValue::new(self.params().from_canonical(&self.params().remainder(&input)));
-                Self::Elem::ct_select(&magnitude, &self.neg(&magnitude), input.negative())
             }
         }
         impl<$($generic)*, const N: usize> WideMul<PrimeValue<$id, L>, Uint<N>> for $provider {

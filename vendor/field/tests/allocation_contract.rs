@@ -49,7 +49,7 @@ fn caller_owned_operations_allocate_nothing() {
     let words = [u64::MAX; 9];
     let mut dot_m = [field.zero(); 34];
     let mut dot_w = [Uint::ZERO; 34];
-    let binary_projection = PreparedGf128Projection::new(Gf128::new(3, 7), 32);
+    let binary_projection = PreparedGf128Projection::<32>::new(Gf128::new(3, 7));
     let binary_input = [u64::MAX; 17];
     let mut binary_output = [Gf128::ZERO; 17];
     let signed_projection = PreparedSignedProjection::new(field.clone(), 9);
@@ -57,7 +57,7 @@ fn caller_owned_operations_allocate_nothing() {
     COUNT.with(|count| count.set(Some(0)));
     signed_projection.project_into(&signed_inputs, &mut out);
     std::hint::black_box(signed_projection.project(signed_inputs[0].as_words()));
-    binary_projection.project_into::<32>(&binary_input, &mut binary_output);
+    binary_projection.project_into(&binary_input, &mut binary_output);
     std::hint::black_box(&binary_output);
     field.batch_mul_into(&weights, &weights, &mut out);
     field.batch_invert_or_zero_ct_into(&weights, &mut out, &mut scratch);
@@ -73,8 +73,8 @@ fn caller_owned_operations_allocate_nothing() {
     std::hint::black_box(field.reduce(incremental));
     field.fold_pairs_into(&input, &mut out, &claim);
     field.fold_pairs_into(&input, &mut plain, &claim);
-    std::hint::black_box(field.from_integer(&UintRef::new(&words)));
-    std::hint::black_box(field.from_integer(&ZRef::from_twos_complement_words(&words)));
+    std::hint::black_box(field.from_unsigned_words(&words));
+    std::hint::black_box(field.from_twos_complement_words(&words));
     std::hint::black_box(field.eqf_single_pair_round(&round_left, &round_right, &weights, 17));
     std::hint::black_box(field.eqf_fused_fold_round(
         &mut round_left,
@@ -145,4 +145,55 @@ fn prepared_wide_and_signed_operations_allocate_nothing() {
     ));
     let count = COUNT.with(|count| count.replace(None).unwrap());
     assert_eq!(count, 0);
+}
+
+#[test]
+fn fixed_preparation_and_evaluation_allocation_contracts() {
+    COUNT.with(|count| count.set(Some(0)));
+    let projection = PreparedGf128Projection::<64>::new(Gf128::GENERATOR);
+    let projection_allocations = COUNT.with(|count| count.replace(Some(0)).unwrap());
+    let private = FixedBasePow::<_, 3>::new(Gf128Ops, Gf128::GENERATOR);
+    let private_allocations = COUNT.with(|count| count.replace(Some(0)).unwrap());
+    let public = FixedBasePow::<_, 3>::new_public(Gf128Ops, Gf128::GENERATOR, 9);
+    let public_allocations = COUNT.with(|count| count.replace(Some(0)).unwrap());
+    std::hint::black_box(private.pow_ct(&Uint::MAX));
+    std::hint::black_box(public.pow_public(&Uint::MAX));
+    std::hint::black_box(public.pow_ct(&Uint::MAX));
+    std::hint::black_box(projection.project(u64::MAX));
+    let operation_allocations = COUNT.with(|count| count.replace(None).unwrap());
+    assert_eq!(projection_allocations, 0);
+    assert_eq!(private_allocations, 1);
+    // Retain separate runtime window rows: flattening them increased Falcon's
+    // peak RSS across repeated proofs despite reducing the allocation count.
+    assert_eq!(public_allocations, (3usize * 64).div_ceil(9) + 1);
+    assert_eq!(operation_allocations, 0);
+}
+
+#[test]
+fn word_conversions_allocate_nothing_for_static_and_composite_contexts() {
+    let prime = Q100Field::new();
+    let ring = ModRingCtx::new(Uint::from_words([18])).unwrap();
+    let _ = prime.one(); // Initialize the shared static parameters before counting.
+    let words = [0, 0, u64::MAX];
+    COUNT.with(|count| count.set(Some(0)));
+    std::hint::black_box(prime.from_unsigned_words(&words));
+    std::hint::black_box(prime.from_twos_complement_words(&words));
+    std::hint::black_box(ring.from_unsigned_words(&words));
+    std::hint::black_box(ring.from_twos_complement_words(&words));
+    std::hint::black_box(Z::<4>::checked_from_twos_complement_words_ct(&words));
+    let count = COUNT.with(|count| count.replace(None).unwrap());
+    assert_eq!(count, 0);
+}
+
+#[cfg(feature = "spongefish")]
+#[test]
+fn canonical_prime_encoding_allocates_nothing() {
+    use spongefish::Encoding;
+    let value = Q100Field::new().from_integer(&123456789u128);
+    COUNT.with(|count| count.set(Some(0)));
+    let bytes = std::hint::black_box(&value).encode();
+    std::hint::black_box(bytes.as_ref());
+    let count = COUNT.with(|count| count.replace(None).unwrap());
+    assert_eq!(count, 0);
+    assert_eq!(bytes.as_ref(), 123456789u128.to_le_bytes());
 }

@@ -46,7 +46,7 @@ pub fn field_probe_batch_mul(ctx: &FpCtx<2>, a: &[Fp<2>], b: &[Fp<2>], out: &mut
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub fn field_probe_borrowed_signed(ctx: &FpCtx<2>, words: &[u64]) -> Fp<2> {
-    ctx.from_integer(&ZRef::from_twos_complement_words(words))
+    ctx.from_twos_complement_words(words)
 }
 #[unsafe(no_mangle)]
 #[inline(never)]

@@ -13,7 +13,7 @@ use circuit::{
     linear_map::circuit::{WengertGenerator, WengertTape},
     sha256,
 };
-use field::{CtOrd, IntegerOps, Uint, WideMul, ZRef};
+use field::{CtOrd, IntegerOps, Uint, WideMul, Z};
 
 use super::error;
 use {
@@ -270,8 +270,7 @@ fn build_local(circuit: EcdsaCircuit) -> Result<LocalRelation, super::Sha256Ecds
     let magnitudes: Vec<Uint<10>> = coefficients
         .iter()
         .map(|words| {
-            ZRef::from_twos_complement_words(words)
-                .checked_resize_ct::<9>()
+            Z::<9>::checked_from_twos_complement_words_ct(words)
                 .value()
                 .unsigned_abs()
                 .zero_extend()

@@ -16,7 +16,7 @@ use divan::counter::ItemsCount;
 use divan::{Bencher, black_box};
 use field::gf128::KERNEL;
 use field::{FixedBasePow, Gf128, Wide256};
-use num_traits::{ConstZero, Inv, Pow};
+use num_traits::{Inv, Pow};
 
 /// Elements per invocation. 1024 of them is 16 KiB, so a pair of operand
 /// arrays stays in L1.
@@ -136,4 +136,83 @@ fn pow_public_comb_w8(bencher: Bencher) {
             black_box(comb.pow_public(&field::Uint::from_words([e as u64, (e >> 64) as u64])));
         }
     });
+}
+
+// Setup cases consume tables in place so the harness does not add a move of
+// the inline array to every sample. Enable `spongefish` to include encoding.
+mod representation {
+    use super::*;
+    use field::{Gf128Ops, PreparedGf128Projection, Q100Field, Uint};
+
+    #[cfg(feature = "spongefish")]
+    #[divan::bench]
+    fn prime_encoding(bencher: Bencher) {
+        use field::IntegerEmbedding;
+        use spongefish::Encoding;
+        let value = Q100Field::new().from_integer(&0x123456789abcdefu128);
+        bencher.bench_local(|| black_box(black_box(&value).encode()));
+    }
+
+    #[divan::bench]
+    fn unsigned_words(bencher: Bencher) {
+        let field = Q100Field::new();
+        let words = [u64::MAX; 9];
+        bencher.bench_local(|| field.from_unsigned_words(black_box(&words)));
+    }
+
+    #[divan::bench]
+    fn signed_words(bencher: Bencher) {
+        let field = Q100Field::new();
+        let words = [0, 0, 1, 2, 3, 4, 5, 6, u64::MAX];
+        bencher.bench_local(|| field.from_twos_complement_words(black_box(&words)));
+    }
+
+    #[divan::bench]
+    fn projection_setup(bencher: Bencher) {
+        bencher.bench_local(|| {
+            let projection = PreparedGf128Projection::<32>::new(black_box(Gf128::GENERATOR));
+            black_box(&projection);
+        });
+    }
+
+    #[divan::bench]
+    fn projection_batch(bencher: Bencher) {
+        let projection = PreparedGf128Projection::<32>::new(Gf128::GENERATOR);
+        let input: Vec<_> = xs().iter().map(|value| value.lo).collect();
+        let mut out = [Gf128::ZERO; N];
+        bencher.counter(ItemsCount::new(N)).bench_local(|| {
+            projection.project_into(black_box(&input), &mut out);
+            black_box(&out);
+        });
+    }
+
+    #[divan::bench]
+    fn private_power_setup(bencher: Bencher) {
+        bencher.bench_local(|| {
+            let table = FixedBasePow::<_, 2>::new(Gf128Ops, black_box(Gf128::GENERATOR));
+            black_box(&table);
+        });
+    }
+
+    #[divan::bench]
+    fn public_power_setup(bencher: Bencher) {
+        bencher.bench_local(|| {
+            let table = FixedBasePow::<_, 2>::new_public(Gf128Ops, black_box(Gf128::GENERATOR), 8);
+            black_box(&table);
+        });
+    }
+
+    #[divan::bench]
+    fn private_power(bencher: Bencher) {
+        let table = FixedBasePow::<_, 2>::new(Gf128Ops, Gf128::GENERATOR);
+        bencher.bench_local(|| table.pow_ct(black_box(&Uint::from_words([0xabcdef, u64::MAX]))));
+    }
+
+    #[divan::bench(args = [16, 32, 64, 128])]
+    fn public_power(bencher: Bencher, bits: u32) {
+        let table = FixedBasePow::<_, 2>::new_public(Gf128Ops, Gf128::GENERATOR, 8);
+        let exponent = u128::MAX >> (128 - bits);
+        let exponent = Uint::from_words([exponent as u64, (exponent >> 64) as u64]);
+        bencher.bench_local(|| table.pow_public(black_box(&exponent)));
+    }
 }

@@ -133,7 +133,6 @@ fn evaluate_integer_row<const L: usize>(
         .row(row)
         .unwrap()
         .iter()
-        .map(|(column, coefficient)| (column, coefficient.as_words()))
         .fold(Z::ZERO, |sum, (column, words)| {
             // Width and positive/negative subset bounds were checked at preparation.
             let coefficient = Z::from_twos_complement_words(
@@ -582,23 +581,11 @@ mod tests {
         assert_eq!(matrices.m.row(0).unwrap().indices(), &[0]);
         assert_eq!(matrices.m.row(1).unwrap().indices(), &[1, 2]);
         assert_eq!(
-            matrices
-                .a
-                .row(0)
-                .unwrap()
-                .iter()
-                .map(|(column, coefficient)| (column, coefficient.as_words()))
-                .collect::<Vec<_>>(),
+            matrices.a.row(0).unwrap().iter().collect::<Vec<_>>(),
             [(2, &[2][..])]
         );
         assert_eq!(
-            matrices
-                .c
-                .row(0)
-                .unwrap()
-                .iter()
-                .map(|(column, coefficient)| (column, coefficient.as_words()))
-                .collect::<Vec<_>>(),
+            matrices.c.row(0).unwrap().iter().collect::<Vec<_>>(),
             [(1, &[u64::MAX][..]), (2, &[1][..]), (3, &[1][..])]
         );
         let satisfying = Witgen::with_inputs(&[true, false]);

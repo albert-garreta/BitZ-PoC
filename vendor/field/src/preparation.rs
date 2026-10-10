@@ -1,5 +1,6 @@
 //! Reusable preparation with caller-owned inputs and outputs.
 
+use crate::integer::LIMB_BITS;
 use crate::*;
 
 #[derive(Clone, Debug)]
@@ -164,8 +165,8 @@ impl<const L: usize> PreparedOddInverse<L> {
     }
 }
 
-enum PowerTable<T> {
-    Private(Vec<T>),
+enum PowerTable<T, const E: usize> {
+    Private(Box<[[T; LIMB_BITS]; E]>),
     Public {
         base: T,
         rows: Vec<Vec<T>>,
@@ -176,19 +177,26 @@ enum PowerTable<T> {
 /// Provider-owned fixed-base preparation with explicit exponent timing contracts.
 pub struct FixedBasePow<C: RingOps, const EXP_LIMBS: usize> {
     field: C,
-    table: PowerTable<C::Elem>,
+    table: PowerTable<C::Elem, EXP_LIMBS>,
 }
 impl<C: RingOps, const E: usize> FixedBasePow<C, E> {
     pub fn new(field: C, base: C::Elem) -> Self {
         const {
             assert!(E > 0);
         }
-        let mut powers = Vec::with_capacity(E * 64);
+        // Keep the full table on the heap; only one fixed row is constructed
+        // on the stack. The boxed-array conversion reuses this allocation.
+        let mut powers = vec![[base; LIMB_BITS]; E].into_boxed_slice();
         let mut value = base;
-        for _ in 0..E * 64 {
-            powers.push(value);
-            value = field.square(&value);
+        for row in &mut powers {
+            for power in row {
+                *power = value;
+                value = field.square(&value);
+            }
         }
+        let powers = powers
+            .try_into()
+            .unwrap_or_else(|_| unreachable!("one power row per exponent limb"));
         Self {
             field,
             table: PowerTable::Private(powers),
@@ -202,12 +210,14 @@ impl<C: RingOps, const E: usize> FixedBasePow<C, E> {
             assert!(E > 0);
         }
         assert!((1..=16).contains(&window), "window must be in 1..=16");
-        let mut rows = Vec::with_capacity((64 * E).div_ceil(window));
+        let row_count = (LIMB_BITS * E).div_ceil(window);
+        let row_len = 1usize << window;
+        let mut rows = Vec::with_capacity(row_count);
         let mut power = base;
-        for _ in 0..(64 * E).div_ceil(window) {
-            let mut row = Vec::with_capacity(1 << window);
+        for _ in 0..row_count {
+            let mut row = Vec::with_capacity(row_len);
             let mut value = field.one();
-            for _ in 0..1 << window {
+            for _ in 0..row_len {
                 row.push(value);
                 value = field.mul(&value, &power);
             }
@@ -227,9 +237,11 @@ impl<C: RingOps, const E: usize> FixedBasePow<C, E> {
             PowerTable::Public { base, .. } => return self.field.pow_ct(base, exponent),
         };
         let mut value = self.field.one();
-        for i in 0..E * 64 {
-            let product = self.field.mul(&value, &powers[i]);
-            value = C::Elem::ct_select(&value, &product, exponent.bit(i).mask());
+        for (word, row) in exponent.as_words().iter().zip(powers.iter()) {
+            for (bit, power) in row.iter().enumerate() {
+                let product = self.field.mul(&value, power);
+                value = C::Elem::ct_select(&value, &product, CtMask::from_lsb(word >> bit));
+            }
         }
         value
     }
@@ -258,10 +270,10 @@ impl<C: RingOps, const E: usize> FixedBasePow<C, E> {
         let mut value = self.field.one();
         for (i, row) in rows.iter().enumerate() {
             let bit = i * window;
-            let (word, shift) = (bit / 64, bit % 64);
+            let (word, shift) = (bit / LIMB_BITS, bit % LIMB_BITS);
             let mut digit = exponent.0[word] >> shift;
-            if shift + window > 64 && word + 1 < E {
-                digit |= exponent.0[word + 1] << (64 - shift);
+            if shift + window > LIMB_BITS && word + 1 < E {
+                digit |= exponent.0[word + 1] << (LIMB_BITS - shift);
             }
             digit &= (1 << window) - 1;
             if digit != 0 {
@@ -532,6 +544,76 @@ mod public_power_tests {
             let expected = binary_power(&Gf128Ops, base, exponent);
             assert_eq!(private.pow_ct(&words), expected);
             assert_eq!(private.pow_public(&words), expected);
+        }
+    }
+
+    fn check_width<const E: usize, C: RingOps>(field: &C, base: C::Elem)
+    where
+        C::Elem: std::fmt::Debug + PartialEq,
+    {
+        let mut exponents = vec![Uint::<E>::ZERO, Uint::ONE, Uint::MAX];
+        for bit in [16, 32, 64, 127, 128] {
+            if bit < E * LIMB_BITS {
+                let mut words = [0; E];
+                words[bit / LIMB_BITS] = 1 << (bit % LIMB_BITS);
+                let boundary = Uint::from_words(words);
+                exponents.extend([
+                    boundary.wrapping_sub(&Uint::ONE),
+                    boundary,
+                    boundary.wrapping_add(&Uint::ONE),
+                ]);
+            }
+        }
+        let expected: Vec<_> = exponents
+            .iter()
+            .map(|exponent| {
+                // Left-to-right binary power is independent of the window tables
+                // and their little-endian limb/window extraction.
+                let mut value = field.one();
+                for word in exponent.as_words().iter().rev() {
+                    for bit in (0..LIMB_BITS).rev() {
+                        value = field.square(&value);
+                        if (word >> bit) & 1 != 0 {
+                            value = field.mul(&value, &base);
+                        }
+                    }
+                }
+                value
+            })
+            .collect();
+        let private = FixedBasePow::new(field, base);
+        for (exponent, expected) in exponents.iter().zip(&expected) {
+            assert_eq!(private.pow_ct(exponent), *expected);
+        }
+        for window in [1, 7, 8, 9, 16] {
+            let public = FixedBasePow::new_public(field, base, window);
+            for (exponent, expected) in exponents.iter().zip(&expected) {
+                assert_eq!(
+                    public.pow_public(exponent),
+                    *expected,
+                    "E={E}, window={window}, exponent={exponent:?}"
+                );
+                assert_eq!(public.pow_ct(exponent), *expected);
+            }
+        }
+    }
+
+    #[test]
+    fn fixed_power_dimensions_and_cross_limb_windows() {
+        for base in [Gf128::ZERO, Gf128::ONE, Gf128::new(0xabcdef, u64::MAX)] {
+            check_width::<1, _>(&Gf128Ops, base);
+            check_width::<2, _>(&Gf128Ops, base);
+            check_width::<3, _>(&Gf128Ops, base);
+        }
+        let prime = create_prime_field(Uint::from_words([17]));
+        let ring = ModRingCtx::new(Uint::from_words([18])).unwrap();
+        for base in [0u64, 1, 7] {
+            check_width::<1, _>(&prime, prime.from_integer(&base));
+            check_width::<2, _>(&prime, prime.from_integer(&base));
+            check_width::<3, _>(&prime, prime.from_integer(&base));
+            check_width::<1, _>(&ring, ring.from_integer(&base));
+            check_width::<2, _>(&ring, ring.from_integer(&base));
+            check_width::<3, _>(&ring, ring.from_integer(&base));
         }
     }
 

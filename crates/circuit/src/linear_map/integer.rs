@@ -96,8 +96,7 @@ fn prepare<Src: ExactInput<L>, const L: usize, I: SparseIndex>(
         let mut positive = Uint::<L>::ZERO;
         let mut negative = Uint::<L>::ZERO;
         for entry in bounds[0].to_usize()..bounds[1].to_usize() {
-            let coefficient =
-                field::ZRef::from_twos_complement_words(&view[entry]).checked_resize_ct::<L>();
+            let coefficient = Z::<L>::checked_from_twos_complement_words_ct(&view[entry]);
             if !coefficient.validity().declassify() {
                 return Err(error());
             }

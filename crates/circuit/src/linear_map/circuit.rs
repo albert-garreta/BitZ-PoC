@@ -1163,13 +1163,7 @@ mod tests {
         let mut output = vec![BigInt::zero(); matrices.a.column_count()];
         for (row, challenge) in challenges.iter().enumerate() {
             let challenge = as_bigint(*challenge);
-            for (column, coefficient) in matrices
-                .a
-                .row(row)
-                .unwrap()
-                .iter()
-                .map(|(column, coefficient)| (column, coefficient.as_words()))
-            {
+            for (column, coefficient) in matrices.a.row(row).unwrap().iter() {
                 let coefficient = BigInt::from_signed_bytes_le(
                     &coefficient
                         .iter()
@@ -1178,13 +1172,7 @@ mod tests {
                 );
                 output[column] += &challenge * coefficient;
             }
-            for (column, coefficient) in matrices
-                .b
-                .row(row)
-                .unwrap()
-                .iter()
-                .map(|(column, coefficient)| (column, coefficient.as_words()))
-            {
+            for (column, coefficient) in matrices.b.row(row).unwrap().iter() {
                 let coefficient = BigInt::from_signed_bytes_le(
                     &coefficient
                         .iter()
@@ -1193,13 +1181,7 @@ mod tests {
                 );
                 output[column] += &challenge * &x * coefficient;
             }
-            for (column, coefficient) in matrices
-                .c
-                .row(row)
-                .unwrap()
-                .iter()
-                .map(|(column, coefficient)| (column, coefficient.as_words()))
-            {
+            for (column, coefficient) in matrices.c.row(row).unwrap().iter() {
                 let coefficient = BigInt::from_signed_bytes_le(
                     &coefficient
                         .iter()

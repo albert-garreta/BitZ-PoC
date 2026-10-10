@@ -58,6 +58,21 @@ impl<const L: usize> ModRingCtx<L> {
     pub fn to_integer(&self, value: &Residue<L>) -> Uint<L> {
         value.0
     }
+    /// Reduce nonempty unsigned little-endian limbs at their public width.
+    #[inline]
+    pub fn from_unsigned_words(&self, words: &[u64]) -> Residue<L> {
+        assert!(!words.is_empty());
+        Residue(self.remainder(words))
+    }
+    /// Reduce nonempty two's-complement little-endian limbs at their public
+    /// width, without allocating or branching on the sign.
+    #[inline]
+    pub fn from_twos_complement_words(&self, words: &[u64]) -> Residue<L> {
+        assert!(!words.is_empty());
+        let input = crate::integer::product::SignedMagnitude::new(words);
+        let magnitude = Residue(self.remainder(&input));
+        Residue::ct_select(&magnitude, &self.neg(&magnitude), input.negative())
+    }
     pub fn from_canonical_ct(&self, value: &Uint<L>) -> CtValue<Residue<L>> {
         let valid = value.ct_lt(&self.modulus);
         CtValue::new(Residue(Uint::ct_select(&Uint::ZERO, value, valid)), valid)
@@ -129,18 +144,6 @@ impl<const L: usize, const N: usize> IntegerEmbedding<Z<N>> for ModRingCtx<L> {
     fn from_integer(&self, value: &Z<N>) -> Self::Elem {
         let magnitude = self.from_integer(&value.unsigned_abs());
         Residue::ct_select(&magnitude, &self.neg(&magnitude), value.is_negative_ct())
-    }
-}
-impl<const L: usize> IntegerEmbedding<crate::UintRef<'_>> for ModRingCtx<L> {
-    fn from_integer(&self, value: &crate::UintRef<'_>) -> Self::Elem {
-        Residue(self.remainder(value.as_words()))
-    }
-}
-impl<const L: usize> IntegerEmbedding<crate::ZRef<'_>> for ModRingCtx<L> {
-    fn from_integer(&self, value: &crate::ZRef<'_>) -> Self::Elem {
-        let input = crate::integer::product::SignedMagnitude::new(value.as_words());
-        let magnitude = Residue(self.remainder(&input));
-        Residue::ct_select(&magnitude, &self.neg(&magnitude), input.negative())
     }
 }
 macro_rules! ring_native {

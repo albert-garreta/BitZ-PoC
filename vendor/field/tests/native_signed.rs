@@ -51,15 +51,22 @@ fn native_signed_mac_preserves_runtime_and_static_scales() {
 }
 
 #[test]
-fn signed_views_preserve_declared_width_and_reject_narrowing() {
-    let negative = ZRef::from_twos_complement_words(&[u64::MAX, u64::MAX]);
-    let narrowed = negative.checked_resize_ct::<1>();
+fn signed_words_preserve_declared_width_and_reject_narrowing() {
+    let narrowed = Z::<1>::checked_from_twos_complement_words_ct(&[u64::MAX, u64::MAX]);
     assert!(narrowed.validity().declassify());
     assert_eq!(narrowed.value().as_words(), &[u64::MAX]);
-    let minimum = ZRef::from_twos_complement_words(&[0, 1 << 63]);
-    assert!(!minimum.checked_resize_ct::<1>().validity().declassify());
+    let minimum = [0, 1 << 63];
+    for words in [minimum, [1 << 63, 0], [0, u64::MAX]] {
+        assert!(
+            !Z::<1>::checked_from_twos_complement_words_ct(&words)
+                .validity()
+                .declassify()
+        );
+    }
     assert_eq!(
-        minimum.checked_resize_ct::<3>().value().as_words(),
+        Z::<3>::checked_from_twos_complement_words_ct(&minimum)
+            .value()
+            .as_words(),
         &[0, 1 << 63, u64::MAX]
     );
 }

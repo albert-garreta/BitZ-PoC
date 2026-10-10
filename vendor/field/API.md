@@ -22,7 +22,6 @@ assert_eq!(field.to_integer(&claim), Uint::from_words([3]));
 |---|---|
 | `Uint<L>` | Exactly L little-endian u64 limbs, unsigned, L > 0. |
 | `Z<L>` | Exactly L limbs, signed two's complement. |
-| `UintRef<'a>`, `ZRef<'a>` | Borrowed nonempty limbs of a public declared width. |
 | `Bit` | An integer-valued bit. |
 | `CtMask`, `CtValue<T>` | Opaque mask and a value accompanied by masked validity. |
 | `FpCtx<L>` | One immutable runtime modulus and prepared arithmetic constants. |
@@ -115,11 +114,14 @@ Indexed MAC calls its callback exactly once at every ascending index. Callers ow
 
 Native u32/u64/Bit occupy one word and u128 occupies two words in prime mixed products. Native word assembly happens inside each consuming operation; no converted operand vector is allocated.
 
-Prime and modular contexts also accept `UintRef` and `ZRef` through
-`IntegerEmbedding`. Their public slice length fixes the work; signed projection
+Prime and modular contexts accept nonempty little-endian slices through
+`from_unsigned_words(&[u64])` and `from_twos_complement_words(&[u64])`.
+Their public slice length fixes the work; signed projection
 uses a masked magnitude view without allocating a temporary word vector. Exact
 MAC retains fixed operand dimensions; use `Uint<N>` in an indexed reader for
 segmented inputs whose public width is known at compile time.
+`Z::<L>::checked_from_twos_complement_words_ct(&[u64])` copies into a fixed-width
+integer with sign extension and masked overflow reporting.
 
 ```rust
 pub type PrimeProductAcc<Id, const L: usize> =
@@ -264,6 +266,14 @@ an overflowing same-width difference or projecting a whole table.
 
 Codecs use fixed little-endian words, reject noncanonical residues/padding, and keep Montgomery words private. GF128 serde preserves Flock's lo/hi structure when the optional serde feature is enabled. Spongefish codecs cover Gf128 and static prime types; runtime prime codecs remain context methods. Legacy Fq/F128 numeric APIs are removed. Q100Prime/Q100Element/Q100Field declare the existing 2^100 - 15 prime.
 
+Static prime encoding stores `[[u8; size_of::<u64>()]; L]` inline and exposes
+the canonical bytes through `AsRef<[u8]>`, without a heap allocation.
+Private `FixedBasePow<C, E>` tables store `E` fixed rows of 64 powers in one
+boxed array and allocate once. Public window tables retain separately allocated
+rows because the window is chosen at runtime; flattening these tables increased
+peak memory use in repeated Falcon proofs. Prepared exponentiation allocates
+nothing in either mode.
+
 ## Coherence and performance contract
 
 1. RingOps owns Elem; arithmetic providers have concrete implementations.
@@ -330,6 +340,7 @@ the output representation explicitly. For `FpCtx<2>`, canonical-u128 helpers
 support existing integer-owned tables; `mul_canonical_u128` takes a prepared
 Montgomery factor. `reduce_montgomery_bounded(&Uint<4>) -> Uint<2>` requires the
 owner to establish `input < modulus * 2^128` and returns canonical integer output.
+`powers_u128::<N>(base)` returns the compile-time-sized array `[u128; N]`.
 
 Binary product domains expose `from_element`, `zero`, XOR combination and reduction.
 `B127Product::from_product_words` requires degree <=252, while
@@ -339,11 +350,12 @@ trusted `from_canonical_words` constructor and masked `from_canonical_ct` decodi
 
 ## Shared binary projections and consumer ownership
 
-`PreparedGf128Projection::new(point, bits)` prepares powers for up to 64 bits.
+`PreparedGf128Projection::<D>::new(point)` prepares `[Gf128; D]` powers with
+`D <= 64` checked at compile time. Zero-width projection is supported.
 `project(bits: u64) -> Gf128` consumes one packed polynomial, and
-`project_into::<D>(&[u64], &mut [Gf128])` uses the retained four-lane NEON kernel
-with a fixed-bound scalar tail. Construction allocates the powers; `_into`
-allocates nothing. High input bits outside the declared width are ignored.
+`project_into(&[u64], &mut [Gf128])` uses the retained four-lane NEON kernel
+with a fixed-bound scalar tail. Construction and projection allocate nothing.
+High input bits outside the declared width are ignored.
 
 BitZ and Flock use the same `Gf128` type and canonical codec. Runtime proof owners
 retain one `FpCtx<2>` for their `Fp<2>` values; codecs require that context rather

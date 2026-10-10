@@ -1,5 +1,6 @@
 //! Canonical numeric encoding. Decoding rejects noncanonical values instead of reducing.
 
+use crate::integer::LIMB_BYTES;
 use crate::{CtValue, IntegerOps, Uint, Z};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,25 +30,33 @@ pub trait CanonicalCodec<T> {
 }
 
 pub(crate) fn encode_words<const L: usize>(value: &Uint<L>, out: &mut [u8]) {
-    assert_eq!(out.len(), L * 8, "encoding output length differs");
-    for (word, bytes) in value.as_words().iter().zip(out.chunks_exact_mut(8)) {
+    assert_eq!(out.len(), L * LIMB_BYTES, "encoding output length differs");
+    for (word, bytes) in value
+        .as_words()
+        .iter()
+        .zip(out.chunks_exact_mut(LIMB_BYTES))
+    {
         bytes.copy_from_slice(&word.to_le_bytes());
     }
 }
 pub(crate) fn decode_words<const L: usize>(input: &[u8]) -> Result<Uint<L>, DecodeError> {
-    if input.len() != L * 8 {
+    if input.len() != L * LIMB_BYTES {
         return Err(DecodeError::Length {
-            expected: L * 8,
+            expected: L * LIMB_BYTES,
             actual: input.len(),
         });
     }
     Ok(Uint::from_words(core::array::from_fn(|i| {
-        u64::from_le_bytes(input[i * 8..i * 8 + 8].try_into().unwrap())
+        u64::from_le_bytes(
+            input[i * LIMB_BYTES..(i + 1) * LIMB_BYTES]
+                .try_into()
+                .unwrap(),
+        )
     })))
 }
 impl<const L: usize> CanonicalCodec<Uint<L>> for IntegerOps {
     fn encoded_len(&self) -> usize {
-        L * 8
+        L * LIMB_BYTES
     }
     fn encode_into(&self, value: &Uint<L>, out: &mut [u8]) {
         encode_words(value, out);
@@ -58,7 +67,7 @@ impl<const L: usize> CanonicalCodec<Uint<L>> for IntegerOps {
 }
 impl<const L: usize> CanonicalCodec<Z<L>> for IntegerOps {
     fn encoded_len(&self) -> usize {
-        L * 8
+        L * LIMB_BYTES
     }
     fn encode_into(&self, value: &Z<L>, out: &mut [u8]) {
         encode_words(&value.0, out);

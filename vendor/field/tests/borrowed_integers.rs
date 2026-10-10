@@ -39,8 +39,7 @@ fn check<const L: usize>(modulus: Uint<L>) {
     for words in cases() {
         let bytes: Vec<_> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
         let expected = BigUint::from_bytes_le(&bytes) % &q;
-        let input = UintRef::new(&words);
-        let actual = prime.to_integer(&prime.from_integer(&input));
+        let actual = prime.to_integer(&prime.from_unsigned_words(&words));
         assert_eq!(
             BigUint::from_bytes_le(
                 &actual
@@ -51,11 +50,10 @@ fn check<const L: usize>(modulus: Uint<L>) {
             ),
             expected
         );
-        assert_eq!(actual, ring.to_integer(&ring.from_integer(&input)));
+        assert_eq!(actual, ring.to_integer(&ring.from_unsigned_words(&words)));
 
         let expected = ((BigInt::from_signed_bytes_le(&bytes) % &signed_q) + &signed_q) % &signed_q;
-        let input = ZRef::from_twos_complement_words(&words);
-        let actual = prime.to_integer(&prime.from_integer(&input));
+        let actual = prime.to_integer(&prime.from_twos_complement_words(&words));
         assert_eq!(
             BigUint::from_bytes_le(
                 &actual
@@ -66,7 +64,10 @@ fn check<const L: usize>(modulus: Uint<L>) {
             ),
             expected.to_biguint().unwrap()
         );
-        assert_eq!(actual, ring.to_integer(&ring.from_integer(&input)));
+        assert_eq!(
+            actual,
+            ring.to_integer(&ring.from_twos_complement_words(&words))
+        );
     }
 }
 
@@ -78,12 +79,49 @@ fn borrowed_projection_matches_big_integer_arithmetic() {
     check(Uint::from_words([u64::MAX - 158, u64::MAX]));
     let words = [0, 0, 0, 1 << 63];
     let field = TinyOps::new();
-    let projected = field.from_integer(&ZRef::from_twos_complement_words(&words));
+    let projected = field.from_twos_complement_words(&words);
     assert_eq!(field.to_integer(&projected), Uint::from_words([8])); // -2^255 mod 17
+    let projected = field.from_unsigned_words(&words);
+    assert_eq!(field.to_integer(&projected), Uint::from_words([9])); // 2^255 mod 17
 }
 
 #[test]
-fn empty_views_are_rejected() {
-    assert!(std::panic::catch_unwind(|| UintRef::new(&[])).is_err());
-    assert!(std::panic::catch_unwind(|| ZRef::from_twos_complement_words(&[])).is_err());
+fn composite_projection_matches_big_integer_arithmetic() {
+    let ring = ModRingCtx::new(Uint::from_words([18])).unwrap();
+    let modulus = BigInt::from(18);
+    for words in cases() {
+        let bytes: Vec<_> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+        for (actual, integer) in [
+            (
+                ring.from_unsigned_words(&words),
+                BigInt::from(BigUint::from_bytes_le(&bytes)),
+            ),
+            (
+                ring.from_twos_complement_words(&words),
+                BigInt::from_signed_bytes_le(&bytes),
+            ),
+        ] {
+            let expected = ((integer % &modulus) + &modulus) % &modulus;
+            assert_eq!(
+                BigInt::from(ring.to_integer(&actual).as_words()[0]),
+                expected
+            );
+        }
+    }
+}
+
+#[test]
+fn empty_words_are_rejected() {
+    let prime = create_prime_field(Uint::from_words([17]));
+    let ring = ModRingCtx::new(Uint::from_words([18])).unwrap();
+    let static_prime = TinyOps::new();
+    assert!(std::panic::catch_unwind(|| prime.from_unsigned_words(&[])).is_err());
+    assert!(std::panic::catch_unwind(|| prime.from_twos_complement_words(&[])).is_err());
+    assert!(std::panic::catch_unwind(|| ring.from_unsigned_words(&[])).is_err());
+    assert!(std::panic::catch_unwind(|| ring.from_twos_complement_words(&[])).is_err());
+    assert!(std::panic::catch_unwind(|| static_prime.from_unsigned_words(&[])).is_err());
+    assert!(std::panic::catch_unwind(|| static_prime.from_twos_complement_words(&[])).is_err());
+    assert!(
+        std::panic::catch_unwind(|| Z::<1>::checked_from_twos_complement_words_ct(&[])).is_err()
+    );
 }

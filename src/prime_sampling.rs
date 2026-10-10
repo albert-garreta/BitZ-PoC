@@ -184,7 +184,7 @@ mod tests {
         let b = 0x0123_4567_89AB_CDEF_0011_2233_4455u128;
         assert_eq!(zq.mul_u128(a, b), mulmod_generic(a, b, q));
         assert_eq!(zq.add_u128(a, b), (a % q + b % q) % q);
-        let pows = zq.powers_u128(a, 4);
+        let pows = zq.powers_u128::<4>(a);
         assert_eq!(pows[0], 1);
         assert_eq!(pows[1], a % q);
         assert_eq!(pows[2], mulmod_generic(a, a, q));

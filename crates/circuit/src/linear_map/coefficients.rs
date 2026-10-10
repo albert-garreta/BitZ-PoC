@@ -2,7 +2,7 @@
 use std::{borrow::Cow, sync::Arc};
 
 use crate::integer_storage::IntegerTable;
-use field::{IntegerEmbedding, RingOps, Z, ZRef};
+use field::{IntegerEmbedding, RingOps, Z};
 
 pub trait CoefficientStore {
     type Ref<'a>
@@ -124,12 +124,12 @@ impl<C> StoreCoefficient<C> for Vec<C> {
     }
 }
 impl CoefficientStore for IntegerTable {
-    type Ref<'a> = ZRef<'a>;
+    type Ref<'a> = &'a [u64];
     fn len(&self) -> usize {
         self.len()
     }
-    fn get(&self, index: usize) -> ZRef<'_> {
-        ZRef::from_twos_complement_words(&self[index])
+    fn get(&self, index: usize) -> &[u64] {
+        &self[index]
     }
     fn compact(&mut self, used: &[bool]) -> Option<Vec<usize>> {
         let mut out = Self::default();
@@ -206,16 +206,6 @@ impl<C> super::WengertTape<Vec<C>> {
     }
 }
 impl super::WengertTape<IntegerTable> {
-    pub fn prepare<'a, F>(&'a self, field: &'a F) -> super::PreparedWengert<'a, &'a F>
-    where
-        F: RingOps + Sync,
-        for<'c> F: IntegerEmbedding<ZRef<'c>>,
-    {
-        self.prepare_projected(field, |words| {
-            field.from_integer(&ZRef::from_twos_complement_words(words))
-        })
-    }
-
     /// Prepare a reusable wide-integer projection once, then project each
     /// distinct coefficient. Execution never performs integer lookup.
     pub fn prepare_projected<'a, F>(

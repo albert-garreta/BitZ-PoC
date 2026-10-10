@@ -2,6 +2,18 @@ The runtime context API deliberately uses an ordinary associated element type.
 The caller retains the modulus and pairs values with the context that created
 them; different runtime moduli of the same width are **not** different Rust types.
 
+Packed polynomial widths and exponent limb counts are compile-time dimensions:
+
+```compile_fail
+use field::{Gf128, PreparedGf128Projection};
+let invalid = PreparedGf128Projection::<65>::new(Gf128::ONE);
+```
+
+```compile_fail
+use field::{FixedBasePow, Gf128, Gf128Ops};
+let invalid = FixedBasePow::<_, 0>::new(Gf128Ops, Gf128::ONE);
+```
+
 ```
 use field::*;
 let field = create_prime_field(Uint::from_words([17]));
