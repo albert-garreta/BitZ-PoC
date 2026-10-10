@@ -1,0 +1,10 @@
+{
+  "command": "python3 -m unittest discover -s scripts -p test_binder_experiments.py -v",
+  "exit_code": 0,
+  "passed": 6,
+  "failed": 0,
+  "reported_seconds": 0.118,
+  "record_source": "Recorded from the successful tool output before production compilation completed; this is a summary, not a raw log.",
+  "runner_sha256": "5d1b750d131b43846ada4510c7a8c8682d7fcfbdee5e9f8e9cdeab6cc432a077",
+  "tests_sha256": "607c98cc03bed5134cde012ded20c5b561971c32b9783edf3fd9ea3f721998bb"
+}

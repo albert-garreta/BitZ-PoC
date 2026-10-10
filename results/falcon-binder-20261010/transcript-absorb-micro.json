@@ -1,0 +1,12 @@
+{
+  "rows": 8192,
+  "bytes_per_row": 16,
+  "batches_per_sample": 1000,
+  "samples": 9,
+  "cpu": 6,
+  "reference_median_us": 373.738,
+  "coalesced_median_us": 261.387,
+  "saved_us": 112.351,
+  "ratio": 0.6993856658942896,
+  "all_digests_match": true
+}

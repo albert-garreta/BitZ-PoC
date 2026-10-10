@@ -1,0 +1,17 @@
+{
+  "benches/falcon_algebraic.rs": "198e41e04c6660ad0d759b731daf8aade424291ab8b66c3a3f17ccfcd690a180",
+  "src/hybrid/integer_bridge.rs": "81b529c12695350fcc487c1a90a96870eca244090c0d0480b08b8aee4f387433",
+  "src/piop/spartan/falcon1024_algebraic/README.md": "3ca53a3e6b8af7baca50ad89de2a68e90858a64dfc43bb261d7a2861c61d3da9",
+  "src/piop/spartan/falcon1024_algebraic/arithmetic.rs": "efe58b8e4450256a7fccc1cc212d5a3e1919f80203df26f942c59a873112cbe7",
+  "src/piop/spartan/falcon1024_algebraic/backend.rs": "8b79c0eb2bf39d67ebee53f28d34ec9dfdd93e93ed2699aae98e7dec8b2d61bf",
+  "src/piop/spartan/falcon1024_algebraic/protocol.rs": "5f724fda5e63cfaafbd869cff9b4f34e2b9e745805f4bc22426b8f1290604218",
+  "src/piop/spartan/falcon_polynomial.rs": "b52cd68c3e415c7699eeb50660a7340c556ea1e1aaafea6669d6f6f71c358c38",
+  "src/sumcheck/inner/packed.rs": "ead781ad69749fb0a6c7c795dce078952ebdec70144413473a3cc3bde89130ad",
+  "src/sumcheck/inner/packed/binding_options.rs": "9efeda3cc7cb72c0f0dede40b187e95460adf308f21da90791648554178ce4b3",
+  "src/transcript/mod.rs": "6eb12747bd47c312adfe1bdbb14c25bddbe01a50a343bdfb86cfdceaa89e81ef",
+  "src/piop/spartan/falcon1024_algebraic/word_binding.rs": "cd83cc253634d191a7ef5a2ce625fdf7bb86a159d0e2b3917a167e72b77d0a73",
+  "docs/falcon-word-binder.md": "3f2097507cb9ce3ada993e2b2118997de0a1a7477a8cba427a84ededbd2e0f9f",
+  "scripts/binder_experiments.py": "5d1b750d131b43846ada4510c7a8c8682d7fcfbdee5e9f8e9cdeab6cc432a077",
+  "scripts/binder_experiments.md": "0016af7b00be9a259d4d0ea26f2f9c7a35e7f23c923c46725db1d756261f74f0",
+  "scripts/test_binder_experiments.py": "607c98cc03bed5134cde012ded20c5b561971c32b9783edf3fd9ea3f721998bb"
+}

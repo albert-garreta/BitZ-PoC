@@ -1,0 +1,43 @@
+[
+  {
+    "name": "baseline",
+    "variant": "arithmetic",
+    "binary": "baseline"
+  },
+  {
+    "name": "baseline",
+    "variant": "full",
+    "binary": "baseline"
+  },
+  {
+    "name": "r011",
+    "variant": "arithmetic",
+    "binary": "candidate",
+    "replay": "off",
+    "construction": "on",
+    "evaluation": "on"
+  },
+  {
+    "name": "r111",
+    "variant": "arithmetic",
+    "binary": "candidate",
+    "replay": "on",
+    "construction": "on",
+    "evaluation": "on"
+  },
+  {
+    "name": "replay-on",
+    "variant": "full",
+    "binary": "candidate",
+    "replay": "on"
+  },
+  {
+    "name": "word",
+    "variant": "arithmetic",
+    "binary": "candidate",
+    "word": "on",
+    "replay": "on",
+    "construction": "on",
+    "evaluation": "on"
+  }
+]

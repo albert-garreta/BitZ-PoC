@@ -1,0 +1,16 @@
+{
+  "base_commit": "51b472c55bfeeda4bccf6d9986345fbeb54953e5",
+  "bins": {
+    "falcon_algebraic": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/results/binder-experiments-20261010/bin/v2-falcon_algebraic",
+      "sha256": "14f919ec75f7361286d58aa5b703990bd5b6291beccaa567397f968d5ae4d5aa"
+    },
+    "falcon_hybrid": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/results/binder-experiments-20261010/bin/v2-falcon_hybrid",
+      "sha256": "1446935e24073a11f3b40b77f158ba17793ea3f9d42f1627f889dba75862613f"
+    }
+  },
+  "rustflags": "-C target-cpu=native",
+  "features": "falcon-hybrid,bench-internals",
+  "profile": "release"
+}

@@ -1,0 +1,40 @@
+Commit regression investigation (read-only, 2026-10-10)
+
+Observed regression, reported by root screen analysis: candidate arithmetic
+witness+commit approximately +8ms at one worker, diminishing with worker count.
+The binaries produce identical source roots and bit-mode proof digests.
+
+Relocation-normalized disassembly comparisons:
+- integer_polynomial_product: 481 instructions, 0x7fe bytes, identical.
+- WitnessData::from_s2 (Falcon-512): 647 instructions, identical.
+- Source::pack_signature (Falcon-512): 252 instructions, 0x465 bytes, identical.
+- shared commit_sources<1>: 392 instructions, 0x82b bytes, identical.
+- AdditiveNttF128::forward_transform_interleaved_from_layer: 5011 instructions, identical.
+- butterfly_fused_4layer_row: 1393 instructions, identical.
+- PreparedFalconAlgebraic::commit_from_s2: 511 instructions, 0x991 bytes;
+  only the Prepared layout field offset changed (0x2a8 -> 0x2c0).
+
+Concrete, UNCONFIRMED alignment hypothesis:
+src/piop/spartan/falcon_polynomial.rs::integer_polynomial_product uses a
+schoolbook base case at n <= 32. For the actual n=32,b.len()=32 case, the
+vectorization threshold compares b.len()-1=31 against 32, taking the scalar loop.
+
+Baseline function address: 0x18e0d0 (mod64=16).
+Baseline scalar inner loop: 0x18e200 (mod64=0).
+Baseline backedge: 0x18e21f, bytes 75 df (jne 0x18e200), mod64=31.
+Candidate function address: 0x1913b0 (mod64=48).
+Candidate scalar inner loop: 0x1914e0 (mod64=32).
+Candidate backedge: 0x1914ff, bytes 75 df (jne 0x1914e0), mod64=63.
+Thus the candidate's two-byte hot backedge crosses a 64-byte boundary.
+
+Degree512 Karatsuba has 3^4=81 leaves, each 32*32 multiply-add iterations.
+Across1024 signatures this is84,934,656 iterations. A small per-iteration
+front-end penalty could explain milliseconds and scales with worker count.
+This is a testable hypothesis, NOT a measured causal finding. Trace
+falcon_algebraic:witness versus commitment encode/hash first. A relink can
+change the address alignment even with identical machine instructions.
+No source change was made to Karatsuba for this investigation.
+
+Frozen binary SHA256:
+baseline-falcon_algebraic: f1e59fb4d807d8f1e5d7cdc55207b477b8f09c6da01384334c6d3e4bbf3276a0
+candidate-falcon_algebraic: d113e631e6dabf2b78aad512c1dc6f1d893aaa2ebb25ea5901f3967116940f67

@@ -1,0 +1,39 @@
+
+running 35 tests
+test piop::spartan::falcon512_algebraic::arithmetic::tests::aligned_binding_matches_dense_evaluation_folds_and_sumcheck ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::altered_bits_and_both_kinds_of_padding_are_rejected ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::factored_construction_and_batched_evaluation_match_legacy ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::grinded_messages_roundtrip_and_require_all_nonces ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::invalid_slack_and_cross_witness_binding_are_rejected ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::malformed_messages_and_nonces_are_rejected ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::parallel_binding_rejects_noncanonical_ring_coefficients ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::preceding_transcript_domains_cannot_be_replayed ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::signatures_cannot_borrow_each_others_norm_budget ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::singleton_and_padded_batch_open_the_same_bits ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::word_binding::tests::word_source_mutations_and_partial_batches_are_rejected ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::word_binding::tests::word_sumcheck_matches_dense_two_product_oracle_and_bit_opening ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::combined_commit_matches_separate_preparation ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::combined_commit_rejects_batch_mismatches ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::configuration_bounds_cover_all_supported_batches ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::default_binding_depends_only_on_public_configuration ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::end_to_end_and_tampering ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::packing_preserves_complete_proofs_and_transcript_continuation ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::recommitted_invalid_assignments_are_rejected ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::serial_and_optimized_binding_preserve_complete_proof_contents ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::word_binding_end_to_end_rejects_terminal_and_protocol_mutations ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::word_binding_security_ledger_and_geometry_are_explicit ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::alpha_coordinates_and_carries_match_independent_fixed_basis_reference ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::an_invalid_ring_witness_has_no_coordinate_lift ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::coordinate_bound_covers_the_entire_encoded_witness_range ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::extension_sampler_rejects_biased_tail_and_base_field_evaluations ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::malformed_quotients_carries_and_nonce_shapes_are_rejected ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::ring_claim_matches_negacyclic_witness_for_padded_batches ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::tampering_changes_the_authenticated_claim_or_is_rejected ... ok
+test piop::spartan::falcon512_algebraic::source::tests::aligned_addresses_are_disjoint_and_preserve_signed15_boundaries ... ok
+test piop::spartan::falcon512_algebraic::source::tests::combined_preparation_rejects_invalid_shapes_and_public_coefficients ... ok
+test piop::spartan::falcon512_algebraic::source::tests::exact_norm_boundary_and_coefficient_limits ... ok
+test piop::spartan::falcon512_algebraic::source::tests::exact_ring_and_norm_match_independent_schoolbook ... ok
+test piop::spartan::falcon512_algebraic::source::tests::packing_strategies_match_every_word ... ok
+test piop::spartan::falcon512_algebraic::source::tests::signed15_source_decodes_and_padding_is_zero ... ok
+
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 768 filtered out; finished in 5.01s

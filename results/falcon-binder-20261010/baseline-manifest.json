@@ -1,0 +1,25 @@
+{
+  "commit": "51b472c55bfeeda4bccf6d9986345fbeb54953e5",
+  "bins": {
+    "falcon_algebraic": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/results/binder-experiments-20261010/bin/baseline-falcon_algebraic",
+      "sha256": "f1e59fb4d807d8f1e5d7cdc55207b477b8f09c6da01384334c6d3e4bbf3276a0"
+    },
+    "bitz": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/results/binder-experiments-20261010/bin/baseline-bitz",
+      "sha256": "5ee7cf09e69008d2ca91f024ed3ab153bf69773ea3bdf1dc2890bc8c6b53660d"
+    },
+    "falcon_hybrid": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/results/binder-experiments-20261010/bin/baseline-falcon_hybrid",
+      "sha256": "e650313ef17c4a324294327e11f42f1648a033fe93d0c4dd9b29852004b33741"
+    },
+    "hybrid-u32-sha256": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/results/binder-experiments-20261010/bin/baseline-hybrid-u32-sha256",
+      "sha256": "34a13d7ee981f3274bf4517e4e50be93dfae701c95babf52a27bd5825b5f8e78"
+    }
+  },
+  "rustflags": "-C target-cpu=native",
+  "profile": "release",
+  "features": "falcon-hybrid,bench-internals",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8\n"
+}
