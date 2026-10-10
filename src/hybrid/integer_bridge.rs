@@ -270,6 +270,13 @@ pub(crate) fn prove_weighted(
     if rows.len() != p.cols() || rows.iter().any(|column| column.len() != p.rows() / 64) {
         return Err(err("bridge source shape"));
     }
+    if column_point.len() != p.col_vars {
+        return Err(err("bridge point shape"));
+    }
+    F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
+    if row_weights.len() != p.rows() || row_weights.iter().any(|&weight| weight >= modulus) {
+        return Err(err("bridge row weights"));
+    }
     if mode == BridgeMode::Unsplit {
         return prove_unsplit(
             t,
@@ -280,13 +287,6 @@ pub(crate) fn prove_weighted(
             grinding_bits,
             row_weights,
         );
-    }
-    if column_point.len() != p.col_vars {
-        return Err(err("bridge point shape"));
-    }
-    F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
-    if row_weights.len() != p.rows() || row_weights.iter().any(|&weight| weight >= modulus) {
-        return Err(err("bridge row weights"));
     }
     split_bounds(p, modulus)?;
     let chunks = weight_limbs(row_weights, limb_width(p))?;
@@ -407,6 +407,12 @@ fn verify_weighted_with_field(
     field: &Cfg,
 ) -> Result<BinaryClaim, FalconError> {
     Shape::new(p.row_vars, p.col_vars).map_err(|_| err("bridge fold shape"))?;
+    if column_point.len() != p.col_vars {
+        return Err(err("bridge point shape"));
+    }
+    if row_weights.len() != p.rows() || row_weights.iter().any(|&weight| weight >= modulus) {
+        return Err(err("bridge row weights"));
+    }
     if mode == BridgeMode::Unsplit {
         return verify_unsplit(
             t,
@@ -420,14 +426,8 @@ fn verify_weighted_with_field(
             field,
         );
     }
-    if column_point.len() != p.col_vars {
-        return Err(err("bridge point shape"));
-    }
     if proof.forest.len() != message_count(p) {
         return Err(err("bridge forest message count"));
-    }
-    if row_weights.len() != p.rows() || row_weights.iter().any(|&weight| weight >= modulus) {
-        return Err(err("bridge row weights"));
     }
     split_bounds(p, modulus)?;
     let width = limb_width(p);
@@ -568,13 +568,6 @@ fn prove_unsplit(
     row_weights: &[u128],
 ) -> Result<(Proof, BinaryClaim), FalconError> {
     let shape = unsplit_shape(p, modulus)?;
-    if column_point.len() != p.col_vars {
-        return Err(err("bridge point shape"));
-    }
-    F::make_cfg(&Uint::from(modulus)).map_err(|_| err("bridge modulus"))?;
-    if row_weights.len() != p.rows() || row_weights.iter().any(|&weight| weight >= modulus) {
-        return Err(err("bridge row weights"));
-    }
     // All terms are nonnegative. Bounding their full sum also bounds every
     // partial sum in the digit-table and parallel folding implementations.
     checked_weight_sum(row_weights)?;
@@ -625,9 +618,6 @@ fn verify_unsplit(
     field: &Cfg,
 ) -> Result<BinaryClaim, FalconError> {
     unsplit_shape(p, modulus)?;
-    if column_point.len() != p.col_vars {
-        return Err(err("bridge point shape"));
-    }
     if proof.forest.len() != unsplit_message_count(p) {
         return Err(err("bridge forest message count"));
     }
@@ -636,9 +626,6 @@ fn verify_unsplit(
     };
     if sums.len() != p.cols() {
         return Err(err("unsplit bridge sum shape"));
-    }
-    if row_weights.len() != p.rows() || row_weights.iter().any(|&weight| weight >= modulus) {
-        return Err(err("bridge row weights"));
     }
     let bound = checked_weight_sum(row_weights)?;
     if sums.iter().any(|&sum| sum > bound) {

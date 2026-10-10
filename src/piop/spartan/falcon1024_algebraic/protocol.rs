@@ -1064,8 +1064,7 @@ mod tests {
                                 })
                                 .unwrap();
                             assert_eq!(prover_next, verifier_next);
-                            // Every nested proof derives Debug, including all
-                            // projection, binding, opening, and PCS nonces.
+                            // Debug includes the proof contents and all present nonces.
                             let contents = (
                                 root,
                                 format!("{proof:?}"),
@@ -1132,8 +1131,7 @@ mod tests {
                     let proof = prepared.prove(committed).unwrap();
                     assert_eq!(proof.source_root(), &root);
                     prepared.verify(&public, &proof).unwrap();
-                    // Derived Debug includes every proof field, including all
-                    // ring, arithmetic, bridge, joint, opening and PCS nonces.
+                    // Debug includes the proof contents and all present nonces.
                     // This compares contents within one build, not a wire codec.
                     (root, format!("{proof:?}"))
                 })

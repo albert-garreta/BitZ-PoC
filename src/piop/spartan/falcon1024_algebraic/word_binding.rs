@@ -40,6 +40,14 @@ fn weight(form: &BindingForm<'_>, index: usize) -> F {
 fn interpolate(field: &Cfg, a: F, b: F, challenge: F) -> F {
     field.add(&a, &field.mul(&challenge, &field.sub(&b, &a)))
 }
+fn accumulate_product_pair(field: &Cfg, sums: &mut [FpProductAcc<2>; 2], a: Row, b: Row) {
+    field.mul_acc(&mut sums[0], &a[0], &a[1]);
+    field.mul_acc(
+        &mut sums[1],
+        &field.sub(&b[0], &a[0]),
+        &field.sub(&b[1], &a[1]),
+    );
+}
 fn product_coefficients(field: &Cfg, rows: &[Row], constant: F) -> [F; 2] {
     let zero = || [FpProductAcc::<2>::default(); 2];
     let accumulate = |mut sums: [FpProductAcc<2>; 2], pair: &[Row]| {
@@ -82,12 +90,7 @@ fn fold_dense(
     let fill = |mut sums: [FpProductAcc<2>; 2], (pair, rows): (usize, &mut [Row])| {
         rows[0] = read(2 * pair);
         rows[1] = read(2 * pair + 1);
-        field.mul_acc(&mut sums[0], &rows[0][0], &rows[0][1]);
-        field.mul_acc(
-            &mut sums[1],
-            &field.sub(&rows[1][0], &rows[0][0]),
-            &field.sub(&rows[1][1], &rows[0][1]),
-        );
+        accumulate_product_pair(field, &mut sums, rows[0], rows[1]);
         sums
     };
     let sums = if len >= 4096 && binding_workers() > 1 {
@@ -154,12 +157,7 @@ fn fold_coefficients(
                 let b = read_folded(chunk, 2 * pair + 1);
                 chunk[4 * pair..4 * pair + 2].copy_from_slice(&a);
                 chunk[4 * pair + 2..4 * pair + 4].copy_from_slice(&b);
-                field.mul_acc(&mut sums[0], &a[0], &a[1]);
-                field.mul_acc(
-                    &mut sums[1],
-                    &field.sub(&b[0], &a[0]),
-                    &field.sub(&b[1], &a[1]),
-                );
+                accumulate_product_pair(field, &mut sums, a, b);
             }
         }
         sums
@@ -181,12 +179,7 @@ fn fold_coefficients(
         // The next variable is side, rather than another coefficient bit.
         let mut sums = zero();
         for (a, b) in s1.chunks_exact(N).zip(s2.chunks_exact(N)) {
-            field.mul_acc(&mut sums[0], &a[0], &a[1]);
-            field.mul_acc(
-                &mut sums[1],
-                &field.sub(&b[0], &a[0]),
-                &field.sub(&b[1], &a[1]),
-            );
+            accumulate_product_pair(field, &mut sums, [a[0], a[1]], [b[0], b[1]]);
         }
         let reduce = field.prepare_product_reduction(s1.len() / N);
         sums.map(|sum| reduce.reduce(sum))
@@ -434,18 +427,7 @@ fn evaluate(form: &BindingForm<'_>, point: &[F]) -> Result<[F; 2], FalconError> 
     let local = eq_table(&point[..COEFFICIENT_LOG + 1], field).map_err(failure)?;
     let instances = eq_table(&point[COEFFICIENT_LOG + 1..], field).map_err(failure)?;
     let reduce = field.prepare_product_reduction(2 * N);
-    let subtotal = |instance: usize| {
-        let mut sum = FpProductAcc::<2>::default();
-        for (side, values) in form.coefficients.iter().enumerate() {
-            for (value, weight) in values[instance * N..(instance + 1) * N]
-                .iter()
-                .zip(&local[side * N..(side + 1) * N])
-            {
-                field.mul_acc(&mut sum, value, weight);
-            }
-        }
-        reduce.reduce(sum)
-    };
+    let subtotal = |instance| reduce.reduce(form.coefficient_product_sum(instance, &local));
     let values: Vec<_> = if binding_workers() > 1 {
         (0..form.layout.batch())
             .into_par_iter()

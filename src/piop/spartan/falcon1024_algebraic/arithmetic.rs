@@ -73,6 +73,7 @@ pub(super) struct Proof {
     pub terminal_merge_nonce: Option<u64>,
 }
 
+// Omit an absent word-merge nonce to preserve legacy bit-proof debug digests.
 impl std::fmt::Debug for Proof {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut debug = f.debug_struct("Proof");
@@ -572,6 +573,19 @@ impl<'a> BindingForm<'a> {
         ))
     }
 
+    fn coefficient_product_sum(&self, instance: usize, weights: &[F]) -> field::FpProductAcc<2> {
+        let mut sum = field::FpProductAcc::<2>::default();
+        for (side, values) in self.coefficients.iter().enumerate() {
+            for (value, weight) in values[instance * N..(instance + 1) * N]
+                .iter()
+                .zip(&weights[side * N..(side + 1) * N])
+            {
+                self.field.mul_acc(&mut sum, value, weight);
+            }
+        }
+        sum
+    }
+
     /// Split bit-lane, coefficient and instance variables. The signed decoder
     /// is evaluated once, rather than once per coefficient or per signature.
     fn evaluate(&self, point: &[F]) -> Result<F, FalconError> {
@@ -620,17 +634,7 @@ impl<'a> BindingForm<'a> {
         };
         let evaluate_instance = |instance: usize| match &evaluation {
             Evaluation::Batched(reduce) => {
-                let mut value = field::FpProductAcc::<2>::default();
-                for side in 0..2 {
-                    for (coefficient, weight) in self.coefficients[side]
-                        [instance * N..(instance + 1) * N]
-                        .iter()
-                        .zip(&coefficients[side * N..(side + 1) * N])
-                    {
-                        self.field.mul_acc(&mut value, coefficient, weight);
-                    }
-                }
-                reduce.reduce(value)
+                reduce.reduce(self.coefficient_product_sum(instance, &coefficients))
             }
             Evaluation::Legacy => {
                 let mut value = self.field.zero();
