@@ -1034,10 +1034,10 @@ impl KeccakSetup {
 use super::common::{BM_V, SendPtr, nt_store_row};
 
 type VLane = [u64; BM_V];
-type VLanes = [[u64; BM_V]; N_LANES];
+pub(super) type VLanes = [[u64; BM_V]; N_LANES];
 
 #[inline(always)]
-fn theta_v(s: &mut VLanes) {
+pub(super) fn theta_v(s: &mut VLanes) {
     let mut c = [[0u64; BM_V]; 5];
     for x in 0..5 {
         for y in 0..5 {
@@ -1061,7 +1061,7 @@ fn theta_v(s: &mut VLanes) {
 }
 
 #[inline(always)]
-fn rho_pi_v(s_in: &VLanes) -> VLanes {
+pub(super) fn rho_pi_v(s_in: &VLanes) -> VLanes {
     let mut out = [[0u64; BM_V]; N_LANES];
     for y in 0..5 {
         for x in 0..5 {

@@ -1,0 +1,4492 @@
+{
+  "description": "Full Falcon-1024 Keccak3 packing comparison; local measurements, not a cross-machine performance guarantee.",
+  "date": "2026-10-10",
+  "baseline_commit": "51b472c55bfeeda4bccf6d9986345fbeb54953e5",
+  "candidate_branch": "codex/falcon-keccak3-packing",
+  "cpu": "AMD Ryzen 9 9950X3D 16-Core Processor",
+  "platform": "Linux-6.17.0-41-generic-x86_64-with-glibc2.42",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "build": [
+    "cargo",
+    "build",
+    "--release",
+    "--locked",
+    "--offline",
+    "--features",
+    "falcon-hybrid",
+    "--bench",
+    "falcon_hybrid"
+  ],
+  "environment": {
+    "RUSTFLAGS": "-C target-cpu=native",
+    "RAYON_NUM_THREADS": "16"
+  },
+  "arguments": [
+    "--degree",
+    "1024",
+    "--batch",
+    "BATCH",
+    "--security",
+    "128",
+    "--threads",
+    "16",
+    "--seed",
+    "42",
+    "--warmup",
+    "1",
+    "--iterations",
+    "3"
+  ],
+  "timing_definition": "Median of three measured trials after one warmup, fresh process per variant/batch; total prover includes witness generation, commitment, and proof construction, excludes setup/input generation and verification. RSS is process high-water mark across all trials.",
+  "execution_order": [
+    "baseline-b1",
+    "candidate-b1",
+    "candidate-b32",
+    "baseline-b32",
+    "baseline-b1024",
+    "candidate-b1024"
+  ],
+  "validation": {
+    "falcon_unit_tests_passed": 203,
+    "profile_tests_passed": 21,
+    "new_vendor_regressions_passed": 2,
+    "existing_vendor_failures_reproduced_on_baseline": [
+      "keccak3::tests::all_zero_witness_rejected",
+      "keccak3::tests::prove_fast_roundtrip"
+    ],
+    "vendor_failure_reason": "Standalone default Ligerito config at m=22 has initial_k=4, caller requests log_batch_size=6."
+  },
+  "runs": {
+    "baseline-b1": [
+      {
+        "algebraic_security_bits": 128.0939402150174,
+        "arithmetic_live_bits_per_signature": 100482,
+        "arithmetic_prime_bits": 126,
+        "arithmetic_prime_max": "85070591730234615865843651857942052863",
+        "arithmetic_prime_min": "42535295865117307932921825928971026432",
+        "batch": 1,
+        "build_rustflags": "-C target-cpu=native",
+        "capacity": 1,
+        "compiled_target_features": {
+          "aes": true,
+          "avx2": true,
+          "avx512f": true,
+          "gfni": true,
+          "pclmulqdq": true,
+          "sse4.1": true,
+          "vpclmulqdq": true
+        },
+        "cpu_affinity": null,
+        "degree": 1024,
+        "event": "prepared",
+        "gf128_kernel": "pclmul-karatsuba-barrett",
+        "input_count": 1,
+        "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+        "input_implementation_version": "0.3.0",
+        "input_mode": "original-falcon-1024",
+        "input_rng": "rand_chacha 0.3.1 ChaCha20Rng::seed_from_u64",
+        "input_seed": 42,
+        "input_setup_ms": 9.608286000000001,
+        "input_source": "pornin/rust-fn-dsa",
+        "integer_bridge": "wfbitz-joint-limbs",
+        "max_batch": 1024,
+        "measured_trials": 3,
+        "native_verify_includes_public_key_decode": true,
+        "pcs_query_shape": {
+          "configuration_fingerprint": "c4d225855afbbf39b8b10835c6f495d994552a7e8cdd94418e3ff272de8cb13e",
+          "fold_grinding_bits": [
+            12,
+            10,
+            8
+          ],
+          "initial_k": 4,
+          "initial_log_msg_cols": 10,
+          "initial_log_num_interleaved": 4,
+          "initial_opened_row_width": 13,
+          "log_inv_rates": [
+            1,
+            2,
+            3
+          ],
+          "merkle_hash": "Blake3",
+          "occupied_lanes": 13,
+          "ood_samples": [
+            0,
+            0,
+            0
+          ],
+          "position_log": 10,
+          "queries": [
+            313,
+            194,
+            161
+          ],
+          "query_grinding_bits": [
+            0,
+            0,
+            0
+          ],
+          "recursive_ks": [
+            3,
+            2
+          ],
+          "recursive_log_msg_cols": [
+            7,
+            5
+          ],
+          "recursive_opened_row_widths": [
+            8
+          ],
+          "recursive_steps": 2,
+          "source_lane_widths": [
+            1,
+            8,
+            4
+          ],
+          "source_packed_logs": [
+            10,
+            13,
+            12
+          ],
+          "virtual_lane_log": 4
+        },
+        "prepare_ms": 4.076351,
+        "protocol": "bitz/falcon/shared-prime/non-zk/v6",
+        "public_inputs": [
+          "public_key",
+          "message",
+          "signature_nonce",
+          "signature_s2"
+        ],
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "runtime_rustflags": "-C target-cpu=native",
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "security_terms": [
+          {
+            "bits": 144.0,
+            "error_bound": 4.484155085839415e-44,
+            "name": "prime sampling"
+          },
+          {
+            "bits": null,
+            "error_bound": 0.0,
+            "name": "per-signature norm identity"
+          },
+          {
+            "bits": 133.0,
+            "error_bound": 9.183549615799121e-41,
+            "name": "integer relation batching"
+          },
+          {
+            "bits": 133.5405683813627,
+            "error_bound": 6.313690360861896e-41,
+            "name": "HashToPoint initial row point"
+          },
+          {
+            "bits": 133.95560588064154,
+            "error_bound": 4.735267770646422e-41,
+            "name": "combined integer outer sumcheck"
+          },
+          {
+            "bits": 138.43517466142694,
+            "error_bound": 2.122559981965021e-42,
+            "name": "shared ring outer and endpoint batch"
+          },
+          {
+            "bits": 134.67807190511263,
+            "error_bound": 2.8698592549372254e-41,
+            "name": "integer polynomial projection"
+          },
+          {
+            "bits": 133.75207248655641,
+            "error_bound": 5.452732584380728e-41,
+            "name": "linear constraints and terminal batching"
+          },
+          {
+            "bits": 133.91253715874967,
+            "error_bound": 4.878760733393283e-41,
+            "name": "prime source sumcheck"
+          },
+          {
+            "bits": 130.1958689788167,
+            "error_bound": 6.414135434784699e-40,
+            "name": "batched integer-to-binary forest"
+          },
+          {
+            "bits": 130.02845644604923,
+            "error_bound": 7.203346729892436e-40,
+            "name": "binary Keccak PIOP"
+          },
+          {
+            "bits": 133.0,
+            "error_bound": 9.183549615799121e-41,
+            "name": "SHAKE wiring, source padding and binary claim batching"
+          },
+          {
+            "bits": 132.60768257722123,
+            "error_bound": 1.2053408870736347e-40,
+            "name": "joint binary sumcheck"
+          },
+          {
+            "bits": 132.0,
+            "error_bound": 1.8367099231598242e-40,
+            "name": "ring switch and support padding"
+          },
+          {
+            "bits": 130.15644262991086,
+            "error_bound": 6.591839727486031e-40,
+            "name": "shared Ligerito"
+          }
+        ],
+        "source_bits_per_signature": [
+          131072,
+          1048576,
+          524288
+        ],
+        "source_layout": "aligned16-h2p-selection-v4",
+        "stage_timings": false,
+        "target_arch": "x86_64",
+        "threads": 16,
+        "warmup_trials": 1
+      },
+      {
+        "batch": 1,
+        "capacity": 1,
+        "degree": 1024,
+        "end_to_end_ms": 53.08417,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "325760",
+              "stored_nonce_boundaries": 157
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "21864",
+              "stored_nonce_boundaries": 21
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "122723",
+              "stored_nonce_boundaries": 55
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "6359",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "130828",
+              "stored_nonce_boundaries": 30
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "390",
+              "stored_nonce_boundaries": 2
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "152195",
+              "stored_nonce_boundaries": 9
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "7511",
+              "stored_nonce_boundaries": 3
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "259632",
+              "stored_nonce_boundaries": 18
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "3822",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "248585",
+              "stored_nonce_boundaries": 12
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "0",
+              "stored_nonce_boundaries": 0
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "4335",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+        "input_setup_ms": 9.608286000000001,
+        "max_batch": 1024,
+        "native_verify_ms": 0.025509,
+        "prepare_ms": 4.076351,
+        "process_peak_rss_kib": 47508,
+        "proof_debug_digest": "3a8d24ac8716a48a71dde9dc318a5bd1cd8a0e6114f12d8981507378e9e3c2ae",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 712,
+          "arithmetic_source_binding": 992,
+          "binary_bridge_gkr": 4992,
+          "binary_bridge_nonces": 1256,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 164,
+          "integer_column_sums_first_limb": 256,
+          "integer_column_sums_remaining_limbs": 64,
+          "joint_binary_sumcheck": 856,
+          "keccak_piops": 8280,
+          "opening_and_auxiliary_nonces": 256,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 4144,
+          "pcs_final_message": 2048,
+          "pcs_initial_opened_rows": 65104,
+          "pcs_nonces": 96,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 6176,
+          "pcs_recursive_opened_rows": 24832,
+          "pcs_roots": 96,
+          "pcs_sumchecks": 384,
+          "ring_certificate_and_reduction": 22938,
+          "source_authentication_joint": 21216
+        },
+        "proof_payload_bytes": 166918,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 36.832917,
+        "proof_verify_ms": 15.19255,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": null,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "a5caf521b2d0a6382ed9148c8c7b169f840ba5b84309f39e1869b50fda23e4fb",
+        "threads": 16,
+        "total_prover_ms": 37.89162,
+        "trial": "warmup",
+        "verified": true,
+        "witness_commit_ms": 1.058703
+      },
+      {
+        "batch": 1,
+        "capacity": 1,
+        "degree": 1024,
+        "end_to_end_ms": 40.142638000000005,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "325760",
+              "stored_nonce_boundaries": 157
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "21864",
+              "stored_nonce_boundaries": 21
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "122723",
+              "stored_nonce_boundaries": 55
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "6359",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "130828",
+              "stored_nonce_boundaries": 30
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "390",
+              "stored_nonce_boundaries": 2
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "152195",
+              "stored_nonce_boundaries": 9
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "7511",
+              "stored_nonce_boundaries": 3
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "259632",
+              "stored_nonce_boundaries": 18
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "3822",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "248585",
+              "stored_nonce_boundaries": 12
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "0",
+              "stored_nonce_boundaries": 0
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "4335",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+        "input_setup_ms": 9.608286000000001,
+        "max_batch": 1024,
+        "native_verify_ms": 0.027912999999999997,
+        "prepare_ms": 4.076351,
+        "process_peak_rss_kib": 50112,
+        "proof_debug_digest": "3a8d24ac8716a48a71dde9dc318a5bd1cd8a0e6114f12d8981507378e9e3c2ae",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 712,
+          "arithmetic_source_binding": 992,
+          "binary_bridge_gkr": 4992,
+          "binary_bridge_nonces": 1256,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 164,
+          "integer_column_sums_first_limb": 256,
+          "integer_column_sums_remaining_limbs": 64,
+          "joint_binary_sumcheck": 856,
+          "keccak_piops": 8280,
+          "opening_and_auxiliary_nonces": 256,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 4144,
+          "pcs_final_message": 2048,
+          "pcs_initial_opened_rows": 65104,
+          "pcs_nonces": 96,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 6176,
+          "pcs_recursive_opened_rows": 24832,
+          "pcs_roots": 96,
+          "pcs_sumchecks": 384,
+          "ring_certificate_and_reduction": 22938,
+          "source_authentication_joint": 21216
+        },
+        "proof_payload_bytes": 166918,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 24.600206,
+        "proof_verify_ms": 14.698245,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": 1,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "a5caf521b2d0a6382ed9148c8c7b169f840ba5b84309f39e1869b50fda23e4fb",
+        "threads": 16,
+        "total_prover_ms": 25.444393,
+        "trial": "sample",
+        "verified": true,
+        "witness_commit_ms": 0.844187
+      },
+      {
+        "batch": 1,
+        "capacity": 1,
+        "degree": 1024,
+        "end_to_end_ms": 37.260935,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "325760",
+              "stored_nonce_boundaries": 157
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "21864",
+              "stored_nonce_boundaries": 21
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "122723",
+              "stored_nonce_boundaries": 55
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "6359",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "130828",
+              "stored_nonce_boundaries": 30
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "390",
+              "stored_nonce_boundaries": 2
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "152195",
+              "stored_nonce_boundaries": 9
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "7511",
+              "stored_nonce_boundaries": 3
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "259632",
+              "stored_nonce_boundaries": 18
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "3822",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "248585",
+              "stored_nonce_boundaries": 12
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "0",
+              "stored_nonce_boundaries": 0
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "4335",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+        "input_setup_ms": 9.608286000000001,
+        "max_batch": 1024,
+        "native_verify_ms": 0.028184,
+        "prepare_ms": 4.076351,
+        "process_peak_rss_kib": 50696,
+        "proof_debug_digest": "3a8d24ac8716a48a71dde9dc318a5bd1cd8a0e6114f12d8981507378e9e3c2ae",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 712,
+          "arithmetic_source_binding": 992,
+          "binary_bridge_gkr": 4992,
+          "binary_bridge_nonces": 1256,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 164,
+          "integer_column_sums_first_limb": 256,
+          "integer_column_sums_remaining_limbs": 64,
+          "joint_binary_sumcheck": 856,
+          "keccak_piops": 8280,
+          "opening_and_auxiliary_nonces": 256,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 4144,
+          "pcs_final_message": 2048,
+          "pcs_initial_opened_rows": 65104,
+          "pcs_nonces": 96,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 6176,
+          "pcs_recursive_opened_rows": 24832,
+          "pcs_roots": 96,
+          "pcs_sumchecks": 384,
+          "ring_certificate_and_reduction": 22938,
+          "source_authentication_joint": 21216
+        },
+        "proof_payload_bytes": 166918,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 24.054182,
+        "proof_verify_ms": 12.317882,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": 2,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "a5caf521b2d0a6382ed9148c8c7b169f840ba5b84309f39e1869b50fda23e4fb",
+        "threads": 16,
+        "total_prover_ms": 24.943053,
+        "trial": "sample",
+        "verified": true,
+        "witness_commit_ms": 0.888871
+      },
+      {
+        "batch": 1,
+        "capacity": 1,
+        "degree": 1024,
+        "end_to_end_ms": 34.896765,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "325760",
+              "stored_nonce_boundaries": 157
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "21864",
+              "stored_nonce_boundaries": 21
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "122723",
+              "stored_nonce_boundaries": 55
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "6359",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "130828",
+              "stored_nonce_boundaries": 30
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "390",
+              "stored_nonce_boundaries": 2
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "152195",
+              "stored_nonce_boundaries": 9
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "7511",
+              "stored_nonce_boundaries": 3
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "259632",
+              "stored_nonce_boundaries": 18
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "3822",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "248585",
+              "stored_nonce_boundaries": 12
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "0",
+              "stored_nonce_boundaries": 0
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "4335",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+        "input_setup_ms": 9.608286000000001,
+        "max_batch": 1024,
+        "native_verify_ms": 0.02157,
+        "prepare_ms": 4.076351,
+        "process_peak_rss_kib": 50932,
+        "proof_debug_digest": "3a8d24ac8716a48a71dde9dc318a5bd1cd8a0e6114f12d8981507378e9e3c2ae",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 712,
+          "arithmetic_source_binding": 992,
+          "binary_bridge_gkr": 4992,
+          "binary_bridge_nonces": 1256,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 164,
+          "integer_column_sums_first_limb": 256,
+          "integer_column_sums_remaining_limbs": 64,
+          "joint_binary_sumcheck": 856,
+          "keccak_piops": 8280,
+          "opening_and_auxiliary_nonces": 256,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 4144,
+          "pcs_final_message": 2048,
+          "pcs_initial_opened_rows": 65104,
+          "pcs_nonces": 96,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 6176,
+          "pcs_recursive_opened_rows": 24832,
+          "pcs_roots": 96,
+          "pcs_sumchecks": 384,
+          "ring_certificate_and_reduction": 22938,
+          "source_authentication_joint": 21216
+        },
+        "proof_payload_bytes": 166918,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 21.368964000000002,
+        "proof_verify_ms": 12.852453,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": 3,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "a5caf521b2d0a6382ed9148c8c7b169f840ba5b84309f39e1869b50fda23e4fb",
+        "threads": 16,
+        "total_prover_ms": 22.044312,
+        "trial": "sample",
+        "verified": true,
+        "witness_commit_ms": 0.675348
+      },
+      {
+        "batch": 1,
+        "capacity": 1,
+        "degree": 1024,
+        "event": "summary",
+        "input_setup_ms": 9.608286000000001,
+        "max_batch": 1024,
+        "median_end_to_end_ms": 37.260935,
+        "median_native_verify_ms": 0.027912999999999997,
+        "median_proof_prove_ms": 24.054182,
+        "median_proof_verify_ms": 12.852453,
+        "median_total_prover_ms": 24.943053,
+        "median_witness_commit_ms": 0.844187,
+        "prepare_ms": 4.076351,
+        "process_peak_rss_kib": 50932,
+        "proof_signatures_per_second": 41.572812577871076,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "samples": 3,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "threads": 16,
+        "total_prover_signatures_per_second": 40.09132322334399,
+        "verified": true
+      }
+    ],
+    "candidate-b1": [
+      {
+        "algebraic_security_bits": 128.09446504251457,
+        "arithmetic_live_bits_per_signature": 100482,
+        "arithmetic_prime_bits": 126,
+        "arithmetic_prime_max": "85070591730234615865843651857942052863",
+        "arithmetic_prime_min": "42535295865117307932921825928971026432",
+        "batch": 1,
+        "build_rustflags": "-C target-cpu=native",
+        "capacity": 1,
+        "compiled_target_features": {
+          "aes": true,
+          "avx2": true,
+          "avx512f": true,
+          "gfni": true,
+          "pclmulqdq": true,
+          "sse4.1": true,
+          "vpclmulqdq": true
+        },
+        "cpu_affinity": null,
+        "degree": 1024,
+        "event": "prepared",
+        "gf128_kernel": "pclmul-karatsuba-barrett",
+        "input_count": 1,
+        "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+        "input_implementation_version": "0.3.0",
+        "input_mode": "original-falcon-1024",
+        "input_rng": "rand_chacha 0.3.1 ChaCha20Rng::seed_from_u64",
+        "input_seed": 42,
+        "input_setup_ms": 7.641796,
+        "input_source": "pornin/rust-fn-dsa",
+        "integer_bridge": "wfbitz-joint-limbs",
+        "max_batch": 1024,
+        "measured_trials": 3,
+        "native_verify_includes_public_key_decode": true,
+        "pcs_query_shape": {
+          "configuration_fingerprint": "79b61ab6a9bedf39d17f9d72a03c1b503c30b12e0f3d1180467ca3cc4cf6474b",
+          "fold_grinding_bits": [
+            13,
+            11,
+            9
+          ],
+          "initial_k": 4,
+          "initial_log_msg_cols": 11,
+          "initial_log_num_interleaved": 4,
+          "initial_opened_row_width": 11,
+          "log_inv_rates": [
+            1,
+            2,
+            3
+          ],
+          "merkle_hash": "Blake3",
+          "occupied_lanes": 11,
+          "ood_samples": [
+            0,
+            0,
+            0
+          ],
+          "position_log": 11,
+          "queries": [
+            311,
+            192,
+            161
+          ],
+          "query_grinding_bits": [
+            0,
+            0,
+            0
+          ],
+          "recursive_ks": [
+            3,
+            3
+          ],
+          "recursive_log_msg_cols": [
+            8,
+            5
+          ],
+          "recursive_opened_row_widths": [
+            8
+          ],
+          "recursive_steps": 2,
+          "source_lane_widths": [
+            1,
+            4,
+            4,
+            2
+          ],
+          "source_packed_logs": [
+            10,
+            13,
+            13,
+            12
+          ],
+          "virtual_lane_log": 4
+        },
+        "prepare_ms": 8.65867,
+        "protocol": "bitz/falcon/shared-prime/non-zk/v7",
+        "public_inputs": [
+          "public_key",
+          "message",
+          "signature_nonce",
+          "signature_s2"
+        ],
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "runtime_rustflags": "-C target-cpu=native",
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "security_terms": [
+          {
+            "bits": 144.0,
+            "error_bound": 4.484155085839415e-44,
+            "name": "prime sampling"
+          },
+          {
+            "bits": null,
+            "error_bound": 0.0,
+            "name": "per-signature norm identity"
+          },
+          {
+            "bits": 133.0,
+            "error_bound": 9.183549615799121e-41,
+            "name": "integer relation batching"
+          },
+          {
+            "bits": 133.5405683813627,
+            "error_bound": 6.313690360861896e-41,
+            "name": "HashToPoint initial row point"
+          },
+          {
+            "bits": 133.95560588064154,
+            "error_bound": 4.735267770646422e-41,
+            "name": "combined integer outer sumcheck"
+          },
+          {
+            "bits": 138.43517466142694,
+            "error_bound": 2.122559981965021e-42,
+            "name": "shared ring outer and endpoint batch"
+          },
+          {
+            "bits": 134.67807190511263,
+            "error_bound": 2.8698592549372254e-41,
+            "name": "integer polynomial projection"
+          },
+          {
+            "bits": 133.75207248655641,
+            "error_bound": 5.452732584380728e-41,
+            "name": "linear constraints and terminal batching"
+          },
+          {
+            "bits": 133.91253715874967,
+            "error_bound": 4.878760733393283e-41,
+            "name": "prime source sumcheck"
+          },
+          {
+            "bits": 130.1958689788167,
+            "error_bound": 6.414135434784699e-40,
+            "name": "batched integer-to-binary forest"
+          },
+          {
+            "bits": 130.02845644604923,
+            "error_bound": 7.203346729892436e-40,
+            "name": "binary Keccak PIOP"
+          },
+          {
+            "bits": 134.0,
+            "error_bound": 4.591774807899561e-41,
+            "name": "SHAKE wiring, source padding and binary claim batching"
+          },
+          {
+            "bits": 133.5405683813627,
+            "error_bound": 6.313690360861896e-41,
+            "name": "joint binary sumcheck"
+          },
+          {
+            "bits": 132.0,
+            "error_bound": 1.8367099231598242e-40,
+            "name": "ring switch and support padding"
+          },
+          {
+            "bits": 129.94828464641483,
+            "error_bound": 7.614974201573808e-40,
+            "name": "shared Ligerito"
+          }
+        ],
+        "source_bits_per_signature": [
+          131072,
+          1048576,
+          1048576,
+          524288
+        ],
+        "source_layout": "aligned16-h2p-selection-v4",
+        "stage_timings": false,
+        "target_arch": "x86_64",
+        "threads": 16,
+        "warmup_trials": 1
+      },
+      {
+        "batch": 1,
+        "capacity": 1,
+        "degree": 1024,
+        "end_to_end_ms": 68.069236,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "337785",
+              "stored_nonce_boundaries": 157
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "41797",
+              "stored_nonce_boundaries": 22
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "398156",
+              "stored_nonce_boundaries": 85
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "81912",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "124538",
+              "stored_nonce_boundaries": 32
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "407",
+              "stored_nonce_boundaries": 2
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "138140",
+              "stored_nonce_boundaries": 10
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "7692",
+              "stored_nonce_boundaries": 3
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "366310",
+              "stored_nonce_boundaries": 18
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "11228",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "203959",
+              "stored_nonce_boundaries": 12
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "0",
+              "stored_nonce_boundaries": 0
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "6003",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+        "input_setup_ms": 7.641796,
+        "max_batch": 1024,
+        "native_verify_ms": 0.019517,
+        "prepare_ms": 8.65867,
+        "process_peak_rss_kib": 83308,
+        "proof_debug_digest": "a627ecddc4ca20460c08561ba1584fcd455c5e2ad9dfe0e676eba3a49cfb118f",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 712,
+          "arithmetic_source_binding": 992,
+          "binary_bridge_gkr": 4992,
+          "binary_bridge_nonces": 1256,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 164,
+          "integer_column_sums_first_limb": 256,
+          "integer_column_sums_remaining_limbs": 64,
+          "joint_binary_sumcheck": 896,
+          "keccak_piops": 12520,
+          "opening_and_auxiliary_nonces": 272,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 4112,
+          "pcs_final_message": 4096,
+          "pcs_initial_opened_rows": 54736,
+          "pcs_nonces": 104,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 10976,
+          "pcs_recursive_opened_rows": 24576,
+          "pcs_roots": 96,
+          "pcs_sumchecks": 416,
+          "ring_certificate_and_reduction": 22938,
+          "source_authentication_joint": 29728
+        },
+        "proof_payload_bytes": 175958,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 47.388965999999996,
+        "proof_verify_ms": 19.399598,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": null,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "726df0cdb5445d7b9b6a409584c4a2d1c010af1d2ba8cead6d79b4786eeff799",
+        "threads": 16,
+        "total_prover_ms": 48.669638,
+        "trial": "warmup",
+        "verified": true,
+        "witness_commit_ms": 1.280672
+      },
+      {
+        "batch": 1,
+        "capacity": 1,
+        "degree": 1024,
+        "end_to_end_ms": 42.868964000000005,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "337785",
+              "stored_nonce_boundaries": 157
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "41797",
+              "stored_nonce_boundaries": 22
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "398156",
+              "stored_nonce_boundaries": 85
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "81912",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "124538",
+              "stored_nonce_boundaries": 32
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "407",
+              "stored_nonce_boundaries": 2
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "138140",
+              "stored_nonce_boundaries": 10
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "7692",
+              "stored_nonce_boundaries": 3
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "366310",
+              "stored_nonce_boundaries": 18
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "11228",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "203959",
+              "stored_nonce_boundaries": 12
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "0",
+              "stored_nonce_boundaries": 0
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "6003",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+        "input_setup_ms": 7.641796,
+        "max_batch": 1024,
+        "native_verify_ms": 0.020759,
+        "prepare_ms": 8.65867,
+        "process_peak_rss_kib": 93652,
+        "proof_debug_digest": "a627ecddc4ca20460c08561ba1584fcd455c5e2ad9dfe0e676eba3a49cfb118f",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 712,
+          "arithmetic_source_binding": 992,
+          "binary_bridge_gkr": 4992,
+          "binary_bridge_nonces": 1256,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 164,
+          "integer_column_sums_first_limb": 256,
+          "integer_column_sums_remaining_limbs": 64,
+          "joint_binary_sumcheck": 896,
+          "keccak_piops": 12520,
+          "opening_and_auxiliary_nonces": 272,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 4112,
+          "pcs_final_message": 4096,
+          "pcs_initial_opened_rows": 54736,
+          "pcs_nonces": 104,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 10976,
+          "pcs_recursive_opened_rows": 24576,
+          "pcs_roots": 96,
+          "pcs_sumchecks": 416,
+          "ring_certificate_and_reduction": 22938,
+          "source_authentication_joint": 29728
+        },
+        "proof_payload_bytes": 175958,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 25.788103,
+        "proof_verify_ms": 15.917791000000001,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": 1,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "726df0cdb5445d7b9b6a409584c4a2d1c010af1d2ba8cead6d79b4786eeff799",
+        "threads": 16,
+        "total_prover_ms": 26.951173,
+        "trial": "sample",
+        "verified": true,
+        "witness_commit_ms": 1.16307
+      },
+      {
+        "batch": 1,
+        "capacity": 1,
+        "degree": 1024,
+        "end_to_end_ms": 40.424549999999996,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "337785",
+              "stored_nonce_boundaries": 157
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "41797",
+              "stored_nonce_boundaries": 22
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "398156",
+              "stored_nonce_boundaries": 85
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "81912",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "124538",
+              "stored_nonce_boundaries": 32
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "407",
+              "stored_nonce_boundaries": 2
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "138140",
+              "stored_nonce_boundaries": 10
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "7692",
+              "stored_nonce_boundaries": 3
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "366310",
+              "stored_nonce_boundaries": 18
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "11228",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "203959",
+              "stored_nonce_boundaries": 12
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "0",
+              "stored_nonce_boundaries": 0
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "6003",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+        "input_setup_ms": 7.641796,
+        "max_batch": 1024,
+        "native_verify_ms": 0.021461,
+        "prepare_ms": 8.65867,
+        "process_peak_rss_kib": 94400,
+        "proof_debug_digest": "a627ecddc4ca20460c08561ba1584fcd455c5e2ad9dfe0e676eba3a49cfb118f",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 712,
+          "arithmetic_source_binding": 992,
+          "binary_bridge_gkr": 4992,
+          "binary_bridge_nonces": 1256,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 164,
+          "integer_column_sums_first_limb": 256,
+          "integer_column_sums_remaining_limbs": 64,
+          "joint_binary_sumcheck": 896,
+          "keccak_piops": 12520,
+          "opening_and_auxiliary_nonces": 272,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 4112,
+          "pcs_final_message": 4096,
+          "pcs_initial_opened_rows": 54736,
+          "pcs_nonces": 104,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 10976,
+          "pcs_recursive_opened_rows": 24576,
+          "pcs_roots": 96,
+          "pcs_sumchecks": 416,
+          "ring_certificate_and_reduction": 22938,
+          "source_authentication_joint": 29728
+        },
+        "proof_payload_bytes": 175958,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 24.059323,
+        "proof_verify_ms": 15.377409,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": 2,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "726df0cdb5445d7b9b6a409584c4a2d1c010af1d2ba8cead6d79b4786eeff799",
+        "threads": 16,
+        "total_prover_ms": 25.047141,
+        "trial": "sample",
+        "verified": true,
+        "witness_commit_ms": 0.9878179999999999
+      },
+      {
+        "batch": 1,
+        "capacity": 1,
+        "degree": 1024,
+        "end_to_end_ms": 40.598329,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "337785",
+              "stored_nonce_boundaries": 157
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "41797",
+              "stored_nonce_boundaries": 22
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "398156",
+              "stored_nonce_boundaries": 85
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "81912",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "124538",
+              "stored_nonce_boundaries": 32
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "407",
+              "stored_nonce_boundaries": 2
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "138140",
+              "stored_nonce_boundaries": 10
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "7692",
+              "stored_nonce_boundaries": 3
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "366310",
+              "stored_nonce_boundaries": 18
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "11228",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "203959",
+              "stored_nonce_boundaries": 12
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "0",
+              "stored_nonce_boundaries": 0
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "6003",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "7f9b86ca417d6187f92b6dbf8186609587dd070c622c650f3c780343c23afdc3",
+        "input_setup_ms": 7.641796,
+        "max_batch": 1024,
+        "native_verify_ms": 0.02146,
+        "prepare_ms": 8.65867,
+        "process_peak_rss_kib": 96024,
+        "proof_debug_digest": "a627ecddc4ca20460c08561ba1584fcd455c5e2ad9dfe0e676eba3a49cfb118f",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 712,
+          "arithmetic_source_binding": 992,
+          "binary_bridge_gkr": 4992,
+          "binary_bridge_nonces": 1256,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 164,
+          "integer_column_sums_first_limb": 256,
+          "integer_column_sums_remaining_limbs": 64,
+          "joint_binary_sumcheck": 896,
+          "keccak_piops": 12520,
+          "opening_and_auxiliary_nonces": 272,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 4112,
+          "pcs_final_message": 4096,
+          "pcs_initial_opened_rows": 54736,
+          "pcs_nonces": 104,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 10976,
+          "pcs_recursive_opened_rows": 24576,
+          "pcs_roots": 96,
+          "pcs_sumchecks": 416,
+          "ring_certificate_and_reduction": 22938,
+          "source_authentication_joint": 29728
+        },
+        "proof_payload_bytes": 175958,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 24.280842,
+        "proof_verify_ms": 15.304551,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": 3,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "726df0cdb5445d7b9b6a409584c4a2d1c010af1d2ba8cead6d79b4786eeff799",
+        "threads": 16,
+        "total_prover_ms": 25.293778,
+        "trial": "sample",
+        "verified": true,
+        "witness_commit_ms": 1.012936
+      },
+      {
+        "batch": 1,
+        "capacity": 1,
+        "degree": 1024,
+        "event": "summary",
+        "input_setup_ms": 7.641796,
+        "max_batch": 1024,
+        "median_end_to_end_ms": 40.598329,
+        "median_native_verify_ms": 0.02146,
+        "median_proof_prove_ms": 24.280842,
+        "median_proof_verify_ms": 15.377409,
+        "median_total_prover_ms": 25.293778,
+        "median_witness_commit_ms": 1.012936,
+        "prepare_ms": 8.65867,
+        "process_peak_rss_kib": 96024,
+        "proof_signatures_per_second": 41.18473321477072,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "samples": 3,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "threads": 16,
+        "total_prover_signatures_per_second": 39.535414598799754,
+        "verified": true
+      }
+    ],
+    "baseline-b32": [
+      {
+        "algebraic_security_bits": 128.09363636605354,
+        "arithmetic_live_bits_per_signature": 100482,
+        "arithmetic_prime_bits": 126,
+        "arithmetic_prime_max": "85070591730234615865843651857942052863",
+        "arithmetic_prime_min": "42535295865117307932921825928971026432",
+        "batch": 32,
+        "build_rustflags": "-C target-cpu=native",
+        "capacity": 32,
+        "compiled_target_features": {
+          "aes": true,
+          "avx2": true,
+          "avx512f": true,
+          "gfni": true,
+          "pclmulqdq": true,
+          "sse4.1": true,
+          "vpclmulqdq": true
+        },
+        "cpu_affinity": null,
+        "degree": 1024,
+        "event": "prepared",
+        "gf128_kernel": "pclmul-karatsuba-barrett",
+        "input_count": 32,
+        "input_digest": "8e13abdaab7d13f141273f898c38b9eb8f9841f3efba64d329b8b4970ad18745",
+        "input_implementation_version": "0.3.0",
+        "input_mode": "original-falcon-1024",
+        "input_rng": "rand_chacha 0.3.1 ChaCha20Rng::seed_from_u64",
+        "input_seed": 42,
+        "input_setup_ms": 274.439955,
+        "input_source": "pornin/rust-fn-dsa",
+        "integer_bridge": "wfbitz-joint-limbs",
+        "max_batch": 1024,
+        "measured_trials": 3,
+        "native_verify_includes_public_key_decode": true,
+        "pcs_query_shape": {
+          "configuration_fingerprint": "45b5c1b6c070676a9bba4a60ae3e0ad9c0bb99926a6992f7e376df0eda6b7032",
+          "fold_grinding_bits": [
+            17,
+            15,
+            13,
+            11,
+            9
+          ],
+          "initial_k": 4,
+          "initial_log_msg_cols": 15,
+          "initial_log_num_interleaved": 4,
+          "initial_opened_row_width": 11,
+          "log_inv_rates": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "merkle_hash": "Blake3",
+          "occupied_lanes": 11,
+          "ood_samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "position_log": 15,
+          "queries": [
+            309,
+            189,
+            155,
+            142,
+            136
+          ],
+          "query_grinding_bits": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "recursive_ks": [
+            3,
+            3,
+            3,
+            1
+          ],
+          "recursive_log_msg_cols": [
+            12,
+            9,
+            6,
+            5
+          ],
+          "recursive_opened_row_widths": [
+            8,
+            8,
+            8
+          ],
+          "recursive_steps": 4,
+          "source_lane_widths": [
+            1,
+            8,
+            2
+          ],
+          "source_packed_logs": [
+            15,
+            18,
+            16
+          ],
+          "virtual_lane_log": 4
+        },
+        "prepare_ms": 3.409871,
+        "protocol": "bitz/falcon/shared-prime/non-zk/v6",
+        "public_inputs": [
+          "public_key",
+          "message",
+          "signature_nonce",
+          "signature_s2"
+        ],
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "runtime_rustflags": "-C target-cpu=native",
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "security_terms": [
+          {
+            "bits": 144.0,
+            "error_bound": 4.484155085839415e-44,
+            "name": "prime sampling"
+          },
+          {
+            "bits": 133.67807190511263,
+            "error_bound": 5.739718509874451e-41,
+            "name": "per-signature norm identity"
+          },
+          {
+            "bits": 133.0,
+            "error_bound": 9.183549615799121e-41,
+            "name": "integer relation batching"
+          },
+          {
+            "bits": 133.0,
+            "error_bound": 9.183549615799121e-41,
+            "name": "HashToPoint initial row point"
+          },
+          {
+            "bits": 133.41503749927884,
+            "error_bound": 6.887662211849341e-41,
+            "name": "combined integer outer sumcheck"
+          },
+          {
+            "bits": 138.4211610005782,
+            "error_bound": 2.1432779905737573e-42,
+            "name": "shared ring outer and endpoint batch"
+          },
+          {
+            "bits": 134.67807190511263,
+            "error_bound": 2.8698592549372254e-41,
+            "name": "integer polynomial projection"
+          },
+          {
+            "bits": 133.21864028647533,
+            "error_bound": 7.89211295107737e-41,
+            "name": "linear constraints and terminal batching"
+          },
+          {
+            "bits": 133.5405683813627,
+            "error_bound": 6.313690360861896e-41,
+            "name": "prime source sumcheck"
+          },
+          {
+            "bits": 130.66237809800748,
+            "error_bound": 4.641997344860962e-40,
+            "name": "batched integer-to-binary forest"
+          },
+          {
+            "bits": 131.5405683813627,
+            "error_bound": 2.5254761443447583e-40,
+            "name": "binary Keccak PIOP"
+          },
+          {
+            "bits": 135.0,
+            "error_bound": 2.2958874039497803e-41,
+            "name": "SHAKE wiring, source padding and binary claim batching"
+          },
+          {
+            "bits": 134.2995602818589,
+            "error_bound": 3.730817031418393e-41,
+            "name": "joint binary sumcheck"
+          },
+          {
+            "bits": 133.0,
+            "error_bound": 9.183549615799121e-41,
+            "name": "ring switch and support padding"
+          },
+          {
+            "bits": 129.06738080628975,
+            "error_bound": 1.4023193138437263e-39,
+            "name": "shared Ligerito"
+          }
+        ],
+        "source_bits_per_signature": [
+          131072,
+          1048576,
+          262144
+        ],
+        "source_layout": "aligned16-h2p-selection-v4",
+        "stage_timings": false,
+        "target_arch": "x86_64",
+        "threads": 16,
+        "warmup_trials": 1
+      },
+      {
+        "batch": 32,
+        "capacity": 32,
+        "degree": 1024,
+        "end_to_end_ms": 71.65083,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "926402",
+              "stored_nonce_boundaries": 222
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "90368",
+              "stored_nonce_boundaries": 26
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "620402",
+              "stored_nonce_boundaries": 64
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "17590",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "398882",
+              "stored_nonce_boundaries": 48
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "6560",
+              "stored_nonce_boundaries": 4
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "2552055",
+              "stored_nonce_boundaries": 14
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "49456",
+              "stored_nonce_boundaries": 5
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "340415",
+              "stored_nonce_boundaries": 23
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "4698",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "360256",
+              "stored_nonce_boundaries": 17
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "8992",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "6314",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "8e13abdaab7d13f141273f898c38b9eb8f9841f3efba64d329b8b4970ad18745",
+        "input_setup_ms": 274.439955,
+        "max_batch": 1024,
+        "native_verify_ms": 0.57628,
+        "prepare_ms": 3.409871,
+        "process_peak_rss_kib": 130096,
+        "proof_debug_digest": "76407fb10b3fbd8a49d60d32008d2e138317e7ee14605f5209c12cc23d2d6062",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 1000,
+          "arithmetic_source_binding": 1272,
+          "binary_bridge_gkr": 7072,
+          "binary_bridge_nonces": 1776,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 5248,
+          "integer_column_sums_first_limb": 8192,
+          "integer_column_sums_remaining_limbs": 2048,
+          "joint_binary_sumcheck": 1056,
+          "keccak_piops": 8640,
+          "opening_and_auxiliary_nonces": 416,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 6480,
+          "pcs_final_message": 1024,
+          "pcs_initial_opened_rows": 54384,
+          "pcs_nonces": 152,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 62496,
+          "pcs_recursive_opened_rows": 62208,
+          "pcs_roots": 160,
+          "pcs_sumchecks": 608,
+          "ring_certificate_and_reduction": 23378,
+          "source_authentication_joint": 68256
+        },
+        "proof_payload_bytes": 317922,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 49.25201,
+        "proof_verify_ms": 14.989194000000001,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": null,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "dd1684028e03d67c2a5ab1233a7a00ac9df61b87d34b96be69461c20e5ae578f",
+        "threads": 16,
+        "total_prover_ms": 56.661636,
+        "trial": "warmup",
+        "verified": true,
+        "witness_commit_ms": 7.409626
+      },
+      {
+        "batch": 32,
+        "capacity": 32,
+        "degree": 1024,
+        "end_to_end_ms": 61.836156,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "926402",
+              "stored_nonce_boundaries": 222
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "90368",
+              "stored_nonce_boundaries": 26
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "620402",
+              "stored_nonce_boundaries": 64
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "17590",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "398882",
+              "stored_nonce_boundaries": 48
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "6560",
+              "stored_nonce_boundaries": 4
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "2552055",
+              "stored_nonce_boundaries": 14
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "49456",
+              "stored_nonce_boundaries": 5
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "340415",
+              "stored_nonce_boundaries": 23
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "4698",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "360256",
+              "stored_nonce_boundaries": 17
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "8992",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "6314",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "8e13abdaab7d13f141273f898c38b9eb8f9841f3efba64d329b8b4970ad18745",
+        "input_setup_ms": 274.439955,
+        "max_batch": 1024,
+        "native_verify_ms": 0.590286,
+        "prepare_ms": 3.409871,
+        "process_peak_rss_kib": 153836,
+        "proof_debug_digest": "76407fb10b3fbd8a49d60d32008d2e138317e7ee14605f5209c12cc23d2d6062",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 1000,
+          "arithmetic_source_binding": 1272,
+          "binary_bridge_gkr": 7072,
+          "binary_bridge_nonces": 1776,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 5248,
+          "integer_column_sums_first_limb": 8192,
+          "integer_column_sums_remaining_limbs": 2048,
+          "joint_binary_sumcheck": 1056,
+          "keccak_piops": 8640,
+          "opening_and_auxiliary_nonces": 416,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 6480,
+          "pcs_final_message": 1024,
+          "pcs_initial_opened_rows": 54384,
+          "pcs_nonces": 152,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 62496,
+          "pcs_recursive_opened_rows": 62208,
+          "pcs_roots": 160,
+          "pcs_sumchecks": 608,
+          "ring_certificate_and_reduction": 23378,
+          "source_authentication_joint": 68256
+        },
+        "proof_payload_bytes": 317922,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 41.619652,
+        "proof_verify_ms": 15.574372,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": 1,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "dd1684028e03d67c2a5ab1233a7a00ac9df61b87d34b96be69461c20e5ae578f",
+        "threads": 16,
+        "total_prover_ms": 46.261784000000006,
+        "trial": "sample",
+        "verified": true,
+        "witness_commit_ms": 4.642132
+      },
+      {
+        "batch": 32,
+        "capacity": 32,
+        "degree": 1024,
+        "end_to_end_ms": 59.083287000000006,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "926402",
+              "stored_nonce_boundaries": 222
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "90368",
+              "stored_nonce_boundaries": 26
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "620402",
+              "stored_nonce_boundaries": 64
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "17590",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "398882",
+              "stored_nonce_boundaries": 48
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "6560",
+              "stored_nonce_boundaries": 4
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "2552055",
+              "stored_nonce_boundaries": 14
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "49456",
+              "stored_nonce_boundaries": 5
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "340415",
+              "stored_nonce_boundaries": 23
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "4698",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "360256",
+              "stored_nonce_boundaries": 17
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "8992",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "6314",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "8e13abdaab7d13f141273f898c38b9eb8f9841f3efba64d329b8b4970ad18745",
+        "input_setup_ms": 274.439955,
+        "max_batch": 1024,
+        "native_verify_ms": 0.6148129999999999,
+        "prepare_ms": 3.409871,
+        "process_peak_rss_kib": 165852,
+        "proof_debug_digest": "76407fb10b3fbd8a49d60d32008d2e138317e7ee14605f5209c12cc23d2d6062",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 1000,
+          "arithmetic_source_binding": 1272,
+          "binary_bridge_gkr": 7072,
+          "binary_bridge_nonces": 1776,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 5248,
+          "integer_column_sums_first_limb": 8192,
+          "integer_column_sums_remaining_limbs": 2048,
+          "joint_binary_sumcheck": 1056,
+          "keccak_piops": 8640,
+          "opening_and_auxiliary_nonces": 416,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 6480,
+          "pcs_final_message": 1024,
+          "pcs_initial_opened_rows": 54384,
+          "pcs_nonces": 152,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 62496,
+          "pcs_recursive_opened_rows": 62208,
+          "pcs_roots": 160,
+          "pcs_sumchecks": 608,
+          "ring_certificate_and_reduction": 23378,
+          "source_authentication_joint": 68256
+        },
+        "proof_payload_bytes": 317922,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 39.678639000000004,
+        "proof_verify_ms": 14.764881,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": 2,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "dd1684028e03d67c2a5ab1233a7a00ac9df61b87d34b96be69461c20e5ae578f",
+        "threads": 16,
+        "total_prover_ms": 44.318406,
+        "trial": "sample",
+        "verified": true,
+        "witness_commit_ms": 4.639767
+      },
+      {
+        "batch": 32,
+        "capacity": 32,
+        "degree": 1024,
+        "end_to_end_ms": 59.14914100000001,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "926402",
+              "stored_nonce_boundaries": 222
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "90368",
+              "stored_nonce_boundaries": 26
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "620402",
+              "stored_nonce_boundaries": 64
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "17590",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "398882",
+              "stored_nonce_boundaries": 48
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "6560",
+              "stored_nonce_boundaries": 4
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "2552055",
+              "stored_nonce_boundaries": 14
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "49456",
+              "stored_nonce_boundaries": 5
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "340415",
+              "stored_nonce_boundaries": 23
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "4698",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "360256",
+              "stored_nonce_boundaries": 17
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "8992",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "6314",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "8e13abdaab7d13f141273f898c38b9eb8f9841f3efba64d329b8b4970ad18745",
+        "input_setup_ms": 274.439955,
+        "max_batch": 1024,
+        "native_verify_ms": 0.6017480000000001,
+        "prepare_ms": 3.409871,
+        "process_peak_rss_kib": 171232,
+        "proof_debug_digest": "76407fb10b3fbd8a49d60d32008d2e138317e7ee14605f5209c12cc23d2d6062",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 1000,
+          "arithmetic_source_binding": 1272,
+          "binary_bridge_gkr": 7072,
+          "binary_bridge_nonces": 1776,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 5248,
+          "integer_column_sums_first_limb": 8192,
+          "integer_column_sums_remaining_limbs": 2048,
+          "joint_binary_sumcheck": 1056,
+          "keccak_piops": 8640,
+          "opening_and_auxiliary_nonces": 416,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 6480,
+          "pcs_final_message": 1024,
+          "pcs_initial_opened_rows": 54384,
+          "pcs_nonces": 152,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 62496,
+          "pcs_recursive_opened_rows": 62208,
+          "pcs_roots": 160,
+          "pcs_sumchecks": 608,
+          "ring_certificate_and_reduction": 23378,
+          "source_authentication_joint": 68256
+        },
+        "proof_payload_bytes": 317922,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 39.179455000000004,
+        "proof_verify_ms": 15.030523,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": 3,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "dd1684028e03d67c2a5ab1233a7a00ac9df61b87d34b96be69461c20e5ae578f",
+        "threads": 16,
+        "total_prover_ms": 44.118618000000005,
+        "trial": "sample",
+        "verified": true,
+        "witness_commit_ms": 4.939163
+      },
+      {
+        "batch": 32,
+        "capacity": 32,
+        "degree": 1024,
+        "event": "summary",
+        "input_setup_ms": 274.439955,
+        "max_batch": 1024,
+        "median_end_to_end_ms": 59.14914100000001,
+        "median_native_verify_ms": 0.6017480000000001,
+        "median_proof_prove_ms": 39.678639000000004,
+        "median_proof_verify_ms": 15.030523,
+        "median_total_prover_ms": 44.318406,
+        "median_witness_commit_ms": 4.642132,
+        "prepare_ms": 3.409871,
+        "process_peak_rss_kib": 171232,
+        "proof_signatures_per_second": 806.4792746545565,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "samples": 3,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "threads": 16,
+        "total_prover_signatures_per_second": 722.0476296011187,
+        "verified": true
+      }
+    ],
+    "candidate-b32": [
+      {
+        "algebraic_security_bits": 128.09328830318478,
+        "arithmetic_live_bits_per_signature": 100482,
+        "arithmetic_prime_bits": 126,
+        "arithmetic_prime_max": "85070591730234615865843651857942052863",
+        "arithmetic_prime_min": "42535295865117307932921825928971026432",
+        "batch": 32,
+        "build_rustflags": "-C target-cpu=native",
+        "capacity": 32,
+        "compiled_target_features": {
+          "aes": true,
+          "avx2": true,
+          "avx512f": true,
+          "gfni": true,
+          "pclmulqdq": true,
+          "sse4.1": true,
+          "vpclmulqdq": true
+        },
+        "cpu_affinity": null,
+        "degree": 1024,
+        "event": "prepared",
+        "gf128_kernel": "pclmul-karatsuba-barrett",
+        "input_count": 32,
+        "input_digest": "8e13abdaab7d13f141273f898c38b9eb8f9841f3efba64d329b8b4970ad18745",
+        "input_implementation_version": "0.3.0",
+        "input_mode": "original-falcon-1024",
+        "input_rng": "rand_chacha 0.3.1 ChaCha20Rng::seed_from_u64",
+        "input_seed": 42,
+        "input_setup_ms": 269.760232,
+        "input_source": "pornin/rust-fn-dsa",
+        "integer_bridge": "wfbitz-joint-limbs",
+        "max_batch": 1024,
+        "measured_trials": 3,
+        "native_verify_includes_public_key_decode": true,
+        "pcs_query_shape": {
+          "configuration_fingerprint": "1e54ed8fa83ef74149881657abda71b0e57feaf00e19b2ee67af257a6c5a0fe6",
+          "fold_grinding_bits": [
+            16,
+            14,
+            12,
+            10
+          ],
+          "initial_k": 4,
+          "initial_log_msg_cols": 14,
+          "initial_log_num_interleaved": 4,
+          "initial_opened_row_width": 16,
+          "log_inv_rates": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "merkle_hash": "Blake3",
+          "occupied_lanes": 16,
+          "ood_samples": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "position_log": 14,
+          "queries": [
+            309,
+            190,
+            156,
+            143
+          ],
+          "query_grinding_bits": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "recursive_ks": [
+            3,
+            3,
+            3
+          ],
+          "recursive_log_msg_cols": [
+            11,
+            8,
+            5
+          ],
+          "recursive_opened_row_widths": [
+            8,
+            8
+          ],
+          "recursive_steps": 3,
+          "source_lane_widths": [
+            2,
+            8,
+            4,
+            2
+          ],
+          "source_packed_logs": [
+            15,
+            17,
+            16,
+            15
+          ],
+          "virtual_lane_log": 4
+        },
+        "prepare_ms": 8.282238000000001,
+        "protocol": "bitz/falcon/shared-prime/non-zk/v7",
+        "public_inputs": [
+          "public_key",
+          "message",
+          "signature_nonce",
+          "signature_s2"
+        ],
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "runtime_rustflags": "-C target-cpu=native",
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "security_terms": [
+          {
+            "bits": 144.0,
+            "error_bound": 4.484155085839415e-44,
+            "name": "prime sampling"
+          },
+          {
+            "bits": 133.67807190511263,
+            "error_bound": 5.739718509874451e-41,
+            "name": "per-signature norm identity"
+          },
+          {
+            "bits": 133.0,
+            "error_bound": 9.183549615799121e-41,
+            "name": "integer relation batching"
+          },
+          {
+            "bits": 133.0,
+            "error_bound": 9.183549615799121e-41,
+            "name": "HashToPoint initial row point"
+          },
+          {
+            "bits": 133.41503749927884,
+            "error_bound": 6.887662211849341e-41,
+            "name": "combined integer outer sumcheck"
+          },
+          {
+            "bits": 138.4211610005782,
+            "error_bound": 2.1432779905737573e-42,
+            "name": "shared ring outer and endpoint batch"
+          },
+          {
+            "bits": 134.67807190511263,
+            "error_bound": 2.8698592549372254e-41,
+            "name": "integer polynomial projection"
+          },
+          {
+            "bits": 133.21864028647533,
+            "error_bound": 7.89211295107737e-41,
+            "name": "linear constraints and terminal batching"
+          },
+          {
+            "bits": 133.5405683813627,
+            "error_bound": 6.313690360861896e-41,
+            "name": "prime source sumcheck"
+          },
+          {
+            "bits": 130.66237809800748,
+            "error_bound": 4.641997344860962e-40,
+            "name": "batched integer-to-binary forest"
+          },
+          {
+            "bits": 130.97209400343013,
+            "error_bound": 3.745166327693079e-40,
+            "name": "binary Keccak PIOP"
+          },
+          {
+            "bits": 135.0,
+            "error_bound": 2.2958874039497803e-41,
+            "name": "SHAKE wiring, source padding and binary claim batching"
+          },
+          {
+            "bits": 133.35614381022526,
+            "error_bound": 7.174648137343063e-41,
+            "name": "joint binary sumcheck"
+          },
+          {
+            "bits": 132.0,
+            "error_bound": 1.8367099231598242e-40,
+            "name": "ring switch and support padding"
+          },
+          {
+            "bits": 129.34762638699917,
+            "error_bound": 1.1547410093472816e-39,
+            "name": "shared Ligerito"
+          }
+        ],
+        "source_bits_per_signature": [
+          131072,
+          524288,
+          262144,
+          131072
+        ],
+        "source_layout": "aligned16-h2p-selection-v4",
+        "stage_timings": false,
+        "target_arch": "x86_64",
+        "threads": 16,
+        "warmup_trials": 1
+      },
+      {
+        "batch": 32,
+        "capacity": 32,
+        "degree": 1024,
+        "end_to_end_ms": 90.725124,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "891500",
+              "stored_nonce_boundaries": 222
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "57564",
+              "stored_nonce_boundaries": 25
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "796314",
+              "stored_nonce_boundaries": 95
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "14458",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "171431",
+              "stored_nonce_boundaries": 42
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "4314",
+              "stored_nonce_boundaries": 3
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "1346725",
+              "stored_nonce_boundaries": 13
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "3800",
+              "stored_nonce_boundaries": 4
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "248306",
+              "stored_nonce_boundaries": 23
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "5097",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "204556",
+              "stored_nonce_boundaries": 17
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "2236",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "2515",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "8e13abdaab7d13f141273f898c38b9eb8f9841f3efba64d329b8b4970ad18745",
+        "input_setup_ms": 269.760232,
+        "max_batch": 1024,
+        "native_verify_ms": 0.5692470000000001,
+        "prepare_ms": 8.282238000000001,
+        "process_peak_rss_kib": 137588,
+        "proof_debug_digest": "65b761386b848cbf1f289c92cb4c9e5a4ff16e670d8e3c125fd61860d3baa3a7",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 1000,
+          "arithmetic_source_binding": 1272,
+          "binary_bridge_gkr": 7072,
+          "binary_bridge_nonces": 1776,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 5248,
+          "integer_column_sums_first_limb": 8192,
+          "integer_column_sums_remaining_limbs": 2048,
+          "joint_binary_sumcheck": 1016,
+          "keccak_piops": 12920,
+          "opening_and_auxiliary_nonces": 360,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 5344,
+          "pcs_final_message": 4096,
+          "pcs_initial_opened_rows": 79104,
+          "pcs_nonces": 136,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 42784,
+          "pcs_recursive_opened_rows": 44288,
+          "pcs_roots": 128,
+          "pcs_sumchecks": 544,
+          "ring_certificate_and_reduction": 23378,
+          "source_authentication_joint": 58304
+        },
+        "proof_payload_bytes": 301066,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 62.802111999999994,
+        "proof_verify_ms": 20.549353,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": null,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "834ad3d07b1c4a370bc2ba3b4ecd8401dc3d48a52928cacc2867df63c9a0a6e9",
+        "threads": 16,
+        "total_prover_ms": 70.175771,
+        "trial": "warmup",
+        "verified": true,
+        "witness_commit_ms": 7.373659
+      },
+      {
+        "batch": 32,
+        "capacity": 32,
+        "degree": 1024,
+        "end_to_end_ms": 65.662774,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "891500",
+              "stored_nonce_boundaries": 222
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "57564",
+              "stored_nonce_boundaries": 25
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "796314",
+              "stored_nonce_boundaries": 95
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "14458",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "171431",
+              "stored_nonce_boundaries": 42
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "4314",
+              "stored_nonce_boundaries": 3
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "1346725",
+              "stored_nonce_boundaries": 13
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "3800",
+              "stored_nonce_boundaries": 4
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "248306",
+              "stored_nonce_boundaries": 23
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "5097",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "204556",
+              "stored_nonce_boundaries": 17
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "2236",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "2515",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "8e13abdaab7d13f141273f898c38b9eb8f9841f3efba64d329b8b4970ad18745",
+        "input_setup_ms": 269.760232,
+        "max_batch": 1024,
+        "native_verify_ms": 0.587021,
+        "prepare_ms": 8.282238000000001,
+        "process_peak_rss_kib": 157988,
+        "proof_debug_digest": "65b761386b848cbf1f289c92cb4c9e5a4ff16e670d8e3c125fd61860d3baa3a7",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 1000,
+          "arithmetic_source_binding": 1272,
+          "binary_bridge_gkr": 7072,
+          "binary_bridge_nonces": 1776,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 5248,
+          "integer_column_sums_first_limb": 8192,
+          "integer_column_sums_remaining_limbs": 2048,
+          "joint_binary_sumcheck": 1016,
+          "keccak_piops": 12920,
+          "opening_and_auxiliary_nonces": 360,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 5344,
+          "pcs_final_message": 4096,
+          "pcs_initial_opened_rows": 79104,
+          "pcs_nonces": 136,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 42784,
+          "pcs_recursive_opened_rows": 44288,
+          "pcs_roots": 128,
+          "pcs_sumchecks": 544,
+          "ring_certificate_and_reduction": 23378,
+          "source_authentication_joint": 58304
+        },
+        "proof_payload_bytes": 301066,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 43.697903000000004,
+        "proof_verify_ms": 17.951559,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": 1,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "834ad3d07b1c4a370bc2ba3b4ecd8401dc3d48a52928cacc2867df63c9a0a6e9",
+        "threads": 16,
+        "total_prover_ms": 47.711215,
+        "trial": "sample",
+        "verified": true,
+        "witness_commit_ms": 4.013312
+      },
+      {
+        "batch": 32,
+        "capacity": 32,
+        "degree": 1024,
+        "end_to_end_ms": 65.351645,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "891500",
+              "stored_nonce_boundaries": 222
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "57564",
+              "stored_nonce_boundaries": 25
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "796314",
+              "stored_nonce_boundaries": 95
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "14458",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "171431",
+              "stored_nonce_boundaries": 42
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "4314",
+              "stored_nonce_boundaries": 3
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "1346725",
+              "stored_nonce_boundaries": 13
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "3800",
+              "stored_nonce_boundaries": 4
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "248306",
+              "stored_nonce_boundaries": 23
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "5097",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "204556",
+              "stored_nonce_boundaries": 17
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "2236",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "2515",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "8e13abdaab7d13f141273f898c38b9eb8f9841f3efba64d329b8b4970ad18745",
+        "input_setup_ms": 269.760232,
+        "max_batch": 1024,
+        "native_verify_ms": 0.5894649999999999,
+        "prepare_ms": 8.282238000000001,
+        "process_peak_rss_kib": 168492,
+        "proof_debug_digest": "65b761386b848cbf1f289c92cb4c9e5a4ff16e670d8e3c125fd61860d3baa3a7",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 1000,
+          "arithmetic_source_binding": 1272,
+          "binary_bridge_gkr": 7072,
+          "binary_bridge_nonces": 1776,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 5248,
+          "integer_column_sums_first_limb": 8192,
+          "integer_column_sums_remaining_limbs": 2048,
+          "joint_binary_sumcheck": 1016,
+          "keccak_piops": 12920,
+          "opening_and_auxiliary_nonces": 360,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 5344,
+          "pcs_final_message": 4096,
+          "pcs_initial_opened_rows": 79104,
+          "pcs_nonces": 136,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 42784,
+          "pcs_recursive_opened_rows": 44288,
+          "pcs_roots": 128,
+          "pcs_sumchecks": 544,
+          "ring_certificate_and_reduction": 23378,
+          "source_authentication_joint": 58304
+        },
+        "proof_payload_bytes": 301066,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 43.45315,
+        "proof_verify_ms": 17.575106,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": 2,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "834ad3d07b1c4a370bc2ba3b4ecd8401dc3d48a52928cacc2867df63c9a0a6e9",
+        "threads": 16,
+        "total_prover_ms": 47.776539,
+        "trial": "sample",
+        "verified": true,
+        "witness_commit_ms": 4.323389000000001
+      },
+      {
+        "batch": 32,
+        "capacity": 32,
+        "degree": 1024,
+        "end_to_end_ms": 65.726013,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "891500",
+              "stored_nonce_boundaries": 222
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "57564",
+              "stored_nonce_boundaries": 25
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "796314",
+              "stored_nonce_boundaries": 95
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "14458",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "171431",
+              "stored_nonce_boundaries": 42
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "4314",
+              "stored_nonce_boundaries": 3
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "1346725",
+              "stored_nonce_boundaries": 13
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "3800",
+              "stored_nonce_boundaries": 4
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "248306",
+              "stored_nonce_boundaries": 23
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "5097",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "204556",
+              "stored_nonce_boundaries": 17
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "2236",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "2515",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "8e13abdaab7d13f141273f898c38b9eb8f9841f3efba64d329b8b4970ad18745",
+        "input_setup_ms": 269.760232,
+        "max_batch": 1024,
+        "native_verify_ms": 0.902327,
+        "prepare_ms": 8.282238000000001,
+        "process_peak_rss_kib": 177892,
+        "proof_debug_digest": "65b761386b848cbf1f289c92cb4c9e5a4ff16e670d8e3c125fd61860d3baa3a7",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 1000,
+          "arithmetic_source_binding": 1272,
+          "binary_bridge_gkr": 7072,
+          "binary_bridge_nonces": 1776,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 5248,
+          "integer_column_sums_first_limb": 8192,
+          "integer_column_sums_remaining_limbs": 2048,
+          "joint_binary_sumcheck": 1016,
+          "keccak_piops": 12920,
+          "opening_and_auxiliary_nonces": 360,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 5344,
+          "pcs_final_message": 4096,
+          "pcs_initial_opened_rows": 79104,
+          "pcs_nonces": 136,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 42784,
+          "pcs_recursive_opened_rows": 44288,
+          "pcs_roots": 128,
+          "pcs_sumchecks": 544,
+          "ring_certificate_and_reduction": 23378,
+          "source_authentication_joint": 58304
+        },
+        "proof_payload_bytes": 301066,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 44.005204,
+        "proof_verify_ms": 17.950988000000002,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": 3,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "834ad3d07b1c4a370bc2ba3b4ecd8401dc3d48a52928cacc2867df63c9a0a6e9",
+        "threads": 16,
+        "total_prover_ms": 47.775025,
+        "trial": "sample",
+        "verified": true,
+        "witness_commit_ms": 3.769821
+      },
+      {
+        "batch": 32,
+        "capacity": 32,
+        "degree": 1024,
+        "event": "summary",
+        "input_setup_ms": 269.760232,
+        "max_batch": 1024,
+        "median_end_to_end_ms": 65.662774,
+        "median_native_verify_ms": 0.5894649999999999,
+        "median_proof_prove_ms": 43.697903000000004,
+        "median_proof_verify_ms": 17.950988000000002,
+        "median_total_prover_ms": 47.775025,
+        "median_witness_commit_ms": 4.013312,
+        "prepare_ms": 8.282238000000001,
+        "process_peak_rss_kib": 177892,
+        "proof_signatures_per_second": 732.3005865979426,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "samples": 3,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "threads": 16,
+        "total_prover_signatures_per_second": 669.8060335918192,
+        "verified": true
+      }
+    ],
+    "baseline-b1024": [
+      {
+        "algebraic_security_bits": 128.0931479114912,
+        "arithmetic_live_bits_per_signature": 100482,
+        "arithmetic_prime_bits": 126,
+        "arithmetic_prime_max": "85070591730234615865843651857942052863",
+        "arithmetic_prime_min": "42535295865117307932921825928971026432",
+        "batch": 1024,
+        "build_rustflags": "-C target-cpu=native",
+        "capacity": 1024,
+        "compiled_target_features": {
+          "aes": true,
+          "avx2": true,
+          "avx512f": true,
+          "gfni": true,
+          "pclmulqdq": true,
+          "sse4.1": true,
+          "vpclmulqdq": true
+        },
+        "cpu_affinity": null,
+        "degree": 1024,
+        "event": "prepared",
+        "gf128_kernel": "pclmul-karatsuba-barrett",
+        "input_count": 1024,
+        "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+        "input_implementation_version": "0.3.0",
+        "input_mode": "original-falcon-1024",
+        "input_rng": "rand_chacha 0.3.1 ChaCha20Rng::seed_from_u64",
+        "input_seed": 42,
+        "input_setup_ms": 9419.81337,
+        "input_source": "pornin/rust-fn-dsa",
+        "integer_bridge": "wfbitz-joint-limbs",
+        "max_batch": 1024,
+        "measured_trials": 3,
+        "native_verify_includes_public_key_decode": true,
+        "pcs_query_shape": {
+          "configuration_fingerprint": "259c5f96b98be7d1dc98c7284ac1a25cc5a730e071a8c44bfb11d517b7dc4a06",
+          "fold_grinding_bits": [
+            22,
+            20,
+            18,
+            16,
+            14,
+            12
+          ],
+          "initial_k": 4,
+          "initial_log_msg_cols": 20,
+          "initial_log_num_interleaved": 4,
+          "initial_opened_row_width": 11,
+          "log_inv_rates": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "merkle_hash": "Blake3",
+          "occupied_lanes": 11,
+          "ood_samples": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "position_log": 20,
+          "queries": [
+            309,
+            189,
+            155,
+            141,
+            135,
+            132
+          ],
+          "query_grinding_bits": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "recursive_ks": [
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "recursive_log_msg_cols": [
+            17,
+            14,
+            11,
+            8,
+            5
+          ],
+          "recursive_opened_row_widths": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "recursive_steps": 5,
+          "source_lane_widths": [
+            1,
+            8,
+            2
+          ],
+          "source_packed_logs": [
+            20,
+            23,
+            21
+          ],
+          "virtual_lane_log": 4
+        },
+        "prepare_ms": 3.518566,
+        "protocol": "bitz/falcon/shared-prime/non-zk/v6",
+        "public_inputs": [
+          "public_key",
+          "message",
+          "signature_nonce",
+          "signature_s2"
+        ],
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "runtime_rustflags": "-C target-cpu=native",
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "security_terms": [
+          {
+            "bits": 144.0,
+            "error_bound": 4.484155085839415e-44,
+            "name": "prime sampling"
+          },
+          {
+            "bits": 133.67807190511263,
+            "error_bound": 5.739718509874451e-41,
+            "name": "per-signature norm identity"
+          },
+          {
+            "bits": 133.0,
+            "error_bound": 9.183549615799121e-41,
+            "name": "integer relation batching"
+          },
+          {
+            "bits": 133.60768257722123,
+            "error_bound": 6.026704435368173e-41,
+            "name": "HashToPoint initial row point"
+          },
+          {
+            "bits": 133.0227200765001,
+            "error_bound": 9.04005665305226e-41,
+            "name": "combined integer outer sumcheck"
+          },
+          {
+            "bits": 138.40728215337109,
+            "error_bound": 2.1639959991824935e-42,
+            "name": "shared ring outer and endpoint batch"
+          },
+          {
+            "bits": 134.67807190511263,
+            "error_bound": 2.8698592549372254e-41,
+            "name": "integer polynomial projection"
+          },
+          {
+            "bits": 133.9610810107077,
+            "error_bound": 4.717331150303064e-41,
+            "name": "linear constraints and terminal batching"
+          },
+          {
+            "bits": 133.24511249783654,
+            "error_bound": 7.748619988330508e-41,
+            "name": "prime source sumcheck"
+          },
+          {
+            "bits": 132.2737818406678,
+            "error_bound": 1.5192317430823937e-40,
+            "name": "batched integer-to-binary forest"
+          },
+          {
+            "bits": 132.87071698305505,
+            "error_bound": 1.0044507392280289e-40,
+            "name": "binary Keccak PIOP"
+          },
+          {
+            "bits": 137.0,
+            "error_bound": 5.739718509874451e-42,
+            "name": "SHAKE wiring, source padding and binary claim batching"
+          },
+          {
+            "bits": 135.04580368961314,
+            "error_bound": 2.2241409225763497e-41,
+            "name": "joint binary sumcheck"
+          },
+          {
+            "bits": 135.0,
+            "error_bound": 2.2958874039497803e-41,
+            "name": "ring switch and support padding"
+          },
+          {
+            "bits": 128.55792796161532,
+            "error_bound": 1.996215866410048e-39,
+            "name": "shared Ligerito"
+          }
+        ],
+        "source_bits_per_signature": [
+          131072,
+          1048576,
+          262144
+        ],
+        "source_layout": "aligned16-h2p-selection-v4",
+        "stage_timings": false,
+        "target_arch": "x86_64",
+        "threads": 16,
+        "warmup_trials": 1
+      },
+      {
+        "batch": 1024,
+        "capacity": 1024,
+        "degree": 1024,
+        "end_to_end_ms": 771.0455569999999,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "4732739",
+              "stored_nonce_boundaries": 287
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "266529",
+              "stored_nonce_boundaries": 31
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "1720352",
+              "stored_nonce_boundaries": 74
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "66550",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "1616282",
+              "stored_nonce_boundaries": 62
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "20516",
+              "stored_nonce_boundaries": 5
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "48078872",
+              "stored_nonce_boundaries": 19
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "258613",
+              "stored_nonce_boundaries": 6
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "668029",
+              "stored_nonce_boundaries": 28
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "11948",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "262350",
+              "stored_nonce_boundaries": 22
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "2043",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "34369",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+        "input_setup_ms": 9419.81337,
+        "max_batch": 1024,
+        "native_verify_ms": 18.239233000000002,
+        "prepare_ms": 3.518566,
+        "process_peak_rss_kib": 2743356,
+        "proof_debug_digest": "b81713e04c3fe3014d2f57d60a45bad408205da8ea50e1dd9c0a638cbb92f79e",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 1280,
+          "arithmetic_source_binding": 1552,
+          "binary_bridge_gkr": 9152,
+          "binary_bridge_nonces": 2296,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 167936,
+          "integer_column_sums_first_limb": 262144,
+          "integer_column_sums_remaining_limbs": 65536,
+          "joint_binary_sumcheck": 1256,
+          "keccak_piops": 9040,
+          "opening_and_auxiliary_nonces": 536,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 7568,
+          "pcs_final_message": 4096,
+          "pcs_initial_opened_rows": 54384,
+          "pcs_nonces": 200,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 162112,
+          "pcs_recursive_opened_rows": 79360,
+          "pcs_roots": 192,
+          "pcs_sumchecks": 800,
+          "ring_certificate_and_reduction": 23818,
+          "source_authentication_joint": 116064
+        },
+        "proof_payload_bytes": 971378,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 568.638246,
+        "proof_verify_ms": 54.858394999999994,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": null,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "770c79df19e997a59c0240cf2eef1e2e739f42a493196455c8428585817c5b59",
+        "threads": 16,
+        "total_prover_ms": 716.187162,
+        "trial": "warmup",
+        "verified": true,
+        "witness_commit_ms": 147.548916
+      },
+      {
+        "batch": 1024,
+        "capacity": 1024,
+        "degree": 1024,
+        "end_to_end_ms": 727.507499,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "4732739",
+              "stored_nonce_boundaries": 287
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "266529",
+              "stored_nonce_boundaries": 31
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "1720352",
+              "stored_nonce_boundaries": 74
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "66550",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "1616282",
+              "stored_nonce_boundaries": 62
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "20516",
+              "stored_nonce_boundaries": 5
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "48078872",
+              "stored_nonce_boundaries": 19
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "258613",
+              "stored_nonce_boundaries": 6
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "668029",
+              "stored_nonce_boundaries": 28
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "11948",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "262350",
+              "stored_nonce_boundaries": 22
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "2043",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "34369",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+        "input_setup_ms": 9419.81337,
+        "max_batch": 1024,
+        "native_verify_ms": 19.191765,
+        "prepare_ms": 3.518566,
+        "process_peak_rss_kib": 2934408,
+        "proof_debug_digest": "b81713e04c3fe3014d2f57d60a45bad408205da8ea50e1dd9c0a638cbb92f79e",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 1280,
+          "arithmetic_source_binding": 1552,
+          "binary_bridge_gkr": 9152,
+          "binary_bridge_nonces": 2296,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 167936,
+          "integer_column_sums_first_limb": 262144,
+          "integer_column_sums_remaining_limbs": 65536,
+          "joint_binary_sumcheck": 1256,
+          "keccak_piops": 9040,
+          "opening_and_auxiliary_nonces": 536,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 7568,
+          "pcs_final_message": 4096,
+          "pcs_initial_opened_rows": 54384,
+          "pcs_nonces": 200,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 162112,
+          "pcs_recursive_opened_rows": 79360,
+          "pcs_roots": 192,
+          "pcs_sumchecks": 800,
+          "ring_certificate_and_reduction": 23818,
+          "source_authentication_joint": 116064
+        },
+        "proof_payload_bytes": 971378,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 559.134949,
+        "proof_verify_ms": 52.655238,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": 1,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "770c79df19e997a59c0240cf2eef1e2e739f42a493196455c8428585817c5b59",
+        "threads": 16,
+        "total_prover_ms": 674.852261,
+        "trial": "sample",
+        "verified": true,
+        "witness_commit_ms": 115.717312
+      },
+      {
+        "batch": 1024,
+        "capacity": 1024,
+        "degree": 1024,
+        "end_to_end_ms": 739.7630419999999,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "4732739",
+              "stored_nonce_boundaries": 287
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "266529",
+              "stored_nonce_boundaries": 31
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "1720352",
+              "stored_nonce_boundaries": 74
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "66550",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "1616282",
+              "stored_nonce_boundaries": 62
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "20516",
+              "stored_nonce_boundaries": 5
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "48078872",
+              "stored_nonce_boundaries": 19
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "258613",
+              "stored_nonce_boundaries": 6
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "668029",
+              "stored_nonce_boundaries": 28
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "11948",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "262350",
+              "stored_nonce_boundaries": 22
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "2043",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "34369",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+        "input_setup_ms": 9419.81337,
+        "max_batch": 1024,
+        "native_verify_ms": 18.519763,
+        "prepare_ms": 3.518566,
+        "process_peak_rss_kib": 3035564,
+        "proof_debug_digest": "b81713e04c3fe3014d2f57d60a45bad408205da8ea50e1dd9c0a638cbb92f79e",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 1280,
+          "arithmetic_source_binding": 1552,
+          "binary_bridge_gkr": 9152,
+          "binary_bridge_nonces": 2296,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 167936,
+          "integer_column_sums_first_limb": 262144,
+          "integer_column_sums_remaining_limbs": 65536,
+          "joint_binary_sumcheck": 1256,
+          "keccak_piops": 9040,
+          "opening_and_auxiliary_nonces": 536,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 7568,
+          "pcs_final_message": 4096,
+          "pcs_initial_opened_rows": 54384,
+          "pcs_nonces": 200,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 162112,
+          "pcs_recursive_opened_rows": 79360,
+          "pcs_roots": 192,
+          "pcs_sumchecks": 800,
+          "ring_certificate_and_reduction": 23818,
+          "source_authentication_joint": 116064
+        },
+        "proof_payload_bytes": 971378,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 553.8440909999999,
+        "proof_verify_ms": 55.531769000000004,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": 2,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "770c79df19e997a59c0240cf2eef1e2e739f42a493196455c8428585817c5b59",
+        "threads": 16,
+        "total_prover_ms": 684.2312729999999,
+        "trial": "sample",
+        "verified": true,
+        "witness_commit_ms": 130.387182
+      },
+      {
+        "batch": 1024,
+        "capacity": 1024,
+        "degree": 1024,
+        "end_to_end_ms": 728.7586050000001,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "4732739",
+              "stored_nonce_boundaries": 287
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "266529",
+              "stored_nonce_boundaries": 31
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "1720352",
+              "stored_nonce_boundaries": 74
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "66550",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "1616282",
+              "stored_nonce_boundaries": 62
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "20516",
+              "stored_nonce_boundaries": 5
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "48078872",
+              "stored_nonce_boundaries": 19
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "258613",
+              "stored_nonce_boundaries": 6
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "668029",
+              "stored_nonce_boundaries": 28
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "11948",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "262350",
+              "stored_nonce_boundaries": 22
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "2043",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "34369",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+        "input_setup_ms": 9419.81337,
+        "max_batch": 1024,
+        "native_verify_ms": 18.409805000000002,
+        "prepare_ms": 3.518566,
+        "process_peak_rss_kib": 3135492,
+        "proof_debug_digest": "b81713e04c3fe3014d2f57d60a45bad408205da8ea50e1dd9c0a638cbb92f79e",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 1280,
+          "arithmetic_source_binding": 1552,
+          "binary_bridge_gkr": 9152,
+          "binary_bridge_nonces": 2296,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 167936,
+          "integer_column_sums_first_limb": 262144,
+          "integer_column_sums_remaining_limbs": 65536,
+          "joint_binary_sumcheck": 1256,
+          "keccak_piops": 9040,
+          "opening_and_auxiliary_nonces": 536,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 7568,
+          "pcs_final_message": 4096,
+          "pcs_initial_opened_rows": 54384,
+          "pcs_nonces": 200,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 162112,
+          "pcs_recursive_opened_rows": 79360,
+          "pcs_roots": 192,
+          "pcs_sumchecks": 800,
+          "ring_certificate_and_reduction": 23818,
+          "source_authentication_joint": 116064
+        },
+        "proof_payload_bytes": 971378,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 556.899932,
+        "proof_verify_ms": 53.237148,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": 3,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "770c79df19e997a59c0240cf2eef1e2e739f42a493196455c8428585817c5b59",
+        "threads": 16,
+        "total_prover_ms": 675.521457,
+        "trial": "sample",
+        "verified": true,
+        "witness_commit_ms": 118.621525
+      },
+      {
+        "batch": 1024,
+        "capacity": 1024,
+        "degree": 1024,
+        "event": "summary",
+        "input_setup_ms": 9419.81337,
+        "max_batch": 1024,
+        "median_end_to_end_ms": 728.7586050000001,
+        "median_native_verify_ms": 18.519763,
+        "median_proof_prove_ms": 556.899932,
+        "median_proof_verify_ms": 53.237148,
+        "median_total_prover_ms": 675.521457,
+        "median_witness_commit_ms": 118.621525,
+        "prepare_ms": 3.518566,
+        "process_peak_rss_kib": 3135492,
+        "proof_signatures_per_second": 1838.7504489765317,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "samples": 3,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "threads": 16,
+        "total_prover_signatures_per_second": 1515.8659867705726,
+        "verified": true
+      }
+    ],
+    "candidate-b1024": [
+      {
+        "algebraic_security_bits": 128.0931673391196,
+        "arithmetic_live_bits_per_signature": 100482,
+        "arithmetic_prime_bits": 126,
+        "arithmetic_prime_max": "85070591730234615865843651857942052863",
+        "arithmetic_prime_min": "42535295865117307932921825928971026432",
+        "batch": 1024,
+        "build_rustflags": "-C target-cpu=native",
+        "capacity": 1024,
+        "compiled_target_features": {
+          "aes": true,
+          "avx2": true,
+          "avx512f": true,
+          "gfni": true,
+          "pclmulqdq": true,
+          "sse4.1": true,
+          "vpclmulqdq": true
+        },
+        "cpu_affinity": null,
+        "degree": 1024,
+        "event": "prepared",
+        "gf128_kernel": "pclmul-karatsuba-barrett",
+        "input_count": 1024,
+        "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+        "input_implementation_version": "0.3.0",
+        "input_mode": "original-falcon-1024",
+        "input_rng": "rand_chacha 0.3.1 ChaCha20Rng::seed_from_u64",
+        "input_seed": 42,
+        "input_setup_ms": 9404.395023,
+        "input_source": "pornin/rust-fn-dsa",
+        "integer_bridge": "wfbitz-joint-limbs",
+        "max_batch": 1024,
+        "measured_trials": 3,
+        "native_verify_includes_public_key_decode": true,
+        "pcs_query_shape": {
+          "configuration_fingerprint": "5c12deaf20b1375da8a852c21d5c714ca2c7ce44b5f67c8fa189cf142c8fef56",
+          "fold_grinding_bits": [
+            21,
+            19,
+            17,
+            15,
+            13,
+            11
+          ],
+          "initial_k": 4,
+          "initial_log_msg_cols": 19,
+          "initial_log_num_interleaved": 4,
+          "initial_opened_row_width": 16,
+          "log_inv_rates": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "merkle_hash": "Blake3",
+          "occupied_lanes": 16,
+          "ood_samples": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "position_log": 19,
+          "queries": [
+            309,
+            189,
+            155,
+            141,
+            135,
+            132
+          ],
+          "query_grinding_bits": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "recursive_ks": [
+            3,
+            3,
+            3,
+            3,
+            2
+          ],
+          "recursive_log_msg_cols": [
+            16,
+            13,
+            10,
+            7,
+            5
+          ],
+          "recursive_opened_row_widths": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "recursive_steps": 5,
+          "source_lane_widths": [
+            2,
+            8,
+            4,
+            2
+          ],
+          "source_packed_logs": [
+            20,
+            22,
+            21,
+            20
+          ],
+          "virtual_lane_log": 4
+        },
+        "prepare_ms": 8.297847,
+        "protocol": "bitz/falcon/shared-prime/non-zk/v7",
+        "public_inputs": [
+          "public_key",
+          "message",
+          "signature_nonce",
+          "signature_s2"
+        ],
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "runtime_rustflags": "-C target-cpu=native",
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "security_terms": [
+          {
+            "bits": 144.0,
+            "error_bound": 4.484155085839415e-44,
+            "name": "prime sampling"
+          },
+          {
+            "bits": 133.67807190511263,
+            "error_bound": 5.739718509874451e-41,
+            "name": "per-signature norm identity"
+          },
+          {
+            "bits": 133.0,
+            "error_bound": 9.183549615799121e-41,
+            "name": "integer relation batching"
+          },
+          {
+            "bits": 133.60768257722123,
+            "error_bound": 6.026704435368173e-41,
+            "name": "HashToPoint initial row point"
+          },
+          {
+            "bits": 133.0227200765001,
+            "error_bound": 9.04005665305226e-41,
+            "name": "combined integer outer sumcheck"
+          },
+          {
+            "bits": 138.40728215337109,
+            "error_bound": 2.1639959991824935e-42,
+            "name": "shared ring outer and endpoint batch"
+          },
+          {
+            "bits": 134.67807190511263,
+            "error_bound": 2.8698592549372254e-41,
+            "name": "integer polynomial projection"
+          },
+          {
+            "bits": 133.9610810107077,
+            "error_bound": 4.717331150303064e-41,
+            "name": "linear constraints and terminal batching"
+          },
+          {
+            "bits": 133.24511249783654,
+            "error_bound": 7.748619988330508e-41,
+            "name": "prime source sumcheck"
+          },
+          {
+            "bits": 131.2737818406678,
+            "error_bound": 3.0384634861647874e-40,
+            "name": "batched integer-to-binary forest"
+          },
+          {
+            "bits": 131.89147554322184,
+            "error_bound": 1.9802028859066855e-40,
+            "name": "binary Keccak PIOP"
+          },
+          {
+            "bits": 137.0,
+            "error_bound": 5.739718509874451e-42,
+            "name": "SHAKE wiring, source padding and binary claim batching"
+          },
+          {
+            "bits": 135.09310940439147,
+            "error_bound": 2.152394441202919e-41,
+            "name": "joint binary sumcheck"
+          },
+          {
+            "bits": 134.0,
+            "error_bound": 4.591774807899561e-41,
+            "name": "ring switch and support padding"
+          },
+          {
+            "bits": 128.76906863033156,
+            "error_bound": 1.7244389691773472e-39,
+            "name": "shared Ligerito"
+          }
+        ],
+        "source_bits_per_signature": [
+          131072,
+          524288,
+          262144,
+          131072
+        ],
+        "source_layout": "aligned16-h2p-selection-v4",
+        "stage_timings": false,
+        "target_arch": "x86_64",
+        "threads": 16,
+        "warmup_trials": 1
+      },
+      {
+        "batch": 1024,
+        "capacity": 1024,
+        "degree": 1024,
+        "end_to_end_ms": 733.1634069999999,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "2393195",
+              "stored_nonce_boundaries": 287
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "191072",
+              "stored_nonce_boundaries": 30
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "1725444",
+              "stored_nonce_boundaries": 110
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "48079",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "1071859",
+              "stored_nonce_boundaries": 60
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "21617",
+              "stored_nonce_boundaries": 5
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "22999281",
+              "stored_nonce_boundaries": 18
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "87647",
+              "stored_nonce_boundaries": 6
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "441516",
+              "stored_nonce_boundaries": 28
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "1730",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "277860",
+              "stored_nonce_boundaries": 22
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "1957",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "538",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+        "input_setup_ms": 9404.395023,
+        "max_batch": 1024,
+        "native_verify_ms": 17.882578,
+        "prepare_ms": 8.297847,
+        "process_peak_rss_kib": 1861692,
+        "proof_debug_digest": "e8b8b50f67038f7bcd3aa4a267808dea6a72719c7e39aa1085721f04d3ad922b",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 1280,
+          "arithmetic_source_binding": 1552,
+          "binary_bridge_gkr": 9152,
+          "binary_bridge_nonces": 2296,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 167936,
+          "integer_column_sums_first_limb": 262144,
+          "integer_column_sums_remaining_limbs": 65536,
+          "joint_binary_sumcheck": 1216,
+          "keccak_piops": 13520,
+          "opening_and_auxiliary_nonces": 520,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 7568,
+          "pcs_final_message": 2048,
+          "pcs_initial_opened_rows": 79104,
+          "pcs_nonces": 192,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 140032,
+          "pcs_recursive_opened_rows": 79360,
+          "pcs_roots": 192,
+          "pcs_sumchecks": 768,
+          "ring_certificate_and_reduction": 23818,
+          "source_authentication_joint": 106944
+        },
+        "proof_payload_bytes": 967234,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 514.168637,
+        "proof_verify_ms": 61.255687,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": null,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "9889261d667748589dc7c4ac09f6c36c2dff7648452b312cc91c8cb46b7a9289",
+        "threads": 16,
+        "total_prover_ms": 671.9077199999999,
+        "trial": "warmup",
+        "verified": true,
+        "witness_commit_ms": 157.739083
+      },
+      {
+        "batch": 1024,
+        "capacity": 1024,
+        "degree": 1024,
+        "end_to_end_ms": 646.872061,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "2393195",
+              "stored_nonce_boundaries": 287
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "191072",
+              "stored_nonce_boundaries": 30
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "1725444",
+              "stored_nonce_boundaries": 110
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "48079",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "1071859",
+              "stored_nonce_boundaries": 60
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "21617",
+              "stored_nonce_boundaries": 5
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "22999281",
+              "stored_nonce_boundaries": 18
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "87647",
+              "stored_nonce_boundaries": 6
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "441516",
+              "stored_nonce_boundaries": 28
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "1730",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "277860",
+              "stored_nonce_boundaries": 22
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "1957",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "538",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+        "input_setup_ms": 9404.395023,
+        "max_batch": 1024,
+        "native_verify_ms": 18.220858,
+        "prepare_ms": 8.297847,
+        "process_peak_rss_kib": 2170492,
+        "proof_debug_digest": "e8b8b50f67038f7bcd3aa4a267808dea6a72719c7e39aa1085721f04d3ad922b",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 1280,
+          "arithmetic_source_binding": 1552,
+          "binary_bridge_gkr": 9152,
+          "binary_bridge_nonces": 2296,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 167936,
+          "integer_column_sums_first_limb": 262144,
+          "integer_column_sums_remaining_limbs": 65536,
+          "joint_binary_sumcheck": 1216,
+          "keccak_piops": 13520,
+          "opening_and_auxiliary_nonces": 520,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 7568,
+          "pcs_final_message": 2048,
+          "pcs_initial_opened_rows": 79104,
+          "pcs_nonces": 192,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 140032,
+          "pcs_recursive_opened_rows": 79360,
+          "pcs_roots": 192,
+          "pcs_sumchecks": 768,
+          "ring_certificate_and_reduction": 23818,
+          "source_authentication_joint": 106944
+        },
+        "proof_payload_bytes": 967234,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 500.782826,
+        "proof_verify_ms": 57.967797000000004,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": 1,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "9889261d667748589dc7c4ac09f6c36c2dff7648452b312cc91c8cb46b7a9289",
+        "threads": 16,
+        "total_prover_ms": 588.904264,
+        "trial": "sample",
+        "verified": true,
+        "witness_commit_ms": 88.121438
+      },
+      {
+        "batch": 1024,
+        "capacity": 1024,
+        "degree": 1024,
+        "end_to_end_ms": 660.4114829999999,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "2393195",
+              "stored_nonce_boundaries": 287
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "191072",
+              "stored_nonce_boundaries": 30
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "1725444",
+              "stored_nonce_boundaries": 110
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "48079",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "1071859",
+              "stored_nonce_boundaries": 60
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "21617",
+              "stored_nonce_boundaries": 5
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "22999281",
+              "stored_nonce_boundaries": 18
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "87647",
+              "stored_nonce_boundaries": 6
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "441516",
+              "stored_nonce_boundaries": 28
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "1730",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "277860",
+              "stored_nonce_boundaries": 22
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "1957",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "538",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+        "input_setup_ms": 9404.395023,
+        "max_batch": 1024,
+        "native_verify_ms": 18.596659000000002,
+        "prepare_ms": 8.297847,
+        "process_peak_rss_kib": 2432612,
+        "proof_debug_digest": "e8b8b50f67038f7bcd3aa4a267808dea6a72719c7e39aa1085721f04d3ad922b",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 1280,
+          "arithmetic_source_binding": 1552,
+          "binary_bridge_gkr": 9152,
+          "binary_bridge_nonces": 2296,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 167936,
+          "integer_column_sums_first_limb": 262144,
+          "integer_column_sums_remaining_limbs": 65536,
+          "joint_binary_sumcheck": 1216,
+          "keccak_piops": 13520,
+          "opening_and_auxiliary_nonces": 520,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 7568,
+          "pcs_final_message": 2048,
+          "pcs_initial_opened_rows": 79104,
+          "pcs_nonces": 192,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 140032,
+          "pcs_recursive_opened_rows": 79360,
+          "pcs_roots": 192,
+          "pcs_sumchecks": 768,
+          "ring_certificate_and_reduction": 23818,
+          "source_authentication_joint": 106944
+        },
+        "proof_payload_bytes": 967234,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 505.81179799999995,
+        "proof_verify_ms": 57.969941,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": 2,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "9889261d667748589dc7c4ac09f6c36c2dff7648452b312cc91c8cb46b7a9289",
+        "threads": 16,
+        "total_prover_ms": 602.4415419999999,
+        "trial": "sample",
+        "verified": true,
+        "witness_commit_ms": 96.629744
+      },
+      {
+        "batch": 1024,
+        "capacity": 1024,
+        "degree": 1024,
+        "end_to_end_ms": 672.772146,
+        "event": "trial",
+        "flock_verifier_affinity": null,
+        "grinding_diagnostics": {
+          "categories": [
+            {
+              "category": "binary_bridge",
+              "serial_nonce_prefix_sum": "2393195",
+              "stored_nonce_boundaries": 287
+            },
+            {
+              "category": "binary_joint",
+              "serial_nonce_prefix_sum": "191072",
+              "stored_nonce_boundaries": 30
+            },
+            {
+              "category": "binary_keccak",
+              "serial_nonce_prefix_sum": "1725444",
+              "stored_nonce_boundaries": 110
+            },
+            {
+              "category": "binary_links",
+              "serial_nonce_prefix_sum": "48079",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "binary_opening",
+              "serial_nonce_prefix_sum": "1071859",
+              "stored_nonce_boundaries": 60
+            },
+            {
+              "category": "pcs_auxiliary",
+              "serial_nonce_prefix_sum": "21617",
+              "stored_nonce_boundaries": 5
+            },
+            {
+              "category": "pcs_folds",
+              "serial_nonce_prefix_sum": "22999281",
+              "stored_nonce_boundaries": 18
+            },
+            {
+              "category": "pcs_queries",
+              "serial_nonce_prefix_sum": "87647",
+              "stored_nonce_boundaries": 6
+            },
+            {
+              "category": "prime_binder",
+              "serial_nonce_prefix_sum": "441516",
+              "stored_nonce_boundaries": 28
+            },
+            {
+              "category": "prime_h2p_rows",
+              "serial_nonce_prefix_sum": "1730",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "prime_integer_outer",
+              "serial_nonce_prefix_sum": "277860",
+              "stored_nonce_boundaries": 22
+            },
+            {
+              "category": "prime_norm",
+              "serial_nonce_prefix_sum": "1957",
+              "stored_nonce_boundaries": 1
+            },
+            {
+              "category": "ring_projection",
+              "serial_nonce_prefix_sum": "538",
+              "stored_nonce_boundaries": 1
+            }
+          ],
+          "definition": "sum(nonce+1) over stored nonce entries; decimal strings preserve u128; includes zero-difficulty placeholders; excludes parallel/SIMD overscan; not executed hashes"
+        },
+        "input_digest": "de99e653487b5daa5bc850062b51a776a9f1c15e330694d23400913b231eba39",
+        "input_setup_ms": 9404.395023,
+        "max_batch": 1024,
+        "native_verify_ms": 19.048133,
+        "prepare_ms": 8.297847,
+        "process_peak_rss_kib": 2585840,
+        "proof_debug_digest": "e8b8b50f67038f7bcd3aa4a267808dea6a72719c7e39aa1085721f04d3ad922b",
+        "proof_payload_breakdown": {
+          "arithmetic_piop": 1280,
+          "arithmetic_source_binding": 1552,
+          "binary_bridge_gkr": 9152,
+          "binary_bridge_nonces": 2296,
+          "binary_link_nonces": 8,
+          "hash_to_point_selection_masks": 167936,
+          "integer_column_sums_first_limb": 262144,
+          "integer_column_sums_remaining_limbs": 65536,
+          "joint_binary_sumcheck": 1216,
+          "keccak_piops": 13520,
+          "opening_and_auxiliary_nonces": 520,
+          "opening_ring_switch": 2048,
+          "pcs_bincode_framing": 7568,
+          "pcs_final_message": 2048,
+          "pcs_initial_opened_rows": 79104,
+          "pcs_nonces": 192,
+          "pcs_ood_values": 0,
+          "pcs_recursive_authentication": 140032,
+          "pcs_recursive_opened_rows": 79360,
+          "pcs_roots": 192,
+          "pcs_sumchecks": 768,
+          "ring_certificate_and_reduction": 23818,
+          "source_authentication_joint": 106944
+        },
+        "proof_payload_bytes": 967234,
+        "proof_payload_definition": "canonical stored payload; excludes Falcon framing and public statement",
+        "proof_prove_ms": 522.685799,
+        "proof_verify_ms": 58.616944999999994,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "sample": 3,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "source_root": "9889261d667748589dc7c4ac09f6c36c2dff7648452b312cc91c8cb46b7a9289",
+        "threads": 16,
+        "total_prover_ms": 614.155201,
+        "trial": "sample",
+        "verified": true,
+        "witness_commit_ms": 91.469402
+      },
+      {
+        "batch": 1024,
+        "capacity": 1024,
+        "degree": 1024,
+        "event": "summary",
+        "input_setup_ms": 9404.395023,
+        "max_batch": 1024,
+        "median_end_to_end_ms": 660.4114829999999,
+        "median_native_verify_ms": 18.596659000000002,
+        "median_proof_prove_ms": 505.81179799999995,
+        "median_proof_verify_ms": 57.969941,
+        "median_total_prover_ms": 602.4415419999999,
+        "median_witness_commit_ms": 91.469402,
+        "prepare_ms": 8.297847,
+        "process_peak_rss_kib": 2585840,
+        "proof_signatures_per_second": 2024.468397235764,
+        "ring_extension": 11,
+        "ring_extension_selection": "auto",
+        "samples": 3,
+        "schema": "bitz/falcon-hybrid/profile-v2",
+        "security_target": 128,
+        "source_layout": "aligned16-h2p-selection-v4",
+        "threads": 16,
+        "total_prover_signatures_per_second": 1699.7499817168984,
+        "verified": true
+      }
+    ]
+  }
+}

@@ -165,8 +165,17 @@ fn fill_subkeccak(
     a_u64: &mut [u64],
     b_u64: &mut [u64],
 ) {
+    fill_subkeccak_lanes(i, state_to_lanes(initial), z_u64, a_u64, b_u64);
+}
+
+fn fill_subkeccak_lanes(
+    i: usize,
+    mut state_lanes: Lanes,
+    z_u64: &mut [u64],
+    a_u64: &mut [u64],
+    b_u64: &mut [u64],
+) -> Lanes {
     // state_0 input self-loops.
-    let mut state_lanes: Lanes = state_to_lanes(initial);
     let s0_base = state_u64_base(i, 0);
     for lane in 0..N_LANES {
         let pos = s0_base + lane;
@@ -225,6 +234,7 @@ fn fill_subkeccak(
         a_u64[pos] = v;
         b_u64[pos] = u64::MAX;
     }
+    state_lanes
 }
 
 fn build_block_witness_into(
@@ -284,6 +294,217 @@ pub fn generate_witness_with_ab_packed_and_lincheck(
         K_LOG,
         build_block_witness_into,
     )
+}
+
+/// Execute chains and pack three consecutive permutations in each circuit block.
+/// Block IDs are `(permutation / 3) * capacity + signature`, with sub-keccak
+/// `permutation % 3`. Packed z/a/b use BatchMajor order; the lincheck stripe
+/// groups eight consecutive block IDs. Outputs are indexed by signature and
+/// permutation, including zero entries for inactive signatures.
+///
+/// Inactive signatures have entirely zero witnesses, including the constant
+/// wire. The caller must pin that wire to the live-signature mask and prove
+/// chaining separately: the underlying circuit still checks independent
+/// permutations. Full groups of eight live signatures share the SIMD producer;
+/// scalar production handles the remainder, including capacities below eight.
+pub fn generate_chained_witness_batch_major(
+    initial: &[[u64; N_LANES]],
+    capacity: usize,
+    permutations: usize,
+) -> (
+    Vec<Gf128>,
+    Vec<Gf128>,
+    Vec<Gf128>,
+    Vec<u8>,
+    Vec<Vec<[u64; N_LANES]>>,
+) {
+    use super::common::{BM_V, BmRow, SendPtr, flush_rows_nt, stripe_from_rows};
+    use rayon::prelude::*;
+
+    assert!(capacity.is_power_of_two() && permutations.is_multiple_of(N_SUB));
+    let triples = permutations / N_SUB;
+    assert!(triples.is_power_of_two());
+    let blocks = capacity.checked_mul(triples).expect("Keccak block count");
+    assert!(initial.len() <= capacity && blocks >= BM_V);
+    let n_log = blocks.ilog2() as usize;
+    let total = blocks * (U64_PER_BLOCK / 2);
+    let useful_chunks = USEFUL_BITS.div_ceil(128);
+    let mut z = flock_core::scratch::take_f128(total);
+    let mut a = flock_core::scratch::take_f128(total);
+    let mut b = flock_core::scratch::take_f128(total);
+    let mut stripe = vec![0u8; total * 16];
+    let mut outputs = vec![vec![[0; N_LANES]; permutations]; capacity];
+    let tail = useful_chunks * blocks;
+    for buf in [&mut z, &mut a, &mut b] {
+        buf[tail..]
+            .par_chunks_mut(1 << 16)
+            .for_each(|chunk| chunk.fill(Gf128::ZERO));
+        // Scratch may hold a previous live batch. Clear inactive blocks in
+        // every useful chunk column as well as the contiguous padding tail.
+        if initial.len() < capacity {
+            buf[..tail].par_chunks_mut(blocks).for_each(|row| {
+                for triple in 0..triples {
+                    row[triple * capacity + initial.len()..(triple + 1) * capacity]
+                        .fill(Gf128::ZERO);
+                }
+            });
+        }
+    }
+    let (zp, ap, bp, sp) = (
+        SendPtr(z.as_mut_ptr() as *mut u64),
+        SendPtr(a.as_mut_ptr() as *mut u64),
+        SendPtr(b.as_mut_ptr() as *mut u64),
+        SendPtr(stripe.as_mut_ptr() as *mut u64),
+    );
+    outputs
+        .par_chunks_mut(BM_V)
+        .enumerate()
+        .take(initial.len() / BM_V)
+        .for_each_init(
+            || -> [Vec<BmRow>; 3] {
+                std::array::from_fn(|_| {
+                    let mut rows = vec![[0u64; BM_V]; U64_PER_BLOCK];
+                    rows[Z_CONST_U64] = [1; BM_V];
+                    rows
+                })
+            },
+            |[rz, ra, rb], (group, out)| {
+                let first = group * BM_V;
+                let mut lanes =
+                    std::array::from_fn(|lane| std::array::from_fn(|j| initial[first + j][lane]));
+                for triple in 0..triples {
+                    // Every live row is overwritten. Intra-slot padding and
+                    // the final half-chunk retain their initialized zeros.
+                    for sub in 0..N_SUB {
+                        lanes = fill_subkeccak_batch(sub, lanes, rz, ra, rb);
+                        for j in 0..BM_V {
+                            out[j][triple * N_SUB + sub] =
+                                std::array::from_fn(|lane| lanes[lane][j]);
+                        }
+                    }
+                    let block = triple * capacity + first;
+                    // SAFETY: each worker owns eight signature IDs in every
+                    // triple. Their chunk rows and stripe groups are disjoint.
+                    unsafe {
+                        flush_rows_nt(rz, zp.get(), block, n_log, useful_chunks);
+                        flush_rows_nt(ra, ap.get(), block, n_log, useful_chunks);
+                        flush_rows_nt(rb, bp.get(), block, n_log, useful_chunks);
+                        stripe_from_rows(
+                            rz,
+                            sp.get() as *mut u8,
+                            block,
+                            U64_PER_BLOCK,
+                            USEFUL_BITS.div_ceil(64),
+                        );
+                    }
+                }
+            },
+        );
+    if initial.len().is_multiple_of(BM_V) {
+        return (z, a, b, stripe, outputs);
+    }
+
+    let mut local_z = vec![0; U64_PER_BLOCK];
+    let mut local_a = vec![0; U64_PER_BLOCK];
+    let mut local_b = vec![0; U64_PER_BLOCK];
+    for local in [&mut local_z, &mut local_a, &mut local_b] {
+        local[Z_CONST_U64] = 1;
+    }
+    let first_partial = initial.len() / BM_V * BM_V;
+    for signature in first_partial..initial.len() {
+        let mut lanes = initial[signature];
+        for triple in 0..triples {
+            for sub in 0..N_SUB {
+                lanes = fill_subkeccak_lanes(sub, lanes, &mut local_z, &mut local_a, &mut local_b);
+                outputs[signature][triple * N_SUB + sub] = lanes;
+            }
+            let block = triple * capacity + signature;
+            for (dest, local) in [(&mut z, &local_z), (&mut a, &local_a), (&mut b, &local_b)] {
+                for (chunk, pair) in local.chunks_exact(2).enumerate() {
+                    dest[chunk * blocks + block] = Gf128 {
+                        lo: pair[0],
+                        hi: pair[1],
+                    };
+                }
+            }
+        }
+    }
+    // A stripe group can cross triple boundaries when capacity < eight.
+    // Transpose complete affected groups after their scalar words are final.
+    use flock_core::bits::transpose_8_u64s_to_64_bytes;
+    let groups = if capacity < BM_V {
+        blocks / BM_V
+    } else {
+        triples
+    };
+    for index in 0..groups {
+        let group = if capacity < BM_V {
+            index
+        } else {
+            index * (capacity / BM_V) + first_partial / BM_V
+        };
+        let destination = &mut stripe[group * K..(group + 1) * K];
+        for (chunk, row) in z.chunks_exact(blocks).take(useful_chunks).enumerate() {
+            let words = &row[group * BM_V..(group + 1) * BM_V];
+            let low = std::array::from_fn(|j| words[j].lo);
+            let high = std::array::from_fn(|j| words[j].hi);
+            transpose_8_u64s_to_64_bytes(&low, &mut destination[128 * chunk..128 * chunk + 64]);
+            transpose_8_u64s_to_64_bytes(
+                &high,
+                &mut destination[128 * chunk + 64..128 * chunk + 128],
+            );
+        }
+    }
+    (z, a, b, stripe, outputs)
+}
+
+/// Eight signatures advance through one sub-keccak. The staging rows are
+/// bounded per worker and reused across the chain; no independent-witness
+/// tensor or list of intermediate Boolean states is materialized.
+fn fill_subkeccak_batch(
+    sub: usize,
+    mut lanes: super::keccak::VLanes,
+    z: &mut [super::common::BmRow],
+    a: &mut [super::common::BmRow],
+    b: &mut [super::common::BmRow],
+) -> super::keccak::VLanes {
+    use super::common::BM_V;
+    use super::keccak::{rho_pi_v, theta_v};
+
+    let input = state_u64_base(sub, 0);
+    for lane in 0..N_LANES {
+        z[input + lane] = lanes[lane];
+        a[input + lane] = lanes[lane];
+        b[input + lane] = [u64::MAX; BM_V];
+    }
+    for round in 0..N_ROUNDS {
+        theta_v(&mut lanes);
+        let linear = rho_pi_v(&lanes);
+        let base = t_u64_base(sub, round);
+        for y in 0..5 {
+            for x in 0..5 {
+                let lane = x + 5 * y;
+                let left = (x + 1) % 5 + 5 * y;
+                let right = (x + 2) % 5 + 5 * y;
+                for j in 0..BM_V {
+                    a[base + lane][j] = !linear[left][j];
+                    b[base + lane][j] = linear[right][j];
+                    z[base + lane][j] = a[base + lane][j] & b[base + lane][j];
+                    lanes[lane][j] = linear[lane][j] ^ z[base + lane][j];
+                }
+            }
+        }
+        for lane in &mut lanes[0] {
+            *lane ^= ROUND_CONSTANTS[round];
+        }
+    }
+    let output = state_u64_base(sub, N_ROUNDS);
+    for lane in 0..N_LANES {
+        z[output + lane] = lanes[lane];
+        a[output + lane] = lanes[lane];
+        b[output + lane] = [u64::MAX; BM_V];
+    }
+    lanes
 }
 
 // ---------------------------------------------------------------------------
@@ -722,6 +943,165 @@ mod tests {
                 a_u64[pos] & b_u64[pos],
                 z_u64[pos],
                 "a·b ≠ z at u64 pos {pos}"
+            );
+        }
+    }
+
+    fn batch_major_word(packed: &[Gf128], blocks: usize, block: usize, word: usize) -> u64 {
+        let value = packed[(word / 2) * blocks + block];
+        if word % 2 == 0 { value.lo } else { value.hi }
+    }
+
+    #[test]
+    fn chained_batch_major_matches_single_witness_and_scalar_stripes() {
+        use super::super::keccak as single;
+
+        let mut rng = Rng::new(0x3C_A17_E055);
+        for (live, capacity, permutations) in [
+            (0, 2, 12),
+            (1, 2, 12),
+            (2, 2, 12),
+            (3, 4, 6),
+            (4, 4, 6),
+            (7, 8, 12),
+            (8, 8, 6),
+            (9, 16, 6),
+            (13, 16, 12),
+            (16, 16, 12),
+        ] {
+            let initial: Vec<Lanes> = (0..live)
+                .map(|_| std::array::from_fn(|_| rng.next_u64()))
+                .collect();
+            let mut inputs = vec![[false; STATE_BITS]; capacity * permutations];
+            let mut native_outputs = vec![vec![[0; N_LANES]; permutations]; capacity];
+            for signature in 0..live {
+                let mut state = single::lanes_to_state(&initial[signature]);
+                for permutation in 0..permutations {
+                    inputs[permutation * capacity + signature] = state;
+                    single::keccak_f(&mut state);
+                    native_outputs[signature][permutation] = state_to_lanes(&state);
+                }
+            }
+            let single_blocks = inputs.len().next_power_of_two();
+            let reference =
+                single::generate_witness_batch_major(&inputs, single_blocks.ilog2() as usize);
+            let blocks = capacity * (permutations / N_SUB);
+            // Every useful inactive cell and every padding gap must overwrite
+            // stale scratch, including the last half of a live chunk column.
+            for _ in 0..3 {
+                flock_core::scratch::give_f128(vec![
+                    Gf128 {
+                        lo: u64::MAX,
+                        hi: u64::MAX
+                    };
+                    blocks * U64_PER_BLOCK / 2
+                ]);
+            }
+            let (z, a, b, stripe, outputs) =
+                generate_chained_witness_batch_major(&initial, capacity, permutations);
+            assert_eq!(
+                outputs, native_outputs,
+                "B={live}, C={capacity}, P={permutations}"
+            );
+            assert!(
+                a.iter()
+                    .zip(&b)
+                    .zip(&z)
+                    .all(|((a, b), z)| { a.lo & b.lo == z.lo && a.hi & b.hi == z.hi })
+            );
+
+            for triple in 0..permutations / N_SUB {
+                for signature in 0..capacity {
+                    let block = triple * capacity + signature;
+                    for (actual, expected) in
+                        [(&z, &reference.0), (&a, &reference.1), (&b, &reference.2)]
+                    {
+                        let mut words = vec![0; U64_PER_BLOCK];
+                        if signature < live {
+                            words[Z_CONST_U64] = 1;
+                            for sub in 0..N_SUB {
+                                let single_block = (triple * N_SUB + sub) * capacity + signature;
+                                let read = |word| {
+                                    batch_major_word(expected, single_blocks, single_block, word)
+                                };
+                                for (round, base) in
+                                    [(0, single::STATE0_BIT_BASE), (24, single::STATE24_BIT_BASE)]
+                                {
+                                    for lane in 0..N_LANES {
+                                        words[state_u64_base(sub, round) + lane] =
+                                            read(base / 64 + lane);
+                                    }
+                                }
+                                for round in 0..N_ROUNDS {
+                                    for lane in 0..N_LANES {
+                                        words[t_u64_base(sub, round) + lane] =
+                                            read(single::z_pos_t(round, lane) / 64);
+                                    }
+                                }
+                            }
+                        }
+                        for (word, expected) in words.into_iter().enumerate() {
+                            assert_eq!(
+                                batch_major_word(actual, blocks, block, word),
+                                expected,
+                                "B={live}, C={capacity}, P={permutations}, block={block}, word={word}"
+                            );
+                        }
+                    }
+                }
+            }
+
+            // Independent per-bit emitter checks both SIMD and scalar stripe
+            // production, especially groups crossing triple boundaries.
+            let mut expected_stripe = vec![0u8; stripe.len()];
+            for block in 0..blocks {
+                for word in 0..U64_PER_BLOCK {
+                    let mut bits = batch_major_word(&z, blocks, block, word);
+                    while bits != 0 {
+                        let bit = bits.trailing_zeros() as usize;
+                        expected_stripe[(block / 8) * K + word * 64 + bit] |= 1 << (block % 8);
+                        bits &= bits - 1;
+                    }
+                }
+            }
+            assert_eq!(stripe, expected_stripe);
+        }
+    }
+
+    #[test]
+    fn chained_batch_major_matches_lincheck_with_inactive_signatures() {
+        let mut rng = Rng::new(0x3C_11_C0DE);
+        let initial: Vec<Lanes> = (0..3)
+            .map(|_| std::array::from_fn(|_| rng.next_u64()))
+            .collect();
+        let (z, a, b, _, _) = generate_chained_witness_batch_major(&initial, 4, 6);
+        let alpha = Gf128 {
+            lo: rng.next_u64(),
+            hi: rng.next_u64(),
+        };
+        let eq_inner: Vec<_> = (0..K)
+            .map(|_| Gf128 {
+                lo: rng.next_u64(),
+                hi: rng.next_u64(),
+            })
+            .collect();
+        let comb = KeccakLincheckCircuit.fold_alpha_batched(alpha, &eq_inner);
+        for block in [0, 3, 4, 7] {
+            let dot = |packed: &[Gf128], weights: &[Gf128]| {
+                let mut sum = Gf128::ZERO;
+                for word in 0..U64_PER_BLOCK {
+                    let mut bits = batch_major_word(packed, 8, block, word);
+                    while bits != 0 {
+                        let bit = bits.trailing_zeros() as usize;
+                        sum += weights[word * 64 + bit];
+                        bits &= bits - 1;
+                    }
+                }
+                sum
+            };
+            assert_eq!(
+                dot(&z, &comb),
+                alpha * dot(&a, &eq_inner) + dot(&b, &eq_inner)
             );
         }
     }

@@ -53,14 +53,15 @@ protocol selector, experimental small-degree catalog, or compatibility
 constructor. Degree-1024 fixture tests compile once; profile tests cover both
 degrees and all retained extensions.
 
-SHAKE slabs follow the descending power-of-two decomposition of the required
-permutation count. Logical arithmetic and Keccak sources project into one joint
-commitment. Canonical rows include structural zero lanes. Activity masks and
-padding checks remain part of the proof.
+Falcon-1024 uses SHAKE slabs of 12+6+2 permutations. The first two pack three
+permutations per circuit block; the last packs one. Falcon-512 retains its
+8+2+1 single-permutation slabs. Logical arithmetic and Keccak sources project
+into one joint commitment. Canonical rows include structural zero lanes.
+Activity masks and padding checks remain part of the proof.
 
 Transcripts bind degree, defining polynomial, norm and encoding parameters,
 maximum batch, target, source geometry, and the public statement/root. The
-protocol identifier is `bitz/falcon/shared-prime/non-zk/v1`.
+protocol identifier is `bitz/falcon/shared-prime/non-zk/v7`.
 
 ## Checks
 
