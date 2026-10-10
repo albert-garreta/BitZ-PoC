@@ -23,24 +23,6 @@ pub(crate) struct FactoredMultilinearExtension<'a, F: SpartanField> {
     live_len: usize,
 }
 
-/// Bit evaluations `[outer ⊗ inner, tail]`, with `origin_adjustment` added
-/// at index zero. The tail starts at the unpadded tensor-product length.
-pub(crate) struct CompositeMultilinearExtension<'a, F: SpartanField> {
-    /// Initial tensor-product segment, with no leading value.
-    repeated: FactoredMultilinearExtension<'a, F>,
-    /// Entries immediately following the unpadded tensor product.
-    tail_evaluations: &'a [F],
-    /// Added to the tensor product's entry at index zero.
-    origin_adjustment: F,
-    /// `repeated.live_len() + tail_evaluations.len()`.
-    live_len: usize,
-    /// Optional prover-side structure of the tail: sorted, disjoint runs
-    /// `(start, len, base)` over tail indices with `tail[start + k] = base · 2^k`;
-    /// tail entries outside every run are unstructured. Never read by
-    /// [`Self::evaluation_at`], so it cannot change what is proved.
-    tail_runs: Option<&'a [(usize, usize, F)]>,
-}
-
 impl<'a, F: SpartanField> FactoredMultilinearExtension<'a, F> {
     pub(crate) fn from_factors(
         num_vars: usize,
@@ -154,106 +136,6 @@ impl<'a, F: SpartanField> FactoredMultilinearExtension<'a, F> {
             inner_factor,
             live_len,
         })
-    }
-}
-
-impl<'a, F: SpartanField> CompositeMultilinearExtension<'a, F> {
-    pub(crate) fn from_parts(
-        num_vars: usize,
-        high: &'a [F],
-        low: &'a [F],
-        tail: &'a [F],
-        origin_adjustment: F,
-        cfg: &F::Config,
-    ) -> Result<Self, EvaluationError> {
-        if !low.len().is_power_of_two() {
-            return Err(EvaluationError::InvalidShape);
-        }
-        let repeated = FactoredMultilinearExtension::from_factors(num_vars, high, low, cfg)?;
-        let live_len = repeated
-            .live_len()
-            .checked_add(tail.len())
-            .ok_or(EvaluationError::Overflow)?;
-        if live_len > domain_size(num_vars)? {
-            return Err(EvaluationError::InvalidShape);
-        }
-        Ok(Self {
-            repeated,
-            tail_evaluations: tail,
-            origin_adjustment,
-            live_len,
-            tail_runs: None,
-        })
-    }
-
-    /// Attaches the tail's geometric runs (prover-side acceleration only). The
-    /// runs must be sorted by start, disjoint, and lie inside the tail.
-    pub(crate) fn with_tail_runs(
-        mut self,
-        runs: &'a [(usize, usize, F)],
-    ) -> Result<Self, EvaluationError> {
-        let mut end = 0usize;
-        for &(start, len, _) in runs {
-            if start < end || len == 0 {
-                return Err(EvaluationError::InvalidShape);
-            }
-            end = start.checked_add(len).ok_or(EvaluationError::Overflow)?;
-        }
-        if end > self.tail_evaluations.len() {
-            return Err(EvaluationError::InvalidShape);
-        }
-        self.tail_runs = Some(runs);
-        Ok(self)
-    }
-
-    pub(crate) fn tail_runs(&self) -> Option<&'a [(usize, usize, F)]> {
-        self.tail_runs
-    }
-
-    pub(crate) fn num_vars(&self) -> usize {
-        self.repeated.num_vars()
-    }
-    pub(crate) fn live_len(&self) -> usize {
-        self.live_len
-    }
-    pub(crate) fn repeated(&self) -> &FactoredMultilinearExtension<'a, F> {
-        &self.repeated
-    }
-    pub(crate) fn tail_evaluations(&self) -> &[F] {
-        self.tail_evaluations
-    }
-    pub(crate) fn origin_adjustment(&self) -> &F {
-        &self.origin_adjustment
-    }
-
-    pub(crate) fn evaluation_at(&self, index: usize) -> Result<F, EvaluationError> {
-        if index >= domain_size(self.num_vars())? {
-            return Err(EvaluationError::InvalidShape);
-        }
-        let mut value = if index < self.repeated.live_len() {
-            self.repeated.evaluation_at(index)?
-        } else if index < self.live_len {
-            self.tail_evaluations[index - self.repeated.live_len()].clone()
-        } else {
-            F::zero_with_cfg(&self.repeated.field)
-        };
-        if index == 0 {
-            value = self.repeated.field.add(&value, &self.origin_adjustment);
-        }
-        Ok(value)
-    }
-
-    pub(crate) fn evaluate(&self, point: &[F], cfg: &F::Config) -> Result<F, EvaluationError> {
-        let mut value = self.repeated.evaluate(point, cfg)?;
-        let weights = EqualityWeights::new(point, cfg);
-        for (index, entry) in self.tail_evaluations.iter().enumerate() {
-            value = cfg.add(
-                &value,
-                &cfg.mul(entry, &weights.at(self.repeated.live_len() + index)),
-            );
-        }
-        value = cfg.add(&value, &cfg.mul(&self.origin_adjustment, &weights.at(0)));
-        Ok(value)
     }
 }
 
@@ -390,36 +272,11 @@ mod tests {
                 assert!(mle.evaluate(&[f(0)], &cfg).is_err());
                 assert!(mle.evaluation_at(32).is_err());
             }
-            if width.is_power_of_two() {
-                let tail = [f(31), f(37), f(41)];
-                let mle =
-                    CompositeMultilinearExtension::from_parts(5, &high, &low, &tail, f(43), &cfg)
-                        .unwrap();
-                let mut values: Vec<_> = high
-                    .iter()
-                    .flat_map(|a| low.iter().map(|b| cfg.mul(a, b)))
-                    .collect();
-                values.extend(tail.iter().cloned());
-                values[0] = cfg.add(&values[0], &f(43));
-                let dense = DenseMultilinearExtension::from_evaluations_vec(5, values, f(0));
-                for index in 0..32 {
-                    assert_eq!(mle.evaluation_at(index).unwrap(), dense.evaluations[index]);
-                }
-                let point = [f(11), f(13), f(17), f(23), f(29)];
-                assert_eq!(
-                    mle.evaluate(&point, &cfg).unwrap(),
-                    evaluate_dense(&dense, &point, &cfg)
-                );
-                assert!(mle.evaluate(&point[..4], &cfg).is_err());
-            }
         }
         assert!(FactoredMultilinearExtension::from_factors(0, &high, &high, &cfg).is_err());
         assert!(
             FactoredMultilinearExtension::from_factors(usize::MAX, &high, &high, &cfg).is_err()
         );
         assert!(FactoredMultilinearExtension::from_factors(3, &[], &high, &cfg).is_err());
-        assert!(
-            CompositeMultilinearExtension::from_parts(5, &high, &high, &[], f(0), &cfg).is_err()
-        );
     }
 }

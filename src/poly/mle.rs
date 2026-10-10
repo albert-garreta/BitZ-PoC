@@ -1,9 +1,7 @@
 pub mod dense;
 mod structured;
 
-pub(crate) use structured::{
-    CompositeMultilinearExtension, EqualityWeights, FactoredMultilinearExtension,
-};
+pub(crate) use structured::{EqualityWeights, FactoredMultilinearExtension};
 
 use crate::poly::coefficient::PolynomialField;
 

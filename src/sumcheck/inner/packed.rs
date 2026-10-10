@@ -362,6 +362,7 @@ impl InnerSumcheckMleSource for FactoredMultilinearExtension<'_, Field> {
 /// Largest supported number of native-small prefix rounds.
 pub const SHA256_INNER_PREFIX_MAX_VARS: usize = 4;
 
+#[cfg(any(test, feature = "ecdsa"))]
 mod composite;
 #[cfg(feature = "ecdsa")]
 pub(crate) use composite::CompactCompositeMle;
@@ -3083,16 +3084,15 @@ mod tests {
         let invalid = crate::piop::spartan::noncanonical_test_value(&cfg);
         for invalid_part in 0..3 {
             let mut high = [field(2, &cfg), field(3, &cfg)];
-            let low = [field(5, &cfg), field(7, &cfg)];
-            let mut tail = [field(11, &cfg), field(13, &cfg)];
+            let mut low = [field(5, &cfg), field(7, &cfg)];
             let mut origin = cfg.zero();
             match invalid_part {
                 0 => high[1] = invalid,
-                1 => tail[1] = invalid,
+                1 => low[1] = invalid,
                 _ => origin = invalid,
             }
-            let coefficients = crate::poly::mle::CompositeMultilinearExtension::from_parts(
-                3, &high, &low, &tail, origin, &cfg,
+            let coefficients = crate::poly::mle::FactoredMultilinearExtension::with_leading_value(
+                3, origin, &high, &low, &cfg,
             )
             .unwrap();
             let bits = vec![0u64];
@@ -3105,7 +3105,7 @@ mod tests {
                 &cfg,
                 &mut transcript,
                 cfg.zero(),
-                PackedInput::new(&coefficients, &bits, 3, 6, 2),
+                PackedInput::new(&coefficients, &bits, 3, 5, 2),
                 (),
                 &mut boundary,
             );
