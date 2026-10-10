@@ -339,7 +339,9 @@ impl PreparedFalconHybrid {
         // Unique decoding avoids a level-zero list-selection obligation. The
         // exact Flock challenge-block plan raises the whole PCS budget above
         // the requested target, including its otherwise unground field draws.
-        let ligerito = LigeritoSelection::MATCHED_UDR
+        let ligerito = LigeritoSelection::bench_rate_override()
+            .map_err(error)?
+            .unwrap_or(LigeritoSelection::MATCHED_UDR)
             .resolve(geometry.packed_log(), target_bits)
             .map_err(error)?;
         // The binary groups and every Ligerito challenge block share the

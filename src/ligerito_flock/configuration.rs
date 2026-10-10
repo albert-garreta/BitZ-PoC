@@ -31,6 +31,28 @@ impl LigeritoSelection {
         fold_grinding: true,
     };
 
+    /// Benchmark-only rate override: `BITZ_FALCON_LIGERITO_LOG_INV_RATE=r`
+    /// selects the matched unique-decoding profile at rate `2^-r`. Production
+    /// builds ignore the variable and keep [`Self::MATCHED_UDR`].
+    pub fn bench_rate_override() -> Result<Option<Self>, String> {
+        #[cfg(feature = "bench-internals")]
+        match std::env::var("BITZ_FALCON_LIGERITO_LOG_INV_RATE") {
+            Ok(value) => {
+                let log_inv_rate = value.parse().map_err(|e| {
+                    format!("BITZ_FALCON_LIGERITO_LOG_INV_RATE must be an integer: {e}")
+                })?;
+                return Ok(Some(Self::CustomUdr {
+                    log_inv_rate,
+                    initial_k: 4,
+                    fold_grinding: true,
+                }));
+            }
+            Err(std::env::VarError::NotPresent) => {}
+            Err(e) => return Err(e.to_string()),
+        }
+        Ok(None)
+    }
+
     /// Existing higher-target standalone profiles keep their historical policy.
     /// Composed 100-bit protocols explicitly choose JOHNSON for their components.
     pub const fn for_target(target: usize) -> Self {

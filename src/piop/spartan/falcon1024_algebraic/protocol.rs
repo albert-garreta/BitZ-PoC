@@ -149,7 +149,9 @@ impl PreparedFalconAlgebraic {
             binding_bits: grind(target_bits, 2 * (COEFFICIENT_LOG + 5 + d), 125),
         };
         let geometry = shared::Geometry::new([COEFFICIENT_LOG - 2 + d]).map_err(error)?;
-        let ligerito = LigeritoSelection::MATCHED_UDR
+        let ligerito = LigeritoSelection::bench_rate_override()
+            .map_err(error)?
+            .unwrap_or(LigeritoSelection::MATCHED_UDR)
             .resolve(geometry.packed_log(), target_bits)
             .map_err(error)?;
         let (grinding, pcs_grinding) =

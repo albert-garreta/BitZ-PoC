@@ -1,13 +1,42 @@
 use serde_json::json;
-use std::time::Instant;
+use std::{
+    io::Write,
+    sync::{Mutex, OnceLock},
+    time::Instant,
+};
 
 /// Diagnostic wall times; kept out of the normal benchmark's subscriber so
 /// span logging cannot bias the matched latency runs. Nested spans overlap.
+/// Closed spans are buffered and written when a root span closes, so per-span
+/// output does not inflate the stages being timed. `start_ms`/`end_ms` share
+/// one process-wide epoch, which lets callers attribute overlapping spans.
 pub(crate) struct StageTimings;
 
 struct StageTiming {
     start: Instant,
     fields: serde_json::Map<String, serde_json::Value>,
+}
+
+struct Record {
+    name: &'static str,
+    parent: Option<&'static str>,
+    span_id: u64,
+    ancestor_ids: Vec<u64>,
+    path: Vec<&'static str>,
+    fields: serde_json::Map<String, serde_json::Value>,
+    start: Instant,
+    end: Instant,
+}
+
+static PENDING: Mutex<Vec<Record>> = Mutex::new(Vec::new());
+
+fn epoch() -> Instant {
+    static EPOCH: OnceLock<Instant> = OnceLock::new();
+    *EPOCH.get_or_init(Instant::now)
+}
+
+fn ms(from: Instant, to: Instant) -> f64 {
+    to.saturating_duration_since(from).as_secs_f64() * 1000.0
 }
 
 impl tracing::field::Visit for StageTiming {
@@ -53,6 +82,7 @@ where
                 || span.name().starts_with("wfbitz:")
                 || span.name() == "spartan:grinding"
             {
+                epoch();
                 let mut timing = StageTiming {
                     start: Instant::now(),
                     fields: serde_json::Map::new(),
@@ -77,17 +107,46 @@ where
     }
 
     fn on_close(&self, id: tracing::Id, ctx: tracing_subscriber::layer::Context<'_, S>) {
-        if let Some(span) = ctx.span(&id) {
-            if let Some(timing) = span.extensions().get::<StageTiming>() {
-                eprintln!(
+        let end = Instant::now();
+        let Some(span) = ctx.span(&id) else { return };
+        let record = {
+            let extensions = span.extensions();
+            let Some(timing) = extensions.get::<StageTiming>() else {
+                return;
+            };
+            Record {
+                name: span.name(),
+                parent: span.parent().map(|parent| parent.name()),
+                span_id: span.id().into_u64(),
+                ancestor_ids: span
+                    .scope()
+                    .from_root()
+                    .map(|ancestor| ancestor.id().into_u64())
+                    .collect(),
+                path: span
+                    .scope()
+                    .from_root()
+                    .map(|ancestor| ancestor.name())
+                    .collect(),
+                fields: timing.fields.clone(),
+                start: timing.start,
+                end,
+            }
+        };
+        let root = record.parent.is_none();
+        let mut pending = PENDING.lock().unwrap_or_else(|poison| poison.into_inner());
+        pending.push(record);
+        if root {
+            let epoch = epoch();
+            let mut out = std::io::stderr().lock();
+            for r in pending.drain(..) {
+                let _ = writeln!(
+                    out,
                     "{}",
-                    json!({"event": "stage", "name": span.name(),
-                    "parent": span.parent().map(|parent| parent.name()),
-                    "span_id": span.id().into_u64(),
-                    "ancestor_ids": span.scope().from_root().map(|ancestor| ancestor.id().into_u64()).collect::<Vec<_>>(),
-                    "path": span.scope().from_root().map(|ancestor| ancestor.name()).collect::<Vec<_>>(),
-                    "fields": timing.fields,
-                    "elapsed_ms": timing.start.elapsed().as_secs_f64() * 1000.0})
+                    json!({"event": "stage", "name": r.name, "parent": r.parent,
+                    "span_id": r.span_id, "ancestor_ids": r.ancestor_ids, "path": r.path,
+                    "fields": r.fields, "elapsed_ms": ms(r.start, r.end),
+                    "start_ms": ms(epoch, r.start), "end_ms": ms(epoch, r.end)})
                 );
             }
         }
