@@ -1,0 +1,36 @@
+{
+  "base": "ef2508f3adaf153b891825d1c2f6dc4a69853898",
+  "head": "454b623e0bdda096721504e9e937cc5a02dc2308",
+  "expected_baseline_sha256": "79dd92b01e5bc2f1d74305306c36fe9013862bffd5a41870d7ff881f50c7dbb2",
+  "altered_baseline_sha256": "ff7174b92cbe9fa92b9c719063b7d9b00e18cdd948234e88861fec7b292af751",
+  "altered_candidate_sha256": "523258cc6799ab24bff2e05102182ea522d007595bd9faceb30d9f959ab47044",
+  "cause": "objcopy --dump-section rewrites input without explicit output",
+  "build_command": [
+    "cargo",
+    "bench",
+    "--offline",
+    "--locked",
+    "--profile",
+    "release",
+    "--features",
+    "falcon-hybrid",
+    "--bench",
+    "falcon_hybrid",
+    "--no-run",
+    "--message-format=json"
+  ],
+  "build_env": {
+    "RUSTFLAGS": "-C target-cpu=native",
+    "CARGO_BUILD_JOBS": "8",
+    "CARGO_TARGET_DIR": "/home/john-wu/code/BitZ-pcs/target/falcon-binder-native"
+  },
+  "recovered-baseline": {
+    "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/simplify/validation/bin/recovered-baseline-falcon_hybrid",
+    "sha256": "79dd92b01e5bc2f1d74305306c36fe9013862bffd5a41870d7ff881f50c7dbb2"
+  },
+  "baseline_byte_identical": true,
+  "recovered-retained": {
+    "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/simplify/validation/bin/recovered-retained-falcon_hybrid",
+    "sha256": "ae69fcf83d379d220e998aec054384e7ad16be33029d7667c353d1ead6f6c835"
+  }
+}

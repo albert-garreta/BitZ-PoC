@@ -1,0 +1,30 @@
+# Dimension 4: dependency cycles and word-binder protocol review
+
+Reviewed `51b472c55..ef2508f3adaf153b891825d1c2f6dc4a69853898`, including the changed Falcon binder, weighted bridge, and their immediate callers. Investigation used manual `mod`/`use` tracing and source reasoning under `simplify-general`, `simplify-rust`, and the rust-reviewer protocol/readability references. No source edits, builds, installs, or test runs were performed.
+
+## Findings
+
+No actionable dependency-cycle, visibility, or unnecessary-indirection findings in this change. No demonstrated protocol correctness defects found in the independently reviewed word binder.
+
+Priority: none. Dependencies: this dimension does not block the dedup, type, or unused-code passes.
+
+## Dependency evidence
+
+- `backend.rs:1` declares the existing arithmetic/protocol/ring/source siblings; `arithmetic.rs:37` adds the private `word_binding` child. Protocol calls arithmetic, which dispatches into its child; the child reuses arithmetic's private form, claim, field, and transcript helpers. There is no new call from the word child into the top-level protocol driver.
+- `word_binding.rs:20`, `word_binding.rs:263`, and `word_binding.rs:374` expose only the child output and two entry points to arithmetic through `pub(super)`. Its kernels, selector evaluation, opening construction, and sparse table remain private. Restricting its fields further would not remove effective external visibility.
+- `integer_bridge.rs:259` and `integer_bridge.rs:371` are appropriately crate-visible because the Falcon protocol is outside the hybrid module. The private `verify_weighted_with_field` helper shares the implementation with the existing equality-point API while avoiding duplicate field preparation. The existing equality wrappers preserve the original relation and are still used.
+- The coarse `spartan`/`hybrid` cross-module dependency predates this range: `51b472c55:src/hybrid/integer_bridge.rs` already imports `falcon::FalconError`, `SpartanBitzField`, `GrindingDomain`, and `matrix::eq_table`. This patch does not add a new dependency edge back into the Falcon protocol. Moving those shared interfaces is outside the binder cleanup and is not justified by this diff.
+- `packed/binding_options.rs` contains workload-policy/benchmark configuration and imports no Falcon implementation. Reexporting `BindingKernel` beside `BindingOptions` does not add a reverse module edge.
+
+## Protocol evidence
+
+- **Relation and degree:** The source decoder at `word_binding.rs:34` sign-extends the low 15 bits, excluding lane 15. The two products are `Lambda * signed15` and `H * lane15`. Each factor is multilinear in word coordinates, so each sumcheck round has degree at most two. The prover stores `[c0,c1,c2]` at `word_binding.rs:317`; `SumcheckProof<F,3>` fixes the degree bound, and `sumcheck/proof.rs:102` onward verifies exact round count, nonce shape, canonical coefficients, and the round sum relation.
+- **Variable order and final round:** Coefficients fold first, then side, then instance. `fold_coefficients` switches its next-round accumulation to side when only one coefficient remains (`word_binding.rs:184`). `fold_dense` retains the final row even when its requested length is one (`word_binding.rs:77`). The full-capacity preparation gate (`protocol.rs:165`) and source layout minimum capacity (`source.rs:79`) ensure the dense instance phase is populated before terminal extraction. Expected word rounds are `log2(N)+1+log2(capacity)` (`protocol.rs:658`).
+- **Selectors and padding:** `SlackTable::new` scans lane 15 of every source word and rejects nonzero padding (`word_binding.rs:202`). Its compact rows store `D=H-padding` and `B`; rows between `SLACK_BITS` and the 32-row slack width have both values zero. For omitted coefficient/side coordinates, `D(1)=B(1)=0`; `coefficients` contributes `c0=(padding+D)B`, `c2=DB`, and `fold` multiplies both stored factors by `1-r` while retaining constant padding (`word_binding.rs:231`). The verifier independently reconstructs `H` from live-position indicators, decoder weights, and the padding complement (`word_binding.rs:429`).
+- **Terminal merge:** Both terminal values are canonical-checked and tested against the independently evaluated public factors (`word_binding.rs:401`). Both are absorbed under the terminal domain before the dedicated nonce and `zeta` challenge (`word_binding.rs:411`). The merged pending opening is `a+zeta*b`; a degree-one terminal-merge error term and matching grinding difficulty are present in `protocol.rs:178` and `protocol.rs:698`.
+- **Bridge row weighting:** `opening` produces the tensor product of the low nine word-coordinate equality weights and all 16 lane weights, including `-2^14` for the sign bit and `zeta` for lane 15 of every word (`word_binding.rs:477`). This produces exactly `2^13` canonical row weights. Remaining coordinates start at side for degree 512 and the high coefficient bit for degree 1024. The modulus, complete row weights, column point, and merged value are absorbed before bridging. Verification derives the same weights; it never reads weights from the proof.
+- **Weighted bridge:** The new entry points retain existing source shape, canonical row-weight, integer sum, and limb bounds (`integer_bridge.rs:259`, `integer_bridge.rs:397`). Prime read-off combines the low/high integer column sums at the column equality point before the GKR reduction (`integer_bridge.rs:438`). The resulting binary claim is discharged by the existing shared PCS in the protocol driver.
+
+## Inspected coverage and limits
+
+Inspected the dense two-product oracle and direct committed-bit opening check (`word_binding.rs:615`), terminal/nonce mutations, source-padding mutations, partial-batch rejection, protocol-version rejection, the public word-mode security ledger, and weighted-bridge tests covering both limb modes and equality-wrapper transcript equivalence. These tests were read, not executed. The review is source reasoning scoped to the binder changes and adjacent bridge paths, not a fresh audit of the complete PCS, grinding model, or field backend.

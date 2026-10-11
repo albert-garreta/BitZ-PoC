@@ -1,0 +1,122 @@
+[
+  {
+    "filter": "falcon512_algebraic",
+    "exit_code": 0,
+    "wall_seconds": 5.030601501464844,
+    "command": [
+      "/home/john-wu/code/BitZ-pcs/target/falcon-binder-native/release/deps/bitz-3c73a2ce86062e4f",
+      "falcon512_algebraic",
+      "--test-threads=1"
+    ],
+    "log": "retained-test-falcon512_algebraic.log",
+    "status": "ok",
+    "passed": 35,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "filter": "falcon1024_algebraic",
+    "exit_code": 0,
+    "wall_seconds": 10.445379972457886,
+    "command": [
+      "/home/john-wu/code/BitZ-pcs/target/falcon-binder-native/release/deps/bitz-3c73a2ce86062e4f",
+      "falcon1024_algebraic",
+      "--test-threads=1"
+    ],
+    "log": "retained-test-falcon1024_algebraic.log",
+    "status": "ok",
+    "passed": 37,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "filter": "hybrid::integer_bridge",
+    "exit_code": 0,
+    "wall_seconds": 0.061537742614746094,
+    "command": [
+      "/home/john-wu/code/BitZ-pcs/target/falcon-binder-native/release/deps/bitz-3c73a2ce86062e4f",
+      "hybrid::integer_bridge",
+      "--test-threads=1"
+    ],
+    "log": "retained-test-hybrid-integer_bridge.log",
+    "status": "ok",
+    "passed": 16,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "filter": "sumcheck::inner::packed",
+    "exit_code": 0,
+    "wall_seconds": 0.1127176284790039,
+    "command": [
+      "/home/john-wu/code/BitZ-pcs/target/falcon-binder-native/release/deps/bitz-3c73a2ce86062e4f",
+      "sumcheck::inner::packed",
+      "--test-threads=1"
+    ],
+    "log": "retained-test-sumcheck-inner-packed.log",
+    "status": "ok",
+    "passed": 47,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "filter": "falcon_profiles::n1024_k11::opening",
+    "exit_code": 0,
+    "wall_seconds": 0.5581731796264648,
+    "command": [
+      "/home/john-wu/code/BitZ-pcs/target/falcon-binder-native/release/deps/bitz-3c73a2ce86062e4f",
+      "falcon_profiles::n1024_k11::opening",
+      "--test-threads=1"
+    ],
+    "log": "retained-test-falcon_profiles-n1024_k11-opening.log",
+    "status": "ok",
+    "passed": 24,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "filter": "transcript::framing_tests",
+    "exit_code": 0,
+    "wall_seconds": 0.002378225326538086,
+    "command": [
+      "/home/john-wu/code/BitZ-pcs/target/falcon-binder-native/release/deps/bitz-3c73a2ce86062e4f",
+      "transcript::framing_tests",
+      "--test-threads=1"
+    ],
+    "log": "retained-test-transcript-framing_tests.log",
+    "status": "ok",
+    "passed": 3,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "filter": "falcon_polynomial",
+    "exit_code": 0,
+    "wall_seconds": 0.002969026565551758,
+    "command": [
+      "/home/john-wu/code/BitZ-pcs/target/falcon-binder-native/release/deps/bitz-3c73a2ce86062e4f",
+      "falcon_polynomial",
+      "--test-threads=1"
+    ],
+    "log": "retained-test-falcon_polynomial.log",
+    "status": "ok",
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "filter": "poly::mle::structured",
+    "exit_code": 0,
+    "wall_seconds": 0.0006735324859619141,
+    "command": [
+      "/home/john-wu/code/BitZ-pcs/target/falcon-binder-native/release/deps/bitz-3c73a2ce86062e4f",
+      "poly::mle::structured",
+      "--test-threads=1"
+    ],
+    "log": "retained-test-poly-mle-structured.log",
+    "status": "ok",
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0
+  }
+]

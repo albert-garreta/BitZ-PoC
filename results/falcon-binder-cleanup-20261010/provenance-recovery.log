@@ -1,0 +1,6 @@
+Building recovered-baseline
+{'path': '/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/simplify/validation/bin/recovered-baseline-falcon_hybrid', 'sha256': '79dd92b01e5bc2f1d74305306c36fe9013862bffd5a41870d7ff881f50c7dbb2'}
+Restored exact frozen baseline
+Building recovered-retained
+{'path': '/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/simplify/validation/bin/recovered-retained-falcon_hybrid', 'sha256': 'ae69fcf83d379d220e998aec054384e7ad16be33029d7667c353d1ead6f6c835'}
+Recovery complete

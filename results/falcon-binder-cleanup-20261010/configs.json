@@ -1,0 +1,24 @@
+[
+  {
+    "name": "baseline",
+    "variant": "arithmetic",
+    "binary": "baseline"
+  },
+  {
+    "name": "cleanup",
+    "variant": "arithmetic",
+    "binary": "candidate",
+    "word": "auto"
+  },
+  {
+    "name": "baseline",
+    "variant": "full",
+    "binary": "baseline"
+  },
+  {
+    "name": "cleanup",
+    "variant": "full",
+    "binary": "candidate",
+    "word": "auto"
+  }
+]

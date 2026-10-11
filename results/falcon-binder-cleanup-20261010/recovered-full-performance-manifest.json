@@ -1,0 +1,744 @@
+{
+  "schema": "bitz/falcon-binder-experiments/v1",
+  "binaries": {
+    "baseline_full": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/simplify/validation/bin/recovered-baseline-falcon_hybrid",
+      "sha256": "79dd92b01e5bc2f1d74305306c36fe9013862bffd5a41870d7ff881f50c7dbb2"
+    },
+    "candidate_full": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/simplify/validation/bin/recovered-retained-falcon_hybrid",
+      "sha256": "ae69fcf83d379d220e998aec054384e7ad16be33029d7667c353d1ead6f6c835"
+    }
+  },
+  "configs": [
+    {
+      "replay": "auto",
+      "construction": "auto",
+      "evaluation": "auto",
+      "word": "off",
+      "name": "baseline",
+      "variant": "full",
+      "binary": "baseline"
+    },
+    {
+      "replay": "auto",
+      "construction": "auto",
+      "evaluation": "auto",
+      "word": "auto",
+      "name": "cleanup",
+      "variant": "full",
+      "binary": "candidate"
+    }
+  ],
+  "jobs": [
+    {
+      "id": "full-t4-s60-r0-cleanup",
+      "variant": "full",
+      "threads": 4,
+      "seed": 60,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t4-s60-r0-baseline",
+      "variant": "full",
+      "threads": 4,
+      "seed": 60,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t1-s62-r0-baseline",
+      "variant": "full",
+      "threads": 1,
+      "seed": 62,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t1-s62-r0-cleanup",
+      "variant": "full",
+      "threads": 1,
+      "seed": 62,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t4-s63-r0-baseline",
+      "variant": "full",
+      "threads": 4,
+      "seed": 63,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t4-s63-r0-cleanup",
+      "variant": "full",
+      "threads": 4,
+      "seed": 63,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t8-s63-r0-cleanup",
+      "variant": "full",
+      "threads": 8,
+      "seed": 63,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t8-s63-r0-baseline",
+      "variant": "full",
+      "threads": 8,
+      "seed": 63,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t1-s64-r0-cleanup",
+      "variant": "full",
+      "threads": 1,
+      "seed": 64,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t1-s64-r0-baseline",
+      "variant": "full",
+      "threads": 1,
+      "seed": 64,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t4-s62-r0-cleanup",
+      "variant": "full",
+      "threads": 4,
+      "seed": 62,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t4-s62-r0-baseline",
+      "variant": "full",
+      "threads": 4,
+      "seed": 62,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t16-s61-r0-cleanup",
+      "variant": "full",
+      "threads": 16,
+      "seed": 61,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t16-s61-r0-baseline",
+      "variant": "full",
+      "threads": 16,
+      "seed": 61,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t16-s63-r0-cleanup",
+      "variant": "full",
+      "threads": 16,
+      "seed": 63,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t16-s63-r0-baseline",
+      "variant": "full",
+      "threads": 16,
+      "seed": 63,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t1-s63-r0-baseline",
+      "variant": "full",
+      "threads": 1,
+      "seed": 63,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t1-s63-r0-cleanup",
+      "variant": "full",
+      "threads": 1,
+      "seed": 63,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t1-s60-r0-baseline",
+      "variant": "full",
+      "threads": 1,
+      "seed": 60,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t1-s60-r0-cleanup",
+      "variant": "full",
+      "threads": 1,
+      "seed": 60,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t8-s61-r0-baseline",
+      "variant": "full",
+      "threads": 8,
+      "seed": 61,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t8-s61-r0-cleanup",
+      "variant": "full",
+      "threads": 8,
+      "seed": 61,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t8-s62-r0-baseline",
+      "variant": "full",
+      "threads": 8,
+      "seed": 62,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t8-s62-r0-cleanup",
+      "variant": "full",
+      "threads": 8,
+      "seed": 62,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t4-s64-r0-baseline",
+      "variant": "full",
+      "threads": 4,
+      "seed": 64,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t4-s64-r0-cleanup",
+      "variant": "full",
+      "threads": 4,
+      "seed": 64,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t16-s62-r0-baseline",
+      "variant": "full",
+      "threads": 16,
+      "seed": 62,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t16-s62-r0-cleanup",
+      "variant": "full",
+      "threads": 16,
+      "seed": 62,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t1-s61-r0-baseline",
+      "variant": "full",
+      "threads": 1,
+      "seed": 61,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t1-s61-r0-cleanup",
+      "variant": "full",
+      "threads": 1,
+      "seed": 61,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t16-s60-r0-baseline",
+      "variant": "full",
+      "threads": 16,
+      "seed": 60,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t16-s60-r0-cleanup",
+      "variant": "full",
+      "threads": 16,
+      "seed": 60,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t8-s60-r0-baseline",
+      "variant": "full",
+      "threads": 8,
+      "seed": 60,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t8-s60-r0-cleanup",
+      "variant": "full",
+      "threads": 8,
+      "seed": 60,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t4-s61-r0-baseline",
+      "variant": "full",
+      "threads": 4,
+      "seed": 61,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t4-s61-r0-cleanup",
+      "variant": "full",
+      "threads": 4,
+      "seed": 61,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t8-s64-r0-cleanup",
+      "variant": "full",
+      "threads": 8,
+      "seed": 64,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    },
+    {
+      "id": "full-t8-s64-r0-baseline",
+      "variant": "full",
+      "threads": 8,
+      "seed": 64,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t16-s64-r0-baseline",
+      "variant": "full",
+      "threads": 16,
+      "seed": 64,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "off",
+        "name": "baseline",
+        "variant": "full",
+        "binary": "baseline"
+      }
+    },
+    {
+      "id": "full-t16-s64-r0-cleanup",
+      "variant": "full",
+      "threads": 16,
+      "seed": 64,
+      "repetition": 0,
+      "config": {
+        "replay": "auto",
+        "construction": "auto",
+        "evaluation": "auto",
+        "word": "auto",
+        "name": "cleanup",
+        "variant": "full",
+        "binary": "candidate"
+      }
+    }
+  ],
+  "degree": 512,
+  "batch": 1024,
+  "security": 128,
+  "iterations": 5,
+  "warmup": 1,
+  "trace": false,
+  "worker_cpus": [
+    6,
+    7,
+    4,
+    5,
+    2,
+    3,
+    0,
+    1,
+    14,
+    15,
+    12,
+    13,
+    10,
+    11,
+    8,
+    9
+  ],
+  "main_cpu": 6,
+  "order_seed": 20261013,
+  "case_cache": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/results/binder-experiments-20261010/case-cache",
+  "cwd": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments",
+  "timeout": 1800,
+  "cpu": "AMD Ryzen 9 9950X3D 16-Core Processor",
+  "allowed_cpus": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31
+  ],
+  "runner_sha256": "f857bec634d093e773c81a321141bb8ad3405f6e7e4981b96e813ed0ecc94164",
+  "helper_sha256": {
+    "bench_statistics.py": "b045f4b39cf627c953139490d419227d2e9766fab704388a6f3cffbc33f6fb09",
+    "bench_support.py": "5c1eab825a98a3ee957e198b2141b3f82efb45d3fe929455165b7ecba7f8964c"
+  }
+}

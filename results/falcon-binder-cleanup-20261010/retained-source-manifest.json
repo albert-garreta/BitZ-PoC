@@ -1,0 +1,20 @@
+{
+  "base": "ef2508f3adaf153b891825d1c2f6dc4a69853898",
+  "head": "454b623e0bdda096721504e9e937cc5a02dc2308",
+  "files": {
+    "scripts/binder_experiments.md": "4eafd9dbc598261c16f21cb7820ec09d440c0bc2557a716534a5d3110ded3795",
+    "scripts/binder_experiments.py": "f857bec634d093e773c81a321141bb8ad3405f6e7e4981b96e813ed0ecc94164",
+    "src/piop/spartan/falcon1024_algebraic/arithmetic.rs": "10fd6094a1cb0a3aa2cf2406ff2ee58ebfd0a54946d802a4e14fc568f6adfdc1",
+    "src/piop/spartan/falcon1024_algebraic/protocol.rs": "5c7ec2caaff3c684f2b37ef37eaf98d719d5c739c1b32e3304737106045de074",
+    "src/piop/spartan/falcon1024_algebraic/word_binding.rs": "ef3a7145cc4456266ddaa85a1daea91246a998759d755a64de96077f0838b54b",
+    "src/poly/mle.rs": "d762603a7e853e3de1792ade07bd0e710833205c8fb3f19f5394caee7fc9ba8f",
+    "src/poly/mle/structured.rs": "8bfee25823f90c19276accd2a8af6418e4fc2243b17e645205f8ef8e1c7d97da",
+    "src/sumcheck/inner/packed.rs": "ff83fcffe2b5068852a84d0a0b6d05c7a6df9e95b665f7809024b7c6563b98fe",
+    "src/sumcheck/inner/packed/binding_options.rs": "4e99fbdb491498d593796e01e7155919502eaccb69fba02c2decaf72bb8b21c1",
+    "src/sumcheck/inner/packed/composite.rs": "2e0690435e3a8ebc4ac59eb94f206e217e60a10dc59851e79ec463a4750c28b5"
+  },
+  "rejected_candidates": {
+    "initial": "ea5fe3158597c8b8a925c1e57616ddb9084db6e8",
+    "inline": "3e7072cb268e6c0c99612cec3364059cf4b54f54"
+  }
+}

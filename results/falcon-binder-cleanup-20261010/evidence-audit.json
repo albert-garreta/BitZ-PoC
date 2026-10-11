@@ -1,0 +1,2591 @@
+{
+  "campaigns": {
+    "performance": {
+      "processes": 80,
+      "trials": 480,
+      "identity_groups": [
+        {
+          "variant": "arithmetic",
+          "seed": 45,
+          "protocol_id": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+          "input_digest": "c9331e216fb269ebcc23f3a890ecbdd51564b0d892c05161ed043a234437b0e1",
+          "source_root": "70efd81bf9efcd08c82cd4200babaf1dcc6b92c19e7c413f321ed1f0d6dd29ed",
+          "proof_debug_digest": "1e140a2153c51e0723d95fe613e956f5a2c7f565ca6c3866c51354728a06eff8",
+          "proof_payload_bytes": 262762,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "arithmetic",
+          "seed": 46,
+          "protocol_id": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+          "input_digest": "c0bffe1cf47709fd31905607d06e1d2cd8ef695743f4d617db02e86360d0a956",
+          "source_root": "373662eff59bc895c460e23bd2dd12ba2f33490c80a303930fd3521007076af8",
+          "proof_debug_digest": "4938d3a64bb37dee4e6b70cf816f33010afb3315ad9c90b7c63507198968b7b6",
+          "proof_payload_bytes": 263690,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "arithmetic",
+          "seed": 47,
+          "protocol_id": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+          "input_digest": "bee971db723b9bd7fdf6c0134f8a2460b28fee5ff8580c7bf1a32eca6aa2930f",
+          "source_root": "7937937ad5a465448c8072105d1b0c070a419c2f9cca9474b6bafebfa89330cb",
+          "proof_debug_digest": "81254567decda7c7cef28aa753c4281c7fbafe7bcd247b1caa4cebc29bcbb569",
+          "proof_payload_bytes": 261706,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "arithmetic",
+          "seed": 48,
+          "protocol_id": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+          "input_digest": "2526b339fcd00de81e905a73f6c05d717e556745cc3270edad2ca2e4177d3822",
+          "source_root": "9d20c6ec884981e1772c3cd1f54bb2a5d473f16cdfb7797bef101a0c0673f9e6",
+          "proof_debug_digest": "307d489156513f15b0cbce2afa1e5ff1392a2dfeffcff112c257e5ffb3869afb",
+          "proof_payload_bytes": 262762,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "arithmetic",
+          "seed": 49,
+          "protocol_id": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+          "input_digest": "b7db94043bb23a956f8f5de83cb1fd09750ef0ff3ac304f227c4bcf4f58cb039",
+          "source_root": "8abb459ffcac939794d55db8521495aaa2a4d12583e0d34f80286f0d698593f1",
+          "proof_debug_digest": "76e07114021d094054f9600b2aa346974aac3fe7bb83bc35a88ab387d7a06edb",
+          "proof_payload_bytes": 263946,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 45,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "c9331e216fb269ebcc23f3a890ecbdd51564b0d892c05161ed043a234437b0e1",
+          "source_root": "e64656180d1a6753e5eafb1502da158b9c39fb7f5126539f2d57561e9ea12e54",
+          "proof_debug_digest": "a8c7ab56016badf58ac334c1c1fcc922900321f81bd01227cb7406b4ef798c49",
+          "proof_payload_bytes": 698218,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 46,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "c0bffe1cf47709fd31905607d06e1d2cd8ef695743f4d617db02e86360d0a956",
+          "source_root": "4ab6461a14e01d8df940c2d3a4796b04d01276dcfdbec159c6a356f5e53abe80",
+          "proof_debug_digest": "609cff3d1405148b8a86fb66c3357db3bbd4453dd4595247af89d08e4ab92208",
+          "proof_payload_bytes": 697610,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 47,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "bee971db723b9bd7fdf6c0134f8a2460b28fee5ff8580c7bf1a32eca6aa2930f",
+          "source_root": "5f3d2d9db02d1a9bf48a666d513b3492fb335cf43d65815a4db8ead4c4112b98",
+          "proof_debug_digest": "ed3961d67b8a6a6e2e21081e0a3671916a3a9db8f9431cf70b160acfdf2d652d",
+          "proof_payload_bytes": 696778,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 48,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "2526b339fcd00de81e905a73f6c05d717e556745cc3270edad2ca2e4177d3822",
+          "source_root": "5d9bff13293e65711d98bf4900244e9c816b89f7e29781d5b1d981a32fb77367",
+          "proof_debug_digest": "1859456aed8be52304f8c91eb42bc30e8381a26fe42fb7c19fda82f020c6a133",
+          "proof_payload_bytes": 699338,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 49,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "b7db94043bb23a956f8f5de83cb1fd09750ef0ff3ac304f227c4bcf4f58cb039",
+          "source_root": "543fa3eb4335bae23b3ca88e4d81828485529bcb2929ce1dcb42f7e6f0b9e178",
+          "proof_debug_digest": "2463c340a0b11eac7b30f6c504b9320d8d695bec6d244d2a9d36ee9c06a156fd",
+          "proof_payload_bytes": 696106,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        }
+      ],
+      "attempts": {
+        "attempt-001": 80
+      },
+      "raw_normalization_consistent": true,
+      "all_process_and_trial_checks_passed": true,
+      "all_summary_metrics_reconciled": true,
+      "manifest_sha256": "bdfd5ae140e0a5d0f790c6e67f7a521fdd48f4fefed6e6e9f1668ec2eaa7b379"
+    },
+    "inline-holdout": {
+      "processes": 80,
+      "trials": 480,
+      "identity_groups": [
+        {
+          "variant": "arithmetic",
+          "seed": 50,
+          "protocol_id": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+          "input_digest": "f20319a09f83e3eee4daa4c7c3ed4ef76e6e89bf3067f63dd026d8f141294632",
+          "source_root": "c45bbe7a8a298a0ff1cc3d704d129af07901dfa76461398c1a0db2be7b18f4bb",
+          "proof_debug_digest": "e7ae063e405dc146b13e2161c7bc4a0f42ed6a0242b31e94979359597c5f8e37",
+          "proof_payload_bytes": 264234,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "arithmetic",
+          "seed": 51,
+          "protocol_id": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+          "input_digest": "9728b0fa1dcb83b5a13b1cc3d26e1f6bb70a4211b3af8bb2706ac1b44579f8a0",
+          "source_root": "d807db6ed5e3c87645ba5bba9e561a1ded4b05b82f0b1243a8517e74eeab3aa2",
+          "proof_debug_digest": "79b02f5e09f7967a28770760e153ec0fae1f722a81f9e183c481665993102a9c",
+          "proof_payload_bytes": 263210,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "arithmetic",
+          "seed": 52,
+          "protocol_id": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+          "input_digest": "963513d779fd4cf5f3e74b4080324ce0238f0741423f4bec80cf44af79ec6e08",
+          "source_root": "9b175b200b54a07776c423568a4be748e5503d00fbf158d151c1389175be61b1",
+          "proof_debug_digest": "2308957035a36bef94e2052dfd99340003441859dca0c524670d396c5e3a3542",
+          "proof_payload_bytes": 262154,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "arithmetic",
+          "seed": 53,
+          "protocol_id": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+          "input_digest": "c98e0ceb83f188fef7b5c72f84130d96e45361f6a6d043a8ed0e7afabde315c5",
+          "source_root": "4b2b8dd85814c8b3ac5f0dd8183cd894ea6110ba7ac2215e71f9641728868f80",
+          "proof_debug_digest": "ed7f7a22a859f374d3a0d71f7a80ca559f4a4bd24ed400de3d02eeadfeccad9c",
+          "proof_payload_bytes": 263210,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "arithmetic",
+          "seed": 54,
+          "protocol_id": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+          "input_digest": "4fd14993931ebaab8e83099d8a2a6b7ac5de4866067265e6f82351fdf128fd55",
+          "source_root": "5f4f21cb1ff34b9f94a986a1f4d009ef5f4cc7338f2d9f22d981de9cb14ade4c",
+          "proof_debug_digest": "8afc6af0f29f4bfcd2b3551c3f932937c62da50aa8346cc89faf7f41e237b6bd",
+          "proof_payload_bytes": 264362,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 50,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "f20319a09f83e3eee4daa4c7c3ed4ef76e6e89bf3067f63dd026d8f141294632",
+          "source_root": "bb93279547345793abbd9e8ed697f2806c63f9a500c870695526b265fa3c4cac",
+          "proof_debug_digest": "881e64b36d0f116530ca3074b16d2ee47b446ca5959c56ac1966519ff75b2fa3",
+          "proof_payload_bytes": 699306,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 51,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "9728b0fa1dcb83b5a13b1cc3d26e1f6bb70a4211b3af8bb2706ac1b44579f8a0",
+          "source_root": "8c91dd1b433d0c37dda84196a94f3625dcb938d27434f8335b8f512f12210e42",
+          "proof_debug_digest": "aa00cf19355c3d608fa12425d03bd200ec76e496a0462a3a270c0088ffdf19d2",
+          "proof_payload_bytes": 697898,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 52,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "963513d779fd4cf5f3e74b4080324ce0238f0741423f4bec80cf44af79ec6e08",
+          "source_root": "e988e4fba0128c000ef3e37fa0680835507cb65b8b02c49955bb81402c48652a",
+          "proof_debug_digest": "4be60a3a3bcaff1e98263e69634956b5698780c947bf106ee474a874233a6c49",
+          "proof_payload_bytes": 699242,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 53,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "c98e0ceb83f188fef7b5c72f84130d96e45361f6a6d043a8ed0e7afabde315c5",
+          "source_root": "5f684931be05249c5a0c75ed523be634fe202a14c648abc41b16cdf9fc8161aa",
+          "proof_debug_digest": "8a087100244704d766f67621b06a2c217f60d32c8fe401530dfbcaf8fa78a3c1",
+          "proof_payload_bytes": 696938,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 54,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "4fd14993931ebaab8e83099d8a2a6b7ac5de4866067265e6f82351fdf128fd55",
+          "source_root": "1edcf8cbc73a02a2b2bb42a32689bf73ff1eeff72fee27e9fd539b70228310c5",
+          "proof_debug_digest": "ddb5d8a5f096416edd1f16146a20ac169c15e627f10ca6927e262faa594ff9a6",
+          "proof_payload_bytes": 696522,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        }
+      ],
+      "attempts": {
+        "attempt-001": 80
+      },
+      "raw_normalization_consistent": true,
+      "all_process_and_trial_checks_passed": true,
+      "all_summary_metrics_reconciled": true,
+      "manifest_sha256": "e08c88331a054a5937cb3121de560e2b66ccfcf97d7adc6c6ca07272f302ce17"
+    },
+    "compat-512": {
+      "processes": 4,
+      "trials": 4,
+      "identity_groups": [
+        {
+          "variant": "arithmetic",
+          "seed": 45,
+          "protocol_id": "bitz/falcon512-algebraic/non-zk/v5",
+          "input_digest": "58c7eb2d6632f8bb504b9792f232d8d728efbf85d254af03e302ab3a067e13c4",
+          "source_root": "7ac1230d7c6febe7114081278bd101ab36c9a7c358bc9597ae1d4ea34fb9a0a8",
+          "proof_debug_digest": "0ad08e606905483fb8e400d522c426fa62a12b2dbd6f6f674f9c31a15fe02914",
+          "proof_payload_bytes": 111498,
+          "threads": [
+            1,
+            4
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 4
+        }
+      ],
+      "attempts": {
+        "attempt-001": 4
+      },
+      "raw_normalization_consistent": true,
+      "all_process_and_trial_checks_passed": true,
+      "all_summary_metrics_reconciled": true,
+      "manifest_sha256": "eeaab5971c4a9005586c16b85d3d662fd9a2ae7604aca84df8d3a905c6d02ed1"
+    },
+    "compat-1024": {
+      "processes": 4,
+      "trials": 4,
+      "identity_groups": [
+        {
+          "variant": "arithmetic",
+          "seed": 45,
+          "protocol_id": "bitz/falcon1024-algebraic/non-zk/v5",
+          "input_digest": "5c5102efd5a96c5cc318b0d00d44ddece4c1a5c6a6fc5bcb783492ec14d21fa0",
+          "source_root": "2e11fcd6b6df168c01e4c02fe487e1cfb46515a9ab840d9c79285d684473a2ac",
+          "proof_debug_digest": "508d97c1b2f1296cada606cfb46fbe4d0fcc176fad9adc7c183471b46c727ff4",
+          "proof_payload_bytes": 105586,
+          "threads": [
+            1,
+            4
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 4
+        }
+      ],
+      "attempts": {
+        "attempt-001": 4
+      },
+      "raw_normalization_consistent": true,
+      "all_process_and_trial_checks_passed": true,
+      "all_summary_metrics_reconciled": true,
+      "manifest_sha256": "e80bb1ad6337e196161927e5ac18c1a9489ba2d5bdd5aca3e71dfe5e0f9a1317"
+    },
+    "inline-compat-512": {
+      "processes": 4,
+      "trials": 4,
+      "identity_groups": [
+        {
+          "variant": "arithmetic",
+          "seed": 50,
+          "protocol_id": "bitz/falcon512-algebraic/non-zk/v5",
+          "input_digest": "234ad7826d20b436ba50addc59460904d2a18d924bed3a71d6fafe2d56b2ebf2",
+          "source_root": "3e96a3cf34b4c4ab3a40037c2c67a84ca00c4ed76b556cd34c260d289287cf3a",
+          "proof_debug_digest": "fb463358e7c4bfdc14dc3058ad28ee6e9e524722cdd53400ec6432df0075a51b",
+          "proof_payload_bytes": 111306,
+          "threads": [
+            1,
+            4
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 4
+        }
+      ],
+      "attempts": {
+        "attempt-001": 4
+      },
+      "raw_normalization_consistent": true,
+      "all_process_and_trial_checks_passed": true,
+      "all_summary_metrics_reconciled": true,
+      "manifest_sha256": "21855769e56281639dba0aac265184869e6084e2ff8031daa40eb78f2fba3b7f"
+    },
+    "inline-compat-1024": {
+      "processes": 4,
+      "trials": 4,
+      "identity_groups": [
+        {
+          "variant": "arithmetic",
+          "seed": 50,
+          "protocol_id": "bitz/falcon1024-algebraic/non-zk/v5",
+          "input_digest": "064cba028f76ab64d8e4c29c919b8e27abf864f3749e9872c9043e314b39ae23",
+          "source_root": "9f9f3e800f9c799ac485c0b08115d877583de3a259d05f58a2968139e60288f6",
+          "proof_debug_digest": "52ece8c9e8ebcb1ce040e45a012438f18b7bed0693181c8cc70e13ac1f4bdea1",
+          "proof_payload_bytes": 105682,
+          "threads": [
+            1,
+            4
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 4
+        }
+      ],
+      "attempts": {
+        "attempt-001": 4
+      },
+      "raw_normalization_consistent": true,
+      "all_process_and_trial_checks_passed": true,
+      "all_summary_metrics_reconciled": true,
+      "manifest_sha256": "182d67f467d0732089599e175455cf278737146a256d33425407da03940c12d7"
+    },
+    "retained-performance": {
+      "processes": 80,
+      "trials": 480,
+      "identity_groups": [
+        {
+          "variant": "arithmetic",
+          "seed": 55,
+          "protocol_id": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+          "input_digest": "5c926b15d82396df130a2ec6151471f06e45c1de7da154058425089ff1457ed1",
+          "source_root": "8a9fc422416cccc2e857a7a0f6116c5cc9f0e3b97c026149ba75cc77d9f66175",
+          "proof_debug_digest": "11714e0e0342fa19fbdaaa37d669c30530312e0c75ee4feeeab6c39721445c5c",
+          "proof_payload_bytes": 262762,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "arithmetic",
+          "seed": 56,
+          "protocol_id": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+          "input_digest": "746e90551160c56d9fb8f3cf61db524a42a167e397fd13ebee098f7b22561464",
+          "source_root": "a84db2e9e0cb30ba9b82c307d462fcdf99c3b8c44bae43924fb900c5e4448e60",
+          "proof_debug_digest": "60d6b6f885ae92eb555f99664f809112192d1a8b73fec5933c453d507bd4ec23",
+          "proof_payload_bytes": 263658,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "arithmetic",
+          "seed": 57,
+          "protocol_id": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+          "input_digest": "9b2b506040bfca7c5d4f4cd63744aeb80ee16b30688867e8d0343ae3aa8af939",
+          "source_root": "2b99a4fd34bf5617e577b077f17c0fb8dce91f75431a7ba653c6a74997e5f309",
+          "proof_debug_digest": "ae2b0d7fed6cdf49a6f90432686ddd7484fc00b7811b33f86bbb0800a212ec4e",
+          "proof_payload_bytes": 263690,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "arithmetic",
+          "seed": 58,
+          "protocol_id": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+          "input_digest": "51771a87a36f2a10d2ecdc91bc581faf8313cdddd6bf6244f7371ec916e22fac",
+          "source_root": "065c7bc41e42cb42af3c0d05ae28cd3b06f531c86915d83b17ad95b8337f479e",
+          "proof_debug_digest": "2c7d2a8fdc4251f36f2ba7e0bc1e019c946fb5f0aba3a59a07d08537c8cdb02b",
+          "proof_payload_bytes": 263402,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "arithmetic",
+          "seed": 59,
+          "protocol_id": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+          "input_digest": "831e78dda13a2c35b39fae87d51c0a137b11de6c927689ff35ebe9a4df7990e8",
+          "source_root": "3dcb987d2a2933284240354a09fae03047f906b9afcc5a1a8270546423a2d3a4",
+          "proof_debug_digest": "eb2b3d0f0b3a724057892c58fb8335a788332ad2f40399b3184eda48d93da81e",
+          "proof_payload_bytes": 263530,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 55,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "5c926b15d82396df130a2ec6151471f06e45c1de7da154058425089ff1457ed1",
+          "source_root": "736db558142e403789b1e61ee98a26270b90eb739015ead2614c6dd646ba56c3",
+          "proof_debug_digest": "02d5db02c87bb52576e35b6df5a89ae7638d7d96e01804cffca086cfff8c084e",
+          "proof_payload_bytes": 696266,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 56,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "746e90551160c56d9fb8f3cf61db524a42a167e397fd13ebee098f7b22561464",
+          "source_root": "9c2061851a03184129529d915dbc5d9416397b3ed9e06a8b2f1eca24ba5f63c5",
+          "proof_debug_digest": "366298e45b310ac703b32db7af6ad54f25fff4fb8e2bdc4ab126512979cd58d3",
+          "proof_payload_bytes": 697130,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 57,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "9b2b506040bfca7c5d4f4cd63744aeb80ee16b30688867e8d0343ae3aa8af939",
+          "source_root": "38c8f0c317f992a1442fa500ef7523f56e878abbc87bbb94d1c9a192f32da56d",
+          "proof_debug_digest": "afa2fef013b7418de6ae75816e8553b06daa85f08f13abc2bee416e8b58d4d3e",
+          "proof_payload_bytes": 694570,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 58,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "51771a87a36f2a10d2ecdc91bc581faf8313cdddd6bf6244f7371ec916e22fac",
+          "source_root": "fcf3c889a55ea2dd43aea25be85a4b1236cd7c08caa9934e4c8a271d2d84d6ae",
+          "proof_debug_digest": "660a331c796418eb8e648fcc066e3a8629aeddceb75697d47a29d7a533dc8925",
+          "proof_payload_bytes": 698218,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 59,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "831e78dda13a2c35b39fae87d51c0a137b11de6c927689ff35ebe9a4df7990e8",
+          "source_root": "25d974e5391a90396eeaa2bbe9dc937b65d13b30952c33153fc801cd06c30abe",
+          "proof_debug_digest": "a28ac1d7879aa40e3b4e2e3aa863583cb5ffd5f5adf4eb880051aa4a42f88ab5",
+          "proof_payload_bytes": 697290,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        }
+      ],
+      "attempts": {
+        "attempt-001": 80
+      },
+      "raw_normalization_consistent": true,
+      "all_process_and_trial_checks_passed": true,
+      "all_summary_metrics_reconciled": true,
+      "manifest_sha256": "3a4a55e7e19e6b2f0fd2478d01542fcd476b9edeeaf08a1f62382ea1d835ae64"
+    },
+    "retained-compat-512": {
+      "processes": 4,
+      "trials": 4,
+      "identity_groups": [
+        {
+          "variant": "arithmetic",
+          "seed": 55,
+          "protocol_id": "bitz/falcon512-algebraic/non-zk/v5",
+          "input_digest": "534a4a415348c93195de1f2915fd58a597d3b7c5bc864ee4c016c08871efa8b6",
+          "source_root": "559afc071507caf067de8b2e77b19071a4b003bab6f05255c5c54b80e92665fe",
+          "proof_debug_digest": "063c0787e815b1d06e461e96a486fc23bb000364faf00336d85d7ba72d8788c2",
+          "proof_payload_bytes": 110954,
+          "threads": [
+            1,
+            4
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 4
+        }
+      ],
+      "attempts": {
+        "attempt-001": 4
+      },
+      "raw_normalization_consistent": true,
+      "all_process_and_trial_checks_passed": true,
+      "all_summary_metrics_reconciled": true,
+      "manifest_sha256": "3b56f7c6486e7ab009dfbbaf833671707fa29269fb230af3bd950c9ea10e956d"
+    },
+    "retained-compat-1024": {
+      "processes": 4,
+      "trials": 4,
+      "identity_groups": [
+        {
+          "variant": "arithmetic",
+          "seed": 55,
+          "protocol_id": "bitz/falcon1024-algebraic/non-zk/v5",
+          "input_digest": "d8df40b6f5c5f98e034f4a613d619e26c6d80c17945cd8d9323a22be31e2a409",
+          "source_root": "4217084f4c45e4262fd0a90e101796fd7c48f340e538398e39ec0381328270f9",
+          "proof_debug_digest": "6480014476988650f40bc8945e125eadafe07c32730dac0b72d6d5b81d5c753c",
+          "proof_payload_bytes": 105586,
+          "threads": [
+            1,
+            4
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 4
+        }
+      ],
+      "attempts": {
+        "attempt-001": 4
+      },
+      "raw_normalization_consistent": true,
+      "all_process_and_trial_checks_passed": true,
+      "all_summary_metrics_reconciled": true,
+      "manifest_sha256": "a698e7e54af572ed9cb81c04a609808fbf26f34a63084d1bf972b85cbb58eb84"
+    },
+    "recovered-full-performance": {
+      "processes": 40,
+      "trials": 240,
+      "identity_groups": [
+        {
+          "variant": "full",
+          "seed": 60,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "03900c2f385c8681ced4d39e367e9d71536b44cbf435aa81da6a8a6f5e0f3f9a",
+          "source_root": "8dae7d36da5c084a18b3b20a9273630021be5bde03ad8c251cc2d5874743b1e5",
+          "proof_debug_digest": "24e448605a5d1cc450314b2d58eebc7dfbe319a642567a59439dca8426f6c9be",
+          "proof_payload_bytes": 698026,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 61,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "503dcf561e728627e1c7d530bda27d4e54600837067ab2d830b54ab9708b1a5b",
+          "source_root": "9c7d63a7f3b9bd824b28c70bb26809dffe98c6d4a7bf15a4686788f565e44b58",
+          "proof_debug_digest": "5e30823baeb4b14a6bf73be544ca3dc1399e43eb9e70182b2b490b7a6941b107",
+          "proof_payload_bytes": 695114,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 62,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "9f211f4dc4a4cb6b76b2780745813ca68212d2df766cca916ecf09a3014d9537",
+          "source_root": "589d22a907d28d84732cedc3f613be0c8f17358f7f45186c7fb6a8718c37d1e3",
+          "proof_debug_digest": "3928e11b47b9d30c2d90e429afba16590c077f0f20c3ba51dc78321332cd4a62",
+          "proof_payload_bytes": 698314,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 63,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "bc942deda191d5711d8c44ed5fb3908263f02f701cddf0d90c94fea80f1da4e7",
+          "source_root": "1d3b447ef4761bd13b8874bbcd72ac58c24d9a8ad4b0c281f4c930e837f86ade",
+          "proof_debug_digest": "00ce47bc5000ee397c91b842a1818d5fa5451ffd2d3b485676e391269f279d09",
+          "proof_payload_bytes": 696906,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        },
+        {
+          "variant": "full",
+          "seed": 64,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "a1fa6bb997ea89738a77ac85df1fee2a55d2fae6cfb98f9df81f9c4939ef9c78",
+          "source_root": "2195764fe742f3b9b6512206aa5585249df156a7b474dccd4a04304f6d554154",
+          "proof_debug_digest": "ca5dcacd0353c997bef530245b198ffe23061dff65ce7633a5664c81e67ae8f0",
+          "proof_payload_bytes": 697738,
+          "threads": [
+            1,
+            4,
+            8,
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 48
+        }
+      ],
+      "raw_normalization_consistent": true,
+      "all_process_and_trial_checks_passed": true,
+      "all_summary_metrics_reconciled": true,
+      "manifest_sha256": "953deda326c44d25cdcb5716d9a73f25f4db7ebef38765e646788b298a32e40f"
+    },
+    "verifier-followup": {
+      "processes": 10,
+      "trials": 60,
+      "identity_groups": [
+        {
+          "variant": "full",
+          "seed": 65,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "972d0e3b0480663630c9d88ac6de4d2ba931ab76a5e1cd7d839c6407d55351f4",
+          "source_root": "1652fde65d6182a47faee28dfc4a1c23616c84a4bda697461f633f968aa6aeda",
+          "proof_debug_digest": "e51586921d2c8621612bbd8efebf56a3b8c4a96ecf2dc89d23b1c492668ef72a",
+          "proof_payload_bytes": 698506,
+          "threads": [
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 12
+        },
+        {
+          "variant": "full",
+          "seed": 66,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "c3d7c5758ca6ee417b1d5fed8f9528d9910115217d2cb838f72f52d145cf35af",
+          "source_root": "7aaf69c3288691781b5a24ed6ccd0386a3aadffb7989a434227700af0bcafd0c",
+          "proof_debug_digest": "3af4bc4a6c0bc76eb1e270fc4bb3a2319fa17d8a25bb5ef550de67af7e22ea0d",
+          "proof_payload_bytes": 698602,
+          "threads": [
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 12
+        },
+        {
+          "variant": "full",
+          "seed": 67,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "864c9ff0af43de0df826355d3c116aa1f27f47e73c21bc32966aafeaa3c630fc",
+          "source_root": "c37e8a535eb6f98ced1a08c947ca311ba32d472f38e4a888c8e8077277524347",
+          "proof_debug_digest": "189d99f3fd6138c06ff1a6c0018d8a7f88bcf0ac210a1793cc95611fd62a75e0",
+          "proof_payload_bytes": 698186,
+          "threads": [
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 12
+        },
+        {
+          "variant": "full",
+          "seed": 68,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "fbaa3654fca9c1af40d92719f5cbc427eaef367a9b3c6496c3651b95237c7717",
+          "source_root": "15da796189ccb212bd4b4380576f12deb73ce3412eec05ed76f13440b159794e",
+          "proof_debug_digest": "29ca3de02b55019963cdfc8cf763bc2cc98d8d8963d2921e03d5e0bfc8125870",
+          "proof_payload_bytes": 697674,
+          "threads": [
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 12
+        },
+        {
+          "variant": "full",
+          "seed": 69,
+          "protocol_id": "bitz/falcon/shared-prime/non-zk/v6",
+          "input_digest": "ba1f07cecdd2b6a1b8371c42421566740c5ff4dd6a8e9138d754880fc6e3033d",
+          "source_root": "3d4f8d5ffe110e4f2e513e6f144f166e3589db8721f9cf593be7a7bf30b917e1",
+          "proof_debug_digest": "940964de53144f36fd23031f3bb40dffa1469c2e91243c75bf929b5ca33a9b15",
+          "proof_payload_bytes": 698378,
+          "threads": [
+            16
+          ],
+          "configs": [
+            "baseline",
+            "cleanup"
+          ],
+          "trials": 12
+        }
+      ],
+      "raw_normalization_consistent": true,
+      "all_process_and_trial_checks_passed": true,
+      "all_summary_metrics_reconciled": true,
+      "manifest_sha256": "c2a665deae6edc1a79cffbdfae9315652d0cc6802c6cf5b2363b906e71392f62"
+    }
+  },
+  "final_metrics": [
+    {
+      "variant": "arithmetic",
+      "threads": 1,
+      "metrics": {
+        "total_prover_ms": {
+          "ratio": 1.0018656086049074,
+          "change_percent": 0.1865608604907365,
+          "ratio_ci95_exact": [
+            0.9988248273987228,
+            1.0055713496822758
+          ],
+          "paired_ratios": [
+            1.0014854357869691,
+            0.9990976662439269,
+            1.0025108275854273,
+            1.0087630042724827,
+            0.9975083566724074
+          ]
+        },
+        "prove_ms": {
+          "ratio": 1.0024225690772124,
+          "change_percent": 0.24225690772123887,
+          "ratio_ci95_exact": [
+            0.9992616083903229,
+            1.0066360548034383
+          ],
+          "paired_ratios": [
+            1.0015470249357834,
+            0.9996407620492641,
+            1.0030413039268096,
+            1.010182586464709,
+            0.9977464313007954
+          ]
+        },
+        "witness_commit_ms": {
+          "ratio": 0.9980541305538759,
+          "change_percent": -0.1945869446124071,
+          "ratio_ci95_exact": [
+            0.9959271277760356,
+            0.9996130024246614
+          ],
+          "paired_ratios": [
+            1.000544588734599,
+            0.9981973018613362,
+            0.9982172490461391,
+            0.999259185733333,
+            0.9940641766823043
+          ]
+        },
+        "verify_ms": {
+          "ratio": 1.0031870016521076,
+          "change_percent": 0.3187001652107613,
+          "ratio_ci95_exact": [
+            0.9985607643754959,
+            1.007340327041564
+          ],
+          "paired_ratios": [
+            1.0042599592378796,
+            0.9956415751085844,
+            1.010323362453515,
+            1.0000422935191782,
+            1.0057303316629072
+          ]
+        },
+        "process_peak_rss_kib": {
+          "ratio": 1.008589397993183,
+          "change_percent": 0.8589397993183034,
+          "ratio_ci95_exact": [
+            0.994735871678902,
+            1.0319120385066698
+          ],
+          "paired_ratios": [
+            0.9929683929262033,
+            0.9939329805996473,
+            0.999893730074389,
+            1.0024443814652118,
+            1.0550312798218642
+          ]
+        },
+        "proof_payload_bytes": {
+          "ratio": 1.0,
+          "change_percent": 0.0,
+          "ratio_ci95_exact": [
+            1.0,
+            1.0
+          ],
+          "paired_ratios": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "acceptance_valid": true,
+      "campaign": "retained-performance"
+    },
+    {
+      "variant": "arithmetic",
+      "threads": 4,
+      "metrics": {
+        "total_prover_ms": {
+          "ratio": 1.0022901826843647,
+          "change_percent": 0.229018268436465,
+          "ratio_ci95_exact": [
+            0.9972664743358666,
+            1.0082929015457598
+          ],
+          "paired_ratios": [
+            1.0019599671367545,
+            0.9936814336655685,
+            1.0128190367241032,
+            1.0033771368636988,
+            0.9997094118423452
+          ]
+        },
+        "prove_ms": {
+          "ratio": 1.0009219241107963,
+          "change_percent": 0.09219241107962795,
+          "ratio_ci95_exact": [
+            0.9966484134720318,
+            1.0053009821225039
+          ],
+          "paired_ratios": [
+            0.996813988162071,
+            0.994724955475615,
+            1.00915968387329,
+            1.0016990152938627,
+            1.0022746227232429
+          ]
+        },
+        "witness_commit_ms": {
+          "ratio": 1.0008638696752887,
+          "change_percent": 0.0863869675288731,
+          "ratio_ci95_exact": [
+            0.9837752267932863,
+            1.023638396074041
+          ],
+          "paired_ratios": [
+            1.0425714839088887,
+            0.984366826329906,
+            0.9817123802142095,
+            1.010255082958793,
+            0.98672682704627
+          ]
+        },
+        "verify_ms": {
+          "ratio": 1.0087923182943128,
+          "change_percent": 0.8792318294312818,
+          "ratio_ci95_exact": [
+            0.9964889221618004,
+            1.0212476213402157
+          ],
+          "paired_ratios": [
+            0.9957819581340165,
+            0.9931522135553588,
+            1.021383904193333,
+            1.0046209692564136,
+            1.029526467100286
+          ]
+        },
+        "process_peak_rss_kib": {
+          "ratio": 0.9989090142084213,
+          "change_percent": -0.10909857915787358,
+          "ratio_ci95_exact": [
+            0.9949839598843928,
+            1.0025792918923402
+          ],
+          "paired_ratios": [
+            0.9961380805582845,
+            0.9994896223205172,
+            0.9924603577103831,
+            1.005142701450855,
+            1.0013616094223372
+          ]
+        },
+        "proof_payload_bytes": {
+          "ratio": 1.0,
+          "change_percent": 0.0,
+          "ratio_ci95_exact": [
+            1.0,
+            1.0
+          ],
+          "paired_ratios": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "acceptance_valid": true,
+      "campaign": "retained-performance"
+    },
+    {
+      "variant": "arithmetic",
+      "threads": 8,
+      "metrics": {
+        "total_prover_ms": {
+          "ratio": 0.9995378847101292,
+          "change_percent": -0.04621152898708347,
+          "ratio_ci95_exact": [
+            0.9971520767773604,
+            1.0014707060750003
+          ],
+          "paired_ratios": [
+            0.9951156859351992,
+            1.0008007796893577,
+            0.9985119852804089,
+            1.0021173921176996,
+            1.0011593524245839
+          ]
+        },
+        "prove_ms": {
+          "ratio": 0.9995795908971257,
+          "change_percent": -0.042040910287433064,
+          "ratio_ci95_exact": [
+            0.9979491036411938,
+            1.0009743812093905
+          ],
+          "paired_ratios": [
+            0.9964669190223372,
+            1.0009409200109425,
+            0.9994126944192641,
+            1.0015066453613326,
+            0.9995784274160774
+          ]
+        },
+        "witness_commit_ms": {
+          "ratio": 0.9901432148963671,
+          "change_percent": -0.9856785103632859,
+          "ratio_ci95_exact": [
+            0.9628676209287371,
+            1.0108624454517334
+          ],
+          "paired_ratios": [
+            0.9405388373102086,
+            0.9971754682719868,
+            0.9888806349195,
+            1.020091307330705,
+            1.0059093397228906
+          ]
+        },
+        "verify_ms": {
+          "ratio": 1.0064069602175514,
+          "change_percent": 0.6406960217551383,
+          "ratio_ci95_exact": [
+            0.9989998643579749,
+            1.0183594352947622
+          ],
+          "paired_ratios": [
+            1.0045487418268761,
+            0.9997553324445845,
+            0.9974952024640393,
+            1.0005022200752152,
+            1.0300885095864358
+          ]
+        },
+        "process_peak_rss_kib": {
+          "ratio": 0.9986294756196273,
+          "change_percent": -0.1370524380372662,
+          "ratio_ci95_exact": [
+            0.9976236856220679,
+            0.9998115174748444
+          ],
+          "paired_ratios": [
+            0.9988357394717584,
+            0.9979327131472775,
+            1.0007642465525834,
+            0.9968829790761681,
+            0.9987357774968394
+          ]
+        },
+        "proof_payload_bytes": {
+          "ratio": 1.0,
+          "change_percent": 0.0,
+          "ratio_ci95_exact": [
+            1.0,
+            1.0
+          ],
+          "paired_ratios": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "acceptance_valid": true,
+      "campaign": "retained-performance"
+    },
+    {
+      "variant": "arithmetic",
+      "threads": 16,
+      "metrics": {
+        "total_prover_ms": {
+          "ratio": 1.0029940948421885,
+          "change_percent": 0.29940948421884883,
+          "ratio_ci95_exact": [
+            0.9987318834787011,
+            1.0083834743867877
+          ],
+          "paired_ratios": [
+            0.9962737283004,
+            1.0025392202660748,
+            1.0011367017253794,
+            1.002321777594981,
+            1.0127710565912182
+          ]
+        },
+        "prove_ms": {
+          "ratio": 0.9999087203998142,
+          "change_percent": -0.009127960018584513,
+          "ratio_ci95_exact": [
+            0.9960964841869145,
+            1.003582395688708
+          ],
+          "paired_ratios": [
+            0.9955699580561638,
+            0.9940233848139441,
+            1.0020782084359452,
+            1.0028718674085084,
+            1.0050469009491483
+          ]
+        },
+        "witness_commit_ms": {
+          "ratio": 1.0073616396636835,
+          "change_percent": 0.7361639663683528,
+          "ratio_ci95_exact": [
+            0.9620471460989724,
+            1.0498132375280902
+          ],
+          "paired_ratios": [
+            1.0092586853022902,
+            1.0764287892009627,
+            0.9851996481905991,
+            0.9290118779653331,
+            1.043262818843245
+          ]
+        },
+        "verify_ms": {
+          "ratio": 1.0026133595435571,
+          "change_percent": 0.26133595435571255,
+          "ratio_ci95_exact": [
+            0.9950556207971059,
+            1.010811995619709
+          ],
+          "paired_ratios": [
+            0.991248881723811,
+            0.9959557576413697,
+            1.005654053695699,
+            1.0028630803500513,
+            1.0175468798326412
+          ]
+        },
+        "process_peak_rss_kib": {
+          "ratio": 0.9976858418494962,
+          "change_percent": -0.23141581505038422,
+          "ratio_ci95_exact": [
+            0.9952621539627156,
+            1.00024056763061
+          ],
+          "paired_ratios": [
+            0.9962826480475822,
+            1.0015463917525773,
+            0.996908759599115,
+            0.993421264794092,
+            1.000291422465434
+          ]
+        },
+        "proof_payload_bytes": {
+          "ratio": 1.0,
+          "change_percent": 0.0,
+          "ratio_ci95_exact": [
+            1.0,
+            1.0
+          ],
+          "paired_ratios": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "acceptance_valid": true,
+      "campaign": "retained-performance"
+    },
+    {
+      "variant": "full",
+      "threads": 1,
+      "metrics": {
+        "total_prover_ms": {
+          "ratio": 0.9987182174617678,
+          "change_percent": -0.128178253823219,
+          "ratio_ci95_exact": [
+            0.9975312383311036,
+            1.0004309392855195
+          ],
+          "paired_ratios": [
+            1.0018942782437037,
+            0.9974257838498127,
+            0.9975812130325855,
+            0.9990547553727708,
+            0.9976422177162401
+          ]
+        },
+        "prove_ms": {
+          "ratio": 0.9988805574722414,
+          "change_percent": -0.11194425277586406,
+          "ratio_ci95_exact": [
+            0.997816223776124,
+            1.0005277668651025
+          ],
+          "paired_ratios": [
+            1.0020703493613359,
+            0.9977563515302704,
+            0.9977113311649854,
+            0.9987256153600721,
+            0.9981458225346586
+          ]
+        },
+        "witness_commit_ms": {
+          "ratio": 0.9981993491392,
+          "change_percent": -0.1800650860799946,
+          "ratio_ci95_exact": [
+            0.9969911137873143,
+            0.999622349998607
+          ],
+          "paired_ratios": [
+            0.9979226181749014,
+            0.9977103816880075,
+            0.9984004493826393,
+            1.0007571126338064,
+            0.996211615364903
+          ]
+        },
+        "verify_ms": {
+          "ratio": 1.0000978706660943,
+          "change_percent": 0.009787066609434625,
+          "ratio_ci95_exact": [
+            0.9981468871802766,
+            1.002015588661255
+          ],
+          "paired_ratios": [
+            0.9978752245997576,
+            1.0012704533098227,
+            0.9969522953302298,
+            1.0023919816811597,
+            1.00201197259543
+          ]
+        },
+        "process_peak_rss_kib": {
+          "ratio": 0.9998997886902653,
+          "change_percent": -0.010021130973469905,
+          "ratio_ci95_exact": [
+            0.9995740793197981,
+            1.0001934152102718
+          ],
+          "paired_ratios": [
+            1.000008497562899,
+            1.000061169250218,
+            0.9996482732254365,
+            0.9993631698179855,
+            1.0004181625326372
+          ]
+        },
+        "proof_payload_bytes": {
+          "ratio": 1.0,
+          "change_percent": 0.0,
+          "ratio_ci95_exact": [
+            1.0,
+            1.0
+          ],
+          "paired_ratios": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "acceptance_valid": true,
+      "campaign": "recovered-full-performance"
+    },
+    {
+      "variant": "full",
+      "threads": 4,
+      "metrics": {
+        "total_prover_ms": {
+          "ratio": 0.9977732750454931,
+          "change_percent": -0.22267249545069312,
+          "ratio_ci95_exact": [
+            0.9960605586776032,
+            0.9992957668792598
+          ],
+          "paired_ratios": [
+            0.9983119633087176,
+            0.9970830177029961,
+            0.9985553398340228,
+            1.0003628331297183,
+            0.9945624437384635
+          ]
+        },
+        "prove_ms": {
+          "ratio": 0.9973024029855762,
+          "change_percent": -0.2697597014423847,
+          "ratio_ci95_exact": [
+            0.9947585462412016,
+            0.9993408846254822
+          ],
+          "paired_ratios": [
+            0.9986404069156902,
+            0.996358035052794,
+            0.999959441782283,
+            0.9990729164164096,
+            0.9924992653912391
+          ]
+        },
+        "witness_commit_ms": {
+          "ratio": 1.0004299785435165,
+          "change_percent": 0.04299785435164516,
+          "ratio_ci95_exact": [
+            0.999447175591076,
+            1.0019787402383888
+          ],
+          "paired_ratios": [
+            0.9992968823012949,
+            0.9998935340768667,
+            1.0001227880041785,
+            1.003468329942186,
+            0.9993743534142007
+          ]
+        },
+        "verify_ms": {
+          "ratio": 0.9998098694791889,
+          "change_percent": -0.01901305208110715,
+          "ratio_ci95_exact": [
+            0.997619581745872,
+            1.0011004388452494
+          ],
+          "paired_ratios": [
+            0.9955323632462818,
+            1.0014251568497692,
+            1.0010192757972853,
+            1.0004980269179786,
+            1.0005862733588988
+          ]
+        },
+        "process_peak_rss_kib": {
+          "ratio": 1.0047173513113703,
+          "change_percent": 0.4717351311370299,
+          "ratio_ci95_exact": [
+            0.9943858242369766,
+            1.0151562214804535
+          ],
+          "paired_ratios": [
+            0.9896509786027693,
+            1.005541632100598,
+            1.019093972956685,
+            0.9935854534076193,
+            1.016056691146181
+          ]
+        },
+        "proof_payload_bytes": {
+          "ratio": 1.0,
+          "change_percent": 0.0,
+          "ratio_ci95_exact": [
+            1.0,
+            1.0
+          ],
+          "paired_ratios": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "acceptance_valid": true,
+      "campaign": "recovered-full-performance"
+    },
+    {
+      "variant": "full",
+      "threads": 8,
+      "metrics": {
+        "total_prover_ms": {
+          "ratio": 1.0002578886007993,
+          "change_percent": 0.025788860079933862,
+          "ratio_ci95_exact": [
+            0.9992177432138417,
+            1.001335449885694
+          ],
+          "paired_ratios": [
+            0.9994598319369445,
+            1.001984797627423,
+            1.0015341861833371,
+            0.9991916196643559,
+            0.9991228419110484
+          ]
+        },
+        "prove_ms": {
+          "ratio": 1.0009251598288356,
+          "change_percent": 0.09251598288355645,
+          "ratio_ci95_exact": [
+            0.9999149425514658,
+            1.0019376257369925
+          ],
+          "paired_ratios": [
+            0.9992088631743595,
+            1.001242326268338,
+            1.0012180859126052,
+            1.0027442530150468,
+            1.00021573957428
+          ]
+        },
+        "witness_commit_ms": {
+          "ratio": 1.0030993582229788,
+          "change_percent": 0.30993582229787986,
+          "ratio_ci95_exact": [
+            0.9958104235936535,
+            1.0104416449429952
+          ],
+          "paired_ratios": [
+            0.9967237301434658,
+            1.0135412818514125,
+            0.9935464525907629,
+            0.9985214281192183,
+            1.0133464631469702
+          ]
+        },
+        "verify_ms": {
+          "ratio": 0.9964770495963484,
+          "change_percent": -0.35229504036515813,
+          "ratio_ci95_exact": [
+            0.9944595416271925,
+            0.9986096571978459
+          ],
+          "paired_ratios": [
+            0.995782296562076,
+            0.9928306006422171,
+            0.9987242041733189,
+            0.9996337950023351,
+            0.9954293527664917
+          ]
+        },
+        "process_peak_rss_kib": {
+          "ratio": 1.0018002704374636,
+          "change_percent": 0.1800270437463558,
+          "ratio_ci95_exact": [
+            0.9998056981750063,
+            1.0036591990808226
+          ],
+          "paired_ratios": [
+            1.0040789188750237,
+            1.00324724119589,
+            0.9986747488953424,
+            0.9995671917847591,
+            1.0034456109800587
+          ]
+        },
+        "proof_payload_bytes": {
+          "ratio": 1.0,
+          "change_percent": 0.0,
+          "ratio_ci95_exact": [
+            1.0,
+            1.0
+          ],
+          "paired_ratios": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "acceptance_valid": true,
+      "campaign": "recovered-full-performance"
+    },
+    {
+      "variant": "full",
+      "threads": 16,
+      "metrics": {
+        "total_prover_ms": {
+          "ratio": 0.9978422363571003,
+          "change_percent": -0.21577636428996572,
+          "ratio_ci95_exact": [
+            0.9932196802868867,
+            1.0039524493761776
+          ],
+          "paired_ratios": [
+            0.9966661922800398,
+            0.9982802222221118,
+            1.0096452165046381,
+            0.9920454107892719,
+            0.9926745211499125
+          ]
+        },
+        "prove_ms": {
+          "ratio": 0.998547393266546,
+          "change_percent": -0.14526067334540427,
+          "ratio_ci95_exact": [
+            0.9954280073995673,
+            1.0010864340881462
+          ],
+          "paired_ratios": [
+            1.000367537982502,
+            0.9931153090817308,
+            1.0014606624617002,
+            0.9967471417477424,
+            1.0010718529281282
+          ]
+        },
+        "witness_commit_ms": {
+          "ratio": 0.9969152702384813,
+          "change_percent": -0.3084729761518745,
+          "ratio_ci95_exact": [
+            0.9871057222394075,
+            1.00697160368238
+          ],
+          "paired_ratios": [
+            0.9848253276187593,
+            1.01282595640079,
+            1.0089960486166518,
+            0.9876252503337443,
+            0.990639314523348
+          ]
+        },
+        "verify_ms": {
+          "ratio": 1.0045648709505155,
+          "change_percent": 0.45648709505154983,
+          "ratio_ci95_exact": [
+            1.0026805826401475,
+            1.0067474408761299
+          ],
+          "paired_ratios": [
+            1.0039333644284207,
+            1.005816743047797,
+            1.0083518954084023,
+            1.0018590232289954,
+            1.0028764980474132
+          ]
+        },
+        "process_peak_rss_kib": {
+          "ratio": 0.9983675570989501,
+          "change_percent": -0.1632442901049913,
+          "ratio_ci95_exact": [
+            0.9959867766236052,
+            1.0010585123274323
+          ],
+          "paired_ratios": [
+            0.9961039462441941,
+            0.9953045106223075,
+            1.0003944573682613,
+            0.997118092774599,
+            1.002937320846205
+          ]
+        },
+        "proof_payload_bytes": {
+          "ratio": 1.0,
+          "change_percent": 0.0,
+          "ratio_ci95_exact": [
+            1.0,
+            1.0
+          ],
+          "paired_ratios": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "acceptance_valid": true,
+      "campaign": "recovered-full-performance"
+    }
+  ],
+  "final_source_manifest": {
+    "base": "ef2508f3adaf153b891825d1c2f6dc4a69853898",
+    "head": "454b623e0bdda096721504e9e937cc5a02dc2308",
+    "files": {
+      "scripts/binder_experiments.md": "4eafd9dbc598261c16f21cb7820ec09d440c0bc2557a716534a5d3110ded3795",
+      "scripts/binder_experiments.py": "f857bec634d093e773c81a321141bb8ad3405f6e7e4981b96e813ed0ecc94164",
+      "src/piop/spartan/falcon1024_algebraic/arithmetic.rs": "10fd6094a1cb0a3aa2cf2406ff2ee58ebfd0a54946d802a4e14fc568f6adfdc1",
+      "src/piop/spartan/falcon1024_algebraic/protocol.rs": "5c7ec2caaff3c684f2b37ef37eaf98d719d5c739c1b32e3304737106045de074",
+      "src/piop/spartan/falcon1024_algebraic/word_binding.rs": "ef3a7145cc4456266ddaa85a1daea91246a998759d755a64de96077f0838b54b",
+      "src/poly/mle.rs": "d762603a7e853e3de1792ade07bd0e710833205c8fb3f19f5394caee7fc9ba8f",
+      "src/poly/mle/structured.rs": "8bfee25823f90c19276accd2a8af6418e4fc2243b17e645205f8ef8e1c7d97da",
+      "src/sumcheck/inner/packed.rs": "ff83fcffe2b5068852a84d0a0b6d05c7a6df9e95b665f7809024b7c6563b98fe",
+      "src/sumcheck/inner/packed/binding_options.rs": "4e99fbdb491498d593796e01e7155919502eaccb69fba02c2decaf72bb8b21c1",
+      "src/sumcheck/inner/packed/composite.rs": "2e0690435e3a8ebc4ac59eb94f206e217e60a10dc59851e79ec463a4750c28b5"
+    },
+    "rejected_candidates": {
+      "initial": "ea5fe3158597c8b8a925c1e57616ddb9084db6e8",
+      "inline": "3e7072cb268e6c0c99612cec3364059cf4b54f54"
+    }
+  },
+  "final_source_files_match": true,
+  "runner_and_helpers_match": true,
+  "retained_full_disposition": "superseded; replaced in final metrics by clean recovered-full-performance",
+  "retained_arithmetic_disposition": "valid: arithmetic binaries untouched",
+  "binary_inspection_incident": {
+    "expected_baseline_full_sha256": "79dd92b01e5bc2f1d74305306c36fe9013862bffd5a41870d7ff881f50c7dbb2",
+    "observed_baseline_full_sha256": "ff7174b92cbe9fa92b9c719063b7d9b00e18cdd948234e88861fec7b292af751",
+    "cause": "objcopy --dump-section invoked without explicit output executable rewrote baseline and retained candidate full binaries",
+    "backup_search_unique_elfs": 71,
+    "exact_backup_found": false
+  },
+  "superseded_retained_full_metrics": [
+    {
+      "variant": "full",
+      "threads": 1,
+      "metrics": {
+        "total_prover_ms": {
+          "ratio": 1.000516843201479,
+          "change_percent": 0.05168432014790447,
+          "ratio_ci95_exact": [
+            1.0000310150136131,
+            1.0012878361680246
+          ],
+          "paired_ratios": [
+            0.9998829929716576,
+            1.0019919746791415,
+            1.0002455409997784,
+            1.0002044755824262,
+            1.0002606373863865
+          ]
+        },
+        "prove_ms": {
+          "ratio": 0.9995820229944423,
+          "change_percent": -0.041797700555767925,
+          "ratio_ci95_exact": [
+            0.9988938416397118,
+            1.0004057642709334
+          ],
+          "paired_ratios": [
+            0.9988236672011196,
+            1.0010843440365458,
+            0.9999541664455409,
+            0.9987721704635514,
+            0.9992776263288442
+          ]
+        },
+        "witness_commit_ms": {
+          "ratio": 1.0041164949710655,
+          "change_percent": 0.41164949710654763,
+          "ratio_ci95_exact": [
+            1.0028223362252986,
+            1.005321466059162
+          ],
+          "paired_ratios": [
+            1.0037180984476597,
+            1.00517351089874,
+            1.0017416572219717,
+            1.0059135045135132,
+            1.0040407605349737
+          ]
+        },
+        "verify_ms": {
+          "ratio": 0.9963758196592234,
+          "change_percent": -0.3624180340776606,
+          "ratio_ci95_exact": [
+            0.9815018402478504,
+            1.0052944002166015
+          ],
+          "paired_ratios": [
+            1.0073378121040364,
+            1.0022370518497434,
+            0.9677042362139747,
+            1.0009069052743074,
+            1.0042318215065755
+          ]
+        },
+        "process_peak_rss_kib": {
+          "ratio": 1.0003109244618356,
+          "change_percent": 0.031092446183556,
+          "ratio_ci95_exact": [
+            1.0000196133264723,
+            1.0005685892222946
+          ],
+          "paired_ratios": [
+            1.000253196822295,
+            1.0004927330372404,
+            0.9997841197098705,
+            1.0007648027573688,
+            1.0002600311697494
+          ]
+        },
+        "proof_payload_bytes": {
+          "ratio": 1.0,
+          "change_percent": 0.0,
+          "ratio_ci95_exact": [
+            1.0,
+            1.0
+          ],
+          "paired_ratios": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "acceptance_valid": false
+    },
+    {
+      "variant": "full",
+      "threads": 4,
+      "metrics": {
+        "total_prover_ms": {
+          "ratio": 1.0012439084675508,
+          "change_percent": 0.12439084675508472,
+          "ratio_ci95_exact": [
+            0.9986810832684465,
+            1.0038133104138383
+          ],
+          "paired_ratios": [
+            1.0003121623462201,
+            0.9981936944084563,
+            1.0052564671215363,
+            0.9983537704672358,
+            1.0041248724677014
+          ]
+        },
+        "prove_ms": {
+          "ratio": 1.0025344142266153,
+          "change_percent": 0.2534414226615267,
+          "ratio_ci95_exact": [
+            0.9993052263625876,
+            1.0059663624773045
+          ],
+          "paired_ratios": [
+            1.0020776821990052,
+            1.0003393779006522,
+            1.0082048020646446,
+            0.997062192261665,
+            1.005024579926753
+          ]
+        },
+        "witness_commit_ms": {
+          "ratio": 0.9958345010660025,
+          "change_percent": -0.41654989339975357,
+          "ratio_ci95_exact": [
+            0.990709434823321,
+            1.0019303673120794
+          ],
+          "paired_ratios": [
+            0.9906956030866958,
+            0.9907146602027131,
+            0.9907266479079928,
+            1.0011985334047748,
+            1.00594206252605
+          ]
+        },
+        "verify_ms": {
+          "ratio": 0.9999768115893459,
+          "change_percent": -0.002318841065407362,
+          "ratio_ci95_exact": [
+            0.9972472349621478,
+            1.0020023961396605
+          ],
+          "paired_ratios": [
+            1.0006234988716018,
+            1.0024976940272359,
+            0.9947393975050335,
+            0.9998459193274686,
+            1.0021971630125468
+          ]
+        },
+        "process_peak_rss_kib": {
+          "ratio": 1.0024043630019543,
+          "change_percent": 0.2404363001954346,
+          "ratio_ci95_exact": [
+            0.9886186657863791,
+            1.0162711635446384
+          ],
+          "paired_ratios": [
+            1.0219439298073898,
+            1.0118745214336935,
+            0.9822940394998821,
+            1.0128231237703278,
+            0.9837526049289023
+          ]
+        },
+        "proof_payload_bytes": {
+          "ratio": 1.0,
+          "change_percent": 0.0,
+          "ratio_ci95_exact": [
+            1.0,
+            1.0
+          ],
+          "paired_ratios": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "acceptance_valid": false
+    },
+    {
+      "variant": "full",
+      "threads": 8,
+      "metrics": {
+        "total_prover_ms": {
+          "ratio": 0.9981598589595874,
+          "change_percent": -0.1840141040412635,
+          "ratio_ci95_exact": [
+            0.9941699755732362,
+            1.0026650295593051
+          ],
+          "paired_ratios": [
+            0.9977621990388263,
+            1.0061139600190998,
+            0.9919469961296727,
+            0.9947098637524728,
+            1.0003256180934061
+          ]
+        },
+        "prove_ms": {
+          "ratio": 0.9980657612268163,
+          "change_percent": -0.19342387731836608,
+          "ratio_ci95_exact": [
+            0.9944036539212734,
+            1.001480212001662
+          ],
+          "paired_ratios": [
+            1.0002188359022102,
+            1.003758606215827,
+            0.9944961068680745,
+            0.9924420268535593,
+            0.9994549918770219
+          ]
+        },
+        "witness_commit_ms": {
+          "ratio": 0.9973794725603397,
+          "change_percent": -0.26205274396603473,
+          "ratio_ci95_exact": [
+            0.9890756143925936,
+            1.0035498675716832
+          ],
+          "paired_ratios": [
+            0.9817807954983703,
+            1.005896240662035,
+            0.9991496390339228,
+            1.0029641299850927,
+            0.9972831315289176
+          ]
+        },
+        "verify_ms": {
+          "ratio": 0.9994706365029592,
+          "change_percent": -0.05293634970408023,
+          "ratio_ci95_exact": [
+            0.9974311002290064,
+            1.0021912016277097
+          ],
+          "paired_ratios": [
+            0.9977339350528548,
+            1.0045652742016777,
+            0.9965243360210454,
+            0.9986406085093822,
+            0.9999082717555542
+          ]
+        },
+        "process_peak_rss_kib": {
+          "ratio": 1.0013558967282257,
+          "change_percent": 0.13558967282256695,
+          "ratio_ci95_exact": [
+            0.9989594787024404,
+            1.0034002488940108
+          ],
+          "paired_ratios": [
+            0.9971515737175758,
+            0.9998535198177585,
+            1.0035047755524162,
+            1.0037067371425195,
+            1.0025786601099689
+          ]
+        },
+        "proof_payload_bytes": {
+          "ratio": 1.0,
+          "change_percent": 0.0,
+          "ratio_ci95_exact": [
+            1.0,
+            1.0
+          ],
+          "paired_ratios": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "acceptance_valid": false
+    },
+    {
+      "variant": "full",
+      "threads": 16,
+      "metrics": {
+        "total_prover_ms": {
+          "ratio": 0.9969908650024343,
+          "change_percent": -0.3009134997565721,
+          "ratio_ci95_exact": [
+            0.9941980245030207,
+            0.9988871291373862
+          ],
+          "paired_ratios": [
+            0.9991718551977538,
+            0.9916871846648442,
+            0.9985732658776195,
+            0.9987594081050711,
+            0.9967819934939687
+          ]
+        },
+        "prove_ms": {
+          "ratio": 0.9981482751007991,
+          "change_percent": -0.1851724899200935,
+          "ratio_ci95_exact": [
+            0.994354687241255,
+            1.0019563359738792
+          ],
+          "paired_ratios": [
+            1.0042295162974066,
+            0.9936627649512425,
+            1.0017954642399582,
+            0.9977457661045505,
+            0.9933546987321957
+          ]
+        },
+        "witness_commit_ms": {
+          "ratio": 0.993981225331802,
+          "change_percent": -0.6018774668198001,
+          "ratio_ci95_exact": [
+            0.9899041605396982,
+            0.9980750821104248
+          ],
+          "paired_ratios": [
+            0.986899371251229,
+            0.9988702628606299,
+            0.990842730415162,
+            0.9940553076692397,
+            0.9992949083327071
+          ]
+        },
+        "verify_ms": {
+          "ratio": 0.9971418547969936,
+          "change_percent": -0.28581452030064236,
+          "ratio_ci95_exact": [
+            0.9913634146694267,
+            1.0015539971901564
+          ],
+          "paired_ratios": [
+            1.0005458746223561,
+            1.0030276490577694,
+            1.0005862114177115,
+            0.986133275659491,
+            0.9955078576861046
+          ]
+        },
+        "process_peak_rss_kib": {
+          "ratio": 1.0011546131948053,
+          "change_percent": 0.1154613194805254,
+          "ratio_ci95_exact": [
+            0.9980308160831229,
+            1.003823750824576
+          ],
+          "paired_ratios": [
+            0.995525209273618,
+            1.0008720340361592,
+            1.0008851885198635,
+            1.005787583860909,
+            1.0027309393724728
+          ]
+        },
+        "proof_payload_bytes": {
+          "ratio": 1.0,
+          "change_percent": 0.0,
+          "ratio_ci95_exact": [
+            1.0,
+            1.0
+          ],
+          "paired_ratios": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "acceptance_valid": false
+    }
+  ],
+  "superseded_binary_hash_checks": {
+    "baseline_arithmetic": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/results/binder-experiments-20261010/bin/production-falcon_algebraic",
+      "sha256": "6831f91eff12dfa61f90f5c244c298a939dfa1f1ff6e8f71985cf306e965c827",
+      "current_sha256": "6831f91eff12dfa61f90f5c244c298a939dfa1f1ff6e8f71985cf306e965c827"
+    },
+    "candidate_arithmetic": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/simplify/validation/bin/retained-falcon_algebraic",
+      "sha256": "909277c358ad25e39cb79d77f78a69841bc1cda5f80e321e4aecba9cc7aebc87",
+      "current_sha256": "909277c358ad25e39cb79d77f78a69841bc1cda5f80e321e4aecba9cc7aebc87"
+    },
+    "baseline_full": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/results/binder-experiments-20261010/bin/production-falcon_hybrid",
+      "sha256": "ff7174b92cbe9fa92b9c719063b7d9b00e18cdd948234e88861fec7b292af751",
+      "current_sha256": "ff7174b92cbe9fa92b9c719063b7d9b00e18cdd948234e88861fec7b292af751"
+    },
+    "candidate_full": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/simplify/validation/bin/retained-falcon_hybrid",
+      "sha256": "523258cc6799ab24bff2e05102182ea522d007595bd9faceb30d9f959ab47044",
+      "current_sha256": "523258cc6799ab24bff2e05102182ea522d007595bd9faceb30d9f959ab47044"
+    }
+  },
+  "final_binary_hash_checks": {
+    "baseline_arithmetic": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/results/binder-experiments-20261010/bin/production-falcon_algebraic",
+      "sha256": "6831f91eff12dfa61f90f5c244c298a939dfa1f1ff6e8f71985cf306e965c827",
+      "current_sha256": "6831f91eff12dfa61f90f5c244c298a939dfa1f1ff6e8f71985cf306e965c827"
+    },
+    "candidate_arithmetic": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/simplify/validation/bin/retained-falcon_algebraic",
+      "sha256": "909277c358ad25e39cb79d77f78a69841bc1cda5f80e321e4aecba9cc7aebc87",
+      "current_sha256": "909277c358ad25e39cb79d77f78a69841bc1cda5f80e321e4aecba9cc7aebc87"
+    },
+    "baseline_full": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/simplify/validation/bin/recovered-baseline-falcon_hybrid",
+      "sha256": "79dd92b01e5bc2f1d74305306c36fe9013862bffd5a41870d7ff881f50c7dbb2",
+      "current_sha256": "79dd92b01e5bc2f1d74305306c36fe9013862bffd5a41870d7ff881f50c7dbb2"
+    },
+    "candidate_full": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/simplify/validation/bin/recovered-retained-falcon_hybrid",
+      "sha256": "ae69fcf83d379d220e998aec054384e7ad16be33029d7667c353d1ead6f6c835",
+      "current_sha256": "ae69fcf83d379d220e998aec054384e7ad16be33029d7667c353d1ead6f6c835"
+    }
+  },
+  "provenance_recovery": {
+    "base": "ef2508f3adaf153b891825d1c2f6dc4a69853898",
+    "head": "454b623e0bdda096721504e9e937cc5a02dc2308",
+    "expected_baseline_sha256": "79dd92b01e5bc2f1d74305306c36fe9013862bffd5a41870d7ff881f50c7dbb2",
+    "altered_baseline_sha256": "ff7174b92cbe9fa92b9c719063b7d9b00e18cdd948234e88861fec7b292af751",
+    "altered_candidate_sha256": "523258cc6799ab24bff2e05102182ea522d007595bd9faceb30d9f959ab47044",
+    "cause": "objcopy --dump-section rewrites input without explicit output",
+    "build_command": [
+      "cargo",
+      "bench",
+      "--offline",
+      "--locked",
+      "--profile",
+      "release",
+      "--features",
+      "falcon-hybrid",
+      "--bench",
+      "falcon_hybrid",
+      "--no-run",
+      "--message-format=json"
+    ],
+    "build_env": {
+      "RUSTFLAGS": "-C target-cpu=native",
+      "CARGO_BUILD_JOBS": "8",
+      "CARGO_TARGET_DIR": "/home/john-wu/code/BitZ-pcs/target/falcon-binder-native"
+    },
+    "recovered-baseline": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/simplify/validation/bin/recovered-baseline-falcon_hybrid",
+      "sha256": "79dd92b01e5bc2f1d74305306c36fe9013862bffd5a41870d7ff881f50c7dbb2"
+    },
+    "baseline_byte_identical": true,
+    "recovered-retained": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/simplify/validation/bin/recovered-retained-falcon_hybrid",
+      "sha256": "ae69fcf83d379d220e998aec054384e7ad16be33029d7667c353d1ead6f6c835"
+    },
+    "independent_original_and_recovered_hash_checks_pass": true,
+    "final_source_and_backup_hashes_match": true
+  },
+  "accepted_final_campaigns": {
+    "arithmetic": "retained-performance",
+    "full": "recovered-full-performance",
+    "compatibility": [
+      "retained-compat-512",
+      "retained-compat-1024"
+    ]
+  },
+  "counts": {
+    "all_audited_processes": 314,
+    "all_audited_trials": 1764,
+    "accepted_final_processes": 88,
+    "accepted_final_trials": 488,
+    "accepted_final_plus_followup_processes": 98,
+    "accepted_final_plus_followup_trials": 548
+  },
+  "verifier_followup": {
+    "campaign": "verifier-followup",
+    "fixed_plan_sha256": "9de4e80d5139a0bb8e76048a47970241e0de2bdc30aae3b1de2cb0a4efa458db",
+    "variant": "full",
+    "threads": 16,
+    "seeds": [
+      65,
+      66,
+      67,
+      68,
+      69
+    ],
+    "independent_pairs": 5,
+    "bootstrap": "exact 5^5 resamples, type-7 95% percentile interval",
+    "metrics": {
+      "total_prover_ms": {
+        "ratio": 1.0120030899321903,
+        "change_percent": 1.2003089932190347,
+        "ratio_ci95": [
+          0.9967241515502081,
+          1.0364414830653075
+        ],
+        "paired_ratios": [
+          1.0592305407484512,
+          1.0065366623428784,
+          0.9998223811434466,
+          0.9920702292675003,
+          1.0037460021789217
+        ]
+      },
+      "prove_ms": {
+        "ratio": 1.0095995758476364,
+        "change_percent": 0.9599575847636377,
+        "ratio_ci95": [
+          0.9985745143999105,
+          1.0267522096209303
+        ],
+        "paired_ratios": [
+          1.04411058157306,
+          1.0075716069904141,
+          1.0012542433230647,
+          0.9948911040772015,
+          1.0009294374743078
+        ]
+      },
+      "witness_commit_ms": {
+        "ratio": 1.0179221990597613,
+        "change_percent": 1.7922199059761335,
+        "ratio_ci95": [
+          0.9933945558065411,
+          1.0558428316372475
+        ],
+        "paired_ratios": [
+          1.093176534609968,
+          1.0135651812391635,
+          0.9910003166428107,
+          0.9897012984805587,
+          1.0056642485363485
+        ]
+      },
+      "verify_ms": {
+        "ratio": 1.002019172549141,
+        "change_percent": 0.20191725491409684,
+        "ratio_ci95": [
+          0.9994834108887132,
+          1.0044649292463588
+        ],
+        "paired_ratios": [
+          1.005123544855942,
+          1.0035624262153073,
+          0.9991718698261247,
+          1.0042580051419963,
+          0.9980006330111231
+        ]
+      },
+      "process_peak_rss_kib": {
+        "ratio": 1.0028559733985838,
+        "change_percent": 0.2855973398583789,
+        "ratio_ci95": [
+          1.0008739462012048,
+          1.0049475703175552
+        ],
+        "paired_ratios": [
+          1.0068265828823013,
+          1.0008709190381557,
+          1.003160707486294,
+          1.0000337098726104,
+          1.0034019282088629
+        ]
+      },
+      "proof_payload_bytes": {
+        "ratio": 1.0,
+        "change_percent": 0.0,
+        "ratio_ci95": [
+          1.0,
+          1.0
+        ],
+        "paired_ratios": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    }
+  },
+  "verifier_combined": {
+    "campaigns": [
+      "recovered-full-performance",
+      "verifier-followup"
+    ],
+    "variant": "full",
+    "threads": 16,
+    "seeds": [
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69
+    ],
+    "independent_pairs": 10,
+    "bootstrap": "100000 log-ratio resamples using Python random.Random(0), type-7 95% percentile interval",
+    "metrics": {
+      "total_prover_ms": {
+        "ratio": 1.0048977194014486,
+        "change_percent": 0.48977194014485637,
+        "ratio_ci95": [
+          0.9962272184208038,
+          1.0180466286229197
+        ],
+        "paired_ratios": [
+          0.9966661922800398,
+          0.9982802222221118,
+          1.0096452165046381,
+          0.9920454107892719,
+          0.9926745211499125,
+          1.0592305407484512,
+          1.0065366623428784,
+          0.9998223811434466,
+          0.9920702292675003,
+          1.0037460021789217
+        ]
+      },
+      "prove_ms": {
+        "ratio": 1.0040582775445197,
+        "change_percent": 0.4058277544519706,
+        "ratio_ci95": [
+          0.9978442830996731,
+          1.0136940945949535
+        ],
+        "paired_ratios": [
+          1.000367537982502,
+          0.9931153090817308,
+          1.0014606624617002,
+          0.9967471417477424,
+          1.0010718529281282,
+          1.04411058157306,
+          1.0075716069904141,
+          1.0012542433230647,
+          0.9948911040772015,
+          1.0009294374743078
+        ]
+      },
+      "witness_commit_ms": {
+        "ratio": 1.0073639779927666,
+        "change_percent": 0.7363977992766557,
+        "ratio_ci95": [
+          0.9931089834052339,
+          1.0282638567632072
+        ],
+        "paired_ratios": [
+          0.9848253276187593,
+          1.01282595640079,
+          1.0089960486166518,
+          0.9876252503337443,
+          0.990639314523348,
+          1.093176534609968,
+          1.0135651812391635,
+          0.9910003166428107,
+          0.9897012984805587,
+          1.0056642485363485
+        ]
+      },
+      "verify_ms": {
+        "ratio": 1.0032912143349857,
+        "change_percent": 0.32912143349856926,
+        "ratio_ci95": [
+          1.0014682826203876,
+          1.0050406348687932
+        ],
+        "paired_ratios": [
+          1.0039333644284207,
+          1.005816743047797,
+          1.0083518954084023,
+          1.0018590232289954,
+          1.0028764980474132,
+          1.005123544855942,
+          1.0035624262153073,
+          0.9991718698261247,
+          1.0042580051419963,
+          0.9980006330111231
+        ]
+      },
+      "process_peak_rss_kib": {
+        "ratio": 1.000609248550119,
+        "change_percent": 0.06092485501190126,
+        "ratio_ci95": [
+          0.9984579487749761,
+          1.0027340348383753
+        ],
+        "paired_ratios": [
+          0.9961039462441941,
+          0.9953045106223075,
+          1.0003944573682613,
+          0.997118092774599,
+          1.002937320846205,
+          1.0068265828823013,
+          1.0008709190381557,
+          1.003160707486294,
+          1.0000337098726104,
+          1.0034019282088629
+        ]
+      },
+      "proof_payload_bytes": {
+        "ratio": 1.0,
+        "change_percent": 0.0,
+        "ratio_ci95": [
+          1.0,
+          1.0
+        ],
+        "paired_ratios": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    "selection_note": "16-worker follow-up chosen after observing original positive verifier interval; original and holdout are retained separately; pooled intervals are descriptive"
+  }
+}

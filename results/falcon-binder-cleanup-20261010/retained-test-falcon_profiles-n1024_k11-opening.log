@@ -1,0 +1,28 @@
+
+running 24 tests
+test piop::spartan::falcon_profiles::n1024_k11::opening::binding_tests::binding_matches_dense_reference_at_degenerate_points ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::binding_tests::binding_preserves_inner_sumcheck_transcript ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::binding_tests::bounded_norm_binding_matches_signed_words_and_slack_for_padded_batch ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::binding_tests::compact_binding_targets_match_constants_oracle_at_boolean_points ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::binding_tests::compact_prefix_binds_word_products_and_weighted_norm_to_source ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::binding_tests::factored_overlay_matches_dense_sumcheck_and_endpoint ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::binding_tests::five_factored_local_forms_match_dense_padded_batch_without_instance_caches ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::binding_tests::mixed_integer_scaling_matches_field_embedding ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::binding_tests::public_selection_enforces_first_accepted_and_distinct_remainder_decoders ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::binding_tests::public_signature_bytes_are_constrained_to_the_committed_source ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::binding_tests::rejection_transpose_authenticates_raw_bits_and_each_terminal ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::binding_tests::rejection_weights_require_exact_row_point_dimensions ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::binding_tests::shared_projection_authenticates_fixed_committed_operands ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::binding_tests::streaming_binding_forms_match_independent_bit_oracle ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::compact::tests::byte_run_geometry_matches_unsigned_and_signed_word_bits ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::compact::tests::compact_blocks_match_bit_stream_and_dense_signed_word_expansion ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::compact::tests::compact_empty_blocks_and_invalid_block_dimensions ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::compact::tests::compact_signature_bytes_match_layout_addresses_and_dense_expansion ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::compact::tests::direct_byte_buckets_match_dense_overlaps_all_patterns_and_runtime_primes ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::compact::tests::direct_byte_buckets_reject_noncanonical_words_and_unaligned_base ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::compact::tests::direct_byte_pair_buckets_match_dense_overlapping_word_expansion ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::compact::tests::folded_strategies_preserve_emission_and_cache_switches ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::compact::tests::grouped_native_buckets_match_separate_reductions_and_enforce_bound ... ok
+test piop::spartan::falcon_profiles::n1024_k11::opening::compact::tests::indexed_word_template_matches_dense_expansion_across_instances_and_zero_scales ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 777 filtered out; finished in 0.56s
