@@ -573,6 +573,7 @@ impl<'a> BindingForm<'a> {
         ))
     }
 
+    #[inline(always)]
     fn coefficient_product_sum(&self, instance: usize, weights: &[F]) -> field::FpProductAcc<2> {
         let mut sum = field::FpProductAcc::<2>::default();
         for (side, values) in self.coefficients.iter().enumerate() {

@@ -40,6 +40,7 @@ fn weight(form: &BindingForm<'_>, index: usize) -> F {
 fn interpolate(field: &Cfg, a: F, b: F, challenge: F) -> F {
     field.add(&a, &field.mul(&challenge, &field.sub(&b, &a)))
 }
+#[inline(always)]
 fn accumulate_product_pair(field: &Cfg, sums: &mut [FpProductAcc<2>; 2], a: Row, b: Row) {
     field.mul_acc(&mut sums[0], &a[0], &a[1]);
     field.mul_acc(
