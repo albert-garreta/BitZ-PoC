@@ -38,9 +38,17 @@ use crate::{
 use super::ring::PreparedClaim;
 use super::{BETA_SQUARED, Cfg, F, FalconError, Layout, N, Schedule, Source, WitnessData};
 
+#[cfg(any(test, feature = "bench-internals"))]
+#[path = "compact_binding.rs"]
+mod compact_binding;
+#[cfg(any(test, feature = "bench-internals"))]
+pub(super) use compact_binding::{CompactProof, prove_compact, verify_compact};
+
 const COEFFICIENT_BITS: usize = 15;
 const COEFFICIENT_LOG: usize = super::COEFFICIENT_LOG;
 const SLACK_BITS: usize = super::SLACK_BITS;
+// Keep the existing strategy below the minimum physical PCS allocation.
+const SMALL_BATCH_MAX: usize = (1 << 19) / (64 * N);
 const NORM_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/integer-outer/v1";
 const MERGE_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/merge/v3";
 const BINDING_DOMAIN: &[u8] = b"bitz/falcon1024-algebraic/binding/v2";
@@ -129,7 +137,7 @@ pub(super) fn prove(
     let merge_nonce = prove_nonce::<Merge>(transcript, schedule.merge_bits)?;
     let eta = sample(transcript, field)?;
     let (mut form, target) = BindingForm::new(layout, ring, &norm_claims, eta, field)?;
-    form.options = BindingOptions::for_arithmetic(layout.batch(), N, schedule.binding_bits == 0);
+    form.options = arithmetic_binding_options(layout.batch(), schedule.binding_bits == 0);
 
     transcript.absorb_slice(BINDING_DOMAIN);
     let stream = StreamingMle::new(&form);
@@ -403,12 +411,24 @@ fn binding_workers() -> usize {
     1
 }
 
-/// Keep unqualified worker counts and small batches on the original path.
-/// Eight-worker measurements qualify the large-batch range for both degrees;
-/// one-core measurements additionally qualify the full 1024-signature batch.
+/// Keep unqualified worker counts and trimmed small batches on the original
+/// strategy. Larger domains reuse cached decoders and streamed byte buckets.
 pub(super) fn optimized_binding(batch: usize) -> bool {
-    (binding_workers() == 8 && (256..=1024).contains(&batch))
-        || (binding_workers() == 1 && batch == 1024)
+    #[cfg(feature = "bench-internals")]
+    match std::env::var("BITZ_ARITHMETIC_BINDING_STRATEGY") {
+        Ok(value) => {
+            return match value.as_str() {
+                "legacy" => false,
+                "optimized" => true,
+                _ => panic!("BITZ_ARITHMETIC_BINDING_STRATEGY must be legacy or optimized"),
+            };
+        }
+        Err(std::env::VarError::NotPresent) => {}
+        Err(std::env::VarError::NotUnicode(_)) => {
+            panic!("BITZ_ARITHMETIC_BINDING_STRATEGY must be valid Unicode")
+        }
+    }
+    matches!(binding_workers(), 1 | 8) && batch > SMALL_BATCH_MAX
 }
 
 fn binding_strategy(batch: usize) -> BindingStrategy {
@@ -421,6 +441,41 @@ fn binding_strategy(batch: usize) -> BindingStrategy {
 
 fn binding_parallel(batch: usize) -> bool {
     optimized_binding(batch) && binding_workers() > 1
+}
+
+fn arithmetic_binding_options(batch: usize, ungrinded: bool) -> BindingOptions {
+    #[cfg(feature = "bench-internals")]
+    match std::env::var("BITZ_ARITHMETIC_BINDING_GROUP_CAP") {
+        Ok(value) => {
+            let group_cap = match value.as_str() {
+                "1" => 1,
+                "8" => 8,
+                "16" => 16,
+                _ => panic!("BITZ_ARITHMETIC_BINDING_GROUP_CAP must be 1, 8, or 16"),
+            };
+            return BindingOptions {
+                optimized: true,
+                group_cap,
+            };
+        }
+        Err(std::env::VarError::NotPresent) => {}
+        Err(std::env::VarError::NotUnicode(_)) => {
+            panic!("BITZ_ARITHMETIC_BINDING_GROUP_CAP must be valid Unicode")
+        }
+    }
+    // Aggregate signatures before expanding their common signed decoder. The
+    // packed consumer reduces this cap when there are fewer parallel tasks.
+    if cfg!(all(target_os = "linux", target_arch = "x86_64"))
+        && matches!(binding_workers(), 1 | 8)
+        && binding_prefix_variables(batch) == 4
+    {
+        BindingOptions {
+            optimized: true,
+            group_cap: 16,
+        }
+    } else {
+        BindingOptions::for_arithmetic(batch, N, ungrinded)
+    }
 }
 
 impl<'a> BindingForm<'a> {
@@ -851,7 +906,6 @@ impl StreamingCoefficientSource for BindingForm<'_> {
                 return Err(SumcheckError::InvalidProductDimensions);
             }
             let base = instance * self.layout.signature_stride();
-            let zero = self.field.zero();
             if instance >= self.layout.batch() {
                 let mut counts = [[0u64; 256]; 2];
                 for offset in (0..self.layout.signature_stride()).step_by(16) {
@@ -875,62 +929,29 @@ impl StreamingCoefficientSource for BindingForm<'_> {
                 }
                 return Ok(());
             }
-            let mut low = [zero; 256];
-            let mut high = [zero; 256];
-            let mut low_spare = [zero; 256];
-            let mut high_spare = [zero; 256];
-            let mut slack = self.slacks[instance];
-            for side in 0..2 {
-                for j in 0..N {
-                    let pair = read_pair(base + coefficient_bit(N, side, j, 0), 16)?;
-                    let low_byte = usize::from(pair & 255);
-                    let high_byte = usize::from(pair >> 8);
-                    let coefficient = self.coefficients[side][instance * N + j];
-                    let spare = if side == 0 && j < SLACK_BITS {
-                        let value = slack;
-                        slack = self.field.add(&slack, &slack);
-                        value
-                    } else {
-                        self.padding
-                    };
-                    if low_byte != 0 {
-                        low[low_byte] = self.field.add(&low[low_byte], &coefficient);
-                        low_spare[low_byte] = self.field.add(&low_spare[low_byte], &spare);
-                    }
-                    if high_byte != 0 {
-                        high[high_byte] = self.field.add(&high[high_byte], &coefficient);
-                        high_spare[high_byte] = self.field.add(&high_spare[high_byte], &spare);
-                    }
-                }
-            }
-            for table in 0..3 {
-                for byte in 1..256 {
-                    // Tables are C0 by h0, C1 by h1, and C0 by h1 + C1 by h0.
-                    let (mut lo, hi, spare) = match table {
-                        0 => (low[byte], zero, zero),
-                        1 => (zero, high[byte], high_spare[byte]),
-                        _ => (high[byte], low[byte], low_spare[byte]),
-                    };
-                    if lo == zero && hi == zero && spare == zero {
-                        continue;
-                    }
-                    let mut hi = self.field.reduce(self.field.mul_wide(&hi, &256u64));
-                    let mut values = [zero; 8];
-                    for lane in 0..7 {
-                        values[lane] = if lane == 6 {
-                            self.field.sub(&lo, &hi)
-                        } else {
-                            self.field.add(&lo, &hi)
-                        };
-                        lo = self.field.add(&lo, &lo);
-                        hi = self.field.add(&hi, &hi);
-                    }
-                    values[7] = self.field.add(&lo, &spare);
-                    emit(table, byte as u8, &values)?;
-                }
-            }
-            Ok(())
+            self.emit_active_pair_buckets(
+                instance..instance + 1,
+                &mut |_, base, lanes| read_pair(base, lanes),
+                emit,
+            )
         })())
+    }
+
+    /// Combine only active signatures; inactive partitions retain the generic
+    /// fallback because their padding coefficients use a different decoder.
+    fn for_each_partition_range_byte_pair_bucket(
+        &self,
+        partitions: std::ops::Range<usize>,
+        read: &mut impl FnMut(usize, usize, usize) -> Result<u16, SumcheckError>,
+        emit: &mut impl FnMut(usize, u8, &[F; 8]) -> Result<(), SumcheckError>,
+    ) -> Option<Result<(), SumcheckError>> {
+        if partitions.start >= partitions.end || partitions.end > self.layout.capacity() {
+            return Some(Err(SumcheckError::InvalidProductDimensions));
+        }
+        if partitions.end > self.layout.batch() {
+            return None;
+        }
+        Some(self.emit_active_pair_buckets(partitions, read, emit))
     }
 
     /// Bind up to the four lane variables once for each decoder. The replay
@@ -1006,6 +1027,75 @@ impl StreamingCoefficientSource for BindingForm<'_> {
 }
 
 impl BindingForm<'_> {
+    /// Prefix accumulators are linear in their coefficient buckets. Accumulate
+    /// signatures before expanding the shared signed15 decoder once per group.
+    fn emit_active_pair_buckets(
+        &self,
+        partitions: std::ops::Range<usize>,
+        read: &mut impl FnMut(usize, usize, usize) -> Result<u16, SumcheckError>,
+        emit: &mut impl FnMut(usize, u8, &[F; 8]) -> Result<(), SumcheckError>,
+    ) -> Result<(), SumcheckError> {
+        let zero = self.field.zero();
+        let mut low = [zero; 256];
+        let mut high = [zero; 256];
+        let mut low_spare = [zero; 256];
+        let mut high_spare = [zero; 256];
+        for instance in partitions {
+            let base = instance * self.layout.signature_stride();
+            let mut slack = self.slacks[instance];
+            for side in 0..2 {
+                for j in 0..N {
+                    let pair = read(instance, base + coefficient_bit(N, side, j, 0), 16)?;
+                    let low_byte = usize::from(pair & 255);
+                    let high_byte = usize::from(pair >> 8);
+                    let coefficient = self.coefficients[side][instance * N + j];
+                    let spare = if side == 0 && j < SLACK_BITS {
+                        let value = slack;
+                        slack = self.field.add(&slack, &slack);
+                        value
+                    } else {
+                        self.padding
+                    };
+                    if low_byte != 0 {
+                        low[low_byte] = self.field.add(&low[low_byte], &coefficient);
+                        low_spare[low_byte] = self.field.add(&low_spare[low_byte], &spare);
+                    }
+                    if high_byte != 0 {
+                        high[high_byte] = self.field.add(&high[high_byte], &coefficient);
+                        high_spare[high_byte] = self.field.add(&high_spare[high_byte], &spare);
+                    }
+                }
+            }
+        }
+        for table in 0..3 {
+            for byte in 1..256 {
+                // Tables are C0 by h0, C1 by h1, and C0 by h1 + C1 by h0.
+                let (mut lo, hi, spare) = match table {
+                    0 => (low[byte], zero, zero),
+                    1 => (zero, high[byte], high_spare[byte]),
+                    _ => (high[byte], low[byte], low_spare[byte]),
+                };
+                if lo == zero && hi == zero && spare == zero {
+                    continue;
+                }
+                let mut hi = self.field.reduce(self.field.mul_wide(&hi, &256u64));
+                let mut values = [zero; 8];
+                for lane in 0..7 {
+                    values[lane] = if lane == 6 {
+                        self.field.sub(&lo, &hi)
+                    } else {
+                        self.field.add(&lo, &hi)
+                    };
+                    lo = self.field.add(&lo, &lo);
+                    hi = self.field.add(&hi, &hi);
+                }
+                values[7] = self.field.add(&lo, &spare);
+                emit(table, byte as u8, &values)?;
+            }
+        }
+        Ok(())
+    }
+
     fn emit_prepared_fold(
         &self,
         instance: usize,
@@ -1134,9 +1224,31 @@ fn verify_nonce<D: GrindingDomain>(
 
 /// Prefix width affects only the prover's representation, never the transcript.
 fn binding_prefix_variables(batch: usize) -> usize {
-    // One-core batch-1024 measurements favor the aligned four-variable
-    // prefix, which halves the dense suffix while keeping ordinary messages.
-    if batch == 1024 && binding_workers() == 1 { 4 } else { 3 }
+    #[cfg(feature = "bench-internals")]
+    match std::env::var("BITZ_ARITHMETIC_BINDING_PREFIX") {
+        Ok(value) => {
+            return match value.as_str() {
+                "3" => 3,
+                "4" => 4,
+                _ => panic!("BITZ_ARITHMETIC_BINDING_PREFIX must be 3 or 4"),
+            };
+        }
+        Err(std::env::VarError::NotPresent) => {}
+        Err(std::env::VarError::NotUnicode(_)) => {
+            panic!("BITZ_ARITHMETIC_BINDING_PREFIX must be valid Unicode")
+        }
+    }
+    // Four variables keep each signed15 coefficient and spare lane together,
+    // halving the dense suffix without changing any sumcheck message. Retain
+    // the three-variable prefix where its smaller byte buckets are faster.
+    let workers = binding_workers();
+    if (workers == 1 && batch > SMALL_BATCH_MAX)
+        || (workers == 8 && ((N == 1024 && batch > SMALL_BATCH_MAX) || (N == 512 && batch >= 33)))
+    {
+        4
+    } else {
+        3
+    }
 }
 
 fn source_rounds(layout: &Layout) -> usize {
@@ -1206,11 +1318,7 @@ mod tests {
                 .sum::<u64>();
             slacks.push(BETA_SQUARED - norm);
         }
-        WitnessData {
-            witness,
-            slacks,
-            quotients: vec![vec![0; N - 1]; batch],
-        }
+        WitnessData { witness, slacks }
     }
 
     fn ring(data: &WitnessData, field: &Cfg) -> PreparedClaim {
@@ -1615,6 +1723,208 @@ mod tests {
         }
     }
 
+    fn grouped_test_form<'a>(layout: &'a Layout, field: &'a Cfg) -> BindingForm<'a> {
+        BindingForm {
+            layout,
+            field,
+            coefficients: std::array::from_fn(|side| {
+                (0..layout.batch() * N)
+                    .map(|j| signed((j as i128 % 53 - 26) * (side + 1) as i128, field))
+                    .collect()
+            }),
+            slacks: (0..layout.batch())
+                .map(|j| signed(j as i128 * 7 - 19, field))
+                .collect(),
+            padding: unsigned(29, field),
+            options: BindingOptions {
+                optimized: true,
+                group_cap: 1,
+            },
+            folded_decoder: Default::default(),
+        }
+    }
+
+    #[test]
+    fn grouped_binding_buckets_match_dense_and_check_ranges() {
+        for modulus in [(1u128 << 61) - 1, (1u128 << 127) - 1] {
+            let field = F::make_cfg(&Uint::from(modulus)).unwrap();
+            let layout = Layout::new(3).unwrap();
+            let form = grouped_test_form(&layout, &field);
+            let pair = |base: usize| (base / 16 * 73 + 19) as u16;
+            for range in [0..1, 0..3, 1..3, 2..3] {
+                let mut expected = vec![[field.zero(); 8]; 3 * 256];
+                for instance in range.clone() {
+                    let start = instance * layout.signature_stride();
+                    for base in (start..start + layout.signature_stride()).step_by(16) {
+                        let word = pair(base);
+                        let low = usize::from(word & 255);
+                        let high = usize::from(word >> 8);
+                        for lane in 0..8 {
+                            let c0 = reference_coefficient(&form, base + lane);
+                            let c1 = reference_coefficient(&form, base + lane + 8);
+                            for (table, byte, value) in
+                                [(0, low, c0), (1, high, c1), (2, high, c0), (2, low, c1)]
+                            {
+                                if byte != 0 {
+                                    let slot = &mut expected[table * 256 + byte][lane];
+                                    *slot = field.add(slot, &value);
+                                }
+                            }
+                        }
+                    }
+                }
+                let mut actual = vec![[field.zero(); 8]; 3 * 256];
+                let mut next_bucket = 0;
+                form.for_each_partition_range_byte_pair_bucket(
+                    range.clone(),
+                    &mut |instance, base, lanes| {
+                        assert!(range.contains(&instance));
+                        assert_eq!(base / layout.signature_stride(), instance);
+                        assert_eq!(base % 16, 0);
+                        assert_eq!(lanes, 16);
+                        Ok(pair(base))
+                    },
+                    &mut |table, byte, values| {
+                        let bucket = table * 256 + usize::from(byte);
+                        assert!(bucket >= next_bucket);
+                        next_bucket = bucket + 1;
+                        actual[bucket] = *values;
+                        Ok(())
+                    },
+                )
+                .unwrap()
+                .unwrap();
+                assert_eq!(actual, expected, "modulus={modulus}, range={range:?}");
+            }
+            for range in [0..0, 2..1, 0..layout.capacity() + 1] {
+                assert!(
+                    form.for_each_partition_range_byte_pair_bucket(
+                        range,
+                        &mut |_, _, _| panic!("invalid range must not read"),
+                        &mut |_, _, _| panic!("invalid range must not emit"),
+                    )
+                    .unwrap()
+                    .is_err()
+                );
+            }
+            for range in [2..4, 3..4] {
+                assert!(
+                    form.for_each_partition_range_byte_pair_bucket(
+                        range,
+                        &mut |_, _, _| panic!("padding fallback must not read"),
+                        &mut |_, _, _| panic!("padding fallback must not emit"),
+                    )
+                    .is_none()
+                );
+            }
+            assert!(
+                form.for_each_partition_range_byte_pair_bucket(
+                    0..3,
+                    &mut |_, _, _| Err(SumcheckError::InvalidProductDimensions),
+                    &mut |_, _, _| panic!("failed read must not emit"),
+                )
+                .unwrap()
+                .is_err()
+            );
+            assert!(
+                form.for_each_partition_range_byte_pair_bucket(
+                    0..3,
+                    &mut |_, base, _| Ok(pair(base)),
+                    &mut |_, _, _| Err(SumcheckError::InvalidProductDimensions),
+                )
+                .unwrap()
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn grouped_binding_preserves_complete_sumcheck_proof_and_transcript() {
+        // One worker leaves enough partitions to exercise actual groups of
+        // sixteen, independent of the test runner's ambient Rayon pool.
+        let check = || {
+            for (modulus, grinding_bits) in [((1u128 << 61) - 1, 0), ((1u128 << 127) - 1, 2)] {
+                let field = F::make_cfg(&Uint::from(modulus)).unwrap();
+                let layout = Layout::new(64).unwrap();
+                let mut form = grouped_test_form(&layout, &field);
+                // Include arbitrary signed lanes and nonzero spare bits so
+                // grouping cannot rely on an honest zero-padding witness.
+                let bits: Vec<_> = (0..layout.source_bits() / 64)
+                    .map(|j| (j as u64).wrapping_mul(0x9e3779b97f4a7c15).rotate_left(23))
+                    .collect();
+                let mut claim = field.zero();
+                form.for_each_coefficient(&mut |index, value| {
+                    if bits[index / 64] >> (index % 64) & 1 != 0 {
+                        claim = field.add(&claim, &value);
+                    }
+                    Ok(())
+                })
+                .unwrap();
+                let mut expected = None;
+                for group_cap in [1, 8, 16] {
+                    form.options.group_cap = group_cap;
+                    let mut transcript = Blake3Transcript::new();
+                    let mut boundary =
+                        ProverGrindingRoundBoundary::<BindingRound>::with_round_offset(
+                            grinding_bits,
+                            0,
+                        );
+                    let actual = prove_inner_sumcheck(
+                        &field,
+                        &mut transcript,
+                        claim,
+                        PackedInput::new(
+                            &StreamingMle::new(&form),
+                            &bits,
+                            form.num_vars(),
+                            form.live_len(),
+                            4,
+                        ),
+                        (),
+                        &mut boundary,
+                    )
+                    .unwrap();
+                    let nonces = boundary.into_nonces();
+                    let continuation = transcript.get_challenge::<u128>();
+                    let mut verifier = Blake3Transcript::new();
+                    let mut boundary =
+                        VerifierGrindingRoundBoundary::<BindingRound>::new(grinding_bits, &nonces);
+                    assert_eq!(
+                        actual
+                            .proof
+                            .verify_with_round_boundary(
+                                &mut verifier,
+                                claim,
+                                form.num_vars(),
+                                &field,
+                                &mut boundary,
+                            )
+                            .unwrap(),
+                        (actual.point.clone(), actual.final_claim)
+                    );
+                    assert_eq!(verifier.get_challenge::<u128>(), continuation);
+                    let result = (actual, nonces, continuation);
+                    if let Some(expected) = &expected {
+                        assert_eq!(
+                            &result, expected,
+                            "group_cap={group_cap}, modulus={modulus}"
+                        );
+                    } else {
+                        expected = Some(result);
+                    }
+                }
+            }
+        };
+        #[cfg(feature = "parallel")]
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap()
+            .install(check);
+        #[cfg(not(feature = "parallel"))]
+        check();
+    }
+
     #[test]
     fn singleton_and_padded_batch_open_the_same_bits() {
         let field = field();
@@ -1699,7 +2009,6 @@ mod tests {
                 s2: vec![[0; N]; 2],
             },
             slacks: vec![0, 2 * BETA_SQUARED - excessive_norm],
-            quotients: vec![vec![0; N - 1]; 2],
         };
         data.witness.s2[0][0] = excessive;
         // The unweighted batch total is exactly 2B, despite the first

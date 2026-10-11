@@ -1,0 +1,460 @@
+{
+  "passed": true,
+  "rules": [
+    {
+      "source_layout": "single",
+      "variants": [
+        "padding",
+        "combined"
+      ],
+      "keys": [
+        "input_digest",
+        "protocol_id",
+        "trial",
+        "iteration",
+        "source_root",
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "committed_source_bits"
+      ]
+    },
+    {
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "keys": [
+        "input_digest",
+        "protocol_id",
+        "trial",
+        "iteration",
+        "source_root",
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "committed_source_bits"
+      ]
+    }
+  ],
+  "complete": true,
+  "expected_proofs": 96,
+  "checked_proofs": 96,
+  "checks": [
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 1,
+      "seed": 42,
+      "source_layout": "single",
+      "variants": [
+        "padding",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 1,
+      "seed": 43,
+      "source_layout": "single",
+      "variants": [
+        "padding",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 8,
+      "seed": 42,
+      "source_layout": "single",
+      "variants": [
+        "padding",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 8,
+      "seed": 43,
+      "source_layout": "single",
+      "variants": [
+        "padding",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 42,
+      "source_layout": "single",
+      "variants": [
+        "padding",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 43,
+      "source_layout": "single",
+      "variants": [
+        "padding",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "seed": 42,
+      "source_layout": "single",
+      "variants": [
+        "padding",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "seed": 43,
+      "source_layout": "single",
+      "variants": [
+        "padding",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "seed": 42,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "seed": 43,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "seed": 42,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "seed": 43,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 33,
+      "threads": 1,
+      "seed": 42,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 33,
+      "threads": 1,
+      "seed": 43,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 33,
+      "threads": 8,
+      "seed": 42,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 33,
+      "threads": 8,
+      "seed": 43,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 1,
+      "seed": 42,
+      "source_layout": "single",
+      "variants": [
+        "padding",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 1,
+      "seed": 43,
+      "source_layout": "single",
+      "variants": [
+        "padding",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 8,
+      "seed": 42,
+      "source_layout": "single",
+      "variants": [
+        "padding",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 8,
+      "seed": 43,
+      "source_layout": "single",
+      "variants": [
+        "padding",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 42,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 43,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "seed": 42,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "seed": 43,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "seed": 42,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "seed": 43,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "seed": 42,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "seed": 43,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 1,
+      "seed": 42,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 1,
+      "seed": 43,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 8,
+      "seed": 42,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 8,
+      "seed": 43,
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "proofs": 3
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{"shapes": 4, "variants": ["v7", "padding"], "primary_control": "v7", "input_cases_per_variant": 4, "proofs_per_variant_including_warmup": 88, "proofs_all_variants_including_warmup": 176, "groups": ["core-small"]}
+v7-n512-s100-b32-t1-seed42
+padding-n512-s100-b32-t1-seed42
+{"completed_shape": {"degree": 512, "security_bits": 100, "batch": 32, "threads": 1}, "deltas_percent_vs_control": {"padding": {"total_prover_ms": 0.3488105324021218, "prove_ms": 0.7466135832534082}}}
+padding-n512-s128-b32-t1-seed42
+v7-n512-s128-b32-t1-seed42
+{"completed_shape": {"degree": 512, "security_bits": 128, "batch": 32, "threads": 1}, "deltas_percent_vs_control": {"padding": {"total_prover_ms": 0.5365179623042282, "prove_ms": 0.8821104335372532}}}
+v7-n1024-s100-b32-t1-seed42
+padding-n1024-s100-b32-t1-seed42
+{"completed_shape": {"degree": 1024, "security_bits": 100, "batch": 32, "threads": 1}, "deltas_percent_vs_control": {"padding": {"total_prover_ms": 0.5966432330531735, "prove_ms": 0.6675919269469865}}}
+padding-n1024-s128-b32-t1-seed42
+v7-n1024-s128-b32-t1-seed42
+{"completed_shape": {"degree": 1024, "security_bits": 128, "batch": 32, "threads": 1}, "deltas_percent_vs_control": {"padding": {"total_prover_ms": 0.061499972753442655, "prove_ms": 0.0997393812154801}}}
+{"comparison": "padding-vs-v7", "observed_gate_passed": false, "positive_entries": 8}

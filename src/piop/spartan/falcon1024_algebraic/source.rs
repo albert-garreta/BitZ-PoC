@@ -78,9 +78,7 @@ impl Layout {
         }
         Ok(Self {
             batch,
-            // The shared opener doubles the source; Ligerito requires at least
-            // 2^20 committed bits, so retain at least 2^19 source bits.
-            capacity: batch.next_power_of_two().max((1 << 19) / (32 * N)),
+            capacity: batch.next_power_of_two(),
         })
     }
     pub const fn batch(&self) -> usize {
@@ -88,6 +86,14 @@ impl Layout {
     }
     pub const fn capacity(&self) -> usize {
         self.capacity
+    }
+    pub fn allocation_capacity(&self) -> usize {
+        self.capacity.max((1 << 19) / (32 * N))
+    }
+    #[cfg(any(test, feature = "bench-internals"))]
+    pub fn padded(mut self) -> Self {
+        self.capacity = self.allocation_capacity();
+        self
     }
     pub const fn signature_stride(&self) -> usize {
         32 * N
@@ -115,7 +121,6 @@ impl Layout {
 pub(super) struct WitnessData {
     pub witness: FalconAlgebraicWitness,
     pub slacks: Vec<u64>,
-    pub quotients: Vec<Vec<u16>>,
 }
 
 impl WitnessData {
@@ -131,21 +136,18 @@ impl WitnessData {
                 let product = product(&public.public_keys[i], &s2[i]);
                 let s1 = centered_s1(&public.targets[i], &product);
                 let slack = norm_slack(&s1, &s2[i])?;
-                Ok((s1, slack, quotient(&product)))
+                Ok((s1, slack))
             })
             .collect::<Result<Vec<_>, FalconError>>()?;
         let mut s1 = Vec::with_capacity(layout.batch());
         let mut slacks = Vec::with_capacity(layout.batch());
-        let mut quotients = Vec::with_capacity(layout.batch());
-        for (signature_s1, slack, quotient) in signatures {
+        for (signature_s1, slack) in signatures {
             s1.push(signature_s1);
             slacks.push(slack);
-            quotients.push(quotient);
         }
         Ok(Self {
             witness: FalconAlgebraicWitness { s1, s2 },
             slacks,
-            quotients,
         })
     }
 
@@ -161,24 +163,18 @@ impl WitnessData {
         check_coefficients(&witness.s1)?;
         check_coefficients(&witness.s2)?;
         let slacks = check_norms(&witness)?;
-        let quotients = crate::utils::cfg_into_iter!(0..layout.batch())
-            .map(|i| {
-                let product = product(&public.public_keys[i], &witness.s2[i]);
-                for j in 0..N {
-                    let residual = i64::from(public.targets[i][j]) - product[j] + product[N + j]
-                        - i64::from(witness.s1[i][j]);
-                    if residual.rem_euclid(Q) != 0 {
-                        return Err(error("invalid algebraic ring witness"));
-                    }
+        crate::utils::cfg_into_iter!(0..layout.batch()).try_for_each(|i| {
+            let product = product(&public.public_keys[i], &witness.s2[i]);
+            for j in 0..N {
+                let residual = i64::from(public.targets[i][j]) - product[j] + product[N + j]
+                    - i64::from(witness.s1[i][j]);
+                if residual.rem_euclid(Q) != 0 {
+                    return Err(error("invalid algebraic ring witness"));
                 }
-                Ok(quotient(&product))
-            })
-            .collect::<Result<Vec<_>, FalconError>>()?;
-        Ok(Self {
-            witness,
-            slacks,
-            quotients,
-        })
+            }
+            Ok(())
+        })?;
+        Ok(Self { witness, slacks })
     }
 }
 
@@ -197,14 +193,6 @@ fn centered_s1(target: &[u16; N], product: &[i64]) -> [i16; N] {
             residue
         }) as i16
     })
-}
-
-fn quotient(product: &[i64]) -> Vec<u16> {
-    // t-h*s2-s1 = (X^N+1)D modulo q, with D = -high(h*s2).
-    product[N..2 * N - 1]
-        .iter()
-        .map(|&v| (-v).rem_euclid(Q) as u16)
-        .collect()
 }
 
 fn check_coefficients(vectors: &[[i16; N]]) -> Result<(), FalconError> {
@@ -371,7 +359,6 @@ mod tests {
                         _ => 0x2aaaaaa & ((1 << SLACK_BITS) - 1),
                     })
                     .collect(),
-                quotients: Vec::new(),
             };
             for polynomial in data.witness.s1.iter_mut().chain(&mut data.witness.s2) {
                 for (j, coefficient) in polynomial.iter_mut().enumerate() {
@@ -433,27 +420,7 @@ mod tests {
         let combined = WitnessData::from_s2(&public, witness.s2.clone()).unwrap();
         assert_eq!(combined.witness, witness);
         assert_eq!(combined.slacks, data.slacks);
-        assert_eq!(combined.quotients, data.quotients);
-        assert_eq!(combined.quotients[0].len(), N - 1);
-        for j in 0..N - 1 {
-            assert_eq!(
-                combined.quotients[0][j],
-                (-ordinary[N + j]).rem_euclid(Q) as u16
-            );
-        }
-        for j in 0..2 * N {
-            let residual = if j < N {
-                i64::from(public.targets[0][j]) - i64::from(s1[j]) - ordinary[j]
-            } else {
-                -ordinary[j]
-            };
-            let expected = if j % N < N - 1 {
-                i64::from(combined.quotients[0][j % N])
-            } else {
-                0
-            };
-            assert_eq!(residual.rem_euclid(Q), expected);
-        }
+        assert_eq!(product(&h, &s2), ordinary);
         assert_eq!(
             data.slacks[0],
             BETA_SQUARED
@@ -482,7 +449,6 @@ mod tests {
         let combined = WitnessData::from_s2(&public, s2.clone()).unwrap();
         assert_eq!(combined.witness, data.witness);
         assert_eq!(combined.slacks, data.slacks);
-        assert_eq!(combined.quotients, data.quotients);
         let layout = Layout::new(3).unwrap();
         let source = Source::new(layout, &data);
         assert_eq!(Source::new(layout, &combined).rows(), source.rows());
@@ -511,7 +477,7 @@ mod tests {
             (0..layout.source_bits())
                 .filter(|&index| layout.is_live(index))
                 .count(),
-            3 * super::super::LIVE_BITS
+            3 * (2 * N * 15 + SLACK_BITS)
         );
     }
 
@@ -524,7 +490,6 @@ mod tests {
                 s2: vec![[0; N]],
             },
             slacks: vec![(1 << SLACK_BITS) - 1],
-            quotients: vec![vec![0; N - 1]],
         };
         // Encoding boundaries are tested independently of the norm gate.
         data.witness.s1[0][..4].copy_from_slice(&[-16384, -1, 0, 16383]);

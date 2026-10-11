@@ -1,0 +1,19 @@
+{
+  "captured_unix": 1791726826.4086628,
+  "source_snapshot": "/tmp/bitz-arithmetic-v7-compact-control-50d91klf",
+  "source_files": 594,
+  "source_hash_manifest": "control-v7-source-sha256.json",
+  "differences_from_performance_first_source_manifest": [],
+  "controls": {
+    "v7": {
+      "original": "/tmp/bitz-arithmetic-candidate-performance-first-binary",
+      "preserved": "/tmp/bitz-arithmetic-compact-control-v7-binary",
+      "sha256": "5208a4513f678c4bbd2ac0dafab83afda8971dd8fe9a4b634e371b9b80ea5273"
+    },
+    "v5": {
+      "original": "/tmp/bitz-arithmetic-baseline-binary",
+      "preserved": "/tmp/bitz-arithmetic-compact-control-v5-binary",
+      "sha256": "a07de9e80c6da1267c261cfac46c0d149aae3ae2049b87ad2ce550ad57d9ab88"
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "passed": true,
+  "candidate_proofs_checked": 512,
+  "unchanged_exact_v7_proofs": 512,
+  "changed_layout_proofs": 0,
+  "all_physical_sources_and_roots_unchanged": true,
+  "all_layouts_security_and_modes_checked": true,
+  "layouts": [
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 524288,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 524288,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 1048576,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 1048576,
+      "new_protocol": false
+    }
+  ]
+}

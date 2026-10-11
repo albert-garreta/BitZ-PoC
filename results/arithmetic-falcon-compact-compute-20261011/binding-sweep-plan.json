@@ -1,0 +1,716 @@
+{
+  "version": 1,
+  "frozen_before_timings": true,
+  "warmup": 1,
+  "iterations": 2,
+  "purpose": "Broad same-binary raw binding strategy sweep, preserving all64 qualification shapes but using diagnostic seeds42/43. Compare legacy3,opt3,opt4 against actual default strategy for each degree/batch/worker shape.",
+  "shapes": [
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-large",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-large",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-large",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-large",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-large",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-large",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-large",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-large",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 16,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 16,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 33,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 33,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 65,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 65,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 129,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 129,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 16,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 16,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 33,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 33,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 65,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 65,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 129,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 129,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 8,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 8,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 9,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 9,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 65,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 65,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 129,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 129,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 8,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 8,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 9,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 9,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 65,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 65,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 129,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 129,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    }
+  ],
+  "variant_order": "forward-reverse",
+  "source_shape_plan": "fixed-plan.json",
+  "qualification": false
+}

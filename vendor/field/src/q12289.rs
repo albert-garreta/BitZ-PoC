@@ -288,6 +288,32 @@ impl<const K: usize> PowerBasis<K> {
         value.0[0] = reduce(u32::from(self.feedback[0]) * top);
     }
 
+    /// Replace `value` with `alpha * value - scalar * subtract`.
+    ///
+    /// Both coordinate vectors must belong to this basis; `scalar` must be
+    /// canonical in F_12289. The result is canonical and safe for integer lifts.
+    #[inline]
+    pub fn advance_sub_scaled(
+        &self,
+        value: &mut PowerCoordinates<K>,
+        scalar: u16,
+        subtract: PowerCoordinates<K>,
+    ) {
+        assert!(u64::from(scalar) < Q, "noncanonical base-field scalar");
+        let top = u32::from(value.0[K - 1]);
+        let scalar = u32::from(scalar);
+        // Q^2 exceeds every subtracted product; the unreduced sum fits in u32.
+        const OFFSET: u32 = (Q * Q) as u32;
+        for k in (1..K).rev() {
+            value.0[k] = reduce(
+                u32::from(value.0[k - 1]) + u32::from(self.feedback[k]) * top + OFFSET
+                    - scalar * u32::from(subtract.0[k]),
+            );
+        }
+        value.0[0] =
+            reduce(u32::from(self.feedback[0]) * top + OFFSET - scalar * u32::from(subtract.0[0]));
+    }
+
     /// Emit start, alpha*start, ... without conversions or allocation per step.
     pub fn fill_powers(&self, start: PowerCoordinates<K>, output: &mut [PowerCoordinates<K>]) {
         let mut value = start;
@@ -326,6 +352,65 @@ impl<const K: usize> PowerBasis<K> {
         let [a, b] = outputs;
         self.fill_powers(starts[0], a);
         self.fill_powers(starts[1], b);
+    }
+
+    /// Emit ordinary powers alongside an adjoint sequence for a public polynomial.
+    ///
+    /// Starting at `starts`, the first sequence advances by alpha and the second
+    /// by `alpha * value - polynomial[n-1-j] * subtract` after output j. Both
+    /// outputs and the canonical F_12289 polynomial must have the same length n.
+    /// All coordinate vectors must belong to this basis. Degree eleven uses a
+    /// fused AVX512F+BW kernel when those features are enabled for the build.
+    pub fn fill_powers_adjoint_pair(
+        &self,
+        starts: [PowerCoordinates<K>; 2],
+        subtract: PowerCoordinates<K>,
+        polynomial: &[u16],
+        outputs: [&mut [PowerCoordinates<K>]; 2],
+    ) {
+        assert_eq!(
+            outputs[0].len(),
+            outputs[1].len(),
+            "sequence lengths differ"
+        );
+        assert_eq!(
+            outputs[0].len(),
+            polynomial.len(),
+            "polynomial length differs"
+        );
+        assert!(
+            polynomial.iter().all(|&scalar| u64::from(scalar) < Q),
+            "noncanonical base-field scalar"
+        );
+        #[cfg(all(
+            target_arch = "x86_64",
+            target_feature = "avx512f",
+            target_feature = "avx512bw"
+        ))]
+        if K == 11 {
+            // SAFETY: build features, degree, lengths, and canonical scalars
+            // were checked; PowerCoordinates preserves canonical coordinates.
+            unsafe {
+                avx512::fill_powers_adjoint_pair(
+                    &self.feedback,
+                    starts,
+                    subtract,
+                    polynomial,
+                    outputs,
+                )
+            };
+            return;
+        }
+        let [a, b] = outputs;
+        let [mut first, mut second] = starts;
+        for j in 0..a.len() {
+            a[j] = first;
+            b[j] = second;
+            if j + 1 < a.len() {
+                self.advance(&mut first);
+                self.advance_sub_scaled(&mut second, polynomial[a.len() - 1 - j], subtract);
+            }
+        }
     }
 }
 
@@ -399,6 +484,125 @@ mod power_basis_tests {
         check::<9>();
         check::<10>();
         check::<11>();
+    }
+
+    fn check_sub_scaled<const K: usize>() {
+        for seed in 0..8 {
+            let alpha = Q12289Extension(std::array::from_fn(|i| {
+                if seed == 0 {
+                    u16::from(i == 1)
+                } else {
+                    ((seed * 1237 + i * 97) % Q as usize) as u16
+                }
+            }));
+            let basis = PowerBasis::try_new(alpha).unwrap();
+            let subtract = Q12289Extension(std::array::from_fn(|i| {
+                ((i * 931 + seed * 73) % Q as usize) as u16
+            }));
+            let mut expected = Q12289Extension([12288; K]);
+            let mut actual = basis.encode(expected);
+            for scalar in [0, 1, 12288, 2, 6144, 12288, 0, 137] {
+                let mut fixed_scalar = Q12289Extension::ZERO;
+                fixed_scalar.0[0] = scalar;
+                expected = expected.mul(alpha).sub(subtract.mul(fixed_scalar));
+                basis.advance_sub_scaled(&mut actual, scalar, basis.encode(subtract));
+                assert_eq!(actual, basis.encode(expected));
+                assert_eq!(basis.decode(actual), expected);
+                assert!(actual.0.iter().all(|&v| u64::from(v) < Q));
+            }
+        }
+    }
+
+    #[test]
+    fn shifted_subtraction_matches_fixed_basis_reference() {
+        check_sub_scaled::<9>();
+        check_sub_scaled::<10>();
+        check_sub_scaled::<11>();
+    }
+
+    #[test]
+    #[should_panic(expected = "noncanonical base-field scalar")]
+    fn shifted_subtraction_rejects_noncanonical_scalar() {
+        let mut alpha = Q12289Extension::<11>::ZERO;
+        alpha.0[1] = 1;
+        let basis = PowerBasis::try_new(alpha).unwrap();
+        let mut value = PowerCoordinates::ZERO;
+        basis.advance_sub_scaled(&mut value, 12289, PowerCoordinates::ZERO);
+    }
+
+    fn check_adjoint_pair<const K: usize>() {
+        for seed in 0..8 {
+            let alpha = Q12289Extension(std::array::from_fn(|i| {
+                if seed == 0 {
+                    u16::from(i == 1)
+                } else {
+                    ((seed * 1237 + i * 97) % Q as usize) as u16
+                }
+            }));
+            let basis = PowerBasis::try_new(alpha).unwrap();
+            let subtract = Q12289Extension::<K>(std::array::from_fn(|i| {
+                [0, 1, 6144, 6145, 12288][(i + seed) % 5]
+            }));
+            let starts = [Q12289Extension::ONE, Q12289Extension([12288; K])];
+            for n in [0, 1, 2, 3, 31, 32, 33, 512, 1024] {
+                let polynomial: Vec<_> = (0..n)
+                    .map(|i| [0, 1, 6144, 6145, 12288][(i + seed) % 5])
+                    .collect();
+                let mut a = vec![PowerCoordinates::ZERO; n];
+                let mut b = a.clone();
+                basis.fill_powers_adjoint_pair(
+                    starts.map(|v| basis.encode(v)),
+                    basis.encode(subtract),
+                    &polynomial,
+                    [&mut a, &mut b],
+                );
+                let mut expected = starts;
+                for j in 0..n {
+                    assert_eq!(a[j], basis.encode(expected[0]));
+                    assert_eq!(b[j], basis.encode(expected[1]));
+                    assert!(a[j].0.iter().chain(&b[j].0).all(|&v| u64::from(v) < Q));
+                    let mut scalar = Q12289Extension::ZERO;
+                    scalar.0[0] = polynomial[n - 1 - j];
+                    expected[0] = expected[0].mul(alpha);
+                    expected[1] = expected[1].mul(alpha).sub(subtract.mul(scalar));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn adjoint_pair_matches_fixed_basis_reference() {
+        check_adjoint_pair::<9>();
+        check_adjoint_pair::<10>();
+        check_adjoint_pair::<11>();
+    }
+
+    #[test]
+    #[should_panic(expected = "polynomial length differs")]
+    fn adjoint_pair_rejects_polynomial_length() {
+        let mut alpha = Q12289Extension::<11>::ZERO;
+        alpha.0[1] = 1;
+        let basis = PowerBasis::try_new(alpha).unwrap();
+        basis.fill_powers_adjoint_pair(
+            [PowerCoordinates::ZERO; 2],
+            PowerCoordinates::ZERO,
+            &[0],
+            [&mut [], &mut []],
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "noncanonical base-field scalar")]
+    fn adjoint_pair_rejects_noncanonical_polynomial() {
+        let mut alpha = Q12289Extension::<11>::ZERO;
+        alpha.0[1] = 1;
+        let basis = PowerBasis::try_new(alpha).unwrap();
+        basis.fill_powers_adjoint_pair(
+            [PowerCoordinates::ZERO; 2],
+            PowerCoordinates::ZERO,
+            &[Q as u16],
+            [&mut [PowerCoordinates::ZERO], &mut [PowerCoordinates::ZERO]],
+        );
     }
 
     fn check_pair<const K: usize>() {

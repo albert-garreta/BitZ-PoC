@@ -1,0 +1,20 @@
+{
+  "captured_unix": 1791732152.1585014,
+  "source_snapshot": "/tmp/bitz-arithmetic-binding-controls-source-eftqam9d",
+  "source_files": 597,
+  "source_hash_manifest": "binding-controls-source-sha256.json",
+  "changed_from_r5": [
+    "src/piop/spartan/falcon1024_algebraic/arithmetic.rs"
+  ],
+  "binary_original": "/tmp/bitz-arithmetic-binding-strategy-binary",
+  "binary_preserved": "/tmp/bitz-arithmetic-binding-controls-pilot-binary",
+  "sha256": "786c631de6eee7801d3b96ecf03667e72f81b5e98c5b287075f0582a156e59ee",
+  "features": [
+    "falcon-hybrid",
+    "bench-internals"
+  ],
+  "RUSTFLAGS": "-C target-cpu=native",
+  "build_profile": "native release with default LTO/profile",
+  "root_confirmed_binary_and_go": true,
+  "revision": "Same-binary benchmark-only raw binding strategy/prefix controls; default production behavior unchanged."
+}

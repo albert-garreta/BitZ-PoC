@@ -1,0 +1,245 @@
+{
+  "version": 1,
+  "frozen_before_timings": true,
+  "warmup": 1,
+  "iterations": 3,
+  "variant_order": "forward-reverse",
+  "purpose": "Check R5 production proof-layout exclusion on all four unchanged batch32/one-worker degree/security shapes using fresh seeds138..169; preserve all earlier failing candidates.",
+  "selection_source": "qualification/comparisons/padding-vs-v7/paired-seed-analysis.json",
+  "selection_rules": [
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "total_prover_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        },
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    }
+  ],
+  "shapes": [
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        138,
+        139,
+        140,
+        141,
+        142,
+        143,
+        144,
+        145,
+        146,
+        147,
+        148,
+        149,
+        150,
+        151,
+        152,
+        153,
+        154,
+        155,
+        156,
+        157,
+        158,
+        159,
+        160,
+        161,
+        162,
+        163,
+        164,
+        165,
+        166,
+        167,
+        168,
+        169
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        138,
+        139,
+        140,
+        141,
+        142,
+        143,
+        144,
+        145,
+        146,
+        147,
+        148,
+        149,
+        150,
+        151,
+        152,
+        153,
+        154,
+        155,
+        156,
+        157,
+        158,
+        159,
+        160,
+        161,
+        162,
+        163,
+        164,
+        165,
+        166,
+        167,
+        168,
+        169
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        138,
+        139,
+        140,
+        141,
+        142,
+        143,
+        144,
+        145,
+        146,
+        147,
+        148,
+        149,
+        150,
+        151,
+        152,
+        153,
+        154,
+        155,
+        156,
+        157,
+        158,
+        159,
+        160,
+        161,
+        162,
+        163,
+        164,
+        165,
+        166,
+        167,
+        168,
+        169
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        138,
+        139,
+        140,
+        141,
+        142,
+        143,
+        144,
+        145,
+        146,
+        147,
+        148,
+        149,
+        150,
+        151,
+        152,
+        153,
+        154,
+        155,
+        156,
+        157,
+        158,
+        159,
+        160,
+        161,
+        162,
+        163,
+        164,
+        165,
+        166,
+        167,
+        168,
+        169
+      ]
+    }
+  ],
+  "revision": "Compile-time exclusion of remaining compact proof variant, module and types from production; tests/benchmark retain experimental branch."
+}

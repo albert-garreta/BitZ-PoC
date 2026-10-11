@@ -1,0 +1,874 @@
+{
+  "started_unix": 1791729090.5668774,
+  "finished_unix": 1791729268.7054696,
+  "platform": "Linux will 6.17.0-41-generic #41-Ubuntu SMP PREEMPT_DYNAMIC Sat Jun 20 18:01:40 UTC 2026 x86_64 GNU/Linux",
+  "cpu": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           48 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  32\nOn-line CPU(s) list:                     0-31\nVendor ID:                               AuthenticAMD\nModel name:                              AMD Ryzen 9 9950X3D 16-Core Processor\nCPU family:                              26\nModel:                                   68\nThread(s) per core:                      2\nCore(s) per socket:                      16\nSocket(s):                               1\nStepping:                                0\nFrequency boost:                         enabled\nCPU(s) scaling MHz:                      19%\nCPU max MHz:                             5756.4521\nCPU min MHz:                             624.1940\nBogoMIPS:                                8583.67\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good amd_lbr_v2 nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 sse4_1 sse4_2 movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpuid_fault cpb cat_l3 cdp_l3 hw_pstate ssbd mba perfmon_v2 ibrs ibpb stibp ibrs_enhanced vmmcall fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local user_shstk avx_vnni avx512_bf16 clzero irperf xsaveerptr rdpru wbnoinvd cppc arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic v_vmsave_vmload vgif x2avic v_spec_ctrl vnmi avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid bus_lock_detect movdiri movdir64b overflow_recov succor smca fsrm avx512_vp2intersect flush_l1d amd_lbr_pmc_freeze\nVirtualization:                          AMD-V\nL1d cache:                               768 KiB (16 instances)\nL1i cache:                               512 KiB (16 instances)\nL2 cache:                                16 MiB (16 instances)\nL3 cache:                                128 MiB (2 instances)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-31\nVulnerability Gather data sampling:      Not affected\nVulnerability Ghostwrite:                Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Old microcode:             Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Not affected\nVulnerability Spec rstack overflow:      Mitigation; IBPB on VMEXIT only\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; STIBP always-on; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Not affected\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Mitigation; IBPB on VMEXIT\n",
+  "plan": {
+    "version": 2,
+    "qualification": false,
+    "purpose": "R2 diagnostic pilot: identical 16 shapes at both security 100 and 128; preserve initial pilot evidence.",
+    "variant_order": "forward-reverse",
+    "warmup": 1,
+    "iterations": 2,
+    "shapes": [
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 1,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 1,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 32,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 32,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 1024,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 1024,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 33,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 33,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 1,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 1,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 32,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 32,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 1024,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 1024,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 17,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 17,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 1,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 1,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 32,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 32,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 1024,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 1024,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 33,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 33,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 1,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 1,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 32,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 32,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 1024,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 1024,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 17,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "diagnostic-pilot-r2",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 17,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      }
+    ],
+    "accepted_by_root": true
+  },
+  "selected_shapes": [
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 33,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 33,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 33,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 33,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-pilot-r2",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    }
+  ],
+  "plan_sha256": "01d0abc83fefd5421ce4012380897a65c341eeda91a12aab245f82795c69abe2",
+  "variant_manifest_sha256": "16bd4f021301b76271799f938749d31e631359b42cf5d9e4d8f4fe0c9e462f40",
+  "benchmark_script_sha256": "38806c328387c63092c7ab1c8a7368abd6d3b52e55879fc109b1a42968703aa1",
+  "variants": [
+    {
+      "label": "v7",
+      "binary": "/tmp/bitz-arithmetic-compact-control-v7-binary",
+      "args": [],
+      "environment": {},
+      "features": [
+        "falcon-hybrid"
+      ],
+      "role": "primary control",
+      "sha256": "5208a4513f678c4bbd2ac0dafab83afda8971dd8fe9a4b634e371b9b80ea5273"
+    },
+    {
+      "label": "padding",
+      "binary": "/tmp/bitz-arithmetic-compact-compute-v8-r2-pilot-binary",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "padding"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "candidate phase control",
+      "expected_fields": {
+        "compute_variant": "padding"
+      },
+      "sha256": "f7793411dbae104d10ccf316a62984bdcebe5bca504e3bcb04ecbe9b7c76aa13"
+    },
+    {
+      "label": "compact",
+      "binary": "/tmp/bitz-arithmetic-compact-compute-v8-r2-pilot-binary",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "compact"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "candidate phase control",
+      "expected_fields": {
+        "compute_variant": "compact"
+      },
+      "sha256": "f7793411dbae104d10ccf316a62984bdcebe5bca504e3bcb04ecbe9b7c76aa13"
+    },
+    {
+      "label": "combined",
+      "binary": "/tmp/bitz-arithmetic-compact-compute-v8-r2-pilot-binary",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "combined"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "candidate phase control",
+      "expected_fields": {
+        "compute_variant": "combined"
+      },
+      "sha256": "f7793411dbae104d10ccf316a62984bdcebe5bca504e3bcb04ecbe9b7c76aa13"
+    }
+  ],
+  "primary_control": "v7",
+  "same_protocol_identity_rules": [
+    {
+      "source_layout": "single",
+      "variants": [
+        "padding",
+        "combined"
+      ],
+      "keys": [
+        "input_digest",
+        "protocol_id",
+        "trial",
+        "iteration",
+        "source_root",
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "committed_source_bits"
+      ]
+    },
+    {
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "keys": [
+        "input_digest",
+        "protocol_id",
+        "trial",
+        "iteration",
+        "source_root",
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "committed_source_bits"
+      ]
+    }
+  ],
+  "reference_protocol_identity": {
+    "reference_variant": "v7",
+    "protocol_suffix": "/v7",
+    "candidate_variants": [
+      "padding",
+      "compact",
+      "combined"
+    ],
+    "keys": [
+      "input_digest",
+      "protocol_id",
+      "trial",
+      "iteration",
+      "source_root",
+      "proof_debug_digest",
+      "proof_payload_bytes",
+      "committed_source_bits"
+    ],
+    "expected_checked_proofs": 240,
+    "eligibility": "Every candidate trial reporting the preserved /v7 protocol must match the original v7 control exactly; new protocol cases are recorded separately."
+  },
+  "trace": false,
+  "description": {
+    "shapes": 32,
+    "variants": [
+      "v7",
+      "padding",
+      "compact",
+      "combined"
+    ],
+    "primary_control": "v7",
+    "input_cases_per_variant": 64,
+    "proofs_per_variant_including_warmup": 192,
+    "proofs_all_variants_including_warmup": 768,
+    "groups": [
+      "diagnostic-pilot-r2"
+    ]
+  },
+  "ordering": "forward-reverse",
+  "build_requirement": "Frozen native release binaries; --locked --offline --features falcon-hybrid --example falcon_algebraic; RUSTFLAGS=-C target-cpu=native. Record any benchmark-only feature or phase-control differences in the variant manifest.",
+  "acceptance": "Report both pooled timing medians and seed-paired uncertainty. An observed positive delta is preserved; repeatability requires separate evidence. Cross-protocol proof identity is not assumed.",
+  "verified_proofs": 768,
+  "verified_measured_proofs": 512,
+  "all_input_digests_matched": true,
+  "cross_protocol_proof_identity_required": false,
+  "same_protocol_identity_checked_proofs": 192,
+  "reference_protocol_identity_checked_proofs": 240
+}

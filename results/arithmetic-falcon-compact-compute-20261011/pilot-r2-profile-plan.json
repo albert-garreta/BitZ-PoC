@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "qualification": false,
+  "purpose": "R2 large stage profiles requested after pilot; trace timings are diagnostic, not acceptance timings.",
+  "variant_order": "cyclic",
+  "warmup": 1,
+  "iterations": 3,
+  "shapes": [
+    {
+      "group": "diagnostic-profiles-r2",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        42
+      ]
+    },
+    {
+      "group": "diagnostic-profiles-r2",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        42
+      ]
+    },
+    {
+      "group": "diagnostic-profiles-r2",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        42
+      ]
+    },
+    {
+      "group": "diagnostic-profiles-r2",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        42
+      ]
+    },
+    {
+      "group": "diagnostic-profiles-r2",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        42
+      ]
+    },
+    {
+      "group": "diagnostic-profiles-r2",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        42
+      ]
+    },
+    {
+      "group": "diagnostic-profiles-r2",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        42
+      ]
+    },
+    {
+      "group": "diagnostic-profiles-r2",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        42
+      ]
+    }
+  ]
+}

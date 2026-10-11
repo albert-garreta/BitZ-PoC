@@ -1,0 +1,732 @@
+{
+  "interpretation": "Positive gains mean faster/smaller. Point ranges compare different shapes, not confidence bounds. Bootstrap intervals are descriptive, seed-paired, with no across-shape multiplicity correction.",
+  "shape_count": 70,
+  "groups": {
+    "all": {
+      "shapes": 70,
+      "metrics": {
+        "prove_ms": {
+          "pooled_median_gain_percent": {
+            "minimum": {
+              "value": 2.8365519670610073,
+              "shape": {
+                "degree": 512,
+                "security_bits": 128,
+                "batch": 17,
+                "threads": 8
+              }
+            },
+            "maximum": {
+              "value": 31.278449342363103,
+              "shape": {
+                "degree": 1024,
+                "security_bits": 100,
+                "batch": 129,
+                "threads": 8
+              }
+            }
+          },
+          "paired_seed_median_gain_percent": {
+            "minimum": {
+              "value": 3.6617219890852537,
+              "shape": {
+                "degree": 512,
+                "security_bits": 128,
+                "batch": 17,
+                "threads": 8
+              }
+            },
+            "maximum": {
+              "value": 30.93729172036617,
+              "shape": {
+                "degree": 512,
+                "security_bits": 100,
+                "batch": 255,
+                "threads": 8
+              }
+            }
+          }
+        },
+        "total_prover_ms": {
+          "pooled_median_gain_percent": {
+            "minimum": {
+              "value": 2.9608365716035423,
+              "shape": {
+                "degree": 512,
+                "security_bits": 128,
+                "batch": 17,
+                "threads": 8
+              }
+            },
+            "maximum": {
+              "value": 28.81221334629259,
+              "shape": {
+                "degree": 1024,
+                "security_bits": 100,
+                "batch": 129,
+                "threads": 8
+              }
+            }
+          },
+          "paired_seed_median_gain_percent": {
+            "minimum": {
+              "value": 3.489790506376189,
+              "shape": {
+                "degree": 512,
+                "security_bits": 128,
+                "batch": 17,
+                "threads": 8
+              }
+            },
+            "maximum": {
+              "value": 28.69256190487597,
+              "shape": {
+                "degree": 512,
+                "security_bits": 100,
+                "batch": 255,
+                "threads": 8
+              }
+            }
+          }
+        }
+      }
+    },
+    "edges": {
+      "shapes": 46,
+      "metrics": {
+        "prove_ms": {
+          "pooled_median_gain_percent": {
+            "minimum": {
+              "value": 2.8365519670610073,
+              "shape": {
+                "degree": 512,
+                "security_bits": 128,
+                "batch": 17,
+                "threads": 8
+              }
+            },
+            "maximum": {
+              "value": 31.278449342363103,
+              "shape": {
+                "degree": 1024,
+                "security_bits": 100,
+                "batch": 129,
+                "threads": 8
+              }
+            }
+          },
+          "paired_seed_median_gain_percent": {
+            "minimum": {
+              "value": 3.6617219890852537,
+              "shape": {
+                "degree": 512,
+                "security_bits": 128,
+                "batch": 17,
+                "threads": 8
+              }
+            },
+            "maximum": {
+              "value": 30.93729172036617,
+              "shape": {
+                "degree": 512,
+                "security_bits": 100,
+                "batch": 255,
+                "threads": 8
+              }
+            }
+          }
+        },
+        "total_prover_ms": {
+          "pooled_median_gain_percent": {
+            "minimum": {
+              "value": 2.9608365716035423,
+              "shape": {
+                "degree": 512,
+                "security_bits": 128,
+                "batch": 17,
+                "threads": 8
+              }
+            },
+            "maximum": {
+              "value": 28.81221334629259,
+              "shape": {
+                "degree": 1024,
+                "security_bits": 100,
+                "batch": 129,
+                "threads": 8
+              }
+            }
+          },
+          "paired_seed_median_gain_percent": {
+            "minimum": {
+              "value": 3.489790506376189,
+              "shape": {
+                "degree": 512,
+                "security_bits": 128,
+                "batch": 17,
+                "threads": 8
+              }
+            },
+            "maximum": {
+              "value": 28.69256190487597,
+              "shape": {
+                "degree": 512,
+                "security_bits": 100,
+                "batch": 255,
+                "threads": 8
+              }
+            }
+          }
+        }
+      }
+    },
+    "batch_1": {
+      "shapes": 8,
+      "metrics": {
+        "prove_ms": {
+          "pooled_median_gain_percent": {
+            "minimum": {
+              "value": 18.51352998760698,
+              "shape": {
+                "degree": 1024,
+                "security_bits": 100,
+                "batch": 1,
+                "threads": 8
+              }
+            },
+            "maximum": {
+              "value": 28.75194180706806,
+              "shape": {
+                "degree": 512,
+                "security_bits": 128,
+                "batch": 1,
+                "threads": 1
+              }
+            }
+          },
+          "paired_seed_median_gain_percent": {
+            "minimum": {
+              "value": 18.704021571015762,
+              "shape": {
+                "degree": 1024,
+                "security_bits": 100,
+                "batch": 1,
+                "threads": 8
+              }
+            },
+            "maximum": {
+              "value": 28.70015668103727,
+              "shape": {
+                "degree": 512,
+                "security_bits": 128,
+                "batch": 1,
+                "threads": 1
+              }
+            }
+          }
+        },
+        "total_prover_ms": {
+          "pooled_median_gain_percent": {
+            "minimum": {
+              "value": 17.624701094181226,
+              "shape": {
+                "degree": 1024,
+                "security_bits": 100,
+                "batch": 1,
+                "threads": 8
+              }
+            },
+            "maximum": {
+              "value": 28.636104353914327,
+              "shape": {
+                "degree": 512,
+                "security_bits": 128,
+                "batch": 1,
+                "threads": 1
+              }
+            }
+          },
+          "paired_seed_median_gain_percent": {
+            "minimum": {
+              "value": 17.853881006185336,
+              "shape": {
+                "degree": 1024,
+                "security_bits": 100,
+                "batch": 1,
+                "threads": 8
+              }
+            },
+            "maximum": {
+              "value": 28.429038971171806,
+              "shape": {
+                "degree": 512,
+                "security_bits": 128,
+                "batch": 1,
+                "threads": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "batch_32": {
+      "shapes": 8,
+      "metrics": {
+        "prove_ms": {
+          "pooled_median_gain_percent": {
+            "minimum": {
+              "value": 5.565645344757431,
+              "shape": {
+                "degree": 512,
+                "security_bits": 128,
+                "batch": 32,
+                "threads": 8
+              }
+            },
+            "maximum": {
+              "value": 16.207781072798568,
+              "shape": {
+                "degree": 1024,
+                "security_bits": 100,
+                "batch": 32,
+                "threads": 1
+              }
+            }
+          },
+          "paired_seed_median_gain_percent": {
+            "minimum": {
+              "value": 5.332601737405829,
+              "shape": {
+                "degree": 512,
+                "security_bits": 128,
+                "batch": 32,
+                "threads": 8
+              }
+            },
+            "maximum": {
+              "value": 16.24909590298076,
+              "shape": {
+                "degree": 1024,
+                "security_bits": 100,
+                "batch": 32,
+                "threads": 1
+              }
+            }
+          }
+        },
+        "total_prover_ms": {
+          "pooled_median_gain_percent": {
+            "minimum": {
+              "value": 4.87775628301681,
+              "shape": {
+                "degree": 512,
+                "security_bits": 128,
+                "batch": 32,
+                "threads": 8
+              }
+            },
+            "maximum": {
+              "value": 14.5402239205073,
+              "shape": {
+                "degree": 1024,
+                "security_bits": 100,
+                "batch": 32,
+                "threads": 1
+              }
+            }
+          },
+          "paired_seed_median_gain_percent": {
+            "minimum": {
+              "value": 4.965411620473869,
+              "shape": {
+                "degree": 512,
+                "security_bits": 128,
+                "batch": 32,
+                "threads": 8
+              }
+            },
+            "maximum": {
+              "value": 14.277194352450584,
+              "shape": {
+                "degree": 1024,
+                "security_bits": 100,
+                "batch": 32,
+                "threads": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "batch_1024": {
+      "shapes": 8,
+      "metrics": {
+        "prove_ms": {
+          "pooled_median_gain_percent": {
+            "minimum": {
+              "value": 14.608202951063054,
+              "shape": {
+                "degree": 1024,
+                "security_bits": 100,
+                "batch": 1024,
+                "threads": 8
+              }
+            },
+            "maximum": {
+              "value": 25.445058872218308,
+              "shape": {
+                "degree": 512,
+                "security_bits": 100,
+                "batch": 1024,
+                "threads": 1
+              }
+            }
+          },
+          "paired_seed_median_gain_percent": {
+            "minimum": {
+              "value": 14.520044724201252,
+              "shape": {
+                "degree": 1024,
+                "security_bits": 100,
+                "batch": 1024,
+                "threads": 8
+              }
+            },
+            "maximum": {
+              "value": 25.513662612327348,
+              "shape": {
+                "degree": 512,
+                "security_bits": 100,
+                "batch": 1024,
+                "threads": 1
+              }
+            }
+          }
+        },
+        "total_prover_ms": {
+          "pooled_median_gain_percent": {
+            "minimum": {
+              "value": 12.27989077125371,
+              "shape": {
+                "degree": 1024,
+                "security_bits": 128,
+                "batch": 1024,
+                "threads": 1
+              }
+            },
+            "maximum": {
+              "value": 22.122483759958776,
+              "shape": {
+                "degree": 512,
+                "security_bits": 100,
+                "batch": 1024,
+                "threads": 1
+              }
+            }
+          },
+          "paired_seed_median_gain_percent": {
+            "minimum": {
+              "value": 12.28548341505331,
+              "shape": {
+                "degree": 1024,
+                "security_bits": 100,
+                "batch": 1024,
+                "threads": 1
+              }
+            },
+            "maximum": {
+              "value": 22.224644875906364,
+              "shape": {
+                "degree": 512,
+                "security_bits": 100,
+                "batch": 1024,
+                "threads": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "confidence": {
+    "prove_ms": {
+      "positive_pooled_delta_shapes": 0,
+      "positive_paired_median_delta_shapes": 0,
+      "median": {
+        "positive_lower_endpoints": 0,
+        "negative_upper_endpoints": 70,
+        "maximum_upper_endpoint_percent": -2.165333032528638
+      },
+      "geomean": {
+        "positive_lower_endpoints": 0,
+        "negative_upper_endpoints": 70,
+        "maximum_upper_endpoint_percent": -2.5119199149444493
+      }
+    },
+    "total_prover_ms": {
+      "positive_pooled_delta_shapes": 0,
+      "positive_paired_median_delta_shapes": 0,
+      "median": {
+        "positive_lower_endpoints": 0,
+        "negative_upper_endpoints": 70,
+        "maximum_upper_endpoint_percent": -2.7066966940670456
+      },
+      "geomean": {
+        "positive_lower_endpoints": 0,
+        "negative_upper_endpoints": 70,
+        "maximum_upper_endpoint_percent": -2.803309272789223
+      }
+    }
+  },
+  "auxiliary_metrics": {
+    "all": {
+      "shapes": 70,
+      "proof_payload_bytes": {
+        "minimum": {
+          "value": 0.0,
+          "shape": {
+            "degree": 512,
+            "security_bits": 100,
+            "batch": 32,
+            "threads": 1
+          }
+        },
+        "maximum": {
+          "value": 4.62633451957295,
+          "shape": {
+            "degree": 512,
+            "security_bits": 100,
+            "batch": 1,
+            "threads": 1
+          }
+        }
+      },
+      "verify_ms": {
+        "minimum": {
+          "value": -2.045511040950565,
+          "shape": {
+            "degree": 512,
+            "security_bits": 100,
+            "batch": 257,
+            "threads": 8
+          }
+        },
+        "maximum": {
+          "value": 44.71374861571435,
+          "shape": {
+            "degree": 1024,
+            "security_bits": 100,
+            "batch": 129,
+            "threads": 8
+          }
+        }
+      },
+      "process_peak_rss_kib": {
+        "minimum": {
+          "value": -14.281241302532699,
+          "shape": {
+            "degree": 512,
+            "security_bits": 100,
+            "batch": 1024,
+            "threads": 8
+          }
+        },
+        "maximum": {
+          "value": 6.075246710526317,
+          "shape": {
+            "degree": 512,
+            "security_bits": 128,
+            "batch": 1,
+            "threads": 1
+          }
+        }
+      },
+      "proof_payload_bytes_saved": {
+        "minimum": {
+          "value": 0.0,
+          "shape": {
+            "degree": 512,
+            "security_bits": 100,
+            "batch": 32,
+            "threads": 1
+          }
+        },
+        "maximum": {
+          "value": 4408.0,
+          "shape": {
+            "degree": 512,
+            "security_bits": 128,
+            "batch": 1,
+            "threads": 1
+          }
+        }
+      }
+    },
+    "changed_layout": {
+      "shapes": 16,
+      "proof_payload_bytes": {
+        "minimum": {
+          "value": 1.2372286079182615,
+          "shape": {
+            "degree": 1024,
+            "security_bits": 128,
+            "batch": 8,
+            "threads": 1
+          }
+        },
+        "maximum": {
+          "value": 4.62633451957295,
+          "shape": {
+            "degree": 512,
+            "security_bits": 100,
+            "batch": 1,
+            "threads": 1
+          }
+        }
+      },
+      "verify_ms": {
+        "minimum": {
+          "value": 1.99147648777529,
+          "shape": {
+            "degree": 512,
+            "security_bits": 100,
+            "batch": 16,
+            "threads": 1
+          }
+        },
+        "maximum": {
+          "value": 13.219224429265086,
+          "shape": {
+            "degree": 512,
+            "security_bits": 128,
+            "batch": 1,
+            "threads": 8
+          }
+        }
+      },
+      "process_peak_rss_kib": {
+        "minimum": {
+          "value": 2.141697117336583,
+          "shape": {
+            "degree": 512,
+            "security_bits": 128,
+            "batch": 16,
+            "threads": 1
+          }
+        },
+        "maximum": {
+          "value": 6.075246710526317,
+          "shape": {
+            "degree": 512,
+            "security_bits": 128,
+            "batch": 1,
+            "threads": 1
+          }
+        }
+      },
+      "proof_payload_bytes_saved": {
+        "minimum": {
+          "value": 1056.0,
+          "shape": {
+            "degree": 1024,
+            "security_bits": 100,
+            "batch": 8,
+            "threads": 1
+          }
+        },
+        "maximum": {
+          "value": 4408.0,
+          "shape": {
+            "degree": 512,
+            "security_bits": 128,
+            "batch": 1,
+            "threads": 1
+          }
+        }
+      }
+    },
+    "unchanged_layout": {
+      "shapes": 54,
+      "proof_payload_bytes": {
+        "minimum": {
+          "value": 0.0,
+          "shape": {
+            "degree": 512,
+            "security_bits": 100,
+            "batch": 32,
+            "threads": 1
+          }
+        },
+        "maximum": {
+          "value": 0.0,
+          "shape": {
+            "degree": 512,
+            "security_bits": 100,
+            "batch": 32,
+            "threads": 1
+          }
+        }
+      },
+      "verify_ms": {
+        "minimum": {
+          "value": -2.045511040950565,
+          "shape": {
+            "degree": 512,
+            "security_bits": 100,
+            "batch": 257,
+            "threads": 8
+          }
+        },
+        "maximum": {
+          "value": 44.71374861571435,
+          "shape": {
+            "degree": 1024,
+            "security_bits": 100,
+            "batch": 129,
+            "threads": 8
+          }
+        }
+      },
+      "process_peak_rss_kib": {
+        "minimum": {
+          "value": -14.281241302532699,
+          "shape": {
+            "degree": 512,
+            "security_bits": 100,
+            "batch": 1024,
+            "threads": 8
+          }
+        },
+        "maximum": {
+          "value": 3.4728984096072724,
+          "shape": {
+            "degree": 512,
+            "security_bits": 100,
+            "batch": 129,
+            "threads": 8
+          }
+        }
+      },
+      "proof_payload_bytes_saved": {
+        "minimum": {
+          "value": 0.0,
+          "shape": {
+            "degree": 512,
+            "security_bits": 100,
+            "batch": 32,
+            "threads": 1
+          }
+        },
+        "maximum": {
+          "value": 0.0,
+          "shape": {
+            "degree": 512,
+            "security_bits": 100,
+            "batch": 32,
+            "threads": 1
+          }
+        }
+      }
+    }
+  }
+}

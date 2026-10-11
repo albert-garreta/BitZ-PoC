@@ -1,0 +1,244 @@
+{
+  "version": 1,
+  "frozen_before_timings": true,
+  "warmup": 1,
+  "iterations": 3,
+  "variant_order": "forward-reverse",
+  "purpose": "First fixed confirmation subset: all four unchanged batch32/one-worker degree/security shapes, selected before timing to establish whether the common small overhead repeats before executing remaining confirmations.",
+  "selection_source": "qualification/comparisons/padding-vs-v7/paired-seed-analysis.json",
+  "selection_rules": [
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "total_prover_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        },
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    }
+  ],
+  "shapes": [
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    }
+  ]
+}

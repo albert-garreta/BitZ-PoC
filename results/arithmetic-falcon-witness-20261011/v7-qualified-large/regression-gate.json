@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "metrics": [
+    "total_prover_ms",
+    "prove_ms"
+  ],
+  "aggregation": "median over all measured trials and selected seeds, per shape",
+  "maximum_regression_percent": 0.0,
+  "regressions": [],
+  "interpretation": "Observed comparison only; this gate is not a statistical confidence claim. Inspect seed-summary.json and broaden input coverage for borderline results."
+}

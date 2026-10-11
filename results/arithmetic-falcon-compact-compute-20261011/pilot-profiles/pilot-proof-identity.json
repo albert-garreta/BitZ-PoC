@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "checked_proofs": 72,
+  "reference": "../pilot/",
+  "checked_keys": [
+    "input_digest",
+    "protocol_id",
+    "source_root",
+    "proof_debug_digest",
+    "proof_payload_bytes",
+    "committed_source_bits"
+  ],
+  "note": "Same frozen binary, mode and input. All proof contents match the untraced pilot; extra diagnostic iterations reuse the same deterministic proof. Trial indices differ where the diagnostic run has an extra sample."
+}

@@ -1,0 +1,20 @@
+{
+  "captured_unix": 1791731059.0372202,
+  "source_snapshot": "/tmp/bitz-arithmetic-v8-r4-source-s238md_n",
+  "source_files": 597,
+  "source_hash_manifest": "candidate-r4-source-sha256.json",
+  "changed_from_first_production": [
+    "src/piop/spartan/falcon1024_algebraic/protocol.rs"
+  ],
+  "binary_original": "/tmp/bitz-arithmetic-v8-r4-production-binary",
+  "binary_preserved": "/tmp/bitz-arithmetic-v8-r4-qualification-binary",
+  "sha256": "dae56333d6c8ec62f2c1cc082330ffa5fcb7412cc0ab1cb7209de582ac23a0d7",
+  "features": [
+    "falcon-hybrid"
+  ],
+  "RUSTFLAGS": "-C target-cpu=native",
+  "build_profile": "native release with default LTO/profile",
+  "root_confirmed_binary_and_go": true,
+  "tests_before_timing": "156 relevant tests passed:97 arithmetic +2 large +54 shared +3 full Falcon",
+  "revision": "Compile-time exclusion of experimental compact path in production and removal of temporary binary-claim Vec, preserving transcripts."
+}

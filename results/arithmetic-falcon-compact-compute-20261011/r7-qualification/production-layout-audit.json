@@ -1,0 +1,710 @@
+{
+  "passed": true,
+  "candidate_proofs_checked": 3776,
+  "unchanged_exact_v7_proofs": 2496,
+  "changed_layout_proofs": 1280,
+  "all_physical_sources_and_roots_unchanged": true,
+  "all_layouts_security_and_modes_checked": true,
+  "layouts": [
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 1,
+      "arithmetic_capacity": 1,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 16384,
+      "new_protocol": true
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 8,
+      "arithmetic_capacity": 1,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 16384,
+      "new_protocol": true
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 524288,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 524288,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 1,
+      "arithmetic_capacity": 1,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 16384,
+      "new_protocol": true
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 8,
+      "arithmetic_capacity": 1,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 16384,
+      "new_protocol": true
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 524288,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 8,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 524288,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 1,
+      "arithmetic_capacity": 1,
+      "allocation_capacity": 16,
+      "logical_binding_bits": 32768,
+      "new_protocol": true
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 8,
+      "arithmetic_capacity": 1,
+      "allocation_capacity": 16,
+      "logical_binding_bits": 32768,
+      "new_protocol": true
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 1048576,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 1048576,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 1,
+      "arithmetic_capacity": 1,
+      "allocation_capacity": 16,
+      "logical_binding_bits": 32768,
+      "new_protocol": true
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 8,
+      "arithmetic_capacity": 1,
+      "allocation_capacity": 16,
+      "logical_binding_bits": 32768,
+      "new_protocol": true
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 1048576,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 8,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 1048576,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "arithmetic_capacity": 1024,
+      "allocation_capacity": 1024,
+      "logical_binding_bits": 16777216,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "arithmetic_capacity": 1024,
+      "allocation_capacity": 1024,
+      "logical_binding_bits": 16777216,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 1,
+      "arithmetic_capacity": 1024,
+      "allocation_capacity": 1024,
+      "logical_binding_bits": 16777216,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "arithmetic_capacity": 1024,
+      "allocation_capacity": 1024,
+      "logical_binding_bits": 16777216,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "arithmetic_capacity": 1024,
+      "allocation_capacity": 1024,
+      "logical_binding_bits": 33554432,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "arithmetic_capacity": 1024,
+      "allocation_capacity": 1024,
+      "logical_binding_bits": 33554432,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 1,
+      "arithmetic_capacity": 1024,
+      "allocation_capacity": 1024,
+      "logical_binding_bits": 33554432,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "arithmetic_capacity": 1024,
+      "allocation_capacity": 1024,
+      "logical_binding_bits": 33554432,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 16,
+      "threads": 1,
+      "arithmetic_capacity": 16,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 262144,
+      "new_protocol": true
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 16,
+      "threads": 8,
+      "arithmetic_capacity": 16,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 262144,
+      "new_protocol": true
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 1,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 524288,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 8,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 524288,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 33,
+      "threads": 1,
+      "arithmetic_capacity": 64,
+      "allocation_capacity": 64,
+      "logical_binding_bits": 1048576,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 33,
+      "threads": 8,
+      "arithmetic_capacity": 64,
+      "allocation_capacity": 64,
+      "logical_binding_bits": 1048576,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 65,
+      "threads": 1,
+      "arithmetic_capacity": 128,
+      "allocation_capacity": 128,
+      "logical_binding_bits": 2097152,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 65,
+      "threads": 8,
+      "arithmetic_capacity": 128,
+      "allocation_capacity": 128,
+      "logical_binding_bits": 2097152,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 129,
+      "threads": 1,
+      "arithmetic_capacity": 256,
+      "allocation_capacity": 256,
+      "logical_binding_bits": 4194304,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 129,
+      "threads": 8,
+      "arithmetic_capacity": 256,
+      "allocation_capacity": 256,
+      "logical_binding_bits": 4194304,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 16,
+      "threads": 1,
+      "arithmetic_capacity": 16,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 262144,
+      "new_protocol": true
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 16,
+      "threads": 8,
+      "arithmetic_capacity": 16,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 262144,
+      "new_protocol": true
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 1,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 524288,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 8,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 524288,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 33,
+      "threads": 1,
+      "arithmetic_capacity": 64,
+      "allocation_capacity": 64,
+      "logical_binding_bits": 1048576,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 33,
+      "threads": 8,
+      "arithmetic_capacity": 64,
+      "allocation_capacity": 64,
+      "logical_binding_bits": 1048576,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 65,
+      "threads": 1,
+      "arithmetic_capacity": 128,
+      "allocation_capacity": 128,
+      "logical_binding_bits": 2097152,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 65,
+      "threads": 8,
+      "arithmetic_capacity": 128,
+      "allocation_capacity": 128,
+      "logical_binding_bits": 2097152,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 129,
+      "threads": 1,
+      "arithmetic_capacity": 256,
+      "allocation_capacity": 256,
+      "logical_binding_bits": 4194304,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 129,
+      "threads": 8,
+      "arithmetic_capacity": 256,
+      "allocation_capacity": 256,
+      "logical_binding_bits": 4194304,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 8,
+      "threads": 1,
+      "arithmetic_capacity": 8,
+      "allocation_capacity": 16,
+      "logical_binding_bits": 262144,
+      "new_protocol": true
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 8,
+      "threads": 8,
+      "arithmetic_capacity": 8,
+      "allocation_capacity": 16,
+      "logical_binding_bits": 262144,
+      "new_protocol": true
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 9,
+      "threads": 1,
+      "arithmetic_capacity": 16,
+      "allocation_capacity": 16,
+      "logical_binding_bits": 524288,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 9,
+      "threads": 8,
+      "arithmetic_capacity": 16,
+      "allocation_capacity": 16,
+      "logical_binding_bits": 524288,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 1,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 1048576,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 8,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 1048576,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 65,
+      "threads": 1,
+      "arithmetic_capacity": 128,
+      "allocation_capacity": 128,
+      "logical_binding_bits": 4194304,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 65,
+      "threads": 8,
+      "arithmetic_capacity": 128,
+      "allocation_capacity": 128,
+      "logical_binding_bits": 4194304,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 129,
+      "threads": 1,
+      "arithmetic_capacity": 256,
+      "allocation_capacity": 256,
+      "logical_binding_bits": 8388608,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 129,
+      "threads": 8,
+      "arithmetic_capacity": 256,
+      "allocation_capacity": 256,
+      "logical_binding_bits": 8388608,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 8,
+      "threads": 1,
+      "arithmetic_capacity": 8,
+      "allocation_capacity": 16,
+      "logical_binding_bits": 262144,
+      "new_protocol": true
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 8,
+      "threads": 8,
+      "arithmetic_capacity": 8,
+      "allocation_capacity": 16,
+      "logical_binding_bits": 262144,
+      "new_protocol": true
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 9,
+      "threads": 1,
+      "arithmetic_capacity": 16,
+      "allocation_capacity": 16,
+      "logical_binding_bits": 524288,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 9,
+      "threads": 8,
+      "arithmetic_capacity": 16,
+      "allocation_capacity": 16,
+      "logical_binding_bits": 524288,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 1,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 1048576,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 8,
+      "arithmetic_capacity": 32,
+      "allocation_capacity": 32,
+      "logical_binding_bits": 1048576,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 65,
+      "threads": 1,
+      "arithmetic_capacity": 128,
+      "allocation_capacity": 128,
+      "logical_binding_bits": 4194304,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 65,
+      "threads": 8,
+      "arithmetic_capacity": 128,
+      "allocation_capacity": 128,
+      "logical_binding_bits": 4194304,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 129,
+      "threads": 1,
+      "arithmetic_capacity": 256,
+      "allocation_capacity": 256,
+      "logical_binding_bits": 8388608,
+      "new_protocol": false
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 129,
+      "threads": 8,
+      "arithmetic_capacity": 256,
+      "allocation_capacity": 256,
+      "logical_binding_bits": 8388608,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 255,
+      "threads": 8,
+      "arithmetic_capacity": 256,
+      "allocation_capacity": 256,
+      "logical_binding_bits": 4194304,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 256,
+      "threads": 8,
+      "arithmetic_capacity": 256,
+      "allocation_capacity": 256,
+      "logical_binding_bits": 4194304,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 257,
+      "threads": 8,
+      "arithmetic_capacity": 512,
+      "allocation_capacity": 512,
+      "logical_binding_bits": 8388608,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 255,
+      "threads": 8,
+      "arithmetic_capacity": 256,
+      "allocation_capacity": 256,
+      "logical_binding_bits": 4194304,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 256,
+      "threads": 8,
+      "arithmetic_capacity": 256,
+      "allocation_capacity": 256,
+      "logical_binding_bits": 4194304,
+      "new_protocol": false
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 257,
+      "threads": 8,
+      "arithmetic_capacity": 512,
+      "allocation_capacity": 512,
+      "logical_binding_bits": 8388608,
+      "new_protocol": false
+    }
+  ]
+}

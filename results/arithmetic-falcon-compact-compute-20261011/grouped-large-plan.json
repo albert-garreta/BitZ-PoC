@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "frozen_before_timings": true,
+  "qualification": false,
+  "warmup": 1,
+  "iterations": 3,
+  "variant_order": "rotated-forward-reverse",
+  "purpose": "Same-binary diagnostic of existing raw grouped byte-pair adapter at batch1024; compare actual default with optimized prefix4 group caps1,8,16 using fresh seeds202/203. Complete proofs must match across all modes.",
+  "shapes": [
+    {
+      "group": "diagnostic-grouped-binding",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        202,
+        203
+      ]
+    },
+    {
+      "group": "diagnostic-grouped-binding",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        202,
+        203
+      ]
+    },
+    {
+      "group": "diagnostic-grouped-binding",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        202,
+        203
+      ]
+    },
+    {
+      "group": "diagnostic-grouped-binding",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        202,
+        203
+      ]
+    },
+    {
+      "group": "diagnostic-grouped-binding",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        202,
+        203
+      ]
+    },
+    {
+      "group": "diagnostic-grouped-binding",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        202,
+        203
+      ]
+    },
+    {
+      "group": "diagnostic-grouped-binding",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        202,
+        203
+      ]
+    },
+    {
+      "group": "diagnostic-grouped-binding",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        202,
+        203
+      ]
+    }
+  ],
+  "order_explanation": "Rotate base mode order by shape, then reverse it for the second input; each mode has equal mean position within every shape."
+}

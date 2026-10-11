@@ -1,0 +1,167 @@
+{
+  "passed": true,
+  "reference": "results/arithmetic-falcon-witness-20261011/v7-no-regression",
+  "candidate": "results/arithmetic-falcon-witness-20261011/v7-final",
+  "required_cases": {
+    "degrees": [
+      512,
+      1024
+    ],
+    "securities": [
+      100,
+      128
+    ],
+    "batches": [
+      32,
+      1024
+    ],
+    "threads": [
+      1,
+      8
+    ],
+    "seeds": [
+      42,
+      43
+    ]
+  },
+  "checked_keys": [
+    "input_digest",
+    "protocol_id",
+    "trial",
+    "iteration",
+    "source_root",
+    "proof_debug_digest",
+    "proof_payload_bytes"
+  ],
+  "checked_proofs": 128,
+  "checked_runs": [
+    {
+      "file": "candidate-n512-s100-b32-t1-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b32-t1-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b32-t8-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b32-t8-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t1-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t1-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t8-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t8-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b32-t1-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b32-t1-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b32-t8-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b32-t8-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t1-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t1-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t8-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t8-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b32-t1-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b32-t1-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b32-t8-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b32-t8-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t1-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t1-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t8-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t8-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b32-t1-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b32-t1-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b32-t8-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b32-t8-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t1-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t1-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t8-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t8-seed43.jsonl",
+      "proofs": 4
+    }
+  ]
+}

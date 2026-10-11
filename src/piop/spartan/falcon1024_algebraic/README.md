@@ -14,8 +14,9 @@ sum_j(s1[j]^2 + s2[j]^2) <= 70_265_242     over the integers
 
 Polynomial coefficients are listed in ascending degree. Public coefficients
 must be canonical residues in `0..12289`. Witness coefficients are signed
-integers; every coefficient allowed by the norm bound fits the signed15 source
-encoding. `s1` need not be centered, and `s2` is not restricted to the CT wire
+integers; every coefficient allowed by the norm bound fits a signed15 value.
+Both committed encodings preserve each supplied value exactly. `s1`
+need not be centered, and `s2` is not restricted to the CT wire
 encoding's range. The public statement contains no message, nonce, or signature
 bytes. The caller must establish that `t` is the desired HashToPoint output.
 
@@ -40,23 +41,78 @@ natively. Prepared configurations accept batches `1..=1024` and security targets
 
 ## Reduction and shared witness
 
-The source contains 30,747 live bits per signature: two signed15 coefficient
-vectors and a 27-bit nonnegative norm slack. Each coefficient occupies a 16-bit
-address block: lanes 0..14 contain its signed15 encoding, and lane 15 of the
-first 27 coefficients contains the corresponding norm-slack bit. All other
-lane-15 positions are padding. Each signature occupies 32,768 bits, leaving
-2,021 padding bits. The batch capacity is the next power of two, with a minimum of sixteen slots to
-meet the PCS minimum size. An authenticated linear zero-sum
-claim enforces all internal and inactive-slot padding. The generic shared opener
-also enforces its structural zero lanes.
+The two coefficient vectors share one encoding between the ring and integer
+norm proofs. Above the minimum PCS allocation, a compact encoding stores each
+coefficient's low twelve bits.
+Coefficients in `-2048..=2047` reconstruct their three remaining signed15 bits
+by sign extension. An exception records its coefficient index and the three
+explicit high bits. Every coefficient requiring an exception has square at
+least `2^22`, so the norm limits their number to `floor(B/2^22)` across both
+vectors. No normalization or
+truncation of a supplied witness is performed.
 
-After binding the public inputs and source root, the protocol samples a prime
+The same implementation also backs `falcon512_algebraic`, with the following
+per-signature capacities for the compact layout:
+
+| Component | Falcon-512 | Falcon-1024 |
+|---|---:|---:|
+| Twelve coefficient bits | 12,288 | 24,576 |
+| Maximum exceptions | 8 | 16 |
+| Explicit high bits at maximum exceptions | 24 | 48 |
+| Nonnegative norm slack | 26 | 27 |
+| Maximum live committed bits | **12,338** | **24,651** |
+| Signed15 live bits at the PCS floor | 15,386 | 30,747 |
+
+In the compact layout, exception indices are public proof metadata, stored as
+`u16` indices with a `u16` count per signature. Their payload is
+`2 + 2*exception_count` bytes per
+signature, separate from the bit counts above. Counts and strictly increasing,
+in-range indices are validated and absorbed before the first arithmetic
+challenge. The API is non-hiding; the exception positions are not secret.
+
+The arithmetic instance capacity is `C = batch.next_power_of_two()`. It is
+independent of the minimum PCS allocation of 32/16 slots for Falcon-512/1024.
+The original signed15 view has sixteen lanes per coefficient and `32*N` bits
+per signature. Lane 15 of the first 26/27 coefficients holds norm slack; other
+lane-15 entries are zero. Small batches use only `32*N*C` logical bits in the
+norm, source binding, and integer bridge. The shared opening checks that the
+remaining physical allocation is zero. At batch 1 the logical arithmetic
+source is 16,384/32,768 bits instead of 524,288.
+
+At the minimum PCS configuration, one source keeps the original signed15
+coefficients and norm slack in sixteen-bit lanes and allocates `2^19` source
+bits. It has no exception metadata or compact decoding step. Compression
+cannot reduce this allocation, so this path avoids its extra work and
+authenticates the logical source directly with one binary tensor. The opening
+geometry records logical support separately from its physical allocation. Its live
+counts remain 15,386/30,747 bits per signature for Falcon-512/1024.
+
+Above that floor, physical storage separates the low bytes, next four bits,
+and an exception/slack tail. The three sources reduce physical committed
+bits from `32*N*capacity` to `26*N*capacity`, an **18.75% reduction** including
+source padding. This split starts at batch 33 for Falcon-512 and batch 17 for
+Falcon-1024. Its shared opening domain is half the old domain. The tail is
+padded to the shared opener's row size. The compact decoder and shared opening
+bind this storage to the signed15 arithmetic view and constrain unused bits.
+`live_bits_per_signature()` reports worst-case live bits for the
+selected layout; `LIVE_BITS` is the signed15 maximum and `COMPACT_LIVE_BITS`
+is the compact maximum.
+`source_bits_per_signature()` reports the aligned virtual stride, and
+`committed_source_bits()` reports the total physical allocation.
+`capacity()` retains its previous PCS-capacity meaning; `arithmetic_capacity()`,
+`logical_binding_bits()`, and `bridge_layouts()` expose the actual computation.
+
+After binding public inputs, exception metadata, and the source root, the protocol samples a prime
 `2^125 <= p < 2^126`. Ring equations are batched over
-`E = F_12289[theta]/(theta^11 + theta + 14)`. A degree-at-most-1022 quotient
-certificate is fixed before its random non-base-field evaluation point.
-Because `h,t` are public, the evaluated equation is linear in both signature
-components. Eleven bounded integer coordinate carries reduce this claim to
-`F_p`; extension products are completed before lifting canonical coordinates.
+`E = F_12289[theta]/(theta^11 + theta + 14)`. The degree-at-most-`N-1`
+negacyclic residual is evaluated directly at a random non-base-field point
+`alpha`. For each public key, the weights on `s2[j]` are
+`W_j = (h(X)*X^j mod (X^N+1))(alpha)`. They obey the linear-time recurrence
+`W_0 = h(alpha)` and `W_(j+1) = alpha*W_j - (alpha^N+1)*h[N-1-j]`.
+This eliminates the cached quotient polynomials and the batched quotient
+certificate, removing 11,242/22,506 certificate bytes for Falcon-512/1024.
+Eleven bounded integer coordinate carries remain and reduce the linear claim
+to `F_p`; extension products are completed before lifting canonical coordinates.
 
 The integer outer uses independent instance weights and one cubic sumcheck
 of `eq(rho,instance)*S(instance,j)^2`, where S concatenates S1 and S2.
@@ -70,12 +126,50 @@ the prime-field equations represent exact integer equations. Ring conversion
 residuals are below `2^50` for every supported batch. These bounds apply to each
 equation before random batching.
 
-A fresh four-claim merge combines the ring claim, the single norm endpoint, slack,
-and padding. Coefficient index and bit-lane variables are separate: the binder
-evaluates the signed decoder once, aggregates its prefix by witness byte, and
-folds the common decoder before replaying coefficient weights. A streamed sumcheck binds them to one multilinear evaluation of
-the original bits. The existing two-limb BitZ bridge, binary product GKR, binary
-source sumcheck, ring switch, and Ligerito opening authenticate that evaluation.
+A fresh four-claim merge combines the ring claim, the single norm endpoint,
+slack, and padding. The default binds the signed15 view with one streamed
+sumcheck and a two-limb integer bridge, including when physical storage is split.
+The default reduces logical padding for small batches and reuses cached decoder
+weights and streamed byte buckets for larger batches on the measured one- and
+eight-worker configurations. A four-variable prefix keeps a coefficient and
+its spare lane together, halving the dense suffix table relative to a
+three-variable prefix. The prover selects the prefix by public degree, batch
+size and worker count; these computation choices preserve every proof message.
+On Linux/x86-64, the selected four-variable paths combine buckets across up to
+sixteen signatures before expanding the decoder, reducing repeated field
+operations. The group size shrinks to preserve parallel work on smaller batches.
+Other worker counts retain the previous binding strategy.
+
+An experimental compact computation binds three logical planes directly,
+without constructing the original signed15 bit source. It remains disabled by
+default because the measured binding overhead causes proving-time regressions.
+It can be selected only in a `bench-internals` build with
+`BITZ_ARITHMETIC_COMPUTE_VARIANT=combined` (or `compact` to retain old logical
+padding); `padding` selects the default behavior. This is separate from the
+already enabled compact physical storage described above.
+
+| Plane | Logical bits | Bridge row variables |
+|---|---:|---:|
+| Low eight bits | `16*N*C` | 12 |
+| Next four bits | `8*N*C` | 11 |
+| Exceptions and slack | `max(TAIL_STRIDE*C, 65536)` | 10 |
+
+For an exception flag `e` fixed by public metadata, the exact integer decoder is
+
+```text
+s = sum(k=0..10, 2^k*b[k]) - 2048*b[11]
+    + e*(4096*b[11] + 4096*u[0] + 8192*u[1] - 16384*u[2]).
+```
+
+Coefficient weights are shared between the ring and norm reductions and streamed
+through this decoder. All three partial sums are absorbed before any branch
+sumcheck challenge, and their sum must equal the merged target. Each branch
+has its own domain label and BitZ bridge. After all binary bridge claims are
+fixed, a fresh binary-field challenge combines their coefficients and targets
+with weights `[1,zeta,zeta^2]`. The existing joint sumcheck and shared opening
+authenticate all three planes. The generic shared opener retains its previous
+transcript for callers using the original geometry constructor, including full
+Falcon verification.
 SHAKE and HashToPoint proof components are absent; BitZ's own product GKR remains.
 
 The verifier reads the public polynomials and does linear work in their size.
@@ -83,8 +177,13 @@ There is no Orthus-style public-input preprocessing in this interface.
 
 ## Security accounting
 
-The layout, combined integer outer, and allocated grinding schedule are bound
-into the v5 protocol domain; proofs from preceding versions cannot be reused.
+The selected decoder, exception indices, physical geometry, direct ring check,
+logical support, combined integer outer, bridge matrices, and allocated grinding
+schedule are bound into the v8
+protocol domain. Unchanged raw configurations retain their exact v7 transcript;
+`prepared.protocol_id()` reports the effective domain, while `PROTOCOL_ID` names
+the newest protocol. Reduced logical support and compact computation never use
+the v7 domain.
 The five prime-field groups each receive at most `2^(-target-4)`. The degree
 numerators of the prime and binary groups are:
 
@@ -94,16 +193,24 @@ numerators of the prime and binary groups are:
 | Norm instance batching | d | `2^125` |
 | Integer outer sumcheck | 3(11+d) | `2^125` |
 | Four-claim merge | 3 | `2^125` |
-| Bit-source binder | 2(15+d) | `2^125` |
-| BitZ product GKR | 367+40d | `2^128` |
-| Binary source sumcheck | 2(16+d) | `2^128` |
+| Bit-source binder | `2*sum(branch bit logs)` | `2^125` |
+| Each BitZ product GKR | `s + 3*(r*(r-1)/2 + r*s) + r` | `2^128` |
+| Compact binary claim merge | 2 | `2^128` |
+| Binary source sumcheck | 2m | `2^128` |
 | Ring switch | 256 | `2^128` |
 
-Here `d = log2(capacity)`. The native ring identity has error at most
-`(2046+d)/2^149`, and prime sampling requests a 144-bit composite-acceptance
-budget.
+This table uses Falcon-1024 and `d = log2(capacity)`.
+`m = log2(shared opening bit domain)`: it is 20 at the minimum allocation and
+`15+d` in split mode. For a bridge with row log `r` and column log `c`,
+`s=c+1` accounts for its two limbs. Single mode has one binding domain and
+bridge; experimental compact computation has three. The bridge-claim merge is present only in
+compact computation. The native ring identity now has
+error at most `(1023+d)/2^149`, or generally `(N-1+d)/2^149`, because it checks
+the reduced residual directly. Prime sampling requests a 144-bit
+composite-acceptance budget. The allocation is recomputed for the actual
+opening geometry, including its Ligerito challenge blocks.
 
-The three binary groups and every Ligerito challenge block share the remaining
+The binary groups and every Ligerito challenge block share the remaining
 budget `(15/16)*2^-target - fixed`. It is split work-optimally by
 `crate::hybrid::grinding_allocation`, accounting for each group's raw error and
 number of grinding sites. The composition stays at least
@@ -115,8 +222,10 @@ stated separately. No zero-knowledge guarantee is made.
 ## Validation and benchmarking
 
 Unit tests cover exact norm boundaries, non-centered and signed coefficients,
-independent schoolbook negacyclic multiplication, ring carries/certificates,
-norm budget borrowing, inconsistent source bits, padding, malformed proofs,
+independent schoolbook negacyclic multiplication and direct ring weights,
+bounded coordinate carries, exhaustive signed15 decoder reconstruction,
+maximum exception counts, malformed exception metadata, compact/virtual claim
+equivalence, norm budget borrowing, inconsistent source bits, padding, malformed proofs,
 public input changes, configuration replay and original Falcon interoperability.
 Large end-to-end cases for batches 32 and 1024 are explicitly ignored by default.
 
@@ -127,16 +236,23 @@ cargo test --features falcon-hybrid --lib falcon1024_algebraic
 cargo test --release --features falcon-hybrid --lib large_batches_at_both_security_targets -- --ignored
 cargo test --features falcon-hybrid --lib hybrid::integer_bridge
 cargo test --features falcon-hybrid --lib hybrid::joint_sumcheck
-RAYON_NUM_THREADS=4 cargo run --release --features falcon-hybrid --example falcon_algebraic -- --batch 32 --security 128 --threads 4 --warmup 1 --iterations 5
+RAYON_NUM_THREADS=8 cargo run --release --features falcon-hybrid --example falcon_algebraic -- --batch 32 --security 128 --threads 8 --warmup 1 --iterations 5
 ```
 
 The example generates distinct original-Falcon cases using the existing fn-dsa
 benchmark helper. External generation, decoding, and hashing are reported
 separately. Total prover time includes centered-witness reconstruction,
-slack/quotient preparation, commitment and proving. `--trace` exposes component
+slack and compact-source preparation, commitment and proving. `--trace` exposes component
 span timings; omit tracing for timing comparisons. Set `RAYON_NUM_THREADS` and
 `--threads` to the same count so both worker pools agree. Warm-up trials are
 marked separately in the output. Verification uses the configured global pool.
-JSON output reports verification time, stored proof payload,
-source size and Linux process peak RSS. Payload accounting excludes public
+JSON output reports verification time, stored proof payload, physical committed
+source size, aligned virtual arithmetic size and Linux process peak RSS.
+Physical allocation savings and live-bit savings are distinct, and neither is
+a prediction of proving speed. Payload accounting excludes public
 inputs and outer transport framing; this API does not define a proof wire codec.
+
+The [October 2026 performance report](../../../../results/arithmetic-falcon-compact-compute-20261011/README.md)
+preserves the native Linux/x86-64 comparisons at one and eight workers,
+including the slower compact-computation experiments. Performance on other
+hardware and worker counts has not been qualified by that study.

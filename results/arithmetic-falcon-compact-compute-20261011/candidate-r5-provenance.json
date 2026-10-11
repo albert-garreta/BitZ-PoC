@@ -1,0 +1,21 @@
+{
+  "captured_unix": 1791731736.6080017,
+  "source_snapshot": "/tmp/bitz-arithmetic-v8-r5-source-pomfpge1",
+  "source_files": 597,
+  "source_hash_manifest": "candidate-r5-source-sha256.json",
+  "changed_from_r4": [
+    "src/piop/spartan/falcon1024_algebraic/arithmetic.rs",
+    "src/piop/spartan/falcon1024_algebraic/protocol.rs"
+  ],
+  "binary_original": "/tmp/bitz-arithmetic-v8-r5-production-binary",
+  "binary_preserved": "/tmp/bitz-arithmetic-v8-r5-qualification-binary",
+  "sha256": "8a5770bfb9ccdc7c3835af972ccf7b68799c3b02da8d283e68bad2a76ce270f5",
+  "features": [
+    "falcon-hybrid"
+  ],
+  "RUSTFLAGS": "-C target-cpu=native",
+  "build_profile": "native release with default LTO/profile",
+  "root_confirmed_binary_and_go": true,
+  "tests_before_timing": "156 relevant tests passed:97 arithmetic +2 large +54 shared +3 full Falcon",
+  "revision": "Compile-time exclusion of remaining experimental compact module/proof variant/types from production; zero compact_binding symbols."
+}

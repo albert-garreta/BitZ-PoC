@@ -1,0 +1,8 @@
+{"directory": "results/arithmetic-falcon-compact-compute-20261011/r6-batch32/comparisons/padding-vs-v7", "shapes": 4, "bootstrap_replicates": 10000}
+{
+  "verified_proofs": 1024,
+  "unchanged_exact_proofs": 512,
+  "new_layout_proofs": 0,
+  "positive_observed_metrics": 0,
+  "positive_paired_intervals": []
+}

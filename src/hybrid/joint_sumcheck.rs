@@ -151,6 +151,7 @@ fn bind<const N: usize>(
     for log in geometry.logs {
         t.absorb_slice(&(log as u64).to_le_bytes());
     }
+    geometry.bind_allocation(t);
     t.absorb_slice(&grinding_bits.to_le_bytes());
     observe(t, &[target]);
 }
@@ -160,15 +161,7 @@ fn validate<const N: usize>(
     coefficients: [&Coefficients; N],
 ) -> Result<(), Error> {
     // Validate before touching the transcript or allocating a tensor table.
-    let expected = Geometry::new(geometry.logs)?;
-    if geometry.physical_logs != expected.physical_logs
-        || geometry.position_log != expected.position_log
-        || geometry.lane_logs != expected.lane_logs
-        || geometry.virtual_lane_log != expected.virtual_lane_log
-        || geometry.offsets != expected.offsets
-    {
-        return Err(Error::Invalid("joint binary sumcheck geometry"));
-    }
+    geometry.validate()?;
     for (branch, coefficients) in coefficients.into_iter().enumerate() {
         let bits = geometry.logs[branch] + 7;
         for tensor in &coefficients.tensors {
@@ -237,11 +230,14 @@ const POSITION_TILE: usize = 1 << POSITION_TILE_LOG;
 impl TensorState {
     fn new(tensor: &Tensor, packed: &[F], tile_vars: usize) -> Self {
         let consume = 7usize.saturating_sub(tensor.low.len().ilog2() as usize);
-        let extension = eq_table(&tensor.high_point[..consume]);
-        let low: Vec<_> = extension
-            .into_iter()
-            .flat_map(|weight| tensor.low.iter().map(move |&value| weight * value))
-            .collect();
+        let low = if consume == 0 {
+            tensor.low.clone()
+        } else {
+            eq_table(&tensor.high_point[..consume])
+                .into_iter()
+                .flat_map(|weight| tensor.low.iter().map(move |&value| weight * value))
+                .collect()
+        };
         let point = &tensor.high_point[consume..];
         let (high, marginals) = match &tensor.marginals {
             Some(marginals) if low.len() == 128 => {
@@ -417,8 +413,12 @@ impl GatherState {
             // the sparse support once for the tile, rather than twice for
             // every repeated signature in the interval.
             let repeat_log = self.high.len().ilog2() as usize;
-            let first = self.words.partition_point(|&word| word < (range.start >> repeat_log));
-            let end = self.words.partition_point(|&word| word <= ((range.end - 1) >> repeat_log));
+            let first = self
+                .words
+                .partition_point(|&word| word < (range.start >> repeat_log));
+            let end = self
+                .words
+                .partition_point(|&word| word <= ((range.end - 1) >> repeat_log));
             for (&word, &coefficient) in self.words[first..end].iter().zip(&self.low[first..end]) {
                 let base = word << repeat_log;
                 let first_repeat = range.start.saturating_sub(base);
@@ -1753,7 +1753,11 @@ mod tests {
     }
 
     fn check_source_count<const N: usize>(logs: [usize; N]) {
-        let geometry = Geometry::new(logs).unwrap();
+        check_source_geometry(Geometry::new(logs).unwrap());
+    }
+
+    fn check_source_geometry<const N: usize>(geometry: Geometry<N>) {
+        let logs = geometry.logs;
         let mut random = Random(0xdefd317);
         let packed: [Vec<F>; N] = std::array::from_fn(|branch| {
             (0..1 << geometry.physical_logs[branch])
@@ -1786,6 +1790,18 @@ mod tests {
         .unwrap();
         assert_eq!(actual, expected);
         assert_eq!(
+            verify(
+                &mut transcript(false),
+                &geometry,
+                claims,
+                target,
+                0,
+                &actual.0
+            )
+            .unwrap(),
+            actual.1
+        );
+        assert_eq!(
             actual_t.get_challenge::<u128>(),
             reference.get_challenge::<u128>()
         );
@@ -1795,6 +1811,42 @@ mod tests {
     fn compact_lane_sumcheck_supports_one_and_four_sources() {
         check_source_count([9]);
         check_source_count([9, 10, 9, 12]);
+    }
+
+    #[test]
+    fn logical_logs_below_allocation_match_the_full_physical_oracle() {
+        // The fixture fills physical padding with nonzero words. The initial
+        // weighted claim omits them, but the final witness evaluation must not.
+        check_source_geometry(Geometry::with_allocation_logs([7], [12]).unwrap());
+        check_source_geometry(Geometry::with_allocation_logs([8], [12]).unwrap());
+        check_source_geometry(Geometry::with_allocation_logs([7, 8], [12, 12]).unwrap());
+    }
+
+    #[test]
+    fn default_geometry_keeps_binding_and_explicit_allocations_are_validated() {
+        let target = F { lo: 37, hi: 19 };
+        let geometry = Geometry::new([9, 13]).unwrap();
+        let explicit = Geometry::with_allocation_logs([9, 13], [9, 13]).unwrap();
+        let mut original = transcript(false);
+        original.absorb_slice(b"bitz/falcon/joint-binary-sumcheck/v1");
+        for log in [9_u64, 13] {
+            original.absorb_slice(&log.to_le_bytes());
+        }
+        original.absorb_slice(&0_u32.to_le_bytes());
+        observe(&mut original, &[target]);
+        let challenge = original.get_challenge::<u128>();
+        for candidate in [&geometry, &explicit] {
+            let mut t = transcript(false);
+            bind(&mut t, candidate, target, 0);
+            assert_eq!(t.get_challenge::<u128>(), challenge);
+        }
+        let coefficients = Coefficients::default();
+        let mut invalid = Geometry::with_allocation_logs([7], [12]).unwrap();
+        invalid.allocation_logs[0] = 11;
+        assert!(validate(&invalid, [&coefficients]).is_err());
+        invalid = Geometry::with_allocation_logs([7], [12]).unwrap();
+        invalid.offsets[0] = 8;
+        assert!(validate(&invalid, [&coefficients]).is_err());
     }
 
     #[test]

@@ -1,0 +1,23 @@
+{
+  "captured_unix": 1791733816.2093124,
+  "source_snapshot": "/tmp/bitz-arithmetic-group-controls-source-2r0x1h_2",
+  "source_files": 597,
+  "source_hash_manifest": "grouped-controls-source-sha256.json",
+  "changed_from_r6": [
+    "src/piop/spartan/falcon1024_algebraic/arithmetic.rs"
+  ],
+  "candidate_binary_pending": false,
+  "features": [
+    "falcon-hybrid",
+    "bench-internals"
+  ],
+  "RUSTFLAGS": "-C target-cpu=native",
+  "revision": "Raw arithmetic grouped byte-pair adapter and benchmark-only cap1/8/16 override, with R6 production strategy unchanged.",
+  "binary_original": "/tmp/bitz-arithmetic-group-controls-binary",
+  "binary_preserved": "/tmp/bitz-arithmetic-group-controls-pilot-binary",
+  "sha256": "7065113a64372161bdff6a4fe13cbff38dc34d23c4be4f799f4642c9229c3151",
+  "source_reverified_unix": 1791733995.356409,
+  "source_reverification_changes": [],
+  "root_confirmed_binary_and_go": true,
+  "tests_before_timing": "160 targeted tests passed:101 arithmetic+2 large+54 shared+3 full Falcon"
+}

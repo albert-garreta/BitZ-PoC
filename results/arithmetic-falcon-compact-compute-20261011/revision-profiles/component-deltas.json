@@ -1,0 +1,908 @@
+[
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "delta": {
+      "commit": {
+        "falcon_algebraic:witness": {
+          "baseline_us": 1021.0115,
+          "candidate_us": 986.3805,
+          "delta_us": -34.630999999999965
+        },
+        "packing_and_commit_ms": {
+          "baseline_us": 149.9194999999999,
+          "candidate_us": 149.98900000000015,
+          "delta_us": 0.06950000000022216
+        },
+        "total_ms": {
+          "baseline_us": 1172.4425,
+          "candidate_us": 1136.3995,
+          "delta_us": -36.04300000000005
+        }
+      },
+      "prove": {
+        "falcon_algebraic:arithmetic": {
+          "baseline_us": 5805.0705,
+          "candidate_us": 5920.654,
+          "delta_us": 115.5835000000005
+        },
+        "falcon_algebraic:binding": {
+          "baseline_us": 4703.050499999999,
+          "candidate_us": 4809.507500000001,
+          "delta_us": 106.45700000000069
+        },
+        "falcon_algebraic:binding_construction": {
+          "baseline_us": 328.24600000000004,
+          "candidate_us": 328.59099999999995,
+          "delta_us": 0.3449999999999287
+        },
+        "falcon_algebraic:binding_evaluation": {
+          "baseline_us": 189.12250000000003,
+          "candidate_us": 192.7295,
+          "delta_us": 3.6069999999999713
+        },
+        "falcon_algebraic:bitz": {
+          "baseline_us": 8704.0335,
+          "candidate_us": 8695.738500000001,
+          "delta_us": -8.294999999998609
+        },
+        "falcon_algebraic:integer_outer": {
+          "baseline_us": 1074.177,
+          "candidate_us": 1079.8925000000002,
+          "delta_us": 5.7155000000002065
+        },
+        "falcon_algebraic:pcs": {
+          "baseline_us": 1155.1905,
+          "candidate_us": 1168.2845,
+          "delta_us": 13.093999999999939
+        },
+        "falcon_algebraic:prime": {
+          "baseline_us": 178.27749999999997,
+          "candidate_us": 178.84850000000003,
+          "delta_us": 0.5710000000000437
+        },
+        "falcon_algebraic:ring": {
+          "baseline_us": 841.6315000000001,
+          "candidate_us": 843.0645000000001,
+          "delta_us": 1.4330000000000176
+        },
+        "falcon_algebraic_ring:carries": {
+          "baseline_us": 24.216,
+          "candidate_us": 23.6395,
+          "delta_us": -0.5765000000000007
+        },
+        "falcon_algebraic_ring:collapse": {
+          "baseline_us": 541.7645,
+          "candidate_us": 542.8165,
+          "delta_us": 1.052000000000053
+        },
+        "falcon_algebraic_ring:coordinates": {
+          "baseline_us": 172.461,
+          "candidate_us": 173.208,
+          "delta_us": 0.7469999999999977
+        },
+        "falcon_algebraic_ring:prove": {
+          "baseline_us": 826.7635,
+          "candidate_us": 828.1015000000001,
+          "delta_us": 1.3380000000000614
+        },
+        "falcon_bridge:column_packing": {
+          "baseline_us": 25.2775,
+          "candidate_us": 25.377999999999997,
+          "delta_us": 0.10049999999999643
+        },
+        "falcon_bridge:integer_folds": {
+          "baseline_us": 136.56799999999998,
+          "candidate_us": 136.1775,
+          "delta_us": -0.3904999999999881
+        },
+        "falcon_bridge:power_tables": {
+          "baseline_us": 354.9115,
+          "candidate_us": 356.1685,
+          "delta_us": 1.257000000000008
+        },
+        "falcon_bridge:wfbitz_forest": {
+          "baseline_us": 8018.456499999999,
+          "candidate_us": 8010.477,
+          "delta_us": -7.979499999999362
+        },
+        "falcon_integer:coefficients": {
+          "baseline_us": 155.73399999999998,
+          "candidate_us": 158.758,
+          "delta_us": 3.0240000000000267
+        },
+        "falcon_integer:fold": {
+          "baseline_us": 279.59849999999994,
+          "candidate_us": 280.349,
+          "delta_us": 0.7505000000000428
+        },
+        "falcon_joint:compact": {
+          "baseline_us": 35.211,
+          "candidate_us": 34.88099999999999,
+          "delta_us": -0.3300000000000039
+        },
+        "falcon_joint:dense": {
+          "baseline_us": 4.5440000000000005,
+          "candidate_us": 4.718,
+          "delta_us": 0.17399999999999968
+        },
+        "falcon_joint:packed_setup": {
+          "baseline_us": 117.4575,
+          "candidate_us": 117.392,
+          "delta_us": -0.06549999999999612
+        },
+        "falcon_joint:prepare": {
+          "baseline_us": 52.650000000000006,
+          "candidate_us": 52.845000000000006,
+          "delta_us": 0.19500000000000073
+        },
+        "inner_packed:fold_tail": {
+          "baseline_us": 1346.618,
+          "candidate_us": 1443.5205,
+          "delta_us": 96.90250000000012
+        },
+        "inner_packed:prefix_accumulators": {
+          "baseline_us": 1209.8735000000001,
+          "candidate_us": 1214.703,
+          "delta_us": 4.829500000000042
+        },
+        "inner_packed:prepare_tail": {
+          "baseline_us": 1205.786,
+          "candidate_us": 1207.5139999999997,
+          "delta_us": 1.7279999999997298
+        },
+        "lig:grind_pow": {
+          "baseline_us": 5.325,
+          "candidate_us": 5.41,
+          "delta_us": 0.085
+        },
+        "op:extra_bases": {
+          "baseline_us": 146.427,
+          "candidate_us": 146.467,
+          "delta_us": 0.04000000000001225
+        },
+        "op:ligerito": {
+          "baseline_us": 836.988,
+          "candidate_us": 843.1445,
+          "delta_us": 6.156499999999898
+        },
+        "op:ring_switch": {
+          "baseline_us": 126.5345,
+          "candidate_us": 133.202,
+          "delta_us": 6.667499999999993
+        },
+        "other_including_joint_ms": {
+          "baseline_us": 1245.2954999999993,
+          "candidate_us": 1242.4555000000003,
+          "delta_us": -2.8399999999990655
+        },
+        "total_ms": {
+          "baseline_us": 17749.8145,
+          "candidate_us": 17882.334499999997,
+          "delta_us": 132.51999999999953
+        }
+      },
+      "verify": {
+        "falcon_algebraic:binding_construction": {
+          "baseline_us": 328.747,
+          "candidate_us": 328.421,
+          "delta_us": -0.32599999999999296
+        },
+        "falcon_algebraic:binding_evaluation": {
+          "baseline_us": 187.705,
+          "candidate_us": 191.332,
+          "delta_us": 3.6269999999999913
+        },
+        "falcon_algebraic:prime": {
+          "baseline_us": 179.179,
+          "candidate_us": 179.8255,
+          "delta_us": 0.6464999999999943
+        },
+        "falcon_algebraic_ring:collapse": {
+          "baseline_us": 538.2185000000001,
+          "candidate_us": 538.6039999999999,
+          "delta_us": 0.38549999999992757
+        },
+        "falcon_algebraic_ring:coordinates": {
+          "baseline_us": 171.575,
+          "candidate_us": 171.8145,
+          "delta_us": 0.23950000000003135
+        },
+        "falcon_algebraic_ring:verify": {
+          "baseline_us": 772.421,
+          "candidate_us": 774.3050000000001,
+          "delta_us": 1.8839999999999968
+        },
+        "total_ms": {
+          "baseline_us": 3784.5734999999995,
+          "candidate_us": 3800.078,
+          "delta_us": 15.504500000000476
+        }
+      }
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 1,
+    "delta": {
+      "commit": {
+        "falcon_algebraic:witness": {
+          "baseline_us": 1047.406,
+          "candidate_us": 992.7085,
+          "delta_us": -54.69750000000006
+        },
+        "packing_and_commit_ms": {
+          "baseline_us": 151.22100000000006,
+          "candidate_us": 151.81249999999991,
+          "delta_us": 0.591499999999856
+        },
+        "total_ms": {
+          "baseline_us": 1198.2265,
+          "candidate_us": 1144.685,
+          "delta_us": -53.54150000000013
+        }
+      },
+      "prove": {
+        "falcon_algebraic:arithmetic": {
+          "baseline_us": 7477.724,
+          "candidate_us": 7561.413,
+          "delta_us": 83.68899999999968
+        },
+        "falcon_algebraic:binding": {
+          "baseline_us": 5533.080999999999,
+          "candidate_us": 5594.1665,
+          "delta_us": 61.08550000000079
+        },
+        "falcon_algebraic:binding_construction": {
+          "baseline_us": 329.3875,
+          "candidate_us": 331.2365,
+          "delta_us": 1.8489999999999895
+        },
+        "falcon_algebraic:binding_evaluation": {
+          "baseline_us": 189.689,
+          "candidate_us": 194.76349999999996,
+          "delta_us": 5.074499999999982
+        },
+        "falcon_algebraic:bitz": {
+          "baseline_us": 13257.497000000001,
+          "candidate_us": 13338.755,
+          "delta_us": 81.25799999999828
+        },
+        "falcon_algebraic:integer_outer": {
+          "baseline_us": 1915.2075,
+          "candidate_us": 1933.833,
+          "delta_us": 18.625500000000184
+        },
+        "falcon_algebraic:pcs": {
+          "baseline_us": 2527.0905,
+          "candidate_us": 2551.6365,
+          "delta_us": 24.545999999999957
+        },
+        "falcon_algebraic:prime": {
+          "baseline_us": 137.931,
+          "candidate_us": 137.61499999999998,
+          "delta_us": -0.3160000000000107
+        },
+        "falcon_algebraic:ring": {
+          "baseline_us": 863.6535,
+          "candidate_us": 865.4124999999999,
+          "delta_us": 1.758999999999955
+        },
+        "falcon_algebraic_ring:carries": {
+          "baseline_us": 23.6395,
+          "candidate_us": 24.892,
+          "delta_us": 1.2525000000000002
+        },
+        "falcon_algebraic_ring:collapse": {
+          "baseline_us": 545.6775,
+          "candidate_us": 544.6655000000001,
+          "delta_us": -1.012000000000013
+        },
+        "falcon_algebraic_ring:coordinates": {
+          "baseline_us": 172.72650000000002,
+          "candidate_us": 174.084,
+          "delta_us": 1.3575000000000115
+        },
+        "falcon_algebraic_ring:prove": {
+          "baseline_us": 848.66,
+          "candidate_us": 849.7924999999999,
+          "delta_us": 1.1324999999999807
+        },
+        "falcon_bridge:column_packing": {
+          "baseline_us": 25.438,
+          "candidate_us": 25.608,
+          "delta_us": 0.17
+        },
+        "falcon_bridge:integer_folds": {
+          "baseline_us": 140.185,
+          "candidate_us": 139.89000000000001,
+          "delta_us": -0.2949999999999897
+        },
+        "falcon_bridge:power_tables": {
+          "baseline_us": 355.67799999999994,
+          "candidate_us": 356.6745,
+          "delta_us": 0.9965000000000668
+        },
+        "falcon_bridge:wfbitz_forest": {
+          "baseline_us": 12555.057999999999,
+          "candidate_us": 12631.643,
+          "delta_us": 76.58500000000146
+        },
+        "falcon_integer:coefficients": {
+          "baseline_us": 156.37,
+          "candidate_us": 160.665,
+          "delta_us": 4.294999999999993
+        },
+        "falcon_integer:fold": {
+          "baseline_us": 281.346,
+          "candidate_us": 281.42599999999993,
+          "delta_us": 0.07999999999996898
+        },
+        "falcon_joint:compact": {
+          "baseline_us": 34.94,
+          "candidate_us": 36.578,
+          "delta_us": 1.6380000000000006
+        },
+        "falcon_joint:dense": {
+          "baseline_us": 4.718,
+          "candidate_us": 4.594,
+          "delta_us": -0.12399999999999997
+        },
+        "falcon_joint:packed_setup": {
+          "baseline_us": 117.0115,
+          "candidate_us": 117.78250000000001,
+          "delta_us": 0.7710000000000078
+        },
+        "falcon_joint:prepare": {
+          "baseline_us": 52.9305,
+          "candidate_us": 55.3245,
+          "delta_us": 2.3939999999999935
+        },
+        "inner_packed:fold_tail": {
+          "baseline_us": 1360.0084999999997,
+          "candidate_us": 1388.1545,
+          "delta_us": 28.14600000000045
+        },
+        "inner_packed:prefix_accumulators": {
+          "baseline_us": 1212.243,
+          "candidate_us": 1219.592,
+          "delta_us": 7.34900000000005
+        },
+        "inner_packed:prepare_tail": {
+          "baseline_us": 1205.891,
+          "candidate_us": 1215.364,
+          "delta_us": 9.473000000000065
+        },
+        "lig:grind_pow": {
+          "baseline_us": 596.0065,
+          "candidate_us": 602.3700000000001,
+          "delta_us": 6.363500000000077
+        },
+        "op:extra_bases": {
+          "baseline_us": 164.466,
+          "candidate_us": 166.36950000000002,
+          "delta_us": 1.9035000000000024
+        },
+        "op:ligerito": {
+          "baseline_us": 2170.395,
+          "candidate_us": 2187.6025,
+          "delta_us": 17.207500000000042
+        },
+        "op:ring_switch": {
+          "baseline_us": 146.4065,
+          "candidate_us": 152.53850000000003,
+          "delta_us": 6.132000000000026
+        },
+        "other_including_joint_ms": {
+          "baseline_us": 1577.1080000000009,
+          "candidate_us": 1595.7535000000007,
+          "delta_us": 18.64549999999987
+        },
+        "spartan:grinding": {
+          "baseline_us": 2481.2279999999996,
+          "candidate_us": 2505.8605,
+          "delta_us": 24.632500000000057
+        },
+        "total_ms": {
+          "baseline_us": 25713.722999999998,
+          "candidate_us": 25940.542,
+          "delta_us": 226.81900000000255
+        }
+      },
+      "verify": {
+        "falcon_algebraic:binding_construction": {
+          "baseline_us": 329.1025,
+          "candidate_us": 330.74550000000005,
+          "delta_us": 1.6430000000000056
+        },
+        "falcon_algebraic:binding_evaluation": {
+          "baseline_us": 188.6815,
+          "candidate_us": 193.436,
+          "delta_us": 4.754499999999995
+        },
+        "falcon_algebraic:prime": {
+          "baseline_us": 137.8305,
+          "candidate_us": 137.671,
+          "delta_us": -0.15950000000000686
+        },
+        "falcon_algebraic_ring:collapse": {
+          "baseline_us": 538.9889999999999,
+          "candidate_us": 541.6045,
+          "delta_us": 2.615500000000104
+        },
+        "falcon_algebraic_ring:coordinates": {
+          "baseline_us": 171.87,
+          "candidate_us": 172.787,
+          "delta_us": 0.9170000000000011
+        },
+        "falcon_algebraic_ring:verify": {
+          "baseline_us": 771.6244999999999,
+          "candidate_us": 774.9855000000001,
+          "delta_us": 3.3610000000001694
+        },
+        "total_ms": {
+          "baseline_us": 4319.1895,
+          "candidate_us": 4339.378,
+          "delta_us": 20.18849999999972
+        }
+      }
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "delta": {
+      "commit": {
+        "falcon_algebraic:witness": {
+          "baseline_us": 2949.6595,
+          "candidate_us": 2949.484,
+          "delta_us": -0.17550000000010613
+        },
+        "packing_and_commit_ms": {
+          "baseline_us": 284.4785000000003,
+          "candidate_us": 306.4245000000001,
+          "delta_us": 21.9459999999998
+        },
+        "total_ms": {
+          "baseline_us": 3234.027,
+          "candidate_us": 3256.3395,
+          "delta_us": 22.312499999999957
+        }
+      },
+      "prove": {
+        "falcon_algebraic:arithmetic": {
+          "baseline_us": 9605.0535,
+          "candidate_us": 9761.5935,
+          "delta_us": 156.53999999999968
+        },
+        "falcon_algebraic:binding": {
+          "baseline_us": 8072.4045000000015,
+          "candidate_us": 8239.8605,
+          "delta_us": 167.45599999999962
+        },
+        "falcon_algebraic:binding_construction": {
+          "baseline_us": 656.737,
+          "candidate_us": 656.0905,
+          "delta_us": -0.6464999999999943
+        },
+        "falcon_algebraic:binding_evaluation": {
+          "baseline_us": 382.44800000000004,
+          "candidate_us": 381.82700000000006,
+          "delta_us": -0.6209999999999827
+        },
+        "falcon_algebraic:bitz": {
+          "baseline_us": 10492.8225,
+          "candidate_us": 10500.210500000001,
+          "delta_us": 7.388000000000616
+        },
+        "falcon_algebraic:integer_outer": {
+          "baseline_us": 1505.6125,
+          "candidate_us": 1493.42,
+          "delta_us": -12.19250000000005
+        },
+        "falcon_algebraic:pcs": {
+          "baseline_us": 1249.7585,
+          "candidate_us": 1247.194,
+          "delta_us": -2.5645000000000806
+        },
+        "falcon_algebraic:prime": {
+          "baseline_us": 142.324,
+          "candidate_us": 141.5625,
+          "delta_us": -0.7614999999999983
+        },
+        "falcon_algebraic:ring": {
+          "baseline_us": 1562.9315,
+          "candidate_us": 1558.027,
+          "delta_us": -4.904499999999867
+        },
+        "falcon_algebraic_ring:carries": {
+          "baseline_us": 46.207,
+          "candidate_us": 46.282500000000006,
+          "delta_us": 0.07550000000000612
+        },
+        "falcon_algebraic_ring:collapse": {
+          "baseline_us": 1078.9564999999998,
+          "candidate_us": 1074.7279999999998,
+          "delta_us": -4.228499999999968
+        },
+        "falcon_algebraic_ring:coordinates": {
+          "baseline_us": 329.994,
+          "candidate_us": 330.8505,
+          "delta_us": 0.8564999999999823
+        },
+        "falcon_algebraic_ring:prove": {
+          "baseline_us": 1548.1285,
+          "candidate_us": 1543.104,
+          "delta_us": -5.024499999999987
+        },
+        "falcon_bridge:column_packing": {
+          "baseline_us": 57.85,
+          "candidate_us": 57.423500000000004,
+          "delta_us": -0.4264999999999963
+        },
+        "falcon_bridge:integer_folds": {
+          "baseline_us": 213.1285,
+          "candidate_us": 211.65499999999997,
+          "delta_us": -1.4735000000000165
+        },
+        "falcon_bridge:power_tables": {
+          "baseline_us": 356.5545,
+          "candidate_us": 354.4705,
+          "delta_us": -2.0839999999999748
+        },
+        "falcon_bridge:wfbitz_forest": {
+          "baseline_us": 9688.2405,
+          "candidate_us": 9699.377,
+          "delta_us": 11.136500000000993
+        },
+        "falcon_integer:coefficients": {
+          "baseline_us": 282.686,
+          "candidate_us": 272.92150000000004,
+          "delta_us": -9.764499999999954
+        },
+        "falcon_integer:fold": {
+          "baseline_us": 541.0445,
+          "candidate_us": 538.1574999999999,
+          "delta_us": -2.886999999999973
+        },
+        "falcon_joint:compact": {
+          "baseline_us": 30.1865,
+          "candidate_us": 29.746000000000002,
+          "delta_us": -0.44049999999999645
+        },
+        "falcon_joint:dense": {
+          "baseline_us": 7.455,
+          "candidate_us": 7.409,
+          "delta_us": -0.046000000000000034
+        },
+        "falcon_joint:packed_setup": {
+          "baseline_us": 165.909,
+          "candidate_us": 165.64849999999998,
+          "delta_us": -0.2605000000000246
+        },
+        "falcon_joint:prepare": {
+          "baseline_us": 76.159,
+          "candidate_us": 76.0035,
+          "delta_us": -0.15550000000000286
+        },
+        "inner_packed:fold_tail": {
+          "baseline_us": 2731.2515,
+          "candidate_us": 2893.55,
+          "delta_us": 162.29850000000033
+        },
+        "inner_packed:prefix_accumulators": {
+          "baseline_us": 1451.1750000000002,
+          "candidate_us": 1460.5525,
+          "delta_us": 9.377499999999817
+        },
+        "inner_packed:prepare_tail": {
+          "baseline_us": 2402.2639999999997,
+          "candidate_us": 2407.2329999999997,
+          "delta_us": 4.969000000000001
+        },
+        "lig:grind_pow": {
+          "baseline_us": 5.1594999999999995,
+          "candidate_us": 5.214999999999999,
+          "delta_us": 0.055499999999999994
+        },
+        "op:extra_bases": {
+          "baseline_us": 144.1925,
+          "candidate_us": 144.2325,
+          "delta_us": 0.03999999999998449
+        },
+        "op:ligerito": {
+          "baseline_us": 864.5604999999999,
+          "candidate_us": 867.9565,
+          "delta_us": 3.3960000000000656
+        },
+        "op:ring_switch": {
+          "baseline_us": 196.14100000000002,
+          "candidate_us": 188.25599999999997,
+          "delta_us": -7.885000000000031
+        },
+        "other_including_joint_ms": {
+          "baseline_us": 1486.8339999999982,
+          "candidate_us": 1486.1770000000015,
+          "delta_us": -0.656999999996799
+        },
+        "total_ms": {
+          "baseline_us": 24394.773,
+          "candidate_us": 24557.631,
+          "delta_us": 162.85799999999995
+        }
+      },
+      "verify": {
+        "falcon_algebraic:binding_construction": {
+          "baseline_us": 657.0825,
+          "candidate_us": 655.049,
+          "delta_us": -2.0335000000000214
+        },
+        "falcon_algebraic:binding_evaluation": {
+          "baseline_us": 380.90599999999995,
+          "candidate_us": 380.675,
+          "delta_us": -0.23099999999998122
+        },
+        "falcon_algebraic:prime": {
+          "baseline_us": 141.848,
+          "candidate_us": 142.014,
+          "delta_us": 0.16599999999999948
+        },
+        "falcon_algebraic_ring:collapse": {
+          "baseline_us": 1071.5515,
+          "candidate_us": 1072.504,
+          "delta_us": 0.9524999999999118
+        },
+        "falcon_algebraic_ring:coordinates": {
+          "baseline_us": 327.24399999999997,
+          "candidate_us": 326.412,
+          "delta_us": -0.8319999999999994
+        },
+        "falcon_algebraic_ring:verify": {
+          "baseline_us": 1463.408,
+          "candidate_us": 1462.8774999999998,
+          "delta_us": -0.5304999999999893
+        },
+        "total_ms": {
+          "baseline_us": 5256.508,
+          "candidate_us": 5258.8425,
+          "delta_us": 2.334499999999906
+        }
+      }
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 1,
+    "delta": {
+      "commit": {
+        "falcon_algebraic:witness": {
+          "baseline_us": 2951.8335,
+          "candidate_us": 2936.2785000000003,
+          "delta_us": -15.554999999999986
+        },
+        "packing_and_commit_ms": {
+          "baseline_us": 283.9119999999997,
+          "candidate_us": 305.9585,
+          "delta_us": 22.0465000000003
+        },
+        "total_ms": {
+          "baseline_us": 3237.6490000000003,
+          "candidate_us": 3242.5185,
+          "delta_us": 4.86949999999986
+        }
+      },
+      "prove": {
+        "falcon_algebraic:arithmetic": {
+          "baseline_us": 11347.589,
+          "candidate_us": 11408.4845,
+          "delta_us": 60.89550000000088
+        },
+        "falcon_algebraic:binding": {
+          "baseline_us": 8926.64,
+          "candidate_us": 9002.963999999998,
+          "delta_us": 76.32399999999961
+        },
+        "falcon_algebraic:binding_construction": {
+          "baseline_us": 657.208,
+          "candidate_us": 657.659,
+          "delta_us": 0.4509999999999792
+        },
+        "falcon_algebraic:binding_evaluation": {
+          "baseline_us": 382.24800000000005,
+          "candidate_us": 382.86949999999996,
+          "delta_us": 0.6214999999999415
+        },
+        "falcon_algebraic:bitz": {
+          "baseline_us": 15589.552999999998,
+          "candidate_us": 15595.619,
+          "delta_us": 6.066000000002347
+        },
+        "falcon_algebraic:integer_outer": {
+          "baseline_us": 2392.1045000000004,
+          "candidate_us": 2379.5159999999996,
+          "delta_us": -12.588500000000558
+        },
+        "falcon_algebraic:pcs": {
+          "baseline_us": 2706.3044999999997,
+          "candidate_us": 2707.0005,
+          "delta_us": 0.6960000000000299
+        },
+        "falcon_algebraic:prime": {
+          "baseline_us": 185.315,
+          "candidate_us": 182.1445,
+          "delta_us": -3.1705000000000205
+        },
+        "falcon_algebraic:ring": {
+          "baseline_us": 1582.4285,
+          "candidate_us": 1583.58,
+          "delta_us": 1.151499999999972
+        },
+        "falcon_algebraic_ring:carries": {
+          "baseline_us": 46.25750000000001,
+          "candidate_us": 46.247499999999995,
+          "delta_us": -0.010000000000010001
+        },
+        "falcon_algebraic_ring:collapse": {
+          "baseline_us": 1076.8819999999998,
+          "candidate_us": 1075.2935,
+          "delta_us": -1.5884999999999927
+        },
+        "falcon_algebraic_ring:coordinates": {
+          "baseline_us": 328.6515,
+          "candidate_us": 329.3625,
+          "delta_us": 0.7110000000000172
+        },
+        "falcon_algebraic_ring:prove": {
+          "baseline_us": 1567.044,
+          "candidate_us": 1568.2765000000002,
+          "delta_us": 1.2324999999999697
+        },
+        "falcon_bridge:column_packing": {
+          "baseline_us": 58.06,
+          "candidate_us": 58.11,
+          "delta_us": 0.05000000000000143
+        },
+        "falcon_bridge:integer_folds": {
+          "baseline_us": 213.3435,
+          "candidate_us": 213.7545,
+          "delta_us": 0.4109999999999947
+        },
+        "falcon_bridge:power_tables": {
+          "baseline_us": 356.35850000000005,
+          "candidate_us": 355.51700000000005,
+          "delta_us": -0.841499999999995
+        },
+        "falcon_bridge:wfbitz_forest": {
+          "baseline_us": 14771.2095,
+          "candidate_us": 14776.960500000001,
+          "delta_us": 5.751000000000062
+        },
+        "falcon_integer:coefficients": {
+          "baseline_us": 283.11949999999996,
+          "candidate_us": 267.8965,
+          "delta_us": -15.222999999999987
+        },
+        "falcon_integer:fold": {
+          "baseline_us": 542.8504999999999,
+          "candidate_us": 541.0585,
+          "delta_us": -1.7919999999999048
+        },
+        "falcon_joint:compact": {
+          "baseline_us": 29.9215,
+          "candidate_us": 30.0275,
+          "delta_us": 0.10599999999999846
+        },
+        "falcon_joint:dense": {
+          "baseline_us": 7.322499999999999,
+          "candidate_us": 7.273,
+          "delta_us": -0.0494999999999992
+        },
+        "falcon_joint:packed_setup": {
+          "baseline_us": 166.33399999999997,
+          "candidate_us": 165.7335,
+          "delta_us": -0.600499999999976
+        },
+        "falcon_joint:prepare": {
+          "baseline_us": 76.42450000000001,
+          "candidate_us": 76.16400000000002,
+          "delta_us": -0.26049999999999685
+        },
+        "inner_packed:fold_tail": {
+          "baseline_us": 2707.2814999999996,
+          "candidate_us": 2767.9770000000003,
+          "delta_us": 60.69550000000046
+        },
+        "inner_packed:prefix_accumulators": {
+          "baseline_us": 1456.6555,
+          "candidate_us": 1460.7135,
+          "delta_us": 4.057999999999895
+        },
+        "inner_packed:prepare_tail": {
+          "baseline_us": 2401.4375,
+          "candidate_us": 2406.9075,
+          "delta_us": 5.469999999999864
+        },
+        "lig:grind_pow": {
+          "baseline_us": 651.1914999999999,
+          "candidate_us": 649.9705,
+          "delta_us": -1.2209999999999166
+        },
+        "op:extra_bases": {
+          "baseline_us": 171.1085,
+          "candidate_us": 170.958,
+          "delta_us": -0.15049999999999786
+        },
+        "op:ligerito": {
+          "baseline_us": 2276.771,
+          "candidate_us": 2284.0499999999997,
+          "delta_us": 7.278999999999591
+        },
+        "op:ring_switch": {
+          "baseline_us": 213.48899999999998,
+          "candidate_us": 205.7095,
+          "delta_us": -7.779499999999995
+        },
+        "other_including_joint_ms": {
+          "baseline_us": 1910.7999999999984,
+          "candidate_us": 1887.1944999999996,
+          "delta_us": -23.605499999998614
+        },
+        "spartan:grinding": {
+          "baseline_us": 2956.4875,
+          "candidate_us": 2959.6495000000004,
+          "delta_us": 3.162000000000109
+        },
+        "total_ms": {
+          "baseline_us": 33157.00699999999,
+          "candidate_us": 33189.5885,
+          "delta_us": 32.58150000000626
+        }
+      },
+      "verify": {
+        "falcon_algebraic:binding_construction": {
+          "baseline_us": 656.7025,
+          "candidate_us": 656.1815,
+          "delta_us": -0.5209999999999937
+        },
+        "falcon_algebraic:binding_evaluation": {
+          "baseline_us": 382.869,
+          "candidate_us": 382.49850000000004,
+          "delta_us": -0.37049999999999583
+        },
+        "falcon_algebraic:prime": {
+          "baseline_us": 182.891,
+          "candidate_us": 182.69050000000001,
+          "delta_us": -0.20049999999999235
+        },
+        "falcon_algebraic_ring:collapse": {
+          "baseline_us": 1076.3305,
+          "candidate_us": 1073.064,
+          "delta_us": -3.266500000000061
+        },
+        "falcon_algebraic_ring:coordinates": {
+          "baseline_us": 329.453,
+          "candidate_us": 326.95799999999997,
+          "delta_us": -2.495000000000025
+        },
+        "falcon_algebraic_ring:verify": {
+          "baseline_us": 1474.99,
+          "candidate_us": 1469.004,
+          "delta_us": -5.986000000000047
+        },
+        "total_ms": {
+          "baseline_us": 5909.442999999999,
+          "candidate_us": 5876.9214999999995,
+          "delta_us": -32.52149999999965
+        }
+      }
+    }
+  }
+]

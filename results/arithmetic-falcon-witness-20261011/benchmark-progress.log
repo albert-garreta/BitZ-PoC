@@ -1,0 +1,128 @@
+baseline-n512-s100-b32-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 17.466951, "proof_payload_bytes": 94354}
+candidate-n512-s100-b32-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 18.324884, "proof_payload_bytes": 83400}
+candidate-n512-s100-b32-t1-seed43
+{"variant": "candidate", "total_prover_ms_median": 18.115348, "proof_payload_bytes": 82888}
+baseline-n512-s100-b32-t1-seed43
+{"variant": "baseline", "total_prover_ms_median": 17.576058, "proof_payload_bytes": 94514}
+baseline-n512-s100-b32-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 5.547898, "proof_payload_bytes": 94354}
+candidate-n512-s100-b32-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 5.901466999999999, "proof_payload_bytes": 83400}
+candidate-n512-s100-b32-t8-seed43
+{"variant": "candidate", "total_prover_ms_median": 5.914911999999999, "proof_payload_bytes": 82888}
+baseline-n512-s100-b32-t8-seed43
+{"variant": "baseline", "total_prover_ms_median": 5.6241829999999995, "proof_payload_bytes": 94514}
+baseline-n512-s100-b1024-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 270.27723199999997, "proof_payload_bytes": 225338}
+candidate-n512-s100-b1024-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 275.78591600000004, "proof_payload_bytes": 216368}
+candidate-n512-s100-b1024-t1-seed43
+{"variant": "candidate", "total_prover_ms_median": 273.909635, "proof_payload_bytes": 216496}
+baseline-n512-s100-b1024-t1-seed43
+{"variant": "baseline", "total_prover_ms_median": 270.16141300000004, "proof_payload_bytes": 226714}
+baseline-n512-s100-b1024-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 54.989071, "proof_payload_bytes": 225338}
+candidate-n512-s100-b1024-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 58.430634000000005, "proof_payload_bytes": 216368}
+candidate-n512-s100-b1024-t8-seed43
+{"variant": "candidate", "total_prover_ms_median": 57.932921, "proof_payload_bytes": 216496}
+baseline-n512-s100-b1024-t8-seed43
+{"variant": "baseline", "total_prover_ms_median": 54.797658, "proof_payload_bytes": 226714}
+baseline-n512-s128-b32-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 20.875840999999998, "proof_payload_bytes": 112010}
+candidate-n512-s128-b32-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 21.416264, "proof_payload_bytes": 100864}
+candidate-n512-s128-b32-t1-seed43
+{"variant": "candidate", "total_prover_ms_median": 21.479394, "proof_payload_bytes": 100576}
+baseline-n512-s128-b32-t1-seed43
+{"variant": "baseline", "total_prover_ms_median": 21.114002, "proof_payload_bytes": 111370}
+baseline-n512-s128-b32-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 7.917131000000001, "proof_payload_bytes": 112010}
+candidate-n512-s128-b32-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 8.420031999999999, "proof_payload_bytes": 100864}
+candidate-n512-s128-b32-t8-seed43
+{"variant": "candidate", "total_prover_ms_median": 8.359738, "proof_payload_bytes": 100576}
+baseline-n512-s128-b32-t8-seed43
+{"variant": "baseline", "total_prover_ms_median": 7.978597000000001, "proof_payload_bytes": 111370}
+baseline-n512-s128-b1024-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 281.695298, "proof_payload_bytes": 263042}
+candidate-n512-s128-b1024-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 281.802651, "proof_payload_bytes": 257640}
+candidate-n512-s128-b1024-t1-seed43
+{"variant": "candidate", "total_prover_ms_median": 282.766564, "proof_payload_bytes": 257320}
+baseline-n512-s128-b1024-t1-seed43
+{"variant": "baseline", "total_prover_ms_median": 282.70838399999997, "proof_payload_bytes": 263970}
+baseline-n512-s128-b1024-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 59.36952, "proof_payload_bytes": 263042}
+candidate-n512-s128-b1024-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 63.040836000000006, "proof_payload_bytes": 257640}
+candidate-n512-s128-b1024-t8-seed43
+{"variant": "candidate", "total_prover_ms_median": 63.00017, "proof_payload_bytes": 257320}
+baseline-n512-s128-b1024-t8-seed43
+{"variant": "baseline", "total_prover_ms_median": 59.884614, "proof_payload_bytes": 263970}
+baseline-n1024-s100-b32-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 27.24372, "proof_payload_bytes": 117802}
+candidate-n1024-s100-b32-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 27.046978, "proof_payload_bytes": 104152}
+candidate-n1024-s100-b32-t1-seed43
+{"variant": "candidate", "total_prover_ms_median": 27.361864999999998, "proof_payload_bytes": 104920}
+baseline-n1024-s100-b32-t1-seed43
+{"variant": "baseline", "total_prover_ms_median": 27.326488, "proof_payload_bytes": 117994}
+baseline-n1024-s100-b32-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 8.098765, "proof_payload_bytes": 117802}
+candidate-n1024-s100-b32-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 8.174808, "proof_payload_bytes": 104152}
+candidate-n1024-s100-b32-t8-seed43
+{"variant": "candidate", "total_prover_ms_median": 8.456671, "proof_payload_bytes": 104920}
+baseline-n1024-s100-b32-t8-seed43
+{"variant": "baseline", "total_prover_ms_median": 7.859652, "proof_payload_bytes": 117994}
+baseline-n1024-s100-b1024-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 508.33564899999993, "proof_payload_bytes": 314802}
+candidate-n1024-s100-b1024-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 512.4113110000001, "proof_payload_bytes": 276288}
+candidate-n1024-s100-b1024-t1-seed43
+{"variant": "candidate", "total_prover_ms_median": 513.361991, "proof_payload_bytes": 277984}
+baseline-n1024-s100-b1024-t1-seed43
+{"variant": "baseline", "total_prover_ms_median": 503.40274500000004, "proof_payload_bytes": 314098}
+baseline-n1024-s100-b1024-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 108.290148, "proof_payload_bytes": 314802}
+candidate-n1024-s100-b1024-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 113.47977800000001, "proof_payload_bytes": 276288}
+candidate-n1024-s100-b1024-t8-seed43
+{"variant": "candidate", "total_prover_ms_median": 113.044855, "proof_payload_bytes": 277984}
+baseline-n1024-s100-b1024-t8-seed43
+{"variant": "baseline", "total_prover_ms_median": 107.564225, "proof_payload_bytes": 314098}
+baseline-n1024-s128-b32-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 30.801361999999997, "proof_payload_bytes": 137250}
+candidate-n1024-s128-b32-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 30.905069, "proof_payload_bytes": 126840}
+candidate-n1024-s128-b32-t1-seed43
+{"variant": "candidate", "total_prover_ms_median": 30.978578, "proof_payload_bytes": 127800}
+baseline-n1024-s128-b32-t1-seed43
+{"variant": "baseline", "total_prover_ms_median": 31.463897, "proof_payload_bytes": 137730}
+baseline-n1024-s128-b32-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 10.736366, "proof_payload_bytes": 137250}
+candidate-n1024-s128-b32-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 10.813191, "proof_payload_bytes": 126840}
+candidate-n1024-s128-b32-t8-seed43
+{"variant": "candidate", "total_prover_ms_median": 10.790928, "proof_payload_bytes": 127800}
+baseline-n1024-s128-b32-t8-seed43
+{"variant": "baseline", "total_prover_ms_median": 11.177430000000001, "proof_payload_bytes": 137730}
+baseline-n1024-s128-b1024-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 521.3852519999999, "proof_payload_bytes": 361738}
+candidate-n1024-s128-b1024-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 525.4888960000001, "proof_payload_bytes": 320976}
+candidate-n1024-s128-b1024-t1-seed43
+{"variant": "candidate", "total_prover_ms_median": 524.1534300000001, "proof_payload_bytes": 319856}
+baseline-n1024-s128-b1024-t1-seed43
+{"variant": "baseline", "total_prover_ms_median": 522.22439, "proof_payload_bytes": 361866}
+baseline-n1024-s128-b1024-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 114.784938, "proof_payload_bytes": 361738}
+candidate-n1024-s128-b1024-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 119.939111, "proof_payload_bytes": 320976}
+candidate-n1024-s128-b1024-t8-seed43
+{"variant": "candidate", "total_prover_ms_median": 120.545458, "proof_payload_bytes": 319856}
+baseline-n1024-s128-b1024-t8-seed43
+{"variant": "baseline", "total_prover_ms_median": 115.800028, "proof_payload_bytes": 361866}

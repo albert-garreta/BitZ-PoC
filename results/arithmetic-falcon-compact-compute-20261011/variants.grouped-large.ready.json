@@ -1,0 +1,111 @@
+{
+  "primary_control": "default",
+  "binary_path_pending_root_confirmation": false,
+  "variants": [
+    {
+      "label": "default",
+      "binary": "/tmp/bitz-arithmetic-group-controls-pilot-binary",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "padding"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "actual default",
+      "expected_fields": {
+        "compute_variant": "padding"
+      }
+    },
+    {
+      "label": "cap1",
+      "binary": "/tmp/bitz-arithmetic-group-controls-pilot-binary",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "padding",
+        "BITZ_ARITHMETIC_BINDING_STRATEGY": "optimized",
+        "BITZ_ARITHMETIC_BINDING_PREFIX": "4",
+        "BITZ_ARITHMETIC_BINDING_GROUP_CAP": "1"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "optimized raw binding, prefix4, explicit grouped cap",
+      "expected_fields": {
+        "compute_variant": "padding"
+      }
+    },
+    {
+      "label": "cap8",
+      "binary": "/tmp/bitz-arithmetic-group-controls-pilot-binary",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "padding",
+        "BITZ_ARITHMETIC_BINDING_STRATEGY": "optimized",
+        "BITZ_ARITHMETIC_BINDING_PREFIX": "4",
+        "BITZ_ARITHMETIC_BINDING_GROUP_CAP": "8"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "optimized raw binding, prefix4, explicit grouped cap",
+      "expected_fields": {
+        "compute_variant": "padding"
+      }
+    },
+    {
+      "label": "cap16",
+      "binary": "/tmp/bitz-arithmetic-group-controls-pilot-binary",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "padding",
+        "BITZ_ARITHMETIC_BINDING_STRATEGY": "optimized",
+        "BITZ_ARITHMETIC_BINDING_PREFIX": "4",
+        "BITZ_ARITHMETIC_BINDING_GROUP_CAP": "16"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "optimized raw binding, prefix4, explicit grouped cap",
+      "expected_fields": {
+        "compute_variant": "padding"
+      }
+    },
+    {
+      "label": "v7",
+      "binary": "/tmp/bitz-arithmetic-compact-control-v7-binary",
+      "args": [],
+      "environment": {},
+      "features": [
+        "falcon-hybrid"
+      ],
+      "role": "original proof integrity reference; timing is exploratory because diagnostic candidate has bench-internals"
+    }
+  ],
+  "reference_protocol_identity": {
+    "reference_variant": "v7",
+    "protocol_suffix": "/v7",
+    "candidate_variants": [
+      "default",
+      "cap1",
+      "cap8",
+      "cap16"
+    ],
+    "keys": [
+      "input_digest",
+      "protocol_id",
+      "trial",
+      "iteration",
+      "source_root",
+      "proof_debug_digest",
+      "proof_payload_bytes",
+      "committed_source_bits"
+    ],
+    "expected_checked_proofs": 256,
+    "eligibility": "Every diagnostic mode proof must exactly match preserved original v7 on each fresh input; same-binary default remains the primary timing baseline."
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "primary_control": "v7",
+  "binary_path_pending_root_confirmation": false,
+  "variants": [
+    {
+      "label": "v7",
+      "binary": "/tmp/bitz-arithmetic-compact-control-v7-binary",
+      "args": [],
+      "environment": {},
+      "features": [
+        "falcon-hybrid"
+      ],
+      "role": "primary control"
+    },
+    {
+      "label": "padding",
+      "binary": "/tmp/bitz-arithmetic-compact-compute-v8-pilot-binary",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "padding"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "candidate phase control",
+      "expected_fields": {
+        "compute_variant": "padding"
+      }
+    },
+    {
+      "label": "compact",
+      "binary": "/tmp/bitz-arithmetic-compact-compute-v8-pilot-binary",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "compact"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "candidate phase control",
+      "expected_fields": {
+        "compute_variant": "compact"
+      }
+    },
+    {
+      "label": "combined",
+      "binary": "/tmp/bitz-arithmetic-compact-compute-v8-pilot-binary",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "combined"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "candidate phase control",
+      "expected_fields": {
+        "compute_variant": "combined"
+      }
+    }
+  ],
+  "identity_rules": [
+    {
+      "source_layout": "single",
+      "variants": [
+        "padding",
+        "combined"
+      ],
+      "keys": [
+        "input_digest",
+        "protocol_id",
+        "trial",
+        "iteration",
+        "source_root",
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "committed_source_bits"
+      ]
+    },
+    {
+      "source_layout": "split",
+      "variants": [
+        "compact",
+        "combined"
+      ],
+      "keys": [
+        "input_digest",
+        "protocol_id",
+        "trial",
+        "iteration",
+        "source_root",
+        "proof_debug_digest",
+        "proof_payload_bytes",
+        "committed_source_bits"
+      ]
+    }
+  ]
+}

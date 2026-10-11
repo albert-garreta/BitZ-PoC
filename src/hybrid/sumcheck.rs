@@ -147,10 +147,12 @@ pub(crate) fn bit_marginals(packed: &[F], high: &[F], low_blocks: usize) -> Vec<
     // Tasks are (block range, row range) pairs. Whole block ranges keep a
     // task's accumulators in L1 and need no merge; a source with few
     // blocks (SHA has one) is split over row ranges and merged at the end.
-    const BLOCKS_PER_TASK: usize = 16;
-    let block_tasks = low_blocks.div_ceil(BLOCKS_PER_TASK);
+    let blocks_per_task = 16;
+    let block_tasks = low_blocks.div_ceil(blocks_per_task);
     #[cfg(feature = "parallel")]
-    let wanted = 4 * rayon::current_num_threads();
+    let workers = rayon::current_num_threads();
+    #[cfg(feature = "parallel")]
+    let wanted = 4 * workers;
     #[cfg(not(feature = "parallel"))]
     let wanted = 1;
     let row_tasks = if block_tasks >= wanted {
@@ -162,10 +164,27 @@ pub(crate) fn bit_marginals(packed: &[F], high: &[F], low_blocks: usize) -> Vec<
     };
     let rows_per_task = rows.div_ceil(row_tasks).div_ceil(8) * 8;
     let row_tasks = rows.div_ceil(rows_per_task).max(1);
+    // Preserve row partitions and already-filled pools. Smaller disjoint
+    // block ranges can use idle workers without extra marginal reductions;
+    // retain at least roughly 8 KiB of packed input per new task.
+    #[cfg(feature = "parallel")]
+    let blocks_per_task = {
+        let target = workers.min(packed.len() / 512);
+        if block_tasks * row_tasks < target {
+            let block_goal = target.div_ceil(row_tasks);
+            low_blocks
+                .div_ceil(block_goal)
+                .next_power_of_two()
+                .min(blocks_per_task)
+        } else {
+            blocks_per_task
+        }
+    };
+    let block_tasks = low_blocks.div_ceil(blocks_per_task);
     let partials: Vec<Vec<F>> = cfg_into_iter!(0..block_tasks * row_tasks)
         .map(|task| {
-            let b0 = (task / row_tasks) * BLOCKS_PER_TASK;
-            let b1 = (b0 + BLOCKS_PER_TASK).min(low_blocks);
+            let b0 = (task / row_tasks) * blocks_per_task;
+            let b1 = (b0 + blocks_per_task).min(low_blocks);
             let i0 = (task % row_tasks) * rows_per_task;
             let i1 = (i0 + rows_per_task).min(rows);
             marginals_task(packed, high, low_blocks, b0..b1, i0..i1)
@@ -176,7 +195,7 @@ pub(crate) fn bit_marginals(packed: &[F], high: &[F], low_blocks: usize) -> Vec<
     }
     let mut out = vec![F::ZERO; low_blocks * 128];
     for (task, part) in partials.iter().enumerate() {
-        let b0 = (task / row_tasks) * BLOCKS_PER_TASK;
+        let b0 = (task / row_tasks) * blocks_per_task;
         for (dst, &v) in out[b0 * 128..].iter_mut().zip(part) {
             *dst += v;
         }
@@ -583,6 +602,63 @@ pub(super) fn verify(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn marginal_task_shapes_match_direct_sums_across_thread_counts() {
+        let pools = [1, 3, 8].map(|workers| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .build()
+                .unwrap()
+        });
+        let mut seed = 0xa718_f0c5_276b_d349_u64;
+        let mut random = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            F {
+                lo: seed,
+                hi: seed.rotate_left(23),
+            }
+        };
+        // Small full-width source, two split widths, an already-filled pool,
+        // a single block, and partial blocks/rows exercise both scheduling paths.
+        for (low_blocks, rows) in [
+            (64, 64),
+            (32, 2048),
+            (16, 2048),
+            (64, 2048),
+            (1, 4096),
+            (17, 65),
+            (17, 1025),
+        ] {
+            let packed: Vec<_> = (0..rows * low_blocks).map(|_| random()).collect();
+            let high: Vec<_> = (0..rows).map(|_| random()).collect();
+            let mut expected = vec![F::ZERO; low_blocks * 128];
+            for (row, &weight) in high.iter().enumerate() {
+                for block in 0..low_blocks {
+                    let word = packed[row * low_blocks + block];
+                    for (half, mut bits) in [word.lo, word.hi].into_iter().enumerate() {
+                        while bits != 0 {
+                            expected[block * 128 + half * 64 + bits.trailing_zeros() as usize] +=
+                                weight;
+                            bits &= bits - 1;
+                        }
+                    }
+                }
+            }
+            for pool in &pools {
+                let actual = pool.install(|| bit_marginals(&packed, &high, low_blocks));
+                assert_eq!(
+                    actual,
+                    expected,
+                    "blocks={low_blocks}, rows={rows}, workers={}",
+                    pool.current_num_threads()
+                );
+            }
+        }
+    }
 
     fn prove_test(
         t: &mut Blake3Transcript,

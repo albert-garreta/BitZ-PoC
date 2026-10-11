@@ -1,0 +1,24 @@
+{
+  "captured_unix": 1791729947.694103,
+  "source_snapshot": "/tmp/bitz-arithmetic-v8-final-source-lazzv9uj",
+  "source_files": 597,
+  "source_hash_manifest": "candidate-final-source-sha256.json",
+  "changed_from_r2": [
+    "src/piop/spartan/falcon1024_algebraic/protocol.rs",
+    "src/piop/spartan/falcon1024_algebraic/source.rs"
+  ],
+  "binary_original": "/tmp/bitz-arithmetic-v8-final-production-binary",
+  "binary_preserved": "/tmp/bitz-arithmetic-v8-final-qualification-binary",
+  "sha256": "36300ab793ab5c058cbc5eee418819f8917d63e95861e9b1ecd59a79f1b798a1",
+  "features": [
+    "falcon-hybrid"
+  ],
+  "RUSTFLAGS": "-C target-cpu=native",
+  "build_profile": "native release with default LTO/profile",
+  "build_command": "RUSTFLAGS=\"-C target-cpu=native\" CARGO_TARGET_DIR=/tmp/bitz-arithmetic-baseline-target cargo build --locked --offline --release --features falcon-hybrid --example falcon_algebraic",
+  "build_log": "/tmp/bitz-v8-final-example-build.log",
+  "root_confirmed_binary": true,
+  "timing_go_pending": false,
+  "timing_go_unix": 1791729960.7825055,
+  "tests_before_timing": "156 relevant tests passed: 97 arithmetic + 2 large + 54 shared + 3 full Falcon"
+}

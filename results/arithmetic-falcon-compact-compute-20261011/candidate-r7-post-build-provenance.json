@@ -1,0 +1,17 @@
+{
+  "captured_unix": 1791735591.4851558,
+  "frozen_source_files_verified": 597,
+  "frozen_source_snapshot_unchanged": true,
+  "binary_sha256_reverified": "ec1c7b55cfba4b7dbce26e4028913a13ccee6b87795f6b5ddaca58b6327ee141",
+  "workspace_build_input_changes": [
+    {
+      "path": "src/sumcheck/inner/packed/binding_options.rs",
+      "frozen_sha256": "305ac266c3e175e4ca7f92c28a4d2cc2e400bf9aa9c014b3d356f0da14851b08",
+      "workspace_sha256": "edfe5a5832900e8c1b3297ef981343ec337412ffc4dd070c7220774f163997f0"
+    }
+  ],
+  "comment_only_verified_by_exact_replacement": true,
+  "patch": "candidate-r7-post-build-comment.patch",
+  "other_workspace_changes": "README documentation changed after capture; README is outside the build-input manifest. Results/report artifacts are outside the build inputs.",
+  "interpretation": "Qualification uses the preserved R7 production binary and frozen source. The only later change among its 597 build-input files is the recorded comment; no behavior changed and no rebuild or timing rerun was performed."
+}

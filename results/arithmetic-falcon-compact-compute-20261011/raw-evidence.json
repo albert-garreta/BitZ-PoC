@@ -1,0 +1,10 @@
+{
+  "archive": "raw-evidence.tar.gz",
+  "sha256": "10000a8db8d06642bbc5b48a759c8f9d5e2638870f5fa93ec6fe6d20a1eb8a7b",
+  "files": 23339,
+  "uncompressed_bytes": 161113909,
+  "compressed_bytes": 7237564,
+  "contents": "All raw JSONL stdout/stderr, per-run command JSON, and samples.json files; paths are relative to this results directory.",
+  "verified": "Every archived file was read back and SHA-256 matched to its original.",
+  "restore_command": "tar -xzf raw-evidence.tar.gz"
+}

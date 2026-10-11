@@ -1,0 +1,99 @@
+{
+  "primary_control": "legacy3",
+  "binary_path_pending_root_confirmation": true,
+  "variants": [
+    {
+      "label": "legacy3",
+      "binary": "PENDING_BINDING_CONTROLS_BINARY",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "padding",
+        "BITZ_ARITHMETIC_BINDING_STRATEGY": "legacy",
+        "BITZ_ARITHMETIC_BINDING_PREFIX": "3"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "same-binary raw binding compute control",
+      "expected_fields": {
+        "compute_variant": "padding"
+      }
+    },
+    {
+      "label": "opt3",
+      "binary": "PENDING_BINDING_CONTROLS_BINARY",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "padding",
+        "BITZ_ARITHMETIC_BINDING_STRATEGY": "optimized",
+        "BITZ_ARITHMETIC_BINDING_PREFIX": "3"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "same-binary raw binding compute control",
+      "expected_fields": {
+        "compute_variant": "padding"
+      }
+    },
+    {
+      "label": "legacy4",
+      "binary": "PENDING_BINDING_CONTROLS_BINARY",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "padding",
+        "BITZ_ARITHMETIC_BINDING_STRATEGY": "legacy",
+        "BITZ_ARITHMETIC_BINDING_PREFIX": "4"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "same-binary raw binding compute control",
+      "expected_fields": {
+        "compute_variant": "padding"
+      }
+    },
+    {
+      "label": "opt4",
+      "binary": "PENDING_BINDING_CONTROLS_BINARY",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "padding",
+        "BITZ_ARITHMETIC_BINDING_STRATEGY": "optimized",
+        "BITZ_ARITHMETIC_BINDING_PREFIX": "4"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "same-binary raw binding compute control",
+      "expected_fields": {
+        "compute_variant": "padding"
+      }
+    }
+  ],
+  "reference_protocol_identity": {
+    "reference_variant": "legacy3",
+    "protocol_suffix": "/v7",
+    "candidate_variants": [
+      "opt3",
+      "legacy4",
+      "opt4"
+    ],
+    "keys": [
+      "input_digest",
+      "protocol_id",
+      "trial",
+      "iteration",
+      "source_root",
+      "proof_debug_digest",
+      "proof_payload_bytes",
+      "committed_source_bits"
+    ],
+    "expected_checked_proofs": 144,
+    "eligibility": "All batch32 mode proofs retain the v7 transcript and must exactly match legacy3, including every warmup."
+  }
+}

@@ -1,0 +1,27 @@
+{"shapes": 6, "variants": ["v7", "padding", "combined"], "primary_control": "v7", "input_cases_per_variant": 6, "proofs_per_variant_including_warmup": 24, "proofs_all_variants_including_warmup": 72, "groups": ["diagnostic-profiles"]}
+v7-n1024-s100-b32-t1-seed42
+padding-n1024-s100-b32-t1-seed42
+combined-n1024-s100-b32-t1-seed42
+{"completed_shape": {"degree": 1024, "security_bits": 100, "batch": 32, "threads": 1}, "deltas_percent_vs_control": {"padding": {"total_prover_ms": 0.621995900466743, "prove_ms": 0.6925253152546995}, "combined": {"total_prover_ms": 20.711314097240276, "prove_ms": 23.460868658042997}}}
+v7-n1024-s100-b32-t8-seed42
+padding-n1024-s100-b32-t8-seed42
+combined-n1024-s100-b32-t8-seed42
+{"completed_shape": {"degree": 1024, "security_bits": 100, "batch": 32, "threads": 8}, "deltas_percent_vs_control": {"padding": {"total_prover_ms": -0.5004309739588431, "prove_ms": -0.03939966968591335}, "combined": {"total_prover_ms": 34.67779727052645, "prove_ms": 38.86686456090671}}}
+v7-n1024-s100-b1024-t1-seed42
+padding-n1024-s100-b1024-t1-seed42
+combined-n1024-s100-b1024-t1-seed42
+{"completed_shape": {"degree": 1024, "security_bits": 100, "batch": 1024, "threads": 1}, "deltas_percent_vs_control": {"padding": {"total_prover_ms": -0.9817684128591297, "prove_ms": -0.14864071949363122}, "combined": {"total_prover_ms": -0.944578372999616, "prove_ms": -0.1323392974867832}}}
+v7-n1024-s100-b1024-t8-seed42
+padding-n1024-s100-b1024-t8-seed42
+combined-n1024-s100-b1024-t8-seed42
+{"completed_shape": {"degree": 1024, "security_bits": 100, "batch": 1024, "threads": 8}, "deltas_percent_vs_control": {"padding": {"total_prover_ms": -0.6761178901221854, "prove_ms": -0.939450423583732}, "combined": {"total_prover_ms": -0.3341675883619888, "prove_ms": 0.06030135077241816}}}
+v7-n512-s100-b33-t8-seed42
+padding-n512-s100-b33-t8-seed42
+combined-n512-s100-b33-t8-seed42
+{"completed_shape": {"degree": 512, "security_bits": 100, "batch": 33, "threads": 8}, "deltas_percent_vs_control": {"padding": {"total_prover_ms": 0.6912999553625454, "prove_ms": -0.7320655282425093}, "combined": {"total_prover_ms": 41.41875478474164, "prove_ms": 43.01905934934198}}}
+v7-n512-s100-b1024-t8-seed42
+padding-n512-s100-b1024-t8-seed42
+combined-n512-s100-b1024-t8-seed42
+{"completed_shape": {"degree": 512, "security_bits": 100, "batch": 1024, "threads": 8}, "deltas_percent_vs_control": {"padding": {"total_prover_ms": -0.2453853756899993, "prove_ms": -0.4779792660705051}, "combined": {"total_prover_ms": 4.373752224617533, "prove_ms": 5.6264249895999985}}}
+{"comparison": "padding-vs-v7", "observed_gate_passed": false, "positive_entries": 3}
+{"comparison": "combined-vs-v7", "observed_gate_passed": false, "positive_entries": 9}

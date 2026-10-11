@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "frozen_before_timings": true,
+  "qualification": false,
+  "warmup": 1,
+  "iterations": 3,
+  "variant_order": "rotated-forward-reverse",
+  "purpose": "Conditional second same-binary grouped pilot at N512/eight-worker batches255/256/257; runs only if large grouped pilot shows clear gains. Original-v7 integrity reference remains secondary; actual same-binary default is primary.",
+  "shapes": [
+    {
+      "group": "diagnostic-grouped-boundaries",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 255,
+      "threads": 8,
+      "seeds": [
+        202,
+        203
+      ]
+    },
+    {
+      "group": "diagnostic-grouped-boundaries",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 256,
+      "threads": 8,
+      "seeds": [
+        202,
+        203
+      ]
+    },
+    {
+      "group": "diagnostic-grouped-boundaries",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 257,
+      "threads": 8,
+      "seeds": [
+        202,
+        203
+      ]
+    },
+    {
+      "group": "diagnostic-grouped-boundaries",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 255,
+      "threads": 8,
+      "seeds": [
+        202,
+        203
+      ]
+    },
+    {
+      "group": "diagnostic-grouped-boundaries",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 256,
+      "threads": 8,
+      "seeds": [
+        202,
+        203
+      ]
+    },
+    {
+      "group": "diagnostic-grouped-boundaries",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 257,
+      "threads": 8,
+      "seeds": [
+        202,
+        203
+      ]
+    }
+  ],
+  "order_explanation": "Rotate base mode order by shape, then reverse it for the second input; each mode has equal mean position within every shape.",
+  "conditional_on": "Clear grouped-computation gains in grouped-large pilot, as authorized by root."
+}

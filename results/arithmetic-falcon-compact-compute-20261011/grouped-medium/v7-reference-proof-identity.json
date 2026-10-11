@@ -1,0 +1,352 @@
+{
+  "passed": true,
+  "rule": {
+    "reference_variant": "v7",
+    "protocol_suffix": "/v7",
+    "candidate_variants": [
+      "default",
+      "cap1",
+      "cap8",
+      "cap16"
+    ],
+    "keys": [
+      "input_digest",
+      "protocol_id",
+      "trial",
+      "iteration",
+      "source_root",
+      "proof_debug_digest",
+      "proof_payload_bytes",
+      "committed_source_bits"
+    ],
+    "expected_checked_proofs": 128,
+    "eligibility": "Every diagnostic mode proof must exactly match preserved original v7 on each fresh input; same-binary default remains the primary timing baseline."
+  },
+  "complete": true,
+  "checked_proofs": 128,
+  "expected_coverage_passed": true,
+  "checks": [
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 202,
+      "variant": "default",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 202,
+      "variant": "cap1",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 202,
+      "variant": "cap8",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 202,
+      "variant": "cap16",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 203,
+      "variant": "default",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 203,
+      "variant": "cap1",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 203,
+      "variant": "cap8",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 203,
+      "variant": "cap16",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 202,
+      "variant": "default",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 202,
+      "variant": "cap1",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 202,
+      "variant": "cap8",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 202,
+      "variant": "cap16",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 203,
+      "variant": "default",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 203,
+      "variant": "cap1",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 203,
+      "variant": "cap8",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 203,
+      "variant": "cap16",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 202,
+      "variant": "default",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 202,
+      "variant": "cap1",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 202,
+      "variant": "cap8",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 202,
+      "variant": "cap16",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 203,
+      "variant": "default",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 203,
+      "variant": "cap1",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 203,
+      "variant": "cap8",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 203,
+      "variant": "cap16",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 202,
+      "variant": "default",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 202,
+      "variant": "cap1",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 202,
+      "variant": "cap8",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 202,
+      "variant": "cap16",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 203,
+      "variant": "default",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 203,
+      "variant": "cap1",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 203,
+      "variant": "cap8",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 203,
+      "variant": "cap16",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    }
+  ],
+  "new_protocol_proofs_not_compared": 0,
+  "new_protocol_cases": []
+}

@@ -1,0 +1,422 @@
+[
+  {
+    "operations": {
+      "commit": {
+        "falcon_algebraic:witness": 96.897751,
+        "packing_and_commit_ms": 6.008468000000008,
+        "total_ms": 102.905359
+      },
+      "prove": {
+        "falcon_algebraic:arithmetic": 197.880201,
+        "falcon_algebraic:binding": 179.77003299999998,
+        "falcon_algebraic:binding_construction": 12.634156,
+        "falcon_algebraic:binding_evaluation": 3.4268240000000003,
+        "falcon_algebraic:bitz": 100.89724899999999,
+        "falcon_algebraic:integer_outer": 18.069772,
+        "falcon_algebraic:pcs": 23.02643,
+        "falcon_algebraic:ring": 52.730127,
+        "falcon_algebraic_ring:collapse": 37.565202,
+        "falcon_algebraic_ring:coordinates": 11.603235999999999,
+        "falcon_algebraic_ring:prove": 52.714306,
+        "falcon_bridge:column_packing": 1.790207,
+        "falcon_bridge:integer_folds": 4.90418,
+        "falcon_bridge:power_tables": 0.371062,
+        "falcon_bridge:wfbitz_forest": 93.26855400000001,
+        "falcon_integer:coefficients": 1.324206,
+        "falcon_integer:fold": 5.5631200000000005,
+        "falcon_integer:native_prefix": 10.219537,
+        "falcon_joint:compact": 1.5237150000000002,
+        "falcon_joint:dense": 0.069983,
+        "falcon_joint:packed_setup": 7.08663,
+        "falcon_joint:prepare": 2.9480880000000003,
+        "inner_packed:fold_tail": 46.817878,
+        "inner_packed:prefix_accumulators": 79.82673999999999,
+        "inner_packed:prepare_tail": 35.343427,
+        "lig:grind_pow": 0.011684,
+        "op:deferred_first_fold": 2.479532,
+        "op:extra_bases": 7.4264719999999995,
+        "op:initial_messages": 7.39863,
+        "op:ligerito": 8.774173,
+        "op:ring_switch": 6.788495,
+        "other_including_joint_ms": 29.672776999999996,
+        "total_ms": 403.524605
+      },
+      "verify": {
+        "falcon_algebraic:binding_construction": 12.813455,
+        "falcon_algebraic:binding_evaluation": 3.237105,
+        "falcon_algebraic_ring:collapse": 37.523752,
+        "falcon_algebraic_ring:coordinates": 11.889257,
+        "falcon_algebraic_ring:verify": 49.821403000000004,
+        "total_ms": 86.385289
+      }
+    },
+    "run": "baseline-n1024-s100-b1024-t1-seed42"
+  },
+  {
+    "operations": {
+      "commit": {
+        "falcon_algebraic:witness": 13.219394000000001,
+        "packing_and_commit_ms": 1.6502820000000025,
+        "total_ms": 15.030890999999999
+      },
+      "prove": {
+        "falcon_algebraic:arithmetic": 34.877005000000004,
+        "falcon_algebraic:binding": 30.237757000000002,
+        "falcon_algebraic:binding_construction": 2.4188270000000003,
+        "falcon_algebraic:binding_evaluation": 0.569438,
+        "falcon_algebraic:bitz": 19.931756,
+        "falcon_algebraic:integer_outer": 4.56099,
+        "falcon_algebraic:pcs": 4.149351,
+        "falcon_algebraic:ring": 14.838528,
+        "falcon_algebraic_ring:collapse": 5.1190869999999995,
+        "falcon_algebraic_ring:coordinates": 6.799556,
+        "falcon_algebraic_ring:prove": 14.823209,
+        "falcon_bridge:column_packing": 0.315828,
+        "falcon_bridge:integer_folds": 0.853545,
+        "falcon_bridge:power_tables": 0.376883,
+        "falcon_bridge:wfbitz_forest": 17.783170000000002,
+        "falcon_integer:coefficients": 1.303778,
+        "falcon_integer:fold": 2.26799,
+        "falcon_joint:compact": 0.296703,
+        "falcon_joint:dense": 0.039154,
+        "falcon_joint:packed_setup": 0.902518,
+        "falcon_joint:prepare": 0.42279,
+        "inner_packed:fold_tail": 10.962923,
+        "inner_packed:prefix_accumulators": 5.951922,
+        "inner_packed:prepare_tail": 7.917891999999999,
+        "lig:grind_pow": 0.012695999999999999,
+        "op:deferred_first_fold": 0.352327,
+        "op:extra_bases": 1.000754,
+        "op:initial_messages": 0.9729610000000001,
+        "op:ligerito": 2.142013,
+        "op:ring_switch": 0.954707,
+        "other_including_joint_ms": 21.536472999999987,
+        "total_ms": 95.286042
+      },
+      "verify": {
+        "falcon_algebraic:binding_construction": 2.777666,
+        "falcon_algebraic:binding_evaluation": 0.448008,
+        "falcon_algebraic_ring:collapse": 4.902596,
+        "falcon_algebraic_ring:coordinates": 7.161862,
+        "falcon_algebraic_ring:verify": 12.481628,
+        "total_ms": 37.242020000000004
+      }
+    },
+    "run": "baseline-n1024-s100-b1024-t8-seed42"
+  },
+  {
+    "operations": {
+      "commit": {
+        "falcon_algebraic:witness": 32.483636000000004,
+        "packing_and_commit_ms": 3.0346720000000005,
+        "total_ms": 35.393192
+      },
+      "prove": {
+        "falcon_algebraic:arithmetic": 130.023112,
+        "falcon_algebraic:binding": 119.746647,
+        "falcon_algebraic:binding_construction": 6.213938,
+        "falcon_algebraic:binding_evaluation": 1.6280109999999999,
+        "falcon_algebraic:bitz": 53.241263,
+        "falcon_algebraic:integer_outer": 10.287075999999999,
+        "falcon_algebraic:pcs": 11.847017,
+        "falcon_algebraic:ring": 25.689048999999997,
+        "falcon_algebraic_ring:collapse": 18.399225,
+        "falcon_algebraic_ring:coordinates": 5.518752,
+        "falcon_algebraic_ring:prove": 25.674151,
+        "falcon_bridge:column_packing": 0.8596969999999999,
+        "falcon_bridge:integer_folds": 2.419248,
+        "falcon_bridge:power_tables": 0.363799,
+        "falcon_bridge:wfbitz_forest": 49.228871,
+        "falcon_integer:coefficients": 0.8881789999999999,
+        "falcon_integer:fold": 2.791231,
+        "falcon_integer:native_prefix": 5.710655999999999,
+        "falcon_joint:compact": 0.715132,
+        "falcon_joint:dense": 0.041489,
+        "falcon_joint:packed_setup": 3.434499,
+        "falcon_joint:prepare": 1.496692,
+        "inner_packed:fold_tail": 23.241698,
+        "inner_packed:prefix_accumulators": 70.587517,
+        "inner_packed:prepare_tail": 17.552342,
+        "lig:grind_pow": 0.009037,
+        "op:deferred_first_fold": 1.2602239999999998,
+        "op:extra_bases": 3.750286,
+        "op:initial_messages": 3.723194,
+        "op:ligerito": 4.642384,
+        "op:ring_switch": 3.4119260000000002,
+        "other_including_joint_ms": 15.91471500000003,
+        "total_ms": 236.903491
+      },
+      "verify": {
+        "falcon_algebraic:binding_construction": 6.28366,
+        "falcon_algebraic:binding_evaluation": 1.606871,
+        "falcon_algebraic_ring:collapse": 18.843987,
+        "falcon_algebraic_ring:coordinates": 5.536486999999999,
+        "falcon_algebraic_ring:verify": 24.68585,
+        "total_ms": 44.089447
+      }
+    },
+    "run": "baseline-n512-s100-b1024-t1-seed42"
+  },
+  {
+    "operations": {
+      "commit": {
+        "falcon_algebraic:witness": 4.808218,
+        "packing_and_commit_ms": 1.015090999999999,
+        "total_ms": 5.823308999999999
+      },
+      "prove": {
+        "falcon_algebraic:arithmetic": 19.818960999999998,
+        "falcon_algebraic:binding": 16.838312000000002,
+        "falcon_algebraic:binding_construction": 1.1684510000000001,
+        "falcon_algebraic:binding_evaluation": 0.243942,
+        "falcon_algebraic:bitz": 10.406441000000001,
+        "falcon_algebraic:integer_outer": 2.958598,
+        "falcon_algebraic:pcs": 3.075359,
+        "falcon_algebraic:ring": 7.052195,
+        "falcon_algebraic_ring:collapse": 2.664292,
+        "falcon_algebraic_ring:coordinates": 3.0403230000000003,
+        "falcon_algebraic_ring:prove": 7.036935000000001,
+        "falcon_bridge:column_packing": 0.169871,
+        "falcon_bridge:integer_folds": 0.406038,
+        "falcon_bridge:power_tables": 0.388024,
+        "falcon_bridge:wfbitz_forest": 9.055956,
+        "falcon_integer:coefficients": 0.863677,
+        "falcon_integer:fold": 1.2143490000000001,
+        "falcon_joint:compact": 0.152219,
+        "falcon_joint:dense": 0.029185,
+        "falcon_joint:packed_setup": 0.45535200000000003,
+        "falcon_joint:prepare": 0.21663,
+        "inner_packed:fold_tail": 5.562274,
+        "inner_packed:prefix_accumulators": 4.901585,
+        "inner_packed:prepare_tail": 3.8925560000000003,
+        "lig:grind_pow": 0.010041,
+        "op:deferred_first_fold": 0.18897799999999998,
+        "op:extra_bases": 0.9816779999999999,
+        "op:initial_messages": 0.953735,
+        "op:ligerito": 1.555423,
+        "op:ring_switch": 0.489285,
+        "other_including_joint_ms": 10.994552999999996,
+        "total_ms": 51.455926
+      },
+      "verify": {
+        "falcon_algebraic:binding_construction": 1.154094,
+        "falcon_algebraic:binding_evaluation": 0.241146,
+        "falcon_algebraic_ring:collapse": 2.4968350000000004,
+        "falcon_algebraic_ring:coordinates": 3.529769,
+        "falcon_algebraic_ring:verify": 6.342912,
+        "total_ms": 19.607010000000002
+      }
+    },
+    "run": "baseline-n512-s100-b1024-t8-seed42"
+  },
+  {
+    "operations": {
+      "commit": {
+        "falcon_algebraic:witness": 99.170461,
+        "packing_and_commit_ms": 10.315528999999998,
+        "total_ms": 109.48599
+      },
+      "prove": {
+        "falcon_algebraic:arithmetic": 197.754223,
+        "falcon_algebraic:binding": 179.741298,
+        "falcon_algebraic:binding_construction": 12.335201,
+        "falcon_algebraic:binding_evaluation": 3.376669,
+        "falcon_algebraic:bitz": 101.175777,
+        "falcon_algebraic:integer_outer": 17.983097,
+        "falcon_algebraic:pcs": 13.51325,
+        "falcon_algebraic:ring": 60.774007,
+        "falcon_algebraic_ring:collapse": 37.478066,
+        "falcon_algebraic_ring:coordinates": 20.973456000000002,
+        "falcon_algebraic_ring:prove": 60.758859,
+        "falcon_bridge:column_packing": 1.77584,
+        "falcon_bridge:integer_folds": 4.9662370000000005,
+        "falcon_bridge:power_tables": 0.38375600000000004,
+        "falcon_bridge:wfbitz_forest": 93.48200800000001,
+        "falcon_integer:coefficients": 1.3125930000000001,
+        "falcon_integer:fold": 5.482993,
+        "falcon_integer:native_prefix": 10.227803,
+        "falcon_joint:compact": 1.177758,
+        "falcon_joint:dense": 0.119083,
+        "falcon_joint:packed_setup": 5.257729,
+        "falcon_joint:prepare": 2.335089,
+        "inner_packed:fold_tail": 46.81724,
+        "inner_packed:prefix_accumulators": 80.167484,
+        "inner_packed:prepare_tail": 35.384515,
+        "lig:grind_pow": 0.009357,
+        "op:deferred_first_fold": 1.26312,
+        "op:extra_bases": 3.716603,
+        "op:initial_messages": 3.691135,
+        "op:ligerito": 4.59756,
+        "op:ring_switch": 5.142762,
+        "other_including_joint_ms": 33.05258200000003,
+        "total_ms": 406.582781
+      },
+      "verify": {
+        "falcon_algebraic:binding_construction": 12.506656,
+        "falcon_algebraic:binding_evaluation": 3.247795,
+        "falcon_algebraic_ring:collapse": 37.594446,
+        "falcon_algebraic_ring:coordinates": 21.206256,
+        "falcon_algebraic_ring:verify": 59.205670000000005,
+        "total_ms": 96.075996
+      }
+    },
+    "run": "candidate-n1024-s100-b1024-t1-seed42"
+  },
+  {
+    "operations": {
+      "commit": {
+        "falcon_algebraic:witness": 13.493533000000001,
+        "packing_and_commit_ms": 6.176948000000001,
+        "total_ms": 19.63848
+      },
+      "prove": {
+        "falcon_algebraic:arithmetic": 34.56273,
+        "falcon_algebraic:binding": 30.009815,
+        "falcon_algebraic:binding_construction": 2.447421,
+        "falcon_algebraic:binding_evaluation": 0.5738260000000001,
+        "falcon_algebraic:bitz": 19.995867,
+        "falcon_algebraic:integer_outer": 4.508621,
+        "falcon_algebraic:pcs": 3.356581,
+        "falcon_algebraic:ring": 15.381295,
+        "falcon_algebraic_ring:collapse": 5.252809,
+        "falcon_algebraic_ring:coordinates": 7.751207000000001,
+        "falcon_algebraic_ring:prove": 15.365135,
+        "falcon_bridge:column_packing": 0.305788,
+        "falcon_bridge:integer_folds": 0.830321,
+        "falcon_bridge:power_tables": 0.376773,
+        "falcon_bridge:wfbitz_forest": 17.886084,
+        "falcon_integer:coefficients": 1.291695,
+        "falcon_integer:fold": 2.271175,
+        "falcon_joint:compact": 0.181373,
+        "falcon_joint:dense": 0.056528999999999996,
+        "falcon_joint:packed_setup": 1.114208,
+        "falcon_joint:prepare": 0.34316,
+        "inner_packed:fold_tail": 10.964153,
+        "inner_packed:prefix_accumulators": 5.911886,
+        "inner_packed:prepare_tail": 7.964831,
+        "lig:grind_pow": 0.010019,
+        "op:deferred_first_fold": 0.18881799999999999,
+        "op:extra_bases": 0.9901639999999999,
+        "op:initial_messages": 0.9653269999999999,
+        "op:ligerito": 1.520767,
+        "op:ring_switch": 0.785226,
+        "other_including_joint_ms": 22.566500000000005,
+        "total_ms": 95.836823
+      },
+      "verify": {
+        "falcon_algebraic:binding_construction": 2.68418,
+        "falcon_algebraic:binding_evaluation": 0.446896,
+        "falcon_algebraic_ring:collapse": 4.914018,
+        "falcon_algebraic_ring:coordinates": 8.099566000000001,
+        "falcon_algebraic_ring:verify": 13.423951,
+        "total_ms": 37.793643
+      }
+    },
+    "run": "candidate-n1024-s100-b1024-t8-seed42"
+  },
+  {
+    "operations": {
+      "commit": {
+        "falcon_algebraic:witness": 33.255306,
+        "packing_and_commit_ms": 6.101706,
+        "total_ms": 39.286969
+      },
+      "prove": {
+        "falcon_algebraic:arithmetic": 129.981583,
+        "falcon_algebraic:binding": 119.784077,
+        "falcon_algebraic:binding_construction": 6.096275,
+        "falcon_algebraic:binding_evaluation": 1.631096,
+        "falcon_algebraic:bitz": 53.783159,
+        "falcon_algebraic:integer_outer": 10.176466,
+        "falcon_algebraic:pcs": 7.137846,
+        "falcon_algebraic:ring": 29.994606,
+        "falcon_algebraic_ring:collapse": 18.387052,
+        "falcon_algebraic_ring:coordinates": 10.39016,
+        "falcon_algebraic_ring:prove": 29.975450000000002,
+        "falcon_bridge:column_packing": 0.862692,
+        "falcon_bridge:integer_folds": 2.4141980000000003,
+        "falcon_bridge:power_tables": 0.365972,
+        "falcon_bridge:wfbitz_forest": 49.811334,
+        "falcon_integer:coefficients": 0.868916,
+        "falcon_integer:fold": 2.761475,
+        "falcon_integer:native_prefix": 5.6317260000000005,
+        "falcon_joint:compact": 0.5199039999999999,
+        "falcon_joint:dense": 0.06994299999999999,
+        "falcon_joint:packed_setup": 2.627822,
+        "falcon_joint:prepare": 1.1786100000000002,
+        "inner_packed:fold_tail": 23.324244999999998,
+        "inner_packed:prefix_accumulators": 70.770493,
+        "inner_packed:prepare_tail": 17.551992,
+        "lig:grind_pow": 0.009518,
+        "op:deferred_first_fold": 0.645873,
+        "op:extra_bases": 1.908671,
+        "op:initial_messages": 1.882993,
+        "op:ligerito": 2.593277,
+        "op:ring_switch": 2.591423,
+        "other_including_joint_ms": 16.791965000000033,
+        "total_ms": 237.415591
+      },
+      "verify": {
+        "falcon_algebraic:binding_construction": 6.23619,
+        "falcon_algebraic:binding_evaluation": 1.619094,
+        "falcon_algebraic_ring:collapse": 18.692961,
+        "falcon_algebraic_ring:coordinates": 10.535325,
+        "falcon_algebraic_ring:verify": 29.524777,
+        "total_ms": 48.835998
+      }
+    },
+    "run": "candidate-n512-s100-b1024-t1-seed42"
+  },
+  {
+    "operations": {
+      "commit": {
+        "falcon_algebraic:witness": 4.9676800000000005,
+        "packing_and_commit_ms": 3.1724129999999997,
+        "total_ms": 8.10193
+      },
+      "prove": {
+        "falcon_algebraic:arithmetic": 19.828369,
+        "falcon_algebraic:binding": 16.845976,
+        "falcon_algebraic:binding_construction": 1.148352,
+        "falcon_algebraic:binding_evaluation": 0.24512399999999998,
+        "falcon_algebraic:bitz": 10.276917,
+        "falcon_algebraic:integer_outer": 2.944592,
+        "falcon_algebraic:pcs": 2.601913,
+        "falcon_algebraic:ring": 7.603127000000001,
+        "falcon_algebraic_ring:collapse": 2.662989,
+        "falcon_algebraic_ring:coordinates": 3.733355,
+        "falcon_algebraic_ring:prove": 7.588077999999999,
+        "falcon_bridge:column_packing": 0.166686,
+        "falcon_bridge:integer_folds": 0.39616,
+        "falcon_bridge:power_tables": 0.376182,
+        "falcon_bridge:wfbitz_forest": 8.964623999999999,
+        "falcon_integer:coefficients": 0.841563,
+        "falcon_integer:fold": 1.2068860000000001,
+        "falcon_joint:compact": 0.084219,
+        "falcon_joint:dense": 0.042248,
+        "falcon_joint:packed_setup": 0.943305,
+        "falcon_joint:prepare": 0.17671399999999998,
+        "inner_packed:fold_tail": 5.607949,
+        "inner_packed:prefix_accumulators": 4.883601,
+        "inner_packed:prepare_tail": 3.8978450000000002,
+        "lig:grind_pow": 0.009508,
+        "op:deferred_first_fold": 0.108025,
+        "op:extra_bases": 0.974404,
+        "op:initial_messages": 0.947052,
+        "op:ligerito": 1.159524,
+        "op:ring_switch": 0.419944,
+        "other_including_joint_ms": 11.721161000000002,
+        "total_ms": 52.000256
+      },
+      "verify": {
+        "falcon_algebraic:binding_construction": 1.138664,
+        "falcon_algebraic:binding_evaluation": 0.24140699999999998,
+        "falcon_algebraic_ring:collapse": 2.480273,
+        "falcon_algebraic_ring:coordinates": 4.1571359999999995,
+        "falcon_algebraic_ring:verify": 6.942025999999999,
+        "total_ms": 19.94498
+      }
+    },
+    "run": "candidate-n512-s100-b1024-t8-seed42"
+  }
+]

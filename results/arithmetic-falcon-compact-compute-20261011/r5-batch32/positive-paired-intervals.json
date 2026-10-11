@@ -1,0 +1,98 @@
+[
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "metric": "total_prover_ms",
+    "paired_seed_median_delta_percent": 1.2084192185480847,
+    "interval": [
+      0.9742728417384772,
+      1.4177308090087326
+    ]
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 1.3775144455300925,
+    "interval": [
+      1.1505708632150613,
+      1.574411410649157
+    ]
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 1,
+    "metric": "total_prover_ms",
+    "paired_seed_median_delta_percent": 1.048747432889785,
+    "interval": [
+      0.9046689256325902,
+      1.0906378734791833
+    ]
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 1,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 1.1869730058846617,
+    "interval": [
+      1.0665367781328872,
+      1.2562156212788667
+    ]
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "metric": "total_prover_ms",
+    "paired_seed_median_delta_percent": 0.4981996885860429,
+    "interval": [
+      0.2555623988991229,
+      0.9981670299310963
+    ]
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 0.9261517984512357,
+    "interval": [
+      0.7764557126282989,
+      1.22695773273227
+    ]
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 1,
+    "metric": "total_prover_ms",
+    "paired_seed_median_delta_percent": 0.41570000719286515,
+    "interval": [
+      0.17643947570049612,
+      0.6128691308713075
+    ]
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 1,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 0.7564323148857799,
+    "interval": [
+      0.5693176297037361,
+      0.9124057358956827
+    ]
+  }
+]

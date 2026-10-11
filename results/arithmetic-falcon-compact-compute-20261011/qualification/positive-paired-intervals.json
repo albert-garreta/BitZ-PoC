@@ -1,0 +1,242 @@
+[
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "metric": "total_prover_ms",
+    "paired_seed_median_delta_percent": 0.44181239407510287,
+    "interval": [
+      0.24168669851072355,
+      0.5358701784694775
+    ]
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 0.5449943652199529,
+    "interval": [
+      0.44240183080741513,
+      0.677508637792168
+    ]
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 1,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 0.3977546294064771,
+    "interval": [
+      0.26126143191529394,
+      0.47581653286643544
+    ]
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 0.25422584454219965,
+    "interval": [
+      0.14290169683615073,
+      0.4286079995390768
+    ]
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 1,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 0.34222441089037936,
+    "interval": [
+      0.25564201656271823,
+      0.4260351252975081
+    ]
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 8,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 0.6593030975579506,
+    "interval": [
+      0.16743156833589623,
+      1.181366084175317
+    ]
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 17,
+    "threads": 1,
+    "metric": "total_prover_ms",
+    "paired_seed_median_delta_percent": 0.4475078071860983,
+    "interval": [
+      0.12198237429734693,
+      0.7842895640333358
+    ]
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 17,
+    "threads": 1,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 0.5826314776438135,
+    "interval": [
+      0.40415398210720266,
+      0.9370395757674288
+    ]
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 33,
+    "threads": 1,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 0.5299525154946139,
+    "interval": [
+      0.33534974228408565,
+      0.7002754387972487
+    ]
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 129,
+    "threads": 1,
+    "metric": "total_prover_ms",
+    "paired_seed_median_delta_percent": 0.35028686837770273,
+    "interval": [
+      0.017017924698037312,
+      0.4683220547055722
+    ]
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 129,
+    "threads": 1,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 0.6866814991447701,
+    "interval": [
+      0.3483081576939995,
+      0.9797159895239771
+    ]
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 65,
+    "threads": 1,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 0.353769788284497,
+    "interval": [
+      0.015215413379543463,
+      0.9464016058657876
+    ]
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 65,
+    "threads": 8,
+    "metric": "total_prover_ms",
+    "paired_seed_median_delta_percent": 0.7081565451599214,
+    "interval": [
+      0.5707535900326022,
+      0.8921922964025608
+    ]
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 65,
+    "threads": 8,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 0.41030773507466645,
+    "interval": [
+      0.07377817197602443,
+      0.8854083944259905
+    ]
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 129,
+    "threads": 1,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 0.49747459952991235,
+    "interval": [
+      0.29486447640514335,
+      0.7893228314291179
+    ]
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 17,
+    "threads": 1,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 0.4183896008121968,
+    "interval": [
+      0.1438308669249322,
+      0.5789263405465928
+    ]
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 129,
+    "threads": 1,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 0.7544762805953731,
+    "interval": [
+      0.6753659585411409,
+      1.4191847928711976
+    ]
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 9,
+    "threads": 1,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 0.13290386975599588,
+    "interval": [
+      0.012024608347216414,
+      0.3229686676583077
+    ]
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 65,
+    "threads": 1,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 0.39521666734809724,
+    "interval": [
+      0.23795213199335752,
+      0.549221526296817
+    ]
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 129,
+    "threads": 8,
+    "metric": "prove_ms",
+    "paired_seed_median_delta_percent": 0.692504044605391,
+    "interval": [
+      0.03339295452569058,
+      1.1851194027375112
+    ]
+  }
+]

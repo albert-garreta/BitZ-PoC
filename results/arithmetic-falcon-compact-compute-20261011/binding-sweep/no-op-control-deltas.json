@@ -1,0 +1,706 @@
+[
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 1,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -10.640864047241283,
+      "prove_ms": -10.646597411208457
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 1,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.6797496695841954,
+      "prove_ms": -0.8028565490922124
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.05327628910125615,
+      "prove_ms": -0.0459471408919887
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.9085642811029859,
+      "prove_ms": 0.6911836057473586
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 1,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.15839569233480066,
+      "prove_ms": -0.17139852369383313
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 1,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 2.769856437563867,
+      "prove_ms": -1.0183954174678655
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.4612052436926861,
+      "prove_ms": 0.48964153761033025
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.6006215683195371,
+      "prove_ms": -0.6555606205504216
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 1,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.1416555095848704,
+      "prove_ms": -0.1615206023266147
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 1,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.16452119957455213,
+      "prove_ms": -0.07372628765078826
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.29078980351632255,
+      "prove_ms": -0.260698289382022
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -2.1121178102526006,
+      "prove_ms": 0.0995657710575415
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 1,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.1322538437948939,
+      "prove_ms": 0.12587054104511441
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 1,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -1.411375280932925,
+      "prove_ms": -1.358651104753128
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.04020565976585733,
+      "prove_ms": 0.03436358588926325
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.7368763408141632,
+      "prove_ms": -0.0428886142520124
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 1024,
+    "threads": 1,
+    "identical_strategy": "opt4",
+    "deltas_percent": {
+      "total_prover_ms": 0.2119045517288809,
+      "prove_ms": 0.2794728225159915
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 1024,
+    "threads": 8,
+    "identical_strategy": "opt3",
+    "deltas_percent": {
+      "total_prover_ms": -0.2540248490434438,
+      "prove_ms": -0.4786089906088642
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 1,
+    "identical_strategy": "opt4",
+    "deltas_percent": {
+      "total_prover_ms": -0.6105483010667601,
+      "prove_ms": -0.6897020530810982
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 8,
+    "identical_strategy": "opt3",
+    "deltas_percent": {
+      "total_prover_ms": -0.309751989192697,
+      "prove_ms": -0.759700154585119
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 1024,
+    "threads": 1,
+    "identical_strategy": "opt4",
+    "deltas_percent": {
+      "total_prover_ms": -0.12751088461432358,
+      "prove_ms": 0.01593423989225684
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 1024,
+    "threads": 8,
+    "identical_strategy": "opt3",
+    "deltas_percent": {
+      "total_prover_ms": 0.5862801675645457,
+      "prove_ms": 0.3459492384926266
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 1,
+    "identical_strategy": "opt4",
+    "deltas_percent": {
+      "total_prover_ms": 0.20317206861979464,
+      "prove_ms": 0.2612578992463588
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 8,
+    "identical_strategy": "opt3",
+    "deltas_percent": {
+      "total_prover_ms": -0.6657660671545607,
+      "prove_ms": -0.49936773206116225
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 16,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.12106746405387003,
+      "prove_ms": 0.21387654516360488
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 16,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -1.759567451841515,
+      "prove_ms": -1.7642458537330152
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 17,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.1418656072992075,
+      "prove_ms": -0.13504869117916263
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 17,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 1.2233913313750566,
+      "prove_ms": 1.8287384875462775
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 33,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.09936782006840783,
+      "prove_ms": 0.11687033448510853
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 33,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.5140991627530234,
+      "prove_ms": 1.474349763604077
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 65,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.10952180277441492,
+      "prove_ms": -0.13819990632986112
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 65,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -1.0938131920943395,
+      "prove_ms": -0.6430914584671155
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 129,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.04020422636579202,
+      "prove_ms": -0.06669947737725224
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 129,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 1.1723291421152693,
+      "prove_ms": 0.6624127355013165
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 16,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.5097998812701343,
+      "prove_ms": -0.5162110539590592
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 16,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.5684027058360241,
+      "prove_ms": 0.2366077367109476
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 17,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.46107102496067975,
+      "prove_ms": -0.47352370441915426
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 17,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.9937933359108309,
+      "prove_ms": -1.5284583803267027
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 33,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.4398379434526478,
+      "prove_ms": -0.4752777331802349
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 33,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.15513276015270971,
+      "prove_ms": 0.3176214424114754
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 65,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.11644054150919958,
+      "prove_ms": -0.11832589605634825
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 65,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -1.1638858890815618,
+      "prove_ms": -1.3197514467220839
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 129,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.15065588890825765,
+      "prove_ms": 0.15040170487630178
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 129,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -1.2938319583596147,
+      "prove_ms": -1.8861909392875909
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 8,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.16685838928829355,
+      "prove_ms": -0.1709749427972973
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 8,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.901870946854122,
+      "prove_ms": 1.6261566168237707
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 9,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.1568205577216597,
+      "prove_ms": 0.13057984372533138
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 9,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.37492569712931356,
+      "prove_ms": 0.22811147768595497
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 17,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.30605398302483433,
+      "prove_ms": -0.018408157664207003
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 17,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.028936516840305515,
+      "prove_ms": 0.17070894117388047
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 65,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 1.0153242056519574,
+      "prove_ms": 1.1655986752649783
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 65,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -1.468879644515242,
+      "prove_ms": -1.1455099444589223
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 129,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.22405136374491486,
+      "prove_ms": -0.28096738838140345
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 129,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.055739893758088854,
+      "prove_ms": -0.6389142745775622
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 8,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.11130517805093554,
+      "prove_ms": -0.09308586501950433
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 8,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.3744917780349799,
+      "prove_ms": -0.39482783782097686
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 9,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.016349159149531278,
+      "prove_ms": -0.021760015009686384
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 9,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.26938654085368885,
+      "prove_ms": 0.5207709568345376
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 17,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.044585415289555286,
+      "prove_ms": 0.008685397346042123
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 17,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.3139176602026117,
+      "prove_ms": 0.36204339535637065
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 65,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.5121884045840019,
+      "prove_ms": 0.6206625273626365
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 65,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.2107393178007344,
+      "prove_ms": -0.25146696331106444
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 129,
+    "threads": 1,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": -0.27586620234180126,
+      "prove_ms": -0.26508671930679517
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 129,
+    "threads": 8,
+    "identical_strategy": "legacy3",
+    "deltas_percent": {
+      "total_prover_ms": 0.541785994181776,
+      "prove_ms": 1.247704099250635
+    }
+  }
+]

@@ -1,0 +1,3079 @@
+{
+  "passed": true,
+  "checked_proofs": 1536,
+  "transitively_matching_original_v7": 1152,
+  "checks": [
+    {
+      "run": "default-n1024-s100-b1-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n1024-s100-b1-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n1024-s100-b1-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n1024-s100-b1-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n1024-s100-b1024-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1024-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b1024-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1024-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b1024-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1024-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b1024-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1024-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b129-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b129-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b129-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b129-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b129-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b129-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b129-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b129-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b17-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b17-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b17-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b17-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b17-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b17-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b17-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b17-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b32-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b32-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b32-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b32-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b32-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b32-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b32-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b32-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b65-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b65-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b65-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b65-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b65-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b65-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b65-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b65-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b8-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b8-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n1024-s100-b8-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b8-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n1024-s100-b8-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b8-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n1024-s100-b8-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b8-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n1024-s100-b9-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b9-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b9-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b9-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b9-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b9-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s100-b9-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b9-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b1-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n1024-s128-b1-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n1024-s128-b1-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n1024-s128-b1-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n1024-s128-b1024-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1024-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b1024-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1024-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b1024-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1024-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b1024-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1024-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b129-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b129-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b129-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b129-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b129-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b129-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b129-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b129-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b17-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b17-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b17-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b17-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b17-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b17-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b17-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b17-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b32-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b32-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b32-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b32-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b32-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b32-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b32-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b32-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b65-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b65-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b65-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b65-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b65-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b65-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b65-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b65-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b8-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b8-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n1024-s128-b8-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b8-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n1024-s128-b8-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b8-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n1024-s128-b8-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b8-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n1024-s128-b9-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b9-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b9-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b9-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b9-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b9-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n1024-s128-b9-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b9-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b1-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n512-s100-b1-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n512-s100-b1-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n512-s100-b1-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n512-s100-b1024-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1024-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b1024-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1024-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b1024-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1024-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b1024-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1024-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b129-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b129-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b129-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b129-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b129-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b129-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b129-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b129-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b16-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b16-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n512-s100-b16-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b16-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n512-s100-b16-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b16-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n512-s100-b16-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b16-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n512-s100-b17-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b17-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b17-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b17-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b17-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b17-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b17-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b17-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b32-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b32-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b32-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b32-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b32-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b32-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b32-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b32-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b33-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b33-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b33-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b33-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b33-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b33-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b33-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b33-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b65-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b65-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b65-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b65-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b65-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b65-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s100-b65-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b65-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b1-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n512-s128-b1-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n512-s128-b1-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n512-s128-b1-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n512-s128-b1024-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1024-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b1024-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1024-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b1024-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1024-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b1024-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1024-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b129-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b129-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b129-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b129-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b129-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b129-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b129-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b129-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b16-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b16-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n512-s128-b16-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b16-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n512-s128-b16-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b16-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n512-s128-b16-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b16-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "default-n512-s128-b17-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b17-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b17-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b17-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b17-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b17-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b17-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b17-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b32-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b32-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b32-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b32-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b32-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b32-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b32-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b32-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b33-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b33-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b33-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b33-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b33-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b33-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b33-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b33-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b65-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b65-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b65-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b65-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b65-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b65-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "default-n512-s128-b65-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b65-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b1-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n1024-s100-b1-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n1024-s100-b1-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n1024-s100-b1-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n1024-s100-b1024-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1024-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b1024-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1024-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b1024-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1024-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b1024-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1024-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b129-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b129-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b129-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b129-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b129-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b129-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b129-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b129-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b17-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b17-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b17-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b17-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b17-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b17-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b17-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b17-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b32-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b32-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b32-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b32-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b32-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b32-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b32-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b32-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b65-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b65-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b65-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b65-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b65-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b65-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b65-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b65-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b8-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b8-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n1024-s100-b8-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b8-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n1024-s100-b8-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b8-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n1024-s100-b8-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b8-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n1024-s100-b9-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b9-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b9-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b9-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b9-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b9-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s100-b9-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b9-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b1-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n1024-s128-b1-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n1024-s128-b1-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n1024-s128-b1-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n1024-s128-b1024-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1024-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b1024-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1024-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b1024-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1024-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b1024-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1024-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b129-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b129-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b129-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b129-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b129-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b129-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b129-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b129-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b17-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b17-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b17-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b17-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b17-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b17-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b17-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b17-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b32-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b32-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b32-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b32-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b32-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b32-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b32-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b32-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b65-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b65-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b65-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b65-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b65-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b65-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b65-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b65-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b8-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b8-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n1024-s128-b8-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b8-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n1024-s128-b8-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b8-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n1024-s128-b8-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b8-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n1024-s128-b9-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b9-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b9-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b9-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b9-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b9-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n1024-s128-b9-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b9-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b1-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n512-s100-b1-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n512-s100-b1-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n512-s100-b1-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n512-s100-b1024-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1024-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b1024-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1024-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b1024-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1024-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b1024-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1024-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b129-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b129-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b129-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b129-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b129-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b129-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b129-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b129-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b16-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b16-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n512-s100-b16-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b16-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n512-s100-b16-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b16-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n512-s100-b16-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b16-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n512-s100-b17-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b17-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b17-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b17-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b17-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b17-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b17-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b17-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b32-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b32-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b32-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b32-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b32-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b32-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b32-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b32-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b33-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b33-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b33-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b33-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b33-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b33-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b33-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b33-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b65-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b65-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b65-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b65-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b65-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b65-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s100-b65-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b65-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b1-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n512-s128-b1-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n512-s128-b1-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n512-s128-b1-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n512-s128-b1024-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1024-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b1024-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1024-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b1024-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1024-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b1024-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1024-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b129-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b129-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b129-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b129-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b129-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b129-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b129-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b129-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b16-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b16-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n512-s128-b16-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b16-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n512-s128-b16-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b16-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n512-s128-b16-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b16-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "legacy3-n512-s128-b17-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b17-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b17-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b17-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b17-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b17-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b17-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b17-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b32-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b32-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b32-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b32-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b32-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b32-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b32-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b32-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b33-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b33-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b33-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b33-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b33-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b33-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b33-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b33-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b65-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b65-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b65-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b65-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b65-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b65-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "legacy3-n512-s128-b65-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b65-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b1-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n1024-s100-b1-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n1024-s100-b1-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n1024-s100-b1-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n1024-s100-b1024-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1024-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b1024-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1024-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b1024-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1024-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b1024-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1024-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b129-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b129-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b129-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b129-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b129-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b129-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b129-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b129-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b17-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b17-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b17-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b17-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b17-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b17-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b17-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b17-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b32-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b32-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b32-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b32-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b32-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b32-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b32-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b32-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b65-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b65-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b65-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b65-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b65-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b65-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b65-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b65-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b8-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b8-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n1024-s100-b8-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b8-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n1024-s100-b8-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b8-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n1024-s100-b8-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b8-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n1024-s100-b9-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b9-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b9-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b9-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b9-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b9-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s100-b9-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b9-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b1-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n1024-s128-b1-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n1024-s128-b1-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n1024-s128-b1-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n1024-s128-b1024-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1024-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b1024-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1024-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b1024-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1024-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b1024-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1024-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b129-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b129-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b129-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b129-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b129-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b129-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b129-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b129-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b17-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b17-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b17-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b17-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b17-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b17-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b17-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b17-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b32-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b32-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b32-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b32-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b32-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b32-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b32-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b32-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b65-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b65-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b65-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b65-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b65-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b65-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b65-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b65-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b8-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b8-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n1024-s128-b8-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b8-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n1024-s128-b8-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b8-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n1024-s128-b8-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b8-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n1024-s128-b9-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b9-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b9-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b9-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b9-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b9-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n1024-s128-b9-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b9-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b1-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n512-s100-b1-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n512-s100-b1-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n512-s100-b1-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n512-s100-b1024-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1024-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b1024-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1024-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b1024-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1024-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b1024-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1024-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b129-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b129-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b129-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b129-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b129-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b129-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b129-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b129-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b16-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b16-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n512-s100-b16-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b16-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n512-s100-b16-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b16-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n512-s100-b16-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b16-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n512-s100-b17-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b17-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b17-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b17-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b17-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b17-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b17-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b17-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b32-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b32-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b32-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b32-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b32-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b32-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b32-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b32-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b33-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b33-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b33-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b33-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b33-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b33-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b33-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b33-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b65-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b65-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b65-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b65-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b65-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b65-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s100-b65-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b65-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b1-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n512-s128-b1-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n512-s128-b1-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n512-s128-b1-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n512-s128-b1024-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1024-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b1024-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1024-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b1024-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1024-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b1024-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1024-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b129-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b129-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b129-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b129-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b129-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b129-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b129-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b129-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b16-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b16-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n512-s128-b16-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b16-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n512-s128-b16-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b16-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n512-s128-b16-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b16-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt3-n512-s128-b17-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b17-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b17-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b17-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b17-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b17-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b17-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b17-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b32-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b32-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b32-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b32-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b32-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b32-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b32-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b32-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b33-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b33-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b33-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b33-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b33-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b33-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b33-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b33-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b65-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b65-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b65-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b65-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b65-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b65-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt3-n512-s128-b65-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b65-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b1-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n1024-s100-b1-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n1024-s100-b1-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n1024-s100-b1-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n1024-s100-b1024-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1024-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b1024-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1024-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b1024-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1024-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b1024-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b1024-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b129-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b129-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b129-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b129-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b129-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b129-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b129-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b129-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b17-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b17-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b17-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b17-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b17-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b17-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b17-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b17-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b32-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b32-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b32-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b32-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b32-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b32-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b32-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b32-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b65-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b65-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b65-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b65-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b65-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b65-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b65-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b65-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b8-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b8-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n1024-s100-b8-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b8-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n1024-s100-b8-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b8-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n1024-s100-b8-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b8-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n1024-s100-b9-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b9-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b9-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b9-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b9-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b9-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s100-b9-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s100-b9-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b1-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n1024-s128-b1-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n1024-s128-b1-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n1024-s128-b1-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n1024-s128-b1024-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1024-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b1024-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1024-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b1024-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1024-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b1024-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b1024-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b129-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b129-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b129-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b129-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b129-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b129-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b129-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b129-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b17-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b17-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b17-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b17-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b17-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b17-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b17-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b17-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b32-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b32-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b32-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b32-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b32-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b32-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b32-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b32-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b65-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b65-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b65-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b65-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b65-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b65-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b65-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b65-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b8-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b8-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n1024-s128-b8-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b8-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n1024-s128-b8-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b8-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n1024-s128-b8-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b8-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n1024-s128-b9-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b9-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b9-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b9-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b9-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b9-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n1024-s128-b9-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n1024-s128-b9-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b1-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n512-s100-b1-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n512-s100-b1-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n512-s100-b1-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n512-s100-b1024-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1024-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b1024-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1024-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b1024-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1024-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b1024-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b1024-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b129-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b129-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b129-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b129-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b129-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b129-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b129-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b129-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b16-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b16-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n512-s100-b16-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b16-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n512-s100-b16-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b16-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n512-s100-b16-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b16-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n512-s100-b17-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b17-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b17-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b17-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b17-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b17-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b17-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b17-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b32-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b32-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b32-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b32-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b32-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b32-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b32-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b32-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b33-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b33-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b33-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b33-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b33-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b33-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b33-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b33-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b65-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b65-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b65-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b65-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b65-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b65-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s100-b65-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s100-b65-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b1-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n512-s128-b1-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n512-s128-b1-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n512-s128-b1-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n512-s128-b1024-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1024-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b1024-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1024-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b1024-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1024-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b1024-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b1024-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b129-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b129-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b129-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b129-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b129-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b129-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b129-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b129-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b16-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b16-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n512-s128-b16-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b16-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n512-s128-b16-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b16-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n512-s128-b16-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b16-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v8"
+    },
+    {
+      "run": "opt4-n512-s128-b17-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b17-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b17-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b17-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b17-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b17-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b17-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b17-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b32-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b32-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b32-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b32-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b32-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b32-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b32-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b32-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b33-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b33-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b33-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b33-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b33-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b33-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b33-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b33-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b65-t1-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b65-t1-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b65-t1-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b65-t1-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b65-t8-seed42",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b65-t8-seed42.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    },
+    {
+      "run": "opt4-n512-s128-b65-t8-seed43",
+      "proofs": 3,
+      "matched_initial_production": "qualification/padding-n512-s128-b65-t8-seed43.jsonl",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7"
+    }
+  ]
+}

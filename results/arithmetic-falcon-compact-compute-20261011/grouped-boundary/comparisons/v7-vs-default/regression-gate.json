@@ -1,0 +1,81 @@
+{
+  "passed": false,
+  "metrics": [
+    "total_prover_ms",
+    "prove_ms"
+  ],
+  "maximum_regression_percent": 0,
+  "regressions": [
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 255,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 16.191282,
+      "candidate_ms": 20.011588000000003,
+      "regression_percent": 23.594833318325257
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 255,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 14.3189305,
+      "candidate_ms": 18.2874775,
+      "regression_percent": 27.715386983685697
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 257,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 21.852496,
+      "candidate_ms": 21.893689,
+      "regression_percent": 0.18850478224547995
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 255,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 18.846184,
+      "candidate_ms": 22.5271775,
+      "regression_percent": 19.531770994064356
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 255,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 17.0991695,
+      "candidate_ms": 20.851252,
+      "regression_percent": 21.943068638509033
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 256,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 16.994186,
+      "candidate_ms": 17.042392,
+      "regression_percent": 0.283661718189987
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 257,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 23.370562999999997,
+      "candidate_ms": 23.4394275,
+      "regression_percent": 0.29466341910548977
+    }
+  ],
+  "interpretation": "Observed pooled-sample median gate only. A tiny positive delta does not establish a repeatable regression; inspect seed-paired dispersion and an independently authorized confirmation run. This gate is not a statistical confidence claim."
+}

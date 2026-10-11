@@ -45,7 +45,7 @@ impl BindingOptions {
         if supported || cfg!(test) {
             Self {
                 optimized: true,
-                // Arithmetic has no grouped adapter and keeps one task per signature.
+                // Arithmetic's own selector enables grouping on qualified paths.
                 group_cap: if !full {
                     1
                 } else if degree == 512 || security_bits == 128 {

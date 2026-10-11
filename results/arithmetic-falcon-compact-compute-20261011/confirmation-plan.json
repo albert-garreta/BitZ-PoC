@@ -1,0 +1,1170 @@
+{
+  "version": 1,
+  "frozen_before_timings": true,
+  "warmup": 1,
+  "iterations": 3,
+  "variant_order": "forward-reverse",
+  "purpose": "Independent confirmation of every original qualification shape having a positive lower endpoint in either paired median or paired geometric mean 95% interval for either proving metric; all fresh input seeds74..105; unchanged frozen binaries.",
+  "selection_source": "qualification/comparisons/padding-vs-v7/paired-seed-analysis.json",
+  "selection_rules": [
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "total_prover_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        },
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "total_prover_ms",
+          "positive_interval_statistics": [
+            "median"
+          ]
+        },
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 8,
+      "reasons": [
+        {
+          "metric": "total_prover_ms",
+          "positive_interval_statistics": [
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 33,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 129,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "total_prover_ms",
+          "positive_interval_statistics": [
+            "median"
+          ]
+        },
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 65,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 65,
+      "threads": 8,
+      "reasons": [
+        {
+          "metric": "total_prover_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        },
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 129,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "total_prover_ms",
+          "positive_interval_statistics": [
+            "geomean"
+          ]
+        },
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 9,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 129,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "total_prover_ms",
+          "positive_interval_statistics": [
+            "geomean"
+          ]
+        },
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 9,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 65,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "total_prover_ms",
+          "positive_interval_statistics": [
+            "geomean"
+          ]
+        },
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 129,
+      "threads": 8,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median"
+          ]
+        }
+      ]
+    }
+  ],
+  "shapes": [
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "core-large",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 8,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 33,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 129,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 65,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 65,
+      "threads": 8,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 129,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 9,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 129,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 9,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 65,
+      "threads": 1,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 129,
+      "threads": 8,
+      "seeds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105
+      ]
+    }
+  ]
+}

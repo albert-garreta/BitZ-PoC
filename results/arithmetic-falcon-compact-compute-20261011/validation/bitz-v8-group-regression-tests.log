@@ -1,0 +1,197 @@
+
+running 103 tests
+test hybrid::integer_bridge::tests::single_algebraic_source_bridge_authenticates_without_falcon_trace ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::compact_binding::tests::compact_integer_decoder_preserves_every_signed15_value ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::compact_binding::tests::compact_proofs_authenticate_all_branches_and_padding ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::compact_binding::tests::compact_stream_and_sumchecks_match_independent_dense_coefficients ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::aligned_binding_matches_dense_evaluation_folds_and_sumcheck ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::altered_bits_and_both_kinds_of_padding_are_rejected ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::factored_construction_and_batched_evaluation_match_legacy ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::grinded_messages_roundtrip_and_require_all_nonces ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::grouped_binding_buckets_match_dense_and_check_ranges ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::grouped_binding_preserves_complete_sumcheck_proof_and_transcript ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::invalid_slack_and_cross_witness_binding_are_rejected ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::malformed_messages_and_nonces_are_rejected ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::parallel_binding_rejects_noncanonical_ring_coefficients ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::preceding_transcript_domains_cannot_be_replayed ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::signatures_cannot_borrow_each_others_norm_budget ... ok
+test piop::spartan::falcon1024_algebraic::arithmetic::tests::singleton_and_padded_batch_open_the_same_bits ... ok
+test piop::spartan::falcon1024_algebraic::compact::tests::bridge_matrices_cover_exactly_the_logical_source_bits ... ok
+test piop::spartan::falcon1024_algebraic::compact::tests::compact_planes_reconstruct_every_virtual_bit ... ok
+test piop::spartan::falcon1024_algebraic::compact::tests::every_signed15_coefficient_has_an_exact_compact_encoding ... ok
+test piop::spartan::falcon1024_algebraic::compact::tests::exception_metadata_and_unrepresentable_padding_are_rejected ... ok
+test piop::spartan::falcon1024_algebraic::compact::tests::minimum_size_source_is_exact_signed15_with_no_metadata ... ok
+test piop::spartan::falcon1024_algebraic::compact::tests::norm_valid_boundaries_and_maximum_exception_count_are_preserved ... ok
+test piop::spartan::falcon1024_algebraic::compact::tests::parallel_packing_preserves_all_bits_and_exception_indices ... ok
+test piop::spartan::falcon1024_algebraic::compact::tests::transposed_claim_matches_direct_virtual_dot_product ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::combined_commit_matches_separate_preparation ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::combined_commit_rejects_batch_mismatches ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::compact_bridges_and_combination_are_bound ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::compact_computation_requires_explicit_experimental_selection ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::configuration_bounds_cover_all_supported_batches ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::end_to_end_and_tampering ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::exact_large_coefficients_and_maximum_exceptions_verify ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::large_batches_at_both_security_targets ... ignored, large end-to-end qualification; run explicitly
+test piop::spartan::falcon1024_algebraic::protocol::tests::omitted_physical_padding_is_constrained ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::original_falcon_fixture_uses_only_algebraic_inputs ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::packing_preserves_complete_proofs_and_transcript_continuation ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::recommitted_invalid_assignments_are_rejected ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::serial_and_optimized_binding_preserve_complete_proof_contents ... ok
+test piop::spartan::falcon1024_algebraic::protocol::tests::supplied_noncentered_s1_still_requires_a_valid_relation ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::alpha_coordinates_and_carries_match_independent_fixed_basis_reference ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::an_invalid_ring_witness_has_no_coordinate_lift ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::coordinate_bound_covers_the_entire_encoded_witness_range ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::direct_ring_check_preserves_signed15_boundaries_and_wraparound ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::extension_sampler_rejects_biased_tail_and_base_field_evaluations ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::malformed_carries_and_nonce_shapes_are_rejected ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::parallel_carries_include_the_final_partial_chunk ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::ring_claim_matches_negacyclic_witness_for_padded_batches ... ok
+test piop::spartan::falcon1024_algebraic::ring::tests::tampering_changes_the_authenticated_claim_or_is_rejected ... ok
+test piop::spartan::falcon1024_algebraic::source::tests::aligned_addresses_are_disjoint_and_preserve_signed15_boundaries ... ok
+test piop::spartan::falcon1024_algebraic::source::tests::combined_preparation_rejects_invalid_shapes_and_public_coefficients ... ok
+test piop::spartan::falcon1024_algebraic::source::tests::exact_norm_boundary_and_coefficient_limits ... ok
+test piop::spartan::falcon1024_algebraic::source::tests::exact_ring_and_norm_match_independent_schoolbook ... ok
+test piop::spartan::falcon1024_algebraic::source::tests::packing_strategies_match_every_word ... ok
+test piop::spartan::falcon1024_algebraic::source::tests::signed15_source_decodes_and_padding_is_zero ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::compact_binding::tests::compact_integer_decoder_preserves_every_signed15_value ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::compact_binding::tests::compact_proofs_authenticate_all_branches_and_padding ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::compact_binding::tests::compact_stream_and_sumchecks_match_independent_dense_coefficients ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::aligned_binding_matches_dense_evaluation_folds_and_sumcheck ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::altered_bits_and_both_kinds_of_padding_are_rejected ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::factored_construction_and_batched_evaluation_match_legacy ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::grinded_messages_roundtrip_and_require_all_nonces ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::grouped_binding_buckets_match_dense_and_check_ranges ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::grouped_binding_preserves_complete_sumcheck_proof_and_transcript ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::invalid_slack_and_cross_witness_binding_are_rejected ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::malformed_messages_and_nonces_are_rejected ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::parallel_binding_rejects_noncanonical_ring_coefficients ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::preceding_transcript_domains_cannot_be_replayed ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::signatures_cannot_borrow_each_others_norm_budget ... ok
+test piop::spartan::falcon512_algebraic::arithmetic::tests::singleton_and_padded_batch_open_the_same_bits ... ok
+test piop::spartan::falcon512_algebraic::compact::tests::bridge_matrices_cover_exactly_the_logical_source_bits ... ok
+test piop::spartan::falcon512_algebraic::compact::tests::compact_planes_reconstruct_every_virtual_bit ... ok
+test piop::spartan::falcon512_algebraic::compact::tests::every_signed15_coefficient_has_an_exact_compact_encoding ... ok
+test piop::spartan::falcon512_algebraic::compact::tests::exception_metadata_and_unrepresentable_padding_are_rejected ... ok
+test piop::spartan::falcon512_algebraic::compact::tests::minimum_size_source_is_exact_signed15_with_no_metadata ... ok
+test piop::spartan::falcon512_algebraic::compact::tests::norm_valid_boundaries_and_maximum_exception_count_are_preserved ... ok
+test piop::spartan::falcon512_algebraic::compact::tests::parallel_packing_preserves_all_bits_and_exception_indices ... ok
+test piop::spartan::falcon512_algebraic::compact::tests::transposed_claim_matches_direct_virtual_dot_product ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::combined_commit_matches_separate_preparation ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::combined_commit_rejects_batch_mismatches ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::compact_bridges_and_combination_are_bound ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::compact_computation_requires_explicit_experimental_selection ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::configuration_bounds_cover_all_supported_batches ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::end_to_end_and_tampering ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::exact_large_coefficients_and_maximum_exceptions_verify ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::large_batches_at_both_security_targets ... ignored, large end-to-end qualification; run explicitly
+test piop::spartan::falcon512_algebraic::protocol::tests::omitted_physical_padding_is_constrained ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::packing_preserves_complete_proofs_and_transcript_continuation ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::recommitted_invalid_assignments_are_rejected ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::serial_and_optimized_binding_preserve_complete_proof_contents ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::alpha_coordinates_and_carries_match_independent_fixed_basis_reference ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::an_invalid_ring_witness_has_no_coordinate_lift ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::coordinate_bound_covers_the_entire_encoded_witness_range ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::direct_ring_check_preserves_signed15_boundaries_and_wraparound ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::extension_sampler_rejects_biased_tail_and_base_field_evaluations ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::malformed_carries_and_nonce_shapes_are_rejected ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::parallel_carries_include_the_final_partial_chunk ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::ring_claim_matches_negacyclic_witness_for_padded_batches ... ok
+test piop::spartan::falcon512_algebraic::ring::tests::tampering_changes_the_authenticated_claim_or_is_rejected ... ok
+test piop::spartan::falcon512_algebraic::source::tests::aligned_addresses_are_disjoint_and_preserve_signed15_boundaries ... ok
+test piop::spartan::falcon512_algebraic::source::tests::combined_preparation_rejects_invalid_shapes_and_public_coefficients ... ok
+test piop::spartan::falcon512_algebraic::source::tests::exact_norm_boundary_and_coefficient_limits ... ok
+test piop::spartan::falcon512_algebraic::source::tests::exact_ring_and_norm_match_independent_schoolbook ... ok
+test piop::spartan::falcon512_algebraic::source::tests::packing_strategies_match_every_word ... ok
+test piop::spartan::falcon512_algebraic::source::tests::signed15_source_decodes_and_padding_is_zero ... ok
+
+test result: ok. 101 passed; 0 failed; 2 ignored; 0 measured; 730 filtered out; finished in 15.20s
+
+
+running 2 tests
+test piop::spartan::falcon1024_algebraic::protocol::tests::large_batches_at_both_security_targets ... ok
+test piop::spartan::falcon512_algebraic::protocol::tests::large_batches_at_both_security_targets ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 831 filtered out; finished in 0.54s
+
+
+running 20 tests
+test hybrid::opening::geometry_tests::compact_joint_opening_preserves_roots_messages_and_transcript ... ok
+test hybrid::opening::geometry_tests::compact_source_rows_preserve_gapped_two_source_lanes ... ok
+test hybrid::opening::geometry_tests::compact_source_rows_reconstruct_canonical_openings ... ok
+test hybrid::opening::geometry_tests::deferred_initial_requires_two_supported_lookahead_rounds ... ok
+test hybrid::opening::geometry_tests::direct_padding_matches_separate_basis_updates ... ok
+test hybrid::opening::geometry_tests::explicit_allocations_are_canonical_and_preserve_default_binding ... ok
+test hybrid::opening::geometry_tests::explicit_default_allocation_preserves_the_complete_opening_proof ... ok
+test hybrid::opening::geometry_tests::falcon_three_keccak_slabs_fit_and_preserve_openings ... ok
+test hybrid::opening::geometry_tests::joint_opening_binds_root_and_rejects_nonzero_physical_padding ... ok
+test hybrid::opening::geometry_tests::joint_projection_matches_binary_mle_at_non_boolean_points ... ok
+test hybrid::opening::geometry_tests::joint_source_authentication_rejects_rows_paths_and_padding_tampering ... ok
+test hybrid::opening::geometry_tests::joint_source_encoding_and_paths_match_dense_reference ... ok
+test hybrid::opening::geometry_tests::small_logical_support_authenticates_all_omitted_physical_words ... ok
+test hybrid::opening::geometry_tests::streamed_ring_switch_and_initial_tables_match_dense_reference ... ok
+test hybrid::opening::geometry_tests::streamed_shared_opening_preserves_entire_proof_and_transcript ... ok
+test hybrid::opening::geometry_tests::three_root_padding_basis_matches_logical_support_exactly ... ok
+test hybrid::opening::grinding::tests::rejects_a_plan_from_another_ligerito_configuration ... ok
+test hybrid::opening::grinding::tests::rejects_missing_extra_nonces_and_wrong_native_schedule ... ok
+test hybrid::opening::grinding::tests::vectors_and_native_pow_share_blocks_and_replay_exactly ... ok
+test hybrid::opening::streamed::tests::deferred_two_round_tables_match_dense_for_padding_ood_and_boolean_challenges ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 813 filtered out; finished in 0.08s
+
+
+running 15 tests
+test hybrid::joint_sumcheck::tests::cached_gather_rounds_match_repeat_scan_for_every_axis_and_round ... ok
+test hybrid::joint_sumcheck::tests::cached_keccak_tensor_high_storage_is_bounded_by_tile_factors ... ok
+test hybrid::joint_sumcheck::tests::cached_tensor_tile_factors_match_full_high_tables_and_padding ... ok
+test hybrid::joint_sumcheck::tests::compact_lane_folds_match_dense_for_every_nonempty_lane_support ... ok
+test hybrid::joint_sumcheck::tests::compact_lane_sumcheck_supports_one_and_four_sources ... ok
+test hybrid::joint_sumcheck::tests::compact_lane_tables_preserve_physical_padding_at_the_opening_endpoint ... ok
+test hybrid::joint_sumcheck::tests::default_geometry_keeps_binding_and_explicit_allocations_are_validated ... ok
+test hybrid::joint_sumcheck::tests::joint_sumcheck_rejects_tampering_and_malformed_inputs ... ok
+test hybrid::joint_sumcheck::tests::logical_logs_below_allocation_match_the_full_physical_oracle ... ok
+test hybrid::joint_sumcheck::tests::masked_gathers_match_subcubes_and_dense_proof ... ok
+test hybrid::joint_sumcheck::tests::prefix_equality_matches_dense_for_every_limit ... ok
+test hybrid::joint_sumcheck::tests::repeat_ranges_match_dense_sumcheck_and_reject_invalid_bounds ... ok
+test hybrid::joint_sumcheck::tests::sparse_only_joint_sumcheck_handles_physical_padding ... ok
+test hybrid::joint_sumcheck::tests::structured_joint_sumcheck_matches_dense_two_root_transcript ... ok
+test hybrid::joint_sumcheck::tests::three_root_joint_sumcheck_and_cached_marginals_match_dense_transcript ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 818 filtered out; finished in 0.42s
+
+
+running 14 tests
+test hybrid::integer_bridge::tests::batched_limbs_authenticate_source_and_reject_compensating_changes ... ok
+test hybrid::integer_bridge::tests::bitz_joint_limb_forest_fits_security_budget ... ok
+test hybrid::integer_bridge::tests::bridge_rejects_nonces_from_other_domains_and_difficulties ... ok
+test hybrid::integer_bridge::tests::cached_generator_comb_matches_fresh_preparation ... ok
+test hybrid::integer_bridge::tests::compact_sums_preserve_reference_absorbed_bytes ... ok
+test hybrid::integer_bridge::tests::native_frames_remain_reference_and_unsplit_domains_are_distinct ... ok
+test hybrid::integer_bridge::tests::reject_layouts_whose_upper_sum_does_not_fit ... ok
+test hybrid::integer_bridge::tests::shared_126_bit_weights_have_bounded_113_bit_limbs ... ok
+test hybrid::integer_bridge::tests::shared_128_bit_bridge_uses_two_limbs_and_authenticates_padded_source ... ok
+test hybrid::integer_bridge::tests::single_algebraic_source_bridge_authenticates_without_falcon_trace ... ok
+test hybrid::integer_bridge::tests::unsplit_bridge_authenticates_source_and_rejects_malformed_proofs ... ok
+test hybrid::integer_bridge::tests::unsplit_counts_and_conservative_modulus_gate ... ok
+test hybrid::integer_bridge::tests::unsplit_full_width_folds_match_big_integer_reference ... ok
+test hybrid::integer_bridge::tests::unsplit_terminal_coefficients_use_original_row_and_column_slots ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 819 filtered out; finished in 0.06s
+
+
+running 5 tests
+test hybrid::sumcheck::table::tests::compact_selected_matches_scalar_supports_tails_and_cross_group_pairs ... ok
+test hybrid::sumcheck::table::tests::dense_selected_matches_scalar_with_tails_and_boolean_challenges ... ok
+test hybrid::sumcheck::table::tests::prefix_masks_preserve_guards_on_unaligned_subslices ... ok
+test hybrid::sumcheck::tests::marginal_task_shapes_match_direct_sums_across_thread_counts ... ok
+test hybrid::sumcheck::tests::streamed_rounds_equal_dense_sumcheck_in_both_lane_orders ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 828 filtered out; finished in 0.04s
+
+
+running 3 tests
+test piop::spartan::falcon_profiles::n1024_k11::hybrid::tests::hybrid_falcon_128_roundtrip ... ok
+test piop::spartan::falcon_profiles::n1024_k11::hybrid::tests::hybrid_falcon_padding_and_wrong_nonce_branch ... ok
+test piop::spartan::falcon_profiles::n1024_k11::hybrid::tests::hybrid_falcon_roundtrip_and_tampering ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 830 filtered out; finished in 1.22s
+

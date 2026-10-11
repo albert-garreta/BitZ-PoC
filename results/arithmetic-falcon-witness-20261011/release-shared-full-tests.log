@@ -1,0 +1,38 @@
+
+running 33 tests
+test hybrid::integer_bridge::tests::batched_limbs_authenticate_source_and_reject_compensating_changes ... ok
+test hybrid::integer_bridge::tests::bitz_joint_limb_forest_fits_security_budget ... ok
+test hybrid::integer_bridge::tests::bridge_rejects_nonces_from_other_domains_and_difficulties ... ok
+test hybrid::integer_bridge::tests::cached_generator_comb_matches_fresh_preparation ... ok
+test hybrid::integer_bridge::tests::compact_sums_preserve_reference_absorbed_bytes ... ok
+test hybrid::integer_bridge::tests::native_frames_remain_reference_and_unsplit_domains_are_distinct ... ok
+test hybrid::integer_bridge::tests::reject_layouts_whose_upper_sum_does_not_fit ... ok
+test hybrid::integer_bridge::tests::shared_126_bit_weights_have_bounded_113_bit_limbs ... ok
+test hybrid::integer_bridge::tests::shared_128_bit_bridge_uses_two_limbs_and_authenticates_padded_source ... ok
+test hybrid::integer_bridge::tests::single_algebraic_source_bridge_authenticates_without_falcon_trace ... ok
+test hybrid::integer_bridge::tests::unsplit_bridge_authenticates_source_and_rejects_malformed_proofs ... ok
+test hybrid::integer_bridge::tests::unsplit_counts_and_conservative_modulus_gate ... ok
+test hybrid::integer_bridge::tests::unsplit_full_width_folds_match_big_integer_reference ... ok
+test hybrid::integer_bridge::tests::unsplit_terminal_coefficients_use_original_row_and_column_slots ... ok
+test hybrid::joint_sumcheck::tests::cached_gather_rounds_match_repeat_scan_for_every_axis_and_round ... ok
+test hybrid::joint_sumcheck::tests::cached_keccak_tensor_high_storage_is_bounded_by_tile_factors ... ok
+test hybrid::joint_sumcheck::tests::cached_tensor_tile_factors_match_full_high_tables_and_padding ... ok
+test hybrid::joint_sumcheck::tests::compact_lane_folds_match_dense_for_every_nonempty_lane_support ... ok
+test hybrid::joint_sumcheck::tests::compact_lane_sumcheck_supports_one_and_four_sources ... ok
+test hybrid::joint_sumcheck::tests::compact_lane_tables_preserve_physical_padding_at_the_opening_endpoint ... ok
+test hybrid::joint_sumcheck::tests::joint_sumcheck_rejects_tampering_and_malformed_inputs ... ok
+test hybrid::joint_sumcheck::tests::masked_gathers_match_subcubes_and_dense_proof ... ok
+test hybrid::joint_sumcheck::tests::prefix_equality_matches_dense_for_every_limit ... ok
+test hybrid::joint_sumcheck::tests::repeat_ranges_match_dense_sumcheck_and_reject_invalid_bounds ... ok
+test hybrid::joint_sumcheck::tests::sparse_only_joint_sumcheck_handles_physical_padding ... ok
+test hybrid::joint_sumcheck::tests::structured_joint_sumcheck_matches_dense_two_root_transcript ... ok
+test hybrid::joint_sumcheck::tests::three_root_joint_sumcheck_and_cached_marginals_match_dense_transcript ... ok
+test hybrid::sumcheck::table::tests::compact_selected_matches_scalar_supports_tails_and_cross_group_pairs ... ok
+test hybrid::sumcheck::table::tests::dense_selected_matches_scalar_with_tails_and_boolean_challenges ... ok
+test hybrid::sumcheck::table::tests::prefix_masks_preserve_guards_on_unaligned_subslices ... ok
+test hybrid::sumcheck::tests::marginal_task_shapes_match_direct_sums_across_thread_counts ... ok
+test hybrid::sumcheck::tests::streamed_rounds_equal_dense_sumcheck_in_both_lane_orders ... ok
+test piop::spartan::falcon_profiles::n1024_k11::hybrid::tests::hybrid_falcon_roundtrip_and_tampering ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 777 filtered out; finished in 0.84s
+

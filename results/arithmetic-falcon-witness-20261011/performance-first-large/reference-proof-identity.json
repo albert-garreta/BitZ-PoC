@@ -1,0 +1,378 @@
+{
+  "passed": true,
+  "reference": "results/arithmetic-falcon-witness-20261011/v7-qualified-large",
+  "candidate": [
+    "results/arithmetic-falcon-witness-20261011/performance-first-large"
+  ],
+  "required_cases": {
+    "degrees": [
+      512,
+      1024
+    ],
+    "securities": [
+      100,
+      128
+    ],
+    "batches": [
+      1024
+    ],
+    "threads": [
+      1,
+      8
+    ],
+    "seeds": [
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49
+    ]
+  },
+  "scope": "split",
+  "checked_keys": [
+    "input_digest",
+    "protocol_id",
+    "trial",
+    "iteration",
+    "source_root",
+    "proof_debug_digest",
+    "proof_payload_bytes"
+  ],
+  "checked_proofs": 256,
+  "checked_runs": [
+    {
+      "file": "candidate-n512-s100-b1024-t1-seed42.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s100-b1024-t1-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t1-seed43.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s100-b1024-t1-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t1-seed44.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s100-b1024-t1-seed44.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t1-seed45.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s100-b1024-t1-seed45.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t1-seed46.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s100-b1024-t1-seed46.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t1-seed47.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s100-b1024-t1-seed47.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t1-seed48.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s100-b1024-t1-seed48.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t1-seed49.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s100-b1024-t1-seed49.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t8-seed42.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s100-b1024-t8-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t8-seed43.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s100-b1024-t8-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t8-seed44.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s100-b1024-t8-seed44.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t8-seed45.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s100-b1024-t8-seed45.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t8-seed46.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s100-b1024-t8-seed46.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t8-seed47.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s100-b1024-t8-seed47.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t8-seed48.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s100-b1024-t8-seed48.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s100-b1024-t8-seed49.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s100-b1024-t8-seed49.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t1-seed42.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s128-b1024-t1-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t1-seed43.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s128-b1024-t1-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t1-seed44.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s128-b1024-t1-seed44.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t1-seed45.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s128-b1024-t1-seed45.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t1-seed46.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s128-b1024-t1-seed46.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t1-seed47.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s128-b1024-t1-seed47.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t1-seed48.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s128-b1024-t1-seed48.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t1-seed49.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s128-b1024-t1-seed49.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t8-seed42.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s128-b1024-t8-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t8-seed43.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s128-b1024-t8-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t8-seed44.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s128-b1024-t8-seed44.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t8-seed45.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s128-b1024-t8-seed45.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t8-seed46.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s128-b1024-t8-seed46.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t8-seed47.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s128-b1024-t8-seed47.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t8-seed48.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s128-b1024-t8-seed48.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n512-s128-b1024-t8-seed49.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n512-s128-b1024-t8-seed49.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t1-seed42.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s100-b1024-t1-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t1-seed43.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s100-b1024-t1-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t1-seed44.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s100-b1024-t1-seed44.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t1-seed45.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s100-b1024-t1-seed45.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t1-seed46.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s100-b1024-t1-seed46.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t1-seed47.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s100-b1024-t1-seed47.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t1-seed48.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s100-b1024-t1-seed48.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t1-seed49.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s100-b1024-t1-seed49.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t8-seed42.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s100-b1024-t8-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t8-seed43.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s100-b1024-t8-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t8-seed44.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s100-b1024-t8-seed44.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t8-seed45.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s100-b1024-t8-seed45.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t8-seed46.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s100-b1024-t8-seed46.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t8-seed47.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s100-b1024-t8-seed47.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t8-seed48.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s100-b1024-t8-seed48.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s100-b1024-t8-seed49.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s100-b1024-t8-seed49.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t1-seed42.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s128-b1024-t1-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t1-seed43.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s128-b1024-t1-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t1-seed44.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s128-b1024-t1-seed44.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t1-seed45.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s128-b1024-t1-seed45.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t1-seed46.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s128-b1024-t1-seed46.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t1-seed47.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s128-b1024-t1-seed47.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t1-seed48.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s128-b1024-t1-seed48.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t1-seed49.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s128-b1024-t1-seed49.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t8-seed42.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s128-b1024-t8-seed42.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t8-seed43.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s128-b1024-t8-seed43.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t8-seed44.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s128-b1024-t8-seed44.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t8-seed45.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s128-b1024-t8-seed45.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t8-seed46.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s128-b1024-t8-seed46.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t8-seed47.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s128-b1024-t8-seed47.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t8-seed48.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s128-b1024-t8-seed48.jsonl",
+      "proofs": 4
+    },
+    {
+      "file": "candidate-n1024-s128-b1024-t8-seed49.jsonl",
+      "candidate_path": "results/arithmetic-falcon-witness-20261011/performance-first-large/candidate-n1024-s128-b1024-t8-seed49.jsonl",
+      "proofs": 4
+    }
+  ],
+  "single_layout_change_input_checks": 0,
+  "single_layout_change_runs": [],
+  "single_layout_check_keys": [
+    "input_digest",
+    "protocol_id",
+    "trial",
+    "iteration",
+    "verified",
+    "committed_source_bits"
+  ],
+  "interpretation": "Every required case must exist exactly once. Full proof identity applies to the selected scope; Single cases outside the Split-only scope retain input/verification/physical-size checks but may change their witness layout and proof."
+}

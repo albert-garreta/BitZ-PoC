@@ -76,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     macro_rules! run {
         ($algebraic:ident, $native:ident, $degree:literal) => {{
             use bitz::piop::spartan::{
-                $algebraic::{FalconAlgebraicStatement, PreparedFalconAlgebraic, PROTOCOL_ID},
+                $algebraic::{FalconAlgebraicStatement, PreparedFalconAlgebraic},
                 falcon_profiles::$native::{decode_public_key, decode_signature_ct, hash_to_point_ct},
             };
             let start = Instant::now();
@@ -141,6 +141,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let packing_strategy = bitz::piop::spartan::$algebraic::packing_bench::selected(options.batch)?;
                 #[cfg(not(feature = "bench-internals"))]
                 let packing_strategy = "serial-word";
+                let packing_strategy = if prepared.bridge_layouts().len() == 3 {
+                    if options.batch >= 128 && observed_threads > 1 {
+                        "direct-compact-parallel"
+                    } else {
+                        "direct-compact-serial"
+                    }
+                } else { packing_strategy };
                 // Exact-build comparison only; hashing is outside every timed phase.
                 let mut proof_hash = DebugHasher(blake3::Hasher::new());
                 std::fmt::write(&mut proof_hash, format_args!("{proof:?}"))?;
@@ -163,12 +170,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "relation": concat!("falcon", stringify!($degree), "-algebraic-public-h-t-private-s1-s2"),
                         "degree": $degree,
                         "extension_degree": 11,
-                        "protocol_id": PROTOCOL_ID,
+                        "protocol_id": prepared.protocol_id(),
+                        "compute_variant": prepared.compute_variant(),
+                        "arithmetic_capacity": prepared.arithmetic_capacity(),
+                        "logical_binding_bits": prepared.logical_binding_bits(),
+                        "bridge_layouts": prepared.bridge_layouts().iter().map(|m| [m.row_vars, m.col_vars]).collect::<Vec<_>>(),
                         "verified": true,
                         "packing_strategy": packing_strategy,
                         "source_root": proof.source_root(),
-                        "layout_version": 2,
-                        "source_layout": "aligned16-v2",
+                        "layout_version": if prepared.capacity() * prepared.source_bits_per_signature() >= 1 << 20 { 4 } else { 5 },
+                        "source_layout": if prepared.capacity() * prepared.source_bits_per_signature() >= 1 << 20 {
+                            "signed12-aligned-small-split-large-v4"
+                        } else {
+                            "signed15-single-v5"
+                        },
                         "coefficient_stride": 16,
                         "input_corpus": "distinct-fn-dsa-0.3.0-original-falcon",
                         "input_digest": input_digest,
@@ -187,8 +202,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "live_bits_per_signature": prepared.live_bits_per_signature(),
                         "source_bits_per_signature": prepared.source_bits_per_signature(),
                         "capacity": prepared.capacity(),
-                        "source_bits": prepared.capacity() * prepared.source_bits_per_signature(),
-                        "source_packed_bytes": prepared.capacity() * prepared.source_bits_per_signature() / 8,
+                        "virtual_arithmetic_bits": prepared.arithmetic_capacity() * prepared.source_bits_per_signature(),
+                        "source_bits": prepared.committed_source_bits(),
+                        "committed_source_bits": prepared.committed_source_bits(),
+                        "source_packed_bytes": prepared.committed_source_bits() / 8,
                         "process_peak_rss_kib": peak_rss_kib,
                         "algebraic_security_bits": prepared.security().algebraic_bits,
                     })
