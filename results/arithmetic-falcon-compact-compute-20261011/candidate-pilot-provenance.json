@@ -1,0 +1,14 @@
+{
+  "captured_unix": 1791727981.4094234,
+  "source_snapshot": "/tmp/bitz-arithmetic-v8-pilot-source-sv2eiphj",
+  "source_files": 597,
+  "source_hash_manifest": "candidate-pilot-source-sha256.json",
+  "binary_original": "/tmp/bitz-arithmetic-compact-compute-v8-binary",
+  "binary_preserved": "/tmp/bitz-arithmetic-compact-compute-v8-pilot-binary",
+  "sha256": "323b313c2c999a98cfcf7c4f9fc42fd41f39d906e393ff921eb3bb6933eb50c4",
+  "features": [
+    "falcon-hybrid",
+    "bench-internals"
+  ],
+  "RUSTFLAGS": "-C target-cpu=native"
+}

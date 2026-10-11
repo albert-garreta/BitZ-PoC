@@ -1,0 +1,64 @@
+baseline-n512-s100-b32-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 19.065159, "proof_payload_bytes": 94354}
+candidate-n512-s100-b32-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 19.248526, "proof_payload_bytes": 83400}
+baseline-n512-s100-b32-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 7.0895589999999995, "proof_payload_bytes": 94354}
+candidate-n512-s100-b32-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 7.429041, "proof_payload_bytes": 83400}
+baseline-n512-s100-b1024-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 277.34632700000003, "proof_payload_bytes": 225338}
+candidate-n512-s100-b1024-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 268.31748100000004, "proof_payload_bytes": 216368}
+baseline-n512-s100-b1024-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 57.369916, "proof_payload_bytes": 225338}
+candidate-n512-s100-b1024-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 57.887976, "proof_payload_bytes": 216368}
+baseline-n512-s128-b32-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 27.174226, "proof_payload_bytes": 112010}
+candidate-n512-s128-b32-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 27.551198, "proof_payload_bytes": 100864}
+baseline-n512-s128-b32-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 14.414493, "proof_payload_bytes": 112010}
+candidate-n512-s128-b32-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 15.031600000000001, "proof_payload_bytes": 100864}
+baseline-n512-s128-b1024-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 289.921862, "proof_payload_bytes": 263042}
+candidate-n512-s128-b1024-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 281.478232, "proof_payload_bytes": 257640}
+baseline-n512-s128-b1024-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 69.37912, "proof_payload_bytes": 263042}
+candidate-n512-s128-b1024-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 69.797401, "proof_payload_bytes": 257640}
+baseline-n1024-s100-b32-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 28.673220999999998, "proof_payload_bytes": 117802}
+candidate-n1024-s100-b32-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 27.898266000000003, "proof_payload_bytes": 104152}
+baseline-n1024-s100-b32-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 10.061850000000002, "proof_payload_bytes": 117802}
+candidate-n1024-s100-b32-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 9.603613000000001, "proof_payload_bytes": 104152}
+baseline-n1024-s100-b1024-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 510.54947500000003, "proof_payload_bytes": 314802}
+candidate-n1024-s100-b1024-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 497.089738, "proof_payload_bytes": 276288}
+baseline-n1024-s100-b1024-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 111.49065700000001, "proof_payload_bytes": 314802}
+candidate-n1024-s100-b1024-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 110.65642000000001, "proof_payload_bytes": 276288}
+baseline-n1024-s128-b32-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 37.688211, "proof_payload_bytes": 137250}
+candidate-n1024-s128-b32-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 37.058621, "proof_payload_bytes": 126840}
+baseline-n1024-s128-b32-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 17.808903, "proof_payload_bytes": 137250}
+candidate-n1024-s128-b32-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 17.726817, "proof_payload_bytes": 126840}
+baseline-n1024-s128-b1024-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 532.410943, "proof_payload_bytes": 361738}
+candidate-n1024-s128-b1024-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 516.8932040000001, "proof_payload_bytes": 320976}
+baseline-n1024-s128-b1024-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 126.40332200000002, "proof_payload_bytes": 361738}
+candidate-n1024-s128-b1024-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 125.941579, "proof_payload_bytes": 320976}

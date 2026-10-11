@@ -1,0 +1,326 @@
+{
+  "passed": true,
+  "checked_proofs": 192,
+  "checks": [
+    {
+      "run": "legacy3-n1024-s100-b32-t1-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s100-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "legacy3-n1024-s100-b32-t1-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s100-b32-t1-seed43.jsonl"
+    },
+    {
+      "run": "legacy3-n1024-s100-b32-t8-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s100-b32-t8-seed42.jsonl"
+    },
+    {
+      "run": "legacy3-n1024-s100-b32-t8-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s100-b32-t8-seed43.jsonl"
+    },
+    {
+      "run": "legacy3-n1024-s128-b32-t1-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s128-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "legacy3-n1024-s128-b32-t1-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s128-b32-t1-seed43.jsonl"
+    },
+    {
+      "run": "legacy3-n1024-s128-b32-t8-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s128-b32-t8-seed42.jsonl"
+    },
+    {
+      "run": "legacy3-n1024-s128-b32-t8-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s128-b32-t8-seed43.jsonl"
+    },
+    {
+      "run": "legacy3-n512-s100-b32-t1-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s100-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "legacy3-n512-s100-b32-t1-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s100-b32-t1-seed43.jsonl"
+    },
+    {
+      "run": "legacy3-n512-s100-b32-t8-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s100-b32-t8-seed42.jsonl"
+    },
+    {
+      "run": "legacy3-n512-s100-b32-t8-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s100-b32-t8-seed43.jsonl"
+    },
+    {
+      "run": "legacy3-n512-s128-b32-t1-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s128-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "legacy3-n512-s128-b32-t1-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s128-b32-t1-seed43.jsonl"
+    },
+    {
+      "run": "legacy3-n512-s128-b32-t8-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s128-b32-t8-seed42.jsonl"
+    },
+    {
+      "run": "legacy3-n512-s128-b32-t8-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s128-b32-t8-seed43.jsonl"
+    },
+    {
+      "run": "legacy4-n1024-s100-b32-t1-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s100-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "legacy4-n1024-s100-b32-t1-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s100-b32-t1-seed43.jsonl"
+    },
+    {
+      "run": "legacy4-n1024-s100-b32-t8-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s100-b32-t8-seed42.jsonl"
+    },
+    {
+      "run": "legacy4-n1024-s100-b32-t8-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s100-b32-t8-seed43.jsonl"
+    },
+    {
+      "run": "legacy4-n1024-s128-b32-t1-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s128-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "legacy4-n1024-s128-b32-t1-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s128-b32-t1-seed43.jsonl"
+    },
+    {
+      "run": "legacy4-n1024-s128-b32-t8-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s128-b32-t8-seed42.jsonl"
+    },
+    {
+      "run": "legacy4-n1024-s128-b32-t8-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s128-b32-t8-seed43.jsonl"
+    },
+    {
+      "run": "legacy4-n512-s100-b32-t1-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s100-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "legacy4-n512-s100-b32-t1-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s100-b32-t1-seed43.jsonl"
+    },
+    {
+      "run": "legacy4-n512-s100-b32-t8-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s100-b32-t8-seed42.jsonl"
+    },
+    {
+      "run": "legacy4-n512-s100-b32-t8-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s100-b32-t8-seed43.jsonl"
+    },
+    {
+      "run": "legacy4-n512-s128-b32-t1-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s128-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "legacy4-n512-s128-b32-t1-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s128-b32-t1-seed43.jsonl"
+    },
+    {
+      "run": "legacy4-n512-s128-b32-t8-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s128-b32-t8-seed42.jsonl"
+    },
+    {
+      "run": "legacy4-n512-s128-b32-t8-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s128-b32-t8-seed43.jsonl"
+    },
+    {
+      "run": "opt3-n1024-s100-b32-t1-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s100-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "opt3-n1024-s100-b32-t1-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s100-b32-t1-seed43.jsonl"
+    },
+    {
+      "run": "opt3-n1024-s100-b32-t8-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s100-b32-t8-seed42.jsonl"
+    },
+    {
+      "run": "opt3-n1024-s100-b32-t8-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s100-b32-t8-seed43.jsonl"
+    },
+    {
+      "run": "opt3-n1024-s128-b32-t1-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s128-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "opt3-n1024-s128-b32-t1-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s128-b32-t1-seed43.jsonl"
+    },
+    {
+      "run": "opt3-n1024-s128-b32-t8-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s128-b32-t8-seed42.jsonl"
+    },
+    {
+      "run": "opt3-n1024-s128-b32-t8-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s128-b32-t8-seed43.jsonl"
+    },
+    {
+      "run": "opt3-n512-s100-b32-t1-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s100-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "opt3-n512-s100-b32-t1-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s100-b32-t1-seed43.jsonl"
+    },
+    {
+      "run": "opt3-n512-s100-b32-t8-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s100-b32-t8-seed42.jsonl"
+    },
+    {
+      "run": "opt3-n512-s100-b32-t8-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s100-b32-t8-seed43.jsonl"
+    },
+    {
+      "run": "opt3-n512-s128-b32-t1-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s128-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "opt3-n512-s128-b32-t1-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s128-b32-t1-seed43.jsonl"
+    },
+    {
+      "run": "opt3-n512-s128-b32-t8-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s128-b32-t8-seed42.jsonl"
+    },
+    {
+      "run": "opt3-n512-s128-b32-t8-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s128-b32-t8-seed43.jsonl"
+    },
+    {
+      "run": "opt4-n1024-s100-b32-t1-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s100-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "opt4-n1024-s100-b32-t1-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s100-b32-t1-seed43.jsonl"
+    },
+    {
+      "run": "opt4-n1024-s100-b32-t8-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s100-b32-t8-seed42.jsonl"
+    },
+    {
+      "run": "opt4-n1024-s100-b32-t8-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s100-b32-t8-seed43.jsonl"
+    },
+    {
+      "run": "opt4-n1024-s128-b32-t1-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s128-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "opt4-n1024-s128-b32-t1-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s128-b32-t1-seed43.jsonl"
+    },
+    {
+      "run": "opt4-n1024-s128-b32-t8-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s128-b32-t8-seed42.jsonl"
+    },
+    {
+      "run": "opt4-n1024-s128-b32-t8-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n1024-s128-b32-t8-seed43.jsonl"
+    },
+    {
+      "run": "opt4-n512-s100-b32-t1-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s100-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "opt4-n512-s100-b32-t1-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s100-b32-t1-seed43.jsonl"
+    },
+    {
+      "run": "opt4-n512-s100-b32-t8-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s100-b32-t8-seed42.jsonl"
+    },
+    {
+      "run": "opt4-n512-s100-b32-t8-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s100-b32-t8-seed43.jsonl"
+    },
+    {
+      "run": "opt4-n512-s128-b32-t1-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s128-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "opt4-n512-s128-b32-t1-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s128-b32-t1-seed43.jsonl"
+    },
+    {
+      "run": "opt4-n512-s128-b32-t8-seed42",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s128-b32-t8-seed42.jsonl"
+    },
+    {
+      "run": "opt4-n512-s128-b32-t8-seed43",
+      "proofs": 3,
+      "matched_original_v7": "qualification/v7-n512-s128-b32-t8-seed43.jsonl"
+    }
+  ]
+}

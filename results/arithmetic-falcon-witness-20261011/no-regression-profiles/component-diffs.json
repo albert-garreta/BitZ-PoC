@@ -1,0 +1,930 @@
+[
+  {
+    "degree": 512,
+    "security": 100,
+    "batch": 32,
+    "threads": 1,
+    "components": {
+      "commit_total": {
+        "baseline_ms": 1.170454,
+        "candidate_ms": 1.164873,
+        "delta_ms": -0.005581000000000058
+      },
+      "packing_commit": {
+        "baseline_ms": 0.15587400000000007,
+        "candidate_ms": 0.17032199999999997,
+        "delta_ms": 0.014447999999999905
+      },
+      "ring": {
+        "baseline_ms": 0.848495,
+        "candidate_ms": 0.831823,
+        "delta_ms": -0.01667200000000002
+      },
+      "ring_coordinates": {
+        "baseline_ms": 0.170633,
+        "candidate_ms": 0.180171,
+        "delta_ms": 0.009537999999999991
+      },
+      "arithmetic": {
+        "baseline_ms": 5.852279,
+        "candidate_ms": 5.875802999999999,
+        "delta_ms": 0.023523999999999212
+      },
+      "bitz_bridge": {
+        "baseline_ms": 8.749468,
+        "candidate_ms": 8.810003,
+        "delta_ms": 0.06053499999999978
+      },
+      "pcs": {
+        "baseline_ms": 1.153682,
+        "candidate_ms": 1.1248269999999998,
+        "delta_ms": -0.028855000000000297
+      },
+      "other_including_joint": {
+        "baseline_ms": 1.1888870000000011,
+        "candidate_ms": 1.4114100000000036,
+        "delta_ms": 0.22252300000000247
+      },
+      "joint_packed_setup": {
+        "baseline_ms": 0.1326,
+        "candidate_ms": 0.22530599999999998,
+        "delta_ms": 0.09270599999999998
+      },
+      "joint_prepare": {
+        "baseline_ms": 0.049975,
+        "candidate_ms": 0.05852,
+        "delta_ms": 0.008545000000000004
+      }
+    }
+  },
+  {
+    "degree": 512,
+    "security": 100,
+    "batch": 32,
+    "threads": 8,
+    "components": {
+      "commit_total": {
+        "baseline_ms": 0.32694799999999996,
+        "candidate_ms": 0.39365500000000003,
+        "delta_ms": 0.06670700000000007
+      },
+      "packing_commit": {
+        "baseline_ms": 0.14957299999999998,
+        "candidate_ms": 0.17967999999999995,
+        "delta_ms": 0.030106999999999967
+      },
+      "ring": {
+        "baseline_ms": 0.330575,
+        "candidate_ms": 0.287574,
+        "delta_ms": -0.04300100000000001
+      },
+      "ring_coordinates": {
+        "baseline_ms": 0.097504,
+        "candidate_ms": 0.082155,
+        "delta_ms": -0.015348999999999988
+      },
+      "arithmetic": {
+        "baseline_ms": 2.446126,
+        "candidate_ms": 2.4982849999999996,
+        "delta_ms": 0.05215899999999962
+      },
+      "bitz_bridge": {
+        "baseline_ms": 2.24186,
+        "candidate_ms": 2.2417499999999997,
+        "delta_ms": -0.00011000000000027654
+      },
+      "pcs": {
+        "baseline_ms": 0.8419019999999999,
+        "candidate_ms": 0.799282,
+        "delta_ms": -0.04261999999999988
+      },
+      "other_including_joint": {
+        "baseline_ms": 0.8431260000000007,
+        "candidate_ms": 1.1753010000000002,
+        "delta_ms": 0.33217499999999944
+      },
+      "joint_packed_setup": {
+        "baseline_ms": 0.062919,
+        "candidate_ms": 0.184058,
+        "delta_ms": 0.121139
+      },
+      "joint_prepare": {
+        "baseline_ms": 0.015489000000000001,
+        "candidate_ms": 0.019377000000000002,
+        "delta_ms": 0.003888000000000001
+      }
+    }
+  },
+  {
+    "degree": 512,
+    "security": 100,
+    "batch": 1024,
+    "threads": 1,
+    "components": {
+      "commit_total": {
+        "baseline_ms": 35.400954999999996,
+        "candidate_ms": 36.256563,
+        "delta_ms": 0.8556080000000037
+      },
+      "packing_commit": {
+        "baseline_ms": 3.0803960000000004,
+        "candidate_ms": 4.6367389999999915,
+        "delta_ms": 1.5563429999999912
+      },
+      "ring": {
+        "baseline_ms": 25.861182,
+        "candidate_ms": 26.312886,
+        "delta_ms": 0.45170399999999944
+      },
+      "ring_coordinates": {
+        "baseline_ms": 5.592868,
+        "candidate_ms": 6.711684,
+        "delta_ms": 1.1188159999999998
+      },
+      "arithmetic": {
+        "baseline_ms": 134.411469,
+        "candidate_ms": 130.656487,
+        "delta_ms": -3.7549820000000125
+      },
+      "bitz_bridge": {
+        "baseline_ms": 53.551504,
+        "candidate_ms": 53.597251,
+        "delta_ms": 0.04574699999999865
+      },
+      "pcs": {
+        "baseline_ms": 11.840053999999999,
+        "candidate_ms": 7.145144,
+        "delta_ms": -4.694909999999998
+      },
+      "other_including_joint": {
+        "baseline_ms": 16.173588999999993,
+        "candidate_ms": 14.190078999999997,
+        "delta_ms": -1.9835099999999954
+      },
+      "joint_packed_setup": {
+        "baseline_ms": 3.4206689999999997,
+        "candidate_ms": 2.522481,
+        "delta_ms": -0.8981879999999998
+      },
+      "joint_prepare": {
+        "baseline_ms": 1.498815,
+        "candidate_ms": 1.183208,
+        "delta_ms": -0.31560699999999997
+      }
+    }
+  },
+  {
+    "degree": 512,
+    "security": 100,
+    "batch": 1024,
+    "threads": 8,
+    "components": {
+      "commit_total": {
+        "baseline_ms": 5.574784,
+        "candidate_ms": 6.199555,
+        "delta_ms": 0.624771
+      },
+      "packing_commit": {
+        "baseline_ms": 0.8949930000000004,
+        "candidate_ms": 1.6001859999999999,
+        "delta_ms": 0.7051929999999995
+      },
+      "ring": {
+        "baseline_ms": 7.199607,
+        "candidate_ms": 7.132941000000001,
+        "delta_ms": -0.06666599999999967
+      },
+      "ring_coordinates": {
+        "baseline_ms": 3.027826,
+        "candidate_ms": 3.2137979999999997,
+        "delta_ms": 0.18597199999999958
+      },
+      "arithmetic": {
+        "baseline_ms": 19.786583999999998,
+        "candidate_ms": 19.776925000000002,
+        "delta_ms": -0.009658999999995643
+      },
+      "bitz_bridge": {
+        "baseline_ms": 10.396253,
+        "candidate_ms": 10.427723,
+        "delta_ms": 0.03147000000000055
+      },
+      "pcs": {
+        "baseline_ms": 3.0818489999999996,
+        "candidate_ms": 2.6108580000000003,
+        "delta_ms": -0.47099099999999927
+      },
+      "other_including_joint": {
+        "baseline_ms": 11.378331000000003,
+        "candidate_ms": 11.689149,
+        "delta_ms": 0.3108179999999976
+      },
+      "joint_packed_setup": {
+        "baseline_ms": 0.452356,
+        "candidate_ms": 0.8719290000000001,
+        "delta_ms": 0.4195730000000001
+      },
+      "joint_prepare": {
+        "baseline_ms": 0.221208,
+        "candidate_ms": 0.18285600000000002,
+        "delta_ms": -0.03835199999999997
+      }
+    }
+  },
+  {
+    "degree": 512,
+    "security": 128,
+    "batch": 32,
+    "threads": 1,
+    "components": {
+      "commit_total": {
+        "baseline_ms": 1.167999,
+        "candidate_ms": 1.166065,
+        "delta_ms": -0.0019340000000001023
+      },
+      "packing_commit": {
+        "baseline_ms": 0.154493,
+        "candidate_ms": 0.17179499999999992,
+        "delta_ms": 0.01730199999999993
+      },
+      "ring": {
+        "baseline_ms": 0.885305,
+        "candidate_ms": 0.8595649999999999,
+        "delta_ms": -0.025740000000000096
+      },
+      "ring_coordinates": {
+        "baseline_ms": 0.180441,
+        "candidate_ms": 0.181032,
+        "delta_ms": 0.0005910000000000082
+      },
+      "arithmetic": {
+        "baseline_ms": 7.543127,
+        "candidate_ms": 7.578564,
+        "delta_ms": 0.03543699999999994
+      },
+      "bitz_bridge": {
+        "baseline_ms": 13.149981,
+        "candidate_ms": 13.594842,
+        "delta_ms": 0.4448609999999995
+      },
+      "pcs": {
+        "baseline_ms": 2.798022,
+        "candidate_ms": 2.591772,
+        "delta_ms": -0.20624999999999982
+      },
+      "other_including_joint": {
+        "baseline_ms": 1.618701999999999,
+        "candidate_ms": 1.7118479999999998,
+        "delta_ms": 0.09314600000000084
+      },
+      "joint_packed_setup": {
+        "baseline_ms": 0.131799,
+        "candidate_ms": 0.223904,
+        "delta_ms": 0.09210499999999999
+      },
+      "joint_prepare": {
+        "baseline_ms": 0.050705,
+        "candidate_ms": 0.060334,
+        "delta_ms": 0.009628999999999999
+      }
+    }
+  },
+  {
+    "degree": 512,
+    "security": 128,
+    "batch": 32,
+    "threads": 8,
+    "components": {
+      "commit_total": {
+        "baseline_ms": 0.394085,
+        "candidate_ms": 0.324203,
+        "delta_ms": -0.069882
+      },
+      "packing_commit": {
+        "baseline_ms": 0.162307,
+        "candidate_ms": 0.18145300000000003,
+        "delta_ms": 0.019146000000000024
+      },
+      "ring": {
+        "baseline_ms": 0.349461,
+        "candidate_ms": 0.352817,
+        "delta_ms": 0.00335599999999997
+      },
+      "ring_coordinates": {
+        "baseline_ms": 0.096933,
+        "candidate_ms": 0.089238,
+        "delta_ms": -0.007695000000000007
+      },
+      "arithmetic": {
+        "baseline_ms": 3.507704,
+        "candidate_ms": 3.53713,
+        "delta_ms": 0.029425999999999952
+      },
+      "bitz_bridge": {
+        "baseline_ms": 6.889730999999999,
+        "candidate_ms": 7.341596,
+        "delta_ms": 0.4518650000000006
+      },
+      "pcs": {
+        "baseline_ms": 1.932064,
+        "candidate_ms": 1.946121,
+        "delta_ms": 0.014056999999999986
+      },
+      "other_including_joint": {
+        "baseline_ms": 1.3005590000000016,
+        "candidate_ms": 1.504906,
+        "delta_ms": 0.2043469999999985
+      },
+      "joint_packed_setup": {
+        "baseline_ms": 0.062889,
+        "candidate_ms": 0.18437900000000002,
+        "delta_ms": 0.12149000000000001
+      },
+      "joint_prepare": {
+        "baseline_ms": 0.018465,
+        "candidate_ms": 0.020238,
+        "delta_ms": 0.0017730000000000003
+      }
+    }
+  },
+  {
+    "degree": 512,
+    "security": 128,
+    "batch": 1024,
+    "threads": 1,
+    "components": {
+      "commit_total": {
+        "baseline_ms": 35.531082,
+        "candidate_ms": 36.286881,
+        "delta_ms": 0.7557990000000032
+      },
+      "packing_commit": {
+        "baseline_ms": 2.90689900000001,
+        "candidate_ms": 4.609156999999996,
+        "delta_ms": 1.7022579999999863
+      },
+      "ring": {
+        "baseline_ms": 25.620337,
+        "candidate_ms": 26.308749,
+        "delta_ms": 0.6884119999999996
+      },
+      "ring_coordinates": {
+        "baseline_ms": 5.50392,
+        "candidate_ms": 6.701485,
+        "delta_ms": 1.197565
+      },
+      "arithmetic": {
+        "baseline_ms": 132.504943,
+        "candidate_ms": 132.241855,
+        "delta_ms": -0.2630880000000104
+      },
+      "bitz_bridge": {
+        "baseline_ms": 62.786480000000005,
+        "candidate_ms": 59.493092,
+        "delta_ms": -3.2933880000000073
+      },
+      "pcs": {
+        "baseline_ms": 17.138124,
+        "candidate_ms": 11.741427,
+        "delta_ms": -5.396697000000001
+      },
+      "other_including_joint": {
+        "baseline_ms": 16.262959999999993,
+        "candidate_ms": 15.298906000000017,
+        "delta_ms": -0.964053999999976
+      },
+      "joint_packed_setup": {
+        "baseline_ms": 3.413727,
+        "candidate_ms": 2.573878,
+        "delta_ms": -0.8398490000000001
+      },
+      "joint_prepare": {
+        "baseline_ms": 1.489287,
+        "candidate_ms": 1.1838389999999999,
+        "delta_ms": -0.30544800000000016
+      }
+    }
+  },
+  {
+    "degree": 512,
+    "security": 128,
+    "batch": 1024,
+    "threads": 8,
+    "components": {
+      "commit_total": {
+        "baseline_ms": 5.452843,
+        "candidate_ms": 6.153378,
+        "delta_ms": 0.7005350000000004
+      },
+      "packing_commit": {
+        "baseline_ms": 0.8869069999999999,
+        "candidate_ms": 1.682582,
+        "delta_ms": 0.7956750000000001
+      },
+      "ring": {
+        "baseline_ms": 7.108474,
+        "candidate_ms": 7.0144969999999995,
+        "delta_ms": -0.09397700000000064
+      },
+      "ring_coordinates": {
+        "baseline_ms": 3.015143,
+        "candidate_ms": 3.103329,
+        "delta_ms": 0.08818599999999988
+      },
+      "arithmetic": {
+        "baseline_ms": 22.969363,
+        "candidate_ms": 22.728788,
+        "delta_ms": -0.24057499999999976
+      },
+      "bitz_bridge": {
+        "baseline_ms": 16.936412,
+        "candidate_ms": 16.760839999999998,
+        "delta_ms": -0.1755720000000025
+      },
+      "pcs": {
+        "baseline_ms": 5.1582859999999995,
+        "candidate_ms": 4.6230530000000005,
+        "delta_ms": -0.535232999999999
+      },
+      "other_including_joint": {
+        "baseline_ms": 11.522573000000001,
+        "candidate_ms": 12.453724999999991,
+        "delta_ms": 0.9311519999999902
+      },
+      "joint_packed_setup": {
+        "baseline_ms": 0.45349700000000004,
+        "candidate_ms": 0.873151,
+        "delta_ms": 0.41965399999999997
+      },
+      "joint_prepare": {
+        "baseline_ms": 0.215477,
+        "candidate_ms": 0.17974,
+        "delta_ms": -0.03573699999999999
+      }
+    }
+  },
+  {
+    "degree": 1024,
+    "security": 100,
+    "batch": 32,
+    "threads": 1,
+    "components": {
+      "commit_total": {
+        "baseline_ms": 3.301564,
+        "candidate_ms": 3.260356,
+        "delta_ms": -0.04120800000000013
+      },
+      "packing_commit": {
+        "baseline_ms": 0.29035900000000003,
+        "candidate_ms": 0.2938749999999999,
+        "delta_ms": 0.0035159999999998526
+      },
+      "ring": {
+        "baseline_ms": 1.598613,
+        "candidate_ms": 1.552767,
+        "delta_ms": -0.04584600000000005
+      },
+      "ring_coordinates": {
+        "baseline_ms": 0.32908200000000004,
+        "candidate_ms": 0.34363,
+        "delta_ms": 0.01454799999999995
+      },
+      "arithmetic": {
+        "baseline_ms": 9.728761,
+        "candidate_ms": 9.684035,
+        "delta_ms": -0.04472600000000071
+      },
+      "bitz_bridge": {
+        "baseline_ms": 10.545936000000001,
+        "candidate_ms": 10.64854,
+        "delta_ms": 0.10260399999999947
+      },
+      "pcs": {
+        "baseline_ms": 1.7420650000000002,
+        "candidate_ms": 1.228313,
+        "delta_ms": -0.5137520000000002
+      },
+      "other_including_joint": {
+        "baseline_ms": 1.7251730000000016,
+        "candidate_ms": 1.4920120000000026,
+        "delta_ms": -0.23316099999999906
+      },
+      "joint_packed_setup": {
+        "baseline_ms": 0.23247900000000002,
+        "candidate_ms": 0.176434,
+        "delta_ms": -0.05604500000000001
+      },
+      "joint_prepare": {
+        "baseline_ms": 0.09160299999999999,
+        "candidate_ms": 0.077427,
+        "delta_ms": -0.014175999999999994
+      }
+    }
+  },
+  {
+    "degree": 1024,
+    "security": 100,
+    "batch": 32,
+    "threads": 8,
+    "components": {
+      "commit_total": {
+        "baseline_ms": 1.045698,
+        "candidate_ms": 0.9812759999999999,
+        "delta_ms": -0.06442200000000009
+      },
+      "packing_commit": {
+        "baseline_ms": 0.2741589999999998,
+        "candidate_ms": 0.2994659999999999,
+        "delta_ms": 0.02530700000000008
+      },
+      "ring": {
+        "baseline_ms": 0.5113869999999999,
+        "candidate_ms": 0.427349,
+        "delta_ms": -0.08403799999999995
+      },
+      "ring_coordinates": {
+        "baseline_ms": 0.178788,
+        "candidate_ms": 0.129204,
+        "delta_ms": -0.04958399999999999
+      },
+      "arithmetic": {
+        "baseline_ms": 3.639844,
+        "candidate_ms": 3.5153689999999997,
+        "delta_ms": -0.12447500000000034
+      },
+      "bitz_bridge": {
+        "baseline_ms": 2.467787,
+        "candidate_ms": 2.494418,
+        "delta_ms": 0.02663100000000007
+      },
+      "pcs": {
+        "baseline_ms": 1.0948710000000001,
+        "candidate_ms": 0.901595,
+        "delta_ms": -0.19327600000000011
+      },
+      "other_including_joint": {
+        "baseline_ms": 1.2717759999999991,
+        "candidate_ms": 1.2599519999999993,
+        "delta_ms": -0.011823999999999835
+      },
+      "joint_packed_setup": {
+        "baseline_ms": 0.087485,
+        "candidate_ms": 0.129415,
+        "delta_ms": 0.04193000000000001
+      },
+      "joint_prepare": {
+        "baseline_ms": 0.021531,
+        "candidate_ms": 0.023634000000000002,
+        "delta_ms": 0.0021030000000000007
+      }
+    }
+  },
+  {
+    "degree": 1024,
+    "security": 100,
+    "batch": 1024,
+    "threads": 1,
+    "components": {
+      "commit_total": {
+        "baseline_ms": 102.59280799999999,
+        "candidate_ms": 102.514571,
+        "delta_ms": -0.07823699999998723
+      },
+      "packing_commit": {
+        "baseline_ms": 6.036196000000004,
+        "candidate_ms": 7.611176,
+        "delta_ms": 1.5749799999999965
+      },
+      "ring": {
+        "baseline_ms": 52.581309,
+        "candidate_ms": 53.879464,
+        "delta_ms": 1.2981550000000013
+      },
+      "ring_coordinates": {
+        "baseline_ms": 11.488058,
+        "candidate_ms": 13.944984,
+        "delta_ms": 2.4569259999999993
+      },
+      "arithmetic": {
+        "baseline_ms": 200.115938,
+        "candidate_ms": 197.386275,
+        "delta_ms": -2.729662999999988
+      },
+      "bitz_bridge": {
+        "baseline_ms": 100.826608,
+        "candidate_ms": 101.026386,
+        "delta_ms": 0.19977800000000911
+      },
+      "pcs": {
+        "baseline_ms": 23.022283,
+        "candidate_ms": 13.596225,
+        "delta_ms": -9.426058000000001
+      },
+      "other_including_joint": {
+        "baseline_ms": 30.605065000000025,
+        "candidate_ms": 28.304202999999973,
+        "delta_ms": -2.300862000000052
+      },
+      "joint_packed_setup": {
+        "baseline_ms": 7.066836,
+        "candidate_ms": 5.075198,
+        "delta_ms": -1.991638
+      },
+      "joint_prepare": {
+        "baseline_ms": 2.933398,
+        "candidate_ms": 2.353822,
+        "delta_ms": -0.5795759999999999
+      }
+    }
+  },
+  {
+    "degree": 1024,
+    "security": 100,
+    "batch": 1024,
+    "threads": 8,
+    "components": {
+      "commit_total": {
+        "baseline_ms": 14.7034,
+        "candidate_ms": 16.194489,
+        "delta_ms": 1.4910890000000006
+      },
+      "packing_commit": {
+        "baseline_ms": 1.610748000000001,
+        "candidate_ms": 3.479039000000002,
+        "delta_ms": 1.868291000000001
+      },
+      "ring": {
+        "baseline_ms": 14.807516999999999,
+        "candidate_ms": 14.382503,
+        "delta_ms": -0.4250139999999991
+      },
+      "ring_coordinates": {
+        "baseline_ms": 6.701284,
+        "candidate_ms": 6.841019,
+        "delta_ms": 0.13973499999999994
+      },
+      "arithmetic": {
+        "baseline_ms": 34.811189999999996,
+        "candidate_ms": 34.849011,
+        "delta_ms": 0.03782100000000099
+      },
+      "bitz_bridge": {
+        "baseline_ms": 19.94878,
+        "candidate_ms": 20.322948,
+        "delta_ms": 0.37416800000000094
+      },
+      "pcs": {
+        "baseline_ms": 4.195655,
+        "candidate_ms": 3.345818,
+        "delta_ms": -0.8498370000000004
+      },
+      "other_including_joint": {
+        "baseline_ms": 22.756530000000012,
+        "candidate_ms": 21.420443000000006,
+        "delta_ms": -1.3360870000000062
+      },
+      "joint_packed_setup": {
+        "baseline_ms": 0.90433,
+        "candidate_ms": 0.903189,
+        "delta_ms": -0.0011409999999999476
+      },
+      "joint_prepare": {
+        "baseline_ms": 0.45993,
+        "candidate_ms": 0.336667,
+        "delta_ms": -0.12326300000000001
+      }
+    }
+  },
+  {
+    "degree": 1024,
+    "security": 128,
+    "batch": 32,
+    "threads": 1,
+    "components": {
+      "commit_total": {
+        "baseline_ms": 3.435638,
+        "candidate_ms": 3.270225,
+        "delta_ms": -0.16541300000000003
+      },
+      "packing_commit": {
+        "baseline_ms": 0.2900879999999999,
+        "candidate_ms": 0.29664,
+        "delta_ms": 0.006552000000000113
+      },
+      "ring": {
+        "baseline_ms": 1.63864,
+        "candidate_ms": 1.589416,
+        "delta_ms": -0.049224000000000157
+      },
+      "ring_coordinates": {
+        "baseline_ms": 0.330285,
+        "candidate_ms": 0.345774,
+        "delta_ms": 0.01548900000000003
+      },
+      "arithmetic": {
+        "baseline_ms": 11.496704999999999,
+        "candidate_ms": 11.918923,
+        "delta_ms": 0.42221800000000087
+      },
+      "bitz_bridge": {
+        "baseline_ms": 15.633318000000001,
+        "candidate_ms": 15.58682,
+        "delta_ms": -0.04649800000000148
+      },
+      "pcs": {
+        "baseline_ms": 3.3587830000000003,
+        "candidate_ms": 2.684878,
+        "delta_ms": -0.6739050000000004
+      },
+      "other_including_joint": {
+        "baseline_ms": 2.1038799999999966,
+        "candidate_ms": 1.957652000000003,
+        "delta_ms": -0.14622799999999359
+      },
+      "joint_packed_setup": {
+        "baseline_ms": 0.233632,
+        "candidate_ms": 0.17611300000000002,
+        "delta_ms": -0.05751899999999999
+      },
+      "joint_prepare": {
+        "baseline_ms": 0.091323,
+        "candidate_ms": 0.076905,
+        "delta_ms": -0.014418
+      }
+    }
+  },
+  {
+    "degree": 1024,
+    "security": 128,
+    "batch": 32,
+    "threads": 8,
+    "components": {
+      "commit_total": {
+        "baseline_ms": 0.9477329999999999,
+        "candidate_ms": 1.054474,
+        "delta_ms": 0.10674099999999997
+      },
+      "packing_commit": {
+        "baseline_ms": 0.26344899999999993,
+        "candidate_ms": 0.28389699999999984,
+        "delta_ms": 0.02044799999999991
+      },
+      "ring": {
+        "baseline_ms": 0.563315,
+        "candidate_ms": 0.457796,
+        "delta_ms": -0.10551900000000003
+      },
+      "ring_coordinates": {
+        "baseline_ms": 0.182114,
+        "candidate_ms": 0.129065,
+        "delta_ms": -0.053048999999999985
+      },
+      "arithmetic": {
+        "baseline_ms": 4.6033159999999995,
+        "candidate_ms": 4.686123,
+        "delta_ms": 0.08280700000000074
+      },
+      "bitz_bridge": {
+        "baseline_ms": 7.660328,
+        "candidate_ms": 7.702227,
+        "delta_ms": 0.04189899999999991
+      },
+      "pcs": {
+        "baseline_ms": 2.303607,
+        "candidate_ms": 2.070065,
+        "delta_ms": -0.23354199999999992
+      },
+      "other_including_joint": {
+        "baseline_ms": 1.6312250000000006,
+        "candidate_ms": 1.7146429999999988,
+        "delta_ms": 0.08341799999999822
+      },
+      "joint_packed_setup": {
+        "baseline_ms": 0.08672400000000001,
+        "candidate_ms": 0.13147899999999998,
+        "delta_ms": 0.044754999999999975
+      },
+      "joint_prepare": {
+        "baseline_ms": 0.023835000000000002,
+        "candidate_ms": 0.021551,
+        "delta_ms": -0.0022840000000000013
+      }
+    }
+  },
+  {
+    "degree": 1024,
+    "security": 128,
+    "batch": 1024,
+    "threads": 1,
+    "components": {
+      "commit_total": {
+        "baseline_ms": 102.761888,
+        "candidate_ms": 102.533476,
+        "delta_ms": -0.22841200000000583
+      },
+      "packing_commit": {
+        "baseline_ms": 6.1136319999999955,
+        "candidate_ms": 7.787209000000004,
+        "delta_ms": 1.6735770000000088
+      },
+      "ring": {
+        "baseline_ms": 52.789964000000005,
+        "candidate_ms": 53.798501,
+        "delta_ms": 1.008536999999997
+      },
+      "ring_coordinates": {
+        "baseline_ms": 11.510912,
+        "candidate_ms": 13.818845999999999,
+        "delta_ms": 2.3079339999999995
+      },
+      "arithmetic": {
+        "baseline_ms": 199.51747699999999,
+        "candidate_ms": 200.902256,
+        "delta_ms": 1.3847790000000089
+      },
+      "bitz_bridge": {
+        "baseline_ms": 110.017371,
+        "candidate_ms": 109.997363,
+        "delta_ms": -0.020007999999990034
+      },
+      "pcs": {
+        "baseline_ms": 35.043109,
+        "candidate_ms": 21.363346,
+        "delta_ms": -13.679763000000001
+      },
+      "other_including_joint": {
+        "baseline_ms": 31.906646999999964,
+        "candidate_ms": 28.073707000000013,
+        "delta_ms": -3.832939999999951
+      },
+      "joint_packed_setup": {
+        "baseline_ms": 7.056636,
+        "candidate_ms": 5.087593,
+        "delta_ms": -1.969043
+      },
+      "joint_prepare": {
+        "baseline_ms": 2.9439990000000003,
+        "candidate_ms": 2.3460270000000003,
+        "delta_ms": -0.597972
+      }
+    }
+  },
+  {
+    "degree": 1024,
+    "security": 128,
+    "batch": 1024,
+    "threads": 8,
+    "components": {
+      "commit_total": {
+        "baseline_ms": 15.075272,
+        "candidate_ms": 16.151148,
+        "delta_ms": 1.0758759999999992
+      },
+      "packing_commit": {
+        "baseline_ms": 1.9314429999999998,
+        "candidate_ms": 3.4745919999999995,
+        "delta_ms": 1.5431489999999997
+      },
+      "ring": {
+        "baseline_ms": 14.980343,
+        "candidate_ms": 14.12251,
+        "delta_ms": -0.8578329999999994
+      },
+      "ring_coordinates": {
+        "baseline_ms": 6.832883,
+        "candidate_ms": 6.713728000000001,
+        "delta_ms": -0.11915499999999923
+      },
+      "arithmetic": {
+        "baseline_ms": 39.609424999999995,
+        "candidate_ms": 39.529183,
+        "delta_ms": -0.08024199999999126
+      },
+      "bitz_bridge": {
+        "baseline_ms": 26.825566,
+        "candidate_ms": 27.035804,
+        "delta_ms": 0.21023800000000037
+      },
+      "pcs": {
+        "baseline_ms": 7.389085,
+        "candidate_ms": 5.851216,
+        "delta_ms": -1.5378689999999997
+      },
+      "other_including_joint": {
+        "baseline_ms": 21.77438199999999,
+        "candidate_ms": 22.77811299999999,
+        "delta_ms": 1.003731000000002
+      },
+      "joint_packed_setup": {
+        "baseline_ms": 0.919609,
+        "candidate_ms": 0.908208,
+        "delta_ms": -0.011400999999999994
+      },
+      "joint_prepare": {
+        "baseline_ms": 0.42935199999999996,
+        "candidate_ms": 0.34266800000000003,
+        "delta_ms": -0.08668399999999993
+      }
+    }
+  }
+]

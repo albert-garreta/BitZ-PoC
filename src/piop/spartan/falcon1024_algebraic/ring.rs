@@ -25,23 +25,20 @@ use super::{Cfg, F, FalconAlgebraicStatement, FalconError, Layout, N, Q, Witness
 
 pub(super) const EXTENSION_DEGREE: usize = 11;
 pub(super) type Ext = FalconExtension<EXTENSION_DEGREE>;
-const DOMAIN: &[u8] = b"bitz/falcon-algebraic/native-ring/alpha-basis/v3";
+const DOMAIN: &[u8] = b"bitz/falcon-algebraic/native-ring/negacyclic-adjoint/v4";
 type CoordinatesInAlpha = PowerCoordinates<EXTENSION_DEGREE>;
 const COEFFICIENT_ABS_BOUND: u64 = 1 << 14;
 
-/// The quotient is fixed before alpha; the carries are fixed before xi.
+/// The coefficient witness is committed before alpha; carries are fixed before xi.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct Proof {
-    pub certificate: Box<[Ext; N - 1]>,
     pub carries: [i64; EXTENSION_DEGREE],
     pub projection_nonce: Option<u64>,
 }
 
 impl Proof {
     pub(super) fn payload_size_bytes(&self) -> usize {
-        2 * EXTENSION_DEGREE * self.certificate.len()
-            + 8 * EXTENSION_DEGREE
-            + usize::from(self.projection_nonce.is_some()) * 8
+        8 * EXTENSION_DEGREE + usize::from(self.projection_nonce.is_some()) * 8
     }
 }
 
@@ -76,12 +73,9 @@ pub(super) fn prove(
     validate_witness(layout, data)?;
     bind_parameters(transcript, layout, field, grinding_bits);
     let lambda = instance_weights(transcript, layout)?;
-    let certificate = certificate(&data.quotients, &lambda);
-    transcript.absorb_slice(b"quotient-certificate");
-    absorb_extensions(transcript, certificate.as_slice());
     transcript.absorb_slice(b"polynomial-evaluation");
     let alpha = sample_extension(transcript, true)?;
-    let coordinates = coordinates(public, &lambda, alpha, certificate.as_slice())?;
+    let coordinates = coordinates(public, &lambda, alpha)?;
     let carries = calculate_carries(&coordinates, data)?;
     check_carries(&carries, layout.batch())?;
     absorb_carries(transcript, &carries);
@@ -102,7 +96,6 @@ pub(super) fn prove(
     let claim = collapse_claim(&coordinates, &carries, xi, field);
     Ok((
         Proof {
-            certificate,
             carries,
             projection_nonce,
         },
@@ -120,19 +113,15 @@ pub(super) fn verify(
     grinding_bits: u32,
 ) -> Result<PreparedClaim, FalconError> {
     validate_context(layout, public, field, grinding_bits)?;
-    if !proof.certificate.iter().all(|x| x.canonical())
-        || proof.projection_nonce.is_some() != (grinding_bits != 0)
-    {
+    if proof.projection_nonce.is_some() != (grinding_bits != 0) {
         return Err(error("invalid algebraic ring proof encoding"));
     }
     check_carries(&proof.carries, layout.batch())?;
     bind_parameters(transcript, layout, field, grinding_bits);
     let lambda = instance_weights(transcript, layout)?;
-    transcript.absorb_slice(b"quotient-certificate");
-    absorb_extensions(transcript, proof.certificate.as_slice());
     transcript.absorb_slice(b"polynomial-evaluation");
     let alpha = sample_extension(transcript, true)?;
-    let coordinates = coordinates(public, &lambda, alpha, proof.certificate.as_slice())?;
+    let coordinates = coordinates(public, &lambda, alpha)?;
     absorb_carries(transcript, &proof.carries);
     if let Some(nonce) = proof.projection_nonce {
         verify_and_absorb(
@@ -176,17 +165,8 @@ fn validate_context(
 }
 
 fn validate_witness(layout: &Layout, data: &WitnessData) -> Result<(), FalconError> {
-    if data.witness.s1.len() != layout.batch()
-        || data.witness.s2.len() != layout.batch()
-        || data.quotients.len() != layout.batch()
-        || data
-            .quotients
-            .iter()
-            .any(|row| row.iter().any(|&coefficient| i64::from(coefficient) >= Q))
-    {
-        return Err(error(
-            "algebraic ring witness dimensions or quotient encoding",
-        ));
+    if data.witness.s1.len() != layout.batch() || data.witness.s2.len() != layout.batch() {
+        return Err(error("algebraic ring witness dimensions"));
     }
     if data
         .witness
@@ -259,10 +239,6 @@ fn absorb_carries(transcript: &mut impl Transcript, carries: &[i64; EXTENSION_DE
     transcript.absorb_slice(&bytes);
 }
 
-fn certificate(quotients: &[Box<[u16; N - 1]>], lambda: &[Ext]) -> Box<[Ext; N - 1]> {
-    crate::piop::spartan::falcon_extension::certificate(quotients, lambda, |row, j| row[j])
-}
-
 fn powers(alpha: Ext) -> Box<[Ext; N + 1]> {
     crate::piop::spartan::falcon_extension::powers(alpha)
 }
@@ -282,7 +258,6 @@ fn coordinates(
     public: &FalconAlgebraicStatement,
     lambda: &[Ext],
     alpha: Ext,
-    certificate: &[Ext],
 ) -> Result<Coordinates, FalconError> {
     // The transcript samples alpha outside F_q. Since 11 is prime, its powers
     // form a basis. Still reject a singular basis rather than assuming invertibility.
@@ -290,14 +265,7 @@ fn coordinates(
         .map_err(|e| error(format!("invalid algebraic ring power basis: {e:?}")))?;
     let powers = powers(alpha);
     let batch = public.public_keys.len();
-    // Keep the public polynomial evaluations and certificate in the fixed basis.
-    // Their cached-power dot products already delay reduction over N terms.
-    let d_at_alpha = certificate
-        .iter()
-        .zip(powers.as_slice())
-        .fold(Ext::ZERO, |sum, (&coefficient, &power)| {
-            sum.add(coefficient.mul(power))
-        });
+    let wrap = powers[N].add(Ext::ONE);
     let mut s1 = vec![CoordinatesInAlpha::ZERO; batch * N];
     let mut s2 = vec![CoordinatesInAlpha::ZERO; batch * N];
     let mut targets = vec![Ext::ZERO; batch];
@@ -310,39 +278,80 @@ fn coordinates(
     )| {
         let lambda_h = lambda[i].mul(eval_public(&public.public_keys[i], powers.as_slice()));
         *target = lambda[i].mul(eval_public(&public.targets[i], powers.as_slice()));
-        // Convert only the starts. Every stored weight remains in the alpha
-        // basis, canonically reduced before the exact signed integer lift.
-        basis.fill_powers_pair([basis.encode(lambda[i]), basis.encode(lambda_h)], [a, b]);
+        // W_j = (h(X) X^j mod (X^N+1))(alpha). Multiplying by X wraps
+        // h[N-1-j] from degree N to degree zero, so
+        // W_{j+1} = alpha W_j - (alpha^N+1) h[N-1-j].
+        // Applying lambda before the recurrence gives the adjoint weights on
+        // s2 directly, with O(N*K) canonical base-field operations per key.
+        let subtract = basis.encode(lambda[i].mul(wrap));
+        basis.fill_powers_adjoint_pair(
+            [basis.encode(lambda[i]), basis.encode(lambda_h)],
+            subtract,
+            &public.public_keys[i],
+            [a, b],
+        );
     };
+    #[cfg(feature = "parallel")]
     s1.par_chunks_mut(N)
         .zip(s2.par_chunks_mut(N))
         .zip(targets.par_iter_mut())
         .enumerate()
         .for_each(fill);
-    let target = basis.encode(
-        targets
-            .into_iter()
-            .fold(Ext::ZERO, Ext::add)
-            .sub(powers[N].add(Ext::ONE).mul(d_at_alpha)),
-    );
+    #[cfg(not(feature = "parallel"))]
+    s1.chunks_mut(N)
+        .zip(s2.chunks_mut(N))
+        .zip(targets.iter_mut())
+        .enumerate()
+        .for_each(fill);
+    let target = basis.encode(targets.into_iter().fold(Ext::ZERO, Ext::add));
     Ok(Coordinates { s1, s2, target })
 }
 
+#[tracing::instrument(skip_all, name = "falcon_algebraic_ring:carries")]
 fn calculate_carries(
     coordinates: &Coordinates,
     data: &WitnessData,
 ) -> Result<[i64; EXTENSION_DEGREE], FalconError> {
-    let mut totals = [0i64; EXTENSION_DEGREE];
-    for (weights, witness) in [
-        (&coordinates.s1, &data.witness.s1),
-        (&coordinates.s2, &data.witness.s2),
-    ] {
-        for (weight, &coefficient) in weights.iter().zip(witness.iter().flatten()) {
-            for (total, &coordinate) in totals.iter_mut().zip(weight.coordinates()) {
-                *total += i64::from(coordinate) * i64::from(coefficient);
+    let batch = data.witness.s1.len();
+    let sum = |start: usize, end: usize| {
+        let mut totals = [0i64; EXTENSION_DEGREE];
+        for (weights, witness) in [
+            (&coordinates.s1, &data.witness.s1),
+            (&coordinates.s2, &data.witness.s2),
+        ] {
+            for (weight, &coefficient) in weights[start * N..end * N]
+                .iter()
+                .zip(witness[start..end].iter().flatten())
+            {
+                for (total, &coordinate) in totals.iter_mut().zip(weight.coordinates()) {
+                    *total += i64::from(coordinate) * i64::from(coefficient);
+                }
             }
         }
-    }
+        totals
+    };
+    #[cfg(feature = "parallel")]
+    let totals = if batch >= 128 && rayon::current_num_threads() > 1 {
+        // At least eight tasks amortize scheduling. The sum of absolute terms
+        // is below 2^49 even at batch 1024, so integer reassociation is exact.
+        const CHUNK: usize = 16;
+        (0..batch.div_ceil(CHUNK))
+            .into_par_iter()
+            .map(|chunk| sum(chunk * CHUNK, ((chunk + 1) * CHUNK).min(batch)))
+            .reduce(
+                || [0; EXTENSION_DEGREE],
+                |mut left, right| {
+                    for (left, right) in left.iter_mut().zip(right) {
+                        *left += right;
+                    }
+                    left
+                },
+            )
+    } else {
+        sum(0, batch)
+    };
+    #[cfg(not(feature = "parallel"))]
+    let totals = sum(0, batch);
     let mut carries = [0i64; EXTENSION_DEGREE];
     for k in 0..EXTENSION_DEGREE {
         let difference = totals[k] - i64::from(coordinates.target.coordinates()[k]);
@@ -463,16 +472,54 @@ mod tests {
         sum
     }
 
+    fn schoolbook_target(h: &[u16; N], s1: &[i16; N], s2: &[i16; N]) -> [u16; N] {
+        let mut result = s1.map(i64::from);
+        for (j, &b) in s2.iter().enumerate() {
+            for (k, &a) in h.iter().enumerate() {
+                let product = i64::from(a) * i64::from(b);
+                if j + k < N {
+                    result[j + k] += product;
+                } else {
+                    result[j + k - N] -= product;
+                }
+            }
+        }
+        result.map(|value| value.rem_euclid(Q) as u16)
+    }
+
+    // Evaluate each independently shifted, reduced polynomial. This deliberately
+    // uses no adjoint recurrence and covers every coefficient crossing X^N=-1.
+    fn shifted_public_evaluation(h: &[u16; N], shift: usize, powers: &[Ext]) -> Ext {
+        let mut sums = [0i64; EXTENSION_DEGREE];
+        for (k, &coefficient) in h.iter().enumerate() {
+            let index = k + shift;
+            let sign = if index < N { 1 } else { -1 };
+            for (sum, &coordinate) in sums.iter_mut().zip(&powers[index % N].0) {
+                *sum += sign * i64::from(coefficient) * i64::from(coordinate);
+            }
+        }
+        Ext::new(sums.map(|value| value.rem_euclid(Q) as u16))
+    }
+
     #[test]
     fn alpha_coordinates_and_carries_match_independent_fixed_basis_reference() {
-        let (_, public, data) = fixture(3);
+        let (_, mut public, mut data) = fixture(3);
+        for i in 0..3 {
+            public.public_keys[i] = std::array::from_fn(|j| ((i * 37 + j * 101) as i64 % Q) as u16);
+            data.witness.s1[i] = std::array::from_fn(|j| (j as i16 % 17) - 8);
+            data.witness.s2[i] = std::array::from_fn(|j| (j as i16 % 11) - 5);
+            public.targets[i] = schoolbook_target(
+                &public.public_keys[i],
+                &data.witness.s1[i],
+                &data.witness.s2[i],
+            );
+        }
         let alpha = Ext::new(std::array::from_fn(|k| (97 * k + 321) as u16));
         let basis = PowerBasis::try_new(alpha).unwrap();
         let lambda: Vec<_> = (0..3)
             .map(|i| Ext::new(std::array::from_fn(|k| ((i + 1) * 123 + k * 17) as u16)))
             .collect();
-        let certificate = certificate(&data.quotients, &lambda);
-        let actual = coordinates(&public, &lambda, alpha, certificate.as_slice()).unwrap();
+        let actual = coordinates(&public, &lambda, alpha).unwrap();
         let mut reference = Coordinates {
             s1: vec![],
             s2: vec![],
@@ -481,19 +528,18 @@ mod tests {
         let powers = powers(alpha);
         let mut target = Ext::ZERO;
         for i in 0..3 {
-            let lambda_h = lambda[i].mul(eval_public(&public.public_keys[i], powers.as_slice()));
             target = target.add(lambda[i].mul(eval_public(&public.targets[i], powers.as_slice())));
-            for &power in &powers[..N] {
+            for (j, &power) in powers[..N].iter().enumerate() {
                 reference.s1.push(basis.encode(lambda[i].mul(power)));
-                reference.s2.push(basis.encode(lambda_h.mul(power)));
+                reference
+                    .s2
+                    .push(basis.encode(lambda[i].mul(shifted_public_evaluation(
+                        &public.public_keys[i],
+                        j,
+                        powers.as_slice(),
+                    ))));
             }
         }
-        // Independent Horner evaluation of the quotient certificate.
-        let quotient = certificate
-            .iter()
-            .rev()
-            .fold(Ext::ZERO, |v, &c| v.mul(alpha).add(c));
-        target = target.sub(powers[N].add(Ext::ONE).mul(quotient));
         reference.target = basis.encode(target);
         assert_eq!(actual.s1, reference.s1);
         assert_eq!(actual.s2, reference.s2);
@@ -502,7 +548,7 @@ mod tests {
             calculate_carries(&actual, &data).unwrap(),
             calculate_carries(&reference, &data).unwrap()
         );
-        assert!(coordinates(&public, &lambda, Ext::ONE, certificate.as_slice()).is_err());
+        assert!(coordinates(&public, &lambda, Ext::ONE).is_err());
     }
 
     #[test]
@@ -528,6 +574,10 @@ mod tests {
             assert_eq!(claim.weights_s1.len(), batch * N);
             assert_eq!(claim.weights_s2.len(), batch * N);
             assert_eq!(
+                proof.payload_size_bytes(),
+                88 + usize::from(grinding_bits != 0) * 8
+            );
+            assert_eq!(
                 prover.get_challenge::<u64>(),
                 verifier.get_challenge::<u64>()
             );
@@ -547,24 +597,20 @@ mod tests {
             0,
         )
         .unwrap();
-        let mut quotient = proof.clone();
-        quotient.certificate[0] = quotient.certificate[0].add(Ext::ONE);
         let mut carry = proof.clone();
         carry.carries[0] += 1;
-        for altered in [quotient, carry] {
-            // Ring verification produces a claim; the shared source binder is
-            // what rejects it, so check that obligation explicitly here.
-            let claim = verify(
-                &mut Blake3Transcript::new(),
-                &layout,
-                &public,
-                &altered,
-                &field,
-                0,
-            )
-            .unwrap();
-            assert_ne!(dot(&claim, &data, &field), claim.target);
-        }
+        // Ring verification produces a claim; the shared source binder is
+        // what rejects it, so check that obligation explicitly here.
+        let claim = verify(
+            &mut Blake3Transcript::new(),
+            &layout,
+            &public,
+            &carry,
+            &field,
+            0,
+        )
+        .unwrap();
+        assert_ne!(dot(&claim, &data, &field), claim.target);
         let mut wrong_target = public.clone();
         wrong_target.targets[0][0] -= 1;
         let claim = verify(
@@ -592,7 +638,7 @@ mod tests {
     }
 
     #[test]
-    fn malformed_quotients_carries_and_nonce_shapes_are_rejected() {
+    fn malformed_carries_and_nonce_shapes_are_rejected() {
         let (layout, public, data) = fixture(1);
         let field = field();
         let (proof, _) = prove(
@@ -604,15 +650,13 @@ mod tests {
             0,
         )
         .unwrap();
-        let mut noncanonical = proof.clone();
-        noncanonical.certificate[0].0[1] = Q as u16;
         let mut out_of_bound = proof.clone();
         out_of_bound.carries[0] = carry_bound(1) as i64 + 1;
         let mut signed_minimum = proof.clone();
         signed_minimum.carries[0] = i64::MIN;
         let mut nonce = proof.clone();
         nonce.projection_nonce = Some(0);
-        for altered in [noncanonical, out_of_bound, signed_minimum, nonce] {
+        for altered in [out_of_bound, signed_minimum, nonce] {
             assert!(
                 verify(
                     &mut Blake3Transcript::new(),
@@ -658,6 +702,69 @@ mod tests {
         assert!(validate_context(&layout, &public, &small, 0).is_err());
     }
 
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn parallel_carries_include_the_final_partial_chunk() {
+        const BATCH: usize = 129;
+        let mut alpha = Ext::ZERO;
+        alpha.0[1] = 1;
+        let basis = PowerBasis::try_new(alpha).unwrap();
+        let patterns = [
+            basis.encode(Ext::ZERO),
+            basis.encode(Ext::ONE),
+            basis.encode(Ext::new([(Q - 1) as u16; EXTENSION_DEGREE])),
+            basis.encode(Ext::new(std::array::from_fn(|k| (97 * k + 43) as u16))),
+        ];
+        let mut data = WitnessData {
+            witness: FalconAlgebraicWitness {
+                s1: (0..BATCH)
+                    .map(|i| std::array::from_fn(|j| [-16384, -1, 0, 1, 16383][(i + j) % 5]))
+                    .collect(),
+                s2: (0..BATCH)
+                    .map(|i| std::array::from_fn(|j| [16383, -2049, 2048, -16384][(i + j) % 4]))
+                    .collect(),
+            },
+            slacks: vec![0; BATCH],
+        };
+        // The final one-signature task has substantial signed contributions.
+        // These are encoding-boundary inputs, independent of the norm gate.
+        data.witness.s1[BATCH - 1].fill(16383);
+        data.witness.s2[BATCH - 1].fill(-16384);
+        let mut coordinates = Coordinates {
+            s1: (0..BATCH * N).map(|j| patterns[j % 4]).collect(),
+            s2: (0..BATCH * N).map(|j| patterns[(j / 7 + 1) % 4]).collect(),
+            target: CoordinatesInAlpha::ZERO,
+        };
+        // Independent coordinate-major i128 dot products supply both a valid
+        // target residue and the exact quotient expected from every worker count.
+        let totals: [i128; EXTENSION_DEGREE] = std::array::from_fn(|k| {
+            let mut total = 0i128;
+            for signature in 0..BATCH {
+                for j in 0..N {
+                    let index = signature * N + j;
+                    total += i128::from(coordinates.s1[index].coordinates()[k])
+                        * i128::from(data.witness.s1[signature][j]);
+                    total += i128::from(coordinates.s2[index].coordinates()[k])
+                        * i128::from(data.witness.s2[signature][j]);
+                }
+            }
+            total
+        });
+        let residues = totals.map(|value| value.rem_euclid(i128::from(Q)) as u16);
+        coordinates.target = basis.encode(Ext::new(residues));
+        // alpha is the fixed-basis generator, so these are also alpha coordinates.
+        assert_eq!(coordinates.target.coordinates(), &residues);
+        let expected = totals.map(|value| value.div_euclid(i128::from(Q)) as i64);
+        for workers in [1, 2, 8] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .build()
+                .unwrap();
+            let actual = pool.install(|| calculate_carries(&coordinates, &data).unwrap());
+            assert_eq!(actual, expected, "degree={N}, workers={workers}");
+        }
+    }
+
     #[test]
     fn an_invalid_ring_witness_has_no_coordinate_lift() {
         let (layout, public, mut data) = fixture(1);
@@ -673,6 +780,38 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn direct_ring_check_preserves_signed15_boundaries_and_wraparound() {
+        let (layout, mut public, mut data) = fixture(1);
+        let field = field();
+        public.public_keys[0] =
+            std::array::from_fn(|j| if j % 2 == 0 { 0 } else { (Q - 1) as u16 });
+        data.witness.s1[0] = std::array::from_fn(|j| if j % 2 == 0 { -16384 } else { 16383 });
+        data.witness.s2[0] = std::array::from_fn(|j| if j % 3 == 0 { 16383 } else { -16384 });
+        public.targets[0] = schoolbook_target(
+            &public.public_keys[0],
+            &data.witness.s1[0],
+            &data.witness.s2[0],
+        );
+        // The ring layer supports the whole encoding range. The enclosing norm
+        // proof separately rejects this deliberately oversized norm.
+        let (proof, claim) = prove(
+            &mut Blake3Transcript::new(),
+            &layout,
+            &public,
+            &data,
+            &field,
+            0,
+        )
+        .unwrap();
+        assert_eq!(dot(&claim, &data, &field), claim.target);
+        assert!(check_carries(&proof.carries, 1).is_ok());
+        for invalid in [-16385, 16384] {
+            data.witness.s1[0][0] = invalid;
+            assert!(validate_witness(&layout, &data).is_err());
+        }
     }
 
     struct ScriptedTranscript {

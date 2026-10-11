@@ -1,4 +1,5 @@
 mod arithmetic;
+mod compact;
 mod protocol;
 mod ring;
 mod source;
@@ -27,27 +28,33 @@ pub const PARAMETERS: super::falcon_parameters::FalconParameters =
 pub const SLACK_BITS: usize = PARAMETERS.norm_bits();
 pub const Q: i64 = 12_289;
 pub const BETA_SQUARED: u64 = PARAMETERS.norm_bound;
+/// Live value bits per signature in the original signed15 representation.
 pub const LIVE_BITS: usize = 2 * N * 15 + SLACK_BITS;
+/// Maximum live value bits per signature in compact split-source commitments.
+/// Public exception-index metadata is counted separately.
+pub const COMPACT_LIVE_BITS: usize =
+    2 * N * compact::BASE_BITS + 3 * compact::MAX_EXCEPTIONS + SLACK_BITS;
+
 /// Public choice of proof relation, shared by prover and verifier.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FalconAlgebraicBinding {
-    /// Original v5 bit-domain binder, including partial batches.
+    /// Bit-domain binder over the compact commitment, including partial batches.
     Bits,
     /// Word-domain binder with a merged source opening; requires full capacity.
     Words,
 }
 
-/// Identifier of the legacy bit relation. Use `prepared.protocol_id()` for the
+/// Identifier of the reduced logical-support bit relation. Use `prepared.protocol_id()` for the
 /// relation selected by a prepared prover or verifier.
 pub const PROTOCOL_ID: &str = if N == 1024 {
-    "bitz/falcon1024-algebraic/non-zk/v5"
+    "bitz/falcon1024-algebraic/non-zk/v8"
 } else {
-    "bitz/falcon512-algebraic/non-zk/v5"
+    "bitz/falcon512-algebraic/non-zk/v8"
 };
 const WORD_PROTOCOL_ID: &str = if N == 1024 {
-    "bitz/falcon1024-algebraic/non-zk/word-binder/v6"
+    "bitz/falcon1024-algebraic/non-zk/word-binder/v9"
 } else {
-    "bitz/falcon512-algebraic/non-zk/word-binder/v6"
+    "bitz/falcon512-algebraic/non-zk/word-binder/v9"
 };
 const PRIME_MIN: u128 = 1 << 125;
 const PRIME_MAX: u128 = (1 << 126) - 1;

@@ -1,0 +1,114 @@
+{
+  "falcon-poc": {
+    "commit": "4491309f5d1e45d506410803e3b9ba488047991f",
+    "date": "2026-09-29T08:55:42-07:00",
+    "binder_symmetric_count": [
+      "105",
+      "0"
+    ]
+  },
+  "origin/falcon-poc": {
+    "commit": "4491309f5d1e45d506410803e3b9ba488047991f",
+    "date": "2026-09-29T08:55:42-07:00",
+    "binder_symmetric_count": [
+      "105",
+      "0"
+    ]
+  },
+  "codex/falcon-binder-experiments": {
+    "commit": "c3bf4e4e3d52a350e3dcd6f9475654b6a307f52d",
+    "date": "2026-10-11T13:41:08-07:00",
+    "binder_symmetric_count": [
+      "0",
+      "0"
+    ]
+  },
+  "codex/falcon-cleanup": {
+    "commit": "51b472c55bfeeda4bccf6d9986345fbeb54953e5",
+    "date": "2026-10-10T13:56:58-07:00",
+    "binder_symmetric_count": [
+      "11",
+      "0"
+    ]
+  },
+  "codex/falcon-keccak3-packing": {
+    "commit": "12f8de9e8df3f8b42f72583fdbb4ac116bdbc3dc",
+    "date": "2026-10-10T14:48:19-07:00",
+    "binder_symmetric_count": [
+      "11",
+      "1"
+    ]
+  },
+  "origin/codex/falcon-keccak3-packing": {
+    "commit": "12f8de9e8df3f8b42f72583fdbb4ac116bdbc3dc",
+    "date": "2026-10-10T14:48:19-07:00",
+    "binder_symmetric_count": [
+      "11",
+      "1"
+    ]
+  },
+  "codex/falcon-shared-prime": {
+    "commit": "7e24c6f647d42fe4848525d8ada20c72386de1ca",
+    "date": "2026-10-07T16:10:33-07:00",
+    "binder_symmetric_count": [
+      "76",
+      "0"
+    ]
+  },
+  "origin/codex/falcon-shared-prime": {
+    "commit": "7e24c6f647d42fe4848525d8ada20c72386de1ca",
+    "date": "2026-10-07T16:10:33-07:00",
+    "binder_symmetric_count": [
+      "76",
+      "0"
+    ]
+  },
+  "codex/falcon-tail-preparation": {
+    "commit": "ac2b42feae0cfcfd86eda449a42edb4942cfa15f",
+    "date": "2026-10-08T08:45:55-07:00",
+    "binder_symmetric_count": [
+      "66",
+      "0"
+    ]
+  },
+  "codex/falcon-witness-preparation": {
+    "commit": "9b7b0d185caed0f709a52ddc838d057b0d14826a",
+    "date": "2026-10-08T13:48:53-07:00",
+    "binder_symmetric_count": [
+      "66",
+      "5"
+    ]
+  },
+  "origin/codex/falcon-witness-preparation": {
+    "commit": "9b7b0d185caed0f709a52ddc838d057b0d14826a",
+    "date": "2026-10-08T13:48:53-07:00",
+    "binder_symmetric_count": [
+      "66",
+      "5"
+    ]
+  },
+  "generic-falcon": {
+    "commit": "d865c9df5e50a1c78ee4d52885d5381b17fc08c5",
+    "date": "2026-10-11T10:24:41-07:00",
+    "binder_symmetric_count": [
+      "18",
+      "1"
+    ]
+  },
+  "origin/generic-falcon": {
+    "commit": "9b7b0d185caed0f709a52ddc838d057b0d14826a",
+    "date": "2026-10-08T13:48:53-07:00",
+    "binder_symmetric_count": [
+      "66",
+      "5"
+    ]
+  },
+  "origin/falcon-grinding-opt": {
+    "commit": "4784ee7699c9ff988966f81c146e3a34ee7acd8c",
+    "date": "2026-10-08T14:55:04+02:00",
+    "binder_symmetric_count": [
+      "75",
+      "1"
+    ]
+  }
+}

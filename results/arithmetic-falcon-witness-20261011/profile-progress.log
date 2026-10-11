@@ -1,0 +1,16 @@
+baseline-n512-s128-b1024-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 289.653756, "proof_payload_bytes": 263042}
+candidate-n512-s128-b1024-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 290.328574, "proof_payload_bytes": 257640}
+baseline-n512-s128-b1024-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 69.94123400000001, "proof_payload_bytes": 263042}
+candidate-n512-s128-b1024-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 72.58726, "proof_payload_bytes": 257640}
+baseline-n1024-s128-b1024-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 533.0595930000001, "proof_payload_bytes": 361738}
+candidate-n1024-s128-b1024-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 533.179098, "proof_payload_bytes": 320976}
+baseline-n1024-s128-b1024-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 126.357686, "proof_payload_bytes": 361738}
+candidate-n1024-s128-b1024-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 129.585072, "proof_payload_bytes": 320976}

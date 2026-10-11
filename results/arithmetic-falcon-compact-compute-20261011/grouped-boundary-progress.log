@@ -1,0 +1,71 @@
+{"shapes": 6, "variants": ["default", "cap1", "cap8", "cap16", "v7"], "primary_control": "default", "input_cases_per_variant": 12, "proofs_per_variant_including_warmup": 48, "proofs_all_variants_including_warmup": 240, "groups": ["diagnostic-grouped-boundaries"]}
+default-n512-s100-b255-t8-seed202
+cap1-n512-s100-b255-t8-seed202
+cap8-n512-s100-b255-t8-seed202
+cap16-n512-s100-b255-t8-seed202
+v7-n512-s100-b255-t8-seed202
+v7-n512-s100-b255-t8-seed203
+cap16-n512-s100-b255-t8-seed203
+cap8-n512-s100-b255-t8-seed203
+cap1-n512-s100-b255-t8-seed203
+default-n512-s100-b255-t8-seed203
+{"completed_shape": {"degree": 512, "security_bits": 100, "batch": 255, "threads": 8}, "deltas_percent_vs_control": {"cap1": {"total_prover_ms": -4.856919297681317, "prove_ms": -3.0979583286614987}, "cap8": {"total_prover_ms": -10.971580261525936, "prove_ms": -11.535037480627475}, "cap16": {"total_prover_ms": -11.867651987038464, "prove_ms": -11.895451968287729}, "v7": {"total_prover_ms": 23.594833318325257, "prove_ms": 27.715386983685697}}}
+cap1-n512-s100-b256-t8-seed202
+cap8-n512-s100-b256-t8-seed202
+cap16-n512-s100-b256-t8-seed202
+v7-n512-s100-b256-t8-seed202
+default-n512-s100-b256-t8-seed202
+default-n512-s100-b256-t8-seed203
+v7-n512-s100-b256-t8-seed203
+cap16-n512-s100-b256-t8-seed203
+cap8-n512-s100-b256-t8-seed203
+cap1-n512-s100-b256-t8-seed203
+{"completed_shape": {"degree": 512, "security_bits": 100, "batch": 256, "threads": 8}, "deltas_percent_vs_control": {"cap1": {"total_prover_ms": -3.905805365209847, "prove_ms": -3.3577987747885896}, "cap8": {"total_prover_ms": -13.110239854894834, "prove_ms": -15.455642939572611}, "cap16": {"total_prover_ms": -14.671808641827344, "prove_ms": -15.70913923277354}, "v7": {"total_prover_ms": -2.1349381903762565, "prove_ms": -1.9794893691000182}}}
+cap8-n512-s100-b257-t8-seed202
+cap16-n512-s100-b257-t8-seed202
+v7-n512-s100-b257-t8-seed202
+default-n512-s100-b257-t8-seed202
+cap1-n512-s100-b257-t8-seed202
+cap1-n512-s100-b257-t8-seed203
+default-n512-s100-b257-t8-seed203
+v7-n512-s100-b257-t8-seed203
+cap16-n512-s100-b257-t8-seed203
+cap8-n512-s100-b257-t8-seed203
+{"completed_shape": {"degree": 512, "security_bits": 100, "batch": 257, "threads": 8}, "deltas_percent_vs_control": {"cap1": {"total_prover_ms": -5.169944888675415, "prove_ms": -6.257557199423614}, "cap8": {"total_prover_ms": -15.183215226306402, "prove_ms": -16.186040630920175}, "cap16": {"total_prover_ms": -13.774280063934107, "prove_ms": -15.35170265883199}, "v7": {"total_prover_ms": 0.18850478224547995, "prove_ms": -0.20520450472888419}}}
+cap16-n512-s128-b255-t8-seed202
+v7-n512-s128-b255-t8-seed202
+default-n512-s128-b255-t8-seed202
+cap1-n512-s128-b255-t8-seed202
+cap8-n512-s128-b255-t8-seed202
+cap8-n512-s128-b255-t8-seed203
+cap1-n512-s128-b255-t8-seed203
+default-n512-s128-b255-t8-seed203
+v7-n512-s128-b255-t8-seed203
+cap16-n512-s128-b255-t8-seed203
+{"completed_shape": {"degree": 512, "security_bits": 128, "batch": 255, "threads": 8}, "deltas_percent_vs_control": {"cap1": {"total_prover_ms": -1.1379518527464327, "prove_ms": -0.8139459638668245}, "cap8": {"total_prover_ms": -9.77348517875024, "prove_ms": -9.208625600208242}, "cap16": {"total_prover_ms": -8.905646363210717, "prove_ms": -9.47548651412572}, "v7": {"total_prover_ms": 19.531770994064356, "prove_ms": 21.943068638509033}}}
+v7-n512-s128-b256-t8-seed202
+default-n512-s128-b256-t8-seed202
+cap1-n512-s128-b256-t8-seed202
+cap8-n512-s128-b256-t8-seed202
+cap16-n512-s128-b256-t8-seed202
+cap16-n512-s128-b256-t8-seed203
+cap8-n512-s128-b256-t8-seed203
+cap1-n512-s128-b256-t8-seed203
+default-n512-s128-b256-t8-seed203
+v7-n512-s128-b256-t8-seed203
+{"completed_shape": {"degree": 512, "security_bits": 128, "batch": 256, "threads": 8}, "deltas_percent_vs_control": {"cap1": {"total_prover_ms": -0.707351970101977, "prove_ms": -0.8252234028743644}, "cap8": {"total_prover_ms": -10.344149846760665, "prove_ms": -11.379115186805656}, "cap16": {"total_prover_ms": -10.89827182501326, "prove_ms": -11.970082003339256}, "v7": {"total_prover_ms": -0.33016532320852, "prove_ms": 0.283661718189987}}}
+default-n512-s128-b257-t8-seed202
+cap1-n512-s128-b257-t8-seed202
+cap8-n512-s128-b257-t8-seed202
+cap16-n512-s128-b257-t8-seed202
+v7-n512-s128-b257-t8-seed202
+v7-n512-s128-b257-t8-seed203
+cap16-n512-s128-b257-t8-seed203
+cap8-n512-s128-b257-t8-seed203
+cap1-n512-s128-b257-t8-seed203
+default-n512-s128-b257-t8-seed203
+{"completed_shape": {"degree": 512, "security_bits": 128, "batch": 257, "threads": 8}, "deltas_percent_vs_control": {"cap1": {"total_prover_ms": -6.759910774679046, "prove_ms": -5.629083475652674}, "cap8": {"total_prover_ms": -13.057215888284768, "prove_ms": -13.348315571173863}, "cap16": {"total_prover_ms": -12.341137950027402, "prove_ms": -13.02344748819273}, "v7": {"total_prover_ms": -0.19636805605934837, "prove_ms": 0.29466341910548977}}}
+{"comparison": "cap1-vs-default", "observed_gate_passed": true, "positive_entries": 0}
+{"comparison": "cap8-vs-default", "observed_gate_passed": true, "positive_entries": 0}
+{"comparison": "cap16-vs-default", "observed_gate_passed": true, "positive_entries": 0}
+{"comparison": "v7-vs-default", "observed_gate_passed": false, "positive_entries": 7}

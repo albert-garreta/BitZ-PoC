@@ -1,0 +1,20 @@
+{
+  "captured_unix": 1791733009.1683147,
+  "source_snapshot": "/tmp/bitz-arithmetic-v8-r6-source-qmk82kcf",
+  "source_files": 597,
+  "source_hash_manifest": "candidate-r6-source-sha256.json",
+  "changed_from_r5": [
+    "src/piop/spartan/falcon1024_algebraic/arithmetic.rs"
+  ],
+  "binary_original": "/tmp/bitz-arithmetic-v8-r6-production-binary",
+  "binary_preserved": "/tmp/bitz-arithmetic-v8-r6-qualification-binary",
+  "sha256": "2df3a184f9025d9b8bca60e886e3a12102f9fe5ddbd2b662edce2506d21c0de9",
+  "features": [
+    "falcon-hybrid"
+  ],
+  "RUSTFLAGS": "-C target-cpu=native",
+  "build_profile": "native release with default LTO/profile",
+  "root_confirmed_binary_and_go": true,
+  "tests_before_timing": "156 relevant tests passed:97 arithmetic +2 large +54 shared +3 full Falcon",
+  "revision": "Selected public batch/degree/worker optimized-binding and prefix strategy; compact computation disabled in production."
+}

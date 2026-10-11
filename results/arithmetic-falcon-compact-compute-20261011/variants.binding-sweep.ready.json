@@ -1,0 +1,97 @@
+{
+  "primary_control": "default",
+  "binary_path_pending_root_confirmation": false,
+  "variants": [
+    {
+      "label": "default",
+      "binary": "/tmp/bitz-arithmetic-binding-controls-pilot-binary",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "padding"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "actual default binding strategy/prefix; both binding controls absent",
+      "expected_fields": {
+        "compute_variant": "padding"
+      }
+    },
+    {
+      "label": "legacy3",
+      "binary": "/tmp/bitz-arithmetic-binding-controls-pilot-binary",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "padding",
+        "BITZ_ARITHMETIC_BINDING_STRATEGY": "legacy",
+        "BITZ_ARITHMETIC_BINDING_PREFIX": "3"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "same-binary raw binding compute control",
+      "expected_fields": {
+        "compute_variant": "padding"
+      }
+    },
+    {
+      "label": "opt3",
+      "binary": "/tmp/bitz-arithmetic-binding-controls-pilot-binary",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "padding",
+        "BITZ_ARITHMETIC_BINDING_STRATEGY": "optimized",
+        "BITZ_ARITHMETIC_BINDING_PREFIX": "3"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "same-binary raw binding compute control",
+      "expected_fields": {
+        "compute_variant": "padding"
+      }
+    },
+    {
+      "label": "opt4",
+      "binary": "/tmp/bitz-arithmetic-binding-controls-pilot-binary",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "padding",
+        "BITZ_ARITHMETIC_BINDING_STRATEGY": "optimized",
+        "BITZ_ARITHMETIC_BINDING_PREFIX": "4"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "same-binary raw binding compute control",
+      "expected_fields": {
+        "compute_variant": "padding"
+      }
+    }
+  ],
+  "reference_protocol_identity": {
+    "reference_variant": "default",
+    "protocol_suffix": "",
+    "candidate_variants": [
+      "legacy3",
+      "opt3",
+      "opt4"
+    ],
+    "keys": [
+      "input_digest",
+      "protocol_id",
+      "trial",
+      "iteration",
+      "source_root",
+      "proof_debug_digest",
+      "proof_payload_bytes",
+      "committed_source_bits"
+    ],
+    "expected_checked_proofs": 1152,
+    "eligibility": "Compare every strategy mode to actual default for every input. Empty suffix deliberately includes both smaller-layout v8 and unchanged-layout v7 proofs; protocol_id equality is among the required checks."
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "passed": false,
+  "metrics": [
+    "total_prover_ms",
+    "prove_ms"
+  ],
+  "maximum_regression_percent": 0.0,
+  "regressions": [
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 16.372834,
+      "candidate_ms": 16.425824499999997,
+      "regression_percent": 0.3236489174690105
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "baseline_ms": 21.1526855,
+      "candidate_ms": 21.182371500000002,
+      "regression_percent": 0.14034151833819397
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 19.989756,
+      "candidate_ms": 20.04499,
+      "regression_percent": 0.27631152676399484
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 22.961146,
+      "candidate_ms": 22.9999745,
+      "regression_percent": 0.1691052354268363
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "baseline_ms": 29.9501205,
+      "candidate_ms": 29.9507375,
+      "regression_percent": 0.002060091878419712
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 26.651757500000002,
+      "candidate_ms": 26.713289000000003,
+      "regression_percent": 0.23087220420643373
+    }
+  ],
+  "interpretation": "Observed pooled-sample median gate only. A tiny positive delta does not establish a repeatable regression; inspect seed-paired dispersion and an independently authorized confirmation run. This gate is not a statistical confidence claim."
+}

@@ -1,0 +1,338 @@
+[
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 1024,
+    "threads": 1,
+    "group": "diagnostic-profiles-r2",
+    "seed": 42,
+    "variants": {
+      "v7": {
+        "prepare_ms": 0.117722,
+        "witness_commit_ms": 36.489016,
+        "prove_ms": 231.18857400000002,
+        "total_prover_ms": 267.518639,
+        "verify_ms": 45.530797,
+        "proof_payload_bytes": 217968,
+        "live_bits_per_signature": 12338,
+        "source_bits_per_signature": 16384,
+        "committed_source_bits": 13631488,
+        "virtual_arithmetic_bits": 16777216,
+        "capacity": 1024,
+        "source_packed_bytes": 1703936,
+        "process_peak_rss_kib": 126508
+      },
+      "combined": {
+        "prepare_ms": 0.112383,
+        "witness_commit_ms": 36.349452,
+        "prove_ms": 237.858159,
+        "total_prover_ms": 274.185709,
+        "verify_ms": 47.796413,
+        "proof_payload_bytes": 270928,
+        "live_bits_per_signature": 12338,
+        "source_bits_per_signature": 16384,
+        "committed_source_bits": 13631488,
+        "virtual_arithmetic_bits": 16777216,
+        "capacity": 1024,
+        "arithmetic_capacity": 1024,
+        "logical_binding_bits": 12648448,
+        "source_packed_bytes": 1703936,
+        "process_peak_rss_kib": 87816
+      }
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 1024,
+    "threads": 8,
+    "group": "diagnostic-profiles-r2",
+    "seed": 42,
+    "variants": {
+      "v7": {
+        "prepare_ms": 0.111,
+        "witness_commit_ms": 5.690012,
+        "prove_ms": 49.875746,
+        "total_prover_ms": 55.66205,
+        "verify_ms": 19.523737,
+        "proof_payload_bytes": 217968,
+        "live_bits_per_signature": 12338,
+        "source_bits_per_signature": 16384,
+        "committed_source_bits": 13631488,
+        "virtual_arithmetic_bits": 16777216,
+        "capacity": 1024,
+        "source_packed_bytes": 1703936,
+        "process_peak_rss_kib": 114988
+      },
+      "combined": {
+        "prepare_ms": 0.11545899999999999,
+        "witness_commit_ms": 5.407729,
+        "prove_ms": 50.748907,
+        "total_prover_ms": 56.30169,
+        "verify_ms": 24.041382,
+        "proof_payload_bytes": 270928,
+        "live_bits_per_signature": 12338,
+        "source_bits_per_signature": 16384,
+        "committed_source_bits": 13631488,
+        "virtual_arithmetic_bits": 16777216,
+        "capacity": 1024,
+        "arithmetic_capacity": 1024,
+        "logical_binding_bits": 12648448,
+        "source_packed_bytes": 1703936,
+        "process_peak_rss_kib": 98312
+      }
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 1024,
+    "threads": 1,
+    "group": "diagnostic-profiles-r2",
+    "seed": 42,
+    "variants": {
+      "v7": {
+        "prepare_ms": 0.103886,
+        "witness_commit_ms": 103.13065300000001,
+        "prove_ms": 391.571464,
+        "total_prover_ms": 495.90957099999997,
+        "verify_ms": 88.295653,
+        "proof_payload_bytes": 277184,
+        "live_bits_per_signature": 24651,
+        "source_bits_per_signature": 32768,
+        "committed_source_bits": 27262976,
+        "virtual_arithmetic_bits": 33554432,
+        "capacity": 1024,
+        "source_packed_bytes": 3407872,
+        "process_peak_rss_kib": 207152
+      },
+      "combined": {
+        "prepare_ms": 0.118044,
+        "witness_commit_ms": 101.743469,
+        "prove_ms": 394.07914700000003,
+        "total_prover_ms": 495.822746,
+        "verify_ms": 92.144504,
+        "proof_payload_bytes": 374304,
+        "live_bits_per_signature": 24651,
+        "source_bits_per_signature": 32768,
+        "committed_source_bits": 27262976,
+        "virtual_arithmetic_bits": 33554432,
+        "capacity": 1024,
+        "arithmetic_capacity": 1024,
+        "logical_binding_bits": 25296896,
+        "source_packed_bytes": 3407872,
+        "process_peak_rss_kib": 157232
+      }
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 1024,
+    "threads": 8,
+    "group": "diagnostic-profiles-r2",
+    "seed": 42,
+    "variants": {
+      "v7": {
+        "prepare_ms": 0.108876,
+        "witness_commit_ms": 14.964313,
+        "prove_ms": 91.61408,
+        "total_prover_ms": 106.63511100000001,
+        "verify_ms": 36.718340000000005,
+        "proof_payload_bytes": 277184,
+        "live_bits_per_signature": 24651,
+        "source_bits_per_signature": 32768,
+        "committed_source_bits": 27262976,
+        "virtual_arithmetic_bits": 33554432,
+        "capacity": 1024,
+        "source_packed_bytes": 3407872,
+        "process_peak_rss_kib": 220840
+      },
+      "combined": {
+        "prepare_ms": 0.119426,
+        "witness_commit_ms": 14.346816,
+        "prove_ms": 90.626442,
+        "total_prover_ms": 105.149141,
+        "verify_ms": 44.517832,
+        "proof_payload_bytes": 374304,
+        "live_bits_per_signature": 24651,
+        "source_bits_per_signature": 32768,
+        "committed_source_bits": 27262976,
+        "virtual_arithmetic_bits": 33554432,
+        "capacity": 1024,
+        "arithmetic_capacity": 1024,
+        "logical_binding_bits": 25296896,
+        "source_packed_bytes": 3407872,
+        "process_peak_rss_kib": 172216
+      }
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 1,
+    "group": "diagnostic-profiles-r2",
+    "seed": 42,
+    "variants": {
+      "v7": {
+        "prepare_ms": 0.145906,
+        "witness_commit_ms": 36.333111,
+        "prove_ms": 245.924415,
+        "total_prover_ms": 282.256013,
+        "verify_ms": 45.961201,
+        "proof_payload_bytes": 258088,
+        "live_bits_per_signature": 12338,
+        "source_bits_per_signature": 16384,
+        "committed_source_bits": 13631488,
+        "virtual_arithmetic_bits": 16777216,
+        "capacity": 1024,
+        "source_packed_bytes": 1703936,
+        "process_peak_rss_kib": 126992
+      },
+      "combined": {
+        "prepare_ms": 0.163339,
+        "witness_commit_ms": 36.357437,
+        "prove_ms": 271.63451399999997,
+        "total_prover_ms": 307.94757699999997,
+        "verify_ms": 48.723867,
+        "proof_payload_bytes": 314200,
+        "live_bits_per_signature": 12338,
+        "source_bits_per_signature": 16384,
+        "committed_source_bits": 13631488,
+        "virtual_arithmetic_bits": 16777216,
+        "capacity": 1024,
+        "arithmetic_capacity": 1024,
+        "logical_binding_bits": 12648448,
+        "source_packed_bytes": 1703936,
+        "process_peak_rss_kib": 88248
+      }
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 8,
+    "group": "diagnostic-profiles-r2",
+    "seed": 42,
+    "variants": {
+      "v7": {
+        "prepare_ms": 0.153871,
+        "witness_commit_ms": 5.687979,
+        "prove_ms": 61.301567,
+        "total_prover_ms": 67.146362,
+        "verify_ms": 19.878419,
+        "proof_payload_bytes": 258088,
+        "live_bits_per_signature": 12338,
+        "source_bits_per_signature": 16384,
+        "committed_source_bits": 13631488,
+        "virtual_arithmetic_bits": 16777216,
+        "capacity": 1024,
+        "source_packed_bytes": 1703936,
+        "process_peak_rss_kib": 115340
+      },
+      "combined": {
+        "prepare_ms": 0.181122,
+        "witness_commit_ms": 5.527115,
+        "prove_ms": 70.502149,
+        "total_prover_ms": 76.12640599999999,
+        "verify_ms": 24.674850000000003,
+        "proof_payload_bytes": 314200,
+        "live_bits_per_signature": 12338,
+        "source_bits_per_signature": 16384,
+        "committed_source_bits": 13631488,
+        "virtual_arithmetic_bits": 16777216,
+        "capacity": 1024,
+        "arithmetic_capacity": 1024,
+        "logical_binding_bits": 12648448,
+        "source_packed_bytes": 1703936,
+        "process_peak_rss_kib": 93124
+      }
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 1,
+    "group": "diagnostic-profiles-r2",
+    "seed": 42,
+    "variants": {
+      "v7": {
+        "prepare_ms": 0.146407,
+        "witness_commit_ms": 103.275757,
+        "prove_ms": 408.52521,
+        "total_prover_ms": 511.80102800000003,
+        "verify_ms": 87.880217,
+        "proof_payload_bytes": 320848,
+        "live_bits_per_signature": 24651,
+        "source_bits_per_signature": 32768,
+        "committed_source_bits": 27262976,
+        "virtual_arithmetic_bits": 33554432,
+        "capacity": 1024,
+        "source_packed_bytes": 3407872,
+        "process_peak_rss_kib": 207372
+      },
+      "combined": {
+        "prepare_ms": 0.167958,
+        "witness_commit_ms": 102.157231,
+        "prove_ms": 433.429926,
+        "total_prover_ms": 535.600943,
+        "verify_ms": 93.939699,
+        "proof_payload_bytes": 420144,
+        "live_bits_per_signature": 24651,
+        "source_bits_per_signature": 32768,
+        "committed_source_bits": 27262976,
+        "virtual_arithmetic_bits": 33554432,
+        "capacity": 1024,
+        "arithmetic_capacity": 1024,
+        "logical_binding_bits": 25296896,
+        "source_packed_bytes": 3407872,
+        "process_peak_rss_kib": 152828
+      }
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 8,
+    "group": "diagnostic-profiles-r2",
+    "seed": 42,
+    "variants": {
+      "v7": {
+        "prepare_ms": 0.15892,
+        "witness_commit_ms": 14.905883,
+        "prove_ms": 105.843655,
+        "total_prover_ms": 120.749658,
+        "verify_ms": 37.160736,
+        "proof_payload_bytes": 320848,
+        "live_bits_per_signature": 24651,
+        "source_bits_per_signature": 32768,
+        "committed_source_bits": 27262976,
+        "virtual_arithmetic_bits": 33554432,
+        "capacity": 1024,
+        "source_packed_bytes": 3407872,
+        "process_peak_rss_kib": 220952
+      },
+      "combined": {
+        "prepare_ms": 0.186923,
+        "witness_commit_ms": 14.413841999999999,
+        "prove_ms": 111.87712599999999,
+        "total_prover_ms": 126.21138800000001,
+        "verify_ms": 45.890387999999994,
+        "proof_payload_bytes": 420144,
+        "live_bits_per_signature": 24651,
+        "source_bits_per_signature": 32768,
+        "committed_source_bits": 27262976,
+        "virtual_arithmetic_bits": 33554432,
+        "capacity": 1024,
+        "arithmetic_capacity": 1024,
+        "logical_binding_bits": 25296896,
+        "source_packed_bytes": 3407872,
+        "process_peak_rss_kib": 172704
+      }
+    }
+  }
+]

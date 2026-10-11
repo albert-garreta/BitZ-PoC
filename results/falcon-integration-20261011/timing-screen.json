@@ -1,0 +1,163 @@
+{
+  "scope": "Descriptive integration timing screen; two seeds, three measured samples after one warmup. Not a statistical non-regression qualification.",
+  "baseline_commit": "c3bf4e4e3d52a350e3dcd6f9475654b6a307f52d",
+  "verified_trials": 148,
+  "processes": 44,
+  "proof_identity": "Identical within each binary and input across requested worker counts; branch-to-branch identity is not expected after protocol/layout changes.",
+  "binary_sha256": {
+    "baseline": {
+      "arithmetic": "8b9a8a43ca2a5b12fb509cc5661d1382c60c5aec9f26f1157891afba3ac1458b",
+      "full": "1eaaf10210ee2d7498bf114b027eb35edc972599a5f3beebe35a13731b3f98d0"
+    },
+    "candidate": {
+      "arithmetic": "d6d7eb7d5cca0f7aa458ed5b586750ebbab16ba04e41a0686af13284863f1050",
+      "full": "6a028a89234640d5d8d09aa4b01da2b7ce3f5ce72f7aa59f347b643fb8b3d70c"
+    }
+  },
+  "rows": [
+    {
+      "variant": "arithmetic",
+      "threads": 1,
+      "baseline": {
+        "total_ms": 181.82491249999998,
+        "prove_ms": 158.846968,
+        "verify_ms": 42.561346,
+        "peak_rss_kib": 111762.0
+      },
+      "candidate": {
+        "total_ms": 162.1572305,
+        "prove_ms": 150.7352505,
+        "verify_ms": 43.821886500000005,
+        "peak_rss_kib": 106316.0
+      },
+      "total_ms_change_percent": -10.816824674671565,
+      "prove_ms_change_percent": -5.106624068518572
+    },
+    {
+      "variant": "arithmetic",
+      "threads": 4,
+      "baseline": {
+        "total_ms": 65.12584799999999,
+        "prove_ms": 58.891307,
+        "verify_ms": 22.896295000000002,
+        "peak_rss_kib": 89168.0
+      },
+      "candidate": {
+        "total_ms": 59.660928,
+        "prove_ms": 56.20425350000001,
+        "verify_ms": 22.9843765,
+        "peak_rss_kib": 86140.0
+      },
+      "total_ms_change_percent": -8.391322597442407,
+      "prove_ms_change_percent": -4.562733681560149
+    },
+    {
+      "variant": "arithmetic",
+      "threads": 8,
+      "baseline": {
+        "total_ms": 45.0704735,
+        "prove_ms": 41.2986115,
+        "verify_ms": 18.7111515,
+        "peak_rss_kib": 90500.0
+      },
+      "candidate": {
+        "total_ms": 42.282253,
+        "prove_ms": 40.235751,
+        "verify_ms": 18.9421785,
+        "peak_rss_kib": 86990.0
+      },
+      "total_ms_change_percent": -6.186357238958228,
+      "prove_ms_change_percent": -2.5735986305496006
+    },
+    {
+      "variant": "arithmetic",
+      "threads": 16,
+      "baseline": {
+        "total_ms": 46.209768499999996,
+        "prove_ms": 42.979733,
+        "verify_ms": 18.421673999999996,
+        "peak_rss_kib": 117884.0
+      },
+      "candidate": {
+        "total_ms": 44.103143,
+        "prove_ms": 41.48579599999999,
+        "verify_ms": 18.885867,
+        "peak_rss_kib": 89128.0
+      },
+      "total_ms_change_percent": -4.558831537967977,
+      "prove_ms_change_percent": -3.4759103785032996
+    },
+    {
+      "variant": "full",
+      "threads": 1,
+      "baseline": {
+        "total_ms": 1957.4840365,
+        "prove_ms": 1631.7279165,
+        "verify_ms": 45.3259765,
+        "peak_rss_kib": 2123116.0
+      },
+      "candidate": {
+        "total_ms": 1923.1067600000001,
+        "prove_ms": 1617.4644145,
+        "verify_ms": 38.1446295,
+        "peak_rss_kib": 2128910.0
+      },
+      "total_ms_change_percent": -1.756197029400397,
+      "prove_ms_change_percent": -0.8741348269995175
+    },
+    {
+      "variant": "full",
+      "threads": 4,
+      "baseline": {
+        "total_ms": 611.8119174999999,
+        "prove_ms": 505.042685,
+        "verify_ms": 34.531934,
+        "peak_rss_kib": 2072732.0
+      },
+      "candidate": {
+        "total_ms": 588.5886085,
+        "prove_ms": 491.115304,
+        "verify_ms": 27.38652,
+        "peak_rss_kib": 2134134.0
+      },
+      "total_ms_change_percent": -3.7958248827344887,
+      "prove_ms_change_percent": -2.7576641368441956
+    },
+    {
+      "variant": "full",
+      "threads": 8,
+      "baseline": {
+        "total_ms": 394.361747,
+        "prove_ms": 320.71393,
+        "verify_ms": 32.4400665,
+        "peak_rss_kib": 2140000.0
+      },
+      "candidate": {
+        "total_ms": 378.7833875,
+        "prove_ms": 311.9305475,
+        "verify_ms": 25.238045,
+        "peak_rss_kib": 2138562.0
+      },
+      "total_ms_change_percent": -3.9502714496292057,
+      "prove_ms_change_percent": -2.7386969128531558
+    },
+    {
+      "variant": "full",
+      "threads": 16,
+      "baseline": {
+        "total_ms": 330.74836,
+        "prove_ms": 263.6569685,
+        "verify_ms": 31.896673999999997,
+        "peak_rss_kib": 2152922.0
+      },
+      "candidate": {
+        "total_ms": 319.134417,
+        "prove_ms": 257.38845349999997,
+        "verify_ms": 24.55601,
+        "peak_rss_kib": 2155120.0
+      },
+      "total_ms_change_percent": -3.51141363180153,
+      "prove_ms_change_percent": -2.3775267673230682
+    }
+  ]
+}

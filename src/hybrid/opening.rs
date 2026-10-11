@@ -50,7 +50,10 @@ pub(crate) const LOG_INV_RATE: usize = 1;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Geometry<const N: usize = 2> {
+    /// Logical packed-word support authenticated by the zero-padding claim.
     pub logs: [usize; N],
+    /// Packed-word capacities used to derive the physical commitment geometry.
+    pub allocation_logs: [usize; N],
     pub physical_logs: [usize; N],
     pub position_log: usize,
     pub lane_logs: [usize; N],
@@ -63,7 +66,26 @@ impl<const N: usize> Geometry<N> {
         if N == 0 || logs.iter().any(|&n| !(9..=27).contains(&n)) {
             return Err(Error::Invalid("packed witness logarithm outside 9..=27"));
         }
-        let mut position_log = *logs.iter().max().expect("nonempty geometry") - 3;
+        Self::with_allocation_logs(logs, logs)
+    }
+
+    /// Retain a larger commitment allocation while proving that every word
+    /// outside each logical support is zero. Equal arrays give exactly `new`.
+    /// Logical logs down to seven support a single Falcon-512 signature.
+    pub fn with_allocation_logs(
+        logs: [usize; N],
+        allocation_logs: [usize; N],
+    ) -> Result<Self, Error> {
+        if N == 0
+            || logs.iter().any(|&n| !(7..=27).contains(&n))
+            || allocation_logs.iter().any(|&n| !(9..=27).contains(&n))
+            || logs.iter().zip(allocation_logs).any(|(&l, a)| l > a)
+        {
+            return Err(Error::Invalid(
+                "logical or allocated packed witness logarithm",
+            ));
+        }
+        let mut position_log = *allocation_logs.iter().max().expect("nonempty geometry") - 3;
         // Additional sources can require a taller common row domain. Keep the
         // established sixteen virtual lanes, shrinking each branch's lane slice
         // until all sources fit. Two-source layouts retain their exact geometry.
@@ -71,7 +93,7 @@ impl<const N: usize> Geometry<N> {
             return Err(Error::Invalid("too many shared opening sources"));
         }
         while N != 2
-            && logs
+            && allocation_logs
                 .iter()
                 .map(|&l| 1usize << l.saturating_sub(position_log))
                 .sum::<usize>()
@@ -79,7 +101,7 @@ impl<const N: usize> Geometry<N> {
         {
             position_log += 1;
         }
-        let physical_logs = logs.map(|l| l.max(position_log));
+        let physical_logs = allocation_logs.map(|l| l.max(position_log));
         let lane_logs = physical_logs.map(|l| l - position_log);
         let virtual_lane_log = 4;
         let mut offsets = [0; N];
@@ -102,12 +124,33 @@ impl<const N: usize> Geometry<N> {
         }
         Ok(Self {
             logs,
+            allocation_logs,
             physical_logs,
             position_log,
             lane_logs,
             virtual_lane_log,
             offsets,
         })
+    }
+
+    pub(super) fn validate(&self) -> Result<(), Error> {
+        if *self != Self::with_allocation_logs(self.logs, self.allocation_logs)? {
+            return Err(Error::Invalid("joint source geometry"));
+        }
+        Ok(())
+    }
+
+    /// Existing geometries add no bytes. Explicitly enlarged allocations bind
+    /// both arrays before challenges, independently of the caller's statement.
+    pub(super) fn bind_allocation(&self, t: &mut impl Transcript) {
+        if self.logs != self.allocation_logs {
+            t.absorb_slice(b"hybrid/source-geometry/logical-allocation/v1");
+            t.absorb_slice(&(N as u64).to_le_bytes());
+            for (&logical, allocated) in self.logs.iter().zip(self.allocation_logs) {
+                t.absorb_slice(&(logical as u64).to_le_bytes());
+                t.absorb_slice(&(allocated as u64).to_le_bytes());
+            }
+        }
     }
     pub fn packed_log(&self) -> usize {
         self.position_log + self.virtual_lane_log
@@ -462,6 +505,170 @@ mod geometry_tests {
             .fold(F::ZERO, |sum, (&word, weight)| {
                 sum + super::super::sumcheck::apply(&low, word) * weight
             })
+    }
+
+    #[test]
+    fn explicit_allocations_are_canonical_and_preserve_default_binding() {
+        use crate::transcript::Blake3Transcript;
+
+        for logs in [[9, 9], [9, 13], [12, 10]] {
+            let original = Geometry::new(logs).unwrap();
+            let allocated = Geometry::with_allocation_logs(logs, logs).unwrap();
+            assert_eq!(original, allocated);
+            let mut untouched = Blake3Transcript::new();
+            let mut bound = Blake3Transcript::new();
+            allocated.bind_allocation(&mut bound);
+            assert_eq!(
+                untouched.get_challenge::<u128>(),
+                bound.get_challenge::<u128>()
+            );
+        }
+        assert!(Geometry::new([7]).is_err());
+        assert!(Geometry::new([8]).is_err());
+        for (logical, allocated) in [(6, 12), (7, 8), (13, 12), (7, 28), (usize::MAX, 12)] {
+            assert!(Geometry::with_allocation_logs([logical], [allocated]).is_err());
+        }
+        assert!(Geometry::<0>::with_allocation_logs([], []).is_err());
+        assert!(Geometry::with_allocation_logs([7; 17], [12; 17]).is_err());
+        let geometry = Geometry::with_allocation_logs([7], [12]).unwrap();
+        assert_eq!(geometry.physical_logs, [12]);
+        assert_eq!(geometry.lane_logs, [3]);
+        assert_eq!(geometry.position_log, 9);
+        assert_eq!(geometry.packed_log(), 13);
+        for field in 0..7 {
+            let mut malformed = geometry.clone();
+            match field {
+                0 => malformed.logs[0] = 6,
+                1 => malformed.allocation_logs[0] = 11,
+                2 => malformed.physical_logs[0] += 1,
+                3 => malformed.position_log += 1,
+                4 => malformed.lane_logs[0] += 1,
+                5 => malformed.virtual_lane_log += 1,
+                _ => malformed.offsets[0] = 1,
+            }
+            assert!(validate_geometry(&malformed).is_err());
+            assert!(commit_sources(&malformed, [&[]], 1).is_err());
+        }
+        let mut challenges = Vec::new();
+        for geometry in [
+            geometry,
+            Geometry::with_allocation_logs([8], [12]).unwrap(),
+            Geometry::with_allocation_logs([7], [13]).unwrap(),
+            Geometry::new([12]).unwrap(),
+        ] {
+            let mut t = Blake3Transcript::new();
+            geometry.bind_allocation(&mut t);
+            challenges.push(t.get_challenge::<u128>());
+        }
+        challenges.sort_unstable();
+        challenges.dedup();
+        assert_eq!(challenges.len(), 4);
+    }
+
+    #[test]
+    fn small_logical_support_authenticates_all_omitted_physical_words() {
+        use crate::{ligerito_flock::LigeritoSelection, transcript::Blake3Transcript};
+
+        for logical in [7, 8] {
+            let geometry = Geometry::with_allocation_logs([logical], [12]).unwrap();
+            let resolved = LigeritoSelection::MATCHED_UDR
+                .resolve(geometry.packed_log(), 100)
+                .unwrap();
+            for altered in [None, Some(1 << logical), Some((1 << 12) - 1)] {
+                let mut sources = sources(&geometry);
+                if let Some(index) = altered {
+                    sources[0][index] = F::ONE;
+                }
+                let borrowed = sources.each_ref().map(Vec::as_slice);
+                let (root, data) =
+                    commit_sources(&geometry, borrowed, resolved.prover().log_inv_rates[0])
+                        .unwrap();
+                let statement = *blake3::hash(&root).as_bytes();
+                let point: Vec<_> = (0..geometry.bit_log())
+                    .map(|i| F {
+                        lo: i as u64 + 39,
+                        hi: 71,
+                    })
+                    .collect();
+                // Evaluate the actual physical witness, including the bad word.
+                // The opening must reject it through its zero-padding claim.
+                let value = bit_evaluation(&geometry.virtual_packed(borrowed), &point);
+                let start = || {
+                    let mut t = Blake3Transcript::new();
+                    t.absorb_slice(&statement);
+                    t
+                };
+                let proof = prove_joint_sources_with_security(
+                    &mut start(),
+                    &geometry,
+                    &statement,
+                    borrowed,
+                    &resolved,
+                    &data,
+                    &point,
+                    None,
+                )
+                .unwrap();
+                let result = verify_joint_with_security(
+                    &mut start(),
+                    &geometry,
+                    &statement,
+                    &root,
+                    &point,
+                    value,
+                    &resolved,
+                    &proof,
+                    None,
+                );
+                assert_eq!(
+                    result.is_ok(),
+                    altered.is_none(),
+                    "logical={logical}, altered={altered:?}"
+                );
+                if altered.is_none() {
+                    let different = Geometry::with_allocation_logs([logical + 1], [12]).unwrap();
+                    assert!(
+                        verify_joint_with_security(
+                            &mut start(),
+                            &different,
+                            &statement,
+                            &root,
+                            &point,
+                            value,
+                            &resolved,
+                            &proof,
+                            None,
+                        )
+                        .is_err()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn explicit_default_allocation_preserves_the_complete_opening_proof() {
+        use crate::{ligerito_flock::LigeritoSelection, transcript::Blake3Transcript};
+
+        let original = Geometry::new([12]).unwrap();
+        let explicit = Geometry::with_allocation_logs([12], [12]).unwrap();
+        let sources = sources(&original);
+        let borrowed = sources.each_ref().map(Vec::as_slice);
+        let resolved = LigeritoSelection::MATCHED_UDR
+            .resolve(original.packed_log(), 100)
+            .unwrap();
+        let (root, data) =
+            commit_sources(&original, borrowed, resolved.prover().log_inv_rates[0]).unwrap();
+        let point = vec![F { lo: 41, hi: 73 }; original.bit_log()];
+        let run = |geometry: &Geometry<1>| {
+            let mut t = Blake3Transcript::new();
+            let proof = prove_joint_sources_with_security(
+                &mut t, geometry, &root, borrowed, &resolved, &data, &point, None,
+            )
+            .unwrap();
+            (format!("{proof:?}"), t.get_challenge::<u128>())
+        };
+        assert_eq!(run(&original), run(&explicit));
     }
 
     #[test]
@@ -1206,10 +1413,7 @@ impl<const N: usize> Drop for JointProverData<N> {
 }
 
 fn validate_geometry<const N: usize>(geometry: &Geometry<N>) -> Result<(), Error> {
-    if *geometry != Geometry::new(geometry.logs)? {
-        return Err(Error::Invalid("joint source geometry"));
-    }
-    Ok(())
+    geometry.validate()
 }
 
 /// The transport order is canonical lane order, independent of branch order.
@@ -1401,6 +1605,7 @@ pub(crate) fn prove_joint_sources_with_security<const N: usize>(
     point: &[Gf],
     security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<JointProof, Error> {
+    validate_geometry(geometry)?;
     if *geometry != data.geometry
         || data.log_inv_rate != resolved.prover().log_inv_rates[0]
         || point.len() != geometry.bit_log()
@@ -1609,6 +1814,11 @@ pub(crate) fn prove_with_security<const N: usize>(
     point: &[Gf],
     security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<Proof<N>, Error> {
+    validate_geometry(geometry)?;
+    if point.len() != geometry.bit_log() || packed.len() != 1 << geometry.packed_log() {
+        return Err(Error::Invalid("shared source opening shape"));
+    }
+    geometry.bind_allocation(t);
     let ring_scope = tracing::info_span!("op:ring_switch").entered();
     // flock's packed words are bit-compatible with `Gf`: the ring switch
     // reads them in place and writes the basis in flock's element type (no
@@ -1695,6 +1905,13 @@ fn prove_sources_initial_with_security<const N: usize, Final: OpeningEncoding>(
     point: &[Gf],
     security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<JointProof<Final>, Error> {
+    validate_geometry(geometry)?;
+    if point.len() != geometry.bit_log()
+        || (0..N).any(|branch| sources[branch].len() != 1 << geometry.physical_logs[branch])
+    {
+        return Err(Error::Invalid("shared source opening shape"));
+    }
+    geometry.bind_allocation(t);
     let ring_scope = tracing::info_span!("op:ring_switch").entered();
     let marginal = geometry.ring_marginal(sources, &point[7..]);
     let (ring, eq_r2, mut target) = ring_switch_prove_marginal(t, marginal);
@@ -2038,6 +2255,11 @@ fn verify_initial_with_security<const N: usize, Final: OpeningEncoding>(
     authenticate_initial: impl FnOnce(usize, usize, &[usize], &RecursiveProof) -> bool,
     security: Option<&mut grinding::GrindingContext<'_>>,
 ) -> Result<(), Error> {
+    validate_geometry(geometry)?;
+    if point.len() != geometry.bit_log() {
+        return Err(Error::Invalid("shared source opening point"));
+    }
+    geometry.bind_allocation(t);
     let (eq_r2, mut target) = ring_switch_verify(t, ring, value, &point[..7])
         .map_err(|_| Error::Invalid("ring switch"))?;
     let eta_ood: Option<Gf> = ood.map(|claim| {

@@ -1,0 +1,1309 @@
+{
+  "passed": true,
+  "rule": {
+    "reference_variant": "v7",
+    "protocol_suffix": "/v7",
+    "candidate_variants": [
+      "padding"
+    ],
+    "keys": [
+      "input_digest",
+      "protocol_id",
+      "trial",
+      "iteration",
+      "source_root",
+      "proof_debug_digest",
+      "proof_payload_bytes",
+      "committed_source_bits"
+    ],
+    "expected_checked_proofs": 512,
+    "eligibility": "Every candidate trial reporting the preserved /v7 protocol must exactly match the original v7 control. New /v8 proofs have a smaller logical arithmetic capacity and are recorded separately."
+  },
+  "complete": true,
+  "checked_proofs": 512,
+  "expected_coverage_passed": true,
+  "checks": [
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 74,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 75,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 76,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 77,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 78,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 79,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 80,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 81,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 82,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 83,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 84,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 85,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 86,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 87,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 88,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 89,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 90,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 91,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 92,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 93,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 94,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 95,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 96,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 97,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 98,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 99,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 100,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 101,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 102,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 103,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 104,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 105,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 74,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 75,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 76,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 77,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 78,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 79,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 80,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 81,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 82,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 83,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 84,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 85,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 86,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 87,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 88,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 89,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 90,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 91,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 92,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 93,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 94,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 95,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 96,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 97,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 98,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 99,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 100,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 101,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 102,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 103,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 104,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 105,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon512-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 74,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 75,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 76,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 77,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 78,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 79,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 80,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 81,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 82,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 83,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 84,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 85,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 86,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 87,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 88,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 89,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 90,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 91,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 92,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 93,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 94,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 95,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 96,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 97,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 98,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 99,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 100,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 101,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 102,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 103,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 104,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seed": 105,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 74,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 75,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 76,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 77,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 78,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 79,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 80,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 81,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 82,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 83,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 84,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 85,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 86,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 87,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 88,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 89,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 90,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 91,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 92,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 93,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 94,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 95,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 96,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 97,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 98,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 99,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 100,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 101,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 102,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 103,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 104,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seed": 105,
+      "variant": "padding",
+      "protocol_id": "bitz/falcon1024-algebraic/non-zk/v7",
+      "proofs": 4
+    }
+  ],
+  "new_protocol_proofs_not_compared": 0,
+  "new_protocol_cases": []
+}

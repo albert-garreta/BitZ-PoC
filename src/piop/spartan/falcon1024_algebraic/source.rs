@@ -75,9 +75,7 @@ impl Layout {
         }
         Ok(Self {
             batch,
-            // The shared opener doubles the source; Ligerito requires at least
-            // 2^20 committed bits, so retain at least 2^19 source bits.
-            capacity: batch.next_power_of_two().max((1 << 19) / (32 * N)),
+            capacity: batch.next_power_of_two(),
         })
     }
     pub const fn batch(&self) -> usize {
@@ -85,6 +83,14 @@ impl Layout {
     }
     pub const fn capacity(&self) -> usize {
         self.capacity
+    }
+    pub fn allocation_capacity(&self) -> usize {
+        self.capacity.max((1 << 19) / (32 * N))
+    }
+    #[cfg(any(test, feature = "bench-internals"))]
+    pub fn padded(mut self) -> Self {
+        self.capacity = self.allocation_capacity();
+        self
     }
     pub const fn signature_stride(&self) -> usize {
         32 * N
@@ -112,7 +118,6 @@ impl Layout {
 pub(super) struct WitnessData {
     pub witness: FalconAlgebraicWitness,
     pub slacks: Vec<u64>,
-    pub quotients: Vec<Box<[u16; N - 1]>>,
 }
 
 impl WitnessData {
@@ -126,31 +131,24 @@ impl WitnessData {
         let signatures = map_products(public, &s2, |i, product| {
             let mut s1 = [0; N];
             let mut norm = 0;
-            let mut quotient = Box::new([0; N - 1]);
             for j in 0..N {
                 let high = product[N + j];
                 let centered = center(i64::from(public.targets[i][j]) - product[j] + high);
                 s1[j] = centered;
                 norm += i64::from(centered).unsigned_abs().pow(2);
                 norm += i64::from(s2[i][j]).unsigned_abs().pow(2);
-                if j < N - 1 {
-                    quotient[j] = (-high).rem_euclid(Q) as u16;
-                }
             }
-            Ok((s1, checked_slack(norm)?, quotient))
+            Ok((s1, checked_slack(norm)?))
         })?;
         let mut s1 = Vec::with_capacity(layout.batch());
         let mut slacks = Vec::with_capacity(layout.batch());
-        let mut quotients = Vec::with_capacity(layout.batch());
-        for (signature_s1, slack, quotient) in signatures {
+        for (signature_s1, slack) in signatures {
             s1.push(signature_s1);
             slacks.push(slack);
-            quotients.push(quotient);
         }
         Ok(Self {
             witness: FalconAlgebraicWitness { s1, s2 },
             slacks,
-            quotients,
         })
     }
 
@@ -166,8 +164,7 @@ impl WitnessData {
         check_coefficients(&witness.s1)?;
         check_coefficients(&witness.s2)?;
         let slacks = check_norms(&witness)?;
-        let quotients = map_products(public, &witness.s2, |i, product| {
-            let mut quotient = Box::new([0; N - 1]);
+        map_products(public, &witness.s2, |i, product| {
             for j in 0..N {
                 let high = product[N + j];
                 let residual = i64::from(public.targets[i][j]) - product[j] + high
@@ -175,17 +172,10 @@ impl WitnessData {
                 if residual.rem_euclid(Q) != 0 {
                     return Err(error("invalid algebraic ring witness"));
                 }
-                if j < N - 1 {
-                    quotient[j] = (-high).rem_euclid(Q) as u16;
-                }
             }
-            Ok(quotient)
+            Ok(())
         })?;
-        Ok(Self {
-            witness,
-            slacks,
-            quotients,
-        })
+        Ok(Self { witness, slacks })
     }
 }
 
@@ -391,7 +381,6 @@ mod tests {
                         _ => 0x2aaaaaa & ((1 << SLACK_BITS) - 1),
                     })
                     .collect(),
-                quotients: Vec::new(),
             };
             for polynomial in data.witness.s1.iter_mut().chain(&mut data.witness.s2) {
                 for (j, coefficient) in polynomial.iter_mut().enumerate() {
@@ -452,27 +441,11 @@ mod tests {
         let combined = WitnessData::from_s2(&public, witness.s2.clone()).unwrap();
         assert_eq!(combined.witness, witness);
         assert_eq!(combined.slacks, data.slacks);
-        assert_eq!(combined.quotients, data.quotients);
-        assert_eq!(combined.quotients[0].len(), N - 1);
-        for j in 0..N - 1 {
-            assert_eq!(
-                combined.quotients[0][j],
-                (-ordinary[N + j]).rem_euclid(Q) as u16
-            );
-        }
-        for j in 0..2 * N {
-            let residual = if j < N {
-                i64::from(public.targets[0][j]) - i64::from(s1[j]) - ordinary[j]
-            } else {
-                -ordinary[j]
-            };
-            let expected = if j % N < N - 1 {
-                i64::from(combined.quotients[0][j % N])
-            } else {
-                0
-            };
-            assert_eq!(residual.rem_euclid(Q), expected);
-        }
+        let mut workspace = PolynomialWorkspace::new(N);
+        assert_eq!(
+            workspace.product(&h, &s2),
+            ordinary.map(|value| value.rem_euclid(Q))
+        );
         assert_eq!(
             data.slacks[0],
             BETA_SQUARED
@@ -497,7 +470,6 @@ mod tests {
             s1: Vec::new(),
             s2: Vec::new(),
         };
-        let mut quotients = Vec::new();
         for instance in 0..batch {
             let h = std::array::from_fn(|j| ((j * 71 + instance * 311) % Q as usize) as u16);
             let s1 = std::array::from_fn(|j| ((j + instance * 3) % 23) as i16 - 11);
@@ -512,18 +484,13 @@ mod tests {
             public.targets.push(std::array::from_fn(|j| {
                 (i64::from(s1[j]) + product[j] - product[N + j]).rem_euclid(Q) as u16
             }));
-            quotients.push(Box::new(std::array::from_fn(|j| {
-                (-product[N + j]).rem_euclid(Q) as u16
-            })));
             expected.s1.push(s1);
             expected.s2.push(s2);
         }
         let derived = WitnessData::from_s2(&public, expected.s2.clone()).unwrap();
         assert_eq!(derived.witness, expected);
-        assert_eq!(derived.quotients, quotients);
         assert_eq!(derived.slacks, check_norms(&expected).unwrap());
         let checked = WitnessData::new(&public, expected.clone()).unwrap();
-        assert_eq!(checked.quotients, quotients);
         assert_eq!(checked.slacks, derived.slacks);
         assert_eq!(
             FalconAlgebraicWitness::from_s2(&public, expected.s2.clone()).unwrap(),
@@ -546,7 +513,6 @@ mod tests {
         let combined = WitnessData::from_s2(&public, s2.clone()).unwrap();
         assert_eq!(combined.witness, data.witness);
         assert_eq!(combined.slacks, data.slacks);
-        assert_eq!(combined.quotients, data.quotients);
         let layout = Layout::new(3).unwrap();
         let source = Source::new(layout, &data);
         assert_eq!(Source::new(layout, &combined).rows(), source.rows());
@@ -575,7 +541,7 @@ mod tests {
             (0..layout.source_bits())
                 .filter(|&index| layout.is_live(index))
                 .count(),
-            3 * super::super::LIVE_BITS
+            3 * (2 * N * 15 + SLACK_BITS)
         );
     }
 
@@ -588,7 +554,6 @@ mod tests {
                 s2: vec![[0; N]],
             },
             slacks: vec![(1 << SLACK_BITS) - 1],
-            quotients: vec![Box::new([0; N - 1])],
         };
         // Encoding boundaries are tested independently of the norm gate.
         data.witness.s1[0][..4].copy_from_slice(&[-16384, -1, 0, 16383]);

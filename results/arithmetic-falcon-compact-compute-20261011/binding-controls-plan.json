@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "frozen_before_timings": true,
+  "qualification": false,
+  "warmup": 1,
+  "iterations": 2,
+  "variant_order": "forward-reverse",
+  "purpose": "Compare raw binding strategy/prefix controls within one diagnostic binary, removing cross-build placement from the comparison. Every mode uses arithmetic padding and must produce the identical complete proof.",
+  "shapes": [
+    {
+      "group": "diagnostic-binding-controls",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-binding-controls",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-binding-controls",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-binding-controls",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-binding-controls",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-binding-controls",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-binding-controls",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "diagnostic-binding-controls",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    }
+  ]
+}

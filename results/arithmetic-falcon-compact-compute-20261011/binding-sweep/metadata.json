@@ -1,0 +1,1558 @@
+{
+  "started_unix": 1791732322.4263995,
+  "finished_unix": 1791732551.0157306,
+  "platform": "Linux will 6.17.0-41-generic #41-Ubuntu SMP PREEMPT_DYNAMIC Sat Jun 20 18:01:40 UTC 2026 x86_64 GNU/Linux",
+  "cpu": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           48 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  32\nOn-line CPU(s) list:                     0-31\nVendor ID:                               AuthenticAMD\nModel name:                              AMD Ryzen 9 9950X3D 16-Core Processor\nCPU family:                              26\nModel:                                   68\nThread(s) per core:                      2\nCore(s) per socket:                      16\nSocket(s):                               1\nStepping:                                0\nFrequency boost:                         enabled\nCPU(s) scaling MHz:                      24%\nCPU max MHz:                             5756.4521\nCPU min MHz:                             624.1940\nBogoMIPS:                                8583.67\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good amd_lbr_v2 nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 sse4_1 sse4_2 movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpuid_fault cpb cat_l3 cdp_l3 hw_pstate ssbd mba perfmon_v2 ibrs ibpb stibp ibrs_enhanced vmmcall fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local user_shstk avx_vnni avx512_bf16 clzero irperf xsaveerptr rdpru wbnoinvd cppc arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic v_vmsave_vmload vgif x2avic v_spec_ctrl vnmi avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid bus_lock_detect movdiri movdir64b overflow_recov succor smca fsrm avx512_vp2intersect flush_l1d amd_lbr_pmc_freeze\nVirtualization:                          AMD-V\nL1d cache:                               768 KiB (16 instances)\nL1i cache:                               512 KiB (16 instances)\nL2 cache:                                16 MiB (16 instances)\nL3 cache:                                128 MiB (2 instances)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-31\nVulnerability Gather data sampling:      Not affected\nVulnerability Ghostwrite:                Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Old microcode:             Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Not affected\nVulnerability Spec rstack overflow:      Mitigation; IBPB on VMEXIT only\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; STIBP always-on; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Not affected\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Mitigation; IBPB on VMEXIT\n",
+  "plan": {
+    "version": 1,
+    "frozen_before_timings": true,
+    "warmup": 1,
+    "iterations": 2,
+    "purpose": "Broad same-binary raw binding strategy sweep, preserving all64 qualification shapes but using diagnostic seeds42/43. Compare legacy3,opt3,opt4 against actual default strategy for each degree/batch/worker shape.",
+    "shapes": [
+      {
+        "group": "core-small",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 1,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-small",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 1,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-small",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 32,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-small",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 32,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-small",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 1,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-small",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 1,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-small",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 32,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-small",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 32,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-small",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 1,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-small",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 1,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-small",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 32,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-small",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 32,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-small",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 1,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-small",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 1,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-small",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 32,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-small",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 32,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-large",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 1024,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-large",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 1024,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-large",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 1024,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-large",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 1024,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-large",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 1024,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-large",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 1024,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-large",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 1024,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "core-large",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 1024,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 16,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 16,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 17,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 17,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 33,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 33,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 65,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 65,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 129,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 100,
+        "batch": 129,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 16,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 16,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 17,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 17,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 33,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 33,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 65,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 65,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 129,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 512,
+        "security_bits": 128,
+        "batch": 129,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 8,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 8,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 9,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 9,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 17,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 17,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 65,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 65,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 129,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 100,
+        "batch": 129,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 8,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 8,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 9,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 9,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 17,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 17,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 65,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 65,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 129,
+        "threads": 1,
+        "seeds": [
+          42,
+          43
+        ]
+      },
+      {
+        "group": "edges",
+        "degree": 1024,
+        "security_bits": 128,
+        "batch": 129,
+        "threads": 8,
+        "seeds": [
+          42,
+          43
+        ]
+      }
+    ],
+    "variant_order": "forward-reverse",
+    "source_shape_plan": "fixed-plan.json",
+    "qualification": false
+  },
+  "selected_shapes": [
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-large",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-large",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-large",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-large",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-large",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-large",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-large",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "core-large",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 16,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 16,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 33,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 33,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 65,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 65,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 129,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 129,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 16,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 16,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 33,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 33,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 65,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 65,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 129,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 129,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 8,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 8,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 9,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 9,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 65,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 65,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 129,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 129,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 8,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 8,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 9,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 9,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 65,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 65,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 129,
+      "threads": 1,
+      "seeds": [
+        42,
+        43
+      ]
+    },
+    {
+      "group": "edges",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 129,
+      "threads": 8,
+      "seeds": [
+        42,
+        43
+      ]
+    }
+  ],
+  "plan_sha256": "ffa090719f68bf0ecc3d9faa6da02841290c8dac123406bee53c624edd3b85d8",
+  "variant_manifest_sha256": "f3d0df3f4826f4f005ab1c52a4be7e4d3b19bbdae462e28e2f637586f965c534",
+  "benchmark_script_sha256": "45487fb39f035083d971393b3b6e1c965dc2d23207584d7e91606cb363d893fd",
+  "variants": [
+    {
+      "label": "default",
+      "binary": "/tmp/bitz-arithmetic-binding-controls-pilot-binary",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "padding"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "actual default binding strategy/prefix; both binding controls absent",
+      "expected_fields": {
+        "compute_variant": "padding"
+      },
+      "sha256": "786c631de6eee7801d3b96ecf03667e72f81b5e98c5b287075f0582a156e59ee"
+    },
+    {
+      "label": "legacy3",
+      "binary": "/tmp/bitz-arithmetic-binding-controls-pilot-binary",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "padding",
+        "BITZ_ARITHMETIC_BINDING_STRATEGY": "legacy",
+        "BITZ_ARITHMETIC_BINDING_PREFIX": "3"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "same-binary raw binding compute control",
+      "expected_fields": {
+        "compute_variant": "padding"
+      },
+      "sha256": "786c631de6eee7801d3b96ecf03667e72f81b5e98c5b287075f0582a156e59ee"
+    },
+    {
+      "label": "opt3",
+      "binary": "/tmp/bitz-arithmetic-binding-controls-pilot-binary",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "padding",
+        "BITZ_ARITHMETIC_BINDING_STRATEGY": "optimized",
+        "BITZ_ARITHMETIC_BINDING_PREFIX": "3"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "same-binary raw binding compute control",
+      "expected_fields": {
+        "compute_variant": "padding"
+      },
+      "sha256": "786c631de6eee7801d3b96ecf03667e72f81b5e98c5b287075f0582a156e59ee"
+    },
+    {
+      "label": "opt4",
+      "binary": "/tmp/bitz-arithmetic-binding-controls-pilot-binary",
+      "args": [],
+      "environment": {
+        "BITZ_ARITHMETIC_COMPUTE_VARIANT": "padding",
+        "BITZ_ARITHMETIC_BINDING_STRATEGY": "optimized",
+        "BITZ_ARITHMETIC_BINDING_PREFIX": "4"
+      },
+      "features": [
+        "falcon-hybrid",
+        "bench-internals"
+      ],
+      "role": "same-binary raw binding compute control",
+      "expected_fields": {
+        "compute_variant": "padding"
+      },
+      "sha256": "786c631de6eee7801d3b96ecf03667e72f81b5e98c5b287075f0582a156e59ee"
+    }
+  ],
+  "primary_control": "default",
+  "same_protocol_identity_rules": [],
+  "reference_protocol_identity": {
+    "reference_variant": "default",
+    "protocol_suffix": "",
+    "candidate_variants": [
+      "legacy3",
+      "opt3",
+      "opt4"
+    ],
+    "keys": [
+      "input_digest",
+      "protocol_id",
+      "trial",
+      "iteration",
+      "source_root",
+      "proof_debug_digest",
+      "proof_payload_bytes",
+      "committed_source_bits"
+    ],
+    "expected_checked_proofs": 1152,
+    "eligibility": "Compare every strategy mode to actual default for every input. Empty suffix deliberately includes both smaller-layout v8 and unchanged-layout v7 proofs; protocol_id equality is among the required checks."
+  },
+  "trace": false,
+  "description": {
+    "shapes": 64,
+    "variants": [
+      "default",
+      "legacy3",
+      "opt3",
+      "opt4"
+    ],
+    "primary_control": "default",
+    "input_cases_per_variant": 128,
+    "proofs_per_variant_including_warmup": 384,
+    "proofs_all_variants_including_warmup": 1536,
+    "groups": [
+      "core-large",
+      "core-small",
+      "edges"
+    ]
+  },
+  "ordering": "forward-reverse",
+  "build_requirement": "Frozen native release binaries; --locked --offline --features falcon-hybrid --example falcon_algebraic; RUSTFLAGS=-C target-cpu=native. Record any benchmark-only feature or phase-control differences in the variant manifest.",
+  "acceptance": "Report both pooled timing medians and seed-paired uncertainty. An observed positive delta is preserved; repeatability requires separate evidence. Cross-protocol proof identity is not assumed.",
+  "verified_proofs": 1536,
+  "verified_measured_proofs": 1024,
+  "all_input_digests_matched": true,
+  "cross_protocol_proof_identity_required": false,
+  "same_protocol_identity_checked_proofs": 0,
+  "reference_protocol_identity_checked_proofs": 1152
+}

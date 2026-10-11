@@ -1,0 +1,401 @@
+{
+  "passed": false,
+  "metrics": [
+    "total_prover_ms",
+    "prove_ms"
+  ],
+  "maximum_regression_percent": 0.0,
+  "regressions": [
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "baseline_ms": 17.6567615,
+      "candidate_ms": 17.777219,
+      "regression_percent": 0.6822174043637386
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 16.534703999999998,
+      "candidate_ms": 16.64872,
+      "regression_percent": 0.6895557368308713
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 5.471068000000001,
+      "candidate_ms": 5.535625,
+      "regression_percent": 1.1799707113857583
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 5.1066185,
+      "candidate_ms": 5.246748999999999,
+      "regression_percent": 2.7440957259681653
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "baseline_ms": 265.061641,
+      "candidate_ms": 269.556804,
+      "regression_percent": 1.6958934469133435
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 228.0998415,
+      "candidate_ms": 233.30267750000002,
+      "regression_percent": 2.2809467844369546
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 53.335179,
+      "candidate_ms": 53.428275,
+      "regression_percent": 0.1745489595150751
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 47.708692,
+      "candidate_ms": 47.913068499999994,
+      "regression_percent": 0.428384203029486
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 33,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 6.650108,
+      "candidate_ms": 7.512084,
+      "regression_percent": 12.961834604791367
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 33,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 6.1493555,
+      "candidate_ms": 7.013285,
+      "regression_percent": 14.049106447008942
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 7.813619000000001,
+      "candidate_ms": 8.6668325,
+      "regression_percent": 10.91956876832616
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 6.94718,
+      "candidate_ms": 7.703525,
+      "regression_percent": 10.887079361697838
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 389.2165645,
+      "candidate_ms": 390.251167,
+      "regression_percent": 0.26581666721432473
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 6.757005,
+      "candidate_ms": 7.597515,
+      "regression_percent": 12.439090987797098
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 17,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 6.1519010000000005,
+      "candidate_ms": 6.991398500000001,
+      "regression_percent": 13.646147751727478
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "baseline_ms": 21.160368,
+      "candidate_ms": 21.1643105,
+      "regression_percent": 0.01863152852541461
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 20.034232499999998,
+      "candidate_ms": 20.0368985,
+      "regression_percent": 0.013307223024394688
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "baseline_ms": 274.413495,
+      "candidate_ms": 291.781695,
+      "regression_percent": 6.329207679819104
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 237.4250745,
+      "candidate_ms": 255.3700905,
+      "regression_percent": 7.558180633528666
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 58.242931999999996,
+      "candidate_ms": 58.457187000000005,
+      "regression_percent": 0.36786437880567124
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 52.6446275,
+      "candidate_ms": 53.0968935,
+      "regression_percent": 0.8590924116615772
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 33,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "baseline_ms": 26.223634500000003,
+      "candidate_ms": 32.3186875,
+      "regression_percent": 23.242594385610428
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 33,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 24.910736500000002,
+      "candidate_ms": 31.055849000000002,
+      "regression_percent": 24.668529973009832
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 33,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 9.134262,
+      "candidate_ms": 12.463618499999999,
+      "regression_percent": 36.449102292007815
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 33,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 8.6092085,
+      "candidate_ms": 11.96211,
+      "regression_percent": 38.94552559622642
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "baseline_ms": 17.225741499999998,
+      "candidate_ms": 17.26755,
+      "regression_percent": 0.24270943575928072
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 17.001186500000003,
+      "candidate_ms": 17.042403999999998,
+      "regression_percent": 0.24243896153950395
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 6.8453219999999995,
+      "candidate_ms": 6.8796925,
+      "regression_percent": 0.5021020194521331
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 6.6256115,
+      "candidate_ms": 6.662151,
+      "regression_percent": 0.5514887191921725
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "baseline_ms": 30.193984,
+      "candidate_ms": 35.972198500000005,
+      "regression_percent": 19.136972782392704
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 26.984619000000002,
+      "candidate_ms": 32.733147,
+      "regression_percent": 21.30298004207507
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 10.6818235,
+      "candidate_ms": 13.4786435,
+      "regression_percent": 26.182982708897985
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 9.7417055,
+      "candidate_ms": 12.571072000000001,
+      "regression_percent": 29.043851715698054
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "baseline_ms": 504.43704449999996,
+      "candidate_ms": 516.739048,
+      "regression_percent": 2.438758936151064
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 400.995404,
+      "candidate_ms": 414.9407755,
+      "regression_percent": 3.477688612111862
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "baseline_ms": 26.5213825,
+      "candidate_ms": 32.312591999999995,
+      "regression_percent": 21.836001573447362
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 24.705212500000002,
+      "candidate_ms": 30.498400500000002,
+      "regression_percent": 23.449253877091735
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 9.418509499999999,
+      "candidate_ms": 12.5533785,
+      "regression_percent": 33.2841305728895
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 17,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 8.7587665,
+      "candidate_ms": 11.8856805,
+      "regression_percent": 35.70039228697328
+    }
+  ],
+  "interpretation": "Observed pooled-sample median gate only. A tiny positive delta does not establish a repeatable regression; inspect seed-paired dispersion and an independently authorized confirmation run. This gate is not a statistical confidence claim."
+}

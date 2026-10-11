@@ -92,8 +92,9 @@ pub fn verify_falcon_ct(
 
 #[cfg(test)]
 mod workspace_tests {
-    use super::super::{KeccakTrace, hash_to_point::from_shake_words};
+    use super::super::hash_to_point::from_shake_words;
     use super::*;
+    use crate::piop::spartan::falcon::KeccakTrace;
 
     // Independent integer-convolution oracle; never used by production callers.
     pub(super) fn schoolbook_trace(

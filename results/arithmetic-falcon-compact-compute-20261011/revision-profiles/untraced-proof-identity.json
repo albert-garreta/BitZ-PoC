@@ -1,0 +1,49 @@
+{
+  "passed": true,
+  "traced_proofs_matched_untraced_v7": 176,
+  "checks": [
+    {
+      "run": "padding-n1024-s100-b32-t1-seed42",
+      "proofs": 22,
+      "matched_untraced_v7": "qualification/v7-n1024-s100-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "padding-n1024-s128-b32-t1-seed42",
+      "proofs": 22,
+      "matched_untraced_v7": "qualification/v7-n1024-s128-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "padding-n512-s100-b32-t1-seed42",
+      "proofs": 22,
+      "matched_untraced_v7": "qualification/v7-n512-s100-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "padding-n512-s128-b32-t1-seed42",
+      "proofs": 22,
+      "matched_untraced_v7": "qualification/v7-n512-s128-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "v7-n1024-s100-b32-t1-seed42",
+      "proofs": 22,
+      "matched_untraced_v7": "qualification/v7-n1024-s100-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "v7-n1024-s128-b32-t1-seed42",
+      "proofs": 22,
+      "matched_untraced_v7": "qualification/v7-n1024-s128-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "v7-n512-s100-b32-t1-seed42",
+      "proofs": 22,
+      "matched_untraced_v7": "qualification/v7-n512-s100-b32-t1-seed42.jsonl"
+    },
+    {
+      "run": "v7-n512-s128-b32-t1-seed42",
+      "proofs": 22,
+      "matched_untraced_v7": "qualification/v7-n512-s128-b32-t1-seed42.jsonl"
+    }
+  ],
+  "root_spans_per_operation_per_binary": 22,
+  "excluded_warmups": 2,
+  "measured_per_binary": 20
+}

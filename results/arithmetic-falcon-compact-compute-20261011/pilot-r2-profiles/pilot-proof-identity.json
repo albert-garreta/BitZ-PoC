@@ -1,0 +1,398 @@
+{
+  "passed": true,
+  "checked_proofs": 64,
+  "keys": [
+    "input_digest",
+    "protocol_id",
+    "source_root",
+    "proof_debug_digest",
+    "proof_payload_bytes",
+    "committed_source_bits"
+  ],
+  "checks": [
+    {
+      "run": "combined-n512-s100-b1024-t1-seed42.jsonl",
+      "trial": "warmup",
+      "iteration": null,
+      "passed": true
+    },
+    {
+      "run": "combined-n512-s100-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 0,
+      "passed": true
+    },
+    {
+      "run": "combined-n512-s100-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 1,
+      "passed": true
+    },
+    {
+      "run": "combined-n512-s100-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 2,
+      "passed": true
+    },
+    {
+      "run": "v7-n1024-s100-b1024-t8-seed42.jsonl",
+      "trial": "warmup",
+      "iteration": null,
+      "passed": true
+    },
+    {
+      "run": "v7-n1024-s100-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 0,
+      "passed": true
+    },
+    {
+      "run": "v7-n1024-s100-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 1,
+      "passed": true
+    },
+    {
+      "run": "v7-n1024-s100-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 2,
+      "passed": true
+    },
+    {
+      "run": "combined-n512-s128-b1024-t1-seed42.jsonl",
+      "trial": "warmup",
+      "iteration": null,
+      "passed": true
+    },
+    {
+      "run": "combined-n512-s128-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 0,
+      "passed": true
+    },
+    {
+      "run": "combined-n512-s128-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 1,
+      "passed": true
+    },
+    {
+      "run": "combined-n512-s128-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 2,
+      "passed": true
+    },
+    {
+      "run": "combined-n1024-s128-b1024-t8-seed42.jsonl",
+      "trial": "warmup",
+      "iteration": null,
+      "passed": true
+    },
+    {
+      "run": "combined-n1024-s128-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 0,
+      "passed": true
+    },
+    {
+      "run": "combined-n1024-s128-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 1,
+      "passed": true
+    },
+    {
+      "run": "combined-n1024-s128-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 2,
+      "passed": true
+    },
+    {
+      "run": "combined-n1024-s100-b1024-t1-seed42.jsonl",
+      "trial": "warmup",
+      "iteration": null,
+      "passed": true
+    },
+    {
+      "run": "combined-n1024-s100-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 0,
+      "passed": true
+    },
+    {
+      "run": "combined-n1024-s100-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 1,
+      "passed": true
+    },
+    {
+      "run": "combined-n1024-s100-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 2,
+      "passed": true
+    },
+    {
+      "run": "combined-n512-s128-b1024-t8-seed42.jsonl",
+      "trial": "warmup",
+      "iteration": null,
+      "passed": true
+    },
+    {
+      "run": "combined-n512-s128-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 0,
+      "passed": true
+    },
+    {
+      "run": "combined-n512-s128-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 1,
+      "passed": true
+    },
+    {
+      "run": "combined-n512-s128-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 2,
+      "passed": true
+    },
+    {
+      "run": "combined-n1024-s128-b1024-t1-seed42.jsonl",
+      "trial": "warmup",
+      "iteration": null,
+      "passed": true
+    },
+    {
+      "run": "combined-n1024-s128-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 0,
+      "passed": true
+    },
+    {
+      "run": "combined-n1024-s128-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 1,
+      "passed": true
+    },
+    {
+      "run": "combined-n1024-s128-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 2,
+      "passed": true
+    },
+    {
+      "run": "v7-n512-s128-b1024-t1-seed42.jsonl",
+      "trial": "warmup",
+      "iteration": null,
+      "passed": true
+    },
+    {
+      "run": "v7-n512-s128-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 0,
+      "passed": true
+    },
+    {
+      "run": "v7-n512-s128-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 1,
+      "passed": true
+    },
+    {
+      "run": "v7-n512-s128-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 2,
+      "passed": true
+    },
+    {
+      "run": "v7-n512-s100-b1024-t8-seed42.jsonl",
+      "trial": "warmup",
+      "iteration": null,
+      "passed": true
+    },
+    {
+      "run": "v7-n512-s100-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 0,
+      "passed": true
+    },
+    {
+      "run": "v7-n512-s100-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 1,
+      "passed": true
+    },
+    {
+      "run": "v7-n512-s100-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 2,
+      "passed": true
+    },
+    {
+      "run": "combined-n512-s100-b1024-t8-seed42.jsonl",
+      "trial": "warmup",
+      "iteration": null,
+      "passed": true
+    },
+    {
+      "run": "combined-n512-s100-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 0,
+      "passed": true
+    },
+    {
+      "run": "combined-n512-s100-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 1,
+      "passed": true
+    },
+    {
+      "run": "combined-n512-s100-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 2,
+      "passed": true
+    },
+    {
+      "run": "v7-n1024-s100-b1024-t1-seed42.jsonl",
+      "trial": "warmup",
+      "iteration": null,
+      "passed": true
+    },
+    {
+      "run": "v7-n1024-s100-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 0,
+      "passed": true
+    },
+    {
+      "run": "v7-n1024-s100-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 1,
+      "passed": true
+    },
+    {
+      "run": "v7-n1024-s100-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 2,
+      "passed": true
+    },
+    {
+      "run": "v7-n512-s128-b1024-t8-seed42.jsonl",
+      "trial": "warmup",
+      "iteration": null,
+      "passed": true
+    },
+    {
+      "run": "v7-n512-s128-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 0,
+      "passed": true
+    },
+    {
+      "run": "v7-n512-s128-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 1,
+      "passed": true
+    },
+    {
+      "run": "v7-n512-s128-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 2,
+      "passed": true
+    },
+    {
+      "run": "v7-n512-s100-b1024-t1-seed42.jsonl",
+      "trial": "warmup",
+      "iteration": null,
+      "passed": true
+    },
+    {
+      "run": "v7-n512-s100-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 0,
+      "passed": true
+    },
+    {
+      "run": "v7-n512-s100-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 1,
+      "passed": true
+    },
+    {
+      "run": "v7-n512-s100-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 2,
+      "passed": true
+    },
+    {
+      "run": "v7-n1024-s128-b1024-t8-seed42.jsonl",
+      "trial": "warmup",
+      "iteration": null,
+      "passed": true
+    },
+    {
+      "run": "v7-n1024-s128-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 0,
+      "passed": true
+    },
+    {
+      "run": "v7-n1024-s128-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 1,
+      "passed": true
+    },
+    {
+      "run": "v7-n1024-s128-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 2,
+      "passed": true
+    },
+    {
+      "run": "v7-n1024-s128-b1024-t1-seed42.jsonl",
+      "trial": "warmup",
+      "iteration": null,
+      "passed": true
+    },
+    {
+      "run": "v7-n1024-s128-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 0,
+      "passed": true
+    },
+    {
+      "run": "v7-n1024-s128-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 1,
+      "passed": true
+    },
+    {
+      "run": "v7-n1024-s128-b1024-t1-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 2,
+      "passed": true
+    },
+    {
+      "run": "combined-n1024-s100-b1024-t8-seed42.jsonl",
+      "trial": "warmup",
+      "iteration": null,
+      "passed": true
+    },
+    {
+      "run": "combined-n1024-s100-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 0,
+      "passed": true
+    },
+    {
+      "run": "combined-n1024-s100-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 1,
+      "passed": true
+    },
+    {
+      "run": "combined-n1024-s100-b1024-t8-seed42.jsonl",
+      "trial": "sample",
+      "iteration": 2,
+      "passed": true
+    }
+  ]
+}

@@ -49,37 +49,107 @@ pub(super) unsafe fn fill_powers_pair<const K: usize>(
     starts: [PowerCoordinates<K>; 2],
     outputs: [&mut [PowerCoordinates<K>]; 2],
 ) {
+    // SAFETY: forwarded from this function's contract; the ordinary specialization
+    // does not use the zero subtraction vector or empty polynomial.
+    unsafe { fill_pair::<K, false>(feedback, starts, PowerCoordinates::ZERO, &[], outputs) };
+}
+
+/// Emit one power sequence and one adjoint sequence with canonical coordinates.
+///
+/// # Safety
+/// AVX512F and AVX512BW must be available. `K == 11`, both outputs and
+/// `polynomial` must have the same length, and all inputs must be canonical.
+/// The degree and length requirements are asserted before any output access.
+#[target_feature(enable = "avx512f,avx512bw")]
+#[inline(never)]
+pub(super) unsafe fn fill_powers_adjoint_pair<const K: usize>(
+    feedback: &[u16; K],
+    starts: [PowerCoordinates<K>; 2],
+    subtract: PowerCoordinates<K>,
+    polynomial: &[u16],
+    outputs: [&mut [PowerCoordinates<K>]; 2],
+) {
+    // SAFETY: this function exposes exactly the adjoint specialization's contract.
+    unsafe { fill_pair::<K, true>(feedback, starts, subtract, polynomial, outputs) };
+}
+
+fn centered_multiplier(value: u16) -> (i16, i16) {
+    let centered = i32::from(value) - if value > Q / 2 { i32::from(Q) } else { 0 };
+    // Rust truncates toward zero; adding a sign-dependent half rounds nearest.
+    let scaled = centered * 32768;
+    let quotient = (scaled
+        + if scaled >= 0 {
+            i32::from(Q / 2)
+        } else {
+            -i32::from(Q / 2)
+        })
+        / i32::from(Q);
+    (centered as i16, quotient as i16)
+}
+
+/// Canonicalize signed lanes in [-16896,29184], with q replicated in `q`.
+#[target_feature(enable = "avx512f,avx512bw")]
+#[inline]
+unsafe fn reduce_adjoint(sum: __m512i, q: __m512i) -> __m512i {
+    // k = round(sum / 16384). Its four intervals have exact remainder ranges:
+    // [-16896,-8193] -> [-4607,4096]; [-8192,8191] -> [-8192,8191];
+    // [8192,24575] -> [-4097,12286]; [24576,29184] -> [-2,4606].
+    // Thus -q < sum-k*q < q, requiring only an addition for negative lanes.
+    let quotient = _mm512_mulhrs_epi16(sum, _mm512_set1_epi16(2));
+    let remainder = _mm512_sub_epi16(sum, _mm512_mullo_epi16(quotient, q));
+    _mm512_min_epu16(remainder, _mm512_add_epi16(remainder, q))
+}
+
+#[target_feature(enable = "avx512f,avx512bw")]
+#[inline]
+unsafe fn fill_pair<const K: usize, const ADJOINT: bool>(
+    feedback: &[u16; K],
+    starts: [PowerCoordinates<K>; 2],
+    subtract: PowerCoordinates<K>,
+    polynomial: &[u16],
+    outputs: [&mut [PowerCoordinates<K>]; 2],
+) {
     assert_eq!(K, 11);
     assert_eq!(outputs[0].len(), outputs[1].len());
+    if ADJOINT {
+        assert_eq!(outputs[0].len(), polynomial.len());
+    }
     let mut coefficients = [0i16; 32];
     let mut quotients = [0i16; 32];
     for i in 0..11 {
-        let centered = i32::from(feedback[i]) - if feedback[i] > Q / 2 { i32::from(Q) } else { 0 };
-        coefficients[i] = centered as i16;
+        (coefficients[i], quotients[i]) = centered_multiplier(feedback[i]);
         coefficients[i + 16] = coefficients[i];
-        // Rust truncates toward zero; adding a sign-dependent half rounds nearest.
-        let scaled = centered * 32768;
-        quotients[i] = ((scaled
-            + if scaled >= 0 {
-                i32::from(Q / 2)
-            } else {
-                -i32::from(Q / 2)
-            })
-            / i32::from(Q)) as i16;
         quotients[i + 16] = quotients[i];
+    }
+    // The correction is zero in the first sequence's lanes. Preparing it once
+    // amortizes the fixed multiplication over the entire public polynomial.
+    let mut subtract_coefficients = [0i16; 32];
+    let mut subtract_quotients = [0i16; 32];
+    if ADJOINT {
+        for i in 0..11 {
+            (subtract_coefficients[16 + i], subtract_quotients[16 + i]) =
+                centered_multiplier(subtract.0[i]);
+        }
     }
     // Each source is a complete 64-byte array, with no alignment requirement.
     let feedback = unsafe { _mm512_loadu_si512(coefficients.as_ptr().cast()) };
     let quotients = unsafe { _mm512_loadu_si512(quotients.as_ptr().cast()) };
+    let subtract_coefficients =
+        unsafe { _mm512_loadu_si512(subtract_coefficients.as_ptr().cast()) };
+    let subtract_quotients = unsafe { _mm512_loadu_si512(subtract_quotients.as_ptr().cast()) };
     let q = _mm512_set1_epi16(Q as i16);
     let top_indices = unsafe { _mm512_loadu_si512(TOP_INDICES.as_ptr().cast()) };
     let shift_indices = unsafe { _mm512_loadu_si512(SHIFT_INDICES.as_ptr().cast()) };
     // The degree assertion ensures each input has exactly eleven coordinates.
     let mut value = unsafe { load_starts(starts) };
     let [a, b] = outputs;
-    for (a, b) in a.iter_mut().zip(b) {
+    let length = a.len();
+    for (j, (a, b)) in a.iter_mut().zip(b).enumerate() {
         // The degree assertion guarantees eleven writable u16 coordinates.
         unsafe { store(value, a, b) };
+        if ADJOINT && j + 1 == length {
+            break;
+        }
         let top = _mm512_permutexvar_epi16(top_indices, value);
         // c = round(centered_feedback * 2^15 / q) has error < 1/2.
         // Since 0 <= top <= 12288, the rounded quotient errs by < 11/16;
@@ -89,17 +159,31 @@ pub(super) unsafe fn fill_powers_pair<const K: usize>(
         let remainder = _mm512_sub_epi16(product, _mm512_mullo_epi16(quotient, q));
         let shifted = _mm512_maskz_permutexvar_epi16(SHIFT, shift_indices, value);
         let sum = _mm512_add_epi16(remainder, shifted);
-        // Adding a canonical predecessor gives -8448 <= sum <= 20736.
-        // Wrapped negative lanes are larger than sum+q as unsigned words;
-        // nonnegative lanes are smaller. Then subtract q at most once.
-        let positive = _mm512_min_epu16(sum, _mm512_add_epi16(sum, q));
-        value = _mm512_min_epu16(positive, _mm512_sub_epi16(positive, q));
+        if ADJOINT {
+            let scalar = _mm512_set1_epi16(polynomial[length - 1 - j] as i16);
+            let quotient = _mm512_mulhrs_epi16(scalar, subtract_quotients);
+            let product = _mm512_mullo_epi16(scalar, subtract_coefficients);
+            let correction = _mm512_sub_epi16(product, _mm512_mullo_epi16(quotient, q));
+            // Both exact remainders lie in [-8448,8448] and the predecessor
+            // is canonical, so the combined sum fits signed16: [-16896,29184].
+            let sum = _mm512_sub_epi16(sum, correction);
+            // SAFETY: the bound above and this function's AVX512 features satisfy
+            // the fused reduction's contract; `q` contains 12289 in every lane.
+            value = unsafe { reduce_adjoint(sum, q) };
+        } else {
+            // Adding a canonical predecessor gives -8448 <= sum <= 20736.
+            // Wrapped negative lanes are larger than sum+q as unsigned words;
+            // nonnegative lanes are smaller. Then subtract q at most once.
+            let positive = _mm512_min_epu16(sum, _mm512_add_epi16(sum, q));
+            value = _mm512_min_epu16(positive, _mm512_sub_epi16(positive, q));
+        }
     }
 }
 #[cfg(test)]
 mod tests {
     use super::super::{PowerBasis, PowerCoordinates, Q12289Extension};
-    use super::fill_powers_pair;
+    use super::{fill_powers_adjoint_pair, fill_powers_pair, reduce_adjoint};
+    use core::arch::x86_64::*;
 
     const Q: u16 = 12_289;
     const ZERO: PowerCoordinates<11> = PowerCoordinates::ZERO;
@@ -229,6 +313,116 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn check_adjoint(
+        feedback: [u16; 11],
+        starts: [PowerCoordinates<11>; 2],
+        subtract: PowerCoordinates<11>,
+        polynomial: &[u16],
+    ) {
+        let basis = PowerBasis {
+            columns: [[0; 11]; 11],
+            inverse: [[0; 11]; 11],
+            feedback,
+        };
+        let len = polynomial.len();
+        let mut expected_a = Vec::with_capacity(len);
+        let mut expected_b = Vec::with_capacity(len);
+        let [mut first, mut second] = starts;
+        for j in 0..len {
+            expected_a.push(first);
+            expected_b.push(second);
+            basis.advance(&mut first);
+            basis.advance_sub_scaled(&mut second, polynomial[len - 1 - j], subtract);
+        }
+        let sentinel = PowerCoordinates([u16::MAX; 11]);
+        let mut a = vec![sentinel; len + 4];
+        let mut b = a.clone();
+        // Runtime features were checked by the caller; all inputs are
+        // canonical degree-eleven values with matching guarded output lengths.
+        unsafe {
+            fill_powers_adjoint_pair(
+                &feedback,
+                starts,
+                subtract,
+                polynomial,
+                [&mut a[2..len + 2], &mut b[2..len + 2]],
+            );
+        }
+        assert_eq!(&a[2..len + 2], expected_a.as_slice());
+        assert_eq!(&b[2..len + 2], expected_b.as_slice());
+        for output in [&a, &b] {
+            assert_eq!(&output[..2], &[sentinel; 2]);
+            assert_eq!(&output[len + 2..], &[sentinel; 2]);
+            assert!(
+                output[2..len + 2]
+                    .iter()
+                    .all(|value| value.0.iter().all(|&coordinate| coordinate < Q))
+            );
+        }
+    }
+
+    #[test]
+    fn adjoint_recurrence_matches_portable_with_guarded_tails() {
+        if !available() {
+            return;
+        }
+        let lengths = [0, 1, 2, 3, 7, 15, 16, 17, 31, 32, 33, 255, 256, 257, 1024];
+        let mut state = 0xfedc_ba98_7654_3210;
+        for _ in 0..64 {
+            let feedback = std::array::from_fn(|_| sample(&mut state));
+            let starts = std::array::from_fn(|_| {
+                PowerCoordinates(std::array::from_fn(|_| sample(&mut state)))
+            });
+            let subtract = PowerCoordinates(std::array::from_fn(|_| sample(&mut state)));
+            for len in lengths {
+                let polynomial: Vec<_> = (0..len).map(|_| sample(&mut state)).collect();
+                check_adjoint(feedback, starts, subtract, &polynomial);
+            }
+        }
+        for feedback in [[0; 11], [1; 11], [6144; 11], [6145; 11], [Q - 1; 11]] {
+            for coordinate in [0, 1, 6144, 6145, Q - 2, Q - 1] {
+                let starts = [
+                    PowerCoordinates([coordinate; 11]),
+                    PowerCoordinates([Q - 1 - coordinate; 11]),
+                ];
+                for subtract in [PowerCoordinates([coordinate; 11]), starts[1]] {
+                    let polynomial: Vec<_> = (0..257)
+                        .map(|i| [0, 1, 6144, 6145, Q - 2, Q - 1][i % 6])
+                        .collect();
+                    check_adjoint(feedback, starts, subtract, &polynomial);
+                }
+            }
+        }
+    }
+
+    #[target_feature(enable = "avx512f,avx512bw")]
+    unsafe fn check_adjoint_reduction() {
+        for base in (-16896_i32..=29184).step_by(32) {
+            let input: [i16; 32] =
+                std::array::from_fn(|lane| (base + lane as i32).min(29184) as i16);
+            let mut output = [0u16; 32];
+            // SAFETY: complete 64-byte arrays permit unaligned loads/stores;
+            // every input lane is in the reduction's prescribed signed range.
+            unsafe {
+                let value = _mm512_loadu_si512(input.as_ptr().cast());
+                let reduced = reduce_adjoint(value, _mm512_set1_epi16(Q as i16));
+                _mm512_storeu_si512(output.as_mut_ptr().cast(), reduced);
+            }
+            for (&raw, &actual) in input.iter().zip(&output) {
+                assert_eq!(actual, i32::from(raw).rem_euclid(i32::from(Q)) as u16);
+            }
+        }
+    }
+
+    #[test]
+    fn adjoint_reduction_covers_every_permitted_signed_sum() {
+        if !available() {
+            return;
+        }
+        // SAFETY: the runtime feature check covers this exhaustive SIMD helper.
+        unsafe { check_adjoint_reduction() };
     }
 
     #[test]

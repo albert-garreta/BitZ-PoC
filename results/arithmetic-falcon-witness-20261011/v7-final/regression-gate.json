@@ -1,0 +1,152 @@
+{
+  "passed": false,
+  "metrics": [
+    "total_prover_ms",
+    "prove_ms"
+  ],
+  "aggregation": "median over all measured trials and selected seeds, per shape",
+  "maximum_regression_percent": 0.0,
+  "regressions": [
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 4.3451335,
+      "candidate_ms": 4.3958595,
+      "regression_percent": 1.1674209779745537
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 4.1870635,
+      "candidate_ms": 4.237545000000001,
+      "regression_percent": 1.2056540341459199
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "baseline_ms": 17.5217195,
+      "candidate_ms": 17.6476975,
+      "regression_percent": 0.7189819469487491
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 16.365071999999998,
+      "candidate_ms": 16.470346,
+      "regression_percent": 0.6432846736024178
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 5.5865615,
+      "candidate_ms": 5.5980425,
+      "regression_percent": 0.20551102856380954
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 5.2170325,
+      "candidate_ms": 5.222457,
+      "regression_percent": 0.10397673389996864
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 6.83394,
+      "candidate_ms": 6.841654500000001,
+      "regression_percent": 0.11288509995699414
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 6.6658225,
+      "candidate_ms": 6.679387500000001,
+      "regression_percent": 0.20350076828479224
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "baseline_ms": 21.102843,
+      "candidate_ms": 21.248348,
+      "regression_percent": 0.6895042530525419
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 19.959650000000003,
+      "candidate_ms": 20.068887500000002,
+      "regression_percent": 0.5472916609259082
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 59.446459000000004,
+      "candidate_ms": 59.7001185,
+      "regression_percent": 0.4267024550612897
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 53.7948645,
+      "candidate_ms": 53.9414615,
+      "regression_percent": 0.27251114276902744
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "baseline_ms": 13.8700635,
+      "candidate_ms": 13.886043,
+      "regression_percent": 0.11520855690387855
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 13.6408195,
+      "candidate_ms": 13.656583999999999,
+      "regression_percent": 0.11556856976224772
+    }
+  ],
+  "interpretation": "Observed comparison only; this gate is not a statistical confidence claim. Inspect seed-summary.json and broaden input coverage for borderline results."
+}

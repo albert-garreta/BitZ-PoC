@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "qualification": false,
+  "purpose": "Root-selected stage diagnostics after the initial pilot; traced timings are not acceptance timings.",
+  "variant_order": "cyclic",
+  "warmup": 1,
+  "iterations": 3,
+  "shapes": [
+    {
+      "group": "diagnostic-profiles",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        42
+      ]
+    },
+    {
+      "group": "diagnostic-profiles",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 8,
+      "seeds": [
+        42
+      ]
+    },
+    {
+      "group": "diagnostic-profiles",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "seeds": [
+        42
+      ]
+    },
+    {
+      "group": "diagnostic-profiles",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        42
+      ]
+    },
+    {
+      "group": "diagnostic-profiles",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 33,
+      "threads": 8,
+      "seeds": [
+        42
+      ]
+    },
+    {
+      "group": "diagnostic-profiles",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "seeds": [
+        42
+      ]
+    }
+  ]
+}

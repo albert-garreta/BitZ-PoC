@@ -1,0 +1,97 @@
+{
+  "scope": "Arithmetic scaling confirmation: six seeds, seven measured samples after two warmups.",
+  "baseline_commit": "c3bf4e4e3d52a350e3dcd6f9475654b6a307f52d",
+  "verified_trials": 216,
+  "processes": 24,
+  "proof_identity": "Identical within each binary and input across requested worker counts; branch-to-branch identity is not expected after protocol/layout changes.",
+  "binary_sha256": {
+    "baseline": {
+      "arithmetic": "8b9a8a43ca2a5b12fb509cc5661d1382c60c5aec9f26f1157891afba3ac1458b",
+      "full": "1eaaf10210ee2d7498bf114b027eb35edc972599a5f3beebe35a13731b3f98d0"
+    },
+    "candidate": {
+      "arithmetic": "d6d7eb7d5cca0f7aa458ed5b586750ebbab16ba04e41a0686af13284863f1050",
+      "full": "6a028a89234640d5d8d09aa4b01da2b7ce3f5ce72f7aa59f347b643fb8b3d70c"
+    }
+  },
+  "rows": [
+    {
+      "variant": "arithmetic",
+      "threads": 8,
+      "baseline": {
+        "total_ms": 44.8248885,
+        "prove_ms": 41.1628805,
+        "verify_ms": 18.729316,
+        "peak_rss_kib": 91542.0
+      },
+      "candidate": {
+        "total_ms": 41.7985075,
+        "prove_ms": 39.608289,
+        "verify_ms": 18.835727,
+        "peak_rss_kib": 86496.0
+      },
+      "total_ms_change_percent": -6.75156392190468,
+      "prove_ms_change_percent": -3.7766829753325903
+    },
+    {
+      "variant": "arithmetic",
+      "threads": 16,
+      "baseline": {
+        "total_ms": 46.140483,
+        "prove_ms": 42.912600499999996,
+        "verify_ms": 18.475135,
+        "peak_rss_kib": 118474.0
+      },
+      "candidate": {
+        "total_ms": 44.856258,
+        "prove_ms": 41.960384000000005,
+        "verify_ms": 19.237592,
+        "peak_rss_kib": 89848.0
+      },
+      "total_ms_change_percent": -2.783293360843242,
+      "prove_ms_change_percent": -2.2189671306449776
+    }
+  ],
+  "scaling": {
+    "baseline": {
+      "total_ms": {
+        "eight_thread_ms": 44.8248885,
+        "sixteen_thread_ms": 46.140483,
+        "paired_change_percent": -2.6254061297384697,
+        "bootstrap_95_percent": [
+          -13.324476949030686,
+          3.5498084820049383
+        ]
+      },
+      "prove_ms": {
+        "eight_thread_ms": 41.1628805,
+        "sixteen_thread_ms": 42.912600499999996,
+        "paired_change_percent": -1.5888191156501252,
+        "bootstrap_95_percent": [
+          -12.582648048769373,
+          4.790170236141042
+        ]
+      }
+    },
+    "candidate": {
+      "total_ms": {
+        "eight_thread_ms": 41.7985075,
+        "sixteen_thread_ms": 44.856258,
+        "paired_change_percent": 4.699354693231632,
+        "bootstrap_95_percent": [
+          1.210494532730001,
+          8.231380304461629
+        ]
+      },
+      "prove_ms": {
+        "eight_thread_ms": 39.608289,
+        "sixteen_thread_ms": 41.960384000000005,
+        "paired_change_percent": 3.894658124418801,
+        "bootstrap_95_percent": [
+          0.34083570229223925,
+          7.388086811226064
+        ]
+      }
+    }
+  }
+}

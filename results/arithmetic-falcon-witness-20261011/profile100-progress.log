@@ -1,0 +1,16 @@
+baseline-n512-s100-b1024-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 272.323594, "proof_payload_bytes": 225338}
+candidate-n512-s100-b1024-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 276.59001700000005, "proof_payload_bytes": 216368}
+baseline-n512-s100-b1024-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 57.140021, "proof_payload_bytes": 225338}
+candidate-n512-s100-b1024-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 60.105171, "proof_payload_bytes": 216368}
+baseline-n1024-s100-b1024-t1-seed42
+{"variant": "baseline", "total_prover_ms_median": 505.72684300000003, "proof_payload_bytes": 314802}
+candidate-n1024-s100-b1024-t1-seed42
+{"variant": "candidate", "total_prover_ms_median": 516.096424, "proof_payload_bytes": 276288}
+baseline-n1024-s100-b1024-t8-seed42
+{"variant": "baseline", "total_prover_ms_median": 110.345257, "proof_payload_bytes": 314802}
+candidate-n1024-s100-b1024-t8-seed42
+{"variant": "candidate", "total_prover_ms_median": 115.503507, "proof_payload_bytes": 276288}

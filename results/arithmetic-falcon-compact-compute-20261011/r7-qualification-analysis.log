@@ -1,0 +1,42 @@
+{"directory": "results/arithmetic-falcon-compact-compute-20261011/r7-qualification/comparisons/padding-vs-v7", "shapes": 70, "bootstrap_replicates": 10000}
+{
+  "verified_proofs": 7552,
+  "unchanged_exact_proofs": 2496,
+  "new_layout_proofs": 1280,
+  "positive_observed_metrics": 0,
+  "positive_paired_intervals": []
+}
+{
+  "shapes": 70,
+  "confidence": {
+    "prove_ms": {
+      "positive_pooled_delta_shapes": 0,
+      "positive_paired_median_delta_shapes": 0,
+      "median": {
+        "positive_lower_endpoints": 0,
+        "negative_upper_endpoints": 70,
+        "maximum_upper_endpoint_percent": -2.165333032528638
+      },
+      "geomean": {
+        "positive_lower_endpoints": 0,
+        "negative_upper_endpoints": 70,
+        "maximum_upper_endpoint_percent": -2.5119199149444493
+      }
+    },
+    "total_prover_ms": {
+      "positive_pooled_delta_shapes": 0,
+      "positive_paired_median_delta_shapes": 0,
+      "median": {
+        "positive_lower_endpoints": 0,
+        "negative_upper_endpoints": 70,
+        "maximum_upper_endpoint_percent": -2.7066966940670456
+      },
+      "geomean": {
+        "positive_lower_endpoints": 0,
+        "negative_upper_endpoints": 70,
+        "maximum_upper_endpoint_percent": -2.803309272789223
+      }
+    }
+  },
+  "confidence_positive_union": []
+}

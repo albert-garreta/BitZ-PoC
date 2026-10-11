@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "frozen_before_timings": true,
+  "qualification": false,
+  "warmup": 1,
+  "iterations": 3,
+  "variant_order": "rotated-forward-reverse",
+  "purpose": "Third same-binary grouped pilot: batch32 one-worker shapes at both degrees/security targets, checking grouped prefix4 on medium production domains after large/boundary diagnostics.",
+  "shapes": [
+    {
+      "group": "diagnostic-grouped-medium",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        202,
+        203
+      ]
+    },
+    {
+      "group": "diagnostic-grouped-medium",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        202,
+        203
+      ]
+    },
+    {
+      "group": "diagnostic-grouped-medium",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        202,
+        203
+      ]
+    },
+    {
+      "group": "diagnostic-grouped-medium",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        202,
+        203
+      ]
+    }
+  ],
+  "order_explanation": "Rotate base mode order by shape, then reverse it for the second input; each mode has equal mean position within every shape."
+}

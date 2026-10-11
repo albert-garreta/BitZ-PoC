@@ -1,0 +1,36 @@
+{
+  "captured_unix": 1791734397.1544006,
+  "source_snapshot": "/tmp/bitz-arithmetic-v8-r7-source-dc7m8ppj",
+  "source_files": 597,
+  "source_hash_manifest": "candidate-r7-source-sha256.json",
+  "changed_from_grouped_controls": [
+    "src/piop/spartan/falcon1024_algebraic/arithmetic.rs"
+  ],
+  "candidate_binary_pending": false,
+  "features": [
+    "falcon-hybrid"
+  ],
+  "RUSTFLAGS": "-C target-cpu=native",
+  "revision": "Uniform cap16 for qualified Linux/x86_64 prefix4 binding; extend N512/eight-worker prefix4 to every batch>=33; preserve small prefix3/trimmed-layout decisions.",
+  "binary_original": "/tmp/bitz-arithmetic-v8-r7-production-binary",
+  "binary_preserved": "/tmp/bitz-arithmetic-v8-r7-qualification-binary",
+  "sha256": "ec1c7b55cfba4b7dbce26e4028913a13ccee6b87795f6b5ddaca58b6327ee141",
+  "source_reverified_unix": 1791734674.8758228,
+  "source_reverification_changes": [],
+  "build_profile": "native release with default LTO/profile",
+  "root_confirmed_binary_and_go": true,
+  "tests_before_timing": "160 targeted tests passed:101 arithmetic+2 explicit large+54 shared+3 full Falcon",
+  "qualification": {
+    "report": "r7-qualification/README.md",
+    "summary": "r7-qualification/qualification-summary.json",
+    "verified_proofs": 7552,
+    "verified_measured_proofs": 5664,
+    "exact_v7_candidate_proofs": 2496,
+    "changed_layout_candidate_proofs": 1280,
+    "shapes": 70,
+    "positive_proof_or_total_observations": 0,
+    "all_280_descriptive_paired_intervals_favor_candidate": true,
+    "parent_acceptance": "Accepted R7 under the no-repeatable-proving-regression criterion for the measured scope.",
+    "post_build_provenance": "candidate-r7-post-build-provenance.json"
+  }
+}

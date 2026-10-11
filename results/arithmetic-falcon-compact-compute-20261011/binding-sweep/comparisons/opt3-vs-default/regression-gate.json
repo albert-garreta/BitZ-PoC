@@ -1,0 +1,91 @@
+{
+  "passed": false,
+  "metrics": [
+    "total_prover_ms",
+    "prove_ms"
+  ],
+  "maximum_regression_percent": 0,
+  "regressions": [
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 3.6812885,
+      "candidate_ms": 3.6971835000000004,
+      "regression_percent": 0.43177816680219916
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 3.458061,
+      "candidate_ms": 3.479011,
+      "regression_percent": 0.6058308398839696
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "baseline_ms": 490.0503215,
+      "candidate_ms": 522.1900355,
+      "regression_percent": 6.558451773202245
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 387.5741825,
+      "candidate_ms": 420.173586,
+      "regression_percent": 8.411139072711581
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "baseline_ms": 104.265253,
+      "candidate_ms": 104.8765395,
+      "regression_percent": 0.5862801675645457
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 8,
+      "metric": "prove_ms",
+      "baseline_ms": 89.65376,
+      "candidate_ms": 89.96391650000001,
+      "regression_percent": 0.3459492384926266
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "baseline_ms": 500.520572,
+      "candidate_ms": 537.0427705,
+      "regression_percent": 7.296842636070511
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 398.7460295,
+      "candidate_ms": 435.2877605,
+      "regression_percent": 9.16416172113883
+    }
+  ],
+  "interpretation": "Observed pooled-sample median gate only. A tiny positive delta does not establish a repeatable regression; inspect seed-paired dispersion and an independently authorized confirmation run. This gate is not a statistical confidence claim."
+}

@@ -1,0 +1,245 @@
+{
+  "version": 1,
+  "frozen_before_timings": true,
+  "warmup": 1,
+  "iterations": 3,
+  "variant_order": "forward-reverse",
+  "purpose": "Qualify revised production binary first on all four unchanged batch32/one-worker degree/security shapes using fresh seeds106..137; original failing candidate evidence remains intact.",
+  "selection_source": "qualification/comparisons/padding-vs-v7/paired-seed-analysis.json",
+  "selection_rules": [
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "total_prover_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        },
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "reasons": [
+        {
+          "metric": "prove_ms",
+          "positive_interval_statistics": [
+            "median",
+            "geomean"
+          ]
+        }
+      ]
+    }
+  ],
+  "shapes": [
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120,
+        121,
+        122,
+        123,
+        124,
+        125,
+        126,
+        127,
+        128,
+        129,
+        130,
+        131,
+        132,
+        133,
+        134,
+        135,
+        136,
+        137
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120,
+        121,
+        122,
+        123,
+        124,
+        125,
+        126,
+        127,
+        128,
+        129,
+        130,
+        131,
+        132,
+        133,
+        134,
+        135,
+        136,
+        137
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120,
+        121,
+        122,
+        123,
+        124,
+        125,
+        126,
+        127,
+        128,
+        129,
+        130,
+        131,
+        132,
+        133,
+        134,
+        135,
+        136,
+        137
+      ]
+    },
+    {
+      "group": "core-small",
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "seeds": [
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120,
+        121,
+        122,
+        123,
+        124,
+        125,
+        126,
+        127,
+        128,
+        129,
+        130,
+        131,
+        132,
+        133,
+        134,
+        135,
+        136,
+        137
+      ]
+    }
+  ],
+  "revision": "Compile-time exclusion of experimental compact path in production plus removal of temporary binary-claim Vec; no transcript changes."
+}

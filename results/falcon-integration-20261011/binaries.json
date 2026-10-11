@@ -1,0 +1,10 @@
+{
+  "baseline": {
+    "arithmetic": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/thread-fix-20261011/bin/restored-fused-arithmetic",
+    "full": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/thread-fix-20261011/bin/restored-fused-full"
+  },
+  "candidate": {
+    "arithmetic": "/tmp/falcon-integration-20261011/bin/arithmetic",
+    "full": "/tmp/falcon-integration-20261011/bin/full"
+  }
+}

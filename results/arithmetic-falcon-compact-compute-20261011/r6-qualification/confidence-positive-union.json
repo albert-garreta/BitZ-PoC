@@ -1,0 +1,205 @@
+[
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 1024,
+    "threads": 1,
+    "positive": [
+      {
+        "metric": "total_prover_ms",
+        "statistics": [
+          "median",
+          "geomean"
+        ],
+        "paired_median": 0.31386687425427606,
+        "median_interval": [
+          0.19547542792943684,
+          0.8814107348872335
+        ],
+        "geomean_interval": [
+          0.25885328702932586,
+          0.7837172967810169
+        ]
+      },
+      {
+        "metric": "prove_ms",
+        "statistics": [
+          "median",
+          "geomean"
+        ],
+        "paired_median": 0.5867494971189213,
+        "median_interval": [
+          0.5169914121156305,
+          1.0482780638621847
+        ],
+        "geomean_interval": [
+          0.5195916052575855,
+          1.109347569603547
+        ]
+      }
+    ]
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 8,
+    "positive": [
+      {
+        "metric": "prove_ms",
+        "statistics": [
+          "median",
+          "geomean"
+        ],
+        "paired_median": 0.6491385227696878,
+        "median_interval": [
+          0.06352350032299281,
+          1.4603780775420239
+        ],
+        "geomean_interval": [
+          0.3296808892861547,
+          1.277547145186353
+        ]
+      }
+    ]
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 1,
+    "positive": [
+      {
+        "metric": "prove_ms",
+        "statistics": [
+          "geomean"
+        ],
+        "paired_median": 0.24582711001635005,
+        "median_interval": [
+          -0.0411567962319781,
+          0.39555900146337475
+        ],
+        "geomean_interval": [
+          0.06685763866813854,
+          0.3528368928582326
+        ]
+      }
+    ]
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 256,
+    "threads": 8,
+    "positive": [
+      {
+        "metric": "total_prover_ms",
+        "statistics": [
+          "geomean"
+        ],
+        "paired_median": 2.719478928337571,
+        "median_interval": [
+          -0.6802977917642172,
+          3.511628514238163
+        ],
+        "geomean_interval": [
+          0.2907518182842628,
+          3.0337121605819473
+        ]
+      },
+      {
+        "metric": "prove_ms",
+        "statistics": [
+          "geomean"
+        ],
+        "paired_median": 1.0789687180180696,
+        "median_interval": [
+          -0.2521406440637919,
+          2.221161051660192
+        ],
+        "geomean_interval": [
+          0.43428315308517984,
+          1.8938924640910404
+        ]
+      }
+    ]
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 256,
+    "threads": 8,
+    "positive": [
+      {
+        "metric": "total_prover_ms",
+        "statistics": [
+          "median",
+          "geomean"
+        ],
+        "paired_median": 0.9096045390650787,
+        "median_interval": [
+          0.24397581693980097,
+          1.3844435911903874
+        ],
+        "geomean_interval": [
+          0.39930926864741867,
+          1.1489143445354122
+        ]
+      },
+      {
+        "metric": "prove_ms",
+        "statistics": [
+          "median",
+          "geomean"
+        ],
+        "paired_median": 0.8430799193630101,
+        "median_interval": [
+          0.5919926819029531,
+          1.5090091814326634
+        ],
+        "geomean_interval": [
+          0.608576854351961,
+          1.2781249935034156
+        ]
+      }
+    ]
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 257,
+    "threads": 8,
+    "positive": [
+      {
+        "metric": "total_prover_ms",
+        "statistics": [
+          "geomean"
+        ],
+        "paired_median": 0.6899077369612705,
+        "median_interval": [
+          -0.3800492816627199,
+          2.1898466006783357
+        ],
+        "geomean_interval": [
+          0.13515328390791836,
+          1.7590127836438985
+        ]
+      },
+      {
+        "metric": "prove_ms",
+        "statistics": [
+          "geomean"
+        ],
+        "paired_median": 0.774215256723898,
+        "median_interval": [
+          -0.12406961255800875,
+          1.1642439083753953
+        ],
+        "geomean_interval": [
+          0.11738781215808736,
+          1.2197594583507554
+        ]
+      }
+    ]
+  }
+]

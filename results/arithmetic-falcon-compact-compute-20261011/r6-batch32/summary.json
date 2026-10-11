@@ -1,0 +1,166 @@
+[
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "group": "core-small",
+    "variants": {
+      "v7": {
+        "prepare_ms": 0.06618500000000001,
+        "witness_commit_ms": 1.131275,
+        "prove_ms": 16.3769575,
+        "total_prover_ms": 17.5677755,
+        "verify_ms": 3.769891,
+        "proof_payload_bytes": 83064.0,
+        "live_bits_per_signature": 15386.0,
+        "source_bits_per_signature": 16384.0,
+        "committed_source_bits": 524288.0,
+        "virtual_arithmetic_bits": 524288.0,
+        "capacity": 32.0,
+        "source_packed_bytes": 65536.0,
+        "process_peak_rss_kib": 20600.0
+      },
+      "padding": {
+        "prepare_ms": 0.065975,
+        "witness_commit_ms": 1.1250485000000001,
+        "prove_ms": 16.265176500000003,
+        "total_prover_ms": 17.395233500000003,
+        "verify_ms": 3.4984175000000004,
+        "proof_payload_bytes": 83064.0,
+        "live_bits_per_signature": 15386.0,
+        "source_bits_per_signature": 16384.0,
+        "committed_source_bits": 524288.0,
+        "virtual_arithmetic_bits": 524288.0,
+        "capacity": 32.0,
+        "arithmetic_capacity": 32.0,
+        "logical_binding_bits": 524288.0,
+        "source_packed_bytes": 65536.0,
+        "process_peak_rss_kib": 20694.0
+      }
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 1,
+    "group": "core-small",
+    "variants": {
+      "v7": {
+        "prepare_ms": 0.089284,
+        "witness_commit_ms": 1.124236,
+        "prove_ms": 19.828777000000002,
+        "total_prover_ms": 20.971398,
+        "verify_ms": 4.314792,
+        "proof_payload_bytes": 100464.0,
+        "live_bits_per_signature": 15386.0,
+        "source_bits_per_signature": 16384.0,
+        "committed_source_bits": 524288.0,
+        "virtual_arithmetic_bits": 524288.0,
+        "capacity": 32.0,
+        "source_packed_bytes": 65536.0,
+        "process_peak_rss_kib": 20420.0
+      },
+      "padding": {
+        "prepare_ms": 0.08982000000000001,
+        "witness_commit_ms": 1.124061,
+        "prove_ms": 19.778821999999998,
+        "total_prover_ms": 20.9207075,
+        "verify_ms": 4.0560670000000005,
+        "proof_payload_bytes": 100464.0,
+        "live_bits_per_signature": 15386.0,
+        "source_bits_per_signature": 16384.0,
+        "committed_source_bits": 524288.0,
+        "virtual_arithmetic_bits": 524288.0,
+        "capacity": 32.0,
+        "arithmetic_capacity": 32.0,
+        "logical_binding_bits": 524288.0,
+        "source_packed_bytes": 65536.0,
+        "process_peak_rss_kib": 20400.0
+      }
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "group": "core-small",
+    "variants": {
+      "v7": {
+        "prepare_ms": 0.0694215,
+        "witness_commit_ms": 3.220687,
+        "prove_ms": 22.900112,
+        "total_prover_ms": 26.288250499999997,
+        "verify_ms": 5.212469500000001,
+        "proof_payload_bytes": 104936.0,
+        "live_bits_per_signature": 24651.0,
+        "source_bits_per_signature": 32768.0,
+        "committed_source_bits": 851968.0,
+        "virtual_arithmetic_bits": 1048576.0,
+        "capacity": 32.0,
+        "source_packed_bytes": 106496.0,
+        "process_peak_rss_kib": 23986.0
+      },
+      "padding": {
+        "prepare_ms": 0.069311,
+        "witness_commit_ms": 3.2298695,
+        "prove_ms": 21.489127500000002,
+        "total_prover_ms": 24.7281445,
+        "verify_ms": 4.6718969999999995,
+        "proof_payload_bytes": 104936.0,
+        "live_bits_per_signature": 24651.0,
+        "source_bits_per_signature": 32768.0,
+        "committed_source_bits": 851968.0,
+        "virtual_arithmetic_bits": 1048576.0,
+        "capacity": 32.0,
+        "arithmetic_capacity": 32.0,
+        "logical_binding_bits": 1048576.0,
+        "source_packed_bytes": 106496.0,
+        "process_peak_rss_kib": 23932.0
+      }
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 1,
+    "group": "core-small",
+    "variants": {
+      "v7": {
+        "prepare_ms": 0.0909875,
+        "witness_commit_ms": 3.214766,
+        "prove_ms": 26.7156135,
+        "total_prover_ms": 29.982994,
+        "verify_ms": 5.7737115,
+        "proof_payload_bytes": 127720.0,
+        "live_bits_per_signature": 24651.0,
+        "source_bits_per_signature": 32768.0,
+        "committed_source_bits": 851968.0,
+        "virtual_arithmetic_bits": 1048576.0,
+        "capacity": 32.0,
+        "source_packed_bytes": 106496.0,
+        "process_peak_rss_kib": 23782.0
+      },
+      "padding": {
+        "prepare_ms": 0.0918785,
+        "witness_commit_ms": 3.225987,
+        "prove_ms": 25.244697000000002,
+        "total_prover_ms": 28.467498,
+        "verify_ms": 5.225849999999999,
+        "proof_payload_bytes": 127720.0,
+        "live_bits_per_signature": 24651.0,
+        "source_bits_per_signature": 32768.0,
+        "committed_source_bits": 851968.0,
+        "virtual_arithmetic_bits": 1048576.0,
+        "capacity": 32.0,
+        "arithmetic_capacity": 32.0,
+        "logical_binding_bits": 1048576.0,
+        "source_packed_bytes": 106496.0,
+        "process_peak_rss_kib": 23892.0
+      }
+    }
+  }
+]

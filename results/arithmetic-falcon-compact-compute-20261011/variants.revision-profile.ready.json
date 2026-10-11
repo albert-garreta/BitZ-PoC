@@ -1,0 +1,48 @@
+{
+  "primary_control": "v7",
+  "binary_path_pending_root_confirmation": false,
+  "variants": [
+    {
+      "label": "v7",
+      "binary": "/tmp/bitz-arithmetic-compact-control-v7-binary",
+      "args": [],
+      "environment": {},
+      "features": [
+        "falcon-hybrid"
+      ],
+      "role": "preserved qualified primary control"
+    },
+    {
+      "label": "padding",
+      "binary": "/tmp/bitz-arithmetic-v8-r4-qualification-binary",
+      "args": [],
+      "environment": {},
+      "features": [
+        "falcon-hybrid"
+      ],
+      "role": "selected production candidate; default padding-only path",
+      "expected_fields": {
+        "compute_variant": "padding"
+      }
+    }
+  ],
+  "reference_protocol_identity": {
+    "reference_variant": "v7",
+    "protocol_suffix": "/v7",
+    "candidate_variants": [
+      "padding"
+    ],
+    "keys": [
+      "input_digest",
+      "protocol_id",
+      "trial",
+      "iteration",
+      "source_root",
+      "proof_debug_digest",
+      "proof_payload_bytes",
+      "committed_source_bits"
+    ],
+    "expected_checked_proofs": 88,
+    "eligibility": "Every candidate trial reporting the preserved /v7 protocol must exactly match the original v7 control. New /v8 proofs have a smaller logical arithmetic capacity and are recorded separately."
+  }
+}

@@ -92,7 +92,7 @@ impl BindingOptions {
             };
             Self {
                 optimized: true,
-                // Arithmetic has no grouped adapter and keeps one task per signature.
+                // Arithmetic's own selector enables grouping on qualified paths.
                 group_cap: if full { group_cap } else { 1 },
             }
         } else {

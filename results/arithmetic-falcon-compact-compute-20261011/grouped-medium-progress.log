@@ -1,0 +1,49 @@
+{"shapes": 4, "variants": ["default", "cap1", "cap8", "cap16", "v7"], "primary_control": "default", "input_cases_per_variant": 8, "proofs_per_variant_including_warmup": 32, "proofs_all_variants_including_warmup": 160, "groups": ["diagnostic-grouped-medium"]}
+default-n512-s100-b32-t1-seed202
+cap1-n512-s100-b32-t1-seed202
+cap8-n512-s100-b32-t1-seed202
+cap16-n512-s100-b32-t1-seed202
+v7-n512-s100-b32-t1-seed202
+v7-n512-s100-b32-t1-seed203
+cap16-n512-s100-b32-t1-seed203
+cap8-n512-s100-b32-t1-seed203
+cap1-n512-s100-b32-t1-seed203
+default-n512-s100-b32-t1-seed203
+{"completed_shape": {"degree": 512, "security_bits": 100, "batch": 32, "threads": 1}, "deltas_percent_vs_control": {"cap1": {"total_prover_ms": -1.1726786502949782, "prove_ms": -1.3539777518016272}, "cap8": {"total_prover_ms": -10.81564341244009, "prove_ms": -12.295362398360322}, "cap16": {"total_prover_ms": -11.413502191389046, "prove_ms": -12.241354318848908}, "v7": {"total_prover_ms": 2.4459232676285803, "prove_ms": 2.1170905265768925}}}
+cap1-n512-s128-b32-t1-seed202
+cap8-n512-s128-b32-t1-seed202
+cap16-n512-s128-b32-t1-seed202
+v7-n512-s128-b32-t1-seed202
+default-n512-s128-b32-t1-seed202
+default-n512-s128-b32-t1-seed203
+v7-n512-s128-b32-t1-seed203
+cap16-n512-s128-b32-t1-seed203
+cap8-n512-s128-b32-t1-seed203
+cap1-n512-s128-b32-t1-seed203
+{"completed_shape": {"degree": 512, "security_bits": 128, "batch": 32, "threads": 1}, "deltas_percent_vs_control": {"cap1": {"total_prover_ms": -1.4758595944741826, "prove_ms": -1.4167808910530932}, "cap8": {"total_prover_ms": -9.222422568259203, "prove_ms": -9.930157503305015}, "cap16": {"total_prover_ms": -9.513656684666804, "prove_ms": -10.030782028007845}, "v7": {"total_prover_ms": 1.4776303459617335, "prove_ms": 1.6037173120694082}}}
+cap8-n1024-s100-b32-t1-seed202
+cap16-n1024-s100-b32-t1-seed202
+v7-n1024-s100-b32-t1-seed202
+default-n1024-s100-b32-t1-seed202
+cap1-n1024-s100-b32-t1-seed202
+cap1-n1024-s100-b32-t1-seed203
+default-n1024-s100-b32-t1-seed203
+v7-n1024-s100-b32-t1-seed203
+cap16-n1024-s100-b32-t1-seed203
+cap8-n1024-s100-b32-t1-seed203
+{"completed_shape": {"degree": 1024, "security_bits": 100, "batch": 32, "threads": 1}, "deltas_percent_vs_control": {"cap1": {"total_prover_ms": -1.5769276350375394, "prove_ms": -1.7004824689228926}, "cap8": {"total_prover_ms": -9.714508790345299, "prove_ms": -10.896856672425525}, "cap16": {"total_prover_ms": -9.455435440203065, "prove_ms": -10.461239046206172}, "v7": {"total_prover_ms": 7.981093677984585, "prove_ms": 7.605100683987964}}}
+cap16-n1024-s128-b32-t1-seed202
+v7-n1024-s128-b32-t1-seed202
+default-n1024-s128-b32-t1-seed202
+cap1-n1024-s128-b32-t1-seed202
+cap8-n1024-s128-b32-t1-seed202
+cap8-n1024-s128-b32-t1-seed203
+cap1-n1024-s128-b32-t1-seed203
+default-n1024-s128-b32-t1-seed203
+v7-n1024-s128-b32-t1-seed203
+cap16-n1024-s128-b32-t1-seed203
+{"completed_shape": {"degree": 1024, "security_bits": 128, "batch": 32, "threads": 1}, "deltas_percent_vs_control": {"cap1": {"total_prover_ms": -1.9237654753100464, "prove_ms": -2.118815917639849}, "cap8": {"total_prover_ms": -7.697154210910551, "prove_ms": -8.826450254831252}, "cap16": {"total_prover_ms": -7.790262883102461, "prove_ms": -8.884617938535587}, "v7": {"total_prover_ms": 6.222291724084039, "prove_ms": 6.939380080087365}}}
+{"comparison": "cap1-vs-default", "observed_gate_passed": true, "positive_entries": 0}
+{"comparison": "cap8-vs-default", "observed_gate_passed": true, "positive_entries": 0}
+{"comparison": "cap16-vs-default", "observed_gate_passed": true, "positive_entries": 0}
+{"comparison": "v7-vs-default", "observed_gate_passed": false, "positive_entries": 8}

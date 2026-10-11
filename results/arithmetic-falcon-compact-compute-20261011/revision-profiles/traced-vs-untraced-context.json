@@ -1,0 +1,46 @@
+[
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "untraced_v7_proof_us": 16372.834,
+    "untraced_r4_proof_us": 16425.8245,
+    "untraced_proof_delta_us": 52.99049999999639,
+    "untraced_proof_delta_percent": 0.3236489174690105,
+    "traced_seed42_root_delta_us": 132.51999999999953
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 1,
+    "untraced_v7_proof_us": 19989.756,
+    "untraced_r4_proof_us": 20044.989999999998,
+    "untraced_proof_delta_us": 55.23399999999867,
+    "untraced_proof_delta_percent": 0.27631152676399484,
+    "traced_seed42_root_delta_us": 226.81900000000255
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "untraced_v7_proof_us": 22961.146,
+    "untraced_r4_proof_us": 22999.9745,
+    "untraced_proof_delta_us": 38.82850000000104,
+    "untraced_proof_delta_percent": 0.1691052354268363,
+    "traced_seed42_root_delta_us": 162.85799999999995
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 1,
+    "untraced_v7_proof_us": 26651.757500000003,
+    "untraced_r4_proof_us": 26713.289000000004,
+    "untraced_proof_delta_us": 61.53150000000096,
+    "untraced_proof_delta_percent": 0.23087220420643373,
+    "traced_seed42_root_delta_us": 32.58150000000626
+  }
+]

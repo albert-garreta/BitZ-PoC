@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "exact_split_proofs": 768,
+  "single_input_verification_physical_size_checks": 1536,
+  "audit_files": [
+    "performance-first-small/reference-proof-identity.json",
+    "performance-first-large/reference-proof-identity.json"
+  ],
+  "reference": "v7-qualified-small and v7-qualified-large",
+  "interpretation": "All reference cases are required. Split cases must preserve exact source roots, proof digests, payload sizes, input and trial identity, protocol ID, and physical source size. Single cases intentionally use a new raw signed15 floor layout; every input, verification, protocol ID, trial identity, and physical source size is checked."
+}

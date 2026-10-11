@@ -544,7 +544,6 @@ mod tests {
             slacks: (0..batch)
                 .map(|i| (0x5a69c3du64 ^ i as u64) & ((1 << SLACK_BITS) - 1))
                 .collect(),
-            quotients: Vec::new(),
         };
         let form = BindingForm {
             layout,
@@ -743,7 +742,7 @@ mod tests {
                 "changed bit {index}"
             );
         }
-        let layout = Layout::new(batch - 1).unwrap();
+        let layout = Layout::new(3).unwrap();
         let (form, source) = fixture(&layout, &field);
         assert!(
             prove(

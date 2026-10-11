@@ -1,0 +1,69 @@
+{"directory": "results/arithmetic-falcon-compact-compute-20261011/r6-qualification/comparisons/padding-vs-v7", "shapes": 70, "bootstrap_replicates": 10000}
+{
+  "verified_proofs": 7552,
+  "unchanged_exact_proofs": 2496,
+  "new_layout_proofs": 1280,
+  "positive_observed_metrics": 16,
+  "positive_paired_intervals": [
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "paired_seed_median_delta_percent": 0.31386687425427606,
+      "interval": [
+        0.19547542792943684,
+        0.8814107348872335
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 1024,
+      "threads": 1,
+      "metric": "prove_ms",
+      "paired_seed_median_delta_percent": 0.5867494971189213,
+      "interval": [
+        0.5169914121156305,
+        1.0482780638621847
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 1024,
+      "threads": 8,
+      "metric": "prove_ms",
+      "paired_seed_median_delta_percent": 0.6491385227696878,
+      "interval": [
+        0.06352350032299281,
+        1.4603780775420239
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 256,
+      "threads": 8,
+      "metric": "total_prover_ms",
+      "paired_seed_median_delta_percent": 0.9096045390650787,
+      "interval": [
+        0.24397581693980097,
+        1.3844435911903874
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 256,
+      "threads": 8,
+      "metric": "prove_ms",
+      "paired_seed_median_delta_percent": 0.8430799193630101,
+      "interval": [
+        0.5919926819029531,
+        1.5090091814326634
+      ]
+    }
+  ]
+}

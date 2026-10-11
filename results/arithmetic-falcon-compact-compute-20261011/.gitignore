@@ -1,0 +1,7 @@
+# Raw benchmark records are committed in raw-evidence.tar.gz.
+*.jsonl
+*.command.json
+samples.json
+__pycache__/
+*.pyc
+!raw-evidence.tar.gz

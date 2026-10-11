@@ -1,0 +1,1282 @@
+[
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "seed": 42,
+    "baseline": {
+      "witness_commit_ms": 1.139575,
+      "prove_ms": 16.306792,
+      "total_prover_ms": 17.446417,
+      "verify_ms": 3.666034,
+      "proof_payload_bytes": 94354,
+      "live_bits_per_signature": 15386,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 524288,
+      "process_peak_rss_kib": 20464
+    },
+    "candidate": {
+      "witness_commit_ms": 1.141249,
+      "prove_ms": 16.453429,
+      "total_prover_ms": 17.594718,
+      "verify_ms": 3.6683280000000003,
+      "proof_payload_bytes": 83240,
+      "live_bits_per_signature": 12338,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 524288,
+      "process_peak_rss_kib": 20216
+    },
+    "reduction_percent": {
+      "witness_commit_ms": -0.14689686944693303,
+      "prove_ms": -0.8992387957116099,
+      "total_prover_ms": -0.8500370018669212,
+      "verify_ms": -0.06257443329769075,
+      "proof_payload_bytes": 11.779044873561272,
+      "live_bits_per_signature": 19.810217080462756,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 0.0,
+      "process_peak_rss_kib": 1.211884284597342
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "seed": 43,
+    "baseline": {
+      "witness_commit_ms": 1.160965,
+      "prove_ms": 16.446797,
+      "total_prover_ms": 17.591091,
+      "verify_ms": 3.7398029999999998,
+      "proof_payload_bytes": 94514,
+      "live_bits_per_signature": 15386,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 524288,
+      "process_peak_rss_kib": 20072
+    },
+    "candidate": {
+      "witness_commit_ms": 1.1408569999999998,
+      "prove_ms": 16.439193,
+      "total_prover_ms": 17.588566999999998,
+      "verify_ms": 3.774388,
+      "proof_payload_bytes": 82888,
+      "live_bits_per_signature": 12338,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 524288,
+      "process_peak_rss_kib": 20548
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 1.7320074248577844,
+      "prove_ms": 0.04623392627756129,
+      "total_prover_ms": 0.01434817203777028,
+      "verify_ms": -0.9247813320648168,
+      "proof_payload_bytes": 12.300823158473872,
+      "live_bits_per_signature": 19.810217080462756,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 0.0,
+      "process_peak_rss_kib": -2.371462734157026
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 8,
+    "seed": 42,
+    "baseline": {
+      "witness_commit_ms": 0.29625,
+      "prove_ms": 5.2162049999999995,
+      "total_prover_ms": 5.515471,
+      "verify_ms": 3.13008,
+      "proof_payload_bytes": 94354,
+      "live_bits_per_signature": 15386,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 524288,
+      "process_peak_rss_kib": 22820
+    },
+    "candidate": {
+      "witness_commit_ms": 0.30617900000000003,
+      "prove_ms": 5.12334,
+      "total_prover_ms": 5.507336,
+      "verify_ms": 3.113338,
+      "proof_payload_bytes": 83240,
+      "live_bits_per_signature": 12338,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 524288,
+      "process_peak_rss_kib": 23020
+    },
+    "reduction_percent": {
+      "witness_commit_ms": -3.3515611814346036,
+      "prove_ms": 1.780317299646006,
+      "total_prover_ms": 0.14749420312426542,
+      "verify_ms": 0.5348745079997941,
+      "proof_payload_bytes": 11.779044873561272,
+      "live_bits_per_signature": 19.810217080462756,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 0.0,
+      "process_peak_rss_kib": -0.876424189307623
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 8,
+    "seed": 43,
+    "baseline": {
+      "witness_commit_ms": 0.356154,
+      "prove_ms": 5.199554,
+      "total_prover_ms": 5.558082,
+      "verify_ms": 3.2087589999999997,
+      "proof_payload_bytes": 94514,
+      "live_bits_per_signature": 15386,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 524288,
+      "process_peak_rss_kib": 22800
+    },
+    "candidate": {
+      "witness_commit_ms": 0.363989,
+      "prove_ms": 5.248095999999999,
+      "total_prover_ms": 5.576488,
+      "verify_ms": 3.221893,
+      "proof_payload_bytes": 82888,
+      "live_bits_per_signature": 12338,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 524288,
+      "process_peak_rss_kib": 22676
+    },
+    "reduction_percent": {
+      "witness_commit_ms": -2.19989105836238,
+      "prove_ms": -0.9335800724446619,
+      "total_prover_ms": -0.33115740285949435,
+      "verify_ms": -0.40931712228935435,
+      "proof_payload_bytes": 12.300823158473872,
+      "live_bits_per_signature": 19.810217080462756,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 0.0,
+      "process_peak_rss_kib": 0.543859649122802
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 1024,
+    "threads": 1,
+    "seed": 42,
+    "baseline": {
+      "witness_commit_ms": 35.254839000000004,
+      "prove_ms": 235.051133,
+      "total_prover_ms": 270.498436,
+      "verify_ms": 44.253228,
+      "proof_payload_bytes": 225338,
+      "live_bits_per_signature": 15386,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 16777216,
+      "process_peak_rss_kib": 129936
+    },
+    "candidate": {
+      "witness_commit_ms": 36.641360999999996,
+      "prove_ms": 228.91128999999998,
+      "total_prover_ms": 265.542412,
+      "verify_ms": 45.104439000000006,
+      "proof_payload_bytes": 217968,
+      "live_bits_per_signature": 12338,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 13631488,
+      "process_peak_rss_kib": 127272
+    },
+    "reduction_percent": {
+      "witness_commit_ms": -3.932855855617423,
+      "prove_ms": 2.6121307826242224,
+      "total_prover_ms": 1.832182127663029,
+      "verify_ms": -1.9235003602449119,
+      "proof_payload_bytes": 3.2706423239755367,
+      "live_bits_per_signature": 19.810217080462756,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": 2.0502401182120433
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 1024,
+    "threads": 1,
+    "seed": 43,
+    "baseline": {
+      "witness_commit_ms": 35.346993,
+      "prove_ms": 234.55614699999998,
+      "total_prover_ms": 270.46882,
+      "verify_ms": 44.104437000000004,
+      "proof_payload_bytes": 226714,
+      "live_bits_per_signature": 15386,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 16777216,
+      "process_peak_rss_kib": 129540
+    },
+    "candidate": {
+      "witness_commit_ms": 36.470568,
+      "prove_ms": 229.18615,
+      "total_prover_ms": 265.656848,
+      "verify_ms": 45.286683000000004,
+      "proof_payload_bytes": 217520,
+      "live_bits_per_signature": 12338,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 13631488,
+      "process_peak_rss_kib": 127044
+    },
+    "reduction_percent": {
+      "witness_commit_ms": -3.1787003777096423,
+      "prove_ms": 2.289429234186724,
+      "total_prover_ms": 1.7791226360214019,
+      "verify_ms": -2.680560234789975,
+      "proof_payload_bytes": 4.055329622343573,
+      "live_bits_per_signature": 19.810217080462756,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": 1.9268179712830014
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 1024,
+    "threads": 8,
+    "seed": 42,
+    "baseline": {
+      "witness_commit_ms": 5.94834,
+      "prove_ms": 49.948811,
+      "total_prover_ms": 55.837057,
+      "verify_ms": 20.173625,
+      "proof_payload_bytes": 225338,
+      "live_bits_per_signature": 15386,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 16777216,
+      "process_peak_rss_kib": 119100
+    },
+    "candidate": {
+      "witness_commit_ms": 5.807404,
+      "prove_ms": 49.153535999999995,
+      "total_prover_ms": 54.943587,
+      "verify_ms": 19.908704,
+      "proof_payload_bytes": 217968,
+      "live_bits_per_signature": 12338,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 13631488,
+      "process_peak_rss_kib": 114852
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 2.3693332929859423,
+      "prove_ms": 1.5921800420834908,
+      "total_prover_ms": 1.6001380588522074,
+      "verify_ms": 1.3132047413392578,
+      "proof_payload_bytes": 3.2706423239755367,
+      "live_bits_per_signature": 19.810217080462756,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": 3.5667506297229257
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 100,
+    "batch": 1024,
+    "threads": 8,
+    "seed": 43,
+    "baseline": {
+      "witness_commit_ms": 5.799369,
+      "prove_ms": 48.410842,
+      "total_prover_ms": 54.210341,
+      "verify_ms": 19.31939,
+      "proof_payload_bytes": 226714,
+      "live_bits_per_signature": 15386,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 16777216,
+      "process_peak_rss_kib": 120348
+    },
+    "candidate": {
+      "witness_commit_ms": 5.453104000000001,
+      "prove_ms": 49.317727,
+      "total_prover_ms": 54.741826,
+      "verify_ms": 19.515230000000003,
+      "proof_payload_bytes": 217520,
+      "live_bits_per_signature": 12338,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 13631488,
+      "process_peak_rss_kib": 115168
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 5.9707357817721185,
+      "prove_ms": -1.8733097019878242,
+      "total_prover_ms": -0.9804125747890025,
+      "verify_ms": -1.0136966022219251,
+      "proof_payload_bytes": 4.055329622343573,
+      "live_bits_per_signature": 19.810217080462756,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": 4.304184531525246
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 1,
+    "seed": 42,
+    "baseline": {
+      "witness_commit_ms": 1.155165,
+      "prove_ms": 19.749323,
+      "total_prover_ms": 20.904548,
+      "verify_ms": 4.321473,
+      "proof_payload_bytes": 112010,
+      "live_bits_per_signature": 15386,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 524288,
+      "process_peak_rss_kib": 20372
+    },
+    "candidate": {
+      "witness_commit_ms": 1.14194,
+      "prove_ms": 19.935385,
+      "total_prover_ms": 21.077094000000002,
+      "verify_ms": 4.326693000000001,
+      "proof_payload_bytes": 100416,
+      "live_bits_per_signature": 12338,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 524288,
+      "process_peak_rss_kib": 20140
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 1.1448580938653863,
+      "prove_ms": -0.9421183703360425,
+      "total_prover_ms": -0.8253993341544863,
+      "verify_ms": -0.12079214656670612,
+      "proof_payload_bytes": 10.350861530220513,
+      "live_bits_per_signature": 19.810217080462756,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 0.0,
+      "process_peak_rss_kib": 1.138817985470253
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 1,
+    "seed": 43,
+    "baseline": {
+      "witness_commit_ms": 1.152349,
+      "prove_ms": 19.979919,
+      "total_prover_ms": 21.186651,
+      "verify_ms": 4.307407,
+      "proof_payload_bytes": 111370,
+      "live_bits_per_signature": 15386,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 524288,
+      "process_peak_rss_kib": 20380
+    },
+    "candidate": {
+      "witness_commit_ms": 1.153592,
+      "prove_ms": 19.918162,
+      "total_prover_ms": 21.071804,
+      "verify_ms": 4.260358,
+      "proof_payload_bytes": 101120,
+      "live_bits_per_signature": 12338,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 524288,
+      "process_peak_rss_kib": 20144
+    },
+    "reduction_percent": {
+      "witness_commit_ms": -0.10786662721100626,
+      "prove_ms": 0.3090953471833413,
+      "total_prover_ms": 0.5420724587382963,
+      "verify_ms": 1.0922812727007347,
+      "proof_payload_bytes": 9.20355571518362,
+      "live_bits_per_signature": 19.810217080462756,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 0.0,
+      "process_peak_rss_kib": 1.1579980372914633
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 8,
+    "seed": 42,
+    "baseline": {
+      "witness_commit_ms": 0.33837,
+      "prove_ms": 7.723838000000001,
+      "total_prover_ms": 8.052751,
+      "verify_ms": 3.849721,
+      "proof_payload_bytes": 112010,
+      "live_bits_per_signature": 15386,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 524288,
+      "process_peak_rss_kib": 22624
+    },
+    "candidate": {
+      "witness_commit_ms": 0.30211099999999996,
+      "prove_ms": 7.626594000000001,
+      "total_prover_ms": 7.926832,
+      "verify_ms": 3.7655420000000004,
+      "proof_payload_bytes": 100416,
+      "live_bits_per_signature": 12338,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 524288,
+      "process_peak_rss_kib": 22732
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 10.715784496261504,
+      "prove_ms": 1.2590113878618414,
+      "total_prover_ms": 1.5636768105707022,
+      "verify_ms": 2.1866259918575826,
+      "proof_payload_bytes": 10.350861530220513,
+      "live_bits_per_signature": 19.810217080462756,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 0.0,
+      "process_peak_rss_kib": -0.47736916548797304
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 8,
+    "seed": 43,
+    "baseline": {
+      "witness_commit_ms": 0.424252,
+      "prove_ms": 7.630311,
+      "total_prover_ms": 8.064953,
+      "verify_ms": 3.761895,
+      "proof_payload_bytes": 111370,
+      "live_bits_per_signature": 15386,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 524288,
+      "process_peak_rss_kib": 22708
+    },
+    "candidate": {
+      "witness_commit_ms": 0.371011,
+      "prove_ms": 7.5474749999999995,
+      "total_prover_ms": 7.901885000000001,
+      "verify_ms": 3.71135,
+      "proof_payload_bytes": 101120,
+      "live_bits_per_signature": 12338,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 524288,
+      "process_peak_rss_kib": 22672
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 12.5493810282568,
+      "prove_ms": 1.0856176111301408,
+      "total_prover_ms": 2.021933667809328,
+      "verify_ms": 1.3436047523920802,
+      "proof_payload_bytes": 9.20355571518362,
+      "live_bits_per_signature": 19.810217080462756,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 0.0,
+      "process_peak_rss_kib": 0.15853443720275084
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 1,
+    "seed": 42,
+    "baseline": {
+      "witness_commit_ms": 35.503199,
+      "prove_ms": 245.537305,
+      "total_prover_ms": 281.04058399999997,
+      "verify_ms": 44.464998,
+      "proof_payload_bytes": 263042,
+      "live_bits_per_signature": 15386,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 16777216,
+      "process_peak_rss_kib": 130240
+    },
+    "candidate": {
+      "witness_commit_ms": 36.578152,
+      "prove_ms": 239.254684,
+      "total_prover_ms": 276.035258,
+      "verify_ms": 46.108867999999994,
+      "proof_payload_bytes": 258088,
+      "live_bits_per_signature": 12338,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 13631488,
+      "process_peak_rss_kib": 127340
+    },
+    "reduction_percent": {
+      "witness_commit_ms": -3.027763779821635,
+      "prove_ms": 2.5587236122836865,
+      "total_prover_ms": 1.7809975800505584,
+      "verify_ms": -3.696997804880131,
+      "proof_payload_bytes": 1.8833494270876883,
+      "live_bits_per_signature": 19.810217080462756,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": 2.226658476658472
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 1,
+    "seed": 43,
+    "baseline": {
+      "witness_commit_ms": 35.299614,
+      "prove_ms": 247.42699000000002,
+      "total_prover_ms": 282.79371,
+      "verify_ms": 44.373095,
+      "proof_payload_bytes": 263970,
+      "live_bits_per_signature": 15386,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 16777216,
+      "process_peak_rss_kib": 130000
+    },
+    "candidate": {
+      "witness_commit_ms": 36.70389,
+      "prove_ms": 236.76676799999998,
+      "total_prover_ms": 273.125465,
+      "verify_ms": 45.631755000000005,
+      "proof_payload_bytes": 257352,
+      "live_bits_per_signature": 12338,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 13631488,
+      "process_peak_rss_kib": 127220
+    },
+    "reduction_percent": {
+      "witness_commit_ms": -3.978162480756886,
+      "prove_ms": 4.308431347768504,
+      "total_prover_ms": 3.4188331133673255,
+      "verify_ms": -2.8365386728151476,
+      "proof_payload_bytes": 2.5071030798954452,
+      "live_bits_per_signature": 19.810217080462756,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": 2.1384615384615335
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 8,
+    "seed": 42,
+    "baseline": {
+      "witness_commit_ms": 5.514921,
+      "prove_ms": 54.037824,
+      "total_prover_ms": 59.885173,
+      "verify_ms": 20.217037,
+      "proof_payload_bytes": 263042,
+      "live_bits_per_signature": 15386,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 16777216,
+      "process_peak_rss_kib": 120096
+    },
+    "candidate": {
+      "witness_commit_ms": 5.487018,
+      "prove_ms": 54.642889,
+      "total_prover_ms": 60.102515000000004,
+      "verify_ms": 20.272613,
+      "proof_payload_bytes": 258088,
+      "live_bits_per_signature": 12338,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 13631488,
+      "process_peak_rss_kib": 115248
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 0.505954663720487,
+      "prove_ms": -1.1197064485794161,
+      "total_prover_ms": -0.3629312384219041,
+      "verify_ms": -0.2748968605043256,
+      "proof_payload_bytes": 1.8833494270876883,
+      "live_bits_per_signature": 19.810217080462756,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": 4.036770583533178
+    }
+  },
+  {
+    "degree": 512,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 8,
+    "seed": 43,
+    "baseline": {
+      "witness_commit_ms": 6.102663000000001,
+      "prove_ms": 63.50075199999999,
+      "total_prover_ms": 69.50351500000001,
+      "verify_ms": 20.507046000000003,
+      "proof_payload_bytes": 263970,
+      "live_bits_per_signature": 15386,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 16777216,
+      "process_peak_rss_kib": 120644
+    },
+    "candidate": {
+      "witness_commit_ms": 5.390846000000001,
+      "prove_ms": 54.364191,
+      "total_prover_ms": 59.948163,
+      "verify_ms": 20.515492,
+      "proof_payload_bytes": 257352,
+      "live_bits_per_signature": 12338,
+      "source_bits_per_signature": 16384,
+      "committed_source_bits": 13631488,
+      "process_peak_rss_kib": 115972
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 11.664039125214675,
+      "prove_ms": 14.388114647839123,
+      "total_prover_ms": 13.748012600513803,
+      "verify_ms": -0.04118584412400317,
+      "proof_payload_bytes": 2.5071030798954452,
+      "live_bits_per_signature": 19.810217080462756,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": 3.872550644872519
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "seed": 42,
+    "baseline": {
+      "witness_commit_ms": 3.368781,
+      "prove_ms": 23.738408,
+      "total_prover_ms": 27.115666,
+      "verify_ms": 5.286118,
+      "proof_payload_bytes": 117802,
+      "live_bits_per_signature": 30747,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 1048576,
+      "process_peak_rss_kib": 23480
+    },
+    "candidate": {
+      "witness_commit_ms": 3.2514890000000003,
+      "prove_ms": 23.411118000000002,
+      "total_prover_ms": 26.675583,
+      "verify_ms": 5.204123,
+      "proof_payload_bytes": 105528,
+      "live_bits_per_signature": 24651,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 851968,
+      "process_peak_rss_kib": 23988
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 3.481734194060093,
+      "prove_ms": 1.3787360972142615,
+      "total_prover_ms": 1.6229842925488236,
+      "verify_ms": 1.5511382833300336,
+      "proof_payload_bytes": 10.419177942649526,
+      "live_bits_per_signature": 19.82632451946531,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": -2.1635434412265786
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 1,
+    "seed": 43,
+    "baseline": {
+      "witness_commit_ms": 3.299681,
+      "prove_ms": 23.618952,
+      "total_prover_ms": 26.909646,
+      "verify_ms": 5.237385,
+      "proof_payload_bytes": 117994,
+      "live_bits_per_signature": 30747,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 1048576,
+      "process_peak_rss_kib": 23496
+    },
+    "candidate": {
+      "witness_commit_ms": 3.230951,
+      "prove_ms": 23.023696,
+      "total_prover_ms": 26.260117,
+      "verify_ms": 5.172383,
+      "proof_payload_bytes": 105400,
+      "live_bits_per_signature": 24651,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 851968,
+      "process_peak_rss_kib": 23800
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 2.082928622494118,
+      "prove_ms": 2.5202472997108427,
+      "total_prover_ms": 2.4137404111521876,
+      "verify_ms": 1.2411155567138898,
+      "proof_payload_bytes": 10.673424072410464,
+      "live_bits_per_signature": 19.82632451946531,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": -1.2938372488934258
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 8,
+    "seed": 42,
+    "baseline": {
+      "witness_commit_ms": 0.873602,
+      "prove_ms": 7.195339000000001,
+      "total_prover_ms": 8.066996999999999,
+      "verify_ms": 4.232195,
+      "proof_payload_bytes": 117802,
+      "live_bits_per_signature": 30747,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 1048576,
+      "process_peak_rss_kib": 26060
+    },
+    "candidate": {
+      "witness_commit_ms": 0.844087,
+      "prove_ms": 7.033793,
+      "total_prover_ms": 7.87793,
+      "verify_ms": 4.094805,
+      "proof_payload_bytes": 105528,
+      "live_bits_per_signature": 24651,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 851968,
+      "process_peak_rss_kib": 26496
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 3.37854080004395,
+      "prove_ms": 2.2451478658615076,
+      "total_prover_ms": 2.343709809238792,
+      "verify_ms": 3.246305994879728,
+      "proof_payload_bytes": 10.419177942649526,
+      "live_bits_per_signature": 19.82632451946531,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": -1.6730621642363719
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 32,
+    "threads": 8,
+    "seed": 43,
+    "baseline": {
+      "witness_commit_ms": 1.014018,
+      "prove_ms": 7.147969,
+      "total_prover_ms": 8.186072000000001,
+      "verify_ms": 4.17704,
+      "proof_payload_bytes": 117994,
+      "live_bits_per_signature": 30747,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 1048576,
+      "process_peak_rss_kib": 25968
+    },
+    "candidate": {
+      "witness_commit_ms": 0.8563200000000001,
+      "prove_ms": 7.146366,
+      "total_prover_ms": 8.002746,
+      "verify_ms": 4.092671,
+      "proof_payload_bytes": 105400,
+      "live_bits_per_signature": 24651,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 851968,
+      "process_peak_rss_kib": 26028
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 15.551794938551389,
+      "prove_ms": 0.02242595064415598,
+      "total_prover_ms": 2.239486777052546,
+      "verify_ms": 2.01982743761131,
+      "proof_payload_bytes": 10.673424072410464,
+      "live_bits_per_signature": 19.82632451946531,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": -0.23105360443622658
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 1024,
+    "threads": 1,
+    "seed": 42,
+    "baseline": {
+      "witness_commit_ms": 102.67292,
+      "prove_ms": 402.21288300000003,
+      "total_prover_ms": 504.83545799999996,
+      "verify_ms": 86.230272,
+      "proof_payload_bytes": 314802,
+      "live_bits_per_signature": 30747,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 33554432,
+      "process_peak_rss_kib": 227212
+    },
+    "candidate": {
+      "witness_commit_ms": 101.879108,
+      "prove_ms": 391.689901,
+      "total_prover_ms": 493.251198,
+      "verify_ms": 88.31256,
+      "proof_payload_bytes": 277184,
+      "live_bits_per_signature": 24651,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 27262976,
+      "process_peak_rss_kib": 207944
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 0.7731464148482359,
+      "prove_ms": 2.61627174184772,
+      "total_prover_ms": 2.294660530758519,
+      "verify_ms": -2.4147992946143226,
+      "proof_payload_bytes": 11.949733483268844,
+      "live_bits_per_signature": 19.82632451946531,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": 8.480185905673999
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 1024,
+    "threads": 1,
+    "seed": 43,
+    "baseline": {
+      "witness_commit_ms": 102.73122,
+      "prove_ms": 402.19732400000004,
+      "total_prover_ms": 505.078288,
+      "verify_ms": 86.764021,
+      "proof_payload_bytes": 314098,
+      "live_bits_per_signature": 30747,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 33554432,
+      "process_peak_rss_kib": 227440
+    },
+    "candidate": {
+      "witness_commit_ms": 102.250891,
+      "prove_ms": 391.019493,
+      "total_prover_ms": 492.903971,
+      "verify_ms": 88.09948700000001,
+      "proof_payload_bytes": 276480,
+      "live_bits_per_signature": 24651,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 27262976,
+      "process_peak_rss_kib": 207728
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 0.4675589368061561,
+      "prove_ms": 2.7791907934225923,
+      "total_prover_ms": 2.4103821702983197,
+      "verify_ms": -1.5391933022560256,
+      "proof_payload_bytes": 11.976516883265731,
+      "live_bits_per_signature": 19.82632451946531,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": 8.666901160745688
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 1024,
+    "threads": 8,
+    "seed": 42,
+    "baseline": {
+      "witness_commit_ms": 15.200999999999999,
+      "prove_ms": 93.808033,
+      "total_prover_ms": 109.00923399999999,
+      "verify_ms": 37.326267,
+      "proof_payload_bytes": 314802,
+      "live_bits_per_signature": 30747,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 33554432,
+      "process_peak_rss_kib": 236080
+    },
+    "candidate": {
+      "witness_commit_ms": 14.980072,
+      "prove_ms": 92.722971,
+      "total_prover_ms": 107.38394,
+      "verify_ms": 37.004458,
+      "proof_payload_bytes": 277184,
+      "live_bits_per_signature": 24651,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 27262976,
+      "process_peak_rss_kib": 220992
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 1.4533780672324137,
+      "prove_ms": 1.156683458014729,
+      "total_prover_ms": 1.4909691045072337,
+      "verify_ms": 0.8621515781366607,
+      "proof_payload_bytes": 11.949733483268844,
+      "live_bits_per_signature": 19.82632451946531,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": 6.391053880040665
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 100,
+    "batch": 1024,
+    "threads": 8,
+    "seed": 43,
+    "baseline": {
+      "witness_commit_ms": 14.869653999999999,
+      "prove_ms": 92.596993,
+      "total_prover_ms": 107.540576,
+      "verify_ms": 37.014757,
+      "proof_payload_bytes": 314098,
+      "live_bits_per_signature": 30747,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 33554432,
+      "process_peak_rss_kib": 235792
+    },
+    "candidate": {
+      "witness_commit_ms": 14.899519999999999,
+      "prove_ms": 92.016695,
+      "total_prover_ms": 106.98848199999999,
+      "verify_ms": 36.371211,
+      "proof_payload_bytes": 276480,
+      "live_bits_per_signature": 24651,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 27262976,
+      "process_peak_rss_kib": 220424
+    },
+    "reduction_percent": {
+      "witness_commit_ms": -0.20085201713502254,
+      "prove_ms": 0.626692056836009,
+      "total_prover_ms": 0.5133820373065645,
+      "verify_ms": 1.738620086037579,
+      "proof_payload_bytes": 11.976516883265731,
+      "live_bits_per_signature": 19.82632451946531,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": 6.517608739906356
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 1,
+    "seed": 42,
+    "baseline": {
+      "witness_commit_ms": 3.289872,
+      "prove_ms": 27.499411000000002,
+      "total_prover_ms": 30.784754,
+      "verify_ms": 5.785763,
+      "proof_payload_bytes": 137250,
+      "live_bits_per_signature": 30747,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 1048576,
+      "process_peak_rss_kib": 23768
+    },
+    "candidate": {
+      "witness_commit_ms": 3.226142,
+      "prove_ms": 26.823763,
+      "total_prover_ms": 30.046046999999998,
+      "verify_ms": 5.8167610000000005,
+      "proof_payload_bytes": 128344,
+      "live_bits_per_signature": 24651,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 851968,
+      "process_peak_rss_kib": 24024
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 1.9371574334806962,
+      "prove_ms": 2.4569544416787825,
+      "total_prover_ms": 2.3995871462867635,
+      "verify_ms": -0.5357633902391079,
+      "proof_payload_bytes": 6.488888888888889,
+      "live_bits_per_signature": 19.82632451946531,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": -1.0770784247728038
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 1,
+    "seed": 43,
+    "baseline": {
+      "witness_commit_ms": 3.326421,
+      "prove_ms": 28.268706,
+      "total_prover_ms": 31.595177000000003,
+      "verify_ms": 5.82676,
+      "proof_payload_bytes": 137730,
+      "live_bits_per_signature": 30747,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 1048576,
+      "process_peak_rss_kib": 23704
+    },
+    "candidate": {
+      "witness_commit_ms": 3.2288669999999997,
+      "prove_ms": 26.956404,
+      "total_prover_ms": 30.199057,
+      "verify_ms": 5.823815000000001,
+      "proof_payload_bytes": 127800,
+      "live_bits_per_signature": 24651,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 851968,
+      "process_peak_rss_kib": 23700
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 2.9327015431901193,
+      "prove_ms": 4.642242909880634,
+      "total_prover_ms": 4.41877568845398,
+      "verify_ms": 0.05054266865289758,
+      "proof_payload_bytes": 7.2097582226094525,
+      "live_bits_per_signature": 19.82632451946531,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": 0.01687478906513551
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 8,
+    "seed": 42,
+    "baseline": {
+      "witness_commit_ms": 0.897518,
+      "prove_ms": 9.827577,
+      "total_prover_ms": 10.830614,
+      "verify_ms": 4.727221,
+      "proof_payload_bytes": 137250,
+      "live_bits_per_signature": 30747,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 1048576,
+      "process_peak_rss_kib": 26060
+    },
+    "candidate": {
+      "witness_commit_ms": 1.018566,
+      "prove_ms": 9.794175000000001,
+      "total_prover_ms": 10.785178,
+      "verify_ms": 4.703346,
+      "proof_payload_bytes": 128344,
+      "live_bits_per_signature": 24651,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 851968,
+      "process_peak_rss_kib": 26528
+    },
+    "reduction_percent": {
+      "witness_commit_ms": -13.486971849032559,
+      "prove_ms": 0.3398803184141763,
+      "total_prover_ms": 0.41951453537167893,
+      "verify_ms": 0.5050536033750164,
+      "proof_payload_bytes": 6.488888888888889,
+      "live_bits_per_signature": 19.82632451946531,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": -1.7958557175748346
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 32,
+    "threads": 8,
+    "seed": 43,
+    "baseline": {
+      "witness_commit_ms": 0.8365630000000001,
+      "prove_ms": 10.415699,
+      "total_prover_ms": 11.193741,
+      "verify_ms": 4.860082,
+      "proof_payload_bytes": 137730,
+      "live_bits_per_signature": 30747,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 1048576,
+      "process_peak_rss_kib": 26016
+    },
+    "candidate": {
+      "witness_commit_ms": 0.966437,
+      "prove_ms": 9.64936,
+      "total_prover_ms": 10.681532,
+      "verify_ms": 4.712242,
+      "proof_payload_bytes": 127800,
+      "live_bits_per_signature": 24651,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 851968,
+      "process_peak_rss_kib": 26032
+    },
+    "reduction_percent": {
+      "witness_commit_ms": -15.524712424527486,
+      "prove_ms": 7.357537885839449,
+      "total_prover_ms": 4.575851808613396,
+      "verify_ms": 3.041923983998629,
+      "proof_payload_bytes": 7.2097582226094525,
+      "live_bits_per_signature": 19.82632451946531,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": -0.06150061500616033
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 1,
+    "seed": 42,
+    "baseline": {
+      "witness_commit_ms": 102.531222,
+      "prove_ms": 420.043608,
+      "total_prover_ms": 522.5749400000001,
+      "verify_ms": 88.164199,
+      "proof_payload_bytes": 361738,
+      "live_bits_per_signature": 30747,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 33554432,
+      "process_peak_rss_kib": 227128
+    },
+    "candidate": {
+      "witness_commit_ms": 101.961765,
+      "prove_ms": 403.23756199999997,
+      "total_prover_ms": 505.11233200000004,
+      "verify_ms": 89.84607,
+      "proof_payload_bytes": 320848,
+      "live_bits_per_signature": 24651,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 27262976,
+      "process_peak_rss_kib": 208232
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 0.5553986277467726,
+      "prove_ms": 4.001024103192652,
+      "total_prover_ms": 3.3416466545449053,
+      "verify_ms": -1.9076575515646566,
+      "proof_payload_bytes": 11.30376128579248,
+      "live_bits_per_signature": 19.82632451946531,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": 8.319537881723083
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 1,
+    "seed": 43,
+    "baseline": {
+      "witness_commit_ms": 102.892876,
+      "prove_ms": 421.560697,
+      "total_prover_ms": 524.964509,
+      "verify_ms": 87.2341,
+      "proof_payload_bytes": 361866,
+      "live_bits_per_signature": 30747,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 33554432,
+      "process_peak_rss_kib": 227416
+    },
+    "candidate": {
+      "witness_commit_ms": 102.123982,
+      "prove_ms": 409.758925,
+      "total_prover_ms": 511.521384,
+      "verify_ms": 89.06091500000001,
+      "proof_payload_bytes": 322416,
+      "live_bits_per_signature": 24651,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 27262976,
+      "process_peak_rss_kib": 208224
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 0.7472762254210896,
+      "prove_ms": 2.7995427666730577,
+      "total_prover_ms": 2.5607683509134116,
+      "verify_ms": -2.094152401411842,
+      "proof_payload_bytes": 10.90182553762995,
+      "live_bits_per_signature": 19.82632451946531,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": 8.439159953565268
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 8,
+    "seed": 42,
+    "baseline": {
+      "witness_commit_ms": 15.119476,
+      "prove_ms": 100.63878299999999,
+      "total_prover_ms": 115.90421500000001,
+      "verify_ms": 37.805333000000005,
+      "proof_payload_bytes": 361738,
+      "live_bits_per_signature": 30747,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 33554432,
+      "process_peak_rss_kib": 231612
+    },
+    "candidate": {
+      "witness_commit_ms": 15.067939,
+      "prove_ms": 99.512222,
+      "total_prover_ms": 114.66138500000001,
+      "verify_ms": 38.647256,
+      "proof_payload_bytes": 320848,
+      "live_bits_per_signature": 24651,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 27262976,
+      "process_peak_rss_kib": 220748
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 0.3408649876490366,
+      "prove_ms": 1.1194103966857383,
+      "total_prover_ms": 1.0722905978872266,
+      "verify_ms": -2.2269953289394184,
+      "proof_payload_bytes": 11.30376128579248,
+      "live_bits_per_signature": 19.82632451946531,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": 4.69060325026337
+    }
+  },
+  {
+    "degree": 1024,
+    "security_bits": 128,
+    "batch": 1024,
+    "threads": 8,
+    "seed": 43,
+    "baseline": {
+      "witness_commit_ms": 15.043252,
+      "prove_ms": 99.364102,
+      "total_prover_ms": 114.40743400000001,
+      "verify_ms": 37.401208999999994,
+      "proof_payload_bytes": 361866,
+      "live_bits_per_signature": 30747,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 33554432,
+      "process_peak_rss_kib": 231940
+    },
+    "candidate": {
+      "witness_commit_ms": 15.018936,
+      "prove_ms": 99.042804,
+      "total_prover_ms": 113.87652,
+      "verify_ms": 38.155014,
+      "proof_payload_bytes": 322416,
+      "live_bits_per_signature": 24651,
+      "source_bits_per_signature": 32768,
+      "committed_source_bits": 27262976,
+      "process_peak_rss_kib": 221288
+    },
+    "reduction_percent": {
+      "witness_commit_ms": 0.1616405814381161,
+      "prove_ms": 0.3233542029092096,
+      "total_prover_ms": 0.4640555088404552,
+      "verify_ms": -2.0154562383264407,
+      "proof_payload_bytes": 10.90182553762995,
+      "live_bits_per_signature": 19.82632451946531,
+      "source_bits_per_signature": 0.0,
+      "committed_source_bits": 18.75,
+      "process_peak_rss_kib": 4.592567043200823
+    }
+  }
+]

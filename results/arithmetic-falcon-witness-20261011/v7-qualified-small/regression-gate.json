@@ -1,0 +1,52 @@
+{
+  "passed": false,
+  "metrics": [
+    "total_prover_ms",
+    "prove_ms"
+  ],
+  "aggregation": "median over all measured trials and selected seeds, per shape",
+  "maximum_regression_percent": 0.0,
+  "regressions": [
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "baseline_ms": 17.546895,
+      "candidate_ms": 17.605646,
+      "regression_percent": 0.3348227706383433
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 16.390217,
+      "candidate_ms": 16.3971805,
+      "regression_percent": 0.04248570961569165
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "baseline_ms": 21.0276185,
+      "candidate_ms": 21.0449215,
+      "regression_percent": 0.08228701695345286
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "metric": "prove_ms",
+      "baseline_ms": 19.865065,
+      "candidate_ms": 19.873626,
+      "regression_percent": 0.043095756293776155
+    }
+  ],
+  "interpretation": "Observed comparison only; this gate is not a statistical confidence claim. Inspect seed-summary.json and broaden input coverage for borderline results."
+}

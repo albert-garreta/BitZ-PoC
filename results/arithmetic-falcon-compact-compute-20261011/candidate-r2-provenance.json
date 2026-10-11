@@ -1,0 +1,25 @@
+{
+  "captured_unix": 1791728752.2764852,
+  "source_snapshot": "/tmp/bitz-arithmetic-v8-r2-source-mpdwodsc",
+  "source_files": 597,
+  "source_hash_manifest": "candidate-r2-source-sha256.json",
+  "changed_from_initial_pilot": [
+    "examples/falcon_algebraic.rs",
+    "src/piop/spartan/falcon1024_algebraic/compact.rs",
+    "src/piop/spartan/falcon1024_algebraic/compact_binding.rs",
+    "src/piop/spartan/falcon1024_algebraic/protocol.rs"
+  ],
+  "removed_from_initial_pilot": [],
+  "candidate_binary_pending": false,
+  "binary_original": "/tmp/bitz-arithmetic-compact-compute-v8-r2-binary",
+  "binary_preserved": "/tmp/bitz-arithmetic-compact-compute-v8-r2-pilot-binary",
+  "sha256": "f7793411dbae104d10ccf316a62984bdcebe5bca504e3bcb04ecbe9b7c76aa13",
+  "features": [
+    "falcon-hybrid",
+    "bench-internals"
+  ],
+  "RUSTFLAGS": "-C target-cpu=native",
+  "build_profile": "native release with default LTO/profile",
+  "source_reverified_unix": 1791728950.669726,
+  "source_reverification_changes": []
+}

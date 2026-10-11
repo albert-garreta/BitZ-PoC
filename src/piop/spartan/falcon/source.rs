@@ -368,9 +368,9 @@ fn put_unsigned(
 }
 #[cfg(test)]
 mod typed_source_tests {
-    use super::super::KeccakTrace;
     use super::*;
     use crate::piop::spartan::falcon::FalconPublicKey;
+    use crate::piop::spartan::falcon::KeccakTrace;
 
     fn trace() -> FalconVerificationTrace {
         FalconVerificationTrace {

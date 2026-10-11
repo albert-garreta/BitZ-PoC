@@ -1,0 +1,81 @@
+{"directory": "results/arithmetic-falcon-compact-compute-20261011/confirmation-batch32/comparisons/padding-vs-v7", "shapes": 4, "bootstrap_replicates": 10000}
+{
+  "verified_proofs": 1024,
+  "unchanged_exact_proofs": 512,
+  "new_layout_proofs": 0,
+  "positive_observed_metrics": 8,
+  "positive_paired_intervals": [
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "paired_seed_median_delta_percent": 0.45659702536267055,
+      "interval": [
+        0.12075093678833859,
+        0.618678169389697
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "metric": "prove_ms",
+      "paired_seed_median_delta_percent": 0.5983792799768128,
+      "interval": [
+        0.43537707248715307,
+        0.6597822560316269
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "paired_seed_median_delta_percent": 0.41475228131853115,
+      "interval": [
+        0.28408614798753895,
+        0.4952115547849134
+      ]
+    },
+    {
+      "degree": 512,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "metric": "prove_ms",
+      "paired_seed_median_delta_percent": 0.5140226599094078,
+      "interval": [
+        0.398016422213221,
+        0.6558933791807942
+      ]
+    },
+    {
+      "degree": 1024,
+      "security_bits": 100,
+      "batch": 32,
+      "threads": 1,
+      "metric": "prove_ms",
+      "paired_seed_median_delta_percent": 0.41921409510812246,
+      "interval": [
+        0.28260119435274955,
+        0.5676412947086984
+      ]
+    },
+    {
+      "degree": 1024,
+      "security_bits": 128,
+      "batch": 32,
+      "threads": 1,
+      "metric": "prove_ms",
+      "paired_seed_median_delta_percent": 0.3515791771607546,
+      "interval": [
+        0.16940474756199642,
+        0.47700571460471686
+      ]
+    }
+  ]
+}
