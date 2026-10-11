@@ -1,0 +1,412 @@
+{
+  "baseline": {
+    "source_head": "78c164f0fdb5939924561e2831241d7eb558c17b",
+    "rustflags": "-C target-cpu=native",
+    "features": "falcon-hybrid",
+    "profile": "release",
+    "binaries": {
+      "arithmetic": {
+        "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/baseline-arithmetic",
+        "sha256": "909277c358ad25e39cb79d77f78a69841bc1cda5f80e321e4aecba9cc7aebc87"
+      },
+      "full": {
+        "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/baseline-full",
+        "sha256": "ae69fcf83d379d220e998aec054384e7ad16be33029d7667c353d1ead6f6c835"
+      }
+    }
+  },
+  "retained": {
+    "source_head": "78c164f0fdb5939924561e2831241d7eb558c17b",
+    "rustflags": "-C target-cpu=native",
+    "profile": "release",
+    "features": [
+      "falcon-hybrid"
+    ],
+    "sources": {
+      "src/bitz/row_dispatch.rs": "c836a76392385ceb67e97ed5245fcf6c6310c9c6ff72fe0949ec26fde9abeb0e",
+      "src/bitz/forest.rs": "a56d567bb4a3e7667a0f6ec7c006812d72594bae8b2ed22508b2f690c7007b38",
+      "src/bitz/kernels.rs": "0a8d3bced27e3d38584e75d2ae7cb678ed186594141020f2d9835bfe05f7dc25",
+      "src/bitz/mod.rs": "433d4a3a7615091e54aa2351645756f5b7d93f76bf1929c79de5f227166fef93",
+      "src/sumcheck/inner/packed/streaming.rs": "656cac599dd1ebc7fbf45da008f5401859e8de0d11f9a55e1d942f71e4b923c0"
+    },
+    "binaries": {
+      "arithmetic": {
+        "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/cyclic-arithmetic",
+        "sha256": "ea9c5b09cf5058fe1eed44372126e4b9828411638fedfc9a7817572efeff3548"
+      },
+      "full": {
+        "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/cyclic-full",
+        "sha256": "5bf3e8f638541268907fd49e1558acf0b7a38bdb23eb565f9b139d675651fb29"
+      }
+    },
+    "build_command": {
+      "env": {
+        "RUSTFLAGS": "-C target-cpu=native",
+        "CARGO_BUILD_JOBS": "8",
+        "CARGO_TARGET_DIR": "/home/john-wu/code/BitZ-pcs/target/falcon-binder-native"
+      },
+      "argv": [
+        "cargo",
+        "bench",
+        "--offline",
+        "--locked",
+        "--profile",
+        "release",
+        "--features",
+        "falcon-hybrid",
+        "--bench",
+        "falcon_algebraic",
+        "--bench",
+        "falcon_hybrid",
+        "--no-run",
+        "--message-format=json"
+      ],
+      "cwd": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments"
+    },
+    "build_evidence": {
+      "cyclic-build.jsonl": {
+        "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/cyclic-build.jsonl",
+        "sha256": "3dc8fbbb622e2910db35e34e96061d1fbe4ddbe6ded45399622c5695769cfad7"
+      },
+      "cyclic-build.log": {
+        "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/cyclic-build.log",
+        "sha256": "5dd0ff95f4f9eb3633994ad51e1b8f3256c4e455af1949fc12905dcf5ce9c8eb"
+      }
+    },
+    "hardware": {
+      "cpu": "AMD Ryzen 9 9950X3D 16-Core Processor",
+      "os": "Linux-6.17.0-41-generic-x86_64-with-glibc2.42",
+      "page_size": 4096,
+      "cpus": [
+        {
+          "cpu": 0,
+          "physical_package": 0,
+          "core_id": 0,
+          "thread_siblings": "0,16",
+          "l3_id": 0,
+          "l3_size": "98304K",
+          "l3_shared_cpus": "0-7,16-23"
+        },
+        {
+          "cpu": 1,
+          "physical_package": 0,
+          "core_id": 1,
+          "thread_siblings": "1,17",
+          "l3_id": 0,
+          "l3_size": "98304K",
+          "l3_shared_cpus": "0-7,16-23"
+        },
+        {
+          "cpu": 2,
+          "physical_package": 0,
+          "core_id": 2,
+          "thread_siblings": "2,18",
+          "l3_id": 0,
+          "l3_size": "98304K",
+          "l3_shared_cpus": "0-7,16-23"
+        },
+        {
+          "cpu": 3,
+          "physical_package": 0,
+          "core_id": 3,
+          "thread_siblings": "3,19",
+          "l3_id": 0,
+          "l3_size": "98304K",
+          "l3_shared_cpus": "0-7,16-23"
+        },
+        {
+          "cpu": 4,
+          "physical_package": 0,
+          "core_id": 4,
+          "thread_siblings": "4,20",
+          "l3_id": 0,
+          "l3_size": "98304K",
+          "l3_shared_cpus": "0-7,16-23"
+        },
+        {
+          "cpu": 5,
+          "physical_package": 0,
+          "core_id": 5,
+          "thread_siblings": "5,21",
+          "l3_id": 0,
+          "l3_size": "98304K",
+          "l3_shared_cpus": "0-7,16-23"
+        },
+        {
+          "cpu": 6,
+          "physical_package": 0,
+          "core_id": 6,
+          "thread_siblings": "6,22",
+          "l3_id": 0,
+          "l3_size": "98304K",
+          "l3_shared_cpus": "0-7,16-23"
+        },
+        {
+          "cpu": 7,
+          "physical_package": 0,
+          "core_id": 7,
+          "thread_siblings": "7,23",
+          "l3_id": 0,
+          "l3_size": "98304K",
+          "l3_shared_cpus": "0-7,16-23"
+        },
+        {
+          "cpu": 8,
+          "physical_package": 0,
+          "core_id": 8,
+          "thread_siblings": "8,24",
+          "l3_id": 1,
+          "l3_size": "32768K",
+          "l3_shared_cpus": "8-15,24-31"
+        },
+        {
+          "cpu": 9,
+          "physical_package": 0,
+          "core_id": 9,
+          "thread_siblings": "9,25",
+          "l3_id": 1,
+          "l3_size": "32768K",
+          "l3_shared_cpus": "8-15,24-31"
+        },
+        {
+          "cpu": 10,
+          "physical_package": 0,
+          "core_id": 10,
+          "thread_siblings": "10,26",
+          "l3_id": 1,
+          "l3_size": "32768K",
+          "l3_shared_cpus": "8-15,24-31"
+        },
+        {
+          "cpu": 11,
+          "physical_package": 0,
+          "core_id": 11,
+          "thread_siblings": "11,27",
+          "l3_id": 1,
+          "l3_size": "32768K",
+          "l3_shared_cpus": "8-15,24-31"
+        },
+        {
+          "cpu": 12,
+          "physical_package": 0,
+          "core_id": 12,
+          "thread_siblings": "12,28",
+          "l3_id": 1,
+          "l3_size": "32768K",
+          "l3_shared_cpus": "8-15,24-31"
+        },
+        {
+          "cpu": 13,
+          "physical_package": 0,
+          "core_id": 13,
+          "thread_siblings": "13,29",
+          "l3_id": 1,
+          "l3_size": "32768K",
+          "l3_shared_cpus": "8-15,24-31"
+        },
+        {
+          "cpu": 14,
+          "physical_package": 0,
+          "core_id": 14,
+          "thread_siblings": "14,30",
+          "l3_id": 1,
+          "l3_size": "32768K",
+          "l3_shared_cpus": "8-15,24-31"
+        },
+        {
+          "cpu": 15,
+          "physical_package": 0,
+          "core_id": 15,
+          "thread_siblings": "15,31",
+          "l3_id": 1,
+          "l3_size": "32768K",
+          "l3_shared_cpus": "8-15,24-31"
+        },
+        {
+          "cpu": 16,
+          "physical_package": 0,
+          "core_id": 0,
+          "thread_siblings": "0,16",
+          "l3_id": 0,
+          "l3_size": "98304K",
+          "l3_shared_cpus": "0-7,16-23"
+        },
+        {
+          "cpu": 17,
+          "physical_package": 0,
+          "core_id": 1,
+          "thread_siblings": "1,17",
+          "l3_id": 0,
+          "l3_size": "98304K",
+          "l3_shared_cpus": "0-7,16-23"
+        },
+        {
+          "cpu": 18,
+          "physical_package": 0,
+          "core_id": 2,
+          "thread_siblings": "2,18",
+          "l3_id": 0,
+          "l3_size": "98304K",
+          "l3_shared_cpus": "0-7,16-23"
+        },
+        {
+          "cpu": 19,
+          "physical_package": 0,
+          "core_id": 3,
+          "thread_siblings": "3,19",
+          "l3_id": 0,
+          "l3_size": "98304K",
+          "l3_shared_cpus": "0-7,16-23"
+        },
+        {
+          "cpu": 20,
+          "physical_package": 0,
+          "core_id": 4,
+          "thread_siblings": "4,20",
+          "l3_id": 0,
+          "l3_size": "98304K",
+          "l3_shared_cpus": "0-7,16-23"
+        },
+        {
+          "cpu": 21,
+          "physical_package": 0,
+          "core_id": 5,
+          "thread_siblings": "5,21",
+          "l3_id": 0,
+          "l3_size": "98304K",
+          "l3_shared_cpus": "0-7,16-23"
+        },
+        {
+          "cpu": 22,
+          "physical_package": 0,
+          "core_id": 6,
+          "thread_siblings": "6,22",
+          "l3_id": 0,
+          "l3_size": "98304K",
+          "l3_shared_cpus": "0-7,16-23"
+        },
+        {
+          "cpu": 23,
+          "physical_package": 0,
+          "core_id": 7,
+          "thread_siblings": "7,23",
+          "l3_id": 0,
+          "l3_size": "98304K",
+          "l3_shared_cpus": "0-7,16-23"
+        },
+        {
+          "cpu": 24,
+          "physical_package": 0,
+          "core_id": 8,
+          "thread_siblings": "8,24",
+          "l3_id": 1,
+          "l3_size": "32768K",
+          "l3_shared_cpus": "8-15,24-31"
+        },
+        {
+          "cpu": 25,
+          "physical_package": 0,
+          "core_id": 9,
+          "thread_siblings": "9,25",
+          "l3_id": 1,
+          "l3_size": "32768K",
+          "l3_shared_cpus": "8-15,24-31"
+        },
+        {
+          "cpu": 26,
+          "physical_package": 0,
+          "core_id": 10,
+          "thread_siblings": "10,26",
+          "l3_id": 1,
+          "l3_size": "32768K",
+          "l3_shared_cpus": "8-15,24-31"
+        },
+        {
+          "cpu": 27,
+          "physical_package": 0,
+          "core_id": 11,
+          "thread_siblings": "11,27",
+          "l3_id": 1,
+          "l3_size": "32768K",
+          "l3_shared_cpus": "8-15,24-31"
+        },
+        {
+          "cpu": 28,
+          "physical_package": 0,
+          "core_id": 12,
+          "thread_siblings": "12,28",
+          "l3_id": 1,
+          "l3_size": "32768K",
+          "l3_shared_cpus": "8-15,24-31"
+        },
+        {
+          "cpu": 29,
+          "physical_package": 0,
+          "core_id": 13,
+          "thread_siblings": "13,29",
+          "l3_id": 1,
+          "l3_size": "32768K",
+          "l3_shared_cpus": "8-15,24-31"
+        },
+        {
+          "cpu": 30,
+          "physical_package": 0,
+          "core_id": 14,
+          "thread_siblings": "14,30",
+          "l3_id": 1,
+          "l3_size": "32768K",
+          "l3_shared_cpus": "8-15,24-31"
+        },
+        {
+          "cpu": 31,
+          "physical_package": 0,
+          "core_id": 15,
+          "thread_siblings": "15,31",
+          "l3_id": 1,
+          "l3_size": "32768K",
+          "l3_shared_cpus": "8-15,24-31"
+        }
+      ],
+      "standard_worker_order": [
+        6,
+        7,
+        4,
+        5,
+        2,
+        3,
+        0,
+        1,
+        14,
+        15,
+        12,
+        13,
+        10,
+        11,
+        8,
+        9
+      ],
+      "standard_main_cpu": 6,
+      "notes": [
+        "Read directly from sysfs; SMT sibling lists identify logical CPUs on the same physical core.",
+        "Standard worker order uses physical cores only. Aux pool workers and full verifier use the recorded main CPU in the benchmark harness."
+      ]
+    },
+    "source_status": "Restored original cyclic candidate. Current source and retained executable hashes exactly match the original frozen manifest and holdout audit.",
+    "notes": [
+      "Retained executables are cyclic-arithmetic and cyclic-full; final-* binaries belong to the rejected shape-gate experiment.",
+      "Current source and retained executable hashes were independently verified after restoration.",
+      "The packed streaming edit only enables an existing grouped-prefix oracle without default features.",
+      "The original holdout and independent low-thread replication are the retained performance evidence."
+    ]
+  },
+  "originals": [
+    {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/baseline-manifest.json",
+      "sha256": "d2c0023da06069aa6ebe9f8acd0e791f9e8ed3f51dc64dd02fd39648d220aeda"
+    },
+    {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/cyclic-source-manifest.json",
+      "sha256": "5803d0b8524f8ed3a1ee0cb7ef9f5249b194fd076dc5d929f3453b817528c343"
+    }
+  ]
+}

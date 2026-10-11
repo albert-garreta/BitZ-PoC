@@ -158,24 +158,31 @@ pub(crate) fn round_sums(
     assert_eq!(hi_r.len(), h);
     let task = w.task_len();
     let tasks = h.div_ceil(task);
-    let partials: Vec<(Gf, Gf)> = cfg_into_iter!(0..tasks, 1)
-        .map(|i| {
-            let (y, c0) = w.task_pos(i);
-            let start = i * task;
-            let end = (start + task).min(h);
-            let ec = &w.eq_c[c0..c0 + (end - start)];
-            let (e, f) = round_sums_task(
-                &lo_l[start..end],
-                &hi_l[start..end],
-                &lo_r[start..end],
-                &hi_r[start..end],
-                ec,
-                send_one,
-            );
-            let wy = w.eq_y[y];
-            (e * wy, f * wy)
-        })
-        .collect();
+    let run = |i| {
+        let (y, c0) = w.task_pos(i);
+        let start = i * task;
+        let end = (start + task).min(h);
+        let ec = &w.eq_c[c0..c0 + (end - start)];
+        let (e, f) = round_sums_task(
+            &lo_l[start..end],
+            &hi_l[start..end],
+            &lo_r[start..end],
+            &hi_r[start..end],
+            ec,
+            send_one,
+        );
+        let wy = w.eq_y[y];
+        (e * wy, f * wy)
+    };
+    #[cfg(feature = "parallel")]
+    if let Some(dispatch) = super::row_dispatch::CyclicRows::new(w.rows(), h * 4 * size_of::<Gf>())
+    {
+        return total(dispatch.map_indices(tasks, |rows| {
+            rows.map(run)
+                .fold((Gf::zero(), Gf::zero()), |(a, b), (x, y)| (a + x, b + y))
+        }));
+    }
+    let partials: Vec<(Gf, Gf)> = cfg_into_iter!(0..tasks, 1).map(run).collect();
     total(partials)
 }
 
@@ -228,6 +235,47 @@ pub(crate) fn fused_fold_round(
         assert_eq!(q.len(), h);
     }
     let task = w.task_len();
+    let run = |i: usize,
+               a0: &mut [Gf],
+               a1: &mut [Gf],
+               a2: &[Gf],
+               a3: &[Gf],
+               b0: &mut [Gf],
+               b1: &mut [Gf],
+               b2: &[Gf],
+               b3: &[Gf]| {
+        let (y, c0) = w.task_pos(i);
+        let ec = &w.eq_c[c0..c0 + a0.len()];
+        let (e, f) = match left {
+            Left::Plain => fused_task::<PLAIN>(a0, a1, a2, a3, b0, b1, b2, b3, &rho, ec, send_one),
+            Left::Weigh => fused_task::<WEIGH>(a0, a1, a2, a3, b0, b1, b2, b3, &rho, ec, send_one),
+            Left::Weighted => {
+                fused_task::<WEIGHTED>(a0, a1, a2, a3, b0, b1, b2, b3, &rho, ec, send_one)
+            }
+        };
+        let wy = w.eq_y[y];
+        (e * wy, f * wy)
+    };
+    #[cfg(feature = "parallel")]
+    if let Some(dispatch) = super::row_dispatch::CyclicRows::new(w.rows(), h * 8 * size_of::<Gf>())
+    {
+        let jobs = q0_l
+            .chunks_mut(task)
+            .zip(q1_l.chunks_mut(task))
+            .zip(q2_l.chunks(task))
+            .zip(q3_l.chunks(task))
+            .zip(q0_r.chunks_mut(task))
+            .zip(q1_r.chunks_mut(task))
+            .zip(q2_r.chunks(task))
+            .zip(q3_r.chunks(task));
+        return total(dispatch.map_jobs(jobs, |rows| {
+            rows.into_iter()
+                .map(|(i, (((((((a0, a1), a2), a3), b0), b1), b2), b3))| {
+                    run(i, a0, a1, a2, a3, b0, b1, b2, b3)
+                })
+                .fold((Gf::zero(), Gf::zero()), |(a, b), (x, y)| (a + x, b + y))
+        }));
+    }
     let partials: Vec<(Gf, Gf)> = crate::cfg_chunks_mut!(q0_l, task)
         .zip(crate::cfg_chunks_mut!(q1_l, task))
         .zip(crate::cfg_chunks!(q2_l, task))
@@ -238,21 +286,7 @@ pub(crate) fn fused_fold_round(
         .zip(crate::cfg_chunks!(q3_r, task))
         .enumerate()
         .map(|(i, (((((((a0, a1), a2), a3), b0), b1), b2), b3))| {
-            let (y, c0) = w.task_pos(i);
-            let ec = &w.eq_c[c0..c0 + a0.len()];
-            let (e, f) = match left {
-                Left::Plain => {
-                    fused_task::<PLAIN>(a0, a1, a2, a3, b0, b1, b2, b3, &rho, ec, send_one)
-                }
-                Left::Weigh => {
-                    fused_task::<WEIGH>(a0, a1, a2, a3, b0, b1, b2, b3, &rho, ec, send_one)
-                }
-                Left::Weighted => {
-                    fused_task::<WEIGHTED>(a0, a1, a2, a3, b0, b1, b2, b3, &rho, ec, send_one)
-                }
-            };
-            let wy = w.eq_y[y];
-            (e * wy, f * wy)
+            run(i, a0, a1, a2, a3, b0, b1, b2, b3)
         })
         .collect();
     total(partials)
@@ -1468,6 +1502,98 @@ mod tests {
                 let got = round_sums_task(&lo_l, &hi_l, &lo_r, &hi_r, &w, send_one);
                 let want = generic::round_sums_task(&lo_l, &hi_l, &lo_r, &hi_r, &w, send_one);
                 assert_eq!(got, want, "n {n} send_one {send_one}");
+            }
+        }
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn cyclic_dense_rows_match_scalar_folds_and_sums() {
+        let (rows, cols) = (32, 2048);
+        let len = rows * cols;
+        let l: [Vec<Gf>; 4] = std::array::from_fn(|i| elements(len, 100 + i as u64));
+        let r: [Vec<Gf>; 4] = std::array::from_fn(|i| elements(len, 110 + i as u64));
+        let eq_c = elements(cols, 120);
+        let eq_y = elements(rows, 121);
+        let rho = elements(1, 122)[0];
+        let w = Weights {
+            eq_c: &eq_c,
+            eq_y: &eq_y,
+        };
+        let pools: Vec<_> = [1, 4, 8, 16]
+            .into_iter()
+            .map(|workers| {
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(workers)
+                    .build()
+                    .unwrap()
+            })
+            .collect();
+        for send_one in [false, true] {
+            let mut plain_sums = (Gf::zero(), Gf::zero());
+            for i in 0..len {
+                let weight = eq_c[i % cols] * eq_y[i / cols];
+                let end = usize::from(send_one);
+                plain_sums.0 += weight * l[end][i] * r[end][i];
+                plain_sums.1 += weight * (l[1][i] - l[0][i]) * (r[1][i] - r[0][i]);
+            }
+            for pool in &pools {
+                pool.install(|| {
+                    assert_eq!(
+                        round_sums(&l[0], &l[1], &r[0], &r[1], w, send_one),
+                        plain_sums
+                    );
+                });
+            }
+            for left in [Left::Plain, Left::Weigh, Left::Weighted] {
+                let mut input_l = l.clone();
+                if left == Left::Weighted {
+                    for quarter in &mut input_l {
+                        for (i, value) in quarter.iter_mut().enumerate() {
+                            *value = *value * eq_c[i % cols];
+                        }
+                    }
+                }
+                let mut want_l = input_l.clone();
+                let mut want_r = r.clone();
+                let mut want_sums = (Gf::zero(), Gf::zero());
+                for i in 0..len {
+                    let a0 = input_l[0][i] + rho * (input_l[2][i] - input_l[0][i]);
+                    let a1 = input_l[1][i] + rho * (input_l[3][i] - input_l[1][i]);
+                    let b0 = r[0][i] + rho * (r[2][i] - r[0][i]);
+                    let b1 = r[1][i] + rho * (r[3][i] - r[1][i]);
+                    let weight = eq_y[i / cols]
+                        * if left == Left::Weighted {
+                            Gf::one()
+                        } else {
+                            eq_c[i % cols]
+                        };
+                    let (a, b) = if send_one { (a1, b1) } else { (a0, b0) };
+                    want_sums.0 += weight * a * b;
+                    want_sums.1 += weight * (a1 - a0) * (b1 - b0);
+                    let out_weight = if left == Left::Weigh {
+                        eq_c[i % cols]
+                    } else {
+                        Gf::one()
+                    };
+                    want_l[0][i] = a0 * out_weight;
+                    want_l[1][i] = a1 * out_weight;
+                    want_r[0][i] = b0;
+                    want_r[1][i] = b1;
+                }
+                for pool in &pools {
+                    pool.install(|| {
+                        let [mut a0, mut a1, a2, a3] = input_l.clone();
+                        let [mut b0, mut b1, b2, b3] = r.clone();
+                        let got = fused_fold_round(
+                            &mut a0, &mut a1, &a2, &a3, &mut b0, &mut b1, &b2, &b3, rho, w,
+                            send_one, left,
+                        );
+                        assert_eq!(got, want_sums);
+                        assert_eq!([a0, a1, a2, a3], want_l);
+                        assert_eq!([b0, b1, b2, b3], want_r);
+                    });
+                }
             }
         }
     }

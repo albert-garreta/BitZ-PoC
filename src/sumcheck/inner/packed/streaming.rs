@@ -2996,42 +2996,46 @@ mod tests {
         let bits = (0..(43 * 4096usize).div_ceil(64))
             .map(|i| (i as u64).wrapping_mul(0x9e3779b97f4a7c15))
             .collect::<Vec<_>>();
+        let check = |workers: usize| {
+            let reference = StreamingMle::new(&Grouped {
+                cfg: &cfg,
+                cap: 1,
+                supported: false,
+            })
+            .build_prefix_accumulators::<4, _>(18, 43 * 4096 - 7, &bits, &cfg, &cfg.zero())
+            .unwrap();
+            for cap in [8, 16] {
+                for supported in [false, true] {
+                    let actual = StreamingMle::new(&Grouped {
+                        cfg: &cfg,
+                        cap,
+                        supported,
+                    })
+                    .build_prefix_accumulators::<4, _>(
+                        18,
+                        43 * 4096 - 7,
+                        &bits,
+                        &cfg,
+                        &cfg.zero(),
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        actual.rounds, reference.rounds,
+                        "workers={workers}, cap={cap}, supported={supported}"
+                    );
+                }
+            }
+        };
+        #[cfg(feature = "parallel")]
         for workers in [1, 2] {
             rayon::ThreadPoolBuilder::new()
                 .num_threads(workers)
                 .build()
                 .unwrap()
-                .install(|| {
-                    let reference = StreamingMle::new(&Grouped {
-                        cfg: &cfg,
-                        cap: 1,
-                        supported: false,
-                    })
-                    .build_prefix_accumulators::<4, _>(18, 43 * 4096 - 7, &bits, &cfg, &cfg.zero())
-                    .unwrap();
-                    for cap in [8, 16] {
-                        for supported in [false, true] {
-                            let actual = StreamingMle::new(&Grouped {
-                                cfg: &cfg,
-                                cap,
-                                supported,
-                            })
-                            .build_prefix_accumulators::<4, _>(
-                                18,
-                                43 * 4096 - 7,
-                                &bits,
-                                &cfg,
-                                &cfg.zero(),
-                            )
-                            .unwrap();
-                            assert_eq!(
-                                actual.rounds, reference.rounds,
-                                "workers={workers}, cap={cap}, supported={supported}"
-                            );
-                        }
-                    }
-                });
+                .install(|| check(workers));
         }
+        #[cfg(not(feature = "parallel"))]
+        check(1);
     }
 
     #[test]

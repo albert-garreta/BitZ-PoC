@@ -36,13 +36,15 @@ use std::sync::OnceLock;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
+#[cfg(feature = "parallel")]
+use super::row_dispatch::CyclicRows;
 
 pub(crate) use self::nibble::NibbleRows;
 use self::nibble::{BitSelectors, Selector};
 use super::eq_factor;
 use super::gkr::{GkrProverTranscript, Point, Weighing, carrying_worthwhile, eq_table, prove_dense_rounds, prove_layer_tensor, weighable};
 use super::kernels;
-use crate::{cfg_chunks_mut, cfg_into_iter};
+use crate::cfg_chunks_mut;
 use field::Gf128 as Gf;
 
 mod nibble;
@@ -889,17 +891,25 @@ impl<'a> Forest<'a> {
         let sel = nibble::jit_selectors(ell);
         let nib = self.nibbles().map(|rows| (rows, &sel));
         let spare = &mut out.spare_capacity_mut()[..len];
-        cfg_chunks_mut!(spare, cols)
-            .enumerate()
-            .for_each(|(y, chunk)| {
-                let tab = [tables.at(y), tables.at(y | (1 << (t - ell - 1)))];
-                for g in 0..groups {
-                    let pats = self.jit_patterns(ell, y, g, nib);
-                    let base_c = g << 6;
-                    let width = 64.min(cols - base_c);
-                    kernels::jit_product_group(tab, &pats, &mut chunk[base_c..base_c + width]);
-                }
+        let fill = |(y, chunk): (usize, &mut [MaybeUninit<Gf>])| {
+            let tab = [tables.at(y), tables.at(y | (1 << (t - ell - 1)))];
+            for g in 0..groups {
+                let pats = self.jit_patterns(ell, y, g, nib);
+                let base_c = g << 6;
+                let width = 64.min(cols - base_c);
+                kernels::jit_product_group(tab, &pats, &mut chunk[base_c..base_c + width]);
+            }
+        };
+        #[cfg(feature = "parallel")]
+        if let Some(dispatch) = CyclicRows::new(rows, len * std::mem::size_of::<Gf>()) {
+            dispatch.map_jobs(spare.chunks_mut(cols), |jobs| {
+                jobs.into_iter().for_each(fill);
             });
+        } else {
+            spare.par_chunks_mut(cols).enumerate().for_each(fill);
+        }
+        #[cfg(not(feature = "parallel"))]
+        spare.chunks_mut(cols).enumerate().for_each(fill);
         // SAFETY: every slot of every row chunk was written by the kernel.
         unsafe { out.set_len(len) };
     }
@@ -943,7 +953,7 @@ impl<'a> Forest<'a> {
                 RowsPtr::new(level, cols)
             })
             .collect();
-        cfg_into_iter!(0..sub, 1).for_each(|y0| {
+        let fill = |y0| {
             let mut l4 = [[MaybeUninit::<Gf>::uninit(); 64]; 1 << FUSED_UPPER_LEVELS];
             for g in 0..groups {
                 let base_c = g << 6;
@@ -985,7 +995,15 @@ impl<'a> Forest<'a> {
                     }
                 }
             }
-        });
+        };
+        #[cfg(feature = "parallel")]
+        if let Some(dispatch) = CyclicRows::new(sub, total * std::mem::size_of::<Gf>()) {
+            dispatch.map_indices(sub, |indices| indices.for_each(fill));
+        } else {
+            (0..sub).into_par_iter().with_min_len(1).for_each(fill);
+        }
+        #[cfg(not(feature = "parallel"))]
+        (0..sub).for_each(fill);
         // The levels above `4 + fused`, each the products of the one below.
         for lower in ell + 1 + fused..t - 1 {
             let (below, rest) = spare.split_at_mut(self.upper_region(lower + 1).start);
@@ -995,7 +1013,7 @@ impl<'a> Forest<'a> {
             let below =
                 unsafe { std::slice::from_raw_parts(below.as_ptr().cast::<Gf>(), below.len()) };
             let len = self.upper_region(lower + 1).len();
-            level_up_into(below, &mut rest[..len]);
+            level_up_into(below, &mut rest[..len], Some(cols));
         }
         // SAFETY: the tasks partition the rows of levels 5..4+fused and the
         // loop above writes every level after them in full.
@@ -1132,51 +1150,66 @@ impl<'a> Forest<'a> {
         let eq_t = transposed_eq(eq_c);
         let sel = nibble::jit_selectors(ell);
         let nib = self.nibbles().map(|rows| (rows, &sel));
+        let sum_row = |y2: usize, [el, eh, ol, oh]: [&mut [MaybeUninit<Gf>]; 4]| {
+            debug_assert!(y2 < rows);
+            let mut sums = kernels::Sums::zero();
+            let mut pats = [[0u8; 64]; 8];
+            let tab: [&[Gf]; 8] = std::array::from_fn(|corner| {
+                let (p, b1, b2) = (corner >> 2, (corner >> 1) & 1, corner & 1);
+                tables
+                    .at((p << low_bits) | (b1 << (low_bits - 1)) | (b2 << (low_bits - 2)) | y2)
+            });
+            for g in 0..groups {
+                // Corner `(p, b1, b2)` is `4p + 2b1 + b2`.
+                for b in 0..4 {
+                    let (b1, b2) = (b >> 1, b & 1);
+                    let y = y2 | (b2 << (low_bits - 2)) | (b1 << (low_bits - 1));
+                    let [p0, p1] = self.jit_patterns(ell, y, g, nib);
+                    pats[b] = p0;
+                    pats[4 + b] = p1;
+                }
+                let base_c = g << 6;
+                let width = 64.min(cols - base_c);
+                let range = base_c..base_c + width;
+                kernels::jit_fold_group::<PRE_SCALED, WEIGH_LEFT>(
+                    tab,
+                    &pats,
+                    &rho,
+                    &eq_t[g << 6..(g + 1) << 6],
+                    send_one,
+                    [&mut el[range.clone()], &mut eh[range.clone()]],
+                    [&mut ol[range.clone()], &mut oh[range]],
+                    &mut sums,
+                );
+            }
+            let (end, inf) = sums.finish();
+            let w = eq_y[y2];
+            (end * w, inf * w)
+        };
+        let sum_job = |(y2, (((el, eh), ol), oh))| sum_row(y2, [el, eh, ol, oh]);
+        let add = |(a, b), (x, y)| (a + x, b + y);
+        #[cfg(feature = "parallel")]
+        if let Some(dispatch) = CyclicRows::new(rows, 2 * half * std::mem::size_of::<Gf>()) {
+            let jobs = e_lo
+                .chunks_mut(cols)
+                .zip(e_hi.chunks_mut(cols))
+                .zip(o_lo.chunks_mut(cols))
+                .zip(o_hi.chunks_mut(cols));
+            let partials = dispatch.map_jobs(jobs, |jobs| {
+                jobs.into_iter()
+                    .map(sum_job)
+                    .fold((Gf::zero(), Gf::zero()), add)
+            });
+            return partials.into_iter().fold((Gf::zero(), Gf::zero()), add);
+        }
         let partials: Vec<(Gf, Gf)> = cfg_chunks_mut!(e_lo, cols)
             .zip(cfg_chunks_mut!(e_hi, cols))
             .zip(cfg_chunks_mut!(o_lo, cols))
             .zip(cfg_chunks_mut!(o_hi, cols))
             .enumerate()
-            .map(|(y2, (((el, eh), ol), oh))| {
-                debug_assert!(y2 < rows);
-                let mut sums = kernels::Sums::zero();
-                let mut pats = [[0u8; 64]; 8];
-                let tab: [&[Gf]; 8] = std::array::from_fn(|corner| {
-                    let (p, b1, b2) = (corner >> 2, (corner >> 1) & 1, corner & 1);
-                    tables
-                        .at((p << low_bits) | (b1 << (low_bits - 1)) | (b2 << (low_bits - 2)) | y2)
-                });
-                for g in 0..groups {
-                    // Corner `(p, b1, b2)` is `4p + 2b1 + b2`.
-                    for b in 0..4 {
-                        let (b1, b2) = (b >> 1, b & 1);
-                        let y = y2 | (b2 << (low_bits - 2)) | (b1 << (low_bits - 1));
-                        let [p0, p1] = self.jit_patterns(ell, y, g, nib);
-                        pats[b] = p0;
-                        pats[4 + b] = p1;
-                    }
-                    let base_c = g << 6;
-                    let width = 64.min(cols - base_c);
-                    let range = base_c..base_c + width;
-                    kernels::jit_fold_group::<PRE_SCALED, WEIGH_LEFT>(
-                        tab,
-                        &pats,
-                        &rho,
-                        &eq_t[g << 6..(g + 1) << 6],
-                        send_one,
-                        [&mut el[range.clone()], &mut eh[range.clone()]],
-                        [&mut ol[range.clone()], &mut oh[range]],
-                        &mut sums,
-                    );
-                }
-                let (end, inf) = sums.finish();
-                let w = eq_y[y2];
-                (end * w, inf * w)
-            })
+            .map(sum_job)
             .collect();
-        partials
-            .into_iter()
-            .fold((Gf::zero(), Gf::zero()), |(a, b), (x, y)| (a + x, b + y))
+        partials.into_iter().fold((Gf::zero(), Gf::zero()), add)
     }
 
     /// Round `j` (1-based, `j ≤ k`) of level `ell`'s sumcheck off the bits:
@@ -1664,17 +1697,35 @@ fn cross_round_sums(
 fn level_up(lower: &[Gf]) -> Vec<Gf> {
     let half = lower.len() / 2;
     let mut out: Vec<Gf> = Vec::with_capacity(half);
-    level_up_into(lower, &mut out.spare_capacity_mut()[..half]);
+    level_up_into(lower, &mut out.spare_capacity_mut()[..half], None);
     // SAFETY: `level_up_into` writes every one of the `half` slots.
     unsafe { out.set_len(half) };
     out
 }
 
 /// [`level_up`] into pre-sized slots.
-fn level_up_into(lower: &[Gf], out: &mut [MaybeUninit<Gf>]) {
+fn level_up_into(lower: &[Gf], out: &mut [MaybeUninit<Gf>], columns: Option<usize>) {
     let half = lower.len() / 2;
     assert_eq!(out.len(), half);
     let (l, r) = lower.split_at(half);
+    #[cfg(feature = "parallel")]
+    if let Some(cols) = columns {
+        if let Some(dispatch) = CyclicRows::new(half / cols, 3 * half * std::mem::size_of::<Gf>()) {
+            dispatch.map_jobs(out.chunks_mut(cols), |jobs| {
+                for (row, chunk) in jobs {
+                    let start = row * cols;
+                    kernels::product_into(
+                        &l[start..start + chunk.len()],
+                        &r[start..start + chunk.len()],
+                        chunk,
+                    );
+                }
+            });
+            return;
+        }
+    }
+    #[cfg(not(feature = "parallel"))]
+    let _ = columns;
     cfg_chunks_mut!(out, PARALLEL_MIN_LANES)
         .enumerate()
         .for_each(|(i, chunk)| {

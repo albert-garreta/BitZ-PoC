@@ -1,0 +1,329 @@
+{
+  "retained_holdout": {
+    "verified": true,
+    "processes": 80,
+    "verified_trials": 480,
+    "trace": false,
+    "diagnostic": false,
+    "identities": [
+      {
+        "variant": "arithmetic",
+        "seed": 60,
+        "protocol": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+        "input_digest": "03900c2f385c8681ced4d39e367e9d71536b44cbf435aa81da6a8a6f5e0f3f9a",
+        "source_root": "3d02e85ab81dee0f2d5f84045c4a12e005e81b4736b50b31d014e5f50aea4ac0",
+        "proof_debug_digest": "c68ffce38510f8489c981a46e1863e721a3feeb12a9a003adee703e16d82cf00",
+        "proof_payload_bytes": 260906
+      },
+      {
+        "variant": "arithmetic",
+        "seed": 61,
+        "protocol": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+        "input_digest": "503dcf561e728627e1c7d530bda27d4e54600837067ab2d830b54ab9708b1a5b",
+        "source_root": "3028cac115aa539d2a87348fc95df5ddc46b7db45c51afa3649f5f6478574ae7",
+        "proof_debug_digest": "bdb49df1b3ab8999c21a52a0e2ed70f68d1ed09b1facc8565a3b70e8594c3ff7",
+        "proof_payload_bytes": 262122
+      },
+      {
+        "variant": "arithmetic",
+        "seed": 62,
+        "protocol": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+        "input_digest": "9f211f4dc4a4cb6b76b2780745813ca68212d2df766cca916ecf09a3014d9537",
+        "source_root": "9bbd72cb813adf1bc61911a858cee840ec4a4dd68701110258e6686ccb60725b",
+        "proof_debug_digest": "6551ef3e3d73ba8f38cba3d34c8a81d57ee9f91756b90f690c7d6383fdebf0de",
+        "proof_payload_bytes": 262634
+      },
+      {
+        "variant": "arithmetic",
+        "seed": 63,
+        "protocol": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+        "input_digest": "bc942deda191d5711d8c44ed5fb3908263f02f701cddf0d90c94fea80f1da4e7",
+        "source_root": "a90425107232391fe7ff94c93c564e33eaa147c5746816b8b0348d652107a343",
+        "proof_debug_digest": "dc1afe3ac5b671f7bd3b52f8837e5c6931b4e502e88e4f7cb47405ad7315b4a8",
+        "proof_payload_bytes": 262890
+      },
+      {
+        "variant": "arithmetic",
+        "seed": 64,
+        "protocol": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+        "input_digest": "a1fa6bb997ea89738a77ac85df1fee2a55d2fae6cfb98f9df81f9c4939ef9c78",
+        "source_root": "466324d0d860880a2ce5b21a7c16953f0e37e91105294656f34939eebd8c23ea",
+        "proof_debug_digest": "311fea051c4dc6bf063389c30f5ff1c7eb56b2ac6d79ff785e58c0ef3f1b84d2",
+        "proof_payload_bytes": 263882
+      },
+      {
+        "variant": "full",
+        "seed": 60,
+        "protocol": "bitz/falcon/shared-prime/non-zk/v6",
+        "input_digest": "03900c2f385c8681ced4d39e367e9d71536b44cbf435aa81da6a8a6f5e0f3f9a",
+        "source_root": "8dae7d36da5c084a18b3b20a9273630021be5bde03ad8c251cc2d5874743b1e5",
+        "proof_debug_digest": "24e448605a5d1cc450314b2d58eebc7dfbe319a642567a59439dca8426f6c9be",
+        "proof_payload_bytes": 698026
+      },
+      {
+        "variant": "full",
+        "seed": 61,
+        "protocol": "bitz/falcon/shared-prime/non-zk/v6",
+        "input_digest": "503dcf561e728627e1c7d530bda27d4e54600837067ab2d830b54ab9708b1a5b",
+        "source_root": "9c7d63a7f3b9bd824b28c70bb26809dffe98c6d4a7bf15a4686788f565e44b58",
+        "proof_debug_digest": "5e30823baeb4b14a6bf73be544ca3dc1399e43eb9e70182b2b490b7a6941b107",
+        "proof_payload_bytes": 695114
+      },
+      {
+        "variant": "full",
+        "seed": 62,
+        "protocol": "bitz/falcon/shared-prime/non-zk/v6",
+        "input_digest": "9f211f4dc4a4cb6b76b2780745813ca68212d2df766cca916ecf09a3014d9537",
+        "source_root": "589d22a907d28d84732cedc3f613be0c8f17358f7f45186c7fb6a8718c37d1e3",
+        "proof_debug_digest": "3928e11b47b9d30c2d90e429afba16590c077f0f20c3ba51dc78321332cd4a62",
+        "proof_payload_bytes": 698314
+      },
+      {
+        "variant": "full",
+        "seed": 63,
+        "protocol": "bitz/falcon/shared-prime/non-zk/v6",
+        "input_digest": "bc942deda191d5711d8c44ed5fb3908263f02f701cddf0d90c94fea80f1da4e7",
+        "source_root": "1d3b447ef4761bd13b8874bbcd72ac58c24d9a8ad4b0c281f4c930e837f86ade",
+        "proof_debug_digest": "00ce47bc5000ee397c91b842a1818d5fa5451ffd2d3b485676e391269f279d09",
+        "proof_payload_bytes": 696906
+      },
+      {
+        "variant": "full",
+        "seed": 64,
+        "protocol": "bitz/falcon/shared-prime/non-zk/v6",
+        "input_digest": "a1fa6bb997ea89738a77ac85df1fee2a55d2fae6cfb98f9df81f9c4939ef9c78",
+        "source_root": "2195764fe742f3b9b6512206aa5585249df156a7b474dccd4a04304f6d554154",
+        "proof_debug_digest": "ca5dcacd0353c997bef530245b198ffe23061dff65ce7633a5664c81e67ae8f0",
+        "proof_payload_bytes": 697738
+      }
+    ],
+    "notes": [
+      "Confidence intervals are exact paired bootstrap percentiles, descriptive and unadjusted for multiple cells.",
+      "Trace campaign latency is diagnostic and is not used to qualify speedups.",
+      "Process peak RSS includes fixture setup and proof digest formatting."
+    ],
+    "original": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/cyclic-holdout-independent-audit.json",
+      "sha256": "3a632bc153e7059926a8d69030b1350eb7ec16b1579b76b346730650e44c3836"
+    }
+  },
+  "retained_replication": {
+    "verified": true,
+    "processes": 20,
+    "verified_trials": 220,
+    "trace": false,
+    "diagnostic": false,
+    "identities": [
+      {
+        "variant": "arithmetic",
+        "seed": 65,
+        "protocol": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+        "input_digest": "972d0e3b0480663630c9d88ac6de4d2ba931ab76a5e1cd7d839c6407d55351f4",
+        "source_root": "8bdfc5c75dceaf8c2f3f94ef22b9565cdbbcf3ca95cae3eb39266c8ee73b2f80",
+        "proof_debug_digest": "49be32674941ee9d995e9e87fad39861d21fbc7baab47ff951a241d867ded907",
+        "proof_payload_bytes": 264106
+      },
+      {
+        "variant": "arithmetic",
+        "seed": 66,
+        "protocol": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+        "input_digest": "c3d7c5758ca6ee417b1d5fed8f9528d9910115217d2cb838f72f52d145cf35af",
+        "source_root": "54a4a5472b4f6b91b4ba47775e7a3e4ecde9080883fb4cc7f80aa0c06d50a3da",
+        "proof_debug_digest": "c7993c05056492a50a41c9a1d15291618ba9b1dfc5b92a156f3cede694993a56",
+        "proof_payload_bytes": 263082
+      },
+      {
+        "variant": "arithmetic",
+        "seed": 67,
+        "protocol": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+        "input_digest": "864c9ff0af43de0df826355d3c116aa1f27f47e73c21bc32966aafeaa3c630fc",
+        "source_root": "9662855b838f662cf6ea991a95c4cc2e615ce5f09372aeb713ac79e2bc219561",
+        "proof_debug_digest": "c6c5984040fa50573d652bc27b4b931eb54cb154ba82501b59970e970b483540",
+        "proof_payload_bytes": 264650
+      },
+      {
+        "variant": "arithmetic",
+        "seed": 68,
+        "protocol": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+        "input_digest": "fbaa3654fca9c1af40d92719f5cbc427eaef367a9b3c6496c3651b95237c7717",
+        "source_root": "ecd173b45a26c3f5325e0543a26dfa584818120ef920fed5ac859a02e5f91b20",
+        "proof_debug_digest": "0c99698e4b5ff5b0e7977a102f84be35a6f345b9e90fdd0bfa5734c3df09e9ad",
+        "proof_payload_bytes": 261450
+      },
+      {
+        "variant": "arithmetic",
+        "seed": 69,
+        "protocol": "bitz/falcon512-algebraic/non-zk/word-binder/v6",
+        "input_digest": "ba1f07cecdd2b6a1b8371c42421566740c5ff4dd6a8e9138d754880fc6e3033d",
+        "source_root": "a9edc91770863435f099764dfa453ab0fb9e3ee3b111b0dcab1923199c24962b",
+        "proof_debug_digest": "b6c1f32468f224ef40ac308aacb6a0987e362c4dbfb4a3f7f9fc1de26afc58b9",
+        "proof_payload_bytes": 262922
+      }
+    ],
+    "notes": [
+      "Confidence intervals are exact paired bootstrap percentiles, descriptive and unadjusted for multiple cells.",
+      "Trace campaign latency is diagnostic and is not used to qualify speedups.",
+      "Process peak RSS includes fixture setup and proof digest formatting."
+    ],
+    "original": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/cyclic-low-thread-confirmation-independent-audit.json",
+      "sha256": "b6ee8ddfe65ef0fab0ac960458260df0663aa1c63a4a01e31f17225dc015cb57"
+    }
+  },
+  "audit_program": {
+    "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/audit_campaign.py",
+    "sha256": "9de76b671cfccd4bb472cc79ab06ad864fe8d9c7be99f71ec842530a8330e461"
+  },
+  "package_program": {
+    "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/build_retained_evidence.py",
+    "sha256": "adda82691bc216b8f7380c7ed5d75c5d1efaacce4f70596b1a49ee06b34aec4f"
+  },
+  "supplemental_checks": {
+    "full_recorded_argv_matches_manifest": true,
+    "explicit_trace_overrides_absent": true,
+    "current_source_hashes_match_retained_freeze": true,
+    "current_retained_executable_hashes_match": true
+  },
+  "checks": {
+    "status": "complete: log hashes and results checked; exact commands supplied by implementation owner",
+    "checks": [
+      {
+        "label": "parallel BitZ development tests",
+        "log": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/cyclic-bitz-tests.log",
+        "sha256": "4f72f577b5519b24f18c7015aaee422cb6c1f8fe2e297afdb82e7b9ae09f9351",
+        "passed": 76,
+        "failed": 0,
+        "ignored": 0,
+        "command": {
+          "env": {
+            "CARGO_BUILD_JOBS": "4",
+            "RAYON_NUM_THREADS": "16"
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--offline",
+            "--locked",
+            "--features",
+            "falcon-hybrid",
+            "--lib",
+            "bitz::",
+            "--",
+            "--test-threads=1"
+          ]
+        }
+      },
+      {
+        "label": "true no-default-feature BitZ development tests",
+        "log": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/cyclic-no-parallel-tests.log",
+        "sha256": "723f64e62d27b17e289e264a7bd2571ccdc9d42162a03e2e72b37c1911772a0a",
+        "passed": 72,
+        "failed": 0,
+        "ignored": 0,
+        "command": {
+          "env": {
+            "CARGO_BUILD_JOBS": "4"
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--offline",
+            "--locked",
+            "--no-default-features",
+            "--lib",
+            "bitz::",
+            "--",
+            "--test-threads=1"
+          ]
+        }
+      },
+      {
+        "label": "specific grouped test without default features",
+        "log": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/grouped-no-parallel-test.log",
+        "sha256": "83d8926cf55243c17efdfe33943af12c26b82f361abe8098405855975084fa08",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "command": {
+          "env": {
+            "CARGO_BUILD_JOBS": "4"
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--offline",
+            "--locked",
+            "--no-default-features",
+            "--lib",
+            "grouped_prefix_partial_groups_and_padding_match_scalar_reference",
+            "--",
+            "--test-threads=1"
+          ]
+        }
+      },
+      {
+        "label": "specific grouped test with parallel feature",
+        "log": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/grouped-parallel-test.log",
+        "sha256": "95392367c95e30ff2e80bdf05f93d9120605ed76e5589bd2bd3d37eacb515051",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "command": {
+          "env": {
+            "CARGO_BUILD_JOBS": "4",
+            "RAYON_NUM_THREADS": "16"
+          },
+          "argv": [
+            "cargo",
+            "test",
+            "--offline",
+            "--locked",
+            "--features",
+            "falcon-hybrid",
+            "--lib",
+            "grouped_prefix_partial_groups_and_padding_match_scalar_reference",
+            "--",
+            "--test-threads=1"
+          ]
+        }
+      }
+    ],
+    "cwd": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments",
+    "owner_reported_checks": [
+      {
+        "command": [
+          "rustfmt",
+          "--check",
+          "--edition",
+          "2024",
+          "src/bitz/row_dispatch.rs"
+        ],
+        "result": "passed; supplied by implementation owner"
+      },
+      {
+        "command": [
+          "git",
+          "diff",
+          "--check"
+        ],
+        "result": "passed; supplied by implementation owner"
+      }
+    ]
+  },
+  "check_summary_original": {
+    "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/candidate-checks-draft.json",
+    "sha256": "1316d4622a461a87c886dd4ea1bd58f168164797ce5b337c95bf0e85e0bf5668"
+  },
+  "raw_evidence": {
+    "holdout": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/cyclic-holdout",
+    "replication": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/cyclic-low-thread-confirmation",
+    "structure": "runs/JOB/result.json selects the successful attempt, retaining command.json, process.json and stdout.jsonl."
+  },
+  "selection": "Original cyclic candidate restored exactly after rejecting later inline and early shape-gate attempts; final-* binaries are rejected history.",
+  "package_file_hashes": {
+    "REPORT.md": "b5e12535ec65c1c39732c457ee4a2ff7cb8572d879e693565135ec3077bafb9b",
+    "source-build.json": "8dccb47ebf35f6ba6fce047feec71deb9ad3385bdcd59405eb3187e1d74f3f47",
+    "summaries.json": "f7d54e32b7a0c35e4ffe62cae90046e348904b9a9f0bb3d0c61dfc897a34869c",
+    "review.md": "5c695e2efefdff7db1167d6614b08202a6f9779e089e5ca1c1eeb6b8008b336b"
+  }
+}

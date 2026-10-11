@@ -1,0 +1,3945 @@
+{
+  "retained_screen": {
+    "settings": {
+      "degree": 512,
+      "batch": 1024,
+      "security": 128,
+      "iterations": 5,
+      "warmup": 1,
+      "trace": false,
+      "worker_cpus": [
+        6,
+        7,
+        4,
+        5,
+        2,
+        3,
+        0,
+        1,
+        14,
+        15,
+        12,
+        13,
+        10,
+        11,
+        8,
+        9
+      ],
+      "main_cpu": 6,
+      "order_seed": 20261020,
+      "case_cache": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/results/binder-experiments-20261010/case-cache",
+      "cpu": "AMD Ryzen 9 9950X3D 16-Core Processor",
+      "configs": [
+        {
+          "replay": "auto",
+          "construction": "auto",
+          "evaluation": "auto",
+          "word": "off",
+          "name": "baseline",
+          "variant": "arithmetic",
+          "binary": "baseline"
+        },
+        {
+          "replay": "auto",
+          "construction": "auto",
+          "evaluation": "auto",
+          "word": "auto",
+          "name": "candidate",
+          "variant": "arithmetic",
+          "binary": "candidate"
+        }
+      ],
+      "binaries": {
+        "baseline_arithmetic": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/baseline-arithmetic",
+          "sha256": "909277c358ad25e39cb79d77f78a69841bc1cda5f80e321e4aecba9cc7aebc87"
+        },
+        "candidate_arithmetic": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/cyclic-arithmetic",
+          "sha256": "ea9c5b09cf5058fe1eed44372126e4b9828411638fedfc9a7817572efeff3548"
+        }
+      },
+      "runner_sha256": "f857bec634d093e773c81a321141bb8ad3405f6e7e4981b96e813ed0ecc94164",
+      "helper_sha256": {
+        "bench_statistics.py": "b045f4b39cf627c953139490d419227d2e9766fab704388a6f3cffbc33f6fb09",
+        "bench_support.py": "5c1eab825a98a3ee957e198b2141b3f82efb45d3fe929455165b7ecba7f8964c"
+      },
+      "seeds": [
+        70,
+        71,
+        72
+      ],
+      "threads": [
+        8,
+        16
+      ]
+    },
+    "manifest": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/cyclic-screen/manifest.json",
+      "sha256": "0cb286c8ac3d37e6f31c5bc298bbf142c985049fb2c5ad34e3ab7460247b3ebb"
+    },
+    "full_audit": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/cyclic-screen-audit.json",
+      "sha256": "b0754739d599f66cc0c7833ee190fd6a6fe4f4251e89c3ab3014025664fc744d"
+    },
+    "comparisons": [
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "config": "baseline",
+        "processes": 3,
+        "median_total_prover_ms": 45.507926999999995,
+        "change_percent_total_prover_ms": 0.0,
+        "ratio_ci95_exact_total_prover_ms": [
+          1.0,
+          1.0
+        ],
+        "median_prove_ms": 41.771286999999994,
+        "change_percent_prove_ms": 0.0,
+        "ratio_ci95_exact_prove_ms": [
+          1.0,
+          1.0
+        ],
+        "median_witness_commit_ms": 3.846758,
+        "change_percent_witness_commit_ms": 0.0,
+        "ratio_ci95_exact_witness_commit_ms": [
+          1.0,
+          1.0
+        ],
+        "median_verify_ms": 20.314968,
+        "change_percent_verify_ms": 0.0,
+        "ratio_ci95_exact_verify_ms": [
+          1.0,
+          1.0
+        ],
+        "median_process_peak_rss_kib": 120468,
+        "change_percent_process_peak_rss_kib": 0.0,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          1.0,
+          1.0
+        ],
+        "median_proof_payload_bytes": 264458,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "config": "candidate",
+        "processes": 3,
+        "median_total_prover_ms": 45.529928,
+        "change_percent_total_prover_ms": -0.10949017377791526,
+        "ratio_ci95_exact_total_prover_ms": [
+          0.997153330116291,
+          1.000339613756974
+        ],
+        "median_prove_ms": 41.714529,
+        "change_percent_prove_ms": -0.2585619666750083,
+        "ratio_ci95_exact_prove_ms": [
+          0.9916629303831843,
+          1.00302754783543
+        ],
+        "median_witness_commit_ms": 3.79474,
+        "change_percent_witness_commit_ms": 1.0722663111941033,
+        "ratio_ci95_exact_witness_commit_ms": [
+          0.9758755296012839,
+          1.0593411163462079
+        ],
+        "median_verify_ms": 20.131290999999997,
+        "change_percent_verify_ms": -0.41489143674198203,
+        "ratio_ci95_exact_verify_ms": [
+          0.9787767178551765,
+          1.0097671610581829
+        ],
+        "median_process_peak_rss_kib": 120048,
+        "change_percent_process_peak_rss_kib": -0.3478084552268834,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          0.9945548509892205,
+          0.9982980702761711
+        ],
+        "median_proof_payload_bytes": 264458,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "config": "baseline",
+        "processes": 3,
+        "median_total_prover_ms": 49.408076,
+        "change_percent_total_prover_ms": 0.0,
+        "ratio_ci95_exact_total_prover_ms": [
+          1.0,
+          1.0
+        ],
+        "median_prove_ms": 46.078366,
+        "change_percent_prove_ms": 0.0,
+        "ratio_ci95_exact_prove_ms": [
+          1.0,
+          1.0
+        ],
+        "median_witness_commit_ms": 3.054249,
+        "change_percent_witness_commit_ms": 0.0,
+        "ratio_ci95_exact_witness_commit_ms": [
+          1.0,
+          1.0
+        ],
+        "median_verify_ms": 19.412812000000002,
+        "change_percent_verify_ms": 0.0,
+        "ratio_ci95_exact_verify_ms": [
+          1.0,
+          1.0
+        ],
+        "median_process_peak_rss_kib": 123968,
+        "change_percent_process_peak_rss_kib": 0.0,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          1.0,
+          1.0
+        ],
+        "median_proof_payload_bytes": 264458,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "config": "candidate",
+        "processes": 3,
+        "median_total_prover_ms": 44.488257000000004,
+        "change_percent_total_prover_ms": -10.045058041894306,
+        "ratio_ci95_exact_total_prover_ms": [
+          0.8912136428571362,
+          0.9059450081726705
+        ],
+        "median_prove_ms": 41.288864000000004,
+        "change_percent_prove_ms": -10.857106332744715,
+        "ratio_ci95_exact_prove_ms": [
+          0.8797870271204337,
+          0.9015961469890924
+        ],
+        "median_witness_commit_ms": 3.1292109999999997,
+        "change_percent_witness_commit_ms": -1.0200622744510612,
+        "ratio_ci95_exact_witness_commit_ms": [
+          0.9454760008987759,
+          1.030392103864316
+        ],
+        "median_verify_ms": 19.303465,
+        "change_percent_verify_ms": -0.14786522148623193,
+        "ratio_ci95_exact_verify_ms": [
+          0.9881734389930812,
+          1.0074985817419022
+        ],
+        "median_process_peak_rss_kib": 123968,
+        "change_percent_process_peak_rss_kib": 0.1390901560190283,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          0.9987194563794558,
+          1.0036071975706256
+        ],
+        "median_proof_payload_bytes": 264458,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      }
+    ],
+    "process_medians": [
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "seed": 71,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 49.408076,
+        "prove_ms": 45.997623000000004,
+        "witness_commit_ms": 3.367382,
+        "verify_ms": 19.479718,
+        "process_peak_rss_kib": 124264,
+        "proof_payload_bytes": 265450
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "seed": 71,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 44.76982,
+        "prove_ms": 41.541982999999995,
+        "witness_commit_ms": 3.1292109999999997,
+        "verify_ms": 19.171535,
+        "process_peak_rss_kib": 123968,
+        "proof_payload_bytes": 265450
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "seed": 70,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 45.676745999999994,
+        "prove_ms": 41.714529,
+        "witness_commit_ms": 3.79474,
+        "verify_ms": 20.536488,
+        "process_peak_rss_kib": 119740,
+        "proof_payload_bytes": 264458
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "seed": 70,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 45.684982,
+        "prove_ms": 41.802064,
+        "witness_commit_ms": 3.882797,
+        "verify_ms": 20.314968,
+        "process_peak_rss_kib": 120480,
+        "proof_payload_bytes": 264458
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "seed": 72,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 44.47372,
+        "prove_ms": 41.066363,
+        "witness_commit_ms": 3.070079,
+        "verify_ms": 19.584056,
+        "process_peak_rss_kib": 123940,
+        "proof_payload_bytes": 263146
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "seed": 72,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 50.119673,
+        "prove_ms": 46.91522,
+        "witness_commit_ms": 3.051504,
+        "verify_ms": 19.412812000000002,
+        "process_peak_rss_kib": 123464,
+        "proof_payload_bytes": 263146
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "seed": 71,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 45.529928,
+        "prove_ms": 41.902485000000006,
+        "witness_commit_ms": 3.75242,
+        "verify_ms": 20.131290999999997,
+        "process_peak_rss_kib": 120116,
+        "proof_payload_bytes": 265450
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "seed": 71,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 45.507926999999995,
+        "prove_ms": 41.716924000000006,
+        "witness_commit_ms": 3.846758,
+        "verify_ms": 20.017887,
+        "process_peak_rss_kib": 120468,
+        "proof_payload_bytes": 265450
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "seed": 72,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 45.462701,
+        "prove_ms": 41.771286999999994,
+        "witness_commit_ms": 3.639617,
+        "verify_ms": 20.510578000000002,
+        "process_peak_rss_kib": 120212,
+        "proof_payload_bytes": 263146
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "seed": 72,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 45.299803,
+        "prove_ms": 41.351152,
+        "witness_commit_ms": 3.941829,
+        "verify_ms": 19.924970000000002,
+        "process_peak_rss_kib": 120048,
+        "proof_payload_bytes": 263146
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "seed": 70,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 44.488257000000004,
+        "prove_ms": 41.288864000000004,
+        "witness_commit_ms": 3.1678740000000003,
+        "verify_ms": 19.303465,
+        "process_peak_rss_kib": 124304,
+        "proof_payload_bytes": 264458
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "seed": 70,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 49.142013,
+        "prove_ms": 46.078366,
+        "witness_commit_ms": 3.054249,
+        "verify_ms": 19.250926,
+        "process_peak_rss_kib": 123968,
+        "proof_payload_bytes": 264458
+      }
+    ]
+  },
+  "retained_holdout": {
+    "settings": {
+      "degree": 512,
+      "batch": 1024,
+      "security": 128,
+      "iterations": 5,
+      "warmup": 1,
+      "trace": false,
+      "worker_cpus": [
+        6,
+        7,
+        4,
+        5,
+        2,
+        3,
+        0,
+        1,
+        14,
+        15,
+        12,
+        13,
+        10,
+        11,
+        8,
+        9
+      ],
+      "main_cpu": 6,
+      "order_seed": 20261021,
+      "case_cache": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/results/binder-experiments-20261010/case-cache",
+      "cpu": "AMD Ryzen 9 9950X3D 16-Core Processor",
+      "configs": [
+        {
+          "replay": "auto",
+          "construction": "auto",
+          "evaluation": "auto",
+          "word": "off",
+          "name": "baseline",
+          "variant": "arithmetic",
+          "binary": "baseline"
+        },
+        {
+          "replay": "auto",
+          "construction": "auto",
+          "evaluation": "auto",
+          "word": "auto",
+          "name": "candidate",
+          "variant": "arithmetic",
+          "binary": "candidate"
+        },
+        {
+          "replay": "auto",
+          "construction": "auto",
+          "evaluation": "auto",
+          "word": "off",
+          "name": "baseline",
+          "variant": "full",
+          "binary": "baseline"
+        },
+        {
+          "replay": "auto",
+          "construction": "auto",
+          "evaluation": "auto",
+          "word": "auto",
+          "name": "candidate",
+          "variant": "full",
+          "binary": "candidate"
+        }
+      ],
+      "binaries": {
+        "baseline_arithmetic": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/baseline-arithmetic",
+          "sha256": "909277c358ad25e39cb79d77f78a69841bc1cda5f80e321e4aecba9cc7aebc87"
+        },
+        "candidate_arithmetic": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/cyclic-arithmetic",
+          "sha256": "ea9c5b09cf5058fe1eed44372126e4b9828411638fedfc9a7817572efeff3548"
+        },
+        "baseline_full": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/baseline-full",
+          "sha256": "ae69fcf83d379d220e998aec054384e7ad16be33029d7667c353d1ead6f6c835"
+        },
+        "candidate_full": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/cyclic-full",
+          "sha256": "5bf3e8f638541268907fd49e1558acf0b7a38bdb23eb565f9b139d675651fb29"
+        }
+      },
+      "runner_sha256": "f857bec634d093e773c81a321141bb8ad3405f6e7e4981b96e813ed0ecc94164",
+      "helper_sha256": {
+        "bench_statistics.py": "b045f4b39cf627c953139490d419227d2e9766fab704388a6f3cffbc33f6fb09",
+        "bench_support.py": "5c1eab825a98a3ee957e198b2141b3f82efb45d3fe929455165b7ecba7f8964c"
+      },
+      "seeds": [
+        60,
+        61,
+        62,
+        63,
+        64
+      ],
+      "threads": [
+        1,
+        4,
+        8,
+        16
+      ]
+    },
+    "manifest": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/cyclic-holdout/manifest.json",
+      "sha256": "b12851ab67589e56a07e15550e4f7f56a3a7f7ac173903fef3a3f077f489f9aa"
+    },
+    "full_audit": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/cyclic-holdout-independent-audit.json",
+      "sha256": "3a632bc153e7059926a8d69030b1350eb7ec16b1579b76b346730650e44c3836"
+    },
+    "comparisons": [
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "config": "baseline",
+        "processes": 5,
+        "median_total_prover_ms": 181.092551,
+        "change_percent_total_prover_ms": 0.0,
+        "ratio_ci95_exact_total_prover_ms": [
+          1.0,
+          1.0
+        ],
+        "median_prove_ms": 158.399953,
+        "change_percent_prove_ms": 0.0,
+        "ratio_ci95_exact_prove_ms": [
+          1.0,
+          1.0
+        ],
+        "median_witness_commit_ms": 22.732252000000003,
+        "change_percent_witness_commit_ms": 0.0,
+        "ratio_ci95_exact_witness_commit_ms": [
+          1.0,
+          1.0
+        ],
+        "median_verify_ms": 44.607343,
+        "change_percent_verify_ms": 0.0,
+        "ratio_ci95_exact_verify_ms": [
+          1.0,
+          1.0
+        ],
+        "median_process_peak_rss_kib": 113292,
+        "change_percent_process_peak_rss_kib": 0.0,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          1.0,
+          1.0
+        ],
+        "median_proof_payload_bytes": 262634,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "config": "candidate",
+        "processes": 5,
+        "median_total_prover_ms": 181.350589,
+        "change_percent_total_prover_ms": 0.30290743175467316,
+        "ratio_ci95_exact_total_prover_ms": [
+          1.000999887056211,
+          1.004452977684918
+        ],
+        "median_prove_ms": 158.564966,
+        "change_percent_prove_ms": 0.3372766131769067,
+        "ratio_ci95_exact_prove_ms": [
+          1.0011439639167294,
+          1.004936572274927
+        ],
+        "median_witness_commit_ms": 22.723716000000003,
+        "change_percent_witness_commit_ms": -0.020257632827203054,
+        "ratio_ci95_exact_witness_commit_ms": [
+          0.9995709740737676,
+          1.0000630698253583
+        ],
+        "median_verify_ms": 44.772175,
+        "change_percent_verify_ms": 0.20039205570088203,
+        "ratio_ci95_exact_verify_ms": [
+          0.9993479972080386,
+          1.0046669024369965
+        ],
+        "median_process_peak_rss_kib": 113264,
+        "change_percent_process_peak_rss_kib": 0.1305649697838751,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          0.9994558930653165,
+          1.0031988282073492
+        ],
+        "median_proof_payload_bytes": 262634,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "config": "baseline",
+        "processes": 5,
+        "median_total_prover_ms": 64.89853600000001,
+        "change_percent_total_prover_ms": 0.0,
+        "ratio_ci95_exact_total_prover_ms": [
+          1.0,
+          1.0
+        ],
+        "median_prove_ms": 58.281185,
+        "change_percent_prove_ms": 0.0,
+        "ratio_ci95_exact_prove_ms": [
+          1.0,
+          1.0
+        ],
+        "median_witness_commit_ms": 6.453992,
+        "change_percent_witness_commit_ms": 0.0,
+        "ratio_ci95_exact_witness_commit_ms": [
+          1.0,
+          1.0
+        ],
+        "median_verify_ms": 24.003287,
+        "change_percent_verify_ms": 0.0,
+        "ratio_ci95_exact_verify_ms": [
+          1.0,
+          1.0
+        ],
+        "median_process_peak_rss_kib": 117544,
+        "change_percent_process_peak_rss_kib": 0.0,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          1.0,
+          1.0
+        ],
+        "median_proof_payload_bytes": 262634,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "config": "candidate",
+        "processes": 5,
+        "median_total_prover_ms": 65.282081,
+        "change_percent_total_prover_ms": 0.5257313483388204,
+        "ratio_ci95_exact_total_prover_ms": [
+          1.0010506788063103,
+          1.0094816253627106
+        ],
+        "median_prove_ms": 58.444325,
+        "change_percent_prove_ms": 0.26335727289672484,
+        "ratio_ci95_exact_prove_ms": [
+          1.00102066532198,
+          1.0042116543667203
+        ],
+        "median_witness_commit_ms": 6.559391000000001,
+        "change_percent_witness_commit_ms": 1.905724487250815,
+        "ratio_ci95_exact_witness_commit_ms": [
+          0.9868151668213954,
+          1.0523527639650698
+        ],
+        "median_verify_ms": 23.941008999999998,
+        "change_percent_verify_ms": -0.17914436142330015,
+        "ratio_ci95_exact_verify_ms": [
+          0.9902833790502972,
+          1.006197158430898
+        ],
+        "median_process_peak_rss_kib": 118072,
+        "change_percent_process_peak_rss_kib": 0.25994942151248424,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          0.9975214447363909,
+          1.0054983593160634
+        ],
+        "median_proof_payload_bytes": 262634,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "config": "baseline",
+        "processes": 5,
+        "median_total_prover_ms": 45.961115,
+        "change_percent_total_prover_ms": 0.0,
+        "ratio_ci95_exact_total_prover_ms": [
+          1.0,
+          1.0
+        ],
+        "median_prove_ms": 42.135786,
+        "change_percent_prove_ms": 0.0,
+        "ratio_ci95_exact_prove_ms": [
+          1.0,
+          1.0
+        ],
+        "median_witness_commit_ms": 3.9255970000000002,
+        "change_percent_witness_commit_ms": 0.0,
+        "ratio_ci95_exact_witness_commit_ms": [
+          1.0,
+          1.0
+        ],
+        "median_verify_ms": 20.467437,
+        "change_percent_verify_ms": 0.0,
+        "ratio_ci95_exact_verify_ms": [
+          1.0,
+          1.0
+        ],
+        "median_process_peak_rss_kib": 120132,
+        "change_percent_process_peak_rss_kib": 0.0,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          1.0,
+          1.0
+        ],
+        "median_proof_payload_bytes": 262634,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "config": "candidate",
+        "processes": 5,
+        "median_total_prover_ms": 46.070801,
+        "change_percent_total_prover_ms": 0.21840002319897245,
+        "ratio_ci95_exact_total_prover_ms": [
+          0.9921703985253089,
+          1.0124651262116307
+        ],
+        "median_prove_ms": 42.236487000000004,
+        "change_percent_prove_ms": 0.2669285142461897,
+        "ratio_ci95_exact_prove_ms": [
+          0.9917515077385728,
+          1.0130759067262982
+        ],
+        "median_witness_commit_ms": 3.8742910000000004,
+        "change_percent_witness_commit_ms": -1.929990804466808,
+        "ratio_ci95_exact_witness_commit_ms": [
+          0.9644442582323345,
+          0.9988658852556197
+        ],
+        "median_verify_ms": 20.292276,
+        "change_percent_verify_ms": -0.4876808713868863,
+        "ratio_ci95_exact_verify_ms": [
+          0.9788245591618944,
+          1.008103930772896
+        ],
+        "median_process_peak_rss_kib": 120140,
+        "change_percent_process_peak_rss_kib": 0.0034052036260723284,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          0.9985354609070587,
+          1.0015372824412512
+        ],
+        "median_proof_payload_bytes": 262634,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "config": "baseline",
+        "processes": 5,
+        "median_total_prover_ms": 49.469232000000005,
+        "change_percent_total_prover_ms": 0.0,
+        "ratio_ci95_exact_total_prover_ms": [
+          1.0,
+          1.0
+        ],
+        "median_prove_ms": 46.434830000000005,
+        "change_percent_prove_ms": 0.0,
+        "ratio_ci95_exact_prove_ms": [
+          1.0,
+          1.0
+        ],
+        "median_witness_commit_ms": 3.122328,
+        "change_percent_witness_commit_ms": 0.0,
+        "ratio_ci95_exact_witness_commit_ms": [
+          1.0,
+          1.0
+        ],
+        "median_verify_ms": 19.630624,
+        "change_percent_verify_ms": 0.0,
+        "ratio_ci95_exact_verify_ms": [
+          1.0,
+          1.0
+        ],
+        "median_process_peak_rss_kib": 123412,
+        "change_percent_process_peak_rss_kib": 0.0,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          1.0,
+          1.0
+        ],
+        "median_proof_payload_bytes": 262634,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "config": "candidate",
+        "processes": 5,
+        "median_total_prover_ms": 44.551307,
+        "change_percent_total_prover_ms": -9.891286458854577,
+        "ratio_ci95_exact_total_prover_ms": [
+          0.8975865662316659,
+          0.9059973777969507
+        ],
+        "median_prove_ms": 41.184657,
+        "change_percent_prove_ms": -10.840343822456466,
+        "ratio_ci95_exact_prove_ms": [
+          0.8876639019696714,
+          0.8955466446318758
+        ],
+        "median_witness_commit_ms": 3.217868,
+        "change_percent_witness_commit_ms": 3.5805649417503638,
+        "ratio_ci95_exact_witness_commit_ms": [
+          0.9966973433046469,
+          1.0764484831553118
+        ],
+        "median_verify_ms": 19.497372,
+        "change_percent_verify_ms": -1.1502813270085288,
+        "ratio_ci95_exact_verify_ms": [
+          0.9676930814206759,
+          1.0072817589464147
+        ],
+        "median_process_peak_rss_kib": 123616,
+        "change_percent_process_peak_rss_kib": 0.09535065066059722,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          0.9964469534763458,
+          1.0055454050084365
+        ],
+        "median_proof_payload_bytes": 262634,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "full",
+        "threads": 1,
+        "config": "baseline",
+        "processes": 5,
+        "median_total_prover_ms": 1995.93756,
+        "change_percent_total_prover_ms": 0.0,
+        "ratio_ci95_exact_total_prover_ms": [
+          1.0,
+          1.0
+        ],
+        "median_prove_ms": 1669.3676269999999,
+        "change_percent_prove_ms": 0.0,
+        "ratio_ci95_exact_prove_ms": [
+          1.0,
+          1.0
+        ],
+        "median_witness_commit_ms": 326.888815,
+        "change_percent_witness_commit_ms": 0.0,
+        "ratio_ci95_exact_witness_commit_ms": [
+          1.0,
+          1.0
+        ],
+        "median_verify_ms": 45.492537999999996,
+        "change_percent_verify_ms": 0.0,
+        "ratio_ci95_exact_verify_ms": [
+          1.0,
+          1.0
+        ],
+        "median_process_peak_rss_kib": 2355244,
+        "change_percent_process_peak_rss_kib": 0.0,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          1.0,
+          1.0
+        ],
+        "median_proof_payload_bytes": 697738,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "full",
+        "threads": 1,
+        "config": "candidate",
+        "processes": 5,
+        "median_total_prover_ms": 1997.6014380000001,
+        "change_percent_total_prover_ms": 0.06319768588520791,
+        "ratio_ci95_exact_total_prover_ms": [
+          0.99943587715458,
+          1.0016782527008186
+        ],
+        "median_prove_ms": 1670.0403000000001,
+        "change_percent_prove_ms": 0.07353293981533504,
+        "ratio_ci95_exact_prove_ms": [
+          0.999636914053883,
+          1.0019630929528252
+        ],
+        "median_witness_commit_ms": 326.58477000000005,
+        "change_percent_witness_commit_ms": -0.03194836998193784,
+        "ratio_ci95_exact_witness_commit_ms": [
+          0.9986440280758586,
+          1.000733544748932
+        ],
+        "median_verify_ms": 45.412496,
+        "change_percent_verify_ms": -0.5620515552498873,
+        "ratio_ci95_exact_verify_ms": [
+          0.982350855980326,
+          1.0018279005647643
+        ],
+        "median_process_peak_rss_kib": 2353732,
+        "change_percent_process_peak_rss_kib": -0.03706402526788555,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          0.9992290080341709,
+          1.0002133811605074
+        ],
+        "median_proof_payload_bytes": 697738,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "full",
+        "threads": 4,
+        "config": "baseline",
+        "processes": 5,
+        "median_total_prover_ms": 630.99325,
+        "change_percent_total_prover_ms": 0.0,
+        "ratio_ci95_exact_total_prover_ms": [
+          1.0,
+          1.0
+        ],
+        "median_prove_ms": 524.1480760000001,
+        "change_percent_prove_ms": 0.0,
+        "ratio_ci95_exact_prove_ms": [
+          1.0,
+          1.0
+        ],
+        "median_witness_commit_ms": 106.38404299999999,
+        "change_percent_witness_commit_ms": 0.0,
+        "ratio_ci95_exact_witness_commit_ms": [
+          1.0,
+          1.0
+        ],
+        "median_verify_ms": 34.700609,
+        "change_percent_verify_ms": 0.0,
+        "ratio_ci95_exact_verify_ms": [
+          1.0,
+          1.0
+        ],
+        "median_process_peak_rss_kib": 2306852,
+        "change_percent_process_peak_rss_kib": 0.0,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          1.0,
+          1.0
+        ],
+        "median_proof_payload_bytes": 697738,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "full",
+        "threads": 4,
+        "config": "candidate",
+        "processes": 5,
+        "median_total_prover_ms": 630.858194,
+        "change_percent_total_prover_ms": 0.0354853038057934,
+        "ratio_ci95_exact_total_prover_ms": [
+          0.9981904061836339,
+          1.0026746933011719
+        ],
+        "median_prove_ms": 524.428486,
+        "change_percent_prove_ms": 0.02688823480183622,
+        "ratio_ci95_exact_prove_ms": [
+          0.9973339421388336,
+          1.0038390162574977
+        ],
+        "median_witness_commit_ms": 106.554845,
+        "change_percent_witness_commit_ms": -0.009588991939402103,
+        "ratio_ci95_exact_witness_commit_ms": [
+          0.9956233533709054,
+          1.003533833094415
+        ],
+        "median_verify_ms": 35.004594,
+        "change_percent_verify_ms": 0.5034055997684916,
+        "ratio_ci95_exact_verify_ms": [
+          1.001156350033143,
+          1.009133769005828
+        ],
+        "median_process_peak_rss_kib": 2299872,
+        "change_percent_process_peak_rss_kib": -0.2826449709736889,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          0.9867445524313715,
+          1.0056799082474552
+        ],
+        "median_proof_payload_bytes": 697738,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "full",
+        "threads": 8,
+        "config": "baseline",
+        "processes": 5,
+        "median_total_prover_ms": 403.94543699999997,
+        "change_percent_total_prover_ms": 0.0,
+        "ratio_ci95_exact_total_prover_ms": [
+          1.0,
+          1.0
+        ],
+        "median_prove_ms": 331.09922200000005,
+        "change_percent_prove_ms": 0.0,
+        "ratio_ci95_exact_prove_ms": [
+          1.0,
+          1.0
+        ],
+        "median_witness_commit_ms": 73.842119,
+        "change_percent_witness_commit_ms": 0.0,
+        "ratio_ci95_exact_witness_commit_ms": [
+          1.0,
+          1.0
+        ],
+        "median_verify_ms": 33.218844,
+        "change_percent_verify_ms": 0.0,
+        "ratio_ci95_exact_verify_ms": [
+          1.0,
+          1.0
+        ],
+        "median_process_peak_rss_kib": 2364672,
+        "change_percent_process_peak_rss_kib": 0.0,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          1.0,
+          1.0
+        ],
+        "median_proof_payload_bytes": 697738,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "full",
+        "threads": 8,
+        "config": "candidate",
+        "processes": 5,
+        "median_total_prover_ms": 406.710057,
+        "change_percent_total_prover_ms": 0.15062618964103436,
+        "ratio_ci95_exact_total_prover_ms": [
+          0.9966463376817642,
+          1.0063898844506571
+        ],
+        "median_prove_ms": 332.983818,
+        "change_percent_prove_ms": 0.17293402407954073,
+        "ratio_ci95_exact_prove_ms": [
+          0.9974564400879526,
+          1.0057298297490183
+        ],
+        "median_witness_commit_ms": 73.91328299999999,
+        "change_percent_witness_commit_ms": -0.13419608862551557,
+        "ratio_ci95_exact_witness_commit_ms": [
+          0.9884853773540546,
+          1.0063648635821785
+        ],
+        "median_verify_ms": 33.297272,
+        "change_percent_verify_ms": 0.2899953062814209,
+        "ratio_ci95_exact_verify_ms": [
+          1.0000256480523178,
+          1.006733351538001
+        ],
+        "median_process_peak_rss_kib": 2365236,
+        "change_percent_process_peak_rss_kib": -0.11590146001605461,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          0.9973986870750837,
+          1.0001908546414238
+        ],
+        "median_proof_payload_bytes": 697738,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "full",
+        "threads": 16,
+        "config": "baseline",
+        "processes": 5,
+        "median_total_prover_ms": 335.292146,
+        "change_percent_total_prover_ms": 0.0,
+        "ratio_ci95_exact_total_prover_ms": [
+          1.0,
+          1.0
+        ],
+        "median_prove_ms": 273.865749,
+        "change_percent_prove_ms": 0.0,
+        "ratio_ci95_exact_prove_ms": [
+          1.0,
+          1.0
+        ],
+        "median_witness_commit_ms": 61.376843,
+        "change_percent_witness_commit_ms": 0.0,
+        "ratio_ci95_exact_witness_commit_ms": [
+          1.0,
+          1.0
+        ],
+        "median_verify_ms": 32.252535,
+        "change_percent_verify_ms": 0.0,
+        "ratio_ci95_exact_verify_ms": [
+          1.0,
+          1.0
+        ],
+        "median_process_peak_rss_kib": 2375980,
+        "change_percent_process_peak_rss_kib": 0.0,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          1.0,
+          1.0
+        ],
+        "median_proof_payload_bytes": 697738,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "full",
+        "threads": 16,
+        "config": "candidate",
+        "processes": 5,
+        "median_total_prover_ms": 325.378397,
+        "change_percent_total_prover_ms": -2.9197283472040647,
+        "ratio_ci95_exact_total_prover_ms": [
+          0.9658559488191855,
+          0.9750785649955717
+        ],
+        "median_prove_ms": 264.684667,
+        "change_percent_prove_ms": -3.623165737317169,
+        "ratio_ci95_exact_prove_ms": [
+          0.9571036757371905,
+          0.9691534312097144
+        ],
+        "median_witness_commit_ms": 61.346735,
+        "change_percent_witness_commit_ms": 0.1578303301421391,
+        "ratio_ci95_exact_witness_commit_ms": [
+          0.994017007657953,
+          1.008935883375929
+        ],
+        "median_verify_ms": 32.419342,
+        "change_percent_verify_ms": 0.4595549401959165,
+        "ratio_ci95_exact_verify_ms": [
+          1.0004265398039063,
+          1.0098514875681364
+        ],
+        "median_process_peak_rss_kib": 2375768,
+        "change_percent_process_peak_rss_kib": 0.0046876333754442,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          0.9975542356913598,
+          1.0026031944959166
+        ],
+        "median_proof_payload_bytes": 697738,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      }
+    ],
+    "process_medians": [
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "seed": 60,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 44.670051,
+        "prove_ms": 41.204063,
+        "witness_commit_ms": 3.365649,
+        "verify_ms": 19.210199,
+        "process_peak_rss_kib": 124084,
+        "proof_payload_bytes": 260906
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "seed": 60,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 49.63185,
+        "prove_ms": 46.465438999999996,
+        "witness_commit_ms": 3.084696,
+        "verify_ms": 19.630624,
+        "process_peak_rss_kib": 123008,
+        "proof_payload_bytes": 260906
+      },
+      {
+        "variant": "full",
+        "threads": 4,
+        "seed": 62,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 630.99325,
+        "prove_ms": 524.1480760000001,
+        "witness_commit_ms": 106.38404299999999,
+        "verify_ms": 34.700609,
+        "process_peak_rss_kib": 2278836,
+        "proof_payload_bytes": 698314
+      },
+      {
+        "variant": "full",
+        "threads": 4,
+        "seed": 62,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 629.831772,
+        "prove_ms": 522.806837,
+        "witness_commit_ms": 106.976072,
+        "verify_ms": 34.762335,
+        "process_peak_rss_kib": 2301176,
+        "proof_payload_bytes": 698314
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 63,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 64.841589,
+        "prove_ms": 58.395782,
+        "witness_commit_ms": 6.5109900000000005,
+        "verify_ms": 23.941008999999998,
+        "process_peak_rss_kib": 118072,
+        "proof_payload_bytes": 262890
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 63,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 64.899378,
+        "prove_ms": 58.310641000000004,
+        "witness_commit_ms": 6.647718,
+        "verify_ms": 24.003287,
+        "process_peak_rss_kib": 117544,
+        "proof_payload_bytes": 262890
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "seed": 61,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 45.334908999999996,
+        "prove_ms": 41.509952000000006,
+        "witness_commit_ms": 4.043301,
+        "verify_ms": 20.06239,
+        "process_peak_rss_kib": 120360,
+        "proof_payload_bytes": 262122
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "seed": 61,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 46.221286,
+        "prove_ms": 42.343019000000005,
+        "witness_commit_ms": 3.8742910000000004,
+        "verify_ms": 20.359663,
+        "process_peak_rss_kib": 120140,
+        "proof_payload_bytes": 262122
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 61,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 64.555076,
+        "prove_ms": 58.155417,
+        "witness_commit_ms": 6.399539,
+        "verify_ms": 23.894962,
+        "process_peak_rss_kib": 117544,
+        "proof_payload_bytes": 262122
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 61,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 64.59187600000001,
+        "prove_ms": 58.15178,
+        "witness_commit_ms": 6.4963820000000005,
+        "verify_ms": 24.082507,
+        "process_peak_rss_kib": 118132,
+        "proof_payload_bytes": 262122
+      },
+      {
+        "variant": "full",
+        "threads": 4,
+        "seed": 61,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 630.858194,
+        "prove_ms": 524.428486,
+        "witness_commit_ms": 106.525941,
+        "verify_ms": 35.001588,
+        "process_peak_rss_kib": 2299872,
+        "proof_payload_bytes": 695114
+      },
+      {
+        "variant": "full",
+        "threads": 4,
+        "seed": 61,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 630.24363,
+        "prove_ms": 523.902049,
+        "witness_commit_ms": 106.341581,
+        "verify_ms": 34.660172,
+        "process_peak_rss_kib": 2307988,
+        "proof_payload_bytes": 695114
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 60,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 66.463888,
+        "prove_ms": 59.65772,
+        "witness_commit_ms": 6.702210999999999,
+        "verify_ms": 24.383848,
+        "process_peak_rss_kib": 118104,
+        "proof_payload_bytes": 260906
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 60,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 65.832193,
+        "prove_ms": 59.449145,
+        "witness_commit_ms": 6.403266,
+        "verify_ms": 24.167167,
+        "process_peak_rss_kib": 117528,
+        "proof_payload_bytes": 260906
+      },
+      {
+        "variant": "full",
+        "threads": 16,
+        "seed": 60,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 327.007099,
+        "prove_ms": 264.889154,
+        "witness_commit_ms": 61.745791000000004,
+        "verify_ms": 32.674344,
+        "process_peak_rss_kib": 2382568,
+        "proof_payload_bytes": 698026
+      },
+      {
+        "variant": "full",
+        "threads": 16,
+        "seed": 60,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 334.29872600000004,
+        "prove_ms": 272.793921,
+        "witness_commit_ms": 61.376843,
+        "verify_ms": 32.214023000000005,
+        "process_peak_rss_kib": 2382976,
+        "proof_payload_bytes": 698026
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 64,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 64.89853600000001,
+        "prove_ms": 58.281185,
+        "witness_commit_ms": 6.6912899999999995,
+        "verify_ms": 24.035418999999997,
+        "process_peak_rss_kib": 117348,
+        "proof_payload_bytes": 263882
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 64,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 65.282081,
+        "prove_ms": 58.593877,
+        "witness_commit_ms": 6.559391000000001,
+        "verify_ms": 23.757562,
+        "process_peak_rss_kib": 118056,
+        "proof_payload_bytes": 263882
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "seed": 62,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 48.844238999999995,
+        "prove_ms": 45.834034,
+        "witness_commit_ms": 3.122328,
+        "verify_ms": 19.270572,
+        "process_peak_rss_kib": 123760,
+        "proof_payload_bytes": 262634
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "seed": 62,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 44.457167999999996,
+        "prove_ms": 41.124523,
+        "witness_commit_ms": 3.217868,
+        "verify_ms": 19.639561,
+        "process_peak_rss_kib": 123744,
+        "proof_payload_bytes": 262634
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "seed": 61,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 44.075807000000005,
+        "prove_ms": 41.015736999999994,
+        "witness_commit_ms": 3.0599999999999996,
+        "verify_ms": 18.913437000000002,
+        "process_peak_rss_kib": 123120,
+        "proof_payload_bytes": 262122
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "seed": 61,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 49.031614000000005,
+        "prove_ms": 45.768069000000004,
+        "witness_commit_ms": 3.159017,
+        "verify_ms": 19.860288,
+        "process_peak_rss_kib": 123968,
+        "proof_payload_bytes": 262122
+      },
+      {
+        "variant": "full",
+        "threads": 1,
+        "seed": 62,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 1995.3391179999999,
+        "prove_ms": 1668.570409,
+        "witness_commit_ms": 327.335,
+        "verify_ms": 45.556858999999996,
+        "process_peak_rss_kib": 2353732,
+        "proof_payload_bytes": 698314
+      },
+      {
+        "variant": "full",
+        "threads": 1,
+        "seed": 62,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 1994.895588,
+        "prove_ms": 1668.429943,
+        "witness_commit_ms": 327.02060500000005,
+        "verify_ms": 45.383251,
+        "process_peak_rss_kib": 2355596,
+        "proof_payload_bytes": 698314
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "seed": 60,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 46.625782,
+        "prove_ms": 42.687780000000004,
+        "witness_commit_ms": 3.890882,
+        "verify_ms": 20.292276,
+        "process_peak_rss_kib": 120592,
+        "proof_payload_bytes": 260906
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "seed": 60,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 46.737213,
+        "prove_ms": 42.561712,
+        "witness_commit_ms": 3.995099,
+        "verify_ms": 20.467437,
+        "process_peak_rss_kib": 120508,
+        "proof_payload_bytes": 260906
+      },
+      {
+        "variant": "full",
+        "threads": 4,
+        "seed": 64,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 619.984641,
+        "prove_ms": 513.578355,
+        "witness_commit_ms": 107.312469,
+        "verify_ms": 34.972313,
+        "process_peak_rss_kib": 2259816,
+        "proof_payload_bytes": 697738
+      },
+      {
+        "variant": "full",
+        "threads": 4,
+        "seed": 64,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 620.375389,
+        "prove_ms": 513.540744,
+        "witness_commit_ms": 106.554845,
+        "verify_ms": 35.004594,
+        "process_peak_rss_kib": 2270328,
+        "proof_payload_bytes": 697738
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 64,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 181.63129999999998,
+        "prove_ms": 158.910099,
+        "witness_commit_ms": 22.721923,
+        "verify_ms": 44.952326,
+        "process_peak_rss_kib": 117420,
+        "proof_payload_bytes": 263882
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 64,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 181.092551,
+        "prove_ms": 158.399953,
+        "witness_commit_ms": 22.72578,
+        "verify_ms": 44.855793,
+        "process_peak_rss_kib": 117004,
+        "proof_payload_bytes": 263882
+      },
+      {
+        "variant": "full",
+        "threads": 1,
+        "seed": 63,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 2022.7715819999999,
+        "prove_ms": 1695.7204299999999,
+        "witness_commit_ms": 326.888815,
+        "verify_ms": 45.49921,
+        "process_peak_rss_kib": 2355344,
+        "proof_payload_bytes": 696906
+      },
+      {
+        "variant": "full",
+        "threads": 1,
+        "seed": 63,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 2027.6597020000002,
+        "prove_ms": 1700.74118,
+        "witness_commit_ms": 326.416412,
+        "verify_ms": 45.395343999999994,
+        "process_peak_rss_kib": 2353600,
+        "proof_payload_bytes": 696906
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 62,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 180.47506199999998,
+        "prove_ms": 157.729184,
+        "witness_commit_ms": 22.732252000000003,
+        "verify_ms": 44.273872,
+        "process_peak_rss_kib": 113500,
+        "proof_payload_bytes": 262634
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 62,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 181.350589,
+        "prove_ms": 158.564966,
+        "witness_commit_ms": 22.738544,
+        "verify_ms": 44.540938000000004,
+        "process_peak_rss_kib": 113536,
+        "proof_payload_bytes": 262634
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "seed": 63,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 46.070801,
+        "prove_ms": 42.236487000000004,
+        "witness_commit_ms": 3.8269710000000003,
+        "verify_ms": 20.614124,
+        "process_peak_rss_kib": 120180,
+        "proof_payload_bytes": 262890
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "seed": 63,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 45.961115,
+        "prove_ms": 42.135786,
+        "witness_commit_ms": 3.846298,
+        "verify_ms": 20.570191,
+        "process_peak_rss_kib": 120132,
+        "proof_payload_bytes": 262890
+      },
+      {
+        "variant": "full",
+        "threads": 8,
+        "seed": 62,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 406.710057,
+        "prove_ms": 332.983818,
+        "witness_commit_ms": 74.165991,
+        "verify_ms": 33.359881,
+        "process_peak_rss_kib": 2363980,
+        "proof_payload_bytes": 698314
+      },
+      {
+        "variant": "full",
+        "threads": 8,
+        "seed": 62,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 403.92129,
+        "prove_ms": 331.09922200000005,
+        "witness_commit_ms": 73.78404900000001,
+        "verify_ms": 33.218844,
+        "process_peak_rss_kib": 2363448,
+        "proof_payload_bytes": 698314
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 63,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 181.13499099999999,
+        "prove_ms": 158.432284,
+        "witness_commit_ms": 22.723716000000003,
+        "verify_ms": 44.772175,
+        "process_peak_rss_kib": 113068,
+        "proof_payload_bytes": 262890
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 63,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 180.460825,
+        "prove_ms": 157.72508599999998,
+        "witness_commit_ms": 22.731561,
+        "verify_ms": 44.56887,
+        "process_peak_rss_kib": 113292,
+        "proof_payload_bytes": 262890
+      },
+      {
+        "variant": "full",
+        "threads": 16,
+        "seed": 64,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 331.528105,
+        "prove_ms": 270.442613,
+        "witness_commit_ms": 60.573052000000004,
+        "verify_ms": 32.252535,
+        "process_peak_rss_kib": 2375980,
+        "proof_payload_bytes": 697738
+      },
+      {
+        "variant": "full",
+        "threads": 16,
+        "seed": 64,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 321.57397,
+        "prove_ms": 260.148915,
+        "witness_commit_ms": 61.425055,
+        "verify_ms": 32.198093,
+        "process_peak_rss_kib": 2375536,
+        "proof_payload_bytes": 697738
+      },
+      {
+        "variant": "full",
+        "threads": 8,
+        "seed": 63,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 406.81159,
+        "prove_ms": 333.297391,
+        "witness_commit_ms": 73.113169,
+        "verify_ms": 33.274429,
+        "process_peak_rss_kib": 2374024,
+        "proof_payload_bytes": 696906
+      },
+      {
+        "variant": "full",
+        "threads": 8,
+        "seed": 63,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 409.582613,
+        "prove_ms": 335.314077,
+        "witness_commit_ms": 73.84297,
+        "verify_ms": 33.297272,
+        "process_peak_rss_kib": 2367364,
+        "proof_payload_bytes": 696906
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "seed": 63,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 44.575793000000004,
+        "prove_ms": 41.522165,
+        "witness_commit_ms": 3.19746,
+        "verify_ms": 19.505005999999998,
+        "process_peak_rss_kib": 123616,
+        "proof_payload_bytes": 262890
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "seed": 63,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 49.762125999999995,
+        "prove_ms": 46.605844,
+        "witness_commit_ms": 3.170379,
+        "verify_ms": 19.427209,
+        "process_peak_rss_kib": 123412,
+        "proof_payload_bytes": 262890
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "seed": 64,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 44.551307,
+        "prove_ms": 41.184657,
+        "witness_commit_ms": 3.385856,
+        "verify_ms": 19.497372,
+        "process_peak_rss_kib": 123160,
+        "proof_payload_bytes": 263882
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 16,
+        "seed": 64,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 49.469232000000005,
+        "prove_ms": 46.434830000000005,
+        "witness_commit_ms": 3.1195120000000003,
+        "verify_ms": 19.699464,
+        "process_peak_rss_kib": 122988,
+        "proof_payload_bytes": 263882
+      },
+      {
+        "variant": "full",
+        "threads": 1,
+        "seed": 61,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 1995.93756,
+        "prove_ms": 1669.3676269999999,
+        "witness_commit_ms": 326.59884700000003,
+        "verify_ms": 45.492537999999996,
+        "process_peak_rss_kib": 2353816,
+        "proof_payload_bytes": 695114
+      },
+      {
+        "variant": "full",
+        "threads": 1,
+        "seed": 61,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 1997.6014380000001,
+        "prove_ms": 1670.0403000000001,
+        "witness_commit_ms": 326.247843,
+        "verify_ms": 45.490825,
+        "process_peak_rss_kib": 2355480,
+        "proof_payload_bytes": 695114
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 61,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 181.01839,
+        "prove_ms": 158.279324,
+        "witness_commit_ms": 22.738705000000003,
+        "verify_ms": 44.815958,
+        "process_peak_rss_kib": 112848,
+        "proof_payload_bytes": 262122
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 61,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 181.166931,
+        "prove_ms": 158.426262,
+        "witness_commit_ms": 22.742773,
+        "verify_ms": 44.875941000000005,
+        "process_peak_rss_kib": 112780,
+        "proof_payload_bytes": 262122
+      },
+      {
+        "variant": "full",
+        "threads": 4,
+        "seed": 63,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 634.504252,
+        "prove_ms": 528.0837819999999,
+        "witness_commit_ms": 106.342633,
+        "verify_ms": 34.615846999999995,
+        "process_peak_rss_kib": 2317800,
+        "proof_payload_bytes": 696906
+      },
+      {
+        "variant": "full",
+        "threads": 4,
+        "seed": 63,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 637.5196589999999,
+        "prove_ms": 531.743026,
+        "witness_commit_ms": 106.598518,
+        "verify_ms": 35.017177,
+        "process_peak_rss_kib": 2265976,
+        "proof_payload_bytes": 696906
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 62,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 64.729096,
+        "prove_ms": 58.275034000000005,
+        "witness_commit_ms": 6.453992,
+        "verify_ms": 23.883802,
+        "process_peak_rss_kib": 118348,
+        "proof_payload_bytes": 262634
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 62,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 65.451352,
+        "prove_ms": 58.444325,
+        "witness_commit_ms": 6.952705,
+        "verify_ms": 23.611096,
+        "process_peak_rss_kib": 117476,
+        "proof_payload_bytes": 262634
+      },
+      {
+        "variant": "full",
+        "threads": 16,
+        "seed": 61,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 335.96147199999996,
+        "prove_ms": 275.158014,
+        "witness_commit_ms": 60.803458,
+        "verify_ms": 32.363957,
+        "process_peak_rss_kib": 2372856,
+        "proof_payload_bytes": 695114
+      },
+      {
+        "variant": "full",
+        "threads": 16,
+        "seed": 61,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 323.17429699999997,
+        "prove_ms": 261.65056599999997,
+        "witness_commit_ms": 61.081304,
+        "verify_ms": 32.419342,
+        "process_peak_rss_kib": 2383432,
+        "proof_payload_bytes": 695114
+      },
+      {
+        "variant": "full",
+        "threads": 8,
+        "seed": 61,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 405.472597,
+        "prove_ms": 331.798876,
+        "witness_commit_ms": 73.91328299999999,
+        "verify_ms": 33.454861,
+        "process_peak_rss_kib": 2370748,
+        "proof_payload_bytes": 695114
+      },
+      {
+        "variant": "full",
+        "threads": 8,
+        "seed": 61,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 403.64810500000004,
+        "prove_ms": 330.09423100000004,
+        "witness_commit_ms": 73.842119,
+        "verify_ms": 33.127451,
+        "process_peak_rss_kib": 2379012,
+        "proof_payload_bytes": 695114
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "seed": 62,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 45.947999,
+        "prove_ms": 41.906813,
+        "witness_commit_ms": 3.970283,
+        "verify_ms": 20.140518,
+        "process_peak_rss_kib": 119824,
+        "proof_payload_bytes": 262634
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "seed": 62,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 45.662257999999994,
+        "prove_ms": 41.736571,
+        "witness_commit_ms": 3.9255970000000002,
+        "verify_ms": 20.05204,
+        "process_peak_rss_kib": 120068,
+        "proof_payload_bytes": 262634
+      },
+      {
+        "variant": "full",
+        "threads": 8,
+        "seed": 60,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 409.040797,
+        "prove_ms": 334.978302,
+        "witness_commit_ms": 74.136416,
+        "verify_ms": 33.230296,
+        "process_peak_rss_kib": 2363492,
+        "proof_payload_bytes": 698026
+      },
+      {
+        "variant": "full",
+        "threads": 8,
+        "seed": 60,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 407.206566,
+        "prove_ms": 333.27594,
+        "witness_commit_ms": 73.942108,
+        "verify_ms": 33.224074,
+        "process_peak_rss_kib": 2363556,
+        "proof_payload_bytes": 698026
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "seed": 64,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 46.289085,
+        "prove_ms": 42.477223,
+        "witness_commit_ms": 3.8892290000000003,
+        "verify_ms": 20.790568,
+        "process_peak_rss_kib": 119644,
+        "proof_payload_bytes": 263882
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 8,
+        "seed": 64,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 45.614078,
+        "prove_ms": 41.804790000000004,
+        "witness_commit_ms": 3.756989,
+        "verify_ms": 20.033496000000003,
+        "process_peak_rss_kib": 119996,
+        "proof_payload_bytes": 263882
+      },
+      {
+        "variant": "full",
+        "threads": 1,
+        "seed": 60,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 2011.65051,
+        "prove_ms": 1685.483641,
+        "witness_commit_ms": 326.58477000000005,
+        "verify_ms": 45.399331000000004,
+        "process_peak_rss_kib": 2353984,
+        "proof_payload_bytes": 698026
+      },
+      {
+        "variant": "full",
+        "threads": 1,
+        "seed": 60,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 2014.6621779999998,
+        "prove_ms": 1687.2810920000002,
+        "witness_commit_ms": 327.045051,
+        "verify_ms": 46.765707,
+        "process_peak_rss_kib": 2354600,
+        "proof_payload_bytes": 698026
+      },
+      {
+        "variant": "full",
+        "threads": 4,
+        "seed": 60,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 633.457862,
+        "prove_ms": 527.007735,
+        "witness_commit_ms": 106.38404299999999,
+        "verify_ms": 35.011837,
+        "process_peak_rss_kib": 2306852,
+        "proof_payload_bytes": 698026
+      },
+      {
+        "variant": "full",
+        "threads": 4,
+        "seed": 60,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 631.731217,
+        "prove_ms": 524.940615,
+        "witness_commit_ms": 106.056933,
+        "verify_ms": 35.049599,
+        "process_peak_rss_kib": 2301292,
+        "proof_payload_bytes": 698026
+      },
+      {
+        "variant": "full",
+        "threads": 16,
+        "seed": 63,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 325.378397,
+        "prove_ms": 264.684667,
+        "witness_commit_ms": 61.000771,
+        "verify_ms": 32.217299,
+        "process_peak_rss_kib": 2371400,
+        "proof_payload_bytes": 696906
+      },
+      {
+        "variant": "full",
+        "threads": 16,
+        "seed": 63,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 335.292146,
+        "prove_ms": 273.865749,
+        "witness_commit_ms": 61.426397,
+        "verify_ms": 32.113543,
+        "process_peak_rss_kib": 2381164,
+        "proof_payload_bytes": 696906
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 60,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 185.231321,
+        "prove_ms": 162.49541200000002,
+        "witness_commit_ms": 22.722053,
+        "verify_ms": 44.546367000000004,
+        "process_peak_rss_kib": 113264,
+        "proof_payload_bytes": 260906
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 60,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 184.417392,
+        "prove_ms": 161.719024,
+        "witness_commit_ms": 22.735598,
+        "verify_ms": 44.607343,
+        "process_peak_rss_kib": 112808,
+        "proof_payload_bytes": 260906
+      },
+      {
+        "variant": "full",
+        "threads": 16,
+        "seed": 62,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 337.195777,
+        "prove_ms": 275.252222,
+        "witness_commit_ms": 61.943554999999996,
+        "verify_ms": 32.292822,
+        "process_peak_rss_kib": 2375164,
+        "proof_payload_bytes": 698314
+      },
+      {
+        "variant": "full",
+        "threads": 16,
+        "seed": 62,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 328.277694,
+        "prove_ms": 266.616583,
+        "witness_commit_ms": 61.346735,
+        "verify_ms": 32.470618,
+        "process_peak_rss_kib": 2375768,
+        "proof_payload_bytes": 698314
+      },
+      {
+        "variant": "full",
+        "threads": 1,
+        "seed": 64,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 1954.600434,
+        "prove_ms": 1627.6336609999998,
+        "witness_commit_ms": 327.209763,
+        "verify_ms": 45.412496,
+        "process_peak_rss_kib": 2353440,
+        "proof_payload_bytes": 697738
+      },
+      {
+        "variant": "full",
+        "threads": 1,
+        "seed": 64,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 1952.284323,
+        "prove_ms": 1625.522948,
+        "witness_commit_ms": 326.76137500000004,
+        "verify_ms": 45.413588,
+        "process_peak_rss_kib": 2355244,
+        "proof_payload_bytes": 697738
+      },
+      {
+        "variant": "full",
+        "threads": 8,
+        "seed": 64,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 401.46524400000004,
+        "prove_ms": 327.41079299999996,
+        "witness_commit_ms": 73.76904099999999,
+        "verify_ms": 33.183527999999995,
+        "process_peak_rss_kib": 2365236,
+        "proof_payload_bytes": 697738
+      },
+      {
+        "variant": "full",
+        "threads": 8,
+        "seed": 64,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 403.94543699999997,
+        "prove_ms": 328.435522,
+        "witness_commit_ms": 75.270461,
+        "verify_ms": 33.186572999999996,
+        "process_peak_rss_kib": 2364672,
+        "proof_payload_bytes": 697738
+      }
+    ]
+  },
+  "retained_low_thread_replication": {
+    "settings": {
+      "degree": 512,
+      "batch": 1024,
+      "security": 128,
+      "iterations": 9,
+      "warmup": 2,
+      "trace": false,
+      "worker_cpus": [
+        6,
+        7,
+        4,
+        5,
+        2,
+        3,
+        0,
+        1,
+        14,
+        15,
+        12,
+        13,
+        10,
+        11,
+        8,
+        9
+      ],
+      "main_cpu": 6,
+      "order_seed": 20261022,
+      "case_cache": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/results/binder-experiments-20261010/case-cache",
+      "cpu": "AMD Ryzen 9 9950X3D 16-Core Processor",
+      "configs": [
+        {
+          "replay": "auto",
+          "construction": "auto",
+          "evaluation": "auto",
+          "word": "off",
+          "name": "baseline",
+          "variant": "arithmetic",
+          "binary": "baseline"
+        },
+        {
+          "replay": "auto",
+          "construction": "auto",
+          "evaluation": "auto",
+          "word": "auto",
+          "name": "candidate",
+          "variant": "arithmetic",
+          "binary": "candidate"
+        }
+      ],
+      "binaries": {
+        "baseline_arithmetic": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/baseline-arithmetic",
+          "sha256": "909277c358ad25e39cb79d77f78a69841bc1cda5f80e321e4aecba9cc7aebc87"
+        },
+        "candidate_arithmetic": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/cyclic-arithmetic",
+          "sha256": "ea9c5b09cf5058fe1eed44372126e4b9828411638fedfc9a7817572efeff3548"
+        }
+      },
+      "runner_sha256": "f857bec634d093e773c81a321141bb8ad3405f6e7e4981b96e813ed0ecc94164",
+      "helper_sha256": {
+        "bench_statistics.py": "b045f4b39cf627c953139490d419227d2e9766fab704388a6f3cffbc33f6fb09",
+        "bench_support.py": "5c1eab825a98a3ee957e198b2141b3f82efb45d3fe929455165b7ecba7f8964c"
+      },
+      "seeds": [
+        65,
+        66,
+        67,
+        68,
+        69
+      ],
+      "threads": [
+        1,
+        4
+      ]
+    },
+    "manifest": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/cyclic-low-thread-confirmation/manifest.json",
+      "sha256": "74c63a3261a0fe7cc667a954f09097e7a3aa03f4c02f332ddf06dbcb612f0179"
+    },
+    "full_audit": {
+      "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/cyclic-low-thread-confirmation-independent-audit.json",
+      "sha256": "b6ee8ddfe65ef0fab0ac960458260df0663aa1c63a4a01e31f17225dc015cb57"
+    },
+    "comparisons": [
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "config": "baseline",
+        "processes": 5,
+        "median_total_prover_ms": 182.021728,
+        "change_percent_total_prover_ms": 0.0,
+        "ratio_ci95_exact_total_prover_ms": [
+          1.0,
+          1.0
+        ],
+        "median_prove_ms": 159.236766,
+        "change_percent_prove_ms": 0.0,
+        "ratio_ci95_exact_prove_ms": [
+          1.0,
+          1.0
+        ],
+        "median_witness_commit_ms": 22.796064,
+        "change_percent_witness_commit_ms": 0.0,
+        "ratio_ci95_exact_witness_commit_ms": [
+          1.0,
+          1.0
+        ],
+        "median_verify_ms": 43.435315,
+        "change_percent_verify_ms": 0.0,
+        "ratio_ci95_exact_verify_ms": [
+          1.0,
+          1.0
+        ],
+        "median_process_peak_rss_kib": 119136,
+        "change_percent_process_peak_rss_kib": 0.0,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          1.0,
+          1.0
+        ],
+        "median_proof_payload_bytes": 263082,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "config": "candidate",
+        "processes": 5,
+        "median_total_prover_ms": 182.886274,
+        "change_percent_total_prover_ms": 0.4747689453825643,
+        "ratio_ci95_exact_total_prover_ms": [
+          1.001850493988526,
+          1.006793951706601
+        ],
+        "median_prove_ms": 160.001533,
+        "change_percent_prove_ms": 0.5454401424678013,
+        "ratio_ci95_exact_prove_ms": [
+          1.0020682808211416,
+          1.0076799786485082
+        ],
+        "median_witness_commit_ms": 22.793719,
+        "change_percent_witness_commit_ms": -0.03708910301482016,
+        "ratio_ci95_exact_witness_commit_ms": [
+          0.9968714022966875,
+          1.0019901758461112
+        ],
+        "median_verify_ms": 43.251618,
+        "change_percent_verify_ms": 0.08215054895701623,
+        "ratio_ci95_exact_verify_ms": [
+          0.9969376643649511,
+          1.0051819242398885
+        ],
+        "median_process_peak_rss_kib": 119264,
+        "change_percent_process_peak_rss_kib": 0.045245421418771414,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          0.9988043099937184,
+          1.001704559180351
+        ],
+        "median_proof_payload_bytes": 263082,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "config": "baseline",
+        "processes": 5,
+        "median_total_prover_ms": 65.16396900000001,
+        "change_percent_total_prover_ms": 0.0,
+        "ratio_ci95_exact_total_prover_ms": [
+          1.0,
+          1.0
+        ],
+        "median_prove_ms": 58.613974999999996,
+        "change_percent_prove_ms": 0.0,
+        "ratio_ci95_exact_prove_ms": [
+          1.0,
+          1.0
+        ],
+        "median_witness_commit_ms": 6.469982,
+        "change_percent_witness_commit_ms": 0.0,
+        "ratio_ci95_exact_witness_commit_ms": [
+          1.0,
+          1.0
+        ],
+        "median_verify_ms": 23.881166,
+        "change_percent_verify_ms": 0.0,
+        "ratio_ci95_exact_verify_ms": [
+          1.0,
+          1.0
+        ],
+        "median_process_peak_rss_kib": 117944,
+        "change_percent_process_peak_rss_kib": 0.0,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          1.0,
+          1.0
+        ],
+        "median_proof_payload_bytes": 263082,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "config": "candidate",
+        "processes": 5,
+        "median_total_prover_ms": 65.300087,
+        "change_percent_total_prover_ms": 0.34952170934858806,
+        "ratio_ci95_exact_total_prover_ms": [
+          0.9992187594478271,
+          1.008507157344005
+        ],
+        "median_prove_ms": 58.758629,
+        "change_percent_prove_ms": 0.43255443047469644,
+        "ratio_ci95_exact_prove_ms": [
+          1.0010960154889605,
+          1.0077084377199468
+        ],
+        "median_witness_commit_ms": 6.556245,
+        "change_percent_witness_commit_ms": 0.9912931393416979,
+        "ratio_ci95_exact_witness_commit_ms": [
+          0.9931145987770466,
+          1.026995404409131
+        ],
+        "median_verify_ms": 23.974573,
+        "change_percent_verify_ms": 0.7079956012763455,
+        "ratio_ci95_exact_verify_ms": [
+          1.0032527842974008,
+          1.0112154564628681
+        ],
+        "median_process_peak_rss_kib": 117828,
+        "change_percent_process_peak_rss_kib": 0.05455157442464387,
+        "ratio_ci95_exact_process_peak_rss_kib": [
+          0.9973646871372904,
+          1.0037364887555082
+        ],
+        "median_proof_payload_bytes": 263082,
+        "change_percent_proof_payload_bytes": 0.0,
+        "ratio_ci95_exact_proof_payload_bytes": [
+          1.0,
+          1.0
+        ]
+      }
+    ],
+    "process_medians": [
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 68,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 182.886274,
+        "prove_ms": 160.168699,
+        "witness_commit_ms": 22.838453,
+        "verify_ms": 43.242861,
+        "process_peak_rss_kib": 119264,
+        "proof_payload_bytes": 261450
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 68,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 182.021728,
+        "prove_ms": 159.236766,
+        "witness_commit_ms": 22.791093,
+        "verify_ms": 43.371624999999995,
+        "process_peak_rss_kib": 119136,
+        "proof_payload_bytes": 261450
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 67,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 65.97873,
+        "prove_ms": 59.241262000000006,
+        "witness_commit_ms": 6.683516,
+        "verify_ms": 24.008927999999997,
+        "process_peak_rss_kib": 117828,
+        "proof_payload_bytes": 264650
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 67,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 65.16396900000001,
+        "prove_ms": 58.619616,
+        "witness_commit_ms": 6.469982,
+        "verify_ms": 23.927634,
+        "process_peak_rss_kib": 118124,
+        "proof_payload_bytes": 264650
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 66,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 65.237948,
+        "prove_ms": 58.700849,
+        "witness_commit_ms": 6.631638,
+        "verify_ms": 23.974573,
+        "process_peak_rss_kib": 117700,
+        "proof_payload_bytes": 263082
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 66,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 65.07249599999999,
+        "prove_ms": 58.402986,
+        "witness_commit_ms": 6.4578999999999995,
+        "verify_ms": 23.696577,
+        "process_peak_rss_kib": 118120,
+        "proof_payload_bytes": 263082
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 68,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 65.332818,
+        "prove_ms": 58.666454,
+        "witness_commit_ms": 6.631077,
+        "verify_ms": 23.896565000000002,
+        "process_peak_rss_kib": 117884,
+        "proof_payload_bytes": 261450
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 68,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 65.300087,
+        "prove_ms": 58.758629,
+        "witness_commit_ms": 6.539062,
+        "verify_ms": 23.988649000000002,
+        "process_peak_rss_kib": 118536,
+        "proof_payload_bytes": 261450
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 69,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 65.500235,
+        "prove_ms": 58.817600999999996,
+        "witness_commit_ms": 6.523383,
+        "verify_ms": 23.716074,
+        "process_peak_rss_kib": 118388,
+        "proof_payload_bytes": 262922
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 69,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 65.12768,
+        "prove_ms": 58.513846,
+        "witness_commit_ms": 6.425297,
+        "verify_ms": 23.396419,
+        "process_peak_rss_kib": 117876,
+        "proof_payload_bytes": 262922
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 66,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 184.026792,
+        "prove_ms": 161.22075,
+        "witness_commit_ms": 22.805841,
+        "verify_ms": 44.499127,
+        "process_peak_rss_kib": 113024,
+        "proof_payload_bytes": 263082
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 66,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 182.74205099999998,
+        "prove_ms": 159.924678,
+        "witness_commit_ms": 22.796064,
+        "verify_ms": 44.324307,
+        "process_peak_rss_kib": 113004,
+        "proof_payload_bytes": 263082
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 65,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 182.59098600000002,
+        "prove_ms": 159.753835,
+        "witness_commit_ms": 22.792827000000003,
+        "verify_ms": 44.706701,
+        "process_peak_rss_kib": 115176,
+        "proof_payload_bytes": 264106
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 65,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 181.304281,
+        "prove_ms": 158.522404,
+        "witness_commit_ms": 22.917423,
+        "verify_ms": 44.337472000000005,
+        "process_peak_rss_kib": 114944,
+        "proof_payload_bytes": 264106
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 67,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 182.890332,
+        "prove_ms": 159.99985,
+        "witness_commit_ms": 22.793719,
+        "verify_ms": 43.251618,
+        "process_peak_rss_kib": 119400,
+        "proof_payload_bytes": 264650
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 67,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 183.042821,
+        "prove_ms": 160.172897,
+        "witness_commit_ms": 22.829947,
+        "verify_ms": 43.435315,
+        "process_peak_rss_kib": 119724,
+        "proof_payload_bytes": 264650
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 69,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 182.71132400000002,
+        "prove_ms": 160.001533,
+        "witness_commit_ms": 22.779892,
+        "verify_ms": 43.151328,
+        "process_peak_rss_kib": 119784,
+        "proof_payload_bytes": 262922
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 1,
+        "seed": 69,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 181.672899,
+        "prove_ms": 158.943651,
+        "witness_commit_ms": 22.718918000000002,
+        "verify_ms": 43.190712,
+        "process_peak_rss_kib": 119580,
+        "proof_payload_bytes": 262922
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 65,
+        "repetition": 0,
+        "config": "baseline",
+        "total_prover_ms": 65.319603,
+        "prove_ms": 58.613974999999996,
+        "witness_commit_ms": 6.627931,
+        "verify_ms": 23.881166,
+        "process_peak_rss_kib": 117944,
+        "proof_payload_bytes": 264106
+      },
+      {
+        "variant": "arithmetic",
+        "threads": 4,
+        "seed": 65,
+        "repetition": 0,
+        "config": "candidate",
+        "total_prover_ms": 65.142017,
+        "prove_ms": 58.566946,
+        "witness_commit_ms": 6.556245,
+        "verify_ms": 23.948223000000002,
+        "process_peak_rss_kib": 117820,
+        "proof_payload_bytes": 264106
+      }
+    ]
+  },
+  "candidate_arithmetic_16_vs_8": {
+    "comparison": "Candidate arithmetic total time: 16 workers / 8 workers",
+    "seed_pairs": [
+      {
+        "seed": 60,
+        "threads8_total_ms": 46.625782,
+        "threads16_total_ms": 44.670051,
+        "ratio": 0.9580547303206625
+      },
+      {
+        "seed": 61,
+        "threads8_total_ms": 46.221286,
+        "threads16_total_ms": 44.075807000000005,
+        "ratio": 0.9535824468406181
+      },
+      {
+        "seed": 62,
+        "threads8_total_ms": 45.947999,
+        "threads16_total_ms": 44.457167999999996,
+        "ratio": 0.9675539515877501
+      },
+      {
+        "seed": 63,
+        "threads8_total_ms": 46.070801,
+        "threads16_total_ms": 44.575793000000004,
+        "ratio": 0.9675497719260405
+      },
+      {
+        "seed": 64,
+        "threads8_total_ms": 45.614078,
+        "threads16_total_ms": 44.551307,
+        "ratio": 0.9767008115345442
+      }
+    ],
+    "ratio_geomean": 0.964654344174917,
+    "change_percent": -3.5345655825082978,
+    "ci95_change_percent": [
+      -4.27441017435074,
+      -2.8798468002840805
+    ]
+  },
+  "all_positive_lower_confidence_bounds": [
+    {
+      "campaign": "holdout",
+      "variant": "arithmetic",
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "change_percent": 0.30290743175467316,
+      "ci95_change_percent": [
+        0.09998870562109019,
+        0.4452977684918036
+      ]
+    },
+    {
+      "campaign": "holdout",
+      "variant": "arithmetic",
+      "threads": 1,
+      "metric": "prove_ms",
+      "change_percent": 0.3372766131769067,
+      "ci95_change_percent": [
+        0.11439639167294402,
+        0.49365722749270535
+      ]
+    },
+    {
+      "campaign": "holdout",
+      "variant": "arithmetic",
+      "threads": 4,
+      "metric": "total_prover_ms",
+      "change_percent": 0.5257313483388204,
+      "ci95_change_percent": [
+        0.10506788063102679,
+        0.9481625362710577
+      ]
+    },
+    {
+      "campaign": "holdout",
+      "variant": "arithmetic",
+      "threads": 4,
+      "metric": "prove_ms",
+      "change_percent": 0.26335727289672484,
+      "ci95_change_percent": [
+        0.10206653219799744,
+        0.421165436672033
+      ]
+    },
+    {
+      "campaign": "holdout",
+      "variant": "full",
+      "threads": 4,
+      "metric": "verify_ms",
+      "change_percent": 0.5034055997684916,
+      "ci95_change_percent": [
+        0.1156350033143072,
+        0.9133769005827963
+      ]
+    },
+    {
+      "campaign": "holdout",
+      "variant": "full",
+      "threads": 8,
+      "metric": "verify_ms",
+      "change_percent": 0.2899953062814209,
+      "ci95_change_percent": [
+        0.002564805231775047,
+        0.6733351538001031
+      ]
+    },
+    {
+      "campaign": "holdout",
+      "variant": "full",
+      "threads": 16,
+      "metric": "verify_ms",
+      "change_percent": 0.4595549401959165,
+      "ci95_change_percent": [
+        0.042653980390627844,
+        0.9851487568136363
+      ]
+    },
+    {
+      "campaign": "low_thread_replication",
+      "variant": "arithmetic",
+      "threads": 1,
+      "metric": "total_prover_ms",
+      "change_percent": 0.4747689453825643,
+      "ci95_change_percent": [
+        0.1850493988525992,
+        0.6793951706600909
+      ]
+    },
+    {
+      "campaign": "low_thread_replication",
+      "variant": "arithmetic",
+      "threads": 1,
+      "metric": "prove_ms",
+      "change_percent": 0.5454401424678013,
+      "ci95_change_percent": [
+        0.20682808211416326,
+        0.7679978648508223
+      ]
+    },
+    {
+      "campaign": "low_thread_replication",
+      "variant": "arithmetic",
+      "threads": 4,
+      "metric": "prove_ms",
+      "change_percent": 0.43255443047469644,
+      "ci95_change_percent": [
+        0.10960154889605445,
+        0.7708437719946781
+      ]
+    },
+    {
+      "campaign": "low_thread_replication",
+      "variant": "arithmetic",
+      "threads": 4,
+      "metric": "verify_ms",
+      "change_percent": 0.7079956012763455,
+      "ci95_change_percent": [
+        0.3252784297400835,
+        1.1215456462868145
+      ]
+    }
+  ],
+  "rejected_experiments": [
+    {
+      "name": "Serial dense cutoff",
+      "decision": "rejected: arithmetic8 slower;16 inconclusive",
+      "campaign": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/dense-screen",
+      "processes": 12,
+      "verified_trials": 72,
+      "verified": true,
+      "audit": {
+        "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/dense-screen-audit.json",
+        "sha256": "af1692f5599337dffb3855140504099715480ffdd2b19b9ba2c746b661efc273"
+      },
+      "binaries": {
+        "baseline_arithmetic": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/baseline-arithmetic",
+          "sha256": "909277c358ad25e39cb79d77f78a69841bc1cda5f80e321e4aecba9cc7aebc87"
+        },
+        "candidate_arithmetic": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/dense-arithmetic",
+          "sha256": "08be4cdc9f45ec73b48848aceb1ae01a95f564292dcd635baa244defa323239e"
+        }
+      },
+      "comparisons": [
+        {
+          "variant": "arithmetic",
+          "threads": 8,
+          "processes": 3,
+          "change_percent_total_prover_ms": 1.1121535896215562,
+          "ratio_ci95_exact_total_prover_ms": [
+            1.0057644620811774,
+            1.0169459445331697
+          ],
+          "change_percent_prove_ms": 1.0593776974924474,
+          "ratio_ci95_exact_prove_ms": [
+            1.0061105265160022,
+            1.016050204657612
+          ],
+          "change_percent_witness_commit_ms": 2.5586810677422633,
+          "ratio_ci95_exact_witness_commit_ms": [
+            1.006526961859526,
+            1.0419623724936127
+          ],
+          "change_percent_verify_ms": 2.1327462448268664,
+          "ratio_ci95_exact_verify_ms": [
+            1.0155547099523219,
+            1.0269572260346664
+          ],
+          "change_percent_process_peak_rss_kib": -0.22794002190019702,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            0.9949637835466071,
+            1.001430652692318
+          ],
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "variant": "arithmetic",
+          "threads": 16,
+          "processes": 3,
+          "change_percent_total_prover_ms": 0.4590591584445525,
+          "ratio_ci95_exact_total_prover_ms": [
+            0.9984551404536257,
+            1.0120566487033285
+          ],
+          "change_percent_prove_ms": 0.44380057754724866,
+          "ratio_ci95_exact_prove_ms": [
+            0.9976748435948787,
+            1.0110534389181556
+          ],
+          "change_percent_witness_commit_ms": -2.1505926680649656,
+          "ratio_ci95_exact_witness_commit_ms": [
+            0.9420889497233372,
+            1.0068960625018946
+          ],
+          "change_percent_verify_ms": -0.4515350754285774,
+          "ratio_ci95_exact_verify_ms": [
+            0.9933858711222243,
+            0.9980669829639456
+          ],
+          "change_percent_process_peak_rss_kib": -0.33889193869851564,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            0.994334082816565,
+            0.9991072762977021
+          ],
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Whole-forest worker entry",
+      "decision": "rejected: substantial peak-RSS regression",
+      "campaign": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/worker-screen",
+      "processes": 12,
+      "verified_trials": 72,
+      "verified": true,
+      "audit": {
+        "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/worker-screen-audit.json",
+        "sha256": "8d7791ee1ab9f9cbb4684bd72033f2c5312b3e14bb83a1e76ba7136b55d85d19"
+      },
+      "binaries": {
+        "baseline_arithmetic": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/baseline-arithmetic",
+          "sha256": "909277c358ad25e39cb79d77f78a69841bc1cda5f80e321e4aecba9cc7aebc87"
+        },
+        "candidate_arithmetic": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/worker-arithmetic",
+          "sha256": "d3d589850edf7185498d2301f5e666c920db93c9e3b6ffa046d26a0d1c0ee5f1"
+        }
+      },
+      "comparisons": [
+        {
+          "variant": "arithmetic",
+          "threads": 8,
+          "processes": 3,
+          "change_percent_total_prover_ms": 0.3658614158427165,
+          "ratio_ci95_exact_total_prover_ms": [
+            1.0002863326767129,
+            1.0065173666048073
+          ],
+          "change_percent_prove_ms": 0.18384865866925004,
+          "ratio_ci95_exact_prove_ms": [
+            0.996690308006678,
+            1.0058718168475638
+          ],
+          "change_percent_witness_commit_ms": 1.3206282938384106,
+          "ratio_ci95_exact_witness_commit_ms": [
+            1.0029794638301488,
+            1.0243450314947806
+          ],
+          "change_percent_verify_ms": 2.1459073656901584,
+          "ratio_ci95_exact_verify_ms": [
+            1.0052459594971372,
+            1.034749054391466
+          ],
+          "change_percent_process_peak_rss_kib": 10.785857204627947,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            1.1062614734891767,
+            1.1095802462268847
+          ],
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "variant": "arithmetic",
+          "threads": 16,
+          "processes": 3,
+          "change_percent_total_prover_ms": -1.7719844030949616,
+          "ratio_ci95_exact_total_prover_ms": [
+            0.9781876208455313,
+            0.9854056643021946
+          ],
+          "change_percent_prove_ms": -2.0646799268225324,
+          "ratio_ci95_exact_prove_ms": [
+            0.975094117564179,
+            0.9825972563735147
+          ],
+          "change_percent_witness_commit_ms": -2.799601496435289,
+          "ratio_ci95_exact_witness_commit_ms": [
+            0.9212605789745911,
+            1.0294362683988312
+          ],
+          "change_percent_verify_ms": 0.996696267934305,
+          "ratio_ci95_exact_verify_ms": [
+            1.0038280140254767,
+            1.0162083726248288
+          ],
+          "change_percent_process_peak_rss_kib": 46.14196347927913,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            1.4283834080468436,
+            1.5063905889550335
+          ],
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Coarse writes plus worker entry",
+      "decision": "rejected: substantial peak-RSS regression; does not isolate coarse writes",
+      "campaign": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/coarse-worker-screen",
+      "processes": 12,
+      "verified_trials": 72,
+      "verified": true,
+      "audit": {
+        "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/coarse-worker-screen-audit.json",
+        "sha256": "0adc9acd5d7b12e4cb0ce346ff3fcaf8ef1281aec802a5c9067ca22474c2dee2"
+      },
+      "binaries": {
+        "baseline_arithmetic": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/baseline-arithmetic",
+          "sha256": "909277c358ad25e39cb79d77f78a69841bc1cda5f80e321e4aecba9cc7aebc87"
+        },
+        "candidate_arithmetic": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/coarse-worker-arithmetic",
+          "sha256": "4fb2655c24bc15c59a61b5c13b2a5d3573f31263f75dc7d70decb4b4bd502fa2"
+        }
+      },
+      "comparisons": [
+        {
+          "variant": "arithmetic",
+          "threads": 8,
+          "processes": 3,
+          "change_percent_total_prover_ms": 0.1075434335966019,
+          "ratio_ci95_exact_total_prover_ms": [
+            0.9970001607318427,
+            1.004790027791695
+          ],
+          "change_percent_prove_ms": 0.28608016944462467,
+          "ratio_ci95_exact_prove_ms": [
+            0.9977631994976951,
+            1.006710872691661
+          ],
+          "change_percent_witness_commit_ms": -2.885770778541852,
+          "ratio_ci95_exact_witness_commit_ms": [
+            0.9566357835974368,
+            0.9847793965289738
+          ],
+          "change_percent_verify_ms": 0.6717963439582642,
+          "ratio_ci95_exact_verify_ms": [
+            1.0017249417635314,
+            1.0120132932057175
+          ],
+          "change_percent_process_peak_rss_kib": 10.81932170931208,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            1.1033555102631412,
+            1.1140941525998036
+          ],
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "variant": "arithmetic",
+          "threads": 16,
+          "processes": 3,
+          "change_percent_total_prover_ms": -0.2935048051568634,
+          "ratio_ci95_exact_total_prover_ms": [
+            0.9919629408236873,
+            1.0034898710012818
+          ],
+          "change_percent_prove_ms": -0.17579211184851617,
+          "ratio_ci95_exact_prove_ms": [
+            0.9924125996735312,
+            1.0041119332442807
+          ],
+          "change_percent_witness_commit_ms": 2.173642896035366,
+          "ratio_ci95_exact_witness_commit_ms": [
+            1.008684352136481,
+            1.0321212418215815
+          ],
+          "change_percent_verify_ms": -0.4705167490585138,
+          "ratio_ci95_exact_verify_ms": [
+            0.9899882698981741,
+            1.0002207400893195
+          ],
+          "change_percent_process_peak_rss_kib": 48.400904190538355,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            1.413220118252981,
+            1.5809984760361115
+          ],
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Four wrapper inline hints",
+      "decision": "rejected: arithmetic1/4/8 and verification regressions",
+      "campaign": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/inline-all-screen",
+      "processes": 24,
+      "verified_trials": 144,
+      "verified": true,
+      "audit": {
+        "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/inline-all-screen-independent-audit.json",
+        "sha256": "d47386b26ec4c690f61b98e359aeea2c5c1d09a17bd8da5d11b342342e7748d7"
+      },
+      "binaries": {
+        "baseline_arithmetic": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/baseline-arithmetic",
+          "sha256": "909277c358ad25e39cb79d77f78a69841bc1cda5f80e321e4aecba9cc7aebc87"
+        },
+        "candidate_arithmetic": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/inline-all-arithmetic",
+          "sha256": "ecf8723d349869951ef964b69408dd31a36cf4d15f98346006a08a006d9bcdf9"
+        }
+      },
+      "comparisons": [
+        {
+          "variant": "arithmetic",
+          "threads": 1,
+          "processes": 3,
+          "change_percent_total_prover_ms": 0.49196712147927535,
+          "ratio_ci95_exact_total_prover_ms": [
+            1.0027382346913831,
+            1.0067565207824432
+          ],
+          "change_percent_prove_ms": 0.09921911607664313,
+          "ratio_ci95_exact_prove_ms": [
+            0.9983515113627353,
+            1.0030522103218347
+          ],
+          "change_percent_witness_commit_ms": 3.286880144702198,
+          "ratio_ci95_exact_witness_commit_ms": [
+            1.031808928247931,
+            1.0342116190146609
+          ],
+          "change_percent_verify_ms": 0.405793619068584,
+          "ratio_ci95_exact_verify_ms": [
+            1.000855352764225,
+            1.0081363506929453
+          ],
+          "change_percent_process_peak_rss_kib": 0.0768347545979875,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            0.9991228490565597,
+            1.0020035614281289
+          ],
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "variant": "arithmetic",
+          "threads": 4,
+          "processes": 3,
+          "change_percent_total_prover_ms": 1.4509114114221733,
+          "ratio_ci95_exact_total_prover_ms": [
+            1.010609637051698,
+            1.0187781584132198
+          ],
+          "change_percent_prove_ms": 1.0083138097686906,
+          "ratio_ci95_exact_prove_ms": [
+            1.0059325706128586,
+            1.0134328794792402
+          ],
+          "change_percent_witness_commit_ms": 5.0751691495217965,
+          "ratio_ci95_exact_witness_commit_ms": [
+            1.0386008275350664,
+            1.0604670392449156
+          ],
+          "change_percent_verify_ms": 2.403401278123174,
+          "ratio_ci95_exact_verify_ms": [
+            1.021694775474573,
+            1.0269437433223152
+          ],
+          "change_percent_process_peak_rss_kib": -0.050533994287205175,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            0.9972703364449275,
+            1.0021526304373858
+          ],
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "variant": "arithmetic",
+          "threads": 8,
+          "processes": 3,
+          "change_percent_total_prover_ms": 1.4651572545948843,
+          "ratio_ci95_exact_total_prover_ms": [
+            1.0073343479367995,
+            1.0222047899907913
+          ],
+          "change_percent_prove_ms": 1.3626143520073963,
+          "ratio_ci95_exact_prove_ms": [
+            1.005842225541717,
+            1.0197604050110562
+          ],
+          "change_percent_witness_commit_ms": 0.19300230788630302,
+          "ratio_ci95_exact_witness_commit_ms": [
+            0.950785814278728,
+            1.0616031329105189
+          ],
+          "change_percent_verify_ms": 2.604383133322208,
+          "ratio_ci95_exact_verify_ms": [
+            1.0071686575202556,
+            1.0411590060469174
+          ],
+          "change_percent_process_peak_rss_kib": 0.32211360634872843,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            1.0010468177764582,
+            1.0048758057074323
+          ],
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "variant": "arithmetic",
+          "threads": 16,
+          "processes": 3,
+          "change_percent_total_prover_ms": -8.49427292700825,
+          "ratio_ci95_exact_total_prover_ms": [
+            0.9116383544680875,
+            0.9185343853695176
+          ],
+          "change_percent_prove_ms": -9.020407486168214,
+          "ratio_ci95_exact_prove_ms": [
+            0.90860232088096,
+            0.9108029600248191
+          ],
+          "change_percent_witness_commit_ms": -1.6392636962317408,
+          "ratio_ci95_exact_witness_commit_ms": [
+            0.9350971531308591,
+            1.0304622832029162
+          ],
+          "change_percent_verify_ms": 3.2396555102135904,
+          "ratio_ci95_exact_verify_ms": [
+            1.018173086612715,
+            1.0439955475252685
+          ],
+          "change_percent_process_peak_rss_kib": -0.046927396398321886,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            0.9952599256163388,
+            1.0039860395093965
+          ],
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Wrapper plus x86 backend inline hints",
+      "decision": "Rejected: residual low-thread regressions; all wrapper and backend inline hints reverted.",
+      "campaign": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/inline-backend-screen",
+      "processes": 24,
+      "verified_trials": 144,
+      "verified": true,
+      "audit": {
+        "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/inline-backend-screen-independent-audit.json",
+        "sha256": "6ffafa8509e3666645c6924fd939467e3a5f84808351250538e094d40c76a7cd"
+      },
+      "binaries": {
+        "baseline_arithmetic": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/baseline-arithmetic",
+          "sha256": "909277c358ad25e39cb79d77f78a69841bc1cda5f80e321e4aecba9cc7aebc87"
+        },
+        "candidate_arithmetic": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/inline-backend-arithmetic",
+          "sha256": "54399fa894e53f58981dc9e4af56920baf89d9c07f15d54f4cb780589ad5a45a"
+        }
+      },
+      "comparisons": [
+        {
+          "variant": "arithmetic",
+          "threads": 1,
+          "processes": 3,
+          "change_percent_total_prover_ms": 0.49221366169731606,
+          "ratio_ci95_exact_total_prover_ms": [
+            1.002886906502557,
+            1.0076364084920477
+          ],
+          "change_percent_prove_ms": 0.5375718459906142,
+          "ratio_ci95_exact_prove_ms": [
+            1.0027323648988957,
+            1.0088567609687458
+          ],
+          "change_percent_witness_commit_ms": 0.2232912167432488,
+          "ratio_ci95_exact_witness_commit_ms": [
+            1.0015007707143457,
+            1.002781043694899
+          ],
+          "change_percent_verify_ms": 0.11015779701706307,
+          "ratio_ci95_exact_verify_ms": [
+            0.996196852009205,
+            1.0061744630614866
+          ],
+          "change_percent_process_peak_rss_kib": 1.8194681686947822,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            0.9965706440070176,
+            1.0463984216809474
+          ],
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "variant": "arithmetic",
+          "threads": 4,
+          "processes": 3,
+          "change_percent_total_prover_ms": 0.5882627172265176,
+          "ratio_ci95_exact_total_prover_ms": [
+            1.0010268450340007,
+            1.009755157046764
+          ],
+          "change_percent_prove_ms": 0.7139746587295326,
+          "ratio_ci95_exact_prove_ms": [
+            1.0005260950244725,
+            1.012359527596618
+          ],
+          "change_percent_witness_commit_ms": -2.1782711589210746,
+          "ratio_ci95_exact_witness_commit_ms": [
+            0.9760714923095719,
+            0.9810171406547097
+          ],
+          "change_percent_verify_ms": 0.5977042004186472,
+          "ratio_ci95_exact_verify_ms": [
+            0.9957134523655652,
+            1.0138707287169995
+          ],
+          "change_percent_process_peak_rss_kib": 0.10772815892059473,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            0.9980194806249236,
+            1.004463799825318
+          ],
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "variant": "arithmetic",
+          "threads": 8,
+          "processes": 3,
+          "change_percent_total_prover_ms": 1.1324986029403128,
+          "ratio_ci95_exact_total_prover_ms": [
+            1.0038786102442137,
+            1.0176374259542469
+          ],
+          "change_percent_prove_ms": 1.08409723372358,
+          "ratio_ci95_exact_prove_ms": [
+            1.0024424336120126,
+            1.0181881656191132
+          ],
+          "change_percent_witness_commit_ms": 1.7897266309662596,
+          "ratio_ci95_exact_witness_commit_ms": [
+            0.9941845352068232,
+            1.0462064930242496
+          ],
+          "change_percent_verify_ms": 0.9895517781059571,
+          "ratio_ci95_exact_verify_ms": [
+            1.0044075560475878,
+            1.0141390325174633
+          ],
+          "change_percent_process_peak_rss_kib": -0.2041475894415612,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            0.9969140715301077,
+            0.9989757081781749
+          ],
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "variant": "arithmetic",
+          "threads": 16,
+          "processes": 3,
+          "change_percent_total_prover_ms": -9.567716988770258,
+          "ratio_ci95_exact_total_prover_ms": [
+            0.9009986341541499,
+            0.9070876772900269
+          ],
+          "change_percent_prove_ms": -10.435560215431817,
+          "ratio_ci95_exact_prove_ms": [
+            0.892034237101235,
+            0.899033677161794
+          ],
+          "change_percent_witness_commit_ms": -0.9709972279161594,
+          "ratio_ci95_exact_witness_commit_ms": [
+            0.9603655976674117,
+            1.0140582068415818
+          ],
+          "change_percent_verify_ms": 0.4304294619997595,
+          "ratio_ci95_exact_verify_ms": [
+            0.9942217717744961,
+            1.011956271198598
+          ],
+          "change_percent_process_peak_rss_kib": 0.6545022205632023,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            0.9992199254455315,
+            1.012058305976695
+          ],
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Early shape gate",
+      "decision": "Rejected after full holdout: worse arithmetic regressions at 1/4/8 workers; the original cyclic constructor was restored.",
+      "campaign": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/final-holdout",
+      "processes": 80,
+      "verified_trials": 720,
+      "verified": true,
+      "audit": {
+        "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/final-holdout-independent-audit.json",
+        "sha256": "97b3389a8a0e75725eaefc80cddae253c5ff2e5e0fc0b7d792fe782857a7c37d"
+      },
+      "source_manifest": {
+        "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/final-source-manifest.json",
+        "sha256": "96599f76cbfaedee77aed33f7c05d95426bf8028c17f57892543666a0caf8cdf"
+      },
+      "binaries": {
+        "baseline_arithmetic": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/baseline-arithmetic",
+          "sha256": "909277c358ad25e39cb79d77f78a69841bc1cda5f80e321e4aecba9cc7aebc87"
+        },
+        "candidate_arithmetic": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/final-arithmetic",
+          "sha256": "f5c1f9c8bae88613a82b6f7e16caccf75e8d1b2380d7057ccd0e697767d7629b"
+        },
+        "baseline_full": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/baseline-full",
+          "sha256": "ae69fcf83d379d220e998aec054384e7ad16be33029d7667c353d1ead6f6c835"
+        },
+        "candidate_full": {
+          "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/bin/final-full",
+          "sha256": "38a3a269c28c65d7b10b73b847e37b6911f9074321373c0aebc660829c5e685d"
+        }
+      },
+      "comparisons": [
+        {
+          "variant": "arithmetic",
+          "threads": 1,
+          "config": "candidate",
+          "processes": 5,
+          "median_total_prover_ms": 183.328987,
+          "change_percent_total_prover_ms": 0.6161688553455225,
+          "ratio_ci95_exact_total_prover_ms": [
+            1.0036330820807426,
+            1.008696665731566
+          ],
+          "median_prove_ms": 159.590261,
+          "change_percent_prove_ms": 0.23627236117553796,
+          "ratio_ci95_exact_prove_ms": [
+            0.9997028587455132,
+            1.0050296654619684
+          ],
+          "median_witness_commit_ms": 23.591810000000002,
+          "change_percent_witness_commit_ms": 3.4279011269187976,
+          "ratio_ci95_exact_witness_commit_ms": [
+            1.032540211063384,
+            1.0357422193494574
+          ],
+          "median_verify_ms": 44.871314000000005,
+          "change_percent_verify_ms": 0.791271835593732,
+          "ratio_ci95_exact_verify_ms": [
+            1.0020690510828705,
+            1.0137904635672075
+          ],
+          "median_process_peak_rss_kib": 113280,
+          "change_percent_process_peak_rss_kib": 0.10010151025412473,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            0.9994646135382366,
+            1.0028503130809108
+          ],
+          "median_proof_payload_bytes": 263082,
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "variant": "arithmetic",
+          "threads": 4,
+          "config": "candidate",
+          "processes": 5,
+          "median_total_prover_ms": 65.674156,
+          "change_percent_total_prover_ms": 1.3817705515124512,
+          "ratio_ci95_exact_total_prover_ms": [
+            1.0080549552230837,
+            1.0200536925363908
+          ],
+          "median_prove_ms": 58.977605000000004,
+          "change_percent_prove_ms": 1.04014732753972,
+          "ratio_ci95_exact_prove_ms": [
+            1.0048220017676908,
+            1.0160119258944353
+          ],
+          "median_witness_commit_ms": 6.786581,
+          "change_percent_witness_commit_ms": 2.3858604968045816,
+          "ratio_ci95_exact_witness_commit_ms": [
+            1.0058509976872094,
+            1.0362282312752293
+          ],
+          "median_verify_ms": 24.184191000000002,
+          "change_percent_verify_ms": 1.3099555516832728,
+          "ratio_ci95_exact_verify_ms": [
+            0.9998130591305509,
+            1.023872970526176
+          ],
+          "median_process_peak_rss_kib": 117784,
+          "change_percent_process_peak_rss_kib": 0.002979966256710931,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            0.9979665534907323,
+            1.0025066009582224
+          ],
+          "median_proof_payload_bytes": 263082,
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "variant": "arithmetic",
+          "threads": 8,
+          "config": "candidate",
+          "processes": 5,
+          "median_total_prover_ms": 45.928604,
+          "change_percent_total_prover_ms": 1.2675576013271517,
+          "ratio_ci95_exact_total_prover_ms": [
+            1.0082786986266632,
+            1.0170916271965489
+          ],
+          "median_prove_ms": 41.894711,
+          "change_percent_prove_ms": 1.028163902972623,
+          "ratio_ci95_exact_prove_ms": [
+            1.0062455965697414,
+            1.01421309037419
+          ],
+          "median_witness_commit_ms": 4.0217600000000004,
+          "change_percent_witness_commit_ms": 3.602900479968185,
+          "ratio_ci95_exact_witness_commit_ms": [
+            1.0234837749364565,
+            1.049348765652197
+          ],
+          "median_verify_ms": 20.682295,
+          "change_percent_verify_ms": 2.413120323871154,
+          "ratio_ci95_exact_verify_ms": [
+            1.0119505695841065,
+            1.0342815350373515
+          ],
+          "median_process_peak_rss_kib": 120204,
+          "change_percent_process_peak_rss_kib": -0.0072808112999478425,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            0.996495227057206,
+            1.0027913320285697
+          ],
+          "median_proof_payload_bytes": 263082,
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "variant": "arithmetic",
+          "threads": 16,
+          "config": "candidate",
+          "processes": 5,
+          "median_total_prover_ms": 44.643903,
+          "change_percent_total_prover_ms": -9.339888571873079,
+          "ratio_ci95_exact_total_prover_ms": [
+            0.8988860709345475,
+            0.9143823750227936
+          ],
+          "median_prove_ms": 41.47119,
+          "change_percent_prove_ms": -9.939950019169064,
+          "ratio_ci95_exact_prove_ms": [
+            0.8940138514277582,
+            0.9078299809088475
+          ],
+          "median_witness_commit_ms": 3.134511,
+          "change_percent_witness_commit_ms": -0.14280938668701504,
+          "ratio_ci95_exact_witness_commit_ms": [
+            0.9619981758487763,
+            1.0365394871257376
+          ],
+          "median_verify_ms": 19.593204,
+          "change_percent_verify_ms": 1.8197782897446224,
+          "ratio_ci95_exact_verify_ms": [
+            1.0106734798393362,
+            1.025678525891671
+          ],
+          "median_process_peak_rss_kib": 124524,
+          "change_percent_process_peak_rss_kib": 0.2787174735938036,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            0.9999541496831058,
+            1.0056224739456916
+          ],
+          "median_proof_payload_bytes": 263082,
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "variant": "full",
+          "threads": 1,
+          "config": "candidate",
+          "processes": 5,
+          "median_total_prover_ms": 1983.6836239999998,
+          "change_percent_total_prover_ms": -0.11056225709131784,
+          "ratio_ci95_exact_total_prover_ms": [
+            0.9979407629010236,
+            1.000091061963122
+          ],
+          "median_prove_ms": 1658.3662719999998,
+          "change_percent_prove_ms": -0.02694177260459396,
+          "ratio_ci95_exact_prove_ms": [
+            0.9987210711269329,
+            1.0011325668011326
+          ],
+          "median_witness_commit_ms": 325.707019,
+          "change_percent_witness_commit_ms": -0.3434318372478873,
+          "ratio_ci95_exact_witness_commit_ms": [
+            0.9957330371142197,
+            0.9971892363305838
+          ],
+          "median_verify_ms": 45.35033,
+          "change_percent_verify_ms": -0.20702559928879039,
+          "ratio_ci95_exact_verify_ms": [
+            0.9799826131474592,
+            1.0166119993577833
+          ],
+          "median_process_peak_rss_kib": 2459444,
+          "change_percent_process_peak_rss_kib": 0.030268690629187134,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            0.9980888266771131,
+            1.002473424160593
+          ],
+          "median_proof_payload_bytes": 696682,
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "variant": "full",
+          "threads": 4,
+          "config": "candidate",
+          "processes": 5,
+          "median_total_prover_ms": 627.6912110000001,
+          "change_percent_total_prover_ms": 0.210806778195205,
+          "ratio_ci95_exact_total_prover_ms": [
+            0.9997535609832103,
+            1.0039565773561816
+          ],
+          "median_prove_ms": 521.3320030000001,
+          "change_percent_prove_ms": 0.04574112160411481,
+          "ratio_ci95_exact_prove_ms": [
+            0.997517910662586,
+            1.002327215059532
+          ],
+          "median_witness_commit_ms": 106.495056,
+          "change_percent_witness_commit_ms": 0.23053724251067553,
+          "ratio_ci95_exact_witness_commit_ms": [
+            0.9994287348936258,
+            1.0051902897300207
+          ],
+          "median_verify_ms": 34.912059,
+          "change_percent_verify_ms": 0.08823469646606075,
+          "ratio_ci95_exact_verify_ms": [
+            0.9984255475508717,
+            1.0028597145927438
+          ],
+          "median_process_peak_rss_kib": 2408404,
+          "change_percent_process_peak_rss_kib": 0.058268394780180977,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            0.9970560672077442,
+            1.0051601903626772
+          ],
+          "median_proof_payload_bytes": 696682,
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "variant": "full",
+          "threads": 8,
+          "config": "candidate",
+          "processes": 5,
+          "median_total_prover_ms": 403.144804,
+          "change_percent_total_prover_ms": -0.34437670365565776,
+          "ratio_ci95_exact_total_prover_ms": [
+            0.991514128323081,
+            1.0006810231554932
+          ],
+          "median_prove_ms": 329.245655,
+          "change_percent_prove_ms": -0.38639823980481935,
+          "ratio_ci95_exact_prove_ms": [
+            0.9891636928590263,
+            1.003256613440495
+          ],
+          "median_witness_commit_ms": 73.91220399999999,
+          "change_percent_witness_commit_ms": 0.3225901463107306,
+          "ratio_ci95_exact_witness_commit_ms": [
+            0.9998346381340818,
+            1.0071419324514148
+          ],
+          "median_verify_ms": 33.082428,
+          "change_percent_verify_ms": -0.08671923117411495,
+          "ratio_ci95_exact_verify_ms": [
+            0.9973302898240454,
+            1.0011096440347058
+          ],
+          "median_process_peak_rss_kib": 2475240,
+          "change_percent_process_peak_rss_kib": 0.1336112785896848,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            0.9997499542309587,
+            1.0030033615841414
+          ],
+          "median_proof_payload_bytes": 696682,
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        },
+        {
+          "variant": "full",
+          "threads": 16,
+          "config": "candidate",
+          "processes": 5,
+          "median_total_prover_ms": 328.812706,
+          "change_percent_total_prover_ms": -3.055657158338909,
+          "ratio_ci95_exact_total_prover_ms": [
+            0.9623198946073259,
+            0.9766196938946645
+          ],
+          "median_prove_ms": 266.773328,
+          "change_percent_prove_ms": -3.9172391680283747,
+          "ratio_ci95_exact_prove_ms": [
+            0.9533671164603563,
+            0.9673037887266676
+          ],
+          "median_witness_commit_ms": 61.625845999999996,
+          "change_percent_witness_commit_ms": 0.5261638841681959,
+          "ratio_ci95_exact_witness_commit_ms": [
+            1.0013879123586629,
+            1.0092683039407535
+          ],
+          "median_verify_ms": 32.123272,
+          "change_percent_verify_ms": -0.35843876465496693,
+          "ratio_ci95_exact_verify_ms": [
+            0.9943553958251748,
+            0.9984284906542658
+          ],
+          "median_process_peak_rss_kib": 2476464,
+          "change_percent_process_peak_rss_kib": 0.08809307209924899,
+          "ratio_ci95_exact_process_peak_rss_kib": [
+            0.9988239373809776,
+            1.0026452895219122
+          ],
+          "median_proof_payload_bytes": 696682,
+          "change_percent_proof_payload_bytes": 0.0,
+          "ratio_ci95_exact_proof_payload_bytes": [
+            1.0,
+            1.0
+          ]
+        }
+      ]
+    }
+  ],
+  "diagnosis": {
+    "forest_inclusive_ms": {
+      "threads8": 14.997,
+      "threads16": 22.208
+    },
+    "integer_column_fold_ms": {
+      "threads8": 0.382,
+      "threads16": 0.39
+    },
+    "notes": [
+      "Nested stage times overlap and are diagnostic only.",
+      "Fine tracing localized the penalty to JIT writes and dense tails.",
+      "The separate SMT-affinity experiment changes physical-core count and locality together; it does not isolate cache causation."
+    ],
+    "references": [
+      {
+        "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/baseline-trace-analysis.json",
+        "sha256": "1a893c735b610aa98609d45081910979eb4bfaa59503539fbb4ed9a7db354e71"
+      },
+      {
+        "path": "/home/john-wu/code/BitZ-pcs/.tmp/falcon-binder-experiments/.tmp/arithmetic-scaling/baseline-fine-trace-analysis.json",
+        "sha256": "b80830097b3a163a907610dd53029452c94af16dd8aee002f3012dc3ac9bff87"
+      }
+    ]
+  },
+  "statistics": {
+    "timing": "Within-process median of samples after excluding warmups; displayed times are medians across five process medians.",
+    "comparison": "Geometric mean of five candidate/baseline ratios paired by variant, workers and seed.",
+    "confidence": "Exact enumeration of 5^5 paired bootstrap resamples of log ratios, with linearly interpolated percentile endpoints; descriptive, with no multiple-comparison adjustment.",
+    "rss": "Maximum process RSS across warmup and samples; includes fixture setup and proof-debug formatting.",
+    "limits": [
+      "Intervals crossing zero are inconclusive, not proof of strict nonregression.",
+      "Results qualify the native build, host, affinity and workload tested."
+    ]
+  }
+}
