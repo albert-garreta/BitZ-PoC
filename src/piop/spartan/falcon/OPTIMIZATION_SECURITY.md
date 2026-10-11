@@ -4,7 +4,7 @@ SharedPrime combines the native Falcon ring proof, integer norm and HashToPoint
 reductions, binary Keccak, and one joint source PCS opening. Supported Falcon
 degrees are 512 and 1024; validated profiles select ring extension degree
 `k` from 9, 10, and 11. The protocol identifier is
-`bitz/falcon/shared-prime/non-zk/v6`.
+`bitz/falcon/shared-prime/non-zk/v7`.
 
 ## Model and fields
 
@@ -118,17 +118,13 @@ complete composition.
 
 ## Binary obligations and PCS
 
-At target 128, the original equal-per-block PCS allocation supplies the total PCS error
-budget. A deterministic greedy allocation buys error reduction per expected
-hash, starting at each block's native minimum. It is adopted only when it
-reduces expected work and its upward-rounded summed error is no greater than
-the original downward-rounded sum. All difficulties remain at most 32 bits.
-Exact dyadic-integer tests compare the represented raw bounds independently
-of this floating-point interval check. The allocation depends only on public
-configuration, never on statement or nonce values. Every final difficulty
-is already included in the statement digest and replayed by the verifier.
-Target 100 retains its original allocation, where dispatch overhead dominates
-the already small nonce searches.
+At both targets, the prepared joint source geometry determines the PCS
+configuration. The work-optimal allocation below sets the final difficulties
+for every binary group and PCS challenge block, preserving each block's native
+minimum. It depends only on public configuration, never on statement or nonce
+values. Every final difficulty is included in the statement digest and replayed
+by the verifier. Exact rational composition tests independently bound the
+represented raw errors.
 
 The ledger retains the bounded integer-to-binary BitZ forest/GKR, every
 Keccak slab, public SHAKE wiring and source padding, binary claim batching,
@@ -136,6 +132,31 @@ the joint binary sumcheck, ring switching, and support padding. Their
 difficulties come from the work-optimal allocation below. The
 activity-mask constant-column identity is multilinear within the existing
 Keccak outer dimension and introduces no additional unbound endpoint.
+
+Falcon-1024 uses three Keccak slabs containing 12, 6, and 2 permutations.
+The first two use three independent permutations per block with block bit
+dimension `k_c=17`; the last uses one with `k_c=16`. Falcon-512 retains
+8+2+1 single-permutation slabs. For a slab with total bit dimension `m_c`,
+the prefix has `m_c+k_c-8` challenge blocks, including `k_c-6` lincheck
+rounds. Its raw error numerator is at most `5*m_c+k_c+150`, below the
+conservative allocation `4*m_c+256` for all supported shapes. Each slab has
+its own ledger contribution and derived grinding difficulty. The three
+permutations share one constant wire, pinned to the live-signature mask;
+inactive blocks, including all three subpermutations, remain zero. Public
+wiring checks every chain edge within and across the slabs.
+
+Claim values are bound before independent linear batching coefficients are
+drawn. Increasing from four to six Keccak terminal claims does not increase
+that batching degree beyond one. The SHAKE wiring polynomial has total degree
+at most `16+10+1=27`, and arithmetic padding at most `17+10+1=28`.
+Their union is at most `56/2^128` before grinding, within the retained
+`256/2^128` link allocation. Those draws share one uninterrupted grinding block.
+
+The new Falcon-1024 layout halves the joint padded domain at capacities of
+at least four. At batches one and two the eight-block lincheck floor instead
+gives slab capacities 2/4/4: the joint domain doubles at batch one and stays
+unchanged at batch two. The ledger uses the resulting actual joint dimensions
+and PCS configuration; old geometry or grinding values are not reused.
 
 The source matrix has 8192 rows; the column count follows the compact source
 stride.
@@ -178,8 +199,9 @@ obligation, since only the composed sum enters the target.
 ## Enforcement and validation
 
 Before challenges, the statement binds the source root, public data, degree,
-extension polynomial, maximum batch, security target, layout, activity
-policy, and derived schedule fields. The native-ring certificate and its
+extension polynomial, maximum batch, security target, layout, slab boundaries
+and circuit widths, activity policy, and derived schedule fields. Each Keccak
+prefix also binds its actual circuit identity and dimensions. The native-ring certificate and its
 integer lift precede their respective challenges; the actual prime is
 sampled after the lift is bound. Public selection masks precede the native-ring
 challenges and all arithmetic challenges. The rejection row point nonce

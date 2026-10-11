@@ -4,7 +4,7 @@ SharedPrime authenticates the arithmetic and Keccak slab witnesses
 through one initial Merkle tree. The logical source dimensions, arithmetic
 bridge, ring switch, and recursive Ligerito commitments remain separate
 concepts. There is no compatibility path for the preceding Falcon proofs.
-The protocol identifier is `bitz/falcon/shared-prime/non-zk/v6`. `FalconHybridStatement::source_root` is the one
+The protocol identifier is `bitz/falcon/shared-prime/non-zk/v7`. `FalconHybridStatement::source_root` is the one
 source root. Ligerito's `initial_root` field is still the statement identifier,
 not that Merkle root; its authentication callback checks `source_root`.
 
@@ -17,10 +17,14 @@ d_j and aligned offset o_j, define the coordinate selection
 
     (P_j W)[128(d_j t + k) + b] = W[128(16t + o_j + k) + b].
 
-For Falcon-1024 at batch 1024 the widths in A/K16/K4 order are [1,8,2], the offsets are
-[10,0,8], and there are 2^20 positions. At batch one its widths are [1,8,4]
-and offsets [12,0,8]. These values are derived from Geometry, not selected
-by the prover. Falcon-512 uses its own slab decomposition and derived widths. Unused lanes and physical source suffixes are zero.
+Falcon-1024 uses A/K12/K6/K2 source order. K12 and K6 pack three independent
+permutations per 2^17-bit block; K2 packs one per 2^16-bit block. At batch 1024
+the widths are [2,8,4,2], the offsets are [12,0,8,14], and there are 2^19
+positions. At batch one the widths are [1,4,4,2], offsets [10,0,4,8], and there
+are 2^11 positions. The lincheck minimum of eight blocks gives slab signature
+capacities [2,4,4] at batch one. These values are derived from Geometry, not
+selected by the prover. Falcon-512 retains its 8+2+1 single-permutation slabs
+and existing geometry. Unused lanes and physical source suffixes are zero.
 
 Pack V(t,l) = sum_b beta_b W(b,l,t), and RS encode along t:
 
@@ -30,7 +34,7 @@ Pack V(t,l) = sum_b beta_b W(b,l,t), and RS encode along t:
 Each leaf authenticates all sixteen canonical little-endian K elements,
 including padding. The implementation encodes only populated source lanes,
 gathers bounded batches of full rows for hashing, and builds one initial
-tree. It does not allocate a dense padded joint codeword or three temporary
+tree. It does not allocate a dense padded joint codeword or temporary
 source trees. One multiproof authenticates the queried initial rows. The
 proof stores their occupied lanes in ascending lane order; the verifier
 restores the structural zero lanes before hashing or inducing a sumcheck.
@@ -38,10 +42,11 @@ All sixteen lanes therefore remain part of the committed alphabet.
 
 ## Compact opening messages
 
-For Falcon-1024, the initial opening stores eleven field elements per query at batch sizes
-2..1024: eight K16 lanes, two K4 lanes, and one arithmetic lane. Batch one
-stores thirteen because its K4 slab needs four lanes. The prepared geometry
-determines these positions and counts. Each row is expanded by
+For Falcon-1024, the initial opening stores sixteen field elements per query at
+batch sizes 3..1024: two arithmetic lanes, eight K12 lanes, four K6 lanes, and
+two K2 lanes. Batches one and two store eleven because the slab capacity floors
+change the relative source sizes. The prepared geometry determines these
+positions and counts. Each row is expanded by
 
     E_full(q,l) = E_compact(q,rank(l))  if l is an occupied lane,
                   0                  otherwise.
@@ -49,8 +54,11 @@ determines these positions and counts. Each row is expanded by
 Only entire structural zero lanes are omitted. An inactive signature, a
 source's physical suffix, or a circuit padding coordinate does not justify
 dropping an encoded field element from an occupied lane. The source root,
-query positions, multiproof hashes, and reconstructed row bytes are unchanged.
-This saves 80 bytes per initial query, or 48 bytes at batch one, before framing.
+query positions, multiproof hashes, and reconstructed row bytes are unchanged
+by compact encoding. At batches one and two it omits five structural zero
+lanes, saving 80 bytes per query before framing. At larger batches all sixteen
+lanes are occupied. The new slab geometry changes the PCS configuration;
+compact-row savings alone do not predict the total proof size.
 
 At the final recursive level, let F(c,l) be the full message of its existing
 commitment, with 32 columns and L lanes. Its stored order is column-major
@@ -66,10 +74,8 @@ rows, and their Merkle multiproof. It now sends F alone. The verifier checks
 The recomputed root must equal the last recursive root already bound in the
 transcript. The verifier derives the old residual y from F and retains the
 residual sumcheck check. This authenticates the entire final codeword without
-storing a final multiproof. For Falcon-1024 at both security targets, batches 1/3/32/1024 use respectively
-128/64/64/256 field elements for F: 2,048/1,024/1,024/4,096 bytes. These are
-smaller than even the former residual-plus-row payloads before their hashes
-and framing are counted.
+storing a final multiproof. The length of F comes from the final recursive
+configuration selected for the prepared geometry and security target.
 
 After that full root check, the last induced-query contribution cancels
 exactly. For the same normalized LCH basis used by the RS encoder, write
@@ -122,7 +128,8 @@ intermediate U/V coefficients are committed. The masks add proof data, not
 another witness commitment. This protocol remains non-ZK.
 
 Keccak contributes its two local AB/C linear claims for each slab. The public
-nonce/input, chaining (including K16 to K4), and HashToPoint extraction checks
+nonce/input, chaining (including transitions within triples and K12 to K6 to
+K2), and HashToPoint extraction checks
 remain in the joint binary sumcheck. The parent transcript binds all values
 before drawing their batching coefficients. Local source claims become
 joint claims through P_j^T, including the lane-selector factors at arbitrary
@@ -136,7 +143,8 @@ authenticates that claim against R_W and the recursive folding commitments.
 ## Inactive Keccak instances
 
 For B live signatures in capacity C, constrain the constant wire of every
-permutation block to mu_B(s) = [s < B]. In the existing lincheck the target is
+circuit block to mu_B(s) = [s < B]. A three-permutation block shares one
+constant wire across all three computations. In the existing lincheck the target is
 
     alpha v_L + v_R + beta MLE(mu_B)(r_signature).
 
@@ -145,6 +153,14 @@ mask takes O(log C) operations and introduces no new messages or challenges.
 The discrepancy between the committed constant column and the public mask
 is a multilinear polynomial of degree at most the existing outer dimension,
 so the existing constant-pin error allocation covers it.
+
+With total bit dimension m and per-block dimension k, the Keccak prefix has
+m+k-8 challenge blocks: m+8 for the single-permutation circuit (k=16), and
+m+9 for the three-permutation circuit (k=17). The latter has eleven lincheck
+rounds instead of ten. Its raw error numerator is bounded by 5m+k+150, which
+remains below the conservative allocation 4m+256 for every supported shape.
+The composition budgets each slab separately and derives its grinding from
+that slab's dimensions.
 
 For active blocks, the homogeneous circuit is ordinary Keccak. For inactive
 blocks, kappa=0 forces the input to zero through S0*kappa=S0. The homogeneous
@@ -156,8 +172,10 @@ walker, not the empty sparse-matrix preparation stub.
 
 The generator executes only live permutations. Full groups use the existing
 SIMD kernel; partial groups use scalar generation. Inactive z/a/b/stripe
-buffers and outputs are zero, including recycled storage. Batch one's K4
-capacity remains two for packing, but its second instance is all zero.
+buffers and outputs are zero, including recycled storage. Every active K12/K6
+block contains exactly three live permutations, so no unused subpermutation
+shares a constant wire pinned to one. Additional signature slots introduced by
+the eight-block floor are all-zero blocks.
 
 ## Binding and soundness accounting
 
@@ -165,14 +183,14 @@ Before challenges, the statement binds R_W, public inputs, protocol version,
 source geometry and offsets, packing, zero-inactive policy, security target,
 prime family and bridge profile, and grinding schedule. The actual shared
 prime is sampled after binding the integer lift. Each Keccak prefix additionally
-binds the actual circuit identity, slab identity, local dimensions, activity
+binds the actual circuit identity, slab identity and width, local dimensions, activity
 policy, and the parent statement digest. Prepared verifier metadata determines
 all layouts; proof lengths do not select a profile.
 
 The initial PCS oracle is one vector-valued RS codeword, with each sixteen-lane
 row as one alphabet symbol. Apply the existing unique-decoding continuation
 to this joint oracle. Do not infer joint proximity from separate proximity
-of the three sources: their corrupt positions could be disjoint. Merkle
+of the logical sources: their corrupt positions could be disjoint. Merkle
 binding identifies one joint oracle, the PCS establishes its proximity, and
 the padding/projection constraints identify the logical committed witness.
 

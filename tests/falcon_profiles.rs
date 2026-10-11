@@ -28,6 +28,81 @@ fn constant_expressions_and_batch_limits() {
 }
 
 #[test]
+fn falcon1024_three_slab_source_geometry() {
+    macro_rules! check {
+        ($profile:ty) => {
+            for (batch, logs, widths, position_log, source_bits) in [
+                (
+                    1,
+                    [10, 13, 13, 12],
+                    [1, 4, 4, 2],
+                    11,
+                    [131_072, 1_048_576, 1_048_576, 524_288],
+                ),
+                (
+                    3,
+                    [12, 14, 13, 12],
+                    [2, 8, 4, 2],
+                    11,
+                    [131_072, 524_288, 262_144, 131_072],
+                ),
+                (
+                    32,
+                    [15, 17, 16, 15],
+                    [2, 8, 4, 2],
+                    14,
+                    [131_072, 524_288, 262_144, 131_072],
+                ),
+                (
+                    1024,
+                    [20, 22, 21, 20],
+                    [2, 8, 4, 2],
+                    19,
+                    [131_072, 524_288, 262_144, 131_072],
+                ),
+            ] {
+                let prepared = PreparedFalconHybrid::<$profile>::new(batch).unwrap();
+                assert_eq!(prepared.pcs_source_packed_logs(), logs, "batch {batch}");
+                assert_eq!(prepared.pcs_source_lane_widths(), widths, "batch {batch}");
+                assert_eq!(prepared.pcs_position_log(), position_log, "batch {batch}");
+                assert_eq!(prepared.pcs_virtual_lane_log(), 4);
+                assert_eq!(
+                    prepared.source_bits_per_signature(),
+                    source_bits,
+                    "batch {batch}"
+                );
+                assert!(prepared.security().algebraic_bits >= <$profile>::SECURITY_BITS as f64);
+            }
+        };
+    }
+    check!(Falcon1024_100);
+    check!(Falcon1024_128);
+}
+
+#[test]
+fn falcon512_keeps_single_permutation_slab_geometry() {
+    macro_rules! check {
+        ($profile:ty) => {
+            for (batch, logs, widths, position_log) in [
+                (1, [9, 12, 12, 12], [1, 4, 4, 4], 10),
+                (3, [11, 14, 12, 12], [1, 8, 2, 2], 11),
+                (32, [14, 17, 15, 14], [1, 8, 2, 1], 14),
+                (1024, [19, 22, 20, 19], [1, 8, 2, 1], 19),
+            ] {
+                let prepared = PreparedFalconHybrid::<$profile>::new(batch).unwrap();
+                assert_eq!(prepared.pcs_source_packed_logs(), logs, "batch {batch}");
+                assert_eq!(prepared.pcs_source_lane_widths(), widths, "batch {batch}");
+                assert_eq!(prepared.pcs_position_log(), position_log, "batch {batch}");
+                assert_eq!(prepared.pcs_virtual_lane_log(), 4);
+                assert!(prepared.security().algebraic_bits >= <$profile>::SECURITY_BITS as f64);
+            }
+        };
+    }
+    check!(Falcon512_100);
+    check!(Falcon512_128);
+}
+
+#[test]
 fn manual_profiles_cannot_bypass_validation() {
     macro_rules! invalid {
         ($name:ident,$n:expr,$k:expr,$bits:expr,$max:expr) => {

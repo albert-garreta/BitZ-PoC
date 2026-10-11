@@ -13,7 +13,7 @@ use flock_core::{
     r1cs::{BlockR1cs, WitnessLayout},
     zerocheck::ZerocheckProof,
 };
-use flock_prover::r1cs_hashes::keccak as compact;
+use flock_prover::r1cs_hashes::{keccak as compact, keccak3};
 
 use crate::{
     hybrid::{
@@ -80,34 +80,49 @@ crate::piop::spartan::grinding::grinding_domains! {
 
 /// Prepared public circuit. No witness-sized tables or commitments are built
 /// during preparation. BatchMajor addresses are
-/// `[7 in-word | log2(capacity) signature | log2(permutations) permutation | 9 chunk]`.
+/// `[7 in-word | log2(capacity) signature | log2(blocks/signature) block | chunk]`.
+/// A block holds one permutation or three consecutive permutations.
 pub(crate) struct PreparedKeccak {
     batch_len: usize,
     capacity: usize,
     r1cs: BlockR1cs,
     first_permutation: usize,
     permutations: usize,
+    permutations_per_block: usize,
 }
 
-/// The block index is [signature | permutation], so the public constant
+/// The block index is [signature | permutation group], so the public constant
 /// column is the prefix mask of the signature coordinates. All circuit
 /// coefficients remain those of the real Keccak walker.
 struct ActiveKeccakCircuit {
     batch_len: usize,
     capacity: usize,
+    permutations_per_block: usize,
 }
 
 impl LincheckCircuit for ActiveKeccakCircuit {
     fn n_cols(&self) -> usize {
-        compact::KeccakLincheckCircuit.n_cols()
+        if self.permutations_per_block == 3 {
+            keccak3::KeccakLincheckCircuit.n_cols()
+        } else {
+            compact::KeccakLincheckCircuit.n_cols()
+        }
     }
 
     fn fold_alpha_batched(&self, alpha: Gf128, eq_inner: &[Gf128]) -> Vec<Gf128> {
-        compact::KeccakLincheckCircuit.fold_alpha_batched(alpha, eq_inner)
+        if self.permutations_per_block == 3 {
+            keccak3::KeccakLincheckCircuit.fold_alpha_batched(alpha, eq_inner)
+        } else {
+            compact::KeccakLincheckCircuit.fold_alpha_batched(alpha, eq_inner)
+        }
     }
 
     fn const_pin_col(&self) -> Option<usize> {
-        Some(compact::Z_CONST)
+        Some(if self.permutations_per_block == 3 {
+            keccak3::Z_CONST
+        } else {
+            compact::Z_CONST
+        })
     }
 
     fn const_pin_value(&self, outer_point: &[Gf128]) -> Gf128 {
@@ -142,14 +157,22 @@ impl PreparedKeccak {
         first: usize,
         permutations: usize,
     ) -> Result<Self, KeccakError> {
-        if !(1..=MAX_CAPACITY).contains(&batch_len)
-            || !(0..super::KECCAK_SLABS).any(|i| super::PARAMETERS.slab(i) == (first, permutations))
-        {
+        if !(1..=MAX_CAPACITY).contains(&batch_len) {
             return Err(KeccakError::Invalid("invalid SHAKE permutation slab"));
         }
+        let slab = (0..super::KECCAK_SLABS)
+            .find(|&i| super::PARAMETERS.slab(i) == (first, permutations))
+            .ok_or(KeccakError::Invalid("invalid SHAKE permutation slab"))?;
+        let permutations_per_block = super::PARAMETERS.slab_width(slab);
+        let blocks_per_signature = permutations / permutations_per_block;
         // The Flock byte-stripe lincheck requires at least eight blocks.
-        let capacity = batch_len.next_power_of_two().max(8 / permutations);
-        let mut r1cs = compact::build_block_r1cs((capacity * permutations).ilog2() as usize);
+        let capacity = batch_len.next_power_of_two().max(8 / blocks_per_signature);
+        let block_log = (capacity * blocks_per_signature).ilog2() as usize;
+        let mut r1cs = if permutations_per_block == 3 {
+            keccak3::build_block_r1cs(block_log)
+        } else {
+            compact::build_block_r1cs(block_log)
+        };
         r1cs.layout = WitnessLayout::BatchMajor;
         Ok(Self {
             batch_len,
@@ -157,6 +180,7 @@ impl PreparedKeccak {
             r1cs,
             first_permutation: first,
             permutations,
+            permutations_per_block,
         })
     }
 
@@ -167,11 +191,12 @@ impl PreparedKeccak {
         if initial.len() != self.batch_len {
             return Err(KeccakError::Invalid("SHAKE chain input shape"));
         }
-        let (z, a, b, lincheck, outputs) = compact::generate_chained_witness_batch_major(
-            initial,
-            self.capacity,
-            self.permutations,
-        );
+        let generate = if self.permutations_per_block == 3 {
+            keccak3::generate_chained_witness_batch_major
+        } else {
+            compact::generate_chained_witness_batch_major
+        };
+        let (z, a, b, lincheck, outputs) = generate(initial, self.capacity, self.permutations);
         Ok((z, KeccakAuxiliary { a, b, lincheck }, outputs))
     }
 
@@ -193,7 +218,7 @@ impl PreparedKeccak {
 
     /// Challenge blocks ground at the prefix difficulty.
     pub(crate) fn challenge_blocks(&self) -> usize {
-        self.bit_vars() + 8
+        self.bit_vars() + self.r1cs.k_log - 8
     }
 
     /// Component target whose derived grinding difficulty is `bits`.
@@ -210,10 +235,10 @@ impl PreparedKeccak {
             ));
         }
         // Initial random eq weights: <=m-7; inverse-at-one exceptional points:
-        // <=m-13; constant-column fold over blocks: <=m-16. Univariate skip:
+        // <=m-13; constant-column fold over blocks: <=m-k. Univariate skip:
         // <128. Zerocheck: 2(m-6). Lincheck alpha/constant pin batching: <=2,
-        // ten quadratic rounds: <=20, final univariate skip: <64.
-        // Total <=5m+166 <4m+256 for every supported m<=34.
+        // k-6 quadratic rounds: <=2(k-6), final univariate skip: <64.
+        // Total <=5m+k+150 <4m+256 for supported m<=34 and k in {16,17}.
         // The seven fixed inner weights encode Boolean residuals in distinct
         // extension-field basis positions; they are not independent draws.
         let raw_error_numerator = self.raw_error_numerator();
@@ -225,7 +250,7 @@ impl PreparedKeccak {
             ));
         }
         // Initial vector, univariate skip, m-6 zerocheck rounds, alpha+beta,
-        // ten lincheck rounds, and the final univariate skip.
+        // k-6 lincheck rounds, and the final univariate skip.
         Ok(PrefixSecurity {
             component_bits,
             grinding_bits,
@@ -234,7 +259,8 @@ impl PreparedKeccak {
         })
     }
 
-    /// Global committed address of a per-permutation lane-contiguous bit.
+    /// Global committed address of a block-local lane-contiguous bit.
+    /// Consecutive triples share a block when `permutations_per_block == 3`.
     pub(crate) fn bit_index(
         &self,
         signature: usize,
@@ -245,10 +271,10 @@ impl PreparedKeccak {
             signature < self.capacity
                 && (self.first_permutation..self.first_permutation + self.permutations)
                     .contains(&permutation)
-                && local_bit < compact::K
+                && local_bit < 1 << self.r1cs.k_log
         );
         let permutation = permutation - self.first_permutation;
-        let block = permutation * self.capacity + signature;
+        let block = (permutation / self.permutations_per_block) * self.capacity + signature;
         (((local_bit >> LOG_PACKING) << self.r1cs.n_log()) | block) * 128 + (local_bit & 127)
     }
 
@@ -260,7 +286,12 @@ impl PreparedKeccak {
         state_bit: usize,
     ) -> usize {
         assert!(state_bit < compact::STATE_BITS);
-        self.bit_index(signature, permutation, compact::STATE0_BIT_BASE + state_bit)
+        let sub = (permutation - self.first_permutation) % self.permutations_per_block;
+        self.bit_index(
+            signature,
+            permutation,
+            2 * keccak3::SLOT_BITS * sub + state_bit,
+        )
     }
 
     pub(crate) fn output_bit_index(
@@ -270,10 +301,11 @@ impl PreparedKeccak {
         state_bit: usize,
     ) -> usize {
         assert!(state_bit < compact::STATE_BITS);
+        let sub = (permutation - self.first_permutation) % self.permutations_per_block;
         self.bit_index(
             signature,
             permutation,
-            compact::STATE24_BIT_BASE + state_bit,
+            2 * keccak3::SLOT_BITS * sub + compact::STATE24_BIT_BASE + state_bit,
         )
     }
 
@@ -289,6 +321,56 @@ impl PreparedKeccak {
         )
     }
 
+    /// Splice a separately valid local computation without repairing its chain
+    /// links. Tests use this to distinguish local Keccak validity from SHAKE.
+    #[cfg(test)]
+    pub(super) fn replace_permutation_for_test(
+        &self,
+        packed: &mut [Gf128],
+        auxiliary: &mut KeccakAuxiliary,
+        donor_packed: &[Gf128],
+        donor_auxiliary: &KeccakAuxiliary,
+        signature: usize,
+        permutation: usize,
+    ) {
+        let local_permutation = permutation - self.first_permutation;
+        let sub = local_permutation % self.permutations_per_block;
+        let block = local_permutation / self.permutations_per_block * self.capacity + signature;
+        let state_base = 2 * sub * keccak3::SLOT_BITS;
+        let chi_base = if self.permutations_per_block == 3 {
+            keccak3::T_PACKED_BIT_BASE + sub * compact::N_T * compact::STATE_BITS
+        } else {
+            compact::T_PACKED_BIT_BASE
+        };
+        for range in [
+            state_base..state_base + compact::STATE_BITS,
+            state_base + compact::STATE24_BIT_BASE
+                ..state_base + compact::STATE24_BIT_BASE + compact::STATE_BITS,
+            chi_base..chi_base + compact::N_T * compact::STATE_BITS,
+        ] {
+            for local in range.step_by(64) {
+                let index = self.bit_index(signature, permutation, local);
+                for (destination, donor) in [
+                    (&mut *packed, donor_packed),
+                    (auxiliary.a.as_mut_slice(), donor_auxiliary.a.as_slice()),
+                    (auxiliary.b.as_mut_slice(), donor_auxiliary.b.as_slice()),
+                ] {
+                    if index % 128 == 0 {
+                        destination[index / 128].lo = donor[index / 128].lo;
+                    } else {
+                        destination[index / 128].hi = donor[index / 128].hi;
+                    }
+                }
+                let mask = 1u8 << (block % 8);
+                let stripe = (block / 8) * (1 << self.r1cs.k_log) + local;
+                for offset in stripe..stripe + 64 {
+                    auxiliary.lincheck[offset] = (auxiliary.lincheck[offset] & !mask)
+                        | (donor_auxiliary.lincheck[offset] & mask);
+                }
+            }
+        }
+    }
+
     fn bind<T: Transcript>(
         &self,
         t: &mut T,
@@ -297,15 +379,17 @@ impl PreparedKeccak {
         security: PrefixSecurity,
     ) -> [u8; 32] {
         let mut h = blake3::Hasher::new();
-        h.update(b"bitz/falcon1024-ct/hybrid-keccak-projected-prefix/v3");
+        h.update(b"bitz/falcon1024-ct/hybrid-keccak-projected-prefix/v4");
         h.update(source_root);
         h.update(statement_digest);
-        h.update(b"compact-keccak-24:state0,state24,chi24;batch-major/v1");
-        h.update(b"constant=signature<batch;inactive=all-zero;signature-before-permutation/v1");
+        h.update(b"compact-keccak-24:state0,state24,chi24;single-or-triple;batch-major/v2");
+        h.update(b"constant=signature<batch;inactive=all-zero;signature-before-block/v2");
         h.update(&self.r1cs.statement_digest());
         for n in [
             self.first_permutation,
             self.permutations,
+            self.permutations_per_block,
+            self.r1cs.k_log,
             self.batch_len,
             self.capacity,
             self.bit_vars(),
@@ -315,7 +399,7 @@ impl PreparedKeccak {
         h.update(&security.component_bits.to_le_bytes());
         h.update(&security.grinding_bits.to_le_bytes());
         let digest = *h.finalize().as_bytes();
-        t.absorb_slice(b"bitz/falcon1024-ct/hybrid-keccak-projected-prefix/v3");
+        t.absorb_slice(b"bitz/falcon1024-ct/hybrid-keccak-projected-prefix/v4");
         t.absorb_slice(&digest);
         digest
     }
@@ -348,6 +432,7 @@ impl PreparedKeccak {
         let circuit = ActiveKeccakCircuit {
             batch_len: self.batch_len,
             capacity: self.capacity,
+            permutations_per_block: self.permutations_per_block,
         };
         let prefix = flock_prover::prover::prove_fast_source_prefix(
             &self.r1cs,
@@ -413,6 +498,7 @@ impl PreparedKeccak {
         let circuit = ActiveKeccakCircuit {
             batch_len: self.batch_len,
             capacity: self.capacity,
+            permutations_per_block: self.permutations_per_block,
         };
         let result = flock_core::verifier::verify_source_core(
             &self.r1cs,
@@ -553,6 +639,7 @@ mod tests {
                 let circuit = ActiveKeccakCircuit {
                     batch_len: count,
                     capacity: weights.len(),
+                    permutations_per_block: 3,
                 };
                 let mut outer = point.clone();
                 outer.extend([Gf128 { lo: 71, hi: 9 }, Gf128 { lo: 13, hi: 42 }]);
@@ -698,95 +785,83 @@ mod tests {
 
     #[test]
     fn shake_slabs_chaining_extraction_and_padding_match_native_trace() {
-        for batch in [1, 3] {
+        for batch in [1, 3, 8] {
             let nonces: Vec<_> = (0..batch).map(|i| [7 + i as u8 * 13; 40]).collect();
             let messages: Vec<_> = (0..batch).map(|i| [11 + i as u8 * 17; 32]).collect();
-            let prepared = [
-                PreparedKeccak::new_slab(batch, 0, 16).unwrap(),
-                PreparedKeccak::new_slab(batch, 16, 4).unwrap(),
-            ];
-            assert_eq!(prepared[0].capacity(), batch.next_power_of_two());
-            assert_eq!(prepared[1].capacity(), batch.next_power_of_two().max(2));
-            let initial: Vec<_> = nonces
+            let prepared: Vec<_> = (0..super::super::KECCAK_SLABS)
+                .map(|i| {
+                    let (first, count) = super::super::PARAMETERS.slab(i);
+                    PreparedKeccak::new_slab(batch, first, count).unwrap()
+                })
+                .collect();
+            let slab_for = |permutation| {
+                prepared.iter().position(|slab| {
+                    (slab.first_permutation..slab.first_permutation + slab.permutations)
+                        .contains(&permutation)
+                }).unwrap()
+            };
+            let mut initial: Vec<_> = nonces
                 .iter()
                 .zip(&messages)
                 .map(|(nonce, message)| initial_state(nonce, message))
                 .collect();
-            let (first, _, outputs) = prepared[0].generate_chain(&initial).unwrap();
-            let next: Vec<_> = outputs.iter().take(batch).map(|chain| chain[15]).collect();
-            let (last, _, _) = prepared[1].generate_chain(&next).unwrap();
-            let packed = [first, last];
-            for (slab, words) in prepared.iter().zip(&packed) {
+            let mut packed = Vec::new();
+            for slab in &prepared {
+                let (words, _, outputs) = slab.generate_chain(&initial).unwrap();
                 assert_eq!(words.len(), 1 << slab.packed_vars());
+                initial = outputs.iter().take(batch).map(|chain| *chain.last().unwrap()).collect();
+                packed.push(words);
             }
             for signature in 0..batch {
                 let input = [nonces[signature].as_slice(), messages[signature].as_slice()].concat();
                 let (expected, trace) = crate::piop::spartan::falcon::shake256_with_trace(&input, 2 * SAMPLES);
                 for sample in 0..SAMPLES {
-                    let slab = usize::from(2 * sample / RATE_BYTES >= 16);
+                    let slab = slab_for(2 * sample / RATE_BYTES);
                     let word = u16::from_be_bytes([expected[2 * sample], expected[2 * sample + 1]]);
                     for b in 0..16 {
                         assert_eq!(
-                            bit(
-                                &packed[slab],
-                                prepared[slab].sample_bit_index(signature, sample, b)
-                            ),
+                            bit(&packed[slab], prepared[slab].sample_bit_index(signature, sample, b)),
                             (word >> b) & 1 != 0,
                         );
                     }
                 }
                 for permutation in 0..PERMUTATIONS {
-                    let slab = usize::from(permutation >= 16);
-                    assert!(bit(
-                        &packed[slab],
-                        prepared[slab].bit_index(signature, permutation, compact::Z_CONST)
-                    ));
+                    let slab = slab_for(permutation);
+                    let constant = if prepared[slab].permutations_per_block == 3 {
+                        keccak3::Z_CONST
+                    } else {
+                        compact::Z_CONST
+                    };
+                    assert!(bit(&packed[slab], prepared[slab].bit_index(signature, permutation, constant)));
                     for state_bit in 0..compact::STATE_BITS {
                         let lane = state_bit / 64;
                         let b = state_bit % 64;
                         assert_eq!(
-                            bit(
-                                &packed[slab],
-                                prepared[slab].initial_bit_index(signature, permutation, state_bit)
-                            ),
+                            bit(&packed[slab], prepared[slab].initial_bit_index(signature, permutation, state_bit)),
                             (trace.permutation_inputs[permutation][lane] >> b) & 1 != 0,
                         );
-                        let output = bit(
-                            &packed[slab],
-                            prepared[slab].output_bit_index(signature, permutation, state_bit),
-                        );
-                        let expected =
-                            trace.round_states[(permutation * compact::N_ROUNDS + 23) * 25 + lane];
+                        let output = bit(&packed[slab], prepared[slab].output_bit_index(signature, permutation, state_bit));
+                        let expected = trace.round_states[(permutation * compact::N_ROUNDS + 23) * 25 + lane];
                         assert_eq!(output, (expected >> b) & 1 != 0);
                         if permutation + 1 < PERMUTATIONS {
-                            let next_slab = usize::from(permutation + 1 >= 16);
+                            let next_slab = slab_for(permutation + 1);
                             assert_eq!(
                                 output,
-                                bit(
-                                    &packed[next_slab],
-                                    prepared[next_slab].initial_bit_index(
-                                        signature,
-                                        permutation + 1,
-                                        state_bit
-                                    )
-                                )
+                                bit(&packed[next_slab], prepared[next_slab].initial_bit_index(signature, permutation + 1, state_bit))
                             );
                         }
                     }
                 }
             }
             // Every inactive signature has an all-zero witness, including
-            // the constant wire, intermediate χ outputs, and unused slots.
+            // the shared constant, all three chi traces, and unused slots.
             for (slab, words) in prepared.iter().zip(&packed) {
                 for signature in batch..slab.capacity() {
-                    for permutation in
-                        slab.first_permutation..slab.first_permutation + slab.permutations
+                    for permutation in (slab.first_permutation..slab.first_permutation + slab.permutations)
+                        .step_by(slab.permutations_per_block)
                     {
-                        for local_bit in 0..compact::K {
-                            assert!(!bit(
-                                words,
-                                slab.bit_index(signature, permutation, local_bit)
-                            ));
+                        for local_bit in 0..1 << slab.r1cs.k_log {
+                            assert!(!bit(words, slab.bit_index(signature, permutation, local_bit)));
                         }
                     }
                 }
@@ -796,7 +871,7 @@ mod tests {
 
     #[test]
     fn committed_prefix_replays_and_claims_match_witness_with_tamper_rejection() {
-        for (first, permutations) in [(0, 16), (16, 4)] {
+        for (first, permutations) in (0..super::super::KECCAK_SLABS).map(|i| super::super::PARAMETERS.slab(i)) {
             let prepared = PreparedKeccak::new_slab(1, first, permutations).unwrap();
             let (packed, auxiliary, _) = prepared
                 .generate_chain(&[initial_state(&[17; 40], &[29; 32])])
@@ -883,13 +958,13 @@ mod tests {
 
     #[test]
     fn security_accounts_for_every_block_and_scales_to_thousands() {
-        for (first, permutations) in [(0, 16), (16, 4)] {
+        for (first, permutations) in (0..super::super::KECCAK_SLABS).map(|i| super::super::PARAMETERS.slab(i)) {
             for batch in [1, 3, 32, 1000, MAX_CAPACITY] {
                 let prepared = PreparedKeccak::new_slab(batch, first, permutations).unwrap();
                 for target in [108, 136] {
                     let security = prepared.security(target).unwrap();
                     assert!(security.error_bound() <= 2f64.powi(-(target as i32)));
-                    assert_eq!(security.challenge_blocks, prepared.bit_vars() + 8);
+                    assert_eq!(security.challenge_blocks, prepared.challenge_blocks());
                     assert_eq!(security.grinding_bits, if target == 108 { 0 } else { 17 });
                 }
             }
@@ -903,7 +978,7 @@ mod tests {
 
     #[test]
     fn component_136_grinds_every_prefix_block_and_rejects_nonce_tampering() {
-        for (first, permutations) in [(0, 16), (16, 4)] {
+        for (first, permutations) in (0..super::super::KECCAK_SLABS).map(|i| super::super::PARAMETERS.slab(i)) {
             let prepared = PreparedKeccak::new_slab(1, first, permutations).unwrap();
             let (packed, auxiliary, _) = prepared
                 .generate_chain(&[initial_state(&[53; 40], &[59; 32])])
@@ -920,7 +995,7 @@ mod tests {
                     136,
                 )
                 .unwrap();
-            assert_eq!(proof.grinding_nonces.len(), prepared.bit_vars() + 8);
+            assert_eq!(proof.grinding_nonces.len(), prepared.challenge_blocks());
             for (claim, cached) in claims.iter().zip(&marginals) {
                 let weights = crate::hybrid::sumcheck::eq_table(&claim.high_point);
                 assert_eq!(
@@ -988,7 +1063,7 @@ mod tests {
 
     #[test]
     fn all_zero_permutations_cannot_bypass_constant_wire_pin() {
-        for (first, permutations) in [(0, 16), (16, 4)] {
+        for (first, permutations) in (0..super::super::KECCAK_SLABS).map(|i| super::super::PARAMETERS.slab(i)) {
             let prepared = PreparedKeccak::new_slab(1, first, permutations).unwrap();
             let n = 1usize << prepared.packed_vars();
             // All zeros satisfy the homogeneous A(z)B(z)=z rows, but are not
@@ -1026,33 +1101,38 @@ mod tests {
 
     #[test]
     fn valid_dummy_keccak_in_inactive_slot_is_rejected_by_activity_pin() {
-        let prepared = PreparedKeccak::new_slab(1, 16, 4).unwrap();
-        assert_eq!(prepared.capacity(), 2);
-        // Every block is a valid Keccak permutation with constant one; the
-        // blocks assigned to signature 1 violate the public activity policy.
-        let states = vec![[false; compact::STATE_BITS]; prepared.capacity() * 4];
-        let (packed, a, b, lincheck) = compact::generate_witness_batch_major(
-            &states,
-            (prepared.capacity() * 4).ilog2() as usize,
-        );
-        let root = [0x81; 32];
-        let context = [0x82; 32];
-        let (proof, _, _) = prepared
-            .prove_prefix(
-                &packed,
-                KeccakAuxiliary { a, b, lincheck },
-                &root,
-                &context,
-                &mut Blake3Transcript::new(),
-                108,
-            )
-            .unwrap();
-        assert!(
-            prepared
-                .verify_prefix(&proof, &root, &context, &mut Blake3Transcript::new(), 108,)
-                .is_err()
-        );
+        for (first, permutations) in (0..super::super::KECCAK_SLABS).map(|i| super::super::PARAMETERS.slab(i)) {
+            let prepared = PreparedKeccak::new_slab(1, first, permutations).unwrap();
+            if prepared.capacity() == 1 {
+                continue;
+            }
+            // Fill every signature slot with genuine computations. The inactive
+            // signatures' constant-one blocks violate the public activity mask.
+            let initial = vec![[0; 25]; prepared.capacity()];
+            let generate = if prepared.permutations_per_block == 3 {
+                keccak3::generate_chained_witness_batch_major
+            } else {
+                compact::generate_chained_witness_batch_major
+            };
+            let (packed, a, b, lincheck, _) = generate(&initial, prepared.capacity(), permutations);
+            let root = [0x81; 32];
+            let context = [0x82; 32];
+            let (proof, _, _) = prepared
+                .prove_prefix(
+                    &packed,
+                    KeccakAuxiliary { a, b, lincheck },
+                    &root,
+                    &context,
+                    &mut Blake3Transcript::new(),
+                    108,
+                )
+                .unwrap();
+            assert!(prepared.verify_prefix(
+                &proof, &root, &context, &mut Blake3Transcript::new(), 108,
+            ).is_err());
+        }
     }
+
 }
 
 }

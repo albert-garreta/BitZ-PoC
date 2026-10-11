@@ -10,8 +10,14 @@ masks reduce HashToPoint
 to linear selection/output checks and quadratic rejection rows; this
 integer-to-binary BitZ forest remains part of the protocol.
 
-The enclosing protocol is `bitz/falcon/shared-prime/non-zk/v6`. The statement
+The enclosing protocol is `bitz/falcon/shared-prime/non-zk/v7`. The statement
 digest binds the derived bridge numerator and grinding difficulty.
+
+Version 7 changes Falcon-1024's Keccak packing to 12+6+2 permutations across
+three slabs. The arithmetic matrix and bridge geometry in this audit stay
+the same. The new Keccak and joint PCS dimensions enter the composed error
+ledger, so the work-optimal allocator derives the final bridge difficulty
+alongside the other groups.
 
 ## Scope and model
 
@@ -190,7 +196,7 @@ handing buffers to the optimized forest.
 
 The following table is for Falcon-1024 with the two-limb bridge at target 128.
 
-| Capacity | s | Sumcheck rounds R | Challenge blocks | Numerator | Bits at target 128 |
+| Capacity | s | Sumcheck rounds R | Challenge blocks | Numerator | Earlier uniform bits at target 128 |
 | ---: | ---: | ---: | ---: | ---: | ---: |
 | 1 | 5 | 143 | 157 | 447 | 17 |
 | 2 | 6 | 156 | 170 | 487 | 17 |
@@ -213,17 +219,20 @@ records the earlier uniform rule. That earlier category allocator used
 g = max(0, target + 8 + ceil(log2(numerator)) - 128).
 ```
 
-The bridge therefore remains at most `2^-(target+8)`. At target 128,
-Falcon-1024 uses 17 grinding bits at capacities one and two, and 18 bits at
-capacities four through 1024. Falcon-512 has one fewer column coordinate:
+Under that earlier rule the bridge contributed at most `2^-(target+8)`.
+At target 128, Falcon-1024 used 17 grinding bits at capacities one and two,
+and 18 bits at capacities four through 1024. Falcon-512 has one fewer column coordinate:
 subtract 13 from `R`, 13 from the challenge-block count, and 40 from the
-numerator in each table row. It uses 17 bits at capacities one, two, and four
+numerator in each table row. The earlier rule used 17 bits at capacities one, two, and four
 (numerators 407, 447, and 487), then 18 bits from capacity eight onward.
+These historical difficulties are not the current schedule; preparation
+derives that schedule from the full composition.
 
 At target 100, the unsplit bridge has `s=c` and no limb coordinate. Its
 numerators are `367+40*log2(capacity)` for Falcon-512 and
-`407+40*log2(capacity)` for Falcon-1024. The same allocation gives zero
-grinding throughout the supported range. Its forest eliminates all 13 row
+`407+40*log2(capacity)` for Falcon-1024. The earlier uniform rule gave zero
+grinding throughout the supported range; the current difficulty comes from
+the composed allocation. Its forest eliminates all 13 row
 coordinates, and its terminal point has `c+13` coordinates. The canonical
 weight bound is checked against the strict binary-shape gate for the actual
 prime; the entire selected family is validated during preparation. The
@@ -272,7 +281,7 @@ independent cryptographic audit of the global Fiat-Shamir model.
   forest, partial product depth, MSB-first arity-two GKR, table-driven rounds
   and dense kernels.
 - [`layout.rs`](layout.rs): fixed binary source dimensions and bit-index mapping.
-- [`hybrid_keccak/grinding.rs`](hybrid_keccak/grinding.rs) and
+- [`src/hybrid/block_grinding.rs`](../../../hybrid/block_grinding.rs) and
   [`src/piop/spartan/grinding.rs`](../grinding.rs): block
   boundaries and domain-, difficulty-, and index-bound nonces.
 - [`src/ligerito_flock/grinding_plan.rs`](../../../ligerito_flock/grinding_plan.rs)

@@ -235,9 +235,10 @@ fn allocate_grinding(
         pcs,
     ))
 }
-// The existing binary claims/SHAKE wiring budget is 128. The additional
-// padding polynomial has degree at most 17 + 10 + 1 (local, instance, merge),
-// so 256 conservatively covers their union for every supported profile.
+// Independent coefficients batch the authenticated claims with degree one.
+// SHAKE wiring has degree at most 16 + 10 + 1 (local, instance, merge),
+// and arithmetic padding at most 17 + 10 + 1. Their union is at most 56;
+// 256 conservatively covers every supported profile, including three slabs.
 const LINK_ERROR_NUMERATOR: usize = 256;
 crate::piop::spartan::grinding::grinding_domains! {
     LinkGrinding => b"bitz/falcon-hybrid/link-grinding/v1";
@@ -621,6 +622,13 @@ impl PreparedFalconHybrid {
         for log in self.geometry.logs {
             h.update(&(log as u64).to_le_bytes());
         }
+        h.update(b"keccak-slabs:first,count,permutations-per-block/v1");
+        for slab in 0..KECCAK_SLABS {
+            let (first, count) = PARAMETERS.slab(slab);
+            for n in [first, count, PARAMETERS.slab_width(slab)] {
+                h.update(&(n as u64).to_le_bytes());
+            }
+        }
         h.update(b"bounded14:low13+4097*top;ring:Q12289,T^k+T+c;Dlen:N-1;profile/v2");
         h.update(b"source-layout:aligned16;polynomials:S1,S2,C,H;slack:S1-lane15;signature:header-nonce-and-mapped-signed-payload/v2");
         h.update(b"arithmetic-padding:random-local-and-instance-equality;active-holes;all-inactive;zero-target/v1");
@@ -945,7 +953,7 @@ impl PreparedFalconHybrid {
         let offsets = self.layout.offsets();
         let mut arithmetic = Vec::with_capacity(320 + 16 * super::HASH_TO_POINT_SAMPLES);
         let mut binary: [Vec<(usize, Gf)>; KECCAK_SLABS] = std::array::from_fn(|_| Vec::new());
-        // Slab addresses are [7 in-word | signature | permutation | chunk].
+        // Slab addresses are [7 in-word | signature | circuit block | chunk].
         // Remove the signature axis for the factored repeated gather.
         let local_index = |slab: usize, index: usize| {
             (index & 127) | ((index >> (7 + self.keccak[slab].capacity().ilog2())) << 7)
@@ -1001,8 +1009,8 @@ impl PreparedFalconHybrid {
                 .push(Gather::repeated(arithmetic, instance_point.clone()));
             for (slab, entries) in binary.into_iter().enumerate() {
                 let mut repeat = instance_point.clone();
-                // The four-permutation slab still has a padded signature
-                // coordinate at batch one; its wiring selects signature zero.
+                // Small slabs retain the encoder's minimum block capacity;
+                // their extra signature coordinates select signature zero.
                 repeat.resize(self.keccak[slab].capacity().ilog2() as usize, Gf::ZERO);
                 result[slab + 1]
                     .gathers
@@ -1144,7 +1152,7 @@ mod tests {
             .iter()
             .map(|&log| 1 << log)
             .sum();
-        assert_eq!(occupied, if prepared.batch() == 1 { 13 } else { 11 });
+        assert_eq!(occupied, if prepared.batch() <= 2 { 11 } else { 16 });
         assert_eq!(pcs.initial_proof.opened_rows.len(), config.queries[0]);
         assert!(
             pcs.initial_proof
@@ -1157,10 +1165,6 @@ mod tests {
         let final_lanes = 1usize << config.recursive_ks[last];
         assert_eq!(final_columns, 32);
         assert_eq!(pcs.final_proof.len(), final_columns * final_lanes);
-        assert_eq!(
-            pcs.final_proof.len(),
-            if prepared.batch() == 1 { 128 } else { 64 }
-        );
         // Even before counting removed authentication hashes and row framing,
         // the full committed message is smaller than the former final payload.
         assert!(pcs.final_proof.len() < final_columns + config.queries[last + 1] * final_lanes);
@@ -1184,7 +1188,7 @@ mod tests {
                 prepared.target_bits,
             );
         };
-        for branch in 0..3 {
+        for branch in 0..SOURCE_COUNT {
             let mut altered = proof.clone();
             altered.opening.ligerito.initial_proof.opened_rows[0]
                 [prepared.geometry.offset(branch)] += Gf::ONE;
@@ -1299,11 +1303,10 @@ mod tests {
                     .collect();
                 assert_eq!(actual, expected, "batch={batch}, signature={signature}");
 
-                // Check the bits committed by both Keccak groups, including
-                // the transition after the sixteenth 136-byte output block.
+                // Check all outputs across both within-block and slab boundaries.
                 for (byte_index, byte) in expected.into_iter().enumerate() {
                     let permutation = byte_index / 136;
-                    let group = usize::from(permutation >= 16);
+                    let group = PreparedFalconHybrid::slab_for(permutation);
                     for bit in 0..8 {
                         let index = prepared.keccak[group].output_bit_index(
                             signature,
@@ -1740,7 +1743,7 @@ mod tests {
         let committed = prepared.commit(public(9)).unwrap();
         assert_eq!(
             prepared.source_bits_per_signature(),
-            [1 << 17, 1 << 20, 1 << 18]
+            [1 << 17, 1 << 19, 1 << 18, 1 << 17]
         );
         let native = super::super::verification_trace(PK, MSG, SIG).unwrap();
         for trace in &committed.traces {
@@ -1752,7 +1755,7 @@ mod tests {
         let mut wrong = statement.clone();
         wrong.source_root[0] ^= 1;
         assert!(prepared.verify(&wrong, &proof).is_err());
-        for branch in 0..3 {
+        for branch in 0..SOURCE_COUNT {
             let mut wrong = proof.clone();
             wrong.opening.ligerito.initial_proof.opened_rows[0]
                 [prepared.geometry.offset(branch)] += Gf::ONE;
@@ -1778,37 +1781,86 @@ mod tests {
     }
 
     #[test]
+    fn valid_local_permutations_cannot_break_intra_slab_chain_links() {
+        let prepared = PreparedFalconHybrid::prepare(1, 100, 1024).unwrap();
+        let nonce = decode_signature_ct::<N>(SIG).unwrap().nonce;
+        let initial = [hybrid_keccak::initial_state(&nonce, MSG.try_into().unwrap())];
+        let slab = &prepared.keccak[0];
+        // Replace each subpermutation and the first permutation in the next
+        // block with a valid computation on a different input. The circuit
+        // checks each permutation independently; the composition must link it.
+        for permutation in [1, 2, 3] {
+            let mut committed = prepared.commit(public(1)).unwrap();
+            let replacement = || {
+                let (mut packed, mut auxiliary, _) = slab.generate_chain(&initial).unwrap();
+                let (donor, donor_auxiliary, _) = slab.generate_chain(&[[0; 25]]).unwrap();
+                slab.replace_permutation_for_test(
+                    &mut packed, &mut auxiliary, &donor, &donor_auxiliary, 0, permutation,
+                );
+                (packed, auxiliary)
+            };
+            let (packed, auxiliary) = replacement();
+            let bit = |index: usize| {
+                let word = packed[index / 128];
+                ((if index % 128 < 64 { word.lo } else { word.hi }) >> (index % 64)) & 1
+            };
+            assert!((0..1600).any(|b| {
+                bit(slab.output_bit_index(0, permutation - 1, b))
+                    != bit(slab.initial_bit_index(0, permutation, b))
+            }));
+            committed.packed[1] = packed;
+            recommit(&prepared, &mut committed);
+            let (_, digest) = prepared.transcript(&committed.statement).unwrap();
+            let root = &committed.statement.source_root;
+            let (prefix, claims, _) = slab.prove_prefix(
+                &committed.packed[1], auxiliary, root, &digest,
+                &mut Blake3Transcript::new(), 108,
+            ).unwrap();
+            assert_eq!(slab.verify_prefix(
+                &prefix, root, &digest, &mut Blake3Transcript::new(), 108,
+            ).unwrap(), claims);
+            committed.auxiliary[0] = replacement().1;
+            let statement = committed.statement.clone();
+            if let Ok(proof) = prepared.prove(committed) {
+                assert!(prepared.verify(&statement, &proof).is_err());
+            }
+        }
+    }
+
+    #[test]
     fn valid_keccak_tail_cannot_break_the_cross_slab_chain_link() {
         let prepared = PreparedFalconHybrid::prepare(1, 100, 1024).unwrap();
-        let mut committed = prepared.commit(public(1)).unwrap();
-        // This is a valid four-permutation Keccak chain, but its input is not
-        // permutation 15's output from the other authenticated commitment.
-        let (packed, auxiliary, _) = prepared.keccak[1].generate_chain(&[[0; 25]]).unwrap();
-        committed.packed[2] = packed;
-        recommit(&prepared, &mut committed);
-        let (_, digest) = prepared.transcript(&committed.statement).unwrap();
-        let root = &committed.statement.source_root;
-        let (prefix, claims, _) = prepared.keccak[1]
-            .prove_prefix(
-                &committed.packed[2],
-                auxiliary,
-                root,
-                &digest,
-                &mut Blake3Transcript::new(),
-                108,
-            )
-            .unwrap();
-        assert_eq!(
-            prepared.keccak[1]
-                .verify_prefix(&prefix, root, &digest, &mut Blake3Transcript::new(), 108)
-                .unwrap(),
-            claims
-        );
-        let (_, auxiliary, _) = prepared.keccak[1].generate_chain(&[[0; 25]]).unwrap();
-        committed.auxiliary[1] = auxiliary;
-        let statement = committed.statement.clone();
-        if let Ok(proof) = prepared.prove(committed) {
-            assert!(prepared.verify(&statement, &proof).is_err());
+        for slab in 1..KECCAK_SLABS {
+            let mut committed = prepared.commit(public(1)).unwrap();
+            // The replacement slab is locally valid, but its input differs from
+            // the preceding slab's authenticated output. Cover both boundaries.
+            let (packed, auxiliary, _) = prepared.keccak[slab].generate_chain(&[[0; 25]]).unwrap();
+            committed.packed[slab + 1] = packed;
+            recommit(&prepared, &mut committed);
+            let (_, digest) = prepared.transcript(&committed.statement).unwrap();
+            let root = &committed.statement.source_root;
+            let (prefix, claims, _) = prepared.keccak[slab]
+                .prove_prefix(
+                    &committed.packed[slab + 1],
+                    auxiliary,
+                    root,
+                    &digest,
+                    &mut Blake3Transcript::new(),
+                    108,
+                )
+                .unwrap();
+            assert_eq!(
+                prepared.keccak[slab]
+                    .verify_prefix(&prefix, root, &digest, &mut Blake3Transcript::new(), 108)
+                    .unwrap(),
+                claims
+            );
+            let (_, auxiliary, _) = prepared.keccak[slab].generate_chain(&[[0; 25]]).unwrap();
+            committed.auxiliary[slab] = auxiliary;
+            let statement = committed.statement.clone();
+            if let Ok(proof) = prepared.prove(committed) {
+                assert!(prepared.verify(&statement, &proof).is_err());
+            }
         }
     }
 }

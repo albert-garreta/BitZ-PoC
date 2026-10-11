@@ -47,9 +47,18 @@ impl FalconParameters {
         (2 * self.samples()).div_ceil(136)
     }
     pub const fn slab_count(self) -> usize {
-        self.permutations().count_ones() as usize
+        if self.n == 1024 {
+            3
+        } else {
+            self.permutations().count_ones() as usize
+        }
     }
     pub const fn slab(self, index: usize) -> (usize, usize) {
+        // Four triple blocks, two triple blocks, then two ordinary blocks.
+        // Each slab has a power-of-two block count without unused permutations.
+        if self.n == 1024 {
+            return [(0, 12), (12, 6), (18, 2)][index];
+        }
         let mut remaining = self.permutations();
         let mut first = 0;
         let mut i = 0;
@@ -63,6 +72,15 @@ impl FalconParameters {
             i += 1;
         }
         panic!("invalid Falcon Keccak slab index")
+    }
+
+    /// Number of logical permutations in one circuit block of this slab.
+    pub const fn slab_width(self, index: usize) -> usize {
+        assert!(
+            index < self.slab_count(),
+            "invalid Falcon Keccak slab index"
+        );
+        if self.n == 1024 && index < 2 { 3 } else { 1 }
     }
 }
 
@@ -183,12 +201,21 @@ mod tests {
             for i in 0..p.slab_count() {
                 let (first, count) = p.slab(i);
                 assert_eq!(first, total);
-                assert!(count.is_power_of_two());
+                let width = p.slab_width(i);
+                assert_eq!(count % width, 0);
+                assert!((count / width).is_power_of_two());
                 total += count;
             }
             assert_eq!(total, p.permutations());
         }
         assert_eq!(FalconParameters::for_degree(512).signature_bytes(), 809);
         assert_eq!(FalconParameters::for_degree(1024).signature_bytes(), 1577);
+        let p = FalconParameters::for_degree(1024);
+        assert_eq!(
+            [p.slab(0), p.slab(1), p.slab(2)],
+            [(0, 12), (12, 6), (18, 2)]
+        );
+        let p = FalconParameters::for_degree(512);
+        assert_eq!([p.slab(0), p.slab(1), p.slab(2)], [(0, 8), (8, 2), (10, 1)]);
     }
 }
