@@ -158,31 +158,36 @@ pub(crate) fn round_sums(
     assert_eq!(hi_r.len(), h);
     let task = w.task_len();
     let tasks = h.div_ceil(task);
-    let run = |i| {
-        let (y, c0) = w.task_pos(i);
-        let start = i * task;
-        let end = (start + task).min(h);
-        let ec = &w.eq_c[c0..c0 + (end - start)];
-        let (e, f) = round_sums_task(
-            &lo_l[start..end],
-            &hi_l[start..end],
-            &lo_r[start..end],
-            &hi_r[start..end],
-            ec,
-            send_one,
-        );
-        let wy = w.eq_y[y];
-        (e * wy, f * wy)
-    };
+    // Separate closure types let each scheduler inline its own row arithmetic.
+    macro_rules! sum_row {
+        () => {
+            |i| {
+                let (y, c0) = w.task_pos(i);
+                let start = i * task;
+                let end = (start + task).min(h);
+                let ec = &w.eq_c[c0..c0 + (end - start)];
+                let (e, f) = round_sums_task(
+                    &lo_l[start..end],
+                    &hi_l[start..end],
+                    &lo_r[start..end],
+                    &hi_r[start..end],
+                    ec,
+                    send_one,
+                );
+                let wy = w.eq_y[y];
+                (e * wy, f * wy)
+            }
+        };
+    }
     #[cfg(feature = "parallel")]
     if let Some(dispatch) = super::row_dispatch::CyclicRows::new(w.rows(), h * 4 * size_of::<Gf>())
     {
         return total(dispatch.map_indices(tasks, |rows| {
-            rows.map(run)
+            rows.map(sum_row!())
                 .fold((Gf::zero(), Gf::zero()), |(a, b), (x, y)| (a + x, b + y))
         }));
     }
-    let partials: Vec<(Gf, Gf)> = cfg_into_iter!(0..tasks, 1).map(run).collect();
+    let partials: Vec<(Gf, Gf)> = cfg_into_iter!(0..tasks, 1).map(sum_row!()).collect();
     total(partials)
 }
 
@@ -235,27 +240,28 @@ pub(crate) fn fused_fold_round(
         assert_eq!(q.len(), h);
     }
     let task = w.task_len();
-    let run = |i: usize,
-               a0: &mut [Gf],
-               a1: &mut [Gf],
-               a2: &[Gf],
-               a3: &[Gf],
-               b0: &mut [Gf],
-               b1: &mut [Gf],
-               b2: &[Gf],
-               b3: &[Gf]| {
-        let (y, c0) = w.task_pos(i);
-        let ec = &w.eq_c[c0..c0 + a0.len()];
-        let (e, f) = match left {
-            Left::Plain => fused_task::<PLAIN>(a0, a1, a2, a3, b0, b1, b2, b3, &rho, ec, send_one),
-            Left::Weigh => fused_task::<WEIGH>(a0, a1, a2, a3, b0, b1, b2, b3, &rho, ec, send_one),
-            Left::Weighted => {
-                fused_task::<WEIGHTED>(a0, a1, a2, a3, b0, b1, b2, b3, &rho, ec, send_one)
+    // Expand into each iterator so the fallback retains its direct row closure.
+    macro_rules! fold_row {
+        () => {
+            |(i, (((((((a0, a1), a2), a3), b0), b1), b2), b3))| {
+                let (y, c0) = w.task_pos(i);
+                let ec = &w.eq_c[c0..c0 + a0.len()];
+                let (e, f) = match left {
+                    Left::Plain => {
+                        fused_task::<PLAIN>(a0, a1, a2, a3, b0, b1, b2, b3, &rho, ec, send_one)
+                    }
+                    Left::Weigh => {
+                        fused_task::<WEIGH>(a0, a1, a2, a3, b0, b1, b2, b3, &rho, ec, send_one)
+                    }
+                    Left::Weighted => {
+                        fused_task::<WEIGHTED>(a0, a1, a2, a3, b0, b1, b2, b3, &rho, ec, send_one)
+                    }
+                };
+                let wy = w.eq_y[y];
+                (e * wy, f * wy)
             }
         };
-        let wy = w.eq_y[y];
-        (e * wy, f * wy)
-    };
+    }
     #[cfg(feature = "parallel")]
     if let Some(dispatch) = super::row_dispatch::CyclicRows::new(w.rows(), h * 8 * size_of::<Gf>())
     {
@@ -270,9 +276,7 @@ pub(crate) fn fused_fold_round(
             .zip(q3_r.chunks(task));
         return total(dispatch.map_jobs(jobs, |rows| {
             rows.into_iter()
-                .map(|(i, (((((((a0, a1), a2), a3), b0), b1), b2), b3))| {
-                    run(i, a0, a1, a2, a3, b0, b1, b2, b3)
-                })
+                .map(fold_row!())
                 .fold((Gf::zero(), Gf::zero()), |(a, b), (x, y)| (a + x, b + y))
         }));
     }
@@ -285,9 +289,7 @@ pub(crate) fn fused_fold_round(
         .zip(crate::cfg_chunks!(q2_r, task))
         .zip(crate::cfg_chunks!(q3_r, task))
         .enumerate()
-        .map(|(i, (((((((a0, a1), a2), a3), b0), b1), b2), b3))| {
-            run(i, a0, a1, a2, a3, b0, b1, b2, b3)
-        })
+        .map(fold_row!())
         .collect();
     total(partials)
 }

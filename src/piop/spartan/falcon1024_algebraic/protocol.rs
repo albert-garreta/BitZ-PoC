@@ -446,6 +446,8 @@ impl PreparedFalconAlgebraic {
                 &self.schedule,
             )?
         };
+        drop(ring_claim);
+        drop(committed.witness);
         let (bridge, a) = {
             let _span = tracing::info_span!("falcon_algebraic:bitz").entered();
             bridge::prove_weighted(
@@ -459,6 +461,7 @@ impl PreparedFalconAlgebraic {
                 &claim.row_weights,
             )?
         };
+        drop(committed.source);
         drop(claim);
         let coefficients = Coefficients {
             tensors: vec![Tensor {
@@ -547,6 +550,7 @@ impl PreparedFalconAlgebraic {
             &proof.arithmetic,
             &self.schedule,
         )?;
+        drop(ring_claim);
         let a = bridge::verify_weighted(
             &mut t,
             &self.layout.bitz_params(),

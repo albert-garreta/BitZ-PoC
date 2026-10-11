@@ -704,14 +704,24 @@ pub(crate) fn transpose_64x64(a: &mut [u64; 64]) {
 /// (g, wi) of `packed_cols` is the bit-transpose of rows `64g..64g+64` at
 /// word `wi`. One pass over the 8-byte-per-64-bits rows instead of a second
 /// sweep of the u128 data tensor.
-#[allow(clippy::arithmetic_side_effects)]
 pub(crate) fn pack_columns_from_rows(p: &IntegerMatrixLayout, rows: &[Vec<u64>]) -> Vec<Vec<u64>> {
+    pack_columns_from_rows_repeated::<false>(p, rows)
+}
+
+/// Pack once, optionally repeating each row into adjacent limb slots. The
+/// two-limb bridge writes its final allocation directly instead of resizing
+/// and duplicating every packed group after the transpose.
+#[allow(clippy::arithmetic_side_effects)]
+pub(crate) fn pack_columns_from_rows_repeated<const DUPLICATE: bool>(
+    p: &IntegerMatrixLayout,
+    rows: &[Vec<u64>],
+) -> Vec<Vec<u64>> {
     let row_len = p.rows();
     let words = row_len.div_ceil(64);
     let num_groups = p.cols().div_ceil(64);
     cfg_into_iter!(0..num_groups)
         .map(|g| {
-            let mut out = vec![0u64; row_len];
+            let mut out = Vec::with_capacity(if DUPLICATE { 2 * row_len } else { row_len });
             for wi in 0..words {
                 let mut blk = [0u64; 64];
                 for k in 0..64usize {
@@ -721,13 +731,14 @@ pub(crate) fn pack_columns_from_rows(p: &IntegerMatrixLayout, rows: &[Vec<u64>])
                     }
                 }
                 transpose_64x64(&mut blk);
-                // blk[t] now holds, per lane k, bit (64·wi + t) of row 64g+k
-                // — wait: transpose maps bit t of blk[k] to bit k of blk[t].
-                let base = wi << 6;
-                for (t, &v) in blk.iter().enumerate() {
-                    if base + t < row_len {
-                        out[base + t] = v;
+                // blk[t] has bit k = source column 64*g+k at row 64*wi+t.
+                let block = &blk[..64.min(row_len - (wi << 6))];
+                if DUPLICATE {
+                    for &word in block {
+                        out.extend_from_slice(&[word, word]);
                     }
+                } else {
+                    out.extend_from_slice(block);
                 }
             }
             out
@@ -856,6 +867,61 @@ mod tests {
             let packed = pack_columns_from_rows(&p, &rows);
             let back = rows_from_packed_cols(&p, &packed);
             assert_eq!(rows, back, "(t={t},s={s})");
+        }
+    }
+
+    #[test]
+    fn repeated_packed_columns_match_pack_then_duplicate() {
+        // Include incomplete row words, partial column groups, and multiple
+        // groups. Unused high bits in the source words are deliberately set.
+        for (t, s) in [
+            (0usize, 0usize),
+            (3, 2),
+            (5, 5),
+            (6, 6),
+            (7, 7),
+            (8, 3),
+            (13, 6),
+        ] {
+            let p = IntegerMatrixLayout {
+                row_vars: t,
+                col_vars: s,
+            };
+            let rows: Vec<Vec<u64>> = (0..p.cols())
+                .map(|column| {
+                    (0..p.rows().div_ceil(64))
+                        .map(|word| match column % 4 {
+                            0 => u64::MAX,
+                            1 => 1u64 << ((column + word) % 64),
+                            2 => 0,
+                            _ => 0x8192_a3b4_c5d6_e7f0u64.rotate_left((column + word) as u32),
+                        })
+                        .collect()
+                })
+                .collect();
+            let ordinary = pack_columns_from_rows(&p, &rows);
+            let mut expected = ordinary.clone();
+            for column in &mut expected {
+                let len = column.len();
+                column.resize(2 * len, 0);
+                for row in (0..len).rev() {
+                    let word = column[row];
+                    column[2 * row] = word;
+                    column[2 * row + 1] = word;
+                }
+            }
+            let actual = pack_columns_from_rows_repeated::<true>(&p, &rows);
+            assert_eq!(actual, expected, "t={t}, s={s}");
+            for (group, column) in actual.iter().enumerate() {
+                assert_eq!(column.len(), 2 * p.rows());
+                for (row, pair) in column.chunks_exact(2).enumerate() {
+                    let expected = (0..64.min(p.cols() - group * 64)).fold(0u64, |out, lane| {
+                        out | (((rows[group * 64 + lane][row / 64] >> (row % 64)) & 1) << lane)
+                    });
+                    assert_eq!(ordinary[group][row], expected, "t={t}, s={s}, row={row}");
+                    assert_eq!(pair, &[expected, expected], "t={t}, s={s}, row={row}");
+                }
+            }
         }
     }
 

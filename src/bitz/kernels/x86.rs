@@ -255,6 +255,7 @@ unsafe fn lookup_complete(table: &[Gf], patterns: &[u8; 64], positions: [usize; 
     }
 }
 
+#[inline(always)]
 pub(crate) fn round_sums_task(
     lo_l: &[Gf],
     hi_l: &[Gf],
@@ -290,6 +291,7 @@ pub(crate) fn round_sums_task(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[inline(always)]
 pub(crate) fn fused_task<const LEFT: u8>(
     q0_l: &mut [Gf],
     q1_l: &mut [Gf],
@@ -402,6 +404,7 @@ pub(crate) fn jit_fold_group<const PRE_SCALED: bool, const WEIGH_LEFT: bool>(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[inline(always)]
 fn jit_fold_group_impl<const PRE_SCALED: bool, const WEIGH_LEFT: bool, const DIRECT: bool>(
     tab: [&[Gf]; 8],
     pat: &[[u8; 64]; 8],

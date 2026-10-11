@@ -134,12 +134,12 @@ fn packed_forest_matches_dense_across_lookup_paths() {
     for (t, s) in [
         (4, 6), // Tiny materialized fallback.
         (5, 6),
-        (6, 9),  // Below the 1024-column prescaling threshold.
-        (6, 10), // At the threshold.
-        (7, 12), // Wide rows and several column groups.
+        (6, 9),   // Below the 1024-column prescaling threshold.
+        (6, 10),  // At the threshold.
+        (7, 12),  // Wide rows and several column groups.
         (10, 10), // Multiple scaling chunks per side of a position table.
-        (7, 0),  // One live lane, no column variables.
-        (7, 3),  // A partial 64-column group.
+        (7, 0),   // One live lane, no column variables.
+        (7, 3),   // A partial 64-column group.
     ] {
         compare_with_dense(t, s, Bits::Mixed);
     }
@@ -181,8 +181,7 @@ fn partial_forest_matches_dense_and_binds_interleaved_images() {
                 _ => next_field(&mut state),
             })
             .collect();
-        let (roots, witnesses) =
-            GrandProductCircuit::new(leaves.clone()).batched_eval(2 * columns);
+        let (roots, witnesses) = GrandProductCircuit::new(leaves.clone()).batched_eval(2 * columns);
         // Roots are columns first, then the unmultiplied low row bit (limb).
         for limb in 0..2 {
             for column in 0..columns {
@@ -203,8 +202,11 @@ fn partial_forest_matches_dense_and_binds_interleaved_images() {
         let dense_terminal = gpgkr_prove(&mut dense, &zeta, witnesses);
         let dense_proof = dense.finish();
         let mut prover = build_kernel_prover(session, instance.as_str());
-        let terminal = Forest::new(row_bits + 1, column_bits, &packed, &images)
-            .prove_depth(&mut prover, &zeta, row_bits);
+        let terminal = Forest::new(row_bits + 1, column_bits, &packed, &images).prove_depth(
+            &mut prover,
+            &zeta,
+            row_bits,
+        );
         let proof = prover.finish();
         assert_eq!(terminal, dense_terminal);
         assert_eq!(proof, dense_proof);
@@ -215,7 +217,11 @@ fn partial_forest_matches_dense_and_binds_interleaved_images() {
         // the forest's table builders and variable-binding order.
         let eq_at = |point: &[Gf], index: usize| {
             point.iter().enumerate().fold(Gf::one(), |acc, (bit, &r)| {
-                acc * if index >> bit & 1 == 0 { Gf::one() + r } else { r }
+                acc * if index >> bit & 1 == 0 {
+                    Gf::one() + r
+                } else {
+                    r
+                }
             })
         };
         let column_point = &terminal.0[..column_bits];

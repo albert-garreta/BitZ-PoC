@@ -36,6 +36,24 @@ fn error(e: impl std::fmt::Display) -> FalconError {
     FalconError::Piop(e.to_string())
 }
 
+fn public_initial_bit_weight(messages: &[[u8; 32]], instances: &[Gf], bit: usize) -> Gf {
+    match (bit / 8, bit % 8) {
+        (byte @ 40..=71, shift) => {
+            let mut weight = Gf::ZERO;
+            for (i, message) in messages.iter().enumerate() {
+                if message[byte - 40] >> shift & 1 == 1 {
+                    weight += instances[i];
+                }
+            }
+            weight
+        }
+        (72, 0..=4) | (135, 7) => instances[..messages.len()]
+            .iter()
+            .fold(Gf::ZERO, |weight, &instance| weight + instance),
+        _ => Gf::ZERO,
+    }
+}
+
 /// Ledger terms whose difficulties the prime-field schedule fixes.
 fn fixed_terms(layout: &FalconSourceLayout, target_bits: usize) -> Vec<(&'static str, f64)> {
     let d = layout.capacity().ilog2() as usize;
@@ -683,6 +701,7 @@ impl PreparedFalconHybrid {
             &committed.arithmetic,
             self.target_bits,
         )?;
+        drop(committed.traces);
         drop(arithmetic_span);
         let bridge_span = tracing::info_span!("falcon_hybrid:binary_bridge").entered();
         let (bridge, a) = integer_bridge::prove(
@@ -695,6 +714,7 @@ impl PreparedFalconHybrid {
             self.grinding.bridge,
             &row_weights,
         )?;
+        drop(committed.arithmetic);
         drop(row_weights);
         drop(bridge_span);
         let keccak_span = tracing::info_span!("falcon_hybrid:keccak_prefix").entered();
@@ -922,18 +942,7 @@ impl PreparedFalconHybrid {
             if bit < 320 {
                 arithmetic.push((self.layout.signature_bit(1 + bit / 8, bit % 8), w));
             } else {
-                let byte = bit / 8;
-                for (i, msg) in public.messages.iter().enumerate() {
-                    let value = match byte {
-                        40..=71 => msg[byte - 40],
-                        72 => 0x1f,
-                        135 => 0x80,
-                        _ => 0,
-                    };
-                    if value >> (bit % 8) & 1 == 1 {
-                        target += instances[i] * w;
-                    }
-                }
+                target += public_initial_bit_weight(&public.messages, &instances, bit) * w;
             }
         }
         for permutation in 1..hybrid_keccak::PERMUTATIONS {
@@ -1050,6 +1059,46 @@ mod tests {
     fn public(batch: usize) -> FalconPublicStatement {
         FalconPublicStatement::from_bytes(&vec![PK; batch], &vec![MSG; batch], &vec![SIG; batch])
             .unwrap()
+    }
+
+    #[test]
+    fn public_initial_bit_weights_match_per_signature_products() {
+        for batch in [1usize, 3, 8, 17] {
+            let messages: Vec<[u8; 32]> = (0..batch)
+                .map(|i| std::array::from_fn(|byte| match (i + byte) % 4 {
+                    0 => 0,
+                    1 => u8::MAX,
+                    2 => 1 << ((i + byte) % 8),
+                    _ => (i * 29 + byte * 17) as u8,
+                }))
+                .collect();
+            // Extra weights model inactive padded signatures and must not
+            // contribute even to the fixed SHAKE padding bits.
+            let instances: Vec<_> = (0..batch.next_power_of_two())
+                .map(|i| Gf { lo: 3 + 7 * i as u64, hi: 11 + 19 * i as u64 })
+                .collect();
+            for scale in [Gf::ZERO, Gf::ONE, Gf { lo: 0x1234, hi: 0x5678 }] {
+                for bit in 320..1600 {
+                    let mut expected = Gf::ZERO;
+                    for (i, message) in messages.iter().enumerate() {
+                        let value = match bit / 8 {
+                            40..=71 => message[bit / 8 - 40],
+                            72 => 0x1f,
+                            135 => 0x80,
+                            _ => 0,
+                        };
+                        if value >> (bit % 8) & 1 == 1 {
+                            expected += instances[i] * scale;
+                        }
+                    }
+                    assert_eq!(
+                        public_initial_bit_weight(&messages, &instances, bit) * scale,
+                        expected,
+                        "batch={batch}, bit={bit}",
+                    );
+                }
+            }
+        }
     }
 
     fn recommit(prepared: &PreparedFalconHybrid, committed: &mut CommittedFalconHybrid) {

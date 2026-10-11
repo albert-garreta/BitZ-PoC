@@ -35,14 +35,17 @@ use std::mem::MaybeUninit;
 use std::sync::OnceLock;
 
 #[cfg(feature = "parallel")]
-use rayon::prelude::*;
-#[cfg(feature = "parallel")]
 use super::row_dispatch::CyclicRows;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 pub(crate) use self::nibble::NibbleRows;
 use self::nibble::{BitSelectors, Selector};
 use super::eq_factor;
-use super::gkr::{GkrProverTranscript, Point, Weighing, carrying_worthwhile, eq_table, prove_dense_rounds, prove_layer_tensor, weighable};
+use super::gkr::{
+    GkrProverTranscript, Point, Weighing, carrying_worthwhile, eq_table, prove_dense_rounds,
+    prove_layer_tensor, weighable,
+};
 use super::kernels;
 use crate::cfg_chunks_mut;
 use field::Gf128 as Gf;
@@ -703,7 +706,12 @@ impl<'a> Forest<'a> {
 
     /// The pre-arena path for tiny `t`: `k` rounds off the bits, then the
     /// folded halves are materialised and the dense rounds continue.
-    fn prove_bit_level(&self, ps: &mut impl GkrProverTranscript, ell: usize, point: Point) -> (Point, Gf) {
+    fn prove_bit_level(
+        &self,
+        ps: &mut impl GkrProverTranscript,
+        ell: usize,
+        point: Point,
+    ) -> (Point, Gf) {
         let k = (MATERIALISED_LEVEL - ell).min(self.t - ell - 1);
         let external: Vec<Gf> = point.iter().rev().copied().collect();
         let (challenges, factor, next_point) = self.bit_rounds(ps, ell, k, &point, &external);
@@ -891,25 +899,30 @@ impl<'a> Forest<'a> {
         let sel = nibble::jit_selectors(ell);
         let nib = self.nibbles().map(|rows| (rows, &sel));
         let spare = &mut out.spare_capacity_mut()[..len];
-        let fill = |(y, chunk): (usize, &mut [MaybeUninit<Gf>])| {
-            let tab = [tables.at(y), tables.at(y | (1 << (t - ell - 1)))];
-            for g in 0..groups {
-                let pats = self.jit_patterns(ell, y, g, nib);
-                let base_c = g << 6;
-                let width = 64.min(cols - base_c);
-                kernels::jit_product_group(tab, &pats, &mut chunk[base_c..base_c + width]);
-            }
-        };
+        // Expand separately so each iterator can inline its own row kernel.
+        macro_rules! fill_row {
+            () => {
+                |(y, chunk)| {
+                    let tab = [tables.at(y), tables.at(y | (1 << (t - ell - 1)))];
+                    for g in 0..groups {
+                        let pats = self.jit_patterns(ell, y, g, nib);
+                        let base_c = g << 6;
+                        let width = 64.min(cols - base_c);
+                        kernels::jit_product_group(tab, &pats, &mut chunk[base_c..base_c + width]);
+                    }
+                }
+            };
+        }
         #[cfg(feature = "parallel")]
         if let Some(dispatch) = CyclicRows::new(rows, len * std::mem::size_of::<Gf>()) {
             dispatch.map_jobs(spare.chunks_mut(cols), |jobs| {
-                jobs.into_iter().for_each(fill);
+                jobs.into_iter().for_each(fill_row!());
             });
         } else {
-            spare.par_chunks_mut(cols).enumerate().for_each(fill);
+            spare.par_chunks_mut(cols).enumerate().for_each(fill_row!());
         }
         #[cfg(not(feature = "parallel"))]
-        spare.chunks_mut(cols).enumerate().for_each(fill);
+        spare.chunks_mut(cols).enumerate().for_each(fill_row!());
         // SAFETY: every slot of every row chunk was written by the kernel.
         unsafe { out.set_len(len) };
     }
@@ -953,57 +966,64 @@ impl<'a> Forest<'a> {
                 RowsPtr::new(level, cols)
             })
             .collect();
-        let fill = |y0| {
-            let mut l4 = [[MaybeUninit::<Gf>::uninit(); 64]; 1 << FUSED_UPPER_LEVELS];
-            for g in 0..groups {
-                let base_c = g << 6;
-                let width = 64.min(cols - base_c);
-                let range = base_c..base_c + width;
-                for (b, row) in l4.iter_mut().enumerate().take(1 << fused) {
-                    let y = y0 + b * sub;
-                    let tab = [tables.at(y), tables.at(y | (1 << (t - ell - 1)))];
-                    // This task owns rows `y0 + b·sub`.
-                    let pats = self.jit_patterns(ell, y, g, nib);
-                    kernels::jit_product_group(tab, &pats, &mut row[..width]);
-                }
-                for i in 1..=fused {
-                    let half = 1usize << (fused - i);
-                    for bp in 0..half {
-                        let y = y0 + bp * sub;
-                        // SAFETY: the level-4 segments were written just
-                        // above (their first `width` slots); slots `range` of
-                        // rows `y` and `y + half·sub` of level `3 + i > 4`
-                        // were written by this task in this group's
-                        // iteration; row `y` of level `4 + i` belongs to it
-                        // alone.
-                        unsafe {
-                            let (a, b): (&[Gf], &[Gf]) = if i == 1 {
-                                (
-                                    init_prefix(&l4[bp], width),
-                                    init_prefix(&l4[bp + half], width),
-                                )
-                            } else {
-                                let below = &above[i - 2];
-                                (
-                                    below.row_init(y, range.clone()),
-                                    below.row_init(y + half * sub, range.clone()),
-                                )
-                            };
-                            let o = above[i - 1].row(y, range.clone());
-                            kernels::product_into(a, b, o);
+        macro_rules! fill_subtree {
+            () => {
+                |y0| {
+                    let mut l4 = [[MaybeUninit::<Gf>::uninit(); 64]; 1 << FUSED_UPPER_LEVELS];
+                    for g in 0..groups {
+                        let base_c = g << 6;
+                        let width = 64.min(cols - base_c);
+                        let range = base_c..base_c + width;
+                        for (b, row) in l4.iter_mut().enumerate().take(1 << fused) {
+                            let y = y0 + b * sub;
+                            let tab = [tables.at(y), tables.at(y | (1 << (t - ell - 1)))];
+                            // This task owns rows `y0 + b·sub`.
+                            let pats = self.jit_patterns(ell, y, g, nib);
+                            kernels::jit_product_group(tab, &pats, &mut row[..width]);
+                        }
+                        for i in 1..=fused {
+                            let half = 1usize << (fused - i);
+                            for bp in 0..half {
+                                let y = y0 + bp * sub;
+                                // SAFETY: the level-4 segments were written just
+                                // above (their first `width` slots); slots `range` of
+                                // rows `y` and `y + half·sub` of level `3 + i > 4`
+                                // were written by this task in this group's
+                                // iteration; row `y` of level `4 + i` belongs to it
+                                // alone.
+                                unsafe {
+                                    let (a, b): (&[Gf], &[Gf]) = if i == 1 {
+                                        (
+                                            init_prefix(&l4[bp], width),
+                                            init_prefix(&l4[bp + half], width),
+                                        )
+                                    } else {
+                                        let below = &above[i - 2];
+                                        (
+                                            below.row_init(y, range.clone()),
+                                            below.row_init(y + half * sub, range.clone()),
+                                        )
+                                    };
+                                    let o = above[i - 1].row(y, range.clone());
+                                    kernels::product_into(a, b, o);
+                                }
+                            }
                         }
                     }
                 }
-            }
-        };
+            };
+        }
         #[cfg(feature = "parallel")]
         if let Some(dispatch) = CyclicRows::new(sub, total * std::mem::size_of::<Gf>()) {
-            dispatch.map_indices(sub, |indices| indices.for_each(fill));
+            dispatch.map_indices(sub, |indices| indices.for_each(fill_subtree!()));
         } else {
-            (0..sub).into_par_iter().with_min_len(1).for_each(fill);
+            (0..sub)
+                .into_par_iter()
+                .with_min_len(1)
+                .for_each(fill_subtree!());
         }
         #[cfg(not(feature = "parallel"))]
-        (0..sub).for_each(fill);
+        (0..sub).for_each(fill_subtree!());
         // The levels above `4 + fused`, each the products of the one below.
         for lower in ell + 1 + fused..t - 1 {
             let (below, rest) = spare.split_at_mut(self.upper_region(lower + 1).start);
@@ -1150,43 +1170,49 @@ impl<'a> Forest<'a> {
         let eq_t = transposed_eq(eq_c);
         let sel = nibble::jit_selectors(ell);
         let nib = self.nibbles().map(|rows| (rows, &sel));
-        let sum_row = |y2: usize, [el, eh, ol, oh]: [&mut [MaybeUninit<Gf>]; 4]| {
-            debug_assert!(y2 < rows);
-            let mut sums = kernels::Sums::zero();
-            let mut pats = [[0u8; 64]; 8];
-            let tab: [&[Gf]; 8] = std::array::from_fn(|corner| {
-                let (p, b1, b2) = (corner >> 2, (corner >> 1) & 1, corner & 1);
-                tables
-                    .at((p << low_bits) | (b1 << (low_bits - 1)) | (b2 << (low_bits - 2)) | y2)
-            });
-            for g in 0..groups {
-                // Corner `(p, b1, b2)` is `4p + 2b1 + b2`.
-                for b in 0..4 {
-                    let (b1, b2) = (b >> 1, b & 1);
-                    let y = y2 | (b2 << (low_bits - 2)) | (b1 << (low_bits - 1));
-                    let [p0, p1] = self.jit_patterns(ell, y, g, nib);
-                    pats[b] = p0;
-                    pats[4 + b] = p1;
+        // Keep the row arithmetic inside each iterator's own closure.
+        macro_rules! sum_row {
+            () => {
+                |(y2, (((el, eh), ol), oh))| {
+                    debug_assert!(y2 < rows);
+                    let mut sums = kernels::Sums::zero();
+                    let mut pats = [[0u8; 64]; 8];
+                    let tab: [&[Gf]; 8] = std::array::from_fn(|corner| {
+                        let (p, b1, b2) = (corner >> 2, (corner >> 1) & 1, corner & 1);
+                        tables.at((p << low_bits)
+                            | (b1 << (low_bits - 1))
+                            | (b2 << (low_bits - 2))
+                            | y2)
+                    });
+                    for g in 0..groups {
+                        // Corner `(p, b1, b2)` is `4p + 2b1 + b2`.
+                        for b in 0..4 {
+                            let (b1, b2) = (b >> 1, b & 1);
+                            let y = y2 | (b2 << (low_bits - 2)) | (b1 << (low_bits - 1));
+                            let [p0, p1] = self.jit_patterns(ell, y, g, nib);
+                            pats[b] = p0;
+                            pats[4 + b] = p1;
+                        }
+                        let base_c = g << 6;
+                        let width = 64.min(cols - base_c);
+                        let range = base_c..base_c + width;
+                        kernels::jit_fold_group::<PRE_SCALED, WEIGH_LEFT>(
+                            tab,
+                            &pats,
+                            &rho,
+                            &eq_t[g << 6..(g + 1) << 6],
+                            send_one,
+                            [&mut el[range.clone()], &mut eh[range.clone()]],
+                            [&mut ol[range.clone()], &mut oh[range]],
+                            &mut sums,
+                        );
+                    }
+                    let (end, inf) = sums.finish();
+                    let w = eq_y[y2];
+                    (end * w, inf * w)
                 }
-                let base_c = g << 6;
-                let width = 64.min(cols - base_c);
-                let range = base_c..base_c + width;
-                kernels::jit_fold_group::<PRE_SCALED, WEIGH_LEFT>(
-                    tab,
-                    &pats,
-                    &rho,
-                    &eq_t[g << 6..(g + 1) << 6],
-                    send_one,
-                    [&mut el[range.clone()], &mut eh[range.clone()]],
-                    [&mut ol[range.clone()], &mut oh[range]],
-                    &mut sums,
-                );
-            }
-            let (end, inf) = sums.finish();
-            let w = eq_y[y2];
-            (end * w, inf * w)
-        };
-        let sum_job = |(y2, (((el, eh), ol), oh))| sum_row(y2, [el, eh, ol, oh]);
+            };
+        }
         let add = |(a, b), (x, y)| (a + x, b + y);
         #[cfg(feature = "parallel")]
         if let Some(dispatch) = CyclicRows::new(rows, 2 * half * std::mem::size_of::<Gf>()) {
@@ -1197,7 +1223,7 @@ impl<'a> Forest<'a> {
                 .zip(o_hi.chunks_mut(cols));
             let partials = dispatch.map_jobs(jobs, |jobs| {
                 jobs.into_iter()
-                    .map(sum_job)
+                    .map(sum_row!())
                     .fold((Gf::zero(), Gf::zero()), add)
             });
             return partials.into_iter().fold((Gf::zero(), Gf::zero()), add);
@@ -1207,7 +1233,7 @@ impl<'a> Forest<'a> {
             .zip(cfg_chunks_mut!(o_lo, cols))
             .zip(cfg_chunks_mut!(o_hi, cols))
             .enumerate()
-            .map(sum_job)
+            .map(sum_row!())
             .collect();
         partials.into_iter().fold((Gf::zero(), Gf::zero()), add)
     }
@@ -2401,8 +2427,12 @@ mod tests {
                 }
                 let session = b"forest-partial-modes/v1";
                 let instance = format!("t={t};s={s};depth={depth};special={special:?}");
-                let (roots, witnesses) = GrandProductCircuit::new(leaves.clone()).batched_eval(1usize << zeta.len());
-                let root_claim = roots.iter().zip(eq_table(&zeta)).fold(Gf::zero(), |acc, (&v, w)| acc + v * w);
+                let (roots, witnesses) =
+                    GrandProductCircuit::new(leaves.clone()).batched_eval(1usize << zeta.len());
+                let root_claim = roots
+                    .iter()
+                    .zip(eq_table(&zeta))
+                    .fold(Gf::zero(), |acc, (&v, w)| acc + v * w);
                 let mut dense = build_kernel_prover(session, instance.as_str());
                 let expected_terminal = gpgkr_prove(&mut dense, &zeta, witnesses);
                 let expected_proof = dense.finish();
@@ -2416,7 +2446,10 @@ mod tests {
                     (false, true, Weighing::On),
                     (true, true, Weighing::On),
                 ] {
-                    let mode = PatternMode { nibble, nibble_from: 0 };
+                    let mode = PatternMode {
+                        nibble,
+                        nibble_from: 0,
+                    };
                     let forest = Forest::new(t, s, &packed, &images)
                         .with_patterns(mode)
                         .with_one_pass(one_pass)
@@ -2424,12 +2457,20 @@ mod tests {
                     let mut ps = build_kernel_prover(session, instance.as_str());
                     let terminal = forest.prove_depth(&mut ps, &zeta, depth);
                     let proof = ps.finish();
-                    let label = format!("{instance};nibble={nibble};one_pass={one_pass};weighing={weighing:?}");
+                    let label = format!(
+                        "{instance};nibble={nibble};one_pass={one_pass};weighing={weighing:?}"
+                    );
                     assert_eq!(terminal, expected_terminal, "terminal: {label}");
                     assert_eq!(proof, expected_proof, "transcript: {label}");
                     let mut verifier = build_kernel_verifier(session, instance.as_str(), &proof);
-                    assert_eq!(gpgkr_verify(&mut verifier, root_claim, &zeta, depth as u32), Some(terminal), "verification: {label}");
-                    verifier.check_eof().expect("all partial-depth messages consumed");
+                    assert_eq!(
+                        gpgkr_verify(&mut verifier, root_claim, &zeta, depth as u32),
+                        Some(terminal),
+                        "verification: {label}"
+                    );
+                    verifier
+                        .check_eof()
+                        .expect("all partial-depth messages consumed");
                 }
             }
         }

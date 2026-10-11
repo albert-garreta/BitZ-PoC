@@ -14,7 +14,7 @@ use crate::{
         gkr::{GkrProverTranscript, GkrVerifierTranscript, gpgkr_verify},
     },
     hybrid::BinaryClaim,
-    ligerito::pack_columns_from_rows,
+    ligerito::{pack_columns_from_rows, pack_columns_from_rows_repeated},
     pcs::IntegerMatrixLayout,
     piop::spartan::{SpartanBitzField, SpartanField, grinding::GrindingDomain, matrix::eq_table},
     poly::{univariate::binary_gf128::Gf128 as Gf, utils::build_eq_x_r_vec},
@@ -223,10 +223,43 @@ fn root_point(t: &mut impl Transcript, p: &IntegerMatrixLayout) -> Vec<Gf> {
 }
 
 fn row_images(chunks: &[LargeNumber], comb: &FixedBasePow) -> Vec<Gf> {
+    #[cfg(feature = "parallel")]
+    if chunks.len() >= 4096 && rayon::current_num_threads() > 1 {
+        return chunks
+            .par_iter()
+            .with_min_len(256)
+            .map(|w| [comb.pow(w.lower), comb.pow(u128::from(w.upper))])
+            .collect::<Vec<[Gf; 2]>>()
+            .into_flattened();
+    }
     chunks
         .iter()
         .flat_map(|w| [comb.pow(w.lower), comb.pow(u128::from(w.upper))])
         .collect()
+}
+
+fn split_root_claim(sums: &[LargeNumber], eq: &[Gf], comb: &FixedBasePow) -> Gf {
+    debug_assert_eq!(eq.len(), 2 * sums.len());
+    #[cfg(feature = "parallel")]
+    if sums.len() >= 4096 && rayon::current_num_threads() > 1 {
+        return sums
+            .par_iter()
+            .with_min_len(256)
+            .enumerate()
+            .map(|(column, sum)| {
+                // Root weights remain limb-major although each job owns a column.
+                eq[column] * comb.pow(sum.lower)
+                    + eq[column + sums.len()] * comb.pow(u128::from(sum.upper))
+            })
+            .reduce(Gf::zero, |a, b| a + b);
+    }
+    sums.iter()
+        .map(|sum| sum.lower)
+        .chain(sums.iter().map(|sum| u128::from(sum.upper)))
+        .zip(eq)
+        .fold(Gf::zero(), |acc, (sum, &weight)| {
+            acc + weight * comb.pow(sum)
+        })
 }
 
 pub(crate) fn prove(
@@ -296,18 +329,9 @@ pub(crate) fn prove_weighted(
     drop(fold_span);
     bind(t, &sums);
     let packing_span = tracing::info_span!("falcon_bridge:column_packing").entered();
-    let mut packed_cols = pack_columns_from_rows(p, rows);
     // Interleave a repeated source bit at row 2*r+limb. Highest-row-bit
     // products reduce only original rows; after d layers the limb survives.
-    crate::utils::cfg_iter_mut!(&mut packed_cols).for_each(|column| {
-        let rows = column.len();
-        column.resize(2 * rows, 0);
-        for r in (0..rows).rev() {
-            let word = column[r];
-            column[2 * r] = word;
-            column[2 * r + 1] = word;
-        }
-    });
+    let packed_cols = pack_columns_from_rows_repeated::<true>(p, rows);
     drop(packing_span);
     let comb = generator_comb();
     let power_span = tracing::info_span!("falcon_bridge:power_tables").entered();
@@ -461,15 +485,10 @@ fn verify_weighted_with_field(
     let mut grinder =
         VerifierBlockGrindingTranscript::<_, BridgeGrinding>::new(t, grinding_bits, &proof.nonces);
     let zeta = root_point(&mut grinder, p);
-    let eq = build_eq_x_r_vec(&zeta, &()).expect("nonempty column and limb point");
-    let root_claim = sums
-        .iter()
-        .map(|sum| sum.lower)
-        .chain(sums.iter().map(|sum| u128::from(sum.upper)))
-        .zip(eq)
-        .fold(Gf::zero(), |acc, (sum, weight)| {
-            acc + weight * comb.pow(sum)
-        });
+    let root_claim = {
+        let eq = build_eq_x_r_vec(&zeta, &()).expect("nonempty column and limb point");
+        split_root_claim(sums, &eq, comb)
+    };
     let mut state = ForestVerifier {
         transcript: &mut grinder,
         messages: &proof.forest,
@@ -735,6 +754,58 @@ mod tests {
     }
 
     const UNSPLIT_PRIME_MAX: u128 = (1u128 << 115) - (1u128 << 102) - 1;
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn public_power_batches_match_serial_limb_order() {
+        let comb = generator_comb();
+        let pools: Vec<_> = [1, 4, 8, 16]
+            .into_iter()
+            .map(|threads| {
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(threads)
+                    .build()
+                    .unwrap()
+            })
+            .collect();
+        // Cross the parallel threshold and leave incomplete 256-entry jobs.
+        for len in [0, 1, 4095, 4096, 4097, 4353] {
+            let sums: Vec<_> = (0..len)
+                .map(|i| LargeNumber {
+                    lower: ((i as u128 + 1) << 96)
+                        | ((i as u128 * 17 + 3) << 32)
+                        | (i as u128 * 29 + 5),
+                    upper: 0x8000_0001u32.wrapping_add(i as u32 * 101),
+                })
+                .collect();
+            let eq: Vec<_> = (0..2 * len)
+                .map(|i| Gf::from_polynomial_words([3 + 7 * i as u64, 11 + 19 * i as u64]))
+                .collect();
+            let mut expected_images = Vec::with_capacity(2 * len);
+            for sum in &sums {
+                expected_images.push(comb.pow(sum.lower));
+                expected_images.push(comb.pow(u128::from(sum.upper)));
+            }
+            // The existing root projection visits all lower limbs, then all
+            // upper limbs; row images store those same powers in adjacent pairs.
+            let mut expected_root = Gf::zero();
+            for limb in 0..2 {
+                for column in 0..len {
+                    expected_root += eq[limb * len + column] * expected_images[2 * column + limb];
+                }
+            }
+            for pool in &pools {
+                pool.install(|| {
+                    assert_eq!(row_images(&sums, comb), expected_images, "len={len}");
+                    assert_eq!(
+                        split_root_claim(&sums, &eq, comb),
+                        expected_root,
+                        "len={len}"
+                    );
+                });
+            }
+        }
+    }
 
     #[test]
     fn single_algebraic_source_bridge_authenticates_without_falcon_trace() {
