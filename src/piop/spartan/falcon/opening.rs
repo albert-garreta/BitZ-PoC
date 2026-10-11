@@ -113,7 +113,7 @@ impl FalconPublicStatement {
             }
         }
         for signature in &self.signatures {
-            signature.encode_ct()?;
+            signature.validate_ct()?;
         }
         Ok(())
     }

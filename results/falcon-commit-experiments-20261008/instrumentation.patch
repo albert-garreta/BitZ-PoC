@@ -1,0 +1,36 @@
+diff --git a/benches/common/falcon_stage_timings.rs b/benches/common/falcon_stage_timings.rs
+index 46056bbe2..e20300db7 100644
+--- a/benches/common/falcon_stage_timings.rs
++++ b/benches/common/falcon_stage_timings.rs
+@@ -45,6 +45,7 @@ where
+     ) {
+         if let Some(span) = ctx.span(id) {
+             if span.name().starts_with("falcon")
++                || span.name().starts_with("shared_source:")
+                 || span.name().starts_with("inner_packed:")
+                 || span.name().starts_with("inner_overlay:")
+                 || span.name().starts_with("op:")
+diff --git a/src/piop/spartan/falcon/hybrid.rs b/src/piop/spartan/falcon/hybrid.rs
+index efdfc5c34..f4c71f96a 100644
+--- a/src/piop/spartan/falcon/hybrid.rs
++++ b/src/piop/spartan/falcon/hybrid.rs
+@@ -355,13 +355,17 @@ impl PreparedFalconHybrid {
+                 .collect::<Result<Vec<_>, FalconError>>()?
+         };
+         let messages: Vec<&[u8]> = public.messages.iter().map(|m| m.as_slice()).collect();
+-        let arithmetic =
+-            FalconSourceWitness::from_traces(self.layout, &messages, &signatures, &traces)?;
++        let arithmetic = {
++            let _span = tracing::info_span!("falcon_hybrid:source_construction").entered();
++            FalconSourceWitness::from_traces(self.layout, &messages, &signatures, &traces)?
++        };
++        let packing_span = tracing::info_span!("falcon_hybrid:source_packing").entered();
+         let mut arithmetic_packed = Vec::with_capacity(1 << self.geometry.physical_logs[0]);
+         for row in arithmetic.rows() {
+             arithmetic_packed.extend(row.chunks_exact(2).map(|w| Gf { lo: w[0], hi: w[1] }));
+         }
+         arithmetic_packed.resize(1 << self.geometry.physical_logs[0], Gf::ZERO);
++        drop(packing_span);
+         let packed: [Vec<Gf>; SOURCE_COUNT] = std::iter::once(arithmetic_packed)
+             .chain(keccak_packed)
+             .collect::<Vec<_>>()

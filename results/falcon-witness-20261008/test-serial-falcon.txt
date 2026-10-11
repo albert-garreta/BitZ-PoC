@@ -1,0 +1,533 @@
+    Blocking waiting for file lock on build directory
+   Compiling either v1.18.0
+   Compiling hashbrown v0.17.1
+   Compiling blake3 v1.8.7
+   Compiling tracing-core v0.1.36
+   Compiling digest v0.11.3
+   Compiling sha3 v0.11.0
+   Compiling rayon v1.12.0
+   Compiling itertools v0.14.0
+   Compiling tracing v0.1.44
+   Compiling spongefish v0.7.4
+   Compiling indexmap v2.14.2
+   Compiling field v0.1.0 (/home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/vendor/field)
+   Compiling toml_edit v0.22.27
+warning: function `square_n` is never used
+   --> vendor/field/src/gf128/portable.rs:104:8
+    |
+104 | pub fn square_n(a: [u64; 2], k: u32) -> [u64; 2] {
+    |        ^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `wide_words` is never used
+   --> vendor/field/src/gf128/portable.rs:116:15
+    |
+116 | pub(crate) fn wide_words(value: Wide) -> [u64; 4] {
+    |               ^^^^^^^^^^
+
+warning: function `wide_zero` is never used
+   --> vendor/field/src/gf128/portable.rs:137:8
+    |
+137 | pub fn wide_zero() -> Wide {
+    |        ^^^^^^^^^
+
+warning: function `wide_of` is never used
+   --> vendor/field/src/gf128/portable.rs:141:8
+    |
+141 | pub fn wide_of(a: [u64; 2]) -> Wide {
+    |        ^^^^^^^
+
+warning: function `wide_add` is never used
+   --> vendor/field/src/gf128/portable.rs:149:8
+    |
+149 | pub fn wide_add(x: Wide, y: Wide) -> Wide {
+    |        ^^^^^^^^
+
+warning: function `wide_add_low` is never used
+   --> vendor/field/src/gf128/portable.rs:155:8
+    |
+155 | pub fn wide_add_low(x: Wide, a: [u64; 2]) -> Wide {
+    |        ^^^^^^^^^^^^
+
+warning: function `wide_reduce` is never used
+   --> vendor/field/src/gf128/portable.rs:159:8
+    |
+159 | pub fn wide_reduce(w: Wide) -> [u64; 2] {
+    |        ^^^^^^^^^^^
+
+warning: function `wide_from_words` is never used
+   --> vendor/field/src/gf128/portable.rs:321:8
+    |
+321 | pub fn wide_from_words(words: [u64; 4]) -> Wide {
+    |        ^^^^^^^^^^^^^^^
+
+   Compiling circuit v0.1.0 (/home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/crates/circuit)
+warning: unused import: `Zero`
+ --> crates/circuit/src/witgen.rs:3:23
+  |
+3 | use num_traits::{One, Zero};
+  |                       ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `One`
+ --> crates/circuit/src/witgen.rs:3:18
+  |
+3 | use num_traits::{One, Zero};
+  |                  ^^^
+
+   Compiling toml v0.8.23
+warning: method `sum_terms` is never used
+   --> crates/circuit/src/linear_map/builder.rs:203:19
+    |
+ 59 | impl<S: CoefficientStore> WengertBuilder<S> {
+    | ------------------------------------------- method in this implementation
+...
+203 |     pub(super) fn sum_terms(&mut self, terms: Vec<(NodeId, u32)>) -> NodeId {
+    |                   ^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `adjoint_map_segments` is never used
+   --> crates/circuit/src/linear_map/evaluate.rs:318:19
+    |
+210 | impl<'a, F: RingOps + Sync> PreparedWengert<'a, F> {
+    | -------------------------------------------------- method in this implementation
+...
+318 |     pub(super) fn adjoint_map_segments(
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `integer_from_bits` is never used
+  --> crates/circuit/src/witgen.rs:14:15
+   |
+14 | pub(crate) fn integer_from_bits<const L: usize>(bits: &[bool]) -> Z<L> {
+   |               ^^^^^^^^^^^^^^^^^
+
+   Compiling flock-core v0.1.0 (/home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/vendor/flock-mod/crates/flock-core)
+warning: `field` (lib) generated 8 warnings
+warning: `circuit` (lib) generated 5 warnings
+   Compiling bitz v0.1.0 (/home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation)
+error[E0433]: cannot find module or crate `rayon` in this scope
+    --> src/sumcheck/inner/packed/streaming.rs:2965:13
+     |
+2965 |             rayon::ThreadPoolBuilder::new()
+     |             ^^^^^ use of unresolved module or unlinked crate `rayon`
+     |
+     = help: if you wanted to use a crate named `rayon`, use `cargo add rayon` to add it to your `Cargo.toml`
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/baby_bear_bitz.rs:23:5
+   |
+23 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `crate::transcript::traits::Transcript`
+   --> src/piop/spartan/baby_bear_bitz.rs:410:9
+    |
+410 |     use crate::transcript::traits::Transcript;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `FQ_BITS`
+   --> src/piop/spartan/baby_bear_bitz.rs:414:15
+    |
+414 |         pcs::{FQ_BITS, Q100Element, eq_le_table_fq, fq_sub},
+    |               ^^^^^^^
+
+warning: unused import: `FQ_BITS`
+   --> src/piop/spartan/u32_mul_relation.rs:275:15
+    |
+275 |         pcs::{FQ_BITS, eq_le_table_fq, fq_sub},
+    |               ^^^^^^^
+
+warning: unused import: `super::falcon::FalconError`
+ --> src/piop/spartan/falcon_profiles.rs:2:5
+  |
+2 | use super::falcon::FalconError;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/grinding.rs:20:5
+   |
+20 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/multiswap/proof.rs:39:5
+   |
+39 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/profile.rs:57:5
+   |
+57 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `RingOps`
+  --> src/piop/spartan/protocol/mod.rs:24:13
+   |
+24 | use field::{RingOps, Uint};
+   |             ^^^^^^^
+
+warning: unused import: `field::RingOps`
+ --> src/piop/spartan/sha256/constraints.rs:9:5
+  |
+9 | use field::RingOps;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::sumcheck::boundary::*`
+ --> src/piop/spartan/sumcheck.rs:3:16
+  |
+3 | pub(crate) use crate::sumcheck::boundary::*;
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/u128_bitz.rs:15:5
+   |
+15 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::transcript::traits::Transcript`
+   --> src/piop/spartan/u128_bitz.rs:200:9
+    |
+200 |     use crate::transcript::traits::Transcript;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/u32_mul.rs:14:5
+   |
+14 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/u64_bitz.rs:19:5
+   |
+19 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::transcript::traits::Transcript`
+   --> src/piop/spartan/u64_bitz.rs:213:9
+    |
+213 |     use crate::transcript::traits::Transcript;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `EqualityWeights`
+ --> src/poly/mle.rs:5:36
+  |
+5 |     CompositeMultilinearExtension, EqualityWeights, FactoredMultilinearExtension,
+  |                                    ^^^^^^^^^^^^^^^
+
+warning: unused import: `clmul_64x64`
+   --> src/poly/univariate/binary_gf128.rs:196:33
+    |
+196 |     use field::gf128::kernels::{clmul_64x64, reduce_256_to_128};
+    |                                 ^^^^^^^^^^^
+
+warning: unused import: `u64_mul::U64MulCoefficient`
+  --> src/sumcheck/inner/native.rs:31:5
+   |
+31 |     u64_mul::U64MulCoefficient,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `arithmetic::merge_accumulators`
+  --> src/sumcheck/inner/native.rs:35:38
+   |
+35 | use crate::sumcheck::{SumcheckError, arithmetic::merge_accumulators};
+   |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::Uint`
+  --> src/sumcheck/inner/packed.rs:10:5
+   |
+10 | use field::Uint;
+   |     ^^^^^^^^^^^
+
+warning: unused import: `overlay::FactoredOverlayInput`
+   --> src/sumcheck/inner/packed.rs:371:16
+    |
+371 | pub(crate) use overlay::FactoredOverlayInput;
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `MergeAccumulator`
+  --> src/sumcheck/outer/univariate.rs:13:30
+   |
+13 | use field::{BatchMulAcc, Fp, MergeAccumulator, Reduce, Uint};
+   |                              ^^^^^^^^^^^^^^^^
+
+warning: unused import: `ConstOne`
+  --> src/poly/univariate/dense.rs:21:66
+   |
+21 | use num_traits::{CheckedAdd, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One, Zero};
+   |                                                                  ^^^^^^^^
+
+warning: unused import: `ConstZero`
+  --> src/poly/univariate/dense.rs:21:76
+   |
+21 | use num_traits::{CheckedAdd, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One, Zero};
+   |                                                                            ^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/multiswap/proof.rs:36:5
+   |
+36 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/protocol/bitify.rs:13:5
+   |
+13 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/protocol/mod.rs:23:5
+   |
+23 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `MergeAccumulator`
+  --> src/sumcheck/outer/univariate_api.rs:15:26
+   |
+15 | use field::{BatchMulAcc, MergeAccumulator, Reduce};
+   |                          ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/sha256/chain.rs:23:5
+   |
+23 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `SpartanField`
+  --> src/piop/spartan/sha256/constraints.rs:32:5
+   |
+32 |     SpartanField, SpartanMatrixError,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/u128_mul.rs:16:5
+   |
+16 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `num_traits::ConstOne`
+   --> src/piop/spartan/mod.rs:160:5
+    |
+160 | use num_traits::ConstOne;
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `One`
+  --> src/poly/univariate/binary_b127.rs:75:18
+   |
+75 | use num_traits::{One, Zero};
+   |                  ^^^
+
+warning: unused import: `Zero`
+  --> src/poly/univariate/binary_gf128.rs:38:23
+   |
+38 | use num_traits::{One, Zero};
+   |                       ^^^^
+
+warning: unused import: `ConstZero`
+  --> src/poly/univariate/binary_ref.rs:18:54
+   |
+18 | use num_traits::{CheckedAdd, CheckedMul, CheckedSub, ConstZero, One, Zero};
+   |                                                      ^^^^^^^^^
+
+warning: unused import: `One`
+  --> src/bitz/virt.rs:27:18
+   |
+27 | use num_traits::{One, Zero};
+   |                  ^^^
+
+warning: unused import: `Zero`
+  --> src/bitz/virt.rs:27:23
+   |
+27 | use num_traits::{One, Zero};
+   |                       ^^^^
+
+warning: unused import: `MergeAccumulator`
+ --> src/sumcheck/outer/api.rs:8:26
+  |
+8 | use field::{BatchMulAcc, MergeAccumulator, Reduce};
+  |                          ^^^^^^^^^^^^^^^^
+
+warning: unused variable: `other_config`
+    --> src/piop/spartan/matrix.rs:2556:13
+     |
+2556 |         let other_config =
+     |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_other_config`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `other_config`
+    --> src/piop/spartan/matrix.rs:2739:13
+     |
+2739 |         let other_config = Fp::<2>::make_cfg(&Uint::from(OTHER_TEST_MODULUS)).unwrap();
+     |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_other_config`
+
+warning: unused variable: `other_config`
+    --> src/piop/spartan/matrix.rs:3214:13
+     |
+3214 |         let other_config = Fp::<2>::make_cfg(&Uint::from(OTHER_TEST_MODULUS)).unwrap();
+     |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_other_config`
+
+warning: unused variable: `other_config`
+    --> src/piop/spartan/piop.rs:1988:13
+     |
+1988 |         let other_config = config((1_u128 << 127) - 1);
+     |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_other_config`
+
+warning: unused variable: `foreign_config`
+    --> src/piop/spartan/piop.rs:2398:13
+     |
+2398 |         let foreign_config = self::config((1_u128 << 127) - 1);
+     |             ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_foreign_config`
+
+warning: unused variable: `ctx`
+   --> src/sumcheck/inner/native/native_witness.rs:697:17
+    |
+697 |             let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
+    |                 ^^^ help: if this is intentional, prefix it with an underscore: `_ctx`
+
+warning: unused variable: `ctx`
+   --> src/sumcheck/inner/native.rs:835:17
+    |
+835 |             let ctx = crate::piop::spartan::raw_monty::field_context(&cfg);
+    |                 ^^^ help: if this is intentional, prefix it with an underscore: `_ctx`
+
+warning: unused variable: `generic_reducer`
+    --> src/sumcheck/inner/native.rs:1083:17
+     |
+1083 |             let generic_reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
+     |                 ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_generic_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/native.rs:1141:17
+     |
+1141 |             let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
+     |                 ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/native.rs:1231:17
+     |
+1231 |             let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
+     |                 ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/native.rs:1438:17
+     |
+1438 |             let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
+     |                 ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+   --> src/sumcheck/inner/packed/composite.rs:752:13
+    |
+752 |         let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
+    |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+   --> src/sumcheck/inner/packed/composite.rs:829:13
+    |
+829 |         let reducer = crate::utils::delayed_reduction::prepare_field(&cfg).unwrap();
+    |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/packed.rs:2302:13
+     |
+2302 |         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/packed.rs:2545:13
+     |
+2545 |         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/packed.rs:2685:13
+     |
+2685 |         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/packed.rs:2988:13
+     |
+2988 |         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/packed.rs:3222:13
+     |
+3222 |         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/packed.rs:3260:13
+     |
+3260 |         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `reducer`
+    --> src/sumcheck/inner/packed.rs:3311:13
+     |
+3311 |         let reducer = crate::utils::delayed_reduction::prepare_field(&field_cfg).unwrap();
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `other_cfg`
+   --> src/sumcheck/inner/reference.rs:951:13
+    |
+951 |         let other_cfg = Fp::<2>::make_cfg(&Uint::from((1_u128 << 127) - 1)).unwrap();
+    |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_other_cfg`
+
+warning: unused variable: `merge`
+   --> src/sumcheck/outer/arithmetic/native.rs:445:9
+    |
+445 |     let merge = |mut a: [FpLinearAcc<2, N>; 2], b: [FpLinearAcc<2, N>; 2]| {
+    |         ^^^^^ help: if this is intentional, prefix it with an underscore: `_merge`
+
+warning: unused variable: `merge`
+   --> src/sumcheck/outer/arithmetic.rs:374:9
+    |
+374 |     let merge = |mut left: LinearPair, right: LinearPair| -> LinearPair {
+    |         ^^^^^ help: if this is intentional, prefix it with an underscore: `_merge`
+
+warning: unused variable: `block_pairs`
+   --> src/sumcheck/outer/arithmetic.rs:539:9
+    |
+539 |     let block_pairs = match weights.two_level_low() {
+    |         ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_block_pairs`
+
+warning: unused variable: `block_pairs`
+   --> src/sumcheck/outer/arithmetic.rs:705:9
+    |
+705 |     let block_pairs = match weights.two_level_low() {
+    |         ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_block_pairs`
+
+warning: unused variable: `reducer`
+   --> src/sumcheck/outer/native_skip/reference.rs:991:48
+    |
+991 | fn product_accumulators<const LANES: usize, R>(reducer: &R) -> [ProductAccumulator<R>; LANES]
+    |                                                ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_reducer`
+
+warning: unused variable: `other_cfg`
+    --> src/sumcheck/outer/univariate.rs:1281:13
+     |
+1281 |         let other_cfg = Fp::<2>::make_cfg(&Uint::from((1_u128 << 127) - 1)).unwrap();
+     |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_other_cfg`
+
+warning: unused variable: `config`
+  --> src/sumcheck/arithmetic.rs:50:9
+   |
+50 |         config: &field::FpCtx<2>,
+   |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_config`
+
+warning: unused variable: `zero`
+   --> src/sumcheck/arithmetic.rs:339:5
+    |
+339 |     zero: &Fp<2>,
+    |     ^^^^ help: if this is intentional, prefix it with an underscore: `_zero`
+
+For more information about this error, try `rustc --explain E0433`.
+warning: `bitz` (lib test) generated 68 warnings
+error: could not compile `bitz` (lib test) due to 1 previous error; 68 warnings emitted

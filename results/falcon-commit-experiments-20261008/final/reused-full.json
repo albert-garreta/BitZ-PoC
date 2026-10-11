@@ -1,0 +1,11 @@
+{
+  "reason": "Identical final and retained candidate source files and executable SHA-256 hashes.",
+  "campaigns": [
+    "arithmetic/e2e",
+    "arithmetic/e2e-extension",
+    "arithmetic/stages"
+  ],
+  "retained_build": "arithmetic-build.json",
+  "final_build": "final-build.json",
+  "binary_sha256": "e94eef139d9c29cbfda71b41203bcf68b5e8b632b4acfd786d0e4e96e1403aab"
+}

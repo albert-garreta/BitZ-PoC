@@ -1,0 +1,254 @@
+--- a/vendor/flock-mod/crates/flock-core/src/scratch.rs
++++ b/vendor/flock-mod/crates/flock-core/src/scratch.rs
+@@ -21,6 +21,67 @@
+ use std::sync::Mutex;
+ 
+ static POOL: Mutex<Vec<Vec<Gf128>>> = Mutex::new(Vec::new());
++static BYTE_POOL: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
++
++// Falcon needs at most three Keccak slabs. Keep one allocation of each
++// capacity, bounded across concurrent proofs and changes in batch size.
++const MAX_BYTE_BUFFERS: usize = 3;
++
++/// Take a zeroed byte buffer for a Keccak lincheck stripe. Unlike `take_f128`,
++/// this clears recycled contents because the emitter leaves padding untouched.
++pub fn take_bytes_zeroed(n: usize) -> Vec<u8> {
++    take_bytes_zeroed_from(&BYTE_POOL, n)
++}
++
++fn take_bytes_zeroed_from(pool: &Mutex<Vec<Vec<u8>>>, n: usize) -> Vec<u8> {
++    let mut pool = pool.lock().unwrap();
++    let best = pool
++        .iter()
++        .enumerate()
++        .filter(|(_, bytes)| bytes.capacity() >= n)
++        .min_by_key(|(_, bytes)| bytes.capacity())
++        .map(|(i, _)| i);
++    let recycled = best.map(|i| pool.swap_remove(i));
++    drop(pool);
++    match recycled {
++        Some(mut bytes) => {
++            use rayon::prelude::*;
++            let reused = bytes.len().min(n);
++            bytes.resize(n, 0);
++            bytes[..reused]
++                .par_chunks_mut(1 << 16)
++                .for_each(|chunk| chunk.fill(0));
++            bytes
++        }
++        None => vec![0; n],
++    }
++}
++
++/// Return a byte buffer, retaining at most one allocation of each capacity
++/// and at most three capacities. Larger allocations win when the pool is full.
++pub fn give_bytes(bytes: Vec<u8>) {
++    give_bytes_to(&BYTE_POOL, bytes);
++}
++
++fn give_bytes_to(pool: &Mutex<Vec<Vec<u8>>>, bytes: Vec<u8>) {
++    if bytes.capacity() == 0 {
++        return;
++    }
++    let mut pool = pool.lock().unwrap();
++    if pool.iter().any(|v| v.capacity() == bytes.capacity()) {
++        return;
++    }
++    pool.push(bytes);
++    if pool.len() > MAX_BYTE_BUFFERS {
++        let smallest = pool
++            .iter()
++            .enumerate()
++            .min_by_key(|(_, bytes)| bytes.capacity())
++            .map(|(i, _)| i)
++            .expect("pool non-empty");
++        pool.swap_remove(smallest);
++    }
++}
+ 
+ /// Max buffers retained. The m=29 prove cycle gives ~18 distinct buffers:
+ /// witness z/a/b, the L0 codeword, zerocheck's 2 fold outputs + 2 ping-pong
+@@ -136,11 +197,42 @@
+ /// Release every pooled buffer back to the OS.
+ pub fn clear() {
+     POOL.lock().unwrap().clear();
++    BYTE_POOL.lock().unwrap().clear();
+ }
+ 
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++
++    #[test]
++    fn byte_reuse_clears_old_contents_when_shrinking_and_growing() {
++        let pool = Mutex::new(Vec::new());
++        let dirty = vec![0xa5; 1024];
++        let pointer = dirty.as_ptr();
++        give_bytes_to(&pool, dirty);
++        let mut bytes = take_bytes_zeroed_from(&pool, 512);
++        assert_eq!(bytes.as_ptr(), pointer);
++        assert_eq!(bytes.len(), 512);
++        assert!(bytes.iter().all(|&byte| byte == 0));
++        bytes.fill(0xff);
++        give_bytes_to(&pool, bytes);
++        let bytes = take_bytes_zeroed_from(&pool, 1024);
++        assert_eq!(bytes.as_ptr(), pointer);
++        assert_eq!(bytes.len(), 1024);
++        assert!(bytes.iter().all(|&byte| byte == 0));
++    }
++
++    #[test]
++    fn byte_pool_retains_only_three_distinct_capacities() {
++        let pool = Mutex::new(Vec::new());
++        for size in [8, 16, 32, 64, 64, 32, 16, 8] {
++            give_bytes_to(&pool, vec![0xa5; size]);
++        }
++        let pool = pool.lock().unwrap();
++        let mut capacities: Vec<_> = pool.iter().map(Vec::capacity).collect();
++        capacities.sort_unstable();
++        assert_eq!(capacities, [16, 32, 64]);
++    }
+ 
+     #[test]
+     fn take_reuses_given_buffer() {
+--- a/vendor/flock-mod/crates/flock-prover/src/r1cs_hashes/keccak.rs
++++ b/vendor/flock-mod/crates/flock-prover/src/r1cs_hashes/keccak.rs
+@@ -1386,7 +1386,7 @@
+     let mut z = flock_core::scratch::take_f128(total);
+     let mut a = flock_core::scratch::take_f128(total);
+     let mut b = flock_core::scratch::take_f128(total);
+-    let mut stripe = vec![0u8; total * 16];
++    let mut stripe = flock_core::scratch::take_bytes_zeroed(total * 16);
+     let tail = USEFUL_BITS.div_ceil(128) << n_log;
+     for buf in [&mut z, &mut a, &mut b] {
+         buf[tail..]
+@@ -2143,6 +2143,8 @@
+     fn partial_chain_stripes_match_scalar_oracle_and_real_constraints() {
+         let mut rng = Rng::new(0x57A1_9E55);
+         for (live, capacity, permutations) in [
++            (0, 8, 1),
++            (8, 8, 1),
+             (1, 1, 16),
+             (1, 2, 4),
+             (2, 2, 4),
+@@ -2172,6 +2174,9 @@
+                         .collect(),
+                 );
+             }
++            // The SIMD stripe emitter leaves odd gap words and the tail
++            // untouched; stale bytes must not survive in any padding region.
++            flock_core::scratch::give_bytes(vec![0xa5; blocks * U64_PER_BLOCK * 8]);
+             let (z, a, b, stripe, outputs) =
+                 generate_chained_witness_batch_major(&initial, capacity, permutations);
+             assert_eq!(
+--- a/vendor/flock-mod/crates/flock-prover/src/prover.rs
++++ b/vendor/flock-mod/crates/flock-prover/src/prover.rs
+@@ -760,9 +760,9 @@
+         &x_ab,
+         challenger,
+     );
+-    // The lincheck stripe copy of z is dead from here on; free it before the
+-    // PCS open (2^(m-3) bytes — 64 MB at m = 29).
+-    drop(z_packed_lincheck);
++    // The stripe is no longer borrowed; retain its allocation for the next
++    // witness instead of freeing and faulting the same pages again.
++    flock_core::scratch::give_bytes(z_packed_lincheck);
+ 
+     let ab = ZClaim {
+         point: r1cs.ab_claim_point(lc_claim.r_inner_skip, &lc_claim.r_inner_rest, &x_ab.x_outer),
+--- a/src/piop/spartan/falcon/hybrid_keccak.rs
++++ b/src/piop/spartan/falcon/hybrid_keccak.rs
+@@ -62,6 +62,16 @@
+     a: Vec<Gf128>,
+     b: Vec<Gf128>,
+     lincheck: Vec<u8>,
++}
++
++impl Drop for KeccakAuxiliary {
++    fn drop(&mut self) {
++        // Also covers rejected or abandoned commits. The prefix prover takes
++        // ownership with mem::take and returns its buffers after their last use.
++        flock_core::scratch::give_f128(std::mem::take(&mut self.a));
++        flock_core::scratch::give_f128(std::mem::take(&mut self.b));
++        flock_core::scratch::give_bytes(std::mem::take(&mut self.lincheck));
++    }
+ }
+ 
+ /// Conservative prefix contribution to the composition's computational
+@@ -316,7 +326,7 @@
+     pub(crate) fn prove_prefix<T: Transcript + Send>(
+         &self,
+         packed: &[Gf128],
+-        auxiliary: KeccakAuxiliary,
++        mut auxiliary: KeccakAuxiliary,
+         source_root: &[u8; 32],
+         statement_digest: &[u8; 32],
+         transcript: &mut T,
+@@ -346,9 +356,9 @@
+             &self.r1cs,
+             &context,
+             packed,
+-            auxiliary.a,
+-            auxiliary.b,
+-            auxiliary.lincheck,
++            std::mem::take(&mut auxiliary.a),
++            std::mem::take(&mut auxiliary.b),
++            std::mem::take(&mut auxiliary.lincheck),
+             &circuit,
+             &mut ZincChallenger(&mut grinding),
+         );
+@@ -1049,3 +1059,54 @@
+ }
+ 
+ }
++
++#[cfg(test)]
++mod auxiliary_cleanup_tests {
++    use super::*;
++    use crate::transcript::Blake3Transcript;
++
++    #[test]
++    fn rejected_or_abandoned_auxiliary_keeps_recycled_stripes_zeroed() {
++        let (first, permutations) = super::super::PARAMETERS.slab(0);
++        let prepared = PreparedKeccak::new_slab(1, first, permutations).unwrap();
++        let n = 1usize << prepared.packed_vars();
++        let packed = vec![Gf128::ZERO; n];
++        let auxiliary = || KeccakAuxiliary {
++            a: vec![Gf128::ONE; n],
++            b: vec![Gf128::ONE; n],
++            lincheck: vec![0xa5; n * 16],
++        };
++        drop(auxiliary());
++        let shape_error = prepared.prove_prefix(
++            &[],
++            auxiliary(),
++            &[0; 32],
++            &[0; 32],
++            &mut Blake3Transcript::new(),
++            108,
++        );
++        assert!(matches!(
++            shape_error,
++            Err(KeccakError::Invalid(
++                "witness buffers have the wrong dimensions"
++            ))
++        ));
++        let security_error = prepared.prove_prefix(
++            &packed,
++            auxiliary(),
++            &[0; 32],
++            &[0; 32],
++            &mut Blake3Transcript::new(),
++            0,
++        );
++        assert!(matches!(
++            security_error,
++            Err(KeccakError::Invalid(
++                "component target must be in 100..=150"
++            ))
++        ));
++        let stripe = flock_core::scratch::take_bytes_zeroed(n * 16);
++        assert_eq!(stripe.len(), n * 16);
++        assert!(stripe.iter().all(|&byte| byte == 0));
++    }
++}

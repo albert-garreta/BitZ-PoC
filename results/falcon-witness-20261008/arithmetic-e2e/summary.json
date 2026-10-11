@@ -1,0 +1,274 @@
+[
+  {
+    "cell": [
+      512,
+      1024,
+      16,
+      100
+    ],
+    "metrics": {
+      "witness_commit_ms": {
+        "baseline": {
+          "median": 4.1992725,
+          "p05": 3.9932020999999995,
+          "p95": 4.33389605,
+          "minimum": 3.9778779999999996,
+          "maximum": 4.377263,
+          "count": 12
+        },
+        "candidate": {
+          "median": 2.355423,
+          "p05": 2.27888075,
+          "p95": 2.40491105,
+          "minimum": 2.27725,
+          "maximum": 2.4245289999999997,
+          "count": 12
+        },
+        "ratio": 0.5631022104790646,
+        "interval95": [
+          0.5514573878096655,
+          0.5745917841854626
+        ],
+        "status": "improvement"
+      },
+      "total_prover_ms": {
+        "baseline": {
+          "median": 70.7033055,
+          "p05": 69.9780659,
+          "p95": 71.5555357,
+          "minimum": 69.96117100000001,
+          "maximum": 71.647202,
+          "count": 12
+        },
+        "candidate": {
+          "median": 68.5572645,
+          "p05": 68.28448915,
+          "p95": 69.39664450000001,
+          "minimum": 68.112442,
+          "maximum": 69.42847300000001,
+          "count": 12
+        },
+        "ratio": 0.9713950239607735,
+        "interval95": [
+          0.965859949699168,
+          0.9763650489756036
+        ],
+        "status": "improvement"
+      },
+      "prove_ms": {
+        "baseline": {
+          "median": 66.394381,
+          "p05": 65.79494945,
+          "p95": 67.46488330000001,
+          "minimum": 65.75425,
+          "maximum": 67.66660900000001,
+          "count": 12
+        },
+        "candidate": {
+          "median": 66.21685,
+          "p05": 65.97434595,
+          "p95": 67.0544654,
+          "minimum": 65.90497500000001,
+          "maximum": 67.10714,
+          "count": 12
+        },
+        "ratio": 0.9974169665982042,
+        "interval95": [
+          0.9916844718986159,
+          1.0027590690735033
+        ],
+        "status": "inconclusive"
+      },
+      "verify_ms": {
+        "baseline": {
+          "median": 36.000345499999995,
+          "p05": 35.70173905,
+          "p95": 36.57318905,
+          "minimum": 35.660758,
+          "maximum": 36.819781000000006,
+          "count": 12
+        },
+        "candidate": {
+          "median": 35.9361735,
+          "p05": 35.77788705,
+          "p95": 36.1121828,
+          "minimum": 35.713718,
+          "maximum": 36.113383999999996,
+          "count": 12
+        },
+        "ratio": 0.9975458551670008,
+        "interval95": [
+          0.9929865017559325,
+          1.001727186299515
+        ],
+        "status": "inconclusive"
+      },
+      "peak_rss_bytes": {
+        "baseline": {
+          "median": 144254976.0,
+          "p05": 143699148.8,
+          "p95": 145023180.8,
+          "minimum": 143482880,
+          "maximum": 145268736,
+          "count": 12
+        },
+        "candidate": {
+          "median": 143298560.0,
+          "p05": 142881177.6,
+          "p95": 144099123.2,
+          "minimum": 142696448,
+          "maximum": 144642048,
+          "count": 12
+        },
+        "ratio": 0.9930866182212605,
+        "interval95": [
+          0.9909234938063255,
+          0.9954447449726908
+        ],
+        "status": "improvement"
+      }
+    },
+    "diagnostic_only": false,
+    "witness_significantly_improves": null,
+    "commit_significantly_improves": true,
+    "secondary_regressions": [],
+    "total_within_two_percent": true
+  },
+  {
+    "cell": [
+      1024,
+      1024,
+      16,
+      100
+    ],
+    "metrics": {
+      "witness_commit_ms": {
+        "baseline": {
+          "median": 9.3163565,
+          "p05": 9.18737945,
+          "p95": 9.447397149999999,
+          "minimum": 9.158703000000001,
+          "maximum": 9.507593,
+          "count": 12
+        },
+        "candidate": {
+          "median": 4.0429015,
+          "p05": 3.9877690500000003,
+          "p95": 4.1340718999999995,
+          "minimum": 3.975674,
+          "maximum": 4.160813999999999,
+          "count": 12
+        },
+        "ratio": 0.4345979296474475,
+        "interval95": [
+          0.4310540768144067,
+          0.4384158436375651
+        ],
+        "status": "improvement"
+      },
+      "total_prover_ms": {
+        "baseline": {
+          "median": 134.183301,
+          "p05": 132.91756279999998,
+          "p95": 136.6480091,
+          "minimum": 132.866459,
+          "maximum": 137.664639,
+          "count": 12
+        },
+        "candidate": {
+          "median": 128.542887,
+          "p05": 127.8806361,
+          "p95": 131.3338962,
+          "minimum": 127.612686,
+          "maximum": 131.60592400000002,
+          "count": 12
+        },
+        "ratio": 0.9614705242771368,
+        "interval95": [
+          0.9522843213216806,
+          0.9704163944257107
+        ],
+        "status": "improvement"
+      },
+      "prove_ms": {
+        "baseline": {
+          "median": 124.93260900000001,
+          "p05": 123.62281775,
+          "p95": 127.14196345,
+          "minimum": 123.606865,
+          "maximum": 128.258068,
+          "count": 12
+        },
+        "candidate": {
+          "median": 124.5341,
+          "p05": 123.76928495,
+          "p95": 126.95929645,
+          "minimum": 123.574855,
+          "maximum": 127.44496899999999,
+          "count": 12
+        },
+        "ratio": 0.9995025217728096,
+        "interval95": [
+          0.9906734757488671,
+          1.0076392256370665
+        ],
+        "status": "inconclusive"
+      },
+      "verify_ms": {
+        "baseline": {
+          "median": 70.210453,
+          "p05": 69.74082215,
+          "p95": 71.0093274,
+          "minimum": 69.63802,
+          "maximum": 71.190207,
+          "count": 12
+        },
+        "candidate": {
+          "median": 70.68127849999999,
+          "p05": 69.75694275,
+          "p95": 70.93300335,
+          "minimum": 69.729473,
+          "maximum": 70.96575200000001,
+          "count": 12
+        },
+        "ratio": 1.00207537764189,
+        "interval95": [
+          0.9972599943812201,
+          1.0070272849289785
+        ],
+        "status": "inconclusive"
+      },
+      "peak_rss_bytes": {
+        "baseline": {
+          "median": 244152320.0,
+          "p05": 242941747.2,
+          "p95": 244606566.4,
+          "minimum": 242786304,
+          "maximum": 244678656,
+          "count": 12
+        },
+        "candidate": {
+          "median": 244832256.0,
+          "p05": 244354662.4,
+          "p95": 245376614.4,
+          "minimum": 244314112,
+          "maximum": 245583872,
+          "count": 12
+        },
+        "ratio": 1.0033821058994097,
+        "interval95": [
+          1.0015828522777683,
+          1.0053470442278878
+        ],
+        "status": "regression"
+      }
+    },
+    "diagnostic_only": false,
+    "witness_significantly_improves": null,
+    "commit_significantly_improves": true,
+    "secondary_regressions": [
+      "peak_rss_bytes"
+    ],
+    "total_within_two_percent": true
+  }
+]

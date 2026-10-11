@@ -1,0 +1,24 @@
+
+running 19 tests
+test constant_expressions_and_batch_limits ... ok
+test falcon1024_100::qualification_batches ... ok
+test falcon1024_100::small_batches ... ok
+test falcon1024_128::qualification_batches ... ok
+test falcon1024_128::small_batches ... ok
+test falcon1024_explicit10::qualification_batches ... ok
+test falcon1024_explicit10::small_batches ... ok
+test falcon1024_explicit11::qualification_batches ... ok
+test falcon1024_explicit11::small_batches ... ok
+test falcon512_100::qualification_batches ... ok
+test falcon512_100::small_batches ... ok
+test falcon512_128::qualification_batches ... ok
+test falcon512_128::small_batches ... ok
+test falcon512_explicit10::qualification_batches ... ok
+test falcon512_explicit10::small_batches ... ok
+test falcon512_explicit11::qualification_batches ... ok
+test falcon512_explicit11::small_batches ... ok
+test inputs::cache_tests::both_degrees_preserve_generated_cases_and_reject_tampering ... ok
+test manual_profiles_cannot_bypass_validation ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.16s
+

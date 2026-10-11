@@ -1,0 +1,59 @@
+{
+  "all_campaigns_complete": true,
+  "cross_campaign_identities_match": true,
+  "source_matches_simplified_build": true,
+  "campaigns": [
+    {
+      "name": "arithmetic-e2e",
+      "processes": 48,
+      "verified_proofs": 432
+    },
+    {
+      "name": "arithmetic-witness",
+      "processes": 32,
+      "verified_proofs": 288
+    },
+    {
+      "name": "backends-arithmetic-witness",
+      "processes": 16,
+      "verified_proofs": 144
+    },
+    {
+      "name": "backends-full-e2e",
+      "processes": 16,
+      "verified_proofs": 144
+    },
+    {
+      "name": "backends-full-witness",
+      "processes": 16,
+      "verified_proofs": 144
+    },
+    {
+      "name": "backends-full512-confirmation",
+      "processes": 24,
+      "verified_proofs": 216
+    },
+    {
+      "name": "cleanup-arithmetic",
+      "processes": 16,
+      "verified_proofs": 144
+    },
+    {
+      "name": "cleanup-arithmetic1024-confirmation",
+      "processes": 24,
+      "verified_proofs": 216
+    },
+    {
+      "name": "cleanup-full",
+      "processes": 16,
+      "verified_proofs": 144
+    },
+    {
+      "name": "full-e2e",
+      "processes": 48,
+      "verified_proofs": 432
+    }
+  ],
+  "total_verified_proofs": 2304,
+  "cleanup_verified_proofs": 504
+}

@@ -1,0 +1,61 @@
+warning: function `square_n` is never used
+   --> /home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/field/src/gf128/portable.rs:104:8
+    |
+104 | pub fn square_n(a: [u64; 2], k: u32) -> [u64; 2] {
+    |        ^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `wide_words` is never used
+   --> /home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/field/src/gf128/portable.rs:116:15
+    |
+116 | pub(crate) fn wide_words(value: Wide) -> [u64; 4] {
+    |               ^^^^^^^^^^
+
+warning: function `wide_zero` is never used
+   --> /home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/field/src/gf128/portable.rs:137:8
+    |
+137 | pub fn wide_zero() -> Wide {
+    |        ^^^^^^^^^
+
+warning: function `wide_of` is never used
+   --> /home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/field/src/gf128/portable.rs:141:8
+    |
+141 | pub fn wide_of(a: [u64; 2]) -> Wide {
+    |        ^^^^^^^
+
+warning: function `wide_add` is never used
+   --> /home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/field/src/gf128/portable.rs:149:8
+    |
+149 | pub fn wide_add(x: Wide, y: Wide) -> Wide {
+    |        ^^^^^^^^
+
+warning: function `wide_add_low` is never used
+   --> /home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/field/src/gf128/portable.rs:155:8
+    |
+155 | pub fn wide_add_low(x: Wide, a: [u64; 2]) -> Wide {
+    |        ^^^^^^^^^^^^
+
+warning: function `wide_reduce` is never used
+   --> /home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/field/src/gf128/portable.rs:159:8
+    |
+159 | pub fn wide_reduce(w: Wide) -> [u64; 2] {
+    |        ^^^^^^^^^^^
+
+warning: function `wide_from_words` is never used
+   --> /home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/field/src/gf128/portable.rs:321:8
+    |
+321 | pub fn wide_from_words(words: [u64; 4]) -> Wide {
+    |        ^^^^^^^^^^^^^^^
+
+warning: `field` (lib) generated 8 warnings
+   Compiling flock-core v0.1.0 (/home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/flock-mod/crates/flock-core)
+   Compiling flock-prover v0.1.0 (/home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/flock-mod/crates/flock-prover)
+    Finished `release` profile [optimized] target(s) in 9.11s
+     Running unittests src/lib.rs (/home/john-wu/code/BitZ-pcs/target/falcon-witness-candidate/release/deps/flock_prover-53ff600684b0743d)
+
+running 1 test
+test r1cs_hashes::keccak::tests::partial_chain_stripes_match_scalar_oracle_and_real_constraints ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 87 filtered out; finished in 0.01s
+

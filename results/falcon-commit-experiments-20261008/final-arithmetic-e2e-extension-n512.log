@@ -1,0 +1,30 @@
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t1-s128-r00-baseline", "medians": {"witness_commit_ms": 9.509509, "total_prover_ms": 300.066025, "prove_ms": 290.596872, "verify_ms": 55.12652, "peak_rss_bytes": 134569984}}
+{"completed": "n512-b1024-t1-s128-r00-candidate", "medians": {"witness_commit_ms": 9.509078, "total_prover_ms": 300.97022699999997, "prove_ms": 291.43181200000004, "verify_ms": 55.391121, "peak_rss_bytes": 134787072}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t1-s128-r01-candidate", "medians": {"witness_commit_ms": 9.50483, "total_prover_ms": 301.025792, "prove_ms": 291.506725, "verify_ms": 55.119987, "peak_rss_bytes": 134856704}}
+{"completed": "n512-b1024-t1-s128-r01-baseline", "medians": {"witness_commit_ms": 9.486975999999999, "total_prover_ms": 300.60645800000003, "prove_ms": 291.077793, "verify_ms": 55.139614, "peak_rss_bytes": 134840320}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t1-s128-r02-baseline", "medians": {"witness_commit_ms": 9.484371, "total_prover_ms": 300.560341, "prove_ms": 291.07589, "verify_ms": 55.21099, "peak_rss_bytes": 134590464}}
+{"completed": "n512-b1024-t1-s128-r02-candidate", "medians": {"witness_commit_ms": 9.520218999999999, "total_prover_ms": 300.581611, "prove_ms": 291.05564, "verify_ms": 54.875454999999995, "peak_rss_bytes": 134553600}}
+[bench_gate] falcon-witness: idle 99% (streak 1/1)
+{"completed": "n512-b1024-t1-s128-r03-candidate", "medians": {"witness_commit_ms": 9.505972, "total_prover_ms": 300.77129, "prove_ms": 291.25621, "verify_ms": 55.052369, "peak_rss_bytes": 134811648}}
+{"completed": "n512-b1024-t1-s128-r03-baseline", "medians": {"witness_commit_ms": 9.506904, "total_prover_ms": 301.165045, "prove_ms": 291.65806100000003, "verify_ms": 55.217932999999995, "peak_rss_bytes": 134836224}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t1-s128-r04-baseline", "medians": {"witness_commit_ms": 9.46233, "total_prover_ms": 300.336277, "prove_ms": 290.793144, "verify_ms": 55.325777, "peak_rss_bytes": 134840320}}
+{"completed": "n512-b1024-t1-s128-r04-candidate", "medians": {"witness_commit_ms": 9.516923, "total_prover_ms": 301.01050299999997, "prove_ms": 291.49345999999997, "verify_ms": 55.464268999999994, "peak_rss_bytes": 134578176}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t8-s128-r00-baseline", "medians": {"witness_commit_ms": 2.297238, "total_prover_ms": 58.315486, "prove_ms": 56.038225, "verify_ms": 20.027196, "peak_rss_bytes": 121978880}}
+{"completed": "n512-b1024-t8-s128-r00-candidate", "medians": {"witness_commit_ms": 2.394843, "total_prover_ms": 58.746051, "prove_ms": 56.46872, "verify_ms": 20.292939, "peak_rss_bytes": 122175488}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t8-s128-r01-candidate", "medians": {"witness_commit_ms": 2.3560600000000003, "total_prover_ms": 59.078089, "prove_ms": 56.738271, "verify_ms": 20.819917, "peak_rss_bytes": 122593280}}
+{"completed": "n512-b1024-t8-s128-r01-baseline", "medians": {"witness_commit_ms": 2.446261, "total_prover_ms": 58.812155999999995, "prove_ms": 56.365795000000006, "verify_ms": 20.207548, "peak_rss_bytes": 122368000}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t8-s128-r02-baseline", "medians": {"witness_commit_ms": 2.408509, "total_prover_ms": 58.282874, "prove_ms": 55.865669, "verify_ms": 20.355636999999998, "peak_rss_bytes": 121819136}}
+{"completed": "n512-b1024-t8-s128-r02-candidate", "medians": {"witness_commit_ms": 2.4034389999999997, "total_prover_ms": 58.3123, "prove_ms": 55.913049, "verify_ms": 19.849319, "peak_rss_bytes": 122200064}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t8-s128-r03-candidate", "medians": {"witness_commit_ms": 2.451871, "total_prover_ms": 58.283995999999995, "prove_ms": 55.834590000000006, "verify_ms": 19.87584, "peak_rss_bytes": 122167296}}
+{"completed": "n512-b1024-t8-s128-r03-baseline", "medians": {"witness_commit_ms": 2.419168, "total_prover_ms": 58.368175, "prove_ms": 55.965598, "verify_ms": 20.106787, "peak_rss_bytes": 122077184}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t8-s128-r04-baseline", "medians": {"witness_commit_ms": 2.421884, "total_prover_ms": 58.635661, "prove_ms": 56.196144000000004, "verify_ms": 19.731787, "peak_rss_bytes": 122359808}}
+{"completed": "n512-b1024-t8-s128-r04-candidate", "medians": {"witness_commit_ms": 2.455858, "total_prover_ms": 58.723188, "prove_ms": 56.298368, "verify_ms": 20.274753999999998, "peak_rss_bytes": 122429440}}

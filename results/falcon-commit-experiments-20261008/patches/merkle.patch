@@ -1,0 +1,104 @@
+--- a/src/hybrid/opening.rs
++++ b/src/hybrid/opening.rs
+@@ -1326,23 +1326,56 @@
+     let positions = 1 << (geometry.position_log + log_inv_rate);
+     let merkle_started = std::time::Instant::now();
+     let merkle_span = tracing::info_span!("shared_source:merkle").entered();
++    let segments: [_; N] = std::array::from_fn(|branch| {
++        let start = geometry.offset(branch) * 16;
++        start..start + (16 << geometry.lane_logs[branch])
++    });
++    let mut ordered = segments.clone();
++    ordered.sort_unstable_by_key(|range| range.start);
++    let mut gaps = Vec::new();
++    let mut end = 0;
++    for segment in &ordered {
++        if end < segment.start {
++            gaps.push(end..segment.start);
++        }
++        end = segment.end;
++    }
++    if end < geometry.lanes() * 16 {
++        gaps.push(end..geometry.lanes() * 16);
++    }
++    #[cfg(target_endian = "little")]
++    let encoded_bytes = codewords
++        .each_ref()
++        .map(|words| flock_core::pcs::commit::codeword_bytes(words));
+     let merkle_tree = merkle::merkle_tree_from_rows(
+         positions,
+         geometry.lanes() * 16,
+         merkle::HashKind::Blake3,
+         |first, bytes| {
+-            bytes.fill(0);
+             for (row_index, row) in bytes.chunks_exact_mut(geometry.lanes() * 16).enumerate() {
++                for gap in &gaps {
++                    row[gap.clone()].fill(0);
++                }
+                 for branch in 0..N {
+-                    let width = 1 << geometry.lane_logs[branch];
+-                    let first_word = (first + row_index) * width;
+-                    for (lane, word) in codewords[branch][first_word..first_word + width]
+-                        .iter()
+-                        .enumerate()
++                    let segment = &segments[branch];
++                    #[cfg(target_endian = "little")]
+                     {
+-                        let offset = (geometry.offset(branch) + lane) * 16;
+-                        row[offset..offset + 8].copy_from_slice(&word.lo.to_le_bytes());
+-                        row[offset + 8..offset + 16].copy_from_slice(&word.hi.to_le_bytes());
++                        let start = (first + row_index) * segment.len();
++                        row[segment.clone()]
++                            .copy_from_slice(&encoded_bytes[branch][start..start + segment.len()]);
++                    }
++                    #[cfg(target_endian = "big")]
++                    {
++                        let width = 1 << geometry.lane_logs[branch];
++                        let first_word = (first + row_index) * width;
++                        for (lane, word) in codewords[branch][first_word..first_word + width]
++                            .iter()
++                            .enumerate()
++                        {
++                            let offset = (geometry.offset(branch) + lane) * 16;
++                            row[offset..offset + 8].copy_from_slice(&word.lo.to_le_bytes());
++                            row[offset + 8..offset + 16].copy_from_slice(&word.hi.to_le_bytes());
++                        }
+                     }
+                 }
+             }
+--- a/vendor/flock-mod/crates/flock-core/src/pcs/commit.rs
++++ b/vendor/flock-mod/crates/flock-core/src/pcs/commit.rs
+@@ -243,6 +243,19 @@
+     codeword
+ }
+ 
++/// Borrow the field words' native-endian representation without padding.
++/// On little-endian hosts this is the canonical `lo || hi` commitment encoding.
++pub fn codeword_bytes(codeword: &[Gf128]) -> &[u8] {
++    // SAFETY: Gf128 is repr(C, align(16)) with two adjacent u64s and no
++    // padding. Every byte is initialized and the borrow retains its lifetime.
++    unsafe {
++        core::slice::from_raw_parts(
++            codeword.as_ptr().cast::<u8>(),
++            core::mem::size_of_val(codeword),
++        )
++    }
++}
++
+ /// Fill `codeword` with `2^r` replicas of `msg` (`r = log2(codeword.len() /
+ /// msg.len())`) — the exact state after the first `r` forward-NTT layers on
+ /// the zero-padded coefficient vector `[msg, 0, …, 0]`. Pair with
+@@ -291,12 +304,7 @@
+     // Zero-copy: cast the codeword Vec<Gf128> directly to &[u8]. Gf128 is
+     // repr(C, align(16)) with two u64s laid out little-endian — same bytes
+     // as the explicit lo.to_le_bytes() + hi.to_le_bytes() serialization.
+-    let codeword_bytes: &[u8] = unsafe {
+-        core::slice::from_raw_parts(
+-            codeword.as_ptr() as *const u8,
+-            codeword.len() * core::mem::size_of::<Gf128>(),
+-        )
+-    };
++    let codeword_bytes = codeword_bytes(&codeword);
+     // Initial tree: one leaf per codeword position, each containing the
+     // row-batch lanes (num_ntts F_{2^128} values = 2^log_batch_size). This is
+     // Ligerito's L0 commitment.

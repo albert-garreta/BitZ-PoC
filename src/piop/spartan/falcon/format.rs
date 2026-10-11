@@ -15,17 +15,23 @@ pub struct FalconSignatureCt<const N: usize> {
 }
 
 impl<const N: usize> FalconSignatureCt<N> {
+    pub(crate) fn validate_ct(&self) -> Result<(), FalconError> {
+        let bits = FalconParameters::for_degree(N).signature_bits;
+        for (index, &coefficient) in self.s2.iter().enumerate() {
+            if coefficient <= -(1 << (bits - 1)) || coefficient >= 1 << (bits - 1) {
+                return Err(FalconError::SignatureCoefficientOutOfRange { index });
+            }
+        }
+        Ok(())
+    }
+
     fn write_ct(&self, bytes: &mut [u8]) -> Result<(), FalconError> {
         let parameters = FalconParameters::for_degree(N);
         let bits = parameters.signature_bits;
         debug_assert_eq!(bytes.len(), parameters.signature_bytes());
         bytes[0] = 0x50 + N.ilog2() as u8;
         bytes[1..1 + NONCE_BYTES].copy_from_slice(&self.nonce);
-        for (index, &coefficient) in self.s2.iter().enumerate() {
-            if coefficient <= -(1 << (bits - 1)) || coefficient >= 1 << (bits - 1) {
-                return Err(FalconError::SignatureCoefficientOutOfRange { index });
-            }
-        }
+        self.validate_ct()?;
         for (i, &coefficient) in self.s2.iter().enumerate() {
             for bit in 0..bits {
                 let offset = i * bits + bit;

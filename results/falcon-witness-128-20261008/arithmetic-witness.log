@@ -1,0 +1,24 @@
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t1-s128-r00-baseline", "medians": {"witness_commit_ms": 34.958227, "total_prover_ms": 334.367415, "prove_ms": 299.44282100000004, "verify_ms": 55.539125, "peak_rss_bytes": 134664192, "diagnostic_witness_ms": 32.045455000000004}}
+{"completed": "n512-b1024-t1-s128-r00-candidate", "medians": {"witness_commit_ms": 9.722259000000001, "total_prover_ms": 308.20292900000004, "prove_ms": 298.48060999999996, "verify_ms": 55.168343, "peak_rss_bytes": 134635520, "diagnostic_witness_ms": 6.804857999999999}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t1-s128-r01-candidate", "medians": {"witness_commit_ms": 9.546616, "total_prover_ms": 308.36425499999996, "prove_ms": 298.564239, "verify_ms": 55.391926, "peak_rss_bytes": 134922240, "diagnostic_witness_ms": 6.632943}}
+{"completed": "n512-b1024-t1-s128-r01-baseline", "medians": {"witness_commit_ms": 35.26644, "total_prover_ms": 334.20930500000003, "prove_ms": 298.767874, "verify_ms": 55.1721, "peak_rss_bytes": 134922240, "diagnostic_witness_ms": 32.348117}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t8-s128-r00-baseline", "medians": {"witness_commit_ms": 5.525217, "total_prover_ms": 71.623895, "prove_ms": 66.056018, "verify_ms": 20.221689, "peak_rss_bytes": 122929152, "diagnostic_witness_ms": 4.598472}}
+{"completed": "n512-b1024-t8-s128-r00-candidate", "medians": {"witness_commit_ms": 2.364465, "total_prover_ms": 68.9637, "prove_ms": 66.455023, "verify_ms": 20.897046999999997, "peak_rss_bytes": 122609664, "diagnostic_witness_ms": 1.2823870000000002}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t8-s128-r01-candidate", "medians": {"witness_commit_ms": 2.4950319999999997, "total_prover_ms": 68.16566, "prove_ms": 65.670568, "verify_ms": 20.736293, "peak_rss_bytes": 122306560, "diagnostic_witness_ms": 1.34761}}
+{"completed": "n512-b1024-t8-s128-r01-baseline", "medians": {"witness_commit_ms": 5.474631, "total_prover_ms": 71.053776, "prove_ms": 65.677582, "verify_ms": 20.06907, "peak_rss_bytes": 123269120, "diagnostic_witness_ms": 4.566302}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n1024-b1024-t1-s128-r00-baseline", "medians": {"witness_commit_ms": 102.04741, "total_prover_ms": 647.469835, "prove_ms": 545.485675, "verify_ms": 108.449585, "peak_rss_bytes": 232239104, "diagnostic_witness_ms": 96.054509}}
+{"completed": "n1024-b1024-t1-s128-r00-candidate", "medians": {"witness_commit_ms": 19.570937, "total_prover_ms": 567.0624789999999, "prove_ms": 547.6605420000001, "verify_ms": 109.786816, "peak_rss_bytes": 232185856, "diagnostic_witness_ms": 13.541918}}
+[bench_gate] falcon-witness: idle 99% (streak 1/1)
+{"completed": "n1024-b1024-t1-s128-r01-candidate", "medians": {"witness_commit_ms": 19.502939, "total_prover_ms": 567.493123, "prove_ms": 547.915393, "verify_ms": 109.575727, "peak_rss_bytes": 232361984, "diagnostic_witness_ms": 13.501781}}
+{"completed": "n1024-b1024-t1-s128-r01-baseline", "medians": {"witness_commit_ms": 101.954143, "total_prover_ms": 648.36031, "prove_ms": 545.980632, "verify_ms": 108.529346, "peak_rss_bytes": 232005632, "diagnostic_witness_ms": 95.931456}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n1024-b1024-t8-s128-r00-baseline", "medians": {"witness_commit_ms": 14.766364000000001, "total_prover_ms": 128.868277, "prove_ms": 114.140064, "verify_ms": 37.381002, "peak_rss_bytes": 241684480, "diagnostic_witness_ms": 13.037243}}
+{"completed": "n1024-b1024-t8-s128-r00-candidate", "medians": {"witness_commit_ms": 4.383786, "total_prover_ms": 119.517171, "prove_ms": 114.788512, "verify_ms": 38.261407999999996, "peak_rss_bytes": 238321664, "diagnostic_witness_ms": 2.4323930000000002}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n1024-b1024-t8-s128-r01-candidate", "medians": {"witness_commit_ms": 4.740762, "total_prover_ms": 118.71730699999999, "prove_ms": 113.97679600000001, "verify_ms": 37.516037000000004, "peak_rss_bytes": 238448640, "diagnostic_witness_ms": 2.6353370000000003}}
+{"completed": "n1024-b1024-t8-s128-r01-baseline", "medians": {"witness_commit_ms": 15.207359, "total_prover_ms": 129.22396, "prove_ms": 113.721292, "verify_ms": 37.446325, "peak_rss_bytes": 241848320, "diagnostic_witness_ms": 13.260775}}

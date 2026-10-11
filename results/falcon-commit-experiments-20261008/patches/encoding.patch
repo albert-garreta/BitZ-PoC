@@ -1,0 +1,21 @@
+--- a/src/hybrid/opening.rs
++++ b/src/hybrid/opening.rs
+@@ -1313,9 +1313,15 @@
+     let timing = std::env::var_os("FLOCK_COMMIT_TIMING").is_some();
+     let encode_started = std::time::Instant::now();
+     let encode_span = tracing::info_span!("shared_source:encode").entered();
+-    let codewords = std::array::from_fn(|branch| {
+-        flock_core::pcs::commit::encode(sources[branch], &geometry.params(branch, log_inv_rate))
+-    });
++    let mut codewords: [Vec<F>; N] = std::array::from_fn(|_| Vec::new());
++    crate::utils::cfg_iter_mut!(codewords)
++        .enumerate()
++        .for_each(|(branch, codeword)| {
++            *codeword = flock_core::pcs::commit::encode(
++                sources[branch],
++                &geometry.params(branch, log_inv_rate),
++            );
++        });
+     drop(encode_span);
+     if timing {
+         eprintln!(

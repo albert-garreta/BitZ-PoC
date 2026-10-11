@@ -1,0 +1,15 @@
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t8-s128-r00-baseline", "medians": {"witness_commit_ms": 72.75985899999999, "total_prover_ms": 481.27545499999997, "prove_ms": 408.214456, "verify_ms": 33.301175, "peak_rss_bytes": 2316222464}}
+{"completed": "n512-b1024-t8-s128-r00-candidate", "medians": {"witness_commit_ms": 67.505029, "total_prover_ms": 469.93172599999997, "prove_ms": 401.77419199999997, "verify_ms": 27.062312000000002, "peak_rss_bytes": 2315849728}}
+[bench_gate] falcon-witness: idle 99% (streak 1/1)
+{"completed": "n512-b1024-t8-s128-r01-candidate", "medians": {"witness_commit_ms": 67.802382, "total_prover_ms": 469.148905, "prove_ms": 401.346523, "verify_ms": 26.649901, "peak_rss_bytes": 2315395072}}
+{"completed": "n512-b1024-t8-s128-r01-baseline", "medians": {"witness_commit_ms": 71.26324600000001, "total_prover_ms": 478.998154, "prove_ms": 407.734908, "verify_ms": 33.302257000000004, "peak_rss_bytes": 2317418496}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t8-s128-r02-baseline", "medians": {"witness_commit_ms": 72.65447999999999, "total_prover_ms": 481.634916, "prove_ms": 408.52277999999995, "verify_ms": 33.504591, "peak_rss_bytes": 2316959744}}
+{"completed": "n512-b1024-t8-s128-r02-candidate", "medians": {"witness_commit_ms": 67.195824, "total_prover_ms": 469.076648, "prove_ms": 402.01282399999997, "verify_ms": 26.680849, "peak_rss_bytes": 2311172096}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t8-s128-r03-candidate", "medians": {"witness_commit_ms": 66.928648, "total_prover_ms": 467.64299400000004, "prove_ms": 400.863829, "verify_ms": 26.648488, "peak_rss_bytes": 2316460032}}
+{"completed": "n512-b1024-t8-s128-r03-baseline", "medians": {"witness_commit_ms": 72.33789999999999, "total_prover_ms": 481.40816800000005, "prove_ms": 408.51952400000005, "verify_ms": 33.433035, "peak_rss_bytes": 2318368768}}
+[bench_gate] falcon-witness: idle 100% (streak 1/1)
+{"completed": "n512-b1024-t8-s128-r04-baseline", "medians": {"witness_commit_ms": 72.696088, "total_prover_ms": 480.630725, "prove_ms": 407.61856800000004, "verify_ms": 33.655936, "peak_rss_bytes": 2316591104}}
+{"completed": "n512-b1024-t8-s128-r04-candidate", "medians": {"witness_commit_ms": 67.14097, "total_prover_ms": 468.66442699999993, "prove_ms": 401.52345699999995, "verify_ms": 26.844047999999997, "peak_rss_bytes": 2306994176}}

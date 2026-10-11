@@ -1,0 +1,97 @@
+     Locking 4 packages to latest compatible versions
+      Adding cmov v0.5.4
+      Adding cpubits v0.1.1
+      Adding crypto-bigint v0.7.5
+      Adding ctutils v0.4.2
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling serde_core v1.0.229
+   Compiling find-msvc-tools v0.1.12
+   Compiling typenum v1.20.1
+   Compiling hashbrown v0.17.1
+   Compiling cfg-if v1.0.4
+   Compiling serde_json v1.0.151
+   Compiling either v1.18.0
+   Compiling generic-array v0.14.7
+   Compiling num-traits v0.2.19
+   Compiling cc v1.4.5
+   Compiling rayon v1.12.0
+   Compiling syn v3.0.5
+   Compiling indexmap v2.14.2
+   Compiling crypto-bigint v0.7.5
+   Compiling sha2-asm v0.6.4
+   Compiling blake3 v1.8.7
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling sha2 v0.10.9
+   Compiling serde_derive v1.0.229
+   Compiling serde v1.0.229
+   Compiling serde_spanned v0.6.9
+   Compiling toml_datetime v0.6.11
+   Compiling bincode v1.3.3
+   Compiling field v0.1.0 (/home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/field)
+   Compiling toml_edit v0.22.27
+warning: function `square_n` is never used
+   --> /home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/field/src/gf128/portable.rs:104:8
+    |
+104 | pub fn square_n(a: [u64; 2], k: u32) -> [u64; 2] {
+    |        ^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `wide_words` is never used
+   --> /home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/field/src/gf128/portable.rs:116:15
+    |
+116 | pub(crate) fn wide_words(value: Wide) -> [u64; 4] {
+    |               ^^^^^^^^^^
+
+warning: function `wide_zero` is never used
+   --> /home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/field/src/gf128/portable.rs:137:8
+    |
+137 | pub fn wide_zero() -> Wide {
+    |        ^^^^^^^^^
+
+warning: function `wide_of` is never used
+   --> /home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/field/src/gf128/portable.rs:141:8
+    |
+141 | pub fn wide_of(a: [u64; 2]) -> Wide {
+    |        ^^^^^^^
+
+warning: function `wide_add` is never used
+   --> /home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/field/src/gf128/portable.rs:149:8
+    |
+149 | pub fn wide_add(x: Wide, y: Wide) -> Wide {
+    |        ^^^^^^^^
+
+warning: function `wide_add_low` is never used
+   --> /home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/field/src/gf128/portable.rs:155:8
+    |
+155 | pub fn wide_add_low(x: Wide, a: [u64; 2]) -> Wide {
+    |        ^^^^^^^^^^^^
+
+warning: function `wide_reduce` is never used
+   --> /home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/field/src/gf128/portable.rs:159:8
+    |
+159 | pub fn wide_reduce(w: Wide) -> [u64; 2] {
+    |        ^^^^^^^^^^^
+
+warning: function `wide_from_words` is never used
+   --> /home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/field/src/gf128/portable.rs:321:8
+    |
+321 | pub fn wide_from_words(words: [u64; 4]) -> Wide {
+    |        ^^^^^^^^^^^^^^^
+
+   Compiling toml v0.8.23
+warning: `field` (lib) generated 8 warnings
+   Compiling flock-core v0.1.0 (/home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation/.tmp/commit-experiments/vendor-test/flock-mod/crates/flock-core)
+    Finished `release` profile [optimized] target(s) in 8.62s
+     Running unittests src/lib.rs (/home/john-wu/code/BitZ-pcs/target/falcon-witness-candidate/release/deps/flock_core-4b10d1e1146072e3)
+
+running 2 tests
+test scratch::tests::byte_pool_retains_only_three_distinct_capacities ... ok
+test scratch::tests::byte_reuse_clears_old_contents_when_shrinking_and_growing ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 313 filtered out; finished in 0.00s
+

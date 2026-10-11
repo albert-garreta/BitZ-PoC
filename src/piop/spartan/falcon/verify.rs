@@ -5,7 +5,7 @@ use super::{
 use crate::piop::spartan::falcon::{
     FalconPublicKey, FalconSignatureCt, decode_public_key, decode_signature_ct,
 };
-use crate::piop::spartan::falcon_polynomial::public_signature_product;
+use crate::piop::spartan::falcon_polynomial::PolynomialWorkspace;
 
 /// Native/circuit-mirror witness for one Falcon verification.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -31,42 +31,26 @@ pub fn verification_trace(
     let public_key = decode_public_key::<N>(public_key)?;
     let signature = decode_signature_ct::<N>(signature)?;
     let hash_to_point = hash_to_point_ct(&signature.nonce, message)?;
-    trace_from_parts(public_key, signature, hash_to_point, false)
+    trace_from_parts(
+        public_key,
+        signature,
+        hash_to_point,
+        &mut PolynomialWorkspace::new(N),
+    )
 }
 
 pub(super) fn trace_from_parts(
     public_key: FalconPublicKey<N>,
     signature: FalconSignatureCt<N>,
     hash_to_point: HashToPointTrace,
-    fast_convolution: bool,
+    workspace: &mut PolynomialWorkspace,
 ) -> Result<FalconVerificationTrace, FalconError> {
-    let mut convolution = Box::new([0i64; N]);
-    let mut high_product = Box::new([0i64; N - 1]);
-    if fast_convolution {
-        let product = public_signature_product(&public_key.h, &signature.s2);
-        for i in 0..N {
-            convolution[i] = product[0][i] - product[1][i];
-        }
-        high_product.copy_from_slice(&product[1][..N - 1]);
-    } else {
-        for (i, &h) in public_key.h.iter().enumerate() {
-            for (j, &s) in signature.s2.iter().enumerate() {
-                let product = i64::from(h) * i64::from(s);
-                let index = i + j;
-                if index < N {
-                    convolution[index] += product;
-                } else {
-                    convolution[index - N] -= product;
-                    high_product[index - N] += product;
-                }
-            }
-        }
-    }
-
+    let product = workspace.product(public_key.h.as_slice(), signature.s2.as_slice());
     let mut s1 = Box::new([0i16; N]);
+    let mut ring_quotient = Box::new([0u16; N - 1]);
     let mut norm = 0u64;
     for i in 0..N {
-        let difference = i64::from(hash_to_point.point[i]) - convolution[i];
+        let difference = i64::from(hash_to_point.point[i]) - product[i] + product[i + N];
         let residue = difference.rem_euclid(Q);
         let centered = if residue > Q / 2 {
             residue - Q
@@ -76,6 +60,9 @@ pub(super) fn trace_from_parts(
         s1[i] = centered as i16;
         norm += centered.unsigned_abs().pow(2);
         norm += i64::from(signature.s2[i]).unsigned_abs().pow(2);
+        if i < N - 1 {
+            ring_quotient[i] = (-product[i + N]).rem_euclid(Q) as u16;
+        }
     }
     if norm > BETA_SQUARED {
         return Err(FalconError::NormTooLarge {
@@ -83,15 +70,12 @@ pub(super) fn trace_from_parts(
             bound: BETA_SQUARED,
         });
     }
-
     Ok(FalconVerificationTrace {
         public_key,
         signature,
         hash_to_point,
         s1,
-        ring_quotient: Box::new(std::array::from_fn(|j| {
-            (-high_product[j]).rem_euclid(Q) as u16
-        })),
+        ring_quotient,
         norm,
         norm_slack: BETA_SQUARED - norm,
     })
@@ -105,6 +89,146 @@ pub fn verify_falcon_ct(
 ) -> Result<(), FalconError> {
     verification_trace(public_key, message, signature).map(drop)
 }
+
+#[cfg(test)]
+mod workspace_tests {
+    use super::super::{KeccakTrace, hash_to_point::from_shake_words};
+    use super::*;
+
+    // Independent integer-convolution oracle; never used by production callers.
+    pub(super) fn schoolbook_trace(
+        public_key: FalconPublicKey<N>,
+        signature: FalconSignatureCt<N>,
+        hash_to_point: HashToPointTrace,
+    ) -> Result<FalconVerificationTrace, FalconError> {
+        let mut convolution = Box::new([0i64; N]);
+        let mut high_product = Box::new([0i64; N - 1]);
+        for (i, &h) in public_key.h.iter().enumerate() {
+            for (j, &s) in signature.s2.iter().enumerate() {
+                let product = i64::from(h) * i64::from(s);
+                let index = i + j;
+                if index < N {
+                    convolution[index] += product;
+                } else {
+                    convolution[index - N] -= product;
+                    high_product[index - N] += product;
+                }
+            }
+        }
+
+        let mut s1 = Box::new([0i16; N]);
+        let mut norm = 0u64;
+        for i in 0..N {
+            let difference = i64::from(hash_to_point.point[i]) - convolution[i];
+            let residue = difference.rem_euclid(Q);
+            let centered = if residue > Q / 2 {
+                residue - Q
+            } else {
+                residue
+            };
+            s1[i] = centered as i16;
+            norm += centered.unsigned_abs().pow(2);
+            norm += i64::from(signature.s2[i]).unsigned_abs().pow(2);
+        }
+        if norm > BETA_SQUARED {
+            return Err(FalconError::NormTooLarge {
+                actual: norm,
+                bound: BETA_SQUARED,
+            });
+        }
+
+        Ok(FalconVerificationTrace {
+            public_key,
+            signature,
+            hash_to_point,
+            s1,
+            ring_quotient: Box::new(std::array::from_fn(|j| {
+                (-high_product[j]).rem_euclid(Q) as u16
+            })),
+            norm,
+            norm_slack: BETA_SQUARED - norm,
+        })
+    }
+
+    #[test]
+    fn reused_workspace_matches_schoolbook_trace() {
+        let mut workspace = PolynomialWorkspace::new(N);
+        for seed in 0..4 {
+            let public_key = FalconPublicKey {
+                h: Box::new(std::array::from_fn(|i| {
+                    ((i * 7_919 + seed * 97) % Q as usize) as u16
+                })),
+            };
+            let mut signature = FalconSignatureCt {
+                nonce: [seed as u8; 40],
+                s2: Box::new([0; N]),
+            };
+            signature.s2[0] = 2_047;
+            signature.s2[N / 2] = seed as i16 - 2;
+            signature.s2[N - 1] = -2_047;
+            let mut hash = from_shake_words(
+                Box::new([0; super::super::HASH_TO_POINT_SAMPLES]),
+                KeccakTrace::default(),
+            )
+            .unwrap();
+            // Construct small centered residuals independently from the three
+            // nonzero signature coefficients, including the negacyclic wrap.
+            let mut convolution = [0i64; N];
+            for (i, &h) in public_key.h.iter().enumerate() {
+                for j in [0, N / 2, N - 1] {
+                    let term = i64::from(h) * i64::from(signature.s2[j]);
+                    if i + j < N {
+                        convolution[i + j] += term;
+                    } else {
+                        convolution[i + j - N] -= term;
+                    }
+                }
+            }
+            for i in 0..N {
+                hash.point[i] = (convolution[i] + (i % 7) as i64 - 3).rem_euclid(Q) as u16;
+            }
+            let slow =
+                schoolbook_trace(public_key.clone(), signature.clone(), hash.clone()).unwrap();
+            let fast = trace_from_parts(public_key, signature, hash, &mut workspace).unwrap();
+            assert_eq!(fast, slow);
+        }
+    }
+
+    #[test]
+    fn fused_trace_preserves_excessive_norm_error() {
+        let public_key = FalconPublicKey {
+            h: Box::new([0; N]),
+        };
+        let signature = FalconSignatureCt {
+            nonce: [0; 40],
+            s2: Box::new([0; N]),
+        };
+        let mut hash = from_shake_words(
+            Box::new([0; super::super::HASH_TO_POINT_SAMPLES]),
+            KeccakTrace::default(),
+        )
+        .unwrap();
+        hash.point.fill((Q / 2) as u16);
+        let expected = Err(FalconError::NormTooLarge {
+            actual: N as u64 * (Q as u64 / 2).pow(2),
+            bound: BETA_SQUARED,
+        });
+        assert_eq!(
+            schoolbook_trace(public_key.clone(), signature.clone(), hash.clone()),
+            expected
+        );
+        assert_eq!(
+            trace_from_parts(
+                public_key,
+                signature,
+                hash,
+                &mut PolynomialWorkspace::new(N)
+            ),
+            expected
+        );
+    }
+}
+
 falcon_tests! {
 mod tests {
     use super::*;
@@ -124,31 +248,30 @@ mod tests {
     }
 
     #[test]
-    fn cached_ring_quotient_matches_full_product_and_fast_trace() {
-        let slow = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
-        let fast = trace_from_parts(
-            slow.public_key.clone(),
-            slow.signature.clone(),
-            slow.hash_to_point.clone(),
-            true,
+    fn cached_ring_quotient_matches_full_product_and_schoolbook_trace() {
+        let trace = verification_trace(PUBLIC_KEY, MESSAGE, SIGNATURE).unwrap();
+        let reference = workspace_tests::schoolbook_trace(
+            trace.public_key.clone(),
+            trace.signature.clone(),
+            trace.hash_to_point.clone(),
         )
         .unwrap();
-        assert_eq!(slow, fast);
+        assert_eq!(trace, reference);
         let mut product = [0i64; 2 * N - 1];
-        for (i, &h) in slow.public_key.h.iter().enumerate() {
-            for (j, &s) in slow.signature.s2.iter().enumerate() {
+        for (i, &h) in trace.public_key.h.iter().enumerate() {
+            for (j, &s) in trace.signature.s2.iter().enumerate() {
                 product[i + j] += i64::from(h) * i64::from(s);
             }
         }
         for j in 0..2 * N - 1 {
             let mut residual = -product[j];
             if j < N {
-                residual += i64::from(slow.hash_to_point.point[j]) - i64::from(slow.s1[j]);
+                residual += i64::from(trace.hash_to_point.point[j]) - i64::from(trace.s1[j]);
             }
             let quotient = if j == N - 1 {
                 0
             } else {
-                slow.ring_quotient[j % N]
+                trace.ring_quotient[j % N]
             };
             assert_eq!(residual.rem_euclid(Q), i64::from(quotient));
         }

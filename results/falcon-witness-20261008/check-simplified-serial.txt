@@ -1,0 +1,1158 @@
+warning: function `square_n` is never used
+   --> vendor/field/src/gf128/portable.rs:104:8
+    |
+104 | pub fn square_n(a: [u64; 2], k: u32) -> [u64; 2] {
+    |        ^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `wide_words` is never used
+   --> vendor/field/src/gf128/portable.rs:116:15
+    |
+116 | pub(crate) fn wide_words(value: Wide) -> [u64; 4] {
+    |               ^^^^^^^^^^
+
+warning: function `wide_zero` is never used
+   --> vendor/field/src/gf128/portable.rs:137:8
+    |
+137 | pub fn wide_zero() -> Wide {
+    |        ^^^^^^^^^
+
+warning: function `wide_of` is never used
+   --> vendor/field/src/gf128/portable.rs:141:8
+    |
+141 | pub fn wide_of(a: [u64; 2]) -> Wide {
+    |        ^^^^^^^
+
+warning: function `wide_add` is never used
+   --> vendor/field/src/gf128/portable.rs:149:8
+    |
+149 | pub fn wide_add(x: Wide, y: Wide) -> Wide {
+    |        ^^^^^^^^
+
+warning: function `wide_add_low` is never used
+   --> vendor/field/src/gf128/portable.rs:155:8
+    |
+155 | pub fn wide_add_low(x: Wide, a: [u64; 2]) -> Wide {
+    |        ^^^^^^^^^^^^
+
+warning: function `wide_reduce` is never used
+   --> vendor/field/src/gf128/portable.rs:159:8
+    |
+159 | pub fn wide_reduce(w: Wide) -> [u64; 2] {
+    |        ^^^^^^^^^^^
+
+warning: function `wide_from_words` is never used
+   --> vendor/field/src/gf128/portable.rs:321:8
+    |
+321 | pub fn wide_from_words(words: [u64; 4]) -> Wide {
+    |        ^^^^^^^^^^^^^^^
+
+warning: `field` (lib) generated 8 warnings
+warning: unused import: `Zero`
+ --> crates/circuit/src/witgen.rs:3:23
+  |
+3 | use num_traits::{One, Zero};
+  |                       ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `One`
+ --> crates/circuit/src/witgen.rs:3:18
+  |
+3 | use num_traits::{One, Zero};
+  |                  ^^^
+
+warning: method `sum_terms` is never used
+   --> crates/circuit/src/linear_map/builder.rs:203:19
+    |
+ 59 | impl<S: CoefficientStore> WengertBuilder<S> {
+    | ------------------------------------------- method in this implementation
+...
+203 |     pub(super) fn sum_terms(&mut self, terms: Vec<(NodeId, u32)>) -> NodeId {
+    |                   ^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `adjoint_map_segments` is never used
+   --> crates/circuit/src/linear_map/evaluate.rs:318:19
+    |
+210 | impl<'a, F: RingOps + Sync> PreparedWengert<'a, F> {
+    | -------------------------------------------------- method in this implementation
+...
+318 |     pub(super) fn adjoint_map_segments(
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `integer_from_bits` is never used
+  --> crates/circuit/src/witgen.rs:14:15
+   |
+14 | pub(crate) fn integer_from_bits<const L: usize>(bits: &[bool]) -> Z<L> {
+   |               ^^^^^^^^^^^^^^^^^
+
+warning: `circuit` (lib) generated 5 warnings
+    Checking bitz v0.1.0 (/home/john-wu/code/BitZ-pcs/.tmp/falcon-witness-preparation)
+warning: unused import: `self`
+  --> src/piop/spartan/u32_mul_relation.rs:36:9
+   |
+36 |         self, BindingHasher, BlockTable, Domains, FieldConfig, Kernel, MatrixSource, PiopWitness,
+   |         ^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `super::falcon::FalconError`
+ --> src/piop/spartan/falcon_profiles.rs:2:5
+  |
+2 | use super::falcon::FalconError;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::sumcheck::boundary::*`
+ --> src/piop/spartan/sumcheck.rs:3:16
+  |
+3 | pub(crate) use crate::sumcheck::boundary::*;
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `EqualityWeights`
+ --> src/poly/mle.rs:5:36
+  |
+5 |     CompositeMultilinearExtension, EqualityWeights, FactoredMultilinearExtension,
+  |                                    ^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::sumcheck::arithmetic::merge_accumulators as merge_product_pair`
+  --> src/sumcheck/inner/native.rs:34:16
+   |
+34 | pub(crate) use crate::sumcheck::arithmetic::merge_accumulators as merge_product_pair;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `arithmetic::merge_accumulators`
+  --> src/sumcheck/inner/native.rs:35:38
+   |
+35 | use crate::sumcheck::{SumcheckError, arithmetic::merge_accumulators};
+   |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `overlay::FactoredOverlayInput`
+   --> src/sumcheck/inner/packed.rs:371:16
+    |
+371 | pub(crate) use overlay::FactoredOverlayInput;
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `ConstZero`
+  --> src/poly/univariate/binary_ref.rs:18:54
+   |
+18 | use num_traits::{CheckedAdd, CheckedMul, CheckedSub, ConstZero, One, Zero};
+   |                                                      ^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/baby_bear_bitz.rs:23:5
+   |
+23 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/baby_bear_bitz.rs:22:5
+   |
+22 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/baby_bear_mul.rs:21:5
+   |
+21 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::sumcheck::bridge::PreparedBinding`
+  --> src/piop/spartan/baby_bear_mul.rs:22:5
+   |
+22 | use crate::sumcheck::bridge::PreparedBinding;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RingOps`
+  --> src/piop/spartan/u32_mul_relation.rs:25:13
+   |
+25 | use field::{RingOps, Uint};
+   |             ^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/cm.rs:35:5
+   |
+35 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/grinding.rs:20:5
+   |
+20 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/multiswap/proof.rs:39:5
+   |
+39 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/multiswap/proof.rs:36:5
+   |
+36 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `ConstZero`
+  --> src/poly/univariate/dense.rs:21:76
+   |
+21 | use num_traits::{CheckedAdd, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One, Zero};
+   |                                                                            ^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/profile.rs:57:5
+   |
+57 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/protocol/bitify.rs:13:5
+   |
+13 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `MergeAccumulator`
+  --> src/sumcheck/outer/univariate_api.rs:15:26
+   |
+15 | use field::{BatchMulAcc, MergeAccumulator, Reduce};
+   |                          ^^^^^^^^^^^^^^^^
+
+warning: unused import: `RingOps`
+  --> src/piop/spartan/protocol/mod.rs:24:13
+   |
+24 | use field::{RingOps, Uint};
+   |             ^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/protocol/mod.rs:23:5
+   |
+23 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/sha256/chain.rs:23:5
+   |
+23 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+ --> src/piop/spartan/sha256/constraints.rs:9:5
+  |
+9 | use field::RingOps;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `SpartanField`
+  --> src/piop/spartan/sha256/constraints.rs:32:5
+   |
+32 |     SpartanField, SpartanMatrixError,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+ --> src/piop/spartan/sha256/constraints.rs:7:5
+  |
+7 | use crate::piop::spartan::SpartanField as _;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+ --> src/piop/spartan/sha256/prime.rs:7:5
+  |
+7 | use crate::piop::spartan::SpartanField as _;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/sha256/proof.rs:20:5
+   |
+20 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/u128_bitz.rs:15:5
+   |
+15 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/u128_mul.rs:16:5
+   |
+16 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `field::RingOps`
+  --> src/piop/spartan/u64_bitz.rs:19:5
+   |
+19 | use field::RingOps;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `MergeAccumulator`
+ --> src/sumcheck/outer/api.rs:8:26
+  |
+8 | use field::{BatchMulAcc, MergeAccumulator, Reduce};
+  |                          ^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/u64_mul.rs:16:5
+   |
+16 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::piop::spartan::SpartanField`
+  --> src/piop/spartan/mod.rs:10:5
+   |
+10 | use crate::piop::spartan::SpartanField as _;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `num_traits::ConstOne`
+   --> src/piop/spartan/mod.rs:160:5
+    |
+160 | use num_traits::ConstOne;
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `ConstOne`
+  --> src/poly/univariate/dense.rs:21:66
+   |
+21 | use num_traits::{CheckedAdd, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One, Zero};
+   |                                                                  ^^^^^^^^
+
+warning: unused import: `Zero`
+  --> src/bitz/virt.rs:27:23
+   |
+27 | use num_traits::{One, Zero};
+   |                       ^^^^
+
+warning: unused import: `One`
+  --> src/bitz/virt.rs:27:18
+   |
+27 | use num_traits::{One, Zero};
+   |                  ^^^
+
+warning: trait `ligerito::PackedBits` is more private than the item `ring_switch_prove`
+   --> src/ligerito.rs:474:1
+    |
+474 | / pub fn ring_switch_prove<T: PackedBits>(
+475 | |     transcript: &mut impl Transcript,
+476 | |     p_msg: &[T],
+477 | |     r_hi: &[Gf],
+478 | | ) -> (RingSwitchProof, Vec<Gf>, Gf) {
+    | |___________________________________^ function `ring_switch_prove` is reachable at visibility `pub`
+    |
+note: but trait `ligerito::PackedBits` is only usable at visibility `pub(crate)`
+   --> src/ligerito.rs:255:1
+    |
+255 | pub(crate) trait PackedBits: Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_bounds)]` on by default
+
+warning: trait `ligerito::PackedBits` is more private than the item `ring_switch_prove_with`
+   --> src/ligerito.rs:486:1
+    |
+486 | / pub fn ring_switch_prove_with<T: PackedBits, O: Send>(
+487 | |     transcript: &mut impl Transcript,
+488 | |     p_msg: &[T],
+489 | |     r_hi: &[Gf],
+490 | |     convert: impl Fn(Gf) -> O + Sync + Send,
+491 | | ) -> (RingSwitchProof, Vec<O>, Gf) {
+    | |__________________________________^ function `ring_switch_prove_with` is reachable at visibility `pub`
+    |
+note: but trait `ligerito::PackedBits` is only usable at visibility `pub(crate)`
+   --> src/ligerito.rs:255:1
+    |
+255 | pub(crate) trait PackedBits: Sync {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `sv_fold_eq_tiled` is never used
+   --> src/ligerito.rs:387:15
+    |
+387 | pub(crate) fn sv_fold_eq_tiled<T: PackedBits>(wit: &[T], point: &[Gf]) -> Vec<Gf> {
+    |               ^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `matches_rows` is never used
+   --> src/ligerito_flock.rs:191:19
+    |
+161 | impl FlockCommitHint {
+    | -------------------- method in this implementation
+...
+191 |     pub(crate) fn matches_rows(&self, rows: &std::sync::Arc<Vec<Vec<u64>>>) -> bool {
+    |                   ^^^^^^^^^^^^
+
+warning: field `raw_error` is never read
+ --> src/ligerito_flock/grinding_plan.rs:9:9
+  |
+6 | pub(crate) struct ChallengeBlock {
+  |                   -------------- field in this struct
+...
+9 |     pub raw_error: f64,
+  |         ^^^^^^^^^
+  |
+  = note: `ChallengeBlock` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: field `source` is never read
+  --> src/ligerito_flock/grinding_plan.rs:16:16
+   |
+14 | pub(crate) struct GrindingPlan {
+   |                   ------------ field in this struct
+15 |     pub blocks: Vec<ChallengeBlock>,
+16 |     pub(super) source: [u8; 32],
+   |                ^^^^^^
+   |
+   = note: `GrindingPlan` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: associated items `matches` and `resolve` are never used
+  --> src/ligerito_flock/grinding_plan.rs:20:19
+   |
+19 | impl GrindingPlan {
+   | ----------------- associated items in this implementation
+20 |     pub(crate) fn matches(&self, config: &ligerito::LigeritoSecurityConfig) -> bool {
+   |                   ^^^^^^^
+...
+33 |     pub fn resolve(config: &ligerito::LigeritoSecurityConfig, target: u32) -> Result<Self, String> {
+   |            ^^^^^^^
+
+warning: constant `ASSIGNMENT_BINDING_DOMAIN` is never used
+  --> src/piop/spartan/baby_bear_bitz.rs:54:7
+   |
+54 | const ASSIGNMENT_BINDING_DOMAIN: &[u8] = b"bitz/spartan-baby-bear-bitz/assignment/v1";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `fixed_q_assignment_binding` is never used
+   --> src/piop/spartan/baby_bear_bitz.rs:133:4
+    |
+133 | fn fixed_q_assignment_binding(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type alias `Cfg` is never used
+  --> src/piop/spartan/falcon_integer.rs:18:6
+   |
+18 | type Cfg = <F as SpartanField>::Config;
+   |      ^^^
+
+warning: struct `Output` is never constructed
+  --> src/piop/spartan/falcon_integer.rs:20:19
+   |
+20 | pub(super) struct Output<const K: usize> {
+   |                   ^^^^^^
+
+warning: function `add` is never used
+  --> src/piop/spartan/falcon_integer.rs:32:4
+   |
+32 | fn add(field: &Cfg, a: [F; 3], b: [F; 3]) -> [F; 3] {
+   |    ^^^
+
+warning: function `product` is never used
+  --> src/piop/spartan/falcon_integer.rs:36:4
+   |
+36 | fn product(field: &Cfg, a: [F; 3], b: [F; 3]) -> [F; 3] {
+   |    ^^^^^^^
+
+warning: function `linear_times` is never used
+  --> src/piop/spartan/falcon_integer.rs:48:4
+   |
+48 | fn linear_times(field: &Cfg, q: [F; 3], a: F, b: F, scale: F) -> [F; 4] {
+   |    ^^^^^^^^^^^^
+
+warning: function `equality_line` is never used
+  --> src/piop/spartan/falcon_integer.rs:59:4
+   |
+59 | fn equality_line(field: &Cfg, t: F) -> [F; 2] {
+   |    ^^^^^^^^^^^^^
+
+warning: function `eq` is never used
+  --> src/piop/spartan/falcon_integer.rs:66:4
+   |
+66 | fn eq(field: &Cfg, a: &[F], b: &[F]) -> F {
+   |    ^^
+
+warning: function `terminal` is never used
+  --> src/piop/spartan/falcon_integer.rs:73:15
+   |
+73 | pub(super) fn terminal<const K: usize>(
+   |               ^^^^^^^^
+
+warning: function `prove` is never used
+  --> src/piop/spartan/falcon_integer.rs:99:15
+   |
+99 | pub(super) fn prove<const K: usize>(
+   |               ^^^^^
+
+warning: constant `EXTENSION` is never used
+   --> src/piop/spartan/falcon_profiles.rs:111:19
+    |
+111 |             const EXTENSION: usize = $k;
+    |                   ^^^^^^^^^
+...
+135 | backend!(n512_k9, 512, 9, any(), $);
+    | ----------------------------------- in this macro invocation
+    |
+    = note: this warning originates in the macro `backend` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: constant `SOURCE_RESIDUAL_BOUND` is never used
+  --> src/piop/spartan/falcon/constraints.rs:10:18
+   |
+10 | pub(super) const SOURCE_RESIDUAL_BOUND: u128 = N as u128
+   |                  ^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `MASK_BYTES` is never used
+ --> src/piop/spartan/falcon/hash_to_point_selection.rs:9:18
+  |
+9 | pub(super) const MASK_BYTES: usize = HASH_TO_POINT_SAMPLES.div_ceil(8);
+  |                  ^^^^^^^^^^
+
+warning: constant `REJECTION_ROWS` is never used
+  --> src/piop/spartan/falcon/hash_to_point_selection.rs:10:18
+   |
+10 | pub(super) const REJECTION_ROWS: usize = HASH_TO_POINT_SAMPLES;
+   |                  ^^^^^^^^^^^^^^
+
+warning: constant `REJECTION_STRIDE` is never used
+  --> src/piop/spartan/falcon/hash_to_point_selection.rs:11:18
+   |
+11 | pub(super) const REJECTION_STRIDE: usize = REJECTION_ROWS.next_power_of_two();
+   |                  ^^^^^^^^^^^^^^^^
+
+warning: constant `REJECTION_ROW_LOG` is never used
+  --> src/piop/spartan/falcon/hash_to_point_selection.rs:12:18
+   |
+12 | pub(super) const REJECTION_ROW_LOG: usize = REJECTION_STRIDE.ilog2() as usize;
+   |                  ^^^^^^^^^^^^^^^^^
+
+warning: struct `Selection` is never constructed
+  --> src/piop/spartan/falcon/hash_to_point_selection.rs:17:19
+   |
+17 | pub(super) struct Selection {
+   |                   ^^^^^^^^^
+
+warning: multiple associated items are never used
+   --> src/piop/spartan/falcon/hash_to_point_selection.rs:23:12
+    |
+ 22 | impl Selection {
+    | -------------- associated items in this implementation
+ 23 |     pub fn from_masks(masks: Vec<Vec<u8>>, batch: usize) -> Result<Self, FalconError> {
+    |            ^^^^^^^^^^
+...
+ 54 |     pub fn from_traces(traces: &[FalconVerificationTrace]) -> Result<Self, FalconError> {
+    |            ^^^^^^^^^^^
+...
+ 80 |     pub fn masks(&self) -> &[Vec<u8>] {
+    |            ^^^^^
+...
+ 84 |     pub fn into_masks(self) -> Vec<Vec<u8>> {
+    |            ^^^^^^^^^^
+...
+ 88 |     pub fn batch(&self) -> usize {
+    |            ^^^^^
+...
+ 92 |     pub fn indices(&self, instance: usize) -> &[u16; N] {
+    |            ^^^^^^^
+...
+103 |     pub fn cutoff(&self, instance: usize) -> usize {
+    |            ^^^^^^
+
+warning: function `invalid_mask` is never used
+   --> src/piop/spartan/falcon/hash_to_point_selection.rs:108:4
+    |
+108 | fn invalid_mask<T>(instance: usize) -> Result<T, FalconError> {
+    |    ^^^^^^^^^^^^
+
+warning: constant `EXTENSION` is never used
+   --> src/piop/spartan/falcon_profiles.rs:111:19
+    |
+111 |             const EXTENSION: usize = $k;
+    |                   ^^^^^^^^^
+...
+136 | backend!(n512_k10, 512, 10, any(), $);
+    | ------------------------------------- in this macro invocation
+    |
+    = note: this warning originates in the macro `backend` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: constant `EXTENSION` is never used
+   --> src/piop/spartan/falcon_profiles.rs:111:19
+    |
+111 |             const EXTENSION: usize = $k;
+    |                   ^^^^^^^^^
+...
+137 | backend!(n512_k11, 512, 11, any(), $);
+    | ------------------------------------- in this macro invocation
+    |
+    = note: this warning originates in the macro `backend` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: constant `EXTENSION` is never used
+   --> src/piop/spartan/falcon_profiles.rs:111:19
+    |
+111 |             const EXTENSION: usize = $k;
+    |                   ^^^^^^^^^
+...
+138 | backend!(n1024_k9, 1024, 9, any(), $);
+    | ------------------------------------- in this macro invocation
+    |
+    = note: this warning originates in the macro `backend` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: constant `EXTENSION` is never used
+   --> src/piop/spartan/falcon_profiles.rs:111:19
+    |
+111 |             const EXTENSION: usize = $k;
+    |                   ^^^^^^^^^
+...
+139 | backend!(n1024_k10, 1024, 10, any(), $);
+    | --------------------------------------- in this macro invocation
+    |
+    = note: this warning originates in the macro `backend` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: constant `EXTENSION` is never used
+   --> src/piop/spartan/falcon_profiles.rs:111:19
+    |
+111 |             const EXTENSION: usize = $k;
+    |                   ^^^^^^^^^
+...
+140 | backend!(n1024_k11, 1024, 11, test, $);
+    | -------------------------------------- in this macro invocation
+    |
+    = note: this warning originates in the macro `backend` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: methods `initial_grinding_bits`, `inner_round_grinding_bits`, `terminal_grinding_bits`, and `accepts_prime` are never used
+   --> src/piop/spartan/sha256/prime.rs:145:18
+    |
+ 87 | impl Sha256PrimeProfile {
+    | ----------------------- methods in this implementation
+...
+145 |     pub const fn initial_grinding_bits(self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^
+...
+150 |     pub const fn inner_round_grinding_bits(self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+155 |     pub const fn terminal_grinding_bits(self) -> usize {
+    |                  ^^^^^^^^^^^^^^^^^^^^^^
+...
+160 |     pub const fn accepts_prime(self, q: u128) -> bool {
+    |                  ^^^^^^^^^^^^^
+
+warning: constant `MIN_LEN` is never used
+   --> src/piop/spartan/u128_mul.rs:112:11
+    |
+112 |     const MIN_LEN: usize = 4096;
+    |           ^^^^^^^
+
+warning: constant `MIN_LEN` is never used
+   --> src/piop/spartan/u64_mul.rs:210:11
+    |
+210 |     const MIN_LEN: usize = 4096;
+    |           ^^^^^^^
+
+warning: struct `CompositeMultilinearExtension` is never constructed
+  --> src/poly/mle/structured.rs:28:19
+   |
+28 | pub(crate) struct CompositeMultilinearExtension<'a, F: SpartanField> {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated items `from_factors` and `evaluate` are never used
+   --> src/poly/mle/structured.rs:45:19
+    |
+ 44 | impl<'a, F: SpartanField> FactoredMultilinearExtension<'a, F> {
+    | ------------------------------------------------------------- associated items in this implementation
+ 45 |     pub(crate) fn from_factors(
+    |                   ^^^^^^^^^^^^
+...
+106 |     pub(crate) fn evaluate(&self, point: &[F], cfg: &F::Config) -> Result<F, EvaluationError> {
+    |                   ^^^^^^^^
+
+warning: multiple associated items are never used
+   --> src/poly/mle/structured.rs:161:19
+    |
+160 | impl<'a, F: SpartanField> CompositeMultilinearExtension<'a, F> {
+    | -------------------------------------------------------------- associated items in this implementation
+161 |     pub(crate) fn from_parts(
+    |                   ^^^^^^^^^^
+...
+191 |     pub(crate) fn with_tail_runs(
+    |                   ^^^^^^^^^^^^^^
+...
+209 |     pub(crate) fn tail_runs(&self) -> Option<&'a [(usize, usize, F)]> {
+    |                   ^^^^^^^^^
+...
+213 |     pub(crate) fn num_vars(&self) -> usize {
+    |                   ^^^^^^^^
+...
+216 |     pub(crate) fn live_len(&self) -> usize {
+    |                   ^^^^^^^^
+...
+219 |     pub(crate) fn repeated(&self) -> &FactoredMultilinearExtension<'a, F> {
+    |                   ^^^^^^^^
+...
+222 |     pub(crate) fn tail_evaluations(&self) -> &[F] {
+    |                   ^^^^^^^^^^^^^^^^
+...
+225 |     pub(crate) fn origin_adjustment(&self) -> &F {
+    |                   ^^^^^^^^^^^^^^^^^
+...
+229 |     pub(crate) fn evaluation_at(&self, index: usize) -> Result<F, EvaluationError> {
+    |                   ^^^^^^^^^^^^^
+...
+246 |     pub(crate) fn evaluate(&self, point: &[F], cfg: &F::Config) -> Result<F, EvaluationError> {
+    |                   ^^^^^^^^
+
+warning: function `check_point` is never used
+   --> src/poly/mle/structured.rs:265:4
+    |
+265 | fn check_point<F>(num_vars: usize, point: &[F]) -> Result<(), EvaluationError> {
+    |    ^^^^^^^^^^^
+
+warning: struct `EqualityWeights` is never constructed
+   --> src/poly/mle/structured.rs:276:19
+    |
+276 | pub(crate) struct EqualityWeights<F: SpartanField> {
+    |                   ^^^^^^^^^^^^^^^
+
+warning: associated items `new`, `from_tables`, `low`, `high`, and `at` are never used
+   --> src/poly/mle/structured.rs:283:8
+    |
+282 | impl<F: SpartanField> EqualityWeights<F> {
+    | ---------------------------------------- associated items in this implementation
+283 |     fn new(point: &[F], cfg: &F::Config) -> Self {
+    |        ^^^
+...
+291 |     pub(crate) fn from_tables(low: Vec<F>, high: Vec<F>, field: &F::Config) -> Self {
+    |                   ^^^^^^^^^^^
+...
+299 |     pub(crate) fn low(&self) -> &[F] {
+    |                   ^^^
+...
+302 |     pub(crate) fn high(&self) -> &[F] {
+    |                   ^^^^
+...
+305 |     pub(crate) fn at(&self, index: usize) -> F {
+    |                   ^^
+
+warning: function `equality_table` is never used
+   --> src/poly/mle/structured.rs:313:4
+    |
+313 | fn equality_table<F: SpartanField>(point: &[F], cfg: &F::Config) -> Vec<F> {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `dot_with_equality` is never used
+   --> src/poly/mle/structured.rs:330:4
+    |
+330 | fn dot_with_equality<F: SpartanField>(values: &[F], point: &[F], cfg: &F::Config) -> F {
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: constant `PARALLEL_MIN_LANES` is never used
+  --> src/bitz/gkr.rs:25:7
+   |
+25 | const PARALLEL_MIN_LANES: usize = 1 << 12;
+   |       ^^^^^^^^^^^^^^^^^^
+
+warning: associated function `prefix` is never used
+   --> src/bitz/grinding.rs:116:19
+    |
+101 | impl Geometry {
+    | ------------- associated function in this implementation
+...
+116 |     pub(crate) fn prefix(rows: usize, columns: usize) -> Self {
+    |                   ^^^^^^
+
+warning: methods `policy` and `coordinate_count` are never used
+   --> src/bitz/grinding.rs:144:19
+    |
+143 | impl Schedule {
+    | ------------- methods in this implementation
+144 |     pub(crate) fn policy(self) -> Policy { self.policy }
+    |                   ^^^^^^
+...
+187 |     pub(crate) fn coordinate_count(self) -> usize {
+    |                   ^^^^^^^^^^^^^^^^
+
+warning: function `jit_sums_group` is never used
+   --> src/bitz/kernels/x86.rs:362:15
+    |
+362 | pub(crate) fn jit_sums_group(
+    |               ^^^^^^^^^^^^^^
+
+warning: associated function `with_security_and_work` is never used
+   --> src/bitz/pcs.rs:134:19
+    |
+133 | impl Pcs {
+    | -------- associated function in this implementation
+134 |     pub(crate) fn with_security_and_work(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `gkr_exit_prove` is never used
+  --> src/bitz/reduce.rs:62:15
+   |
+62 | pub(crate) fn gkr_exit_prove(
+   |               ^^^^^^^^^^^^^^
+
+warning: function `gkr_exit_verify` is never used
+  --> src/bitz/reduce.rs:79:15
+   |
+79 | pub(crate) fn gkr_exit_verify(
+   |               ^^^^^^^^^^^^^^^
+
+warning: function `inputs` is never used
+  --> src/sumcheck/inner/binary.rs:75:15
+   |
+75 | pub(crate) fn inputs(pairs: Vec<[Vec<F>; 2]>, num_vars: usize) -> (Vec<[Vec<F>; 2]>, Vec<()>) {
+   |               ^^^^^^
+
+warning: function `encode` is never used
+   --> src/sumcheck/inner/binary.rs:159:15
+    |
+159 | pub(crate) fn encode(
+    |               ^^^^^^
+
+warning: associated function `quadratic` is never used
+   --> src/sumcheck/inner/evaluation_form.rs:152:19
+    |
+151 | impl<F> MultiDegreeSumcheckProof<F> {
+    | ----------------------------------- associated function in this implementation
+152 |     pub(crate) fn quadratic(
+    |                   ^^^^^^^^^
+
+warning: constant `FOLD_BLOCK` is never used
+  --> src/sumcheck/inner/native.rs:65:18
+   |
+65 | pub(crate) const FOLD_BLOCK: usize = 1 << 11;
+   |                  ^^^^^^^^^^
+
+warning: associated function `new` is never used
+   --> src/sumcheck/inner/native.rs:301:19
+    |
+300 | impl NativeConstantPrefix {
+    | ------------------------- associated function in this implementation
+301 |     pub(crate) fn new(block_len: usize) -> Self {
+    |                   ^^^
+
+warning: struct `ColumnMajorPackedBits` is never constructed
+   --> src/sumcheck/inner/packed.rs:176:19
+    |
+176 | pub(crate) struct ColumnMajorPackedBits<'a> {
+    |                   ^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `new` is never used
+   --> src/sumcheck/inner/packed.rs:182:19
+    |
+181 | impl<'a> ColumnMajorPackedBits<'a> {
+    | ---------------------------------- associated function in this implementation
+182 |     pub(crate) fn new(columns: &'a [Vec<u64>], row_vars: usize) -> Self {
+    |                   ^^^
+
+warning: function `linear_merge` is never used
+    --> src/sumcheck/inner/packed.rs:2095:4
+     |
+2095 | fn linear_merge(accumulator: &mut LinearAccumulator, other: LinearAccumulator) {
+     |    ^^^^^^^^^^^^
+
+warning: function `product_merge` is never used
+    --> src/sumcheck/inner/packed.rs:2123:4
+     |
+2123 | fn product_merge(accumulator: &mut ProductAccumulator, other: ProductAccumulator) {
+     |    ^^^^^^^^^^^^^
+
+warning: struct `BindingOptions` is never constructed
+ --> src/sumcheck/inner/packed/binding_options.rs:4:19
+  |
+4 | pub(crate) struct BindingOptions {
+  |                   ^^^^^^^^^^^^^^
+
+warning: associated items `REFERENCE`, `for_arithmetic`, `for_full`, and `for_workload` are never used
+  --> src/sumcheck/inner/packed/binding_options.rs:10:15
+   |
+ 9 | impl BindingOptions {
+   | ------------------- associated items in this implementation
+10 |     pub const REFERENCE: Self = Self {
+   |               ^^^^^^^^^
+...
+15 |     pub fn for_arithmetic(batch: usize, degree: usize, ungrinded_binding: bool) -> Self {
+   |            ^^^^^^^^^^^^^^
+...
+20 |     pub fn for_full(batch: usize, degree: usize, security_bits: usize, extension: usize) -> Self {
+   |            ^^^^^^^^
+...
+24 |     fn for_workload(batch: usize, degree: usize, full: bool, security_100: bool) -> Self {
+   |        ^^^^^^^^^^^^
+
+warning: struct `TailPiece` is never constructed
+   --> src/sumcheck/inner/packed/composite.rs:241:8
+    |
+241 | struct TailPiece {
+    |        ^^^^^^^^^
+
+warning: function `tail_pieces` is never used
+   --> src/sumcheck/inner/packed/composite.rs:252:4
+    |
+252 | fn tail_pieces<const K: usize>(
+    |    ^^^^^^^^^^^
+
+warning: function `ternary_extension_table` is never used
+   --> src/sumcheck/inner/packed/composite.rs:323:4
+    |
+323 | fn ternary_extension_table<const K: usize>() -> Vec<[i8; 16]> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `TailShapeState` is never constructed
+   --> src/sumcheck/inner/packed/composite.rs:367:8
+    |
+367 | struct TailShapeState {
+    |        ^^^^^^^^^^^^^^
+
+warning: associated function `new` is never used
+   --> src/sumcheck/inner/packed/composite.rs:373:8
+    |
+372 | impl TailShapeState {
+    | ------------------- associated function in this implementation
+373 |     fn new<const K: usize>() -> Self {
+    |        ^^^
+
+warning: function `shape_index` is never used
+   --> src/sumcheck/inner/packed/composite.rs:385:4
+    |
+385 | fn shape_index<const K: usize>(lo: usize, hi: usize) -> usize {
+    |    ^^^^^^^^^^^
+
+warning: function `accumulate_tail_block` is never used
+   --> src/sumcheck/inner/packed/composite.rs:391:4
+    |
+391 | fn accumulate_tail_block<const K: usize, H: Sha256InnerBitSource + ?Sized>(
+    |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `tail_run_beta_values` is never used
+   --> src/sumcheck/inner/packed/composite.rs:441:4
+    |
+441 | fn tail_run_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
+    |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `finish_tail_shapes` is never used
+   --> src/sumcheck/inner/packed/composite.rs:528:4
+    |
+528 | fn finish_tail_shapes<const K: usize>(state: TailShapeState, cfg: &FieldConfig, zero: &Field) -> Result<Vec<Field>, SumcheckError> {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: struct `RepeatedState` is never constructed
+   --> src/sumcheck/inner/packed/composite.rs:598:8
+    |
+598 | struct RepeatedState {
+    |        ^^^^^^^^^^^^^
+
+warning: function `repeated_beta_values` is never used
+   --> src/sumcheck/inner/packed/composite.rs:611:4
+    |
+611 | fn repeated_beta_values<const K: usize, H: Sha256InnerBitSource + ?Sized>(
+    |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `FactoredOverlayInput` is never constructed
+ --> src/sumcheck/inner/packed/overlay.rs:9:19
+  |
+9 | pub(crate) struct FactoredOverlayInput<'a, S: ?Sized, H: ?Sized> {
+  |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `new` is never used
+  --> src/sumcheck/inner/packed/overlay.rs:22:19
+   |
+20 | impl<'a, S: ?Sized, H: ?Sized> FactoredOverlayInput<'a, S, H> {
+   | ------------------------------------------------------------- associated function in this implementation
+21 |     #[allow(clippy::too_many_arguments)]
+22 |     pub(crate) fn new(
+   |                   ^^^
+
+warning: struct `OverlayState` is never constructed
+  --> src/sumcheck/inner/packed/overlay.rs:45:19
+   |
+45 | pub(crate) struct OverlayState<'a, S: ?Sized, H: ?Sized, const K: usize> {
+   |                   ^^^^^^^^^^^^
+
+warning: associated items `new`, `prepare_tail`, `coefficients`, `fold`, and `terminal` are never used
+   --> src/sumcheck/inner/packed/overlay.rs:62:8
+    |
+ 59 | / impl<'a, S: StreamingCoefficientSource + ?Sized, H: Sha256InnerBitSource + ?Sized, const K: usize>
+ 60 | |     OverlayState<'a, S, H, K>
+    | |_____________________________- associated items in this implementation
+ 61 |   {
+ 62 |       fn new(input: FactoredOverlayInput<'a, S, H>, f: &FieldConfig) -> Result<Self, SumcheckError> {
+    |          ^^^
+...
+141 |       fn prepare_tail(&mut self, f: &FieldConfig) -> Result<(), SumcheckError> {
+    |          ^^^^^^^^^^^^
+...
+213 |       fn coefficients(&self, f: &FieldConfig) -> Result<[Field; 2], SumcheckError> {
+    |          ^^^^^^^^^^^^
+...
+226 |       fn fold(&mut self, f: &FieldConfig, challenge: &Field) -> Result<(), SumcheckError> {
+    |          ^^^^
+...
+327 |       fn terminal(&self, f: &FieldConfig) -> Result<[Field; 2], SumcheckError> {
+    |          ^^^^^^^^
+
+warning: function `ring_axes` is never used
+   --> src/sumcheck/inner/packed/overlay.rs:353:4
+    |
+353 | fn ring_axes<'a>(row: &'a [Field], column: &'a [Field]) -> (&'a [Field], &'a [Field]) {
+    |    ^^^^^^^^^
+
+warning: function `fold_factor` is never used
+   --> src/sumcheck/inner/packed/overlay.rs:361:4
+    |
+361 | fn fold_factor(values: &mut Vec<Field>, challenge: &Field, f: &FieldConfig) {
+    |    ^^^^^^^^^^^
+
+warning: function `sum_pairs` is never used
+   --> src/sumcheck/inner/packed/overlay.rs:375:4
+    |
+375 | fn sum_pairs(
+    |    ^^^^^^^^^
+
+warning: function `ring_prefix` is never used
+   --> src/sumcheck/inner/packed/overlay.rs:453:4
+    |
+453 | fn ring_prefix<const K: usize, H: Sha256InnerBitSource + ?Sized>(
+    |    ^^^^^^^^^^^
+
+warning: struct `OffsetBits` is never constructed
+   --> src/sumcheck/inner/packed/overlay.rs:511:8
+    |
+511 | struct OffsetBits<'a, H: ?Sized> {
+    |        ^^^^^^^^^^
+
+warning: struct `ColumnSource` is never constructed
+   --> src/sumcheck/inner/packed/overlay.rs:524:8
+    |
+524 | struct ColumnSource<'a> {
+    |        ^^^^^^^^^^^^
+
+warning: enum `State` is never used
+   --> src/sumcheck/inner/packed/overlay.rs:638:17
+    |
+638 | pub(crate) enum State<'a, S: ?Sized, H: ?Sized> {
+    |                 ^^^^^
+
+warning: trait `StreamingCoefficientSource` is never used
+ --> src/sumcheck/inner/packed/streaming.rs:9:18
+  |
+9 | pub(crate) trait StreamingCoefficientSource: Sync {
+  |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `StreamingMle` is never constructed
+   --> src/sumcheck/inner/packed/streaming.rs:127:19
+    |
+127 | pub(crate) struct StreamingMle<'a, S: ?Sized> {
+    |                   ^^^^^^^^^^^^
+
+warning: associated items `new`, `validate_dimensions`, `visit_checked`, `visit_blocks_checked`, `visit_folded_checked`, and `visit_folded_final_checked` are never used
+   --> src/sumcheck/inner/packed/streaming.rs:132:19
+    |
+131 | impl<'a, S: StreamingCoefficientSource + ?Sized> StreamingMle<'a, S> {
+    | -------------------------------------------------------------------- associated items in this implementation
+132 |     pub(crate) fn new(source: &'a S) -> Self {
+    |                   ^^^
+...
+136 |     fn validate_dimensions<const K: usize>(
+    |        ^^^^^^^^^^^^^^^^^^^
+...
+157 |     fn visit_checked(
+    |        ^^^^^^^^^^^^^
+...
+182 |     fn visit_blocks_checked<const K: usize>(
+    |        ^^^^^^^^^^^^^^^^^^^^
+...
+207 |     fn visit_folded_checked<const K: usize>(
+    |        ^^^^^^^^^^^^^^^^^^^^
+...
+227 |     fn visit_folded_final_checked<const K: usize>(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `build_four_variable_group`, `build_partition`, and `build_four_variable_partition` are never used
+   --> src/sumcheck/inner/packed/streaming.rs:595:8
+    |
+594 | impl<S: StreamingCoefficientSource + ?Sized> StreamingMle<'_, S> {
+    | ---------------------------------------------------------------- methods in this implementation
+595 |     fn build_four_variable_group<H: Sha256InnerBitSource + ?Sized>(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+654 |     fn build_partition<const K: usize, H: Sha256InnerBitSource + ?Sized>(
+    |        ^^^^^^^^^^^^^^^
+...
+812 |     fn build_four_variable_partition<H: Sha256InnerBitSource + ?Sized>(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `finish_four_variable_partition` is never used
+   --> src/sumcheck/inner/packed/streaming.rs:912:4
+    |
+912 | fn finish_four_variable_partition(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `finish_partition` is never used
+   --> src/sumcheck/inner/packed/streaming.rs:937:4
+    |
+937 | fn finish_partition<const K: usize>(
+    |    ^^^^^^^^^^^^^^^^
+
+warning: static `BIT_EXTENSIONS_3` is never used
+   --> src/sumcheck/inner/packed/streaming.rs:954:8
+    |
+954 | static BIT_EXTENSIONS_3: [[i8; 27]; 256] = bit_extensions_3();
+    |        ^^^^^^^^^^^^^^^^
+
+warning: function `accumulate_three_variable_block` is never used
+   --> src/sumcheck/inner/packed/streaming.rs:956:4
+    |
+956 | fn accumulate_three_variable_block(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `bit_extensions_3` is never used
+   --> src/sumcheck/inner/packed/streaming.rs:981:10
+    |
+981 | const fn bit_extensions_3() -> [[i8; 27]; 256] {
+    |          ^^^^^^^^^^^^^^^^
+
+warning: function `accumulate_block` is never used
+    --> src/sumcheck/inner/packed/streaming.rs:1013:4
+     |
+1013 | fn accumulate_block<const K: usize, H: Sha256InnerBitSource + ?Sized>(
+     |    ^^^^^^^^^^^^^^^^
+
+warning: method `len` is never used
+   --> src/sumcheck/outer/arithmetic.rs:100:19
+    |
+ 91 | impl<'a> NativeProducts<'a> {
+    | --------------------------- method in this implementation
+...
+100 |     pub(crate) fn len(&self) -> usize {
+    |                   ^^^
+
+warning: function `validate_products_for_skip` is never used
+   --> src/sumcheck/outer/univariate.rs:681:4
+    |
+681 | fn validate_products_for_skip<F>(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `validate_equality_factors` is never used
+   --> src/sumcheck/outer/univariate.rs:705:4
+    |
+705 | fn validate_equality_factors<F>(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `has_dense_shape` is never used
+   --> src/sumcheck/outer/univariate.rs:735:4
+    |
+735 | fn has_dense_shape<F>(mle: &DenseMultilinearExtension<F>) -> bool {
+    |    ^^^^^^^^^^^^^^^
+
+warning: function `outer_fold_grain` is never used
+   --> src/sumcheck/arithmetic.rs:398:15
+    |
+398 | pub(crate) fn outer_fold_grain(pairs: usize) -> usize {
+    |               ^^^^^^^^^^^^^^^^
+
+warning: variant `Independent` is never constructed
+   --> src/sumcheck/bridge/native.rs:195:5
+    |
+187 | pub(crate) enum RowFunctional<'a> {
+    |                 ------------- variant in this enum
+...
+195 |     Independent([&'a [field::Fp<2>]; 3]),
+    |     ^^^^^^^^^^^
+    |
+    = note: `RowFunctional` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: `bitz` (lib) generated 138 warnings (run `cargo fix --lib -p bitz` to apply 7 suggestions)
+    Finished `release` profile [optimized] target(s) in 3.11s
